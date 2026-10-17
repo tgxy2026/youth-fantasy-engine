@@ -61,6 +61,14 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
       )}
       {relationGroups.map(g => {
         const gOpen = relGroupOpen.has(g.key)
+        /**
+         * 关系摘要（3.1.2 视觉巡检 F 条）：文件夹头原只有「人物名 + N 条关系」，右侧一大片空白。
+         * 把这位人物身上出现过的**关系类型**去重列出来（最多 3 个，其余折叠成 +N），
+         * 折叠状态下也能一眼看出他跟别人都是什么关系，不必逐条展开。
+         */
+        const relTypes = [...new Set(
+          g.rows.map(r => String(r.data['关系类型'] ?? '').trim()).filter(Boolean),
+        )]
         return (
           <div key={g.key} className={`rounded-xl border overflow-hidden ${g.unnamed ? 'border-dashed border-ink-600 bg-ink-850/50' : 'border-ink-700 bg-ink-850'}`}>
             <Button variant="bare"
@@ -75,6 +83,16 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
               <Users size={12} className="text-amber/80 shrink-0" />
               <span className="text-13 font-semibold text-ink-100 truncate">{g.name}</span>
               <span className="text-10 text-ink-500 shrink-0">{g.rows.length} 条关系</span>
+              {relTypes.length > 0 && (
+                <span className="ml-auto flex items-center gap-1 min-w-0 shrink-0">
+                  {relTypes.slice(0, 3).map(t => (
+                    <span key={t} className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-400 border border-ink-700 whitespace-nowrap">{t}</span>
+                  ))}
+                  {relTypes.length > 3 && (
+                    <span className="text-10 text-ink-600 whitespace-nowrap" title={relTypes.slice(3).join('、')}>+{relTypes.length - 3}</span>
+                  )}
+                </span>
+              )}
             </Button>
             {gOpen && (
               <div className="border-t border-ink-700/60 px-3 py-2.5 space-y-2">

@@ -142,7 +142,7 @@ export default function TavernControlModes({
           label="设定来源"
           hint="决定「世界与角色设定」这一层从哪来 —— 它每轮都进 system，是预算里最大的一块。"
           footer={(
-            <div className="mt-1.5 space-y-1 text-10 text-ink-600 leading-relaxed">
+            <div className="mt-1.5 space-y-1 text-11 text-ink-600 leading-relaxed">
               <p>· 两者（默认）：项目原始资料 + 你提炼的背景设定。资料最全，但项目原始资料本身就有四千六百字以上（示范项目实测还会丢 11 段），加上协议四千四百多字 —— 24000 的预算里 system 会吃掉一半左右，留给对话历史仍有一万多字。</p>
               <p>· 只用背景设定：设定层只留「作品概览 + 章节清单」（约 2200 字），世界规则靠你提炼的那份，省下的全给对话历史。代价是没在场配角的卡、名词 / 地理 / 历史细节不再注入 —— 所以背景设定里建议把「主要人物关系」写成一节，并让关键词留空（始终注入）。</p>
               <p>· 只用项目资料：不注入背景设定那一层。</p>
@@ -259,7 +259,7 @@ export default function TavernControlModes({
           {/* 🚫 2026-09-16：这里原来的「触发整理」与「自动整理最小间隔」已删 ——
               项目不再有任何自动整理（两种模式都改为作者手动触发：自由对话「结束本轮对话」、
               剧情推演「整理本场记忆」），留着这两个旋钮只会让人以为拧了有用。 */}
-          <p className="mb-3 text-10 leading-relaxed text-ink-500">
+          <p className="mb-3 text-11 leading-relaxed text-ink-500">
             下面几项决定记忆怎么压、怎么滚。<span className="text-ink-400">整理时机不在这一栏</span>——
             现在没有自动整理：自由对话在点「结束本轮对话」时整理，剧情推演点「整理本场记忆」。
             <br />
@@ -319,7 +319,7 @@ export default function TavernControlModes({
             value={free.unloadAfterRoundEnd}
             onChange={v => setFree('unloadAfterRoundEnd', v)}
           />
-          <p className="mt-2 text-10 leading-relaxed text-ink-500">
+          <p className="mt-2 text-11 leading-relaxed text-ink-500">
             代价是「下一场的第一句要等模型重新加载」（本地 27B 上这一步是几十秒），所以默认是关的 ——
             需要「每场都从干净状态开始」时再打开。
           </p>
@@ -350,7 +350,7 @@ export default function TavernControlModes({
                   selected={on} onClick={() => toggleVarKey(d.key)}
                 >
                   {on ? '✓ ' : ''}{d.label}
-                  <span className="ml-1 text-10 text-ink-500">
+                  <span className="ml-1 text-11 text-ink-500">
                     {d.kind === 'num' ? `${d.min}–${d.max}` : `≤${d.maxLen} 字`}
                   </span>
                 </Button>
@@ -365,7 +365,7 @@ export default function TavernControlModes({
           value={vars.maxStep} onCommit={v => setVars({ maxStep: Math.max(1, Math.round(v)) })}
         />
 
-        <p className="text-10 text-ink-600 leading-relaxed">
+        <p className="text-11 text-ink-600 leading-relaxed">
           自由对话里每轮回复后都会单开一次小调用，把这一轮真的变了的项算出来（点「结束本轮对话」时再兜底算一次）。
           写进提示词的有三样：当前值、一次能改多少，以及每一项的档位定义（哪一段算反感、哪一段算亲近），
           模型据此判断现在落在哪一档、该往哪走。算不出来时一个字段都不动 —— 绝不会为了记账改错你要看的内容。

@@ -75,6 +75,11 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
     const row = entry.row
     const depth = entry.depth
     const hasChildren = entry.hasChildren
+    /**
+     * 编号类列（3.1.2 G 条）：「编号」（各设定表）与「章节号」（章节总表）。
+     * 这类值是**不可分割的标识**（地理风物的 `G0001-001-001`），折行只会让行高参差不齐 —— 统一单行显示。
+     */
+    const isCodeLikeCol = (n: string) => n === codeCol || n === '章节号'
     // 合并 draft 后的最终数据，用于行底色
     const bg = rowBadgeClass(tab.id, row.data)
     const rowDirty = isRowDirty(row)
@@ -273,6 +278,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                         onChange={v => setCellDraft(row.id, col.name, v)}
                         invalid={col.name === codeCol && isInvalidCode(row)}
                         title={col.name === codeCol && isInvalidCode(row) ? '编号与同表其它行重复，保存前请修改' : undefined}
+                        nowrap={isCodeLikeCol(col.name)}
                       />
                       {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
                       {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (
@@ -298,6 +304,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                     onChange={v => setCellDraft(row.id, col.name, v)}
                     invalid={col.name === codeCol && isInvalidCode(row)}
                     title={col.name === codeCol && isInvalidCode(row) ? '编号与同表其它行重复，保存前请修改' : undefined}
+                    nowrap={isCodeLikeCol(col.name)}
                   />
                   {/* 编号联动：F01 → 伏笔追踪，H01 → 历史事件 */}
                   {tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/) && (

@@ -231,7 +231,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const [customOpts, setCustomOpts] = useState<Record<string, CustomOptionPayload>>({})
 
   const defaultColWidth = (col: { name: string; type?: string }) => {
-    if (col.name === '编号' || col.name === '章节号') return 110
+    // 3.1.2 G 条：110 → 130。地理风物的层级编号形如 `G0001-001-001`，110 刚好卡在边缘，
+    // 配合单元格 nowrap 后仍会被裁掉尾巴；给到 130 让这类编号能完整显示一次。
+    if (col.name === '编号' || col.name === '章节号') return 130
     if (col.type === 'date') return 220
     if (col.type === 'calendar') return 150
     if (col.type === 'select') return 134

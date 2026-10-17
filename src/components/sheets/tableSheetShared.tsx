@@ -54,11 +54,17 @@ export function rowBadgeClass(tabId: string, data: Record<string, string>): stri
  * 表格文本单元格：自动换行、随内容撑高，但最多约 3 行（≈78px）即封顶并裁切；
  * 超长内容通过原生 title 在悬停时以"小窗"展示全文，避免表格行高被无限撑大。
  */
-export function CellTextarea({ value, onChange, invalid, title }: {
+export function CellTextarea({ value, onChange, invalid, title, nowrap }: {
   value: string
   onChange: (v: string) => void
   invalid?: boolean
   title?: string
+  /**
+   * 不折行（3.1.2 视觉巡检 G 条）：编号列（如 `G0001-001-001`）在窄列里会被折成 2-3 行，
+   * 同一列各行高度参差不齐、看着像排版坏了。编号是**不可分割的标识**，折行没有任何可读性收益 ——
+   * 这里让它单行显示、超出部分裁掉（全文仍在 title 里悬停可见）。
+   */
+  nowrap?: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -75,7 +81,7 @@ export function CellTextarea({ value, onChange, invalid, title }: {
       onChange={e => onChange(e.target.value)}
       rows={1}
       title={title ?? value}
-      className={`!py-1 text-12 w-full whitespace-pre-wrap break-words resize-none overflow-hidden bg-transparent ${invalid ? '!border-danger/60 text-danger' : ''}`}
+      className={`!py-1 text-12 w-full ${nowrap ? 'whitespace-pre' : 'whitespace-pre-wrap break-words'} resize-none overflow-hidden bg-transparent ${invalid ? '!border-danger/60 text-danger' : ''}`}
     />
   )
 }

@@ -4,7 +4,7 @@
  * 本文件**只负责长相**：状态、effect、派生值与动作全部在 `useTableSheetModel()`（2026-09-19 拆出）。
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
 import { deleteTableRow } from '@/lib/db'
@@ -36,6 +36,7 @@ import { LoadingState } from '@/components/common/LoadingState'
 import TableSheetRow from '@/components/sheets/TableSheetRow'
 import TableRelationGroups from '@/components/sheets/TableRelationGroups'
 import { useTableSheetModel, ROW_ACTION_COL_W } from '@/components/sheets/useTableSheetModel'
+import TableMoreMenu, { type MoreMenuItem } from '@/components/sheets/TableMoreMenu'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { foldVh } from '@/lib/settings/theme'
 
@@ -99,6 +100,47 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   }
 
   /**
+   * 「更多」菜单的项（3.1.2 B 条）：把不常用的「导入 / 导出」与破坏性的「清空全部」收进来。
+   * 母表（章节总表）不提供导入导出 —— 它的行由各卷台账驱动，手填会打架，故整份菜单为空 ⇒ 组件自动不渲染。
+   */
+  const moreItems: MoreMenuItem[] = isMaster ? [] : [
+    {
+      key: 'import',
+      label: '批量导入',
+      icon: <FileDown size={13} />,
+      title: '批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条',
+      onClick: () => setShowImport(true),
+    },
+    {
+      key: 'export',
+      label: '导出 CSV',
+      icon: <FileUp size={13} />,
+      title: '导出本表数据为 CSV（Excel 可直接打开）',
+      onClick: exportCsv,
+    },
+    // 只有人物关系 / 历史事件支持清空（与原来按钮的可见条件逐字一致，功能不增减）
+    ...(['relations', 'history'].includes(tab.id) && rows.length > 0 ? [{
+      key: 'clear',
+      label: '清空全部',
+      icon: <Trash2 size={13} />,
+      danger: true,
+      title: `清空「${tab.name}」中所有 ${rows.length} 条记录`,
+      onClick: async () => {
+        if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
+        // 🔴 串行 await（2026-10-10 六维审计）：原先 forEach + void 是**并发发起且不等待**，
+        //    失败被静默吞掉 ⇒ 界面已清空、库里可能残留（重开这一页它们又冒出来）。
+        let failedCount = 0
+        for (const row of rows) {
+          try { await deleteTableRow(row.id) } catch { failedCount++ }
+        }
+        setRows([])
+        setDrafts({})
+        if (failedCount) showToast(`有 ${failedCount} 条没能删掉（其余已清除）—— 请再试一次`, 'error')
+      },
+    }] : []),
+  ]
+
+  /**
    * 宽表格「左键按住拖动平移」（2026-10-17 主人反馈）＋ **表头冻结**。
    *   原状：横向只能拖底部滚动条；表格一长往下翻，表头（列名 + 筛选框）就滚没了。
    *   现在：左键按住表格左右一拖即横向平移（阈值 4px，单击仍正常进单元格）；
@@ -107,6 +149,28 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 🔴 必须放在 `if (!loaded) return` **之前** —— React 要求 hook 的调用顺序每次渲染都一致。
    */
   const pan = usePanScroll<HTMLDivElement>()
+
+  /**
+   * 「右边还有内容」渐隐提示（3.1.2 视觉巡检 C 条）：
+   *   列一多，表格总宽就会超过容器（table-fixed 的正常机制），最右一列常被切掉半个列名 ——
+   *   那不是渲染坏了，但界面上**没有任何「还能往右滑」的暗示**，作者第一眼会当成 bug。
+   *   这里在容器右缘压一道渐隐；滑到最右（没有更多内容）时它自动消失，不留常驻装饰。
+   */
+  const [scrollHint, setScrollHint] = useState(false)
+  const syncScrollHint = useCallback(() => {
+    const el = pan.ref.current
+    setScrollHint(!!el && el.scrollWidth - el.clientWidth - el.scrollLeft > 4)
+  }, [pan.ref])
+  useEffect(() => {
+    syncScrollHint()
+    const el = pan.ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    // 容器尺寸变了（窗口缩放 / 界面缩放 / 列宽拖拽）也要重算，否则提示会僵在旧状态
+    const ro = new ResizeObserver(syncScrollHint)
+    ro.observe(el)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rows/totalWidth 变化会改变 scrollWidth，需重算
+  }, [syncScrollHint, rows.length, totalWidth, tab.id])
 
   if (!loaded) return <LoadingState />
 
@@ -144,7 +208,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 伏笔追踪可切到「剧情线」视图（v1.6.1）：自动聚合伏笔（埋设/回收）、爽点、时间脉络事件，按章节串成一条叙事主线；顶部统计悬空伏笔与「已到点未回收」的警示。
 · 带「上级 / 层级归属」列的表（国家势力、地理风物、种族生物、物品资源、历史事件、名词术语等）支持「树形层级」：按隶属关系折叠 / 展开，行首的树形图标按钮可在某条下新增子条目（编号形如「父编号-001」，父级顺序号不变），父级下拉自动排除自身与子孙防成环。
 · 行首操作会按表格能力显示：适用时可删除此行、AI 补全本行空白（只填当前行未填字段，不影响其他行 / 表）或新增子条目；母表、无 AI 能力或无层级的表会隐藏不适用操作。章节总表行首另有「打开正文」按钮。
-· 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 新增」，部分表没有这个按钮）——「AI 整理」从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；「AI 新增」则新建一行并由 AI 补全整行。人物关系 / 历史事件支持「清空全部」批量删除。`}
+· 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 新增」，部分表没有这个按钮）——「AI 整理」从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；「AI 新增」则新建一行并由 AI 补全整行。
+· 右上「更多」菜单里是低频操作：**批量导入**（粘贴表格 / CSV / 纯文本或上传文件，散文式设定可用「AI 智能拆分」自动解析成多条）、**导出 CSV**（Excel 可直接打开）；人物关系 / 历史事件另有**清空全部**（会先问一次再删）。`}
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
           </div>
@@ -184,26 +249,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Save size={13} /> {saving ? '保存中…' : '保存'}
           </Button>
           )}
-          {/* 多行批量删除按钮（人物关系 / 历史事件支持） */}
-          {['relations', 'history'].includes(tab.id) && rows.length > 0 && (
-            <Button variant="danger" // 破坏性操作用 danger 令牌（原为 bare + 手写红样式，与 danger 输出等价）
-              onClick={async () => {
-                if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
-                // 🔴 串行 await（2026-10-10 六维审计）：原先 forEach + void 是**并发发起且不等待**，
-                //    失败被静默吞掉 ⇒ 界面已清空、库里可能残留（重开这一页它们又冒出来）。
-                let failedCount = 0
-                for (const row of rows) {
-                  try { await deleteTableRow(row.id) } catch { failedCount++ }
-                }
-                setRows([])
-                setDrafts({})
-                if (failedCount) showToast(`有 ${failedCount} 条没能删掉（其余已清除）—— 请再试一次`, 'error')
-              }}
-              className="font-medium"
-            >
-              <Trash2 size={14} /> 清空全部
-            </Button>
-          )}
+          {/* 3.1.2 B 条：低频 / 危险操作收进「更多」菜单（原「清空全部」是常驻红按钮 ——
+              危险色常驻会压住整页的重点，且它与「导入 / 导出」一起把工具条挤到折行） */}
+          <TableMoreMenu items={moreItems} />
           {isTimelineCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
               <Button variant="bare"
@@ -273,16 +321,6 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           )}
-          {!isMaster && (
-          <Button variant="secondary" onClick={() => setShowImport(true)} title="批量导入：粘贴表格 / CSV / 纯文本并上传文件；散文式设定可用「AI 智能拆分」自动解析成多条" className="flex items-center gap-1.5 transition-colors shrink-0">
-            <FileDown size={14} /> 导入
-          </Button>
-          )}
-          {!isMaster && (
-          <Button variant="secondary" onClick={exportCsv} title="导出本表数据为 CSV（Excel 可直接打开）" className="flex items-center gap-1.5 transition-colors shrink-0">
-            <FileUp size={14} /> 导出
-          </Button>
-          )}
           {aiCap !== 'none' && !isMaster && (
             <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : 'AI 新增一行：提供粗略设定，由 AI 补全整行字段后落盘（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 新增'}
@@ -337,12 +375,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   ) : (
         <>
       {/* 表格 */}
-      <div className="rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
+      <div className="relative rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
         {/* 🔴 表头冻结 + 左键拖拽平移（2026-10-17）：纵向滚动收进本容器（maxHeight 只在内容长时生效），
             表头 sticky 钉顶；横向既可拖滚动条，也可左键按住直接拖动。 */}
         <div
           ref={pan.ref}
           data-table-scroll
+          onScroll={syncScrollHint}
           onMouseDown={pan.handlers.onMouseDown}
           onMouseMove={pan.handlers.onMouseMove}
           onMouseUp={pan.handlers.onMouseUp}
@@ -422,6 +461,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </tbody>
           </table>
         </div>
+        {/* C 条：右侧渐隐提示（只在确实还有内容没露出来时出现；纯装饰，不接鼠标事件） */}
+        {scrollHint && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-ink-850 via-ink-850/70 to-transparent"
+            style={{ zIndex: Z.pageBase }}
+          />
+        )}
       </div>
         </>
       )}

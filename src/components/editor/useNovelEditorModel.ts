@@ -186,8 +186,53 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     await Promise.all(jobs.map(j => j().catch(() => { /* 忽略单笔失败 */ })))
   })
   // 章节树 / 设定检索栏宽度可拖拽调整（持久化）
-  const chapterPane = useResizable({ key: 'yfe-chapter-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
-  const searchPane = useResizable({ key: 'yfe-search-w', initial: 360, initialWide: 480, min: 280, max: 760, side: 'right' })
+  // 🔴 3.1.2 视觉巡检 A 条：1440 视口下「章节树 320 + 检索栏 480」把正文列挤到只剩 317px（一行约 25 字）。
+  //    两栏默认值同步收窄（检索栏 360→320 / 大屏 480→400；章节树大屏 300→280），先把码字区还回来。
+  const chapterPane = useResizable({ key: 'yfe-chapter-w', initial: 224, initialWide: 280, min: 200, max: 560, side: 'right' })
+  const searchPane = useResizable({ key: 'yfe-search-w', initial: 320, initialWide: 400, min: 280, max: 760, side: 'right' })
+
+  /**
+   * 正文列保底（A 条真正的一劳永逸解法）：
+   *   只改默认值对**已经拖过/存过宽度的老用户不生效**（localStorage 里躺着 480），
+   *   所以这里按「三栏容器实测宽度」给检索栏算一个**可用额度**：
+   *     检索栏实际宽度 = min(用户设定值, max(检索栏下限 280, 容器宽 − 章节树 − 正文保底 560))
+   *   宽屏下额度充裕 ⇒ 与用户设定值逐像素一致（**不改任何人的既有布局**）；
+   *   窄屏下才把检索栏压回去，优先保住码字区不被挤成一条缝。
+   * ⚠️ 压的只是**渲染宽度**，不写回 localStorage —— 用户拖出来的偏好原样留着，窗口一放大它自己就回来了。
+   */
+  const MAIN_MIN_W = 560
+  const SEARCH_MIN_W = 280
+  const [wrapW, setWrapW] = useState(0)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  // 🔴 依赖必须带 `loaded`：本组件的 JSX 在 `!loaded` 时走 LoadingState，**那时 wrapRef 还没挂上**
+  //    （.current === null）。依赖写成 [] 的话，effect 只在挂载时白跑一趟、之后再也不重跑
+  //    ⇒ wrapW 恒为 0 ⇒ 正文列保底与铺满开关判断全部失效（2026-10-18 实测踩到）。
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const read = () => setWrapW(el.clientWidth)
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loaded])
+  const sideW = focusMode ? 0 : chapterPane.size
+  const searchPaneW = (focusMode || !showSearch)
+    ? 0
+    : (wrapW > 0
+      ? Math.min(searchPane.size, Math.max(SEARCH_MIN_W, wrapW - sideW - MAIN_MIN_W))
+      : searchPane.size)
+  /** 正文列实际宽度（用于判断「铺满 / 限宽」开关是否还有意义） */
+  const mainColW = wrapW > 0 ? Math.max(0, wrapW - sideW - searchPaneW) : 0
+  /**
+   * 「铺满 / 限宽」开关是否显示：
+   *   限宽的实现是给正文列挂 `max-w-3xl`(768px) / `max-w-5xl`(1024px) ——
+   *   **正文列本身就窄于 768px 时这个上限根本不生效**，点了界面纹丝不动（死开关，只会让人以为坏了）。
+   *   故只在正文列 ≥ 900px（比 768 留一档余量，保证切换看得出差别）时才把它显示出来；
+   *   其余情况一律「默认铺满」——与主人拍板的方向一致，且不砍掉宽屏用户的能力。
+   */
+  const showPageWide = mainColW >= 900
 
   // ---- 引用名内联高亮（D4-2 拆出，同名解构接回；下游代码一个字没改）----
   const {
@@ -1043,6 +1088,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
+    // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
+    wrapRef, searchPaneW, showPageWide,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉

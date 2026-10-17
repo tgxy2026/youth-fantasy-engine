@@ -62,6 +62,11 @@ export function rejectReasonOf(name: string): string | null {
 export function rejectValueReasonOf(value: string): string | null {
   // 🔴 CR / LF / NUL ⇒ 头注入风险，且 fetch 会直接抛 TypeError。必须在这里拦下并说清原因。
   if (/[\r\n\0]/.test(value)) return '头值不能包含换行或空字符'
+  // 🔴 非 ByteString（码位 > 0xFF，如中文）：HTTP 头值按规范只能是单字节字符，
+  //    `new Headers()` 会直接抛 TypeError —— 不拦的话作者要等到发请求时才看到一句
+  //    看不懂的报错（独立复核 2026-10-18：离线边界审计 headers.syntax 命中此项）。
+  //    逐字符扫而不是正则范围，避免把 emoji（代理对）判成两个合法字符。
+  for (const ch of value) if (ch.codePointAt(0)! > 0xff) return '头值只能是单字节字符（中文等需先做 URL 编码或改用英文值）'
   return null
 }
 

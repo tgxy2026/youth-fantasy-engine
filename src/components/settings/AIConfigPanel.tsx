@@ -428,7 +428,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         </Button>
                       ))}
                     </div>
-                    <p className="text-10 text-ink-500 mt-2 leading-relaxed">
+                    <p className="text-11 text-ink-500 mt-2 leading-relaxed">
                       {pickMode === 'local'
                         ? '本地平台运行在本机 / 局域网，一般免密钥、无需联网；Ollama 需先「ollama pull」拉取模型。'
                         : '联网平台需要 API 密钥，按预设填好接口地址后填入密钥与模型名即可。'}
@@ -550,7 +550,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   onChange={e => setEditing({ ...editing, systemPrompt: e.target.value })}
                   placeholder="对所有调用此模型的功能追加一段总体指令（如写作风格、人称、禁忌）。留空则按系统预设。"
                 />
-                <p className="text-10 text-amber mt-1 leading-relaxed">
+                <p className="text-11 text-amber mt-1 leading-relaxed">
                   ⚠️ 这段提示词是「全局」的 —— 对所有调用该模型的 AI 功能一并生效（酒馆模式默认不接，需要时可在酒馆控制面板单独开启）。
                   如果只想调整某一个具体功能，请到「模型设置 → AI 提示词」里改那个功能自己的提示词，不要写在这里。
                   它会附加在各功能自带提示词之后，不覆盖、不影响原有的格式约束。
@@ -564,7 +564,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               <div>
                 <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
                   <label className="block text-11 text-ink-500">文本生成微调（选填 · 全局生效）</label>
-                  <span className="text-10 text-ink-600">全部留空 ＝ 不下发，行为与原来完全一致</span>
+                  <span className="text-11 text-ink-600">全部留空 ＝ 不下发，行为与原来完全一致</span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {SAMPLING_FIELDS.map(f => {
@@ -578,10 +578,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         className={`rounded-lg border px-2.5 py-2 ${usable ? 'border-ink-700 bg-ink-900/40' : 'border-ink-700 bg-ink-900/20'}`}>
                         <div className="flex flex-wrap items-baseline gap-x-2">
                           <span className={`text-11 ${usable ? 'text-ink-300' : 'text-ink-600'}`}>{f.label}</span>
-                          <span className="text-10 text-ink-600">推荐 {f.recommend}</span>
+                          <span className="text-11 text-ink-600">推荐 {f.recommend}</span>
                           {/* 「仅本地」改成「仅 Ollama」（2026-10-10 审计）：灰显判据是 isOllamaSamplingChannel（type==='ollama'），
                               本地 OpenAI 兼容（LM Studio / LocalAI）同样被灰显 ⇒ 写「仅本地」会让人以为本地就能用。 */}
-                          {!f.cloud && <span className="text-10 text-ink-600">仅 Ollama</span>}
+                          {!f.cloud && <span className="text-11 text-ink-600">仅 Ollama</span>}
                         </div>
                         {usable ? (
                           // 🔴 必须走 NumberField（本地 text 态 + 失焦提交 + 钳制）：
@@ -607,12 +607,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         ) : (
                           <SamplingUnavailable className="mt-1" />
                         )}
-                        <p className="mt-1 text-10 leading-relaxed text-ink-600">{f.effect}</p>
+                        <p className="mt-1 text-11 leading-relaxed text-ink-600">{f.effect}</p>
                       </div>
                     )
                   })}
                 </div>
-                <p className="mt-1 text-10 leading-relaxed text-ink-600">
+                <p className="mt-1 text-11 leading-relaxed text-ink-600">
                   温度另有独立入口（上面的「生成温度」档位）。这些参数只影响<b>文本生成效果</b>、不改动任何项目数据；
                   结构化任务（需要解析成 JSON 的那些）不受影响 —— 那类固定走低温，且不使用这里的参数，以保证解析稳定。
                   酒馆模式有自己的一套参数（控制面板里调），不受这里影响。
@@ -636,7 +636,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
                         <label className="block text-11 text-ink-500">选择模型</label>
                         {ollamaFilter.trim() && (
-                          <span className="text-10 text-ink-500">命中 {shown.length} / 共 {ollamaModels.length}</span>
+                          <span className="text-11 text-ink-500">命中 {shown.length} / 共 {ollamaModels.length}</span>
                         )}
                       </div>
                       <input
@@ -650,7 +650,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                       {shown.length === 0 && (
-                        <p className="text-10 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
+                        <p className="text-11 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
                       )}
                     </div>
                     )
@@ -677,7 +677,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     >
                       {presetList.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
                     </select>
-                    <p className="text-10 text-ink-500 mt-1">本地平台（LM Studio / LocalAI 等）一般免密钥、无需联网；联网平台需填写 API 密钥。选「自定义」可手填接口地址。</p>
+                    <p className="text-11 text-ink-500 mt-1">本地平台（LM Studio / LocalAI 等）一般免密钥、无需联网；联网平台需填写 API 密钥。选「自定义」可手填接口地址。</p>
                   </div>
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
@@ -703,7 +703,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                       <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
                         <label className="block text-11 text-ink-500">从端点获取的可用模型（{openaiModels.length} 个）</label>
                         {openaiFilter.trim() && (
-                          <span className="text-10 text-ink-500">命中 {shown.length} / 共 {openaiModels.length}</span>
+                          <span className="text-11 text-ink-500">命中 {shown.length} / 共 {openaiModels.length}</span>
                         )}
                       </div>
                       <input
@@ -717,9 +717,9 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         {shown.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                       {shown.length === 0 && (
-                        <p className="text-10 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
+                        <p className="text-11 text-ink-500 mt-1">没有匹配的模型 —— 换个关键词，或在下方手动填写。</p>
                       )}
-                      <p className="text-10 text-ink-500 mt-1">清单较长时用上面的筛选框按名字定位最快；也可在下方手动填写。</p>
+                      <p className="text-11 text-ink-500 mt-1">清单较长时用上面的筛选框按名字定位最快；也可在下方手动填写。</p>
                     </div>
                     )
                   })()}

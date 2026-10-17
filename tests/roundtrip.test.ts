@@ -6,6 +6,7 @@ import { createDemoProject } from '../src/lib/app/seedData'
 import type { ProjectBundle } from '../src/lib/db'
 import type { Chapter, TableRow } from '../src/lib/types'
 import { __resetMockStores, __dumpAll, memoryOps } from './mock-memory'
+import { readAliases } from '@/lib/settings/aliases'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -174,6 +175,27 @@ ok('migrateChapterNumbering 幂等（跑两遍全库快照一致）', snapAfter1
 ok('章节号全局连续且「不计入序号」保留手填值',
   await noOf('废脉') === '第1章' && await noOf('序章') === '番外' && await noOf('塔灵') === '第2章' && await orderOf('塔灵') === 2,
   `废脉=${await noOf('废脉')} 序章=${await noOf('序章')} 塔灵=${await noOf('塔灵')} 塔灵行order=${await orderOf('塔灵')}`)
+
+// ---------- 4. 同名并存（duplicate）与曾用名（legacy-name）：导出→导入往返后不丢 ----------
+// 运行契约 io.roundtrip 要求的两个场景（2026-10-18 独立复核补）：
+//   · duplicate   —— 现实里「重名种族 / 重名地点」是常态，导入不得因为同名被去重或互相覆盖；
+//   · legacy-name —— 「别称」字段登记的是**曾用名 / 外号**（schema 里就这么写），
+//                    往返丢了这个字段 ⇒ 正文里出现的旧名再也认不出是同一个实体。
+__resetMockStores()
+const pid3 = await createDemoProject()
+db.setCurrentProject(pid3)
+await db.saveTableRow({ id: 'dup-a', projectId: pid3, tabId: 'races', order: 0, data: { '编号': 'R0001', '名称': '青岚', '别称': '' } })
+await db.saveTableRow({ id: 'dup-b', projectId: pid3, tabId: 'races', order: 1, data: { '编号': 'R0002', '名称': '青岚', '别称': '青岚旧部、岚部' } })
+const b3 = await db.exportProject(pid3) as unknown as AnyRec
+__resetMockStores()
+const pid4 = await db.importProject(b3 as unknown as ProjectBundle)
+db.setCurrentProject(pid4)
+const dupRows = (await memoryOps.getAll<TableRow>('tableRows')).filter(r => r.tabId === 'races' && r.data['名称'] === '青岚')
+ok('duplicate 同名两条往返后仍是两条（不因同名去重 / 互相覆盖）', dupRows.length === 2, `实际 ${dupRows.length} 条`)
+const legacyRow = dupRows.find(r => r.data['编号'] === 'R0002')
+ok('legacy-name 曾用名（别称）往返后不丢且可解析',
+  !!legacyRow && readAliases('races', legacyRow.data).join('|') === '青岚旧部|岚部',
+  JSON.stringify(legacyRow?.data ?? null))
 
 console.log(`\n===== 结果：${pass} PASS / ${fail} FAIL =====`)
 process.exit(fail > 0 ? 1 : 0)

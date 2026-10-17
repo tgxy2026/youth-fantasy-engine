@@ -303,7 +303,7 @@ export default function CheckTools() {
           </div>
           {customWords.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3 max-h-32 overflow-y-auto p-2 bg-ink-900/40 rounded border border-ink-700/50">
-              <span className="text-10 text-ink-500 py-1">自定义 {customWords.length} 词：</span>
+              <span className="text-11 text-ink-500 py-1">自定义 {customWords.length} 词：</span>
               {customWords.map(w => (
                 <span key={w} className="inline-flex items-center gap-1 px-2 py-0.5 bg-danger/10 border border-danger/20 rounded-md text-11 text-danger">
                   {w}
@@ -442,7 +442,7 @@ export default function CheckTools() {
                     <span className="text-12 font-semibold text-ink-100">{f.title}</span>
                   </div>
                   {f.detail && <div className="text-11 text-ink-400">{f.detail}</div>}
-                  {f.where && <div className="text-10 text-ink-500 mt-0.5">涉及：{f.where}</div>}
+                  {f.where && <div className="text-11 text-ink-500 mt-0.5">涉及：{f.where}</div>}
                 </div>
               ))}
             </div>

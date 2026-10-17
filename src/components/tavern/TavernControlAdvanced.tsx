@@ -51,7 +51,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
                   <li key={p.id} className="flex flex-wrap items-center gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-12 text-ink-100">{p.name}</div>
-                      <div className="text-10 text-ink-500">
+                      <div className="text-11 text-ink-500">
                         {new Date(p.updatedAt).toLocaleString()}
                         {' · 叙事温度 '}{p.data.plot.temperature}{' · 聊天温度 '}{p.data.free.temperature}
                       </div>
@@ -163,7 +163,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
                     placeholder="替换成（$1 = 第一个捕获组；留空 = 直接删掉）"
                   />
                   {r.note && (
-                    <p className={`mt-1 text-10 leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
+                    <p className={`mt-1 text-11 leading-relaxed ${r.enabled ? 'text-ink-600' : 'text-amber/80'}`}>
                       {r.note}
                     </p>
                   )}
@@ -174,11 +174,11 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm" onClick={addRule}>＋ 新增规则</Button>
               <Button variant="secondary" size="sm" onClick={resetRules}>恢复出厂默认</Button>
-              <span className="text-10 text-ink-500">
+              <span className="text-11 text-ink-500">
                 共 {s.postRules.length} 条 · 启用 {s.postRules.filter(r => r.enabled).length} 条
               </span>
             </div>
-            <p className="text-10 text-ink-600 leading-relaxed">
+            <p className="text-11 text-ink-600 leading-relaxed">
               正则写法提示：$1 / $2 是捕获组（例：星号动作那条的正则是 {RULE_EXAMPLE}）；
               flags 固定 gm（m 让 ^ 匹配每一行，行首说话人标签那条要用）。
             </p>
@@ -196,7 +196,7 @@ export default function TavernControlAdvanced({ m }: { m: TavernControlModel }) 
                 onChange={setRuleTry}
               />
               <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-11 leading-relaxed text-ink-300">{rulePreview.text || '（上面输入内容就能看到结果）'}</pre>
-              <p className="mt-1 text-10 leading-relaxed text-ink-500">
+              <p className="mt-1 text-11 leading-relaxed text-ink-500">
                 {rulePreview.errors.length > 0
                   ? <span className="text-amber">⚠️ 正则无效、已跳过：{rulePreview.errors.join('、')}</span>
                   : rulePreview.applied.length > 0

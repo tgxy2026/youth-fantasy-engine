@@ -87,6 +87,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
+    wrapRef, searchPaneW, showPageWide,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
@@ -228,7 +229,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   }
 
   return (
-    <div className="flex h-full page-enter overflow-hidden">
+    // 🔴 ref 供「正文列保底」测量容器宽度（检索栏压多少、铺满开关显示与否都按它算）
+    <div ref={wrapRef} className="flex h-full page-enter overflow-hidden">
       {/* 章节树 */}
       {/* 章节树（已抽成独立组件，见 NovelEditorChapterTree.tsx） */}
       {!focusMode && (
@@ -266,7 +268,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       {!focusMode && showSearch && (
         <div
           className="relative shrink-0 flex flex-col"
-          style={{ width: searchPane.size, minWidth: searchPane.size }}
+          // 🔴 用**保底后的** searchPaneW（窄窗口下自动让位给码字区）；用户拖出来的偏好仍留在 localStorage 里
+          style={{ width: searchPaneW, minWidth: searchPaneW }}
         >
           {/* 拖拽调整设定检索栏宽度 */}
           <div
@@ -632,6 +635,8 @@ style={{ zIndex: Z.pageHandle }}
                 <Save size={10} />{saving ? '保存中…' : savedFlash ? '已保存' : '自动保存已开启'}
               </span>
               <div className="flex-1" />
+              {/* 「铺满 / 限宽」：只在正文列宽到能看出差别时才出现（窄列下 max-w 不生效 = 点了没反应） */}
+              {showPageWide && (
               <Button variant="bare"
                 onClick={() => { const v = !pageWide; setPageWide(v); localStorage.setItem('novel-page-wide', v ? '1' : '0') }}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors whitespace-nowrap
@@ -640,6 +645,7 @@ style={{ zIndex: Z.pageHandle }}
               >
                 <PanelsTopLeft size={11} /> {pageWide ? '铺满' : '限宽'}
               </Button>
+              )}
               <Button variant="bare"
                 onClick={() => { const v = !typewriter; setTypewriter(v); localStorage.setItem('novel-typewriter', v ? '1' : '0') }}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors whitespace-nowrap

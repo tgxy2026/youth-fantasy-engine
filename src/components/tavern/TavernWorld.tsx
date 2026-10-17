@@ -179,7 +179,7 @@ export default function TavernWorld() {
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">一句话总纲</div>
-              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
+              <p className="mt-0.5 mb-2 text-11 text-ink-500 leading-relaxed">
                 时代 / 地点 / 基调。它最先进上下文，模型靠它抓住大感觉。
               </p>
               <AutoTextarea
@@ -188,7 +188,7 @@ export default function TavernWorld() {
                 minRows={2}
                 placeholder="例：现代都市·城南老城区，梅雨季。故事围绕一间凌晨还亮着灯的便利店发生。"
               />
-              <p className={`mt-1 text-10 ${briefOver ? 'text-amber' : 'text-ink-500'}`}>
+              <p className={`mt-1 text-11 ${briefOver ? 'text-amber' : 'text-ink-500'}`}>
                 每轮全量注入，<span className={briefOver ? 'text-amber' : 'text-ink-300'}>{briefChars}</span> / {quota.fixed} 字
                 {briefOver && ' —— 超了不让保存，请精简'}
               </p>
@@ -203,7 +203,7 @@ export default function TavernWorld() {
                   ＋ 加一节
                 </Button>
               </div>
-              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
+              <p className="mt-0.5 mb-2 text-11 text-ink-500 leading-relaxed">
                 建议 3–6 节、每节一百多字。只留会影响人物言行的内容，背景板式的描述删掉。
               </p>
 
@@ -266,7 +266,7 @@ export default function TavernWorld() {
                           placeholder="本节触发词（留空 = 总是带上）"
                           className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100 outline-none focus:border-amber/50"
                         />
-                        <label className="flex shrink-0 items-center gap-1 text-10 text-ink-400" title="命中后还要过这道随机闸：1 = 必中，0.5 = 一半概率">
+                        <label className="flex shrink-0 items-center gap-1 text-11 text-ink-400" title="命中后还要过这道随机闸：1 = 必中，0.5 = 一半概率">
                           <span>概率</span>
                           {/* 🔴 走 NumberField（2026-10-10 六维审计）：与 TavernScript 的世界书词条同因 ——
                               受控 type=number 在「0.」中间态会把值回写成 0，小数点打不进去。 */}
@@ -310,7 +310,7 @@ export default function TavernWorld() {
                                 sections: prev.sections.map(x => x.id === s.id ? { ...x, state: next } : x),
                               }))}
                             />
-                            <span className="text-10 text-ink-600">
+                            <span className="text-11 text-ink-600">
                               {inferred === 'on'
                                 ? global ? '整份关键词命中后带入' : '每轮都带'
                                 : own ? `本节自带 ${own} 个触发词` : global ? '跟随整份关键词' : '按触发词命中'}
@@ -326,7 +326,7 @@ export default function TavernWorld() {
 
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">关键词（命中才注入）</div>
-              <p className="mt-0.5 mb-2 text-10 text-ink-500 leading-relaxed">
+              <p className="mt-0.5 mb-2 text-11 text-ink-500 leading-relaxed">
                 逗号或换行分隔。留空 = 每轮都注入；填了就只在这些词出现时带上这一层。
                 通常填地名、势力名、行话这类「提到就说明需要背景」的词。
               </p>
@@ -353,7 +353,7 @@ export default function TavernWorld() {
           <aside className="w-72 shrink-0 space-y-3 overflow-y-auto">
             <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
               <div className="text-12 text-amber">从项目资料提炼</div>
-              <p className="mt-1 text-10 text-ink-400 leading-relaxed">
+              <p className="mt-1 text-11 text-ink-400 leading-relaxed">
                 读项目里的世界观、势力、人物等资料，由 AI 精简整合成上面的分节。它不会把资料原样搬过来。
               </p>
 
@@ -385,7 +385,7 @@ export default function TavernWorld() {
               >
                 {drafting ? '正在生成…' : '一键从项目提炼'}
               </Button>
-              <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">
+              <p className="mt-1.5 text-11 text-ink-500 leading-relaxed">
                 ⚠️ 会覆盖现有分节（brief 只在原来是空的时候填）。生成后请过一遍再保存。
               </p>
               <DraftSourceLine source={lastSource} />
@@ -429,7 +429,7 @@ export default function TavernWorld() {
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="flex items-center gap-1.5">
                 <div className="text-12 text-ink-200">注入预览</div>
-                <span className="text-10 text-ink-600">（空上下文时实际会注入的部分）</span>
+                <span className="text-11 text-ink-600">（空上下文时实际会注入的部分）</span>
               </div>
               <pre className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap rounded border border-ink-700 bg-ink-900/60 p-2 text-10 leading-relaxed text-ink-400">
                 {buildPlotWorldBook(w, '', { maxChars: quota.dynamic, fixedMaxChars: quota.fixed }).text || '（空）'}

@@ -44,8 +44,8 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-11 text-ink-200 leading-relaxed">{cap.headline}</div>
-                  <div className="mt-0.5 text-10 text-ink-500 leading-relaxed">{cap.note}</div>
-                  <div className="mt-1 text-10 text-ink-600 leading-relaxed">
+                  <div className="mt-0.5 text-11 text-ink-500 leading-relaxed">{cap.note}</div>
+                  <div className="mt-1 text-11 text-ink-600 leading-relaxed">
                     下面「记忆三项 / 日记保留 / 固定开销」的推荐值按当前预算同比推算（预算跟着所选模型走，它们也就跟着变）。
                     窗口默认取「模型配置 → 上下文窗口」填的值；预算与记忆档都按它缩放，
                     本地只在「超过窗口承载」时才回落（否则会被静默截断）。
@@ -166,7 +166,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                   <Button variant="secondary" size="sm" onClick={() => removeProfile(curProfileId)}>删除这份</Button>
                 )}
               </div>
-              <p className="mt-1.5 text-10 leading-relaxed text-ink-500">
+              <p className="mt-1.5 text-11 leading-relaxed text-ink-500">
                 下面四栏改的是「当前选中的这份」。多套档案的用处：同一个你，在不同书里换身份
                 —— 比如写仙侠用一套、写都市用另一套，切换后模型立刻按新的称呼与关系说话。
                 {profiles.length === 1 && '（现在只有一份 —— 点「＋ 新建档案」就能加。）'}

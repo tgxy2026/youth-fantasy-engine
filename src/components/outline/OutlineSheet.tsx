@@ -71,9 +71,13 @@ export default function OutlineSheet({ tab }: Props) {
   // 🔴 用 ref 持有最新草稿：下面「切换卡片」的 effect 里读到的是**切换前**的那一份 —— 正是要落库的。
   //    （与 CharacterSheet 的切卡守卫同型。审计 2026-09-18 P1-3：原先直接 setDraft(新卡)，
   //      未保存的编辑静默消失，SaveFab 也一并消失、界面上没有任何提示。）
+  // 🔴🔴 同步 effect **必须声明在下方**（「切换 active 时落库旧草稿」那个 effect 之后）：
+  //    React 按**声明顺序**执行 effect。写在这里的话，新建 / 复制 / AI 新增这类
+  //    「setActiveId + setDraft 在同一批次里发生」的操作会先把它刷成新卡，
+  //    切换 effect 再去读就拿到**新草稿**、而不是要落库的旧草稿 ⇒ 旧卡未保存的编辑静默蒸发。
+  //    2026-10-18 独立复核：此处注释原写「同步 effect 声明在下方」，实际却写在上方 —— 注释与实现相反。
   const draftRef = useRef(draft)
   const prevActiveRef = useRef<string | null>(null)
-  useEffect(() => { draftRef.current = draft }, [draft])
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -148,7 +152,11 @@ export default function OutlineSheet({ tab }: Props) {
     // 仅当「确实切到了另一张仍存在的卡」才存旧草稿；因删除导致的切换不存档（免得把已删的卡复活）
     if (prev && prev !== activeId && dirtyRef.current && draftRef.current && records.some(r => r.id === prev)) {
       const done = draftRef.current
-      void saveCardRecord(done)
+      // 🔴 失败必须出声（本项目「绝不静默」口径）：`void` 掉的话写盘失败会被吞，
+      //    作者以为切走时自动存上了，重开项目编辑却没了 —— 这正是独立复核要核对的失败路径。
+      void saveCardRecord(done).catch(() => {
+        showToast('切换前自动保存上一份编辑失败，请回到那一张手动保存一次', 'error')
+      })
       // 🔴 落库后必须同步刷新内存 records：否则切回来时用**库里的旧记录**回灌，
       //    刚保存的编辑在界面上又消失（数据其实已入库，但用户看到的是「白改了」，
       //    且此后 dirty 归零，再改一处保存就会把它覆盖回去）。2026-09-18 实机抓到：
@@ -164,6 +172,8 @@ export default function OutlineSheet({ tab }: Props) {
     const rec = records.find(r => r.id === activeId)
     setDraft(rec ? { ...rec, data: { ...rec.data } } : null)
   }, [activeId, records])
+  // 🔴 draftRef 同步刻意排在**上面那个 effect 之后**（理由见声明处的长注释）
+  useEffect(() => { draftRef.current = draft }, [draft])
 
   // v1.6：新增/改名走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
   const [namePrompt, setNamePrompt] = useState<null | { kind: 'add' | 'rename'; def?: string }>(null)
@@ -194,7 +204,14 @@ export default function OutlineSheet({ tab }: Props) {
         id: uid(), projectId: getCurrentProjectId(), tabId: tab.id,
         name: v.trim(), data: { [nameKey]: v.trim() }, order: newOrder,
       }
-      await saveCardRecord(rec)
+      // 🔴 写库失败就**不切换选择、不替换草稿**：否则界面上多出一条库里根本没有的卡
+      //    （刷新即消失），而作者此刻的原编辑还挂在旧草稿上（运行契约 draft.failure）。
+      try {
+        await saveCardRecord(rec)
+      } catch {
+        showToast(`新建${noun}失败，改动没有保存 —— 请重试`, 'error')
+        return
+      }
       setRecords([rec, ...records])
       setActiveId(rec.id)
       setDraft(rec)
@@ -218,7 +235,13 @@ export default function OutlineSheet({ tab }: Props) {
       id: uid(), projectId: getCurrentProjectId(), tabId: tab.id,
       name, data: { ...draft.data, [nameKey]: name }, order: newOrder,
     }
-    await saveCardRecord(rec)
+    // 与「新建」同口径：落库失败不切换选择，避免界面出现一条刷新即消失的幽灵卡
+    try {
+      await saveCardRecord(rec)
+    } catch {
+      showToast('复制失败，改动没有保存 —— 请重试', 'error')
+      return
+    }
     setRecords([rec, ...records])
     setActiveId(rec.id)
     setDraft(rec)
@@ -246,8 +269,14 @@ export default function OutlineSheet({ tab }: Props) {
     next[idx] = a; next[target] = b
     // 按 order 重排，保证列表顺序与 order 一致（手动上移/下移后视觉立即移动）
     setRecords(next.sort((a, b) => a.order - b.order))
-    await saveCardRecord(a)
-    await saveCardRecord(b)
+    // 排序已先落到界面上（视觉立即移动），故写库失败不回滚、但**必须出声**，
+    //    否则 order 的库内值与界面不一致，作者无从察觉。
+    try {
+      await saveCardRecord(a)
+      await saveCardRecord(b)
+    } catch {
+      showToast('排序没能写入，请再拖一次（界面顺序可能与库内不一致）', 'error')
+    }
     // 若 draft 被移动，同步其 order
     setDraft(d => (d && (d.id === a.id || d.id === b.id) ? next.find(r => r.id === d.id)! : d))
   }
@@ -273,7 +302,13 @@ export default function OutlineSheet({ tab }: Props) {
       id: uid(), projectId: getCurrentProjectId(), tabId: tab.id,
       name, data: { ...values }, order: newOrder,
     }
-    await saveCardRecord(rec)
+    // 同口径：落库失败就不切换选择、也不关弹窗（作者还能改完再提交一次）
+    try {
+      await saveCardRecord(rec)
+    } catch {
+      showToast(`AI 新增${noun}失败，改动没有保存 —— 请重试`, 'error')
+      return
+    }
     setRecords([rec, ...records])
     setActiveId(rec.id)
     setDraft(rec)
@@ -302,6 +337,29 @@ export default function OutlineSheet({ tab }: Props) {
   // 🔴 与上面那个切换守卫配对：声明顺序在它之后，所以守卫里读到的是「上一轮」的脏标记（切换前状态）
   const dirtyRef = useRef(false)
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
+
+  /**
+   * 切换当前卡片（运行契约 draft.failure）：
+   *   🔴 **先冲刷旧草稿、成功才真的换选择** —— 写盘失败就留在原地并出声。
+   *     原先是「先切过去，再由 effect 补存旧草稿」：一旦那次补存失败，界面已经在新卡上，
+   *     旧编辑既没入库、也从 draft 里被顶掉了 ⇒ 作者看到的只有「白改了」，且无从察觉
+   *     （2026-10-18 独立复核：draft.failure 契约）。
+   */
+  const switchTo = useCallback(async (id: string | null) => {
+    const cur = draftRef.current
+    if (cur && cur.id !== id && dirtyRef.current && records.some(r => r.id === cur.id)) {
+      try {
+        await saveCardRecord(cur)
+        // 与切换守卫同口径：落库后同步内存副本，否则切回来会用库里的旧记录回灌
+        setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
+      } catch {
+        showToast('上一张的改动没能保存，已留在原处 —— 请手动保存一次再切换', 'error')
+        return false
+      }
+    }
+    setActiveId(id)
+    return true
+  }, [records])
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return
@@ -447,7 +505,7 @@ export default function OutlineSheet({ tab }: Props) {
             return (
               <div
                 key={rec.id}
-                onClick={() => setActiveId(rec.id)}
+                onClick={() => void switchTo(rec.id)}
                 title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
                   ${isActive
