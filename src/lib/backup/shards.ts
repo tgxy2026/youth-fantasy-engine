@@ -132,9 +132,32 @@ function mimeOf(dataUrl: string): string {
  * 🔴 图片没变 ⇒ 同一个 id ⇒ 后续备份直接复用它（不重写）—— 这就是"60 份备份只占一份图"的落点。
  *    排序后拼接是必须的：refs 顺序会随遍历顺序变，不排序会让同一图集算出两个 id（复用失效）。
  *    带 projectId 是刻意的：跨项目共享媒体片会让"删项目"变成跨项目引用问题，收益不值这个风险。
+ *
+ * 🔴🔴 **3.1.3 · R01 修复：id 里绝不能掺 links（归属表）。**
+ *    踩过的坑：只按 ref 集合算 id 时，把角色 A／B 的立绘**交换**一下再备份 —— 图集（ref 集合）
+ *    一个字节没变，id 相同 ⇒ 复用上一份媒体片 ⇒ 那份里写的是「A→甲、B→乙」，
+ *    恢复出来两人的图还是换回来之前的样子。作者看到的是"我明明换了图，备份恢复了旧归属"。
+ *    反过来把 links 也塞进 id 同样不行：那等于"改一次归属就复制一遍全部图片"，
+ *    分片省空间的初衷直接作废（30 份备份各存一份图集）。
+ *
+ *    正解是**两件事分开存**：
+ *      · 图片本体按内容寻址、跨备份复用（本函数算的 id，只认内容）；
+ *      · 归属表（links）随**每一份文字快照**存 —— 见 `createAutoBackup` 写入的 `mediaLinks`。
+ *    于是"图没变但换人了"只会多存一份几十字节的归属表，不用再复制图片。
  */
 export function mediaPayloadIdOf(projectId: string, refs: readonly string[]): string {
   return `media-${projectId}-${mediaRef([...refs].sort().join('|'))}`
+}
+
+/**
+ * 落盘用的媒体片：**只带图片本体，不带归属表**（R01）。
+ *
+ * 归属表改由文字快照携带，所以这里恒为 `links: []`。
+ * 🔴 旧备份的媒体片里是**带** links 的（那正是出问题的写法），读取侧必须保留
+ *    「文字片没带归属表就回退到媒体片 links」的兜底，否则老备份恢复出来一张图都没有。
+ */
+export function mediaShardForPayload(blobs: readonly MediaBlob[]): MediaShard {
+  return { blobs: [...blobs], links: [] }
 }
 
 function isDataUrl(v: unknown): v is string {
@@ -314,6 +337,21 @@ export function mergeShards(shards: ProjectShards): BundleLike {
     ...(shards.settings.knowledgeBase ? { knowledgeBase: shards.settings.knowledgeBase } : {}),
   }
   return applyMediaToBundle(base, shards.media)
+}
+
+/**
+ * **唯一**的「媒体片 + 归属表 → 可写回的 MediaShard」拼接点（3.1.3 · R01）。
+ *
+ * 🔴 归属表优先用**本份快照自带的** `mediaLinks`；只有旧备份没带时才回退到媒体片里的 `links`。
+ *    这条优先级就是 R01 的修复本体 —— 共用媒体片里的 links 属于"第一次写它的那次备份"，
+ *    谁后恢复到谁头上就错了（交换两张立绘后恢复出旧归属，已复现）。
+ *
+ * 拉成纯函数是为了让"交换归属"这条回归能脱离 IndexedDB 直接钉死（见 `tests/backupShards`）。
+ */
+export function composeBackupMedia(media: MediaShard, mediaLinks?: readonly MediaLink[]): MediaShard {
+  const blobs = Array.isArray(media?.blobs) ? media.blobs : []
+  const fallback = Array.isArray(media?.links) ? media.links : []
+  return { blobs, links: mediaLinks ? [...mediaLinks] : fallback }
 }
 
 /** 各片体积（字符数，与备份 meta 的 bytes 同口径）—— 备份列表据此显示"文字 / 图片"拆分 */

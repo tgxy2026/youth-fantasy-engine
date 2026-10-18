@@ -8,7 +8,10 @@
 //   ④ 媒体缺失 / 哈希对不上时**不写回**（宁可少一张图，不能写错图）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { mediaRef, shardChars, mergeShards, splitBundle, applyMediaToBundle, mediaPayloadIdOf, SHARD_IDS } from '@/lib/backup/shards'
+import {
+  mediaRef, shardChars, mergeShards, splitBundle, applyMediaToBundle, mediaPayloadIdOf,
+  mediaShardForPayload, composeBackupMedia, SHARD_IDS,
+} from '@/lib/backup/shards'
 import type { BundleLike } from '@/lib/backup/shards'
 
 let pass = 0, fail = 0
@@ -204,6 +207,69 @@ const norm = (b: BundleLike) => stable({
   ok('⑫ 负向：孤儿判定收集分片引用，不再只比 meta.id',
     src.includes('referencedPayloadIdsOf') && src.includes('flatMap'))
   ok('⑫ 读取兼容旧整包（kind 缺省/ full）', /if \(p\.kind !== 'text'\) return p\.bundle/.test(src))
+}
+
+// ---------- ⑬ R01 回归：交换图片归属后，第二次备份必须恢复出新归属 ----------
+//
+// 病根复盘：媒体片按「图片内容」复用（这本身是对的），但修复前**归属表也塞在媒体片里**。
+// 把角色 A／B 的立绘交换一下 —— 图集一个字节没变 ⇒ 同一个媒体片 id ⇒ 复用上一份，
+// 而那份里写的是交换前的归属 ⇒ 恢复出来图又换回去了。作者视角："我换了图，备份却给我旧的"。
+{
+  const base = makeBundle()
+  const cards = (b: BundleLike) => b.cardRecords as unknown as { id: string; portrait?: string }[]
+  ok('⑬ 前置：k1 用 PNG、k2 用 JPG', cards(base)[0].portrait === PNG && cards(base)[1].portrait === JPG)
+
+  // 第一次备份
+  const b1 = splitBundle(base)
+  const id1 = mediaPayloadIdOf('p1', b1.shards.media.blobs.map(x => x.ref))
+  // 交换两人的立绘后再备份一次
+  const swapped = makeBundle()
+  cards(swapped)[0].portrait = JPG
+  cards(swapped)[1].portrait = PNG
+  const b2 = splitBundle(swapped)
+  const id2 = mediaPayloadIdOf('p1', b2.shards.media.blobs.map(x => x.ref))
+
+  ok('⑬ 交换归属后图集不变 ⇒ 媒体片 id 相同（图片本体照旧复用，这才省空间）', id1 === id2)
+  ok('⑬ 但两次的归属表不同（这正是 R01 的关键输入）',
+    JSON.stringify(b1.shards.media.links) !== JSON.stringify(b2.shards.media.links))
+
+  // 🔴 修复前的写法：归属表跟着媒体片走（第一次写的那份胜出）⇒ 第二次备份恢复出**旧**归属
+  const sharedWithStaleLinks = { blobs: b2.shards.media.blobs, links: b1.shards.media.links }
+  const old = applyMediaToBundle(mergeShards({ ...b2.shards, media: { blobs: [], links: [] } }), sharedWithStaleLinks)
+  ok('⑬ 负向：用共用媒体片里的旧归属表 ⇒ 恢复出错（k1 拿回 PNG，正是已复现的 bug）',
+    cards(old as BundleLike)[0].portrait === PNG, String(cards(old as BundleLike)[0].portrait))
+
+  // ✅ 修复后：媒体片只存图片本体，归属表随各自的文字快照走
+  const text2 = mergeShards({ ...b2.shards, media: { blobs: [], links: [] } })
+  const fixed2 = applyMediaToBundle(text2, composeBackupMedia(mediaShardForPayload(b2.shards.media.blobs), b2.shards.media.links))
+  ok('⑬ 修复后：第二次备份恢复出**交换后**的归属（k1=JPG / k2=PNG）',
+    cards(fixed2)[0].portrait === JPG && cards(fixed2)[1].portrait === PNG,
+    `${cards(fixed2)[0].portrait?.slice(0, 20)} / ${cards(fixed2)[1].portrait?.slice(0, 20)}`)
+
+  // 第一次备份仍恢复它自己的归属：改第二次不能污染第一次
+  const text1 = mergeShards({ ...b1.shards, media: { blobs: [], links: [] } })
+  const fixed1 = applyMediaToBundle(text1, composeBackupMedia(mediaShardForPayload(b1.shards.media.blobs), b1.shards.media.links))
+  ok('⑬ 第一次备份不受影响（k1=PNG / k2=JPG）',
+    cards(fixed1)[0].portrait === PNG && cards(fixed1)[1].portrait === JPG)
+
+  // 旧备份兼容：文字片没带归属表 ⇒ 回退到媒体片里的 links（老数据只能按老写法读）
+  const legacy = composeBackupMedia(sharedWithStaleLinks)
+  ok('⑬ 旧备份兼容：无 mediaLinks 时回退媒体片 links', legacy.links === b1.shards.media.links)
+  ok('⑬ 显式传空数组 = 这份快照确实没有图（不被回退覆盖）',
+    composeBackupMedia({ blobs: b1.shards.media.blobs, links: b1.shards.media.links }, []).links.length === 0)
+  ok('⑬ 落盘媒体片不带归属表', mediaShardForPayload(b1.shards.media.blobs).links.length === 0)
+  ok('⑬ 落盘媒体片保留全部图片本体',
+    mediaShardForPayload(b1.shards.media.blobs).blobs.length === b1.shards.media.blobs.length)
+}
+
+// ---------- ⑭ 源码闸：R01 修复确实接进备份读写 ----------
+{
+  const src = read('src/lib/db/backups.ts')
+  ok('⑭ 文字片把归属表一起落盘', src.includes('mediaLinks'))
+  ok('⑭ 媒体片不带归属表地落盘', src.includes('mediaShardForPayload'))
+  ok('⑭ 读取优先用本份快照的归属表（composeBackupMedia）', src.includes('composeBackupMedia'))
+  ok('⑭ 负向：媒体片 id 仍只按图片内容算（掺 links 会把图片复制 30 遍）',
+    /mediaPayloadIdOf\(projectId, shards\.media\.blobs\.map/.test(src))
 }
 
 console.log(`\n—— backupShards 用例结束：${pass} 通过 / ${fail} 失败 ——`)

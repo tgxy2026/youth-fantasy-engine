@@ -10,7 +10,10 @@ import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
 import { currentSidecarApi } from '@/lib/storage/sidecar'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
-import { splitBundle, mergeShards, applyMediaToBundle, mediaPayloadIdOf, type MediaShard } from '@/lib/backup/shards'
+import {
+  splitBundle, mergeShards, applyMediaToBundle, mediaPayloadIdOf, mediaShardForPayload, composeBackupMedia,
+  type MediaShard, type MediaLink,
+} from '@/lib/backup/shards'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
 // 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；
@@ -73,6 +76,17 @@ export interface BackupPayload {
   kind?: 'full' | 'text' | 'media'
   bundle?: ProjectBundle
   media?: MediaShard
+  /**
+   * 3.1.3 · R01：文字片自带的**图片归属表**（`target → ref`）。
+   *
+   * 🔴 为什么非要存在文字片里：媒体片按"图片内容"复用（见 `mediaPayloadIdOf`），
+   *    同一个媒体片会被几十份备份共用 —— 而"哪张图属于哪个人"是**每份快照各不相同**的，
+   *    塞进共用的媒体片里就必然互相覆盖（交换两张立绘后第二次备份恢复出旧归属，已复现）。
+   *    归属表只有几十字节，随文字片各存一份，图片本体继续共用 ⇒ 既正确又省空间。
+   *
+   * 旧备份没有这个字段 ⇒ 读取侧回退到 `media.links`（见 `getBackupPayload`）。
+   */
+  mediaLinks?: MediaLink[]
 }
 
 /**
@@ -206,9 +220,11 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   const id = uid()
   const textBytes = payloadBytes(textBundle)
   // 媒体片 id = 项目 + 「图片 ref 集合」的哈希 ⇒ 内容相同即同一片（跨备份自动复用）
+  // 🔴 刻意**不含** links：理由见 mediaPayloadIdOf 的 R01 注释。归属表走下面的 mediaLinks。
   const mediaId = manifest.mediaCount > 0
     ? mediaPayloadIdOf(projectId, shards.media.blobs.map(b => b.ref))
     : undefined
+  const mediaLinks = shards.media.links
   const meta: BackupMeta = {
     id,
     projectId,
@@ -226,13 +242,19 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
     },
   }
   // 先写载荷再写元数据：元数据是「列表看得见的东西」，载荷缺失时列表会立刻暴露（而不是留一份空壳）
-  await ops.put('backupPayloads', { id, projectId, kind: 'text', bundle: textBundle } satisfies BackupPayload)
+  // 🔴 mediaLinks 随本次文字快照落盘 ⇒ 每份备份各记各的归属，改归属不会污染别的备份。
+  await ops.put('backupPayloads', {
+    id, projectId, kind: 'text', bundle: textBundle, mediaLinks,
+  } satisfies BackupPayload)
   if (mediaId) {
     // 🔴 同一份图片集合已存在就**直接复用、不重写** —— 这是分片省空间的实际落点。
     //    复用判定只看 id（由内容哈希得出），不比对内容：同 id 即同图集。
+    // 🔴 写进去的媒体片**不带** links（mediaShardForPayload）—— 共用片里存归属表就是 R01 的病根。
     const existing = await ops.get<BackupPayload>('backupPayloads', mediaId)
     if (!existing) {
-      await ops.put('backupPayloads', { id: mediaId, projectId, kind: 'media', media: shards.media } satisfies BackupPayload)
+      await ops.put('backupPayloads', {
+        id: mediaId, projectId, kind: 'media', media: mediaShardForPayload(shards.media.blobs),
+      } satisfies BackupPayload)
     }
   }
   await ops.put('backups', meta)
@@ -338,7 +360,8 @@ export async function getBackupPayload(id: string): Promise<ProjectBundle | unde
   const mediaRec = await ops.get<BackupPayload>('backupPayloads', refs.mediaPayloadId)
   // 媒体片丢了：**文字照常恢复**（图片缺省）—— 这比"整份备份都恢复不了"对作者更有用
   if (!mediaRec?.media) return p.bundle
-  return applyMediaToBundle(p.bundle, mediaRec.media as MediaShard)
+  // 🔴 归属表优先取本份快照自带的；旧备份回退到媒体片 links（理由见 composeBackupMedia）
+  return applyMediaToBundle(p.bundle, composeBackupMedia(mediaRec.media as MediaShard, p.mediaLinks))
 }
 
 /**
