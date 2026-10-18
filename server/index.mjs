@@ -109,10 +109,19 @@ const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https'
 // 🔴 只在「有人访问页面」和「认证动作」时记，静态资源（65 个 chunk）一律不记 ——
 //    否则一次刷新就刷出几十行，既拖慢 IO 也没信息量。
 const STATS_LOG = process.env.YFE_STATS || '/opt/yfe/logs/stats.log'
+/** 本地日期（YYYY-MM-DD）。
+ * 🔴 不能用 `toISOString().slice(0,10)`：那是 **UTC** 日期。服务器虽已设 Asia/Shanghai，
+ *    但 UTC 与本地差 8 小时 ⇒ 本地凌晨 0–8 点的活动会被记成「昨天」，
+ *    而汇总脚本按本地日期取数，这部分数据永远汇总不进去（静默丢失）。
+ *    踩过一次：统计看着正常，其实每天最早那批访客全没被计入。 */
+function todayLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 function recordStat(type) {
   try {
     mkdirSync(STATS_LOG.slice(0, STATS_LOG.lastIndexOf('/')), { recursive: true })
-    appendFileSync(STATS_LOG, `${new Date().toISOString().slice(0, 10)}\t${type}\n`)
+    appendFileSync(STATS_LOG, `${todayLocal()}\t${type}\n`)
   } catch { /* 统计失败绝不能影响主流程 */ }
 }
 
@@ -471,8 +480,11 @@ async function handleApi(req, res, url) {
     const me = authCheck(req)
     if (!me.user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(me.reason) })
     const u = me.user
-    setUsedBytes(u.id, usageOf(u.id))
-    return sendJSON(res, 200, { ok: true, user: publicUser(findById(u.id)) })
+    // 🔴 不再每次调用都 usageOf() 重算：那会**递归遍历整个用户目录**（data.json + 全部外置 blob），
+    //    重度用户几千个文件时是几百毫秒的同步 IO，而页面加载 + 底部胶囊每次都要调这个接口。
+    //    usedBytes 由 PUT /api/data 与 blob 写入时同步维护，这里直接返回记录值即可
+    //    （配额提示不需要精确到字节，滞后一次保存完全可接受）。
+    return sendJSON(res, 200, { ok: true, user: publicUser(u) })
   }
 
   if (path === '/api/ping') {
@@ -511,8 +523,15 @@ async function handleApi(req, res, url) {
       const text = buf.toString('utf8')
       let parsed
       try { parsed = JSON.parse(text) } catch { return sendJSON(res, 400, { ok: false, error: '内容不是有效 JSON' }) }
+      // 🔴 kind 必须校验：只查 stores 会放过「结构不完整但能解析」的载荷
+      //    （例如一次误发的空对象 `{}` 之外的畸形数据）。口径与 importGuestData /
+      //    importDesktopData 一致 —— 三端数据契约靠这个字面量识别，漏一处就等于开了一个
+      //    「能把用户整库写成残缺结构」的后门。
       if (!parsed || typeof parsed !== 'object' || typeof parsed.stores !== 'object') {
         return sendJSON(res, 400, { ok: false, error: '数据结构无效（缺少 stores）' })
+      }
+      if (parsed.kind !== 'portable-data') {
+        return sendJSON(res, 400, { ok: false, error: '数据格式不是本软件的数据文件（缺少 kind 标识）' })
       }
 
       // 配额：新整库 + 现有外置数据（blobs）不得超过配额

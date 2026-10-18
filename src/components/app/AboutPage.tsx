@@ -207,11 +207,14 @@ export default function AboutPage() {
                   。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
-                {/* 安装权限提示：旧版按机器安装(Program Files)需先管理员升级一次，迁移为当前用户安装后重装免管理员 */}
-                <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-11 text-ink-200 leading-relaxed">
-                  <span className="font-medium text-amber">安装提示：</span>
-                  若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
-                </div>
+                {/* 安装权限提示：旧版按机器安装(Program Files)需先管理员升级一次，迁移为当前用户安装后重装免管理员。
+                    🔴 网页版看不到安装包，这段 Windows 权限说明对它纯属噪音 ⇒ WEB 时隐藏。 */}
+                {!WEB && (
+                  <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-11 text-ink-200 leading-relaxed">
+                    <span className="font-medium text-amber">安装提示：</span>
+                    若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
+                  </div>
+                )}
                 {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
                 {/* 🔴 2026-10-13 · 便携版不显示这一组控件：便携版跑在浏览器里、没有安装器，
                     查到新版本也无法自动更新（只会弹一个作者做不到的提示），

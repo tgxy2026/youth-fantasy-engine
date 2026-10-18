@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, HardDriveDownload } from 'lucide-react'
 import { copyText, showToast } from '@/components/dialogs/dialogs'
 import {
   PORTABLE,
@@ -7,8 +7,10 @@ import {
   subscribePortable,
   unlockPortableWrite,
   portableDataPath,
+  exportPortableData,
 } from '@/lib/storage/fileBackend'
 import { WriteLockBanner } from '@/components/app/WriteLockBanner'
+import { WEB } from '@/lib/app/platform'
 
 /**
  * 便携版：「数据文件写盘已锁定」的常驻告警条。
@@ -35,17 +37,37 @@ export function PortableWriteLockBanner() {
     )
   }
 
+  // 网页版没有「本地数据文件路径」可复制 ⇒ 主操作换成「导出全部数据」，
+  // 文案也全部换成云端口径。桌面版 / 便携版走原分支，逐字不变。
+  const webMode = WEB
+  const subject = webMode ? '云端数据' : '便携数据文件'
+  const writeBackTo = webMode ? '云端' : '数据文件'
+
+  const doExport = async () => {
+    const r = await exportPortableData()
+    if (r.ok) showToast(`已导出全部数据（浏览器下载）：${r.fileName ?? ''}`)
+    else showToast(r.error || '导出失败', 'error')
+  }
+
   return (
     <WriteLockBanner
-      subject="便携数据文件"
+      subject={subject}
       reason={st.writeLockReason}
-      writeBackTo="数据文件"
-      primary={{
-        label: '复制数据文件路径',
-        icon: <FolderOpen className="h-3.5 w-3.5" />,
-        onClick: () => void onCopyPath(),
-      }}
-      backupHint="建议先把数据文件复制一份备份（可点「复制数据文件路径」定位），再决定是否继续。"
+      writeBackTo={writeBackTo}
+      primary={webMode
+        ? {
+            label: '导出全部数据',
+            icon: <HardDriveDownload className="h-3.5 w-3.5" />,
+            onClick: () => void doExport(),
+          }
+        : {
+            label: '复制数据文件路径',
+            icon: <FolderOpen className="h-3.5 w-3.5" />,
+            onClick: () => void onCopyPath(),
+          }}
+      backupHint={webMode
+        ? '建议先导出一份 JSON 备份（可导入桌面版），再决定是否继续。'
+        : '建议先把数据文件复制一份备份（可点「复制数据文件路径」定位），再决定是否继续。'}
       onUnlock={() => unlockPortableWrite()}
     />
   )
