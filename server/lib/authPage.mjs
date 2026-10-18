@@ -42,6 +42,11 @@ button.submit:disabled{background:#b9ab8b;cursor:not-allowed}
 .dl{margin-top:14px;padding-top:12px;border-top:1px solid #eee8dc;font-size:11.5px;line-height:1.9;color:#9a9084}
 .dl a{color:#8a6d1f;text-decoration:none;border-bottom:1px solid rgba(138,109,31,.35);transition:color .15s,border-color .15s}
 .dl a:hover{color:#6b5316;border-bottom-color:#6b5316}
+.forgot{margin-top:12px;text-align:center;font-size:11.5px}
+.forgot a{color:#8a6d1f;text-decoration:none;border-bottom:1px solid rgba(138,109,31,.35)}
+.forgot a:hover{color:#6b5316}
+.resetNote{margin-top:14px;padding:10px 12px;font-size:11px;line-height:1.75;color:#8a8279;
+  background:#faf7f1;border:1px solid #eee8dc;border-radius:8px}
 .orDivider{display:flex;align-items:center;gap:10px;margin:18px 0 12px;font-size:11.5px;color:#a89f92}
 .orDivider::before,.orDivider::after{content:'';flex:1;height:1px;background:#e8e1d5}
 .guestBtn{display:block;text-align:center;padding:10px 0;font-size:13px;color:#6b6459;text-decoration:none;
@@ -98,6 +103,8 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
     </form>
 
     <div class="msg ${msgClass}" id="msg">${msgText}</div>
+
+    <div class="forgot"><a href="/reset">忘记密码？可用注册时的邀请码重置</a></div>
 
     <div class="orDivider"><span>或者</span></div>
     <a class="guestBtn" href="/guest">以游客身份试用</a>
@@ -192,6 +199,114 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
   if (needInvite) switchTab('login')
 })();
 </script>
+</body>
+</html>`
+}
+
+/**
+ * 重置密码页（WEB-06：凭注册时那张邀请码）。
+ *
+ * 【为什么这么设计】站主亲手发码、码与账号一对一绑定 ⇒ 邀请码本身就是最合适的找回凭证，
+ * 不需要邮件服务。用户名与邀请码必须**同时匹配**才放行（服务端同口径校验）。
+ *
+ * @param {{error?:string, name?:string}} opts error=失败原因；name=重置成功的用户名（走成功态）
+ */
+export function renderResetPage({ error = '', name = '' } = {}) {
+  const done = !!name
+  const msgClass = error ? 'err' : ''
+  const msgText = escapeHtml(error)
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>重置密码 · 青春幻想引擎</title>
+<style>${STYLE}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <h1>重置密码</h1>
+    <p>凭注册时使用的那张邀请码</p>
+  </div>
+  <div class="card">
+    ${done ? `
+      <p style="font-size:13px;line-height:1.8;color:#3d6b36;background:#f0f7ef;border:1px solid #cfe5cb;border-radius:8px;padding:10px 12px">
+        <strong>${escapeHtml(name)}</strong> 的密码已重置。<br>
+        为安全起见，其他设备上的登录已全部退出，请使用新密码重新登录。
+      </p>
+      <a class="guestBtn" href="/" style="margin-top:16px">返回登录</a>
+    ` : `
+    <form id="form" autocomplete="on">
+      <label for="name">用户名</label>
+      <input id="name" name="name" required maxlength="24" autocomplete="username" placeholder="注册时填的用户名">
+
+      <label for="invite">邀请码</label>
+      <input id="invite" name="invite" required maxlength="32" placeholder="注册时使用的那张 8 位邀请码"
+             style="text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em">
+
+      <label for="pwd">新密码</label>
+      <input id="pwd" name="password" type="password" required minlength="6" maxlength="128"
+             autocomplete="new-password" placeholder="至少 6 位，请设一个没用过的新密码">
+
+      <button class="submit" id="btn" type="submit">重置密码</button>
+    </form>
+    <div class="msg ${msgClass}" id="msg">${msgText}</div>
+    <div class="resetNote">
+      邀请码是注册账号时使用的那张（由站主发放）。<br>
+      重置成功后：其他设备的登录会全部退出，<strong style="color:#6b6459">全部作品与设定不受影响</strong>。<br>
+      若邀请码也忘了，请联系站主（QQ 交流群 / 公众号）人工核实后重置。
+    </div>
+    `}
+  </div>
+  <div class="foot"><a href="/" style="color:#8a6d1f;text-decoration:none">返回登录</a></div>
+</div>
+${done ? '' : `<script>
+(function () {
+  var form = document.getElementById('form')
+  var btn = document.getElementById('btn')
+  var msg = document.getElementById('msg')
+
+  function say(text, kind) {
+    msg.className = 'msg ' + (kind || 'err')
+    msg.textContent = text
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault()
+    btn.disabled = true
+    var original = btn.textContent
+    btn.textContent = '请稍候…'
+
+    fetch('/api/auth/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('name').value.trim(),
+        invite: document.getElementById('invite').value.trim().toUpperCase(),
+        password: document.getElementById('pwd').value
+      })
+    }).then(function (r) {
+      return r.json().then(function (j) { return { status: r.status, body: j } })
+    }).then(function (res) {
+      if (res.status === 200 && res.body && res.body.ok) {
+        say('重置成功，正在返回登录页…', 'ok')
+        setTimeout(function () { location.replace('/') }, 900)
+        return
+      }
+      say((res.body && res.body.error) || '重置失败，请重试', 'err')
+      btn.disabled = false
+      btn.textContent = original
+    }).catch(function () {
+      say('网络异常，请检查连接后重试', 'err')
+      btn.disabled = false
+      btn.textContent = original
+    })
+  })
+})();
+</script>`}
 </body>
 </html>`
 }

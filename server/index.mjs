@@ -23,10 +23,11 @@ import {
 } from './lib/config.mjs'
 import { sendJSON, sendText, readBody, readJSONBody, parseCookies, buildCookie, clientIp } from './lib/http.mjs'
 import { rateLimit, resetLimit } from './lib/ratelimit.mjs'
-import { renderAuthPage } from './lib/authPage.mjs'
+import { renderAuthPage, renderResetPage } from './lib/authPage.mjs'
 import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
-  claimInvite, createInvite, listInvites, newUserId, setActiveSession, clearActiveSession, markIssued,
+  claimInvite, createInvite, listInvites, newUserId, setActiveSession, clearActiveSession,
+  markIssued, resetPasswordByInvite,
 } from './lib/users.mjs'
 import {
   hashPassword, verifyPassword, loadOrCreateSecret, signSession, verifySessionToken,
@@ -419,6 +420,29 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(req) })
   }
 
+  // ---- 凭邀请码重置密码（WEB-06） ----
+  if (path === '/api/auth/reset' && req.method === 'POST') {
+    // 限流口径与登录一致：重置是暴力试邀请码的主要入口，必须按 IP 卡住
+    const rl = rateLimit(`reset:${ip}`, 5, 10 * 60 * 1000)
+    if (!rl.ok) return sendJSON(res, 429, { ok: false, error: `尝试次数过多，请 ${rl.retryAfter} 秒后再试` })
+
+    let body
+    try { body = await readJSONBody(req, 8 * 1024) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }) }
+
+    const nv = validateName(body.name)
+    if (!nv.ok) return sendJSON(res, 400, { ok: false, error: nv.error })
+    const pv = validatePassword(body.password)
+    if (!pv.ok) return sendJSON(res, 400, { ok: false, error: pv.error })
+    const invite = String(body.invite || '').trim().toUpperCase()
+    if (!invite) return sendJSON(res, 400, { ok: false, error: '请填写注册时使用的那张邀请码' })
+
+    const r = resetPasswordByInvite(nv.value, invite, hashPassword(pv.value))
+    if (!r.ok) return sendJSON(res, 400, { ok: false, error: r.error })
+
+    console.log(`[auth] 密码重置（凭邀请码）：${r.value.name} from ${ip}`)
+    return sendJSON(res, 200, { ok: true, name: r.value.name })
+  }
+
   // ---- 当前用户 ----
   if (path === '/api/auth/me' && req.method === 'GET') {
     // 用自己的 authCheck（此处位于公共 chk 定义之前，不能借用）
@@ -582,6 +606,24 @@ const server = createServer((req, res) => {
     if (u) setCookies.push(clearCookie(req))
     res.writeHead(302, { Location: '/', 'Set-Cookie': setCookies, 'Cache-Control': 'no-store' })
     return res.end()
+  }
+  if (pathOnly === '/reset') {
+    // 重置密码页（WEB-06：凭邀请码）。已登录的人不需要重置 ⇒ 直接回工作台，
+    // 避免「在已登录状态下打开重置页」这种会让用户困惑的分支。
+    const u = authUser(req)
+    if (u) {
+      res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store' })
+      return res.end()
+    }
+    const html = renderResetPage({})
+    const body = Buffer.from(html, 'utf8')
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Length': body.length,
+      'Cache-Control': 'no-store',
+      'X-Frame-Options': 'SAMEORIGIN',
+    })
+    return res.end(req.method === 'HEAD' ? undefined : body)
   }
   if (pathOnly === '/logout') {
     // 退出登录：会话与游客标记一并清除，回到「登录页」这个真正的入口分流点。

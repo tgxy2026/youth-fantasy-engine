@@ -131,6 +131,31 @@ export function setUsedBytes(id, bytes) {
 }
 
 /** 全部用户（按注册时间倒序） */
+/**
+ * 用**注册时那张邀请码**重置密码（WEB-06 的零成本方案）。
+ *
+ * 【为什么可行】邀请码由站主亲手发放、与账号一对一绑定（`user.invite` + `invite.usedBy` 双向可查）、
+ * 8 位十六进制（约 10^12 组合）猜不动，且无需邮件服务。对「打赏用户」这个量级完全够用。
+ *
+ * 🔴 安全口径：
+ *   · **用户名与邀请码必须同时匹配**。只校验「邀请码是否有效」会让拿到别人码的人重置别人的号；
+ *   · 用户名不存在与邀请码不匹配返回**同一句错误** —— 分开提示等于免费告诉攻击者哪些用户名存在；
+ *   · 重置后**清掉活跃会话**：用户来重置往往意味着怀疑账号被盗，不能让旧设备继续挂着；
+ *   · 数据零改动：只换 `pwd` 一个字段，用户目录与全部稿件原样不动。
+ */
+export function resetPasswordByInvite(name, invite, newPasswordHash) {
+  const db = loadUsers()
+  const u = findByName(name)
+  if (!u || !u.invite) return { ok: false, error: '用户名或邀请码不正确' }
+  if (String(u.invite).toUpperCase() !== String(invite || '').trim().toUpperCase()) {
+    return { ok: false, error: '用户名或邀请码不正确' }
+  }
+  u.pwd = newPasswordHash
+  delete u.session
+  persist(db)
+  return { ok: true, value: u }
+}
+
 export function listUsers() {
   const db = loadUsers()
   return Object.values(db.users).sort((a, b) => b.createdAt - a.createdAt)
