@@ -12,6 +12,9 @@
  *     真正写库由调用方做 —— 这样"同名不同类型"这类冲突可以在预览里先说清楚再落盘。
  */
 import type { TabDef, TableRow } from '@/lib/types'
+import { ATLAS_TABS } from './schema'
+import { ATLAS_TOTAL_LIMIT, formatBytes } from './quota'
+import { dataUrlBytes } from '@/lib/media/imagePortrait'
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from './types'
 
 export const ATLAS_PACKAGE_KIND = 'yfe-atlas'
@@ -20,6 +23,12 @@ export const ATLAS_PACKAGE_VERSION = 1
 export const ATLAS_PACKAGE_MAX_ROWS = 5000
 /** 单份资料包的字段上限（与配置上限同量级） */
 export const ATLAS_PACKAGE_MAX_FIELDS = 200
+/** 外来包接受的图片格式（与 `atlas/image` 的接受清单同口径；SVG 可执行内容，一律拒） */
+export const ATLAS_PACKAGE_IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp']
+/** 单张主图的字符数上限（外来包按同一规格卡；自报的 bytes 一律不信，见 normalizeImage） */
+export const ATLAS_PACKAGE_MAX_IMAGE_CHARS = 512 * 1024
+/** 六类字段类型（与 `atlas/types` 的 `CustomFieldType` 同步；写死是为了校验外来包） */
+export const ATLAS_FIELD_TYPES: readonly string[] = ['text', 'longText', 'number', 'select', 'multiSelect', 'boolean']
 
 export interface AtlasPackageRow {
   data: Record<string, string>
@@ -73,6 +82,133 @@ export type ParseResult =
   | { ok: true; pkg: AtlasPackage }
   | { ok: false; reason: string }
 
+// ============ 深校验（3.1.3 · R05）============
+//
+// 🔴 为什么必须逐字段校验：修复前 `parseAtlasPackage` 只做"是不是数组 / 超不超限"这种浅断言，
+//    然后直接 `as AtlasFieldDefinition[]` / `as Record<string,string>` 强转 ——
+//    实测 `{名称: 42}` 这样的包会被判为合法并写库，而界面与检索到处对值调 `.trim()`
+//    ⇒ 运行时崩溃，且崩溃点在**写库之后**，作者的项目已经脏了。
+//    外来文件是**不可信输入**，规矩是：任何目标写入之前先完整验证，不合格就整包拒绝。
+
+/** 单条字段定义的问题；没问题返回 null */
+function fieldProblem(f: unknown, i: number): string | null {
+  const at = `第 ${i + 1} 个字段`
+  if (!f || typeof f !== 'object') return `${at}不是合法对象`
+  const o = f as Record<string, unknown>
+  if (typeof o.id !== 'string' || !o.id.trim()) return `${at}缺少稳定 id`
+  const name = typeof o.label === 'string' && o.label.trim() ? o.label : o.id
+  if (typeof o.label !== 'string' || !o.label.trim()) return `字段「${name}」缺少名称`
+  if (typeof o.type !== 'string' || !ATLAS_FIELD_TYPES.includes(o.type)) {
+    return `字段「${name}」的类型不合法（${String(o.type)}）`
+  }
+  if (o.appliesTo !== '*' && !Array.isArray(o.appliesTo)) return `字段「${name}」的类别适用范围不合法`
+  if (Array.isArray(o.appliesTo) && !o.appliesTo.every(x => typeof x === 'string')) {
+    return `字段「${name}」的类别适用范围里有非文本值`
+  }
+  if (o.options !== undefined && !Array.isArray(o.options)) return `字段「${name}」的下拉候选不是数组`
+  if (Array.isArray(o.options) && !o.options.every(x => typeof x === 'string')) {
+    return `字段「${name}」的下拉候选里有非文本值`
+  }
+  for (const b of ['tableVisible', 'detailVisible', 'searchable', 'aiReadable', 'aiWritable', 'archived'] as const) {
+    if (o[b] !== undefined && typeof o[b] !== 'boolean') return `字段「${name}」的开关「${b}」不是布尔值`
+  }
+  if (o.order !== undefined && typeof o.order !== 'number') return `字段「${name}」的排序不是数字`
+  for (const s of ['unit', 'description', 'groupId'] as const) {
+    if (o[s] !== undefined && typeof o[s] !== 'string') return `字段「${name}」的「${s}」不是文本`
+  }
+  return null
+}
+
+/** 单张主图的问题；没问题返回 null */
+function imageProblem(img: unknown, i: number): string | null {
+  const at = `第 ${i + 1} 条条目的主图`
+  if (!img || typeof img !== 'object') return `${at}不合法`
+  const m = img as Record<string, unknown>
+  if (typeof m.dataUrl !== 'string' || !m.dataUrl.startsWith('data:')) return `${at}不是图片数据`
+  if (!m.dataUrl.includes(';base64,')) return `${at}不是 base64 数据`
+  const mime = /^data:([^;,]+)/.exec(m.dataUrl)?.[1] ?? ''
+  if (!ATLAS_PACKAGE_IMAGE_MIMES.includes(mime)) {
+    return `${at}格式不支持（${mime || '未知'}；只接受 PNG / JPEG / WebP，SVG 一律拒）`
+  }
+  if (m.dataUrl.length > ATLAS_PACKAGE_MAX_IMAGE_CHARS) {
+    return `${at}太大（${Math.round(m.dataUrl.length / 1024)}KB，单张上限 ${Math.round(ATLAS_PACKAGE_MAX_IMAGE_CHARS / 1024)}KB）`
+  }
+  return null
+}
+
+/** 单条条目的问题；没问题返回 null */
+function rowProblem(r: unknown, i: number): string | null {
+  const at = `第 ${i + 1} 条条目`
+  if (!r || typeof r !== 'object') return `${at}不是合法对象`
+  const o = r as Record<string, unknown>
+  if (o.data === undefined || o.data === null) return null
+  if (typeof o.data !== 'object' || Array.isArray(o.data)) return `${at}的内容不合法`
+  for (const [k, v] of Object.entries(o.data as Record<string, unknown>)) {
+    // 🔴 非字符串值必须挡在写库之前：全项目对单元格值调 .trim()，数字/对象会直接崩
+    if (typeof v !== 'string') return `${at}的「${k}」不是文本（收到 ${typeof v}）`
+  }
+  if (o.atlasImage !== undefined && o.atlasImage !== null) return imageProblem(o.atlasImage, i)
+  return null
+}
+
+/**
+ * 外来包的**完整结构校验**（纯函数，可单测）。
+ * @returns 没问题返回 `null`；有问题返回给作者看的原因（含定位，方便他改包）
+ */
+export function atlasPackageProblem(o: Record<string, unknown>): string | null {
+  // 🔴 页签白名单**必须**取自 ATLAS_TABS（3.1.3 · R07）：
+  //    这里原先写死 'races' / 'items'，于是 nations 与 geography 导出的包**导不回自己家**。
+  if (!ATLAS_TABS.includes(o.tabId as AtlasTabId)) {
+    return `资料包的目标页签不合法（${String(o.tabId)}；支持 ${ATLAS_TABS.join(' / ')}）`
+  }
+  const rows = o.rows
+  if (!Array.isArray(rows)) return '资料包里没有条目（rows）'
+  if (rows.length > ATLAS_PACKAGE_MAX_ROWS) {
+    return `条目太多（${rows.length} 条，单份最多 ${ATLAS_PACKAGE_MAX_ROWS} 条）`
+  }
+  const schema = (o.schema && typeof o.schema === 'object' ? o.schema : {}) as Record<string, unknown>
+  const fields = Array.isArray(schema.fields) ? schema.fields : []
+  if (fields.length > ATLAS_PACKAGE_MAX_FIELDS) {
+    return `字段太多（${fields.length} 个，单份最多 ${ATLAS_PACKAGE_MAX_FIELDS} 个）`
+  }
+  const seen = new Set<string>()
+  for (let i = 0; i < fields.length; i++) {
+    const msg = fieldProblem(fields[i], i)
+    if (msg) return msg
+    const id = String((fields[i] as Record<string, unknown>).id)
+    if (seen.has(id)) return `字段 id 重复（${id}）—— 两个字段共用一个键会让数据串味`
+    seen.add(id)
+  }
+  let imageChars = 0
+  for (let i = 0; i < rows.length; i++) {
+    const msg = rowProblem(rows[i], i)
+    if (msg) return msg
+    const img = (rows[i] as Record<string, unknown> | null)?.atlasImage as Record<string, unknown> | undefined
+    if (img && typeof img.dataUrl === 'string') imageChars += img.dataUrl.length
+  }
+  // 包自身就超过总量上限 ⇒ 没必要开始（调用方还会再按"项目剩余额度"判一次是否剥图）
+  if (imageChars > ATLAS_TOTAL_LIMIT) {
+    return `资料包里的图片合计 ${formatBytes(imageChars)}，超过单项目图片上限 ${formatBytes(ATLAS_TOTAL_LIMIT)}`
+  }
+  return null
+}
+
+/**
+ * 外来图片的**规范化**：尺寸与体积一律**重算**，不信包里自报的（3.1.3 · R05）。
+ * 自报 bytes 是"伪造体积"的入口：写 1 就能绕过所有容量闸，实际却塞进一张几 MB 的图。
+ */
+function normalizeImage(img: Record<string, unknown>): AtlasImage {
+  const dataUrl = String(img.dataUrl ?? '')
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  return {
+    dataUrl,
+    mime: (/^data:([^;,]+)/.exec(dataUrl)?.[1] ?? 'image/png') as AtlasImage['mime'],
+    width: num(img.width),
+    height: num(img.height),
+    bytes: dataUrlBytes(dataUrl),
+  }
+}
+
 /**
  * 校验外来包。
  * 🔴 先校验后写库（方案 §8.3）：不完整 / 超限的包在**动目标项目之前**就拒绝。
@@ -93,26 +229,19 @@ export function parseAtlasPackage(text: string): ParseResult {
   if (ver > ATLAS_PACKAGE_VERSION) {
     return { ok: false, reason: `这份资料包来自更新的版本（formatVersion ${ver}），当前版本读不了` }
   }
-  if (o.tabId !== 'races' && o.tabId !== 'items') {
-    return { ok: false, reason: '资料包的目标页签不合法（只支持种族生物 / 物品资源）' }
-  }
-  const rows = Array.isArray(o.rows) ? o.rows : null
-  if (!rows) return { ok: false, reason: '资料包里没有条目（rows）' }
-  if (rows.length > ATLAS_PACKAGE_MAX_ROWS) {
-    return { ok: false, reason: `条目太多（${rows.length} 条，单份最多 ${ATLAS_PACKAGE_MAX_ROWS} 条）` }
-  }
+  // 🔴 深校验（R05 + R07）：字段定义、每条单元格值、图片格式与体积逐项过一遍再谈导入
+  const problem = atlasPackageProblem(o)
+  if (problem) return { ok: false, reason: problem }
+  const rows = o.rows as unknown[]
   const schema = (o.schema ?? {}) as Record<string, unknown>
   const fields = Array.isArray(schema.fields) ? schema.fields : []
-  if (fields.length > ATLAS_PACKAGE_MAX_FIELDS) {
-    return { ok: false, reason: `字段太多（${fields.length} 个，单份最多 ${ATLAS_PACKAGE_MAX_FIELDS} 个）` }
-  }
   return {
     ok: true,
     pkg: {
       kind: ATLAS_PACKAGE_KIND,
       formatVersion: ver,
       exportedAt: typeof o.exportedAt === 'number' ? o.exportedAt : 0,
-      tabId: o.tabId,
+      tabId: o.tabId as AtlasTabId,
       tabName: typeof o.tabName === 'string' ? o.tabName : String(o.tabId),
       schema: {
         fields: fields as AtlasFieldDefinition[],
@@ -124,7 +253,10 @@ export function parseAtlasPackage(text: string): ParseResult {
         .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
         .map(r => ({
           data: (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, string>,
-          ...(r.atlasImage && typeof r.atlasImage === 'object' ? { atlasImage: r.atlasImage as AtlasImage } : {}),
+          // 🔴 图片重算体积（不信包里自报的 bytes）
+          ...(r.atlasImage && typeof r.atlasImage === 'object'
+            ? { atlasImage: normalizeImage(r.atlasImage as Record<string, unknown>) }
+            : {}),
         })),
     },
   }

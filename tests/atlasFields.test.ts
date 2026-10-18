@@ -20,7 +20,11 @@ import {
   ATLAS_TOTAL_LIMIT, atlasImageUsageOf, atlasUsageLabel, atlasUsageRatio, atlasUsageText,
   checkAtlasBudget, formatBytes,
 } from '@/lib/atlas/quota'
-import { ATLAS_PACKAGE_MAX_ROWS, buildAtlasPackage, parseAtlasPackage, planAtlasImport, previewAtlasImport } from '@/lib/atlas/packageIO'
+import {
+  ATLAS_PACKAGE_MAX_IMAGE_CHARS, ATLAS_PACKAGE_MAX_ROWS,
+  buildAtlasPackage, parseAtlasPackage, planAtlasImport, previewAtlasImport,
+} from '@/lib/atlas/packageIO'
+import { dataUrlBytes } from '@/lib/media/imagePortrait'
 import { buildImportPrepared, exportRowsCsv, mapHeaders, parseImportText } from '@/lib/storage/tableIO'
 import { collectIndexDocs, type AtlasIndexFieldRule } from '@/lib/semantic/indexer'
 import {
@@ -466,6 +470,95 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     sheet.indexOf('parseAtlasPackage') < sheet.indexOf('importAtlasPackage(r.pkg)'))
   ok('⑲ 导入前有确认弹窗（不当场默默写入）', /previewAtlasImport[\s\S]{0,600}confirmDialog/.test(sheet))
   ok('⑲ 导出用含草稿的 sortedRows', /buildAtlasPackage\(tab, atlasConfig, sortedRows\)/.test(sheet))
+}
+
+// ---------- ㉕ R05（2026-10-19 修）：外来资料包逐字段深校验，不再靠强转放行 ----------
+//
+// 病根：`parseAtlasPackage` 只做浅断言（是不是数组 / 超不超限），然后直接 `as` 强转。
+// 实测 `rows=[{data:{名称:42}}]` 被判合法 —— 而界面与检索到处对单元格值调 `.trim()`，
+// 数字/对象会直接崩，且崩在**写库之后**，作者项目已经脏了。图片体积还信包里自报的 bytes。
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const rows = [{ id: 'r1', projectId: 'p1', tabId: 'races', order: 0, data: { 名称: '墨鳞蟒', cf_diet: '肉食' } }]
+  const field: AtlasFieldDefinition = {
+    id: 'cf_diet', label: '食性', type: 'text', description: '', appliesTo: '*', groupId: 'extra',
+    order: 0, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: false, archived: false,
+  }
+  const pkg = buildAtlasPackage(races, { ...emptyAtlasSchema(), fields: [field] }, rows as never, { now: 1 })
+  const P = (o: Record<string, unknown>) => parseAtlasPackage(JSON.stringify({ ...pkg, ...o }))
+  const okIs = (name: string, o: Record<string, unknown>) => ok(name, P(o).ok)
+  const badIs = (name: string, o: Record<string, unknown>) => ok(name, !P(o).ok)
+
+  // ① 单元格值必须是文本（验收已复现的那一条）
+  badIs('㉕ R05：`{名称: 42}` 被拒（非文本值会崩在 .trim() 上）', { rows: [{ data: { 名称: 42 } }] })
+  badIs('㉕ R05：对象值被拒', { rows: [{ data: { 名称: { a: 1 } } }] })
+  badIs('㉕ R05：null 值被拒', { rows: [{ data: { 名称: null } }] })
+  badIs('㉕ R05：数组值被拒', { rows: [{ data: { 名称: ['a'] } }] })
+  okIs('㉕ R05：正常的文本值放行', { rows: [{ data: { 名称: '墨鳞蟒' } }] })
+  okIs('㉕ R05：空字符串放行（空值是合法的）', { rows: [{ data: { 名称: '' } }] })
+
+  // ② 字段定义逐项校验
+  badIs('㉕ R05：字段缺 id 被拒', { schema: { fields: [{ ...field, id: undefined }] } })
+  badIs('㉕ R05：字段缺名称被拒', { schema: { fields: [{ ...field, label: '' }] } })
+  badIs('㉕ R05：未知字段类型被拒', { schema: { fields: [{ ...field, type: 'richtext' }] } })
+  badIs('㉕ R05：appliesTo 不合法被拒', { schema: { fields: [{ ...field, appliesTo: '魔兽' }] } })
+  badIs('㉕ R05：appliesTo 数组含非文本被拒', { schema: { fields: [{ ...field, appliesTo: [1] }] } })
+  badIs('㉕ R05：下拉候选含非文本被拒', { schema: { fields: [{ ...field, type: 'select', options: ['a', 2] }] } })
+  badIs('㉕ R05：开关不是布尔被拒', { schema: { fields: [{ ...field, aiReadable: 'yes' }] } })
+  badIs('㉕ R05：排序不是数字被拒', { schema: { fields: [{ ...field, order: '1' }] } })
+  badIs('㉕ R05：字段 id 重复被拒（两个字段共用一个键会串味）',
+    { schema: { fields: [field, { ...field, label: '食性2' }] } })
+  badIs('㉕ R05：字段不是对象被拒', { schema: { fields: ['食性'] } })
+  okIs('㉕ R05：合法字段放行', { schema: { fields: [field, { ...field, id: 'cf_b', label: '栖息地' }] } })
+
+  // ③ 图片：格式、编码、体积（自报 bytes 一律不信）
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  const img = (over: Partial<Record<string, unknown>> = {}) => ({ dataUrl: png, mime: 'image/png', width: 1, height: 1, bytes: 70, ...over })
+  okIs('㉕ R05：合法图片放行', { rows: [{ data: { 名称: '墨鳞蟒' }, atlasImage: img() }] })
+  badIs('㉕ R05：SVG 被拒（可执行内容）', { rows: [{ data: {}, atlasImage: img({ dataUrl: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }) }] })
+  badIs('㉕ R05：假 MIME（声称 png 实为 svg）被拒 —— 按 dataUrl 实际内容判',
+    { rows: [{ data: {}, atlasImage: img({ dataUrl: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', mime: 'image/png' }) }] })
+  badIs('㉕ R05：非 base64 数据被拒', { rows: [{ data: {}, atlasImage: img({ dataUrl: 'data:image/png,abc' }) }] })
+  badIs('㉕ R05：不是 dataURL 被拒', { rows: [{ data: {}, atlasImage: img({ dataUrl: 'https://x/y.png' }) }] })
+  badIs('㉕ R05：单张超限被拒',
+    { rows: [{ data: {}, atlasImage: img({ dataUrl: 'data:image/png;base64,' + 'A'.repeat(ATLAS_PACKAGE_MAX_IMAGE_CHARS + 100) }) }] })
+
+  // ④ 自报 bytes 必须被重算覆盖（伪造体积是绕过容量闸的入口）
+  const withImg = P({ rows: [{ data: { 名称: '墨鳞蟒' }, atlasImage: img({ bytes: 1 }) }] })
+  ok('㉕ R05：伪造的 bytes 被重算覆盖（不再信自报）',
+    withImg.ok && (withImg.ok ? withImg.pkg.rows[0].atlasImage?.bytes : 0) > 1,
+    withImg.ok ? String(withImg.pkg.rows[0].atlasImage?.bytes) : '解析失败')
+  ok('㉕ R05：重算出的体积 > 0（真按内容算）',
+    withImg.ok && (withImg.ok ? withImg.pkg.rows[0].atlasImage?.bytes : 0) === dataUrlBytes(png))
+
+  // ⑤ 源码闸：校验必须在造 pkg 之前（不能"先转了再说"）
+  const psrc2 = read('src/lib/atlas/packageIO.ts')
+  ok('㉕ R05：解析里先过完整校验再组装（不是先强转再"顺便"校验）',
+    psrc2.indexOf('const problem = atlasPackageProblem(o)') > 0
+    && psrc2.indexOf('const problem = atlasPackageProblem(o)') < psrc2.indexOf('tabId: o.tabId'))
+  ok('㉕ R05：图片体积重算（dataUrlBytes）', psrc2.includes('dataUrlBytes'))
+}
+
+// ---------- ㉖ R07（2026-10-19 修）：四个图鉴页签自产自读 ----------
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const field: AtlasFieldDefinition = {
+    id: 'cf_x', label: '特性', type: 'text', description: '', appliesTo: '*', groupId: 'extra',
+    order: 0, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: false, archived: false,
+  }
+  const cfg = { ...emptyAtlasSchema(), fields: [field] }
+  for (const id of ATLAS_TABS) {
+    const tab = TABS.find(t => t.id === id)!
+    const p = buildAtlasPackage(tab, cfg, [], { now: 1 })
+    const r = parseAtlasPackage(JSON.stringify(p))
+    ok(`㉖ R07：${tab.name} 导出的包能被自己读回`, r.ok, r.ok ? '' : r.reason)
+  }
+  const psrc3 = read('src/lib/atlas/packageIO.ts')
+  ok('㉖ R07：页签白名单取自 ATLAS_TABS（不再写死两个）',
+    psrc3.includes('ATLAS_TABS.includes') && !/'races' && o\.tabId !== 'items'/.test(psrc3))
+  ok('㉖ R07 负向：未知页签仍被拒',
+    !parseAtlasPackage(JSON.stringify(buildAtlasPackage(
+      { ...races, id: 'history' } as never, cfg, [], { now: 1 }))).ok)
 }
 
 // ---------- ⑳ 外来列建字段 / 类别冲突 / 世界包 / AI 上下文（收尾组） ----------
