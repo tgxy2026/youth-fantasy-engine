@@ -10,6 +10,7 @@ import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
 import { currentSidecarApi } from '@/lib/storage/sidecar'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
+import { splitBundle, mergeShards, applyMediaToBundle, mediaPayloadIdOf, type MediaShard } from '@/lib/backup/shards'
 
 // ============ 自动备份（v1.3 备份策略加固） ============
 // 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；
@@ -44,6 +45,11 @@ export interface BackupMeta {
   fingerprint?: string
   /** 冻结时的完成检查摘要（章数 / 字数等；存下来即可离线回看，不必重算） */
   stats?: FrozenStats
+  /**
+   * 3.1.3 逻辑分片的引用（见 `BackupShardRefs`）。
+   * ⚠️ 旧备份没有这个字段 ⇒ 读取侧一律按「整包」处理（`getBackupPayload` 里有兜底）。
+   */
+  shards?: BackupShardRefs
 }
 
 /** 冻结版本带出的完成检查摘要（与 `bookVersion.BookStats` 的展示子集对齐，刻意只存展示需要的） */
@@ -54,11 +60,39 @@ export interface FrozenStats {
   totalWords: number
 }
 
-/** 备份**载荷**（backupPayloads store）：一份整包项目数据 */
+/** 备份**载荷**（backupPayloads store）。3.1.3 起一份备份 = 文字片 + 媒体片（见下） */
 export interface BackupPayload {
   id: string
   projectId: string
-  bundle: ProjectBundle
+  /**
+   * 3.1.3 逻辑分片：
+   *   'text'  文字片（`bundle` 里**不含任何 dataURL**）
+   *   'media' 媒体片（`media.blobs` + `media.links`，按内容去重）
+   *   'full'  / 缺省：旧形态整包 —— **只用于兼容读取**，新代码不再写
+   */
+  kind?: 'full' | 'text' | 'media'
+  bundle?: ProjectBundle
+  media?: MediaShard
+}
+
+/**
+ * 备份元数据里的分片引用（3.1.3）。
+ *
+ * 🔴 为什么媒体片要单独记 id：媒体片是**内容寻址、可复用**的 —— 图片没变时，
+ *    连续 10 次备份指向同一个媒体片（这正是省空间的关键）。所以 `mediaPayloadId`
+ *    不等于 `id`，删备份时也必须先确认「没有其他备份还在引用它」才能真的删。
+ */
+export interface BackupShardRefs {
+  /** 文字片载荷 id（通常等于 meta.id） */
+  textPayloadId: string
+  /** 媒体片载荷 id；这份备份没有图片时缺省 */
+  mediaPayloadId?: string
+  /** 去重后的图片张数 */
+  mediaCount?: number
+  /** 图片字符数合计 */
+  mediaChars?: number
+  /** 文字片字符数（列表里显示"文字 / 图片"拆分用） */
+  textChars?: number
 }
 
 /**
@@ -151,18 +185,56 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   // 🔴 自动备份**也不带**参考资料（2.8.0 · #017）：同一条理由 —— 长文档单篇可达 40 万字，
   //    每 5 分钟重写一遍等于让数据文件持续膨胀。作者勾的「随包走」开关只作用于**手动导出**。
   const bundle = await exportProject(projectId, { includeSnapshots: false, includeKnowledgeBase: false })
+  /**
+   * 3.1.3 逻辑分片（主人 2026-10-18 拍板）：
+   *   文字片（`textBundle`，已剔除所有 dataURL）+ 媒体片（按内容去重）。
+   *   🔴 为什么要分：一份备份原本是整包 —— 30 张立绘会被 60 份备份各复制一遍；
+   *      分成两片之后，**图片没变就复用同一个媒体片**，60 份备份只占一份图。
+   */
+  const { shards, manifest } = splitBundle(bundle)
+  /**
+   * 🔴 文字片必须由**分片结果**合并而来（`shards` 里图片已被剥离），
+   *    不能用 `applyMediaToBundle(bundle, 空媒体片)` —— 那只是"不写回图"，
+   *    原 bundle 里已经剥掉？没有：它返回的仍是原 bundle，图一张没少（实测踩过）。
+   */
+  const textBundle: ProjectBundle = {
+    // 先铺原 bundle（保住 app / version / exportedAt 这些"包封皮"字段），再用无图分片覆盖数据部分
+    ...bundle,
+    ...mergeShards({ ...shards, media: { blobs: [], links: [] } }),
+  }
   const now = Date.now()
   const id = uid()
+  const textBytes = payloadBytes(textBundle)
+  // 媒体片 id = 项目 + 「图片 ref 集合」的哈希 ⇒ 内容相同即同一片（跨备份自动复用）
+  const mediaId = manifest.mediaCount > 0
+    ? mediaPayloadIdOf(projectId, shards.media.blobs.map(b => b.ref))
+    : undefined
   const meta: BackupMeta = {
     id,
     projectId,
     kind,
     label: label ?? (kind === 'daily' ? `每日自动备份` : `自动备份`),
     createdAt: now,
-    bytes: payloadBytes(bundle),
+    // bytes 仍表示「恢复这份备份所需的总体积」（含图片），不是实际新增占用 —— 界面另有拆分显示
+    bytes: textBytes + manifest.mediaChars,
+    shards: {
+      textPayloadId: id,
+      ...(mediaId
+        ? { mediaPayloadId: mediaId, mediaCount: manifest.mediaCount, mediaChars: manifest.mediaChars }
+        : {}),
+      textChars: textBytes,
+    },
   }
   // 先写载荷再写元数据：元数据是「列表看得见的东西」，载荷缺失时列表会立刻暴露（而不是留一份空壳）
-  await ops.put('backupPayloads', { id, projectId, bundle } satisfies BackupPayload)
+  await ops.put('backupPayloads', { id, projectId, kind: 'text', bundle: textBundle } satisfies BackupPayload)
+  if (mediaId) {
+    // 🔴 同一份图片集合已存在就**直接复用、不重写** —— 这是分片省空间的实际落点。
+    //    复用判定只看 id（由内容哈希得出），不比对内容：同 id 即同图集。
+    const existing = await ops.get<BackupPayload>('backupPayloads', mediaId)
+    if (!existing) {
+      await ops.put('backupPayloads', { id: mediaId, projectId, kind: 'media', media: shards.media } satisfies BackupPayload)
+    }
+  }
   await ops.put('backups', meta)
   // 滚动淘汰：超过该类型上限则删除最早的（元数据与载荷一起删，避免留下孤儿载荷）。手动备份（limit=0）不淘汰。
   const limit = backupLimit(kind)
@@ -243,13 +315,45 @@ export async function listFrozenVersions(projectId: string): Promise<BackupMeta[
     .sort((a, b) => b.createdAt - a.createdAt)
 }
 
-/** 读取某份备份的载荷（恢复 / 导出单份备份时才调用）。找不到返回 undefined。 */
+/**
+ * 读取某份备份的载荷（恢复 / 导出单份备份时才调用）。找不到返回 undefined。
+ *
+ * 3.1.3：这份函数是**唯一的读取入口** —— 文字片 + 媒体片在这里拼回完整 bundle，
+ * 于是 `restoreBackup` / `buildBackupFile` / 备份文件解析全都不用改（旧整包也照样能读）。
+ */
 export async function getBackupPayload(id: string): Promise<ProjectBundle | undefined> {
-  const p = await ops.get<BackupPayload>('backupPayloads', id)
-  if (p?.bundle) return p.bundle
-  // 兼容：尚未迁移的老库里，bundle 仍躺在 backups 记录里
-  const legacy = await ops.get<LegacyBackupRecord>('backups', id)
-  return legacy?.bundle
+  const meta = await ops.get<BackupMeta>('backups', id)
+  const refs = meta?.shards
+  const textId = refs?.textPayloadId ?? id
+  const p = await ops.get<BackupPayload>('backupPayloads', textId)
+  if (!p) {
+    // 兼容：尚未迁移的老库里，bundle 仍躺在 backups 记录里
+    const legacy = await ops.get<LegacyBackupRecord>('backups', id)
+    return legacy?.bundle
+  }
+  // 旧形态整包（kind 缺省或 'full'）
+  if (p.kind !== 'text') return p.bundle
+  if (!p.bundle) return undefined
+  if (!refs?.mediaPayloadId) return p.bundle
+  const mediaRec = await ops.get<BackupPayload>('backupPayloads', refs.mediaPayloadId)
+  // 媒体片丢了：**文字照常恢复**（图片缺省）—— 这比"整份备份都恢复不了"对作者更有用
+  if (!mediaRec?.media) return p.bundle
+  return applyMediaToBundle(p.bundle, mediaRec.media as MediaShard)
+}
+
+/**
+ * 媒体片的引用检查：没有别的备份还在用它，才可以删。
+ * 低频操作（只在删备份 / 清理孤儿时跑），直接扫一遍元数据即可。
+ */
+async function gcMediaPayload(mediaId: string): Promise<void> {
+  try {
+    const metas = await ops.getAll<BackupMeta>('backups')
+    if (metas.some(m => m.shards?.mediaPayloadId === mediaId)) return
+    await ops.del('backupPayloads', mediaId)
+  } catch (e) {
+    // 清理失败不致命：只留下一个无人引用的媒体片，下次清理会再扫到
+    console.warn('[db] 清理媒体片失败（不影响本次删除）：', e)
+  }
 }
 
 
@@ -265,8 +369,13 @@ export async function getBackupPayload(id: string): Promise<ProjectBundle | unde
  *    在载荷还是整库 JSON 里的一行时，这个差别无足轻重；挪成独立文件后就成了磁盘垃圾。
  */
 export async function deleteBackup(id: string) {
-  await ops.del('backupPayloads', id)
+  const meta = await ops.get<BackupMeta>('backups', id)
+  const textId = meta?.shards?.textPayloadId ?? id
+  const mediaId = meta?.shards?.mediaPayloadId
+  await ops.del('backupPayloads', textId)
   await ops.del('backups', id)
+  // 3.1.3：媒体片可能被其他备份共用 ⇒ 删完元数据后再确认一次"确实没人引用了"才删
+  if (mediaId) await gcMediaPayload(mediaId)
 }
 
 /** 孤儿备份：备份记录存在但其项目已被删除（删除项目时按约定保留备份，导致此类记录积累） */
@@ -284,19 +393,33 @@ export async function deleteOrphanBackups(): Promise<number> {
 }
 
 /**
- * 孤儿**载荷**判定（纯函数，可单测）：磁盘上有文件、但列表里已没有对应元数据。
+ * 孤儿**载荷**判定（纯函数，可单测）：磁盘上有文件、但列表里已没有任何备份引用它。
  *
  * 🔴 为什么会有孤儿：创建备份是「先写载荷、后写元数据」（见 createAutoBackup 的注释）。
  *    若两步之间被打断（断电、U 盘拔插、服务中断），载荷文件留下了而元数据没写进去
  *    ⇒ 列表里**没有任何痕迹**，却实打实占着磁盘，且没有任何入口能再找到它。
  *    删除路径已修正为先删载荷（见 deleteBackup），故孤儿只剩这一条来源。
  *
- * @param payloadIds 磁盘上实际存在的载荷 id
- * @param metaIds    列表里还看得见的备份 id
+ * 🔴 3.1.3 起 `referencedIds` **不再只是 meta.id**：分片后一份备份可能引用
+ *    `textPayloadId` 与共享的 `mediaPayloadId`（一个媒体片被多份备份共用）。
+ *    只拿 meta.id 比对会把媒体片全部误判成孤儿 —— 那等于把别人的图片删了。
+ *
+ * @param payloadIds     磁盘上实际存在的载荷 id
+ * @param referencedIds  所有备份引用到的载荷 id（meta.id + 各片 id）
  */
-export function orphanPayloadIdsOf(payloadIds: string[], metaIds: string[]): string[] {
-  const known = new Set((metaIds ?? []).map(String))
+export function orphanPayloadIdsOf(payloadIds: string[], referencedIds: string[]): string[] {
+  const known = new Set((referencedIds ?? []).map(String))
   return (payloadIds ?? []).map(String).filter(id => !known.has(id))
+}
+
+/** 一份备份元数据引用到的全部载荷 id（旧整包=自身 id；分片=文字片 + 可选媒体片） */
+export function referencedPayloadIdsOf(meta: BackupMeta | LegacyBackupRecord): string[] {
+  const shards = (meta as BackupMeta).shards
+  return [
+    String(meta.id),
+    ...(shards?.textPayloadId ? [shards.textPayloadId] : []),
+    ...(shards?.mediaPayloadId ? [shards.mediaPayloadId] : []),
+  ]
 }
 
 /**
@@ -311,7 +434,7 @@ export async function listOrphanPayloadIds(): Promise<string[]> {
     api.listIds('backupPayloads').catch(() => [] as string[]),
     ops.getAll<BackupMeta | LegacyBackupRecord>('backups').catch(() => [] as BackupMeta[]),
   ])
-  return orphanPayloadIdsOf(ids, metas.map(m => String((m as BackupMeta).id ?? '')))
+  return orphanPayloadIdsOf(ids, metas.flatMap(m => referencedPayloadIdsOf(m)))
 }
 
 /** 删除全部孤儿载荷，返回删除条数 */

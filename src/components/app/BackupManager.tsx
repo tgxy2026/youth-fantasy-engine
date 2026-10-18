@@ -288,6 +288,20 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     const kb = (b.bytes ?? 0) / 1024
     return kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`
   }
+  /**
+   * 3.1.3 分片：把「文字 / 图片」拆开显示。
+   * 自动备份的图片是**按内容复用**的（同一图集只存一份），所以这里显示的是
+   * 「恢复这份备份需要的量」，不是它实际新占的空间 —— 文案据实写成「含图片」。
+   */
+  const splitOf = (b: db.BackupMeta): string | null => {
+    const s = b.shards
+    if (!s || s.textChars === undefined) return null
+    const kb = (n: number) => (n / 1024 > 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${(n / 1024).toFixed(0)} KB`)
+    const media = s.mediaChars ?? 0
+    return media > 0
+      ? `文字 ${kb(s.textChars)} · 含图片 ${kb(media)}（${s.mediaCount ?? 0} 张，多份备份共用）`
+      : `文字 ${kb(s.textChars)} · 无图片`
+  }
   // #012：份数过多会让数据文件变大、开关与保存变慢
   const totalMB = backups.reduce((s, b) => s + (b.bytes ?? 0), 0) / 1024 / 1024
   // 折叠状态（只对 collapsible 的分组有意义；默认全收起 = 两组自动备份默认折叠）
@@ -338,6 +352,9 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               <div className="min-w-0 flex-1">
                 <div className="text-12 text-ink-100">{b.label}</div>
                 <div className="text-10 text-ink-500">{new Date(b.createdAt).toLocaleString()} · {sizeOf(b)}</div>
+                {splitOf(b) && (
+                  <div className="text-10 text-ink-600">{splitOf(b)}</div>
+                )}
               </div>
               <Button variant="bare"
                 onClick={() => restore(b)}
