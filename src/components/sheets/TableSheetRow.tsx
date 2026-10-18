@@ -21,6 +21,7 @@ import CalendarSelect from '@/components/common/CalendarSelect'
 import NumberField from '@/components/common/NumberField'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import { CellTextarea, rowBadgeClass } from '@/components/sheets/tableSheetShared'
+import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import { ROW_ACTION_COL_W, type TableSheetModel } from '@/components/sheets/useTableSheetModel'
 import { readAliases } from '@/lib/settings/aliases'
 
@@ -70,6 +71,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
     collapsed,
     setFillRow,
     calendarRule,
+    effectiveColumns,
   } = model
 
     const row = entry.row
@@ -156,8 +158,20 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
           )}
           </div>
         </td>
-        {tab.columns!.filter(col => !col.hidden).map(col => {
+        {effectiveColumns.map(col => {
           const val = cellVal(row, col.name)
+          // 3.1.3：自定义字段走专用控件（内置列的控件一个都没换）
+          if (col.atlasField) {
+            return (
+              <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
+                <AtlasCellInput
+                  field={col.atlasField}
+                  value={val}
+                  onChange={v => setCellDraft(row.id, col.name, v)}
+                />
+              </td>
+            )
+          }
           if (isMaster) {
             const fh = (tab.id !== 'foreshadow' && tab.id !== 'history' && val.match(/[FH]\d+/g)) || null
             return (

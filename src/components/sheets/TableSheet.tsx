@@ -7,9 +7,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
-import { deleteTableRow } from '@/lib/db'
+import { addCustomItem, deleteTableRow } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2 } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
 import StoryTimeline from '@/components/outline/StoryTimeline'
 import StorylineView from '@/components/outline/StorylineView'
@@ -37,6 +37,12 @@ import TableSheetRow from '@/components/sheets/TableSheetRow'
 import TableRelationGroups from '@/components/sheets/TableRelationGroups'
 import { useTableSheetModel, ROW_ACTION_COL_W } from '@/components/sheets/useTableSheetModel'
 import TableMoreMenu, { type MoreMenuItem } from '@/components/sheets/TableMoreMenu'
+import AtlasView from '@/components/atlas/AtlasView'
+import AtlasFieldManager from '@/components/atlas/AtlasFieldManager'
+import type { AtlasColumn } from '@/lib/atlas/columns'
+import { atlasDisplayValue } from '@/lib/atlas/schema'
+import { buildAtlasPackage, parseAtlasPackage, previewAtlasImport } from '@/lib/atlas/packageIO'
+import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { foldVh } from '@/lib/settings/theme'
 
@@ -58,13 +64,24 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const [showCalRule, setShowCalRule] = useState(false)
   /** 「资料提及」面板（3.1 P1）：行内放大镜按钮打开，纯读不落库 */
   const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
+  /** 3.1.3：字段设置弹窗（自定义字段增删改、归档恢复、排序） */
+  const [showFieldMgr, setShowFieldMgr] = useState(false)
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
   const aliasTargets = useMemo(
     () => tableAliasTargets((tab.columns ?? []).filter(c => !c.hidden)),
     [tab],
   )
   const aliasCols = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
-  const { labels: aliasLabels } = useFieldAliases(tab.id, aliasCols)
+  const { map: aliasMap, labels: aliasLabels, save: saveAliases } = useFieldAliases(tab.id, aliasCols)
+
+  /**
+   * 表头显示名 / 悬停说明（3.1.3）：自定义字段用它的**字段名**，内置字段仍走别名单。
+   * 🔴 两者都只影响显示 —— 存储键永远是 `col.name`（内置＝列名，自定义＝`cf_*`）。
+   */
+  const colLabelOf = (col: AtlasColumn) => col.atlasField?.label ?? aliasLabels[col.name] ?? col.name
+  const colTitleOf = (col: AtlasColumn) => col.atlasField
+    ? (col.atlasField.description || `自定义字段（存储键 ${col.name}，改名不影响已填内容）`)
+    : (aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`)
 
   const {
     // 落库与装载
@@ -80,7 +97,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 编号
     codeError,
     // 视图与高亮
-    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, 
+    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, 
+    // 图鉴字段配置（3.1.3）
+    effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 人物关系分组
     relationGroups, 
     // 历法
@@ -94,14 +113,86 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 🔴 用 `sortedRows` 而不是 `rows`（2026-10-02 六维审计 P2）：它才是屏幕上这份视图 ——
    *    与表格排序一致、且已并入未保存草稿。旧实现导出的是裸库数据：作者刚改完还没保存就导出，
    *    导出的文件里**看不到自己的改动**，而屏幕上明明有。
+   * 🔴 3.1.3：列清单走 `effectiveColumns`（含自定义字段），列头用**字段名**（不暴露 cf_ 键），
+   *    自定义字段的值按显示形态导出（多选→顿号、布尔→是/否）；内置列一律原值，否则导不回来。
    */
   const exportCsv = () => {
-    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportRowsCsv(tab, sortedRows)], { type: 'text/csv;charset=utf-8' }))
+    const columns = effectiveColumns.map(col => ({ name: col.name, label: colLabelOf(col) }))
+    const textOf = (name: string, raw: string) => {
+      const col = effectiveColumns.find(c => c.name === name)
+      return col?.atlasField ? atlasDisplayValue(col.atlasField, raw) : raw
+    }
+    const csv = exportRowsCsv(tab, sortedRows, { columns, textOf })
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
   }
 
   /**
-   * 「更多」菜单的项（3.1.2 B 条）：把不常用的「导入 / 导出」与破坏性的「清空全部」收进来。
+   * 图鉴资料包 · 导出（方案 §8.2）：字段定义 + 全部条目 + 主图。
+   * 🔴 用 `sortedRows`（含未保存草稿），与 CSV 同口径 —— 作者看到什么就带走什么。
+   */
+  const exportAtlasPackage = () => {
+    const pkg = buildAtlasPackage(tab, atlasConfig, sortedRows)
+    downloadBlob(
+      `${tab.name}-图鉴资料包.json`,
+      new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' }),
+    )
+    showToast(`已导出 ${pkg.rows.length} 条（自定义字段 ${pkg.schema.fields.length} 个）`, 'success')
+  }
+
+  /**
+   * 图鉴资料包 · 导入（方案 §8.3）：**先校验、再预览确认、最后才动库**。
+   * 不完整/超限的包在动目标项目之前就被拒绝；页签不一致会额外问一次。
+   */
+  const importAtlasPackageFile = async (file: File) => {
+    let text: string
+    try {
+      text = await file.text()
+    } catch {
+      showToast('文件读取失败', 'error')
+      return
+    }
+    const r = parseAtlasPackage(text)
+    if (!r.ok) { showToast(r.reason, 'error'); return }
+
+    if (r.pkg.tabId !== tab.id) {
+      const go = await confirmDialog({
+        title: '页签不一致',
+        message: `这份资料包来自「${r.pkg.tabName}」，当前页签是「${tab.name}」。\n\n继续导入会把它的字段与条目并入当前页签（不会删除现有内容），确定吗？`,
+        danger: true,
+      })
+      if (!go) return
+    }
+
+    const p = previewAtlasImport(r.pkg, atlasConfig, atlasCategoryOptions(tab))
+    const catNote = p.unknownCategories.length > 0
+      ? `\n\n类别值里有 ${p.unknownCategories.length} 个目标表还没有（${p.unknownCategories.slice(0, 3).join('、')}${p.unknownCategories.length > 3 ? '…' : ''}）—— 导入后会自动登记成「类别」列的自定义选项，不会丢值。`
+      : ''
+    const ok = await confirmDialog({
+      title: '导入图鉴资料包',
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}`,
+    })
+    if (!ok) return
+
+    try {
+      const res = await importAtlasPackage(r.pkg)
+      // 未知类别值登记为「类别」列的自定义选项 —— 否则行内下拉显示空白，作者会以为值丢了
+      for (const v of p.unknownCategories) {
+        try { await addCustomItem(tab.id, '类别', v) } catch { /* 登记失败不影响条目本身 */ }
+      }
+      const strip = res.strippedImages > 0 ? `；容量不足，有 ${res.strippedImages} 条图片未导入` : ''
+      showToast(`已导入 ${res.added} 条，新建字段 ${res.createdFields} 个${strip}`, strip ? 'error' : 'success')
+    } catch (e) {
+      showToast('导入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  /**
+   * 「导入导出」菜单的项（3.1.2 B 条起；2026-10-18 起菜单里**只剩导入/导出**）。
    * 母表（章节总表）不提供导入导出 —— 它的行由各卷台账驱动，手填会打架，故整份菜单为空 ⇒ 组件自动不渲染。
+   *
+   * 🔴 「清空全部」已从这个菜单里挪出去（见下方 `canClear`）：它一在里面，菜单就只能叫「更多」，
+   *    而主人反馈「点开才知道是导入导出」。现在菜单永远只有导入导出 ⇒ 按钮名可以如实叫「导入导出」，
+   *    清空变成旁边一个**常态中性、hover 才红**的图标键（危险色不常驻，见项目红线）。
    */
   const moreItems: MoreMenuItem[] = isMaster ? [] : [
     {
@@ -118,27 +209,26 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       title: '导出本表数据为 CSV（Excel 可直接打开）',
       onClick: exportCsv,
     },
-    // 只有人物关系 / 历史事件支持清空（与原来按钮的可见条件逐字一致，功能不增减）
-    ...(['relations', 'history'].includes(tab.id) && rows.length > 0 ? [{
-      key: 'clear',
-      label: '清空全部',
-      icon: <Trash2 size={13} />,
-      danger: true,
-      title: `清空「${tab.name}」中所有 ${rows.length} 条记录`,
-      onClick: async () => {
-        if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
-        // 🔴 串行 await（2026-10-10 六维审计）：原先 forEach + void 是**并发发起且不等待**，
-        //    失败被静默吞掉 ⇒ 界面已清空、库里可能残留（重开这一页它们又冒出来）。
-        let failedCount = 0
-        for (const row of rows) {
-          try { await deleteTableRow(row.id) } catch { failedCount++ }
-        }
-        setRows([])
-        setDrafts({})
-        if (failedCount) showToast(`有 ${failedCount} 条没能删掉（其余已清除）—— 请再试一次`, 'error')
-      },
-    }] : []),
   ]
+
+  /** 只有人物关系 / 历史事件支持清空（与原来菜单项的可见条件逐字一致，功能不增减） */
+  const canClear = ['relations', 'history'].includes(tab.id) && rows.length > 0
+
+  /**
+   * 清空本表全部记录。
+   * 🔴 串行 await（2026-10-10 六维审计）：原先 forEach + void 是**并发发起且不等待**，
+   *    失败被静默吞掉 ⇒ 界面已清空、库里可能残留（重开这一页它们又冒出来）。
+   */
+  const clearAll = async () => {
+    if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」中所有 ${rows.length} 条记录？`, danger: true })) return
+    let failedCount = 0
+    for (const row of rows) {
+      try { await deleteTableRow(row.id) } catch { failedCount++ }
+    }
+    setRows([])
+    setDrafts({})
+    if (failedCount) showToast(`有 ${failedCount} 条没能删掉（其余已清除）—— 请再试一次`, 'error')
+  }
 
   /**
    * 宽表格「左键按住拖动平移」（2026-10-17 主人反馈）＋ **表头冻结**。
@@ -228,13 +318,25 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   ? `共 ${filteredRows.length} 行 · 按编号排序`
                   : `共 ${filteredRows.length} 行 · 按编辑时间排序`}
           </span>
-          {aliasCols.length > 0 && (
+          {/* 字段显示名 + 字段设置＝同一件事的两个入口（2026-10-18 主人反馈）。
+              图鉴页签把它并进「字段设置」面板，这里就不再单独出现；其他表格没有那个面板，
+              仍用「字段名」按钮 —— 两边写的是同一份 `fieldAlias` 存储。 */}
+          {aliasCols.length > 0 && !isAtlasCapable && (
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
               intro="给这一页的列起你自己看得懂的名字（例如把「契约/驯化关系」改成「外勤预约」）。"
               targets={aliasTargets}
             />
+          )}
+          {/* 3.1.3：字段设置（自定义字段增删改 / 归档恢复 / 排序 + 内置字段显示名），只对图鉴页签出现 */}
+          {isAtlasCapable && (
+            <Button variant="secondary" onClick={() => setShowFieldMgr(true)}
+              className="flex items-center gap-1.5"
+              title="字段设置：加自定义字段（例如魔兽的「食性」、丹药的「副作用」），改内置字段的显示名，可归档 / 恢复 / 调整顺序"
+            >
+              <Settings2 size={12} /> 字段设置
+            </Button>
           )}
           {!isMaster && (
           <Button variant="bare"
@@ -252,6 +354,33 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           {/* 3.1.2 B 条：低频 / 危险操作收进「更多」菜单（原「清空全部」是常驻红按钮 ——
               危险色常驻会压住整页的重点，且它与「导入 / 导出」一起把工具条挤到折行） */}
           <TableMoreMenu items={moreItems} />
+          {/* 清空全部：单独一个图标键，常态中性、hover 才红（危险色不常驻是本项目红线） */}
+          {canClear && (
+            <Button variant="icon-danger" size="sm" onClick={() => void clearAll()}
+              title={`清空「${tab.name}」中所有 ${rows.length} 条记录（会先问你一次，删了不可恢复）`}>
+              <Trash2 size={13} />
+            </Button>
+          )}
+          {/* 3.1.3：种族生物 / 物品资源的「表格 ⇄ 图鉴」（方案 §3.1；入口只开放 races / items） */}
+          {isAtlasCapable && (
+            <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
+              <Button variant="bare"
+                onClick={() => setViewMode('table')}
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                  ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
+              >
+                <Table2 size={11} /> 表格
+              </Button>
+              <Button variant="bare"
+                onClick={() => setViewMode('atlas')}
+                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                  ${viewMode === 'atlas' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
+                title="图鉴视图：卡片墙浏览，点卡片看完整资料（编辑仍回表格，共用同一份草稿）"
+              >
+                <BookOpen size={11} /> 图鉴
+              </Button>
+            </div>
+          )}
           {isTimelineCapable && (
             <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
               <Button variant="bare"
@@ -360,7 +489,21 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
 
       {/* history / timeline 页签可切到时间轴视图；人物关系可切到关系图 */}
-      {viewMode === 'graph' ? (
+      {viewMode === 'atlas' && isAtlasCapable ? (
+        /* ============ 3.1.3 图鉴视图（卡片墙 + 详情，实现已拆到 components/atlas） ============ */
+        <AtlasView
+          tab={tab}
+          rows={filteredRows}
+          aliases={aliasLabels}
+          config={atlasConfig}
+          onEditInTable={() => setViewMode('table')}
+          onSaveImage={saveRowImage}
+          imageUsage={atlasImageUsage}
+          imageLimit={atlasImageLimit}
+          onExportPackage={exportAtlasPackage}
+          onImportPackage={file => void importAtlasPackageFile(file)}
+        />
+      ) : viewMode === 'graph' ? (
         tab.id === 'faction-rels' ? <FactionGraph rows={rows} onNavigate={onNavigate} /> : <RelationGraph rows={rows} />
       ) : viewMode === 'storyline' && tab.id === 'foreshadow' ? (
         <StorylineView />
@@ -399,12 +542,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               <tr className="sticky top-0 z-10 bg-ink-800 border-b border-ink-700">
                 <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
                 <th className="bg-ink-800 px-1 py-2.5 align-middle" style={{ width: ROW_ACTION_COL_W }} />
-                {tab.columns!.filter(col => !col.hidden).map(col => (
+                {effectiveColumns.map(col => (
                   <th key={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
-                    <div
-                      className="truncate"
-                      title={aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`}
-                    >{aliasLabels[col.name]}</div>
+                    <div className="truncate" title={colTitleOf(col)}>{colLabelOf(col)}</div>
                     {col.type === 'select' && col.options ? (
                       <select
                         value={colFilters[col.name] ?? ''}
@@ -438,7 +578,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <tbody className="divide-y divide-ink-700/50">
               {(rows.length === 0 || bodyRows.length === 0) && (
                 <tr>
-                  <td colSpan={tab.columns!.filter(c => !c.hidden).length + 2} className="px-4 py-16 text-center text-ink-500">
+                  <td colSpan={effectiveColumns.length + 2} className="px-4 py-16 text-center text-ink-500">
                     <div className="flex flex-col items-center gap-2">
                       <Plus size={20} className="text-ink-600" />
                       <span>{rows.length === 0 ? (isMaster ? '各卷台账还没有章节，去左侧各卷「章节台账」表录入即可在此汇总显示' : '还没有记录，点击右上角「新增一行」开始') : '没有符合筛选条件的记录'}</span>
@@ -518,6 +658,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           existing={sortedRows}
           calendars={calendars}
           visCtx={ctx}
+          extraColumns={effectiveColumns
+            .filter(c => c.atlasField)
+            .map(c => ({ name: c.name, label: c.atlasField!.label }))}
+          onCreateFields={isAtlasCapable ? createAtlasFields : undefined}
           onAdd={handleImport}
           onClose={() => setShowImport(false)}
         />
@@ -537,6 +681,18 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
       {showDedupAI && (
         <TermDedupPanel rows={rows.map(r => r.data)} onClose={() => setShowDedupAI(false)} />
+      )}
+      {isAtlasCapable && showFieldMgr && atlasConfig && (
+        <AtlasFieldManager
+          tab={tab}
+          config={atlasConfig}
+          readOnly={atlasNewerFormat}
+          aliasKeys={aliasCols}
+          aliases={aliasMap}
+          onSaveAliases={saveAliases}
+          onSave={saveAtlasConfig}
+          onClose={() => setShowFieldMgr(false)}
+        />
       )}
       {showCalRule && (
         <CalendarRuleModal

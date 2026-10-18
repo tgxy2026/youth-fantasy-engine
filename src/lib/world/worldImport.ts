@@ -15,6 +15,8 @@
  */
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
+import { isAtlasTab } from '@/lib/atlas/schema'
+import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import type { WorldPackTable } from '@/lib/world/worldTypes'
 
 /** `settingsKV` 里的键名（与项目绑定） */
@@ -66,9 +68,39 @@ export async function importWorldIntoCurrent(worldId: string, version = 0): Prom
     }
     // ---- 表格型 ----
     if (t.kind === 'table') {
+      /**
+       * 3.1.3（方案 §8.3）：随包带来的自定义字段定义**先并进本项目**，再写行。
+       * 🔴 不能直接沿用包里的字段 id：那是源项目的 id，撞上本项目已有 id 就会"两个字段共用一个键"
+       *    （数据串味且极难查）。所以：同名同类型复用本项目字段，其余重新发 id 并**重映射行数据键**。
+       */
+      const idMap = new Map<string, string>()
+      if (t.atlasFields?.length && isAtlasTab(t.tabId)) {
+        const pid = db.getCurrentProjectId()
+        const cur = (await loadAtlasSchema(pid, t.tabId)).config
+        const nextFields = [...cur.fields]
+        for (const f of t.atlasFields) {
+          const hit = cur.fields.find(e => e.label === f.label && e.type === f.type)
+          if (hit) { idMap.set(f.id, hit.id); continue }
+          const nid = newFieldId()
+          idMap.set(f.id, nid)
+          nextFields.push({ ...f, id: nid, archived: false })
+        }
+        if (nextFields.length > cur.fields.length) {
+          await saveAtlasSchema(pid, t.tabId, { ...cur, fields: nextFields })
+        }
+      }
       for (const old of await db.getTableRows(t.tabId)) await db.deleteTableRow(old.id)
       for (let i = 0; i < t.rows.length; i++) {
-        await db.saveTableRow({ id: uid(), projectId: '', tabId: t.tabId, data: { ...t.rows[i].data }, order: i })
+        const src = t.rows[i]
+        const data: Record<string, string> = { ...src.data }
+        for (const [oldKey, newKey] of idMap) {
+          if (oldKey === newKey) continue
+          if (oldKey in data) { data[newKey] = data[oldKey]; delete data[oldKey] }
+        }
+        await db.saveTableRow({
+          id: uid(), projectId: '', tabId: t.tabId, data, order: i,
+          ...(src.atlasImage ? { atlasImage: src.atlasImage } : {}),
+        })
       }
       continue
     }

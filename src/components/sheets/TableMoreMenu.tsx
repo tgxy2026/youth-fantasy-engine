@@ -1,4 +1,16 @@
 /**
+ * 表格页头「导入导出」/「更多」下拉菜单。
+ *
+ * 🔴 命名规则（2026-10-18 主人反馈：点开才发现是导入导出，名字在骗人）：
+ *    菜单里**只有导入/导出**（没有删除类危险项）⇒ 按钮直接叫「导入导出」+ 双向箭头图标；
+ *    菜单里**混着危险项**（如「清空全部」）⇒ 仍叫「更多」+ 三点图标
+ *    —— 那种情况叫「导入导出」会更误导（点开里面躺着一颗红色炸弹）。
+ *    判定放在组件内部按 `items` 自动做，调用方不用各写一遍（八张表各写一遍必然漏）。
+ *
+ * 📌 现状（2026-10-18）：所有表的「清空全部」都已挪到菜单外（独立的 icon-danger 图标键），
+ *    所以全应用都显示「导入导出」。这条 danger 分支留着是给**将来**再加危险菜单项时兜底 ——
+ *    别因为现在没人用就删掉它，否则下次谁往菜单里塞删除项，按钮名会立刻开始骗人。
+ *
  * 表格页头「更多」下拉菜单。
  *
  * 为什么要它（3.1.2 视觉巡检 B 条）：
@@ -15,7 +27,7 @@
  *    的层叠上下文，内部浮层不会跑去压弹窗；也不用引 dropdownPos 那套坐标计算。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { MoreHorizontal } from 'lucide-react'
+import { ArrowDownUp, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 
@@ -33,9 +45,11 @@ interface Props {
   items: MoreMenuItem[]
   /** 无可用项时整个菜单不渲染（母表等场景不该留一个点开是空的「更多」） */
   label?: string
+  /** 悬浮提示；不给则按当前命名自动生成（改写「批量导入 / 导出 CSV / 清空全部」那套旧文案会漏） */
+  title?: string
 }
 
-export default function TableMoreMenu({ items, label = '更多' }: Props) {
+export default function TableMoreMenu({ items, label, title }: Props) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -56,6 +70,16 @@ export default function TableMoreMenu({ items, label = '更多' }: Props) {
 
   if (items.length === 0) return null
 
+  /**
+   * 无危险项 ⇒ 里面只有导入/导出，按钮就叫「导入导出」。
+   * 有危险项（清空全部）⇒ 叫「更多」，否则等于承诺「这里只有导入导出」，点开却是删除入口。
+   */
+  const hasDanger = items.some(it => it.danger)
+  const text = label ?? (hasDanger ? '更多' : '导入导出')
+  const hint = title ?? (hasDanger
+    ? '更多操作：批量导入 / 导出 CSV / 清空全部'
+    : '导入导出：粘贴或上传表格批量导入，也可以把当前表导出成 CSV（Excel 可直接打开）')
+
   return (
     <div ref={boxRef} className="relative shrink-0">
       <Button variant="secondary"
@@ -63,8 +87,8 @@ export default function TableMoreMenu({ items, label = '更多' }: Props) {
         aria-expanded={open}
         aria-haspopup="menu"
         className="flex items-center gap-1.5 transition-colors"
-        title="更多操作：批量导入 / 导出 CSV / 清空全部">
-        <MoreHorizontal size={14} /> {label}
+        title={hint}>
+        {hasDanger ? <MoreHorizontal size={14} /> : <ArrowDownUp size={14} />} {text}
       </Button>
       {open && (
         <div

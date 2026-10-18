@@ -25,6 +25,10 @@ import { getTempDocs, renderTempDocs } from '@/lib/ai/tempDocs'
 import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
 import { planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
+import { isAtlasTab } from '@/lib/atlas/schema'
+import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
+import { formatCustomValue } from '@/lib/atlas/values'
+import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
@@ -552,14 +556,24 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
 }
 
 /** 表格型：首行列名，之后每行用 ｜ 分隔（比 JSON 省 token 得多） */
-function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: RenderOpts = {}): string {
+function renderTable(
+  tab: TabDef,
+  rows: { data: Record<string, string> }[],
+  o: RenderOpts = {},
+  /** 3.1.3：图鉴页签的有效字段（不传 ⇒ 走 tab.columns，其他表行为不变） */
+  atlasFields?: readonly ResolvedAtlasField[] | null,
+): string {
   // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）；
   // 系统元数据列（保密等级）两个视角都不渲染 —— 它已完成使命，对模型只是噪音。
   // 🔴 隐藏列（`cH()` 构造，如《地理风物》的「地图格子」坐标串 `gx,gy;…`）是**给程序用的内部数据**，
   //    表格视图本就不显示 —— 它同样不该进提示词（对模型纯噪声，还白占 token）。
   //    `!c.hidden` 是全项目既有写法（tableIO / TableImportDialog / TableSheet / useTableSheetModel …），
   //    这里与 organizeRows 此前漏了（2026-10-08 补齐，三处口径统一）。
-  const cols = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
+  // 🔴 两道过滤对两种来源都生效（加图鉴字段时漏过一次，被 contextRank / tavernFlow 抓出来）：
+  //    SYSTEM_META_FIELDS＝保密等级（纯调度元数据）；AUTHOR_SIDE_FIELDS＝沉浸档整列不能出现。
+  const cols = (atlasFields
+    ? atlasFields.map(f => f.key)
+    : (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name))
     .filter(c => !SYSTEM_META_FIELDS.has(c))
     .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
   if (cols.length === 0) return ''
@@ -574,8 +588,14 @@ function renderTable(tab: TabDef, rows: { data: Record<string, string> }[], o: R
   const filled = sortBySecrecy(usable).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
   const use = filled.slice(0, cap)
   if (use.length === 0) return ''
-  const out = [cols.join(' ｜ ')]
-  for (const r of use) out.push(cols.map(c => clip(r.data[c] ?? '', cellCap(c))).join(' ｜ '))
+  // 表头用字段名（cf_ 键不给模型看），值按类型格式化（多选 JSON → 顿号），否则模型会照抄 JSON 碎片
+  const labelOf = (key: string) => atlasFields?.find(f => f.key === key)?.label ?? key
+  const cellOf = (key: string, raw: string) => {
+    const f = atlasFields?.find(x => x.key === key)
+    return f?.customType ? formatCustomValue(f.customType, raw, f.unit) : raw
+  }
+  const out = [cols.map(labelOf).join(' ｜ ')]
+  for (const r of use) out.push(cols.map(c => clip(cellOf(c, r.data[c] ?? ''), cellCap(c))).join(' ｜ '))
   if (filled.length > cap) out.push(`（另有 ${filled.length - cap} 行未列出）`)
   return out.join('\n')
 }
@@ -633,6 +653,8 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
     if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), o)
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id)
+      // 3.1.3：图鉴页签的字段清单（见 ai/atlasContext 的口径）
+      const atlasFields = isAtlasTab(tab.id) ? await loadAtlasFieldsForAI(tab) : null
       // 酒馆模式：知情权限只带「该角色是知情者」的条目（方案 §6.5 事实边界的自动推断）
       if (tab.id === 'secrets' && knowerName) {
         // 🔴 2026-10-02 六维审计 P1：`knowerName` 是把多个 AI 角色用「、」拼成的**整串**，
@@ -643,9 +665,9 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
         const mine = names.length
           ? rows.filter(r => names.some(n => String(r.data?.['知情者'] ?? '').includes(n)))
           : rows
-        return renderTable(tab, mine, o)
+        return renderTable(tab, mine, o, atlasFields)
       }
-      return renderTable(tab, rows, o)
+      return renderTable(tab, rows, o, atlasFields)
     }
   } catch {
     // 单段读取失败就当这段没有，不影响其他资料

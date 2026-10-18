@@ -1,5 +1,8 @@
 // ============ 类型定义 ============
 
+// 图鉴主图的形状由 atlas 领域模块定义（唯一真源）；这里只 type-only 引用，不产生运行时依赖
+import type { AtlasImage } from '@/lib/atlas/types'
+
 /** 表单字段 */
 export interface FormField {
   name: string
@@ -236,6 +239,13 @@ export interface TableRow {
   order: number
   updatedAt?: number  // 最后编辑时间（保存时自动写入，用于无编号表格的降序排列）
   createdAt?: number  // 创建时间（用于 newestFirst 表格按创建时间倒序；旧数据缺省时回落 order）
+  /**
+   * 图鉴主图（3.1.3 · 方案 §6.1）。
+   * 🔴 存**顶层**而不是塞进 `data`：`data` 是 `Record<string, string>` 的字段值字典，
+   *    图片有 mime / 宽高 / 字节数，塞进去会把「字段值」这层抽象污染掉。
+   * 🔴 所有「重建 TableRow」的路径必须保留它（`{...row}` 展开是安全的；手挑字段重建会丢）。
+   */
+  atlasImage?: AtlasImage
 }
 
 export interface FormData {

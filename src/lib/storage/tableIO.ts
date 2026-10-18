@@ -156,13 +156,29 @@ export function splitIntoChunks(text: string, maxChars = 3000): string[] {
 
 // ============ B. 映射与行对象 ============
 
-/** 表头 → schema 列名（null = 该列忽略）。按列名精确匹配，不按位置 */
-export function mapHeaders(headers: string[], tab: TabDef): (string | null)[] {
+/**
+ * 表头 → 存储键（null = 该列忽略）。
+ *
+ * 3.1.3：`extra` 是自定义字段（`{ name: cf_xxx, label: 字段名 }`）。
+ * 🔴 匹配顺序与理由：
+ *   ① **先内置列名**（存储键）—— 老 CSV 里的「威胁等级」必须优先命中内置列；
+ *   ② 再自定义字段的**显示名**（label）—— 导出时列头写的就是 label，导出再导入才能对上；
+ *   ③ 最后按自定义字段的 `cf_` 键兜底（手改过的 CSV 也可能直接写键）。
+ *   返回的一律是**存储键**，因为写回 `row.data` 用的就是它。
+ */
+export function mapHeaders(
+  headers: string[],
+  tab: TabDef,
+  extra: readonly { name: string; label: string }[] = [],
+): (string | null)[] {
   const cols = tab.columns ?? []
   return headers.map(h => {
     const key = (h ?? '').trim()
-    const hit = cols.find(c => c.name === key)
-    return hit ? hit.name : null
+    if (!key) return null
+    const builtin = cols.find(c => c.name === key)
+    if (builtin) return builtin.name
+    const custom = extra.find(c => c.label === key || c.name === key)
+    return custom ? custom.name : null
   })
 }
 
@@ -386,17 +402,44 @@ export function csvCell(v: string): string {
 }
 
 /** 导出当前表数据为 CSV（列序 = schema 列序，跳过隐藏列） */
-export function exportRowsCsv(tab: TabDef, rows: TableRow[]): string {
-  const cols = (tab.columns ?? []).filter(c => !c.hidden)
-  const head = cols.map(c => csvCell(c.name)).join(',')
-  const body = rows.map(r => cols.map(c => csvCell(String(r.data[c.name] ?? ''))).join(','))
+/** 导出列：`name` 是存储键，`label` 是 CSV 列头（自定义字段用字段名，别把 cf_ 暴露给作者） */
+export interface ExportColumn {
+  name: string
+  label?: string
+}
+
+/**
+ * 导出 CSV。
+ *
+ * 3.1.3：`columns` 可传「内置 + 自定义」的完整列清单；`textOf` 负责把存储值翻成可读文本
+ * （多选 `["刀","盾"]` → `刀、盾`、布尔 → `是/否`）。
+ * ⚠️ 内置列的 `textOf` 一律返回原值 —— 像「保密等级」存的是单字母 `S`，
+ *    导出成长文案会**导不回来**（导入是按存储值匹配的）。
+ * ⚠️ 属性名叫 `textOf` 而不是 `valueOf`：后者与 `Object.prototype.valueOf` 撞名，
+ *    默认参数 `= {}` 时会被推断成内置方法，直接类型报错（踩过一次）。
+ */
+export function exportRowsCsv(
+  tab: TabDef,
+  rows: TableRow[],
+  opts: { columns?: readonly ExportColumn[]; textOf?: (colName: string, raw: string) => string } = {},
+): string {
+  const cols: readonly ExportColumn[] = opts.columns
+    ?? (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ name: c.name }))
+  const head = cols.map(c => csvCell(c.label ?? c.name)).join(',')
+  const body = rows.map(r => cols
+    .map(c => {
+      const raw = String(r.data[c.name] ?? '')
+      return csvCell(opts.textOf ? opts.textOf(c.name, raw) : raw)
+    })
+    .join(','))
   return [head, ...body].join('\n')
 }
 
 /** 导出空白模板 CSV：只有列头行（不含示例数据，避免误当成一条记录导进去） */
-export function exportTemplateCsv(tab: TabDef): string {
-  const cols = (tab.columns ?? []).filter(c => !c.hidden)
-  return cols.map(c => csvCell(c.name)).join(',')
+export function exportTemplateCsv(tab: TabDef, columns?: readonly ExportColumn[]): string {
+  const cols: readonly ExportColumn[] = columns
+    ?? (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ name: c.name }))
+  return cols.map(c => csvCell(c.label ?? c.name)).join(',')
 }
 
 function colTypeLabel(c: TableColumn): string {
@@ -511,7 +554,8 @@ export function buildImportPrepared(
   parsed: ParsedInput | null,
   tab: TabDef,
   ai?: { rows: Record<string, string>[]; rawCount: number; chunks: number } | null,
-): { rows: Record<string, string>[]; note: string } {
+  extra?: readonly { name: string; label: string }[],
+): { rows: Record<string, string>[]; note: string; unmapped?: string[] } {
   if (ai) {
     const rawN = ai.rawCount ?? ai.rows.length
     const chunkN = ai.chunks ?? 1
@@ -523,7 +567,7 @@ export function buildImportPrepared(
   }
   if (!parsed) return { rows: [], note: '' }
   if (parsed.table) {
-    const mapping = mapHeaders(parsed.table.headers, tab)
+    const mapping = mapHeaders(parsed.table.headers, tab, extra ?? [])
     const hit = mapping.filter(Boolean).length
     const lostCols = parsed.table.headers.filter((_, i) => !mapping[i])
     // 🔴 「未识别的列已忽略」必须**报出来**：不报的话，作者会以为整份表都导进来了，
@@ -532,6 +576,9 @@ export function buildImportPrepared(
     return {
       rows: matrixToRows(parsed.table, mapping, tab),
       note: `${parsed.note} · 匹配到 ${hit}/${mapping.length} 列${lost}`,
+      // 3.1.3：把这些列头交给弹窗 —— 图鉴页签可以一键把它们建成自定义字段，
+      // 而不是让作者眼睁睁看着整列被丢掉（方案 §8.2「外来列可映射 / 新建 / 忽略」）。
+      unmapped: [...new Set(lostCols.map(c => c.trim()).filter(Boolean))],
     }
   }
   const tx = textToRows(parsed.text ?? '', tab)

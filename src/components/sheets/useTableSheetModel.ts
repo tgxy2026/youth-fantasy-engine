@@ -28,6 +28,14 @@ import {
 } from '@/lib/db'
 import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
 import { countCodeRefs, codeRefWarning } from '@/lib/app/codeRefs'
+import { ATLAS_TABS, emptyAtlasSchema, isAtlasTab } from '@/lib/atlas/schema'
+import { atlasColumnsOf, customColumnWidth, type AtlasColumn } from '@/lib/atlas/columns'
+import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
+import { coerceAiValue } from '@/lib/atlas/values'
+import { ATLAS_TOTAL_LIMIT, atlasImageUsageOf, checkAtlasBudget } from '@/lib/atlas/quota'
+import { WEB_CLOUD } from '@/lib/app/platform'
+import { planAtlasImport, type AtlasPackage } from '@/lib/atlas/packageIO'
+import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { buildImportRows, type ImportRowResult } from '@/lib/storage/tableIO'
@@ -36,7 +44,7 @@ import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions } from '@/components/common/CustomSelect'
-import { usePersistedSet, readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
+import { usePersistedSet, usePersistedEnum, readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import type { TemplateField } from '@/lib/ai'
 
@@ -66,6 +74,10 @@ function codeSortKey(s: string | undefined): string | null {
 function colWidthsKey(tabId: string): string {
   return `colw.${tabId}`
 }
+
+/** 表格页签的全部视图（含 3.1.3 的图鉴）；顺序只影响类型推断，不影响界面顺序 */
+const TABLE_VIEW_MODES = ['table', 'timeline', 'graph', 'storyline', 'atlas'] as const
+type TableViewMode = (typeof TABLE_VIEW_MODES)[number]
 
 /**
  * 一次性迁移旧键 `yfe-colw::<表 id>` → uiPrefs 的 `yfe-ui:colw.<表 id>`。
@@ -134,9 +146,137 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const isGraphCapable = tab.id === 'relations' || tab.id === 'faction-rels'
   // 伏笔追踪提供"剧情线"视图（聚合伏笔 + 爽点 + 时间脉络，v1.6.1）
   const isStorylineCapable = tab.id === 'foreshadow'
+  /**
+   * 3.1.3：种族生物 / 物品资源提供「表格 ⇄ 图鉴」视图切换。
+   * 🔴 判据只有一个来源 —— `lib/atlas/schema.ts` 的 `isAtlasTab()`：
+   *    这里写死 `tab.id === 'races' || ...` 就会与字段解析层各说各话。
+   */
+  const isAtlasCapable = isAtlasTab(tab.id)
   // 章节总表：只读汇总视图（聚合所有卷台账），不可直接编辑，编辑请到各卷子表
   const isMaster = tab.id === 'chapter-master'
-  const [viewMode, setViewMode] = useState<'table' | 'timeline' | 'graph' | 'storyline'>('table')
+  /**
+   * 视图偏好（方案 §3.4）：按「项目 + 页签」记忆，切走再回来仍是上次那个视图。
+   * 🔴 旧实现在切页签的 effect 里 `setViewMode('table')` 强制重置 —— 与「记住偏好」直接冲突，已删。
+   *    存下的视图若本页签根本不支持（配置改过 / 换了项目），下面回落到表格。
+   */
+  const [viewModeStored, setViewMode] = usePersistedEnum<TableViewMode>(
+    `table-view::${getCurrentProjectId()}::${tab.id}`,
+    TABLE_VIEW_MODES,
+    'table',
+  )
+  const viewMode: TableViewMode =
+    (viewModeStored === 'atlas' && !isAtlasCapable) ||
+    (viewModeStored === 'timeline' && !isTimelineCapable) ||
+    (viewModeStored === 'graph' && !isGraphCapable) ||
+    (viewModeStored === 'storyline' && !isStorylineCapable)
+      ? 'table'
+      : viewModeStored
+
+  /**
+   * 3.1.3 图鉴：字段配置（项目级设置 `atlasSchema::<tabId>`，随项目 / 备份 / 同步走）。
+   * 🔴 读取用**显式 projectId**（`loadAtlasSchema` 内部走 getSettingFor），
+   *    读取失败只提示、**绝不回写空配置** —— 那会把作者的字段定义整份清掉。
+   */
+  const [atlasConfig, setAtlasConfig] = useState<AtlasSchemaConfig | null>(null)
+  const [atlasNewerFormat, setAtlasNewerFormat] = useState(false)
+  const [atlasConfigError, setAtlasConfigError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isAtlasCapable) {
+      setAtlasConfig(null)
+      setAtlasNewerFormat(false)
+      setAtlasConfigError(null)
+      return
+    }
+    let cancelled = false
+    const pid = getCurrentProjectId()
+    void loadAtlasSchema(pid, tab.id as AtlasTabId).then(r => {
+      if (cancelled) return
+      setAtlasConfig(r.config)
+      setAtlasNewerFormat(r.newerFormat)
+      setAtlasConfigError(r.error ?? null)
+      if (r.error) showToast(`字段配置读取失败：${r.error}`, 'error')
+    })
+    return () => { cancelled = true }
+  }, [isAtlasCapable, tab.id])
+
+  /**
+   * 本页签实际渲染的列（内置列原样 + 自定义字段）。
+   * 🔴 非 races／items 页签配置恒为 null ⇒ 结果与原来的 `tab.columns` 等价，行为不变。
+   */
+  const effectiveColumns = useMemo<AtlasColumn[]>(
+    () => atlasColumnsOf(tab, atlasConfig),
+    [tab, atlasConfig],
+  )
+
+  /** 保存字段配置：revision 自增在 persistence 里做，界面状态必须用**返回值**覆盖 */
+  const saveAtlasConfig = useCallback(async (next: AtlasSchemaConfig) => {
+    const pid = getCurrentProjectId()
+    const saved = await saveAtlasSchema(pid, tab.id as AtlasTabId, next)
+    setAtlasConfig(saved)
+  }, [tab.id])
+
+  /**
+   * 项目图鉴图片占用（方案 §6.2）：**所有图鉴页签合计**，不是只算当前表。
+   * 当前表从内存 `rows` 算（含刚上传/刚删的），其余页签读一次库补上 —— 只在切页签时刷新。
+   *
+   * 🔴 别写回「只差一个页签」的老写法（`tab.id === 'races' ? 'items' : 'races'`）：
+   *    3.1.3 起有四个图鉴页签，那样 nations / geography 的图根本不进配额，上限形同虚设。
+   */
+  const [otherAtlasImageBytes, setOtherAtlasImageBytes] = useState(0)
+  useEffect(() => {
+    if (!isAtlasCapable) { setOtherAtlasImageBytes(0); return }
+    let cancelled = false
+    const peers = ATLAS_TABS.filter(id => id !== tab.id)
+    void Promise.all(peers.map(id => getTableRows(id).catch(() => [])))
+      .then(lists => {
+        if (!cancelled) setOtherAtlasImageBytes(lists.reduce((n, rs) => n + atlasImageUsageOf(rs).used, 0))
+      })
+      // 读不到就先按 0 算：这是"提示用"的量，不该阻断上传（真超限也还有硬闸兜底）
+      .catch(() => { if (!cancelled) setOtherAtlasImageBytes(0) })
+    return () => { cancelled = true }
+  }, [isAtlasCapable, tab.id])
+
+  /**
+   * 批量新建自定义字段（3.1.3 · CSV 导入时「认不出的列」一步变成字段）。
+   * 🔴 新字段一律落在「补充资料」组、`aiWritable: false`（作者没显式同意前，AI 不该往里写）；
+   *    单选/多选先建空候选值 —— 让作者去「字段设置」补，别替他猜。
+   */
+  const createAtlasFields = useCallback(async (items: { label: string; type: CustomFieldType }[]) => {
+    const cfg = atlasConfig ?? emptyAtlasSchema()
+    const start = cfg.fields.length
+    const created: AtlasFieldDefinition[] = items.map((it, i) => ({
+      id: newFieldId(),
+      label: it.label.slice(0, 20),
+      type: it.type,
+      description: '',
+      options: [],
+      appliesTo: '*',
+      groupId: 'extra',
+      order: (start + i) * 10,
+      tableVisible: true,
+      detailVisible: true,
+      searchable: true,
+      aiReadable: true,
+      aiWritable: false,
+      archived: false,
+    }))
+    await saveAtlasConfig({ ...cfg, fields: [...cfg.fields, ...created] })
+  }, [atlasConfig, saveAtlasConfig])
+
+  const atlasImageUsage = useMemo(
+    () => atlasImageUsageOf(rows).used + otherAtlasImageBytes,
+    [rows, otherAtlasImageBytes],
+  )
+
+  /**
+   * 项目图片总上限按**运行形态**取（2026-10-18 主人拍板）：
+   *   · 网页版云端账号（`WEB_CLOUD`）—— 数据进服务器配额，32MiB 硬上限 + 80% 预警；
+   *   · 桌面 / 便携 / 游客网页版 —— 数据在自己机器上，**不限**（`Infinity`）。
+   * 🔴 不要在这里给本地也塞一个"宽松上限"：任何数字都会在几年后变成用户的新墙，
+   *    而本地存储的真实边界是磁盘，不是我们能拍的数字。
+   */
+  const atlasImageLimit = WEB_CLOUD ? ATLAS_TOTAL_LIMIT : Number.POSITIVE_INFINITY
+
   // 历法配置（项目级多历法数值体系），时间轴按数值判定跨历法先后顺序
   const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
   // draft = 未保存的编辑态（key=行id, value=该行字段副本）
@@ -161,11 +301,37 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   // 读者反馈 / 名词术语的专属 AI 入口（独立于补全/整理能力矩阵）
   const [showFeedbackAI, setShowFeedbackAI] = useState(false)
   const [showDedupAI, setShowDedupAI] = useState(false)
+  /**
+   * 交给 AI 的字段清单（AI 新增 / 补全本行 / 整理共用同一份）。
+   * 3.1.3：包含自定义字段，但只收 `aiWritable` 的 —— 作者在「字段设置」里关掉「允许 AI 填写」之后，
+   * 这个字段就不再是输出目标（模型看不到它，也就不会去编它的值）。
+   */
   const tableFields = useMemo<TemplateField[]>(
-    () => (tab.columns ?? []).filter(c => !c.hidden).map(c => ({ key: c.name, label: c.name, locked: c.name === codeCol })),
-    // 🔴 读 tab.columns，依赖锚在 tab 本身（getTab 返回模块常量引用，同一页签稳定）
-    [tab, codeCol],
+    () => effectiveColumns
+      .filter(c => !c.atlasField || c.atlasField.aiWritable)
+      .map(c => ({ key: c.name, label: c.atlasField?.label ?? c.name, locked: c.name === codeCol })),
+    [effectiveColumns, codeCol],
   )
+
+  /** 按存储键找自定义字段定义（内置列返回 null）—— AI 回填时判断要不要做类型校验 */
+  const atlasFieldOf = (key: string) => effectiveColumns.find(c => c.name === key)?.atlasField ?? null
+
+  /**
+   * 图鉴主图保存（3.1.3）。
+   *
+   * 🔴 为什么不走 `drafts`：草稿是「`data` 里字段值的补丁」，而主图在 `TableRow` **顶层**。
+   *    所以图片是**即选即存**：上传成功就落库并同步内存行，不参与"未保存改动"计数 ——
+   *    否则用户以为按 Ctrl+S 才保存，实际上图没保存（或反过来，保存了一堆图却没按保存）。
+   */
+  const saveRowImage = useCallback(async (rowId: string, image: AtlasImage | null) => {
+    const row = rowsRef.current.find(r => r.id === rowId)
+    if (!row) return
+    const next: TableRow = { ...row }
+    if (image) next.atlasImage = image
+    else delete next.atlasImage
+    await saveTableRow(next)
+    setRows(prev => prev.map(r => (r.id === rowId ? next : r)))
+  }, [])
   // 保存闪烁定时器（卸载时清理，防止组件卸载后仍触发 setState）
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   // 用 ref 持有最新草稿与行数据，避免切换页签时因 effect 闭包过期而丢失未保存草稿
@@ -240,9 +406,11 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     return 178
   }
   const widthOf = (colName: string) => {
-    const c = tab.columns?.find(x => x.name === colName)
+    const c = effectiveColumns.find(x => x.name === colName)
     if (!c) return 160
-    return colWidths[colName] ?? defaultColWidth(c)
+    // 自定义字段按类型给默认宽度（数字窄、长文本宽）；作者拖过列宽则以记忆值为准
+    const custom = c.atlasField ? customColumnWidth(c.atlasField.customType ?? 'text') : null
+    return colWidths[colName] ?? (custom ?? defaultColWidth(c))
   }
   const onResizeStart = (e: ReactMouseEvent, colName: string) => {
     e.preventDefault()
@@ -306,7 +474,6 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       setRows(r)
       setLoaded(true)
     })
-    setViewMode('table')
     setRelGroupOpen(new Set())
     setRelRowOpen(new Set())
     setCodeError(null)
@@ -540,8 +707,21 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
     await saveTableRow(row)
     setRows([...rows, row])
+    const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
-      if (k !== codeCol) setCellDraft(row.id, k, v)
+      if (k === codeCol) continue
+      const af = atlasFieldOf(k)
+      if (af) {
+        // 3.1.3：自定义字段先过类型校验（与「补全本行」同一口径）
+        const r = coerceAiValue(af, v)
+        if (!r.ok) { rejected.push(r.reason); continue }
+        if (r.value) setCellDraft(row.id, k, r.value)
+        continue
+      }
+      setCellDraft(row.id, k, v)
+    }
+    if (rejected.length > 0) {
+      showToast(`AI 返回的 ${rejected.length} 个自定义字段值不符合规则，已跳过：${rejected[0]}`, 'error')
     }
     setShowFill(false)
   }
@@ -549,12 +729,27 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   /**
    * AI 补全本行空白：只把当前行「仍未填写（含未保存草稿为空）」的单元格交给 AI 结果回填，
    * 已填的单元格一律不动 —— 作用域严格限定在「当前表 / 这一行」，不影响其他行或其他表（如种族生物）。
+   *
+   * 3.1.3：自定义字段先过 `coerceAiValue`（数字 / 选项 / 是真假 都要校验），
+   * 不合法的值**跳过并如实报数**，绝不静默写进去（方案 §7.3）。
    */
   const handleFillRow = (row: TableRow, values: Record<string, string>) => {
+    const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
       if (k === codeCol) continue
       const cur = ((drafts[row.id]?.[k] ?? row.data[k] ?? '') as string).trim()
-      if (!cur) setCellDraft(row.id, k, v)
+      if (cur) continue
+      const af = atlasFieldOf(k)
+      if (af) {
+        const r = coerceAiValue(af, v)
+        if (!r.ok) { rejected.push(r.reason); continue }
+        if (r.value) setCellDraft(row.id, k, r.value)
+        continue
+      }
+      setCellDraft(row.id, k, v)
+    }
+    if (rejected.length > 0) {
+      showToast(`AI 返回的 ${rejected.length} 个自定义字段值不符合规则，已跳过：${rejected[0]}`, 'error')
     }
     setFillRow(null)
   }
@@ -567,10 +762,19 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    */
   const handleOrganize = async (newRows: Record<string, string>[]) => {
     const created: TableRow[] = []
+    let rejectedCustom = 0
     try {
       for (const vals of newRows) {
         const data: Record<string, string> = {}
         tab.columns!.forEach(col => { data[col.name] = vals[col.name] ?? '' })
+        // 3.1.3：自定义字段（只收作者允许 AI 填写、且通过类型校验的值；未知键一律丢弃）
+        for (const c of effectiveColumns) {
+          const af = c.atlasField
+          if (!af || !af.aiWritable) continue
+          const r = coerceAiValue(af, vals[c.name])
+          if (!r.ok) { rejectedCustom++; continue }
+          if (r.value) data[c.name] = r.value
+        }
         if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
           data[codeCol] = nextAutoCode(tab.id, [...rows, ...created], drafts, codeCol)
         }
@@ -592,6 +796,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       throw e
     }
     setRows(prev => [...prev, ...created])
+    if (rejectedCustom > 0) {
+      showToast(`AI 整理的结果里有 ${rejectedCustom} 个自定义字段值不符合规则，已跳过`, 'error')
+    }
     // 关系网分组视图：把新整理出的关系所属分组展开，作者一眼能看到成果
     if (tab.id === 'relations') {
       setRelGroupOpen(prev => {
@@ -606,6 +813,62 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       })
     }
   }
+
+  /**
+   * 导入图鉴资料包（3.1.3 · 方案 §8.3）：**先在内存里算计划，再逐行落库**。
+   *
+   * 🔴 三条纪律：
+   *   1. 字段先落配置、行后落库 —— 行的 `data` 键已经按新字段 id 重映射过，配置不在就先写行
+   *      会得到一堆"孤键"（图鉴能显示值，但字段列里查无此字段）；
+   *   2. 图片按容量闸判断：总量装不下就**整批不带图**（而不是装一半），并如实报告跳过了几条；
+   *   3. 逐行 `await` 写库（不用 forEach 并发）—— 中途失败时已写入的行要并入内存，不能"库里有界面没有"。
+   */
+  const importAtlasPackage = useCallback(async (pkg: AtlasPackage) => {
+    const cfg = atlasConfig ?? emptyAtlasSchema()
+    const plan = planAtlasImport(pkg, cfg, newFieldId)
+    const incomingImages = plan.rows.reduce((n, r) => n + (r.atlasImage?.bytes ?? 0), 0)
+    const stripImages = checkAtlasBudget(atlasImageUsage, incomingImages, atlasImageLimit).level === 'over'
+
+    // 1) 字段配置（含新分组）
+    if (plan.created.length > 0) {
+      const groupIds = new Set(cfg.groups.map(g => g.id))
+      const extraGroups = pkg.schema.groups.filter(g => !groupIds.has(g.id))
+      await saveAtlasConfig({
+        ...cfg,
+        fields: plan.fields,
+        groups: [...cfg.groups, ...extraGroups],
+      })
+    }
+
+    // 2) 条目
+    const created: TableRow[] = []
+    for (const r of plan.rows) {
+      const data: Record<string, string> = { ...r.data }
+      if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+        data[codeCol] = nextAutoCode(tab.id, [...rowsRef.current, ...created], {}, codeCol)
+      }
+      const row: TableRow = {
+        id: uid(),
+        projectId: getCurrentProjectId(),
+        tabId: tab.id,
+        data,
+        order: rowsRef.current.length + created.length,
+        createdAt: Date.now(),
+        ...(r.atlasImage && !stripImages ? { atlasImage: r.atlasImage } : {}),
+      }
+      await saveTableRow(row)
+      created.push(row)
+    }
+    setRows(prev => [...prev, ...created])
+
+    return {
+      added: created.length,
+      createdFields: plan.created.length,
+      reusedFields: plan.reused.length,
+      strippedImages: stripImages ? plan.imageRows : 0,
+      totalImages: plan.imageRows,
+    }
+  }, [atlasConfig, atlasImageLimit, atlasImageUsage, codeCol, tab.id, tab.group, saveAtlasConfig])
 
   /**
    * 批量导入落盘（2.6.4）：与 handleOrganize 同口径 —— 直接写库、不进 drafts；
@@ -673,9 +936,13 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   }, [drafts])
   // 表头筛选：仅保留在筛选列上命中关键字的行
   // 下拉（select）列用精确匹配选项；文本列用包含匹配
+  /**
+   * 表头筛选的下拉列。自定义「是/否」字段排除在外 —— 它的存储值是 `true/false`，
+   * 露出到筛选项里既不直观，也和行内「是/否」显示不一致。
+   */
   const selectCols = useMemo(
-    () => (tab.columns ?? []).filter(c => !c.hidden && c.type === 'select' && c.options),
-    [tab.columns]
+    () => effectiveColumns.filter(c => c.type === 'select' && c.options && c.atlasField?.customType !== 'boolean'),
+    [effectiveColumns]
   )
   const selectColNames = useMemo(() => new Set(selectCols.map(c => c.name)), [selectCols])
 
@@ -684,9 +951,11 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 让用户在行内下拉里新增/删除/改名后，表头筛选下拉立刻同步。
    */
   const loadCustomOpts = useCallback(async () => {
-    if (selectCols.length === 0) return
+    // 自定义字段的候选值来自字段定义，不参与「内置列自定义选项」那套（也就没必要读库）
+    const builtinSelects = selectCols.filter(c => !c.atlasField)
+    if (builtinSelects.length === 0) return
     const entries = await Promise.all(
-      selectCols.map(async c => [c.name, await getCustomOptions(tab.id, c.name)] as const)
+      builtinSelects.map(async c => [c.name, await getCustomOptions(tab.id, c.name)] as const)
     )
     setCustomOpts(Object.fromEntries(entries))
   }, [selectCols, tab.id])
@@ -707,9 +976,12 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 表头筛选下拉的候选值：与行内 CustomSelect 完全同口径
    * （内置项去掉 hidden、应用 renamed，再拼上用户自定义项，同名去重）。
    */
-  const filterOptionsOf = (col: (typeof selectCols)[number]) =>
-    resolveOptions(col.options ?? [], customOpts[col.name] ?? { items: [], hidden: [] })
+  const filterOptionsOf = (col: (typeof selectCols)[number]) => {
+    // 自定义字段：候选值只来自字段定义（label 是唯一名称来源，没有「用户改名」这一层）
+    if (col.atlasField) return col.atlasField.options ?? []
+    return resolveOptions(col.options ?? [], customOpts[col.name] ?? { items: [], hidden: [] })
       .map(o => o.name)
+  }
   const filteredRows = useMemo(() => {
     const active = Object.entries(colFilters).filter(([, v]) => (v ?? '').trim().length > 0)
     if (active.length === 0) return sortedRows
@@ -812,8 +1084,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   // 表总宽 = 各列宽之和 + 序号列(40) + 行首操作列(ROW_ACTION_COL_W)。超出容器时由外层
   // overflow-x-auto 出横向滑条，而非压缩其他列（拖动某列只改它自己，不影响其余列宽）。
-  const totalWidth = tab.columns
-    ? tab.columns.filter(c => !c.hidden).reduce((s, c) => s + widthOf(c.name), 0) + 40 + ROW_ACTION_COL_W
+  const totalWidth = effectiveColumns
+    ? effectiveColumns.reduce((s, c) => s + widthOf(c.name), 0) + 40 + ROW_ACTION_COL_W
     : 0
 
   const isRowDirty = (r: TableRow) => !!drafts[r.id] && Object.keys(drafts[r.id]).length > 0
@@ -842,7 +1114,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 编号
     codeCol, codeError,
     // 视图与高亮
-    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
+    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
+    // 图鉴字段配置（3.1.3）
+    effectiveColumns, atlasConfig, atlasNewerFormat, atlasConfigError, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 人物关系分组
     relationGroups, relGroupOpen, setRelGroupOpen, relRowOpen, setRelRowOpen,
     // 历法

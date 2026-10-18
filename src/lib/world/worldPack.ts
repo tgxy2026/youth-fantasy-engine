@@ -19,6 +19,10 @@ import * as db from '@/lib/db'
 // 🔴 世界包的**形状**集中在 `worldTypes.ts`（无依赖）—— 存储层 `db/worlds.ts` 也要用它，
 //    留在这里会让 `db → worldPack` 成环。此处只 re-export，既有 import 路径一字不变。
 import type { WorldPackKind, WorldPackTable, WorldPackOrigin, WorldPack } from '@/lib/world/worldTypes'
+import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
+import { TABS } from '@/lib/schema'
+import { loadAtlasSchema } from '@/lib/atlas/persistence'
+import type { AtlasFieldDefinition } from '@/lib/atlas/types'
 export type { WorldPackKind, WorldPackRow, WorldPackTable, WorldPackOrigin, WorldPack } from '@/lib/world/worldTypes'
 export type { WorldVersion, WorldStoredRecord } from '@/lib/world/worldTypes'
 
@@ -104,13 +108,41 @@ export async function collectWorldPack(opts: { name: string; projectName?: strin
     }
     const rows = spec.kind === 'table' ? await db.getTableRows(spec.tabId) : await db.getCardRecords(spec.tabId)
     if (!rows.length) continue
+    /**
+     * 3.1.3（方案 §8.3）：图鉴页签要**随条目带字段定义与主图**。
+     * 只带"被这些行实际用到"的自定义字段 —— 整份配置搬过去等于替对方改了字段方案。
+     */
+    let atlasFields: AtlasFieldDefinition[] | undefined
+    if (isAtlasTab(spec.tabId)) {
+      const cfg = (await loadAtlasSchema(projectId, spec.tabId)).config
+      const usedKeys = new Set<string>()
+      for (const r of rows) {
+        for (const k of Object.keys((r as { data?: Record<string, string> }).data ?? {})) {
+          if (k.startsWith('cf_')) usedKeys.add(k)
+        }
+      }
+      const defs = cfg.fields.filter(f => usedKeys.has(f.id))
+      // 借用 resolveAtlasFields 的"有效字段"口径：归档字段不该随包走
+      const tabDef = TABS.find(t => t.id === spec.tabId) ?? ({ id: spec.tabId, columns: [] } as never)
+      const valid = new Set(resolveAtlasFields(tabDef, { config: cfg, purpose: 'export', ignoreAppliesTo: true })
+        .filter(f => f.source === 'custom').map(f => f.key))
+      const kept = defs.filter(f => valid.has(f.id))
+      if (kept.length) atlasFields = kept
+    }
     tables.push({
       tabId: spec.tabId,
       kind: spec.kind,
       rows: rows.map(r => {
-        const c = r as { id: string; name?: string; data?: Record<string, string>; order?: number }
-        return { id: c.id, ...(spec.kind === 'card' ? { name: c.name || '' } : {}), data: c.data ?? {}, order: c.order ?? 0 }
+        const c = r as { id: string; name?: string; data?: Record<string, string>; order?: number; atlasImage?: never }
+        return {
+          id: c.id,
+          ...(spec.kind === 'card' ? { name: c.name || '' } : {}),
+          data: c.data ?? {},
+          order: c.order ?? 0,
+          ...(c.atlasImage ? { atlasImage: c.atlasImage } : {}),
+        }
       }),
+      ...(atlasFields ? { atlasFields } : {}),
     })
   }
 

@@ -10,6 +10,9 @@
 import * as db from '@/lib/db'
 import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
 import { tokenize } from '@/lib/editor/tokenize'
+import { isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
+import { loadAtlasSchema } from '@/lib/atlas/persistence'
+import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import type { CardRecord, TableRow } from '@/lib/types'
 
 // 🔬 分词口径的**单一真源**已移到 `./tokenize`（纯函数，不 import db）——
@@ -88,20 +91,38 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
     }
   }
   // 表格型设定（含人物关系、名词术语、国家势力等）—— 隐藏形态下跳过
+  // 3.1.3：图鉴页签（races / items）的字段配置先加载一次，供下面的正文构造用
+  const atlasCfgs = new Map<string, AtlasSchemaConfig | null>()
+  {
+    const pid = db.getCurrentProjectId()
+    for (const id of ['races', 'items'] as const) {
+      try {
+        atlasCfgs.set(id, (await loadAtlasSchema(pid, id)).config)
+      } catch {
+        // 读配置失败不该让整份检索崩：退回原口径（全部有值字段）
+        atlasCfgs.set(id, null)
+      }
+    }
+  }
   for (const tab of TABS) {
     if (tab.type !== 'table') continue
     if (!tabVisible(tab.id, ctx)) continue
     const rows: TableRow[] = await db.getTableRows(tab.id)
     const displayCol = tab.displayCol
+    const atlasFields = isAtlasTab(tab.id)
+      ? resolveAtlasFields(tab, { config: atlasCfgs.get(tab.id) ?? null, purpose: 'search' })
+      : null
     for (const r of rows) {
+      const body = atlasFields
+        ? atlasSearchText(atlasFields, r.data)
+        : Object.entries(r.data).filter(([, v]) => v && v.trim()).map(([, v]) => v).join('\n')
+      if (!body.trim()) continue
       const filled = Object.entries(r.data).filter(([, v]) => v && v.trim())
-      if (filled.length === 0) continue
-      let title = (displayCol && r.data[displayCol]) || filled[0][1] || '（未命名）'
+      let title = (displayCol && r.data[displayCol]) || filled[0]?.[1] || '（未命名）'
       if (tab.id === 'relations') {
         const pair = `${r.data['人物A'] || ''} → ${r.data['人物B'] || ''}`.trim()
         if (pair) title = pair
       }
-      const body = filled.map(([, v]) => v).join('\n')
       docs.push({ id: `row-${r.id}`, type: 'setting', title, body, tabId: tab.id, source: tab.name })
     }
   }

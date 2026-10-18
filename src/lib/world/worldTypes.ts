@@ -24,6 +24,11 @@ export interface WorldPackRow {
   /** 字段字典（模块名::字段名 → 值） */
   data: Record<string, string>
   order: number
+  /**
+   * 图鉴主图（3.1.3 · 方案 §8.3）：只有 races / items 的行可能带。
+   * 🔴 不带图的世界包在引入后会「条目在、图不见了」，而作者根本不会想到是搬运丢的。
+   */
+  atlasImage?: import('@/lib/atlas/types').AtlasImage
 }
 
 export interface WorldPackTable {
@@ -31,6 +36,12 @@ export interface WorldPackTable {
   kind: WorldPackKind
   /** `form` → 0 或 1 项；`table` / `card` / `sub` → 行数组（按 order 已排好） */
   rows: WorldPackRow[]
+  /**
+   * 这些行**实际用到**的自定义字段定义（3.1.3；只有 races / items 会有）。
+   * 🔴 只带被用到的那些，不是整份配置：世界包是"按选中条目搬运"，
+   *    把别的字段一起塞进去等于悄悄把作者的字段方案也搬走了。
+   */
+  atlasFields?: import('@/lib/atlas/types').AtlasFieldDefinition[]
 }
 
 export interface WorldPackOrigin {

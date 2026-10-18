@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileDown, Check, CheckSquare, Square, AlertTriangle, Loader2, FileText, Trash2, Sparkles, CircleStop } from 'lucide-react'
+import { FileDown, Check, CheckSquare, Square, AlertTriangle, Loader2, FileText, Trash2, Sparkles, CircleStop, Plus } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -8,6 +8,7 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import { showToast } from '@/components/dialogs/dialogs'
 import { foldVh } from '@/lib/settings/theme'
 import type { CalendarDef, TabDef, TableRow } from '@/lib/types'
+import type { CustomFieldType } from '@/lib/atlas/types'
 import { getTableRows } from '@/lib/db'
 import { TABS, type VisCtx } from '@/lib/schema'
 import { downloadBlob } from '@/lib/storage/zip'
@@ -33,6 +34,16 @@ interface Props {
    */
   calendars?: CalendarDef[]
   visCtx?: VisCtx
+  /**
+   * 3.1.3：自定义字段的「存储键 → 字段名」映射。
+   * 传了它，CSV 里写的**字段名**才认得出（否则整列会被当成"未识别列"忽略）。
+   */
+  extraColumns?: readonly { name: string; label: string }[]
+  /**
+   * 3.1.3：把"认不出的列"建成自定义字段（仅图鉴页签提供）。
+   * 建完由父组件刷新配置 ⇒ `extraColumns` 变化 ⇒ 这里会**自动重新解析**，那些列立刻被认出来。
+   */
+  onCreateFields?: (items: { label: string; type: CustomFieldType }[]) => Promise<void>
   /** 采用：把勾选的行交给父组件落库（父组件走 buildImportRows + saveTableRow，与 AI 整理同口径） */
   onAdd: (picked: ImportRowResult[]) => Promise<void> | void
   onClose: () => void
@@ -64,7 +75,7 @@ interface Props {
  *   2. **不擅自替作者决定**：AI 拆出来的行与本地解析的行走**同一套校验与预览**，
  *      重复 / 缺必填 / 悬空都标出来，勾不勾、导不导由作者定。
  */
-export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, onAdd, onClose, guideBuilder }: Props) {
+export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, extraColumns = [], onCreateFields, onAdd, onClose, guideBuilder }: Props) {
   const [raw, setRaw] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
@@ -119,13 +130,48 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * 3.1.3：把"认不出的列"建成自定义字段。
+   * `newFieldPick` 记每列的勾选与类型；建完把 `creating` 复位 —— 配置更新后
+   * 父组件会传新的 `extraColumns`，`prepared` 重算，这些列就属于"已识别"了。
+   */
+  const [newFieldPick, setNewFieldPick] = useState<Record<string, { type: CustomFieldType; on: boolean }>>({})
+  const [busyCreating, setBusyCreating] = useState(false)
+  const [creating, setCreating] = useState(false)
+
   const parsed = useMemo(() => (raw.trim() ? parseImportText(raw) : null), [raw])
 
   /** 解析 → 行对象（AI 结果优先；否则表格走矩阵映射、纯文本走本地拆分）—— 构造已抽到 buildImportPrepared */
   const prepared = useMemo(
-    () => buildImportPrepared(parsed, tab, aiRows ? t.result : null),
-    [parsed, tab, aiRows, t.result],
+    () => buildImportPrepared(parsed, tab, aiRows ? t.result : null, extraColumns),
+    [parsed, tab, aiRows, t.result, extraColumns],
   )
+
+  /** 认不出的列（图鉴页签才给"建成字段"入口） */
+  const unmappedCols = useMemo(
+    () => (onCreateFields ? (prepared.unmapped ?? []).filter(h => !extraColumns.some(c => c.label === h)) : []),
+    [prepared.unmapped, extraColumns, onCreateFields],
+  )
+  const pickedCount = unmappedCols.filter(h => newFieldPick[h]?.on ?? true).length
+  const createPickedFields = async () => {
+    if (!onCreateFields) return
+    const items = unmappedCols
+      .filter(h => newFieldPick[h]?.on ?? true)
+      .map(h => ({ label: h, type: newFieldPick[h]?.type ?? 'text' as CustomFieldType }))
+    if (items.length === 0) return
+    setBusyCreating(true)
+    try {
+      await onCreateFields(items)
+      setCreating(true)
+      showToast(`已创建 ${items.length} 个字段，正在按新字段重新识别…`, 'success')
+      // 让上一轮的解析结果退场：配置更新后会重新解析（依赖 extraColumns）
+      setTimeout(() => setCreating(false), 600)
+    } catch (e) {
+      showToast('创建字段失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setBusyCreating(false)
+    }
+  }
 
   const ctx: ImportContext = useMemo(() => ({ existing, refValues, refLabels }), [existing, refValues, refLabels])
   const results = useMemo(
@@ -182,7 +228,11 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
   }
 
   const downloadTemplate = () => {
-    downloadBlob(`${tab.name}-导入模板.csv`, new Blob(['\uFEFF' + exportTemplateCsv(tab)], { type: 'text/csv;charset=utf-8' }))
+    const columns = [
+      ...(tab.columns ?? []).filter(c => !c.hidden).map(c => ({ name: c.name })),
+      ...(extraColumns ?? []).map(c => ({ name: c.name, label: c.label })),
+    ]
+    downloadBlob(`${tab.name}-导入模板.csv`, new Blob(['\uFEFF' + exportTemplateCsv(tab, columns)], { type: 'text/csv;charset=utf-8' }))
   }
   const downloadGuide = () => {
     // 卡片型页签会传自己的说明生成器（见 Props.guideBuilder）
@@ -293,6 +343,51 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
         {parsed && !t.running && (
           <div className="text-11 text-ink-400">
             识别为：<span className="text-amber/80">{prepared.note || parsed.note}</span>
+          </div>
+        )}
+
+        {/* 3.1.3：外来列 → 新建自定义字段（方案 §8.2「可映射 / 新建 / 忽略」，这里做「新建」这条路） */}
+        {unmappedCols.length > 0 && onCreateFields && !creating && (
+          <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2.5 space-y-2">
+            <div className="text-11 text-amber/90">
+              有 {unmappedCols.length} 列没认出来。它们是这一页还没有的字段 —— 可以一次建成自定义字段，再重新解析导入：
+            </div>
+            <ul className="space-y-1">
+              {unmappedCols.map(h => (
+                <li key={h} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={newFieldPick[h]?.on ?? true}
+                    onChange={e => setNewFieldPick(prev => ({ ...prev, [h]: { type: prev[h]?.type ?? 'text', on: e.target.checked } }))}
+                  />
+                  <span className="text-12 text-ink-100 truncate flex-1">{h}</span>
+                  <select
+                    value={newFieldPick[h]?.type ?? 'text'}
+                    onChange={e => setNewFieldPick(prev => ({ ...prev, [h]: { type: e.target.value as CustomFieldType, on: prev[h]?.on ?? true } }))}
+                    className="text-11 px-1.5 py-0.5 rounded bg-ink-900 border border-ink-700 text-ink-200 outline-none focus:border-amber/40"
+                  >
+                    <option value="text">短文本</option>
+                    <option value="longText">长文本</option>
+                    <option value="number">数字</option>
+                    <option value="select">单选</option>
+                    <option value="multiSelect">多选</option>
+                    <option value="boolean">是/否</option>
+                  </select>
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busyCreating || pickedCount === 0}
+              onClick={() => void createPickedFields()}
+              className="flex items-center gap-1.5"
+            >
+              <Plus size={12} /> 创建选中的 {pickedCount} 个字段
+            </Button>
+            <div className="text-10 text-ink-500">
+              单选 / 多选建好之后，请在「字段设置」里补上候选值；建完这里会自动重新识别这些列。
+            </div>
           </div>
         )}
 
