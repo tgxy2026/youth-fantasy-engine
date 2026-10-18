@@ -165,12 +165,16 @@ export function unlockPortableWrite(): void {
 }
 
 /** 读一次数据文件（GET /api/data）；返回形状与桌面版 `DataFileLoadResult` 对齐 */
-async function loadFromServer(): Promise<{ text?: string | null; error?: string | null; missing?: boolean; path?: string }> {
+async function loadFromServer(): Promise<{ text?: string | null; error?: string | null; missing?: boolean; path?: string; needReauth?: boolean }> {
   try {
     const res = await fetch(apiBase() + '/api/data', { cache: 'no-store' })
     if (!res.ok) {
       // 404 = 数据文件尚不存在（首次使用），由服务显式返回，不是错误
       if (res.status === 404) return { text: null, missing: true, error: null }
+      // 🔴 401 = 会话过期 / 未登录（WEB-08）。**绝不能**当成「读取失败」走 lock 分支：
+      //    那会弹出「数据文件读取失败」的红条，把「请重新登录」这件简单的事伪装成数据事故。
+      //    此时内存是空库，正确做法是回登录页 —— 重新登录后数据自然从服务端取回。
+      if (res.status === 401) return { text: null, error: null, needReauth: true }
       return { text: null, error: `HTTP ${res.status}` }
     }
     const j = (await res.json()) as { text?: string | null; path?: string; missing?: boolean }
@@ -190,6 +194,12 @@ export async function initPortableStore(): Promise<void> {
   let loaded = false
   try {
     const r = await loadFromServer()
+    // 会话过期：不锁写盘（重新登录后还要能存），但内存是空库 ⇒ 直接回登录页。
+    // 放在最前面：锁写盘会挂上红条，而这件事只需要重新登录。
+    if (r.needReauth) {
+      location.replace('/login')
+      return
+    }
     dataFilePath = r.path ?? './data/youth-fantasy-engine-data.json'
     if (r.error) {
       lock(`数据文件读取失败：${r.error}`, `读取便携数据文件失败：${r.error}。为免用空库覆盖原文件，已暂停写入。`)
@@ -274,7 +284,12 @@ export async function flushPortable(): Promise<boolean> {
       body: JSON.stringify(data),
     })
     if (!res.ok) {
-      lastError = `写入便携数据文件失败：HTTP ${res.status}`
+      // 🔴 401 单独说清原因（WEB-08）：会话 30 天过期后若只显示「写入失败 HTTP 401」，
+      //    作者不知道要去重新登录，还会以为数据存坏了。这里点明「未保存的改动有丢失风险」，
+      //    促使人尽快处理（重新登录后内存里的稿子会随下一次保存一起上去）。
+      lastError = res.status === 401
+        ? '登录已过期：未保存的改动有丢失风险，请立即重新登录'
+        : `写入便携数据文件失败：HTTP ${res.status}`
       return false
     }
     savedSeq = seqAtStart

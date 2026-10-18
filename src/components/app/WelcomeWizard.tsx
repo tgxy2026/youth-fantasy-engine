@@ -20,6 +20,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { WEB, WEB_GUEST } from '@/lib/app/platform'
 import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { ProjectBundle } from '@/lib/db'
@@ -137,6 +138,16 @@ export default function WelcomeWizard({ onDone }: Props) {
           <>
             <h2 className="text-15 font-semibold text-ink-100 mb-1">你想怎么开始？</h2>
             <p className="text-12 text-ink-400 mb-4">选一个，随时可以改 —— 三个入口在项目管理页也都找得到。</p>
+
+            {/* WEB-16：首启向导是游客**必定会看**的一屏，而此前的四重告知都在页面边缘
+                （登录页/底部胶囊/左下角数据坞），最容易就在这一屏说清「数据在哪」。
+                放在选择之前：先知道后果，再决定要不要投入写作。 */}
+            {WEB && WEB_GUEST && (
+              <p className="mb-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-11 leading-relaxed text-amber">
+                你正在以<b>游客</b>身份使用：作品保存在这个浏览器里，清除浏览数据或换设备后无法找回。
+                建议先用左下角「本地存储」导出一份备份；注册账号后可转为云端保存。
+              </p>
+            )}
 
             <div className="grid grid-cols-1 gap-3">
               {CARDS.map(c => (

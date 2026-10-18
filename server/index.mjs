@@ -127,6 +127,47 @@ function resolveSafe(urlPath) {
   return abs
 }
 
+/**
+ * 404 页面（WEB-15）。
+ * 🔴 原来是一句纯文本 `Not Found` —— 访客手误打错地址、或从旧分享链接进来时，
+ *    看到一句英文技术术语会直接关掉。现在给一句人话 + 回首页的入口。
+ *    做成 HTML 而不复用 index.html：404 时加载整个 SPA 是浪费（用户不会在这里操作）。
+ */
+function notFoundPage(path) {
+  const safe = escapeForHtml(String(path || '').slice(0, 120))
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>页面不存在 · 青春幻想引擎</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:#f7f4ee;color:#2c2c2a;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.card{width:100%;max-width:420px;background:#fff;border:1px solid #e8e1d5;border-radius:14px;padding:32px 28px;text-align:center}
+h1{margin:0 0 10px;font-size:19px;font-weight:600;color:#1f1d1a;letter-spacing:.04em}
+p{margin:0 0 6px;font-size:13px;line-height:1.8;color:#6b6459}
+code{display:block;margin:12px 0 20px;padding:8px 10px;font-size:12px;color:#8a8278;
+  background:#f6f2ea;border-radius:7px;word-break:break-all}
+a{display:inline-block;padding:9px 22px;font-size:13px;color:#fff;background:#8a6d1f;border-radius:8px;text-decoration:none;letter-spacing:.05em;transition:background .15s}
+a:hover{background:#755c19}
+</style></head><body><div class="card">
+<h1>这个页面不存在</h1>
+<p>可能是地址输错了，或者旧版本的分享链接已失效。</p>
+<code>${safe}</code>
+<a href="/">回到首页</a>
+</div></body></html>`
+}
+
+function sendNotFound(req, res, path) {
+  const body = Buffer.from(notFoundPage(path), 'utf8')
+  res.writeHead(404, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  res.end(req.method === 'HEAD' ? undefined : body)
+}
+
 function baseHeaders(ext, isIndex) {
   return {
     'Content-Type': MIME[ext] || 'application/octet-stream',
@@ -349,7 +390,7 @@ async function handleApi(req, res, url) {
   // ---- 当前用户 ----
   if (path === '/api/auth/me' && req.method === 'GET') {
     const u = authUser(req)
-    if (!u) return sendJSON(res, 401, { ok: false, error: '未登录' })
+    if (!u) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
     setUsedBytes(u.id, usageOf(u.id))
     return sendJSON(res, 200, { ok: true, user: publicUser(findById(u.id)) })
   }
@@ -363,7 +404,7 @@ async function handleApi(req, res, url) {
 
   // ---- 整库读写（契约与便携版一致）----
   if (path === '/api/data') {
-    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录' })
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
 
     if (req.method === 'GET') {
       const r = readUserData(user.id)
@@ -419,7 +460,7 @@ async function handleApi(req, res, url) {
 
   // ---- 外置大块数据 ----
   if (path === '/api/blob' || path === '/api/blob/list') {
-    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录' })
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
     const store = qs.get('store') || ''
 
     if (path === '/api/blob/list' && req.method === 'GET') {
@@ -527,7 +568,7 @@ const server = createServer((req, res) => {
 
   if (!isHtmlRequest) {
     if (serveFile(req, res, abs, ext)) return
-    return sendText(res, 404, 'Not Found')
+    return sendNotFound(req, res, pathOnly)
   }
 
   // ---- HTML：未登录给登录页，已登录给注入后的 index.html，游客给游客版 ----

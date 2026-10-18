@@ -4,6 +4,7 @@ import { encryptJSON, decryptJSON, isEncrypted } from '@/lib/storage/crypto'
 import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown, BookMarked } from 'lucide-react'
 import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { WEB } from '@/lib/app/platform'
 import { downloadBlob } from '@/lib/storage/zip'
 import { markExported } from '@/lib/sync/backupReminder'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -388,10 +389,26 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       >
         <div className="space-y-5">
           <div className="text-11 text-ink-400 leading-relaxed bg-ink-850 border border-ink-700 rounded-lg px-3 py-2">
-            打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
-            <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
-            <br />
-            这些备份都只存在这台电脑的软件数据文件里。想多一层保险，可用每行的 <span className="text-ink-200">↑ 导出</span> 把某一份存成独立文件，放进云盘或移动硬盘。
+            {WEB ? (
+              <>
+                {/* WEB-12：网页版的备份在云端，**计入账号配额** —— 原文案说「只存在这台电脑」
+                    在网页版是错的，且用户往往因此不知道配额是被备份吃掉的。 */}
+                备份存放在你的<b className="text-ink-200">云端账号</b>里，<b className="text-ink-200">占用账号配额</b>
+                （当前备份合计约 <span className="text-ink-200">{totalMB.toFixed(1)} MB</span>）。
+                打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
+                <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
+                <br />
+                配额被备份占满时，新的保存会被拒绝 —— 可删除不需要的备份，或用每行的 <span className="text-ink-200">↑ 导出</span>
+                把某一份存成独立文件（放云盘 / 移动硬盘）后再删云端备份。导出的文件与桌面版通用。
+              </>
+            ) : (
+              <>
+                打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
+                <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
+                <br />
+                这些备份都只存在这台电脑的软件数据文件里。想多一层保险，可用每行的 <span className="text-ink-200">↑ 导出</span> 把某一份存成独立文件，放进云盘或移动硬盘。
+              </>
+            )}
           </div>
 
           {/* #012：份数过多时的体验提示 —— 便携版是单 JSON 全量写盘，膨胀会直接拖慢保存 */}
