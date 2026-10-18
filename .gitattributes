@@ -1,0 +1,8 @@
+# 换行符策略：shell / systemd / Node 脚本在 Linux 上运行，CRLF 会直接导致
+# 「bad interpreter」或 unit 解析失败。Windows 默认 core.autocrlf=true，
+# 不显式声明的话，新克隆签出这些文件会变成 CRLF——本机写时看不出问题，
+# 部署到服务器才炸。故强制 eol=lf（2026-10-18 三端专项审计后补）。
+*.sh        text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.service   text eol=lf
