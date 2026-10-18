@@ -47,6 +47,14 @@ export default function CardMoveDialog({ rec, from, targets, onClose, onConfirm 
   const chosen = plans.find(p => p.tab.id === chosenId) ?? null
   const lost = chosen?.plan.lost ?? []
   const needAck = lost.length > 0
+  /**
+   * 立绘位只挂在「基础信息」模块里（见 CharacterSheet 的 `isBasicMod`）。
+   * NPC 卡的模块叫「NPC档案」，没有立绘位 ⇒ 数据搬得过去但界面上看不见。
+   * 🔴 这一条必须明说：作者传了两张图，搬完发现"图没了"会以为丢了，实际上搬回来就还在。
+   */
+  const portraitHidden = !!chosen
+    && !!(rec.portrait || rec.portrait2)
+    && !(chosen.tab.modules ?? []).some(m => m.name.includes('基础信息'))
 
   const pick = (id: string) => {
     setChosenId(id)
@@ -180,7 +188,7 @@ export default function CardMoveDialog({ rec, from, targets, onClose, onConfirm 
             )}
 
             {/* ── 特殊处理说明（合并栏 / 超集栏） ── */}
-            {chosen.plan.notes.length > 0 && (
+            {(chosen.plan.notes.length > 0 || portraitHidden) && (
               <div className="rounded-xl border border-amber/25 bg-amber/5 p-3 space-y-1">
                 {chosen.plan.notes.map((n, i) => (
                   <div key={i} className="text-11 text-amber/90 leading-relaxed flex items-start gap-1.5">
@@ -188,6 +196,15 @@ export default function CardMoveDialog({ rec, from, targets, onClose, onConfirm 
                     <span>{n}</span>
                   </div>
                 ))}
+                {portraitHidden && (
+                  <div className="text-11 text-amber/90 leading-relaxed flex items-start gap-1.5">
+                    <Info size={11} className="mt-0.5 shrink-0" />
+                    <span>
+                      「{chosen.tab.name}」没有立绘位（立绘挂在「基础信息」模块里）—— 图片数据会一起搬过去、不会丢，
+                      但在这个页签看不到；搬回带「基础信息」的页签就会重新出现。
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
