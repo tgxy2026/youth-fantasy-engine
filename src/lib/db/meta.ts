@@ -90,3 +90,15 @@ export async function setSettingFor(pid: string, key: string, value: unknown) {
 export async function delSetting(key: string): Promise<void> {
   await ops.del('settingsKV', `${currentProjectId}::${key}`)
 }
+
+/**
+ * 删除**指定项目**的一条设置（3.1.3 · R03）。
+ *
+ * 🔴 为什么必须补它：原先只有 `delSetting`（删当前项目）。凡是要删的那条**不是当前项目**的
+ *    （异步任务执行期间作者已经切了书 —— 见 `creative/interviewStore` 的串行落盘队列），
+ *    用 delSetting 就会**删掉当前这本的键**：A 的存档没删掉、B 的同名存档被误删。
+ *    这正是验收 R03 里"清理路径也可能删错项目记录"的那一半。
+ */
+export async function delSettingFor(pid: string, key: string): Promise<void> {
+  await ops.del('settingsKV', `${pid}::${key}`)
+}

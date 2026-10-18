@@ -20,10 +20,17 @@
  * 3. 超过 7 天 ⇒ 丢弃：半年后突然冒出一段旧对话，比没有更吓人。
  * 三条都**顺手把库里的键删掉**（否则孤儿键会一直躺着，还会被备份带走）。
  *
+ * ## 🔴🔴 项目绑定（3.1.3 · R03）
+ * `getSetting / setSetting / delSetting` 拼的是**调用那一刻的当前项目**。而本文件的落盘是
+ * 排队的（见下面的 `chains`）：发起保存时作者在第 A 本，等任务真正跑起来时他可能已经切到第 B 本
+ * ⇒ 存档被写进 B（验收实测 `writtenToA=false, writtenToB=true`），B 的同名存档还可能被覆盖。
+ * 所以规矩是：**入口处立刻把项目 id 抓在手里**，之后队列键、读、写、删全都走显式 pid 的
+ * `getSettingFor / setSettingFor / delSettingFor`，队列也按 `pid::scope` 分开。
+ *
  * 🔴 存档不是关键数据：读写失败只留痕、不抛 —— 绝不能因为它把对话界面卡死。
  * 🔴 本文件只能 import `@/lib/db` 与类型，不许 import 任何 component。
  */
-import { delSetting, getSetting, setSetting } from '@/lib/db'
+import { delSettingFor, getSettingFor, setSettingFor, getCurrentProjectId } from '@/lib/db'
 import type { InterviewState } from '@/lib/creative/interview'
 
 /** 存储键前缀 */
@@ -79,12 +86,16 @@ export function archiveAgeLabel(updatedAt: number, now = Date.now()): string {
  *
  * @param now 仅供测试注入（默认 `Date.now()`）
  */
-export async function loadInterviewArchive(scope: string, now = Date.now()): Promise<InterviewArchive | null> {
+export async function loadInterviewArchive(
+  scope: string,
+  now = Date.now(),
+  pid = getCurrentProjectId(),
+): Promise<InterviewArchive | null> {
   const key = interviewKeyOf(scope)
-  if (!key) return null
+  if (!key || !pid) return null
   let raw: unknown
   try {
-    raw = await getSetting<unknown>(key, null)
+    raw = await getSettingFor<unknown>(pid, key, null)
   } catch (e) {
     // 读失败 = 这次没有存档（不影响对话本身）
     console.warn('[interviewStore] 读取对话存档失败：', e)
@@ -92,7 +103,8 @@ export async function loadInterviewArchive(scope: string, now = Date.now()): Pro
   }
   if (!isUsableArchive(raw)) {
     // 结构不可用（含"从来没存过"的 null）—— 只有真存过东西才值得删，避免每次打开都打一次删除
-    if (raw !== null && raw !== undefined) await clearInterviewArchive(scope)
+    // 🔴 清的是**读的那本项目**（pid），不是"读到结果时恰好打开的那本"
+    if (raw !== null && raw !== undefined) await clearInterviewArchive(scope, pid)
     return null
   }
   const a = raw
@@ -105,7 +117,7 @@ export async function loadInterviewArchive(scope: string, now = Date.now()): Pro
    */
   const answered = a.state.turns.filter(t => t.role === 'user').length
   if (a.applied || answered === 0 || now - a.updatedAt > INTERVIEW_ARCHIVE_TTL_MS) {
-    await clearInterviewArchive(scope)
+    await clearInterviewArchive(scope, pid)
     return null
   }
   return a
@@ -117,44 +129,68 @@ export async function loadInterviewArchive(scope: string, now = Date.now()): Pro
  * 🔴 为什么必须要：`runTurn` 是异步的，作者手快连发两轮时，第二次 `setSetting` 可能先于第一次
  *    完成 ⇒ 库里留下的是**旧那一轮**（界面显示 3 轮、重开只剩 2 轮）。串行链让写入按调用顺序排队。
  * 🔴 链上每个节点都必须 catch 掉自己的异常：一处失败不能让后面所有落盘都断掉。
+ *
+ * 🔴🔴 队列键是 `pid::scope`（3.1.3 · R03）：原来的键只有 scope，于是两本项目的同一功能
+ *    会**共用一条链** —— 不只是"慢一点"，而是 A 的写入得等 B 的写入跑完，
+ *    期间若作者切回 A 看到的是"还没存上"，而且删操作也可能排到别人的写后面。
  */
 const chains = new Map<string, Promise<unknown>>()
 
-/** 落盘。返回**是否真的存上了**（失败只留痕，不抛） */
-export async function saveInterviewArchive(scope: string, a: InterviewArchive): Promise<boolean> {
+/** 队列键：项目 + 作用域（见上） */
+function chainKeyOf(pid: string, scope: string): string {
+  return `${pid}::${scope}`
+}
+
+/**
+ * 落盘。返回**是否真的存上了**（失败只留痕，不抛）。
+ *
+ * 🔴 `pid` 默认取**调用这一刻**的当前项目并立刻固定下来 —— 等队列真跑起来时
+ *    作者可能已经切书，那时再取就成"把 A 的对话存进 B"（验收 R03 已复现）。
+ */
+export async function saveInterviewArchive(
+  scope: string,
+  a: InterviewArchive,
+  pid = getCurrentProjectId(),
+): Promise<boolean> {
   const key = interviewKeyOf(scope)
-  if (!key) return false
-  const prev = chains.get(key) ?? Promise.resolve()
+  if (!key || !pid) return false
+  const ck = chainKeyOf(pid, scope)
+  const prev = chains.get(ck) ?? Promise.resolve()
   const next = prev
     .catch(() => { /* 上一环失败不影响这一环 */ })
     .then(async () => {
       try {
-        await setSetting(key, a)
+        await setSettingFor(pid, key, a)
         return true
       } catch (e) {
         console.warn('[interviewStore] 对话存档写入失败（本次未落库，对话照常）：', e)
         return false
       }
     })
-  chains.set(key, next)
+  chains.set(ck, next)
   return next
 }
 
-/** 删掉存档（填回表单后 / 作者选「重新开始」时调用）。幂等：不存在也算成功 */
-export async function clearInterviewArchive(scope: string): Promise<void> {
+/**
+ * 删掉存档（填回表单后 / 作者选「重新开始」/ 读到过期存档时调用）。幂等：不存在也算成功。
+ *
+ * 🔴 同样要传 pid：异步清理路径（读到过期存档后再删）若用"当前项目"，会删错书的那条。
+ */
+export async function clearInterviewArchive(scope: string, pid = getCurrentProjectId()): Promise<void> {
   const key = interviewKeyOf(scope)
-  if (!key) return
+  if (!key || !pid) return
+  const ck = chainKeyOf(pid, scope)
   // 清也要排在写入之后：否则一个还没落完的写会把刚删的存档又写回来
-  const prev = chains.get(key) ?? Promise.resolve()
+  const prev = chains.get(ck) ?? Promise.resolve()
   const next = prev
     .catch(() => { /* 同上 */ })
     .then(async () => {
       try {
-        await delSetting(key)
+        await delSettingFor(pid, key)
       } catch (e) {
         console.warn('[interviewStore] 对话存档清理失败：', e)
       }
     })
-  chains.set(key, next)
+  chains.set(ck, next)
   await next
 }

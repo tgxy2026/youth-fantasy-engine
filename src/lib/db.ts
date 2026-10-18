@@ -34,7 +34,11 @@ export * from '@/lib/db/tabs'
 // 母级不在这里 —— 它就是 tabs 的 formData 那一份，位置与 API 都没变。
 export * from '@/lib/db/worldSets'
 export type { DailyStat } from '@/lib/db/meta'
-export { getMeta, setMeta, getDailyStats, putDailyStat, getSetting, setSetting, getSettingFor, setSettingFor, delSetting } from '@/lib/db/meta'
+export {
+  getMeta, setMeta, getDailyStats, putDailyStat,
+  getSetting, setSetting, delSetting,
+  getSettingFor, setSettingFor, delSettingFor,
+} from '@/lib/db/meta'
 export * from '@/lib/db/tavernReports'
 export * from '@/lib/db/aiRuns'
 export * from '@/lib/db/syncConflicts'
