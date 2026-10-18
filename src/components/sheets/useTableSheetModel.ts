@@ -41,7 +41,7 @@ import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persis
 import { coerceAiValue } from '@/lib/atlas/values'
 import { ATLAS_TOTAL_LIMIT, atlasImageUsageOf, checkAtlasBudget } from '@/lib/atlas/quota'
 import { WEB_CLOUD } from '@/lib/app/platform'
-import { planAtlasImport, type AtlasPackage } from '@/lib/atlas/packageIO'
+import { packageRowId, planAtlasImport, type AtlasPackage } from '@/lib/atlas/packageIO'
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
@@ -915,7 +915,17 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *   2. 图片按容量闸判断：总量装不下就**整批不带图**（而不是装一半），并如实报告跳过了几条；
    *   3. 逐行 `await` 写库（不用 forEach 并发）—— 中途失败时已写入的行要并入内存，不能"库里有界面没有"。
    */
-  const importAtlasPackage = useCallback(async (pkg: AtlasPackage) => {
+  const importAtlasPackage = useCallback(async (pkg: AtlasPackage): Promise<{
+    added: number
+    createdFields: number
+    reusedFields: number
+    strippedImages: number
+    totalImages: number
+    /** 落库失败的行数（3.1.3 · R11：如实报数，不静默） */
+    failed: number
+    /** 最后一次失败的原因 */
+    failure: string
+  }> => {
     const cfg = atlasConfig ?? emptyAtlasSchema()
     const plan = planAtlasImport(pkg, cfg, newFieldId)
     const incomingImages = plan.rows.reduce((n, r) => n + (r.atlasImage?.bytes ?? 0), 0)
@@ -934,24 +944,40 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
     // 2) 条目
     const created: TableRow[] = []
-    for (const r of plan.rows) {
-      const data: Record<string, string> = { ...r.data }
-      if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
-        data[codeCol] = nextAutoCode(tab.id, [...rowsRef.current, ...created], {}, codeCol)
+    let failed = 0
+    let failure = ''
+    try {
+      for (let i = 0; i < plan.rows.length; i++) {
+        const r = plan.rows[i]
+        const data: Record<string, string> = { ...r.data }
+        if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
+          data[codeCol] = nextAutoCode(tab.id, [...rowsRef.current, ...created], {}, codeCol)
+        }
+        const row: TableRow = {
+          // 🔴 稳定 id（3.1.3 · R11）：同一份包重导得到同一批 id ⇒ **重试是幂等的**，
+          //    不会把上次已成功的行再写一遍变成重复条目（修复前用的是 uid()，重试即翻倍）。
+          id: packageRowId(pkg, i),
+          projectId: getCurrentProjectId(),
+          tabId: tab.id,
+          data,
+          order: rowsRef.current.length + created.length,
+          createdAt: Date.now(),
+          ...(r.atlasImage && !stripImages ? { atlasImage: r.atlasImage } : {}),
+        }
+        try {
+          await saveTableRow(row)
+          created.push(row)
+        } catch (e) {
+          // 🔴 单行失败**不吞也不中断**：记下来继续，最后如实报数（同 handleImport 的口径）
+          failed++
+          failure = e instanceof Error ? e.message : String(e)
+        }
       }
-      const row: TableRow = {
-        id: uid(),
-        projectId: getCurrentProjectId(),
-        tabId: tab.id,
-        data,
-        order: rowsRef.current.length + created.length,
-        createdAt: Date.now(),
-        ...(r.atlasImage && !stripImages ? { atlasImage: r.atlasImage } : {}),
-      }
-      await saveTableRow(row)
-      created.push(row)
+    } finally {
+      // 🔴 已成功的行**必须**先并入内存再谈别的：否则"库里有、界面没有"，
+      //    作者刷新才看到，还可能以为没导进去又导一次（修复前只在全部成功时才 setRows）。
+      if (created.length) setRows(prev => [...prev, ...created])
     }
-    setRows(prev => [...prev, ...created])
 
     return {
       added: created.length,
@@ -959,6 +985,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       reusedFields: plan.reused.length,
       strippedImages: stripImages ? plan.imageRows : 0,
       totalImages: plan.imageRows,
+      failed,
+      failure,
     }
   }, [atlasConfig, atlasImageLimit, atlasImageUsage, codeCol, tab.id, tab.group, saveAtlasConfig])
 

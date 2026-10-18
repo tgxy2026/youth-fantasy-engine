@@ -262,6 +262,19 @@ export function parseAtlasPackage(text: string): ParseResult {
   }
 }
 
+/**
+ * 资料包条目的**稳定 id**（3.1.3 · R11）。
+ *
+ * 🔴 为什么要稳定而不用 `uid()`：分批导入中途失败时，前 N-1 行其实已经入库了。
+ *    修复前只在"全部成功"时才并入界面 ⇒ 作者看到的是"一条都没进来"，于是再导一次 ——
+ *    而重试用的是新 uid，成功的那批被**再写一遍**，变成两条一模一样的条目。
+ *    id 由「包指纹 + 行序号」算出 ⇒ 同一份包重导落在同一批 id 上 ⇒ **重试天然幂等**，
+ *    重导只会补上上次没成功的那几条。
+ */
+export function packageRowId(pkg: AtlasPackage, index: number): string {
+  return `atk-${pkg.exportedAt || 0}-${pkg.rows.length}-${pkg.tabId}-${index}`
+}
+
 export interface ImportPlan {
   /** 导入后应有的完整字段清单（原有 + 新建） */
   fields: AtlasFieldDefinition[]

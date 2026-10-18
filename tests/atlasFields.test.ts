@@ -24,7 +24,7 @@ import {
 } from '@/lib/atlas/quota'
 import {
   ATLAS_PACKAGE_MAX_IMAGE_CHARS, ATLAS_PACKAGE_MAX_ROWS,
-  buildAtlasPackage, parseAtlasPackage, planAtlasImport, previewAtlasImport,
+  buildAtlasPackage, packageRowId, parseAtlasPackage, planAtlasImport, previewAtlasImport,
 } from '@/lib/atlas/packageIO'
 import { dataUrlBytes } from '@/lib/media/imagePortrait'
 import { buildImportPrepared, exportRowsCsv, mapHeaders, parseImportText } from '@/lib/storage/tableIO'
@@ -946,6 +946,50 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const mgrSrc = read('src/components/atlas/AtlasFieldManager.tsx')
   ok('㉔ 字段管理器接住写入服务的拒写错误（不变成未处理 Promise）',
     /} catch \(e\) \{[\s\S]{0,200}setErr\(/.test(mgrSrc))
+}
+
+// ---------- ㉗ R10（2026-10-19 修）：主图必须等落库真成功才提示 ----------
+{
+  const detail = read('src/components/atlas/AtlasDetail.tsx')
+  ok('㉗ R10：回调返回 Promise（不再是 void 丢掉）',
+    /onImageChange: \(image: AtlasImage \| null\) => void \| Promise<void>/.test(detail))
+  ok('㉗ R10：上传 await 落库结果后才提示"已更新"', /await commitImage\(r\.image\)/.test(detail))
+  ok('㉗ R10：移除也 await（移除失败时不能先说已移除）', /await commitImage\(null\)/.test(detail))
+  ok('㉗ R10：落库失败如实报错（不谎报成功）', /主图保存失败/.test(detail))
+  ok('㉗ R10：上传与移除串行（连点不互相覆盖）', /chainRef\.current/.test(detail))
+  ok('㉗ R10 负向：不再把 Promise 丢进 void', !/void onImageChange\(/.test(detail))
+  const view = read('src/components/atlas/AtlasView.tsx')
+  ok('㉗ R10 负向：父组件不再 void 掉保存 Promise（否则 catch 不到失败）',
+    !/void onSaveImage\?\.\(/.test(view))
+}
+
+// ---------- ㉘ R11（2026-10-19 修）：分批导入中断后已成功的行要进界面，重试不翻倍 ----------
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const pkg = buildAtlasPackage(races, emptyAtlasSchema(), [
+    { id: 'r1', projectId: 'p1', tabId: 'races', order: 0, data: { 名称: '甲' } },
+    { id: 'r2', projectId: 'p1', tabId: 'races', order: 1, data: { 名称: '乙' } },
+  ] as never, { now: 1700000000000 })
+
+  // ① 稳定 id：同一份包两次算出同一批 id ⇒ 重导是"覆盖/补齐"，不是翻倍
+  const ids1 = pkg.rows.map((_, i) => packageRowId(pkg, i))
+  const ids2 = pkg.rows.map((_, i) => packageRowId(pkg, i))
+  ok('㉘ R11：同一份包算出的 id 稳定', ids1.join('|') === ids2.join('|'), ids1.join('|'))
+  ok('㉘ R11：不同行的 id 不同', ids1[0] !== ids1[1])
+  ok('㉘ R11：id 带包指纹前缀（不与手工建的行撞）', ids1.every(id => id.startsWith('atk-')))
+  const other = buildAtlasPackage(races, emptyAtlasSchema(), pkg.rows as never, { now: 1700000000001 })
+  ok('㉘ R11：另一份包（时间不同）算出不同 id ⇒ 不会互相覆盖',
+    packageRowId(other, 0) !== ids1[0])
+
+  // ② 源码闸：中途失败也要并入已成功的行，并如实报数
+  const model = read('src/components/sheets/useTableSheetModel.ts')
+  ok('㉘ R11：单行失败不中断（记下来继续）', /catch \(e\) \{\s*\n\s*\/\/ 🔴 单行失败/.test(model))
+  ok('㉘ R11：finally 里把已成功的行并入界面（不再只在全部成功时 setRows）',
+    /\} finally \{[\s\S]{0,400}if \(created\.length\) setRows\(/.test(model))
+  ok('㉘ R11：返回结果带失败数与原因', /failed,\s*\n\s*failure,/.test(model))
+  ok('㉘ R11：条目 id 用稳定 id（不是 uid）', model.includes('id: packageRowId(pkg, i)'))
+  const sheet = read('src/components/sheets/TableSheet.tsx')
+  ok('㉘ R11：界面如实显示"部分成功 + 可再导一次补齐"', /res\.failed > 0/.test(sheet))
 }
 
 console.log(`\n—— atlasFields 用例结束：${pass} 通过 / ${fail} 失败 ——`)

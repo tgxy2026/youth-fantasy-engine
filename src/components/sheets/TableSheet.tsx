@@ -180,7 +180,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         try { await addCustomItem(tab.id, '类别', v) } catch { /* 登记失败不影响条目本身 */ }
       }
       const strip = res.strippedImages > 0 ? `；容量不足，有 ${res.strippedImages} 条图片未导入` : ''
-      showToast(`已导入 ${res.added} 条，新建字段 ${res.createdFields} 个${strip}`, strip ? 'error' : 'success')
+      // 🔴 R11：如实报"部分成功"—— 已入库的已并入列表，失败的那几条没进来；
+      //    同一份包再导一次只会补上缺的（条目 id 由包指纹算出，重试幂等，不会翻倍）。
+      const partial = res.failed > 0 ? `；${res.failed} 条落库失败（${res.failure}）—— 已导入的已在列表里，可再导一次补齐` : ''
+      const level = res.failed > 0 ? 'error' : (strip ? 'error' : 'success')
+      showToast(`已导入 ${res.added} 条，新建字段 ${res.createdFields} 个${strip}${partial}`, level)
     } catch (e) {
       showToast('导入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     }

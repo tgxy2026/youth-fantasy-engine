@@ -24,8 +24,13 @@ interface Props {
   sections: readonly AtlasResolvedSection[]
   /** 主图（`TableRow.atlasImage`） */
   image?: AtlasImage | null
-  /** 主图变更：null = 移除。父组件负责落库（即选即存，不进文字草稿） */
-  onImageChange: (image: AtlasImage | null) => void
+  /**
+   * 主图变更：null = 移除。父组件负责落库（即选即存，不进文字草稿）。
+   * 🔴 返回 Promise（3.1.3 · R10）：落库是异步的，**必须等它真的写完**才能提示"已更新" ——
+   *    之前这里是 `void`，父组件又把 Promise 丢掉 ⇒ 磁盘写不进去 / 云端登录过期 / 配额不足时
+   *    作者看到的仍是"主图已更新"，而图其实没存上（修复前是未处理 Promise 静默失败）。
+   */
+  onImageChange: (image: AtlasImage | null) => void | Promise<void>
   /** 项目图鉴图片已用字节（races + items 合计），用于容量提示与硬闸 */
   projectImageBytes?: number
   /** 项目图片总上限；`Infinity` = 本机存储不限（桌面 / 便携 / 游客网页版）。默认按云端档位保守处理 */
@@ -41,6 +46,30 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
 
+  /**
+   * 上传 / 移除的**串行链**（3.1.3 · R10）。
+   * 作者手快连点两次"换一张"时，两次落库若并发跑，后写者可能用旧行覆盖前者的图 ⇒
+   * 界面显示的与库里的不是同一张。串起来之后顺序即结果。
+   */
+  const chainRef = useRef<Promise<unknown>>(Promise.resolve())
+
+  /** 落库并**等它真的写完**再提示；失败保留原图并如实报错（不谎报成功、不静默吞错） */
+  const commitImage = async (next: AtlasImage | null) => {
+    setBusy(true)
+    const run = chainRef.current.catch(() => undefined).then(() => onImageChange(next))
+    // 链上存的是"已消化失败"的版本：一次失败不能堵死后续所有操作
+    chainRef.current = run.then(() => undefined, () => undefined)
+    try {
+      await run
+      return true
+    } catch (e) {
+      showToast(`主图保存失败（原图未改动）：${e instanceof Error ? e.message : String(e)}`, 'error')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** 选图 → 压缩 → 容量检查 → 交给父组件落库。失败原因直接展示给作者（不吞错、不写半成品） */
   const pickImage = async (file: File | undefined) => {
     if (!file) return
@@ -55,7 +84,9 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
         showToast(check.reason ?? '项目图片容量不足', 'error')
         return
       }
-      onImageChange(r.image)
+      // 🔴 必须 await：落库真的成功了才提示"已更新"
+      const okSave = await commitImage(r.image)
+      if (!okSave) return
       showToast(
         `主图已更新（${Math.round(r.image.bytes / 1024)}KB，${r.image.width}×${r.image.height}）`
         + (check.level === 'warn' ? ` · 项目图片已用 ${atlasUsageText(check.after, imageLimit)}，快满了` : ''),
@@ -64,6 +95,11 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
     } finally {
       setBusy(false)
     }
+  }
+
+  /** 移除主图：同样要等落库（移除失败时图还在，不能先说"已移除"） */
+  const removeImage = async () => {
+    if (await commitImage(null)) showToast('已移除主图（文字内容不受影响）')
   }
 
   /** 容量提示的成色：≥80% 琥珀、超限红（和方案 §6.2 的提示口径一致） */
@@ -145,7 +181,7 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
           {image && (
             <button
               type="button"
-              onClick={() => onImageChange(null)}
+              onClick={() => void removeImage()}
               disabled={busy}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-10 text-ink-500 hover:text-danger transition-colors disabled:opacity-50"
               title="移除主图（文字内容不受影响）"

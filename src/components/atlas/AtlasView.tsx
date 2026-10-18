@@ -219,7 +219,8 @@ export default function AtlasView({ tab, rows, aliases, config, onEditInTable, o
             badges={atlasCardBadges(tab.id, selected.data)}
             sections={sections}
             image={selected.atlasImage}
-            onImageChange={img => void onSaveImage?.(selected.id, img)}
+            // 🔴 不丢 Promise（3.1.3 · R10）：详情要 await 落库结果才能提示"已更新"
+            onImageChange={img => onSaveImage?.(selected.id, img)}
             projectImageBytes={imageUsage}
             imageLimit={imageLimit}
             overlay={narrow}
