@@ -117,7 +117,15 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                       <div className="mt-1 text-11 text-ink-500">
                         上下文：{r.context.sections.length} 段 / {r.context.chars} 字
                         {r.context.dropped.length > 0 && (
-                          <span className="text-amber"> · 预算外未带 {r.context.dropped.length} 段</span>
+                          <span className="text-amber" title={r.context.dropped.join('、')}>
+                            {' '}· 预算外未带 {r.context.dropped.length} 段
+                          </span>
+                        )}
+                        {/* 3.1.3 R3：与「完全没带」分开显示 —— 这些带了一部分，作者得知道不能当全集看 */}
+                        {(r.context.trimmed?.length ?? 0) > 0 && (
+                          <span className="text-amber" title={(r.context.trimmed ?? []).join('、')}>
+                            {' '}· 只带了一部分 {(r.context.trimmed ?? []).length} 段
+                          </span>
                         )}
                       </div>
                     )}

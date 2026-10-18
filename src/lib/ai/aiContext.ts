@@ -23,10 +23,11 @@ import { buildSemanticRecallBlock } from '@/lib/semantic/inject'
 import { buildKbBlock } from '@/lib/search/kbInject'
 import { getTempDocs, renderTempDocs } from '@/lib/ai/tempDocs'
 import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
-import { planFor } from '@/lib/ai/contextLayers'
+import { CHAPTER_RESERVE_CHARS, planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import { isAtlasTab } from '@/lib/atlas/schema'
 import { cellCap } from '@/lib/ai/fieldCap'
+import { createContextAssembler } from '@/lib/ai/contextAssembler'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
 import { formatCustomValue } from '@/lib/atlas/values'
 import type { ResolvedAtlasField } from '@/lib/atlas/types'
@@ -35,7 +36,7 @@ import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
 export interface ProjectContextOptions {
   /**
-   * 总字符预算。**不传则按项目规模取档**（见 `lib/contextLayers.ts`；小项目＝12000，与旧行为一致）。
+   * 总字符预算。**不传则按项目规模取档**（见 `lib/ai/contextLayers.ts`；小项目＝16000）。
    * 本地小模型建议显式传 6000~8000。
    */
   budget?: number
@@ -942,28 +943,36 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   // 锚点白名单（null = 不裁剪）
   const anchorAllow = opts.anchorChapterId ? await idsUpToAnchor(opts.anchorChapterId) : null
 
-  const parts: string[] = []
-  const sections: string[] = []
-  const dropped: string[] = []
-  let used = 0
+  /**
+   * 章节清单要**先算再装配** —— 预留额度按它的真实长度定（见下方 reserve）。
+   *
+   * 3.1.3 · R3（主人 2026-10-18 拍板 A+B）：short 档预算 12000 → 16000，
+   * 同时给清单独占一块预留。两件事必须一起做：
+   *   · 只抬预算不预留 ⇒ 贪心装载照样把空间吃光，清单位次太靠后，实测 32000 时仍进不来；
+   *   · 只预留不抬预算 ⇒ 得从设定段里硬扣，人物关系被裁、丢弃反而变多（实测净损）。
+   */
+  const chapterDigest = opts.includeChapterList === false
+    ? ''
+    : await buildChapterDigest(plan.digestChapters, opts.anchorChapterId).catch(() => '')
+
+  /**
+   * 预留 = 清单实际长度（上限 `CHAPTER_RESERVE_CHARS`）。
+   * 🔴 别改成固定比例：清单只有 800 字时留 3600 会白白浪费，把「写作规范 / 势力关系」
+   *    这类小段挤出去（这正是"修一个问题造一个问题"）。清单为空时预留为 0。
+   */
+  const reserve = chapterDigest ? Math.min(chapterDigest.length + 40, CHAPTER_RESERVE_CHARS) : 0
+
+  /**
+   * 装配器：负责「放不放得下 / 放不下怎么裁 / 如何如实申报」。
+   * 实现与实测数据见 `lib/ai/contextAssembler.ts` 与 `lib/ai/segBudget.ts`。
+   */
+  const asm = createContextAssembler(budget, { inlineDropNote: opts.inlineDropNote, reserve })
+  const push = asm.push
 
   // 🆕 3.0.3 · 项目级查询文本（书名 + 简介）—— 供**没有焦点章**的调用点
   //   （AI 助手 / 灵感创作 / AI 伴写…）做〖参考资料〗召回的降级 query。
-  //   理由见 `KbInjectOptions.fallbackQuery`：参考资料是作者**全项目共用**的素材，
-  //   不该因为某个功能没有"当前写到哪"就一段都读不到（本轮修的就是这处漏接）。
+  //   参考资料是作者**全项目共用**的素材，不该因为某个功能没有"当前写到哪"就一段都读不到。
   let projectLevelQuery = ''
-
-  const push = (title: string, body: string) => {
-    if (!body.trim()) return
-    const block = `〖${title}〗\n${body.trim()}`
-    if (used + block.length > budget) {
-      dropped.push(title)
-      return
-    }
-    parts.push(block)
-    sections.push(title)
-    used += block.length + 2
-  }
 
   // 🆕 3.0.3 · 本次附加文件（AI 弹窗「附加文件」的一次性资料，不落库、不进索引）。
   // 🔴 放在**整条序列的最前面**（还在「作品概览」之前）：它是作者**显式**递进来的东西，
@@ -972,7 +981,8 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   //    被静默丢掉，比参考资料没进来严重得多。
   //    机制与生命周期纪律见 `lib/ai/tempDocs.ts`（独立模块：aiContext 已贴着 1200 行结构闸）。
   if (getTempDocs().length > 0 && !opts.skeletonOnly) {
-    push('本次附加文件', renderTempDocs(getTempDocs()))
+    // 作者显式递进来的东西整块进，不参与单段裁剪
+    push('本次附加文件', renderTempDocs(getTempDocs()), { whole: true })
   }
 
   // 头部：项目基本信息 + 体量统计（几乎不占预算，但对模型判断"写到哪了"很关键）
@@ -1111,19 +1121,16 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     if (kbBlock) push('参考资料', kbBlock)
   }
 
-  if (opts.includeChapterList !== false) {
-    const digest = await buildChapterDigest(plan.digestChapters, opts.anchorChapterId)
-    push('章节清单', digest)
+  if (chapterDigest) {
+    // 它是「写到哪了」的唯一来源 ⇒ 允许动用预留额度，否则永远排不到
+    push('章节清单', chapterDigest, { reserved: true })
   }
 
-  // 被预算丢弃的段落必须在文末声明，否则模型会把自己没看到的资料当成不存在
-  const note = dropped.length > 0 && opts.inlineDropNote !== false
-    ? `\n\n（注：以下资料因长度预算未带入本提示，仅供参考时留意其可能存在：${dropped.join('、')}）`
-    : ''
-  const text = parts.join('\n\n') + note
+  // 收尾：被丢弃 / 被裁剪的段落都在文末如实声明（否则模型会把残缺当全集）
+  const built = asm.build()
   // 3.0 · W1-2c：记下本次装配（供运行账本「上下文查看」）
-  lastAssembly = { at: Date.now(), sections: [...sections], dropped: [...dropped], chars: text.length, budget }
-  return { text, sections, dropped, chars: text.length }
+  lastAssembly = { at: Date.now(), sections: built.sections, dropped: built.dropped, trimmed: built.trimmed, chars: built.chars, budget }
+  return { text: built.text, sections: built.sections, dropped: built.dropped, chars: built.chars }
 }
 
 /**

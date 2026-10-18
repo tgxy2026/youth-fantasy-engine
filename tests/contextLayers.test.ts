@@ -4,7 +4,7 @@
 //   ① 规模判定与配额（纯函数）—— 阈值边界、单调性；
 //   ② 🔴 **小项目档位冻结** —— 改造不该动到中短篇的手感（short 档必须与旧写死值逐项相等）。
 import fs from 'node:fs'
-import { scaleOf, planFor, LAYER_PLANS, SCALE_GATES } from '../src/lib/ai/contextLayers'
+import { CHAPTER_RESERVE_CHARS, scaleOf, planFor, LAYER_PLANS, SCALE_GATES } from '../src/lib/ai/contextLayers'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -42,9 +42,19 @@ console.log('\n—— contextLayers 用例开始 ——')
   ok('planFor 与 LAYER_PLANS 一致', planFor(500_000) === LAYER_PLANS.long)
 }
 
-// ---------- ③ 🔴 小项目档位冻结（与改造前逐项相等） ----------
+// ---------- ③ 小项目档位（预算 3.1.3 起主动上调，其余仍冻结） ----------
 {
-  ok('🔴 short 档预算 = 旧写死值 12000', LAYER_PLANS.short.budget === 12_000, String(LAYER_PLANS.short.budget))
+  /**
+   * 🔴 3.1.3 · R3：short 档预算由 12000 抬到 16000（主人 2026-10-18 拍板）。
+   *    原断言是"与改造前写死值相等"，那条**已被主动作废** —— 实测 12000 装完前期设定就没了，
+   *    章节清单 + 种族生物/物品资源/地理风物 共 19 段被整段丢弃。
+   *    这里改成钉住"抬高这件事本身"，防止有人无声地改回 12000（那会让 R3 白做）。
+   */
+  ok('🔴 short 档预算 = 16000（3.1.3 上调，别悄悄改回 12000）',
+    LAYER_PLANS.short.budget === 16_000, String(LAYER_PLANS.short.budget))
+  ok('🔴 章节清单预留常量 = 1800 且不超过 short 预算的 1/4',
+    CHAPTER_RESERVE_CHARS === 1800 && CHAPTER_RESERVE_CHARS <= LAYER_PLANS.short.budget / 4,
+    String(CHAPTER_RESERVE_CHARS))
   ok('🔴 short 档相关章节召回 = 旧默认 8', LAYER_PLANS.short.relatedChapters === 8, String(LAYER_PLANS.short.relatedChapters))
   ok('🔴 short 档章节清单 = 旧默认 200', LAYER_PLANS.short.digestChapters === 200, String(LAYER_PLANS.short.digestChapters))
 }
@@ -56,6 +66,17 @@ console.log('\n—— contextLayers 用例开始 ——')
   ok('🔴 相关章节召回走规模门', /opts\.relatedChapterLimit \?\? plan\.relatedChapters/.test(src))
   ok('🔴 章节清单上限走规模门', /buildChapterDigest\(plan\.digestChapters/.test(src))
   ok('🔴 不再写死 const budget = opts.budget ?? 12000', !/const budget = opts\.budget \?\? 12000/.test(src))
+
+  /**
+   * 3.1.3 · R3 的接线闸。
+   * 🔴 这三条缺一条，R3 就等于没做：常量抬了但没预留 / 预留了但清单没申请动用 /
+   *    或者预留写成固定比例（清单只有几百字时白留空间，把设定段挤出去）。
+   */
+  ok('🔴 预留按清单实际长度算（不是固定比例）',
+    /const reserve = chapterDigest \? Math\.min\(chapterDigest\.length \+ 40, CHAPTER_RESERVE_CHARS\) : 0/.test(src))
+  ok('🔴 章节清单申请动用预留额度', /push\('章节清单', chapterDigest, \{ reserved: true \}\)/.test(src))
+  ok('🔴 两个数字都来自 contextLayers（不许在 aiContext 里另写 16000 / 1800）',
+    /from '@\/lib\/ai\/contextLayers'/.test(src) && !/\b16_000\b|\b1_800\b/.test(src))
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

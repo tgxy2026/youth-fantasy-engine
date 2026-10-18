@@ -44,14 +44,33 @@ export interface LayerPlan {
 
 /**
  * 四档配额。
- * 🔴 `short` 档与改造前的写死值**逐项相等**（budget 12000 / related 8）—— 这是"小项目零变化"的保证。
+ *
+ * 🔴 `short` 档 3.1.3 由 12000 抬到 **16000**（主人 2026-10-18 拍板）。
+ *    原注释写的是"与改造前写死值逐项相等"，那条保证**已主动作废**：实测一个 22 章的小项目，
+ *    12000 字符在装完世界设定 / 力量体系 / 四制度 / 势力之后就用光了，
+ *    ⇒ 章节清单、种族生物、物品资源、地理风物、伏笔追踪 共 19 段被整段丢弃，
+ *    模型完全不知道剧情写到哪。抬到 16000 是为「章节清单 + 一两个设定表」留出实际空间。
+ *    ⚠️ 代价：每次请求多约 1.3K token（云端计费、本地只慢一点）。
  */
 export const LAYER_PLANS: Record<ContextScale, LayerPlan> = {
-  short: { budget: 12_000, relatedChapters: 8, semantic: 6, digestChapters: 200 },
+  short: { budget: 16_000, relatedChapters: 8, semantic: 6, digestChapters: 200 },
   medium: { budget: 20_000, relatedChapters: 12, semantic: 8, digestChapters: 300 },
   long: { budget: 32_000, relatedChapters: 16, semantic: 10, digestChapters: 500 },
   epic: { budget: 48_000, relatedChapters: 20, semantic: 12, digestChapters: 800 },
 }
+
+/**
+ * 给「章节清单」预留的字符上限（3.1.3 · R3）。
+ *
+ * 🔴 为什么需要单独预留：章节清单在装配序列里排得很后，而装载是**贪心**的 ——
+ *    前面的设定段只要还有空间就会一直吃，清单永远轮不到。实测把预算抬到 32000 时
+ *    `章节清单` 依然是「未带入」（每次都只剩不到 200 字符）。
+ *    没有它的后果很具体：AI 不知道「现在是第几章、上一章发生了什么」，续写容易接错线。
+ *
+ * 取 1800 的理由：一个 200 章的项目清单约 1500~2500 字符，1800 能覆盖大半；
+ * 再大就会从设定段里扣得太狠。**只在清单真的有内容时才预留**（见 aiContext 里的动态计算）。
+ */
+export const CHAPTER_RESERVE_CHARS = 1800
 
 /** 取某项目体量对应的配额 */
 export function planFor(totalWords: number): LayerPlan {

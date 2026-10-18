@@ -75,6 +75,11 @@ export interface AiContextSnapshot {
   sections: string[]
   /** 因预算被丢弃的段落标题（如实声明，非空即说明「模型没看到这些」） */
   dropped: string[]
+  /**
+   * 因预算**只带了一部分**的段落（形如「地理风物（11/22 行）」）。
+   * 🔴 与 `dropped` 分开：一个「完全没给」，一个「给了一半」，对模型和作者是两件事。
+   */
+  trimmed?: string[]
   /** 装配后的字符数 */
   chars: number
   /** 本次预算 */
