@@ -395,7 +395,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                     在网页版是错的，且用户往往因此不知道配额是被备份吃掉的。 */}
                 备份存放在你的<b className="text-ink-200">云端账号</b>里，<b className="text-ink-200">占用账号配额</b>
                 （当前备份合计约 <span className="text-ink-200">{totalMB.toFixed(1)} MB</span>）。
-                打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
+                打开项目时每 {WEB ? 15 : 5} 分钟自动滚动备份（最多 {db.maxAutoBackups()} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.maxDailyBackups()} 份）；
                 <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
                 <br />
                 配额被备份占满时，新的保存会被拒绝 —— 可删除不需要的备份，或用每行的 <span className="text-ink-200">↑ 导出</span>
@@ -403,7 +403,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               </>
             ) : (
               <>
-                打开项目时每 5 分钟自动滚动备份（最多 {db.MAX_AUTO_BACKUPS} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.MAX_DAILY_BACKUPS} 份）；
+                打开项目时每 5 分钟自动滚动备份（最多 {db.maxAutoBackups()} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.maxDailyBackups()} 份）；
                 <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
                 <br />
                 这些备份都只存在这台电脑的软件数据文件里。想多一层保险，可用每行的 <span className="text-ink-200">↑ 导出</span> 把某一份存成独立文件，放进云盘或移动硬盘。
@@ -425,8 +425,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
 
           <Group id="frozen" title="定稿版本" icon={<BookMarked size={13} className="text-amber" />} items={frozen} hint="定稿冻结留档，不设上限、不会自动删除" />
           <Group id="manual" title="手动备份" icon={<ShieldCheck size={13} className="text-amber" />} items={manual} hint="不设上限，不会自动删除" />
-          <Group id="daily" collapsible title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.MAX_DAILY_BACKUPS} 份`} />
-          <Group id="auto" collapsible title="5 分钟自动备份" icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.MAX_AUTO_BACKUPS} 份`} />
+          <Group id="daily" collapsible title="每日自动备份" icon={<CalendarDays size={13} className="text-amber" />} items={daily} hint={`最多 ${db.maxDailyBackups()} 份`} />
+          <Group id="auto" collapsible title={WEB ? '15 分钟自动备份' : '5 分钟自动备份'} icon={<Clock size={13} className="text-amber" />} items={auto} hint={`滚动保留最多 ${db.maxAutoBackups()} 份`} />
 
           {/* v1.3 迁移 / 换机：加密迁移包导出导入 */}
           <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-3">

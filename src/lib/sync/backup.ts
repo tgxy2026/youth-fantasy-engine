@@ -8,8 +8,20 @@ import * as db from '@/lib/db'
 import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/app/desktop'
 import { todayKey } from '@/lib/app/date'
 import { isDemoProjectName } from '@/lib/constants'
+import { WEB } from '@/lib/app/platform'
 
 const FIVE_MIN = 5 * 60 * 1000
+
+/**
+ * 网页版自动备份间隔（WEB-02 衍生议题：云端备份计入配额 + 每次都是整库上传）。
+ *
+ * 🔴 为什么不能沿用 5 分钟：云端每份备份都是**整库上传**，而这个计时器是独立的 setInterval，
+ *    与前端 800ms 防抖无关。5 分钟一次意味着一个下午就能攒出十几份几乎相同的整库快照 ——
+ *    带宽翻倍、配额翻倍，而相邻两份的差异往往只有几十个字。
+ *    收紧到 15 分钟：写作场景里退回 15 分钟前的稿子，重打完全可接受。
+ */
+const WEB_AUTO_INTERVAL = 15 * 60 * 1000
+const autoInterval = (): number => (WEB ? WEB_AUTO_INTERVAL : FIVE_MIN)
 
 /**
  * 最近一次备份失败的记录。
@@ -118,7 +130,7 @@ export function startAutoBackup(projectId: string): () => void {
   //    失去整场会话的自动备份，而注释说「照常启动」。
   const arm = (isDemo: boolean) => {
     if (stopped || isDemo) return
-    timer = setInterval(tick, FIVE_MIN)
+    timer = setInterval(tick, autoInterval())
   }
   void db.getProject(projectId)
     .then(p => arm(isDemoProjectName(p?.name)))

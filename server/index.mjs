@@ -26,7 +26,7 @@ import { rateLimit, resetLimit } from './lib/ratelimit.mjs'
 import { renderAuthPage } from './lib/authPage.mjs'
 import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
-  claimInvite, createInvite, listInvites, newUserId,
+  claimInvite, createInvite, listInvites, newUserId, setActiveSession, clearActiveSession, markIssued,
 } from './lib/users.mjs'
 import {
   hashPassword, verifyPassword, loadOrCreateSecret, signSession, verifySessionToken,
@@ -69,19 +69,48 @@ if (listUsers().length === 0 && !listInvites().some((i) => i.note === '首次启
 }
 
 // ---------- 认证 ----------
-function authUser(req) {
+/**
+ * 校验请求的会话，并区分**为什么无效**。
+ * 🔴 reason 必须精确：前端要靠它把「登录过期」和「账号在别处登录」说成两句不同的话 ——
+ *    混成一句「未登录」会让用户反复登录反复被踢，却完全看不出原因。
+ * @returns {{user: object|null, reason: ''|'NO_TOKEN'|'EXPIRED'|'NO_USER'|'REPLACED'}}
+ */
+function authCheck(req) {
   const token = parseCookies(req)[SESSION_COOKIE]
-  if (!token) return null
+  if (!token) return { user: null, reason: 'NO_TOKEN' }
   const uid = verifySessionToken(token, SECRET)
-  if (!uid) return null
-  return findById(uid)
+  if (!uid) return { user: null, reason: 'EXPIRED' }
+  const u = findById(uid)
+  if (!u) return { user: null, reason: 'NO_USER' }
+  // 单会话：服务端记录的活跃 token 与本次请求不一致 ⇒ 已被别处的登录顶掉
+  if (!u.session || u.session.token !== token) return { user: null, reason: 'REPLACED' }
+  return { user: u, reason: '' }
 }
+
+function authUser(req) {
+  return authCheck(req).user
+}
+
+/** 401 的 code：前端据此分流提示文案 */
+const sessionCode = (reason) => (reason === 'REPLACED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED')
 
 const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https'
 
 function sessionCookie(req, uid) {
   const token = signSession(uid, Date.now() + SESSION_TTL_MS, SECRET)
   // 直连 http 时不加 Secure（否则浏览器直接丢弃 Cookie）；走 https 反代时自动加
+  return buildCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS, secure: isHttps(req) })
+}
+
+/**
+ * 签发会话并写入「活跃会话」记录。
+ * 🔴 单会话的关键一步：每次登录都覆盖 `user.session` ⇒ 旧设备的下一个请求
+ *    会发现服务端记的 token 与自己不符，立刻失效（WEB-02 跨设备并发的根治方案）。
+ *    同一浏览器多标签页共用同一 Cookie，不会自己踢自己。
+ */
+function issueSession(req, uid) {
+  const token = signSession(uid, Date.now() + SESSION_TTL_MS, SECRET)
+  setActiveSession(uid, token)
   return buildCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS, secure: isHttps(req) })
 }
 
@@ -357,7 +386,7 @@ async function handleApi(req, res, url) {
     console.log(`[auth] 新用户注册：${user.name} (${user.id}) from ${ip}${inviteCode ? ` 邀请码=${inviteCode}` : ''}`)
     return sendJSON(res, 200, { ok: true, user: publicUser(user) }, {
       // 注册即登录：种会话，同时清掉游客标记（否则下次打开还会被当成游客）
-      'Set-Cookie': [sessionCookie(req, user.id), clearGuestCookie(req)],
+      'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
     })
   }
 
@@ -378,19 +407,24 @@ async function handleApi(req, res, url) {
     touchLogin(user.id)
     console.log(`[auth] 登录：${user.name} from ${ip}`)
     return sendJSON(res, 200, { ok: true, user: publicUser(findById(user.id)) }, {
-      'Set-Cookie': [sessionCookie(req, user.id), clearGuestCookie(req)],
+      'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
     })
   }
 
   // ---- 退出 ----
   if (path === '/api/auth/logout' && req.method === 'POST') {
+    // 抹掉活跃会话：否则退出后旧 Cookie 仍被服务端认可（单会话下等于没退干净）
+    const u = authUser(req)
+    if (u) clearActiveSession(u.id)
     return sendJSON(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(req) })
   }
 
   // ---- 当前用户 ----
   if (path === '/api/auth/me' && req.method === 'GET') {
-    const u = authUser(req)
-    if (!u) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
+    // 用自己的 authCheck（此处位于公共 chk 定义之前，不能借用）
+    const me = authCheck(req)
+    if (!me.user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(me.reason) })
+    const u = me.user
     setUsedBytes(u.id, usageOf(u.id))
     return sendJSON(res, 200, { ok: true, user: publicUser(findById(u.id)) })
   }
@@ -400,11 +434,14 @@ async function handleApi(req, res, url) {
   }
 
   // ---- 以下全部需要登录 ----
-  const user = authUser(req)
+  // 🔴 用 authCheck 而非 authUser：reason 要传给 401 的 code，前端靠它区分
+  //    「登录过期」与「账号在别处登录」两句提示（WEB-02 单会话）。
+  const chk = authCheck(req)
+  const user = chk.user
 
   // ---- 整库读写（契约与便携版一致）----
   if (path === '/api/data') {
-    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
 
     if (req.method === 'GET') {
       const r = readUserData(user.id)
@@ -460,7 +497,7 @@ async function handleApi(req, res, url) {
 
   // ---- 外置大块数据 ----
   if (path === '/api/blob' || path === '/api/blob/list') {
-    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: 'SESSION_EXPIRED' })
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
     const store = qs.get('store') || ''
 
     if (path === '/api/blob/list' && req.method === 'GET') {
@@ -550,6 +587,8 @@ const server = createServer((req, res) => {
     // 退出登录：会话与游客标记一并清除，回到「登录页」这个真正的入口分流点。
     // 两条 cookie 都要清：只清会话的话，曾经点过「游客试用」的人会直接掉进游客模式，
     // 而不是回到登录页（用户会以为「退出后怎么还是这个界面」）。
+    const u = authUser(req)
+    if (u) clearActiveSession(u.id)
     res.writeHead(302, {
       Location: '/',
       'Set-Cookie': [clearCookie(req), clearGuestCookie(req)],

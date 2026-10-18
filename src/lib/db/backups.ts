@@ -4,6 +4,7 @@
 import type { Project, FormData } from '@/lib/types'
 import { uid } from '@/lib/app/id'
 import { ops, touchProject } from '@/lib/db/core'
+import { WEB } from '@/lib/app/platform'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
 import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
@@ -73,10 +74,33 @@ export type BackupRecord = BackupMeta
 export const MAX_AUTO_BACKUPS = 30
 /** 每日自动备份保留上限（#012：原先不限量 → 30，约一个月） */
 export const MAX_DAILY_BACKUPS = 30
+
+/**
+ * 网页版专用档位（WEB-02 衍生议题：云端备份**计入 200 MB 账号配额**）。
+ *
+ * 【为什么必须分开】每份备份是**整包全量快照**，重复内容占 99%。按桌面档位算一笔账：
+ *   一个 100 万字项目约 3 MB 文本 ⇒ 自动 30 份 + 每日 30 份 ≈ **180 MB**，
+ *   而配额总共 200 MB —— 等于用户自己的书只占 3 MB，其余全被备份历史吃掉，
+ *   写到第 60 份时就会被「存储空间不足」挡住，而他还一部书都没写完。
+ * 网页版收紧为 10 + 7（约 51 MB）：既保住「最近改动能找回」，又不挤占创作空间。
+ * 桌面版 / 便携版是**本机存储**、磁盘宽裕，维持 30 + 30 不变（常量即桌面档位）。
+ */
+const WEB_MAX_AUTO_BACKUPS = 10
+const WEB_MAX_DAILY_BACKUPS = 7
+
+/** 当前平台的自动备份保留份数（网页版走收紧档） */
+export function maxAutoBackups(): number {
+  return WEB ? WEB_MAX_AUTO_BACKUPS : MAX_AUTO_BACKUPS
+}
+/** 当前平台的每日备份保留份数 */
+export function maxDailyBackups(): number {
+  return WEB ? WEB_MAX_DAILY_BACKUPS : MAX_DAILY_BACKUPS
+}
+
 /** 保留上限查表：手动备份为 0，表示不限制 */
 function backupLimit(kind: BackupKind): number {
-  if (kind === 'auto5min') return MAX_AUTO_BACKUPS
-  if (kind === 'daily') return MAX_DAILY_BACKUPS
+  if (kind === 'auto5min') return maxAutoBackups()
+  if (kind === 'daily') return maxDailyBackups()
   // manual / frozen：作者主动留档，永不自动删
   return 0
 }

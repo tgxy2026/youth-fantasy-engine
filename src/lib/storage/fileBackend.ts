@@ -284,12 +284,19 @@ export async function flushPortable(): Promise<boolean> {
       body: JSON.stringify(data),
     })
     if (!res.ok) {
-      // 🔴 401 单独说清原因（WEB-08）：会话 30 天过期后若只显示「写入失败 HTTP 401」，
-      //    作者不知道要去重新登录，还会以为数据存坏了。这里点明「未保存的改动有丢失风险」，
-      //    促使人尽快处理（重新登录后内存里的稿子会随下一次保存一起上去）。
-      lastError = res.status === 401
-        ? '登录已过期：未保存的改动有丢失风险，请立即重新登录'
-        : `写入便携数据文件失败：HTTP ${res.status}`
+      // 🔴 401 单独说清原因（WEB-08 / WEB-02 单会话）：只显示「写入失败 HTTP 401」的话，
+      //    作者不知道要去重新登录，还会以为数据存坏了。
+      //    服务端用 code 区分两种情形，前端必须说成两句不同的话 ——
+      //    混成一句会让用户反复登录反复被踢，却完全看不出原因。
+      if (res.status === 401) {
+        let code = ''
+        try { code = (await res.json() as { code?: string }).code || '' } catch { /* 读不到就按通用过期处理 */ }
+        lastError = code === 'SESSION_REPLACED'
+          ? '账号已在别处登录，本次会话已失效：未保存的改动有丢失风险，请重新登录'
+          : '登录已过期：未保存的改动有丢失风险，请立即重新登录'
+        return false
+      }
+      lastError = `写入便携数据文件失败：HTTP ${res.status}`
       return false
     }
     savedSeq = seqAtStart

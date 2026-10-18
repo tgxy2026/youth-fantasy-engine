@@ -130,9 +130,36 @@ export function setUsedBytes(id, bytes) {
   persist(db)
 }
 
+/** 全部用户（按注册时间倒序） */
 export function listUsers() {
   const db = loadUsers()
   return Object.values(db.users).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+/**
+ * 记录该用户当前**唯一**的活跃会话 token。
+ *
+ * 🔴 为什么要有它：会话原先是无状态签名 Cookie（`uid.exp.hmac`），服务端不留痕 ⇒
+ *    无法让旧设备下线，两个设备可以同时用一个账号各自写，然后互相覆盖（WEB-02 跨设备部分）。
+ *    现在每次登录都覆盖这里的 token：旧设备下一次请求发现「服务端记的 token 不是我这个」，
+ *    立刻失效。**从根上消除多端并发**，比做版本锁简单得多，也不要求用户记得手动退出。
+ * ⚠️ 同一浏览器的多个标签页共用同一个 Cookie ⇒ 不受影响（不会自己踢自己）。
+ */
+export function setActiveSession(id, token) {
+  const db = loadUsers()
+  const u = db.users[id]
+  if (!u) return
+  u.session = { token, at: Date.now() }
+  persist(db)
+}
+
+/** 主动退出：抹掉活跃会话（否则退出后旧 token 仍被服务端认可） */
+export function clearActiveSession(id) {
+  const db = loadUsers()
+  const u = db.users[id]
+  if (!u || !u.session) return
+  delete u.session
+  persist(db)
 }
 
 export function deleteUser(id) {
