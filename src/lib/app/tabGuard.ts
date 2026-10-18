@@ -13,6 +13,7 @@
 // 而这里用原生 DOM 挂一条 fixed 浮层，不占布局、不依赖任何组件树，也不会影响桌面版与便携版
 // （非网页版在第一行就返回了）。
 import { WEB } from '@/lib/app/platform'
+import { PORTABLE } from '@/lib/storage/fileBackend'
 
 const CHANNEL = 'yfe-web-tab-guard'
 
@@ -70,11 +71,15 @@ function showBanner() {
 }
 
 /**
- * 安装多标签页探测。**只在网页版生效**，桌面版 / 便携版调用它是空操作。
+ * 安装多标签页探测。**网页版与便携版生效**，桌面版调用它是空操作。
+ *
+ * 🔴 2026-10-18 三端兼容专项审计（concurrency/portable 运行单元）：便携版同样是
+ * 「浏览器多标签 + 整库读入内存」，两个标签页互相覆盖的风险与网页版完全一致，
+ * 原先只在 WEB 装是审计发现的覆盖缺口 —— 现扩展到便携版（桌面版单进程独占，仍不需要）。
  * 建议在 `main.tsx` 渲染 React 之前调用一次。
  */
 export function installWebTabGuard(): void {
-  if (!WEB) return
+  if (!WEB && !PORTABLE) return
   if (typeof BroadcastChannel === 'undefined') return
 
   const selfId = Math.random().toString(36).slice(2)

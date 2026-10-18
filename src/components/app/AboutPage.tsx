@@ -209,7 +209,8 @@ export default function AboutPage() {
                 </p>
                 {/* 安装权限提示：旧版按机器安装(Program Files)需先管理员升级一次，迁移为当前用户安装后重装免管理员。
                     🔴 网页版看不到安装包，这段 Windows 权限说明对它纯属噪音 ⇒ WEB 时隐藏。 */}
-                {!WEB && (
+                {/* 🔴 仅安装版显示：便携版是解压即用、网页版无安装器，都不存在「管理员升级」这件事 */}
+                {!WEB && !PORTABLE && (
                   <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-11 text-ink-200 leading-relaxed">
                     <span className="font-medium text-amber">安装提示：</span>
                     若你电脑上已安装过旧版（装在 C 盘「Program Files」目录下），请先用「右键 → 以管理员身份运行」打开本安装包完成一次升级；升级后会迁移为「当前用户安装」，之后重装都不再需要管理员权限。
