@@ -17,7 +17,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
-import jiewenjiGufeng from '@/assets/jiewenji-gufeng.png'
+// 与 ProjectHub 保持一致用 WebP 版本（249 KB vs 4.18 MB）。
+// 🔴 两处必须同步：这个弹窗是「恢复默认」时的预览源，若它还指向 PNG，
+//    构建产物里就会同时打进两份同一张图（实测：改了 ProjectHub 后 dist 里 PNG 仍在）。
+import jiewenjiGufeng from '@/assets/jiewenji-gufeng.webp'
 import { readPortraitFile, PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES } from '@/lib/media/imagePortrait'
 import { usePersistedBool, readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
 

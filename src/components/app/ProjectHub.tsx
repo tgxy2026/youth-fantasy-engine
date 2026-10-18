@@ -24,7 +24,12 @@ import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from 
 import { getGenreToAIFor, setGenreToAIFor } from '@/lib/ai/aiGenreHint'
 import { GenrePackSelect } from '@/components/creative/GenrePackSelect'
 import workbenchBg from '@/assets/workbench-bg.png'
-import jiewenjiGufeng from '@/assets/jiewenji-gufeng.png'
+// 看板娘立绘改用 WebP（2026-10-18 · 网页版首屏优化）：
+// 原 PNG 1440×2560 / 4.18 MB，而界面最大只显示 380 CSS px 宽（2x 屏需 760px），冗余 3.4 倍。
+// 已转为 768×1365 WebP（q82 + lossless alpha）/ 249 KB —— **省 94.2%**，视觉无差异。
+// 🔴 原 `jiewenji-gufeng.png` 保留在 assets 里作素材源，但**不再被 import**（不参与打包）。
+//    要换回 PNG 只需把这行改回去，别删源文件。
+import jiewenjiGufeng from '@/assets/jiewenji-gufeng.webp'
 import { Button } from '@/components/common/Button'
 import MascotSettingsDialog from '@/components/settings/MascotSettingsDialog'
 import AppIconDialog from '@/components/settings/AppIconDialog'
