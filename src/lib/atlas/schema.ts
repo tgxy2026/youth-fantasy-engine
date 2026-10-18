@@ -221,6 +221,7 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
       searchable: true,
       aiReadable: true,
       aiWritable: false,
+      appliesTo: '*',
     })
   })
 
@@ -247,6 +248,7 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
       searchable: def.searchable,
       aiReadable: def.aiReadable,
       aiWritable: def.aiWritable,
+      appliesTo: def.appliesTo,
     })
   }
 
@@ -256,6 +258,35 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
     if (ga !== gb) return ga - gb
     return a.order - b.order
   })
+}
+
+/**
+ * 两份字段定义之间，**「能不能给 AI 看」这件事变没变**（3.1.3 · R04）。
+ *
+ * 🔴 为什么必须专门判：语义索引是**已经算好的向量**，改了 `aiReadable` / `archived`
+ *    并不会回头改旧向量 —— 作者刚把某字段设成"不给 AI 参考"，旧索引里那段文本照样能被召回、
+ *    照样注回提示词。所以调用方据此**作废旧索引**（宁可让作者重建一次，也不能继续泄漏）。
+ *
+ * 只认 AI 可见性的变化：改名 / 调顺序 / 改下拉选项不影响"能不能看"，不该逼作者重建。
+ * @returns true ⇒ 需要作废索引
+ */
+export function atlasAiVisibilityChanged(
+  before: readonly { id: string; aiReadable?: boolean; archived?: boolean }[],
+  after: readonly { id: string; aiReadable?: boolean; archived?: boolean }[],
+): boolean {
+  const visOf = (f: { id: string; aiReadable?: boolean; archived?: boolean }) =>
+    `${f.archived ? 'A' : '-'}${f.aiReadable === false ? 'N' : 'Y'}`
+  const map = new Map<string, string>()
+  for (const f of before ?? []) map.set(f.id, visOf(f))
+  for (const f of after ?? []) {
+    const was = map.get(f.id)
+    // 新加的字段：旧索引里根本没有它 ⇒ 不用为此逼作者重建
+    if (was === undefined) continue
+    if (was !== visOf(f)) return true
+  }
+  // 字段被整个删掉也算：删掉的字段此前可能已进索引
+  const afterIds = new Set((after ?? []).map(f => f.id))
+  return (before ?? []).some(f => !afterIds.has(f.id))
 }
 
 /** 按分组聚合（详情页用）。空组分不出现在结果里 —— 字段数为零就不该有标题 */

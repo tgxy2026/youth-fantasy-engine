@@ -28,7 +28,8 @@ import {
 } from '@/lib/db'
 import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
 import { countCodeRefs, codeRefWarning } from '@/lib/app/codeRefs'
-import { ATLAS_TABS, emptyAtlasSchema, isAtlasTab } from '@/lib/atlas/schema'
+import { ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab } from '@/lib/atlas/schema'
+import { invalidateIndex } from '@/lib/semantic/indexer'
 import { atlasColumnsOf, customColumnWidth, type AtlasColumn } from '@/lib/atlas/columns'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import { coerceAiValue } from '@/lib/atlas/values'
@@ -208,12 +209,27 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     [tab, atlasConfig],
   )
 
-  /** 保存字段配置：revision 自增在 persistence 里做，界面状态必须用**返回值**覆盖 */
+  /**
+   * 保存字段配置：revision 自增在 persistence 里做，界面状态必须用**返回值**覆盖。
+   *
+   * 🔴 3.1.3 · R04：**改了字段的 AI 可见性就必须作废旧索引**。
+   *    语义索引是已经算好的文本快照，作者把「允许 AI 参考」关掉、或把字段归档之后，
+   *    旧向量里那段内容还在 —— 语义召回照样能捞出来注回提示词，
+   *    等于"开关关了、AI 还是知道"。宁可让他重建一次，也不能留这个口子。
+   */
   const saveAtlasConfig = useCallback(async (next: AtlasSchemaConfig) => {
     const pid = getCurrentProjectId()
     const saved = await saveAtlasSchema(pid, tab.id as AtlasTabId, next)
     setAtlasConfig(saved)
-  }, [tab.id])
+    if (atlasAiVisibilityChanged(atlasConfig?.fields ?? [], saved.fields)) {
+      try {
+        await invalidateIndex(pid)
+        showToast('字段的 AI 可见性已变更，旧语义索引作废 —— 请在「语义检索」里重建后再使用', 'error')
+      } catch {
+        showToast('旧语义索引作废失败，请到「语义检索」手动重建', 'error')
+      }
+    }
+  }, [tab.id, atlasConfig])
 
   /**
    * 项目图鉴图片占用（方案 §6.2）：**所有图鉴页签合计**，不是只算当前表。

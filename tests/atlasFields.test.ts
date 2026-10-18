@@ -12,7 +12,7 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import {
   ATLAS_TABS, atlasBadgeKeys, atlasCardBadges, atlasSections, atlasSummaryFields, atlasSearchText,
-  defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
+  atlasAiVisibilityChanged, defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import { atlasColumnsOf } from '@/lib/atlas/columns'
 import {
@@ -21,7 +21,7 @@ import {
 } from '@/lib/atlas/quota'
 import { ATLAS_PACKAGE_MAX_ROWS, buildAtlasPackage, parseAtlasPackage, planAtlasImport, previewAtlasImport } from '@/lib/atlas/packageIO'
 import { buildImportPrepared, exportRowsCsv, mapHeaders, parseImportText } from '@/lib/storage/tableIO'
-import { collectIndexDocs } from '@/lib/semantic/indexer'
+import { collectIndexDocs, type AtlasIndexFieldRule } from '@/lib/semantic/indexer'
 import {
   formatBooleanValue, formatCustomValue, formatMultiSelectValues,
   isEmptyValue, parseMultiSelectValues, coerceAiValue,
@@ -614,14 +614,14 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 
 // ---------- ㉓ AI 两条链路口径一致：索引文本与提示词都用字段名（2026-10-18 修 R1/R2） ----------
 {
-  const mk = (data: Record<string, string>, fieldLabels?: Record<string, string>) => collectIndexDocs({
+  const mk = (data: Record<string, string>, fieldRules?: Record<string, AtlasIndexFieldRule>) => collectIndexDocs({
     chapters: [],
-    tables: [{ tabId: 'races', tabName: '种族生物', rows: [{ id: 'r1', data }], fieldLabels }],
+    tables: [{ tabId: 'races', tabName: '种族生物', rows: [{ id: 'r1', data }], fieldRules }],
     cards: [],
   })[0]?.text ?? ''
 
   // R1：cf_* 键名绝不能进索引文本（它会被〖语义召回〗原样注回提示词）
-  const withMap = mk({ 名称: '霜狼', cf_abc: '肉食' }, { cf_abc: '食性' })
+  const withMap = mk({ 名称: '霜狼', cf_abc: '肉食' }, { cf_abc: { label: '食性', aiReadable: true, appliesTo: '*' } })
   ok('㉓ 索引文本用字段名（cf_ 换成「食性」）', withMap.includes('食性：肉食'))
   ok('㉓ 负向：索引文本里不出现 cf_ 键名', !withMap.includes('cf_abc'))
   // 拿不到映射时退化，也绝不漏内部键（宁可重名）
@@ -644,9 +644,62 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉓ 表格渲染按字段类型取上限（不是只按列名）',
     read('src/lib/ai/tableRender.ts').includes('const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)')
     && read('src/lib/ai/tableRender.ts').includes('capOf(c)'))
+  // ---------- R04（2026-10-19 修）：作者关掉的字段不许从语义召回绕回来 ----------
+  // 病根：索引侧只有"cf_ → 名字"的映射，aiReadable / archived / appliesTo 一律不管
+  // ⇒ 提示词里被拦下的内容，〖语义召回〗照样能捞出来注回提示词（已复现）。
+  {
+    const secretRule = { cf_secret: { label: '密文', aiReadable: false, appliesTo: '*' as const } }
+    const r = (data: Record<string, string>, rules?: Record<string, AtlasIndexFieldRule>) =>
+      mk(data, rules)
+
+    // ① 作者关掉「允许 AI 参考」
+    const off = r({ 名称: '霜狼', cf_secret: '不应进入AI的密文' }, secretRule)
+    ok('㉓ R04：aiReadable=false 的字段不进索引', !off.includes('密文'), off)
+    ok('㉓ R04：同行的其他字段照常进索引', off.includes('名称：霜狼'))
+
+    // ② 归档字段：规则表里没有它（resolveAtlasFields 已排除归档），值属于历史残留
+    const archived = r({ 名称: '霜狼', cf_gone: '已归档的旧值' }, { cf_other: { label: '别的', aiReadable: true, appliesTo: '*' } })
+    ok('㉓ R04：已归档/已删除字段的值不进索引', !archived.includes('已归档的旧值'), archived)
+    ok('㉓ R04：负向——规则里没有的 cf_ 键绝不退化成「自定义字段」兜底', !archived.includes('自定义字段'))
+
+    // ③ 类别不适用：食性只对魔兽有效，这条已改成灵兽 ⇒ 残留值不算数
+    const scoped = { cf_diet: { label: '食性', aiReadable: true, appliesTo: ['魔兽'] } }
+    ok('㉓ R04：类别匹配 ⇒ 进索引', r({ 类别: '魔兽', cf_diet: '冰晶' }, scoped).includes('食性：冰晶'))
+    ok('㉓ R04：类别不匹配 ⇒ 不进索引（历史残留不该被召回）',
+      !r({ 类别: '灵兽', cf_diet: '冰晶' }, scoped).includes('冰晶'))
+    ok('㉓ R04：不限类别的字段不受影响',
+      r({ 类别: '灵兽', cf_any: '通用' }, { cf_any: { label: '通用项', aiReadable: true, appliesTo: '*' } }).includes('通用项：通用'))
+
+    // ④ 拿不到规则（配置读失败）时**不**因此丢内容 —— 权限信息缺失不是"一律禁止"的理由
+    ok('㉓ R04：无规则时仍保守入索引（只换名字，不静默丢作者的资料）',
+      r({ 名称: '霜狼', cf_abc: '肉食' }).includes('自定义字段：肉食'))
+
+    // ⑥ 权限改动 ⇒ 必须作废旧索引（否则改了开关旧向量照样能召回）
+    const f = (id: string, aiReadable = true, archived = false) => ({ id, aiReadable, archived })
+    ok('㉓ R04：关掉「允许 AI 参考」⇒ 判定为需作废', atlasAiVisibilityChanged([f('a')], [f('a', false)]))
+    ok('㉓ R04：字段归档 ⇒ 判定为需作废', atlasAiVisibilityChanged([f('a')], [f('a', true, true)]))
+    ok('㉓ R04：字段被删掉 ⇒ 判定为需作废（旧索引里还有它）', atlasAiVisibilityChanged([f('a')], []))
+    ok('㉓ R04：只改名/改顺序/加新字段 ⇒ 不需要作废（不该逼作者重建）',
+      !atlasAiVisibilityChanged([f('a'), f('b')], [f('b'), f('a'), f('c')]))
+    ok('㉓ R04：新旧都是"不给 AI" ⇒ 不需要作废', !atlasAiVisibilityChanged([f('a', false)], [f('a', false)]))
+    ok('㉓ R04：空对空 ⇒ 不需要作废', !atlasAiVisibilityChanged([], []))
+
+    // ⑦ 源码闸：界面保存配置时真的接了"作废索引"
+    const model = read('src/components/sheets/useTableSheetModel.ts')
+    ok('㉓ R04：保存字段配置时校验 AI 可见性变化',
+      model.includes('atlasAiVisibilityChanged') && model.includes('invalidateIndex'))
+
+    // ⑤ 负向守卫：同一份数据、只是**不给规则**（修复前的状态）⇒ 密文照样进来
+    //    证明上面几条"不见了"不是因为值碰巧为空 —— 闸本身有效。
+    const leaky = r({ 名称: '霜狼', cf_secret: '不应进入AI的密文' })
+    ok('㉓ R04 负向：不给规则 ⇒ 密文确实会进索引（闸本身有效）', leaky.includes('不应进入AI的密文'), leaky)
+  }
+
   // 索引侧也要拿到映射（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
   const idxSrc = read('src/lib/semantic/indexer.ts')
-  ok('㉓ 索引器为图鉴表加载字段映射', idxSrc.includes('fieldLabelsOf') && idxSrc.includes('loadAtlasSchema'))
+  ok('㉓ 索引器为图鉴表加载字段规则', idxSrc.includes('fieldRulesOf') && idxSrc.includes('loadAtlasSchema'))
+  ok('㉓ 索引侧走 resolveAtlasFields（不自己读配置原文，避免两套口径）',
+    idxSrc.includes('resolveAtlasFields') && !/cfg\.fields/.test(idxSrc))
   ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
     /catch \{\s*return undefined\s*\}/.test(idxSrc))
 }

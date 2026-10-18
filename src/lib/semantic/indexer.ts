@@ -24,7 +24,7 @@
 import * as db from '@/lib/db'
 import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
 import { TABS } from '@/lib/schema'
-import { isAtlasTab } from '@/lib/atlas/schema'
+import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'
@@ -46,18 +46,38 @@ export interface CollectInput {
   chapters: { id: string; title: string; summary?: string; content: string }[]
   /**
    * `hiddenCols` ＝ 该表的隐藏列名（调用方从 schema 取）—— 不进索引文本，见 renderRow。
-   * `fieldLabels` ＝ 自定义字段的「存储键 → 字段名」映射（图鉴页签才有）——
-   *   `cf_*` 这种内部键**绝不能**写进向量文本，见 renderRow 的注释。
+   * `fieldRules` ＝ 自定义字段的索引规则（图鉴页签才有）——
+   *   `cf_*` 这种内部键**绝不能**写进向量文本，且**作者关掉的字段不许进索引**，见 renderRow。
    */
   tables: {
     tabId: string
     tabName: string
     rows: { id: string; data: Record<string, string> }[]
     hiddenCols?: string[]
-    fieldLabels?: Record<string, string>
+    fieldRules?: Record<string, AtlasIndexFieldRule>
   }[]
   cards: { tabId: string; tabName: string; rows: { id: string; name: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
 }
+
+/**
+ * 自定义字段进索引的规则（3.1.3 · R04）。
+ *
+ * 🔴 为什么不只是「键→名字」的映射：索引文本会经〖语义召回〗原样注回提示词，
+ *    所以作者在图鉴里关掉的每一个开关，在这里**必须同样生效** —— 否则就成了
+ *    "提示词里看不到，但语义召回能捞出来"的绕行通道（验收 R04 已复现：
+ *    `aiReadable=false` + `archived=true` 的字段内容照样进了索引文本）。
+ */
+export interface AtlasIndexFieldRule {
+  /** 作者起的字段名（`cf_*` 键绝不进索引文本） */
+  label: string
+  /** 作者关掉「允许 AI 参考」⇒ 不进索引；与提示词侧 `purpose:'aiRead'` 同一口径 */
+  aiReadable: boolean
+  /** 类别适用范围：`'*'` = 不限；数组 = 只对这几个类别生效 */
+  appliesTo: '*' | string[]
+}
+
+/** 条目类别所在的列（图鉴四页签一致） */
+const CATEGORY_COL = '类别'
 
 /**
  * 行 → 可嵌入文本。**带列名**（"身份：剑修"）比只拼值（"剑修"）更容易被语义匹配到。
@@ -66,13 +86,20 @@ export interface CollectInput {
  *    索引文本会经〖语义召回〗原样注回提示词（`inject.renderRecallHits`），
  *    留着 `cf_mvdjsuz400001sletxf：…` 等于给模型看一串无意义字符，还稀释向量。
  *    这与 `aiContext.renderTable` 的 `labelOf` 是**同一口径**（3.1.3 补上，此前只有提示词那边换了）。
- *    拿不到映射时（配置读失败 / 字段已不存在）退化成「自定义字段」—— 宁可重名，也不露内部键。
+ *    拿不到规则时（配置读失败）退化成「自定义字段」—— 宁可重名，也不露内部键。
+ *
+ * 🔴🔴 `fieldRules` 一旦给了就是**权威**（3.1.3 · R04）：
+ *      · 规则里**没有**这个 `cf_` 键 ⇒ 字段已归档或已删除 ⇒ 值一律不进索引。
+ *        这些值只是历史残留，不是作者当下想让 AI 看到的东西（"我归档了却还能被召回"最伤信任）。
+ *      · `aiReadable=false` ⇒ 不进索引（与提示词同一口径）。
+ *      · `appliesTo` 不含本行类别 ⇒ 不进索引（同上，跨类别的旧值不算数）。
  */
 function renderRow(
   data: Record<string, string> | undefined,
   head?: string,
   hiddenCols?: Set<string>,
-  fieldLabels?: Record<string, string>,
+  fieldRules?: Record<string, AtlasIndexFieldRule>,
+  category?: string,
 ): string {
   const lines: string[] = []
   if (head && head.trim()) lines.push(head.trim())
@@ -85,7 +112,13 @@ function renderRow(
     //    与 `aiContext.renderTable` 同一口径。索引文本会经〖语义召回〗注回提示词，
     //    所以「不进提示词」的列在这里同样要挡（2026-10-08 修）。
     if (hiddenCols?.has(k) || SYSTEM_META_FIELDS.has(k)) continue
-    const label = fieldLabels?.[k] ?? (k.startsWith('cf_') ? '自定义字段' : k)
+    const rule = fieldRules?.[k]
+    if (k.startsWith('cf_')) {
+      if (fieldRules && !rule) continue            // 已归档 / 已删除
+      if (rule && !rule.aiReadable) continue       // 作者关了「允许 AI 参考」
+      if (rule && rule.appliesTo !== '*' && !rule.appliesTo.includes((category ?? '').trim())) continue
+    }
+    const label = rule?.label ?? (k.startsWith('cf_') ? '自定义字段' : k)
     lines.push(`${label}：${val}`)
   }
   return lines.join('\n').trim()
@@ -140,7 +173,9 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
     const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
-      const text = renderRow(r.data, undefined, hidden, t.fieldLabels)
+      // 逐行取类别：类别限定的字段只对匹配的条目进索引（R04）
+      const category = typeof r.data?.[CATEGORY_COL] === 'string' ? r.data[CATEGORY_COL] : ''
+      const text = renderRow(r.data, undefined, hidden, t.fieldRules, category)
       if (!text) continue
       out.push({ kind: 'setting', refId: r.id, title: t.tabName, text, secret: isSecretRow(r.data) })
     }
@@ -191,17 +226,26 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   const hiddenColsOf = (tab: (typeof TABS)[number]) => (tab.columns ?? []).filter(c => c.hidden).map(c => c.name)
 
   /**
-   * 图鉴页签的自定义字段「存储键 → 字段名」映射。
+   * 图鉴页签的自定义字段**索引规则**（存储键 → 名字 / AI 可读 / 类别范围）。
+   *
+   * 🔴🔴 走 `resolveAtlasFields`（字段解析的唯一入口），不自己遍历配置原文里的字段数组 ——
+   *    否则"提示词一套口径、索引另一套"会再次出现（R04 就是这么来的）。
+   *    `ignoreAppliesTo: true` 是**故意**的：这里要的是**全表字段结构**，
+   *    类别是否匹配由 `renderRow` 拿每行的 `类别` 逐行判（全表视图不该先砍掉再判）。
+   *
    * 🔴 读配置失败**不影响索引**：退化成 `undefined` ⇒ renderRow 把 `cf_*` 叫「自定义字段」，
    *    条照常入库，只是那条字段的可读名丢了（比整表跳过好）。
-   * 归档字段也映射：它的值还留在行里，索引文本仍要能读。
    */
-  const fieldLabelsOf = async (tabId: string): Promise<Record<string, string> | undefined> => {
-    if (!isAtlasTab(tabId)) return undefined
+  const fieldRulesOf = async (tab: (typeof TABS)[number]): Promise<Record<string, AtlasIndexFieldRule> | undefined> => {
+    if (!isAtlasTab(tab.id)) return undefined
     try {
-      const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tabId)).config
-      const map: Record<string, string> = {}
-      for (const f of cfg.fields) map[f.id] = f.label
+      const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id)).config
+      const fields = resolveAtlasFields(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
+      const map: Record<string, AtlasIndexFieldRule> = {}
+      for (const f of fields) {
+        if (f.source !== 'custom') continue
+        map[f.key] = { label: f.label, aiReadable: f.aiReadable, appliesTo: f.appliesTo }
+      }
       return Object.keys(map).length > 0 ? map : undefined
     } catch {
       return undefined
@@ -217,7 +261,7 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
           tabName: tab.name,
           rows: rows.map(r => ({ id: r.id, data: r.data })),
           hiddenCols: hiddenColsOf(tab),
-          fieldLabels: await fieldLabelsOf(tab.id),
+          fieldRules: await fieldRulesOf(tab),
         })
       }
     } else if (tab.type === 'card') {
@@ -236,6 +280,27 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   }
 
   return { docs: collectIndexDocs({ chapters, tables, cards }), incomplete }
+}
+
+/**
+ * 字段的 AI 可见性变了 ⇒ **作废旧索引**（3.1.3 · R04）。
+ *
+ * 🔴 为什么必须整库清：向量是早就算好的文本快照，作者把某字段改成"不给 AI 参考"之后，
+ *    旧向量里那段内容**还在**，语义检索照样能把它捞出来注回提示词 ——
+ *    "我明明关了开关，AI 还是知道"是最伤信任的一类问题，宁可让作者重建一次。
+ *    （只改名字 / 顺序不该走到这里，判定的活交给 `atlasAiVisibilityChanged`。）
+ *
+ * 清完之后 `indexStatus` 会回到「尚未建立索引」，界面自然会提示重建。
+ */
+export async function invalidateIndex(projectId: string): Promise<void> {
+  if (!projectId) return
+  try {
+    await clearProjectVectors(projectId)
+  } catch (e) {
+    // 清不掉也要让作者知道（否则他还以为旧索引已经废了）
+    console.warn('[semantic] 作废旧索引失败（旧内容可能仍会被召回）：', e)
+    throw e
+  }
 }
 
 export interface IndexProgress {
