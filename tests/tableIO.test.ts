@@ -10,11 +10,12 @@
 import {
   splitCsvLine, splitMdRow, isMdSeparator, parseImportText, mapHeaders, matrixToRows,
   mainColumn, textToRows, validateImport, buildImportRows, exportRowsCsv, exportTemplateCsv,
-  csvCell, buildImportGuide, splitIntoChunks,
+  csvCell, parseCsvGrid, buildImportGuide, splitIntoChunks,
   buildImportPrepared, summarizeImportResults, defaultCheckedIndexes, refColumnTargets,
   type ImportContext, type ImportRowResult,
 } from '../src/lib/storage/tableIO'
 import type { TabDef, TableRow } from '../src/lib/types'
+import { parseTypedImportValue } from '../src/lib/atlas/values'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -163,7 +164,27 @@ function row(id: string, data: Record<string, string>, order = 0, tabId = 'natio
 {
   ok('csvCell 含逗号要加引号', csvCell('a,b') === '"a,b"')
   ok('csvCell 含引号要转义', csvCell('a"b') === '"a""b"', csvCell('a"b'))
-  ok('csvCell 换行折成空格（不破坏行结构）', csvCell('a\nb') === 'a b')
+  /**
+   * 🔴 3.1.3 · R09：这条**改了契约** —— 原先把换行压成空格，代价是"导出去再导回来
+   *    永远回不来换行"（验收实测：'第一行\n第二行' → '第一行 第二行'）。
+   *    现在按标准 CSV 把换行留在引号里，导入端用 `parseCsvGrid` 认得它 ⇒ 往返等值。
+   */
+  ok('csvCell 换行**保留**在引号里（不再折成空格，见 R09）', csvCell('a\nb') === '"a\nb"', csvCell('a\nb'))
+  ok('csvCell 普通值不加引号（不无谓膨胀）', csvCell('普通') === '普通')
+  // 完整往返：导出 → 解析 → 值必须一模一样
+  {
+    const row = [csvCell('第一行\n第二行'), csvCell('含,逗号'), csvCell('含"引号"')].join(',')
+    const grid = parseCsvGrid(`A,B,C\n${row}`)
+    ok('csvCell + parseCsvGrid 往返等值（3 列齐全，没被换行切碎）', grid.length === 2 && grid[1].length === 3, JSON.stringify(grid))
+    ok('往返后换行仍在', grid[1]?.[0] === '第一行\n第二行', JSON.stringify(grid[1]?.[0]))
+    ok('往返后逗号单元格完整', grid[1]?.[1] === '含,逗号')
+    ok('往返后引号还原', grid[1]?.[2] === '含"引号"')
+  }
+  // 类型化回导：导出的是显示值，导入要还原成存储值（否则控件回显不出来）
+  ok('导入布尔「是」→ true', parseTypedImportValue('是', { customType: 'boolean' }) === 'true')
+  ok('导入多选顿号串 → JSON 数组',
+    parseTypedImportValue('怕火、怕水', { customType: 'multiSelect' }) === JSON.stringify(['怕火', '怕水']))
+  ok('导入带单位数字 → 纯数字', parseTypedImportValue('18 级', { customType: 'number', unit: '级' }) === '18')
 
   const tmpl = exportTemplateCsv(nations)
   ok('空白模板只有一行表头', tmpl === '编号,名称,上级,类别', tmpl)

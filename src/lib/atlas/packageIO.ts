@@ -90,6 +90,67 @@ export type ParseResult =
 //    ⇒ 运行时崩溃，且崩溃点在**写库之后**，作者的项目已经脏了。
 //    外来文件是**不可信输入**，规矩是：任何目标写入之前先完整验证，不合格就整包拒绝。
 
+/** 两份字段定义的**可比较指纹**（类型 / 单位 / 候选 / 类别范围）—— 同义判定用它，不比 id */
+function definitionFingerprint(f: {
+  type?: string
+  unit?: string
+  options?: readonly string[]
+  appliesTo?: '*' | readonly string[]
+}): string {
+  // 🔴 用 JSON 而不是拼串：拼串要靠分隔符，而分隔符本身可能是候选值的一部分
+  //    （「食肉」+「杂食」拼成「食肉杂食」会和一个叫「食肉杂食」的候选撞上）。
+  const opts = [...(f.options ?? [])].map(x => x.trim()).sort()
+  const scope = !f.appliesTo ? '*' : f.appliesTo === '*' ? '*' : [...f.appliesTo].map(x => x.trim()).sort()
+  return JSON.stringify([f.type ?? '', (f.unit ?? '').trim(), opts, scope])
+}
+
+/**
+ * 两个字段**是不是同一件事**（3.1.3 · R08）。
+ *
+ * 🔴 判定必须比完整定义：只看「同名 + 同类型」会把"同名异义"的两个字段合并 ——
+ *    例如源叫「食性」候选「食肉」，目标也叫「食性」但候选只有「食草」，
+ *    两者含义不同（说明不同 / 单位不同 / 类别范围不同都算异义）。
+ * @param a 目标项目里已有的字段
+ * @param b 资料包带来的字段
+ */
+export function sameAtlasFieldDefinition(
+  a: { label: string; type?: string; unit?: string; options?: readonly string[]; appliesTo?: '*' | readonly string[] },
+  b: { label: string; type?: string; unit?: string; options?: readonly string[]; appliesTo?: '*' | readonly string[] },
+): boolean {
+  return a.label.trim() === b.label.trim() && definitionFingerprint(a) === definitionFingerprint(b)
+}
+
+/** 说清楚"为什么不算同一个字段"（预览里给作者看） */
+function conflictReasonOf(
+  f: { label: string; type?: string; unit?: string; options?: readonly string[]; appliesTo?: '*' | readonly string[] },
+  existing: readonly { label: string; type?: string; unit?: string; options?: readonly string[]; appliesTo?: '*' | readonly string[] }[],
+): string {
+  const same = existing.find(e => e.label.trim() === f.label.trim())
+  if (!same) return '目标表已有同名字段'
+  if ((same.type ?? '').trim() !== (f.type ?? '').trim()) {
+    return `目标已有一个「${f.label}」，但类型不同（${same.type ?? '无'} / ${f.type ?? '无'}）`
+  }
+  if ((same.unit ?? '').trim() !== (f.unit ?? '').trim()) {
+    return `目标已有一个「${f.label}」，但单位不同（${same.unit ?? '无'} / ${f.unit ?? '无'}）`
+  }
+  const optsSame = [...(same.options ?? [])].map(x => x.trim()).sort()
+  const optsIn = [...(f.options ?? [])].map(x => x.trim()).sort()
+  if (optsSame.join('\n') !== optsIn.join('\n')) return `目标已有一个「${f.label}」，但下拉候选不同`
+  return `目标已有一个「${f.label}」，但适用类别不同`
+}
+
+/** 重名时改名：`食性` → `食性（2）` → `食性（3）`（不静默覆盖，也不留两个同名同姓的字段） */
+export function uniqueFieldLabel(taken: readonly string[], label: string): string {
+  const base = (label ?? '').trim() || '未命名字段'
+  const set = new Set(taken.map(x => (x ?? '').trim()))
+  if (!set.has(base)) return base
+  for (let i = 2; i < 100; i++) {
+    const next = `${base}（${i}）`
+    if (!set.has(next)) return next
+  }
+  return `${base}（${Date.now()}）`
+}
+
 /** 单条字段定义的问题；没问题返回 null */
 function fieldProblem(f: unknown, i: number): string | null {
   const at = `第 ${i + 1} 个字段`
@@ -282,6 +343,11 @@ export interface ImportPlan {
   fieldMap: Record<string, string>
   reused: { label: string; id: string }[]
   created: { label: string; id: string }[]
+  /**
+   * 名字撞车但**定义不同**的字段（3.1.3 · R08）：已另建并改名，这里说清原因，
+   * 供预览弹窗如实告诉作者"为什么多了一个「食性（2）」"。
+   */
+  conflicts: { label: string; newLabel: string; reason: string }[]
   /** 每行的 data 已按 fieldMap 重映射 */
   rows: AtlasPackageRow[]
   /** 资料包里带了图但目标容量不够时，这些行的图会被跳过（由调用方填） */
@@ -306,19 +372,32 @@ export function planAtlasImport(
   const fieldMap: Record<string, string> = {}
   const reused: ImportPlan['reused'] = []
   const created: ImportPlan['created'] = []
+  const conflicts: ImportPlan['conflicts'] = []
   const newFields: AtlasFieldDefinition[] = []
 
   for (const f of pkg.schema.fields) {
-    const hit = existing.find(e => e.label === f.label && e.type === f.type)
+    // 🔴 3.1.3 · R08：**完整定义一致**才复用。
+    //    修复前只看「同名 + 同类型」⇒ 源字段候选是「食肉」、目标叫「食性」但其实只有「食草」，
+    //    导入计划照样复用 ⇒ 值不属于目标选项，后续编辑 / AI 校验全部打架，
+    //    而作者看到的是"我导进来的值怎么存不进去"。同名≠同义，不替作者猜。
+    const hit = existing.find(e => sameAtlasFieldDefinition(e, f))
     if (hit) {
       fieldMap[f.id] = hit.id
       reused.push({ label: f.label, id: hit.id })
       continue
     }
     const id = makeId()
+    /**
+     * 名字撞车（目标已有一个叫这名字、但定义不同的字段）⇒ 新建并**改名**，
+     * 不静默复用（复用了就把两种含义的数据搅在一起），也不留两个同名同姓的字段。
+     */
+    const label = uniqueFieldLabel([...existing.map(e => e.label), ...created.map(c => c.label)], f.label)
     fieldMap[f.id] = id
-    created.push({ label: f.label, id })
-    newFields.push({ ...f, id, archived: false })
+    created.push({ label, id })
+    newFields.push({ ...f, id, label, archived: false })
+    if (label !== f.label) {
+      conflicts.push({ label: f.label, newLabel: label, reason: conflictReasonOf(f, existing) })
+    }
   }
 
   const rows: AtlasPackageRow[] = pkg.rows.map(r => {
@@ -339,6 +418,7 @@ export function planAtlasImport(
     fieldMap,
     reused,
     created,
+    conflicts,
     rows,
     imageRows: pkg.rows.filter(r => !!r.atlasImage).length,
   }
@@ -354,9 +434,24 @@ export function previewAtlasImport(
   pkg: AtlasPackage,
   targetConfig: AtlasSchemaConfig | null | undefined,
   categoryOptions: readonly string[] = [],
-): { rows: number; images: number; reusedFields: number; createdFields: number; unknownCategories: string[] } {
+): {
+  rows: number
+  images: number
+  reusedFields: number
+  createdFields: number
+  unknownCategories: string[]
+  /** 名字撞车但定义不同的字段（3.1.3 · R08）：会另建并改名，预览要提前说清楚 */
+  conflicts: { label: string; newLabel: string; reason: string }[]
+} {
   const existing = (targetConfig?.fields ?? []).filter(f => !f.archived)
-  const reusedFields = pkg.schema.fields.filter(f => existing.some(e => e.label === f.label && e.type === f.type)).length
+  const reusedFields = pkg.schema.fields.filter(f => existing.some(e => sameAtlasFieldDefinition(e, f))).length
+  /**
+   * 撞车清单：目标已有同名、但（类型 / 单位 / 候选 / 类别范围）不同的字段。
+   * 🔴 必须**提前**告诉作者：否则导完之后凭空多出一个「食性（2）」，他会以为是 bug。
+   */
+  const conflicts = pkg.schema.fields
+    .filter(f => existing.some(e => e.label.trim() === f.label.trim()) && !existing.some(e => sameAtlasFieldDefinition(e, f)))
+    .map(f => ({ label: f.label, newLabel: f.label, reason: conflictReasonOf(f, existing) }))
   /**
    * 3.1.3：包里的「类别」值目标表没有 ⇒ 导入后这一格在下拉里会显示空白（值其实在），
    * 所以预览要**先说清楚**，导入时再把这些值登记成该列的自定义选项（不丢值、可筛选）。
@@ -373,5 +468,6 @@ export function previewAtlasImport(
     reusedFields,
     createdFields: pkg.schema.fields.length - reusedFields,
     unknownCategories,
+    conflicts,
   }
 }

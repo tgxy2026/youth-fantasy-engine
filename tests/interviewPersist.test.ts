@@ -167,6 +167,59 @@ async function rawOf(scope: string): Promise<unknown> {
   ok('⑧ 完全不是对象 → 当没有存档', (await loadInterviewArchive(scope2)) === null)
 }
 
+// ---------- ⑧b R03 回归：排队期间切项目，存档必须落在发起时的那本书上 ----------
+//
+// 病根复盘：save/del 排了队（好意），但队列里跑的是 `setSetting` —— 它拼的是**执行那一刻**
+// 的当前项目。作者在第 A 本发起保存、还没落库就切到第 B 本 ⇒ 存档进了 B（验收实测
+// writtenToA=false / writtenToB=true），B 的同名存档还被顶掉。清理路径同理会删错书。
+{
+  const pidA = 'r03-A'
+  const pidB = 'r03-B'
+  const scope = 'r03-scope'
+  const rawFor = (p: string, s: string) => db.getSettingFor<unknown>(p, interviewKeyOf(s), null)
+
+  // 两本书各自先有一份存档
+  await saveInterviewArchive(scope, mkArchive(st(2), { subject: 'B 原本的对话' }), pidB)
+  await saveInterviewArchive(scope, mkArchive(st(2), { subject: 'A 原本的对话' }), pidA)
+
+  // 🔴 在 A 上发起保存，**不 await** 就切到 B —— 这正是验收复现的时序
+  db.setCurrentProject(pidA)
+  const pending = saveInterviewArchive(scope, mkArchive(st(3), { subject: 'A 新写的对话' }))
+  db.setCurrentProject(pidB)
+  await pending
+
+  const inA = await loadInterviewArchive(scope, Date.now(), pidA)
+  const inB = await loadInterviewArchive(scope, Date.now(), pidB)
+  ok('⑧b 发起时的项目（A）存到了 A', inA?.subject === 'A 新写的对话', String(inA?.subject))
+  ok('⑧b 目标项目（B）的存档没有被覆盖', inB?.subject === 'B 原本的对话', String(inB?.subject))
+  ok('⑧b 库里 B 的键仍是原值', (await rawFor(pidB, scope)) !== null)
+
+  // 清理路径：删 B 的时候"当前项目"是 A
+  db.setCurrentProject(pidA)
+  await clearInterviewArchive(scope, pidB)
+  ok('⑧b 指定 pid 清理 ⇒ 删的是 B 那条', (await rawFor(pidB, scope)) === null)
+  ok('⑧b 负向：A 那条没被误删', (await rawFor(pidA, scope)) !== null)
+
+  // 两本书的队列互不阻塞：并发各写各的
+  db.setCurrentProject(pidA)
+  const pA = saveInterviewArchive(scope, mkArchive(st(5), { subject: 'A 并发' }), pidA)
+  const pB = saveInterviewArchive(scope, mkArchive(st(7), { subject: 'B 并发' }), pidB)
+  await Promise.all([pA, pB])
+  ok('⑧b 两本项目各自排队、互不串写',
+    (await loadInterviewArchive(scope, Date.now(), pidA))?.subject === 'A 并发'
+    && (await loadInterviewArchive(scope, Date.now(), pidB))?.subject === 'B 并发')
+
+  // 读到过期存档后的清理也必须落在"读的那本"上
+  db.setCurrentProject(pidB)
+  await saveInterviewArchive(scope, mkArchive(st(2), { updatedAt: Date.now() - INTERVIEW_ARCHIVE_TTL_MS - 1000 }), pidA)
+  const expired = await loadInterviewArchive(scope, Date.now(), pidA)
+  ok('⑧b 过期存档不恢复', expired === null)
+  ok('⑧b 负向：过期清理删的是 A（读的那本），B 不受影响',
+    (await rawFor(pidA, scope)) === null && (await rawFor(pidB, scope)) !== null)
+
+  db.setCurrentProject(pid)
+}
+
 // ---------- ⑨ 时间文案 ----------
 {
   const now = 1_700_000_000_000
@@ -183,7 +236,14 @@ async function rawOf(scope: string): Promise<unknown> {
   const src = fs.readFileSync('src/lib/creative/interviewStore.ts', 'utf8')
   ok('⑩ lib 层不 import 任何 component', !/from '@\/components\//.test(src))
   ok('⑩ 走 db 门面（不直接 import ./db/meta）', /from '@\/lib\/db'/.test(src) && !/db\/meta/.test(src))
-  ok('⑩ 负向：没有自己拼 currentProjectId', !/currentProjectId/.test(src))
+  ok('⑩ 负向：没有自己拼存储键（pid 一律交给 db 的 For 系接口）',
+    !/currentProjectId\}\$\{|\$\{currentProjectId\}/.test(src))
+  // 3.1.3 · R03：读、写、删三处都必须带 pid —— 用 current 系就是"排队期间切项目会串写"
+  ok('⑩ R03：三处读写删全走显式 pid 接口',
+    /setSettingFor[<(]/.test(src) && /getSettingFor[<(]/.test(src) && /delSettingFor[<(]/.test(src))
+  ok('⑩ 负向：不再出现不带 pid 的 setSetting/delSetting 调用',
+    !/await setSetting\(/.test(src) && !/await delSetting\(/.test(src))
+  ok('⑩ R03：队列键带项目（两本书各排各的队）', /`\$\{pid\}::\$\{scope\}`/.test(src))
 }
 
 console.log(`\n—— interviewPersist 用例结束：${pass} 通过 / ${fail} 失败 ——`)

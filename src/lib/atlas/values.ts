@@ -62,6 +62,46 @@ export function formatCustomValue(
   return s
 }
 
+/**
+ * 把**显示形态**的值还原成**存储形态**（3.1.3 · R09）。
+ *
+ * 🔴 为什么需要它：CSV 导出的是给人看的（多选→「怕火、怕水」、布尔→「是 / 否」、
+ *    带单位数字→「18 级」），而库里存的不是这些（分别是 JSON 数组 / `true` / `18`）。
+ *    修复前导入端只 `trim()` ⇒ 导出去再导回来，多选变成一串顿号文本、布尔变成"是"、
+ *    带单位的变成"18 级" —— 控件全部回显不出来，作者只会觉得"导入坏了"。
+ *
+ * @param field 目标字段定义（拿不到就当纯文本，绝不猜）
+ */
+export function parseTypedImportValue(
+  raw: string,
+  field?: { customType?: CustomFieldType; unit?: string },
+): string {
+  const s = (raw ?? '').trim()
+  const type = field?.customType
+  if (!type || !s) return s
+  if (type === 'boolean') {
+    if (s === '是' || s === 'true' || s === 'TRUE' || s === '有' || s === 'yes') return 'true'
+    if (s === '否' || s === 'false' || s === 'FALSE' || s === '无' || s === 'no') return 'false'
+    return s
+  }
+  if (type === 'multiSelect') {
+    // 已经是存储形态（JSON 数组）⇒ 归一化后原样返回，不二次拆分
+    const asJson = parseMultiSelectValues(s)
+    if (asJson.length > 0) return formatMultiSelectValues(asJson)
+    const parts = s.split(/[、,，;；]/).map(x => x.trim()).filter(Boolean)
+    return parts.length > 0 ? formatMultiSelectValues(parts) : s
+  }
+  if (type === 'number') {
+    // 剥掉单位后缀与千分位空格：'18 级' / '18级' ⇒ '18'
+    const unit = (field?.unit ?? '').trim()
+    let t = s
+    if (unit && t.endsWith(unit)) t = t.slice(0, -unit.length).trim()
+    t = t.replace(/\s+/g, '')
+    return /^-?\d+(\.\d+)?$/.test(t) ? t : s
+  }
+  return s
+}
+
 /** 按类型写回存储串（供后续配置 UI / AI 回填使用） */
 export function serializeCustomValue(
   type: CustomFieldType,

@@ -40,6 +40,13 @@ interface Props {
    */
   extraColumns?: readonly { name: string; label: string }[]
   /**
+   * 3.1.3 · R09：自定义字段的**类型信息**（存储键 → 类型 / 单位）。
+   * 传了它，CSV 里"给人看的值"才能还原成库里存的值
+   * （多选「怕火、怕水」→JSON、布尔「是 / 否」→true/false、带单位数字「18 级」→18）；
+   * 不传则一律当纯文本 —— 导出去再导回来，控件会全部回显不出来。
+   */
+  fieldTypes?: Record<string, { customType?: CustomFieldType; unit?: string }>
+  /**
    * 3.1.3：把"认不出的列"建成自定义字段（仅图鉴页签提供）。
    * 建完由父组件刷新配置 ⇒ `extraColumns` 变化 ⇒ 这里会**自动重新解析**，那些列立刻被认出来。
    */
@@ -75,7 +82,7 @@ interface Props {
  *   2. **不擅自替作者决定**：AI 拆出来的行与本地解析的行走**同一套校验与预览**，
  *      重复 / 缺必填 / 悬空都标出来，勾不勾、导不导由作者定。
  */
-export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, extraColumns = [], onCreateFields, onAdd, onClose, guideBuilder }: Props) {
+export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, extraColumns = [], fieldTypes, onCreateFields, onAdd, onClose, guideBuilder }: Props) {
   const [raw, setRaw] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
@@ -143,8 +150,8 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
 
   /** 解析 → 行对象（AI 结果优先；否则表格走矩阵映射、纯文本走本地拆分）—— 构造已抽到 buildImportPrepared */
   const prepared = useMemo(
-    () => buildImportPrepared(parsed, tab, aiRows ? t.result : null, extraColumns),
-    [parsed, tab, aiRows, t.result, extraColumns],
+    () => buildImportPrepared(parsed, tab, aiRows ? t.result : null, extraColumns, fieldTypes),
+    [parsed, tab, aiRows, t.result, extraColumns, fieldTypes],
   )
 
   /** 认不出的列（图鉴页签才给"建成字段"入口） */

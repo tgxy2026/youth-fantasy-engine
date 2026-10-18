@@ -17,6 +17,7 @@ import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
+import { sameAtlasFieldDefinition, uniqueFieldLabel } from '@/lib/atlas/packageIO'
 import type { WorldPackTable } from '@/lib/world/worldTypes'
 
 /** `settingsKV` 里的键名（与项目绑定） */
@@ -79,11 +80,18 @@ export async function importWorldIntoCurrent(worldId: string, version = 0): Prom
         const cur = (await loadAtlasSchema(pid, t.tabId)).config
         const nextFields = [...cur.fields]
         for (const f of t.atlasFields) {
-          const hit = cur.fields.find(e => e.label === f.label && e.type === f.type)
+          // 🔴 3.1.3 · R08：完整定义一致才复用（同名异义不硬合并，与资料包同一口径）
+          const hit = cur.fields.find(e => sameAtlasFieldDefinition(e, f))
           if (hit) { idMap.set(f.id, hit.id); continue }
           const nid = newFieldId()
           idMap.set(f.id, nid)
-          nextFields.push({ ...f, id: nid, archived: false })
+          // 名字撞车就改个名（与资料包导入同一口径，见 `uniqueFieldLabel`）
+          nextFields.push({
+            ...f,
+            id: nid,
+            label: uniqueFieldLabel([...cur.fields.map(x => x.label), ...nextFields.map(x => x.label)], f.label),
+            archived: false,
+          })
         }
         if (nextFields.length > cur.fields.length) {
           await saveAtlasSchema(pid, t.tabId, { ...cur, fields: nextFields })

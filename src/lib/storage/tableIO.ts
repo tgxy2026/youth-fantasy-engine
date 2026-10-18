@@ -19,6 +19,10 @@
 //   · 文本：一段散文式设定 —— 走 `textToRows`，先按「列名：值」块或按行拆分。
 
 import type { TabDef, TableColumn, TableRow } from '@/lib/types'
+import type { CustomFieldType } from '@/lib/atlas/types'
+// 🔴 类型化回导的单一真源在 `atlas/values`（与导出用的 `formatCustomValue` 同源），
+//    这里只调用、不另写一份解析 —— 否则"导出一套、导入另一套"迟早对不上（R09 的病根）。
+import { parseTypedImportValue } from '@/lib/atlas/values'
 import { organizeKeyColumns, isDirectedPairTab } from '@/lib/ai/aiScope'
 import { nextAutoCode, AUTONUM_GROUPS } from '@/lib/ai/autoCode'
 
@@ -102,8 +106,9 @@ export function parseImportText(raw: string): ParsedInput {
 
   // ③ CSV
   if (lines.length >= 2 && lines[0].includes(',')) {
-    const grid = lines.map(splitCsvLine)
-    const w = grid[0].length
+    // 🔴 用完整解析器（`parseCsvGrid`）：按行再拆会把"引号内的换行"切成两条脏行（R09）
+    const grid = parseCsvGrid(text)
+    const w = grid[0]?.length ?? 0
     const sameWidth = grid.filter(r => r.length === w).length
     if (w >= 2 && sameWidth >= Math.max(2, grid.length - 1)) {
       return { format: 'csv', table: { headers: grid[0], rows: grid.slice(1) }, note: `逗号分隔（CSV）· ${w} 列 × ${grid.length - 1} 行` }
@@ -182,15 +187,26 @@ export function mapHeaders(
   })
 }
 
-/** 矩阵 + 映射 → 行对象（键 = schema 列名；未映射的列丢弃） */
-export function matrixToRows(table: ParsedTable, mapping: (string | null)[], tab: TabDef): Record<string, string>[] {
+/**
+ * 矩阵 + 映射 → 行对象（键 = schema 列名；未映射的列丢弃）。
+ *
+ * @param fieldTypes 自定义字段的类型信息（存储键 → 类型 / 单位）——
+ *   🔴 3.1.3 · R09：给了就按类型把**显示形态**还原成**存储形态**（多选 / 布尔 / 带单位数字），
+ *     否则"导出去再导回来"控件全部回显不出来。拿不到就当纯文本（保守，不猜）。
+ */
+export function matrixToRows(
+  table: ParsedTable,
+  mapping: (string | null)[],
+  tab: TabDef,
+  fieldTypes?: Record<string, { customType?: CustomFieldType; unit?: string }>,
+): Record<string, string>[] {
   const cols = tab.columns ?? []
   return table.rows.map(r => {
     const data: Record<string, string> = {}
     cols.forEach(c => { data[c.name] = '' })
     r.forEach((v, i) => {
       const col = mapping[i]
-      if (col) data[col] = (v ?? '').trim()
+      if (col) data[col] = parseTypedImportValue((v ?? '').trim(), fieldTypes?.[col])
     })
     return data
   })
@@ -395,10 +411,50 @@ export function buildImportRows(
 
 // ============ E. 导出 ============
 
-/** CSV 单元格转义（含逗号 / 引号 / 换行的字段用双引号包裹） */
+/**
+ * CSV 单元格转义（含逗号 / 引号 / 换行的字段用双引号包裹）。
+ *
+ * 🔴 3.1.3 · R09：修复前先把换行**替换成空格**再判断要不要加引号
+ *    ⇒ "第一行\n第二行" 导出后变成 "第一行 第二行"，再导入**永远还原不回换行**
+ *    （验收实测）。正确做法正是标准 CSV 本来就支持的：换行留在引号里原样写。
+ *    代价是导入端必须认得引号内的换行 —— 见 `parseCsvGrid`。
+ */
 export function csvCell(v: string): string {
-  const s = String(v ?? '').replace(/\r?\n/g, ' ')
-  return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  const s = String(v ?? '')
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/**
+ * 完整 CSV 解析（**支持引号内的换行**与 `""` 转义）。
+ *
+ * 🔴 为什么不能"先按 \n 切再逐行拆"（那是修复前的写法）：带引号的多行字段被切成两半，
+ *    后半段变成一条缺列的脏行。这里一遍扫完整段文本，只有**不在引号里**的换行才算换行。
+ */
+export function parseCsvGrid(text: string): string[][] {
+  const grid: string[][] = []
+  let row: string[] = []
+  let cur = ''
+  let inQ = false
+  let started = false   // 这一行是否已经有内容（用来跳过纯空行）
+  const endCell = () => { row.push(cur); cur = '' }
+  const endRow = () => { endCell(); if (started) grid.push(row); row = []; started = false }
+  const s = String(text ?? '').replace(/\r\n?/g, '\n')
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (inQ) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { cur += '"'; i++ } else inQ = false
+      } else cur += ch
+      continue
+    }
+    if (ch === '"') { inQ = true; started = true; continue }
+    if (ch === ',') { endCell(); started = true; continue }
+    if (ch === '\n') { endRow(); continue }
+    cur += ch
+    started = true
+  }
+  endRow()
+  return grid
 }
 
 /** 导出当前表数据为 CSV（列序 = schema 列序，跳过隐藏列） */
@@ -555,6 +611,8 @@ export function buildImportPrepared(
   tab: TabDef,
   ai?: { rows: Record<string, string>[]; rawCount: number; chunks: number } | null,
   extra?: readonly { name: string; label: string }[],
+  /** 自定义字段的类型信息（3.1.3 · R09）：给了才把显示形态还原成存储形态 */
+  fieldTypes?: Record<string, { customType?: CustomFieldType; unit?: string }>,
 ): { rows: Record<string, string>[]; note: string; unmapped?: string[] } {
   if (ai) {
     const rawN = ai.rawCount ?? ai.rows.length
@@ -574,7 +632,7 @@ export function buildImportPrepared(
     //    实际少了几列却毫无提示 —— 这类静默丢数据是导入功能最不该有的表现。
     const lost = lostCols.length ? `；未识别的列已忽略：${lostCols.join('、')}` : ''
     return {
-      rows: matrixToRows(parsed.table, mapping, tab),
+      rows: matrixToRows(parsed.table, mapping, tab, fieldTypes),
       note: `${parsed.note} · 匹配到 ${hit}/${mapping.length} 列${lost}`,
       // 3.1.3：把这些列头交给弹窗 —— 图鉴页签可以一键把它们建成自定义字段，
       // 而不是让作者眼睁睁看着整列被丢掉（方案 §8.2「外来列可映射 / 新建 / 忽略」）。

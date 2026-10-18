@@ -40,6 +40,7 @@ import TableMoreMenu, { type MoreMenuItem } from '@/components/sheets/TableMoreM
 import AtlasView from '@/components/atlas/AtlasView'
 import AtlasFieldManager from '@/components/atlas/AtlasFieldManager'
 import type { AtlasColumn } from '@/lib/atlas/columns'
+import type { CustomFieldType } from '@/lib/atlas/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
 import { buildAtlasPackage, parseAtlasPackage, previewAtlasImport } from '@/lib/atlas/packageIO'
 import { atlasCategoryOptions } from '@/lib/atlas/schema'
@@ -109,6 +110,20 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   } = model
 
   /**
+   * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。
+   * 导出写的是给人看的值（多选→顿号、布尔→是/否、带单位数字→"18 级"），
+   * 导入时必须按这份类型表还原成库里存的值，否则控件全部回显不出来。
+   */
+  const atlasFieldTypes = useMemo(() => {
+    const out: Record<string, { customType?: CustomFieldType; unit?: string }> = {}
+    for (const c of effectiveColumns) {
+      if (!c.atlasField) continue
+      out[c.name] = { customType: c.atlasField.customType, unit: c.atlasField.unit }
+    }
+    return out
+  }, [effectiveColumns])
+
+  /**
    * 导出本表为 CSV（UTF-8 BOM，Excel 直接打开不乱码）。
    * 🔴 用 `sortedRows` 而不是 `rows`（2026-10-02 六维审计 P2）：它才是屏幕上这份视图 ——
    *    与表格排序一致、且已并入未保存草稿。旧实现导出的是裸库数据：作者刚改完还没保存就导出，
@@ -164,12 +179,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     }
 
     const p = previewAtlasImport(r.pkg, atlasConfig, atlasCategoryOptions(tab))
+    // 🔴 R08：名字撞车但定义不同的字段会另建并改名 —— **导入前**就要说清楚，
+    //    否则导完凭空多一个「食性（2）」，作者只会以为是 bug。
+    const conflictNote = p.conflicts.length > 0
+      ? `\n\n有 ${p.conflicts.length} 个字段与现有字段同名但定义不同，不会硬合并，将**另建并改名**：${p.conflicts.slice(0, 3).map(c => `「${c.label}」→「${c.label}（新）」(${c.reason})`).join('；')}`
+      : ''
     const catNote = p.unknownCategories.length > 0
       ? `\n\n类别值里有 ${p.unknownCategories.length} 个目标表还没有（${p.unknownCategories.slice(0, 3).join('、')}${p.unknownCategories.length > 3 ? '…' : ''}）—— 导入后会自动登记成「类别」列的自定义选项，不会丢值。`
       : ''
     const ok = await confirmDialog({
       title: '导入图鉴资料包',
-      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}`,
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
     })
     if (!ok) return
 
@@ -665,6 +685,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           extraColumns={effectiveColumns
             .filter(c => c.atlasField)
             .map(c => ({ name: c.name, label: c.atlasField!.label }))}
+          // 🔴 R09：类型信息一起传，导出的"显示值"才能还原成库里的"存储值"
+          fieldTypes={atlasFieldTypes}
           onCreateFields={isAtlasCapable ? createAtlasFields : undefined}
           onAdd={handleImport}
           onClose={() => setShowImport(false)}

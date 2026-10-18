@@ -25,13 +25,16 @@ import {
 import {
   ATLAS_PACKAGE_MAX_IMAGE_CHARS, ATLAS_PACKAGE_MAX_ROWS,
   buildAtlasPackage, packageRowId, parseAtlasPackage, planAtlasImport, previewAtlasImport,
+  sameAtlasFieldDefinition, uniqueFieldLabel,
 } from '@/lib/atlas/packageIO'
 import { dataUrlBytes } from '@/lib/media/imagePortrait'
-import { buildImportPrepared, exportRowsCsv, mapHeaders, parseImportText } from '@/lib/storage/tableIO'
+import {
+  buildImportPrepared, csvCell, exportRowsCsv, mapHeaders, parseCsvGrid, parseImportText,
+} from '@/lib/storage/tableIO'
 import { collectIndexDocs, type AtlasIndexFieldRule } from '@/lib/semantic/indexer'
 import {
   formatBooleanValue, formatCustomValue, formatMultiSelectValues,
-  isEmptyValue, parseMultiSelectValues, coerceAiValue,
+  isEmptyValue, parseMultiSelectValues, coerceAiValue, parseTypedImportValue,
 } from '@/lib/atlas/values'
 
 let pass = 0, fail = 0
@@ -479,7 +482,7 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const sheet = read('src/components/sheets/TableSheet.tsx')
   ok('⑲ 导入先校验再落库（parse → 预览确认 → import）',
     sheet.indexOf('parseAtlasPackage') < sheet.indexOf('importAtlasPackage(r.pkg)'))
-  ok('⑲ 导入前有确认弹窗（不当场默默写入）', /previewAtlasImport[\s\S]{0,600}confirmDialog/.test(sheet))
+  ok('⑲ 导入前有确认弹窗（不当场默默写入）', /previewAtlasImport[\s\S]{0,1200}confirmDialog/.test(sheet))
   ok('⑲ 导出用含草稿的 sortedRows', /buildAtlasPackage\(tab, atlasConfig, sortedRows\)/.test(sheet))
 }
 
@@ -990,6 +993,112 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉘ R11：条目 id 用稳定 id（不是 uid）', model.includes('id: packageRowId(pkg, i)'))
   const sheet = read('src/components/sheets/TableSheet.tsx')
   ok('㉘ R11：界面如实显示"部分成功 + 可再导一次补齐"', /res\.failed > 0/.test(sheet))
+}
+
+// ---------- ㉙ R08（2026-10-19 修）：同名异义字段不再自动复用 ----------
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const def = (over: Partial<AtlasFieldDefinition>): AtlasFieldDefinition => ({
+    id: 'cf_diet', label: '食性', type: 'select', description: '', options: ['食肉'],
+    appliesTo: '*', groupId: 'extra', order: 10, tableVisible: true, detailVisible: true,
+    searchable: true, aiReadable: true, aiWritable: false, archived: false, ...over,
+  })
+
+  // ① 同义判定必须比完整定义
+  ok('㉙ R08：定义完全一致 ⇒ 算同一个字段', sameAtlasFieldDefinition(def({}), def({})))
+  ok('㉙ R08：候选不同 ⇒ 不算同一个（同名异义）',
+    !sameAtlasFieldDefinition(def({}), def({ options: ['食草'] })))
+  ok('㉙ R08：单位不同 ⇒ 不算同一个',
+    !sameAtlasFieldDefinition(def({ type: 'number', unit: '级' }), def({ type: 'number', unit: '阶' })))
+  ok('㉙ R08：类别范围不同 ⇒ 不算同一个',
+    !sameAtlasFieldDefinition(def({ appliesTo: ['魔兽'] }), def({ appliesTo: ['灵兽'] })))
+  ok('㉙ R08：类型不同 ⇒ 不算同一个',
+    !sameAtlasFieldDefinition(def({ type: 'text' }), def({ type: 'select' })))
+  ok('㉙ R08：候选顺序不同仍算同一个（顺序不是语义）',
+    sameAtlasFieldDefinition(def({ options: ['食肉', '杂食'] }), def({ options: ['杂食', '食肉'] })))
+  ok('㉙ R08 负向：不同名就一定不算同一个',
+    !sameAtlasFieldDefinition(def({ label: '食性' }), def({ label: '栖息地' })))
+
+  // ② 导入计划：撞车 ⇒ 另建 + 改名，且把值映射到新字段
+  const target = { ...emptyAtlasSchema(), fields: [def({ id: 'cf_local', options: ['食草'] })] }
+  const pkg = buildAtlasPackage(races, { ...emptyAtlasSchema(), fields: [def({})] },
+    [{ id: 'r1', projectId: 'p1', tabId: 'races', order: 0, data: { 名称: '墨鳞蟒', cf_diet: '食肉' } }] as never, { now: 1 })
+  const plan = planAtlasImport(pkg, target, () => 'cf_new')
+  ok('㉙ R08：同名异义 ⇒ 不复用（新建）', plan.reused.length === 0 && plan.created.length === 1)
+  ok('㉙ R08：新建的字段改了名（不留两个同名同姓的字段）',
+    plan.created[0].label === '食性（2）', plan.created[0].label)
+  ok('㉙ R08：撞车原因如实报出来（说清是候选不同）',
+    plan.conflicts.length === 1 && plan.conflicts[0].reason.includes('候选'), JSON.stringify(plan.conflicts))
+  ok('㉙ R08：值映射到新字段（不是塞进目标那个异义字段）', plan.rows[0].data.cf_new === '食肉')
+  ok('㉙ R08：目标原有字段的值没被碰', plan.rows[0].data.cf_local === undefined)
+
+  // ③ 定义一致 ⇒ 照旧复用（不该每次都新建）
+  const sameTarget = { ...emptyAtlasSchema(), fields: [def({ id: 'cf_local' })] }
+  const plan2 = planAtlasImport(pkg, sameTarget, () => 'cf_new')
+  ok('㉙ R08：定义一致 ⇒ 复用（不重复造字段）',
+    plan2.reused.length === 1 && plan2.created.length === 0 && plan2.conflicts.length === 0)
+
+  // ④ 改名函数
+  ok('㉙ R08：不撞车时原名保留', uniqueFieldLabel(['已有'], '食性') === '食性')
+  ok('㉙ R08：撞车时递增改名', uniqueFieldLabel(['食性', '食性（2）'], '食性') === '食性（3）')
+
+  // ⑤ 预览要提前说清
+  const pv = previewAtlasImport(pkg, target, [])
+  ok('㉙ R08：预览里报出撞车（导入前就告诉作者）', pv.conflicts.length === 1)
+  const sheet = read('src/components/sheets/TableSheet.tsx')
+  ok('㉙ R08：确认弹窗里显示撞车说明', /p\.conflicts\.length > 0/.test(sheet))
+  const wi = read('src/lib/world/worldImport.ts')
+  ok('㉙ R08：世界包导入也用同一套判定（不自己另写一份）', wi.includes('sameAtlasFieldDefinition'))
+}
+
+// ---------- ㉚ R09（2026-10-19 修）：CSV 往返等值（换行 / 类型化值） ----------
+{
+  // ① 换行：修前 `csvCell` 先把换行换成空格 ⇒ 导出去再导回来永远回不来
+  ok('㉚ R09：带换行的单元格用引号包裹（不再被压成空格）',
+    csvCell('第一行\n第二行') === '"第一行\n第二行"', JSON.stringify(csvCell('第一行\n第二行')))
+  ok('㉚ R09 负向：不含特殊字符时不加引号（不无谓膨胀）', csvCell('普通') === '普通')
+  ok('㉚ R09：逗号 / 引号照旧处理', csvCell('a,b') === '"a,b"' && csvCell('a"b') === '"a""b"')
+
+  const line = [csvCell('名称'), csvCell('备注')].join(',')
+  const csv = [line, [csvCell('墨鳞蟒'), csvCell('第一行\n第二行')].join(',')].join('\n')
+  const grid = parseCsvGrid(csv)
+  ok('㉚ R09：完整解析出 2 条记录（引号内换行不算换行）', grid.length === 2, String(grid.length))
+  ok('㉚ R09：换行往返等值', grid[1][1] === '第一行\n第二行', JSON.stringify(grid[1][1]))
+  ok('㉚ R09：引号转义往返等值', parseCsvGrid('a,"x""y"')[0][1] === 'x"y')
+  ok('㉚ R09 负向：按行拆会把它切成两条脏行（闸本身有效）', csv.split('\n').length === 3)
+
+  // ② 类型化回导：导出的是显示值，导入要还原成存储值
+  ok('㉚ R09：布尔「是」→ true', parseTypedImportValue('是', { customType: 'boolean' }) === 'true')
+  ok('㉚ R09：布尔「否」→ false（不是"否"这个字符串）', parseTypedImportValue('否', { customType: 'boolean' }) === 'false')
+  ok('㉚ R09：布尔脏值不猜（原样保留）', parseTypedImportValue('大概是', { customType: 'boolean' }) === '大概是')
+  ok('㉚ R09：多选「怕火、怕水」→ JSON 数组',
+    parseTypedImportValue('怕火、怕水', { customType: 'multiSelect' }) === JSON.stringify(['怕火', '怕水']),
+    parseTypedImportValue('怕火、怕水', { customType: 'multiSelect' }))
+  ok('㉚ R09：多选已是存储形态时不二次拆分',
+    parseTypedImportValue(JSON.stringify(['怕火']), { customType: 'multiSelect' }) === JSON.stringify(['怕火']))
+  ok('㉚ R09：带单位数字「18 级」→ 18', parseTypedImportValue('18 级', { customType: 'number', unit: '级' }) === '18')
+  ok('㉚ R09：不带单位的数字', parseTypedImportValue('3.50', { customType: 'number' }) === '3.50')
+  ok('㉚ R09：数字位解析不出来就原样（不静默归零）',
+    parseTypedImportValue('未知', { customType: 'number' }) === '未知')
+  ok('㉚ R09：没有类型信息就当纯文本（保守，不猜）', parseTypedImportValue(' 是 ') === '是')
+
+  // ③ 端到端：导出 → 导入 → 等值
+  const display = (raw: string, type: CustomFieldType, unit?: string) => formatCustomValue(type, raw, unit)
+  const roundTrip = (stored: string, type: CustomFieldType, unit?: string) =>
+    parseTypedImportValue(display(stored, type, unit), { customType: type, unit })
+  ok('㉚ R09：布尔往返等值', roundTrip('true', 'boolean') === 'true' && roundTrip('false', 'boolean') === 'false')
+  ok('㉚ R09：多选往返等值',
+    roundTrip(JSON.stringify(['怕火', '怕水']), 'multiSelect') === JSON.stringify(['怕火', '怕水']))
+  ok('㉚ R09：带单位数字往返等值', roundTrip('18', 'number', '级') === '18')
+
+  // ④ 源码闸：导入端用完整 CSV 解析器 / 类型信息已接进界面
+  const io = read('src/lib/storage/tableIO.ts')
+  ok('㉚ R09：导入用 parseCsvGrid（不再先按行切）', io.includes('parseCsvGrid(text)'))
+  ok('㉚ R09：矩阵转行时按类型还原', /parseTypedImportValue\(/.test(io))
+  const sheet = read('src/components/sheets/TableSheet.tsx')
+  ok('㉚ R09：界面把字段类型传给导入弹窗', sheet.includes('fieldTypes={atlasFieldTypes}'))
+  const dlg = read('src/components/sheets/TableImportDialog.tsx')
+  ok('㉚ R09：弹窗把类型信息一路传下去', dlg.includes('fieldTypes'))
 }
 
 console.log(`\n—— atlasFields 用例结束：${pass} 通过 / ${fail} 失败 ——`)
