@@ -66,6 +66,8 @@ export default function CreativeWritingPanel() {
             showToast('已填入想法 —— 生成的是要点提纲，改完再开始创作')
           }}
           applyLabel="填入想法"
+          persistScope="creative-seed"
+          persistLabel="一句话想法"
         />
       )}
     </div>

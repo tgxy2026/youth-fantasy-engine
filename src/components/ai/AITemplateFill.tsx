@@ -317,6 +317,13 @@ export default function AITemplateFill({
         onClose={onClose}
         onApply={onSubmit}
         applyLabel="生成草稿并填入"
+        /**
+         * 存档作用域（3.1.3）：优先复用草稿本的 `draftScope` —— 它已经是「页签 / 记录 / 行」
+         * 维度的稳定值，8 个调用方都传了；没传时退回「按弹窗标题」，至少同类型弹窗能接上。
+         * 🔴 这里只给**裸 scope**，`interview::` 前缀由 interviewStore 自己加（别拼两层）。
+         */
+        persistScope={draftScope ?? `by-title::${title}`}
+        persistLabel={title.replace(/^AI (?:补全|新增)(?:本行空白)?\s*·\s*/, '').trim() || title}
       />
     )
   }

@@ -22,13 +22,18 @@ import {
   emptyInterview, interviewProgress, filledToText, runInterviewTurn,
   type InterviewSpec, type InterviewState,
 } from '@/lib/creative/interview'
-import { showToast } from '@/components/dialogs/dialogs'
+import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
+import {
+  archiveAgeLabel, clearInterviewArchive, loadInterviewArchive, saveInterviewArchive,
+  type InterviewArchive,
+} from '@/lib/creative/interviewStore'
 import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 
 export default function InterviewChat({
   subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入', headerSlot,
+  persistScope, persistLabel,
 }: {
   /** 「角色卡」/「剧本」/「这份设定」—— 只用于文案 */
   subject: string
@@ -47,35 +52,142 @@ export default function InterviewChat({
    * 🔴 本组件**不自己读库**：读什么、读多少一律由调用方决定后通过 `context` 递进来。
    */
   headerSlot?: ReactNode
+  /**
+   * 会话存档作用域（3.1.3）。由调用方给**稳定值**（通常直接复用弹窗的 `draftScope`）；
+   * 不传 = 不存档（一次性试聊 / 单测）。
+   */
+  persistScope?: string
+  /** 恢复提示里的主语（默认用 `subject`，如「主要角色」） */
+  persistLabel?: string
 }) {
   const [state, setState] = useState<InterviewState>(() => emptyInterview())
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  /** 读到但**尚未恢复**的存档：有值 ⇒ 顶部显示「继续 / 重新开始」，且不自动开场 */
+  const [archive, setArchive] = useState<InterviewArchive | null>(null)
+  /** 存档还在读 —— 读完之前别自动开场，否则会和恢复提示抢着开场 */
+  const [archiveLoading, setArchiveLoading] = useState(!!persistScope)
   const startedRef = useRef(false)
+  /** 是否已把结果填回表单（填过就不必在关闭时再问一句） */
+  const appliedRef = useRef(false)
+  /** 卸载守卫：异步回来后不再 setState（切页签会卸载本组件） */
+  const aliveRef = useRef(true)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  const send = async (text: string | null) => {
+  useEffect(() => {
+    aliveRef.current = true
+    return () => { aliveRef.current = false }
+  }, [])
+
+  /**
+   * 打开时读存档，**不自动恢复**。
+   * 🔴 自动恢复的坑：作者以为这次是从零开始，结果 AI 接着上次那半句话问下去，
+   *    他会以为"AI 记住了不该记的东西"。所以一律先问一句「继续 / 重新开始」。
+   */
+  useEffect(() => {
+    if (!persistScope) { setArchiveLoading(false); return }
+    let alive = true
+    void loadInterviewArchive(persistScope).then(a => {
+      if (!alive) return
+      setArchive(a)
+      setArchiveLoading(false)
+    })
+    return () => { alive = false }
+  }, [persistScope])
+
+  /** 落盘：存档不是关键数据，失败不阻断对话（串行由 interviewStore 内部保证） */
+  const persist = (next: InterviewState) => {
+    if (!persistScope) return
+    void saveInterviewArchive(persistScope, {
+      state: next,
+      updatedAt: Date.now(),
+      applied: false,
+      subject: persistLabel ?? subject,
+    })
+  }
+
+  /**
+   * 发一轮。
+   * @param base 指定起点（「重新开始」时上一句刚 setState，闭包里还是旧 state）
+   */
+  const send = async (text: string | null, base?: InterviewState) => {
+    const from = base ?? state
     setBusy(true)
     setErr('')
     try {
-      const res = await runInterviewTurn(spec, state, text, { callChat, existing, context })
+      const res = await runInterviewTurn(spec, from, text, { callChat, existing, context })
+      if (!aliveRef.current) return
       setState(res.state)
+      // 先 setState 再落盘：界面不等库（落盘失败也不该让对话卡住）
+      persist(res.state)
     } catch (e) {
+      if (!aliveRef.current) return
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
-      setBusy(false)
+      if (aliveRef.current) setBusy(false)
     }
   }
 
   // 打开后自动开场（只跑一次 —— startedRef 防 React 双跑与依赖变化引起的重入）
   useEffect(() => {
     if (startedRef.current || busy) return
+    // 有存档待选择时不开场：先让作者决定「继续」还是「重新开始」
+    if (archiveLoading || archive) return
     if (state.turns.length > 0) return
     startedRef.current = true
     void send(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.turns.length, busy])
+  }, [state.turns.length, busy, archive, archiveLoading])
+
+  /** 恢复上次的对话（提示条消失，不再重复出现） */
+  const restoreArchive = () => {
+    if (!archive) return
+    setState(archive.state)
+    setArchive(null)
+    startedRef.current = true // 已有对话，别再自动开场
+  }
+
+  /** 丢掉存档、从第一句重新开始 */
+  const restartFromScratch = () => {
+    setArchive(null)
+    startedRef.current = true
+    const fresh = emptyInterview()
+    setState(fresh)
+    setInput('')
+    if (persistScope) void clearInterviewArchive(persistScope)
+    void send(null, fresh)
+  }
+
+  /**
+   * 关闭前确认（B 方案）。
+   * 🔴 禁原生 `window.confirm`（项目红线），一律走 `confirmDialog`。
+   * 🔴 文案要讲清「会保留存档」—— 否则作者以为一关就全丢，反而不敢关。
+   */
+  const requestClose = () => {
+    if (state.turns.length > 0 && !appliedRef.current) {
+      void confirmDialog({
+        title: '对话还没填回表单',
+        message: '关掉后这段对话会保留存档，下次打开可以接着聊；现在要关闭吗？',
+        confirmText: '关闭',
+        cancelText: '继续聊',
+      }).then(ok => {
+        if (!ok) return
+        // 保险：把这轮再落一次（正常情况下每轮已经落过）
+        persist(state)
+        onClose()
+      })
+      return
+    }
+    onClose()
+  }
+
+  /** 填回表单：先清存档再交给调用方（已填过的会话不该再被恢复） */
+  const applyAndClose = () => {
+    appliedRef.current = true
+    if (persistScope) void clearInterviewArchive(persistScope)
+    onApply(state.filled)
+  }
 
   useEffect(() => {
     const el = scrollRef.current
@@ -84,6 +196,11 @@ export default function InterviewChat({
 
   // 渲染期派生（2026-10-04 六维审计 A5）：输入框每敲一键都会重渲染，包 useMemo 免跟着重算。
   const progress = useMemo(() => interviewProgress(state, spec.allowedKeys), [state, spec.allowedKeys])
+  /** 「第 N 轮」按作者的**回答数**算（AI 开场白不算一轮） */
+  const userTurnCount = useMemo(
+    () => (archive ? archive.state.turns.filter(t => t.role === 'user').length : 0),
+    [archive],
+  )
   const filledRows = useMemo(
     () => Object.entries(state.filled).filter(([, v]) => String(v ?? '').trim()),
     [state.filled],
@@ -91,7 +208,7 @@ export default function InterviewChat({
 
   return (
     <Modal
-      open onClose={onClose} title={`对话引导 · 创建${subject}`} width="xl"
+      open onClose={requestClose} title={`对话引导 · 创建${subject}`} width="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-11 text-ink-500">
@@ -100,13 +217,13 @@ export default function InterviewChat({
               : `已收集 ${progress.got} / ${progress.total} 栏${state.done ? ' · AI 认为可以收尾了' : ''}`}
           </span>
           <div className="flex gap-2">
-            <Button variant="secondary" size="md" onClick={onClose}>关闭</Button>
+            <Button variant="secondary" size="md" onClick={requestClose}>关闭</Button>
             <Button
               variant="primary" size="md"
               disabled={progress.got === 0 || busy}
               onClick={() => {
                 if (progress.got === 0) return
-                onApply(state.filled)
+                applyAndClose()
                 showToast(`已填入 ${progress.got} 栏 —— 生成的是草稿，逐栏改完再保存`)
               }}
             >
@@ -117,6 +234,21 @@ export default function InterviewChat({
       }
     >
       {headerSlot && <div className="mb-3">{headerSlot}</div>}
+
+      {/* 恢复提示条：只在「有存档且还没选」时出现 —— 进入对话后立刻消失，不反复打扰。
+          窄窗口下靠 flex-wrap 换行，两个按钮不会被挤成一条缝。 */}
+      {archive && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-amber/30 bg-amber/5 px-2.5 py-1.5">
+          <span className="min-w-0 text-11 leading-relaxed text-ink-300">
+            上次在聊「{archive.subject || subject}」，聊到第 {userTurnCount} 轮回答（{archiveAgeLabel(archive.updatedAt)}）—— 要接着聊吗？
+          </span>
+          <div className="ml-auto flex shrink-0 gap-2">
+            <Button variant="secondary" size="sm" disabled={busy} onClick={restoreArchive}>继续上次</Button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={restartFromScratch}>重新开始</Button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_15rem]">
         {/* 左：对话 */}
         <div className="flex h-[26rem] min-h-0 flex-col">
