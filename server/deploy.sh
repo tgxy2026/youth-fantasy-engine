@@ -25,6 +25,15 @@ WHAT="${1:-both}"
 SSH="ssh -i $KEY -o BatchMode=yes -o ConnectTimeout=15"
 SCP="scp -i $KEY -o BatchMode=yes -o ConnectTimeout=15"
 
+# 🔴 构建摘要算法（PLT-10）：与 server/scripts/deploy.sh 里的 build_id() 必须逐字一致，
+#    两端不一致会让「版本核对」永远失败。改这里必须同步改远端。
+#    口径：目录内全部文件（排除 BUILD_ID 自身）按路径排序，逐个 sha256 后与路径一起再 sha256。
+build_id() {
+  (cd "$1" && find . -type f -not -name BUILD_ID | LC_ALL=C sort | while read -r f; do
+     printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
+   done | sha256sum | cut -d' ' -f1)
+}
+
 # 远端上线脚本（先确保它在，版本跟着仓库走）
 $SCP "$SERVER_DIR/scripts/deploy.sh" "$HOST":/tmp/yfe-deploy.sh >/dev/null
 $SSH "$HOST" "mkdir -p /opt/yfe/scripts && mv /tmp/yfe-deploy.sh /opt/yfe/scripts/deploy.sh && chmod +x /opt/yfe/scripts/deploy.sh"
@@ -33,14 +42,19 @@ deploy_www() {
   echo "==> 构建前端"
   (cd "$ROOT" && npm run build >/dev/null)
   echo "==> 打包并上传 www"
+  # 把构建摘要写进包里（BUILD_ID 被 build_id 自身排除，不会自我循环）
+  printf '%s\n' "$(build_id "$ROOT/dist")" > "$ROOT/dist/BUILD_ID"
   tar -czf /tmp/yfe-www.tgz -C "$ROOT/dist" .
+  rm -f "$ROOT/dist/BUILD_ID"
   $SCP /tmp/yfe-www.tgz "$HOST":/tmp/ >/dev/null
   $SSH "$HOST" "bash /opt/yfe/scripts/deploy.sh /tmp/yfe-www.tgz www; rc=\$?; rm -f /tmp/yfe-www.tgz; exit \$rc"
 }
 
 deploy_server() {
   echo "==> 打包并上传 server"
+  printf '%s\n' "$(build_id "$SERVER_DIR")" > "$SERVER_DIR/BUILD_ID"
   tar -czf /tmp/yfe-server.tgz -C "$SERVER_DIR" .
+  rm -f "$SERVER_DIR/BUILD_ID"
   $SCP /tmp/yfe-server.tgz "$HOST":/tmp/ >/dev/null
   $SSH "$HOST" "bash /opt/yfe/scripts/deploy.sh /tmp/yfe-server.tgz server; rc=\$?; rm -f /tmp/yfe-server.tgz; exit \$rc"
 }
