@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HardDriveDownload, FileInput, ShieldAlert } from 'lucide-react'
+import { HardDriveUpload, FileInput, ShieldAlert } from 'lucide-react'
 import { exportGuestData, importGuestData } from '@/lib/db/guestData'
 import { pickLocalFile } from '@/lib/storage/fileBackend'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -108,7 +108,7 @@ export function GuestDataBar() {
         </div>
         <Button variant="bare" onClick={doExport} disabled={!!busy}
           title="导出全部数据：下载一个 JSON 文件，用于留档或换设备" className={iconBtn}>
-          <HardDriveDownload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
+          <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>
         <Button variant="bare" onClick={doImport} disabled={!!busy}
           title="导入数据文件：选择之前导出的 JSON，替换当前浏览器里的全部数据" className={iconBtn}>

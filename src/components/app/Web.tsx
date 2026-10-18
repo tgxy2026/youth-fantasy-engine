@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Save, HardDriveDownload, FileInput, Cloud } from 'lucide-react'
+import { Save, HardDriveUpload, FileInput, Cloud } from 'lucide-react'
 import {
   getPortableState, subscribePortable, flushPortable,
   exportPortableData, importPortableData, pickLocalFile,
@@ -148,7 +148,7 @@ export function WebDataBar() {
         </Button>
         <Button variant="bare" onClick={doExport} disabled={!!busy}
           title="导出全部数据：下载一个 JSON 文件（与桌面版格式一致，可直接导入桌面版）" className={iconBtn}>
-          <HardDriveDownload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
+          <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>
         <Button variant="bare" onClick={doImport} disabled={!!busy}
           title="导入数据文件：选择之前导出的 JSON，替换云端账号的全部数据" className={iconBtn}>
