@@ -6,7 +6,7 @@ import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search, FileDown, FileUp } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search, FileDown, FileUp, ArrowRightLeft } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '@/lib/media/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '@/lib/media/portraitSpec'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -32,6 +32,8 @@ import MentionPanel from '@/components/app/MentionPanel'
 import TableImportDialog from '@/components/sheets/TableImportDialog'
 import { buildCardImportGuide, buildCardRecords, cardNamePath, cardRecordsToTableRows, cardTabToTableTab, exportCardsCsv } from '@/lib/storage/cardIO'
 import { CARD_SELECT_FIELDS } from '@/lib/world/cardFields'
+import { characterCardTargets, isCharacterCardTab, planCardMove } from '@/lib/world/cardMove'
+import CardMoveDialog from '@/components/world/CardMoveDialog'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { ImportRowResult } from '@/lib/storage/tableIO'
 
@@ -83,6 +85,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
   /** 批量导入弹窗（3.1.x）：角色页签的「导入」按钮打开 */
   const [showImport, setShowImport] = useState(false)
+  /** 跨页签移动弹窗（3.1.3）：主要 / 次要 / NPC 三张角色卡之间搬运 */
+  const [moveOpen, setMoveOpen] = useState(false)
+  /**
+   * 可移动到的目标页签。只认「角色管理组的三张角色卡」——
+   * 「其他设定」虽然也是 card 型，但它不是人物档案，字段语义对不上，不该出现在这里。
+   */
+  const moveTargets = useMemo(
+    () => (isCharacterCardTab(tab.id) ? characterCardTargets(tab.id) : []),
+    [tab.id],
+  )
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
   const { labels: aliasLabels } = useFieldAliases(
@@ -343,6 +355,42 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   }
 
   /**
+   * 跨页签移动（3.1.3）：把当前这张卡连同立绘搬到另一张角色卡页签。
+   *
+   * 三条纪律：
+   *  ① **先冲刷脏草稿**再搬。否则作者刚改的两行还只在 draft 里，搬过去的是库里的旧值，
+   *     而旧页签那张卡已经没了 —— 改的内容就彻底找不回来。
+   *  ② 用 `planCardMove()` 现算一次（不信任弹窗传来的预览）：预览可能是几十秒前的快照。
+   *  ③ 保留原 `id` 与 `createdAt`：这是同一张卡换了住址，不是新建一张。立绘字段也随 `...latest` 带过去。
+   *     落库失败直接抛给弹窗（它会把原因显示在弹窗里，作者可重试，不会留下"卡在半路"的状态）。
+   */
+  const moveCardTo = async (to: TabDef) => {
+    const cur = draftRef.current
+    if (!cur) throw new Error('当前没有选中的角色卡')
+    if (!await flushCurrentDraft(true)) {
+      throw new Error(`当前${nounCard}未能保存，移动已取消 —— 请先手动保存后重试`)
+    }
+    const latest = draftRef.current ?? cur
+    const plan = planCardMove(tab, to, latest)
+    // 接在目标页签列表末尾：搬过去的卡不该插队到别人前面
+    const targetRecords = await getCardRecords(to.id)
+    const next: CardRecord = { ...latest, tabId: to.id, data: plan.data, order: targetRecords.length }
+    await saveCardRecord(next)
+    // 草稿本按「页签::记录id」存 —— 旧页签那份已经没意义，留着就是孤儿
+    void clearFreeDraft(`card::${tab.id}::${next.id}`)
+    const left = records.filter(r => r.id !== next.id)
+    setRecords(left)
+    setActiveId(left[0]?.id ?? null)
+    setMoveOpen(false)
+    showToast(
+      plan.lost.length
+        ? `「${latest.name}」已移动到「${to.name}」；${plan.lost.length} 项无对应栏位的内容已按确认丢弃`
+        : `「${latest.name}」已移动到「${to.name}」，${plan.carried.length} 项已带过去`,
+      plan.lost.length ? 'info' : 'success',
+    )
+  }
+
+  /**
    * 批量导入（3.1.x）：把勾选的导入行转成角色卡逐条落库，然后刷新左栏并选中第一张新卡。
    *
    * 🔴 逐条串行 await（不用 forEach + void）：与 TableSheet「清空全部」同一个教训 ——
@@ -600,7 +648,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h2
                   className="text-lg font-bold text-amber cursor-pointer hover:text-amber-soft"
                   onClick={renameCard}
@@ -609,6 +657,19 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   {draft.name}
                 </h2>
                 <span className="text-10 text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
+                {/* 跨页签移动（3.1.3）：角色卡升级 / 降级的正路 ——
+                    左右两栏挨着的页签来回切着复制粘贴，既容易漏项也会丢立绘。 */}
+                {moveTargets.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="ml-auto flex items-center gap-1.5"
+                    onClick={() => setMoveOpen(true)}
+                    title={`把「${draft.name}」移动到其他角色页签（按字段名对应，会先列出会丢哪些内容）`}
+                  >
+                    <ArrowRightLeft size={12} /> 移动到其他页签
+                  </Button>
+                )}
               </div>
               {tab.modules!.map(mod => {
                 // ⚠️ 模块名在 schema 里带序号（「一、基础信息」）—— 别用全等去比，
@@ -834,6 +895,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         onSubmit={submitNamePrompt}
         onCancel={() => setNamePrompt(null)}
       />
+
+      {/* 3.1.3：跨页签移动 —— rec 用当前草稿（未保存的修改也一起搬，见 moveCardTo） */}
+      {moveOpen && draft && moveTargets.length > 0 && (
+        <CardMoveDialog
+          rec={draft}
+          from={tab}
+          targets={moveTargets}
+          onClose={() => setMoveOpen(false)}
+          onConfirm={moveCardTo}
+        />
+      )}
 
       {/* 3.1 P1：资料提及结果面板（纯读，见 MentionPanel 头注） */}
       {mention && (
