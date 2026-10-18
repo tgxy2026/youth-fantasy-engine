@@ -21,6 +21,7 @@ import {
 } from '@/lib/atlas/quota'
 import { ATLAS_PACKAGE_MAX_ROWS, buildAtlasPackage, parseAtlasPackage, planAtlasImport, previewAtlasImport } from '@/lib/atlas/packageIO'
 import { buildImportPrepared, exportRowsCsv, mapHeaders, parseImportText } from '@/lib/storage/tableIO'
+import { collectIndexDocs } from '@/lib/semantic/indexer'
 import {
   formatBooleanValue, formatCustomValue, formatMultiSelectValues,
   isEmptyValue, parseMultiSelectValues, coerceAiValue,
@@ -606,6 +607,45 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const mgr = read('src/components/atlas/AtlasFieldManager.tsx')
   ok('㉒ 显示名编辑在字段设置面板里（同一套校验与清洗）',
     mgr.includes('内置字段显示名') && mgr.includes('sanitizeAliases') && mgr.includes('validateAliasInput'))
+}
+
+// ---------- ㉓ AI 两条链路口径一致：索引文本与提示词都用字段名（2026-10-18 修 R1/R2） ----------
+{
+  const mk = (data: Record<string, string>, fieldLabels?: Record<string, string>) => collectIndexDocs({
+    chapters: [],
+    tables: [{ tabId: 'races', tabName: '种族生物', rows: [{ id: 'r1', data }], fieldLabels }],
+    cards: [],
+  })[0]?.text ?? ''
+
+  // R1：cf_* 键名绝不能进索引文本（它会被〖语义召回〗原样注回提示词）
+  const withMap = mk({ 名称: '霜狼', cf_abc: '肉食' }, { cf_abc: '食性' })
+  ok('㉓ 索引文本用字段名（cf_ 换成「食性」）', withMap.includes('食性：肉食'))
+  ok('㉓ 负向：索引文本里不出现 cf_ 键名', !withMap.includes('cf_abc'))
+  // 拿不到映射时退化，也绝不漏内部键（宁可重名）
+  const noMap = mk({ 名称: '霜狼', cf_abc: '肉食' })
+  ok('㉓ 无映射时退化成「自定义字段」', noMap.includes('自定义字段：肉食'))
+  ok('㉓ 负向：无映射时也不露 cf_ 键名', !noMap.includes('cf_abc'))
+  // 内置列名照旧（不能被映射逻辑连累）
+  ok('㉓ 内置列名原样保留', withMap.includes('名称：霜狼'))
+
+  // R2：自定义长文本按 600 字放宽（内置名单判不到 cf_*，必须按类型判）
+  // 额度表与 cellCap 在 `ai/fieldCap.ts`（aiContext 贴 1200 行结构闸，纯数据另立文件）
+  const ctxSrc = read('src/lib/ai/aiContext.ts')
+  const capSrc = read('src/lib/ai/fieldCap.ts')
+  ok('㉓ 单元格上限认自定义字段类型（longText → 600）',
+    /export function cellCap\(name: string, customType\?:/.test(capSrc)
+    && capSrc.includes("if (customType === 'longText') return CELL_CAP_LONG"))
+  ok('㉓ 内置长字段名单仍在（不能因为抽文件把它丢了）', capSrc.includes('LONG_FIELDS') && capSrc.includes('CELL_CAP_LONG = 600'))
+  ok('㉓ aiContext 用的是抽出去的那一份（不许自己另写一个 cellCap）',
+    ctxSrc.includes("from '@/lib/ai/fieldCap'") && !/function cellCap\(/.test(ctxSrc))
+  ok('㉓ 表格渲染按字段类型取上限（不是只按列名）',
+    ctxSrc.includes('const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)')
+    && ctxSrc.includes('capOf(c)'))
+  // 索引侧也要拿到映射（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
+  const idxSrc = read('src/lib/semantic/indexer.ts')
+  ok('㉓ 索引器为图鉴表加载字段映射', idxSrc.includes('fieldLabelsOf') && idxSrc.includes('loadAtlasSchema'))
+  ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
+    /catch \{\s*return undefined\s*\}/.test(idxSrc))
 }
 
 console.log(`\n—— atlasFields 用例结束：${pass} 通过 / ${fail} 失败 ——`)

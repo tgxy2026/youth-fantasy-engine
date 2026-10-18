@@ -24,6 +24,8 @@
 import * as db from '@/lib/db'
 import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
 import { TABS } from '@/lib/schema'
+import { isAtlasTab } from '@/lib/atlas/schema'
+import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'
 import {
@@ -42,13 +44,36 @@ export type { IndexDoc }
 
 export interface CollectInput {
   chapters: { id: string; title: string; summary?: string; content: string }[]
-  /** `hiddenCols` ＝ 该表的隐藏列名（调用方从 schema 取）—— 不进索引文本，见 renderRow */
-  tables: { tabId: string; tabName: string; rows: { id: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
+  /**
+   * `hiddenCols` ＝ 该表的隐藏列名（调用方从 schema 取）—— 不进索引文本，见 renderRow。
+   * `fieldLabels` ＝ 自定义字段的「存储键 → 字段名」映射（图鉴页签才有）——
+   *   `cf_*` 这种内部键**绝不能**写进向量文本，见 renderRow 的注释。
+   */
+  tables: {
+    tabId: string
+    tabName: string
+    rows: { id: string; data: Record<string, string> }[]
+    hiddenCols?: string[]
+    fieldLabels?: Record<string, string>
+  }[]
   cards: { tabId: string; tabName: string; rows: { id: string; name: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
 }
 
-/** 行 → 可嵌入文本。**带列名**（"身份：剑修"）比只拼值（"剑修"）更容易被语义匹配到 */
-function renderRow(data: Record<string, string> | undefined, head?: string, hiddenCols?: Set<string>): string {
+/**
+ * 行 → 可嵌入文本。**带列名**（"身份：剑修"）比只拼值（"剑修"）更容易被语义匹配到。
+ *
+ * 🔴 自定义字段的存储键是 `cf_<uid>`，**必须换成作者起的字段名**：
+ *    索引文本会经〖语义召回〗原样注回提示词（`inject.renderRecallHits`），
+ *    留着 `cf_mvdjsuz400001sletxf：…` 等于给模型看一串无意义字符，还稀释向量。
+ *    这与 `aiContext.renderTable` 的 `labelOf` 是**同一口径**（3.1.3 补上，此前只有提示词那边换了）。
+ *    拿不到映射时（配置读失败 / 字段已不存在）退化成「自定义字段」—— 宁可重名，也不露内部键。
+ */
+function renderRow(
+  data: Record<string, string> | undefined,
+  head?: string,
+  hiddenCols?: Set<string>,
+  fieldLabels?: Record<string, string>,
+): string {
   const lines: string[] = []
   if (head && head.trim()) lines.push(head.trim())
   for (const [k, v] of Object.entries(data ?? {})) {
@@ -60,7 +85,8 @@ function renderRow(data: Record<string, string> | undefined, head?: string, hidd
     //    与 `aiContext.renderTable` 同一口径。索引文本会经〖语义召回〗注回提示词，
     //    所以「不进提示词」的列在这里同样要挡（2026-10-08 修）。
     if (hiddenCols?.has(k) || SYSTEM_META_FIELDS.has(k)) continue
-    lines.push(`${k}：${val}`)
+    const label = fieldLabels?.[k] ?? (k.startsWith('cf_') ? '自定义字段' : k)
+    lines.push(`${label}：${val}`)
   }
   return lines.join('\n').trim()
 }
@@ -114,7 +140,7 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
     const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
-      const text = renderRow(r.data, undefined, hidden)
+      const text = renderRow(r.data, undefined, hidden, t.fieldLabels)
       if (!text) continue
       out.push({ kind: 'setting', refId: r.id, title: t.tabName, text, secret: isSecretRow(r.data) })
     }
@@ -163,10 +189,37 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   const cards: CollectInput['cards'] = []
   // 隐藏列（如《地理风物》的「地图格子」坐标串）不进索引文本 —— 与 aiContext 同一口径
   const hiddenColsOf = (tab: (typeof TABS)[number]) => (tab.columns ?? []).filter(c => c.hidden).map(c => c.name)
+
+  /**
+   * 图鉴页签的自定义字段「存储键 → 字段名」映射。
+   * 🔴 读配置失败**不影响索引**：退化成 `undefined` ⇒ renderRow 把 `cf_*` 叫「自定义字段」，
+   *    条照常入库，只是那条字段的可读名丢了（比整表跳过好）。
+   * 归档字段也映射：它的值还留在行里，索引文本仍要能读。
+   */
+  const fieldLabelsOf = async (tabId: string): Promise<Record<string, string> | undefined> => {
+    if (!isAtlasTab(tabId)) return undefined
+    try {
+      const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tabId)).config
+      const map: Record<string, string> = {}
+      for (const f of cfg.fields) map[f.id] = f.label
+      return Object.keys(map).length > 0 ? map : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   for (const tab of TABS) {
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id).catch(onFail)
-      if (rows.length) tables.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, data: r.data })), hiddenCols: hiddenColsOf(tab) })
+      if (rows.length) {
+        tables.push({
+          tabId: tab.id,
+          tabName: tab.name,
+          rows: rows.map(r => ({ id: r.id, data: r.data })),
+          hiddenCols: hiddenColsOf(tab),
+          fieldLabels: await fieldLabelsOf(tab.id),
+        })
+      }
     } else if (tab.type === 'card') {
       const rows = await db.getCardRecords(tab.id).catch(onFail)
       if (rows.length) cards.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })), hiddenCols: hiddenColsOf(tab) })

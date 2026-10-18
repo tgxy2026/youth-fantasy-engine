@@ -26,6 +26,7 @@ import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
 import { planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { cellCap } from '@/lib/ai/fieldCap'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
 import { formatCustomValue } from '@/lib/atlas/values'
 import type { ResolvedAtlasField } from '@/lib/atlas/types'
@@ -345,30 +346,7 @@ function sortBySecrecy<T extends { data?: Record<string, string> }>(rows: T[]): 
     .map(x => x.r)
 }
 
-/** 单个字段值的字符上限，超出截断（设定里偶有超长自由文本） */
-const CELL_CAP = 200
-
-/**
- * 天生就该长的字段：真相 / 派系斗争 / 关系演变 / 事件链这类自由文本。
- * 按 200 字截断的后果是模型只看到半句，反而容易"接着半句往下编" —— 故单独放宽。
- * 按**字段名**判定（schema 列名即存储键，全库同名同义）。
- */
-const LONG_FIELDS = new Set([
-  '事件经过（真相）', '民间流传版本（vs真相）', '事件链（起→承→转→合）',
-  '内部派系与权力斗争', '演变轨迹（按卷）', '演变触发事件',
-  '经济来源', '历史沿革', '对外关系',
-  '核心矛盾/内在挣扎', '关键过往经历', '核心性格',
-  '距离与行程时间', '地貌与气候', '范围与面积',
-  '世界终极真相', '隐藏设定', '体系背后的世界观真相', '体系的隐藏层级',
-  '回收方式与效果', '回收前置条件',
-  '镇派功法/核心武力', '实力与功法',
-])
-const CELL_CAP_LONG = 600
-
-/** 取某字段的字符上限（长文本字段放宽到 600） */
-function cellCap(name: string): number {
-  return LONG_FIELDS.has(name) ? CELL_CAP_LONG : CELL_CAP
-}
+// 单元格字符上限（含 LONG_FIELDS 名单）已抽到 `ai/fieldCap.ts` —— aiContext 贴着 1200 行结构闸。
 
 /**
  * 纯系统调度元数据：**不往提示词里写**。
@@ -594,8 +572,10 @@ function renderTable(
     const f = atlasFields?.find(x => x.key === key)
     return f?.customType ? formatCustomValue(f.customType, raw, f.unit) : raw
   }
+  /** 单元格上限：自定义长文本也给 600（不能只认内置列名，见 cellCap 的注释） */
+  const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)
   const out = [cols.map(labelOf).join(' ｜ ')]
-  for (const r of use) out.push(cols.map(c => clip(cellOf(c, r.data[c] ?? ''), cellCap(c))).join(' ｜ '))
+  for (const r of use) out.push(cols.map(c => clip(cellOf(c, r.data[c] ?? ''), capOf(c))).join(' ｜ '))
   if (filled.length > cap) out.push(`（另有 ${filled.length - cap} 行未列出）`)
   return out.join('\n')
 }
