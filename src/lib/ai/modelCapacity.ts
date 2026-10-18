@@ -144,6 +144,24 @@ export function lookupWindow(model: string | undefined | null): { window: number
   return hit ? { window: hit.window, label: hit.label } : null
 }
 
+/**
+ * 取某个 provider 的**有效上下文窗口（token）**。
+ *
+ * 规则与 `adviseCapacity` 内那段**逐条一致**（这里单独导出是因为上下文预算也要用它）：
+ *   用户手填（且 ≥ MIN_SANE_WINDOW）> 按模型名识别 > 保守兜底 FALLBACK_WINDOW。
+ *
+ * 🔴 小于 MIN_SANE_WINDOW 的手填值视为「把 K 当成了词元」（如填 128 表示 128K），
+ *    不采纳，继续走识别 —— 否则会算成"窗口只有 128 个词元"，预算直接塌成 0。
+ */
+export function effectiveWindowOf(
+  p: Pick<AIProvider, 'model' | 'contextWindow'> | null | undefined,
+): number {
+  const userSet = p?.contextWindow
+  if (typeof userSet === 'number' && userSet >= MIN_SANE_WINDOW) return Math.floor(userSet)
+  const hit = lookupWindow(p?.model)
+  return hit ? hit.window : FALLBACK_WINDOW
+}
+
 /** 云端有效系数：标称窗口 × 它 ≈ 可靠推理长度。依据见文件头注释。 */
 export const CLOUD_EFFECTIVE_RATIO = 0.6
 

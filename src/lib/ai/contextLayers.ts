@@ -72,6 +72,33 @@ export const LAYER_PLANS: Record<ContextScale, LayerPlan> = {
  */
 export const CHAPTER_RESERVE_CHARS = 1800
 
+/**
+ * 上下文预算的上下限（字符）。
+ *
+ * 上限 200000 ≈ 13 万汉字设定 —— 再长的项目也不会用到这么多"资料段"，
+ * 给更大只是让预算数字好看，实际装不满就停（装配器按数据量走）。
+ * 下限 8000：小窗口模型（8K）也要能装下章节清单 + 一两张表。
+ */
+export const BUDGET_MIN = 8_000
+export const BUDGET_MAX = 200_000
+
+/**
+ * **按模型上下文窗口算资料预算（字符）**。
+ *
+ * 公式就一句：`窗口 × 0.5`。
+ *   · 1 token ≈ 1 个中文字符（保守取值），窗口的一半给"资料"，另一半留给
+ *     系统提示词、召回文本、模型回复与误差；
+ *   · 32K → 16384；64K → 32768；128K → 65536；200K → 100000（封顶 200000）。
+ *
+ * 🔴 不要在这里再乘项目规模系数：项目小的时候数据本来就少，装配器**装不满就停**，
+ *    不需要提前把预算压低 —— 压低了只会在"项目变长"时突然不够用。
+ */
+export function budgetFromWindow(windowTokens: number): number {
+  const w = Number.isFinite(windowTokens) && windowTokens > 0 ? windowTokens : 0
+  if (w <= 0) return LAYER_PLANS.short.budget
+  return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.round(w * 0.5)))
+}
+
 /** 取某项目体量对应的配额 */
 export function planFor(totalWords: number): LayerPlan {
   return LAYER_PLANS[scaleOf(totalWords)]

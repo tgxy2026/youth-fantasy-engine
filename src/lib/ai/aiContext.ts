@@ -23,21 +23,29 @@ import { buildSemanticRecallBlock } from '@/lib/semantic/inject'
 import { buildKbBlock } from '@/lib/search/kbInject'
 import { getTempDocs, renderTempDocs } from '@/lib/ai/tempDocs'
 import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
-import { CHAPTER_RESERVE_CHARS, planFor } from '@/lib/ai/contextLayers'
+import { CHAPTER_RESERVE_CHARS, budgetFromWindow, planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import { isAtlasTab } from '@/lib/atlas/schema'
 import { cellCap } from '@/lib/ai/fieldCap'
+import {
+  renderTable, AUTHOR_SIDE_FIELDS, DEFAULT_ROW_CAP, DEFAULT_TABLE_MAX_CHARS,
+  ROW_CAP, SYSTEM_META_FIELDS, type RenderOpts,
+} from '@/lib/ai/tableRender'
+import { isPrunedForAI, isSecretRow, sortBySecrecy } from '@/lib/ai/secrecy'
+import { segCapOf } from '@/lib/ai/segBudget'
 import { createContextAssembler } from '@/lib/ai/contextAssembler'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
-import { formatCustomValue } from '@/lib/atlas/values'
-import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
 export interface ProjectContextOptions {
   /**
-   * 总字符预算。**不传则按项目规模取档**（见 `lib/ai/contextLayers.ts`；小项目＝16000）。
-   * 本地小模型建议显式传 6000~8000。
+   * 总字符预算。**不传则按当前模型的上下文窗口算**（`窗口 × 0.5`，3.1.3 起）。
+   *
+   * 🔴 不再按项目字数分档：实测大多数用户用线上模型（32K~200K 窗口），
+   *    按最保守的档给会让 AI 明明有空间却看不到设定（生成质量白掉）。
+   *    只有在**读不到模型配置**时才回落到 `LAYER_PLANS[规模档].budget`。
+   *    显式传值仍然优先（伴写 1200~1300、「AI 整理」的完整表等场景需要自己定）。
    */
   budget?: number
   /** 只包含这些页签（不传则按默认优先级全量） */
@@ -82,6 +90,14 @@ export interface ProjectContextOptions {
    * 变成"接了线却依然读不到"（本轮修的就是这类静默失效）。
    */
   kbMaxChars?: number
+  /**
+   * 🆕 3.1.3 · 单张设定表的字符上限（默认 `min(单段上限, 1600)`）。
+   *
+   * 表超过它就**先减列、再减行**（见 `ai/tableDigest.ts`），而不是整段塞进装配器再被裁/被丢。
+   * 传 `Number.POSITIVE_INFINITY` = 不压（"AI 整理"这类**需要看全表**的场合，
+   * 以及测排序/稳定性的用例要用它把变量挡掉）。
+   */
+  tableMaxChars?: number
   /**
    * 是否在正文尾部附一段「（注：以下资料因长度预算未带入…）」。默认 true。
    * 酒馆模式传 false —— 它把 dropped 交给 buildSystemPrompt 生成**独立的**
@@ -189,76 +205,9 @@ const AUTHOR_SIDE_TABS = [
   'changelog',         // 设定变更（作者侧台账）
 ]
 
-/**
- * 作者侧**字段**（卡片字段名 / 表格列名）：写的是「故事将如何发展」或「作者的设计意图」，
- * 不是角色此刻知道什么。
- *
- * 🔴 为什么段落级排除不够（2026-09-14 端到端测试实测）：
- *   像「次要角色」这类**表本身属于角色常识**（萧景行当然知道自己的性格、功法），
- *   但表内混着「结局归宿：卷六雨夜再战，兵解」「隐藏设定：第14章败走时…」这类**未来向**列。
- *   只排除页签的话，这些列会照原样喂给模型 —— 演员提前知道了自己的结局，
- *   「测角色真实反应」同样失效。故角色视角下需再过滤一层。
- *
- * 口径刻意保守：只列**明确指向尚未发生之事 / 作者底牌**的字段；
- * 中性字段（如「备注」「知情度」「关系现状」）一律保留，避免误伤角色常识。
- * 清单可增删 —— 新增页签若带未来向字段，请一并登记到这里。
- */
-const AUTHOR_SIDE_FIELDS = new Set([
-  // 角色卡：未来命运与作者规划
-  '结局归宿', '死亡/退场规划', '角色弧光', '主角弧光', '高光名场面', '活跃卷与出场频率',
-  // 角色卡 / 势力表：作者眼中的「作用」，不是角色认知
-  '剧情功能', '剧情作用', '戏剧功能', '功能定位', '本章功能',
-  // 人物关系表：关系的**走向**
-  '演变轨迹（按卷）', '演变触发事件', '关系终点',
-  // 角色卡：作者底牌
-  '隐藏设定', '世界终极真相', '体系背后的世界观真相', '体系的隐藏层级', '事件经过（真相）',
-  // 结局与揭晓计划
-  '计划揭晓章节', '大结局', '各主要角色结局',
-  // 伏笔台账（表本身已整体排除，此处兜住散落在其它表里的伏笔列）
-  '计划回收位置', '回收前置条件', '回收方式与效果', '对应伏笔编号', '回收伏笔编号', '埋设伏笔编号',
-  '可埋伏笔点', '贯穿伏笔推进', '本卷回收伏笔', '本卷新埋伏笔',
-  // 世界设定表（worldbase）里的未来向字段 —— 与已登记的「世界终极真相」「可埋伏笔点」同口径。
-  // 审计 2026-09-17（P2-12）：原先只登记了同表的一部分，这三个漏网 → 角色视角下照样带进去，
-  // 演员会提前知道终局舞台 / 界外真相 / 留白谜题。
-  '最终圈', '界外威胁', '世界级悬念',
-  // 力量体系 / 物品 / 种族（审计 2026-09-18 P1-1）：同样是「指向尚未发生之事」的列。
-  //   漏登记的后果与上面「最终圈」那批一模一样 —— 沉浸档下演员会提前拿到
-  //   自己的成长路线（分卷解锁计划）与终局悬念；物品的「流转轨迹」其实是分配计划。
-  '金手指的成长路线', '顶端模糊地带',   // 力量体系：分段解锁计划 / 最高境界之上的悬念
-  '流转轨迹',                          // 物品资源：谁给谁、怎么给、何时给
-  '与主线关系',                        // 种族生物：指向未来的主线关联
-  // 制度页签（2026-10-02 · 2.7.1）：新题材模板里的未来向 / 作者底牌字段。
-  // 老字段名（如「世界终极真相」「体系的隐藏层级」）在各题材模板里**同名保留** ⇒
-  // 上面已登记的条目自动覆盖它们，这里只补**新出现**的字段名。
-  '信仰与真相的落差',                  // 宗教信仰：官方教义与真相之间的落差，是作者底牌
-])
 
-/** 渲染选项：角色视角下隐藏作者侧字段 */
-type RenderOpts = {
-  /** 角色视角：整列剔除「作者侧字段」（见 AUTHOR_SIDE_FIELDS） */
-  hideAuthorFields?: boolean
-  /**
-   * 角色视角：整行剔除「保密等级 = S」的条目（S 是绝密 / 剧透，演员不该看到结局）。
-   *
-   * 🔴 2026-10-02 六维审计 P0：SABC_DESC 一直写着「S=绝密（角色视角看不到）」，
-   *    但实现只做了「按页签 / 字段名排除作者侧资料」——**从没有按 S 级剔行**，
-   *    等于文案长期在承诺一件没做的事（作者给条目标了 S，演员照样看得到结局）。
-   *    本字段把承诺落地：与 D 级同层的**行级**过滤，且同样不进「另有 N 条未列出」的计数。
-   */
-  hideSecretRows?: boolean
-}
 
-/** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
-const ROW_CAP: Record<string, number> = {
-  'char-main': 30,
-  'char-secondary': 24,
-  'char-npc': 20,
-  relations: 60,
-  terms: 60,
-  'chapter-master': 60,
-  'chapter-outline': 40,
-}
-const DEFAULT_ROW_CAP = 40
+
 
 /**
  * 「保密等级」= 信息档位（定义见 schema 的字段说明）：在此决定**条目**进上下文预算的先后。
@@ -271,81 +220,9 @@ const DEFAULT_ROW_CAP = 40
  * 🔴 未填 / 未知值一律按中性（= B 档）。**绝不能当 C** —— 否则历史数据会因为当年没标等级
  *   而被排到最后优先丢弃，等于用一个新功能把老项目的数据静默降级。
  */
-const SECRECY_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3, D: 99 }
-const DEFAULT_RANK = 2
-
-/** D 档 = 终结 / 弃用（**任何视角**都不进 AI） */
-const PRUNED_LEVEL = 'D'
-
-/** S 档 = 绝密 / 剧透（仅**角色视角**剔除，见 isSecretRow） */
-const SECRET_LEVEL = 'S'
-
-/**
- * 取一条记录的保密等级原文（大写；读不到给空串）。
- *
- * 🔴 两种存储口径都要认（2026-09-17 实测踩过）：
- *   · 表格行：**裸列名**键 —— data['保密等级']
- *   · 卡片 / 表单：**复合键** —— data['一、基础信息::保密等级']（与 renderForm 的取值口径一致）
- *   只认前者时，所有角色卡的等级都会被读成"未填" → 全部中性 → 角色卡排序**静默失效**
- *   （表格型却正常，所以光看表格测不出来，必须卡片型也测）。
- */
-function secrecyOf(data: Record<string, string> | undefined): string {
-  if (!data) return ''
-  let raw = data['保密等级']
-  if (raw === undefined) {
-    for (const [k, v] of Object.entries(data)) {
-      if (k.endsWith('::保密等级')) { raw = v; break }
-    }
-  }
-  return String(raw ?? '').trim().toUpperCase()
-}
-
-/**
- * 🔴 **D 级（终结 / 弃用）：任何情况下都不进 AI。**
- *
- * 不是"排在最后"，是压根不带 —— 它的定义就是「已经用完或不再使用的数据」，
- * 再喂给模型只会拿过时的结论污染新判断（旧版设定、已废弃的路线、退场的人物）。
- * 凡是"把项目数据交给模型"的入口都要过这一道：
- *   ① 内容装配（renderTable / renderCards 先剔除行，连「另有 N 条未列出」的计数都不算它）；
- *   ② 姓名清单（`loadCharacterNames` —— 它喂给 AI 整理当候选值）；
- *   ③ 判重清单（`organizeRows` 的 existingKeys）。
- *
- * 与角色视角**无关**：作者侧同样排除（这才是"任何情况下"的含义）。
- * `rankOf` 给 D 一个大数只是第二道保险 —— 万一某处漏了过滤，它也会排到最后被预算先丢掉。
- */
-export function isPrunedForAI(data: Record<string, string> | undefined): boolean {
-  return secrecyOf(data) === PRUNED_LEVEL
-}
-
-/**
- * 🔴 **S 级（绝密 / 剧透）：角色视角下不进 AI。**
- *
- * 与 D 级的区别：D 是「任何视角、任何功能都不给」（作者侧也排除）；S 只对**角色视角**
- * （酒馆沉浸档的剧情推演 / 扮演）生效 —— 作者 / 导演视角照常带上（那是他自己的底牌）。
- * 判据与 `isPrunedForAI` 同源（都走 `secrecyOf`），所以表格的裸列名键与卡片的复合键都认。
- */
-export function isSecretRow(data: Record<string, string> | undefined): boolean {
-  return secrecyOf(data) === SECRET_LEVEL
-}
-
-/** 取一条记录的预算优先级（读不到等级时给中性档） */
-function rankOf(data: Record<string, string> | undefined): number {
-  return SECRECY_RANK[secrecyOf(data)] ?? DEFAULT_RANK
-}
-
-/**
- * 按预算优先级排序，且**严格稳定**（同等级保持录入顺序）。
- *
- * 🔴 稳定性是硬要求，不是修饰：本地模型的 prompt prefix cache 依赖前缀逐字一致；
- *   同级顺序若随排序抖动，每次请求都要重算 prefill —— 就成了"改了个好事反而更慢"。
- *   故显式带原下标做 tiebreaker，不依赖引擎 sort 的稳定性承诺。
- */
-function sortBySecrecy<T extends { data?: Record<string, string> }>(rows: T[]): T[] {
-  return rows
-    .map((r, i) => ({ r, i }))
-    .sort((a, b) => rankOf(a.r.data) - rankOf(b.r.data) || a.i - b.i)
-    .map(x => x.r)
-}
+// 保密等级的三件事（可见性 / 预算顺序 / D 级剔除）已抽到 `ai/secrecy.ts` ——
+// aiContext 贴着 1200 行结构闸。下面 re-export 保持既有 import 路径可用。
+export { isPrunedForAI, isSecretRow } from '@/lib/ai/secrecy'
 
 // 单元格字符上限（含 LONG_FIELDS 名单）已抽到 `ai/fieldCap.ts` —— aiContext 贴着 1200 行结构闸。
 
@@ -357,11 +234,7 @@ function sortBySecrecy<T extends { data?: Record<string, string> }>(rows: T[]): 
  * 纯噪音且白占 token（长篇下这一列的累积量不小）。
  * 它仍然完整参与排序（见 rankOf）与将来的行过滤，只是不出现在提示词里。
  */
-/**
- * 🔴 导出给 `semantic/indexer` 复用：索引文本会经〖语义召回〗注回提示词，
- *    所以「不往提示词里写」的列在索引阶段同样要挡（见 indexer 的 renderRow）。
- */
-export const SYSTEM_META_FIELDS = new Set(['保密等级'])
+export { SYSTEM_META_FIELDS } from '@/lib/ai/tableRender'
 
 /**
  * 写作节奏摘要（2.9.1）。
@@ -534,52 +407,7 @@ function renderCards(tab: TabDef, recs: { name: string; data: Record<string, str
   return out.join('\n')
 }
 
-/** 表格型：首行列名，之后每行用 ｜ 分隔（比 JSON 省 token 得多） */
-function renderTable(
-  tab: TabDef,
-  rows: { data: Record<string, string> }[],
-  o: RenderOpts = {},
-  /** 3.1.3：图鉴页签的有效字段（不传 ⇒ 走 tab.columns，其他表行为不变） */
-  atlasFields?: readonly ResolvedAtlasField[] | null,
-): string {
-  // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）；
-  // 系统元数据列（保密等级）两个视角都不渲染 —— 它已完成使命，对模型只是噪音。
-  // 🔴 隐藏列（`cH()` 构造，如《地理风物》的「地图格子」坐标串 `gx,gy;…`）是**给程序用的内部数据**，
-  //    表格视图本就不显示 —— 它同样不该进提示词（对模型纯噪声，还白占 token）。
-  //    `!c.hidden` 是全项目既有写法（tableIO / TableImportDialog / TableSheet / useTableSheetModel …），
-  //    这里与 organizeRows 此前漏了（2026-10-08 补齐，三处口径统一）。
-  // 🔴 两道过滤对两种来源都生效（加图鉴字段时漏过一次，被 contextRank / tavernFlow 抓出来）：
-  //    SYSTEM_META_FIELDS＝保密等级（纯调度元数据）；AUTHOR_SIDE_FIELDS＝沉浸档整列不能出现。
-  const cols = (atlasFields
-    ? atlasFields.map(f => f.key)
-    : (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name))
-    .filter(c => !SYSTEM_META_FIELDS.has(c))
-    .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
-  if (cols.length === 0) return ''
-  const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
-  // 🔴 D 级（任何视角）与 S 级（仅角色视角）都先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）
-  const usable = rows.filter(r => !isPrunedForAI(r.data) && !(o.hideSecretRows && isSecretRow(r.data)))
-  // 2.2.0：先按「保密等级」排预算优先级（同等级保持录入序）
-  // 🔴 2026-10-02 六维审计 P1：**空行过滤必须在 slice 之前**。
-  //    原来先 slice(cap) 再滤「本行可见列全空」⇒ 排在那样的行之后的有效行**不递补**，
-  //    明明 60 行有效数据只输出 25 行；且计数 `usable.length - cap` 系统性偏小，
-  //    模型会以为「剩下的都读过了」（renderCards 没这问题，两份复制品已漂移）。
-  const filled = sortBySecrecy(usable).filter(r => cols.some(c => (r.data[c] ?? '').trim()))
-  const use = filled.slice(0, cap)
-  if (use.length === 0) return ''
-  // 表头用字段名（cf_ 键不给模型看），值按类型格式化（多选 JSON → 顿号），否则模型会照抄 JSON 碎片
-  const labelOf = (key: string) => atlasFields?.find(f => f.key === key)?.label ?? key
-  const cellOf = (key: string, raw: string) => {
-    const f = atlasFields?.find(x => x.key === key)
-    return f?.customType ? formatCustomValue(f.customType, raw, f.unit) : raw
-  }
-  /** 单元格上限：自定义长文本也给 600（不能只认内置列名，见 cellCap 的注释） */
-  const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)
-  const out = [cols.map(labelOf).join(' ｜ ')]
-  for (const r of use) out.push(cols.map(c => clip(cellOf(c, r.data[c] ?? ''), capOf(c))).join(' ｜ '))
-  if (filled.length > cap) out.push(`（另有 ${filled.length - cap} 行未列出）`)
-  return out.join('\n')
-}
+
 
 /**
  * 把叙事序列表截到锚点章为止（含锚点本身）。
@@ -922,6 +750,30 @@ export function lastContextAssembly(): AiContextSnapshot | null {
 }
 
 
+
+/**
+ * 默认上下文预算：**按当前模型的上下文窗口算**（3.1.3）。
+ *
+ * `窗口 × 0.5`（1 token ≈ 1 中文字符，一半给资料、一半给提示词与回复）。
+ * 读不到模型配置（没配 / 单测环境 / 读失败）⇒ 回落项目规模档。
+ *
+ * 🔴 用**动态 import**：`aiCore/session` 是配置层，`aiContext` 是装配层，
+ *    静态互相引用会把「读配置」拖进每次纯装配的调用链，也让单测更容易炸。
+ */
+async function resolveContextBudget(fallback: number): Promise<number> {
+  try {
+    const [{ getActiveProvider }, { effectiveWindowOf }] = await Promise.all([
+      import('@/lib/aiCore/session'),
+      import('@/lib/ai/modelCapacity'),
+    ])
+    const p = await getActiveProvider()
+    if (!p) return fallback
+    return budgetFromWindow(effectiveWindowOf(p))
+  } catch {
+    return fallback
+  }
+}
+
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
   // 3.0 · W1-2 规模门（§10.3 #2）：预算与召回数**按项目体量**取档，不再写死 12000 ——
   //    长篇（百万字）时那点预算只够塞开头几章，模型看到的「前文」永远是第 1 章。
@@ -929,7 +781,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   let scaleWords = 0
   try { scaleWords = (await db.getProjectStats(db.getCurrentProjectId())).words } catch { /* 拿不到按最小档 */ }
   const plan = planFor(scaleWords)
-  const budget = opts.budget ?? plan.budget
+  const budget = opts.budget ?? await resolveContextBudget(plan.budget)
   // skeletonOnly：页签一个都不带（下面 for 循环里的 only 命中判定于是全部不通过），
   // 而「作品概览」在循环之前无条件 push、「章节清单」由 includeChapterList 单独控制 → 两块都留着。
   const only = opts.skeletonOnly
@@ -1047,12 +899,32 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   }
 
   // 角色视角下再过滤一层「作者侧字段」（段落级排除管不到表内的未来向列，见 AUTHOR_SIDE_FIELDS 说明）
+  /**
+   * 单表上限跟预算走（三档都要兜住，别用固定值）：
+   *   · 小预算（伴写 1300，segCap 2000）—— 至少给 1600，否则一张表就吃光额度；
+   *   · short 档 16000 —— 约 1920（≈ 表头 + 10 条摘要），八张表约 1.5 万刚好装得下；
+   *   · 大预算（epic 48000 / 测试用的 20 万）—— 按 12% 放大，别把本来就宽裕的场景压瘦。
+   * 上限再夹一道 segCap（单段上限），保证不会单表突破装配层预算。
+   */
+  const tableMaxChars = opts.tableMaxChars
+    ?? Math.min(segCapOf(budget), Math.max(DEFAULT_TABLE_MAX_CHARS, Math.floor(budget * 0.12)))
   const renderOpts: RenderOpts = {
     hideAuthorFields: opts.viewMode === 'character-view',
     // S 级（绝密 / 剧透）在角色视角下整行剔除 —— 见 RenderOpts.hideSecretRows 的说明
     hideSecretRows: opts.viewMode === 'character-view',
+    tableMaxChars,
   }
 
+  /**
+   * 单遍装载（3.1.3 定稿）。
+   *
+   * 🔴 曾经做过「两遍：先给落选段铺 400 字符保底，再补满前面的段」——
+   *    实测在真正紧张的预算下它会把每张表切成 2 行（物品资源 26 条只剩 2 条），
+   *    也就是主人明确反对的「为了兼容小窗口而牺牲内容」。
+   *    预算现在按模型窗口算（`budgetFromWindow`），宽裕时本来都装得下；
+   *    真装不下时，**完整少数几段**比**每段都半截**对生成质量更有益。
+   *    真正需要"防某一张表吃光预算"的地方，交给 `ai/tableDigest.ts` 的单表上限。
+   */
   for (const id of ordered) {
     if (only && !only.has(id)) continue
     if (exclude.has(id)) continue

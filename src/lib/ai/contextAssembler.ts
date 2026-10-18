@@ -55,6 +55,10 @@ export interface AssembledContext {
 
 export interface ContextAssembler {
   push: (title: string, body: string, opts?: PushOptions) => void
+  /**
+   * 把已装入的段从**保底版升级成完整版**（第二遍；段不存在或放不下则什么都不做）。
+   * 用于「人人有份，重要的多给」：第一遍每段先拿一小份，第二遍按优先级补满。
+   */
   /** 收尾：拼出最终文本，并在文末如实声明「哪些没带」「哪些只带了一部分」 */
   build: () => AssembledContext
 }
@@ -74,6 +78,17 @@ export function createContextAssembler(
   const segCap = segCapOf(budget)
   const reserve = Math.max(0, Math.min(opts.reserve ?? 0, Math.floor(budget * 0.4)))
 
+  /**
+   * 段装进去了就从「未带入」名单里摘掉。
+   * 🔴 两遍装载必须做这一步：第一遍放不下会 push 进 dropped，第二遍铺底又装进去了，
+   *    不清就会在文末出现「…未带入本提示：次要角色、名词术语…」而它们明明就在上面 ——
+   *    这种自相矛盾的申报比不申报更糟（模型会以为自己没看到，实际上看到了）。
+   */
+  const unmarkDropped = (title: string) => {
+    const i = dropped.indexOf(title)
+    if (i >= 0) dropped.splice(i, 1)
+  }
+
   const push = (title: string, body: string, o: PushOptions = {}) => {
     if (!body.trim()) return
     const head = `〖${title}〗\n`
@@ -90,6 +105,7 @@ export function createContextAssembler(
       parts.push(head + raw)
       sections.push(title)
       used += whole + 2
+      unmarkDropped(title)
       return
     }
     // 二、放不下：附件整块专用，不放就丢（绝不切）
@@ -127,6 +143,7 @@ export function createContextAssembler(
     parts.push(block)
     sections.push(title)
     used += block.length + 2
+    unmarkDropped(title)
     // 🔴 只有真的加进去了才记 trimmed —— 否则会出现「既说带了一部分、又在 dropped 里」
     trimmed.push(`${title}（${fit.keptLines}/${fit.totalLines} 行）`)
   }

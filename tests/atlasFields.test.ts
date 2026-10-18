@@ -496,14 +496,17 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 
   // AI 上下文：字段名与格式化
   const ctx = read('src/lib/ai/aiContext.ts')
-  ok('⑳ AI 上下文表头用字段名（cf_ 键不给模型看）', ctx.includes('labelOf') && ctx.includes('?.label ?? key'))
-  ok('⑳ AI 上下文按类型格式化值（多选不用 JSON 碎片）', ctx.includes('formatCustomValue(f.customType, raw, f.unit)'))
+  // 表格渲染在 3.1.3 抽到 ai/tableRender（aiContext 贴 1200 行上限）；断言跟着搬，并防回退
+  const renderSrc = read('src/lib/ai/tableRender.ts')
+  ok('⑳ AI 上下文表头用字段名（cf_ 键不给模型看）', renderSrc.includes('labelOf') && renderSrc.includes('?.label ?? key'))
+  ok('⑳ AI 上下文按类型格式化值（多选不用 JSON 碎片）', renderSrc.includes('formatCustomValue(f.customType, raw, f.unit)'))
+  ok('⑳ 负向：aiContext 不许再自己实现一份 renderTable', !/function renderTable\(/.test(ctx))
   // 加载与过滤抽到了 ai/atlasContext（aiContext 已贴 1200 行上限）
   const atlasCtx = read('src/lib/ai/atlasContext.ts')
   ok('⑳ AI 上下文按 aiReadable 过滤（口径在 atlasContext）',
     atlasCtx.includes("purpose: 'aiRead'") && ctx.includes('loadAtlasFieldsForAI'))
   ok('⑳ 负向：保密等级 / 作者侧字段的过滤对图鉴字段同样生效',
-    ctx.includes('SYSTEM_META_FIELDS.has(c)') && ctx.includes('AUTHOR_SIDE_FIELDS.has(c)'))
+    renderSrc.includes('SYSTEM_META_FIELDS.has(c)') && renderSrc.includes('AUTHOR_SIDE_FIELDS.has(c)'))
 }
 
 // ---------- ㉑ 32MiB 只对云端账号模式生效（本地不限） ----------
@@ -639,8 +642,8 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉓ aiContext 用的是抽出去的那一份（不许自己另写一个 cellCap）',
     ctxSrc.includes("from '@/lib/ai/fieldCap'") && !/function cellCap\(/.test(ctxSrc))
   ok('㉓ 表格渲染按字段类型取上限（不是只按列名）',
-    ctxSrc.includes('const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)')
-    && ctxSrc.includes('capOf(c)'))
+    read('src/lib/ai/tableRender.ts').includes('const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)')
+    && read('src/lib/ai/tableRender.ts').includes('capOf(c)'))
   // 索引侧也要拿到映射（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
   const idxSrc = read('src/lib/semantic/indexer.ts')
   ok('㉓ 索引器为图鉴表加载字段映射', idxSrc.includes('fieldLabelsOf') && idxSrc.includes('loadAtlasSchema'))
