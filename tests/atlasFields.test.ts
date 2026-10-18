@@ -12,10 +12,12 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import {
   ATLAS_TABS, atlasBadgeKeys, atlasCardBadges, atlasSections, atlasSummaryFields, atlasSearchText,
-  atlasAiVisibilityChanged, defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
+  atlasAiVisibilityChanged, atlasFieldsForCategory,
+  defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import { atlasColumnsOf } from '@/lib/atlas/columns'
 import { ATLAS_FORMAT_VERSION, checkAtlasWritable } from '@/lib/atlas/persistence'
+import { atlasFieldHintForAI } from '@/lib/ai/atlasContext'
 import {
   ATLAS_TOTAL_LIMIT, atlasImageUsageOf, atlasUsageLabel, atlasUsageRatio, atlasUsageText,
   checkAtlasBudget, formatBytes,
@@ -173,7 +175,12 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('⑧ 负向：图鉴组件不许自己读库（绕过草稿就会「表格改了图鉴看不见」）',
     !view.includes('getTableRows') && !view.includes("@/lib/db"))
   // 🔴 实测踩过：图鉴少传 config ⇒ 表格里新建的字段图鉴完全看不见，且不报错
-  ok('⑧ 图鉴把字段配置传进解析层', /resolveAtlasFields\(tab, \{ aliases, config, purpose: 'detail' \}\)/.test(view))
+  ok('⑧ 图鉴把字段配置传进解析层', /resolveAtlasFields\(tab, \{ aliases, config, purpose: 'detail'/.test(view))
+  // 3.1.3 · R02：详情必须**按选中条目的类别**过滤（不传类别 ⇒ 类别限定字段一律消失）
+  ok('⑧ R02：详情按选中条目的类别取字段', view.includes('atlasFieldsForCategory'))
+  ok('⑧ R02：表结构取全量（类别不适用也不该整列消失）',
+    read('src/lib/atlas/columns.ts').includes('ignoreAppliesTo: true'))
+  ok('⑧ R02：检索逐行按类别过滤', read('src/lib/search/search.ts').includes('atlasFieldsForCategory'))
   ok('⑧ 表格把字段配置传给图鉴', /config=\{atlasConfig\}/.test(read('src/components/sheets/TableSheet.tsx')))
 
   // 负向：字段解析只能有一个入口，组件里不许再自己筛 columns 拼字段
@@ -255,9 +262,13 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 // ---------- ⑫ AI 接入与多选控件（源码闸） ----------
 {
   const model = read('src/components/sheets/useTableSheetModel.ts')
-  ok('⑫ 交给 AI 的字段清单来自 effectiveColumns（含自定义字段）',
-    /const tableFields = useMemo<TemplateField\[\]>\(\s*\(\) => effectiveColumns/.test(model))
-  ok('⑫ 未开放「允许 AI 填写」的自定义字段不进清单', /c\.atlasField\.aiWritable/.test(model))
+  // 3.1.3 · R12：清单改为按 `purpose:'aiWrite'` 独立解析（不再从"表格可见列"派生）
+  ok('⑫ 交给 AI 的字段清单按 aiWrite 解析（含自定义字段）',
+    /const tableFields = useMemo<TemplateField\[\]>/.test(model)
+    && /purpose: 'aiWrite'/.test(model))
+  ok('⑫ 未开放「允许 AI 填写」的自定义字段不进清单（口径在 resolveAtlasFields 里）',
+    /purpose: 'aiWrite'/.test(model) && /source === 'custom'/.test(model)
+    && read('src/lib/atlas/schema.ts').includes("if (purpose === 'aiWrite' && !def.aiWritable) continue"))
   ok('⑫ 三条 AI 写入路径都过类型校验（新增 / 补全 / 整理）',
     (model.match(/coerceAiValue\(/g) ?? []).length >= 3)
 
@@ -525,11 +536,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 
   // ④ 自报 bytes 必须被重算覆盖（伪造体积是绕过容量闸的入口）
   const withImg = P({ rows: [{ data: { 名称: '墨鳞蟒' }, atlasImage: img({ bytes: 1 }) }] })
-  ok('㉕ R05：伪造的 bytes 被重算覆盖（不再信自报）',
-    withImg.ok && (withImg.ok ? withImg.pkg.rows[0].atlasImage?.bytes : 0) > 1,
-    withImg.ok ? String(withImg.pkg.rows[0].atlasImage?.bytes) : '解析失败')
-  ok('㉕ R05：重算出的体积 > 0（真按内容算）',
-    withImg.ok && (withImg.ok ? withImg.pkg.rows[0].atlasImage?.bytes : 0) === dataUrlBytes(png))
+  const gotBytes = withImg.ok ? Number(withImg.pkg.rows[0]?.atlasImage?.bytes ?? 0) : 0
+  ok('㉕ R05：伪造的 bytes 被重算覆盖（不再信自报）', gotBytes > 1, String(gotBytes))
+  ok('㉕ R05：重算出的体积按内容算（等于 dataUrlBytes）', gotBytes === dataUrlBytes(png), `${gotBytes} vs ${dataUrlBytes(png)}`)
 
   // ⑤ 源码闸：校验必须在造 pkg 之前（不能"先转了再说"）
   const psrc2 = read('src/lib/atlas/packageIO.ts')
@@ -796,6 +805,112 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     idxSrc.includes('resolveAtlasFields') && !/cfg\.fields/.test(idxSrc))
   ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
     /catch \{\s*return undefined\s*\}/.test(idxSrc))
+}
+
+// ---------- ㉓b R02（2026-10-19 修）：类别限定字段在表格/详情/检索里不再整体消失 ----------
+//
+// 病根：`resolveAtlasFields` 要求 category 匹配才算数，但表格列、图鉴详情、普通检索
+// 三个调用点**一个都没传类别** ⇒ 只要字段不是"不限类别"，在所有地方都被排除。
+// 验收实测：给魔兽建了"食性"并存了"冰晶"，表格没这一列、详情没这一项、搜索也搜不到
+//（值一直在库里，作者只会以为"我存的东西丢了"）。
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const def = (over: Partial<AtlasFieldDefinition>): AtlasFieldDefinition => ({
+    id: 'cf_diet', label: '食性', type: 'text', description: '', appliesTo: '*', groupId: 'extra',
+    order: 100, tableVisible: true, detailVisible: true, searchable: true,
+    aiReadable: true, aiWritable: false, archived: false, ...over,
+  })
+  const cfg: AtlasSchemaConfig = {
+    ...emptyAtlasSchema(),
+    fields: [def({ appliesTo: ['魔兽'] }), def({ id: 'cf_free', label: '通用项', appliesTo: '*' })],
+  }
+
+  // ① 表格列：全量（不再因为"只适用魔兽"就整列消失）
+  const cols = atlasColumnsOf(races, cfg)
+  ok('㉓b R02：类别限定字段在表格里有列（修前整列消失）', cols.some(c => c.name === 'cf_diet'),
+    cols.map(c => c.name).join('|'))
+  ok('㉓b R02：不限类别的字段照旧', cols.some(c => c.name === 'cf_free'))
+  ok('㉓b R02：列的存储键仍是 cf_（不是显示名）', !cols.some(c => c.name === '食性'))
+
+  // ② 逐行决定适用（同一张表：魔兽行看得到、灵兽行看不到）
+  const all = resolveAtlasFields(races, { config: cfg, purpose: 'detail', ignoreAppliesTo: true })
+  ok('㉓b R02：全量清单里两个字段都在', all.some(f => f.key === 'cf_diet') && all.some(f => f.key === 'cf_free'))
+  const forBeast = atlasFieldsForCategory(all, '魔兽')
+  const forSpirit = atlasFieldsForCategory(all, '灵兽')
+  const forNone = atlasFieldsForCategory(all, '')
+  ok('㉓b R02：魔兽条目看得到「食性」', forBeast.some(f => f.key === 'cf_diet'))
+  ok('㉓b R02：灵兽条目看不到「食性」（不把别人的字段塞给它）', !forSpirit.some(f => f.key === 'cf_diet'))
+  ok('㉓b R02：不限类别的字段两类都看得到',
+    forBeast.some(f => f.key === 'cf_free') && forSpirit.some(f => f.key === 'cf_free'))
+  ok('㉓b R02：没填类别 ⇒ 只留不限类别的（保守，不猜）',
+    !forNone.some(f => f.key === 'cf_diet') && forNone.some(f => f.key === 'cf_free'))
+  ok('㉓b R02 负向：appliesTo 为空数组 ⇒ 谁都看不到（不是"谁都看得到"）',
+    !atlasFieldsForCategory(
+      [{ key: 'a', appliesTo: [] }], '魔兽').length)
+
+  // ③ 检索：作者存了值就搜得到（修复前这条是红的）
+  const beastRow = { 名称: '墨鳞蟒', 类别: '魔兽', cf_diet: '冰晶' }
+  const searchable = atlasSearchText(atlasFieldsForCategory(all, beastRow['类别']), beastRow)
+  ok('㉓b R02：魔兽条目的「食性」能被检索到', searchable.includes('冰晶') && searchable.includes('食性'), searchable)
+  // 类别不匹配的历史残留不该被当成这一条的内容
+  const spiritRow = { 名称: '青鸾', 类别: '灵兽', cf_diet: '冰晶（旧值）' }
+  ok('㉓b R02：灵兽条目不把「食性」的旧值算进去',
+    !atlasSearchText(atlasFieldsForCategory(all, spiritRow['类别']), spiritRow).includes('冰晶'))
+}
+
+// ---------- ㉓c R12（2026-10-19 修）：AI 回填有基准、字段定义完整交给模型 ----------
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const def = (over: Partial<AtlasFieldDefinition>): AtlasFieldDefinition => ({
+    id: 'cf_x', label: '战力', type: 'number', description: '大致战力，用于排序', unit: '级',
+    appliesTo: '*', groupId: 'extra', order: 10, tableVisible: true, detailVisible: true,
+    searchable: true, aiReadable: true, aiWritable: true, archived: false, ...over,
+  })
+  const cfg: AtlasSchemaConfig = { ...emptyAtlasSchema(), fields: [def({})] }
+
+  // ① 输出目标按 aiWrite 独立解析：**不看** tableVisible（隐藏列 ≠ 不许 AI 写）
+  const hiddenButWritable = { ...cfg, fields: [def({ tableVisible: false })] }
+  const writes = resolveAtlasFields(races, { config: hiddenButWritable, purpose: 'aiWrite', ignoreAppliesTo: true })
+    .filter(f => f.source === 'custom')
+  ok('㉓c R12：隐藏了但仍允许 AI 写的字段**仍是**输出目标（解耦"隐藏"与"禁写"）',
+    writes.some(f => f.key === 'cf_x'), writes.map(f => f.key).join('|'))
+  const notWritable = { ...cfg, fields: [def({ aiWritable: false })] }
+  ok('㉓c R12：关掉「允许 AI 填写」⇒ 不再是输出目标',
+    !resolveAtlasFields(races, { config: notWritable, purpose: 'aiWrite', ignoreAppliesTo: true })
+      .some(f => f.source === 'custom' && f.key === 'cf_x'))
+  ok('㉓c R12 负向：表格可见列仍按 tableVisible 过滤（两件事真的分开了）',
+    !atlasColumnsOf(races, hiddenButWritable).some(c => c.name === 'cf_x'))
+
+  // ② 字段定义完整交给模型（类型 / 单位 / 候选 / 说明 / 类别范围）
+  const f = resolveAtlasFields(races, { config: cfg, purpose: 'aiWrite', ignoreAppliesTo: true })
+    .find(x => x.key === 'cf_x')!
+  const hint = atlasFieldHintForAI(f)
+  ok('㉓c R12：提示里有类型', hint.includes('数字'), hint)
+  ok('㉓c R12：提示里有单位', hint.includes('级'))
+  ok('㉓c R12：提示里有作者的说明', hint.includes('大致战力'))
+  ok('㉓c R12：提示里不出现 cf_ 内部键', !hint.includes('cf_x'))
+  const sel = resolveAtlasFields(races, {
+    config: { ...cfg, fields: [def({ type: 'select', options: ['高', '中', '低'], unit: undefined })] },
+    purpose: 'aiWrite', ignoreAppliesTo: true,
+  }).find(x => x.key === 'cf_x')!
+  ok('㉓c R12：单选把候选值交给模型（否则它只能瞎编）',
+    atlasFieldHintForAI(sel).includes('高 / 中 / 低'), atlasFieldHintForAI(sel))
+  const scoped = resolveAtlasFields(races, {
+    config: { ...cfg, fields: [def({ appliesTo: ['魔兽'] })] }, purpose: 'aiWrite', ignoreAppliesTo: true,
+  }).find(x => x.key === 'cf_x')!
+  ok('㉓c R12：类别限定也告诉模型（只对哪类有意义）', atlasFieldHintForAI(scoped).includes('魔兽'))
+
+  // ③ 源码闸：应用前核基准、未知键不再默默写入
+  const model = read('src/components/sheets/useTableSheetModel.ts')
+  ok('㉓c R12：三条回填路径都先核基准',
+    (model.match(/verifyAiWriteBase\(\)/g) ?? []).length >= 3)
+  ok('㉓c R12：应用前重读配置（不是拿内存里的旧清单）', model.includes('loadAtlasAiWriteTargets'))
+  ok('㉓c R12：revision 不一致 ⇒ 作废', model.includes('targets.revision !== atlasConfig.revision'))
+  ok('㉓c R12：未知键不再默默写进草稿',
+    (model.match(/allowedKeys\.has\(k\)/g) ?? []).length >= 2)
+  ok('㉓c R12：补全本行还校验"这一行内容在生成期间变没变"',
+    model.includes('JSON.stringify(now.data) !== JSON.stringify(row.data)'))
+  ok('㉓c R12：字段清单把说明交给模型', model.includes('atlasFieldHintForAI'))
 }
 
 // ---------- ㉔ R06（2026-10-19 修）：未知版本 / 读失败 / 损坏配置，写入服务必须拒写 ----------

@@ -56,7 +56,14 @@ export function atlasColumnsOf(
     .filter(c => !c.hidden)
     .map(c => ({ ...c }))
 
-  const customs = resolveAtlasFields(tab, { config, aliases, purpose: 'table' })
+  /**
+   * 🔴 列结构必须取**全量**（`ignoreAppliesTo: true`，3.1.3 · R02）：
+   *    表格是「一整张表的列」，不该因为某个字段只适用魔兽就让这一列**在所有行上消失**
+   *    —— 那样作者既看不到、也改不到（验收实测：魔兽条目存了"食性=冰晶"，表格没这一列）。
+   *    类别是否适用由**每一行**自己决定，见 `atlasFieldsForCategory`。
+   *    另：这样"改类别前的历史值"也仍有一个能看见、能改回来的地方。
+   */
+  const customs = resolveAtlasFields(tab, { config, aliases, purpose: 'table', ignoreAppliesTo: true })
     .filter(f => f.source === 'custom')
     .sort((a, b) => a.order - b.order)
 

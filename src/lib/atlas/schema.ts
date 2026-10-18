@@ -289,6 +289,29 @@ export function atlasAiVisibilityChanged(
   return (before ?? []).some(f => !afterIds.has(f.id))
 }
 
+/**
+ * 从一份**全表字段清单**里，按**某一条目的类别**挑出真正适用的那些（3.1.3 · R02）。
+ *
+ * 🔴 为什么要有这么一步：修 R02 之前，表格 / 详情 / 检索调 `resolveAtlasFields` 时
+ *    都没传 `category`，于是 `appliesTo` 判定里 `category` 恒为空 ⇒
+ *    **只要字段不是"不限类别"，就被整类排除**（验收实测：魔兽条目存了"食性=冰晶"，
+ *    表格没这一列、详情没这一项、搜索也搜不到，值其实还在库里）。
+ *
+ *    正确做法是**两分**：表结构解析（列清单 / 摘要候选）取**全量**，
+ *    再按每行自己的 `类别` 逐行决定"这一行用得上哪些"。
+ *    这样既不会让列凭空消失，也不会把「只适用魔兽」的字段塞给一条灵兽。
+ *
+ * @param category 该条目的类别值（空 ⇒ 只保留不限类别的字段，保守、不猜）
+ */
+export function atlasFieldsForCategory<T extends { appliesTo: '*' | string[] }>(
+  fields: readonly T[],
+  category?: string,
+): T[] {
+  const c = (category ?? '').trim()
+  if (!c) return fields.filter(f => f.appliesTo === '*')
+  return fields.filter(f => f.appliesTo === '*' || f.appliesTo.includes(c))
+}
+
 /** 按分组聚合（详情页用）。空组分不出现在结果里 —— 字段数为零就不该有标题 */
 export function atlasSections(
   tab: TabDef,

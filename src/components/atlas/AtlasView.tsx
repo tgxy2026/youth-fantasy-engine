@@ -12,7 +12,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import type { TableRow, TabDef } from '@/lib/types'
-import { atlasCardBadges, atlasSections, atlasSummaryFields, resolveAtlasFields } from '@/lib/atlas/schema'
+import {
+  atlasCardBadges, atlasFieldsForCategory, atlasSections, atlasSummaryFields, resolveAtlasFields,
+} from '@/lib/atlas/schema'
 import type { AtlasImage, AtlasSchemaConfig } from '@/lib/atlas/types'
 import { foldVh } from '@/lib/settings/theme'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
@@ -81,12 +83,21 @@ export default function AtlasView({ tab, rows, aliases, config, onEditInTable, o
   }, [])
 
   const nameKey = tab.displayCol ?? '名称'
+  /**
+   * 🔴 详情按**选中条目自己的类别**解析（3.1.3 · R02）。
+   *    之前这里完全没传类别 ⇒ 凡是"只适用某类别"的字段在详情里一律不显示
+   *    （验收实测：魔兽条目的"食性"存了值，详情里却没有这一项）。
+   *    表结构仍取全量（见 `atlasColumnsOf`），这里只决定"这一条看得见哪些"。
+   */
   const detailFields = useMemo(
-    () => resolveAtlasFields(tab, { aliases, config, purpose: 'detail' }),
-    [tab, aliases, config],
+    () => atlasFieldsForCategory(
+      resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
+      selectedId ? rows.find(r => r.id === selectedId)?.data?.['类别'] : undefined,
+    ),
+    [tab, aliases, config, selectedId, rows],
   )
-  const summaryFields = useMemo(
-    // 摘要不受「详情可见 / 类别适用」限制 —— 它是作者在字段设置里显式挑的展示项
+  /** 摘要候选取全量（作者在字段设置里显式挑的展示项，不受类别砍） */
+  const allSummaryFields = useMemo(
     () => atlasSummaryFields(
       tab.id,
       resolveAtlasFields(tab, { aliases, config, purpose: 'export', ignoreAppliesTo: true }),
@@ -186,7 +197,7 @@ export default function AtlasView({ tab, rows, aliases, config, onEditInTable, o
                   density={density}
                   image={row.atlasImage}
                   badges={atlasCardBadges(tab.id, row.data)}
-                  summaryFields={summaryFields}
+                  summaryFields={atlasFieldsForCategory(allSummaryFields, row.data['类别'])}
                   selected={row.id === selectedId}
                   onOpen={() => setSelectedId(row.id)}
                 />

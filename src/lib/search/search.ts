@@ -10,7 +10,7 @@
 import * as db from '@/lib/db'
 import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
 import { tokenize } from '@/lib/editor/tokenize'
-import { isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
+import { atlasFieldsForCategory, isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import type { CardRecord, TableRow } from '@/lib/types'
@@ -109,10 +109,16 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
     if (!tabVisible(tab.id, ctx)) continue
     const rows: TableRow[] = await db.getTableRows(tab.id)
     const displayCol = tab.displayCol
-    const atlasFields = isAtlasTab(tab.id)
-      ? resolveAtlasFields(tab, { config: atlasCfgs.get(tab.id) ?? null, purpose: 'search' })
+    /**
+     * 🔴 检索也按**每行自己的类别**解析（3.1.3 · R02）。
+     *    这里原先整表只解析一次且不带类别 ⇒ "只适用某类别"的字段在所有行上都被排除，
+     *    作者填了值却搜不到。做法与表格列一致：先取全量，再逐行过滤。
+     */
+    const allAtlasFields = isAtlasTab(tab.id)
+      ? resolveAtlasFields(tab, { config: atlasCfgs.get(tab.id) ?? null, purpose: 'search', ignoreAppliesTo: true })
       : null
     for (const r of rows) {
+      const atlasFields = allAtlasFields ? atlasFieldsForCategory(allAtlasFields, r.data?.['类别']) : null
       const body = atlasFields
         ? atlasSearchText(atlasFields, r.data)
         : Object.entries(r.data).filter(([, v]) => v && v.trim()).map(([, v]) => v).join('\n')

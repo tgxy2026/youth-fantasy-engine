@@ -28,7 +28,13 @@ import {
 } from '@/lib/db'
 import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
 import { countCodeRefs, codeRefWarning } from '@/lib/app/codeRefs'
-import { ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab } from '@/lib/atlas/schema'
+import {
+  ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
+} from '@/lib/atlas/schema'
+import {
+  atlasFieldHintForAI, loadAtlasAiWriteTargets, type AtlasAiWriteTargets,
+} from '@/lib/ai/atlasContext'
+import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import { invalidateIndex } from '@/lib/semantic/indexer'
 import { atlasColumnsOf, customColumnWidth, type AtlasColumn } from '@/lib/atlas/columns'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
@@ -318,19 +324,62 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const [showFeedbackAI, setShowFeedbackAI] = useState(false)
   const [showDedupAI, setShowDedupAI] = useState(false)
   /**
+   * 🔴 AI 的**输出目标**按 `purpose: 'aiWrite'` 独立解析（3.1.3 · R12）。
+   *    之前它是从「表格可见列」派生的 ⇒ 「隐藏表格列」和「允许 AI 填写」被绑成同一件事：
+   *    作者只想让某列不占地方（隐藏），结果 AI 也跟着不能写了。
+   *    这里只看 `aiWritable`，不看 `tableVisible` —— 两件事就该是两件事。
+   */
+  const aiWritableFields = useMemo<ResolvedAtlasField[]>(
+    () => isAtlasCapable
+      ? resolveAtlasFields(tab, { config: atlasConfig, purpose: 'aiWrite', ignoreAppliesTo: true })
+        .filter(f => f.source === 'custom')
+      : [],
+    [isAtlasCapable, tab, atlasConfig],
+  )
+
+  /**
    * 交给 AI 的字段清单（AI 新增 / 补全本行 / 整理共用同一份）。
    * 3.1.3：包含自定义字段，但只收 `aiWritable` 的 —— 作者在「字段设置」里关掉「允许 AI 填写」之后，
    * 这个字段就不再是输出目标（模型看不到它，也就不会去编它的值）。
+   * 🔴 R12：自定义字段把**类型 / 单位 / 候选 / 说明**一并交给模型（否则它只能瞎编，
+   *    写出来的值又被 `coerceAiValue` 拒掉 —— 作者看到的就是"AI 又跳过一堆字段"）。
    */
-  const tableFields = useMemo<TemplateField[]>(
-    () => effectiveColumns
-      .filter(c => !c.atlasField || c.atlasField.aiWritable)
-      .map(c => ({ key: c.name, label: c.atlasField?.label ?? c.name, locked: c.name === codeCol })),
-    [effectiveColumns, codeCol],
-  )
+  const tableFields = useMemo<TemplateField[]>(() => [
+    ...(tab.columns ?? []).filter(c => !c.hidden)
+      .map(c => ({ key: c.name, label: c.name, locked: c.name === codeCol })),
+    ...aiWritableFields.map(f => ({
+      key: f.key,
+      label: f.label,
+      locked: f.key === codeCol,
+      ...(atlasFieldHintForAI(f) ? { desc: atlasFieldHintForAI(f) } : {}),
+    })),
+  ], [tab, codeCol, aiWritableFields])
 
   /** 按存储键找自定义字段定义（内置列返回 null）—— AI 回填时判断要不要做类型校验 */
-  const atlasFieldOf = (key: string) => effectiveColumns.find(c => c.name === key)?.atlasField ?? null
+  const atlasFieldOf = (key: string) =>
+    effectiveColumns.find(c => c.name === key)?.atlasField
+    // 🔴 隐藏了但仍允许 AI 写的字段也要能找到定义，否则类型校验会被跳过（R12）
+    ?? aiWritableFields.find(f => f.key === key)
+    ?? null
+
+  /**
+   * 应用 AI 结果前的**基准复核**（3.1.3 · R12）。
+   * 重读一份最新的「可写目标」：配置锁写 / 版本变了 / 字段被删 ⇒ 直接放弃本次回填，
+   * 绝不拿旧清单往新库里写（那会把值写进已不存在的字段，或写进作者刚禁写的字段）。
+   */
+  const verifyAiWriteBase = useCallback(async (): Promise<AtlasAiWriteTargets | null> => {
+    const pid = getCurrentProjectId()
+    const targets = await loadAtlasAiWriteTargets(tab, pid)
+    if (targets.lockedReason) {
+      showToast(`已放弃本次 AI 回填：${targets.lockedReason}`, 'error')
+      return null
+    }
+    if (isAtlasCapable && typeof atlasConfig?.revision === 'number' && targets.revision !== atlasConfig.revision) {
+      showToast('字段定义在生成期间被人改过（为避免写错字段，本次结果已作废），请重新生成', 'error')
+      return null
+    }
+    return targets
+  }, [tab, isAtlasCapable, atlasConfig])
 
   /**
    * 图鉴主图保存（3.1.3）。
@@ -715,6 +764,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   // AI 补全：建行（自动编号）+ 用模型补全的单元格值填充各列（编号列 locked，不覆盖）
   const handleFill = async (values: Record<string, string>) => {
+    // 🔴 R12：先核基准 —— 生成期间字段定义若变过，旧结果一律作废（不拿旧清单写新库）
+    const base = await verifyAiWriteBase()
+    if (!base) return
     const data: Record<string, string> = {}
     tab.columns!.forEach(col => { data[col.name] = '' })
     if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
@@ -726,7 +778,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
       if (k === codeCol) continue
-      const af = atlasFieldOf(k)
+      // 🔴 R12：未知键**不再**默默当普通草稿写进去（修复前没有统一允许键校验）
+      if (!base.allowedKeys.has(k)) { rejected.push(`「${k}」不是这张表的字段`); continue }
+      const af = base.fields.get(k) ?? atlasFieldOf(k)
       if (af) {
         // 3.1.3：自定义字段先过类型校验（与「补全本行」同一口径）
         const r = coerceAiValue(af, v)
@@ -737,7 +791,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       setCellDraft(row.id, k, v)
     }
     if (rejected.length > 0) {
-      showToast(`AI 返回的 ${rejected.length} 个自定义字段值不符合规则，已跳过：${rejected[0]}`, 'error')
+      showToast(`AI 返回的 ${rejected.length} 个值没被采用，已跳过：${rejected[0]}`, 'error')
     }
     setShowFill(false)
   }
@@ -748,14 +802,33 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *
    * 3.1.3：自定义字段先过 `coerceAiValue`（数字 / 选项 / 是真假 都要校验），
    * 不合法的值**跳过并如实报数**，绝不静默写进去（方案 §7.3）。
+   *
+   * 🔴 R12：另外核两道基准 ——
+   *   · 字段定义在生成期间变过 ⇒ 作废（值可能已不属于现在的字段）；
+   *   · **这一行的内容在生成期间变过** ⇒ 作废（AI 是按"当时还空着哪些格"补的，
+   *     作者中途手填过的话，补出来的东西就是基于过期事实的）。
    */
-  const handleFillRow = (row: TableRow, values: Record<string, string>) => {
+  const handleFillRow = async (row: TableRow, values: Record<string, string>) => {
+    const base = await verifyAiWriteBase()
+    if (!base) { setFillRow(null); return }
+    const now = rowsRef.current.find(r => r.id === row.id)
+    if (!now) {
+      showToast('这一行已经不在了（本次补全结果已作废）', 'error')
+      setFillRow(null)
+      return
+    }
+    if (JSON.stringify(now.data) !== JSON.stringify(row.data)) {
+      showToast('这一行的内容在生成期间变过（为避免覆盖，本次结果已作废），请重新生成', 'error')
+      setFillRow(null)
+      return
+    }
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
       if (k === codeCol) continue
+      if (!base.allowedKeys.has(k)) { rejected.push(`「${k}」不是这张表的字段`); continue }
       const cur = ((drafts[row.id]?.[k] ?? row.data[k] ?? '') as string).trim()
       if (cur) continue
-      const af = atlasFieldOf(k)
+      const af = base.fields.get(k) ?? atlasFieldOf(k)
       if (af) {
         const r = coerceAiValue(af, v)
         if (!r.ok) { rejected.push(r.reason); continue }
@@ -765,7 +838,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       setCellDraft(row.id, k, v)
     }
     if (rejected.length > 0) {
-      showToast(`AI 返回的 ${rejected.length} 个自定义字段值不符合规则，已跳过：${rejected[0]}`, 'error')
+      showToast(`AI 返回的 ${rejected.length} 个值没被采用，已跳过：${rejected[0]}`, 'error')
     }
     setFillRow(null)
   }
@@ -777,6 +850,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 编号在循环内累加计算，避免多行拿到同一个编号。
    */
   const handleOrganize = async (newRows: Record<string, string>[]) => {
+    // 🔴 R12：整理也是 AI 写入 —— 同样要核基准（字段定义在生成期间改过就作废）
+    const base = await verifyAiWriteBase()
+    if (!base) return
     const created: TableRow[] = []
     let rejectedCustom = 0
     try {
@@ -784,12 +860,12 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         const data: Record<string, string> = {}
         tab.columns!.forEach(col => { data[col.name] = vals[col.name] ?? '' })
         // 3.1.3：自定义字段（只收作者允许 AI 填写、且通过类型校验的值；未知键一律丢弃）
-        for (const c of effectiveColumns) {
-          const af = c.atlasField
-          if (!af || !af.aiWritable) continue
-          const r = coerceAiValue(af, vals[c.name])
+        // 🔴 R12：目标清单取自**重读的**可写目标（隐藏但允许写的字段也算，被禁写的一律不算）
+        for (const [key, af] of base.fields) {
+          if (!(key in vals)) continue
+          const r = coerceAiValue(af, vals[key])
           if (!r.ok) { rejectedCustom++; continue }
-          if (r.value) data[c.name] = r.value
+          if (r.value) data[key] = r.value
         }
         if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
           data[codeCol] = nextAutoCode(tab.id, [...rows, ...created], drafts, codeCol)
