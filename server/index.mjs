@@ -11,7 +11,7 @@
 // 🔴 安全基线：路径遍历前缀断言、请求体上限、登录/注册限流、Cookie HttpOnly+SameSite、
 //    密码 scrypt、会话 HMAC 签名、外置 store 白名单。任何一条都不是「以后再补」。
 import { createServer } from 'node:http'
-import { createReadStream, statSync, readFileSync, existsSync } from 'node:fs'
+import { createReadStream, statSync, readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { join, extname, normalize, sep } from 'node:path'
 import { createGzip } from 'node:zlib'
 import { pipeline } from 'node:stream'
@@ -96,6 +96,25 @@ function authUser(req) {
 const sessionCode = (reason) => (reason === 'REPLACED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED')
 
 const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https'
+
+// ---------- 访问统计（WEB-17 · 方案 E：最小自研计数） ----------
+//
+// 【为什么不用第三方】自托管 umami/plausible 在这台 1.7 GB 内存的机器上跑不动；
+// 百度统计/GA 要么带广告代码、要么国内访问不稳，且都要往页面里插第三方脚本。
+// 这里只追加一行极短的日志，零依赖、零内存成本、数据全在自己手里。
+//
+// 🔴 **只记类型，不记 IP、不记用户名、不记任何路径参数**：
+//    统计的目的是「有没有人来、来了会不会注册」，不需要知道是谁。
+//    记了 IP 就等于把访客行为和个人挂上钩，那份隐私成本不值这几行日志。
+// 🔴 只在「有人访问页面」和「认证动作」时记，静态资源（65 个 chunk）一律不记 ——
+//    否则一次刷新就刷出几十行，既拖慢 IO 也没信息量。
+const STATS_LOG = process.env.YFE_STATS || '/opt/yfe/logs/stats.log'
+function recordStat(type) {
+  try {
+    mkdirSync(STATS_LOG.slice(0, STATS_LOG.lastIndexOf('/')), { recursive: true })
+    appendFileSync(STATS_LOG, `${new Date().toISOString().slice(0, 10)}\t${type}\n`)
+  } catch { /* 统计失败绝不能影响主流程 */ }
+}
 
 function sessionCookie(req, uid) {
   const token = signSession(uid, Date.now() + SESSION_TTL_MS, SECRET)
@@ -385,6 +404,7 @@ async function handleApi(req, res, url) {
     touchLogin(user.id) // 注册即登录，最后登录时间此刻就是现在（否则界面显示「—」）
     // 🔴 临界区结束
     console.log(`[auth] 新用户注册：${user.name} (${user.id}) from ${ip}${inviteCode ? ` 邀请码=${inviteCode}` : ''}`)
+    recordStat('register')
     return sendJSON(res, 200, { ok: true, user: publicUser(user) }, {
       // 注册即登录：种会话，同时清掉游客标记（否则下次打开还会被当成游客）
       'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
@@ -407,6 +427,7 @@ async function handleApi(req, res, url) {
     resetLimit(`login:${ip}`)
     touchLogin(user.id)
     console.log(`[auth] 登录：${user.name} from ${ip}`)
+    recordStat('login')
     return sendJSON(res, 200, { ok: true, user: publicUser(findById(user.id)) }, {
       'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
     })
@@ -440,6 +461,7 @@ async function handleApi(req, res, url) {
     if (!r.ok) return sendJSON(res, 400, { ok: false, error: r.error })
 
     console.log(`[auth] 密码重置（凭邀请码）：${r.value.name} from ${ip}`)
+    recordStat('reset')
     return sendJSON(res, 200, { ok: true, name: r.value.name })
   }
 
@@ -661,6 +683,7 @@ const server = createServer((req, res) => {
     // 只在根路径与「无扩展名」的路径上给登录页；/assets 之类不会走到这里
     if (pathOnly === '/' || !ext) {
       const html = renderAuthPage({ mode: REGISTER_MODE })
+      recordStat('visit_loginpage')
       const body = Buffer.from(html, 'utf8')
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -675,6 +698,7 @@ const server = createServer((req, res) => {
 
   // user 为 null 时 renderIndex 走游客分支（不注入 __YFE_PORTABLE__ ⇒ 前端用 IndexedDB）
   const html = renderIndex(user)
+  recordStat(user ? 'visit_cloud' : 'visit_guest')
   const body = Buffer.from(html, 'utf8')
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
