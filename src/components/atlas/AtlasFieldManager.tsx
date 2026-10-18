@@ -269,6 +269,15 @@ export default function AtlasFieldManager({
                       <span className="shrink-0 text-10 text-ink-500">
                         {groups.find(g => g.id === f.groupId)?.label ?? '补充资料'}
                       </span>
+                      {/* 隐藏但 AI 可写：列表里就该看得见，不能等点进编辑才知道（3.1.3 · R12） */}
+                      {!f.tableVisible && f.aiWritable && (
+                        <span
+                          className="shrink-0 text-10 px-1.5 py-0.5 rounded bg-amber/15 border border-amber/30 text-amber"
+                          title="表格里看不见这一栏，但 AI 仍会往里写 —— 值只出现在详情与检索里"
+                        >
+                          隐藏 · AI 会写
+                        </span>
+                      )}
                     </div>
                     {f.description && (
                       <div className="mt-0.5 text-10 text-ink-500 truncate" title={f.description}>{f.description}</div>
@@ -398,6 +407,17 @@ export default function AtlasFieldManager({
                   </label>
                 ))}
               </div>
+
+              {/* 🔴 3.1.3 · R12（主人 2026-10-19 拍板「按推荐优化」）：
+                  两个开关**保持独立**（隐藏 ≠ 禁写，否则会改动作者已有的配置语义），
+                  但「看不见的栏位被 AI 悄悄写」必须说出来 —— 否则作者在表格里找不到值，
+                  会以为 AI 编造了内容。这里只在真的会发生时提示，平时不占版面。 */}
+              {!draft.tableVisible && draft.aiWritable && (
+                <p className="rounded-lg border border-amber/30 bg-amber/5 px-2.5 py-1.5 text-10 text-amber/90 leading-relaxed">
+                  这一栏在表格里看不见，但 AI 仍会往里写 —— 值会出现在详情与检索里，表格中却查不到。
+                  想彻底挡住 AI，请同时关掉「允许 AI 填写」。
+                </p>
+              )}
 
               {err && <div className="text-11 text-danger">{err}</div>}
 

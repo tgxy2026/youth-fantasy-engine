@@ -46,6 +46,22 @@ interface Props {
   onExportPackage?: () => void
   /** 导入资料包（父组件负责解析、预览确认与落库） */
   onImportPackage?: (file: File) => void
+  /**
+   * 逐字段取值（含未保存草稿）。
+   * 🔴 必须传 `model.cellVal`：详情只读展示也要看得见"表格里刚改还没保存"的值，
+   *    否则就是「表格改了、点开详情还是旧的」——两套口径。
+   */
+  cellValue?: (row: TableRow, key: string) => string
+  /** 就地编辑：写入共享草稿（父级 `model.setCellDraft`） */
+  onCellChange?: (rowId: string, key: string, value: string) => void
+  /** 某行是否有未保存改动 */
+  dirtyOf?: (rowId: string) => boolean
+  /** 全局保存进行中 */
+  saving?: boolean
+  /** 保存（= 表格底部同一个 `saveAll`） */
+  onSave?: () => void | Promise<void>
+  /** 撤销详情里本次改动：交回进入编辑态时的字段值快照 */
+  onRevert?: (rowId: string, values: Record<string, string>) => void
 }
 
 /** 详情侧栏默认宽度（方案 §3.1：默认 420px，允许 360～600 拖动 —— 拖动留到 F4） */
@@ -58,7 +74,10 @@ type Density = 'compact' | 'standard' | 'loose'
 const MIN_CARD_W: Record<Density, number> = { compact: 150, standard: 180, loose: 220 }
 const DENSITY_LABEL: Record<Density, string> = { compact: '紧凑', standard: '标准', loose: '宽松' }
 
-export default function AtlasView({ tab, rows, aliases, config, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage }: Props) {
+export default function AtlasView({
+  tab, rows, aliases, config, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
+  cellValue, onCellChange, dirtyOf, saving, onSave, onRevert,
+}: Props) {
   const pkgInputRef = useRef<HTMLInputElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [narrow, setNarrow] = useState(false)
@@ -214,6 +233,7 @@ export default function AtlasView({ tab, rows, aliases, config, onEditInTable, o
           style={narrow ? undefined : { width: DETAIL_W }}
         >
           <AtlasDetail
+            key={selected.id}
             row={selected}
             nameKey={nameKey}
             badges={atlasCardBadges(tab.id, selected.data)}
@@ -226,6 +246,12 @@ export default function AtlasView({ tab, rows, aliases, config, onEditInTable, o
             overlay={narrow}
             onClose={() => setSelectedId(null)}
             onEditInTable={onEditInTable}
+            cellValue={cellValue}
+            onCellChange={onCellChange ? (k, v) => onCellChange(selected.id, k, v) : undefined}
+            dirty={dirtyOf?.(selected.id) ?? false}
+            saving={saving}
+            onSave={onSave}
+            onRevert={onRevert ? vals => onRevert(selected.id, vals) : undefined}
           />
         </div>
       )}

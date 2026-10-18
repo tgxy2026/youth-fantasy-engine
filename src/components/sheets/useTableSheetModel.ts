@@ -45,6 +45,7 @@ import { packageRowId, planAtlasImport, type AtlasPackage } from '@/lib/atlas/pa
 import {
   colWidthsKey, migrateColWidths, sortRows, TABLE_VIEW_MODES, type TableViewMode,
 } from '@/components/sheets/tableSheetOrder'
+import { revertDraftCells } from '@/components/sheets/tableSheetDraftOps'
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
@@ -586,6 +587,15 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setSaved(false)
     // 用户修改了编号相关内容时清除上次的校验错误提示
     if (codeError) setCodeError(null)
+  }
+
+  /**
+   * 详情面板「撤销本次改动」（3.1.3 · 就地编辑）：只回滚详情里动过的那几栏 ——
+   * 与库值一致的直接摘掉草稿，不一致的写回快照值；表格里其它未保存改动一根不动。
+   */
+  const revertCellDrafts = (rowId: string, values: Record<string, string>) => {
+    const base = rows.find(r => r.id === rowId)?.data ?? {}
+    setDrafts(prev => revertDraftCells(prev, base, rowId, values))
   }
 
   /**
@@ -1160,7 +1170,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 落库与装载
     rows, setRows, drafts, setDrafts, saving, saved, dirtyKeys, saveAll, loaded,
     // 行编辑
-    setCellDraft, cellVal, isRowDirty, isInvalidCode, addRow, removeRow,
+    setCellDraft, cellVal, isRowDirty, isInvalidCode, addRow, removeRow, revertCellDrafts,
     // 排序与筛选
     sortedRows, filteredRows, colFilters, setColFilters, filterOptionsOf,
     // 列宽与拖拽

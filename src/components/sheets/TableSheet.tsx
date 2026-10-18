@@ -87,8 +87,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const {
     // 落库与装载
     rows, setRows, setDrafts, saving, saved, dirtyKeys, saveAll, loaded,
-    // 行编辑
-    addRow, 
+    // 行编辑（图鉴详情的就地编辑走的也是这一份草稿，不另开一套）
+    addRow, setCellDraft, cellVal, isRowDirty, revertCellDrafts,
     // 排序与筛选
     sortedRows, filteredRows, colFilters, setColFilters, filterOptionsOf,
     // 列宽与拖拽
@@ -139,6 +139,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     }
     const csv = exportRowsCsv(tab, sortedRows, { columns, textOf })
     downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+    // 🔴 3.1.3 · R09（主人 2026-10-19 拍板）：只对**自有格式**承诺无损。
+    //    CSV 是给 Excel 看的通用交换格式 —— 多维候选会被铺成一段纯文本、主图与附件根本不在里面、
+    //    换行以外的排版还原不回来。导出后必须把这条边界说出来，
+    //    否则作者会以为"导出的 CSV 就是完整备份"，换台机器导回来才发现少了东西。
+    showToast(
+      isAtlasCapable
+        ? `已导出 CSV（${sortedRows.length} 条）· 通用交换格式：多维候选与主图不在里面，要完整保真请用「导出资料包」`
+        : `已导出 CSV（${sortedRows.length} 条）· 只保文字：多维值按顿号铺平，格式与附件不跟着走`,
+      'info', 6000,
+    )
   }
 
   /**
@@ -230,7 +240,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       key: 'export',
       label: '导出 CSV',
       icon: <FileUp size={13} />,
-      title: '导出本表数据为 CSV（Excel 可直接打开）',
+      title: '导出本表数据为 CSV（Excel 可直接打开）· 通用交换格式，多维候选与图片不在里面',
       onClick: exportCsv,
     },
   ]
@@ -323,7 +333,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 带「上级 / 层级归属」列的表（国家势力、地理风物、种族生物、物品资源、历史事件、名词术语等）支持「树形层级」：按隶属关系折叠 / 展开，行首的树形图标按钮可在某条下新增子条目（编号形如「父编号-001」，父级顺序号不变），父级下拉自动排除自身与子孙防成环。
 · 行首操作会按表格能力显示：适用时可删除此行、AI 补全本行空白（只填当前行未填字段，不影响其他行 / 表）或新增子条目；母表、无 AI 能力或无层级的表会隐藏不适用操作。章节总表行首另有「打开正文」按钮。
 · 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 新增」，部分表没有这个按钮）——「AI 整理」从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；「AI 新增」则新建一行并由 AI 补全整行。
-· 右上「更多」菜单里是低频操作：**批量导入**（粘贴表格 / CSV / 纯文本或上传文件，散文式设定可用「AI 智能拆分」自动解析成多条）、**导出 CSV**（Excel 可直接打开）；人物关系 / 历史事件另有**清空全部**（会先问一次再删）。`}
+· 右上「更多」菜单里是低频操作：**批量导入**（粘贴表格 / CSV / 纯文本或上传文件，散文式设定可用「AI 智能拆分」自动解析成多条）、**导出 CSV**（Excel 可直接打开）；人物关系 / 历史事件另有**清空全部**（会先问一次再删）。
+· CSV 是**通用交换格式，不是无损备份**：多维候选会被铺成一段纯文本、图片与附件根本不在文件里、换行以外的排版也还原不回来。要原样搬运（含字段定义与主图），请用图鉴页签的「导出资料包」。`}
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
           </div>
@@ -526,6 +537,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           imageLimit={atlasImageLimit}
           onExportPackage={exportAtlasPackage}
           onImportPackage={file => void importAtlasPackageFile(file)}
+          // 🟢 3.1.3 详情就地编辑：值与草稿全走表格这一份，详情不持有第二份数据
+          cellValue={cellVal}
+          onCellChange={setCellDraft}
+          dirtyOf={id => {
+            const r = rows.find(x => x.id === id)
+            return r ? isRowDirty(r) : false
+          }}
+          saving={saving}
+          onSave={saveAll}
+          onRevert={revertCellDrafts}
         />
       ) : viewMode === 'graph' ? (
         tab.id === 'faction-rels' ? <FactionGraph rows={rows} onNavigate={onNavigate} /> : <RelationGraph rows={rows} />

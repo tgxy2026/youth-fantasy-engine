@@ -1,21 +1,30 @@
 /**
- * 图鉴详情（3.1.3 · 骨架版）。
+ * 图鉴详情（3.1.3）。
  *
  * 依据：方案 §3.2「详情默认浏览，点击编辑进入表单；编辑内容沿用共享草稿机制」。
  *
- * 🔴 本轮是**只读预览**：编辑仍回表格（底栏按钮切回表格视图）。
- *    这样做的理由 —— 详情里直接编辑就必须接进 `useTableSheetModel` 的 `drafts/saveAll`
- *    那套共享草稿，否则会多出「与表格脱节的第二份资料」，而方案明令禁止。
- *    等 F3（数据流接入）把共享草稿打通后再开放就地编辑。
+ * 🔴 编辑的口径（2026-10-19 主人拍板「要」就地编辑）：
+ *    · 默认仍是**只读浏览**，点「编辑」才进入表单 —— 图鉴是速查视图，误触改字代价太高；
+ *    · 改动一律走 `onCellChange` 写进**表格的同一份草稿**（`useTableSheetModel.setCellDraft`），
+ *      这里**不持有第二份数据** —— 否则就会出现"详情里改了、表格里没变"的两套真源；
+ *    · 保存复用底部那个全局保存（`onSave` 就是 `model.saveAll`），详情不另开落库通道；
+ *    · 「撤销」只回滚本次在详情里动过的栏位（`revertDraftCells`），不碰表格里其它未保存改动。
+ *
+ * 🔴 只读展示的值也必须**含未保存草稿**（`cellValue`）：
+ *    之前这里直接读 `row.data`，导致「表格里刚改、点开详情还是旧值」—— 与图鉴视图
+ *    "不自己去读库"的口径自相矛盾。现在由父级把 `model.cellVal` 传下来。
  */
-import { useRef, useState } from 'react'
-import { ArrowLeft, ImagePlus, Loader2, Table2, Trash2 } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
-import type { AtlasImage, AtlasResolvedSection } from '@/lib/atlas/types'
+import type { AtlasImage, AtlasResolvedSection, ResolvedAtlasField } from '@/lib/atlas/types'
 import { ATLAS_IMAGE_ACCEPT, readAtlasImage } from '@/lib/atlas/image'
 import { ATLAS_TOTAL_LIMIT, atlasUsageRatio, atlasUsageText, checkAtlasBudget } from '@/lib/atlas/quota'
 import { showToast } from '@/components/dialogs/dialogs'
+import { Button } from '@/components/common/Button'
+import AtlasCellInput from './AtlasCellInput'
+import { CellTextarea } from '@/components/sheets/tableSheetShared'
 
 interface Props {
   row: TableRow
@@ -31,7 +40,7 @@ interface Props {
    *    作者看到的仍是"主图已更新"，而图其实没存上（修复前是未处理 Promise 静默失败）。
    */
   onImageChange: (image: AtlasImage | null) => void | Promise<void>
-  /** 项目图鉴图片已用字节（races + items 合计），用于容量提示与硬闸 */
+  /** 项目图鉴图片已用字节（四个图鉴页签合计），用于容量提示与硬闸 */
   projectImageBytes?: number
   /** 项目图片总上限；`Infinity` = 本机存储不限（桌面 / 便携 / 游客网页版）。默认按云端档位保守处理 */
   imageLimit?: number
@@ -39,12 +48,91 @@ interface Props {
   overlay: boolean
   onClose: () => void
   onEditInTable: () => void
+
+  /**
+   * 逐字段取值（已并入未保存草稿）。不传则退回读 `row.data` —— 只在没有表格模型的
+   * 场景（例如将来的只读分享页）允许这样。
+   */
+  cellValue?: (row: TableRow, key: string) => string
+  /** 就地编辑：写入共享草稿。不传 ⇒ 整个详情保持只读（不出现「编辑」按钮） */
+  onCellChange?: (key: string, value: string) => void
+  /** 本行有未保存改动（父级 `drafts[row.id]` 非空） */
+  dirty?: boolean
+  /** 全局保存进行中 */
+  saving?: boolean
+  /** 保存（= 表格底部同一个 `saveAll`） */
+  onSave?: () => void | Promise<void>
+  /** 撤销本次改动：把进入编辑态时的字段值快照交回去 */
+  onRevert?: (values: Record<string, string>) => void
 }
 
-export default function AtlasDetail({ row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT, overlay, onClose, onEditInTable }: Props) {
-  const name = (row.data[nameKey] ?? '').trim() || '未命名条目'
+/**
+ * 详情里**能就地改**的字段 —— 判定本身在 `lib/atlas/editability.ts`
+ * （纯函数、可单测；组件这里只负责按它挂控件）。
+ */
+import { atlasDetailEditable } from '@/lib/atlas/editability'
+export { atlasDetailEditable }
+
+/** 单个字段的编辑器：自定义字段走 `AtlasCellInput`，内置字段只用文本 / 下拉两种 */
+function DetailInput({ field, value, onChange }: { field: ResolvedAtlasField; value: string; onChange: (v: string) => void }) {
+  if (field.source === 'custom') {
+    return <AtlasCellInput field={field} value={value} onChange={onChange} />
+  }
+  if ((field.builtinType ?? 'text') === 'select') {
+    return (
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full text-12 py-1 px-1.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
+      >
+        <option value="">—</option>
+        {(field.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    )
+  }
+  return <CellTextarea value={value} onChange={onChange} title={field.description || field.label} />
+}
+
+export default function AtlasDetail({
+  row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
+  overlay, onClose, onEditInTable,
+  cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
+}: Props) {
+  const name = ((cellValue ? cellValue(row, nameKey) : row.data[nameKey]) ?? '').trim() || '未命名条目'
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  /** 进入编辑态那一刻的值快照（含草稿）—— 「撤销」就回到这里 */
+  const [snapshot, setSnapshot] = useState<Record<string, string>>({})
+
+  /** 取值统一入口：草稿优先（父级 `cellVal`），没有模型时退回库值 */
+  const valueOf = (key: string) => {
+    if (cellValue) return cellValue(row, key)
+    const v = row.data[key]
+    return v === undefined || v === null ? '' : String(v)
+  }
+
+  const editable = !!onCellChange
+  /** 本次编辑态里可改的字段（进出编辑态时重算，类别改了跟着变） */
+  const editKeys = useMemo(
+    () => sections.flatMap(sec => sec.fields).filter(atlasDetailEditable).map(f => f.key),
+    [sections],
+  )
+
+  const startEdit = () => {
+    const snap: Record<string, string> = {}
+    for (const k of editKeys) snap[k] = valueOf(k)
+    setSnapshot(snap)
+    setEditing(true)
+  }
+  const cancelEdit = () => {
+    onRevert?.(snapshot)
+    setEditing(false)
+  }
+  const finishEdit = async () => {
+    if (dirty && onSave) await onSave()
+    setEditing(false)
+  }
 
   /**
    * 上传 / 移除的**串行链**（3.1.3 · R10）。
@@ -116,13 +204,14 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
     .map(sec => ({
       ...sec,
       fields: sec.fields
-        .map(f => ({ field: f, value: atlasDisplayValue(f, row.data[f.key]) }))
-        .filter(x => showEmpty || x.value.length > 0),
+        .map(f => ({ field: f, value: atlasDisplayValue(f, valueOf(f.key)) }))
+        // 编辑态下空的也要露出来，否则"想补一栏空的"根本没入口
+        .filter(x => showEmpty || editing || x.value.length > 0),
     }))
     .filter(sec => sec.fields.length > 0)
   /** 已填项数（与上面的开关无关 —— 开关只决定"空字段要不要显示"） */
   const filledCount = sections.reduce(
-    (n, sec) => n + sec.fields.filter(f => atlasDisplayValue(f, row.data[f.key]).length > 0).length,
+    (n, sec) => n + sec.fields.filter(f => atlasDisplayValue(f, valueOf(f.key)).length > 0).length,
     0,
   )
 
@@ -225,7 +314,9 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
             <div className="flex flex-col items-center gap-2 text-ink-500 py-8">
               <Table2 size={20} className="text-ink-600" />
               <span className="text-12">这条资料还没有填写内容</span>
-              <span className="text-10 text-ink-600">回表格视图填写后，这里会按分组显示</span>
+              <span className="text-10 text-ink-600">
+                {editable ? '点底部「编辑」就能在这里填' : '回表格视图填写后，这里会按分组显示'}
+              </span>
             </div>
           </div>
         ) : (
@@ -238,12 +329,35 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
                 </h3>
                 <dl className="space-y-1.5">
                   {sec.fields.map(({ field, value }) => {
+                    const canEdit = editing && atlasDetailEditable(field)
+                    if (canEdit) {
+                      return (
+                        <div key={field.key}>
+                          <dt className="text-11 text-ink-500 mb-0.5 flex items-center gap-1">
+                            {field.label}
+                            {field.unit && <span className="text-10 text-ink-600">{field.unit}</span>}
+                          </dt>
+                          <dd className="text-12 text-ink-200">
+                            <DetailInput
+                              field={field}
+                              value={valueOf(field.key)}
+                              onChange={v => onCellChange?.(field.key, v)}
+                            />
+                          </dd>
+                        </div>
+                      )
+                    }
                     // 长内容（长文本 / 说明性字段）单独成块，短值左右并排 —— 与表格里的观感一致
                     const isLong = value.length > 40 || field.builtinType === 'textarea' || field.customType === 'longText'
+                    /** 编辑态下没能改的字段，说清楚为什么 —— 否则作者会以为"这里坏了" */
+                    const lockedHint = editing && editable && !atlasDetailEditable(field)
+                      ? '这类字段（编号 / 引用 / 日期）请在表格里改'
+                      : undefined
                     return (
-                      <div key={field.key} className={isLong ? '' : 'flex gap-2 items-baseline'}>
-                        <dt className={`text-11 text-ink-500 ${isLong ? 'mb-0.5' : 'shrink-0 w-20'}`}>
+                      <div key={field.key} className={isLong ? '' : 'flex gap-2 items-baseline'} title={lockedHint}>
+                        <dt className={`text-11 text-ink-500 ${isLong ? 'mb-0.5' : 'shrink-0 w-20'} ${lockedHint ? 'opacity-70' : ''}`}>
                           {field.label}
+                          {lockedHint && <span className="ml-1 text-9 text-ink-600">表格</span>}
                         </dt>
                         <dd className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap break-words">
                           {value || <span className="text-ink-600">—</span>}
@@ -259,14 +373,42 @@ export default function AtlasDetail({ row, nameKey, badges, sections, image, onI
       </div>
 
       <footer className="shrink-0 border-t border-ink-700 px-4 py-2.5 flex items-center justify-between gap-2">
-        <span className="text-10 text-ink-500">只读预览 · 编辑回表格（共用同一份草稿与保存）</span>
-        <button
-          type="button"
-          onClick={onEditInTable}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-11 text-ink-200 border border-ink-700 bg-ink-800 hover:border-amber/40 hover:text-amber transition-colors"
-        >
-          <Table2 size={11} /> 在表格中编辑
-        </button>
+        <span className="text-10 text-ink-500 min-w-0 truncate">
+          {editing
+            ? (dirty ? '有未保存改动 · 存进表格同一份草稿' : '改哪栏写哪栏，不会覆盖别的字段')
+            : '浏览模式 · 点「编辑」可就地修改'}
+        </span>
+        <div className="shrink-0 flex items-center gap-1.5">
+          {editing ? (
+            <>
+              <Button variant="secondary" size="xs" onClick={cancelEdit} title="撤销本次在详情里做的改动">
+                <Undo2 size={11} /> 撤销
+              </Button>
+              <Button
+                variant="primary"
+                solid
+                size="xs"
+                onClick={() => void finishEdit()}
+                disabled={saving}
+                title="保存并退出编辑（与表格底部「保存」是同一个动作）"
+              >
+                {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                保存
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" size="xs" onClick={onEditInTable}>
+                <Table2 size={11} /> 在表格中编辑
+              </Button>
+              {editable && (
+                <Button variant="primary" solid size="xs" onClick={startEdit} title="在这里直接改这条资料">
+                  编辑
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </footer>
     </aside>
   )
