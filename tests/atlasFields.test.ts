@@ -15,6 +15,7 @@ import {
   atlasAiVisibilityChanged, defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import { atlasColumnsOf } from '@/lib/atlas/columns'
+import { ATLAS_FORMAT_VERSION, checkAtlasWritable } from '@/lib/atlas/persistence'
 import {
   ATLAS_TOTAL_LIMIT, atlasImageUsageOf, atlasUsageLabel, atlasUsageRatio, atlasUsageText,
   checkAtlasBudget, formatBytes,
@@ -702,6 +703,41 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     idxSrc.includes('resolveAtlasFields') && !/cfg\.fields/.test(idxSrc))
   ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
     /catch \{\s*return undefined\s*\}/.test(idxSrc))
+}
+
+// ---------- ㉔ R06（2026-10-19 修）：未知版本 / 读失败 / 损坏配置，写入服务必须拒写 ----------
+//
+// 病根：只读只在「字段管理器」那一颗按钮上（禁用），写入服务 `saveAtlasSchema` 是无条件写的。
+// 于是资料包导入、CSV 建字段、世界包导入这几条不经过按钮的路径照样能覆盖 ——
+// 验收实测：formatVersion=99 的配置被写回 1，未来版本才有的 futureOnly 字段直接丢失。
+{
+  const v1 = { formatVersion: 1, revision: 3, fields: [] }
+  ok('㉔ 正常版本 ⇒ 允许写入', checkAtlasWritable(v1).allow)
+  ok('㉔ 还没存过（null）⇒ 允许全新写入', checkAtlasWritable(null).allow)
+  ok('㉔ 未来版本 ⇒ 拒写', !checkAtlasWritable({ formatVersion: 99, fields: [], futureOnly: 'x' }).allow)
+  ok('㉔ 未来版本的提示里带双方版本号',
+    (checkAtlasWritable({ formatVersion: 99, fields: [] }).reason ?? '').includes('99')
+    && (checkAtlasWritable({ formatVersion: 99, fields: [] }).reason ?? '').includes(String(ATLAS_FORMAT_VERSION)))
+  ok('㉔ 当前版本 ⇒ 不误拒（只挡更高的）', checkAtlasWritable({ formatVersion: ATLAS_FORMAT_VERSION, fields: [] }).allow)
+  ok('㉔ 读取失败 ⇒ 拒写（不知道磁盘上是什么就不许写）', !checkAtlasWritable(v1, 'IDB 读失败').allow)
+  ok('㉔ 读失败时 null 也算拒写（不能当成"没存过"放行）', !checkAtlasWritable(null, 'IDB 读失败').allow)
+  ok('㉔ 结构损坏（fields 不是数组）⇒ 拒写', !checkAtlasWritable({ formatVersion: 1, fields: 'oops' }).allow)
+  ok('㉔ 整个不是对象 ⇒ 拒写', !checkAtlasWritable('一个字符串').allow)
+  ok('㉔ 数组也算损坏 ⇒ 拒写', !checkAtlasWritable([{ id: 'cf_a' }]).allow)
+  ok('㉔ 没带 fields 字段（老数据）⇒ 放行（normalize 会补空，不算覆盖）', checkAtlasWritable({ formatVersion: 1 }).allow)
+
+  // 源码闸：拒写判定必须落在**领域写入接口**里，不能只靠界面禁用按钮
+  const psrc = read('src/lib/atlas/persistence.ts')
+  ok('㉔ saveAtlasSchema 写入前先过守卫',
+    /const check = checkAtlasWritable\(raw\)/.test(psrc) && /if \(!check\.allow\) throw/.test(psrc))
+  ok('㉔ 写入前自己重读一次（不靠调用方把状态传进来）', /getSettingFor<unknown>\(projectId, atlasSchemaKey\(tabId\)/.test(psrc))
+  ok('㉔ 负向：守卫**在**真正落库之前（不是写完再补一句判断）',
+    psrc.indexOf('checkAtlasWritable(raw)') > 0
+    && psrc.indexOf('checkAtlasWritable(raw)') < psrc.indexOf('await setSettingFor('))
+  // 抛错必须被界面接住，否则变成"点了保存什么反馈都没有"
+  const mgrSrc = read('src/components/atlas/AtlasFieldManager.tsx')
+  ok('㉔ 字段管理器接住写入服务的拒写错误（不变成未处理 Promise）',
+    /} catch \(e\) \{[\s\S]{0,200}setErr\(/.test(mgrSrc))
 }
 
 console.log(`\n—— atlasFields 用例结束：${pass} 通过 / ${fail} 失败 ——`)

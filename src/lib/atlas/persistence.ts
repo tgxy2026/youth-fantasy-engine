@@ -106,15 +106,74 @@ export async function loadAtlasSchema(projectId: string, tabId: AtlasTabId): Pro
   }
 }
 
+export interface AtlasSaveCheck {
+  allow: boolean
+  /** 不允许写入的原因（界面直接显示给作者） */
+  reason?: string
+}
+
+/**
+ * 写入守卫：**这份配置现在能不能写**（纯函数，可单测）。
+ *
+ * 🔴 3.1.3 · R06：修复前只有「字段管理器」这一个界面把 `newerFormat` 变成按钮禁用，
+ *    而**写入服务本身**是无条件写的 —— 于是资料包导入、CSV 建字段、世界包导入这几条
+ *    不经过那颗按钮的路径照样能覆盖（验收实测：formatVersion=99 的配置被写回 1、
+ *    未来字段 futureOnly 直接丢失）。规矩改成：**能不能写由领域层判，不靠界面自觉**。
+ *
+ * 三种拒写：
+ *   · **读取失败** —— 不知道磁盘上现在是什么，就绝不能写（回写默认值等于删库）；
+ *   · **未来版本** —— 更新的软件写的配置，本机读不懂，改一个字就可能丢它新加的东西；
+ *   · **结构损坏** —— `fields` 不是数组之类；`normalize` 会把它"补成"空配置，
+ *     若允许写入，作者原来的字段定义就被这次"补"的默认值永久替换了。
+ *
+ * @param raw       库里现在存的那份（未解析）
+ * @param readError 读取过程报错信息（有值 ⇒ 相当于"不知道现在是什么"）
+ */
+export function checkAtlasWritable(raw: unknown, readError?: string): AtlasSaveCheck {
+  if (readError) {
+    return { allow: false, reason: `字段配置读取失败，为避免覆盖原配置已拒绝修改：${readError}` }
+  }
+  // 从来没存过 ⇒ 全新写入，放行
+  if (raw == null) return { allow: true }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { allow: false, reason: '库里的字段配置不是合法对象，已拒绝修改（请先恢复备份或重建该页签配置）' }
+  }
+  const o = raw as Record<string, unknown>
+  const ver = o.formatVersion
+  if (typeof ver === 'number' && ver > ATLAS_FORMAT_VERSION) {
+    return {
+      allow: false,
+      reason: `这份字段配置由更新的版本写入（格式 v${ver}，当前 v${ATLAS_FORMAT_VERSION}），已锁定为只读；请升级软件后再编辑`,
+    }
+  }
+  // 结构损坏：fields 位置上的东西不是数组（normalize 会把它补成空 ⇒ 写回去就是清空）
+  if (o.fields !== undefined && !Array.isArray(o.fields)) {
+    return { allow: false, reason: '库里的字段配置结构已损坏（fields 不是数组），已拒绝修改' }
+  }
+  return { allow: true }
+}
+
 /**
  * 写入配置（revision 自动 +1）。
  * 🔴 返回**新配置** —— 调用方必须用返回值更新界面状态，否则下一次编辑会拿着旧 revision 再写一遍。
+ *
+ * 🔴🔴 写之前先自己重读一次并过 `checkAtlasWritable`（3.1.3 · R06）：
+ *    未来版本 / 读取失败 / 结构损坏 **一律抛错拒写**，不靠调用方记着判断。
+ *    抛错是刻意的 —— 静默跳过会让作者以为"存上了"，那比报错更糟。
  */
 export async function saveAtlasSchema(
   projectId: string,
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
 ): Promise<AtlasSchemaConfig> {
+  let raw: unknown = null
+  try {
+    raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null)
+  } catch (e) {
+    throw new Error(`字段配置读取失败，已拒绝修改：${e instanceof Error ? e.message : String(e)}`)
+  }
+  const check = checkAtlasWritable(raw)
+  if (!check.allow) throw new Error(check.reason ?? '字段配置已锁定为只读，拒绝修改')
   const next: AtlasSchemaConfig = {
     ...config,
     formatVersion: ATLAS_FORMAT_VERSION,

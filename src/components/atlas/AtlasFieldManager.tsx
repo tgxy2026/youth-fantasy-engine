@@ -148,6 +148,11 @@ export default function AtlasFieldManager({
         setEditingId(null)
       }
       setErr('')
+    } catch (e) {
+      // 🔴 必须接住（3.1.3 · R06）：写入服务会主动抛错拒写（未来版本 / 读取失败 / 结构损坏），
+      //    漏掉这个 catch 就变成未处理 Promise —— 作者点完"保存"什么反馈都没有，
+      //    还以为存上了（其实配置一动没动）。
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
