@@ -20,6 +20,7 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { downloadBlob } from '@/lib/storage/zip'
 import { renderDoc } from '@/lib/tavern/exportDoc'
 import { exportPdfDocument, DESKTOP } from '@/lib/app/desktop'
+import { WEB } from '@/lib/app/platform'
 import {
   packToDocModel, packToJson, evidenceHtmlFileName, evidenceJsonFileName,
   evidenceSummary, dailyRange, DEFAULT_EVIDENCE_OPTIONS,
@@ -178,7 +179,11 @@ export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: 
             存为 PDF
           </span>
           <span className="text-10 text-ink-400 font-normal leading-relaxed">
-            {DESKTOP ? '一键保存到本机，中文排版由系统打印引擎渲染。' : '当前不是桌面版：将改为下载 HTML，打开后按 Ctrl+P 另存。'}
+            {DESKTOP
+              ? '一键保存到本机，中文排版由系统打印引擎渲染。'
+              : WEB
+                ? '网页版无法直接存 PDF：将下载 HTML，打开后按 Ctrl+P 另存为 PDF。'
+                : '当前不是桌面版：将改为下载 HTML，打开后按 Ctrl+P 另存。'}
           </span>
         </Button>
 

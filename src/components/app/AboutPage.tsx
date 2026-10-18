@@ -11,9 +11,11 @@ import HelpPopover from '@/components/common/HelpPopover'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import MigrationWizard from '@/components/app/MigrationWizard'
 import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
-import { QUARK_URL, QUARK_CODE, QUARK_TOKEN } from '@/lib/app/downloadLinks'
+import { QUARK_URL, QUARK_CODE, QUARK_TOKEN, GITEE_RELEASES_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
 import { PORTABLE } from '@/lib/storage/fileBackend'
+// 网页版（云端 / 游客）在文案上必须与桌面版、便携版分开；`WEB` 为真时优先走网页措辞
+import { WEB } from '@/lib/app/platform'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { collectDiagnostics } from '@/lib/app/diagnostics'
 
@@ -103,9 +105,11 @@ export default function AboutPage() {
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
-            {PORTABLE
-              ? '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；便携版不做任何联网检查。'
-              : '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
+            {WEB
+              ? '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；网页版不做任何版本检查。'
+              : PORTABLE
+                ? '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；便携版不做任何联网检查。'
+                : '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
           </HelpPopover>
         </div>
         <p className="text-ink-400 text-sm mb-8">
@@ -141,6 +145,59 @@ export default function AboutPage() {
               </div>
             </section>
 
+            {/* 跨版本指引（2026-10-18）：网页版 ⇄ 桌面版 / 便携版互导。
+                三端是同一款软件的不同用法，用户往往先接触网页版再想装到电脑上（或反过来），
+                这里给一条明确的往返路径，并说明「换版本不会丢稿」——那句最能打消顾虑。 */}
+            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+              <SectionTitle icon={<Globe size={15} className="text-amber" />}>
+                {WEB ? '装到电脑上用' : '在浏览器里用'}
+              </SectionTitle>
+              {WEB ? (
+                <>
+                  <p className="text-ink-400 text-xs leading-relaxed mb-3">
+                    网页版免安装，换台电脑登录就能接着写。若想要离线使用、导出 PDF、更换应用图标等桌面能力，
+                    可下载桌面版或便携版 —— 三者数据格式一致，可以互相搬。
+                  </p>
+                  <ul className="mb-4 space-y-1.5 text-11 text-ink-400 leading-relaxed">
+                    <li>· <span className="text-ink-200">桌面版</span>：Windows 安装包，功能最全，支持自动更新</li>
+                    <li>· <span className="text-ink-200">便携版</span>：免安装压缩包，放 U 盘里带走，目录里的 data 就是全部数据</li>
+                  </ul>
+                  <a
+                    href={GITEE_RELEASES_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-600 bg-ink-800 px-3 py-1.5 text-12 text-ink-200 transition-colors hover:border-amber/50 hover:text-amber"
+                  >
+                    <Download size={13} /> 前往 Gitee 下载 <ExternalLink size={11} />
+                  </a>
+                  <p className="mt-3 text-10 leading-relaxed text-ink-500">
+                    换版本不会丢稿：先在左下角「云端存储」导出 JSON，再到桌面版「导入数据文件」即可。
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-ink-400 text-xs leading-relaxed mb-3">
+                    不想安装、或者想换台设备直接用？网页版打开即用，界面与功能和桌面版一致。
+                  </p>
+                  <ul className="mb-4 space-y-1.5 text-11 text-ink-400 leading-relaxed">
+                    <li>· <span className="text-ink-200">注册账号</span>（打赏用户凭邀请码）：数据存云端，多设备可用</li>
+                    <li>· <span className="text-ink-200">游客试用</span>：无需注册，数据只存本机浏览器，请自行导出备份</li>
+                  </ul>
+                  <a
+                    href={WEB_APP_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-600 bg-ink-800 px-3 py-1.5 text-12 text-ink-200 transition-colors hover:border-amber/50 hover:text-amber"
+                  >
+                    <Globe size={13} /> 打开网页版 <ExternalLink size={11} />
+                  </a>
+                  <p className="mt-3 text-10 leading-relaxed text-ink-500">
+                    地址：<span className="font-mono text-ink-400">{WEB_APP_URL}</span>
+                  </p>
+                </>
+              )}
+            </section>
+
             {/* 获取最新版本：只给网盘链接 + 版本号，不联网检测 */}
             {QUARK_URL && (
               <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
@@ -159,7 +216,13 @@ export default function AboutPage() {
                 {/* 🔴 2026-10-13 · 便携版不显示这一组控件：便携版跑在浏览器里、没有安装器，
                     查到新版本也无法自动更新（只会弹一个作者做不到的提示），
                     且「使用说明」已写明便携版没有自动更新检查。改为静态指引。 */}
-                {PORTABLE ? (
+                {WEB ? (
+                  <p className="mt-4 text-11 text-ink-400 leading-relaxed">
+                    网页版<strong className="text-ink-300">不需要更新</strong>：刷新页面即加载最新版本。
+                    想离线使用、或需要导出 PDF / 更换应用图标等桌面能力，可到发布页下载桌面版 ——
+                    数据可以在「云端存储」里导出成 JSON，再导入桌面版，稿件不会丢。
+                  </p>
+                ) : PORTABLE ? (
                   <p className="mt-4 text-11 text-ink-400 leading-relaxed">
                     便携版<strong className="text-ink-300">不提供在线更新</strong>：有新版本时请到发布页下载新的便携版压缩包，
                     解压后把旧目录里的 <span className="font-mono text-ink-300">data</span> 文件夹拷进新目录即可 —— 稿件不会丢。

@@ -17,6 +17,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import { HAS_NET_BRIDGE } from '@/lib/app/desktop'
+import { WEB } from '@/lib/app/platform'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import {
   DEFAULT_BYPASS, getStoredNetProxy, storeNetProxy, applyNetProxy, normalizeProxyInput, sanitizeBypassList,
@@ -129,7 +130,9 @@ export default function NetworkProxyPanel() {
 
         {!HAS_NET_BRIDGE && (
           <p className="text-11 text-ink-500 leading-relaxed">
-            当前运行在浏览器 / 便携版环境：设置可以保存，但只在桌面版中生效。
+            {WEB
+              ? '当前运行在网页版：请求由浏览器直接发出，代理设置只在桌面版中生效（浏览器自身的代理请在系统或扩展里配置）。'
+              : '当前运行在浏览器 / 便携版环境：设置可以保存，但只在桌面版中生效。'}
           </p>
         )}
 

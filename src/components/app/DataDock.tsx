@@ -2,9 +2,13 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
+import { GuestDataBar } from '@/components/app/Guest'
+import { WebDataBar } from '@/components/app/Web'
 import { DESKTOP } from '@/lib/app/desktop'
 import { decideDataDockView } from '@/lib/app/dataDockView'
 import { PORTABLE } from '@/lib/storage/fileBackend'
+import { GUEST } from '@/lib/db/guestData'
+import { WEB } from '@/lib/app/platform'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
@@ -40,8 +44,10 @@ export default function DataDock() {
   //   ⚠️ hook 必须写在 early return **之前**（否则违反 hooks 规则）。
   const [collapsed, setCollapsed] = usePersistedBool('dock-collapsed', false)
 
-  // 桌面版 / 便携版 / dev 预览三态判定（判定落在 lib/app/dataDockView，便于单测）
-  const view = decideDataDockView({ desktop: DESKTOP, portable: PORTABLE, dev: DEV })
+  // 桌面版 / 便携版 / 网页云端 / 网页游客 / dev 预览五态判定（判定落在 lib/app/dataDockView，便于单测）
+  // 🔴 网页版的云端模式同时带 PORTABLE 标记（复用它那套 HTTP StoreOps），
+  //    所以必须把 `web` 传进去并**优先于便携判定** —— 否则会显示成便携版的「数据文件 ./data/xxx.json」。
+  const view = decideDataDockView({ desktop: DESKTOP, portable: PORTABLE, web: WEB, guest: GUEST, dev: DEV })
 
   if (!view.render) return null
 
@@ -60,7 +66,9 @@ export default function DataDock() {
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
-        title={collapsed ? '展开左下角工具栏（本机存储 / 云盘文件同步）' : '收起到底边（只留这条箭头）'}
+        title={collapsed
+          ? `展开左下角工具栏（${view.storageBar === 'web' ? '云端存储' : view.storageBar === 'guest' ? '本地存储' : '本机存储'}）`
+          : '收起到底边（只留这条箭头）'}
         aria-label={collapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
         aria-expanded={!collapsed}
         className="flex items-center justify-center py-0.5 -mx-1 rounded text-ink-500 hover:text-amber transition-colors"
@@ -78,9 +86,18 @@ export default function DataDock() {
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5 text-xs text-ink-300">
-              <span className="font-medium">本机存储</span>
+              {/* 标题随形态变：桌面/便携说「本机」，云端说「云端」，游客说「本地」 */}
+              <span className="font-medium">
+                {view.storageBar === 'web' ? '云端存储' : view.storageBar === 'guest' ? '本地存储' : '本机存储'}
+              </span>
             </div>
-            {view.storageBar === 'portable' ? <PortableDataBar /> : <DesktopDataBar />}
+            {view.storageBar === 'web'
+              ? <WebDataBar />
+              : view.storageBar === 'portable'
+                ? <PortableDataBar />
+                : view.storageBar === 'guest'
+                  ? <GuestDataBar />
+                  : <DesktopDataBar />}
           </div>
 
           {CLOUD_FILE_SYNC && (

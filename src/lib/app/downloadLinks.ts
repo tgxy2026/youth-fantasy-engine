@@ -18,3 +18,13 @@ export const QUARK_TOKEN =
 /** Gitee 仓库主页 / Release 页（Web 端兜底：打不开直链时给人看的页面） */
 const GITEE_REPO_URL = 'https://gitee.com/tgxy2026/youth-fantasy-engine'
 export const GITEE_RELEASES_URL = `${GITEE_REPO_URL}/releases`
+
+/**
+ * 网页版访问地址（桌面版 / 便携版的「在线使用」入口指向它）。
+ *
+ * 🔴 现在是公网 IP，ICP 备案通过后只改**这一行**：
+ *    `https://youth-fantasy-engine.online`
+ *    改完需重新构建并发布桌面版 / 便携版才会生效（两端都是离线应用，拿不到远程配置）。
+ * ⚠️ 服务端登录页里也有一份同样的地址（`server/lib/config.mjs`），改的时候一起改。
+ */
+export const WEB_APP_URL = 'http://115.120.232.153'

@@ -64,6 +64,45 @@ console.log('\n—— dataDockView 用例开始 ——')
   ok('⑤ 便携 + 非 dev ⇒ 不显示 dev 提示', portableProd.showDevHint === false)
 }
 
+// ---------- ⑦ 网页游客（2026-10-18）：渲染 + 游客条 + 不显示 dev 提示 ----------
+// 🔴 这条是数据安全底线：改之前游客四者皆非 ⇒ 数据坞整块不渲染 ⇒
+//    游客的数据只存在浏览器 IndexedDB 里却**没有任何导出入口**，清缓存即失。
+{
+  const v = decideDataDockView({ desktop: false, portable: false, guest: true, dev: false })
+  ok('🔴 ⑦ 游客 ⇒ 必须渲染（否则游客没有导出入口）', v.render === true)
+  ok('⑦ 游客 ⇒ 游客数据条', v.storageBar === 'guest', v.storageBar)
+  ok('⑦ 游客 ⇒ 不显示 dev 提示（游客是正式形态）', v.showDevHint === false)
+}
+{
+  // 便携 + 游客同时为真（实际不该发生）：便携优先，避免走错导出通道
+  const v = decideDataDockView({ desktop: false, portable: true, guest: true, dev: false })
+  ok('🔴 ⑦ 双真 ⇒ 便携优先于游客', v.storageBar === 'portable', v.storageBar)
+}
+{
+  // guest 缺省（老调用方只传三个字段）不得改变既有行为
+  const v = decideDataDockView({ desktop: true, portable: false, dev: false })
+  ok('⑦ 缺省 guest ⇒ 仍走桌面条（向后兼容）', v.storageBar === 'desktop', v.storageBar)
+}
+
+// ---------- ⑧ 网页版（2026-10-18）：云端优先于便携、游客走 guest ----------
+// 🔴 网页云端同时带 PORTABLE 标记（服务端注入它以复用便携版那套 HTTP StoreOps），
+//    所以 `web` 必须排在 `portable` 之前判定 —— 否则会显示「便携数据文件 ./data/…」这种云端不存在的路径。
+{
+  const cloud = decideDataDockView({ desktop: false, portable: true, web: true, guest: false, dev: false })
+  ok('🔴 ⑧ 网页云端 + PORTABLE ⇒ 必须走 web 条（不是便携条）', cloud.storageBar === 'web', cloud.storageBar)
+  ok('⑧ 网页云端 ⇒ 渲染', cloud.render === true)
+  ok('⑧ 网页云端 ⇒ 不显示 dev 提示', cloud.showDevHint === false)
+
+  const guest = decideDataDockView({ desktop: false, portable: false, web: true, guest: true, dev: false })
+  ok('⑧ 网页游客 ⇒ 走 guest 条', guest.storageBar === 'guest', guest.storageBar)
+  ok('⑧ 网页游客 ⇒ 渲染（有导出入口）', guest.render === true)
+}
+{
+  // 只有 WEB、既非云端也非游客（理论上不该出现）：仍渲染，落 web 条兜底
+  const v = decideDataDockView({ desktop: false, portable: false, web: true, dev: false })
+  ok('⑧ 仅 WEB ⇒ 渲染并落 web 条', v.render === true && v.storageBar === 'web', v.storageBar)
+}
+
 // ---------- ⑥ 未知环境（三者皆非）⇒ 不渲染（不摆死控件） ----------
 {
   const v = decideDataDockView({ desktop: false, portable: false, dev: false })

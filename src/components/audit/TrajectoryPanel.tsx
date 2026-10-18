@@ -25,6 +25,7 @@ import {
   isAIVersion, type TrajectoryNode,
 } from '@/lib/ai/trajectory'
 import { buildEvidencePack, shortDate } from '@/lib/audit/evidencePack'
+import { WEB } from '@/lib/app/platform'
 import { buildBookEvidencePack } from '@/lib/audit/bookEvidence'
 import { foldVh } from '@/lib/settings/theme'
 import { summarizeAiAssist, AI_SOURCE_LABELS, AI_SOURCE_KINDS } from '@/lib/ai/aiAssist'
@@ -207,7 +208,7 @@ export default function TrajectoryPanel() {
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
           <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>
-            {'按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据全部来自软件本就有的记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成，保存位置由你选择；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明，不会假装完整；\n· 可导出证据包：PDF（桌面版一键保存）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名、跟编辑说明创作过程时，用来自证。软件不做、也不参与任何「规避 AI 检测」的事情。'}
+            {`按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据全部来自软件本就有的记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成，保存位置由你选择；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明，不会假装完整；\n· 可导出证据包：PDF（${WEB ? '网页版下载 HTML 后另存' : '桌面版一键保存'}）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名、跟编辑说明创作过程时，用来自证。软件不做、也不参与任何「规避 AI 检测」的事情。`}
           </HelpPopover>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => setVersionOpen(true)} className="gap-1.5"

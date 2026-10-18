@@ -19,6 +19,7 @@ import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import { showToast } from '@/components/dialogs/dialogs'
 import { DESKTOP } from '@/lib/app/desktop'
+import { WEB } from '@/lib/app/platform'
 import {
   PRESET_FONTS, getStoredFontPrefs, applyFontPrefs, storeFontPrefs,
   listSystemFonts, sanitizeFontStack, fontStackLabel,
@@ -179,7 +180,7 @@ export default function FontSettingsDialog({ open, onClose }: Props) {
       <div className="space-y-4">
         <FontSlot
           title="正文编辑器字体"
-          help={'写作区（章节正文）使用的字体。\n\n· 「跟随默认」= 思源宋体；选了未安装的字体时自动回落到默认，不会白屏；\n· 桌面版可以从「系统字体」里列出本机全部字体；\n· 改动实时预览，满意点「应用」保存，未应用关闭会自动还原。'}
+          help={`写作区（章节正文）使用的字体。\n\n· 「跟随默认」= 思源宋体；选了未安装的字体时自动回落到默认，不会白屏；\n· ${WEB ? '网页版无法读取本机已安装字体，只能从系统提供的字体里选' : '桌面版可以从「系统字体」里列出本机全部字体'}；\n· 改动实时预览，满意点「应用」保存，未应用关闭会自动还原。`}
           value={draft.editor}
           systemFonts={systemFonts}
           onChange={s => patch({ editor: s })}

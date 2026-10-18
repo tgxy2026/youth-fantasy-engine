@@ -14,6 +14,10 @@ import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom,
 import { DESKTOP, HAS_WINDOW_BRIDGE, toggleFullscreen } from '@/lib/app/desktop'
 import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
+import { WebDataBar } from '@/components/app/Web'
+import { GuestDataBar } from '@/components/app/Guest'
+import { WEB } from '@/lib/app/platform'
+import { GUEST } from '@/lib/db/guestData'
 import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { PORTABLE } from '@/lib/storage/fileBackend'
@@ -405,8 +409,10 @@ style={{ zIndex: Z.pageBase }}
         {/* 本机存储：数据文件保存 / 导出 / 导入。
             内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。
             便携版改用浏览器等价实现（导出=下载 / 导入=选文件 / 路径可复制）—— 2026-10-10 便携版 WP-2b */}
+        {/* 🔴 网页版必须**先判 WEB**：网页云端同时带 PORTABLE 标记（复用其 HTTP StoreOps），
+            若只判 PORTABLE 会显示成「便携数据文件 ./data/…」这种云端不存在的路径。 */}
         {DESKTOP && <DesktopDataBar />}
-        {PORTABLE && <PortableDataBar />}
+        {WEB ? (GUEST ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
         {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
         </div>
