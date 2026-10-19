@@ -64,7 +64,14 @@ export function scanAst(root, contracts) {
         if (a && ts.isStringLiteral(a) && /[A-Z]/.test(a.text)) add(u, n, 'cssom.name', 'getPropertyValue需要CSS短横线属性名，camelCase会读到空值', 'high')
       }
     })
-    if (chart || mono) inventory.push({ file: u.file, mono, explicitDrawing: chart, registered: contracts.charts.includes(u.file) })
+    if (chart || mono) inventory.push({
+      file: u.file, mono, explicitDrawing: chart,
+      // 已登记 = 图表清单，或**显式登记的非图表 mono 绘制点**（如正文缩进参考线）。
+      // 🔴 后者绝不能并入 charts：charts 会喂给 mono.rendered 契约的 cases，
+      //    把没有运行样本的组件塞进去，就是在契约里写空头承诺。
+      registered: contracts.charts.includes(u.file)
+        || (contracts.nonChartMono ?? []).some(x => x.file === u.file),
+    })
   }
   for (const u of units) visit(u.ast, n => {
     if (ts.isFunctionDeclaration(n) && n.name && /^build.*(?:ImportGuide|Guide)$/.test(n.name.text) && !(calls.get(n.name.text) > 0) && !callbackUses.has(n.name.text)) {

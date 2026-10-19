@@ -213,7 +213,11 @@ export default function OutlineSheet({ tab }: Props) {
         return
       }
       setRecords([rec, ...records])
-      setActiveId(rec.id)
+      // 🔴 2026-10-19 全量审计（draft.switch）：新建后要切到新卡，必须走 `switchTo` ——
+      //    它会**先冲刷旧草稿、写盘失败就不切**。原先这里直接 `setActiveId` 再靠切换 effect 补存，
+      //    一旦补存失败，作者已经站在新卡上、旧编辑被顶掉，只剩一句 toast（与角色卡 R8 同类）。
+      //    落库顺序保持：先 `saveCardRecord(rec)`（新卡进库）→ 进列表 → 冲刷成功才切过去。
+      if (!(await switchTo(rec.id, `「${rec.name}」已建好（在列表最上方），但当前这张的改动没能保存 —— 已留在原处，先手动保存一次再切`))) return
       setDraft(rec)
     } else {
       if (!draft || v.trim() === draft.name) return
@@ -243,7 +247,8 @@ export default function OutlineSheet({ tab }: Props) {
       return
     }
     setRecords([rec, ...records])
-    setActiveId(rec.id)
+    // 与新建同口径（2026-10-19 审计）：复制出副本后要切过去，先冲刷旧草稿、失败不切
+    if (!(await switchTo(rec.id, `副本「${name}」已建好，但当前这张的改动没能保存 —— 已留在原处，先手动保存一次再切`))) return
     setDraft(rec)
   }
 
@@ -310,7 +315,11 @@ export default function OutlineSheet({ tab }: Props) {
       return
     }
     setRecords([rec, ...records])
-    setActiveId(rec.id)
+    // 与「新建」同口径（2026-10-19 审计）：切到 AI 新条目之前先冲刷旧草稿，失败就留在原处
+    if (!(await switchTo(rec.id, `「${rec.name}」已建好（在列表最上方），但当前这张的改动没能保存 —— 已留在原处，先手动保存一次再切`))) {
+      setShowFillNew(false)   // 新条目已入库，留着弹窗再提交会建出第二张
+      return
+    }
     setDraft(rec)
     setShowFillNew(false)
   }
@@ -345,7 +354,7 @@ export default function OutlineSheet({ tab }: Props) {
    *     旧编辑既没入库、也从 draft 里被顶掉了 ⇒ 作者看到的只有「白改了」，且无从察觉
    *     （2026-10-18 独立复核：draft.failure 契约）。
    */
-  const switchTo = useCallback(async (id: string | null) => {
+  const switchTo = useCallback(async (id: string | null, failHint?: string) => {
     const cur = draftRef.current
     if (cur && cur.id !== id && dirtyRef.current && records.some(r => r.id === cur.id)) {
       try {
@@ -353,7 +362,7 @@ export default function OutlineSheet({ tab }: Props) {
         // 与切换守卫同口径：落库后同步内存副本，否则切回来会用库里的旧记录回灌
         setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
       } catch {
-        showToast('上一张的改动没能保存，已留在原处 —— 请手动保存一次再切换', 'error')
+        showToast(failHint ?? '上一张的改动没能保存，已留在原处 —— 请手动保存一次再切换', 'error')
         return false
       }
     }

@@ -17,5 +17,11 @@
     "src/components/outline/StructurePacePanel.tsx",
     "src/components/outline/StoryTimeline.tsx",
     "src/components/outline/HistoryTimeline.tsx"
+  ],
+  "nonChartMono": [
+    {
+      "file": "src/components/editor/NovelEditor.tsx",
+      "reason": "正文段首缩进参考线：mono 下是 rgb(var(--ink-100)) 实线（无 alpha，天然二值），非 mono 才用 ink-500/18%。它是正文的视觉辅助线、不是图表，故不并入 charts —— 塞进 charts 会让 mono.rendered 契约声称覆盖了一个没有运行样本的组件，属于假绿灯。2026-10-19 全量审计核对。"
+    }
   ]
 }

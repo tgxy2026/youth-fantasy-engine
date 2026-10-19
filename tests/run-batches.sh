@@ -34,7 +34,7 @@ if [ ! -f "$NODE" ]; then
   exit 1
 fi
 
-BATCH_A="structureGates appIcon tableSheetPan masterDetailScroll collapseHeaderAlign geoMapLabel writingCalendar visualEmptyStates tableSheetRowActions tavernRunEmptyState visualToolbarA2G importCycles sensitiveMeta uiUxGuards syncGuards privateCloudSync promptGuard chapterScopeGuard platformCheck antiSpoiler aiDataSources aiFillSemantics paramGuide customOptions themeContrast tavernTimeout tavernWindow depOverrides updateDownload sourceClaims sourcePathGuard kbInline"
+BATCH_A="structureGates appIcon tableSheetPan masterDetailScroll collapseHeaderAlign geoMapLabel writingCalendar visualEmptyStates tableSheetRowActions tavernRunEmptyState visualToolbarA2G importCycles sensitiveMeta uiUxGuards syncGuards privateCloudSync promptGuard chapterScopeGuard platformCheck antiSpoiler aiDataSources aiFillSemantics paramGuide customOptions themeContrast tavernTimeout tavernWindow depOverrides updateDownload sourceClaims sourcePathGuard kbInline outlineDraftSwitch"
 
 BATCH_B="aiParse inlineSuggest indent exportIndent schemaTemplates customTheme fieldAlias extractAliases extractFields textDiff storyStructures structurePace graphVisual timelineScale volumeGap chapterSeq autoCode relationMulti settingSearchAlias mentions legacyMigration contextLayers evidenceGate aiRefusal aiUsageStats futureImpact themeZoom bookVersion tavernProfileFit styleFit sidecar viewSelectors runKp runClues runEndings chapterImport dropdownPos chapterBoardView monoMarks aiHeaders atlasFields backupShards contextAssembler tableDigest cardMove atlasDetailEdit"
 
