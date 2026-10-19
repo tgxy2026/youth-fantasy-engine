@@ -13,6 +13,7 @@ export function printSupplement(root, family = 'all') {
   if (family === 'all') {
     lines.push('  必验边界：请求头大小写/语法、预设新增与编辑入口、严格黑白真实绘制、草稿保存失败、导入导出往返。')
     lines.push('  统一JSON/Markdown证据报告：node scripts/audit/run.mjs --probes（不会替代本入口）。')
+    if (fs.existsSync(`${root}/server/index.mjs`)) lines.push('  三端兼容专项：node .workbuddy/tmp/audit-platform.mjs --matrix（桌面/便携/网页云端/游客分别取证）。')
   }
   const text = lines.join('\n')
   console.log(text)

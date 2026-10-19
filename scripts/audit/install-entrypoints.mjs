@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const target = path.join(root, '.workbuddy/tmp')
 fs.mkdirSync(target, { recursive: true })
-const names = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
+const names = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency', 'platform']
 const backup = path.join(target, `audit-entrypoints-backup-${Date.now()}`)
 for (const name of names) {
   const dest = path.join(target, `audit-${name}.mjs`)
@@ -15,7 +15,9 @@ for (const name of names) {
     fs.mkdirSync(backup, { recursive: true })
     fs.copyFileSync(dest, path.join(backup, path.basename(dest)))
   }
-  const text = `// YFE_AUDIT_COMPAT_ENTRY — historical filename, arguments and base output are preserved.
+  const text = name === 'platform' ? `// YFE_AUDIT_COMPAT_ENTRY — additional specialised entry; historical eleven paths unchanged.
+await import('../../scripts/audit/platform/run.mjs')
+` : `// YFE_AUDIT_COMPAT_ENTRY — historical filename, arguments and base output are preserved.
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
 const root = path.resolve(process.argv[2] || fileURLToPath(new URL('../..', import.meta.url)))
@@ -24,4 +26,4 @@ await import('../../scripts/audit/legacy/audit-${name}.mjs')
 `
   fs.writeFileSync(dest, text, 'utf8')
 }
-console.log('11 historical entrypoints retained in .workbuddy/tmp; previous files backed up when replaced.')
+console.log('11 historical entrypoints retained; platform entry added in .workbuddy/tmp; previous files backed up when replaced.')

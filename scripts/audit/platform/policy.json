@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {"id":"desktop","label":"桌面安装版","window":{"electronStore":{}},"expected":{"DESKTOP":true,"PORTABLE":false,"WEB":false,"WEB_GUEST":false,"WEB_CLOUD":false},"store":"desktopStore","persistence":"用户数据目录JSON / IPC确认","identity":"本机用户","updates":"安装器","vectors":"独立浏览器数据库"},
+    {"id":"portable","label":"便携版","window":{"__YFE_PORTABLE__":{"apiBase":""}},"expected":{"DESKTOP":false,"PORTABLE":true,"WEB":false,"WEB_GUEST":false,"WEB_CLOUD":false},"store":"portableStore","persistence":"应用目录data / 本地HTTP确认","identity":"本机目录","updates":"替换应用文件","vectors":"同目录外置blob"},
+    {"id":"web-cloud","label":"网页云端账号","window":{"__YFE_WEB__":1,"__YFE_PORTABLE__":{"apiBase":""}},"expected":{"DESKTOP":false,"PORTABLE":true,"WEB":true,"WEB_GUEST":false,"WEB_CLOUD":true},"store":"portableStore","persistence":"按账号隔离的服务端目录 / 远端HTTP确认","identity":"会话账号","updates":"网页前后端配套部署","vectors":"账号外置blob"},
+    {"id":"web-guest","label":"网页游客","window":{"__YFE_WEB__":1,"__YFE_GUEST__":1},"expected":{"DESKTOP":false,"PORTABLE":false,"WEB":true,"WEB_GUEST":true,"WEB_CLOUD":false},"store":"idbOps","persistence":"当前origin的IndexedDB / 事务确认","identity":"当前浏览器origin","updates":"刷新网页","vectors":"当前浏览器数据库"},
+    {"id":"dev","label":"开发预览（不计入正式交付）","window":{},"expected":{"DESKTOP":false,"PORTABLE":false,"WEB":false,"WEB_GUEST":false,"WEB_CLOUD":false},"store":"idbOps","persistence":"预览origin的IndexedDB","identity":"开发环境","updates":"开发服务","vectors":"浏览器数据库"}
+  ],
+  "flagSources": {"DESKTOP":"src/lib/app/desktop.ts","PORTABLE":"src/lib/storage/fileBackend.ts","WEB":"src/lib/app/platform.ts","WEB_GUEST":"src/lib/app/platform.ts","WEB_CLOUD":"src/lib/app/platform.ts"},
+  "bridgeAdapters": ["src/lib/app/desktop.ts"],
+  "rawFlagAdapters": ["src/lib/app/desktop.ts","src/lib/app/platform.ts","src/lib/storage/fileBackend.ts"],
+  "httpStoreAdapters": ["src/lib/storage/fileBackend.ts"],
+  "sidecars": [
+    {"file":"electron/main.cjs","symbol":"BLOB_STORES","expected":["backupPayloads"],"reason":"桌面向量/知识库独立存储，不强行要求与HTTP形态一致"},
+    {"file":"scripts/portable-server.mjs","symbol":"BLOB_STORES","expected":["backupPayloads","vecRows","kbDocs","kbBodies"],"reason":"便携数据必须随应用目录携带"},
+    {"file":"server/lib/userdata.mjs","symbol":"ALLOWED_STORES","expected":["backupPayloads","vecRows","kbDocs","kbBodies"],"reason":"网页云端复用HTTP协议，但必须按账号隔离"}
+  ],
+  "runtimeCases": [
+    {"id":"boot-store","profiles":["desktop","portable","web-cloud","web-guest"],"description":"实际启动前注入、选中正确后端、重启后从该后端读回","scenarios":["initial-flags","backend-selection","restart-readback"]},
+    {"id":"write-failure","profiles":["desktop","portable","web-cloud","web-guest"],"description":"区分内存接受与持久化确认，失败不清dirty/不刷新/可导出","scenarios":["accepted-vs-persisted","failure-preserves-draft","retry-readback"]},
+    {"id":"account-isolation","profiles":["web-cloud"],"description":"账号A/B、游客/账号、共享Cookie旧标签页之间不得串写","scenarios":["two-accounts","guest-to-account","same-browser-account-switch","expired-session"]},
+    {"id":"concurrency","profiles":["portable","web-cloud"],"description":"多窗口写入与退出兜底；单会话不等于多标签并发保护","scenarios":["two-tabs","replace-session","close-during-save"]},
+    {"id":"network","profiles":["desktop","portable","web-cloud","web-guest"],"description":"直发/IPC、CORS、HTTPS、本机模型、鉴权失败与取消","scenarios":["remote-model","local-model","search","cancel-timeout"]},
+    {"id":"roundtrip","profiles":["desktop","portable","web-cloud","web-guest"],"description":"跨形态导入导出、sidecar、敏感配置及失败恢复","scenarios":["schema-version","sidecars","secret-stripping","restore-failure"]},
+    {"id":"capability-ui","profiles":["desktop","portable","web-cloud","web-guest"],"description":"更新、PDF、字体、文件路径、代理与数据位置文案","scenarios":["unsupported-action","storage-label","pdf-font","update-proxy"]},
+    {"id":"artifacts","profiles":["desktop","portable","web-cloud"],"description":"实际交付物、版本、静态资源、注入及失败回滚","scenarios":["built-version","static-assets","flag-injection","rollback"]}
+  ],
+  "owners": {"platform":"运行平台适配负责人","persistence":"存储与同步负责人","identity":"网页版鉴权负责人","network":"模型与网络负责人","delivery":"构建与发布负责人"}
+}

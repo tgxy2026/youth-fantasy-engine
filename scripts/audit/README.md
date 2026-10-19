@@ -1,5 +1,19 @@
 # 审计工具与历史入口
 
+## 三端兼容专项（2026-10-18新增）
+
+```powershell
+node .workbuddy/tmp/audit-platform.mjs --matrix
+# 可选统一调度（不改变原默认审计范围）
+node scripts/audit/run.mjs --platform --matrix
+```
+
+桌面、便携、网页云端、网页游客分别管理，另有dev对照。网页云端PORTABLE也为真，专项从真实源码推演平台标记与后端，检查跨形态冲突候选并保留26个运行取证单元。`--base`仅辅助定位改动，`--evidence`录入带责任人/期限及产物哈希的治理记录。
+
+规则及白名单差异在 `scripts/audit/platform/policy.json`；方案见 `docs/三端兼容专项审计与治理方案-2026-10-18.md`。专项指纹覆盖server、构建脚本及资产，与原通用指纹范围不同，旧证据不能直接复用。默认只读源码，不连接生产、不读写实际稿件、不执行部署。
+
+原11个路径不变；恢复入口脚本会额外恢复audit-platform入口。新增 `.workbuddy/tools/audit-platform.mjs` 也可直接调用。不要把本专项与投稿平台预检 `src/lib/audit/platformCheck.ts` 混用。
+
 ## 原调用路径保持不变
 
 以下命令及可选的工作区路径参数继续可用：

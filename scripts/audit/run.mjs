@@ -8,8 +8,12 @@ import context from './context.cjs'
 
 const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const args = process.argv.slice(2)
+if (args.includes('--platform')) {
+  process.argv.splice(process.argv.indexOf('--platform'), 1)
+  await import('./platform/run.mjs')
+} else {
 if (args.includes('--help')) {
-  console.log('node scripts/audit/run.mjs [--probes] [--no-legacy] [--evidence file.json]\nExit 0: complete evidence; 1: confirmed failure; 2: incomplete/blocked/review candidates. No product writes or publishing.')
+  console.log('node scripts/audit/run.mjs [--probes] [--no-legacy] [--evidence file.json]\nSpecialised: node scripts/audit/run.mjs --platform [--matrix] [--base ref] [--evidence ledger.json]\nExit 0: complete evidence; 1: confirmed failure; 2: incomplete/blocked/review candidates. No product writes or publishing.')
   process.exit(0)
 }
 const allowed = new Set(['--probes', '--no-legacy', '--evidence'])
@@ -98,3 +102,4 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
 fs.writeFileSync(path.join(out, 'report.md'), md.join('\n'))
 console.log(`Audit ${report.status}: ${report.static.findings.length} candidates; ${failures.length} failing contracts.\nReport: ${path.join(out, 'report.md')}`)
 process.exitCode = report.status === 'failed' ? 1 : report.status === 'incomplete' ? 2 : 0
+}
