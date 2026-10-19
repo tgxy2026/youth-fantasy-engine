@@ -139,6 +139,35 @@ export function writeTargetsOf(template: EffectiveTemplate): WriteTargets {
 }
 
 /**
+ * 语义索引的**字段规则**（自定义字段进不进索引文本、叫什么名、对哪些类别有效）。
+ *
+ * 🔴 为什么必须与提示词同源：索引文本会经〖语义召回〗原样注回提示词。
+ *    作者在图鉴里关掉「允许 AI 参考」之后，如果索引还能把内容捞出来，
+ *    就等于开了一条**绕行通道**（3.1.3 · R04 实测复现过）。
+ * 🔴 只有**自定义**字段需要规则：内置列的名字就是存储键，且没有「关掉 AI 参考」的开关。
+ */
+export interface IndexFieldRule {
+  label: string
+  aiReadable: boolean
+  appliesTo: '*' | string[]
+}
+
+/**
+ * 从 `purpose:'aiRead'` 的模板取索引规则。
+ * 返回 `undefined` 与旧口径一致（**一条规则都没有**时让调用方走降级：把 `cf_*` 叫「自定义字段」）。
+ * 🔴 注意：`aiReadable=false` 的字段**根本不会出现在模板里**（解析侧已过滤），
+ *    所以这里拿到的规则 `aiReadable` 恒为 true —— 这是刻意的：缺席即不可读。
+ */
+export function indexRulesOf(template: EffectiveTemplate): Record<string, IndexFieldRule> | undefined {
+  const map: Record<string, IndexFieldRule> = {}
+  for (const f of template.fields) {
+    if (f.source !== 'custom') continue
+    map[f.sourceKey] = { label: f.label, aiReadable: f.permissions.aiRead, appliesTo: f.appliesTo }
+  }
+  return Object.keys(map).length > 0 ? map : undefined
+}
+
+/**
  * AI **输出目标**的字段集合（表格页签「AI 新增 / 补全本行 / 整理」共用）。
  *
  * 分两段是因为两者的**来源**不同、界面用法也不同：

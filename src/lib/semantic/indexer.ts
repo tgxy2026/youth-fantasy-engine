@@ -24,8 +24,10 @@
 import * as db from '@/lib/db'
 import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
 import { TABS } from '@/lib/schema'
-import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
+import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
+import { resolveTemplateCached } from '@/lib/templates/cache'
+import { indexRulesOf, type IndexFieldRule } from '@/lib/templates/consumers'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'
 import {
@@ -66,15 +68,11 @@ export interface CollectInput {
  *    所以作者在图鉴里关掉的每一个开关，在这里**必须同样生效** —— 否则就成了
  *    "提示词里看不到，但语义召回能捞出来"的绕行通道（验收 R04 已复现：
  *    `aiReadable=false` + `archived=true` 的字段内容照样进了索引文本）。
+ *
+ * 3.2.0 · WT0-4：结构定义挪到 `templates/consumers.IndexFieldRule`（**唯一来源**），
+ * 这里只留旧名字的别名 —— 两份接口定义必然漂移。
  */
-export interface AtlasIndexFieldRule {
-  /** 作者起的字段名（`cf_*` 键绝不进索引文本） */
-  label: string
-  /** 作者关掉「允许 AI 参考」⇒ 不进索引；与提示词侧 `purpose:'aiRead'` 同一口径 */
-  aiReadable: boolean
-  /** 类别适用范围：`'*'` = 不限；数组 = 只对这几个类别生效 */
-  appliesTo: '*' | string[]
-}
+export type AtlasIndexFieldRule = IndexFieldRule
 
 /** 条目类别所在的列（图鉴四页签一致） */
 const CATEGORY_COL = '类别'
@@ -228,7 +226,7 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   /**
    * 图鉴页签的自定义字段**索引规则**（存储键 → 名字 / AI 可读 / 类别范围）。
    *
-   * 🔴🔴 走 `resolveAtlasFields`（字段解析的唯一入口），不自己遍历配置原文里的字段数组 ——
+   * 🔴🔴 走**有效模板**（`resolveTemplateCached` + `indexRulesOf`），不自己遍历配置原文的字段数组 ——
    *    否则"提示词一套口径、索引另一套"会再次出现（R04 就是这么来的）。
    *    `ignoreAppliesTo: true` 是**故意**的：这里要的是**全表字段结构**，
    *    类别是否匹配由 `renderRow` 拿每行的 `类别` 逐行判（全表视图不该先砍掉再判）。
@@ -240,13 +238,7 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
     if (!isAtlasTab(tab.id)) return undefined
     try {
       const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id)).config
-      const fields = resolveAtlasFields(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
-      const map: Record<string, AtlasIndexFieldRule> = {}
-      for (const f of fields) {
-        if (f.source !== 'custom') continue
-        map[f.key] = { label: f.label, aiReadable: f.aiReadable, appliesTo: f.appliesTo }
-      }
-      return Object.keys(map).length > 0 ? map : undefined
+      return indexRulesOf(resolveTemplateCached(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true }))
     } catch {
       return undefined
     }

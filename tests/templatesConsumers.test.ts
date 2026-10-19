@@ -7,7 +7,7 @@
 import { TABS } from '@/lib/schema'
 import { resolveAtlasFields } from '@/lib/atlas/schema'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
-import { tableFieldsOf, toTableFieldProjection, aiReadableTableFieldsOf } from '@/lib/templates/consumers'
+import { tableFieldsOf, toTableFieldProjection, aiReadableTableFieldsOf, indexRulesOf } from '@/lib/templates/consumers'
 import { renderTable } from '@/lib/ai/tableRender'
 import { adaptBuiltinTab } from '@/lib/templates/legacyAdapter'
 import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
@@ -171,6 +171,54 @@ const cfg = mkConfig()
   const expected = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
   ok('⑨ 非图鉴页签投影 = 非隐藏列', JSON.stringify(proj.map(p => p.key)) === JSON.stringify(expected))
   ok('⑨ 内置列没有 kind', proj.every(p => p.kind === undefined))
+}
+
+// ────────────────────────── ⑩ 语义索引规则（indexRulesOf）──────────────────────────
+{
+  // ① 与旧口径（`resolveAtlasFields` 手搓 map）逐项对齐 —— 索引是"提示词绕行通道"的高发区
+  for (const id of ATLAS_TAB_IDS) {
+    const tab = tabOf(id)
+    const legacyMap: Record<string, { label: string; aiReadable: boolean; appliesTo: '*' | string[] }> = {}
+    for (const f of resolveAtlasFields(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })) {
+      if (f.source !== 'custom') continue
+      legacyMap[f.key] = { label: f.label, aiReadable: f.aiReadable, appliesTo: f.appliesTo }
+    }
+    const tpl = resolveTemplateForTab(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
+    const got = indexRulesOf(tpl)
+    const same = JSON.stringify(legacyMap) === JSON.stringify(got)
+    ok(`⑩ ${id} 索引规则与旧口径逐项一致`, same,
+      same ? '' : `\n legacy=${JSON.stringify(legacyMap)}\n got   =${JSON.stringify(got)}`)
+    ok(`⑩ ${id} 对照组有效（确实有自定义字段）`, Object.keys(legacyMap).length > 0)
+  }
+}
+
+// ────────────────────────── ⑪ 索引规则的边界 ──────────────────────────
+{
+  const mk = (fields: EffectiveField[]): EffectiveTemplate => ({
+    templateId: 'builtin:x', version: 1, revision: 0, semanticDigest: 'd', tabId: 'races',
+    purpose: 'aiRead', groups: [], fields, diagnostics: [],
+  })
+  const field = (over: Partial<EffectiveField>): EffectiveField => ({
+    id: 'cf_a', sourceKey: 'cf_a', source: 'custom', label: '自定义', type: 'text',
+    groupId: 'g', order: 0, appliesTo: '*', archived: false,
+    permissions: { table: true, detail: true, search: true, aiRead: true, aiWrite: false },
+    ...over,
+  })
+
+  // 🔴 内置字段不进规则：内置列没有「关掉 AI 参考」的开关，名字就是存储键，交给原逻辑处理
+  const onlyBuiltin = mk([field({ id: '名称', sourceKey: '名称', source: 'builtin', label: '名称' })])
+  ok('⑪ 只有内置字段 ⇒ undefined（走降级）', indexRulesOf(onlyBuiltin) === undefined)
+
+  // 一条规则都没有 ⇒ undefined（保持旧口径，让调用方降级把 cf_* 叫「自定义字段」）
+  ok('⑪ 无字段 ⇒ undefined', indexRulesOf(mk([])) === undefined)
+
+  // aiRead 开关照常透传（模板侧已过滤 false，这里钉住"缺席即不可读"的契约）
+  const withRule = mk([field({ id: 'cf_b', sourceKey: 'cf_b', label: '备注', appliesTo: ['角色'] })])
+  const r = indexRulesOf(withRule)!
+  ok('⑪ 规则以存储键为键', Object.keys(r).join(',') === 'cf_b')
+  ok('⑪ 带上当前显示名', r.cf_b.label === '备注')
+  ok('⑪ aiReadable 透传', r.cf_b.aiReadable === true)
+  ok('⑪ appliesTo 透传（类别逐行判，规则不预先砍）', JSON.stringify(r.cf_b.appliesTo) === JSON.stringify(['角色']))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

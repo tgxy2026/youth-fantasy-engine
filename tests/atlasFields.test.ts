@@ -808,8 +808,10 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   // 索引侧也要拿到映射（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
   const idxSrc = read('src/lib/semantic/indexer.ts')
   ok('㉓ 索引器为图鉴表加载字段规则', idxSrc.includes('fieldRulesOf') && idxSrc.includes('loadAtlasSchema'))
-  ok('㉓ 索引侧走 resolveAtlasFields（不自己读配置原文，避免两套口径）',
-    idxSrc.includes('resolveAtlasFields') && !/cfg\.fields/.test(idxSrc))
+  // 🔴 2026-10-20（WT0-4）：索引侧改走**有效模板**（`resolveTemplateCached` + `indexRulesOf`），
+  //    与提示词侧同一口径；闸同步改成认"调用了什么函数"，不认字面参数（搬过三次，别再踩）。
+  ok('㉓ 索引侧走有效模板（不自己读配置原文，避免两套口径）',
+    idxSrc.includes('resolveTemplateCached') && idxSrc.includes('indexRulesOf') && !/cfg\.fields/.test(idxSrc))
   ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
     /catch \{\s*return undefined\s*\}/.test(idxSrc))
 }

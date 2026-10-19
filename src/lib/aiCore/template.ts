@@ -6,6 +6,9 @@
  */
 
 import * as db from '@/lib/db'
+import { TABS } from '@/lib/schema'
+import { loadAliases, type AliasMap } from '@/lib/settings/fieldAlias'
+import { resolveTemplateCached } from '@/lib/templates/cache'
 import { parsePlainObject } from '@/lib/ai/aiParse'
 import { chat } from '@/lib/aiCore/chat'
 import { requireProviderFor } from '@/lib/ai/aiRouting'
@@ -71,16 +74,49 @@ export const WORLD_CONTEXT_GROUPS: WorldContextGroup[] = [
  * v1：抽取表单型「世界设定 / 力量体系 / 作品信息」的关键字段，作为模型补全的约束。
  *
  * @param onlyKeys 只取这些分组；**不传 = 全取**（保持「一次成稿」的既有行为不变）。
+ *
+ * 🔴 3.2.0 · WT0-4：字段的**显示名**改从有效模板取（`resolveTemplateCached` + 字段别名），
+ *    不再一律用白名单里的字面名。理由（方案 §3.10.3）：
+ *    「一对一字段、含义不变的改名，AI 应使用**当前名称**」—— 作者把「世界名称」改名成
+ *    「世界称呼」之后，喂给模型的还是旧名，模型就会按旧名理解和回填。
+ *    🔴 存储键**一个字节都不动**：`f.sourceKey` 仍是 `模块::字段名`，取值路径不变。
+ *    🔴 模板里找不到该字段（schema 改过名 / 历史脏键）⇒ **退回原来的全表扫描**，
+ *      宁可名字难听，也不能把作者已经填好的内容丢掉。
  */
 export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
-  const pick = (data: Record<string, string> | undefined, names: string[]): string[] => {
+  /** 表单页签的字段（存储键 + 当前显示名） */
+  const fieldsOf = async (tabId: string): Promise<{ key: string; label: string }[]> => {
+    const tab = TABS.find(t => t.id === tabId)
+    if (!tab) return []
+    // 别名读失败不影响主流程：退回原名显示（与 `loadAliases` 的降级口径一致）
+    const aliases: AliasMap = await loadAliases(tabId).catch(() => ({}))
+    const tpl = resolveTemplateCached(tab)
+    // 🔴 显示名在这里叠别名，而不是靠模板层：`adaptBuiltinTab` 只读 schema 的字段名，
+    //    显示名是 `settings/fieldAlias` 的职责（`SchemaFieldGrid` 也是这么做的）。
+    //    别名的键就是存储键 `模块名::字段名`，所以 `aliases[f.sourceKey]` 直接可用。
+    return tpl.fields.map(f => ({ key: f.sourceKey, label: aliases[f.sourceKey] ?? f.label }))
+  }
+  const pick = (
+    data: Record<string, string> | undefined,
+    names: string[],
+    fields: { key: string; label: string }[],
+  ): string[] => {
     if (!data) return []
-    const out: string[] = []
-    for (const n of names) {
-      const v = Object.entries(data)
+    /** 老式扫描：任何 `模块::字段名` 或纯字段名都算（题材包换过、历史数据模块名不同时靠它兜底） */
+    const scan = (n: string): string => {
+      const hit = Object.entries(data)
         .map(([k, val]) => (k.endsWith(`::${n}`) || k === n ? val : ''))
         .find(Boolean)
-      if (v && v.trim()) out.push(`${n}：${v.trim()}`)
+      return (hit ?? '').trim()
+    }
+    const out: string[] = []
+    for (const n of names) {
+      const f = fields.find(x => x.key === n || x.key.endsWith(`::${n}`))
+      // 🔴 先按模板的真实存储键取，取不到再退回全表扫描 ——
+      //    只认模板键是不够的：题材包换过之后，老数据的模块前缀可能与当前 schema 不同，
+      //    那时 `data[f.key]` 是空的而值其实还在（本轮实机测试抓到的丢值 bug）。
+      const v = (f ? (data[f.key] ?? data[n] ?? '').trim() : '') || scan(n)
+      if (v) out.push(`${f ? f.label : n}：${v}`)
     }
     return out
   }
@@ -94,8 +130,16 @@ export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
     need.has('positioning') ? db.getFormData('positioning').catch(() => undefined) : Promise.resolve(undefined),
   ])
   const byTab: Record<string, Record<string, string> | undefined> = { worldbase: world, power, positioning: pos }
+  const [fWorld, fPower, fPos] = await Promise.all([
+    need.has('worldbase') ? fieldsOf('worldbase') : Promise.resolve([]),
+    need.has('power') ? fieldsOf('power') : Promise.resolve([]),
+    need.has('positioning') ? fieldsOf('positioning') : Promise.resolve([]),
+  ])
+  const fieldsByTab: Record<string, { key: string; label: string }[]> = {
+    worldbase: fWorld, power: fPower, positioning: fPos,
+  }
   const lines: string[] = []
-  for (const g of groups) lines.push(...pick(byTab[g.tabId], g.names))
+  for (const g of groups) lines.push(...pick(byTab[g.tabId], g.names, fieldsByTab[g.tabId] ?? []))
   return lines.join('\n')
 }
 
