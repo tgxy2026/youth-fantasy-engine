@@ -50,6 +50,13 @@ export interface EffectiveField {
   id: string
   /** 原始存储键：列名 / `模块名::字段名` / `cf_<uid>` */
   sourceKey: string
+  /**
+   * 字段来源：`builtin`（schema 内置）或 `custom`（图鉴自定义 `cf_*`）。
+   * 🔴 写回权限靠它分叉：内置字段走**原执行器通道**（旧 commit 一直在写它们），
+   *    自定义字段必须作者放开 `aiWritable` 才许写 —— 两者不能共用一个开关，
+   *    否则要么把内置写入全掐死，要么让自定义字段被静默填值。
+   */
+  source: TemplateFieldSource
   /** 显示名（内置字段取别名，自定义字段取 label）—— 界面与 AI 共用 */
   label: string
   /** 字段含义说明（人看，也发给 AI） */

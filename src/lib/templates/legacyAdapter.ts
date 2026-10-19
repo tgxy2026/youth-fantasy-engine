@@ -51,6 +51,7 @@ export function effectiveFieldOfAtlas(f: ResolvedAtlasField): EffectiveField {
   return {
     id: f.key,
     sourceKey: f.key,
+    source: f.source,
     label: f.label,
     ...(f.description ? { description: f.description } : {}),
     type: typeOf(f),
@@ -148,6 +149,7 @@ export function adaptBuiltinTab(tab: TabDef, opts: { revision?: number } = {}): 
       fields.push({
         id: col.name,
         sourceKey: col.name,
+        source: 'builtin',
         label: col.name,
         type,
         ...(col.options ? { options: col.options } : {}),
@@ -171,6 +173,7 @@ export function adaptBuiltinTab(tab: TabDef, opts: { revision?: number } = {}): 
       fields.push({
         id: key,
         sourceKey: key,
+        source: 'builtin',
         label: fld.name,
         ...(fld.desc ? { description: fld.desc } : {}),
         type,
@@ -210,8 +213,11 @@ export function canAdaptAsAtlas(tab: TabDef): boolean {
 /**
  * FNV-1a 32 位哈希（纯 JS，浏览器与 Node 同码；不引 crypto，避免环境差异）。
  * 只用于「变了没有」的比对，不用于安全目的。
+ *
+ * 🔴 导出给 `mappingPlan.ts` 复用：映射摘要与模板摘要必须用**同一套**哈希，
+ *    否则同一次变更在两个摘要里得出不同结论，排查时会被误导。
  */
-function fnv1a(s: string): string {
+export function fnv1a(s: string): string {
   let h = 0x811c9dc5
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i)
