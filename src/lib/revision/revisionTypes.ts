@@ -76,7 +76,13 @@ export type ParseOutcome = 'valid' | 'repaired' | 'invalid'
 
 export interface ParseDiagnostic {
   /** 缺字段 / 类型错误 / 截断 / 无法恢复的文本 */
-  code: 'missing-field' | 'type-error' | 'truncated' | 'unrecoverable' | 'unknown-target'
+  code:
+    | 'missing-field'
+    | 'type-error'
+    | 'truncated'
+    | 'stray-punct'   // MQ0 后增：清掉结构位杂散标点后救回（无条目丢弃，但调用方应知道文本不干净）
+    | 'unrecoverable'
+    | 'unknown-target'
   detail: string
   /** repaired 时被丢弃的条目索引；invalid 时为 undefined */
   droppedIndex?: number

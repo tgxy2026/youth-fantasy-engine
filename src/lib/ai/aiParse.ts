@@ -10,6 +10,8 @@
 //
 // 约定：任何「把模型文本变成结构化数据」的地方都必须走本模块，不要再手写 JSON.parse。
 
+import type { ParseDiagnostic, TaskResult } from '@/lib/revision/revisionTypes'
+
 /** 剥掉 markdown 代码块围栏（```json ... ``` / ``` ... ```） */
 export function stripCodeFence(raw: string): string {
   return raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
@@ -212,15 +214,104 @@ export function parseLooseObject(raw: string): Record<string, unknown> | null {
  *   🔴 请勿退回「先按 '[' 切片再判数组」的老写法。
  */
 export function parseObjectArray(raw: string): Record<string, unknown>[] {
-  const arr = normalizeParsed(tryParse(sliceJSON(raw, '[')))
-  if (arr && arr.length > 0) return arr
+  return parseObjectArrayDetailed(raw).data
+}
+
+/**
+ * WQ1（3.2.0 · MQ0 契约）：「对象数组」的**详细**解析结果。
+ *
+ * 为什么不能只返回数组：`parseObjectArray` 的 `[]` 至少有三种完全不同的含义 ——
+ *   ① 模型明确返回空数组（**合法空结果**＝检查后未发现问题）；
+ *   ② 元素全非对象被过滤光 / 截断修复后只剩空壳（**修复**，条目被丢弃）；
+ *   ③ 根本解析不出来（**失败**，上游却当成"无问题"继续跑）。
+ * Q1 要求三者可区分、可汇总，故本函数返回 `TaskResult`（valid / repaired / invalid）。
+ *
+ * 🔴 容错边界与 `parseObjectArray` **逐字一致**（严格 → 单对象归一化 → 截断修复）：
+ *    不新增 stray-punct 等更宽松路径 —— 那是 `parseLooseObject` 的地盘，
+ *    静默扩大接受范围属于回归风险（见 `parseLooseObject` 注释里的取舍）。
+ *    本函数只做一件事：把「走到了哪条路、丢了什么」显式化。
+ *
+ * 判定：
+ *   · valid    —— 严格路径成功（**含合法空数组 `[]` 与 `{list:[]}`**）；
+ *                单对象 / {list:[…]} 归一化属既有兼容行为，不算修复。
+ *   · repaired —— 元素被过滤（`type-error`）或走截断修剪补齐（`truncated`，
+ *                尾部残缺条目被丢弃，记 `droppedIndex`）。
+ *   · invalid  —— 所有路径都失败；`data` 为 `[]` 但**不是**合法空结果。
+ *
+ * 🔴 原 `parseObjectArray` 现为本函数的兼容包装（行为逐字不变），
+ *    新调用方一律用本函数；禁止"新增了详细版却继续把 `[]` 当无问题"。
+ */
+export function parseObjectArrayDetailed(raw: string): TaskResult<Record<string, unknown>[]> {
+  const diagnostics: ParseDiagnostic[] = []
+
+  // 1) 严格路径 · 数组形态。🔴 解析成功即停——**不要求 length > 0**，
+  //    否则「模型明确返回 []」会被误判成失败（正是 Q1 要消灭的二义）。
+  const arrV = tryParse(sliceJSON(raw, '['))
+  if (arrV !== null && Array.isArray(arrV)) {
+    if (arrV.length === 0) {
+      return { outcome: 'valid', data: [], diagnostics, truncated: false }
+    }
+    const arr = normalizeParsed(arrV)
+    if (arr && arr.length > 0) {
+      if (arr.length < arrV.length) {
+        diagnostics.push({ code: 'type-error', detail: `数组 ${arrV.length} 个元素中 ${arrV.length - arr.length} 个非对象被丢弃` })
+        return { outcome: 'repaired', data: arr, diagnostics, truncated: false }
+      }
+      return { outcome: 'valid', data: arr, diagnostics, truncated: false }
+    }
+    // 元素全非对象 ⇒ 丢光了；给 repaired 空结果 + 诊断，让调用方知道不干净
+    diagnostics.push({ code: 'type-error', detail: `数组 ${arrV.length} 个元素全部非对象，无可用条目` })
+    return { outcome: 'repaired', data: [], diagnostics, truncated: false }
+  }
+
+  // 2) 严格路径 · 单对象 / {list:[…]} 归一化（既有兼容行为）。
+  //    {list:[]} 归一化成 [] —— 模型明确给了空清单，合法空结果。
   const obj = normalizeParsed(tryParse(sliceJSON(raw, '{')))
-  if (obj && obj.length > 0) return obj
-  // 末级兜底：结构被截断时修剪 + 补齐 —— 抽取任务一次要吐十几条，
-  // 最后一条被截断就会让整批解析失败（保住前 N-1 条也远好过全丢）
+  if (obj) {
+    return { outcome: 'valid', data: obj, diagnostics, truncated: false }
+  }
+
+  // 3) 末级兜底：截断修剪 + 补齐（保住前 N-1 条；丢弃的尾部条目记诊断）
   const repaired = normalizeParsed(parseTruncatedJson(raw))
-  if (repaired && repaired.length > 0) return repaired
-  return []
+  if (repaired && repaired.length > 0) {
+    diagnostics.push({ code: 'truncated', detail: 'JSON 被截断，已从最近结构断点回退补齐', droppedIndex: repaired.length })
+    return { outcome: 'repaired', data: repaired, diagnostics, truncated: true }
+  }
+
+  diagnostics.push({ code: 'unrecoverable', detail: '严格/单对象归一化/截断修复三条路径均无法解析出对象条目' })
+  return { outcome: 'invalid', data: [], diagnostics, truncated: false }
+}
+
+/**
+ * WQ1：「单个 JSON 对象」的**详细**解析结果。
+ *
+ * 🔴 容错边界与 `parseLooseObject` 逐字一致（严格 → 清杂散标点 → 截断修复）——
+ *    因为 `parseLooseObject` 才是生成型入口既定的宽松口径；`parsePlainObject`
+ *    的严格边界被 20+ 处复用，不在此处扩大（历史取舍见 `parseLooseObject` 注释）。
+ */
+export function parsePlainObjectDetailed(raw: string): TaskResult<Record<string, unknown>> {
+  const diagnostics: ParseDiagnostic[] = []
+  const invalid = (detail: string): TaskResult<Record<string, unknown>> => {
+    diagnostics.push({ code: 'unrecoverable', detail })
+    return { outcome: 'invalid', data: {}, diagnostics, truncated: false }
+  }
+
+  const direct = parsePlainObject(raw)
+  if (direct) return { outcome: 'valid', data: direct, diagnostics, truncated: false }
+
+  const punctV = tryParse(stripStrayPunct(sliceJSON(raw, '{')))
+  if (punctV && typeof punctV === 'object' && !Array.isArray(punctV)) {
+    diagnostics.push({ code: 'stray-punct', detail: 'JSON 结构位存在杂散标点，清理后解析成功' })
+    return { outcome: 'repaired', data: punctV as Record<string, unknown>, diagnostics, truncated: false }
+  }
+
+  const truncatedV = parseTruncatedJson(raw)
+  if (truncatedV && typeof truncatedV === 'object' && !Array.isArray(truncatedV)) {
+    diagnostics.push({ code: 'truncated', detail: 'JSON 被截断，已修剪补齐（可能丢失尾部字段）' })
+    return { outcome: 'repaired', data: truncatedV as Record<string, unknown>, diagnostics, truncated: true }
+  }
+
+  return invalid('严格/杂散标点/截断修复三条路径均无法解析出对象')
 }
 
 /**
