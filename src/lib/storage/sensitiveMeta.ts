@@ -41,6 +41,10 @@ export const SENSITIVE_META_KEYS: readonly string[] = [
  */
 export const LOCAL_ONLY_META_KEY_PREFIXES: readonly string[] = [
   'templateMigration32:',
+  // `templateLibrary32:` —— 个人模板库（方案 §3.5：默认本机个人库，加入云同步排除）。
+  // 不跟云走的原因不是"敏感"，而是：库是**作者本机的资产**，不是任何一本项目的结构；
+  // 跟云同步会让两台机器的库互相覆盖版本号，而"已发布版本不可原地覆盖"正是靠版本号成立的。
+  'templateLibrary32:',
 ]
 
 /** 键名是否落在「本机专属」前缀里 */

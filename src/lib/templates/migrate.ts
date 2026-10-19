@@ -80,6 +80,25 @@ function countValues(store: ValueStore, fieldId: string): number {
   return targetsWithValue(store, fieldId).length
 }
 
+/**
+ * 统计若干字段当前的**值条目数**（供升级预览等"先看规模再动手"的场景）。
+ *
+ * 🔴 口径必须与执行层内部一致：表单一条 + 每行一条，空串不算值。
+ *    这个函数是那个口径的**唯一出口**，界面/预览不许自己数一遍 ——
+ *    两处口径分叉，就会出现"预览说影响 3 条、实际改了 5 条"。
+ */
+export async function countValuesForFields(
+  pid: string,
+  tabId: string,
+  fieldIds: readonly string[],
+): Promise<Record<string, number>> {
+  if (!pid || !tabId || fieldIds.length === 0) return {}
+  const store = await readValueStore(pid, tabId)
+  const out: Record<string, number> = {}
+  for (const id of fieldIds) out[id] = countValues(store, id)
+  return out
+}
+
 /** 待写入的一条值（先算后写：备份必须覆盖"将要动"的全部槽位） */
 interface PlannedWrite {
   target: ValueTarget
