@@ -39,9 +39,26 @@ const BUILTIN_TYPE_MAP: Record<string, TemplateFieldType> = {
   characters: 'characters',
 }
 
+/**
+ * 图鉴**自定义字段**的类型词表（`CustomFieldType` 六种）。
+ *
+ * 🔴 这张表与 `BUILTIN_TYPE_MAP` 不能合并：
+ *    自定义字段的类型叫 `longText`，内置列叫 `textarea` —— 用内置表去查 `longText`
+ *    会查不到、归成 `other`（只读 + 一条「类型未识别」诊断），
+ *    于是**作者的长文本自定义字段全部被静默降级**（WT0-4 首轮实测抓到，2026-10-19）。
+ */
+const CUSTOM_TYPE_MAP: Record<string, TemplateFieldType> = {
+  text: 'text',
+  longText: 'textarea',
+  number: 'number',
+  select: 'select',
+  multiSelect: 'multiSelect',
+  boolean: 'boolean',
+}
+
 function typeOf(f: ResolvedAtlasField): TemplateFieldType {
   if (f.source === 'custom') {
-    return f.customType ? (BUILTIN_TYPE_MAP[f.customType] ?? 'other') : 'other'
+    return f.customType ? (CUSTOM_TYPE_MAP[f.customType] ?? 'other') : 'other'
   }
   return BUILTIN_TYPE_MAP[f.builtinType ?? 'text'] ?? 'other'
 }

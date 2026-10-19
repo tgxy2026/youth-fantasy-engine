@@ -605,7 +605,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   // 表格渲染在 3.1.3 抽到 ai/tableRender（aiContext 贴 1200 行上限）；断言跟着搬，并防回退
   const renderSrc = read('src/lib/ai/tableRender.ts')
   ok('⑳ AI 上下文表头用字段名（cf_ 键不给模型看）', renderSrc.includes('labelOf') && renderSrc.includes('?.label ?? key'))
-  ok('⑳ AI 上下文按类型格式化值（多选不用 JSON 碎片）', renderSrc.includes('formatCustomValue(f.customType, raw, f.unit)'))
+  // WT0-4：单元格格式化改为读 `kindOf()`（投影名 kind + 旧名 customType 兼容窗口）
+  ok('⑳ AI 上下文按类型格式化值（多选不用 JSON 碎片）',
+    renderSrc.includes('formatCustomValue(kind, raw') && renderSrc.includes('const kindOf = '))
   ok('⑳ 负向：aiContext 不许再自己实现一份 renderTable', !/function renderTable\(/.test(ctx))
   // 加载与过滤抽到了 ai/atlasContext（aiContext 已贴 1200 行上限）
   const atlasCtx = read('src/lib/ai/atlasContext.ts')
@@ -748,7 +750,7 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉓ aiContext 用的是抽出去的那一份（不许自己另写一个 cellCap）',
     ctxSrc.includes("from '@/lib/ai/fieldCap'") && !/function cellCap\(/.test(ctxSrc))
   ok('㉓ 表格渲染按字段类型取上限（不是只按列名）',
-    read('src/lib/ai/tableRender.ts').includes('const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)')
+    read('src/lib/ai/tableRender.ts').includes('cellCap(key, kindOf(')
     && read('src/lib/ai/tableRender.ts').includes('capOf(c)'))
   // ---------- R04（2026-10-19 修）：作者关掉的字段不许从语义召回绕回来 ----------
   // 病根：索引侧只有"cf_ → 名字"的映射，aiReadable / archived / appliesTo 一律不管

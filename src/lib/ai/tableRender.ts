@@ -10,7 +10,7 @@
  *    3.1.3 给图鉴页签加字段时漏过一次，被 contextRank / tavernFlow 当场抓出来。
  */
 import type { TabDef } from '@/lib/types'
-import type { ResolvedAtlasField } from '@/lib/atlas/types'
+import type { TableFieldProjection } from '@/lib/templates/consumers'
 import { formatCustomValue } from '@/lib/atlas/values'
 import { cellCap } from '@/lib/ai/fieldCap'
 import { digestTable } from '@/lib/ai/tableDigest'
@@ -117,8 +117,12 @@ export function renderTable(
   tab: TabDef,
   rows: { data: Record<string, string> }[],
   o: RenderOpts = {},
-  /** 3.1.3：图鉴页签的有效字段（不传 ⇒ 走 tab.columns，其他表行为不变） */
-  atlasFields?: readonly ResolvedAtlasField[] | null,
+  /**
+   * 3.2.0 · WT0-4：图鉴/自定义页签的**有效字段投影**（不传 ⇒ 走 tab.columns，其他表行为不变）。
+   * 🔴 形状刻意收窄成 `{key,label,kind,unit}`：渲染层不需要权限/类别，给多了会被顺手用成第二套口径。
+   *    `ResolvedAtlasField` 结构上满足它，老调用方零改动。
+   */
+  atlasFields?: readonly TableFieldProjection[] | null,
 ): string {
   // 角色视角：作者侧列整列不渲染（连列名都不出现，避免模型去追问）；
   // 系统元数据列（保密等级）两个视角都不渲染 —— 它已完成使命，对模型只是噪音。
@@ -147,12 +151,20 @@ export function renderTable(
   if (use.length === 0) return ''
   // 表头用字段名（cf_ 键不给模型看），值按类型格式化（多选 JSON → 顿号），否则模型会照抄 JSON 碎片
   const labelOf = (key: string) => atlasFields?.find(f => f.key === key)?.label ?? key
+  /**
+   * 取字段的自定义类型。
+   * 🔴 兼容窗口：`kind` 是 WT0-4 的投影名，`customType` 是旧 `ResolvedAtlasField` 的名字。
+   *    两个都认是为了「还没迁移完的调用方不会突然丢掉格式化」——
+   *    **等所有调用方都传投影后删掉 `customType` 这一支**（届时本函数只剩 `f?.kind`）。
+   */
+  const kindOf = (f?: TableFieldProjection) =>
+    f?.kind ?? (f as { customType?: TableFieldProjection['kind'] } | undefined)?.customType
   const cellOf = (key: string, raw: string) => {
-    const f = atlasFields?.find(x => x.key === key)
-    return f?.customType ? formatCustomValue(f.customType, raw, f.unit) : raw
+    const kind = kindOf(atlasFields?.find(x => x.key === key))
+    return kind ? formatCustomValue(kind, raw, atlasFields?.find(x => x.key === key)?.unit) : raw
   }
   /** 单元格上限：自定义长文本也给 600（不能只认内置列名，见 cellCap 的注释） */
-  const capOf = (key: string) => cellCap(key, atlasFields?.find(x => x.key === key)?.customType)
+  const capOf = (key: string) => cellCap(key, kindOf(atlasFields?.find(x => x.key === key)))
   /**
    * 摘要化（3.1.3 · R3）：单表先压到预算内，再交给装配器。
    * 🔴 压缩顺序是「先减列、再减行」，且**只在超限时动手** —— 放得下的小表输出与改造前逐字一致。

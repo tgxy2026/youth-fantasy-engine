@@ -14,16 +14,26 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
 import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
+import { resolveTemplateCached } from '@/lib/templates/cache'
+import { aiReadableTableFieldsOf, type TableFieldProjection } from '@/lib/templates/consumers'
 import * as db from '@/lib/db'
 
 /**
  * 读当前项目的图鉴字段（含自定义字段），失败时返回 `null`。
  * `null` 的语义是「按原 `tab.columns` 走」—— 单段读取失败不该让整份上下文崩掉。
+ *
+ * 3.2.0 · WT0-4：改为**从有效模板派生**（`resolveTemplateCached` + 投影），
+ * 不再自己调 `resolveAtlasFields`。同一套口径连同缓存一起复用，
+ * 输出与旧的 `resolveAtlasFields(...)` 逐字段一致（见 `tests/templatesConsumers.test.ts`）。
  */
-export async function loadAtlasFieldsForAI(tab: TabDef): Promise<ResolvedAtlasField[] | null> {
+export async function loadAtlasFieldsForAI(tab: TabDef): Promise<TableFieldProjection[] | null> {
+  // 非图鉴页签 ⇒ null（= 走 tab.columns）。调用方本来就会先判 isAtlasTab，
+  // 这里显式收口一次，既让类型收窄到 AtlasTabId，也避免将来有人误用拿到空清单。
+  if (!isAtlasTab(tab.id)) return null
   try {
-    const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id as 'races' | 'items')).config
-    return resolveAtlasFields(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
+    const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id)).config
+    const tpl = resolveTemplateCached(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
+    return aiReadableTableFieldsOf(tpl)
   } catch {
     return null
   }

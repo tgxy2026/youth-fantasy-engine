@@ -179,5 +179,35 @@ function fieldEquals(f: ResolvedAtlasField, e: EffectiveField): boolean {
   ok('⑦ 两次调用字段数一致', a.fields.length === b.fields.length)
 }
 
+// ---------- ⑧ 自定义字段六类型往返（WT0-4 实测抓到的真缺陷，锁死不再回退） ----------
+//
+// 自定义字段的类型叫 `longText`，内置列叫 `textarea` —— 用内置词表去查 `longText` 会查不到，
+// 于是长文本自定义字段被归成 `other`（只读 + 一条「类型未识别」诊断），
+// 作者的长文本字段**全部静默降级**。本条就是那道锁。
+{
+  const cfg = {
+    formatVersion: 1, revision: 1,
+    fields: (['text', 'longText', 'number', 'select', 'multiSelect', 'boolean'] as const).map((t, i) => ({
+      id: `cf_${t}`, label: t, type: t, description: '', options: t === 'select' || t === 'multiSelect' ? ['甲'] : [],
+      appliesTo: '*', groupId: 'g1', order: i, tableVisible: true, detailVisible: true,
+      searchable: true, aiReadable: true, aiWritable: false,
+    })),
+    groups: [{ id: 'g1', label: '扩展', order: 0 }], builtinPresentation: {}, summaryKeys: [],
+  } as unknown as AtlasSchemaConfig
+  const tpl = adaptAtlasTab(tabOf('races'), { config: cfg })
+  const byId = (id: string) => tpl.fields.find(f => f.id === id)!
+  const expect: Record<string, string> = {
+    cf_text: 'text', cf_longText: 'textarea', cf_number: 'number',
+    cf_select: 'select', cf_multiSelect: 'multiSelect', cf_boolean: 'boolean',
+  }
+  for (const [id, type] of Object.entries(expect)) {
+    ok(`⑧ 自定义 ${id} → ${type}`, byId(id).type === type, byId(id).type)
+    ok(`⑧ ${id} 不被误判为 other`, byId(id).type !== 'other')
+  }
+  ok('⑧ 六类型都不产生「类型未识别」诊断',
+    !tpl.diagnostics.some(d => d.code === 'unknown-field-type'),
+    JSON.stringify(tpl.diagnostics))
+}
+
 console.log(`\ntemplatesAdapter: ${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1
