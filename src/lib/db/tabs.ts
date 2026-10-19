@@ -13,6 +13,27 @@ export async function saveFormData(tabId: string, data: Record<string, string>) 
   touchProject(currentProjectId)
 }
 
+/**
+ * 按**指定项目 id** 读表单数据（3.2.0 · WT1-4 模板迁移）。
+ *
+ * 🔴 为什么必须补：模板迁移与恢复日志都是"按 pid 执行"的（作者可能在迁移/恢复期间
+ *    切了书）。上面那两个拼的是 `currentProjectId` ⇒ 会读写**当前打开的那一本**，
+ *    表现是"A 书迁移，B 书的值被改了"，而且这类串书极难定位。
+ *    凡"要动的不是当前项目"一律走带 `For` 的版本（判据同 `getSettingFor` / `delSettingFor`）。
+ */
+export async function getFormDataFor(pid: string, tabId: string): Promise<Record<string, string>> {
+  if (!pid || !tabId) return {}
+  const rec = await ops.get<FormData>('formData', `${pid}::${tabId}`)
+  return rec?.data ?? {}
+}
+
+/** 按**指定项目 id** 写表单数据（同上；只在真有变化时调用，避免无谓 touchProject） */
+export async function saveFormDataFor(pid: string, tabId: string, data: Record<string, string>) {
+  if (!pid || !tabId) return
+  await ops.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
+  touchProject(pid)
+}
+
 // ============ 表格行 ============
 export async function getTableRows(tabId: string): Promise<TableRow[]> {
   // #020：走 tabId 索引只取本表行，避免每开一张表就全表扫（portable/desktop/cloud 三端
@@ -20,6 +41,20 @@ export async function getTableRows(tabId: string): Promise<TableRow[]> {
   const rows = await ops.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)
   return rows
     .filter(r => r.projectId === currentProjectId)
+    .sort((a, b) => a.order - b.order)
+}
+
+/**
+ * 按**指定项目 id** 读表格行（3.2.0 · WT1-4 模板迁移）。
+ *
+ * 🔴 行的 `tabId` 是**裸页签 id**（`races` 这类），项目归属靠 `projectId` 字段 ——
+ *    所以这里仍按 `tabId` 索引取数，再按 pid 过滤；不要改成一个不存在的复合索引键。
+ */
+export async function getTableRowsFor(pid: string, tabId: string): Promise<TableRow[]> {
+  if (!pid || !tabId) return []
+  const rows = await ops.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)
+  return rows
+    .filter(r => r.projectId === pid)
     .sort((a, b) => a.order - b.order)
 }
 export async function saveTableRow(row: TableRow) {

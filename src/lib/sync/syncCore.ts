@@ -20,7 +20,7 @@ import { isDeleted, markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syn
 //    syncTransport → syncCore 与本文件的 syncCore → syncTransport 凑成环（importCycles 会报红）。
 import { webcrypto, hasWebCrypto } from '@/lib/storage/webcrypto'
 // 敏感 meta 键清单（叶子模块）—— 云同步 / 数据文件导出 / 项目包导出三处共用一份判据
-import { SENSITIVE_META_KEYS } from '@/lib/storage/sensitiveMeta'
+import { SENSITIVE_META_KEYS, isSensitiveMetaKey } from '@/lib/storage/sensitiveMeta'
 
 // 对象库清单（与 db.ts 中对象库一致，作为对账依据）。
 // ⚠️ 注意 'backups' / 'backupPayloads' 是**本地专属**（详见下方 LOCAL_ONLY_STORES）。
@@ -120,7 +120,10 @@ let fallbackHandler: ((cache: SyncStores) => void) | null = null
 /** 敏感/本地专属 meta：AI 配置不上云；冲突副本只落本地、不上传 */
 export function isExcludedMetaKey(key: unknown): boolean {
   if (typeof key !== 'string') return false
-  return EXCLUDED_META_KEYS.has(key) || key.startsWith(CONFLICT_KEY_PREFIX)
+  // 🔴 走叶子模块的判据而不是直接查 `EXCLUDED_META_KEYS`：前者还管**前缀族**
+  //    （3.2.0 的 `templateMigration32:` 迁移日志/备份是按项目+页签动态命名的，清单查不到）。
+  //    两边判据一旦分叉，就会出现"导出时剥掉了、同步时没剥"的半吊子状态。
+  return isSensitiveMetaKey(key) || key.startsWith(CONFLICT_KEY_PREFIX)
 }
 
 /**

@@ -30,6 +30,26 @@ export const SENSITIVE_META_KEYS: readonly string[] = [
 ]
 
 /**
+ * **本机专属**的 meta 键**前缀**（键名带项目 id / 页签 id，无法穷举成清单）。
+ *
+ * 判据与 {@link SENSITIVE_META_KEYS} 同级：云同步与数据文件导出都排除。
+ * 但排除的理由不同 —— 这里不是"含密钥"，而是**换台机器就无意义、且拼不上**：
+ *   · `templateMigration32:` —— 模板迁移日志 / 迁移前的值备份 / 待处理索引
+ *     （方案 §3.5「迁移暂存」：本机项目级，不进日常云同步；恢复必须在本机做完）。
+ *     把它同步到另一台设备，等于让那台机器在没有原值的情况下看到"迁移未完成"，
+ *     甚至据一条不属于自己的日志去回滚别人已经改好的结构。
+ */
+export const LOCAL_ONLY_META_KEY_PREFIXES: readonly string[] = [
+  'templateMigration32:',
+]
+
+/** 键名是否落在「本机专属」前缀里 */
+export function isLocalOnlyMetaKey(key: unknown): boolean {
+  if (typeof key !== 'string') return false
+  return LOCAL_ONLY_META_KEY_PREFIXES.some(p => key.startsWith(p))
+}
+
+/**
  * 旧版**项目级** AI 配置键名（1.5.0 之前模型配置按项目存，键名与全局的相同）。
  *
  * 🔴 与 {@link SENSITIVE_META_KEYS} 刻意分开：那边是「云同步 / 导出时整体排除」的清单，
@@ -54,9 +74,10 @@ const SENSITIVE_FIELD_RE =
  */
 const MAX_DEPTH = 8
 
-/** 键名是否命中已知敏感清单 */
+/** 键名是否命中已知敏感清单**或**本机专属前缀 */
 export function isSensitiveMetaKey(key: unknown): boolean {
-  return typeof key === 'string' && SENSITIVE_META_KEYS.includes(key)
+  if (typeof key !== 'string') return false
+  return SENSITIVE_META_KEYS.includes(key) || isLocalOnlyMetaKey(key)
 }
 
 /**
