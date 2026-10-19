@@ -410,7 +410,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 onClick={() => setViewMode('atlas')}
                 className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
                   ${viewMode === 'atlas' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
-                title="图鉴视图：卡片墙浏览，点卡片看完整资料（编辑仍回表格，共用同一份草稿）"
+                title="图鉴视图：卡片墙浏览，点卡片看完整资料，可就地编辑（与表格共用同一份草稿）"
               >
                 <BookOpen size={11} /> 图鉴
               </Button>
