@@ -270,8 +270,10 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     /const tableFields = useMemo<TemplateField\[\]>/.test(model)
     && /purpose: 'aiWrite'/.test(model))
   ok('⑫ 未开放「允许 AI 填写」的自定义字段不进清单（口径在 resolveAtlasFields 里）',
-    /purpose: 'aiWrite'/.test(model) && /source === 'custom'/.test(model)
-    && read('src/lib/atlas/schema.ts').includes("if (purpose === 'aiWrite' && !def.aiWritable) continue"))
+    /purpose: 'aiWrite'/.test(model) && /aiWriteFieldsOf/.test(model)
+    // 口径仍只有一处：解析侧按 aiWritable 过滤，投影侧只收 source==='custom'
+    && read('src/lib/atlas/schema.ts').includes("if (purpose === 'aiWrite' && !def.aiWritable) continue")
+    && read('src/lib/templates/consumers.ts').includes("if (f.source === 'custom')"))
   ok('⑫ 三条 AI 写入路径都过类型校验（新增 / 补全 / 整理）',
     (model.match(/coerceAiValue\(/g) ?? []).length >= 3)
 
@@ -915,7 +917,8 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     (model.match(/allowedKeys\.has\(k\)/g) ?? []).length >= 2)
   ok('㉓c R12：补全本行还校验"这一行内容在生成期间变没变"',
     model.includes('JSON.stringify(now.data) !== JSON.stringify(row.data)'))
-  ok('㉓c R12：字段清单把说明交给模型', model.includes('atlasFieldHintForAI'))
+  // WT0-4：提示实现统一到 templates/consumers.fieldHintForAI（旧入口已改为委托）
+  ok('㉓c R12：字段清单把说明交给模型', model.includes('fieldHintForAI'))
 }
 
 // ---------- ㉔ R06（2026-10-19 修）：未知版本 / 读失败 / 损坏配置，写入服务必须拒写 ----------

@@ -6,8 +6,10 @@
 import { TABS } from '@/lib/schema'
 import { resolveAtlasFields } from '@/lib/atlas/schema'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
-import { writeTargetsOf, toWriteFieldProjection } from '@/lib/templates/consumers'
+import { writeTargetsOf, toWriteFieldProjection, fieldHintForAI } from '@/lib/templates/consumers'
 import { coerceAiValue } from '@/lib/atlas/values'
+import { effectiveFieldOfAtlas } from '@/lib/templates/legacyAdapter'
+import { atlasFieldHintForAI } from '@/lib/ai/atlasContext'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 
 let pass = 0, fail = 0
@@ -130,6 +132,70 @@ const cfgWithLocked = mkConfig([
   const expected = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
   ok('⑥ 非图鉴页签允许键 = 非隐藏列', JSON.stringify(t.keys) === JSON.stringify(expected))
   ok('⑥ 非图鉴页签没有自定义字段', t.custom.size === 0)
+}
+
+// ────────────────────────── ⑦ 提示文本与旧实现逐字一致 ──────────────────────────
+//
+// `atlasFieldHintForAI` 已改为委托到 `fieldHintForAI`。这里用**旧实现的一份副本**做对照，
+// 保证"换个地方写"没有写歪 —— 提示词少一个候选值，模型就会开始瞎编。
+{
+  const LEGACY_TYPE_HINT: Record<string, string> = {
+    text: '短文本', longText: '长文本', number: '数字', select: '单选', multiSelect: '多选', boolean: '是/否',
+  }
+  const legacyHint = (f: {
+    customType?: string; unit?: string; options?: string[]; description?: string; appliesTo?: '*' | string[]
+  }): string => {
+    const parts: string[] = [LEGACY_TYPE_HINT[f.customType ?? 'text'] ?? '文本']
+    if (f.unit) parts.push(`单位：${f.unit}`)
+    if (f.options?.length) parts.push(`候选：${f.options.join(' / ')}`)
+    if (f.description?.trim()) parts.push(f.description.trim())
+    if (f.appliesTo && f.appliesTo !== '*' && f.appliesTo.length) {
+      parts.push(`只对类别「${f.appliesTo.join('、')}」有意义`)
+    }
+    return parts.join('；')
+  }
+
+  const variants = [
+    { label: '纯文本', type: 'text' },
+    { label: '长文本', type: 'longText' },
+    { label: '数字带单位', type: 'number', unit: '级', description: '大致战力' },
+    { label: '单选带候选', type: 'select', options: ['高', '中', '低'] },
+    { label: '多选带候选', type: 'multiSelect', options: ['甲', '乙'] },
+    { label: '是非', type: 'boolean' },
+    { label: '限类别', type: 'text', appliesTo: ['魔兽'] },
+    { label: '全都有', type: 'number', unit: 'kg', options: ['1', '2'], description: '体重', appliesTo: ['魔兽', '灵族'] },
+  ]
+  const cfg = mkConfig(variants)
+  const legacy = resolveAtlasFields(tabOf('races'), { config: cfg, purpose: 'aiWrite', ignoreAppliesTo: true })
+    .filter(f => f.source === 'custom')
+  ok('⑦ 前置：八个变体都解析出来了', legacy.length === variants.length, String(legacy.length))
+  for (const f of legacy) {
+    const proj = toWriteFieldProjection(effectiveFieldOfAtlas(f))
+    const a = legacyHint(f)
+    const b = fieldHintForAI(proj)
+    ok(`⑦ ${f.label}：提示与旧实现逐字一致`, a === b, `\n 旧=${a}\n 新=${b}`)
+    ok(`⑦ ${f.label}：旧入口也一致（已委托）`, atlasFieldHintForAI(f) === a)
+  }
+  // 内置列：旧实现走 customType ?? 'text' ⇒ 短文本
+  const builtin = resolveAtlasFields(tabOf('races'), { config: cfg, purpose: 'aiWrite', ignoreAppliesTo: true })
+    .find(f => f.source === 'builtin')!
+  ok('⑦ 内置列的提示是「短文本」（不因无 customType 变「文本」）',
+    fieldHintForAI(toWriteFieldProjection(effectiveFieldOfAtlas(builtin))) === '短文本')
+  // 提示里不许出现 cf_ 内部键
+  for (const f of legacy) ok(`⑦ ${f.label}：提示不含内部键`, !fieldHintForAI(toWriteFieldProjection(effectiveFieldOfAtlas(f))).includes('cf_'))
+}
+
+// ────────────────────────── ⑧ 投影带说明与类别范围（供提示词用）──────────────────────────
+{
+  const cfg = mkConfig([
+    { label: '带说明', type: 'text', description: '这是什么' },
+    { label: '限类别', type: 'text', appliesTo: ['魔兽'] },
+  ])
+  const tpl = resolveTemplateForTab(tabOf('races'), { config: cfg, purpose: 'aiWrite', ignoreAppliesTo: true })
+  const custom = [...writeTargetsOf(tpl).custom.values()]
+  ok('⑧ 说明透传', custom.some(p => p.description === '这是什么'))
+  ok('⑧ 类别范围透传', custom.some(p => Array.isArray(p.appliesTo) && p.appliesTo.includes('魔兽')))
+  ok('⑧ 不限类别的字段不写 appliesTo（不制造噪音）', custom.some(p => p.appliesTo === undefined))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

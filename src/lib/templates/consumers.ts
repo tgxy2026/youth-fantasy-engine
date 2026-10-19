@@ -66,6 +66,10 @@ export interface WriteFieldProjection {
   type?: CustomFieldType
   options?: string[]
   unit?: string
+  /** 作者写的字段说明（一并交给模型，否则它只能瞎编） */
+  description?: string
+  /** 类别适用范围（只对某些类别有意义的字段要告诉模型） */
+  appliesTo?: '*' | string[]
 }
 
 /** 单个字段的写回投影 */
@@ -77,7 +81,39 @@ export function toWriteFieldProjection(f: EffectiveField): WriteFieldProjection 
     ...(type ? { type } : {}),
     ...(f.options?.length ? { options: f.options } : {}),
     ...(f.unit ? { unit: f.unit } : {}),
+    ...(f.description?.trim() ? { description: f.description.trim() } : {}),
+    ...(f.appliesTo !== '*' ? { appliesTo: f.appliesTo } : {}),
   }
+}
+
+/** 六类型的人话名（给模型看，别给 `cf_` 键） */
+const TYPE_HINT: Partial<Record<CustomFieldType, string>> = {
+  text: '短文本',
+  longText: '长文本',
+  number: '数字',
+  select: '单选',
+  multiSelect: '多选',
+  boolean: '是/否',
+}
+
+/**
+ * 把一个字段投影说成**一句模型能懂的话**（3.1.3 · R12 的通用版）。
+ *
+ * 🔴 为什么必须带类型/单位/候选/说明：只给 `key / label` 时模型不知道这是数字还是多选、
+ *    不知道单位、不知道候选里有哪些值 ⇒ 只能瞎编（"18岁"填进数字列、"大概"填进单选列），
+ *    然后被 `coerceAiValue` 拒掉，作者看到的是"AI 又跳过了一堆字段"。
+ * 🔴 这是**唯一实现**：旧入口 `atlasFieldHintForAI` 已改为委托到本函数，
+ *    不要再在别处复制一份（复制品必然漂移）。
+ */
+export function fieldHintForAI(p: WriteFieldProjection): string {
+  const parts: string[] = [TYPE_HINT[p.type ?? 'text'] ?? '文本']
+  if (p.unit) parts.push(`单位：${p.unit}`)
+  if (p.options?.length) parts.push(`候选：${p.options.join(' / ')}`)
+  if (p.description?.trim()) parts.push(p.description.trim())
+  if (p.appliesTo && p.appliesTo !== '*' && (p.appliesTo as string[]).length) {
+    parts.push(`只对类别「${(p.appliesTo as string[]).join('、')}」有意义`)
+  }
+  return parts.join('；')
 }
 
 export interface WriteTargets {
@@ -100,6 +136,27 @@ export function writeTargetsOf(template: EffectiveTemplate): WriteTargets {
     if (f.source === 'custom') custom.set(f.sourceKey, toWriteFieldProjection(f))
   }
   return { keys: template.fields.map(f => f.sourceKey), custom }
+}
+
+/**
+ * AI **输出目标**的字段集合（表格页签「AI 新增 / 补全本行 / 整理」共用）。
+ *
+ * 分两段是因为两者的**来源**不同、界面用法也不同：
+ *   · `builtinKeys` —— 内置列（隐藏列已被模板解析排除，不用调用方再 filter）
+ *   · `custom`      —— 作者放开 AI 填写的自定义字段（含类型/候选/说明，直接喂提示词与校验）
+ */
+export interface AiWriteFieldSet {
+  builtinKeys: string[]
+  custom: WriteFieldProjection[]
+}
+
+/** 从模板取 AI 输出目标（内置 + 可写自定义） */
+export function aiWriteFieldsOf(template: EffectiveTemplate): AiWriteFieldSet {
+  const { custom } = writeTargetsOf(template)
+  return {
+    builtinKeys: template.fields.filter(f => f.source === 'builtin').map(f => f.sourceKey),
+    custom: [...custom.values()],
+  }
 }
 
 /**

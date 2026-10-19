@@ -29,12 +29,11 @@ import {
 import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
 import { countCodeRefs, codeRefWarning } from '@/lib/app/codeRefs'
 import {
-  ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
+  ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab,
 } from '@/lib/atlas/schema'
-import {
-  atlasFieldHintForAI, loadAtlasAiWriteTargets, type AtlasAiWriteTargets,
-} from '@/lib/ai/atlasContext'
-import type { ResolvedAtlasField } from '@/lib/atlas/types'
+import { loadAtlasAiWriteTargets, type AtlasAiWriteTargets } from '@/lib/ai/atlasContext'
+import { resolveTemplateCached } from '@/lib/templates/cache'
+import { aiWriteFieldsOf, fieldHintForAI } from '@/lib/templates/consumers'
 import { invalidateIndex } from '@/lib/semantic/indexer'
 import { atlasColumnsOf, customColumnWidth, type AtlasColumn } from '@/lib/atlas/columns'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
@@ -266,13 +265,14 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *    作者只想让某列不占地方（隐藏），结果 AI 也跟着不能写了。
    *    这里只看 `aiWritable`，不看 `tableVisible` —— 两件事就该是两件事。
    */
-  const aiWritableFields = useMemo<ResolvedAtlasField[]>(
-    () => isAtlasCapable
-      ? resolveAtlasFields(tab, { config: atlasConfig, purpose: 'aiWrite', ignoreAppliesTo: true })
-        .filter(f => f.source === 'custom')
-      : [],
-    [isAtlasCapable, tab, atlasConfig],
-  )
+  /**
+   * 🔴 AI 的**输出目标**按 `purpose:'aiWrite'` 独立解析（3.1.3 · R12）：只看 `aiWritable`、
+   *    不看 `tableVisible`（隐藏列＝不占地方，≠ 不许 AI 写）。
+   * 3.2.0 · WT0-4：改从有效模板取 —— 内置＝`source==='builtin'`，自定义＝已筛过 `aiWritable` 的投影。
+   */
+  const aiFieldTargets = useMemo(() => aiWriteFieldsOf(resolveTemplateCached(tab, {
+    config: atlasConfig, purpose: 'aiWrite', ignoreAppliesTo: true,
+  })), [tab, atlasConfig])
 
   /**
    * 交给 AI 的字段清单（AI 新增 / 补全本行 / 整理共用同一份）。
@@ -282,21 +282,20 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *    写出来的值又被 `coerceAiValue` 拒掉 —— 作者看到的就是"AI 又跳过一堆字段"）。
    */
   const tableFields = useMemo<TemplateField[]>(() => [
-    ...(tab.columns ?? []).filter(c => !c.hidden)
-      .map(c => ({ key: c.name, label: c.name, locked: c.name === codeCol })),
-    ...aiWritableFields.map(f => ({
-      key: f.key,
-      label: f.label,
-      locked: f.key === codeCol,
-      ...(atlasFieldHintForAI(f) ? { desc: atlasFieldHintForAI(f) } : {}),
+    ...aiFieldTargets.builtinKeys.map(k => ({ key: k, label: k, locked: k === codeCol })),
+    ...aiFieldTargets.custom.map(p => ({
+      key: p.key,
+      label: p.label,
+      locked: p.key === codeCol,
+      ...(fieldHintForAI(p) ? { desc: fieldHintForAI(p) } : {}),
     })),
-  ], [tab, codeCol, aiWritableFields])
+  ], [codeCol, aiFieldTargets])
 
   /** 按存储键找自定义字段定义（内置列返回 null）—— AI 回填时判断要不要做类型校验 */
   const atlasFieldOf = (key: string) =>
     effectiveColumns.find(c => c.name === key)?.atlasField
     // 🔴 隐藏了但仍允许 AI 写的字段也要能找到定义，否则类型校验会被跳过（R12）
-    ?? aiWritableFields.find(f => f.key === key)
+    ?? aiFieldTargets.custom.find(f => f.key === key)
     ?? null
 
   /**
