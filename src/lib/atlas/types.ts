@@ -120,6 +120,11 @@ export interface ResolvedAtlasField {
   description?: string
   /** 下拉候选（内置列取 schema 选项，自定义字段取定义里的 options） */
   options?: string[]
+  /**
+   * 选项固定（OPT-010）：内置列的封闭枚举（如保密等级，被 AI 预算排序与角色视角读取），
+   * 不允许在详情/表格的自定义下拉里增改删。透传自列定义的 fixedOptions。
+   */
+  fixedOptions?: boolean
   tableVisible: boolean
   detailVisible: boolean
   searchable: boolean

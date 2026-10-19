@@ -212,6 +212,7 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
       label: opts.aliases?.[col.name] ?? col.name,
       source: 'builtin',
       builtinType: col.type ?? 'text',
+      ...(col.fixedOptions ? { fixedOptions: true } : {}),
       groupId: groupOfBuiltin(col.name),
       order: pres?.order ?? index,
       options: col.options,

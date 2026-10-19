@@ -27,6 +27,12 @@ import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
 
 interface Props {
+  /**
+   * 所属页签 ID（OPT-010）：内置下拉要接「自定义选项」存储
+   * （键 = customOption::<pid>::<tabId>::<列名>），必须与表格侧同一个 tabId
+   * 才看得到、加得到同一批自定义值。
+   */
+  tabId: string
   row: TableRow
   nameKey: string
   badges: string[]
@@ -71,30 +77,35 @@ interface Props {
  * （纯函数、可单测；组件这里只负责按它挂控件）。
  */
 import { atlasDetailEditable } from '@/lib/atlas/editability'
+import CustomSelect from '@/components/common/CustomSelect'
 export { atlasDetailEditable }
 
 /** 单个字段的编辑器：自定义字段走 `AtlasCellInput`，内置字段只用文本 / 下拉两种 */
-function DetailInput({ field, value, onChange }: { field: ResolvedAtlasField; value: string; onChange: (v: string) => void }) {
+function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: ResolvedAtlasField; value: string; onChange: (v: string) => void }) {
   if (field.source === 'custom') {
     return <AtlasCellInput field={field} value={value} onChange={onChange} />
   }
   if ((field.builtinType ?? 'text') === 'select') {
+    // 🔴 OPT-010（2026-10-19 主人反馈）：原先这里是原生 select、只读 schema 预设选项 ——
+    //    表格模式用的 CustomSelect 能加自定义值、也能看到别人加的值，图鉴却都看不到也加不了。
+    //    现统一走 CustomSelect（同一份 customOption::<pid>::<tabId>::<列名> 存储）。
+    //    封闭枚举（保密等级等，被 AI 预算排序与角色视角读取）由 fixedOptions 挡住增改。
     return (
-      <select
+      <CustomSelect
+        tabId={tabId}
+        colName={field.key}
+        options={field.options ?? []}
         value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-full text-12 py-1 px-1.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
-      >
-        <option value="">—</option>
-        {(field.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+        onChange={onChange}
+        {...(field.fixedOptions ? { fixedOptions: true } : {})}
+      />
     )
   }
   return <CellTextarea value={value} onChange={onChange} title={field.description || field.label} />
 }
 
 export default function AtlasDetail({
-  row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
+  tabId, row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
 }: Props) {
@@ -339,6 +350,7 @@ export default function AtlasDetail({
                           </dt>
                           <dd className="text-12 text-ink-200">
                             <DetailInput
+                              tabId={tabId}
                               field={field}
                               value={valueOf(field.key)}
                               onChange={v => onCellChange?.(field.key, v)}

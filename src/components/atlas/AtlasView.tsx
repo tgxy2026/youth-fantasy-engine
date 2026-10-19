@@ -234,6 +234,7 @@ export default function AtlasView({
         >
           <AtlasDetail
             key={selected.id}
+            tabId={tab.id}
             row={selected}
             nameKey={nameKey}
             badges={atlasCardBadges(tab.id, selected.data)}
