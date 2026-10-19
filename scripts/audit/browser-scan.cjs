@@ -3,9 +3,48 @@ function scanRenderedPaint({ binary = true } = {}) {
   const violations = [], unknown = []
   let painted = 0
   const alpha = v => Number.isFinite(Number.parseFloat(v)) ? Number.parseFloat(v) : 1
+  /**
+   * 把 CSS 颜色解析成 `{ rgb:[r,g,b], a }`（0–255 / 0–1）。
+   *
+   * 🔴 2026-10-19 起必须支持 oklch / oklab：
+   *    Tailwind v4 的调色板是 oklch，`getComputedStyle` 在某些属性上原样吐 `oklch(...)`
+   *    （实测节奏带、时间轴的 `stroke`）。只认 rgb() 会把它们全塞进 `unknown`，
+   *    契约就永远 blocked —— 而画面其实是对的（mono 下零彩色、严格二值都过）。
+   *    这里按 CSS Color 4 的标准公式换回 sRGB，宁可换算后严格判，也不放过。
+   */
   const colour = value => {
-    const m = /^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/.exec(value)
-    return m && { rgb: m.slice(1, 4).map(Number), a: alpha(m[4]) }
+    const v = String(value).trim()
+    const m = /^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/.exec(v)
+    if (m) return { rgb: m.slice(1, 4).map(Number), a: alpha(m[4]) }
+
+    // oklch(L C H[ / A]) 或 oklab(L a b[ / A])；L 可以是 0–1 或百分比
+    const om = /^okl(ch|ab)\(\s*([\d.]+)(%?)\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*([\d.]+)(%?))?\s*\)$/.exec(v)
+    if (!om) return null
+    const lu = om[3] === '%' ? Number(om[2]) / 100 : Number(om[2])
+    let A, B
+    if (om[1] === 'ch') {
+      const C = Number(om[4])
+      const H = Number(om[5]) * Math.PI / 180
+      A = C * Math.cos(H); B = C * Math.sin(H)
+    } else {
+      A = Number(om[4]); B = Number(om[5])
+    }
+    // oklab → LMS → 线性 RGB
+    const l_ = lu + 0.3963377774 * A + 0.2158037573 * B
+    const m_ = lu - 0.1055613458 * A - 0.0638541728 * B
+    const s_ = lu - 0.0894841775 * A - 1.2914855480 * B
+    const l = l_ ** 3, mm = m_ ** 3, s = s_ ** 3
+    const lin = [
+      +4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * mm + 1.7076147010 * s,
+    ]
+    const enc = x => {
+      const c = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(x, 0), 1 / 2.4) - 0.055
+      return Math.min(255, Math.max(0, Math.round(c * 255)))
+    }
+    const aRaw = om[6] === undefined ? 1 : (om[7] === '%' ? Number(om[6]) / 100 : Number(om[6]))
+    return { rgb: lin.map(enc), a: alpha(aRaw) }
   }
   const visible = el => {
     let opacity = 1
