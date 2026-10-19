@@ -73,3 +73,31 @@ export function isPortableDataFile(parsed: unknown): boolean {
   if (o.kind !== 'portable-data') return false
   return o.app === undefined || o.app === 'youth-fantasy-engine'
 }
+
+/**
+ * OPT-011（2026-10-19 社区反馈复现）：整库导入被拒时，识别"这其实是另一种合法文件"，
+ * 返回**指路文案**；不是本软件任何已知格式则返回 null（走通用拒绝语）。
+ *
+ * 背景：网页版「项目中心 → 导出」产出的是**单本书备份包**（`db.exportProject`：
+ * 有 `project` 对象、无 `kind`/`stores`），而桌面「数据坞 → 导入数据文件」只收**整库**
+ * （`kind='portable-data'`）。用户拿错文件时只看到一句"请选择便携版创建的数据文件"，
+ * 不知道还能去哪导入 —— 复现证明整库主链路本身是通的（8/8），卡住的是入口混淆。
+ *
+ * 🔴 只做识别与提示，**不**替用户改走导入路径（两种包语义不同：整库=替换全部数据，
+ *    项目包=追加一本书），避免"以为在导整库、实际只加了一本书"的误解。
+ */
+export function describeDataFileReject(parsed: unknown): string | null {
+  const o = (parsed ?? {}) as Record<string, unknown>
+  if (isPortableDataFile(parsed)) return null
+  const looksProjectBundle =
+    !!o.project && typeof o.project === 'object'
+    && !('stores' in o) && !('kind' in o)
+    && (Array.isArray(o.chapters) || Array.isArray(o.volumes) || Array.isArray(o.tableRows))
+  if (looksProjectBundle) {
+    const name = (o.project as { name?: unknown }).name
+    return `这是单本书的备份文件${typeof name === 'string' && name ? `（《${name}》）` : ''}，不是整库数据。\n`
+      + '请到「项目中心」对应该书卡片上的「导入项目」打开它；\n'
+      + '若想整体搬迁（全部项目 + 设定），请在原设备的左下角数据坞用「导出全部数据」。'
+  }
+  return null
+}

@@ -218,6 +218,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       `青春幻想引擎备份-${p.name}-${new Date().toISOString().slice(0, 10)}.json`,
       new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }),
     )
+    // OPT-011：这是**单本书**备份（不是整库）—— 说清去哪导入，避免用户拿去
+    // 数据坞的「导入数据文件」被拒后卡住（2026-10-19 社区反馈复现结论）
+    showToast(`已导出《${p.name}》备份（单本书）。\n换设备还原请用「项目中心」的「导入项目」；整体搬迁请用左下角数据坞的「导出全部数据」。`, 'success', 7000)
     markExported() // #031：记录「已导出到外部文件」，提醒据此重新计时
   }
 

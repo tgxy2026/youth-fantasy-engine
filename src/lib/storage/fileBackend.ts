@@ -19,7 +19,7 @@ import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
 import { normalizePortableData, isPortableDataFile } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
-import { PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
+import { PORTABLE_FILE_VERSION, describeDataFileReject } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 与桌面版 exportDesktopData 同口径
 import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
@@ -643,7 +643,9 @@ export async function importPortableData(
     return { ok: false, error: '数据文件已损坏（JSON 解析失败）' }
   }
   if (!isPortableDataFile(parsed)) {
-    return { ok: false, error: '这不是有效的小说工坊数据文件（请选择本软件导出的数据文件）' }
+    // OPT-011：同桌面口径 —— 拿错文件（单本书备份）时给指路
+    const guide = describeDataFileReject(parsed)
+    return { ok: false, error: guide ?? '这不是有效的小说工坊数据文件（请选择本软件导出的数据文件）' }
   }
   replacePortableData(parsed)
   // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）

@@ -7,7 +7,7 @@
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
-import { normalizePortableData, isPortableDataFile, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
+import { normalizePortableData, isPortableDataFile, describeDataFileReject, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
@@ -862,7 +862,9 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   }
   const o = parsed as PortableData
   if (o.app !== 'youth-fantasy-engine' || o.kind !== 'portable-data') {
-    return { ok: false, error: '这不是有效的小说工坊数据文件（请选择便携版创建的 .json 数据文件）' }
+    // OPT-011：拿错文件时给指路（单本书备份 ⇒ 去项目中心导入），别只甩一句格式不对
+    const guide = describeDataFileReject(parsed)
+    return { ok: false, error: guide ?? '这不是有效的小说工坊数据文件（请选择便携版创建的 .json 数据文件）' }
   }
   data = normalizePortableData(parsed)
   dirty = true
