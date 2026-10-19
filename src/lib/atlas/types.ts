@@ -131,6 +131,13 @@ export interface ResolvedAtlasField {
   aiReadable: boolean
   aiWritable: boolean
   /**
+   * 是否归档（3.2.0 · WT1-2）。
+   * 🔴 常规解析直接 `continue` 掉归档字段，所以这里恒为 false；
+   *    只有显式传 `unfiltered: true`（派生模板快照时）才会带 true ——
+   *    快照必须把归档定义一起带走，否则老项目迁移后恢复不了。
+   */
+  archived?: boolean
+  /**
    * 类别适用范围（3.1.3 · R04）：`'*'` = 不限类别；数组 = 只对这几个类别生效。
    * 内置字段恒为 `'*'`。
    * 🔴 为什么解析结果必须带上它：语义索引要按**每一行的类别**决定某个值还算不算数

@@ -47,6 +47,8 @@ interface CacheEntry {
   configRevision: number
   /** 别名映射的内容签名（别名的保存会换新对象，但签名更稳） */
   aliasesSig: string
+  /** 项目采用快照的身份（`templateId@revision`）；未采用模板时为空串 */
+  defSig: string
   template: EffectiveTemplate
 }
 
@@ -70,9 +72,12 @@ function aliasesSignature(aliases: Record<string, string> | undefined): string {
 export function templateCacheKeyOf(
   tabId: string,
   purpose: string,
-  opts: Pick<ResolveTemplateOptions, 'category' | 'ignoreAppliesTo'> = {},
+  opts: Pick<ResolveTemplateOptions, 'category' | 'ignoreAppliesTo' | 'def'> = {},
 ): string {
-  return [tabId, purpose, opts.category ?? '', opts.ignoreAppliesTo ? '1' : '0'].join(SEP)
+  // 🔴 快照身份也要进键：作者把《种族生物》从「预设 v1」换成「我的模板」之后，
+  //    若键里没有 templateId/revision，会命中换模板前那一份缓存。
+  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}` : ''
+  return [tabId, purpose, opts.category ?? '', opts.ignoreAppliesTo ? '1' : '0', defSig].join(SEP)
 }
 
 /**
@@ -111,12 +116,16 @@ export function resolveTemplateCached(
 ): EffectiveTemplate {
   const isAtlas = canAdaptAsAtlas(tab)
   const purpose = opts.purpose ?? 'detail'
-  const logicalKey = isAtlas
+  // 🔴 有快照 ⇒ 一切按快照走（purpose/category/ignoreAppliesTo 都进键）
+  const logicalKey = opts.def
     ? templateCacheKeyOf(tab.id, purpose, opts)
-    : templateCacheKeyOf(tab.id, '', {})
+    : isAtlas
+      ? templateCacheKeyOf(tab.id, purpose, opts)
+      : templateCacheKeyOf(tab.id, '', {})
+  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}` : ''
+  const configRevision = !opts.def && isAtlas && opts.config ? (opts.config.revision ?? 0) : -1
+  const aliasesSig = !opts.def && isAtlas ? aliasesSignature(opts.aliases) : ''
   const key = entryKeyOf(pid, logicalKey)
-  const configRevision = isAtlas && opts.config ? (opts.config.revision ?? 0) : -1
-  const aliasesSig = isAtlas ? aliasesSignature(opts.aliases) : ''
   const revision = opts.revision ?? 0
 
   const hit = cache.get(key)
@@ -127,6 +136,7 @@ export function resolveTemplateCached(
     && hit.revision === revision
     && hit.configRevision === configRevision
     && hit.aliasesSig === aliasesSig
+    && hit.defSig === defSig
   ) {
     stats.hits++
     // 保持「最近使用在末尾」，淘汰时从最旧开始
@@ -143,7 +153,7 @@ export function resolveTemplateCached(
     return template
   }
 
-  cache.set(key, { pid, tab, revision, configRevision, aliasesSig, template })
+  cache.set(key, { pid, tab, revision, configRevision, aliasesSig, defSig, template })
   while (cache.size > MAX_ENTRIES) {
     const oldest = cache.keys().next()
     if (oldest.done) break

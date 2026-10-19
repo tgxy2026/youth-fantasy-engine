@@ -90,12 +90,14 @@ export function effectiveFieldOfAtlas(f: ResolvedAtlasField): EffectiveField {
 }
 
 /**
- * 归档判定：`resolveAtlasFields` 已经过滤掉归档字段（`def.archived` 直接 continue），
- * 所以解析结果里的自定义字段恒为「未归档」。这里保留函数是为了将来 adapter
- * 读「未过滤视图」时不至于悄悄改变语义。
+ * 归档判定：直接取解析结果带出来的 `archived`。
+ *
+ * 🔴 常规解析会 `continue` 掉归档字段 ⇒ 这个值恒为 false；
+ *    只有显式传 `includeArchived: true`（派生模板快照时）才为 true。
+ *    归档是「不显示」而不是「删除」，快照把它丢掉就再也恢复不了。
  */
-function isArchived(_f: ResolvedAtlasField): boolean {
-  return false
+function isArchived(f: ResolvedAtlasField): boolean {
+  return f.archived === true
 }
 
 export interface AdaptAtlasOptions {
@@ -104,6 +106,11 @@ export interface AdaptAtlasOptions {
   purpose?: TemplatePurpose
   category?: string
   ignoreAppliesTo?: boolean
+  /**
+   * 返回**未过滤的完整结构**（3.2.0 · WT1-2，仅派生快照时用）。
+   * 默认 false ⇒ 既有调用逐字不变。含义见 `ResolveAtlasOptions.unfiltered`。
+   */
+  unfiltered?: boolean
   /** 项目修订号（纯展示变化 +1；不参与 semanticDigest） */
   revision?: number
 }
@@ -121,6 +128,7 @@ export function adaptAtlasTab(tab: TabDef, opts: AdaptAtlasOptions = {}): Effect
     purpose: atlasPurpose,
     ...(opts.category ? { category: opts.category } : {}),
     ...(opts.ignoreAppliesTo ? { ignoreAppliesTo: true } : {}),
+    ...(opts.unfiltered ? { unfiltered: true } : {}),
   })
   const diagnostics: TemplateDiagnostic[] = []
   const effFields = fields.map(f => {

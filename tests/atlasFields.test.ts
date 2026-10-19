@@ -272,7 +272,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('⑫ 未开放「允许 AI 填写」的自定义字段不进清单（口径在 resolveAtlasFields 里）',
     /purpose: 'aiWrite'/.test(model) && /aiWriteFieldsOf/.test(model)
     // 口径仍只有一处：解析侧按 aiWritable 过滤，投影侧只收 source==='custom'
-    && read('src/lib/atlas/schema.ts').includes("if (purpose === 'aiWrite' && !def.aiWritable) continue")
+    // 🔴 断言「同一行里按 aiWrite 口径读 aiWritable」而非整行字面量：
+    //    过滤条件可能因其他选项（如 !raw 快照视图）调整前缀，约束点不应随之假红
+    && /purpose === 'aiWrite'.*aiWritable/.test(read('src/lib/atlas/schema.ts'))
     && read('src/lib/templates/consumers.ts').includes("if (f.source === 'custom')"))
   ok('⑫ 三条 AI 写入路径都过类型校验（新增 / 补全 / 整理）',
     (model.match(/coerceAiValue\(/g) ?? []).length >= 3)

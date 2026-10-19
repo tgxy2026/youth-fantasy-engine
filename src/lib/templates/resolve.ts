@@ -14,7 +14,9 @@ import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import {
   adaptAtlasTab, adaptBuiltinTab, canAdaptAsAtlas, TEMPLATE_FORMAT_VERSION,
 } from './legacyAdapter'
+import { adaptTemplateDef } from './defAdapter'
 import type { EffectiveTemplate, TemplatePurpose } from './types'
+import type { TemplateDef } from './definition'
 
 /** 图鉴配置的**读取**格式版本（与模板格式版本是两个概念） */
 const ATLAS_CONFIG_READ_VERSION = 1
@@ -32,6 +34,18 @@ export interface ResolveTemplateOptions {
   ignoreAppliesTo?: boolean
   /** 项目修订号（纯展示变化 +1；不参与语义摘要） */
   revision?: number
+  /**
+   * 项目**已采用**的模板快照（WT1）。
+   * 🔴 有它 ⇒ 一切以快照为准，内置 schema 再变也不动作者的结构；
+   *    没它 ⇒ 走内置 / 图鉴兼容适配器（老项目行为不变）。
+   */
+  def?: TemplateDef | null
+  /**
+   * 返回**未过滤的完整结构**（仅派生快照时用，见 `snapshot.ts`）。
+   * 🔴 常规解析一律不传 —— 归档字段不参与展示 / AI / 索引；
+   *    用途过滤也照常生效（某视图隐藏某列，在该视图里就是不该出现）。
+   */
+  unfiltered?: boolean
 }
 
 /**
@@ -45,6 +59,13 @@ export interface ResolveTemplateOptions {
  */
 export function resolveTemplateForTab(tab: TabDef, opts: ResolveTemplateOptions = {}): EffectiveTemplate {
   const purpose = opts.purpose ?? 'detail'
+  // 🔴 快照优先：采用过模板的页签，结构由快照决定，与内置 schema 解耦
+  if (opts.def) return adaptTemplateDef(opts.def, {
+    purpose,
+    ...(opts.category ? { category: opts.category } : {}),
+    ...(opts.ignoreAppliesTo ? { ignoreAppliesTo: true } : {}),
+    ...(opts.revision != null ? { revision: opts.revision } : {}),
+  })
   if (canAdaptAsAtlas(tab)) {
     const raw = opts.config ?? null
     const tooNew = raw != null && (raw.formatVersion as number) > ATLAS_CONFIG_READ_VERSION
@@ -53,8 +74,9 @@ export function resolveTemplateForTab(tab: TabDef, opts: ResolveTemplateOptions 
       config: tooNew ? null : raw,
       purpose,
       ...(opts.category ? { category: opts.category } : {}),
-      ...(opts.ignoreAppliesTo ? { ignoreAppliesTo: true } : {}),
-      ...(opts.revision != null ? { revision: opts.revision } : {}),
+    ...(opts.ignoreAppliesTo ? { ignoreAppliesTo: true } : {}),
+    ...(opts.unfiltered ? { unfiltered: true } : {}),
+    ...(opts.revision != null ? { revision: opts.revision } : {}),
     })
     if (tooNew) {
       template.diagnostics.push({

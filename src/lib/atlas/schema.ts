@@ -183,6 +183,18 @@ export interface ResolveAtlasOptions {
    * 就在界面上消失（否则作者根本选不到它）。
    */
   ignoreAppliesTo?: boolean
+  /**
+   * 返回**未过滤的完整结构**（3.2.0 · WT1-2，仅派生模板快照时用）。
+   *
+   * 🔴 为什么需要：常规解析会按本次用途过滤 —— 归档字段不显示、类别不适用不算、
+   *    某个视图里隐藏了某列。而**快照存的是定义本身**：那些被过滤掉的东西
+   *    都是作者还可能恢复的（方案 §3.6：迁移要「复制字段定义、归档项和权限」），
+   *    存档时一律带走，不能因为"此刻看不见"就永久删掉。
+   *    「此刻看不看得到」交给解析侧按用途再判一次 —— 两套口径的分工在这里。
+   *
+   * 默认 false ⇒ 除快照派生外的所有既有调用**逐字不变**。
+   */
+  unfiltered?: boolean
 }
 
 /**
@@ -196,6 +208,8 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
   const config = opts.config ?? null
   const spec = groupSpecOf(tab.id)
   const out: ResolvedAtlasField[] = []
+  // 🔴 未过滤视图（派生快照用）：跳过归档 / 类别 / 用途三道过滤，只要完整定义
+  const raw = opts.unfiltered === true
 
   const groupOfBuiltin = (key: string): string => {
     const override = config?.builtinPresentation[key]?.groupId
@@ -205,8 +219,8 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
 
   ;(tab.columns ?? []).filter(c => !c.hidden).forEach((col, index) => {
     const pres = config?.builtinPresentation[col.name]
-    if (purpose === 'table' && pres?.tableVisible === false) return
-    if (purpose === 'detail' && pres?.detailVisible === false) return
+    if (!raw && purpose === 'table' && pres?.tableVisible === false) return
+    if (!raw && purpose === 'detail' && pres?.detailVisible === false) return
     out.push({
       key: col.name,
       label: opts.aliases?.[col.name] ?? col.name,
@@ -227,13 +241,13 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
   })
 
   for (const def of config?.fields ?? []) {
-    if (def.archived) continue
-    if (!opts.ignoreAppliesTo && !appliesTo(def, opts.category)) continue
-    if (purpose === 'table' && !def.tableVisible) continue
-    if (purpose === 'detail' && !def.detailVisible) continue
-    if (purpose === 'search' && !def.searchable) continue
-    if (purpose === 'aiRead' && !def.aiReadable) continue
-    if (purpose === 'aiWrite' && !def.aiWritable) continue
+    if (!raw && def.archived) continue
+    if (!raw && !opts.ignoreAppliesTo && !appliesTo(def, opts.category)) continue
+    if (!raw && purpose === 'table' && !def.tableVisible) continue
+    if (!raw && purpose === 'detail' && !def.detailVisible) continue
+    if (!raw && purpose === 'search' && !def.searchable) continue
+    if (!raw && purpose === 'aiRead' && !def.aiReadable) continue
+    if (!raw && purpose === 'aiWrite' && !def.aiWritable) continue
     out.push({
       key: def.id,
       label: def.label,
@@ -250,6 +264,7 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
       aiReadable: def.aiReadable,
       aiWritable: def.aiWritable,
       appliesTo: def.appliesTo,
+      ...(def.archived ? { archived: true } : {}),
     })
   }
 
