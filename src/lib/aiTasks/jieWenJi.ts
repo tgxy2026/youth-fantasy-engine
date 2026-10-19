@@ -4,8 +4,9 @@
 // 🔴 铁律：未配模型不调用；调用失败只提示；**绝不直接改正文**（改写文本一律交给作者取舍）。
 // ⚠️ 原文件里 #18 选区改稿的注册顺序**早于** #17 整章改写（那部分已拆去 ./rewrite）——
 //    注册顺序由门面的 PROMPT_ORDER 还原，改这里不影响设置页顺序。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText, humanText, hasSubstance } from '@/lib/ai/aiParse'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
+import { parseObjectArray, parseObjectArrayDetailed, asText, humanText, hasSubstance } from '@/lib/ai/aiParse'
+import type { StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
 import { countWords } from '@/lib/editor/textStats'
 // 类型与拼装逻辑住在**零依赖纯函数层**（lib/rewriteAsk.ts）——
 // tests 只 import 那边，不会把传输层（./ai → aiCore）拉进 Node 测试。
@@ -281,36 +282,64 @@ export async function aiOocCheck(
   chapterText: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<OocFinding[]> {
-  const cfg = await requireProviderFor('review')
-  const fence = newAuthorFence()
-  const sys = P_ooc_check
-  const user = `【设定资料】
+  const r = await aiOocCheckWithStatus(projectContext, chapterText, opts)
+  return r.result?.data ?? []
+}
+
+/**
+ * WQ1（3.2.0）：OOC 检查的**带状态**版本。
+ * 旧签名 `[]` 分不清「没人 OOC」与「请求/解析失败」；本函数返回
+ * `StepExecutionResult`（合法空＝completed，失败/取消各有状态）。
+ */
+export async function aiOocCheckWithStatus(
+  projectContext: string,
+  chapterText: string,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<StepExecutionResult<OocFinding[]>> {
+  const one = (state: StepResultState, errorCode?: string): StepExecutionResult<OocFinding[]> =>
+    ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
+  try {
+    const cfg = await requireProviderFor('review')
+    const fence = newAuthorFence()
+    const sys = P_ooc_check
+    const user = `【设定资料】
 ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 【本章正文】
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请检查角色言行是否符合人设。`
-  const text = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
-  )
-  const out: OocFinding[] = []
-  for (const it of parseObjectArray(text)) {
-    const character = asText(it.character ?? it['角色'])
-    const issue = asText(it.issue ?? it['问题'])
-    if (!character || !issue) continue
-    out.push({
-      character,
-      evidence: asText(it.evidence ?? it['原文']),
-      issue,
-      suggestion: asText(it.suggestion ?? it['建议']),
-      level: asText(it.level ?? it['级别']) || '提示',
-    })
-    if (out.length >= 10) break
+    const text = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    )
+    const parsed = parseObjectArrayDetailed(text)
+    if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
+    const out: OocFinding[] = []
+    for (const it of parsed.data) {
+      const character = asText(it.character ?? it['角色'])
+      const issue = asText(it.issue ?? it['问题'])
+      if (!character || !issue) continue
+      out.push({
+        character,
+        evidence: asText(it.evidence ?? it['原文']),
+        issue,
+        suggestion: asText(it.suggestion ?? it['建议']),
+        level: asText(it.level ?? it['级别']) || '提示',
+      })
+      if (out.length >= 10) break
+    }
+    return {
+      state: 'completed',
+      result: { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated },
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'ooc',
+    }
+  } catch (e) {
+    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
   }
-  return out
 }
 
 // ---------- 颉文姬④：选区改写（建议段模式） ----------

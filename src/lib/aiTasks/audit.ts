@@ -3,10 +3,11 @@
 // 收编：连续性自查 / 读者反馈分析 / 项目健康诊断 / 伏笔闭环 / 术语去重 / 文风体检。
 // ⚠️ #9 项目诊断用到 #7 的 `ContinuityFinding` 类型 —— 同文件内引用，不再跨模块。
 // ⚠️ 六条提示词各自就地声明；注册顺序由门面的 PROMPT_ORDER 决定，**别在这里调整顺序**。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText, humanText } from '@/lib/ai/aiParse'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
+import { parseObjectArray, parseObjectArrayDetailed, asText, humanText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import type { StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
 
 /** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_style_audit = `你是文风编辑。作者提供了《写作规范》（个人坏习惯清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风。
@@ -91,36 +92,68 @@ export async function aiContinuityAudit(
   chapterText: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ContinuityFinding[]> {
-  const cfg = await requireProviderFor('review')
-  // 🔴 作者资料与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
-  const fence = newAuthorFence()
-  const sys = P_continuity_audit
-  const user = `【设定资料】
+  const r = await aiContinuityAuditWithStatus(projectContext, chapterText, opts)
+  return r.result?.data ?? []
+}
+
+/**
+ * WQ1（3.2.0）：连续性审查的**带状态**版本。
+ *
+ * 为什么要它：旧签名只返回 `ContinuityFinding[]`，`[]` 分不清「审了没问题」与
+ * 「请求失败 / 解析失败」—— 连写自检把三种都当成"通过"（Q1 登记病灶）。
+ * 本函数返回 `StepExecutionResult`：合法空结果是 completed，失败/取消/截断
+ * 分别有状态，调用方（selfRefine）据此决定是否暂停自动应用。
+ */
+export async function aiContinuityAuditWithStatus(
+  projectContext: string,
+  chapterText: string,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<StepExecutionResult<ContinuityFinding[]>> {
+  const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ContinuityFinding[]> =>
+    ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
+  try {
+    const cfg = await requireProviderFor('review')
+    // 🔴 作者资料与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+    const fence = newAuthorFence()
+    const sys = P_continuity_audit
+    const user = `【设定资料】
 ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 【待审查正文】
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（作者未指定正文，请仅在设定资料内部查找互相矛盾之处）'}
 
 请返回问题清单。`
-  const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
-    json: true,
-    timeoutMs: CHAT_TIMEOUT_MS,
-    signal: opts?.signal,
-    onToken: opts?.onToken,
-  })
-  const out: ContinuityFinding[] = []
-  for (const it of parseObjectArray(text)) {
-    const title = asText(it.title ?? it['结论'] ?? it['问题'])
-    if (!title) continue
-    out.push({
-      level: asText(it.level ?? it['级别']) || '提示',
-      title,
-      detail: asText(it.detail ?? it['详情'] ?? it['说明']),
-      where: asText(it.where ?? it['位置'] ?? it['涉及']),
+    const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
+      json: true,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: opts?.signal,
+      onToken: opts?.onToken,
     })
-    if (out.length >= 12) break
+    // WQ1：三态解析 —— invalid 是失败，合法空数组是"审了没问题"
+    const parsed = parseObjectArrayDetailed(text)
+    if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
+    const out: ContinuityFinding[] = []
+    for (const it of parsed.data) {
+      const title = asText(it.title ?? it['结论'] ?? it['问题'])
+      if (!title) continue
+      out.push({
+        level: asText(it.level ?? it['级别']) || '提示',
+        title,
+        detail: asText(it.detail ?? it['详情'] ?? it['说明']),
+        where: asText(it.where ?? it['位置'] ?? it['涉及']),
+      })
+      if (out.length >= 12) break
+    }
+    return {
+      state: 'completed',
+      result: { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated },
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'continuity',
+    }
+  } catch (e) {
+    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
   }
-  return out
 }
 
 // ============ 读者反馈 AI 分析（任务1） ============
@@ -278,37 +311,60 @@ export async function aiForeshadowReview(
   projectContext: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ForeshadowReviewFinding[]> {
-  const cfg = await requireProviderFor('review')
-  const fence = newAuthorFence()
-  const sys = P_foreshadow_review
+  const r = await aiForeshadowReviewWithStatus(projectContext, opts)
+  return r.result?.data ?? []
+}
 
-  const user = `【项目资料（含伏笔追踪与章节总表）】
+/** WQ1：伏笔审查的带状态版本（判定口径同 `aiContinuityAuditWithStatus`） */
+export async function aiForeshadowReviewWithStatus(
+  projectContext: string,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<StepExecutionResult<ForeshadowReviewFinding[]>> {
+  const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ForeshadowReviewFinding[]> =>
+    ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
+  try {
+    const cfg = await requireProviderFor('review')
+    const fence = newAuthorFence()
+    const sys = P_foreshadow_review
+
+    const user = `【项目资料（含伏笔追踪与章节总表）】
 ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 请审查伏笔闭环健康度。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
-  )
+    const text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(sys, cfg) },
+        { role: 'user', content: user },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    )
 
-  const out: ForeshadowReviewFinding[] = []
-  for (const it of parseObjectArray(text)) {
-    const title = asText(it.title ?? it['结论'] ?? it['问题'])
-    if (!title) continue
-    out.push({
-      level: asText(it.level ?? it['级别']) || '提示',
-      title,
-      detail: asText(it.detail ?? it['详情'] ?? it['说明']),
-      where: asText(it.where ?? it['位置'] ?? it['涉及']),
-    })
-    if (out.length >= 12) break
+    const parsed = parseObjectArrayDetailed(text)
+    if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
+    const out: ForeshadowReviewFinding[] = []
+    for (const it of parsed.data) {
+      const title = asText(it.title ?? it['结论'] ?? it['问题'])
+      if (!title) continue
+      out.push({
+        level: asText(it.level ?? it['级别']) || '提示',
+        title,
+        detail: asText(it.detail ?? it['详情'] ?? it['说明']),
+        where: asText(it.where ?? it['位置'] ?? it['涉及']),
+      })
+      if (out.length >= 12) break
+    }
+    return {
+      state: 'completed',
+      result: { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated },
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'foreshadow',
+    }
+  } catch (e) {
+    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
   }
-  return out
 }
 
 // ============ 名词术语 AI 查重归一（任务5） ============

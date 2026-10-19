@@ -25,6 +25,8 @@ export async function startFakeOllama(o: {
   /**
    * 结构化请求（提示词里点名要 JSON）返回什么，默认 `[]`。
    * 传 `'__EMPTY__'` 可让**所有**请求都返回空正文 —— 用来复现"模型没返回内容"的失败路径。
+   * 传 `'__JSON_EMPTY__'` 只让**结构化请求**返回空（正文请求照常）——
+   * 用来复现"正文能生成、但自检/抽取等 json 任务失败"的路径（WQ1-2 回归防线）。
    */
   json?: string
 }): Promise<FakeOllama> {
@@ -38,9 +40,19 @@ export async function startFakeOllama(o: {
       const msgs = j.messages ?? []
       const sys = msgs.filter(m => m.role === 'system').map(m => m.content).join('\n')
       calls.push({ sys, user: msgs.filter(m => m.role === 'user').map(m => m.content).join('\n'), stream: j.stream === true })
+      const jsonEmpty = o.json === '__JSON_EMPTY__'
       const empty = o.json === '__EMPTY__' || o.body === '__EMPTY__'
-      const text = empty ? '' : (/JSON/i.test(sys) ? (o.json ?? '[]') : o.body)
+      const text = empty ? '' : (/JSON/i.test(sys) ? (jsonEmpty ? '' : (o.json ?? '[]')) : o.body)
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson' })
+      if (j.stream !== true) {
+        // 🔴 非流式必须返回**单个 JSON 对象**（与真实 Ollama 一致）。
+        //    2026-10-19 WQ1-2 修复：原先对所有请求都分块吐 NDJSON，而非流式路径
+        //    （chat.ts 的 res.json()）解析不了多行 ⇒ content 恒空 ⇒ 报"未返回内容"。
+        //    这个缺陷让测试环境里的自检**从来没成功过**——旧代码 `.catch(() => [])`
+        //    把失败吞成"无问题"，于是整条链路的自检一直是假绿。
+        res.end(JSON.stringify({ message: { content: text }, done: true }) + '\n')
+        return
+      }
       // 分块：模拟真实流式（首字节很快到，尾字节慢慢来）
       const parts = text.match(/[\s\S]{1,120}/g) ?? ['']
       let i = 0

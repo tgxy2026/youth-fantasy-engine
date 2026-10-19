@@ -32,9 +32,11 @@ import { parseObjectArray, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { buildProjectContext, type ProjectContextResult } from '@/lib/ai/aiContext'
 import {
-  aiExtractSettingEntities, aiContinuityAudit, aiOocCheck, aiForeshadowReview,
+  aiExtractSettingEntities,
+  aiContinuityAuditWithStatus, aiOocCheckWithStatus, aiForeshadowReviewWithStatus,
   aiRewritePassage, aiChapterSummary, cleanChapterOutput, type ExtractedEntity,
 } from '@/lib/ai/aiTasks'
+import type { Coverage, StepExecutionResult } from '@/lib/revision/revisionTypes'
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settings/settingLedger'
 import { sortChapters, chapterSeqOf } from '@/lib/outline/chapterSeq'
 import { deAiGenerateRule, deAiPolishClause } from '@/lib/ai/deAiStyle'
@@ -251,30 +253,86 @@ async function generateOneChapter(opts: {
 }
 
 /** 编辑自检：连续性 / 人设崩坏 / 伏笔 三类检查，命中严重/中等则单轮改写后接受不完美退出 */
-async function selfRefine(body: string, ctx: ProjectContextResult, signal?: AbortSignal, onPhase?: (p: string) => void): Promise<string> {
-  if (!ctx.text.trim() || countWords(body) < 200) return body
+/**
+ * WQ1-2（3.2.0）：连写自检的结果形状。
+ *
+ * 🔴 `selfCheck.state !== 'completed'` 时调用方**必须暂停后续自动应用**：
+ *    三项审校是「本次已启用且承诺执行的必选项」，请求失败 / 解析失败 /
+ *    取消都不是"审了没问题"。草稿保留在编辑器，由作者重试或明确跳过。
+ */
+export interface SelfRefineResult {
+  body: string
+  selfCheck: StepExecutionResult<RefineFinding[]>
+}
+
+/** 自检三项的共同 Finding 形状（只按 level 过滤，其余字段原样带过） */
+type RefineFinding = { level?: string }
+
+/**
+ * WQ1-2 纯汇总：把三项审校的运行结果压成一条（可单测，无 IO）。
+ *
+ * 规则（§16.2）：
+ *   · 全部 completed（**含合法空 findings**）⇒ completed —— 空也是"审了没问题"；
+ *   · 任一 cancelled ⇒ cancelled（作者取消立即传播，不当成通过）；
+ *   · 全部 failed ⇒ failed；部分失败 ⇒ partial —— 都不得显示"自检通过"。
+ */
+export function summarizeSelfCheck(
+  runs: readonly StepExecutionResult<RefineFinding[]>[],
+): StepExecutionResult<RefineFinding[]> {
+  const requested = runs.length
+  const completed = runs.filter(r => r.state === 'completed').length
+  const failed = runs.filter(r => r.state === 'failed').length
+  const cancelled = runs.filter(r => r.state === 'cancelled').length
+  const coverage: Coverage = { requested, completed, failed, skipped: 0 }
+  const bad = runs.filter(r => r.state !== 'completed')
+  const issues = bad.map(r => `${r.sourceId ?? '检查'}:${r.errorCode ?? r.state}`)
+  if (cancelled > 0) {
+    return { state: 'cancelled', coverage, issues, errorCode: 'cancelled' }
+  }
+  if (failed === 0) {
+    return { state: 'completed', coverage, sourceId: 'self-refine' }
+  }
+  if (failed === requested) {
+    return { state: 'failed', coverage, issues, errorCode: runs[0]?.errorCode ?? 'all-checks-failed', retryable: true }
+  }
+  return { state: 'partial', coverage, issues, errorCode: 'some-checks-failed', retryable: true }
+}
+
+async function selfRefine(body: string, ctx: ProjectContextResult, signal?: AbortSignal, onPhase?: (p: string) => void): Promise<SelfRefineResult> {
+  if (!ctx.text.trim() || countWords(body) < 200) {
+    return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
+  }
   onPhase?.('AI 编辑自检（连续性 / 人设 / 伏笔）')
-  const findings: Array<{ level?: string; title?: string; detail?: string }> = []
-  /** 三类审查产出的**共同形状**：自检只按 `level` 过滤，其余字段原样带过（不为每个 Finding 单写一套类型） */
-  type RefineFinding = { level?: string }
+  const findings: RefineFinding[] = []
   const push = (arr: readonly RefineFinding[]) => {
     for (const f of arr) if (f && (f.level === '严重' || f.level === '中等')) findings.push(f)
   }
-  push(await aiContinuityAudit(ctx.text, body, { signal }).catch(() => [] as RefineFinding[]))
-  push(await aiOocCheck(ctx.text, body, { signal }).catch(() => [] as RefineFinding[]))
-  push(await aiForeshadowReview(ctx.text, { signal }).catch(() => [] as RefineFinding[]))
+  // WQ1-2：三项都走**带状态**版本 —— 旧写法 `.catch(() => [])` 把请求失败
+  // 吞成"无问题"，是 Q1 登记病灶（自检失败却显示通过）的直接成因。
+  const runs = await Promise.all([
+    aiContinuityAuditWithStatus(ctx.text, body, { signal }),
+    aiOocCheckWithStatus(ctx.text, body, { signal }),
+    aiForeshadowReviewWithStatus(ctx.text, { signal }),
+  ])
+  const selfCheck = summarizeSelfCheck(runs)
+  if (selfCheck.state !== 'completed') {
+    // 必选项失败/取消：不当成通过、不进入改写分支；调用方据此暂停连写
+    onPhase?.(`编辑自检未完成（${selfCheck.issues?.join('；') || selfCheck.state}），本章不自动修正`)
+    return { body, selfCheck }
+  }
+  for (const r of runs) push(r.result?.data ?? [])
   if (!findings.length) {
     onPhase?.('编辑自检通过，未发现严重问题')
-    return body
+    return { body, selfCheck }
   }
   onPhase?.(`根据 ${findings.length} 条审读问题改写修正`)
-  const instr = findings.map(f => `- ${f.title || '问题'}：${f.detail || ''}`).join('\n')
+  const instr = findings.map(f => `- ${(f as { title?: string }).title || '问题'}：${(f as { detail?: string }).detail || ''}`).join('\n')
   // 2.9.2 · ②：`aiRewritePassage` 收 `RewriteAsk` 对象（编辑区传 5 个动作词，这里传自由文本）
   const res = await aiRewritePassage(body, { instruction: `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}` }, '', { signal }).catch(() => null)
   const rw = res?.rewritten ? stripThink(res.rewritten).trim() : ''
   // 安全阀：改写结果显著缩水（不足原文 60%）视为模型偷懒或被截断，保留原文
-  if (!rw || countWords(rw) < countWords(body) * 0.6) return body
-  return rw
+  if (!rw || countWords(rw) < countWords(body) * 0.6) return { body, selfCheck }
+  return { body: rw, selfCheck }
 }
 
 async function suggestTitle(body: string, signal?: AbortSignal): Promise<string> {
@@ -477,6 +535,8 @@ export async function runAutoContinue(
   const minWords = minValidWords(opts.targetWords)
   let memory = ''
   let aborted = false
+  /** WQ1-2：编辑自检未完成 ⇒ 暂停连写（与 aborted 分开：作者没喊停，是必选项没过） */
+  let paused = false
 
   // 最近 3 章的章节摘要（title+字数+summary 裁剪），作为续写时的整体剧情走向参考
   const recentSummaries = ordered.length
@@ -637,7 +697,20 @@ export async function runAutoContinue(
       }
 
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
-      body = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
+      // WQ1-2：自检三项是必选项 —— 失败/取消/未完成都暂停连写，本章不落库，
+      // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
+      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
+      body = refined.body
+      if (refined.selfCheck.state !== 'completed') {
+        const sc = refined.selfCheck
+        cb.onLog?.(
+          `${tag}编辑自检未完成（${sc.state}${sc.issues?.length ? '：' + sc.issues.join('；') : ''}），已暂停连写；`
+          + `本章未保存，稿子在编辑器里，审阅后可重试或明确跳过`,
+        )
+        cb.onBodyReplace?.(body)
+        paused = true
+        break
+      }
       body = await enforceWordRange({
         cfg: await requireProviderFor('create'), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()), signal: cb.signal,
@@ -694,8 +767,8 @@ export async function runAutoContinue(
   }
   cb.onPhase?.(
     created.length
-      ? `✓ ${aborted ? '已停止' : '续写完成'}，共新增 ${created.length} 章`
-      : (aborted ? '已停止，未生成章节' : '未生成章节（请检查模型配置或查看日志）'),
+      ? `✓ ${aborted ? '已停止' : paused ? '自检未过已暂停' : '续写完成'}，共新增 ${created.length} 章`
+      : (aborted ? '已停止，未生成章节' : paused ? '自检未完成，已暂停（稿子已留在编辑器，审阅后可重试）' : '未生成章节（请检查模型配置或查看日志）'),
   )
   return { created }
 }

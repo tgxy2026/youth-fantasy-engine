@@ -69,7 +69,11 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
 {
   __resetMockStores()
   db.setCurrentProject('run-pid-1')
-  const fake = await startFakeOllama({ body: BODY })
+  // WQ1-2 适配：连写自检三项走 `json` 分支。未传 json 时假模型默认返回 `[]`，
+  // 但**空响应体会让 chat 层报"未返回内容"** ⇒ 新契约下自检 failed ⇒ 暂停连写
+  // （这正是要防的"失败吞成通过"的反面被修正后的行为，见 ①-b）。
+  // 主链路用例必须显式给 json 一个**合法空结果**，自检才判定"审了没问题"继续写。
+  const fake = await startFakeOllama({ body: BODY, json: '[]' })
   await useFake(fake.port)
   await commitOutline(mkOutline(3, '第一卷 星宿初醒'))
   ok('播种：细纲 3 章 / 正文 0 章',
@@ -92,6 +96,32 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
   ok('日志里有落库记录（不再黑洞）', runLogs.some(l => /已保存/.test(l)), runLogs.join(' | ').slice(0, 200))
   const vols = await db.getAllVolumes()
   ok('章节落在播种的那个卷里', chs.every(c => c.volumeId === vols[0].id))
+  fake.close()
+}
+
+// ---------- ①-b WQ1-2 回归防线：正文正常但自检请求失败 ⇒ 必须暂停，不得落库 ----------
+//
+// 旧契约：selfRefine 的三项审校 `.catch(() => [])` 把请求失败吞成"无问题"
+// ⇒ 自检失败却显示通过、正文照常落库。新契约：必选项失败 ⇒ 暂停连写、本章不保存。
+{
+  __resetMockStores()
+  db.setCurrentProject('run-pid-1b')
+  // body 正常（能生成正文），仅 json 分支空响应 ⇒ 三项自检全部 failed
+  const fake = await startFakeOllama({ body: BODY, json: '__JSON_EMPTY__' })
+  await useFake(fake.port)
+  await commitOutline(mkOutline(3, '第一卷 自检失败'))
+
+  const runLogs: string[] = []
+  await runCreativeWriting({}, {
+    chapters: 2, targetWords: 600, useOutline: true, target: 'full',
+    onRunLog: line => runLogs.push(line),
+  }).catch(() => {})
+
+  ok('🔴 WQ1-2：自检请求失败 ⇒ 一章都不落库（旧契约会照常保存）',
+    (await db.getAllChapters()).length === 0, String((await db.getAllChapters()).length))
+  ok('🔴 WQ1-2：日志明说"编辑自检未完成 / 已暂停"（不当成通过）',
+    runLogs.some(l => /编辑自检未完成/.test(l)) && runLogs.some(l => /已暂停连写/.test(l)),
+    runLogs.join(' | ').slice(0, 200))
   fake.close()
 }
 
