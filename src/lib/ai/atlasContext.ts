@@ -12,10 +12,11 @@
  */
 import type { TabDef } from '@/lib/types'
 import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
-import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
+import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
-import { aiReadableTableFieldsOf, type TableFieldProjection } from '@/lib/templates/consumers'
+import type { TableFieldProjection, WriteFieldProjection } from '@/lib/templates/consumers'
+import { aiReadableTableFieldsOf, writeTargetsOf } from '@/lib/templates/consumers'
 import * as db from '@/lib/db'
 
 /**
@@ -53,42 +54,54 @@ export async function loadAtlasFieldsForAI(tab: TabDef): Promise<TableFieldProje
 export interface AtlasAiWriteTargets {
   /** 允许写入的存储键（内置列 + 允许 AI 填写的自定义字段） */
   allowedKeys: Set<string>
-  /** 自定义字段定义（按存储键）；内置列不在里面 */
-  fields: Map<string, ResolvedAtlasField>
+  /** 自定义字段投影（按存储键）；内置列不在里面。形状即 `coerceAiValue` 的入参 */
+  fields: Map<string, WriteFieldProjection>
   /** 这份配置的版本号（应用前与发起时的基准比对） */
   revision: number
   /** 非空 ⇒ 这份配置**锁写**（未来版本 / 读取失败），调用方必须放弃本次回填 */
   lockedReason?: string
 }
 
+/**
+ * 只取**内置**部分的允许键（降级路径用：配置读不了 / 来自更新版本时，
+ * 至少内置列还能写 —— 与旧行为一致）。
+ */
+function builtinAllowKeys(tab: TabDef): Set<string> {
+  const tpl = resolveTemplateCached(tab, { purpose: 'aiWrite' })
+  return new Set(tpl.fields.filter(f => f.source === 'builtin').map(f => f.sourceKey))
+}
+
 export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): Promise<AtlasAiWriteTargets> {
-  const builtinKeys = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
+  // 🔴 卡片 / 表单页签的写回目标**尚未迁移**：保持原口径（非隐藏列）。
+  //    这类页签的字段是 `模块::字段`，一下子全放开等于把 AI 能写的范围扩大几十倍，
+  //    必须等 WT0-4 的用例（AI 补全卡片）单独验过再动。
   if (!isAtlasTab(tab.id)) {
-    return { allowedKeys: new Set(builtinKeys), fields: new Map(), revision: 0 }
+    const keys = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
+    return { allowedKeys: new Set(keys), fields: new Map(), revision: 0 }
   }
   let loaded: { config: AtlasSchemaConfig; newerFormat: boolean; error?: string }
   try {
     loaded = await loadAtlasSchema(projectId, tab.id)
   } catch (e) {
     return {
-      allowedKeys: new Set(builtinKeys), fields: new Map(), revision: 0,
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0,
       lockedReason: `字段配置读取失败：${e instanceof Error ? e.message : String(e)}`,
     }
   }
   if (loaded.newerFormat || loaded.error) {
     return {
-      allowedKeys: new Set(builtinKeys), fields: new Map(), revision: loaded.config.revision,
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: loaded.config.revision,
       lockedReason: loaded.error ?? '字段配置来自更新的版本，已锁定为只读',
     }
   }
-  const fields = new Map<string, ResolvedAtlasField>()
-  for (const f of resolveAtlasFields(tab, { config: loaded.config, purpose: 'aiWrite', ignoreAppliesTo: true })) {
-    if (f.source !== 'custom') continue
-    fields.set(f.key, f)
-  }
+  // 3.2.0 · WT0-4：改从有效模板取（连带缓存）。
+  // 实测四页签的 `keys` 与旧口径逐字一致；隐藏内置列（如《地理风物》的「地图格子」）
+  // 由模板解析排除，不再靠这里单独 filter。
+  const tpl = resolveTemplateCached(tab, { config: loaded.config, purpose: 'aiWrite', ignoreAppliesTo: true })
+  const targets = writeTargetsOf(tpl)
   return {
-    allowedKeys: new Set([...builtinKeys, ...fields.keys()]),
-    fields,
+    allowedKeys: new Set(targets.keys),
+    fields: targets.custom,
     revision: loaded.config.revision,
   }
 }

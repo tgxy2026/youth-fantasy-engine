@@ -53,6 +53,56 @@ export function tableFieldsOf(template: EffectiveTemplate): TableFieldProjection
 }
 
 /**
+ * **写回目标**的字段投影（AI 回填 / 补全本行 / 整理共用）。
+ *
+ * 比渲染投影多两件事：`type`（决定值怎么归一化）和 `options`（决定哪些值算合法）。
+ * 🔴 字段名刻意叫 `type` 而不是 `kind`：`coerceAiValue` 收的就是 `{label, customType|type, options}`，
+ *    叫 `type` 可以直接把投影喂进去，调用方不必再拼一次对象（拼一次就多一处漂移）。
+ */
+export interface WriteFieldProjection {
+  key: string
+  label: string
+  /** 自定义字段的类型（内置列为 undefined ⇒ 按普通文本处理） */
+  type?: CustomFieldType
+  options?: string[]
+  unit?: string
+}
+
+/** 单个字段的写回投影 */
+export function toWriteFieldProjection(f: EffectiveField): WriteFieldProjection {
+  const type = f.source === 'custom' ? TYPE_TO_CUSTOM[f.type] : undefined
+  return {
+    key: f.sourceKey,
+    label: f.label,
+    ...(type ? { type } : {}),
+    ...(f.options?.length ? { options: f.options } : {}),
+    ...(f.unit ? { unit: f.unit } : {}),
+  }
+}
+
+export interface WriteTargets {
+  /** 允许写入的存储键（内置非隐藏列 + 作者放开 AI 填写的自定义字段） */
+  keys: string[]
+  /** 自定义字段投影（按存储键）；内置列不在里面 */
+  custom: Map<string, WriteFieldProjection>
+}
+
+/**
+ * 从模板取写回目标。
+ *
+ * 🔴 谁负责过滤：模板解析。**这里不再判断权限** ——
+ *    调用方传入的是 `purpose:'aiWrite'` 的模板，自定义字段已按 `aiWritable` 筛过，
+ *    隐藏内置列也已排除（实测四页签与旧口径逐字一致）。再判一次就是第二套规则。
+ */
+export function writeTargetsOf(template: EffectiveTemplate): WriteTargets {
+  const custom = new Map<string, WriteFieldProjection>()
+  for (const f of template.fields) {
+    if (f.source === 'custom') custom.set(f.sourceKey, toWriteFieldProjection(f))
+  }
+  return { keys: template.fields.map(f => f.sourceKey), custom }
+}
+
+/**
  * AI 读取用的字段清单（口径见 `ai/atlasContext` 文件头三条）：
  * 按 `aiReadable` 过滤、忽略类别适用范围、归档不参与 —— 这些都由**模板解析**负责。
  * 这里的 `aiRead` 过滤只是**兜底**（防有人传了 `purpose:'detail'` 的模板进来），
