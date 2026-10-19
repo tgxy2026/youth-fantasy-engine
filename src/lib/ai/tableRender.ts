@@ -152,16 +152,15 @@ export function renderTable(
   // 表头用字段名（cf_ 键不给模型看），值按类型格式化（多选 JSON → 顿号），否则模型会照抄 JSON 碎片
   const labelOf = (key: string) => atlasFields?.find(f => f.key === key)?.label ?? key
   /**
-   * 取字段的自定义类型。
-   * 🔴 兼容窗口：`kind` 是 WT0-4 的投影名，`customType` 是旧 `ResolvedAtlasField` 的名字。
-   *    两个都认是为了「还没迁移完的调用方不会突然丢掉格式化」——
-   *    **等所有调用方都传投影后删掉 `customType` 这一支**（届时本函数只剩 `f?.kind`）。
+   * 取字段的自定义类型（决定单元格怎么格式化）。
+   * 🔴 只认投影名 `kind`。旧 `ResolvedAtlasField` 的 `customType` 兼容支已在
+   *    WT0-4 收口时删掉 —— 两个名字并存就会变成两套口径。
+   *    还在传旧形状的调用方必须先用 `toTableFieldProjection()` 转成投影。
    */
-  const kindOf = (f?: TableFieldProjection) =>
-    f?.kind ?? (f as { customType?: TableFieldProjection['kind'] } | undefined)?.customType
+  const kindOf = (f?: TableFieldProjection) => f?.kind
   const cellOf = (key: string, raw: string) => {
-    const kind = kindOf(atlasFields?.find(x => x.key === key))
-    return kind ? formatCustomValue(kind, raw, atlasFields?.find(x => x.key === key)?.unit) : raw
+    const f = atlasFields?.find(x => x.key === key)
+    return kindOf(f) ? formatCustomValue(kindOf(f)!, raw, f?.unit) : raw
   }
   /** 单元格上限：自定义长文本也给 600（不能只认内置列名，见 cellCap 的注释） */
   const capOf = (key: string) => cellCap(key, kindOf(atlasFields?.find(x => x.key === key)))

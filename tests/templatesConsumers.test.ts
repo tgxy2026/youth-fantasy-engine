@@ -116,7 +116,9 @@ const cfg = mkConfig()
     const data: Record<string, string> = {}
     legacy.forEach((f, i) => { data[f.key] = f.customType === 'multiSelect' ? '甲、乙' : String(i + 1) })
     const rows = [{ data }]
-    const a = renderTable(tab, rows, {}, legacy)
+    // 旧形状先用 legacyProj 转成投影（旧调用方必须转换，不再有 customType 兼容支）
+    const legacyAsProjection = legacy.map(legacyProj)
+    const a = renderTable(tab, rows, {}, legacyAsProjection)
     const b = renderTable(tab, rows, {}, proj)
     ok(`⑤ ${id} 渲染文本逐字一致`, a === b, a === b ? '' : `\n legacy=${a}\n proj  =${b}`)
     ok(`⑤ ${id} 渲染非空（对照组有效）`, b.length > 0)
