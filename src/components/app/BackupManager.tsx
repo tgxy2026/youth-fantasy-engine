@@ -11,6 +11,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
+import { invalidateTemplateCache } from '@/lib/templates/cache'
 
 interface Props {
   projectId: string
@@ -109,6 +110,9 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       await db.restoreBackup(b.id)
       // #017 收尾：包里带回来的「已启用」资料是没索引的，不重建＝静默降级（详见 kbRestoreIndex）
       void rebuildKbIndexAfterRestore(projectId)
+      // WT0-2：恢复是**整份覆盖项目数据** —— 页签配置的 revision 可能「降」回旧值，
+      // 恰好与模板缓存里某条旧条目一致（pid 也比得上），不清就会读到恢复前/恢复中的旧结构。
+      invalidateTemplateCache()
       onRestored()
     } catch (e) {
       showToast('恢复失败：' + (e as Error).message, 'error')

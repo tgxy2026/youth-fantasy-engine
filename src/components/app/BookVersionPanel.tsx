@@ -25,6 +25,7 @@ import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { downloadBlob } from '@/lib/storage/zip'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
+import { invalidateTemplateCache } from '@/lib/templates/cache'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
 
@@ -128,6 +129,8 @@ export default function BookVersionPanel({
       await db.restoreBackup(v.id)
       // #017 收尾：包里带回来的「已启用」资料是没索引的，不重建＝静默降级（与 BackupManager 同一处理）
       void rebuildKbIndexAfterRestore(pid)
+      // WT0-2：整份覆盖项目数据 ⇒ 模板缓存全清（revision 可能回退，pid 比对兜不住）
+      invalidateTemplateCache()
       await load()
       onRestored?.()
       showToast('已恢复到该版本', 'success')
