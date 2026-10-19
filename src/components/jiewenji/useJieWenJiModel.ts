@@ -23,7 +23,7 @@ import { buildProjectContext, getContinuationSources } from '@/lib/ai/aiContext'
 import { checkContinuationFocus, formatGap } from '@/lib/audit/evidenceGate'
 import { styleContextForAI } from '@/lib/ai/styleAudit'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
-import { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '@/lib/ai/aiTasks'
+import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settings/settingLedger'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
 import { readImpact, clearImpact, type ImpactMark } from '@/lib/outline/futureImpact'
@@ -620,7 +620,14 @@ export function useJieWenJiModel(props: Props) {
     oocT.run(async job => {
       job.progress({ ch })
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-ooc'), focusChapterId })
-      return { ch, v: await aiOocCheck(ctx.text, content, { signal: job.signal }) }
+      // WQ1-3：未完整完成（解析失败/截断/取消）一律抛出，让任务中心显示原因；
+      // 不再把失败假装成"没人 OOC"（空数组曾是三种语义混一起）
+      const r = await aiOocCheckWithStatus(ctx.text, content, { signal: job.signal })
+      if (r.state !== 'completed') {
+        const n = r.result?.data?.length ?? 0
+        throw new Error(`OOC 检查未完整完成（${r.errorCode ?? r.state}）${n ? `，已收到 ${n} 处仅供参考` : ''}，请重试或更换模型`)
+      }
+      return { ch, v: r.result?.data ?? [] }
     })
   }
   const runAdvice = () => {

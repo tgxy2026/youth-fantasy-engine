@@ -21,7 +21,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { downloadText } from '@/lib/storage/zip'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
-import { aiReviewSensitive, aiContinuityAudit, type SensitiveReview, type ContinuityFinding } from '@/lib/ai/aiTasks'
+import { aiReviewSensitive, aiContinuityAuditWithStatus, type SensitiveReview, type ContinuityFinding } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { runDataHealthCheck, type TavernGhostInfo } from '@/lib/storage/dataHealth'
 import { checkAuditChapters, formatGap } from '@/lib/audit/evidenceGate'
@@ -128,6 +128,8 @@ export default function CheckTools() {
   const [auditLoading, setAuditLoading] = useState(false)
   const [auditErr, setAuditErr] = useState('')
   const [auditRun, setAuditRun] = useState(false)
+  /** WQ1-3：审查运行状态（''＝完整跑完；partial/failed/cancelled/incomplete 未完成） */
+  const [auditStatus, setAuditStatus] = useState('')
   /** 三个 AI 功能共用的流式实时预览（仅加载中显示） */
   const [streamText, setStreamText] = useState('')
 
@@ -226,11 +228,15 @@ export default function CheckTools() {
     const chapters = await db.getAllChapters().catch(() => [])
     const gap = checkAuditChapters(chapters.filter(c => (c.content ?? '').trim()).length)
     if (gap) { showToast(formatGap(gap), 'error'); return }
-    setAuditLoading(true); setAuditErr(''); setFindings([]); setStreamText('')
+    setAuditLoading(true); setAuditErr(''); setFindings([]); setStreamText(''); setAuditStatus('')
     try {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('consistency-selfcheck') }).catch(() => ({ text: '' }))
-      setFindings(await aiContinuityAudit(ctx.text, auditText.trim(), { onToken: (d) => setStreamText(prev => prev + d) }))
+      // WQ1-3：走带状态版本 —— 解析失败（invalid）/ 截断修复（repaired）/ 取消
+      // 都不得显示成绿色的"未发现矛盾"（那是合法空结果专属）
+      const r = await aiContinuityAuditWithStatus(ctx.text, auditText.trim(), { onToken: (d) => setStreamText(prev => prev + d) })
+      setFindings(r.result?.data ?? [])
       setAuditRun(true)
+      setAuditStatus(r.state === 'completed' ? '' : r.state)
     } catch (e) { setAuditErr(e instanceof Error ? e.message : String(e)) }
     finally { setAuditLoading(false) }
   }
@@ -429,8 +435,17 @@ export default function CheckTools() {
               <ShieldAlert size={13} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{auditErr}</span>
             </div>
           )}
-          {auditRun && !auditLoading && findings.length === 0 && (
+          {auditRun && !auditLoading && !auditStatus && findings.length === 0 && (
             <div className="mt-4 py-3 text-center text-12 text-success">AI 自查完成，未发现明显的前后矛盾 ✓</div>
+          )}
+          {auditRun && !auditLoading && auditStatus && (
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-12 text-amber">
+              <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+              <span className="whitespace-pre-wrap">
+                {`AI 自查未完整完成（${auditStatus === 'partial' ? '部分项未跑完' : auditStatus === 'cancelled' ? '已取消' : auditStatus === 'incomplete' ? '输出不完整' : '执行失败'}），以下结果仅供参考，不代表全书都已检查。`}
+                {findings.length > 0 ? `\n已收到 ${findings.length} 处疑似冲突。` : '\n没有可用结果，请重试或换模型。'}
+              </span>
+            </div>
           )}
           {findings.length > 0 && (
             <div className="mt-4 space-y-2">

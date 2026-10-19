@@ -20,7 +20,7 @@ import { useTaskRunner, chapterOwned, type ChOwned, type ChProgress } from '@/li
 /** AI 深度分析返回的条目形状（伏笔 / 连续性两个弹窗共用） */
 type AiFinding = { level: string; title: string; detail: string; where: string }
 import { buildProjectContext, getRecentChapterTexts } from '@/lib/ai/aiContext'
-import { aiForeshadowReview, aiContinuityAudit, aiStyleCheck } from '@/lib/ai/aiTasks'
+import { aiForeshadowReviewWithStatus, aiContinuityAuditWithStatus, aiStyleCheck } from '@/lib/ai/aiTasks'
 import { Button } from '@/components/common/Button'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 
@@ -41,7 +41,15 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
   const runAiReview = () => {
     t.run(async () => {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('foreshadow-review'), onlyTabIds: ['foreshadow', 'chapter-master', 'timeline'] })
-      return aiForeshadowReview(ctx.text)
+      // WQ1-3：未完整完成（含解析失败 / 截断 / 取消）一律抛出，让任务中心的
+      // 错误位显示原因 —— 不再把失败或半成品假装成"审查完、没问题"。
+      // 有部分产物时在错误信息里说明"仅供参考"，作者可重试。
+      const r = await aiForeshadowReviewWithStatus(ctx.text)
+      if (r.state !== 'completed') {
+        const n = r.result?.data?.length ?? 0
+        throw new Error(`伏笔审查未完整完成（${r.errorCode ?? r.state}）${n ? `，已收到 ${n} 处仅供参考` : ''}，请重试或更换模型`)
+      }
+      return r.result?.data ?? []
     })
   }
 
@@ -181,7 +189,13 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('continuity-audit') })
       // 喂最近 6 章正文：一致性冲突最常出现在临近章节；空串时 prompt 会自动退化为仅查设定内部矛盾
       const texts = await getRecentChapterTexts(6).catch(() => '')
-      return aiContinuityAudit(ctx.text, texts)
+      // WQ1-3：未完整完成一律抛出（同伏笔看板），错误信息带部分产物计数
+      const r = await aiContinuityAuditWithStatus(ctx.text, texts)
+      if (r.state !== 'completed') {
+        const n = r.result?.data?.length ?? 0
+        throw new Error(`连续性审查未完整完成（${r.errorCode ?? r.state}）${n ? `，已收到 ${n} 处仅供参考` : ''}，请重试或更换模型`)
+      }
+      return r.result?.data ?? []
     })
   }
 
