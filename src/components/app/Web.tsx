@@ -7,6 +7,7 @@ import {
 import { WEB_CLOUD } from '@/lib/app/platform'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import AccountExit from '@/components/app/AccountExit'
 
 /**
  * 网页版 · 云端账号数据条。
@@ -36,9 +37,14 @@ export function WebDataBar() {
   const [state, setState] = useState(getPortableState())
   const [busy, setBusy] = useState<'export' | 'import' | null>(null)
   const [usage, setUsage] = useState<Usage | null>(() => {
-    // 服务端注入的初值（index.html 里的 __YFE_USER__），先显示出来避免空窗
-    const boot = (window as unknown as { __YFE_USER__?: Usage }).__YFE_USER__
-    return boot ? { used: boot.used ?? 0, quota: boot.quota ?? 0 } : null
+    // 服务端注入的初值（index.html 里的 __YFE_USER__），先显示出来避免空窗。
+    // 🔴 字段名是 `usedBytes` / `quotaBytes`（服务端 renderIndex 里注入的就是这两个），
+    //    原先这里读的是 `used` / `quota` ⇒ 永远 undefined、首屏永远显示「云端空间」，
+    //    得等 fetch('/api/auth/me') 回来才补上。2026-10-19 顺手修正。
+    const boot = (window as unknown as {
+      __YFE_USER__?: { usedBytes?: number; quotaBytes?: number }
+    }).__YFE_USER__
+    return boot ? { used: boot.usedBytes ?? 0, quota: boot.quotaBytes ?? 0 } : null
   })
 
   useEffect(() => subscribePortable(() => setState(getPortableState())), [])
@@ -166,6 +172,8 @@ export function WebDataBar() {
         <span className={`ml-auto shrink-0 tabular-nums ${quotaWarn ? 'text-amber' : 'text-ink-500'}`}>
           {quotaText}
         </span>
+        {/* 退出登录：并入这一行（原先在屏幕底部正中常驻，2026-10-19 按主人要求挪过来） */}
+        <AccountExit />
       </div>
     </div>
   )

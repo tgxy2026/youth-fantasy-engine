@@ -312,35 +312,20 @@ const escapeForHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 ))
 
 /**
- * 账号态常驻胶囊（注入到 </body> 前）。
+ * 账号态「退出登录」入口 —— **2026-10-19 起不再由服务端注入**。
  *
- * 🔴 为什么必须有它：登录后会话保留 30 天，而界面上**原本没有任何登出入口** ——
- *    用户被永久锁在云端模式下，既回不到登录页、也切不到游客模式（实测主人被卡住）。
- *    顺带解决另一个缺口：界面上看不到「已用 / 配额」，只能撞上限才知道。
+ * 原先这里是一个 `position:fixed; bottom:16px` 的居中胶囊（账号 + 云端空间 + 退出），
+ * 理由是"登录后 30 天会话、界面上原本没有登出入口，关掉就再也找不到退出"。
+ * 但它**常驻**在正文区下方正中，进项目后既影响观感也挡东西。
  *
- * 与 `GUEST_BANNER` 的差异：**不可关闭**。游客胶囊关掉只是少一条提示，
- * 这个关掉就再也找不到退出入口了 —— 宁可常驻，也不留死角。
+ * 现在退出入口由前端 `src/components/app/AccountExit.tsx` 渲染在两个位置：
+ *   · 项目内  → 左侧栏「青春幻想引擎 / 小说创作工作台」右侧的空白
+ *   · 项目首页 → 「创建示范项目 / 导入已有项目」那一排按钮
+ * 账号名与「已用 / 配额」在左下角数据坞的 `WebDataBar` 里本来就有，不必重复。
+ *
+ * 🔴 保留 `__YFE_USER__` 注入（见 renderIndex）：前端要靠它判断"是不是网页云端账号"
+ *    以及显示用量。别因为删了胶囊就把那段也删了。
  */
-const ACCOUNT_BANNER = (name) => `
-<div id="yfe-acct" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:calc(100vw - 32px);padding:7px 14px;border-radius:999px;background:rgba(28,26,23,.9);border:1px solid rgba(148,140,128,.28);color:#cfc8bc;font-size:12px;line-height:1.5;box-shadow:0 6px 20px -10px rgba(0,0,0,.6);opacity:.72;transition:opacity .18s,border-color .18s;font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" onmouseover="this.style.opacity='1';this.style.borderColor='rgba(201,162,39,.45)'" onmouseout="this.style.opacity='.72';this.style.borderColor='rgba(148,140,128,.28)'">
-  <span style="color:#d9a04a;font-weight:500;white-space:nowrap">${escapeForHtml(name)}</span>
-  <span id="yfe-acct-quota" style="white-space:nowrap;color:#9a9084">云端空间</span>
-  <a href="/logout" style="color:#9a9084;text-decoration:none;border-bottom:1px solid rgba(148,140,128,.4);white-space:nowrap;transition:color .15s" onmouseover="this.style.color='#d9a04a'" onmouseout="this.style.color='#9a9084'">退出</a>
-</div>
-<script>
-(function () {
-  function fmt(b) {
-    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
-    if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
-    return b + ' B';
-  }
-  fetch('/api/auth/me', { cache: 'no-store' }).then(function (r) { return r.json() }).then(function (j) {
-    if (!j || !j.ok || !j.user) return;
-    var el = document.getElementById('yfe-acct-quota');
-    if (el) el.textContent = '已用 ' + fmt(j.user.usedBytes) + ' / ' + fmt(j.user.quotaBytes);
-  }).catch(function () {});
-})();
-</script>`
 
 let indexCache = null
 function renderIndex(user) {
@@ -364,7 +349,9 @@ function renderIndex(user) {
   const insertAt = indexCache.includes('</head>') ? '</head>' : ''
   let html = insertAt ? indexCache.replace(insertAt, `${script}</head>`) : script + indexCache
   if (html.includes('</body>')) {
-    const banner = user ? ACCOUNT_BANNER(user.name) : GUEST_BANNER
+    // 🔴 2026-10-19：已登录用户**不再注入底部胶囊**（退出入口改到 Sidebar 左上角 / 项目首页按钮排，
+    //    见 src/components/app/AccountExit.tsx）。游客提示照旧。
+    const banner = user ? '' : GUEST_BANNER
     html = html.replace('</body>', `${banner}</body>`)
   }
   return html
