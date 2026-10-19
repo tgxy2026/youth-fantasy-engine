@@ -123,7 +123,11 @@ console.log('\n—— chapterPostProcess 用例开始 ——')
   ok('🔴 走 aiParse（parseObjectArray），禁裸 JSON.parse', pp.includes('parseObjectArray') && !pp.includes('JSON.parse'))
   ok('结构化必传 json: true', pp.includes('json: true'))
   ok('不可信文本包裹（newAuthorFence / authorBlock）', pp.includes('newAuthorFence') && pp.includes('authorBlock'))
-  ok('正文为空直接早退（不发请求）', pp.includes("if (!body) return { ...EMPTY_CHANGES }"))
+  // WQ1-4：早退逻辑搬进 WithStatus 内核（正文为空 ⇒ completed 的合法空，不发请求）；
+  // 包装函数把 result 的 data 取出，EMPTY_CHANGES 仍是无结果时的兜底。
+  ok('正文为空直接早退（不发请求）', pp.includes("if (!body) return one('completed')"))
+  ok('🔴 走三态解析（parseChapterChangesDetailed），失败可与合法空区分',
+    pp.includes('parseChapterChangesDetailed') && pp.includes("outcome === 'invalid'"))
 }
 
 console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)

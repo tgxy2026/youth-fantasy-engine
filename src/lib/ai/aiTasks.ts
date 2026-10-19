@@ -61,7 +61,7 @@ export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiOocCheckWithStatus, a
 export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, ContinueAsk, PleasureReport, OpeningReport, BriefingReport } from '@/lib/aiTasks/jieWenJi'
 export { CHAPTER_REWRITE_META, aiRewriteChapter, cleanChapterOutput, stripInlineMarkdown } from '@/lib/aiTasks/rewrite'
 export type { ChapterRewriteAction, ChapterRewriteOpts } from '@/lib/aiTasks/rewrite'
-export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, parseExtractedEntities } from '@/lib/aiTasks/extract'
+export { SLOT_HINT, EXTRACT_FIELD_KEYS, EXTRACT_FIELDS_SPEC, extractSysFull, aiExtractSettingEntities, aiExtractSettingEntitiesWithStatus, parseExtractedEntities, parseExtractedEntitiesDetailed } from '@/lib/aiTasks/extract'
 export type { SettingEntityType, ExtractedEntity } from '@/lib/aiTasks/extract'
 export { INLINE_SUGGEST_LIMITS, trimInlineSuggestion, aiInlineSuggest, foldGhostNewlines } from '@/lib/aiTasks/inline'
 export type { InlineSuggestLength, InlineSuggestOptions } from '@/lib/aiTasks/inline'
@@ -100,7 +100,7 @@ export {
 export type { StyleProfile, StyleMetrics, ExtractOptions } from '@/lib/ai/styleFingerprint'
 // 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
-export { aiExtractChapterChanges, parseChapterChanges, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
+export { aiExtractChapterChanges, aiExtractChapterChangesWithStatus, parseChapterChanges, parseChapterChangesDetailed, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from '@/lib/aiTasks/postProcess'
 
 /**

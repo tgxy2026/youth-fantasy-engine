@@ -10,11 +10,12 @@
 //    输出用**扁平数组 + kind 字段**，直接复用既有 `parseObjectArray`（不新写解析器）。
 //
 // 提示词 `POST_PROCESS_SYS` 就地声明在本文件（promptSettings 要求「提示词 ↔ 用法」同处）。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
+import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import type { StepExecutionResult, StepResultState, TaskResult } from '@/lib/revision/revisionTypes'
 
 let POST_PROCESS_SYS = `你是长篇小说「章后整理」助理。作者刚写完本章，请从本章正文中抽取**本章带来的变化**，供作者核对登记。
 
@@ -87,8 +88,21 @@ export async function aiExtractChapterChanges(
   chapterTitle: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ChapterChanges> {
+  const r = await aiExtractChapterChangesWithStatus(chapterText, chapterTitle, opts)
+  return r.result?.data ?? { ...EMPTY_CHANGES }
+}
+
+/** WQ1-4：带状态版本（判定口径同 aiExtractSettingEntitiesWithStatus） */
+export async function aiExtractChapterChangesWithStatus(
+  chapterText: string,
+  chapterTitle: string,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<StepExecutionResult<ChapterChanges>> {
+  const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ChapterChanges> =>
+    ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
   const body = (chapterText ?? '').trim()
-  if (!body) return { ...EMPTY_CHANGES }
+  if (!body) return one('completed')
+  try {
   // #014 用途路由：从正文抽取属「整理」
   const cfg = await requireProviderFor('utility')
   // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
@@ -105,7 +119,18 @@ ${authorBlock(fence, body)}
     // 走流式（与 extract 同理：非流式等整段生成完会撞总超时墙）
     { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
   )
-  return parseChapterChanges(text)
+    const r = parseChapterChangesDetailed(text)
+    if (r.outcome === 'invalid') return one('failed', 'parse-invalid')
+    return {
+      state: 'completed',
+      result: r,
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'chapter-changes',
+    }
+  } catch (e) {
+    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
+  }
 }
 
 /**
@@ -115,12 +140,24 @@ ${authorBlock(fence, body)}
  * 🔴 丢弃空名字 / 空内容的条目 —— 让「没抽到」表现为空数组，而不是一条没用的空条目。
  */
 export function parseChapterChanges(text: string): ChapterChanges {
+  return parseChapterChangesDetailed(text).data
+}
+
+/**
+ * WQ1-4：三态版本。合法空（本章无伏笔/关系/状态变化）＝ completed；
+ * JSON 坏了 ⇒ invalid —— 章后整理据此写 notes，不假装"本章没有可整理的条目"。
+ */
+export function parseChapterChangesDetailed(text: string): TaskResult<ChapterChanges> {
+  const parsed = parseObjectArrayDetailed(text)
+  if (parsed.outcome === 'invalid') {
+    return { outcome: 'invalid', data: { ...EMPTY_CHANGES }, diagnostics: parsed.diagnostics, truncated: parsed.truncated }
+  }
   const out: ChapterChanges = { foreshadows: [], relations: [], statuses: [] }
   const seenFore = new Set<string>()
   const seenRel = new Set<string>()
   const seenSt = new Set<string>()
 
-  for (const it of parseObjectArray(text)) {
+  for (const it of parsed.data) {
     const kind = asText(it.kind ?? it['类型'] ?? it['类别']).trim()
     if (kind === '伏笔') {
       const content = asText(it.content ?? it['伏笔内容'] ?? it['内容']).trim()
@@ -151,7 +188,7 @@ export function parseChapterChanges(text: string): ChapterChanges {
       out.statuses.push({ name, state, evidence: asText(it.evidence ?? it['证据'] ?? it['原句']).trim() })
     }
   }
-  return out
+  return { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated }
 }
 
 

@@ -15,7 +15,7 @@
 //    的「绝不新建细纲卡」同口径）。
 import * as db from '@/lib/db'
 import {
-  aiExtractChapterChanges, aiExtractSettingEntities,
+  aiExtractChapterChangesWithStatus, aiExtractSettingEntitiesWithStatus,
   type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus,
 } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settings/settingLedger'
@@ -237,21 +237,24 @@ export async function collectPostProcess(
   ])
 
   // 一次 AI 调用覆盖三类（伏笔 / 关系 / 状态）
-  let changes: Awaited<ReturnType<typeof aiExtractChapterChanges>>
-  try {
-    changes = await aiExtractChapterChanges(body, chapterTitle, { signal: opts?.signal })
-  } catch {
-    changes = { foreshadows: [], relations: [], statuses: [] }
-    notes.push('AI 抽取失败，本次只做设定实体比对。')
+  // WQ1-4：走带状态版本 —— 请求失败与**解析失败**都写 notes，
+  // 不再把「JSON 坏了」假装成「本章没有需要整理的条目」（假绿）。
+  const chRun = await aiExtractChapterChangesWithStatus(body, chapterTitle, { signal: opts?.signal })
+  const changes = chRun.result?.data ?? { foreshadows: [], relations: [], statuses: [] }
+  if (chRun.state === 'cancelled') notes.push('AI 抽取已取消，以下仅为已完成的比对。')
+  else if (chRun.state !== 'completed') {
+    notes.push('AI 抽取未完整完成（' + (chRun.errorCode ?? chRun.state) + '），伏笔/关系/状态三类可能漏检；本次只做已成功的设定实体比对。')
   }
 
   // 实体：复用既有链路（同一份正文再抽一次实体 —— 与「补登」模式同口径）
   if (reg) {
-    try {
-      const entities = await aiExtractSettingEntities(body, chapterTitle, { signal: opts?.signal })
-      items.push(...entityItems(entities, reg))
-    } catch {
-      notes.push('设定实体抽取失败，本次跳过该类。')
+    const entRun = await aiExtractSettingEntitiesWithStatus(body, chapterTitle, { signal: opts?.signal })
+    if (entRun.state === 'completed') {
+      items.push(...entityItems(entRun.result?.data ?? [], reg))
+    } else if (entRun.state === 'cancelled') {
+      notes.push('设定实体抽取已取消，本次跳过该类。')
+    } else {
+      notes.push('设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '），本次跳过该类。')
     }
   }
 

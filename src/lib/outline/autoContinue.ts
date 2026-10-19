@@ -28,15 +28,15 @@ import { withAiAssist } from '@/lib/ai/aiAssist'
 //    只为**保持既有 import 路径可用**（面板仍从本文件取 `WORD_TOLERANCE`）。
 import { ask, askSoft, enforceWordRange, WORD_TOLERANCE, type Cfg } from '@/lib/editor/wordRange'
 export { WORD_TOLERANCE }
-import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { buildProjectContext, type ProjectContextResult } from '@/lib/ai/aiContext'
 import {
-  aiExtractSettingEntities,
+  aiExtractSettingEntitiesWithStatus,
   aiContinuityAuditWithStatus, aiOocCheckWithStatus, aiForeshadowReviewWithStatus,
-  aiRewritePassage, aiChapterSummary, cleanChapterOutput, type ExtractedEntity,
+  aiRewritePassage, aiChapterSummary, cleanChapterOutput,
 } from '@/lib/ai/aiTasks'
-import type { Coverage, StepExecutionResult } from '@/lib/revision/revisionTypes'
+import type { Coverage, StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settings/settingLedger'
 import { sortChapters, chapterSeqOf } from '@/lib/outline/chapterSeq'
 import { deAiGenerateRule, deAiPolishClause } from '@/lib/ai/deAiStyle'
@@ -391,8 +391,14 @@ export async function extractAndCommitSettings(
   body: string, title: string, strategy: ContinueStrategy,
   onConfirm?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>,
   signal?: AbortSignal,
-): Promise<{ created: number; failed: string[] }> {
-  const entities = await aiExtractSettingEntities(body, title, { signal }).catch(() => [] as ExtractedEntity[])
+): Promise<{ created: number; failed: string[]; errors?: string[] }> {
+  // WQ1-4：解析失败/请求失败与"本章无新实体"分开 —— 失败要经 errors 上报，
+  // 不再静默 return { created: 0 } 让 UI 显示"新增 0 条"像正常一样
+  const entRun = await aiExtractSettingEntitiesWithStatus(body, title, { signal })
+  if (entRun.state !== 'completed') {
+    return { created: 0, failed: [], errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'] }
+  }
+  const entities = entRun.result?.data ?? []
   if (!entities.length) return { created: 0, failed: [] }
   const reg = await loadRegistry().catch(() => null)
   if (!reg) return { created: 0, failed: [] }
@@ -409,8 +415,9 @@ export async function extractAndCommitSettings(
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title).catch(() => empty)
-    await applySettingUpdates(body, title, signal).catch(() => {})
-    return { created: r.created, failed: r.failed }
+    const w = await applySettingUpdates(body, title, signal)
+    const errs = [...r.failed.length ? [] : [], ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : [])]
+    return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
   }
   // confirm：把新实体与疑似重复项交给用户勾选
   const cands = items.filter(i => i.status === 'new' || i.status === 'duplicate')
@@ -425,15 +432,19 @@ export async function extractAndCommitSettings(
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============
 
-async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<SettingUpdate[]> {
+async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<{ updates: SettingUpdate[]; state: StepResultState }> {
   const cfg = await requireProviderFor('create')
   const sys = P_setting_update_detect
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
   // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
-  return parseObjectArray(text)
+  // WQ1-4：三态 —— invalid（JSON 坏了）与合法空（无变化）分开上报。
+  const parsed = parseObjectArrayDetailed(text)
+  if (parsed.outcome === 'invalid') return { updates: [], state: 'failed' }
+  const updates = parsed.data
     .filter(x => asText(x.name))
     .map(x => ({ name: asText(x.name), note: asText(x.note) }))
+  return { updates, state: parsed.outcome === 'valid' ? 'completed' : 'partial' }
 }
 
 function pickNoteCol(data: Record<string, string>): string | null {
@@ -455,11 +466,18 @@ function findRegistered(reg: Awaited<ReturnType<typeof loadRegistry>>, name: str
   return null
 }
 
-async function applySettingUpdates(body: string, title: string, signal?: AbortSignal) {
-  const updates = await extractSettingUpdates(body, title, signal).catch(() => [] as SettingUpdate[])
-  if (!updates.length) return
+async function applySettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<{ applied: number; state: StepResultState }> {
+  // WQ1-4：解析失败（JSON 坏）不再静默 return —— 调用方（auto-update 分支）记录到日志
+  let run: { updates: SettingUpdate[]; state: StepResultState }
+  try {
+    run = await extractSettingUpdates(body, title, signal)
+  } catch {
+    return { applied: 0, state: 'failed' }
+  }
+  const updates = run.updates
+  if (!updates.length) return { applied: 0, state: run.state }
   const reg = await loadRegistry().catch(() => null)
-  if (!reg) return
+  if (!reg) return { applied: 0, state: run.state }
   for (const u of updates) {
     const hit = findRegistered(reg, u.name)
     if (!hit) continue
@@ -481,6 +499,7 @@ async function applySettingUpdates(body: string, title: string, signal?: AbortSi
       }
     } catch { /* 单条失败不影响整体 */ }
   }
+  return { applied: updates.length, state: run.state }
 }
 
 // ============ 顶层编排（L2 多章循环） ============
@@ -751,7 +770,8 @@ export async function runAutoContinue(
       const dev = finalWords - opts.targetWords
       cb.onLog?.(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`
-        + (r.failed.length ? `，失败：${r.failed.join('、')}` : ''),
+        + (r.failed.length ? `，失败：${r.failed.join('、')}` : '')
+        + (r.errors?.length ? `；${r.errors.join('；')}` : ''),
       )
       // 滚动摘要回灌（应对多章记忆滚雪球），复用刚刚生成的 1/10 摘要
       if (sum) memory = (memory ? memory + '\n' : '') + `· 第${no}章《${ch.title}》：${sum.replace(/\s+/g, ' ').slice(0, 200)}`

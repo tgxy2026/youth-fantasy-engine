@@ -1,12 +1,13 @@
 // ============ AI 任务层 · 设定实体抽取（拆书 / 设定补登共用）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #23 段）。
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
-import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
+import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { KIND_MAP } from '@/lib/flow/fieldMap'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import type { StepExecutionResult, StepResultState, TaskResult } from '@/lib/revision/revisionTypes'
 
 // ---------- 颉文姬⑤：本章设定补登（实体抽取） ----------
 //
@@ -177,24 +178,51 @@ export async function aiExtractSettingEntities(
   chapterTitle: string,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
 ): Promise<ExtractedEntity[]> {
-  // #014 用途路由：从正文抽取设定属「整理」
-  const cfg = await requireProviderFor('utility')
-  // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
-  const fence = newAuthorFence()
-  const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}
+  const r = await aiExtractSettingEntitiesWithStatus(chapterText, chapterTitle, opts)
+  return r.result?.data ?? []
+}
+
+/**
+ * WQ1-4：带状态版本。合法空（模型说本章无新设定）＝ completed；
+ * 请求失败 / 解析失败 ⇒ failed 且带 errorCode —— 调用方（章后整理）据此
+ * 写 notes，不再把"解析坏了"假装成"没有新设定"。
+ */
+export async function aiExtractSettingEntitiesWithStatus(
+  chapterText: string,
+  chapterTitle: string,
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+): Promise<StepExecutionResult<ExtractedEntity[]>> {
+  const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ExtractedEntity[]> =>
+    ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
+  try {
+    const cfg = await requireProviderFor('utility')
+    // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
+    const fence = newAuthorFence()
+    const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}
 
 【本章正文】
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
 
 请抽取本章出现的设定实体。`
-  const text = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(extractSysFull(), cfg) }, { role: 'user', content: user }],
-    // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
-    //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
-  )
-  return parseExtractedEntities(text)
+    const text = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(extractSysFull(), cfg) }, { role: 'user', content: user }],
+      // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
+      //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
+    )
+    const r = parseExtractedEntitiesDetailed(text)
+    if (r.outcome === 'invalid') return one('failed', 'parse-invalid')
+    return {
+      state: 'completed',
+      result: r,
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'extract-entities',
+    }
+  } catch (e) {
+    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
+  }
 }
 
 /**
@@ -204,9 +232,22 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
  *    照单全收会写出一列驴唇不对马嘴的数据。
  */
 export function parseExtractedEntities(text: string): ExtractedEntity[] {
+  return parseExtractedEntitiesDetailed(text).data
+}
+
+/**
+ * WQ1-4：抽取实体解析的**三态**版本（MQ0 契约）。
+ * `[]` 以前分不清「模型说本章无新设定」（合法空）与「JSON 坏了/没返回」
+ * （失败）—— 后者会让章后整理静默跳过，作者以为"没有新设定"。
+ */
+export function parseExtractedEntitiesDetailed(text: string): TaskResult<ExtractedEntity[]> {
+  const parsed = parseObjectArrayDetailed(text)
+  if (parsed.outcome === 'invalid') {
+    return { outcome: 'invalid', data: [], diagnostics: parsed.diagnostics, truncated: parsed.truncated }
+  }
   const out: ExtractedEntity[] = []
   const seen = new Set<string>()
-  for (const it of parseObjectArray(text)) {
+  for (const it of parsed.data) {
     const name = asText(it.name ?? it['名称'])
     if (!name) continue
     const rawType = asText(it.type ?? it['类型'])
@@ -251,7 +292,7 @@ export function parseExtractedEntities(text: string): ExtractedEntity[] {
     })
     if (out.length >= 20) break
   }
-  return out
+  return { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated }
 }
 
 /**
