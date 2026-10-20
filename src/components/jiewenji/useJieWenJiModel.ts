@@ -25,6 +25,7 @@ import { styleContextForAI } from '@/lib/ai/styleAudit'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
 import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settings/settingLedger'
+import * as db from '@/lib/db'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
 import { readImpact, clearImpact, type ImpactMark } from '@/lib/outline/futureImpact'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -258,7 +259,8 @@ export function useJieWenJiModel(props: Props) {
     if (picked.length === 0 || ledgerSaving) return
     setLedgerSaving(true)
     try {
-      const r = await commitEntities(picked, chapterTitle ?? '')
+      // 3.2.0 · WT2：补登落点按有效模板解析（作者改名/同义自建字段后仍写对字段）
+      const r = await commitEntities(picked, chapterTitle ?? '', { pid: db.getCurrentProjectId() })
       if (r.created > 0) {
         showToast(`已补登 ${r.created} 条设定，去对应表里补完细节即可${r.failed.length ? `（${r.failed.length} 条失败）` : ''}`, 'success')
         onLedgerCommitted?.(r.created)

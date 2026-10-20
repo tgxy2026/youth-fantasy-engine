@@ -302,7 +302,7 @@ export async function applyPostProcess(
   // 实体批量走既有提交器
   const entityRaws = items.filter(i => i.kind === 'entity' && i.raw).map(i => i.raw as LedgerItem)
   if (entityRaws.length) {
-    const r = await commitEntities(entityRaws, input.chapterTitle ?? '').catch(() => ({ created: 0, failed: entityRaws.map(e => e.name) }))
+    const r = await commitEntities(entityRaws, input.chapterTitle ?? '', { pid: db.getCurrentProjectId() }).catch(() => ({ created: 0, failed: entityRaws.map(e => e.name) }))
     created += r.created
     failed.push(...r.failed)
   }

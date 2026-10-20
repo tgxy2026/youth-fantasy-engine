@@ -12,6 +12,9 @@ import { TABS } from '@/lib/schema'
 import { readAliases } from '@/lib/settings/aliases'
 import { nextAutoCode } from '@/lib/ai/autoCode'
 import { uid } from '@/lib/app/id'
+import { resolveSlot } from '@/lib/flow/fieldMap'
+import { loadDraftMappingContexts, type DraftMappingContext } from '@/lib/flow/draftMapping'
+import { resolveSemanticWrite } from '@/lib/templates/semanticWrite'
 import type { CardRecord, TableRow } from '@/lib/types'
 import type { ExtractedEntity, SettingEntityType } from '@/lib/ai/aiTasks'
 
@@ -185,25 +188,88 @@ export interface CommitResult {
  * 把勾选的「待补登」项写入对应设定表 / 角色卡。
  * 只填名称、一句话描述、首次出场章节，其余字段一律留空交给作者补——
  * 宁可少填，也不让模型替作者脑补设定。
+ *
+ * 🔴 3.2.0 · WT2（§3.11「设定补登 / 章后整理 / 逐章连写章后补登」逐链复用）：
+ *    落点改由**有效模板**解析 —— 作者把「姓名」改名成「名字」、或把「身份定位」
+ *    换成同义自建字段后，补登必须写进**当前字段**（存储键由模板给出），
+ *    而不是按旧中文列名去 schema 里找（那样会写进另一个栏位、甚至什么都写不进去）。
+ *    · 采用过模板 ⇒ 槽位 `name/desc/firstAppear` 按映射方案落点；解析不到**不写**，本条如实计入 `failed`；
+ *    · 没采用模板 ⇒ 不给上下文，**逐字节沿用旧口径**（老项目 / 测试行为不变）。
+ *    🔴 存储键与「编号」仍是程序契约：改名只换 `label`，`sourceKey` 不变（方案 §3.12.1）。
  */
-export async function commitEntities(items: LedgerItem[], chapterTitle: string): Promise<CommitResult> {
+export interface CommitEntitiesOptions {
+  /** 项目 ID：读取已采用模板的用途映射。🔴 不传 ⇒ 完全沿用旧口径（老项目 / 测试行为一个字节都不动）。 */
+  pid?: string
+  /** 已加载的映射上下文（调用方复用 / 测试注入；不传则按 `pid` 现读） */
+  mappings?: ReadonlyMap<string, DraftMappingContext>
+}
+
+/** 待写条目的目标页签：人物 = 角色卡（作者可改），其余 = 设定表 */
+function targetTabOfItem(item: LedgerItem): string | undefined {
+  return item.type === '人物' ? (item.targetTabId ?? 'char-npc') : TABLE_TARGET[item.type]
+}
+
+/**
+ * 有效模板口径：把**槽位候选**解析成「槽位 → { 存储键, 值 }」。
+ * 返回 `null` = 连主名落点都没有 —— 这条根本落不了库，调用方记 `failed`、不写幽灵键。
+ */
+function mappedSlotsOf(
+  ctx: DraftMappingContext, candidate: Record<string, string>,
+): Map<string, { field: string; value: string }> | null {
+  const wr = resolveSemanticWrite(ctx.template, ctx.plan, ctx.slots, candidate)
+  const out = new Map<string, { field: string; value: string }>()
+  for (const a of wr.accepted) out.set(a.slot, { field: a.fieldKey, value: a.value })
+  return out.has('name') ? out : null
+}
+
+export async function commitEntities(
+  items: LedgerItem[], chapterTitle: string, opts: CommitEntitiesOptions = {},
+): Promise<CommitResult> {
   const failed: string[] = []
   let created = 0
 
+  // 映射上下文按「本条会实际写到的页签」预读一次（调用方复用 / 测试注入优先）
+  const mappings = opts.mappings ?? await loadDraftMappingContexts(
+    opts.pid,
+    items.map(targetTabOfItem).filter((t): t is string => !!t),
+  )
+
   for (const item of items) {
     try {
+      const tabId = targetTabOfItem(item)
+      if (!tabId) { failed.push(item.name); continue }
+      const ctx = mappings.get(tabId)
+      const tab = TABS.find(t => t.id === tabId)
+
       if (item.type === '人物') {
-        const tabId = item.targetTabId ?? 'char-npc'
-        const existing = await db.getCardRecords(tabId)
         const data: Record<string, string> = {}
-        const namePath = cardFieldPath(tabId, ['姓名'])
-        const descPath = cardFieldPath(tabId, ['身份定位', '身份'])
-        const firstPath = cardFieldPath(tabId, ['首次出场', '关键出场'])
-        const statusPath = cardFieldPath(tabId, ['人物状态'])
-        if (namePath) data[namePath] = item.name
-        if (descPath && item.desc) data[descPath] = item.desc
-        if (firstPath && chapterTitle) data[firstPath] = chapterTitle
-        if (statusPath) data[statusPath] = '已登场'
+        if (ctx) {
+          // 槽位候选：主名必发；描述、首次出场有值才发（与旧口径一致，不多塞）
+          const candidate: Record<string, string> = { name: item.name }
+          if (item.desc) candidate.desc = item.desc
+          if (chapterTitle) candidate.firstAppear = chapterTitle
+          const slots = mappedSlotsOf(ctx, candidate)
+          if (!slots) { failed.push(item.name); continue }
+          for (const s of slots.values()) data[s.field] = s.value
+          // 「人物状态」不是语义槽位（由新建通道决定，不是抽取事实）——按存储键解析 + 模板存在性校验，
+          // 归档 / 模板里没有该字段时**不写**（模板之外多一个键就是幽灵数据）。
+          const statusKey = resolveSlot(tabId, '人物状态')
+          if (statusKey && !(statusKey in data)
+            && ctx.template.fields.some(f => f.sourceKey === statusKey && !f.archived)) {
+            data[statusKey] = '已登场'
+          }
+        } else {
+          const namePath = cardFieldPath(tabId, ['姓名'])
+          if (!namePath) { failed.push(item.name); continue }
+          const descPath = cardFieldPath(tabId, ['身份定位', '身份'])
+          const firstPath = cardFieldPath(tabId, ['首次出场', '关键出场'])
+          const statusPath = cardFieldPath(tabId, ['人物状态'])
+          data[namePath] = item.name
+          if (descPath && item.desc) data[descPath] = item.desc
+          if (firstPath && chapterTitle) data[firstPath] = chapterTitle
+          if (statusPath) data[statusPath] = '已登场'
+        }
+        const existing = await db.getCardRecords(tabId)
         const rec: CardRecord = {
           id: uid(),
           projectId: db.getCurrentProjectId(),
@@ -214,16 +280,24 @@ export async function commitEntities(items: LedgerItem[], chapterTitle: string):
         }
         await db.saveCardRecord(rec)
       } else {
-        const tabId = TABLE_TARGET[item.type]
-        if (!tabId) { failed.push(item.name); continue }
         const rows = await db.getTableRows(tabId)
-        const tab = TABS.find(t => t.id === tabId)
         const data: Record<string, string> = {}
+        // 先按 schema 真列铺空（改名只换 label，列名仍是程序契约）
         for (const col of tab?.columns ?? []) data[col.name] = ''
-        data['名称'] = item.name
-        const descCol = DESC_COL[item.type]
-        if (descCol && item.desc) data[descCol] = item.desc
-        if (item.type === '术语' && chapterTitle) data['首次出现章节'] = chapterTitle
+        if (ctx) {
+          const candidate: Record<string, string> = { name: item.name }
+          if (item.desc) candidate.desc = item.desc
+          if (item.type === '术语' && chapterTitle) candidate.firstAppear = chapterTitle
+          const slots = mappedSlotsOf(ctx, candidate)
+          if (!slots) { failed.push(item.name); continue }
+          for (const s of slots.values()) data[s.field] = s.value
+        } else {
+          data['名称'] = item.name
+          const descCol = DESC_COL[item.type]
+          if (descCol && item.desc) data[descCol] = item.desc
+          if (item.type === '术语' && chapterTitle) data['首次出现章节'] = chapterTitle
+        }
+        // 编号一律由 autoCode 生成（不接受外部值）；存储键固定为「编号」
         data['编号'] = nextAutoCode(tabId, rows)
         const row: TableRow = {
           id: uid(),

@@ -39,6 +39,8 @@ import {
 import type { Coverage, StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settings/settingLedger'
 import { sortChapters, chapterSeqOf } from '@/lib/outline/chapterSeq'
+import { loadDraftMappingContexts, type DraftMappingContext } from '@/lib/flow/draftMapping'
+import { resolveSemanticWrite } from '@/lib/templates/semanticWrite'
 import { deAiGenerateRule, deAiPolishClause } from '@/lib/ai/deAiStyle'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
@@ -404,17 +406,20 @@ export async function extractAndCommitSettings(
   if (!reg) return { created: 0, failed: [] }
   const items = classify(entities, reg)
   const empty = { created: 0, failed: [] as string[] }
+  // 3.2.0 · WT2：补登落点按**有效模板**解析（作者改名/同义自建字段后仍写对字段）。
+  // 不传 pid 则沿用旧中文列名口径，所以这里必须把当前项目带上。
+  const pid = db.getCurrentProjectId()
 
   if (strategy === 'add-only') {
     // 仅限新增：只补登新实体，绝不碰已登记设定
     const news = items.filter(i => i.status === 'new')
-    const r = await commitEntities(news, title).catch(() => empty)
+    const r = await commitEntities(news, title, { pid }).catch(() => empty)
     return { created: r.created, failed: r.failed }
   }
   if (strategy === 'auto-update') {
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
-    const r = await commitEntities(news, title).catch(() => empty)
+    const r = await commitEntities(news, title, { pid }).catch(() => empty)
     const w = await applySettingUpdates(body, title, signal)
     const errs = [...r.failed.length ? [] : [], ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : [])]
     return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
@@ -424,7 +429,7 @@ export async function extractAndCommitSettings(
   if (!cands.length) return empty
   const chosen = await onConfirm?.(cands)
   if (chosen && chosen.length) {
-    const r = await commitEntities(chosen, title).catch(() => empty)
+    const r = await commitEntities(chosen, title, { pid }).catch(() => empty)
     return { created: r.created, failed: r.failed }
   }
   return empty
@@ -454,6 +459,30 @@ function pickNoteCol(data: Record<string, string>): string | null {
 function appendNote(existing: string | undefined, note: string): string {
   return (existing ? existing + '\n' : '') + note
 }
+
+/**
+ * 备注落点（3.2.0 · WT2 §3.11「章后整理」）—— 把「续写备注」写到**真实字段**。
+ *
+ * 优先按**有效模板**的语义槽位解析（`note`＝命名备注，退而取 `desc`＝一句话描述），
+ * 拿到的是模板给出的存储键；解析不到 / 没采用模板 ⇒ 沿用旧的「备注类列名」口径，
+ * 老项目与老测试行为一个字节不变。
+ *
+ * 🔴 卡片（`char-*`）不套用 `desc` 槽位：那会把「续写备注」塞进「身份定位」这类语义栏，
+ *    旧行为也从不写卡片备注列 —— 故只在模板显式绑定 `note` 槽位时才写卡片。
+ */
+function resolveNoteKey(
+  ctx: DraftMappingContext | undefined, tabId: string, data: Record<string, string>, noteText: string,
+): string | null {
+  if (ctx) {
+    const order = tabId.startsWith('char-') ? ['note'] : ['note', 'desc']
+    for (const slot of order) {
+      const wr = resolveSemanticWrite(ctx.template, ctx.plan, ctx.slots, { [slot]: noteText })
+      const hit = wr.accepted.find(a => a.slot === slot)
+      if (hit) return hit.fieldKey
+    }
+  }
+  return pickNoteCol(data)
+}
 function findRegistered(reg: Awaited<ReturnType<typeof loadRegistry>>, name: string): { tabId: string; id: string } | null {
   const target = normName(name)
   if (!target) return null
@@ -478,6 +507,15 @@ async function applySettingUpdates(body: string, title: string, signal?: AbortSi
   if (!updates.length) return { applied: 0, state: run.state }
   const reg = await loadRegistry().catch(() => null)
   if (!reg) return { applied: 0, state: run.state }
+  // 有效模板映射上下文：按「本条实际写到的页签」惰性读一次并缓存（读失败 ⇒ 该页签沿用旧口径）
+  const ctxCache = new Map<string, DraftMappingContext | null>()
+  const ctxOf = async (tabId: string): Promise<DraftMappingContext | undefined> => {
+    if (ctxCache.has(tabId)) return ctxCache.get(tabId) ?? undefined
+    const map = await loadDraftMappingContexts(db.getCurrentProjectId(), [tabId]).catch(() => new Map<string, DraftMappingContext>())
+    const ctx = map.get(tabId) ?? null
+    ctxCache.set(tabId, ctx)
+    return ctx ?? undefined
+  }
   for (const u of updates) {
     const hit = findRegistered(reg, u.name)
     if (!hit) continue
@@ -486,15 +524,17 @@ async function applySettingUpdates(body: string, title: string, signal?: AbortSi
         const recs = await db.getCardRecords(hit.tabId)
         const rec = recs.find(r => r.id === hit.id)
         if (rec) {
-          const col = pickNoteCol(rec.data)
-          if (col) { rec.data[col] = appendNote(rec.data[col], `[续写·${title}] ${u.note}`); await db.saveCardRecord(rec) }
+          const line = `[续写·${title}] ${u.note}`
+          const col = resolveNoteKey(await ctxOf(hit.tabId), hit.tabId, rec.data, line)
+          if (col) { rec.data[col] = appendNote(rec.data[col], line); await db.saveCardRecord(rec) }
         }
       } else {
         const rows = await db.getTableRows(hit.tabId)
         const row = rows.find(r => r.id === hit.id)
         if (row) {
-          const col = pickNoteCol(row.data)
-          if (col) { row.data[col] = appendNote(row.data[col], `[续写·${title}] ${u.note}`); await db.saveTableRow(row) }
+          const line = `[续写·${title}] ${u.note}`
+          const col = resolveNoteKey(await ctxOf(hit.tabId), hit.tabId, row.data, line)
+          if (col) { row.data[col] = appendNote(row.data[col], line); await db.saveTableRow(row) }
         }
       }
     } catch { /* 单条失败不影响整体 */ }
