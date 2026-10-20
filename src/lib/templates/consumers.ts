@@ -224,3 +224,25 @@ export function aiWriteFieldsOf(template: EffectiveTemplate): AiWriteFieldSet {
 export function aiReadableTableFieldsOf(template: EffectiveTemplate): TableFieldProjection[] {
   return template.fields.filter(f => f.permissions.aiRead).map(toTableFieldProjection)
 }
+
+/**
+ * AI 结果落笔前的**目标键过滤**（3.2.0 · WT2，卡片写回用）。
+ *
+ * 🔴 为什么必须过滤：模型拿的是**生成开始时的**字段清单，期间模板可能删字段 / 归档 /
+ *    关掉「AI 可填写」。直接把返回值摊进 `data` 会留下模板里看不见、但导出与索引
+ *    仍可能碰到的「幽灵字段」—— 作者从界面上根本发现不了。
+ * 🔴 这里只做键过滤，不做类型归一化：类型校验仍归 `coerceAiValue`，两件事不能合并。
+ */
+export function pickValuesOfKeys(
+  values: Record<string, string>,
+  keys: readonly string[],
+): { picked: Record<string, string>; dropped: number } {
+  const allowed = new Set(keys)
+  const picked: Record<string, string> = {}
+  let dropped = 0
+  for (const [k, v] of Object.entries(values)) {
+    if (allowed.has(k)) picked[k] = v
+    else dropped++
+  }
+  return { picked, dropped }
+}

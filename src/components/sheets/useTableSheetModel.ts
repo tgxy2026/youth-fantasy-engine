@@ -35,7 +35,7 @@ import { loadAtlasAiWriteTargets, type AtlasAiWriteTargets } from '@/lib/ai/atla
 import { aiWriteFieldsOf, fieldHintForAI } from '@/lib/templates/consumers'
 import { invalidateIndex } from '@/lib/semantic/indexer'
 import { customColumnWidth } from '@/lib/atlas/columns'
-import { useSheetTemplate } from '@/components/templates/useSheetTemplate'
+import { useSheetTemplate, useAiWriteBasis } from '@/components/templates/useSheetTemplate'
 import { guardTabWrite } from '@/lib/templates/migrationGuard'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import { coerceAiValue } from '@/lib/atlas/values'
@@ -259,17 +259,13 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const [showFeedbackAI, setShowFeedbackAI] = useState(false)
   const [showDedupAI, setShowDedupAI] = useState(false)
   /**
-   * 🔴 AI 的**输出目标**按 `purpose: 'aiWrite'` 独立解析（3.1.3 · R12）。
-   *    之前它是从「表格可见列」派生的 ⇒ 「隐藏表格列」和「允许 AI 填写」被绑成同一件事：
-   *    作者只想让某列不占地方（隐藏），结果 AI 也跟着不能写了。
-   *    这里只看 `aiWritable`，不看 `tableVisible` —— 两件事就该是两件事。
-   */
-  /**
    * 🔴 AI 的**输出目标**按 `purpose:'aiWrite'` 独立解析（3.1.3 · R12）：只看 `aiWritable`、
    *    不看 `tableVisible`（隐藏列＝不占地方，≠ 不许 AI 写）。
    * 3.2.0 · WT0-4：改从有效模板取 —— 内置＝`source==='builtin'`，自定义＝已筛过 `aiWritable` 的投影。
    */
   const aiFieldTargets = useMemo(() => aiWriteFieldsOf(aiWriteTemplate), [aiWriteTemplate])
+  // WT2 生成期基准：弹窗打开那一刻的写回语义摘要（见 `useAiWriteBasis` 头注）
+  const aiGenBasisRef = useAiWriteBasis(showFill || !!fillRow || showOrganize, aiWriteTemplate.semanticDigest)
 
   /**
    * 交给 AI 的字段清单（AI 新增 / 补全本行 / 整理共用同一份）。
@@ -296,9 +292,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     ?? null
 
   /**
-   * 应用 AI 结果前的**基准复核**（3.1.3 · R12）。
-   * 重读一份最新的「可写目标」：配置锁写 / 版本变了 / 字段被删 ⇒ 直接放弃本次回填，
-   * 绝不拿旧清单往新库里写（那会把值写进已不存在的字段，或写进作者刚禁写的字段）。
+   * 应用 AI 结果前的**基准复核**（R12；WT2 改语义摘要）：重读最新可写目标，
+   * 锁写 / 生成期语义变了 / 字段被删 ⇒ 放弃本次回填，绝不拿旧清单往新库里写。
+   * 🔴 不与配置 `revision` 比：采用快照后那是快照自己的代号，与配置各数各的。
    */
   const verifyAiWriteBase = useCallback(async (): Promise<AtlasAiWriteTargets | null> => {
     const pid = getCurrentProjectId()
@@ -310,12 +306,12 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       showToast(`已放弃本次 AI 回填：${targets.lockedReason}`, 'error')
       return null
     }
-    if (isAtlasCapable && typeof atlasConfig?.revision === 'number' && targets.revision !== atlasConfig.revision) {
+    if (aiGenBasisRef.current && targets.basis && targets.basis !== aiGenBasisRef.current) {
       showToast('字段定义在生成期间被人改过（为避免写错字段，本次结果已作废），请重新生成', 'error')
       return null
     }
     return targets
-  }, [tab, isAtlasCapable, atlasConfig])
+  }, [tab, aiGenBasisRef])
 
   /**
    * 图鉴主图保存（3.1.3）。

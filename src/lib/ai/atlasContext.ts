@@ -55,6 +55,11 @@ async function resolveTemplateForAI(
   }
 }
 
+/** 未锁写时的基准：用途过滤后的语义摘要（布局 / 分组顺序不参与） */
+function basisOfTpl(tpl: EffectiveTemplate): string {
+  return tpl.semanticDigest
+}
+
 /**
  * 读当前项目的图鉴字段（含自定义字段），失败时返回 `null`。
  * `null` 的语义是「按原 `tab.columns` 走」—— 单段读取失败不该让整份上下文崩掉。
@@ -91,8 +96,18 @@ export interface AtlasAiWriteTargets {
   allowedKeys: Set<string>
   /** 自定义字段投影（按存储键）；内置列不在里面。形状即 `coerceAiValue` 的入参 */
   fields: Map<string, WriteFieldProjection>
-  /** 这份配置的版本号（应用前与发起时的基准比对） */
+  /** 这份配置的版本号（仅展示 / 兼容；**不要用它判失效**） */
   revision: number
+  /**
+   * 生成期失效判据（3.2.0 · WT2）：`purpose:'aiWrite'` 解析结果的语义摘要。
+   *
+   * 🔴 为什么不用 `revision`：采用过快照的页签，`revision` 是**快照自己的**代号，
+   *    与图鉴配置的 revision 各数各的 —— 拿两者比会「没改也说改过」，把正常回填全作废。
+   * 🔴 为什么用语义摘要：只挪位置 / 改分组顺序不会变，改名 / 改说明 / 改类型 / 改权限 /
+   *    删字段 / 归档都会变 —— 正好对应「相关字段变了才失效、布局无关变更可继续」。
+   * 🔴 锁写 / 读取失败时为空串：调用方本来就会因 `lockedReason` 放弃，不必再比。
+   */
+  basis: string
   /** 非空 ⇒ 这份配置**锁写**（未来版本 / 读取失败），调用方必须放弃本次回填 */
   lockedReason?: string
 }
@@ -112,7 +127,7 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
   //    必须等 WT0-4 的用例（AI 补全卡片）单独验过再动。
   if (!isAtlasTab(tab.id)) {
     const keys = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
-    return { allowedKeys: new Set(keys), fields: new Map(), revision: 0 }
+    return { allowedKeys: new Set(keys), fields: new Map(), revision: 0, basis: '' }
   }
 
   // 🔴 Q2：采用快照优先。只读图鉴配置时，快照里已归档 / 已禁写的字段仍会被 AI 回填，
@@ -122,15 +137,17 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
     def = await loadTemplateDef(projectId, tab.id)
   } catch (e) {
     return {
-      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0,
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0, basis: '',
       lockedReason: `读取项目模板失败：${e instanceof Error ? e.message : String(e)}`,
     }
   }
   if (def) {
-    const targets = writeTargetsOf(resolveTemplateCached(
-      tab, { def, purpose: 'aiWrite', ignoreAppliesTo: true }, projectId,
-    ))
-    return { allowedKeys: new Set(targets.keys), fields: targets.custom, revision: def.revision }
+    const tpl = resolveTemplateCached(tab, { def, purpose: 'aiWrite', ignoreAppliesTo: true }, projectId)
+    const targets = writeTargetsOf(tpl)
+    return {
+      allowedKeys: new Set(targets.keys), fields: targets.custom,
+      revision: def.revision, basis: basisOfTpl(tpl),
+    }
   }
 
   let loaded: { config: AtlasSchemaConfig; newerFormat: boolean; error?: string }
@@ -138,13 +155,13 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
     loaded = await loadAtlasSchema(projectId, tab.id)
   } catch (e) {
     return {
-      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0,
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0, basis: '',
       lockedReason: `字段配置读取失败：${e instanceof Error ? e.message : String(e)}`,
     }
   }
   if (loaded.newerFormat || loaded.error) {
     return {
-      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: loaded.config.revision,
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: loaded.config.revision, basis: '',
       lockedReason: loaded.error ?? '字段配置来自更新的版本，已锁定为只读',
     }
   }
@@ -157,6 +174,7 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
     allowedKeys: new Set(targets.keys),
     fields: targets.custom,
     revision: loaded.config.revision,
+    basis: basisOfTpl(tpl),
   }
 }
 

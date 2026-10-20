@@ -7,7 +7,7 @@
 import { TABS } from '@/lib/schema'
 import { resolveAtlasFields } from '@/lib/atlas/schema'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
-import { tableFieldsOf, toTableFieldProjection, aiReadableTableFieldsOf, indexRulesOf } from '@/lib/templates/consumers'
+import { tableFieldsOf, toTableFieldProjection, aiReadableTableFieldsOf, indexRulesOf, pickValuesOfKeys } from '@/lib/templates/consumers'
 import { renderTable } from '@/lib/ai/tableRender'
 import { adaptBuiltinTab } from '@/lib/templates/legacyAdapter'
 import { loadAtlasFieldsForAI, loadAtlasAiWriteTargets } from '@/lib/ai/atlasContext'
@@ -302,11 +302,57 @@ const cfg = mkConfig()
   ok('⑬ 旧配置有、快照里没有的字段不可写', !write.allowedKeys.has('cf_legacy'))
   ok('⑬ 内置可写列仍在', write.allowedKeys.has('名称'))
 
+  // ── ⑭ 生成期基准：用 aiWrite 语义摘要，而不是 configuration revision ──
+  const expectDigest = resolveTemplateForTab(RACES, { def, purpose: 'aiWrite', ignoreAppliesTo: true }).semanticDigest
+  ok('⑭ 快照路径给出非空基准', write.basis.length > 0)
+  ok('⑭ 基准 = aiWrite 用途过滤后的语义摘要', write.basis === expectDigest,
+    `basis=${write.basis} expect=${expectDigest}`)
+
+  // 只改字段顺序（纯布局）⇒ 基准不变：生成中的结果不该因此作废
+  const reordered: TemplateDef = {
+    ...def,
+    fields: [...def.fields].reverse().map((f, i) => ({ ...f, order: i })),
+  }
+  await db.setSettingFor(pid, projectTemplateKeyOf('races'), reordered)
+  __resetTemplateCacheForTests()
+  const layoutWrite = await loadAtlasAiWriteTargets(RACES, pid)
+  ok('⑭ 只改字段顺序不算语义变化（基准不变）', layoutWrite.basis === write.basis,
+    `before=${write.basis} after=${layoutWrite.basis}`)
+
+  // 生成期间关掉「AI 可填写」⇒ 基准变化，旧结果应整体作废
+  const tightened: TemplateDef = {
+    ...def,
+    revision: 2,
+    semanticDigest: 'f1:q2ctx2',
+    fields: def.fields.map(f => f.id === 'cf_fill'
+      ? { ...f, permissions: { ...f.permissions, aiWrite: false } }
+      : f),
+  }
+  await db.setSettingFor(pid, projectTemplateKeyOf('races'), tightened)
+  __resetTemplateCacheForTests()
+  const tightenedWrite = await loadAtlasAiWriteTargets(RACES, pid)
+  ok('⑭ 生成期间关掉 AI 可填写 ⇒ 基准变化', tightenedWrite.basis !== write.basis,
+    `before=${write.basis} after=${tightenedWrite.basis}`)
+  ok('⑭ 收紧后该字段退出可写目标', !tightenedWrite.allowedKeys.has('cf_fill'))
+
   // 负控：拿掉快照后旧配置字段重新可见（证明上面的差异来自快照，不是配置里本来就没有）
   await db.delSettingFor(pid, projectTemplateKeyOf('races'))
   __resetTemplateCacheForTests()
   const legacyKeys = ((await loadAtlasFieldsForAI(RACES)) ?? []).map(f => f.key)
   ok('⑬ 负控：未采用快照时旧配置字段照常可见', legacyKeys.includes('cf_secret') && legacyKeys.includes('cf_legacy'))
+  ok('⑭ 未采用快照时同样给出基准（配置路径）', (await loadAtlasAiWriteTargets(RACES, pid)).basis.length > 0)
+}
+
+// ── ⑮ 角色卡 AI 写回：只接受当前模板可写键（防幽灵字段） ──
+{
+  const r = pickValuesOfKeys({
+    '基础信息::姓名': '叶昭',
+    '基础信息::年龄': '17',
+    '旧模块::已删字段': '不该写进去',
+  }, ['基础信息::姓名', '基础信息::年龄'])
+  ok('⑮ 只保留当前可写字段', Object.keys(r.picked).length === 2 && r.picked['基础信息::姓名'] === '叶昭')
+  ok('⑮ 幽灵字段被丢弃并计数', r.dropped === 1 && !('旧模块::已删字段' in r.picked))
+  ok('⑮ 全部合法时 dropped=0', pickValuesOfKeys({ a: '1' }, ['a']).dropped === 0)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

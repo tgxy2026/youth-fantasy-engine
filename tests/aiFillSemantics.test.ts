@@ -25,12 +25,21 @@ function main() {
   ok('AI 新增：点开的是新建弹窗 setShowFill(true)', cs.includes('onClick={() => setShowFill(true)}'))
   ok('AI 新增：弹窗标题为「AI 新增 · 页签名」', cs.includes('AI 新增 · ${tab.name}'))
   ok('🔴 AI 补全：新增独立状态 setShowFillExisting(true)', cs.includes('const [showFillExisting, setShowFillExisting] = useState(false)') && cs.includes('onClick={() => setShowFillExisting(true)}'))
-  ok('🔴 AI 补全：传 existing={draft.data}（已填字段锁定、只补空白）', cs.includes('existing={draft.data}'))
+  // WT2：existing 只带「允许 AI 参考」的已填值（禁读字段的值不进模型材料）
+  ok('🔴 AI 补全：传进来的已填值只含可参考字段（已填字段锁定、只补空白）',
+    cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)\) out\[k\] = v/.test(cs))
   ok('🔴 AI 补全：弹窗标题带当前卡名', cs.includes('AI 补全 · ${draft.name}'))
   ok('🔴 AI 补全：未选卡时禁用（!aiReady || !draft）', cs.includes('disabled={!aiReady || !draft}'))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet 同口径）',
-    /for \(const \[k, v\] of Object\.entries\(values\)\) if \(v && v\.trim\(\)\) next\.data\[k\] = v/.test(cs))
+    /const accepted = acceptAiValues\(values\)/.test(cs)
+    && /if \(v && v\.trim\(\)\) next\.data\[k\] = v/.test(cs)
+    && /if \(cur\) continue/.test(cs))
   ok('AI 新增仍走 handleFill（建卡落库），未被改动', cs.includes('onSubmit={handleFill}'))
+  // WT2：卡片也要按有效模板分读 / 写两个用途，且旧结果不得写进新结构
+  ok('🔴 采用模板后卡片 AI 清单分别按 aiWrite / aiRead 解析',
+    cs.includes("purpose: 'aiWrite'") && cs.includes("purpose: 'aiRead'"))
+  ok('🔴 AI 结果只保留当前可写键（防幽灵字段）', cs.includes('pickValuesOfKeys(values, cardAiFields'))
+  ok('🔴 模板在生成期间改过 ⇒ 整批作废', cs.includes('acceptAiValues(values)') && cs.includes('semanticDigest !== aiBasisRef.current'))
 
   // ── ② 世界构建组 + 全项目表格（TableSheet）：右上角「AI 新增」，行首才是「AI 补全本行空白」 ──
   const ts = read('src/components/sheets/TableSheet.tsx')

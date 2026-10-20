@@ -9,7 +9,7 @@
  * 🔴 订阅 `subscribeTemplateStore`：采用 / 放弃自定义 / 迁移回滚都会 emit，
  *    否则页面会停在旧结构，作者以为"点了采用没反应"。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import { getCurrentProjectId } from '@/lib/db'
@@ -73,4 +73,19 @@ export function useSheetTemplate(
   )
 
   return { def, effectiveColumns, aiWriteTemplate }
+}
+
+/**
+ * AI 生成期基准（3.2.0 · WT2）：弹窗**打开那一刻**记下模板语义摘要，关窗清空。
+ *
+ * 🔴 只在打开时取：生成期间模板 / 权限被改（含另一台设备同步到达）时这个值不跟着更新，
+ *    应用前与重读结果比对必然失配 ⇒ 旧结果作废。只挪位置 / 改布局不进摘要，不会误杀。
+ */
+export function useAiWriteBasis(open: boolean, digest: string): { current: string | null } {
+  const ref = useRef<string | null>(null)
+  useEffect(() => {
+    if (!open) { ref.current = null; return }
+    if (ref.current === null) ref.current = digest
+  }, [open, digest])
+  return ref
 }

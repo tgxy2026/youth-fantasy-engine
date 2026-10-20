@@ -269,11 +269,13 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 {
   const model = read('src/components/sheets/useTableSheetModel.ts')
   // 3.1.3 · R12：清单改为按 `purpose:'aiWrite'` 独立解析（不再从"表格可见列"派生）
+  // WT2 起解析在 useSheetTemplate 里做（模型只消费解析结果），源码闸跟着看真源。
+  const hook = read('src/components/templates/useSheetTemplate.ts')
   ok('⑫ 交给 AI 的字段清单按 aiWrite 解析（含自定义字段）',
     /const tableFields = useMemo<TemplateField\[\]>/.test(model)
-    && /purpose: 'aiWrite'/.test(model))
+    && /purpose: 'aiWrite'/.test(hook))
   ok('⑫ 未开放「允许 AI 填写」的自定义字段不进清单（口径在 resolveAtlasFields 里）',
-    /purpose: 'aiWrite'/.test(model) && /aiWriteFieldsOf/.test(model)
+    /purpose: 'aiWrite'/.test(hook) && /aiWriteFieldsOf/.test(model)
     // 口径仍只有一处：解析侧按 aiWritable 过滤，投影侧只收 source==='custom'
     // 🔴 断言「同一行里按 aiWrite 口径读 aiWritable」而非整行字面量：
     //    过滤条件可能因其他选项（如 !raw 快照视图）调整前缀，约束点不应随之假红
@@ -928,7 +930,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉓c R12：三条回填路径都先核基准',
     (model.match(/verifyAiWriteBase\(\)/g) ?? []).length >= 3)
   ok('㉓c R12：应用前重读配置（不是拿内存里的旧清单）', model.includes('loadAtlasAiWriteTargets'))
-  ok('㉓c R12：revision 不一致 ⇒ 作废', model.includes('targets.revision !== atlasConfig.revision'))
+  // 3.2.0 · WT2：基准从 revision 改为「生成时的 aiWrite 语义摘要」——
+  // 采用快照后 revision 是快照自己的代号，与图鉴配置各数各的，不能混比。
+  ok('㉓c R12/WT2：生成期语义摘要不一致 ⇒ 作废', model.includes('targets.basis !== aiGenBasisRef.current'))
   ok('㉓c R12：未知键不再默默写进草稿',
     (model.match(/allowedKeys\.has\(k\)/g) ?? []).length >= 2)
   ok('㉓c R12：补全本行还校验"这一行内容在生成期间变没变"',

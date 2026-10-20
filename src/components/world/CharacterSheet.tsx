@@ -36,9 +36,10 @@ import { characterCardTargets, isCharacterCardTab, planCardMove } from '@/lib/wo
 import CardMoveDialog from '@/components/world/CardMoveDialog'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { ImportRowResult } from '@/lib/storage/tableIO'
-import { useSheetTemplate } from '@/components/templates/useSheetTemplate'
+import { useSheetTemplate, useAiWriteBasis } from '@/components/templates/useSheetTemplate'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { cardGroupsOfTemplate } from '@/lib/templates/render'
+import { pickValuesOfKeys } from '@/lib/templates/consumers'
 import type { TemplateFieldType } from '@/lib/templates/types'
 import TemplateManagerDialog from '@/components/templates/TemplateManagerDialog'
 import { isTemplateTab } from '@/lib/templates/eligible'
@@ -251,6 +252,75 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     [tab, templateDef, cardGroups],
   )
   /**
+   * 交给 AI 的卡片字段（3.2.0 · WT2）。
+   *
+   * 🔴 采用模板后按 `purpose:'aiWrite'` 解析：作者在模板里关掉「AI 可填写」的字段
+   *    既不该出现在提示词里，也不该被回填 —— 与表格页签同一口径。
+   * 🔴 未采用模板时沿用 `cardFields`：老项目没有快照，行为一个字节都不动。
+   */
+  const cardAiFields = useMemo<TemplateField[]>(() => {
+    if (!templateDef) return cardFields
+    const tpl = resolveTemplateForTab(tab, { def: templateDef, purpose: 'aiWrite', ignoreAppliesTo: true })
+    return tpl.fields.map(f => ({
+      key: f.sourceKey,
+      label: f.label,
+      ...(f.description ? { desc: f.description } : {}),
+      ...(f.example ? { example: f.example } : {}),
+    }))
+  }, [tab, templateDef, cardFields])
+
+  /**
+   * AI **可参考**的键（`purpose:'aiRead'`）。
+   *
+   * 🔴 为什么要单独有：`existing` 会被摊平成「已有什么」发给模型。模板里关掉
+   *    「允许 AI 参考」的字段即使可写，其**已填值也不能进入这份材料**。
+   *    未采用模板 ⇒ null，沿用原来的整份草稿。
+   */
+  const cardAiReadKeys = useMemo<Set<string> | null>(() => {
+    if (!templateDef) return null
+    const tpl = resolveTemplateForTab(tab, { def: templateDef, purpose: 'aiRead', ignoreAppliesTo: true })
+    return new Set(tpl.fields.map(f => f.sourceKey))
+  }, [tab, templateDef])
+
+  /** 只把可参考字段的已填值交给 AI（禁读字段的值一律不出现在材料里） */
+  const cardAiExisting = useMemo(() => {
+    if (!draft) return undefined
+    if (!cardAiReadKeys) return draft.data
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(draft.data)) if (cardAiReadKeys.has(k)) out[k] = v
+    return out
+  }, [draft, cardAiReadKeys])
+
+  /**
+   * 「AI 补全」的字段清单：**已填但禁读**的字段标 `locked`。
+   * 不标的话，它既不在 `existing` 里（值不能发出去）又被当成空字段 ——
+   * AI 会去「补」一个作者早已填好的栏，采用时把它覆盖掉。
+   */
+  const cardAiFillFields = useMemo<TemplateField[]>(() => {
+    if (!cardAiReadKeys || !draft) return cardAiFields
+    return cardAiFields.map(f =>
+      !cardAiReadKeys.has(f.key) && (draft.data[f.key] ?? '').trim() ? { ...f, locked: true } : f)
+  }, [cardAiFields, cardAiReadKeys, draft])
+
+  // WT2 生成期基准：弹窗打开那一刻的模板语义摘要（未采用模板时为空串 = 不判失效）
+  const aiBasisRef = useAiWriteBasis(showFill || showFillExisting, templateDef?.semanticDigest ?? '')
+
+  /**
+   * AI 结果落笔前复核：模板变了 ⇒ 整批作废；只保留**当前可写字段**的值。
+   * 🔴 防幽灵写入：模型可能按旧清单返回已删除 / 已归档 / 已禁写的键，
+   *    直接摊进 `data` 会在卡片里留下模板看不见、但导出与索引仍可能碰到的字段。
+   */
+  const acceptAiValues = (values: Record<string, string>): Record<string, string> | null => {
+    if (templateDef && aiBasisRef.current && templateDef.semanticDigest !== aiBasisRef.current) {
+      showToast('模板在生成期间改过（为避免写进已不存在的字段，本次结果已作废），请重新生成', 'error')
+      return null
+    }
+    if (!templateDef) return values
+    const { picked, dropped } = pickValuesOfKeys(values, cardAiFields.map(f => f.key))
+    if (dropped > 0) showToast(`已忽略 ${dropped} 个当前模板中不可写的字段`, 'error')
+    return picked
+  }
+  /**
    * 标题改名时要顺带补「姓名」的存储键。
    * 🔴 采用模板后以模板的 `nameFieldId` 为准 —— 作者可能把姓名换成了别的字段，
    *    继续用 `cardNamePath` 会往一个已经隐藏/归档的旧槽位里写值。
@@ -413,15 +483,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const handleFill = async (values: Record<string, string>) => {
     // R8：建卡后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止）
     if (await blockedByMigration('ai-writeback')) return
+    const accepted = acceptAiValues(values)
+    if (!accepted) return
     if (!await flushCurrentDraft()) return
-    const nameKey = Object.keys(values).find(k => k.endsWith('::姓名'))
-    const name = (nameKey ? values[nameKey] : '')?.trim() || `未命名${noun}`
+    const name = (nameStorageKey ? values[nameStorageKey] : '')?.trim() || `未命名${noun}`
     const rec: CardRecord = {
       id: uid(),
       projectId: getCurrentProjectId(),
       tabId: tab.id,
       name,
-      data: { ...values },
+      data: { ...accepted },
       order: records.length,
     }
     await saveCardRecord(rec)
@@ -438,8 +509,15 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    */
   const handleFillExisting = (values: Record<string, string>) => {
     if (!draft) return
+    const accepted = acceptAiValues(values)
+    if (!accepted) return
     const next = { ...draft, data: { ...draft.data } }
-    for (const [k, v] of Object.entries(values)) if (v && v.trim()) next.data[k] = v
+    for (const [k, v] of Object.entries(accepted)) {
+      // 只补空白：生成期间作者手填的内容不覆盖（模型可能按过期空白清单返回它）
+      const cur = ((next.data[k] ?? '') as string).trim()
+      if (cur) continue
+      if (v && v.trim()) next.data[k] = v
+    }
     setDraft(next)
     setShowFillExisting(false)
   }
@@ -1036,7 +1114,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
       {showFill && (
         <AITemplateFill
-          fields={cardFields}
+          fields={cardAiFields}
           // 草稿本按「这张卡」存：换到另一张角色卡时，攒的草稿不会跟错人
           draftScope={`card::${tab.id}::${draft?.id ?? 'new'}`}
           title={`AI 新增 · ${tab.name}`}
@@ -1048,8 +1126,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
       {showFillExisting && draft && (
         <AITemplateFill
-          fields={cardFields}
-          existing={draft.data}
+          fields={cardAiFillFields}
+          existing={cardAiExisting}
           draftScope={`card::${tab.id}::${draft.id}`}
           title={`AI 补全 · ${draft.name}`}
           sketchPlaceholder={`补充「${draft.name}」已填内容的背景 / 细节，让 AI 补全其余空白字段（已填的不会动）…`}
