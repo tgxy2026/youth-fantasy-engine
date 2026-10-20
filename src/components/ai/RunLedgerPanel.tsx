@@ -130,6 +130,16 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                           if (fb.length === 0) return null
                           return <span title="从发出请求到第一个字出现（最快的一次）"> · 首字 {(Math.min(...fb) / 1000).toFixed(1)}s</span>
                         })()}
+                        {/* 3.2.0 · WQ5：本次调用的协议降级（如"端点不支持推理＋结构"） */}
+                        {(() => {
+                          const lims = r.calls.flatMap(c => c.protocol?.limitations ?? [])
+                          if (lims.length === 0) return null
+                          return (
+                            <span className="text-amber" title={[...new Set(lims)].join('\n')}>
+                              {' '}· {lims.length} 处协议降级
+                            </span>
+                          )
+                        })()}
                         {/* 3.2.0 · WQ7：并行期间被**排除**的调用 —— 少算要说明白，不能悄悄少算 */}
                         {r.excludedCalls && r.excludedCalls.count > 0 && (
                           <span

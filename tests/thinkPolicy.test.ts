@@ -8,6 +8,7 @@
 import { chat } from '../src/lib/ai'
 import type { AIProvider } from '../src/lib/ai'
 import { readAiModule } from './sourceScan'
+import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean, e = '') => { if (c) { pass++; console.log('  PASS', n) } else { fail++; console.log('  FAIL', n, '::', e) } }
@@ -57,7 +58,17 @@ async function main() {
   // 🔴 读**整个 ai 模块**（门面 + aiCore/*）：think 归中规则随拆分搬进了 aiCore/chat.ts，
   //    只读门面会静默失明（2026-10-04 踩过）。
   const src = readAiModule()
-  ok('🔴 归中规则在 chat() 入口一处', /const think = opts\.think \?\? \(opts\.json \? false : undefined\)/.test(src))
+  // 🔴 断言语义而不是字面量：3.2.0 · WQ5 把「要不要思考」的判定搬进了
+  //    `ai/outputProtocol.ts`（与「要不要 JSON」解耦后必然如此），chat() 只负责调用它。
+  //    这里钉两件事：① chat() 确实走协议解析；② 判据只有那一处（不许在 chat() 里另写一份）。
+  ok('🔴 归中规则在 chat() 入口一处（经 outputProtocol.resolveOutputProtocol）',
+    /resolveOutputProtocol\(/.test(src) && /const think = protocol\.think/.test(src)
+    && !/opts\.json \? false : undefined/.test(src))
+  // 🔴 判据文件不属 `readAiModule()` 的范围（它只读门面 + aiCore/*），所以单独读 ——
+  //    别为了这一条去改 `readAiModule`，那会牵动其它十几道闸的取证范围。
+  const protoSrc = readFileSync('src/lib/ai/outputProtocol.ts', 'utf8')
+  ok('🔴 think 判据只在 outputProtocol 一处（think=false/true/undefined 由 reasoning 推）',
+    /reasoning === 'off'/.test(protoSrc) && /const think = d\.think !== undefined/.test(protoSrc))
   ok('🔴 ollama 路径只认 ===false（true 与 undefined 都不下发）', /if \(think === false\) body\.think = false/.test(src))
 
   // ⑥ 结构化任务盘点：显式关的比例（记录现状，防止以后回退成「到处各写一份」）

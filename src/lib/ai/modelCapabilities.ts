@@ -23,6 +23,15 @@ export interface ModelCapability {
   note?: string
 }
 
+/**
+ * 能力结论的来源（方案 §16.6）：
+ *  · `user-config`   —— 作者在设置里明确配的；
+ *  · `isolated-test` —— 在隔离端点实测通过（作者主动测的，不是自动探测）；
+ *  · `unknown`       —— 只是按模型名/常识推断，**不足以据此改变请求形态**。
+ * 🔴 只有前两者能用来「下发结构格式 / 开推理」；`unknown` 一律走提示词约束原路径。
+ */
+export type CapabilitySource = 'user-config' | 'isolated-test' | 'unknown'
+
 export interface ModelCapabilities {
   /** 模型 ID */
   modelId: string
@@ -36,16 +45,30 @@ export interface ModelCapabilities {
   maxOutput: number
   /** 额外能力 */
   extra: ModelCapability[]
+  /** 能力结论的来源（缺省按 `unknown` 处理：只当提示，不据此改请求） */
+  source?: CapabilitySource
+  /**
+   * 结构格式的下发方式（缺省 `none` ＝ 只靠提示词约束）。
+   * 🔴 同一兼容接口**不按模型名**一律认定能力；要下发必须先由作者配置或实测确认。
+   */
+  structuredOutput?: 'none' | 'json-object' | 'json-schema'
+  /** 是否**确认**「推理 + 结构输出」可同时使用（缺省 false＝未确认） */
+  reasoningWithStructure?: boolean
 }
 
 // ============ 默认能力配置 ============
 export const DEFAULT_CAPABILITIES: ModelCapabilities = {
   modelId: 'default',
+  /** 提示词约束下能否产出 JSON —— 这不是「能下发结构格式」的凭据 */
   jsonOutput: true,
   thinking: false,
   maxContext: 32768,
   maxOutput: 4096,
   extra: [],
+  // 🔴 未知端点的诚实默认：只走提示词约束，不下发结构格式，也不假设推理能与结构共存
+  source: 'unknown',
+  structuredOutput: 'none',
+  reasoningWithStructure: false,
 }
 
 // ============ 能力检测 ============

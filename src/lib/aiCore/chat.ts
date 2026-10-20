@@ -8,7 +8,7 @@
 import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
 import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
-  OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE, precheck,
+  OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, precheck,
   injectUserSystemPrompt,
   type AIProvider, type ChatMessage,
 } from '@/lib/aiCore/core'
@@ -19,6 +19,9 @@ import { mergeHeaders } from '@/lib/aiCore/headers'
 import { usageFromOllama, usageFromOpenAI, usageFromStreamChunk, mergeUsage, type RealUsage } from '@/lib/aiCore/usageParse'
 // 3.2.0 · WQ6：请求生命周期（本轮只做**旁路记录**，不接管超时语义）
 import { createLifecycle, transitionLifecycle } from '@/lib/ai/streaming'
+// 3.2.0 · WQ5：输出结构与推理需求分开解析（唯一口径）
+import { resolveOutputProtocol, type OutputKind, type ReasoningNeed } from '@/lib/ai/outputProtocol'
+import { detectCapabilities } from '@/lib/ai/modelCapabilities'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { uid } from '@/lib/app/id'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
@@ -40,6 +43,18 @@ export interface ChatOptions {
    * 才能从机制上堵住漏传（新增任务也不例外）。
    */
   json?: boolean
+  /**
+   * 输出结构声明（3.2.0 · WQ5）：`text` / `json-object` / `json-schema`。
+   * 🔴 与 `reasoning` **分开**声明 —— 「要 JSON」不等于「不许思考」。
+   *    不传则按旧口径（`json:true` ⇒ JSON 对象 + 关推理），行为与 3.1.x 逐字一致。
+   */
+  output?: OutputKind
+  /**
+   * 推理需求（3.2.0 · WQ5）：`default`（按模型默认）/ `off` / `required`。
+   * 声明为 `required` 但端点未确认能「推理＋结构」共存时会**降级为 off 并记一条限制**，
+   * 不会静默地既开推理又输出坏 JSON。
+   */
+  reasoning?: ReasoningNeed
   /**
    * 采样温度，默认按 DEFAULT_TEMPERATURE（0.85，偏创意）；
    * 若同时传了 json:true 且未显式给 temperature，则默认改用 JSON_TASK_TEMPERATURE（0.3）。
@@ -152,24 +167,31 @@ async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts)
 
 /** 统一对话入口：按 provider.type 分发 */
 export async function chat(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
-  // 注意：opts.think 默认 undefined → ollamaChatRaw 不传 think 字段，思考型模型保持思考。
+  // 输出结构与推理需求在这里**一次**解析（唯一口径在 `ai/outputProtocol.ts`）。
   //
-  // 🔴🔴 2026-10-03 统一口径：**JSON 任务默认关思考**（显式 `think: true` 仍是逃生口）。
-  //   依据（本文件上方实测）：本地思考型模型思考开 ⇒ 50.5 秒 / 思考链 12687 字 /
-  //   **content 只剩 271 字且被截断** ⇒ JSON 必残。而调用点里 32 处 `json: true` 只有十来处
-  //   显式写了 `think: false`，其余在本地路径上一直开着思考 —— 「功能坏掉」的风险远大于
-  //   「多想一会儿」的收益。要推理的长文任务（正文续写 / 整章改写 / 伴写 / 深度设定深化）
-  //   不是 JSON 任务，保持 undefined、照旧让思考型模型思考。
-  // ⚠️ 一次「想给它开思考」的取舍备案在此：创意生成（`aiTasks/creative.ts`）也走 `json: true`
-  //   （要解析成结构化清单），因此同样落在「关」这一侧 —— 这是**有意为之**：思考型模型思考开
-  //   会把 content 截到几百字，那不是「创意少一点」，而是**整份 JSON 直接坏掉**。
-  //   想要更好的创意，走草图（作者自己多给几条线索）比赌截断靠谱。
-  const think = opts.think ?? (opts.json ? false : undefined)
+  // 历史备案（3.1.x，仍然有效的一部分）：本地思考型模型思考开 ⇒ 实测 50.5 秒 / 思考链 12687 字 /
+  //   **content 只剩 271 字且被截断** ⇒ 结构输出必残。所以 **旧口径 `json: true` 依旧关推理**，
+  //   与 3.1.x 逐字一致（不能借迁移悄悄改老调用点的行为）。
+  //
+  // 3.2.0 · WQ5 改的是另一半：想保留构思能力的任务（大纲 / 设定 / 创意）现在可以显式声明
+  //   `output: 'json-object'` + `reasoning: 'default' | 'required'`，不必再被「要 JSON」绑架。
+  //   🔴 但 `required` + 结构输出只在端点**确认**支持共存时才生效，否则降级为 off 并记一条限制
+  //   （见 outputProtocol 的能力闸）—— 宁可按老路走，也不赌「既推理又吐完整 JSON」。
+  const protocol = resolveOutputProtocol({
+    ...(opts.output ? { output: opts.output } : {}),
+    ...(opts.reasoning ? { reasoning: opts.reasoning } : {}),
+    ...(opts.json ? { json: true } : {}),
+    ...(opts.think !== undefined ? { think: opts.think } : {}),
+    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(config.temperature !== undefined ? { providerTemperature: config.temperature } : {}),
+    caps: detectCapabilities(config.model),
+  })
+  const think = protocol.think
   // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
   // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
   // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
   // 本地小模型与云端大模型合适值差别很大；JSON 任务仍固定低温，不受影响。
-  const temperature = opts.temperature ?? (opts.json ? JSON_TASK_TEMPERATURE : (config.temperature ?? DEFAULT_TEMPERATURE))
+  const temperature = protocol.temperature
   // 🔴 兜底注入「作者自定义系统提示词」（2026-10-06）：这里是全项目**唯一**能让「所有 AI 功能
   //    都接上」这句话成立的位置。已显式调过 `composeSystemPrompt` 的链路内容里带标记，
   //    这里会跳过 —— 不会拼两遍，也不会改变既有行为。
@@ -230,7 +252,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //    的承诺同口径（2026-10-09 审计修）。
       //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
-      extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
+      extraOptions: opts.extraOptions ?? (protocol.output !== 'text' ? undefined : samplingOptionsOf(config)),
     })
     lifecycle = transitionLifecycle(lifecycle, 'completed')
     const out = raw.content
@@ -241,6 +263,11 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     reportUsage({
       model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
       request,
+      protocol: {
+        output: protocol.output,
+        reasoning: protocol.reasoning,
+        ...(protocol.limitations.length ? { limitations: protocol.limitations } : {}),
+      },
       promptTokens: hasRealPrompt ? real!.promptTokens : budget.estimates.input.tokens,
       ...(real?.completionTokens !== undefined ? { completionTokens: real.completionTokens } : {}),
       ...(real?.finishReason ? { finishReason: real.finishReason } : {}),
@@ -273,7 +300,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
   if (!config.model) throw new Error('未选择 Ollama 模型，请先到「模型设置 → 模型配置」拉取并选择本地模型。')
   // 构建请求体：**只有关思考时才传 think:false**。
-  // · JSON 任务：由 `chat()` 统一归一（`opts.think ?? (opts.json ? false : undefined)`）⇒ 这里会收到 false；
+  // · 结构化输出任务：由 `chat()` 经 `resolveOutputProtocol` 归一（旧 `json:true` ⇒ false）⇒ 这里会收到 false；
   //   理由是思考型模型思考开会把 content 截到只剩几百字，JSON 必残。
   // · 长文创作（正文续写 / 改写 / 伴写 / 深度设定深化）：think 为 undefined ⇒ **不下发该字段**，
   //   由模型/平台默认 —— 思考型模型（deepseek-r1 / gemma4 / qwen3.5）保持思考，利于深度设定补全。

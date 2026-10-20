@@ -144,8 +144,10 @@ const full: SamplingValues = {
     cfg.includes('留空 ＝ 不下发') && cfg.includes('结构化任务'))
   ok('🔴 装配层：chat() 确实用 provider 兜底（否则界面填了也白填）',
     readSrc('src/lib/aiCore/chat.ts').includes('samplingOptionsOf(config)'))
-  ok('🔴 结构化任务（json）不下发兜底参数 —— 与界面「结构化任务不受影响」的承诺同口径',
-    readSrc('src/lib/aiCore/chat.ts').includes('opts.json ? undefined : samplingOptionsOf(config)'))
+  // 🔴 3.2.0 · WQ5 起「是不是结构化任务」由 `outputProtocol` 判定（`json` 只是它的兼容包装），
+  //    所以这里断言语义：结构化输出时抑制兜底采样参数，判据来自协议解析结果。
+  ok('🔴 结构化任务不下发兜底参数 —— 与界面「结构化任务不受影响」的承诺同口径',
+    readSrc('src/lib/aiCore/chat.ts').includes("protocol.output !== 'text' ? undefined : samplingOptionsOf(config)"))
   ok('🔴 只抑制兜底来源：显式传入的 extraOptions 一律照发（酒馆有自己的参数面板）',
     readSrc('src/lib/aiCore/chat.ts').includes('opts.extraOptions ?? ('))
 

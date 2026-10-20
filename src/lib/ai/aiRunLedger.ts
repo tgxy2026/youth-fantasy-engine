@@ -152,6 +152,7 @@ function toRunCall(u: ChatUsage, via: 'task-id' | 'legacy-single-run'): AiRunCal
     ...(u.firstByteMs !== undefined ? { firstByteMs: u.firstByteMs } : {}),
     ...(u.finishReason ? { finishReason: u.finishReason } : {}),
     ...(u.request ? { request: pickRequest(u.request) } : {}),
+    ...(u.protocol ? { protocol: u.protocol } : {}),
     attributedBy: via,
     at: u.at,
   }

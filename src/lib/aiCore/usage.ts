@@ -36,6 +36,17 @@ export interface ChatUsage {
    * 🔴 这是作者最直观的"卡不卡"指标 —— 总耗时 30s 里如果是 25s 才出首字，体感和"20s 出字 + 10s 输出"完全不同。
    */
   firstByteMs?: number
+  /**
+   * 本次请求的输出协议与实际降级（3.2.0 · WQ5）。
+   * 🔴 降级必须随**这次调用**一起留档（方案 §16.6 末条）：事后按全局状态回看，
+   *    看不出「当时是哪个端点降了什么」。
+   */
+  protocol?: {
+    output: string
+    reasoning: string
+    /** 与声明不一致的地方（空/缺省＝声明被完整满足） */
+    limitations?: string[]
+  }
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
   /** 来源通道 */
