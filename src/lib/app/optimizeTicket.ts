@@ -41,6 +41,8 @@ import * as db from '@/lib/db'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { hashOf } from '@/lib/semantic/chunk'
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · W4：「加入工单」—— 把已落库的 AI 检查结论挂到按章的工单上
+import { joinCheckReportsToTicket, type ChapterRef } from '@/lib/revision/ticketIntake'
 
 /** 工单条目的来源分类 */
 export type TicketSource =
@@ -180,7 +182,15 @@ export async function buildTicket(opts: BuildTicketOpts = {}): Promise<TicketIte
     done++
     opts.onProgress?.(done, targets.length)
   }
-  return sortAndDedup(out)
+
+  // 3.2.0 · W4（「加入工单」）：把检查报告里**有实质发现**的条目并进工单。
+  // 🔴 本地确定性检查（错别字/敏感词/文风）先出，AI 检查结论后并 —— 同类问题以本地结论为准，
+  //    再按去重键合并，已有条目状态不被覆盖（作者标过的 skipped/done 不会被打回 pending）。
+  const refs: ChapterRef[] = targets.map(c => ({
+    id: c.chapter.id, title: c.chapter.title, no: c.no, body: c.chapter.content ?? '',
+  }))
+  const joined = await joinCheckReportsToTicket(db.getCurrentProjectId() ?? '', refs, sortAndDedup(out))
+  return sortAndDedup(joined.items)
 }
 
 /** 一章的体检报告 → 工单条目 */

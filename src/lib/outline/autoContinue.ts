@@ -331,6 +331,11 @@ async function selfRefine(
   body: string, ctx: ProjectContextResult, signal?: AbortSignal,
   onPhase?: (p: string) => void, request?: CallRequestContext,
   budget?: AttemptBudget,
+  /**
+   * 计划章号（W4：检查报告要按章挂在工单上）。
+   * 🔴 用章号而不是章 id：自检发生在 `createChapterAfter` **之前**，那时新章还没有 id。
+   */
+  chapterNo?: number,
 ): Promise<SelfRefineResult> {
   if (!ctx.text.trim() || countWords(body) < 200) {
     return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
@@ -357,6 +362,7 @@ async function selfRefine(
     await persistCheckReports({
       projectId: String(request.projectId),
       jobId: request.taskId,
+      ...(chapterNo !== undefined ? { chapterNo } : {}),
       reports: [
         { checkId: 'continuity', source: '章节自检 · 连续性', run: runs[0] as unknown as CheckRunLike },
         { checkId: 'ooc', source: '章节自检 · 人设', run: runs[1] as unknown as CheckRunLike },
@@ -841,7 +847,7 @@ export async function runAutoContinue(
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
       // WQ1-2：自检三项是必选项 —— 失败/取消/未完成都暂停连写，本章不落库，
       // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
-      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget)
+      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget, ordered.length + i + 1)
       body = refined.body
       if (refined.selfCheck.state !== 'completed') {
         const sc = refined.selfCheck

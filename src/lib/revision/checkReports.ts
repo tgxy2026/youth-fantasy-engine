@@ -148,6 +148,13 @@ export function planCheckReportPrune(
 export interface PersistCheckReportsInput {
   projectId: string
   jobId: string
+  /**
+   * 归属章节（3.2.0 · W4）。有它时「每任务 5 份」按**章**分组算（与作者口径一致），
+   * 没有时退回按任务分组 —— 老调用行为不变。
+   */
+  chapterId?: string
+  /** 计划章号（新章落库前只有这个可用；有它才能按章分组淘汰） */
+  chapterNo?: number
   /** 本次跑过的检查（顺序无关） */
   reports: readonly { checkId: string; source: string; run: CheckRunLike | null | undefined; evidence?: TicketEvidence[] }[]
 }
@@ -204,6 +211,9 @@ export async function persistCheckReports(
         findings,
         r.evidence,
         `检查 ${r.checkId}：严重 ${serious} / 中等 ${minor}`,
+        (input.chapterId || input.chapterNo !== undefined)
+          ? { ...(input.chapterId ? { chapterId: input.chapterId } : {}), ...(input.chapterNo !== undefined ? { chapterNo: input.chapterNo } : {}) }
+          : undefined,
       )
       if (res.ok) { out.saved++; seen.add(fp) }
       else out.skipped++
@@ -212,7 +222,14 @@ export async function persistCheckReports(
     // 淘汰：拿全项目报告（含刚写的）算一遍
     const all = (await listProjectRevisionPayloads(input.projectId))
       .filter(p => p.kind === 'report')
-      .map(p => ({ id: p.id, jobId: p.jobId, createdAt: p.createdAt, bytes: p.bytes }))
+      .map(p => {
+        const r = (p.report ?? {}) as Record<string, unknown>
+        const ch = typeof r.chapterId === 'string' && r.chapterId
+          ? r.chapterId
+          : (typeof r.chapterNo === 'number' ? `no:${r.chapterNo}` : '')
+        // 🔴 分组键 = 任务 + 章：「每章 5 份」才不会被同一任务里的其它章挤掉
+        return { id: p.id, jobId: ch ? `${p.jobId}::${ch}` : p.jobId, createdAt: p.createdAt, bytes: p.bytes }
+      })
     const drop = planCheckReportPrune(all)
     for (const id of drop) {
       await deleteRevisionPayload(id)

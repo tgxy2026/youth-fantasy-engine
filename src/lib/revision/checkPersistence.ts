@@ -34,6 +34,10 @@ export interface CheckPayload {
   result: unknown
   /** 证据列表 */
   evidence?: TicketEvidence[]
+  /** 归属章节（工单按章聚合的依据） */
+  chapterId?: string
+  /** 计划章号（新章落库前只有这个可用） */
+  chapterNo?: number
   /** 摘要 */
   summary: string
   /** 字节数 */
@@ -65,12 +69,24 @@ export async function persistCheckResult(
   result: unknown,
   evidence?: TicketEvidence[],
   summary?: string,
+  /**
+   * 归属章节（3.2.0 · W4）。
+   * 🔴 必须存：检查报告的下一站是「加入工单」，而工单是按**章**分组的；
+   *    只存 jobId 时，一个连写任务跨多章，报告就再也挂不回具体哪一章了。
+   */
+  opts?: { chapterId?: string; chapterNo?: number },
 ): Promise<CheckPersistResult> {
   try {
     const payloadId = `check-${uid()}`
     // 🔴 checkId / source / evidence 必须**跟载荷一起存**：
     //    否则读回来只能写 'unknown'（曾如此），筛选与去重全部失效。
-    const report = { checkId, source, result, evidence: evidence ?? [] }
+    const report = {
+      checkId, source, result, evidence: evidence ?? [],
+      ...(opts?.chapterId ? { chapterId: opts.chapterId } : {}),
+      // 🔴 连写新章在自检那一刻**还没有 id**（`createChapterAfter` 之后才有），
+      //    所以同时记计划章号：报告能立刻落库不丢，事后再靠章号挂回工单。
+      ...(opts?.chapterNo !== undefined ? { chapterNo: opts.chapterNo } : {}),
+    }
     const resultStr = JSON.stringify(report)
     const bytes = byteCount(resultStr)
 
@@ -106,6 +122,8 @@ export async function loadCheckResult(payloadId: string): Promise<CheckPayload |
     source: typeof r.source === 'string' ? r.source : 'unknown',
     result: r.result ?? {},
     ...(Array.isArray(r.evidence) ? { evidence: r.evidence as TicketEvidence[] } : {}),
+    ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
+    ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
     summary: p.summary,
     bytes: p.bytes,
     createdAt: p.createdAt,
