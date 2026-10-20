@@ -15,6 +15,12 @@ export interface ChatUsage {
   ms: number
   promptTokens?: number
   completionTokens?: number
+  /**
+   * 这次上报的 token 是**估算值**（3.2.0 · WQ7）。
+   * 🔴 厂商返回真实 usage 时为 undefined/false；只有拿不到时才置 true。
+   *    统计页必须能区分两者 —— 否则估算值会被当成账单依据。
+   */
+  tokensEstimated?: boolean
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
   /** 来源通道 */

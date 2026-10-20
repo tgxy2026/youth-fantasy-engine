@@ -117,6 +117,7 @@ function bindUsageSink(): void {
       ms: u.ms,
       ...(u.promptTokens !== undefined ? { promptTokens: u.promptTokens } : {}),
       ...(u.completionTokens !== undefined ? { completionTokens: u.completionTokens } : {}),
+      ...(u.tokensEstimated ? { tokensEstimated: true } : {}),
       ...(u.finishReason ? { finishReason: u.finishReason } : {}),
       at: u.at,
     })

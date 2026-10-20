@@ -15,6 +15,8 @@ import {
 // 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
 import { samplingOptionsOf } from '@/lib/ai/modelSampling'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+// 3.2.0 · WQ7：真实 token 用量提取（Ollama / OpenAI 兼容两套字段收在一处）
+import { usageFromOllama, usageFromOpenAI, usageFromStreamChunk, mergeUsage, type RealUsage } from '@/lib/aiCore/usageParse'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
 import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
@@ -109,6 +111,11 @@ interface ChatRaw {
   content: string
   /** Ollama 把模型加载进显存的耗时（毫秒）；联网接口无此概念，恒为 0 */
   loadMs: number
+  /**
+   * 真实 token 用量（WQ7）。拿不到就是 undefined —— 由 `chat()` 决定是否退回估算并标注，
+   * 通道层不编数字。
+   */
+  usage?: RealUsage
 }
 
 /** 内部调用参数：统一成对象，避免位置参数越加越乱 */
@@ -127,7 +134,7 @@ interface CallOpts {
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
 async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   if (config.type === 'ollama') return ollamaChatRaw(config, messages, o)
-  return { content: await openaiChat(config, messages, o), loadMs: 0 }
+  return openaiChat(config, messages, o)
 }
 
 /** 统一对话入口：按 provider.type 分发 */
@@ -178,7 +185,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   const t0 = Date.now()
   const usageSource: ChatUsage['source'] = config.type === 'ollama' ? 'ollama' : 'openai'
   try {
-    const out = (await chatRaw(config, msgs, {
+    const raw = await chatRaw(config, msgs, {
       timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
       think,
       signal: opts.signal,
@@ -193,12 +200,18 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
       extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
-    })).content
+    })
+    const out = raw.content
+    // 3.2.0 · WQ7：**真实用量优先**；只有拿不到时才退回估算，并打上 `tokensEstimated`
+    // （统计页据此区分"厂商报的数"与"我们估的数"，避免把估算当成账单依据）。
+    const real = raw.usage
+    const hasRealPrompt = real?.promptTokens !== undefined
     reportUsage({
       model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
-      // 🔴 这里的 token 是**估算值**（`requestBudget.estimateTokens`：中文 1 字≈1 token）。
-      //    真实 usage 由 WQ7 的通道解析补上；在此之前宁可给一个标明来源的估算，也不留空。
-      promptTokens: budget.estimates.input.tokens,
+      promptTokens: hasRealPrompt ? real!.promptTokens : budget.estimates.input.tokens,
+      ...(real?.completionTokens !== undefined ? { completionTokens: real.completionTokens } : {}),
+      ...(real?.finishReason ? { finishReason: real.finishReason } : {}),
+      ...(hasRealPrompt && real?.completionTokens !== undefined ? {} : { tokensEstimated: true }),
     })
     return out
   } catch (e) {
@@ -262,11 +275,15 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   // 流式：边读边回调，本地大参数模型首字出来就不转圈
   if (o.onToken) {
     let content = ''
+    // 🔴 流式用量在 `done:true` 的收尾块里（prompt_eval_count / eval_count），
+    //    逐块合并 —— 只读最后一块会漏掉部分中转实现把计数放在中间块的情况。
+    let usage: RealUsage = {}
     try {
       await readSSE(res, (obj) => {
         const chunk = obj as SseChunk
         const delta = chunk?.message?.content
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
+        usage = mergeUsage(usage, usageFromStreamChunk(obj, 'ollama'))
       }, () => clearTimer?.())
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
@@ -274,7 +291,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
       throw e
     }
     if (!content.trim()) throw new Error('Ollama 未返回内容，请确认模型名称正确且已拉取（ollama pull <模型名>）。')
-    return { content: stripThink(content), loadMs: 0 }
+    return { content: stripThink(content), loadMs: 0, usage }
   }
   const data = await res.json().catch(() => ({}))
   const msg = data?.message ?? {}
@@ -287,7 +304,11 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   if (!content.trim()) throw new Error('Ollama 未返回内容，请确认模型名称正确且已拉取（ollama pull <模型名>）。')
   // load_duration 单位为纳秒，转成毫秒
   const loadMs = Math.round(Number(data?.load_duration ?? 0) / 1e6)
-  return { content: stripThink(content), loadMs: Number.isFinite(loadMs) ? loadMs : 0 }
+  return {
+    content: stripThink(content),
+    loadMs: Number.isFinite(loadMs) ? loadMs : 0,
+    usage: usageFromOllama(data),
+  }
 }
 
 /**
@@ -324,7 +345,7 @@ function openaiSampling(o: CallOpts): Record<string, number> {
   return out
 }
 
-async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<string> {
+async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   const { timeoutMs } = o
   const base = openaiBaseOf(config.baseUrl || '')
   if (!base) throw new Error('未填写 API 接口地址（baseUrl）。')
@@ -387,6 +408,9 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     let content = ''
     /** 3.0 · W1-3：`content_filter` 表示被内容过滤截断 —— 此前全仓不读它（§14.1） */
     let finishReason = ''
+    // 3.2.0 · WQ7：兼容端点若在最后一块带 usage（需请求方要求 include_usage），有就收；
+    // 不主动加那个字段 —— 中转站对未知字段很敏感，400 一次就是整轮失败。
+    let streamUsage: RealUsage = {}
     try {
       await readSSE(res, (obj) => {
         const chunk = obj as SseChunk
@@ -394,6 +418,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         const fr = chunk?.choices?.[0]?.finish_reason
         if (typeof fr === 'string' && fr) finishReason = fr
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
+        streamUsage = mergeUsage(streamUsage, usageFromStreamChunk(obj, 'openai'))
       }, () => clearTimer?.())
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
@@ -432,7 +457,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           if (looksLikeRefusalText(c)) throw new AIRefusalError('refusal-text', c.trim().slice(0, 200))
           const out = stripThink(c)
           o.onToken?.(out)
-          return out
+          return { content: out, loadMs: 0, usage: usageFromOpenAI(data) }
         }
       }
       throw new Error('API 未返回内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 OpenAI 流式格式——请确认中转站文档给出的接口地址与模型名，或换官方接口测试。')
@@ -441,7 +466,14 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     if (looksLikeRefusalText(content)) {
       throw new AIRefusalError('refusal-text', content.trim().slice(0, 200))
     }
-    return stripThink(content)
+    return {
+      content: stripThink(content),
+      loadMs: 0,
+      usage: {
+        ...streamUsage,
+        ...(finishReason ? { finishReason } : {}),
+      },
+    }
   }
   const data = await res.json().catch(() => ({}))
   const content = data?.choices?.[0]?.message?.content
@@ -452,7 +484,14 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   if (looksLikeRefusalText(String(content))) {
     throw new AIRefusalError('refusal-text', String(content).trim().slice(0, 200))
   }
-  return stripThink(content)
+  return {
+    content: stripThink(content),
+    loadMs: 0,
+    usage: {
+      ...usageFromOpenAI(data),
+      ...(finishReason ? { finishReason } : {}),
+    },
+  }
 }
 
 // ---- 连通性测试 ----
