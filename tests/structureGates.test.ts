@@ -637,5 +637,15 @@ if (!SRC) {
   }
 }
 
+{
+  // ⑬ 归批完整性：写了测试但全量从不跑它 —— 这是最高危的假绿（"有测试"三个字骗了所有人）
+  // 2026-10-20 加：本轮新增 5 个测试文件，全靠手工往 run-batches.sh 里加，漏一次就再也不会跑。
+  const sh = fs.readFileSync(path.resolve('tests/run-batches.sh'), 'utf8')
+  const all = fs.readdirSync(path.resolve('tests')).filter(f => f.endsWith('.test.ts'))
+  const missing = all.filter(f => !sh.includes(f.slice(0, -'.test.ts'.length)))
+  ok(`⑬ 全部测试文件都已归批（${all.length} 个）`, missing.length === 0,
+    missing.join('、') || '')
+}
+
 console.log(`\nstructureGates: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1
