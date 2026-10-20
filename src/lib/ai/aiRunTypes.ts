@@ -71,8 +71,10 @@ export interface AiRunCall {
   tokensEstimated?: boolean
   /** 首字耗时（毫秒，流式才有） */
   firstByteMs?: number
-  /** 结束原因（如 `stop` / `length` / `content_filter`）—— 拒答感知的判据来源 */
+  /** 结束原因（如 `stop` / `length` / `content_filter` / `eof`＝对端直接收掉、原因未知） */
   finishReason?: string
+  /** 这次逻辑调用实际发了几次请求（>1 才写） */
+  attempts?: number
   /** 请求上下文（WQ7）：这次调用自报属于谁 */
   request?: AiRunCallRequest
   /**

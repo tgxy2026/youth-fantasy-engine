@@ -5,7 +5,7 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, type StreamReport, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
 import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, precheck,
@@ -279,6 +279,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       promptTokens: hasRealPrompt ? real!.promptTokens : budget.estimates.input.tokens,
       ...(real?.completionTokens !== undefined ? { completionTokens: real.completionTokens } : {}),
       ...(real?.finishReason ? { finishReason: real.finishReason } : {}),
+      ...(real?.attempts !== undefined ? { attempts: real.attempts } : {}),
       ...(hasRealPrompt && real?.completionTokens !== undefined ? {} : { tokensEstimated: true }),
       // 流式才有首字；非流式整段一次到，首字耗时没有独立意义（不写 0 冒充）。
       ...(lifecycle.firstByteAt !== undefined ? { firstByteMs: lifecycle.firstByteAt - lifecycle.startedAt } : {}),
@@ -356,8 +357,9 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     // 🔴 流式用量在 `done:true` 的收尾块里（prompt_eval_count / eval_count），
     //    逐块合并 —— 只读最后一块会漏掉部分中转实现把计数放在中间块的情况。
     let usage: RealUsage = {}
+    let report: StreamReport = { sawDone: false, chunks: 0 }
     try {
-      await readSSE(res, (obj) => {
+      report = await readSSE(res, (obj) => {
         const chunk = obj as SseChunk
         const delta = chunk?.message?.content
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
@@ -370,8 +372,15 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
       if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试；若长期超时建议换用更小的模型。`)
       throw e
     }
+    // 🔴 流里报错就不能算成功（HTTP 200 只是"连上了"）
+    if (report.errorMessage) throw new Error(`Ollama 在生成过程中报错：${report.errorMessage}`)
     if (!content.trim()) throw new Error('Ollama 未返回内容，请确认模型名称正确且已拉取（ollama pull <模型名>）。')
-    return { content: stripThink(content), loadMs: 0, usage }
+    return {
+      content: stripThink(content),
+      loadMs: 0,
+      // 缺 `done:true` 说明流是被对端直接收掉的：内容可用，但结束原因**未知**（不假装 stop）
+      usage: report.sawDone ? usage : { ...usage, finishReason: usage.finishReason ?? 'eof' },
+    }
   }
   const data = await res.json().catch(() => ({}))
   const msg = data?.message ?? {}
@@ -425,6 +434,22 @@ function openaiSampling(o: CallOpts): Record<string, number> {
   return out
 }
 
+/**
+ * 这条 400 该不该「降级重试」？（3.2.0 · WQ5）
+ *
+ * 🔴 方案 §16.6：「参数不支持时仅移除被明确拒绝的可选参数；**不把所有 400 都重试成裸请求**」。
+ *    旧实现无条件降级 —— 模型名写错、密钥失效、messages 结构不对时都会白发一轮，
+ *    还把真正的错误信息换成第三轮的结果（作者看到的原因全是错的）。
+ *
+ * 判据：错误文案**指向与本请求可选参数无关**的东西（模型/消息/鉴权/额度/内容政策）⇒ 不降级；
+ *      其余（含空响应体，老中转站常见）⇒ 仍降级 —— 兼容性优先，但不再无脑。
+ */
+export function shouldDegradeOn400(errorText: string): boolean {
+  const t = errorText.trim()
+  if (!t) return true
+  return !/(model|messages|api[-_ ]?key|unauthor|forbidden|auth|quota|balance|content[_ ]?policy|context length)/i.test(t)
+}
+
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   const { timeoutMs } = o
   const base = openaiBaseOf(config.baseUrl || '')
@@ -432,6 +457,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   if (!config.model) throw new Error('未填写模型名称。')
   let res: Response
   let clearTimer: (() => void) | null = null
+  /** 本次逻辑调用实际发了几次请求（3.2.0 · WQ6：重试次数可核对） */
+  let attempts = 0
   // 云端 Qwen3 系：思考开着就拿不到 content，等于静默废掉所有 AI 功能 —— 默认关掉（`think:true` 可显式保留）
   const thinkToggle = !config.local && o.think !== true && HYBRID_THINKING_RE.test(config.model)
   // 三级请求体：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
@@ -459,16 +486,18 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   )
   try {
     res = await doFetch(thinkToggle ? 'full' : 'noToggle')
+    attempts = 1
     // 该端点不认 enable_thinking（返回 400）→ 丢掉这个字段重试一次。
     // 宁可少一个优化，也绝不因为多发一个字段把功能弄坏。
     if (res.status === 400 && thinkToggle) {
-      await res.text().catch(() => '')
-      res = await doFetch('noToggle')
+      const txt = await res.text().catch(() => '')
+      if (shouldDegradeOn400(txt)) { res = await doFetch('noToggle'); attempts += 1 }
     }
-    // 🔴 中转站兼容：部分端点 / 推理系模型对 temperature、采样字段校验严格（HTTP 400）→ 再降一级重试
+    // 🔴 中转站兼容：部分端点 / 推理系模型对 temperature、采样字段校验严格（HTTP 400）→ 再降一级
+    //    ⚠️ 但只有「不像别的原因」时才降 —— 否则模型名写错也会被降成裸请求，错误原因全变味。
     if (res.status === 400) {
-      await res.text().catch(() => '')
-      res = await doFetch('bare')
+      const txt = await res.text().catch(() => '')
+      if (shouldDegradeOn400(txt)) { res = await doFetch('bare'); attempts += 1 }
     }
   } catch (e) {
     if (isCancelled(e)) throw e
@@ -491,8 +520,9 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     // 3.2.0 · WQ7：兼容端点若在最后一块带 usage（需请求方要求 include_usage），有就收；
     // 不主动加那个字段 —— 中转站对未知字段很敏感，400 一次就是整轮失败。
     let streamUsage: RealUsage = {}
+    let streamReport: StreamReport = { sawDone: false, chunks: 0 }
     try {
-      await readSSE(res, (obj) => {
+      streamReport = await readSSE(res, (obj) => {
         const chunk = obj as SseChunk
         const delta = chunk?.choices?.[0]?.delta?.content
         const fr = chunk?.choices?.[0]?.finish_reason
@@ -506,10 +536,20 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }
+    // 🔴 流里报错就不能算成功 —— 且**已收到的一半内容也不冒充完整结果**
+    if (streamReport.errorMessage) {
+      throw new Error(
+        `接口在生成过程中报错：${streamReport.errorMessage}`
+        + (content.trim() ? '（已收到的部分内容未采用，请重试）' : ''),
+      )
+    }
     // 3.0 · W1-3 判据①（结构化，最强）：被内容过滤截断 ⇒ 如实报「被拒」，不当正常产出用
     if (finishReason === 'content_filter') {
       throw new AIRefusalError('content-filter', '')
     }
+    // 🔴 没有 `[DONE]` 说明是被对端直接收掉的：内容可用，但结束原因**未知**（方案 §16.7
+    //    「已确认以正常 EOF 结束的兼容端点可接受 EOF，但记录 finishReason 未知」）
+    if (!streamReport.sawDone && !finishReason && content.trim()) finishReason = 'eof'
     if (!content.trim()) {
       // 🔴 2.5.2 中转站兼容：部分中转对流式返回**非标准体**（每行 JSON.parse 失败被 readSSE
       //    静默跳过）→ content 恒为空，用户看到的就是「跑不通」。自动降级**非流式**重试一次——
@@ -538,7 +578,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           if (looksLikeRefusalText(c)) throw new AIRefusalError('refusal-text', c.trim().slice(0, 200))
           const out = stripThink(c)
           o.onToken?.(out)
-          return { content: out, loadMs: 0, usage: usageFromOpenAI(data) }
+          // 一次逻辑调用发了**两次**实际请求（流式失败 + 非流式重试）—— 次数必须可核对
+          return { content: out, loadMs: 0, usage: { ...usageFromOpenAI(data), attempts: attempts + 1 } }
         }
       }
       throw new Error('API 未返回内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 OpenAI 流式格式——请确认中转站文档给出的接口地址与模型名，或换官方接口测试。')
@@ -553,6 +594,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       usage: {
         ...streamUsage,
         ...(finishReason ? { finishReason } : {}),
+        ...(attempts > 1 ? { attempts } : {}),
       },
     }
   }

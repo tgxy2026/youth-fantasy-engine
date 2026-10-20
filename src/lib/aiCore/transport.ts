@@ -49,6 +49,22 @@ export function isCancelled(e: unknown): boolean {
 }
 
 /**
+ * 从一块 SSE 负载里抠出服务端错误文案。
+ * OpenAI 兼容是 `{error:{message,type}}`，Ollama 是 `{error:"..."}`，也有裸 `{message:"..."}` 的。
+ */
+function errorTextOf(obj: unknown): string | undefined {
+  if (!obj || typeof obj !== 'object') return undefined
+  const e = (obj as { error?: unknown }).error
+  if (!e) return undefined
+  if (typeof e === 'string') return e.trim() || '接口返回了错误事件'
+  if (typeof e === 'object') {
+    const m = (e as { message?: unknown; code?: unknown }).message ?? (e as { code?: unknown }).code
+    if (typeof m === 'string' && m.trim()) return m.trim()
+  }
+  return '接口返回了错误事件'
+}
+
+/**
  * 流式输出**停滞**（3.2.0 · WQ6）。
  *
  * 🔴 为什么必须有这个错误：首 token 到达后，`chat()` 会把外层总超时清掉
@@ -227,6 +243,16 @@ export type SseChunk = {
   done?: boolean
 }
 
+/** 一次流式读取的「协议层」结论（3.2.0 · WQ6） */
+export interface StreamReport {
+  /** 是否见到协议结束标记（OpenAI 的 `[DONE]` / Ollama 的 `done:true`） */
+  sawDone: boolean
+  /** 服务端在流里主动报的错（`{"error":...}`）—— 有它就不能算成功 */
+  errorMessage?: string
+  /** 解析成功的增量行数 */
+  chunks: number
+}
+
 export interface ReadSseOptions {
   /**
    * 空闲超时（毫秒，3.2.0 · WQ6）：**有进展**才重置。
@@ -248,7 +274,7 @@ export async function readSSE(
   onJson: (obj: unknown) => void,
   onFirstByte?: () => void,
   opts: ReadSseOptions = {},
-): Promise<void> {
+): Promise<StreamReport> {
   if (!res.body) throw new Error('当前环境不支持流式读取响应体。')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -256,6 +282,8 @@ export async function readSSE(
   let firedFirst = false
   /** 解析成功（＝真实进展）的增量行数 */
   let parsedChunks = 0
+  let sawDone = false
+  let errorMessage: string | undefined
   const idle = opts.idleTimeoutMs ?? 0
   let timer: ReturnType<typeof setTimeout> | null = null
   /** 停滞时用来把 `reader.read()` 的等待打断 */
@@ -281,13 +309,19 @@ export async function readSSE(
     if (!line) return
     let payload = line
     if (line.startsWith('data:')) payload = line.slice(5).trim()
-    if (!payload || payload === '[DONE]') return
-    try {
-      onJson(JSON.parse(payload))
-      parsedChunks += 1
-      arm()
-      if (!firedFirst) { firedFirst = true; onFirstByte?.() }
-    } catch { /* 跳过无法解析的增量行，不致命（也不当作进展） */ }
+    if (!payload) return
+    // 协议结束标记：OpenAI 用一行 `[DONE]`，Ollama 用块里的 `done:true`（下面一起认）
+    if (payload === '[DONE]') { sawDone = true; return }
+    let obj: unknown
+    try { obj = JSON.parse(payload) } catch { return /* 解析不了的行不致命，也不当作进展 */ }
+    // 🔴 服务端在流里报错：HTTP 200 不代表成功（方案 §16.7「HTTP 200 之后的错误不能作为成功」）
+    const err = errorTextOf(obj)
+    if (err) { errorMessage = err; return }
+    if ((obj as { done?: unknown })?.done === true) sawDone = true
+    onJson(obj)
+    parsedChunks += 1
+    arm()
+    if (!firedFirst) { firedFirst = true; onFirstByte?.() }
   }
 
   arm()
@@ -308,6 +342,7 @@ export async function readSSE(
       }
     }
     if (buf.trim()) flushLine(buf)
+    return { sawDone, ...(errorMessage ? { errorMessage } : {}), chunks: parsedChunks }
   } catch (e) {
     // 停滞 / 取消 / 断流：一律把读取器放掉，别让底层连接悬着
     // （方案 §16.7「取消监听和 reader 由一次调用持有，直到消费完毕、失败或主动取消后统一释放」）

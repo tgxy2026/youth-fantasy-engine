@@ -17,6 +17,11 @@ export interface RealUsage {
   completionTokens?: number
   /** 结束原因（`stop` / `length` / `content_filter`…），有就带回去 */
   finishReason?: string
+  /**
+   * 这次**逻辑调用**实际发了几次请求（3.2.0 · WQ6）。
+   * 🔴 只在 >1 时写：流式解析失败后降级非流式重试 = 2。方案 §16.7 要求"重试次数可核对"。
+   */
+  attempts?: number
 }
 
 function num(v: unknown): number | undefined {

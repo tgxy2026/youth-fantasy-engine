@@ -47,6 +47,8 @@ export interface ChatUsage {
     /** 与声明不一致的地方（空/缺省＝声明被完整满足） */
     limitations?: string[]
   }
+  /** 本次逻辑调用实际发了几次请求（>1 才写：如流式失败→非流式重试） */
+  attempts?: number
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
   /** 来源通道 */
