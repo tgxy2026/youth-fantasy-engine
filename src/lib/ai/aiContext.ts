@@ -1049,8 +1049,6 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
 
   // 收尾：被丢弃 / 被裁剪的段落都在文末如实声明（否则模型会把残缺当全集）
   const built = asm.build()
-  // 3.0 · W1-2c：记下本次装配（供运行账本「上下文查看」）
-  lastAssembly = { at: Date.now(), sections: built.sections, dropped: built.dropped, trimmed: built.trimmed, chars: built.chars, budget }
   // 3.2.0 · WQ4：发送材料清单 —— 由**装配的真实结果**生成（每段进了多少 / 裁剪还是丢弃 / 为什么），
   // 连预算与实际窗口一起交回调用方；名单不在事后回读资料重算（那会把"后来改过的"记成"当时发过的"）。
   const win = await resolveActiveWindow()
@@ -1059,6 +1057,12 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     ...(win ? { window: win.window, windowSource: win.source } : {}),
     assembleMs: Date.now() - t0,
   })
+  // 3.0 · W1-2c：记下本次装配（供运行账本「上下文查看」）；清单随后一起记 ——
+  // 🔴 先算清单再赋值：否则账本里存的是"没有清单"的旧快照，作者永远看不到未带入原因。
+  lastAssembly = {
+    at: Date.now(), sections: built.sections, dropped: built.dropped, trimmed: built.trimmed,
+    chars: built.chars, budget, manifest,
+  }
   return {
     text: built.text, sections: built.sections, dropped: built.dropped, chars: built.chars, manifest,
   }

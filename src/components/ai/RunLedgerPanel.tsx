@@ -15,6 +15,7 @@ import type { AiRun } from '@/lib/ai/aiRunTypes'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
+import { manifestGaps } from '@/lib/ai/requestBudget'
 
 const KIND_LABEL: Record<string, string> = {
   creative: '创意写作',
@@ -92,6 +93,12 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
               {runs.map(r => {
                 const st = STATUS_STYLE[r.status]
                 const candCount = r.candidates.reduce((n, c) => n + c.count, 0)
+                // 3.2.0 · WQ4：清单里的「未带入/只带一部分」明细（含原因）；
+                // 老记录没有 manifest ⇒ 退回原来的 dropped 列表，不假装有原因。
+                const gaps = r.context?.manifest ? manifestGaps(r.context.manifest) : []
+                const droppedDetail = gaps.length > 0
+                  ? gaps.map(g => `${g.source.ref}（${g.reason ?? (g.scope === 'trimmed' ? '只带了一部分' : '未带入')}）`).join('\n')
+                  : (r.context?.dropped ?? []).join('、')
                 return (
                   <li key={r.id} className="rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -117,13 +124,13 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                       <div className="mt-1 text-11 text-ink-500">
                         上下文：{r.context.sections.length} 段 / {r.context.chars} 字
                         {r.context.dropped.length > 0 && (
-                          <span className="text-amber" title={r.context.dropped.join('、')}>
+                          <span className="text-amber" title={droppedDetail}>
                             {' '}· 预算外未带 {r.context.dropped.length} 段
                           </span>
                         )}
                         {/* 3.1.3 R3：与「完全没带」分开显示 —— 这些带了一部分，作者得知道不能当全集看 */}
                         {(r.context.trimmed?.length ?? 0) > 0 && (
-                          <span className="text-amber" title={(r.context.trimmed ?? []).join('、')}>
+                          <span className="text-amber" title={droppedDetail}>
                             {' '}· 只带了一部分 {(r.context.trimmed ?? []).length} 段
                           </span>
                         )}

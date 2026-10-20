@@ -1,3 +1,4 @@
+import type { MaterialManifest } from '@/lib/ai/requestBudget'
 /**
  * AI 运行账本 · 类型定义（3.0 · W1-1）· 纯类型模块，无任何 import。
  *
@@ -88,6 +89,11 @@ export interface AiContextSnapshot {
   budget: number
   /** 装配时刻（用于判断这份快照属于哪次任务） */
   at: number
+  /**
+   * 发送材料清单（3.2.0 · WQ4）：逐段「进了多少 / 裁剪还是丢弃 / 为什么」，
+   * 连同预算与实际窗口。🔴 记的是**当时**发出去的东西，不要事后回读资料重算。
+   */
+  manifest?: MaterialManifest
 }
 
 /** 一次 AI 任务 = 一条运行记录（持久化，重启不丢） */
