@@ -23,6 +23,12 @@ export interface RevisionCandidate {
   jobId: string
   /** 项目 ID */
   projectId: string
+  /**
+   * 归属章节（3.2.0 · W3）。
+   * 🔴 **应用候选的唯一落点依据**：没有它，候选只能靠 `jobId` 反查，
+   *    而一个连写任务跨多章时，`jobId` 根本指不到具体哪一章 —— 那就不敢应用了。
+   */
+  chapterId?: string
   /** 候选状态 */
   status: RevisionCandidateStatus
   /** 候选全文（来自 payload.candidateText） */

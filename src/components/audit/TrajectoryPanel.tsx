@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { FileDiff, History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume, CardRecord } from '@/lib/types'
 import type { Snapshot } from '@/lib/db'
@@ -36,6 +36,8 @@ import SelectRow from '@/components/common/SelectRow'
 import { showToast } from '@/components/dialogs/dialogs'
 import EvidenceExportDialog from '@/components/audit/EvidenceExportDialog'
 import RunLedgerPanel from '@/components/ai/RunLedgerPanel'
+// 3.2.0 · W3：候选审阅（AI 产出、作者决定的稿子）
+import CandidatePanel from '@/components/revision/CandidatePanel'
 import BookVersionPanel from '@/components/app/BookVersionPanel'
 
 const OUTLINE_TAB = 'chapter-outline'
@@ -60,6 +62,8 @@ export default function TrajectoryPanel() {
   const [ledgerOpen, setLedgerOpen] = useState(false)
   // 3.0 · W3-1：定稿与版本 —— 同属「这本书的里程碑 / 留痕」，与账本并列
   const [versionOpen, setVersionOpen] = useState(false)
+  // 3.2.0 · W3：候选审阅面板
+  const [candidateOpen, setCandidateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [projectName, setProjectName] = useState('')
   const [volumes, setVolumes] = useState<Volume[]>([])
@@ -204,6 +208,7 @@ export default function TrajectoryPanel() {
       {/* 3.0 · W1-1：AI 运行账本（只读留痕） */}
       {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
+      {candidateOpen && <CandidatePanel onClose={() => setCandidateOpen(false)} />}
       <header className="mb-5 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
@@ -211,6 +216,10 @@ export default function TrajectoryPanel() {
             {`按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据全部来自软件本就有的记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成，保存位置由你选择；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明，不会假装完整；\n· 可导出证据包：PDF（${WEB ? '网页版下载 HTML 后另存' : '桌面版一键保存'}）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名、跟编辑说明创作过程时，用来自证。软件不做、也不参与任何「规避 AI 检测」的事情。`}
           </HelpPopover>
           <div className="ml-auto flex items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => setCandidateOpen(true)} className="gap-1.5"
+              title="查看 AI 产出的候选稿并决定是否应用到正文（会先比对正文，被改过会拒绝）">
+              <FileDiff size={12} /> 候选审阅
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setVersionOpen(true)} className="gap-1.5"
               title="冻结这一版、回看版本历史（定稿快照）">
               <BookMarked size={12} /> 定稿与版本

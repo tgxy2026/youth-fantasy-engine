@@ -30,6 +30,8 @@ import { hashOf } from '@/lib/semantic/chunk'
 interface CandidateMeta {
   status: RevisionCandidateStatus
   generation: number
+  /** 归属章节（应用时定位用） */
+  chapterId?: string
   updatedAt: number
   appliedAt?: number
   discardedAt?: number
@@ -50,6 +52,7 @@ export function candidateToPayload(c: RevisionCandidate): RevisionPayload {
   const meta: CandidateMeta = {
     status: c.status,
     generation: c.generation,
+    ...(c.chapterId ? { chapterId: c.chapterId } : {}),
     updatedAt: c.updatedAt,
     ...(c.appliedAt !== undefined ? { appliedAt: c.appliedAt } : {}),
     ...(c.discardedAt !== undefined ? { discardedAt: c.discardedAt } : {}),
@@ -96,6 +99,7 @@ export function payloadToCandidate(p: RevisionPayload): RevisionCandidate | null
     createdAt: p.createdAt,
     updatedAt: meta.updatedAt ?? p.createdAt,
     generation: meta.generation ?? 0,
+    ...(typeof meta.chapterId === 'string' ? { chapterId: meta.chapterId } : {}),
     ...(meta.appliedAt !== undefined ? { appliedAt: meta.appliedAt } : {}),
     ...(meta.discardedAt !== undefined ? { discardedAt: meta.discardedAt } : {}),
     ...(meta.discardedReason ? { discardedReason: meta.discardedReason } : {}),
@@ -165,6 +169,28 @@ export async function listJobCandidates(jobId: string): Promise<RevisionCandidat
 
 export async function deleteCandidate(id: string): Promise<void> {
   await deleteRevisionPayload(id)
+}
+
+/**
+ * 某项目的候选（界面「待审阅」列表用）。
+ *
+ * 🔴 为什么要按项目而不是按任务：作者只记得「我有几份稿子没处理」，
+ *    不记得它们属于哪一次连写。按任务查会让候选散落在几十条记录里找不到。
+ */
+export async function listProjectCandidates(
+  projectId: string,
+  opts: { onlyReviewable?: boolean } = {},
+): Promise<RevisionCandidate[]> {
+  const list = await listProjectRevisionPayloads(projectId)
+  const out: RevisionCandidate[] = []
+  for (const p of list) {
+    if (p.kind !== 'candidate') continue
+    const c = payloadToCandidate(p)
+    if (!c) continue
+    if (opts.onlyReviewable && c.status !== 'pending' && c.status !== 'applying' && c.status !== 'needs-reconcile') continue
+    out.push(c)
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt)
 }
 
 /**
