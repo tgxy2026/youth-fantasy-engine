@@ -91,6 +91,13 @@ export type RenderOpts = {
    * 不传 ⇒ 用 `DEFAULT_TABLE_MAX_CHARS`（够小表原样通过）。
    */
   tableMaxChars?: number
+  /**
+   * 3.2.0 · T3：存储键 → **当前显示名**（采用模板 / 字段别名）。
+   *
+   * 🔴 只影响表头文字，不影响取值：正文仍按 `sourceKey` 从行数据里取。
+   * 🔴 图鉴页签的 `atlasFields` 自带 label，优先于本表（见 `labelOf`）。
+   */
+  labels?: Record<string, string>
 }
 
 /** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
@@ -150,7 +157,9 @@ export function renderTable(
   const use = filled.slice(0, cap)
   if (use.length === 0) return ''
   // 表头用字段名（cf_ 键不给模型看），值按类型格式化（多选 JSON → 顿号），否则模型会照抄 JSON 碎片
-  const labelOf = (key: string) => atlasFields?.find(f => f.key === key)?.label ?? key
+  // 🔴 T3：图鉴字段自带 label；内置表格用作者当前显示名（采用模板 / 别名），最后才退回存储键。
+  const labelOf = (key: string) =>
+    atlasFields?.find(f => f.key === key)?.label ?? o.labels?.[key] ?? key
   /**
    * 取字段的自定义类型（决定单元格怎么格式化）。
    * 🔴 只认投影名 `kind`。旧 `ResolvedAtlasField` 的 `customType` 兼容支已在

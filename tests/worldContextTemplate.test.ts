@@ -112,8 +112,11 @@ async function main() {
   // 这里按老规矩断言**调用了什么函数**，不认字面参数 —— 搬代码的人才会被拦住。
   {
     const src = readFileSync(path.join(process.cwd(), 'src/lib/aiCore/template.ts'), 'utf8')
+    // 3.2.0 · T3：别名的叠加收口到 `loadFieldLabels`（采用模板 > 别名 > 原名），
+    // 本文件不再自己读别名表 —— 否则「模板改名」到不了这里。
+    const labelsSrc = readFileSync(path.join(process.cwd(), 'src/lib/templates/labels.ts'), 'utf8')
     ok('🔴 源码：buildWorldContext 走有效模板', src.includes('resolveTemplateCached'))
-    ok('🔴 源码：显示名取当前别名', src.includes('loadAliases'))
+    ok('🔴 源码：显示名取当前别名', src.includes('loadFieldLabels') && labelsSrc.includes('loadAliases'))
     ok('🔴 源码：模板键取不到时退回全表扫描（防丢值）', /const scan = /.test(src) && /scan\(/.test(src))
     ok('🔴 源码：不再自己拼死名字（白名单只用于「取哪些字段」）',
       /out\.push\(`\$\{f \? f\.label : n\}：/.test(src), '输出行应优先用模板 label')

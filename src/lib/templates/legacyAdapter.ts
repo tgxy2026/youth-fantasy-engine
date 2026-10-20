@@ -9,6 +9,7 @@
  *    新编译器上线前，本适配器的输出必须与旧输出逐字段一致（见 tests/templatesAdapter.test.ts）。
  */
 import type { TabDef } from '@/lib/types'
+import { sanitizeAliases } from '@/lib/settings/aliasCore'
 import { atlasSections, resolveAtlasFields, isAtlasTab } from '@/lib/atlas/schema'
 import type { AtlasPurpose, AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
 import type {
@@ -161,7 +162,18 @@ export function adaptAtlasTab(tab: TabDef, opts: AdaptAtlasOptions = {}): Effect
  *    业务消费者不自行兜回 tab.columns / tab.modules」。本函数就是那个兜底入口 ——
  *    当前阶段它逐字读 schema 原始结构，不改变任何既有行为。
  */
-export function adaptBuiltinTab(tab: TabDef, opts: { revision?: number } = {}): EffectiveTemplate {
+export interface AdaptBuiltinOptions {
+  /** 项目修订号（纯展示变化 +1；不参与 semanticDigest） */
+  revision?: number
+  /**
+   * 字段别名（`settings/fieldAlias` 的原始映射）。
+   * 🔴 只改 `label`，`id` / `sourceKey` 一个字节都不动 —— 存储键、回填键、检索键不受改名影响。
+   * 🔴 走 `sanitizeAliases`：未知键 / 撞名 / 超长一律丢弃，解析层与界面用同一份口径。
+   */
+  aliases?: Record<string, string>
+}
+
+export function adaptBuiltinTab(tab: TabDef, opts: AdaptBuiltinOptions = {}): EffectiveTemplate {
   const fields: EffectiveField[] = []
   const diagnostics: TemplateDiagnostic[] = []
 
@@ -213,18 +225,24 @@ export function adaptBuiltinTab(tab: TabDef, opts: { revision?: number } = {}): 
     order += mod.fields.length
   }
 
+  // 别名只改显示名（见 `AdaptBuiltinOptions.aliases`）。清洗后再叠，避免脏别名进模板。
+  const aliases = opts.aliases ? sanitizeAliases(fields.map(f => f.sourceKey), opts.aliases) : {}
+  const labeled = Object.keys(aliases).length
+    ? fields.map(f => (aliases[f.sourceKey] ? { ...f, label: aliases[f.sourceKey]! } : f))
+    : fields
+
   const groups: EffectiveGroup[] = (tab.modules ?? []).map((m, i) => ({ id: m.name, label: m.name, order: i }))
-  if (fields.some(f => f.groupId === 'default')) groups.unshift({ id: 'default', label: tab.name, order: -1 })
+  if (labeled.some(f => f.groupId === 'default')) groups.unshift({ id: 'default', label: tab.name, order: -1 })
 
   return {
     templateId: `builtin:${tab.id}`,
     version: TEMPLATE_FORMAT_VERSION,
     revision: opts.revision ?? 0,
-    semanticDigest: semanticDigestOf(fields),
+    semanticDigest: semanticDigestOf(labeled),
     tabId: tab.id,
     purpose: 'detail',
     groups,
-    fields,
+    fields: labeled,
     diagnostics,
   }
 }

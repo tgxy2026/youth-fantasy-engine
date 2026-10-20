@@ -613,7 +613,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const ctx = read('src/lib/ai/aiContext.ts')
   // 表格渲染在 3.1.3 抽到 ai/tableRender（aiContext 贴 1200 行上限）；断言跟着搬，并防回退
   const renderSrc = read('src/lib/ai/tableRender.ts')
-  ok('⑳ AI 上下文表头用字段名（cf_ 键不给模型看）', renderSrc.includes('labelOf') && renderSrc.includes('?.label ?? key'))
+  // 3.2.0 · T3：表头优先图鉴字段 label，其次作者当前显示名（模板 / 别名），最后才退回存储键。
+  ok('⑳ AI 上下文表头用字段名（cf_ 键不给模型看）',
+    renderSrc.includes('labelOf') && renderSrc.includes('?.label ??') && renderSrc.includes('o.labels?.[key] ?? key'))
   // WT0-4：单元格格式化改读投影的 kind（customType 兼容支已收口删除）
   ok('⑳ AI 上下文按类型格式化值（多选不用 JSON 碎片）',
     renderSrc.includes('formatCustomValue(') && renderSrc.includes('kindOf('))

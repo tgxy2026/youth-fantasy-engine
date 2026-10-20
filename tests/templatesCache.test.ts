@@ -161,11 +161,24 @@ const FORM_TAB = tabOf('master')   // 非图鉴页签（表单）
 {
   __resetTemplateCacheForTests()
   const t1 = resolveTemplateCached(FORM_TAB, { purpose: 'detail' }, 'p1')
-  const t2 = resolveTemplateCached(FORM_TAB, { purpose: 'aiRead', aliases: { 姓名: '名字' }, config: mkConfig(9) }, 'p1')
+  const t2 = resolveTemplateCached(FORM_TAB, { purpose: 'aiRead', config: mkConfig(9) }, 'p1')
   const s = templateCacheStats()
-  ok('⑨ 换用途/传配置/传别名 ⇒ 仍命中（这些输入不影响内置模板）', t1 === t2, JSON.stringify(s))
+  ok('⑨ 换用途/传配置 ⇒ 仍命中（这些输入不影响内置模板）', t1 === t2, JSON.stringify(s))
   ok('⑨ 只有 1 条缓存（不按用途各存一份）', s.size === 1, String(s.size))
   ok('⑨ 内置模板 purpose 恒为 detail', t2.purpose === 'detail')
+
+  // 🔴 3.2.0 · T3：别名**会**改模板的 label，必须未命中（否则改名后 AI 仍看到旧名）。
+  const KEY = '一、故事内核::主线一句话'
+  const renamed = resolveTemplateCached(FORM_TAB, { aliases: { [KEY]: '故事主线' } }, 'p1')
+  ok('⑨ 真改名 ⇒ 未命中', templateCacheStats().misses === 2, JSON.stringify(templateCacheStats()))
+  ok('⑨ 改名只动 label，不动存储键',
+    renamed.fields.some(f => f.sourceKey === KEY && f.label === '故事主线'))
+  const again = resolveTemplateCached(FORM_TAB, { aliases: { [KEY]: '故事主线' } }, 'p1')
+  ok('⑨ 同一别名再来 ⇒ 命中', again === renamed && templateCacheStats().hits === 2, JSON.stringify(templateCacheStats()))
+  // 无关别名（不属于本表）清洗后不改变输出，但仍按签名换槽位 —— 只多算一次，不能端错内容。
+  const unrelated = resolveTemplateCached(FORM_TAB, { aliases: { 不存在: '别的' } }, 'p1')
+  ok('⑨ 无关别名不改变字段名（清洗后丢弃）',
+    unrelated.fields.find(f => f.sourceKey === KEY)?.label === '主线一句话')
 }
 
 // ────────────────────────── ⑩ 图鉴页签按用途隔离 ──────────────────────────

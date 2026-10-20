@@ -107,9 +107,11 @@ function uncacheable(t: EffectiveTemplate): boolean {
  * `pid` 缺省取当前项目（浏览器/桌面都走 `getCurrentProjectId()`）；测试可显式传入。
  * 命中条件：pid、TabDef 身份、修订号、配置修订号、别名签名**全部**一致。
  *
- * 🔴 键只收**真正影响输出**的输入（`adaptBuiltinTab` 只吃 `revision`，别名/配置/用途/类别
- *    一律忽略，且 `purpose` 恒为 `detail`）：非图鉴页签把后三者折成常量，
+ * 🔴 键只收**真正影响输出**的输入：非图鉴页签的 `adaptBuiltinTab` 只吃 `revision` 与 `aliases`，
+ *    配置 / 用途 / 类别一律忽略（`purpose` 恒为 `detail`）⇒ 后三者折成常量，
  *    否则同一份模板会按用途各存一条（表格页签 6 份重复），纯属浪费。
+ *    🔴 别名**必须**单独比（T3）：它现在会改动模板的 `label` 与语义摘要，
+ *    不进比对就会在作者改名后继续把旧名字端给 AI 与界面。
  */
 export function resolveTemplateCached(
   tab: TabDef,
@@ -126,7 +128,8 @@ export function resolveTemplateCached(
       : templateCacheKeyOf(tab.id, '', {})
   const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}#${opts.def.semanticDigest}` : ''
   const configRevision = !opts.def && isAtlas && opts.config ? (opts.config.revision ?? 0) : -1
-  const aliasesSig = !opts.def && isAtlas ? aliasesSignature(opts.aliases) : ''
+  // 别名两边都吃：图鉴走 `resolveAtlasFields`，内置走 `adaptBuiltinTab`（T3）。
+  const aliasesSig = !opts.def ? aliasesSignature(opts.aliases) : ''
   const key = entryKeyOf(pid, logicalKey)
   const revision = opts.revision ?? 0
 

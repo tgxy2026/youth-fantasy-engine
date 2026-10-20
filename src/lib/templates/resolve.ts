@@ -86,7 +86,10 @@ export function resolveTemplateForTab(tab: TabDef, opts: ResolveTemplateOptions 
     }
     return template
   }
-  return adaptBuiltinTab(tab, opts.revision != null ? { revision: opts.revision } : {})
+  return adaptBuiltinTab(tab, {
+    ...(opts.revision != null ? { revision: opts.revision } : {}),
+    ...(opts.aliases ? { aliases: opts.aliases } : {}),
+  })
 }
 
 /**

@@ -7,8 +7,8 @@
 
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
-import { loadAliases, type AliasMap } from '@/lib/settings/fieldAlias'
 import { resolveTemplateCached } from '@/lib/templates/cache'
+import { loadFieldLabels } from '@/lib/templates/labels'
 import { parsePlainObject } from '@/lib/ai/aiParse'
 import { chat } from '@/lib/aiCore/chat'
 import { requireProviderFor } from '@/lib/ai/aiRouting'
@@ -75,8 +75,8 @@ export const WORLD_CONTEXT_GROUPS: WorldContextGroup[] = [
  *
  * @param onlyKeys 只取这些分组；**不传 = 全取**（保持「一次成稿」的既有行为不变）。
  *
- * 🔴 3.2.0 · WT0-4：字段的**显示名**改从有效模板取（`resolveTemplateCached` + 字段别名），
- *    不再一律用白名单里的字面名。理由（方案 §3.10.3）：
+ * 🔴 3.2.0：字段的**显示名**统一从 `loadFieldLabels` 取（采用模板 > 别名 > schema 原名），
+ *    不再一律用白名单里的字面名。理由（方案 §3.10.3 / §3.12）：
  *    「一对一字段、含义不变的改名，AI 应使用**当前名称**」—— 作者把「世界名称」改名成
  *    「世界称呼」之后，喂给模型的还是旧名，模型就会按旧名理解和回填。
  *    🔴 存储键**一个字节都不动**：`f.sourceKey` 仍是 `模块::字段名`，取值路径不变。
@@ -88,13 +88,11 @@ export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
   const fieldsOf = async (tabId: string): Promise<{ key: string; label: string }[]> => {
     const tab = TABS.find(t => t.id === tabId)
     if (!tab) return []
-    // 别名读失败不影响主流程：退回原名显示（与 `loadAliases` 的降级口径一致）
-    const aliases: AliasMap = await loadAliases(tabId).catch(() => ({}))
+    // 3.2.0 · T3：显示名统一走 `loadFieldLabels`（采用模板 > 别名 > schema 原名），
+    // 读失败返回空表 ⇒ 退回模板原名。存储键不变（取值仍用 `f.sourceKey`）。
+    const labels = await loadFieldLabels(tab)
     const tpl = resolveTemplateCached(tab)
-    // 🔴 显示名在这里叠别名，而不是靠模板层：`adaptBuiltinTab` 只读 schema 的字段名，
-    //    显示名是 `settings/fieldAlias` 的职责（`SchemaFieldGrid` 也是这么做的）。
-    //    别名的键就是存储键 `模块名::字段名`，所以 `aliases[f.sourceKey]` 直接可用。
-    return tpl.fields.map(f => ({ key: f.sourceKey, label: aliases[f.sourceKey] ?? f.label }))
+    return tpl.fields.map(f => ({ key: f.sourceKey, label: labels[f.sourceKey] ?? f.label }))
   }
   const pick = (
     data: Record<string, string> | undefined,

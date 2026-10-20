@@ -35,6 +35,7 @@ import { isPrunedForAI, isSecretRow, sortBySecrecy } from '@/lib/ai/secrecy'
 import { segCapOf } from '@/lib/ai/segBudget'
 import { createContextAssembler } from '@/lib/ai/contextAssembler'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
+import { loadFieldLabels } from '@/lib/templates/labels'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
@@ -310,7 +311,8 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
       const key = `${mod.name}::${f.name}`
       const v = data[key] ?? data[f.name] ?? ''
       used.add(key)
-      if (v.trim()) lines.push(`${f.name}：${clip(v, cellCap(f.name))}`)
+      // 3.2.0 · T3：模型看到作者当前的名字；存储键不变
+      if (v.trim()) lines.push(`${o.labels?.[key] ?? f.name}：${clip(v, cellCap(f.name))}`)
     }
   }
   // 兼容历史遗留 key（schema 改过字段名的老项目），不丢数据
@@ -323,7 +325,7 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
     const fn = fieldName(k)
     if (SYSTEM_META_FIELDS.has(fn)) continue
     if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue
-    lines.push(`${fn}：${clip(v, cellCap(fn))}`)
+    lines.push(`${o.labels?.[k] ?? fn}：${clip(v, cellCap(fn))}`)
   }
   return lines.join('\n')
 }
@@ -437,12 +439,15 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 /** 单个页签的资料段（空数据返回空串） */
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
+    // 3.2.0 · T3：模型看到作者当前的字段名（采用模板 / 别名）；读不到就退回 schema 原名。
+    const labels = await loadFieldLabels(tab)
+    const ro: RenderOpts = Object.keys(labels).length ? { ...o, labels: { ...o.labels, ...labels } } : o
     if (tab.type === 'form') {
       // 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
       //    资料全在 `<tabId>-sub` 那批条目里 ⇒ 直接渲染活跃条目段，**不读也不带「全书统一」层**。
       //    （旧实现会读一份根本不存在的 formData、把空的「〖全书统一〗」喂给 AI。）
       if (isParallelSetTab(tab.id)) {
-        return (await renderActiveParallelSets(tab, o)) ?? ''
+        return (await renderActiveParallelSets(tab, ro)) ?? ''
       }
       const formData = await db.getFormData(tab.id)
       // 角色视角：整条记录标了 S（绝密 / 剧透）⇒ 整段不带（含它的子世界）
@@ -450,16 +455,16 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
       //    `isPrunedForAI`（D＝终结，任何视角都不进 AI）的契约是「凡是把项目数据交给模型的入口都要过」，
       //    而 renderCards / renderTable 都接了、这里与两个子集渲染器没接 —— 同一份逻辑复制四遍时漏改。
       if (isPrunedForAI(formData)) return ''
-      if (o.hideSecretRows && isSecretRow(formData)) return ''
-      const main = renderForm(tab, formData, o)
+      if (ro.hideSecretRows && isSecretRow(formData)) return ''
+      const main = renderForm(tab, formData, ro)
       // 母子结构表（世界设定 / 力量体系）：建过子项才引入母／子两层标题。
       // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
       if (!isWorldSetTab(tab.id)) return main
-      const sub = await renderActiveSubSets(tab, o)
+      const sub = await renderActiveSubSets(tab, ro)
       if (sub === null) return main
       return [`〖全书统一〗${main ? '\n' + main : '\n（尚未填写）'}`, sub].join('\n\n')
     }
-    if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), o)
+    if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), ro)
     if (tab.type === 'table') {
       const rows = await db.getTableRows(tab.id)
       // 3.1.3：图鉴页签的字段清单（见 ai/atlasContext 的口径）
@@ -474,9 +479,9 @@ async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): 
         const mine = names.length
           ? rows.filter(r => names.some(n => String(r.data?.['知情者'] ?? '').includes(n)))
           : rows
-        return renderTable(tab, mine, o, atlasFields)
+        return renderTable(tab, mine, ro, atlasFields)
       }
-      return renderTable(tab, rows, o, atlasFields)
+      return renderTable(tab, rows, ro, atlasFields)
     }
   } catch {
     // 单段读取失败就当这段没有，不影响其他资料
