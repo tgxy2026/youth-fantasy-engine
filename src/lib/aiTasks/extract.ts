@@ -1,6 +1,7 @@
 // ============ AI 任务层 · 设定实体抽取（拆书 / 设定补登共用）============
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #23 段）。
 // 🔴 字段键从 flow/fieldMap 的 KIND_MAP 派生（见 SLOT_HINT 注释）—— 只读，不改。
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
 import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
@@ -173,10 +174,19 @@ function joinRelations(v: unknown): string {
   return parts.join('；')
 }
 
+/**
+ * 抽取类任务的公共选项（3.2.0 · WQ7 加 `request`）。
+ */
+type ExtractionAiOpts = {
+  signal?: AbortSignal
+  onToken?: (delta: string) => void
+  request?: CallRequestContext
+}
+
 export async function aiExtractSettingEntities(
   chapterText: string,
   chapterTitle: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ExtractionAiOpts,
 ): Promise<ExtractedEntity[]> {
   const r = await aiExtractSettingEntitiesWithStatus(chapterText, chapterTitle, opts)
   return r.result?.data ?? []
@@ -190,7 +200,7 @@ export async function aiExtractSettingEntities(
 export async function aiExtractSettingEntitiesWithStatus(
   chapterText: string,
   chapterTitle: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ExtractionAiOpts,
 ): Promise<StepExecutionResult<ExtractedEntity[]>> {
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ExtractedEntity[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
@@ -209,7 +219,10 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
       [{ role: 'system', content: composeSystemPrompt(extractSysFull(), cfg) }, { role: 'user', content: user }],
       // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
       //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
+      {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
     )
     const r = parseExtractedEntitiesDetailed(text)
     if (r.outcome === 'invalid') return one('failed', 'parse-invalid')

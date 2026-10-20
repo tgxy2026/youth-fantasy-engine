@@ -22,6 +22,7 @@ import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { requireProviderFor, isCancelled, stripThink } from '@/lib/ai'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { withAiAssist } from '@/lib/ai/aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
@@ -130,6 +131,8 @@ export interface ContinueCallbacks {
   volumeIdFor?: (chapterNo: number) => string | undefined
   onLog?: (msg: string) => void
   signal?: AbortSignal
+  /** 请求归属（3.2.0 · WQ7）：每章 3~8 次模型调用，是全项目调用量最大的链路 */
+  request?: CallRequestContext
 }
 
 interface SettingUpdate { name: string; note: string }
@@ -188,11 +191,15 @@ async function deAiFlavor(o: {
   signal?: AbortSignal
   onToken?: (d: string) => void
   onBodyReplace?: (s: string) => void
+  request?: CallRequestContext
 }): Promise<string> {
   return askSoft(o.cfg,
     `${DEAI_SYS}\n\n【本次润色侧重点】\n${o.instruction}`,
     ['【待润色正文】', authorBlock(newAuthorFence(), o.body)].join('\n'),
-    { signal: o.signal, onToken: o.onToken })
+    {
+      signal: o.signal, onToken: o.onToken,
+      ...(o.request ? { request: o.request } : {}),
+    })
 }
 
 // ============ 单章生成 ============
@@ -207,6 +214,7 @@ async function generateOneChapter(opts: {
   /** 本次要写的章号（写进提示词做范围限定；不传则只说「这一章」）。 */
   chapterNo?: number
   signal?: AbortSignal
+  request?: CallRequestContext
   onToken?: (d: string) => void
   onPhase?: (p: string) => void
   onBodyReplace?: (s: string) => void
@@ -237,19 +245,25 @@ async function generateOneChapter(opts: {
       : '\n🔴 本次只写这一章，写完就收尾 —— 不要写出下一章的内容。'),
   ].join('\n')
 
-  let body = await ask(cfg, sys, user, { signal: opts.signal, onToken: opts.onToken })
+  let body = await ask(cfg, sys, user, {
+    signal: opts.signal, onToken: opts.onToken,
+    ...(opts.request ? { request: opts.request } : {}),
+  })
 
   // 异常返回（模型抽风 / 思维链剥离后只剩残片）→ 静默重试一次，不再流式以免污染预览
   if (countWords(body) < 50) {
     opts.onLog?.(`模型返回异常（仅 ${countWords(body)} 汉字），正在重试`)
     opts.onBodyReplace?.('')
-    body = await askSoft(cfg, sys, user, { signal: opts.signal })
+    body = await askSoft(cfg, sys, user, {
+      signal: opts.signal, ...(opts.request ? { request: opts.request } : {}),
+    })
     opts.onBodyReplace?.(body)
   }
 
   return (await enforceWordRange({
     cfg, body, target: opts.targetWords, sys, chapterNo: opts.chapterNo,
     signal: opts.signal, onToken: opts.onToken,
+    ...(opts.request ? { request: opts.request } : {}),
     onPhase: opts.onPhase, onBodyReplace: opts.onBodyReplace,
   })).trim()
 }
@@ -300,7 +314,10 @@ export function summarizeSelfCheck(
   return { state: 'partial', coverage, issues, errorCode: 'some-checks-failed', retryable: true }
 }
 
-async function selfRefine(body: string, ctx: ProjectContextResult, signal?: AbortSignal, onPhase?: (p: string) => void): Promise<SelfRefineResult> {
+async function selfRefine(
+  body: string, ctx: ProjectContextResult, signal?: AbortSignal,
+  onPhase?: (p: string) => void, request?: CallRequestContext,
+): Promise<SelfRefineResult> {
   if (!ctx.text.trim() || countWords(body) < 200) {
     return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
   }
@@ -312,9 +329,9 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
   // WQ1-2：三项都走**带状态**版本 —— 旧写法 `.catch(() => [])` 把请求失败
   // 吞成"无问题"，是 Q1 登记病灶（自检失败却显示通过）的直接成因。
   const runs = await Promise.all([
-    aiContinuityAuditWithStatus(ctx.text, body, { signal }),
-    aiOocCheckWithStatus(ctx.text, body, { signal }),
-    aiForeshadowReviewWithStatus(ctx.text, { signal }),
+    aiContinuityAuditWithStatus(ctx.text, body, { signal, ...(request ? { request } : {}) }),
+    aiOocCheckWithStatus(ctx.text, body, { signal, ...(request ? { request } : {}) }),
+    aiForeshadowReviewWithStatus(ctx.text, { signal, ...(request ? { request } : {}) }),
   ])
   const selfCheck = summarizeSelfCheck(runs)
   if (selfCheck.state !== 'completed') {
@@ -337,12 +354,14 @@ async function selfRefine(body: string, ctx: ProjectContextResult, signal?: Abor
   return { body: rw, selfCheck }
 }
 
-async function suggestTitle(body: string, signal?: AbortSignal): Promise<string> {
+async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRequestContext): Promise<string> {
   const cfg = await requireProviderFor('create').catch(() => null)
   if (!cfg) return '未命名章节'
   const snippet = body.slice(0, 1500)
   const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个汉字，只输出标题本身，不要标点、不要引号、不要解释。'
-  const t = await askSoft(cfg, sys, `【本章正文（节选）】\n${snippet}`, { signal })
+  const t = await askSoft(cfg, sys, `【本章正文（节选）】\n${snippet}`, {
+    signal, ...(request ? { request } : {}),
+  })
   const clean = t.replace(/[「」"'》>、。！？\s]/g, '').slice(0, 15)
   return clean || '未命名章节'
 }
@@ -393,10 +412,15 @@ export async function extractAndCommitSettings(
   body: string, title: string, strategy: ContinueStrategy,
   onConfirm?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>,
   signal?: AbortSignal,
+  /**
+   * 请求归属（3.2.0 · WQ7）。放在**末尾可选位**：改写侧（`chapterPostProcess` /
+   * `optimizeTicket`）还是老调用，不传就是兼容归属，行为零变化。
+   */
+  request?: CallRequestContext,
 ): Promise<{ created: number; failed: string[]; errors?: string[] }> {
   // WQ1-4：解析失败/请求失败与"本章无新实体"分开 —— 失败要经 errors 上报，
   // 不再静默 return { created: 0 } 让 UI 显示"新增 0 条"像正常一样
-  const entRun = await aiExtractSettingEntitiesWithStatus(body, title, { signal })
+  const entRun = await aiExtractSettingEntitiesWithStatus(body, title, { signal, ...(request ? { request } : {}) })
   if (entRun.state !== 'completed') {
     return { created: 0, failed: [], errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'] }
   }
@@ -420,7 +444,7 @@ export async function extractAndCommitSettings(
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title, { pid }).catch(() => empty)
-    const w = await applySettingUpdates(body, title, signal)
+    const w = await applySettingUpdates(body, title, signal, request)
     const errs = [...r.failed.length ? [] : [], ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : [])]
     return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
   }
@@ -437,10 +461,12 @@ export async function extractAndCommitSettings(
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============
 
-async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<{ updates: SettingUpdate[]; state: StepResultState }> {
+async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal, request?: CallRequestContext): Promise<{ updates: SettingUpdate[]; state: StepResultState }> {
   const cfg = await requireProviderFor('create')
   const sys = P_setting_update_detect
-  const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, { signal, json: true })
+  const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, {
+    signal, json: true, ...(request ? { request } : {}),
+  })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
   // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
   // WQ1-4：三态 —— invalid（JSON 坏了）与合法空（无变化）分开上报。
@@ -495,11 +521,13 @@ function findRegistered(reg: Awaited<ReturnType<typeof loadRegistry>>, name: str
   return null
 }
 
-async function applySettingUpdates(body: string, title: string, signal?: AbortSignal): Promise<{ applied: number; state: StepResultState }> {
+async function applySettingUpdates(
+  body: string, title: string, signal?: AbortSignal, request?: CallRequestContext,
+): Promise<{ applied: number; state: StepResultState }> {
   // WQ1-4：解析失败（JSON 坏）不再静默 return —— 调用方（auto-update 分支）记录到日志
   let run: { updates: SettingUpdate[]; state: StepResultState }
   try {
-    run = await extractSettingUpdates(body, title, signal)
+    run = await extractSettingUpdates(body, title, signal, request)
   } catch {
     return { applied: 0, state: 'failed' }
   }
@@ -624,6 +652,7 @@ export async function runAutoContinue(
           target: opts.targetWords,
           sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()),
           ...(cb.signal ? { signal: cb.signal } : {}),
+          ...(cb.request ? { request: cb.request } : {}),
           onPhase: p => cb.onPhase?.(`补齐最后一章：${p}`),
           onBodyReplace: cb.onBodyReplace,
           ...(cb.onLog ? { onLog: cb.onLog } : {}),
@@ -698,6 +727,7 @@ export async function runAutoContinue(
           ctx, prevTail, intent: opts.intent, recentSummaries, targetWords: opts.targetWords,
           chapterNo: ordered.length + i + 1, // 🔴 范围限定：只写这一章，别把下一章的内容带进来（社区反馈）
           signal: cb.signal, onToken: cb.onBodyToken,
+          ...(cb.request ? { request: cb.request } : {}),
           onPhase: p => cb.onPhase?.(`${tag}：${p}`),
           onBodyReplace: cb.onBodyReplace,
           onLog: cb.onLog,
@@ -725,7 +755,7 @@ export async function runAutoContinue(
           // 去 AI 味儿也是模型产出，同样可能带回 markdown 标记 —— 一并净化后再量字数
           const def = cleanChapterOutput(await deAiFlavor({
             cfg: await requireProviderFor('create'), body, instruction: opts.deAi.prompt,
-            signal: cb.signal, onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
+            signal: cb.signal, ...(cb.request ? { request: cb.request } : {}), onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
           }).catch(() => ''))
           const dw = countWords(def)
           // 安全阀：润色结果显著缩水（不足原文 60%）视为模型偷懒/截断，保留原稿
@@ -758,7 +788,7 @@ export async function runAutoContinue(
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
       // WQ1-2：自检三项是必选项 —— 失败/取消/未完成都暂停连写，本章不落库，
       // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
-      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`))
+      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request)
       body = refined.body
       if (refined.selfCheck.state !== 'completed') {
         const sc = refined.selfCheck
@@ -773,6 +803,7 @@ export async function runAutoContinue(
       body = await enforceWordRange({
         cfg: await requireProviderFor('create'), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()), signal: cb.signal,
+        ...(cb.request ? { request: cb.request } : {}),
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
         ...(cb.onLog ? { onLog: cb.onLog } : {}),
         maxExpand: 2, maxShrink: 2,
@@ -790,7 +821,7 @@ export async function runAutoContinue(
       }
 
       cb.onPhase?.(`${tag}：生成标题并保存`)
-      const title = await suggestTitle(body, cb.signal)
+      const title = await suggestTitle(body, cb.signal, cb.request)
       // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
       const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
       // 🔴 本章的**计划章号** ＝ 库里已有章数 + 本轮第几章（与上面取细纲的 `ordered.length + i + 1` 同一个数）。
@@ -806,7 +837,7 @@ export async function runAutoContinue(
       lastTitle = ch.title
 
       cb.onPhase?.(`${tag}：抽取并补登设定`)
-      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal)
+      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request)
       const dev = finalWords - opts.targetWords
       cb.onLog?.(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`

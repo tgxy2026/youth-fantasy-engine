@@ -840,6 +840,9 @@ export async function runCreativeWriting(
       },
       {
         signal: ctx.signal,
+        // 3.2.0 · WQ7：正文连写是全项目调用量最大的链路（每章 3~8 次），
+        // 归属必须显式传下去 —— 否则这些账只能靠"唯一任务"兼容路径，并行时会被排除。
+        ...(opts.request ? { request: opts.request } : {}),
         /**
          * 🔴 必须传 `onBodyToken`（哪怕是空回调）——它是**流式开关**，不是"要不要显示"。
          *    非流式请求的响应头要等**整段正文生成完**才回来，4000 字/章的云端生成必然撞

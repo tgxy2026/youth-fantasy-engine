@@ -13,6 +13,7 @@
  *    模型默认按 token 或字符估，写出来必然偏长（实测：目标 4000 写成 5000，超 25%）。
  */
 import { chat, requireActiveProvider, stripThink, isCancelled } from '@/lib/ai'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { countWords } from '@/lib/editor/textStats'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 
@@ -26,7 +27,13 @@ export type Cfg = Awaited<ReturnType<typeof requireActiveProvider>>
 
 export async function ask(
   cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
+  opts: {
+    signal?: AbortSignal
+    onToken?: (d: string) => void
+    json?: boolean
+    /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
+    request?: CallRequestContext
+  } = {},
 ): Promise<string> {
   const raw = await chat(cfg, [
     { role: 'system', content: sys },
@@ -38,7 +45,13 @@ export async function ask(
 /** 非致命问答：取消向上抛，其它异常吞成空串由调用方按字数判定 */
 export async function askSoft(
   cfg: Cfg, sys: string, user: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; json?: boolean } = {},
+  opts: {
+    signal?: AbortSignal
+    onToken?: (d: string) => void
+    json?: boolean
+    /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
+    request?: CallRequestContext
+  } = {},
 ): Promise<string> {
   try {
     return await ask(cfg, sys, user, opts)
@@ -84,6 +97,8 @@ export async function enforceWordRange(o: {
   fillTarget?: number
   signal?: AbortSignal
   onToken?: (d: string) => void
+  /** 请求归属（3.2.0 · WQ7）：透传到每次补写/压缩调用 */
+  request?: CallRequestContext
   onPhase?: (p: string) => void
   onBodyReplace?: (s: string) => void
   /**
@@ -128,7 +143,10 @@ export async function enforceWordRange(o: {
       (o.chapterNo
         ? `🔴 补写仍属第 ${o.chapterNo} 章：只能在「本章范围内」展开（场景、对话、细节、心理描写），不得写出下一章的开头或提前展开下一章的事件。`
         : '🔴 补写只能在「本章范围内」展开，不得写出下一章的开头或提前展开下一章的事件。'),
-    ].join('\n'), { signal: o.signal, onToken: o.onToken })
+    ].join('\n'), {
+      signal: o.signal, onToken: o.onToken,
+      ...(o.request ? { request: o.request } : {}),
+    })
     if (countWords(add) < 30) {
       // 无效增量：停止空转，接受偏短。🔴 但必须**说出来**（否则调用方只看到"字数没变"）
       o.onLog?.(`补写未生效（模型只返回 ${countWords(add)} 汉字，可能失败或被截断）：停在 ${words} 汉字，目标 ${o.target}`)
@@ -163,7 +181,11 @@ export async function enforceWordRange(o: {
       // 🔴 `onToken` 是**流式开关**（不是"要不要显示"）：压缩要输出整章（几千字），
       //    非流式请求的响应头要等**整段生成完**才回来，必然撞 `CHAT_TIMEOUT_MS`(180s) ——
       //    后果是「压缩永远失败、超字永远压不下去」（实测：目标 3500、结果停在 3975）。
-      { signal: o.signal, ...(o.onToken ? { onToken: o.onToken } : {}) })
+      {
+        signal: o.signal,
+        ...(o.onToken ? { onToken: o.onToken } : {}),
+        ...(o.request ? { request: o.request } : {}),
+      })
     const ow = countWords(out)
     if (!out || ow < lo * 0.85) {
       o.onLog?.(`压缩结果异常（${ow} 汉字，低于下限 ${Math.round(lo * 0.85)}），保留原文 ${words} 汉字`)

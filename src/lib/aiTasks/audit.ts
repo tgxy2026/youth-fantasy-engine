@@ -3,6 +3,7 @@
 // 收编：连续性自查 / 读者反馈分析 / 项目健康诊断 / 伏笔闭环 / 术语去重 / 文风体检。
 // ⚠️ #9 项目诊断用到 #7 的 `ContinuityFinding` 类型 —— 同文件内引用，不再跨模块。
 // ⚠️ 六条提示词各自就地声明；注册顺序由门面的 PROMPT_ORDER 决定，**别在这里调整顺序**。
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt, isCancelled } from '@/lib/ai'
 import { parseObjectArray, parseObjectArrayDetailed, asText, humanText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
@@ -87,10 +88,20 @@ export interface ContinuityFinding {
   where: string
 }
 
+/**
+ * 审查类任务的公共选项（3.2.0 · WQ7 加 `request`）。
+ * 🔴 审查也是要记账的模型调用 —— 不带归属就只能靠"唯一任务"兼容路径。
+ */
+type ReviewAiOpts = {
+  signal?: AbortSignal
+  onToken?: (delta: string) => void
+  request?: CallRequestContext
+}
+
 export async function aiContinuityAudit(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<ContinuityFinding[]> {
   const r = await aiContinuityAuditWithStatus(projectContext, chapterText, opts)
   return r.result?.data ?? []
@@ -107,7 +118,7 @@ export async function aiContinuityAudit(
 export async function aiContinuityAuditWithStatus(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<StepExecutionResult<ContinuityFinding[]>> {
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ContinuityFinding[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
@@ -128,6 +139,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（作者未指
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: opts?.signal,
       onToken: opts?.onToken,
+      ...(opts?.request ? { request: opts.request } : {}),
     })
     // WQ1：三态解析 —— invalid 是失败，合法空数组是"审了没问题"
     const parsed = parseObjectArrayDetailed(text)
@@ -185,7 +197,7 @@ export interface FeedbackAnalysis {
 
 export async function aiAnalyzeFeedback(
   entries: FeedbackEntry[],
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<FeedbackAnalysis> {
   const cfg = await requireProviderFor('review')
   const list = entries.length
@@ -217,7 +229,10 @@ ${entries.length ? authorBlock(fence, list) : list}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
   )
 
   const objs = parseObjectArray(text)
@@ -248,7 +263,7 @@ export interface ProjectDiagnosis {
 export async function aiDiagnoseProject(
   projectContext: string,
   stats: { chapters: number; words: number; volumes: number; unf: number; unusedIdeas: number },
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<ProjectDiagnosis> {
   const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
@@ -269,7 +284,10 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
   )
 
   const objs = parseObjectArray(text)
@@ -309,7 +327,7 @@ export interface ForeshadowReviewFinding {
 
 export async function aiForeshadowReview(
   projectContext: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<ForeshadowReviewFinding[]> {
   const r = await aiForeshadowReviewWithStatus(projectContext, opts)
   return r.result?.data ?? []
@@ -318,7 +336,7 @@ export async function aiForeshadowReview(
 /** WQ1：伏笔审查的带状态版本（判定口径同 `aiContinuityAuditWithStatus`） */
 export async function aiForeshadowReviewWithStatus(
   projectContext: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<StepExecutionResult<ForeshadowReviewFinding[]>> {
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ForeshadowReviewFinding[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
@@ -338,7 +356,10 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
         { role: 'system', content: composeSystemPrompt(sys, cfg) },
         { role: 'user', content: user },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+      {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
     )
 
     const parsed = parseObjectArrayDetailed(text)
@@ -382,7 +403,7 @@ export interface TermDupGroup {
 
 export async function aiDedupTerms(
   terms: { term: string; category: string; definition: string }[],
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<{ groups: TermDupGroup[] }> {
   const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
@@ -402,7 +423,10 @@ ${list.trim() ? authorBlock(fence, list) : '（空）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
   )
 
   const objs = parseObjectArray(text)
@@ -439,7 +463,7 @@ export interface StyleCheckFinding {
 export async function aiStyleCheck(
   chapterText: string,
   styleContext: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: ReviewAiOpts,
 ): Promise<StyleCheckFinding[]> {
   const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
@@ -460,7 +484,10 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
       { role: 'system', content: composeSystemPrompt(sys, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    {
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      ...(opts?.request ? { request: opts.request } : {}),
+    },
   )
 
   const out: StyleCheckFinding[] = []
