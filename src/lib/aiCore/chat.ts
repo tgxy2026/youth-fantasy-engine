@@ -15,6 +15,9 @@ import {
 // 2.9.2：「模型配置 → 文本生成微调」的语义名 → 原生键名（详见 lib/modelSampling.ts）
 import { samplingOptionsOf } from '@/lib/ai/modelSampling'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+// 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
+import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
+import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
 
 export interface ChatOptions {
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
@@ -84,6 +87,22 @@ export interface ChatOptions {
    *    —— 那样才能一处改动覆盖酒馆全部 15 个调用点，且在新增酒馆功能时自动跟随。
    */
   skipUserSystem?: boolean
+  /**
+   * 任务意图（3.2.0 · WQ4）：只用于预算/诊断归因，不影响发送内容。
+   * 例：`chapter-continue` / `chapter-review` / `setting-extract`。
+   */
+  intent?: string
+  /** 任务声明的输出上限（token）；缺省用全局 `REPLY_RESERVE_TOKENS` */
+  outputTokens?: number
+  /**
+   * 允许超预算发送（**逃生口，默认关闭**）。
+   *
+   * 🔴 为什么默认要拦：本地 Ollama / 多数兼容端点超窗口时是**静默截断**——
+   *    作者以为"资料全给了"，模型其实只看到前半段，输出看着挺像样。
+   *    明确报错比这种假完整好。仅在"确认截断可接受"的兼容路径上显式打开，
+   *    每一处打开都该在注释里写清为什么。
+   */
+  allowOverflow?: boolean
 }
 
 interface ChatRaw {
@@ -138,6 +157,24 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   // 3.0 · W1-4：上报本次调用用量（无订阅者时零开销）。
   // 🔴 失败 / 被拒**也记一笔** —— §14 说「拒答也记一笔，便于复盘哪段内容老被拒」；
   //    统计是旁路，绝不打断调用（reportUsage 内部已吞异常）。
+  // 3.2.0 · WQ4：**发送前核对完整请求**（方案 §16.5 的固定顺序最后一步）。
+  // 窗口取"实际 provider"的值（手填 > 模型识别 > 保守兜底），不用全局最近一次结果。
+  const budget = planRequestBudget({
+    window: effectiveWindowOf(config),
+    windowSource: config.contextWindow != null && config.contextWindow >= MIN_SANE_WINDOW
+      ? 'user'
+      : (lookupWindow(config.model) ? 'preset' : 'fallback'),
+    systemPrompt: msgs.filter(m => m.role === 'system').map(m => m.content).join('\n'),
+    body: msgs.filter(m => m.role !== 'system').map(m => m.content).join('\n'),
+    ...(opts.outputTokens != null ? { outputTokens: opts.outputTokens } : {}),
+  })
+  // 🔴 硬上限 = 输入 + 输出预留 + 安全余量 ≤ 窗口。超过它是一定会被截断的，
+  //    连"资料额度 0.5"都算不上 —— 此时**必须**报错，不能发出去赌端点仁慈。
+  const hardLimit = budget.windowTokens - budget.outputReserveTokens - budget.safetyMarginTokens
+  if (!opts.allowOverflow && budget.estimates.input.tokens > hardLimit) {
+    throw new AIContextOverflowError(budget)
+  }
+
   const t0 = Date.now()
   const usageSource: ChatUsage['source'] = config.type === 'ollama' ? 'ollama' : 'openai'
   try {
@@ -157,7 +194,12 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
       extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
     })).content
-    reportUsage({ model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now() })
+    reportUsage({
+      model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
+      // 🔴 这里的 token 是**估算值**（`requestBudget.estimateTokens`：中文 1 字≈1 token）。
+      //    真实 usage 由 WQ7 的通道解析补上；在此之前宁可给一个标明来源的估算，也不留空。
+      promptTokens: budget.estimates.input.tokens,
+    })
     return out
   } catch (e) {
     // 3.0 · W1-4：被内容政策拒绝的调用也记一笔，并标 finishReason ——
