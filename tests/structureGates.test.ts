@@ -638,6 +638,25 @@ if (!SRC) {
 }
 
 {
+  // ⑭ 检查报告 / 候选载荷只走 lib 门面：界面不许直接读 `db/revisionJobs`（3.2.0 · W4）
+  //
+  // 为什么：留存的**口径全在 lib 里** —— A 策略（有问题才存）、指纹去重、双闸淘汰、
+  // 「报告不能标成 candidate」这些判据散在 `checkReports` / `candidateStore` / `ticketIntake`。
+  // 界面若各读一份原始载荷，就会各写一套筛选：一处漏掉 `kind === 'report'`，
+  // 候选正文就会被当成检查报告显示出来；一处漏掉淘汰口径，列表就会把已删的又列一遍。
+  // 这类 bug 不报错、只是"看起来怪"，所以只能靠闸。
+  const SRC3 = findSrc()
+  if (SRC3) {
+    const comps = walk(path.join(SRC3, 'components'))
+      .map(f => ({ f, t: stripCommentsAndStrings(fs.readFileSync(f, 'utf8')) }))
+      .filter(x => x.t.includes('db/revisionJobs'))
+      .map(x => path.relative(path.dirname(SRC3), x.f).replace(/\\/g, '/'))
+    ok('⑭ 界面不直接读检查报告/候选载荷（一律走 revision/* 门面）',
+      comps.length === 0, comps.join('、'))
+  }
+}
+
+{
   // ⑬ 归批完整性：写了测试但全量从不跑它 —— 这是最高危的假绿（"有测试"三个字骗了所有人）
   // 2026-10-20 加：本轮新增 5 个测试文件，全靠手工往 run-batches.sh 里加，漏一次就再也不会跑。
   const sh = fs.readFileSync(path.resolve('tests/run-batches.sh'), 'utf8')

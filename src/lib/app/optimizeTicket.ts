@@ -43,6 +43,14 @@ import { hashOf } from '@/lib/semantic/chunk'
 import { isCancelled } from '@/lib/ai'
 // 3.2.0 · W4：「加入工单」—— 把已落库的 AI 检查结论挂到按章的工单上
 import { joinCheckReportsToTicket, type ChapterRef } from '@/lib/revision/ticketIntake'
+// 3.2.0 · W4：本地诊断也要留档 —— 此前只有连写自检（AI 侧）的报告会落库，
+//    作者「一键诊断」出的问题当天看得见、隔天查不到，链条缺一环。
+import { chapterReportToFindings, chapterReportToRun, LOCAL_TICKET_JOB_ID } from '@/lib/revision/checkAdapters'
+import { persistCheckReports, type CheckRunLike, type PersistCheckReportsResult } from '@/lib/revision/checkReports'
+// 3.2.0 · WQ1：检查项状态列表 —— 某章检查抛错时不再被吞成「诊断完成、没有问题」
+import {
+  calculateCoverage, type CheckItemResult, type CheckSummary,
+} from '@/lib/aiTasks/reviewFindings'
 
 /** 工单条目的来源分类 */
 export type TicketSource =
@@ -154,11 +162,34 @@ interface BuildTicketOpts {
   onProgress?: (done: number, total: number) => void
 }
 
+/** 一次诊断的完整结果（条目 + 检查项状态 + 留档情况） */
+export interface TicketDiagnose {
+  items: TicketItem[]
+  /**
+   * 每章一个检查项。
+   * 🔴 粒度是**章**不是引擎：`runChapterCheck` 内部把五个引擎的失败各自 `.catch(() => [])`，
+   *    外层无法区分「连续性引擎挂了」和「这一章真没问题」—— 所以不假装知道，只如实记到章。
+   */
+  checks: CheckItemResult[]
+  /** 覆盖率与计数（与 `checks` 同源，供界面一句话说清） */
+  summary: CheckSummary
+  /** 报告留档结果（A 策略：只有严重 / 中等发现才写） */
+  persisted: PersistCheckReportsResult
+}
+
 /**
  * 跑一遍诊断、汇总成工单。**只读不写**（五个引擎全是本地确定性检查，零 AI 请求、零成本）。
  * 结果按「章序 → 严重度 → 来源」排序并去重。
+ *
+ * 🔴 「只读」指的是**不碰正文**：检查报告会留档（旁路写 `revisionPayloads`），但那不是作品数据，
+ *    且全程不抛（写不进去只记 error，工单照出）。
  */
 export async function buildTicket(opts: BuildTicketOpts = {}): Promise<TicketItem[]> {
+  return (await buildTicketDetailed(opts)).items
+}
+
+/** 与 `buildTicket` 同一条流程，额外给出检查项状态与留档结果（3.2.0 · W4 / WQ1） */
+export async function buildTicketDetailed(opts: BuildTicketOpts = {}): Promise<TicketDiagnose> {
   const cands = await listRewriteCandidates()
   // 🔴 最新章判据与 creativeSession 同源：候选列表是按真实叙事序排的，最后一个就是最新章
   const latestId = cands.length ? cands[cands.length - 1].chapter.id : ''
@@ -166,22 +197,74 @@ export async function buildTicket(opts: BuildTicketOpts = {}): Promise<TicketIte
   const targets = want ? cands.filter(c => want.has(c.chapter.id)) : cands
 
   const out: TicketItem[] = []
+  const checks: CheckItemResult[] = []
+  /** 待留档的报告（攒到最后一次落库 —— 逐章各调一遍会把全项目载荷反复列出来，大书会明显变慢） */
+  const pending: {
+    checkId: string
+    source: string
+    run: CheckRunLike
+    chapterId: string
+    chapterNo: number
+  }[] = []
   let done = 0
   for (const c of targets) {
     if (opts.signal?.aborted) break
-    // 空章跳过（没正文没什么可诊断的），但仍然计入进度
-    if ((c.chapter.content ?? '').trim()) {
-      const rep = await runChapterCheck(c.chapter).catch(e => {
-        // 🔴 别静默吞：某章检查抛错时该章被跳过，工单会呈现成「诊断完成、没有问题」而掩盖漏检。
-        //    但一次读失败不该让整张工单中断 —— 记一行日志，继续诊断其余章。
-        console.warn(`[optimizeTicket] 一章诊断失败（已跳过）：${c.chapter.title}`, e)
-        return null
-      })
-      if (rep) out.push(...issuesOf(c, rep, c.chapter.id === latestId))
+    const title = c.chapter.title || '（未命名）'
+    // 空章跳过（没正文没什么可诊断的），但仍然计入进度 —— 记为 skipped，不装作"检过且没问题"
+    if (!(c.chapter.content ?? '').trim()) {
+      checks.push({ id: c.chapter.id, name: title, status: 'skipped', findings: 0, critical: 0, finishedAt: Date.now() })
+      done++
+      opts.onProgress?.(done, targets.length)
+      continue
     }
+    const rep = await runChapterCheck(c.chapter).catch(e => {
+      // 🔴 别静默吞：某章检查抛错时该章被跳过，工单会呈现成「诊断完成、没有问题」而掩盖漏检。
+      //    但一次读失败不该让整张工单中断 —— 记一行日志，继续诊断其余章。
+      console.warn(`[optimizeTicket] 一章诊断失败（已跳过）：${c.chapter.title}`, e)
+      return null
+    })
+    if (!rep) {
+      checks.push({
+        id: c.chapter.id, name: title, status: 'failed', findings: 0, critical: 0,
+        error: '这一章没检成（引擎读库失败），等于没查 —— 请重新诊断这一章',
+        finishedAt: Date.now(),
+      })
+      done++
+      opts.onProgress?.(done, targets.length)
+      continue
+    }
+    out.push(...issuesOf(c, rep, c.chapter.id === latestId))
+    const findings = chapterReportToFindings(rep)
+    // 计数只算"需要动手"的（提示级不算问题）—— 与工单条目口径一致
+    const actionable = findings.filter(f => f.level !== '提示').length
+    const critical = findings.filter(f => f.level === '严重').length
+    checks.push({
+      id: c.chapter.id, name: title, status: 'done',
+      findings: actionable, critical, finishedAt: Date.now(),
+    })
+    pending.push({
+      checkId: 'chapter-check', source: 'local', run: chapterReportToRun(rep),
+      chapterId: c.chapter.id, chapterNo: c.no,
+    })
     done++
     opts.onProgress?.(done, targets.length)
   }
+
+  // 🔴 中止时剩下的章如实记为 pending：不记就会让覆盖率变成「30/30 = 100%」，
+  //    作者会以为全书都查过了 —— 这正是 WQ1 登记的病灶。
+  for (let i = done; i < targets.length; i++) {
+    const c = targets[i]
+    checks.push({ id: c.chapter.id, name: c.chapter.title || '（未命名）', status: 'pending', findings: 0, critical: 0 })
+  }
+
+  // 留档：A 策略（有实质发现才存 + 指纹去重 + 双闸淘汰）。全程不抛。
+  const persisted: PersistCheckReportsResult = pending.length
+    ? await persistCheckReports({
+      projectId: db.getCurrentProjectId() ?? '',
+      jobId: LOCAL_TICKET_JOB_ID,
+      reports: pending,
+    })
+    : { saved: 0, skipped: 0, pruned: 0 }
 
   // 3.2.0 · W4（「加入工单」）：把检查报告里**有实质发现**的条目并进工单。
   // 🔴 本地确定性检查（错别字/敏感词/文风）先出，AI 检查结论后并 —— 同类问题以本地结论为准，
@@ -190,7 +273,12 @@ export async function buildTicket(opts: BuildTicketOpts = {}): Promise<TicketIte
     id: c.chapter.id, title: c.chapter.title, no: c.no, body: c.chapter.content ?? '',
   }))
   const joined = await joinCheckReportsToTicket(db.getCurrentProjectId() ?? '', refs, sortAndDedup(out))
-  return sortAndDedup(joined.items)
+  return {
+    items: sortAndDedup(joined.items),
+    checks,
+    summary: calculateCoverage(checks),
+    persisted,
+  }
 }
 
 /** 一章的体检报告 → 工单条目 */
@@ -337,6 +425,42 @@ interface RunTicketResult {
   beforeText?: string
   afterText?: string
   error?: string
+  /** 改完复检（3.2.0 · W4 闭环：本地引擎，零额度；没跑成就没有这个字段） */
+  recheck?: RunRecheck
+}
+
+/** 改完复检的结论 */
+export interface RunRecheck {
+  /** 复检后仍需动手的问题数（提示级不计） */
+  findings: number
+  /** 其中冲突级 */
+  critical: number
+  /** 🔴 改前工单里**仍然存在**的问题 —— 标 done 只是"改过了"，不等于"解决了" */
+  stillOpen: string[]
+  /** 改前工单里已经解决掉的条数 */
+  resolved: number
+  /** 复检报告是否留档成功（留档是旁路，失败不影响正文） */
+  saved: boolean
+}
+
+/**
+ * 复检前后比对（纯函数，导出供单测）。
+ *
+ * 🔴 按**标题**比对而不是按正文片段：正文已被改写，拿片段比对没有意义；
+ *    工单条目与复检发现出自同一套引擎措辞（含「错别字：X → Y」这类），标题是可比的。
+ */
+export function recheckDelta(
+  beforeTitles: readonly string[],
+  afterFindings: readonly { level?: string; title?: string }[],
+): { stillOpen: string[]; resolved: number } {
+  const after = new Set(
+    afterFindings
+      .filter(f => f.level !== '提示')
+      .map(f => (f.title ?? '').trim())
+      .filter(Boolean),
+  )
+  const stillOpen = beforeTitles.filter(t => after.has(t))
+  return { stillOpen, resolved: beforeTitles.length - stillOpen.length }
 }
 
 /** 把所有非 manual、且在被处理集合里的条目标成同一状态 */
@@ -502,6 +626,44 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
   if (ledger?.id) {
     noteCandidate(ledger.id, { target: `chapter:${chapterId}`, fingerprint: hashOf(text), state: 'adopted' })
   }
+
+  // 3.2.0 · W4 闭环：**改完复检**（五个本地引擎，零额度）。
+  // 🔴 条目标 `done` 只代表"这一章改过了"，不代表"问题解决了" —— 不复检，作者看到的就是
+  //    「执行完一片绿」，而错别字/敏感词可能一个没动。复检免费，所以没有不做的理由。
+  let recheck: RunRecheck | undefined
+  if (!opts.signal?.aborted) {
+    try {
+      const after = await runChapterCheck({ ...hit.chapter, content: text })
+      const findings = chapterReportToFindings(after)
+      const delta = recheckDelta(todo.map(i => i.title), findings)
+      const saved = await persistCheckReports({
+        projectId: db.getCurrentProjectId() ?? '',
+        jobId: LOCAL_TICKET_JOB_ID,
+        reports: [{
+          checkId: 'chapter-check',
+          source: 'local-recheck',
+          run: chapterReportToRun(after),
+          chapterId,
+          chapterNo: hit.no,
+        }],
+      })
+      recheck = {
+        findings: findings.filter(f => f.level !== '提示').length,
+        critical: findings.filter(f => f.level === '严重').length,
+        stillOpen: delta.stillOpen,
+        resolved: delta.resolved,
+        saved: saved.saved > 0,
+      }
+    } catch (e) {
+      // 🔴 复检是**旁路**：跑了更好，跑不成也不该把已落库的正文报成失败 ——
+      //    只是这一章没有「改完到底改好没」的记录，界面会如实说"复检没跑成"。
+      console.warn('[optimizeTicket] 改完复检没跑成（正文已落库）：', e)
+    }
+  }
+
   await settleRewriteLedger(ledger, 'done')
-  return { chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text }
+  return {
+    chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text,
+    ...(recheck ? { recheck } : {}),
+  }
 }

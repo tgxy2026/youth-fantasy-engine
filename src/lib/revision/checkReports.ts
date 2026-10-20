@@ -39,6 +39,11 @@ export interface CheckFindingLike {
   level?: string
   title?: string
   detail?: string
+  /**
+   * 可定位的原文片段（3.2.0 · W4：工单侧拿它去正文里逐字命中、算出**段号**当证据）。
+   * 取不到就留空 —— 没有证据会被如实标成"未定位"，绝不编段号。
+   */
+  where?: string
 }
 
 /** 一次检查的结果形状（`*WithStatus` 内核的返回） */
@@ -83,8 +88,7 @@ export function countFindings(findings: readonly CheckFindingLike[]): {
 /** 一批发现的指纹：同内容不重复落库（检查重跑不算新报告） */
 export function findingsFingerprint(findings: readonly CheckFindingLike[]): string {
   const lines = findings
-    // where 不在 CheckFindingLike 里（审计侧才有），取不到就空串——指纹只需稳定，不需完整
-    .map(f => `${f.level ?? ''}|${f.title ?? ''}|${(f as { where?: string }).where ?? ''}|${f.detail ?? ''}`)
+    .map(f => `${f.level ?? ''}|${f.title ?? ''}|${f.where ?? ''}|${f.detail ?? ''}`)
     .sort()
   return hashOf(lines.join('\n'))
 }
@@ -145,6 +149,88 @@ export function planCheckReportPrune(
   return [...drop]
 }
 
+// ============ 回看（3.2.0 · W4：存下来就是为了能翻回去看） ============
+
+/** 一份留档报告的回看形状 */
+export interface CheckReportView {
+  id: string
+  jobId: string
+  checkId: string
+  source: string
+  chapterId?: string
+  chapterNo?: number
+  createdAt: number
+  bytes: number
+  summary: string
+  findings: CheckFindingLike[]
+  serious: number
+  minor: number
+  info: number
+}
+
+/** 报告来源的人话（作者看的不是 `local-recheck` 这种键） */
+export function reportSourceLabel(source: string): string {
+  if (source === 'local') return '本地诊断'
+  if (source === 'local-recheck') return '改后复检'
+  if (source === 'self-refine') return '连写自检'
+  return 'AI 检查'
+}
+
+/** 列出本项目的检查报告（新的在前） */
+export async function listCheckReportViews(
+  projectId: string,
+  opts: { limit?: number } = {},
+): Promise<CheckReportView[]> {
+  const rows = (await listProjectRevisionPayloads(projectId)).filter(p => p.kind === 'report')
+  const out: CheckReportView[] = []
+  for (const p of rows) {
+    const r = (p.report ?? {}) as Record<string, unknown>
+    const findings = Array.isArray(r.result) ? (r.result as CheckFindingLike[]) : []
+    const c = countFindings(findings)
+    out.push({
+      id: p.id,
+      jobId: p.jobId,
+      checkId: typeof r.checkId === 'string' ? r.checkId : 'unknown',
+      source: typeof r.source === 'string' ? r.source : '',
+      ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
+      ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
+      createdAt: p.createdAt,
+      bytes: p.bytes,
+      summary: p.summary ?? '',
+      findings,
+      serious: c.serious,
+      minor: c.minor,
+      info: c.info,
+    })
+  }
+  out.sort((a, b) => b.createdAt - a.createdAt)
+  return typeof opts.limit === 'number' ? out.slice(0, opts.limit) : out
+}
+
+/** 报告汇总（纯函数，供单测） */
+export function summarizeReportViews(rows: readonly CheckReportView[]): {
+  total: number
+  /** 涉及几章（章 id 或章号去重；都没记的不算） */
+  chapters: number
+  serious: number
+  minor: number
+  /** 最近一份的时间（没有就是 null，界面要显示"没有"而不是编一个） */
+  latestAt: number | null
+} {
+  const ch = new Set<string>()
+  for (const r of rows) {
+    const key = r.chapterId ?? (r.chapterNo !== undefined ? `no:${r.chapterNo}` : '')
+    if (key) ch.add(key)
+  }
+  return {
+    total: rows.length,
+    chapters: ch.size,
+    serious: rows.reduce((n, r) => n + r.serious, 0),
+    minor: rows.reduce((n, r) => n + r.minor, 0),
+    latestAt: rows.length ? rows.reduce((m, r) => Math.max(m, r.createdAt), 0) : null,
+  }
+}
+
 export interface PersistCheckReportsInput {
   projectId: string
   jobId: string
@@ -155,8 +241,19 @@ export interface PersistCheckReportsInput {
   chapterId?: string
   /** 计划章号（新章落库前只有这个可用；有它才能按章分组淘汰） */
   chapterNo?: number
-  /** 本次跑过的检查（顺序无关） */
-  reports: readonly { checkId: string; source: string; run: CheckRunLike | null | undefined; evidence?: TicketEvidence[] }[]
+  /**
+   * 本次跑过的检查（顺序无关）。
+   * 🔴 单条可自带归属章（3.2.0 · W4 工单诊断：一次调用要落**多章**的报告）；
+   *    没有时退回 `input.chapterId / chapterNo`（老调用行为逐字不变）。
+   */
+  reports: readonly {
+    checkId: string
+    source: string
+    run: CheckRunLike | null | undefined
+    evidence?: TicketEvidence[]
+    chapterId?: string
+    chapterNo?: number
+  }[]
 }
 
 export interface PersistCheckReportsResult {
@@ -203,6 +300,8 @@ export async function persistCheckReports(
       // 同一批发现只存一份（检查重跑 / 换模型后结论相同，不该占两份额度）
       if (seen.has(fp)) { out.skipped++; continue }
       const { serious, minor } = countFindings(findings)
+      const chapterId = r.chapterId ?? input.chapterId
+      const chapterNo = r.chapterNo ?? input.chapterNo
       const res = await persistCheckResult(
         input.jobId,
         input.projectId,
@@ -211,8 +310,8 @@ export async function persistCheckReports(
         findings,
         r.evidence,
         `检查 ${r.checkId}：严重 ${serious} / 中等 ${minor}`,
-        (input.chapterId || input.chapterNo !== undefined)
-          ? { ...(input.chapterId ? { chapterId: input.chapterId } : {}), ...(input.chapterNo !== undefined ? { chapterNo: input.chapterNo } : {}) }
+        (chapterId || chapterNo !== undefined)
+          ? { ...(chapterId ? { chapterId } : {}), ...(chapterNo !== undefined ? { chapterNo } : {}) }
           : undefined,
       )
       if (res.ok) { out.saved++; seen.add(fp) }

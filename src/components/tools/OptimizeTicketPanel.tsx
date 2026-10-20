@@ -27,8 +27,8 @@ import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { foldVh } from '@/lib/settings/theme'
 import { SEVERITY_LABEL, type IssueSeverity } from '@/lib/audit/audit'
 import {
-  SOURCE_LABEL, actionLabelOf, buildTicket, groupByChapter, groupByIssue, runTicketChapter,
-  type TicketItem,
+  SOURCE_LABEL, actionLabelOf, buildTicketDetailed, groupByChapter, groupByIssue, runTicketChapter,
+  type TicketItem, type TicketDiagnose, type RunRecheck,
 } from '@/lib/app/optimizeTicket'
 
 const OWNER_TAB = 'check-tools'
@@ -38,9 +38,17 @@ const KIND_RUN = 'optimize-ticket-run'
 /** 界面态：lib 的条目 + 本地勾选位（勾选是界面概念，不进 lib 类型） */
 type Item = TicketItem & { picked: boolean }
 
-interface GenResult { items: TicketItem[] }
+/** 诊断结果＝工单条目 + 检查项状态（哪几章没检成，如实说，不装作"全查过了"） */
+interface GenResult extends TicketDiagnose {}
 interface GenProgress { done: number; total: number }
-interface RunChapterOut { chapterId: string; items: TicketItem[]; beforeText?: string; afterText?: string }
+interface RunChapterOut {
+  chapterId: string
+  items: TicketItem[]
+  beforeText?: string
+  afterText?: string
+  /** 改完复检（本地引擎，零额度）；没跑成就没有 —— 界面如实说"没跑成"，不装作"已解决" */
+  recheck?: RunRecheck
+}
 interface RunResult { chapters: RunChapterOut[] }
 interface RunProgress { done: number; total: number; title?: string }
 
@@ -125,14 +133,19 @@ export default function OptimizeTicketPanel() {
     if (gen.running) return
     gen.run(async ctx => {
       ctx.progress({ done: 0, total: 0 })
-      const list = await buildTicket({
+      const r = await buildTicketDetailed({
         signal: ctx.signal,
         onProgress: (done, total) => ctx.progress({ done, total }),
       })
-      return { items: list }
+      return r
     }, ({ status, result, error }) => {
       if (status === 'failed') return { text: `生成工单失败：${error || '未知原因'}`, kind: 'error' as const }
       if (status === 'done' && result) {
+        // 🔴 有几章没检成时**不能**说"诊断完成，没有问题"—— 那会把漏检说成通过（WQ1 病灶）
+        const missed = result.checks.filter(c => c.status === 'failed').length
+        if (missed) {
+          return { text: `工单已生成：${result.items.length} 条待处理，但 ${missed} 章没检成（这几章等于没查）`, kind: 'info' as const }
+        }
         return result.items.length
           ? { text: `优化工单已生成：${result.items.length} 条待处理`, kind: 'info' as const }
           : { text: '诊断完成，没有发现需要处理的问题', kind: 'success' as const }
@@ -154,7 +167,12 @@ export default function OptimizeTicketPanel() {
       for (const g of plan) {
         if (ctx.isAborted()) break
         const r = await runTicketChapter(g.items, { signal: ctx.signal })
-        out.push({ chapterId: r.chapterId, items: r.items, beforeText: r.beforeText, afterText: r.afterText })
+        out.push({
+          chapterId: r.chapterId, items: r.items,
+          ...(r.beforeText !== undefined ? { beforeText: r.beforeText } : {}),
+          ...(r.afterText !== undefined ? { afterText: r.afterText } : {}),
+          ...(r.recheck ? { recheck: r.recheck } : {}),
+        })
         done++
         // 🔴 每章跑完就把「已完成」的产物写进 resume：任务结束时 `result` 会被清掉
         //    （中止 ⇒ 不留可疑产物，是任务中心的有意设计），但 `resume` 会保留。
@@ -171,8 +189,12 @@ export default function OptimizeTicketPanel() {
       if (status === 'failed') return { text: `逐章修订失败：${error || '未知原因'}`, kind: 'error' as const }
       if (status === 'done' && result) {
         const ok = result.chapters.filter(c => c.afterText !== undefined).length
+        // 🔴 复检如实带一句：改完不等于改好，有多少章仍有未解决项要说出来
+        const stuck = result.chapters.filter(c => c.recheck && c.recheck.stillOpen.length).length
         return {
-          text: `逐章修订完成：${ok}/${result.chapters.length} 章已改写（旧稿都在「时光机 · 本章版本历史」里）`,
+          text: `逐章修订完成：${ok}/${result.chapters.length} 章已改写`
+            + (stuck ? `（其中 ${stuck} 章复检后仍有未解决项，见每章标题旁）` : '')
+            + '（旧稿都在「时光机 · 本章版本历史」里）',
           kind: 'success' as const,
         }
       }
@@ -183,6 +205,10 @@ export default function OptimizeTicketPanel() {
   const runProgress = exe.task?.progress
   const genProgress = gen.task?.progress
   const curDiff = exe.result?.chapters.find(c => c.chapterId === diffChapter)
+  /** 改完复检的结论（两个来源都读：`result` 与中止时保留的 `resume`，与上面状态合并同源） */
+  const recheckOf = (chapterId: string): RunRecheck | undefined =>
+    (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
+      ?.chapters.find(c => c.chapterId === chapterId)?.recheck
 
   return (
     <Panel>
@@ -251,6 +277,50 @@ export default function OptimizeTicketPanel() {
         </div>
       )}
 
+      {/* 诊断状态（WQ1：漏检如实说 —— 不把"没检成"显示成"没问题"） */}
+      {gen.result && !gen.running && (() => {
+        const s = gen.result.summary
+        const missed = gen.result.checks.filter(c => c.status === 'failed')
+        const notReached = gen.result.checks.filter(c => c.status === 'pending')
+        const skipped = gen.result.checks.filter(c => c.status === 'skipped')
+        return (
+          <div className={`mb-2 rounded-lg border px-3 py-1.5 text-11 ${
+            missed.length ? 'border-danger/30 bg-danger/10' : 'border-ink-700 bg-ink-900/40'
+          }`}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-ink-400">
+              <ListChecks size={11} className="shrink-0" />
+              <span>已检 <b className="text-ink-200 tabular-nums">{s.done}</b> / {s.total} 章</span>
+              {skipped.length > 0 && <span>（{skipped.length} 章空章，跳过）</span>}
+              {s.totalFindings > 0 && (
+                <span>发现 <b className="text-ink-200 tabular-nums">{s.totalFindings}</b> 个问题
+                  {s.criticalFindings > 0 && <>，其中 <b className="text-danger tabular-nums">{s.criticalFindings}</b> 个冲突</>}
+                </span>
+              )}
+              {gen.result.persisted.saved > 0 && (
+                <span className="text-ink-500" title="只有「冲突 / 注意」级的发现会留档；同一章重跑不会重复占额度（在「创作轨迹」里可回看）">
+                  · 留档 {gen.result.persisted.saved} 份{gen.result.persisted.pruned ? `（淘汰 ${gen.result.persisted.pruned} 份旧报告）` : ''}
+                </span>
+              )}
+              {gen.result.persisted.error && (
+                <span className="text-ink-500" title={gen.result.persisted.error}>· 留档未成功（不影响工单）</span>
+              )}
+            </div>
+            {missed.length > 0 && (
+              <div className="mt-1 text-danger">
+                {missed.length} 章没检成：{missed.slice(0, 3).map(c => c.name).join('、')}
+                {missed.length > 3 ? ` 等 ${missed.length} 章` : ''}
+                <span className="text-ink-400"> —— 这几章是「没查」，不是「查过没问题」，建议重新诊断。</span>
+              </div>
+            )}
+            {notReached.length > 0 && (
+              <div className="mt-1 text-amber">
+                还有 {notReached.length} 章没轮到（诊断被中止），它们不在上面这份工单里。
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* 工单表格 */}
       {items.length > 0 && (
         <>
@@ -313,6 +383,29 @@ export default function OptimizeTicketPanel() {
                       {g.chapterNo > 0 ? `第${g.chapterNo}章 · ` : ''}{g.chapterTitle || '（未命名）'}
                     </span>
                     <span className="text-10 text-ink-500">{g.items.length} 条</span>
+                    {/* 改完复检：本地引擎、零额度。标"已改写"≠"问题解决了"，这里如实区分 */}
+                    {(() => {
+                      const rc = recheckOf(g.chapterId)
+                      const rewritten = exe.result?.chapters.some(c => c.chapterId === g.chapterId && c.afterText !== undefined)
+                        || (exe.task?.resume as RunResult | null | undefined)?.chapters.some(c => c.chapterId === g.chapterId && c.afterText !== undefined)
+                      if (!rc) {
+                        return rewritten
+                          ? <span className="text-10 text-ink-500" title="改完没跑成复检（本地检查，不影响正文）">· 复检没跑成</span>
+                          : null
+                      }
+                      if (rc.stillOpen.length) {
+                        return (
+                          <span className="text-10 text-amber" title={`改完仍在：${rc.stillOpen.join('；')}`}>
+                            · 复检：{rc.stillOpen.length} 条没解决
+                          </span>
+                        )
+                      }
+                      return (
+                        <span className={`text-10 ${rc.findings ? 'text-ink-400' : 'text-success'}`}>
+                          · 复检：原问题已清{rc.findings ? `，还剩 ${rc.findings} 个` : ''}
+                        </span>
+                      )
+                    })()}
                     <Button variant="secondary" size="xs" className="ml-auto"
                       title="勾选本章所有可自动处理的条目"
                       onClick={() => setGroup(g.chapterId, true)}>按章全选</Button>

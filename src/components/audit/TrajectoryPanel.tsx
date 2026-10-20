@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileDiff, History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { FileDiff, History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, FileWarning, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume, CardRecord } from '@/lib/types'
 import type { Snapshot } from '@/lib/db'
@@ -38,6 +38,8 @@ import EvidenceExportDialog from '@/components/audit/EvidenceExportDialog'
 import RunLedgerPanel from '@/components/ai/RunLedgerPanel'
 // 3.2.0 · W3：候选审阅（AI 产出、作者决定的稿子）
 import CandidatePanel from '@/components/revision/CandidatePanel'
+// 3.2.0 · W4：检查报告回看（留下来的结论要能翻回去看）
+import CheckReportPanel from '@/components/revision/CheckReportPanel'
 import BookVersionPanel from '@/components/app/BookVersionPanel'
 
 const OUTLINE_TAB = 'chapter-outline'
@@ -64,6 +66,8 @@ export default function TrajectoryPanel() {
   const [versionOpen, setVersionOpen] = useState(false)
   // 3.2.0 · W3：候选审阅面板
   const [candidateOpen, setCandidateOpen] = useState(false)
+  // 3.2.0 · W4：检查报告回看面板
+  const [reportOpen, setReportOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [projectName, setProjectName] = useState('')
   const [volumes, setVolumes] = useState<Volume[]>([])
@@ -209,6 +213,7 @@ export default function TrajectoryPanel() {
       {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
       {candidateOpen && <CandidatePanel onClose={() => setCandidateOpen(false)} />}
+      {reportOpen && <CheckReportPanel onClose={() => setReportOpen(false)} />}
       <header className="mb-5 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
@@ -219,6 +224,10 @@ export default function TrajectoryPanel() {
             <Button variant="primary" size="sm" onClick={() => setCandidateOpen(true)} className="gap-1.5"
               title="查看 AI 产出的候选稿并决定是否应用到正文（会先比对正文，被改过会拒绝）">
               <FileDiff size={12} /> 候选审阅
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setReportOpen(true)} className="gap-1.5"
+              title="回看留档的检查报告（只有查到冲突/注意级问题才留档；全绿的检查不占空间）">
+              <FileWarning size={12} /> 检查报告
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setVersionOpen(true)} className="gap-1.5"
               title="冻结这一版、回看版本历史（定稿快照）">
