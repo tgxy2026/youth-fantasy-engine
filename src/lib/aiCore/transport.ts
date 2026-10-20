@@ -48,6 +48,33 @@ export function isCancelled(e: unknown): boolean {
 }
 
 /**
+ * 流式输出**停滞**（3.2.0 · WQ6）。
+ *
+ * 🔴 为什么必须有这个错误：首 token 到达后，`chat()` 会把外层总超时清掉
+ *    （否则长篇输出会被一刀切）—— 于是「服务端收了请求、发了响应头、然后不再发数据」
+ *    过去会**永久挂住**，作者只能看到界面一直转圈。方案 §16.7 的验收项
+ *    「首输出后停滞能结束等待」说的就是这件事。
+ */
+export class AIStreamStalledError extends Error {
+  constructor(
+    /** 判定的空闲时长（毫秒） */
+    readonly idleMs: number,
+    /** 停滞前已收到的增量行数（0 ＝ 连第一段内容都没来） */
+    readonly chunksBeforeStall: number,
+  ) {
+    super(
+      chunksBeforeStall > 0
+        ? `模型输出停滞：已收到 ${chunksBeforeStall} 段内容后，${Math.round(idleMs / 1000)} 秒没有新数据，已停止等待。`
+        : `模型 ${Math.round(idleMs / 1000)} 秒没有返回任何内容，已停止等待（可稍后重试或换模型）。`,
+    )
+    this.name = 'AIStreamStalledError'
+  }
+}
+export function isStreamStalled(e: unknown): boolean {
+  return e instanceof Error && e.name === 'AIStreamStalledError'
+}
+
+/**
  * OpenAI 兼容端点的 baseUrl 归一：剥掉误粘的 `/chat/completions` 尾段（中转站商家
  * 常给完整接口地址），得到「chat/completions 的前缀」——`/chat/completions` 与
  * `/models` 的拼接都从这里走（2.5.2 中转站兼容）。
@@ -199,12 +226,57 @@ export type SseChunk = {
   done?: boolean
 }
 
-export async function readSSE(res: Response, onJson: (obj: unknown) => void, onFirstByte?: () => void): Promise<void> {
+export interface ReadSseOptions {
+  /**
+   * 空闲超时（毫秒，3.2.0 · WQ6）：**有进展**才重置。
+   * 省略或 0 ⇒ 不设（与旧行为一致）；生产路径传 `STREAM_IDLE_TIMEOUT_MS`。
+   */
+  idleTimeoutMs?: number
+}
+
+/**
+ * 流式空闲超时的默认值。
+ *
+ * 🔴 取 120 秒而不是 30 秒（方案 §16.7「流式空闲初始建议 120 秒」）：
+ *    本机 27B 在思考阶段可能几十秒不吐增量，30 秒会把**正常慢模型**判成停滞 ——
+ *    那是比"偶尔多等一会儿"更糟的错误（作者会以为模型坏了）。
+ *    真正断流的端点不会因为放宽到 120 秒而变得更难发现：它一秒数据都不会再来。
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 120_000
+
+export async function readSSE(
+  res: Response,
+  onJson: (obj: unknown) => void,
+  onFirstByte?: () => void,
+  opts: ReadSseOptions = {},
+): Promise<void> {
   if (!res.body) throw new Error('当前环境不支持流式读取响应体。')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
   let firedFirst = false
+  /** 解析成功（＝真实进展）的增量行数 */
+  let parsedChunks = 0
+  const idle = opts.idleTimeoutMs ?? 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+  /** 停滞时用来把 `reader.read()` 的等待打断 */
+  let rejectIdle: ((e: Error) => void) | null = null
+
+  const disarm = () => { if (timer) { clearTimeout(timer); timer = null } }
+  /**
+   * 重新计时。
+   * 🔴 只在**解析出增量**时调用 —— 心跳/注释行（`: ping`）不算进展，
+   *    否则一个每隔 10 秒发心跳的端点能让任务无限挂着（方案 §16.7 明确禁止）。
+   */
+  const arm = () => {
+    if (idle <= 0) return
+    disarm()
+    timer = setTimeout(() => {
+      timer = null
+      rejectIdle?.(new AIStreamStalledError(idle, parsedChunks))
+    }, idle)
+  }
+
   const flushLine = (raw: string) => {
     const line = raw.trim()
     if (!line) return
@@ -213,20 +285,38 @@ export async function readSSE(res: Response, onJson: (obj: unknown) => void, onF
     if (!payload || payload === '[DONE]') return
     try {
       onJson(JSON.parse(payload))
+      parsedChunks += 1
+      arm()
       if (!firedFirst) { firedFirst = true; onFirstByte?.() }
-    } catch { /* 跳过无法解析的增量行，不致命 */ }
+    } catch { /* 跳过无法解析的增量行，不致命（也不当作进展） */ }
   }
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    let idx: number
-    while ((idx = buf.indexOf('\n')) >= 0) {
-      flushLine(buf.slice(0, idx))
-      buf = buf.slice(idx + 1)
+
+  arm()
+  try {
+    for (;;) {
+      const { done, value } = idle > 0
+        ? await new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          rejectIdle = reject
+          reader.read().then(resolve, reject)
+        })
+        : await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        flushLine(buf.slice(0, idx))
+        buf = buf.slice(idx + 1)
+      }
     }
+    if (buf.trim()) flushLine(buf)
+  } catch (e) {
+    // 停滞 / 取消：把读取器放掉，别让底层连接悬着
+    if (idle > 0) { try { await reader.cancel() } catch { /* 忽略 */ } }
+    throw e
+  } finally {
+    disarm()
+    rejectIdle = null
   }
-  if (buf.trim()) flushLine(buf)
 }
 
 /**

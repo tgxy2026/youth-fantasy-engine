@@ -5,7 +5,7 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
 import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, precheck,
@@ -125,6 +125,11 @@ export interface ChatOptions {
    */
   allowOverflow?: boolean
   /**
+   * 流式空闲超时（毫秒，3.2.0 · WQ6）。缺省 `STREAM_IDLE_TIMEOUT_MS`（120 秒）。
+   * 🔴 这是「多久没有**新内容**就判停滞」，不是总时长 —— 长篇连续输出不该被一刀切。
+   */
+  idleTimeoutMs?: number
+  /**
    * 请求上下文（3.2.0 · WQ7）：显式说明「这次调用属于哪个项目 / 哪个任务 / 哪一步」。
    *
    * 🔴 账本按 `request.taskId` 精确归属。不传也能跑，但含义是「调用方没声明归属」：
@@ -157,6 +162,8 @@ interface CallOpts {
   temperature: number
   /** 额外采样参数（见 ChatOptions.extraOptions）：原样并入 Ollama 的 options，OpenAI 侧只转发白名单 */
   extraOptions?: Record<string, number>
+  /** 流式空闲超时（见 ChatOptions.idleTimeoutMs） */
+  idleTimeoutMs?: number
 }
 
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
@@ -253,6 +260,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
       extraOptions: opts.extraOptions ?? (protocol.output !== 'text' ? undefined : samplingOptionsOf(config)),
+      ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: opts.idleTimeoutMs } : {}),
     })
     lifecycle = transitionLifecycle(lifecycle, 'completed')
     const out = raw.content
@@ -354,9 +362,11 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
         const delta = chunk?.message?.content
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
         usage = mergeUsage(usage, usageFromStreamChunk(obj, 'ollama'))
-      }, () => clearTimer?.())
+      }, () => clearTimer?.(), { idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS })
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
+      // 停滞（3.2.0 · WQ6）原样抛：它自带「收到了几段、等了多久」，比一句"超时"有用得多
+      if (isStreamStalled(e)) throw e
       if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试；若长期超时建议换用更小的模型。`)
       throw e
     }
@@ -489,9 +499,10 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         if (typeof fr === 'string' && fr) finishReason = fr
         if (typeof delta === 'string' && delta) { content += delta; o.onToken!(delta) }
         streamUsage = mergeUsage(streamUsage, usageFromStreamChunk(obj, 'openai'))
-      }, () => clearTimer?.())
+      }, () => clearTimer?.(), { idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS })
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
+      if (isStreamStalled(e)) throw e
       if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }
