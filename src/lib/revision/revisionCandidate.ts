@@ -116,15 +116,26 @@ export function transitionCandidate(
 }
 
 // ============ 取消边界 ============
-// 同章有另一份候选时，应用一份后另一份应失效（§9.1）
+/**
+ * 同章（同落点）有另一份候选时，应用一份后另一份应失效（§9.1）。
+ *
+ * 🔴 标 **`stale` 而不是 `discarded`**：`discarded` 的语义是「**作者**主动放弃」，
+ *    而这里作者根本没看过它 —— 记成"作者丢弃"会让复盘看到一堆他从未做过的决定。
+ *    `stale` 才是事实：同章的正文已经被另一份候选改写，这份的基准不再成立。
+ */
 export function invalidateSiblings(
   candidates: RevisionCandidate[],
   appliedId: string,
 ): RevisionCandidate[] {
   return candidates.map(c => {
     if (c.id === appliedId) return c
-    if (c.status === 'pending' || c.status === 'stale' || c.status === 'applying') {
-      return { ...c, status: 'discarded' as const, discardedAt: Date.now(), updatedAt: Date.now() }
+    if (c.status === 'pending' || c.status === 'applying') {
+      return {
+        ...c,
+        status: 'stale' as const,
+        staleReasons: [...(c.staleReasons ?? []), '同章另一份候选已被应用'],
+        updatedAt: Date.now(),
+      }
     }
     return c
   })

@@ -236,8 +236,12 @@ async function case5() {
   const all = [c1, c2, c3]
   const after = invalidateSiblings(all, 'c1')
 
-  ok('⑤① 应用者保持 applied', after.find(c => c.id === 'c1')?.status === 'pending')
-  ok('⑤② 另一份 pending 变为 discarded', after.find(c => c.id === 'c2')?.status === 'discarded')
+  ok('⑤① 被应用的那份不被改动（状态由应用流程自己推进）', after.find(c => c.id === 'c1')?.status === 'pending')
+  // 🔴 3.2.0 修正：同章另一份应标 **stale（基准失效）**，不是 discarded（作者主动放弃）。
+  //    作者根本没看过它，记成"作者丢弃"会让复盘看到一堆他从未做过的决定。
+  ok('⑤② 另一份 pending 变为 stale', after.find(c => c.id === 'c2')?.status === 'stale')
+  ok('⑤② 失效原因写明"同章另一份候选已被应用"',
+    (after.find(c => c.id === 'c2')?.staleReasons ?? []).join('').includes('另一份候选'))
   ok('⑤③ 已 applied 的不受影响', after.find(c => c.id === 'c3')?.status === 'applied')
 }
 
