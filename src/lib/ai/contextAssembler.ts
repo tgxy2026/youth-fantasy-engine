@@ -45,12 +45,29 @@ export interface AssemblerOptions {
  */
 const MIN_TAIL = 200
 
+/**
+ * 单段的装入结果 —— 发送清单（`MaterialManifest`）的原料。
+ *
+ * 🔴 为什么让装配器自己产出而不是回头再算一遍：装配是**有损**的（裁剪/丢弃都发生在里面），
+ *    事后重算只能看到"原始长度"，说清不了"实际进了多少、为什么没进"。
+ */
+export interface AssembledEntry {
+  title: string
+  /** 实际带入的字符数（整段记全文长度；裁剪记保留下来的长度） */
+  includedChars: number
+  scope: 'full' | 'trimmed' | 'dropped'
+  /** `trimmed` / `dropped` 的原因（人话，直接给作者看） */
+  reason?: string
+}
+
 export interface AssembledContext {
   text: string
   sections: string[]
   dropped: string[]
   trimmed: string[]
   chars: number
+  /** 逐段装入结果（顺序与装入顺序一致） */
+  entries: AssembledEntry[]
 }
 
 export interface ContextAssembler {
@@ -71,6 +88,7 @@ export function createContextAssembler(
   const sections: string[] = []
   const dropped: string[] = []
   const trimmed: string[] = []
+  const entries: AssembledEntry[] = []
   let used = 0
 
   // 小预算（如伴写 1300）不裁：那里总共只放三四段，裁了只会每段都半截
@@ -87,6 +105,11 @@ export function createContextAssembler(
   const unmarkDropped = (title: string) => {
     const i = dropped.indexOf(title)
     if (i >= 0) dropped.splice(i, 1)
+    // 🔴 段级结果同理：先前记过“丢弃”，这次装进来了就必须把那一条**删掉**，
+    //    否则清单里会同时出现“已带入”和“未带入”，作者无法判断到底发没发。
+    for (let j = entries.length - 1; j >= 0; j--) {
+      if (entries[j].title === title && entries[j].scope === 'dropped') entries.splice(j, 1)
+    }
   }
 
   const push = (title: string, body: string, o: PushOptions = {}) => {
@@ -106,11 +129,16 @@ export function createContextAssembler(
       sections.push(title)
       used += whole + 2
       unmarkDropped(title)
+      entries.push({ title, includedChars: raw.length, scope: 'full' })
       return
     }
     // 二、放不下：附件整块专用，不放就丢（绝不切）
     if (!trimOn || o.whole) {
       dropped.push(title)
+      entries.push({
+        title, includedChars: 0, scope: 'dropped',
+        reason: o.whole ? '整块材料不想被切开，但预算放不下整份' : '预算不足，整段未带入',
+      })
       return
     }
     // 三、按**单段上限**裁（不是"能吃多少吃多少"）。
@@ -119,6 +147,7 @@ export function createContextAssembler(
     //    2648 字符全占满，比原来更糟。这里要的是"防巨段"，不是"贪心填充"。
     if (room < MIN_TAIL) {
       dropped.push(title)
+      entries.push({ title, includedChars: 0, scope: 'dropped', reason: '剩余预算不足 200 字符' })
       return
     }
     /**
@@ -133,11 +162,13 @@ export function createContextAssembler(
     const fit = fitBlock(raw, fitLimit, { keepTail: !!o.reserved })
     if (!fit.trimmed) {
       dropped.push(title)
+      entries.push({ title, includedChars: 0, scope: 'dropped', reason: '裁剪后无可用内容' })
       return
     }
     const block = head + fit.text
     if (used + block.length > limit) {
       dropped.push(title)
+      entries.push({ title, includedChars: 0, scope: 'dropped', reason: '裁剪后仍超出剩余预算' })
       return
     }
     parts.push(block)
@@ -146,6 +177,10 @@ export function createContextAssembler(
     unmarkDropped(title)
     // 🔴 只有真的加进去了才记 trimmed —— 否则会出现「既说带了一部分、又在 dropped 里」
     trimmed.push(`${title}（${fit.keptLines}/${fit.totalLines} 行）`)
+    entries.push({
+      title, includedChars: fit.text.length, scope: 'trimmed',
+      reason: `超出单段上限，保留 ${fit.keptLines}/${fit.totalLines} 行${o.reserved ? '（保尾）' : ''}`,
+    })
   }
 
   const build = (): AssembledContext => {
@@ -164,7 +199,18 @@ export function createContextAssembler(
         : '',
     ].filter(Boolean).join('')
     const text = parts.join('\n\n') + note
-    return { text, sections: [...sections], dropped: [...dropped], trimmed: [...trimmed], chars: text.length }
+    // 同标题保留**最后一条**：第二遍铺底重装时，前面那条（丢弃/裁剪）已被 `unmarkDropped`
+    // 清掉，这里只处理“先裁后整段”这类升级，不再需要编造任何长度。
+    const finalEntries: AssembledEntry[] = []
+    for (const e of entries) {
+      const i = finalEntries.findIndex(x => x.title === e.title)
+      if (i >= 0) finalEntries[i] = e
+      else finalEntries.push(e)
+    }
+    return {
+      text, sections: [...sections], dropped: [...dropped], trimmed: [...trimmed],
+      chars: text.length, entries: finalEntries,
+    }
   }
 
   return { push, build }

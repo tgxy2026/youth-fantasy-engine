@@ -34,12 +34,19 @@ import {
 import { isPrunedForAI, isSecretRow, sortBySecrecy } from '@/lib/ai/secrecy'
 import { segCapOf } from '@/lib/ai/segBudget'
 import { createContextAssembler } from '@/lib/ai/contextAssembler'
+// 3.2.0 · WQ4：发送材料清单（由装配器的真实结果生成，不在事后回读资料重算）
+import { manifestFromAssembled, type MaterialManifest } from '@/lib/ai/requestBudget'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
 import { loadFieldGating } from '@/lib/templates/labels'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
 export interface ProjectContextOptions {
+  /**
+   * 任务意图（3.2.0 · WQ4）：写进发送清单，便于事后区分"这次是为哪个功能取的资料"。
+   * 缺省 `project-context`。
+   */
+  intent?: string
   /**
    * 总字符预算。**不传则按当前模型的上下文窗口算**（`窗口 × 0.5`，3.1.3 起）。
    *
@@ -139,6 +146,12 @@ export interface ProjectContextResult {
   /** 因预算不足被丢弃的段落名 */
   dropped: string[]
   chars: number
+  /**
+   * 本次装配的**发送材料清单**（3.2.0 · WQ4）：
+   * 每段进了多少、是裁剪还是丢弃、为什么；连同预算与耗时一起交给调用方。
+   * 🔴 只在真正装配完成后才有；`skeletonOnly` 等轻量路径同样会给（清单不会凭空变大）。
+   */
+  manifest?: MaterialManifest
 }
 
 /**
@@ -788,7 +801,29 @@ async function resolveContextBudget(fallback: number): Promise<number> {
   }
 }
 
+/**
+ * 读当前活动模型的**实际窗口**（用于发送清单里的预算，标注来源）。
+ * 与 `resolveContextBudget` 同源（手填 > 模型识别 > 兜底），只是这里要来源给作者看。
+ */
+async function resolveActiveWindow(): Promise<{ window: number; source: 'user' | 'preset' | 'fallback' } | null> {
+  try {
+    const [{ getActiveProvider }, { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW }] = await Promise.all([
+      import('@/lib/aiCore/session'),
+      import('@/lib/ai/modelCapacity'),
+    ])
+    const p = await getActiveProvider()
+    if (!p) return null
+    const source: 'user' | 'preset' | 'fallback' = (typeof p.contextWindow === 'number' && p.contextWindow >= MIN_SANE_WINDOW)
+      ? 'user'
+      : (lookupWindow(p.model) ? 'preset' : 'fallback')
+    return { window: effectiveWindowOf(p), source }
+  } catch {
+    return null
+  }
+}
+
 export async function buildProjectContext(opts: ProjectContextOptions = {}): Promise<ProjectContextResult> {
+  const t0 = Date.now()
   // 3.0 · W1-2 规模门（§10.3 #2）：预算与召回数**按项目体量**取档，不再写死 12000 ——
   //    长篇（百万字）时那点预算只够塞开头几章，模型看到的「前文」永远是第 1 章。
   // 🔴 小项目（< 10 万字）档位与改造前**逐字一致**（budget 12000 / related 8）—— 中短篇手感零变化。
@@ -1016,7 +1051,17 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   const built = asm.build()
   // 3.0 · W1-2c：记下本次装配（供运行账本「上下文查看」）
   lastAssembly = { at: Date.now(), sections: built.sections, dropped: built.dropped, trimmed: built.trimmed, chars: built.chars, budget }
-  return { text: built.text, sections: built.sections, dropped: built.dropped, chars: built.chars }
+  // 3.2.0 · WQ4：发送材料清单 —— 由**装配的真实结果**生成（每段进了多少 / 裁剪还是丢弃 / 为什么），
+  // 连预算与实际窗口一起交回调用方；名单不在事后回读资料重算（那会把"后来改过的"记成"当时发过的"）。
+  const win = await resolveActiveWindow()
+  const manifest = manifestFromAssembled(built, {
+    intent: opts.intent ?? 'project-context',
+    ...(win ? { window: win.window, windowSource: win.source } : {}),
+    assembleMs: Date.now() - t0,
+  })
+  return {
+    text: built.text, sections: built.sections, dropped: built.dropped, chars: built.chars, manifest,
+  }
 }
 
 /**

@@ -122,5 +122,40 @@ const line = (n: number, tag = '行') => Array.from({ length: n }, (_, i) => `${
   ok('③ 负向：inlineDropNote=false 时不写文末声明', !/未带入本提示/.test(e.build().text))
 }
 
+{
+  // ---------- ④ 段级结果（3.2.0 · WQ4：发送清单的原料） ----------
+  const a = createContextAssembler(12000)
+  a.push('世界设定', 'w'.repeat(300))
+  a.push('巨段', line(300).join('\n'))   // 会触发裁剪
+  const built = a.build()
+  const full = built.entries.find(e => e.title === '世界设定')
+  const trimmed = built.entries.find(e => e.title === '巨段')
+  ok('④ 整段装入记 scope=full 且长度真实', full?.scope === 'full' && full.includedChars === 300, JSON.stringify(full))
+  ok('④ 裁剪记录 scope=trimmed 且带原因', trimmed?.scope === 'trimmed' && (trimmed.reason ?? '').includes('行'), JSON.stringify(trimmed))
+  ok('④ 裁剪记录的长度是**实际保留**的那部分（小于原文）',
+    (trimmed?.includedChars ?? 0) > 0 && (trimmed?.includedChars ?? 0) < line(300).join('\n').length,
+    String(trimmed?.includedChars))
+
+  // 放不下 ⇒ dropped 且带原因
+  const b = createContextAssembler(1300, { inlineDropNote: false })
+  b.push('大段', 'x'.repeat(1500))
+  const bb = b.build()
+  const dropped = bb.entries.find(e => e.title === '大段')
+  ok('④ 未带入记 scope=dropped 且带原因', dropped?.scope === 'dropped' && Boolean(dropped.reason), JSON.stringify(dropped))
+  ok('④ 未带入的长度为 0（不虚报已发）', dropped?.includedChars === 0)
+
+  // 🔴 两遍装载：先丢弃、后被铺底装回来 ⇒ 结果只能有一条且是"已带入"
+  const c = createContextAssembler(12000, { reserve: 6000, inlineDropNote: false })
+  c.push('预留段', 'r'.repeat(5000), { reserved: true })
+  c.push('常规段', 'n'.repeat(7000))       // 常规额度只剩 6000 ⇒ 先被丢
+  c.push('常规段', 'n'.repeat(100), {})    // 再来一次（模拟第二遍铺底）⇒ 放得下
+  const cc = c.build()
+  const mixed = cc.entries.filter(e => e.title === '常规段')
+  ok('🔴 同一段的丢弃记录会被清掉（不留"既发了又没发"）',
+    mixed.length === 1 && mixed[0].scope !== 'dropped', JSON.stringify(mixed))
+  ok('④ 段级结果与 sections 口径一致（装进去的都标 full/trimmed）',
+    cc.entries.filter(e => e.scope !== 'dropped').every(e => cc.sections.includes(e.title)))
+}
+
 console.log(`\n—— contextAssembler 用例结束：${pass} 通过 / ${fail} 失败 ——`)
 if (fail > 0) process.exit(1)

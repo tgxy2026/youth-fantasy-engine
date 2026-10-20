@@ -260,6 +260,49 @@ export function buildMaterialManifest(args: {
   }
 }
 
+/**
+ * 用**装配器的真实结果**生成清单。
+ *
+ * 🔴 这是清单的**唯一生产端**：装配是有损的（裁剪/丢弃都发生在里面），
+ *    事后再拿原始资料重算，只能看到"本该有多大"，说清不了"实际发了多少、为什么没发"。
+ */
+export function manifestFromAssembled(
+  assembled: {
+    entries: readonly { title: string; includedChars: number; scope: 'full' | 'trimmed' | 'dropped'; reason?: string }[]
+    text: string
+  },
+  opts: {
+    intent: string
+    output?: MaterialManifest['output']
+    /** 实际模型窗口（取不到就省略 ⇒ 预算里会标"32K 保守估算"） */
+    window?: number | null
+    windowSource?: 'user' | 'preset' | 'fallback' | 'unknown'
+    assembleMs?: number
+    recallStates?: MaterialManifest['recallStates']
+  },
+): MaterialManifest {
+  const budget = planRequestBudget({
+    ...(opts.window != null ? { window: opts.window } : {}),
+    ...(opts.windowSource ? { windowSource: opts.windowSource } : {}),
+    body: assembled.text,
+  })
+  const entries: MaterialEntry[] = assembled.entries.map(e => ({
+    // 装配器只知道"段标题"；来源种类一律记 `tab`（附件段由 `tempDocs` 另计，不在本清单）
+    source: { kind: 'tab' as const, ref: e.title },
+    includedChars: e.includedChars,
+    scope: e.scope,
+    ...(e.reason ? { reason: e.reason } : {}),
+  }))
+  return buildMaterialManifest({
+    intent: opts.intent,
+    output: opts.output ?? 'text',
+    budget,
+    entries,
+    ...(opts.assembleMs != null ? { assembleMs: opts.assembleMs } : {}),
+    ...(opts.recallStates ? { recallStates: opts.recallStates } : {}),
+  })
+}
+
 /** 清单里"没带进来"的部分（界面据此显示"未带入原因"，而不是只显示一个总数） */
 export function manifestGaps(m: MaterialManifest): MaterialEntry[] {
   return m.entries.filter(e => e.scope !== 'full')

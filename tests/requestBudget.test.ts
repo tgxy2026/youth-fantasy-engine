@@ -7,6 +7,7 @@
 //   ④ 发送清单按来源去重，`dropped/trimmed` 必须带原因 —— 作者要知道"没带什么、为什么"。
 import {
   planRequestBudget, estimateTokens, describeBudget, buildMaterialManifest, manifestGaps,
+  manifestFromAssembled,
   AIContextOverflowError, MATERIAL_SHARE_OF_WINDOW, SAFETY_MARGIN_RATIO, MAX_OUTPUT_SHARE_OF_WINDOW,
   type MaterialEntry,
 } from '@/lib/ai/requestBudget'
@@ -95,6 +96,32 @@ async function main() {
     ok('④ 未带入条数可统计', manifestGaps(m).length === 2, String(manifestGaps(m).length))
     ok('④ 输出协议与装配耗时随清单走', m.output === 'json-object' && m.assembleMs === 37)
     ok('④ 检索原因码可追溯', m.recallStates?.['sem-42'] === 'stale-index')
+  }
+
+  // ────────────────────────── ④-b 装配结果 → 清单（生产端） ──────────────────────────
+  {
+    const m = manifestFromAssembled({
+      text: '字'.repeat(1200),
+      entries: [
+        { title: '世界设定', includedChars: 400, scope: 'full' },
+        { title: '主要角色', includedChars: 260, scope: 'trimmed', reason: '超出单段上限，保留 20/40 行' },
+        { title: '远期待办', includedChars: 0, scope: 'dropped', reason: '剩余预算不足 200 字符' },
+      ],
+    }, { intent: 'chapter-review', window: 32768, windowSource: 'user', assembleMs: 12 })
+
+    ok('④-b 清单来自装配真实结果（3 段）', m.entries.length === 3, String(m.entries.length))
+    ok('④-b 段标题成为来源引用', m.entries[0].source.ref === '世界设定' && m.entries[0].source.kind === 'tab')
+    ok('④-b 裁剪/丢弃的原因原样带出',
+      m.entries[1].reason?.includes('20/40') === true && m.entries[2].reason?.includes('不足') === true,
+      JSON.stringify(m.entries.map(e => e.reason)))
+    ok('④-b 预算按传入窗口算（不是 32K 兜底）', m.budget.windowTokens === 32768 && m.budget.windowSource === 'user')
+    ok('④-b 清单预算包含正文估算', m.budget.estimates.body.tokens === 1200, String(m.budget.estimates.body.tokens))
+    ok('④-b 未带入项可枚举', m.intent === 'chapter-review' && manifestGaps(m).length === 2)
+
+    const noWindow = manifestFromAssembled({ text: '短', entries: [] }, { intent: 'x' })
+    ok('④-b 取不到窗口时预算标注兜底（不冒充精确）',
+      noWindow.budget.windowSource === 'unknown'
+      && noWindow.budget.warnings.some(w => w.includes('32K')), JSON.stringify(noWindow.budget.windowSource))
   }
 
   // ────────────────────────── ⑤ chat() 发送前拦截 ──────────────────────────
