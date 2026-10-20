@@ -92,7 +92,10 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
             <ul className="space-y-2.5">
               {runs.map(r => {
                 const st = STATUS_STYLE[r.status]
-                const candCount = r.candidates.reduce((n, c) => n + c.count, 0)
+                // 3.2.0 · W3：候选条数**不含已丢弃稿** —— 否则"生成了 3 稿、丢了 2 稿"会显示成
+                // "候选 3 条"，作者会以为有 3 条等着他选。丢弃数单独标出来。
+                const candCount = r.candidates.filter(c => c.state !== 'discarded').reduce((n, c) => n + c.count, 0)
+                const discardedCount = r.candidates.filter(c => c.state === 'discarded').reduce((n, c) => n + c.count, 0)
                 // 3.2.0 · WQ4：清单里的「未带入/只带一部分」明细（含原因）；
                 // 老记录没有 manifest ⇒ 退回原来的 dropped 列表，不假装有原因。
                 const gaps = r.context?.manifest ? manifestGaps(r.context.manifest) : []
@@ -118,7 +121,13 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                         {r.outcome.failed.length > 0 && <span className="text-danger"> · 失败 {r.outcome.failed.length}</span>}
                       </div>
                     )}
-                    {candCount > 0 && <div className="mt-1 text-11 text-ink-500">候选 {candCount} 条</div>}
+                    {(candCount > 0 || discardedCount > 0) && (
+                      <div className="mt-1 text-11 text-ink-500">
+                        {candCount > 0 && `候选 ${candCount} 条`}
+                        {candCount > 0 && discardedCount > 0 && ' · '}
+                        {discardedCount > 0 && <span title="生成了但被丢弃的稿（内容异常或作者选择重写）">丢弃 {discardedCount} 稿</span>}
+                      </div>
+                    )}
                     {r.calls.length > 0 && (
                       <div className="mt-1 text-11 text-ink-500">
                         模型调用 {r.calls.length} 次

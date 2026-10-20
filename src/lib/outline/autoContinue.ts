@@ -23,6 +23,9 @@ import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { requireProviderFor, isCancelled, stripThink } from '@/lib/ai'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
+// 3.2.0 · W3 种子：把「候选产出/采纳/丢弃」记进运行账本（此前 AiRun.candidates 无生产者）
+import { noteCandidate } from '@/lib/ai/aiRunLedger'
+import { hashOf } from '@/lib/semantic/chunk'
 import { withAiAssist } from '@/lib/ai/aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
@@ -741,6 +744,7 @@ export async function runAutoContinue(
         // 落库硬闸门：内容异常（只剩残片/标点）一律丢弃重生成，绝不落库
         if (w < minWords) {
           cb.onLog?.(`${tag}第 ${attempt} 稿内容异常（仅 ${w} 汉字，低于 ${minWords} 下限），已丢弃`)
+          noteCandidate(cb.request?.taskId, { target: 'chapter:new', fingerprint: hashOf(body), state: 'discarded' })
           if (attempt >= MAX_DRAFT_ATTEMPTS) throw new Error('模型连续返回异常内容，已中止本章')
           continue
         }
@@ -830,6 +834,11 @@ export async function runAutoContinue(
       const ch = await createChapterAfter(anchorId, title, body, sum, cb.volumeIdFor?.(plannedNo))
       const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
       const no = chapterSeqOf(lv, lc, ch.id)
+      // 3.2.0 · W3 种子：走到这里＝作者已裁决采纳并落库，账本记一条「已采纳」候选引用。
+      // 🔴 只存指纹与落点，不存正文 —— 账本随正文膨胀会拖慢整库保存。
+      noteCandidate(cb.request?.taskId, {
+        target: `chapter:${ch.id}`, fingerprint: hashOf(body), state: 'adopted',
+      })
       cb.onChapterSaved?.({ id: ch.id, title: ch.title, no })
       created.push({ id: ch.id, title: ch.title, no })
       anchorId = ch.id

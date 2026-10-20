@@ -13,7 +13,7 @@
  */
 import type { Chapter } from '@/lib/types'
 import type {
-  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunCallRequest, AiRunKind, AiRunOutcome, AiRunStatus,
+  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunCallRequest, AiRunCandidateRef, AiRunKind, AiRunOutcome, AiRunStatus,
 } from '@/lib/ai/aiRunTypes'
 import { hashOf } from '@/lib/semantic/chunk'
 import { uid } from '@/lib/app/id'
@@ -126,6 +126,11 @@ interface ActiveRunSlot {
   excludedReasons: Map<string, number>
   /** 走「唯一任务」兼容路径归属的调用数 */
   legacyAttributed: number
+  /**
+   * 本任务产出的候选引用（3.2.0 · W3 种子）。
+   * 🔴 只存「落点 / 条数 / 指纹 / 状态」，不存候选全文 —— 否则账本会跟着正文一起膨胀。
+   */
+  candidates: AiRunCandidateRef[]
 }
 
 const activeRuns = new Map<string, ActiveRunSlot>()
@@ -185,6 +190,38 @@ function bindUsageSink(): void {
   })
 }
 
+/**
+ * 记一条**候选引用**（3.2.0 · W3 种子）。
+ *
+ * 🔴 为什么需要：`AiRun.candidates` 从 3.0 就存在，但**一直没有生产者** ——
+ *    「创作轨迹」里的候选条数恒为 0，等于这块界面从来没说过真话。
+ *
+ * 口径：
+ *  · 同一 `target` + 同一 `fingerprint` 重复上报 ⇒ 只更新状态（不重复计数）；
+ *  · 同一 `target` 但指纹变了 ⇒ 视为**新一版候选**，追加一条（作者看得出改过几稿）；
+ *  · `runId` 不在跑（任务已收尾 / 页面重载）⇒ 静默忽略：账本不是关键路径，绝不因此打断创作。
+ */
+export function noteCandidate(
+  runId: string | undefined,
+  ref: { target: string; count?: number; fingerprint: string; state: AiRunCandidateRef['state'] },
+): void {
+  if (!runId) return
+  const slot = activeRuns.get(runId)
+  if (!slot) return
+  const hit = slot.candidates.find(c => c.target === ref.target && c.fingerprint === ref.fingerprint)
+  if (hit) {
+    hit.state = ref.state
+    if (ref.count !== undefined) hit.count = ref.count
+    return
+  }
+  slot.candidates.push({
+    target: ref.target,
+    count: Math.max(1, Math.round(ref.count ?? 1)),
+    fingerprint: ref.fingerprint,
+    state: ref.state,
+  })
+}
+
 /** 摘掉总线（没有任务在跑时）—— 否则页面空闲期间的调用会一直空转 */
 function unbindUsageSinkIfIdle(): void {
   if (activeRuns.size > 0) return
@@ -235,6 +272,7 @@ export async function createRun(input: {
     calls: [],
     excludedReasons: new Map(),
     legacyAttributed: 0,
+    candidates: [],
   })
   bindUsageSink()
   return run
@@ -254,7 +292,7 @@ export async function patchRun(id: string, patch: Partial<AiRun>): Promise<AiRun
 
 // 📌 2026-10-10 轻量审计：删掉 `appendRunCall` / `makeCandidateRef` 两个未使用导出 ——
 //    · 调用账改由 `setUsageSink` 内存累积、`finishRun` **一次写入**（`appendRunCall` 的逐步读改写被淘汰）；
-//    · 候选引用目前只在 `AiRun.candidates` 结构里承载，尚无生产者（等「候选产出」接线时再加构造器）。
+//    · 候选引用现由 `noteCandidate()` 生产（3.2.0 · W3 种子）；正文链在落库时上报「已采纳」。
 /** 收尾：置终态 + 验收回执 */
 export async function finishRun(
   id: string,
@@ -270,6 +308,7 @@ export async function finishRun(
   // 3.2.0 · WQ7：只取**本任务槽位**的账一次写入；并行任务的账互不影响。
   const slot = activeRuns.get(id)
   const calls = slot ? [...slot.calls] : []
+  const candidates = slot ? [...slot.candidates] : []
   const excluded = slot && slot.excludedReasons.size > 0
     ? {
       count: [...slot.excludedReasons.values()].reduce((n, c) => n + c, 0),
@@ -282,6 +321,7 @@ export async function finishRun(
     error: patch.error ?? '',
     ...(patch.context !== undefined ? { context: patch.context } : {}),
     ...(calls.length ? { calls } : {}),
+    ...(candidates.length ? { candidates } : {}),
     ...(excluded ? { excludedCalls: excluded } : {}),
     ...(slot && slot.legacyAttributed > 0 ? { legacyAttributedCalls: slot.legacyAttributed } : {}),
     finishedAt: patch.now ?? Date.now(),
