@@ -55,6 +55,8 @@ export interface AiRunCall {
   completionTokens?: number
   /** token 是估算值（拿不到厂商真实用量时置 true） */
   tokensEstimated?: boolean
+  /** 首字耗时（毫秒，流式才有） */
+  firstByteMs?: number
   /** 结束原因（如 `stop` / `length` / `content_filter`）—— 拒答感知的判据来源 */
   finishReason?: string
   at: number

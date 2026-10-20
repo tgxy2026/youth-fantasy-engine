@@ -119,7 +119,19 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                       </div>
                     )}
                     {candCount > 0 && <div className="mt-1 text-11 text-ink-500">候选 {candCount} 条</div>}
-                    {r.calls.length > 0 && <div className="mt-1 text-11 text-ink-500">模型调用 {r.calls.length} 次</div>}
+                    {r.calls.length > 0 && (
+                      <div className="mt-1 text-11 text-ink-500">
+                        模型调用 {r.calls.length} 次
+                        {/* 3.2.0 · WQ6：首字耗时（流式才有）。取最快的一次 —— 作者关心的是"最好能多快" */}
+                        {(() => {
+                          const fb = r.calls
+                            .map(c => c.firstByteMs)
+                            .filter((v): v is number => typeof v === 'number' && v >= 0)
+                          if (fb.length === 0) return null
+                          return <span title="从发出请求到第一个字出现（最快的一次）"> · 首字 {(Math.min(...fb) / 1000).toFixed(1)}s</span>
+                        })()}
+                      </div>
+                    )}
                     {r.context && (
                       <div className="mt-1 text-11 text-ink-500">
                         上下文：{r.context.sections.length} 段 / {r.context.chars} 字

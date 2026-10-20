@@ -17,6 +17,8 @@ import { samplingOptionsOf } from '@/lib/ai/modelSampling'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 // 3.2.0 · WQ7：真实 token 用量提取（Ollama / OpenAI 兼容两套字段收在一处）
 import { usageFromOllama, usageFromOpenAI, usageFromStreamChunk, mergeUsage, type RealUsage } from '@/lib/aiCore/usageParse'
+// 3.2.0 · WQ6：请求生命周期（本轮只做**旁路记录**，不接管超时语义）
+import { createLifecycle, transitionLifecycle } from '@/lib/ai/streaming'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
 import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
@@ -183,13 +185,27 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   }
 
   const t0 = Date.now()
+  // 3.2.0 · WQ6（旁路第一步）：建生命周期，只**记录**首字/结局与耗时，暂不参与超时判定。
+  // 🔴 为什么先旁路：现有超时是 `fetchWithTimeout` + `readSSE` 的组合，语义经过多轮实测校准；
+  //    一次性换成生命周期驱动，风险是把"慢模型被一刀切"这类老问题请回来。
+  //    先记录一轮（拿到真实首字分布），下一轮再让它接管。
+  let lifecycle = transitionLifecycle(createLifecycle(`${config.model}@${t0}`), 'connecting')
+  const wrappedOnToken = opts.onToken
+    ? (delta: string) => {
+      if (lifecycle.firstByteAt === undefined) {
+        lifecycle = transitionLifecycle(lifecycle, 'first-byte', { firstByteAt: Date.now() })
+      }
+      lifecycle = transitionLifecycle(lifecycle, 'streaming', { text: delta, tokens: 1 })
+      opts.onToken!(delta)
+    }
+    : undefined
   const usageSource: ChatUsage['source'] = config.type === 'ollama' ? 'ollama' : 'openai'
   try {
     const raw = await chatRaw(config, msgs, {
       timeoutMs: opts.timeoutMs ?? CHAT_TIMEOUT_MS,
       think,
       signal: opts.signal,
-      onToken: opts.onToken,
+      onToken: wrappedOnToken,
       temperature,
       // 2.9.2：显式传入优先；否则用「模型配置 → 文本生成微调」里填的那组参数。
       // 🔴 不填时 `samplingOptionsOf` 返回 undefined ⇒ 请求体与改动前逐字节一致。
@@ -201,6 +217,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
       extraOptions: opts.extraOptions ?? (opts.json ? undefined : samplingOptionsOf(config)),
     })
+    lifecycle = transitionLifecycle(lifecycle, 'completed')
     const out = raw.content
     // 3.2.0 · WQ7：**真实用量优先**；只有拿不到时才退回估算，并打上 `tokensEstimated`
     // （统计页据此区分"厂商报的数"与"我们估的数"，避免把估算当成账单依据）。
@@ -212,9 +229,16 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       ...(real?.completionTokens !== undefined ? { completionTokens: real.completionTokens } : {}),
       ...(real?.finishReason ? { finishReason: real.finishReason } : {}),
       ...(hasRealPrompt && real?.completionTokens !== undefined ? {} : { tokensEstimated: true }),
+      // 流式才有首字；非流式整段一次到，首字耗时没有独立意义（不写 0 冒充）。
+      ...(lifecycle.firstByteAt !== undefined ? { firstByteMs: lifecycle.firstByteAt - lifecycle.startedAt } : {}),
     })
     return out
   } catch (e) {
+    lifecycle = transitionLifecycle(
+      lifecycle,
+      e instanceof AICancelled ? 'cancelled' : 'failed',
+      { error: e instanceof Error ? e.message : String(e) },
+    )
     // 3.0 · W1-4：被内容政策拒绝的调用也记一笔，并标 finishReason ——
     // 统计页据此显示「被拒 N 次」，方便复盘哪段内容老被拒（§14）
     reportUsage({

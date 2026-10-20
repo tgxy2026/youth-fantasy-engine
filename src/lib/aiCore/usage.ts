@@ -21,6 +21,11 @@ export interface ChatUsage {
    *    统计页必须能区分两者 —— 否则估算值会被当成账单依据。
    */
   tokensEstimated?: boolean
+  /**
+   * 首字耗时（毫秒，流式才有）：从发请求到第一个增量到达。
+   * 🔴 这是作者最直观的"卡不卡"指标 —— 总耗时 30s 里如果是 25s 才出首字，体感和"20s 出字 + 10s 输出"完全不同。
+   */
+  firstByteMs?: number
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
   /** 来源通道 */
