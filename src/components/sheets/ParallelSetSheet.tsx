@@ -542,6 +542,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
       {showFill && selSub && (
         <AITemplateFill
           fields={templates}
+          tabId={tab.id}
           existing={draft}
           extraContextGroups={siblingCtx ? [{
             key: 'siblings',

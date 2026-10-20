@@ -39,10 +39,17 @@ import InterviewContextPicker, { type ContextChoice } from '@/components/creativ
 import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { applyFieldLabels } from '@/lib/templates/labels'
+import { useFieldLabels } from '@/lib/templates/useFieldLabels'
 
 interface Props {
   /** 该实体的全部字段（key 约定见 TemplateField） */
   fields: TemplateField[]
+  /**
+   * 所属页签（3.2.0 · T3）。传了就把字段名换成**作者当前显示名**（模板 > 别名 > 原名），
+   * 提示词、已填摘要与预览三处同步。`fields[].key` 仍是存储键，回填路径不变。
+   */
+  tabId?: string
   /**
    * 补全语境 —— 决定发哪条系统提示词（缺省 = 通用设定补全）。
    * 大纲规划三页签（全书总纲 / 分卷大纲 / 章节细纲）各传自己那条；见 `lib/ai.ts` 的 `FillContext`。
@@ -95,6 +102,7 @@ type Mode = 'fill' | 'interview'
 
 export default function AITemplateFill({
   fields,
+  tabId,
   context,
   existing,
   withWorldContext = true,
@@ -190,10 +198,14 @@ export default function AITemplateFill({
     return out
   }, [existing])
 
+  // 3.2.0 · T3：作者当前显示名（改名不影响 key，回填仍按存储键）
+  const labels = useFieldLabels(tabId)
+  const labeledFields = useMemo(() => applyFieldLabels(fields, labels), [fields, labels])
+
   // 锁定 / 已填字段不发给模型；其余才是 AI 真正补全的对象
   const sendFields = useMemo(
-    () => fields.filter(f => !f.locked && !(safeExisting?.[f.key]?.trim())),
-    [fields, safeExisting],
+    () => labeledFields.filter(f => !f.locked && !(safeExisting?.[f.key]?.trim())),
+    [labeledFields, safeExisting],
   )
 
   /**
@@ -230,9 +242,9 @@ export default function AITemplateFill({
   /** 已填字段摊平成文本：给对话引导当起点（「只追问缺口」），也给补全当「补完」依据 */
   const existingText = useMemo(() => {
     if (!safeExisting) return ''
-    const labels = Object.fromEntries(fields.map(f => [f.key, f.label]))
-    return filledToText(safeExisting, labels)
-  }, [safeExisting, fields])
+    const labelOf = Object.fromEntries(labeledFields.map(f => [f.key, f.label]))
+    return filledToText(safeExisting, labelOf)
+  }, [safeExisting, labeledFields])
 
   /** 对话引导的「纲」：字段清单是动态的，所以提纲按字段顺序切话题 */
   const spec = useMemo<InterviewSpec>(() => ({
@@ -449,7 +461,7 @@ export default function AITemplateFill({
                 </div>
                 <div className="space-y-3 overflow-y-auto pr-1"
 style={{ maxHeight: foldVh('42vh') }}>
-                  {fields.map(f => {
+                  {labeledFields.map(f => {
                     const isProduced = !f.locked && !(safeExisting?.[f.key]?.trim())
                     const val = isProduced ? (result[f.key] ?? '') : (safeExisting?.[f.key] ?? '')
                     const filled = isProduced && aiFilled.includes(f.key)

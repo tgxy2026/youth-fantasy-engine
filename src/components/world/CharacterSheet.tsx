@@ -1115,6 +1115,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       {showFill && (
         <AITemplateFill
           fields={cardAiFields}
+          tabId={tab.id}
           // 草稿本按「这张卡」存：换到另一张角色卡时，攒的草稿不会跟错人
           draftScope={`card::${tab.id}::${draft?.id ?? 'new'}`}
           title={`AI 新增 · ${tab.name}`}
@@ -1127,6 +1128,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       {showFillExisting && draft && (
         <AITemplateFill
           fields={cardAiFillFields}
+          tabId={tab.id}
           existing={cardAiExisting}
           draftScope={`card::${tab.id}::${draft.id}`}
           title={`AI 补全 · ${draft.name}`}

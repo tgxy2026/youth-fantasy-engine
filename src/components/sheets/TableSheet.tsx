@@ -698,6 +698,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {showFill && (
         <AITemplateFill
           fields={tableFields}
+          tabId={tab.id}
           draftScope={`table::${tab.id}`}
           title={`AI 新增 · ${tab.name}`}
           sketchPlaceholder="例如：北境最大的商盟，掌控三条主干商路，与皇室关系微妙，暗中资助主角……"
@@ -709,6 +710,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {fillRow && (
         <AITemplateFill
           fields={tableFields}
+          tabId={tab.id}
           existing={fillRow.data}
           draftScope={`row::${tab.id}::${fillRow.id}`}
           title={`AI 补全本行空白 · ${tab.name}`}

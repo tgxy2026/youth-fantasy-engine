@@ -543,6 +543,7 @@ export default function WorldSetSheet({ tab }: Props) {
       {showFill && (
         <AITemplateFill
           fields={templates}
+          tabId={tab.id}
           existing={draft}
           extraContextGroups={siblingCtx ? [{
             key: 'siblings',
@@ -566,6 +567,7 @@ export default function WorldSetSheet({ tab }: Props) {
       {showOrganize && (
         <AITemplateFill
           fields={templates}
+          tabId={tab.id}
           // 已填字段照样发给模型当"别再生成一遍"的依据，但弹窗里会标成「已填」不可改
           existing={draft}
           initialSketch={freeDraft}

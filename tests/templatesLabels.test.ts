@@ -4,6 +4,8 @@
 //   · 一对一改名（含义不变）⇒ AI 使用**当前名称**理解与回填；
 //   · 采用模板的 label 优先于老别名；两者都只影响显示；
 //   · 渲染 / 上下文 / 世界观摘要三条链路取同一份名字。
+import { readFileSync } from 'node:fs'
+import * as path from 'node:path'
 import { TABS } from '@/lib/schema'
 import type { TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
@@ -12,7 +14,7 @@ import { __resetMockStores } from './mock-memory'
 import { adaptBuiltinTab } from '@/lib/templates/legacyAdapter'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { __resetTemplateCacheForTests } from '@/lib/templates/cache'
-import { loadFieldLabels } from '@/lib/templates/labels'
+import { applyFieldLabels, loadFieldLabels } from '@/lib/templates/labels'
 import { snapshotOfBuiltin } from '@/lib/templates/snapshot'
 import { saveTemplateDef } from '@/lib/templates/store'
 import { saveAliases } from '@/lib/settings/fieldAlias'
@@ -134,6 +136,25 @@ async function main() {
 
     const tpl = resolveTemplateForTab(POS, { def })
     ok('⑦ 模板快照里别名没有反向覆盖结构', tpl.fields.find(f => f.sourceKey === posKey)?.label === '模板书名')
+  }
+
+  // ────────────────────────── ⑧ AI 补全清单：换显示名，不换回填键 ──────────────────────────
+  {
+    const fields: { key: string; label: string; locked?: boolean; desc?: string }[] = [
+      { key: `${KEY}`, label: '主线一句话', locked: true, desc: '说明' },
+      { key: '一、故事内核::主角弧光', label: '主角弧光' },
+    ]
+    const out = applyFieldLabels(fields, { [KEY]: '故事主线' })
+    ok('⑧ 补全清单使用当前显示名', out[0].label === '故事主线')
+    ok('⑧ 回填键 / 锁定 / 说明原样保留',
+      out[0].key === KEY && out[0].locked === true && out[0].desc === '说明')
+    ok('⑧ 没改名的字段原样复用（不新建对象）', out[1] === fields[1])
+    ok('⑧ 空显示名表 ⇒ 原数组返回', applyFieldLabels(fields, {}) === fields)
+
+    // 源码闸：弹窗必须在发提示词与预览前叠当前名（否则 T3-01 只做了一半）
+    const src = readFileSync(path.join(process.cwd(), 'src/components/ai/AITemplateFill.tsx'), 'utf8')
+    ok('🔴 源码：补全弹窗叠当前显示名',
+      src.includes('useFieldLabels') && src.includes('applyFieldLabels') && src.includes('labeledFields'))
   }
 
   console.log(`\ntemplatesLabels: ${pass} 通过 / ${fail} 失败`)

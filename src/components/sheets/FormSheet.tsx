@@ -297,6 +297,7 @@ export default function FormSheet({ tab }: Props) {
       {showFill && (
         <AITemplateFill
           fields={formFields}
+          tabId={tab.id}
           context={fillContext}
           existing={data}
           draftScope={`form::${tab.id}`}
@@ -310,6 +311,7 @@ export default function FormSheet({ tab }: Props) {
       {showFillNew && (
         <AITemplateFill
           fields={formFields}
+          tabId={tab.id}
           context={fillContext}
           // 🔴 刻意**不传 existing** —— 这就是「起草全份」与「补全」的分界：
           //    不传 ⇒ 全部字段都由模型产出，采用时整体写入（已填的会被替换；点按钮前 openFillNew 已确认过）。

@@ -660,6 +660,7 @@ export default function OutlineSheet({ tab }: Props) {
       {showFillNew && (
         <AITemplateFill
           fields={cardFields}
+          tabId={tab.id}
           context={fillContext}
           draftScope={`card::${tab.id}::new`}
           title={`AI 新增 · ${tab.name}`}
@@ -674,6 +675,7 @@ export default function OutlineSheet({ tab }: Props) {
       {showFillExisting && draft && (
         <AITemplateFill
           fields={cardFields}
+          tabId={tab.id}
           context={fillContext}
           existing={draft.data}
           draftScope={`card::${tab.id}::${draft.id}`}

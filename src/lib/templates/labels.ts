@@ -27,6 +27,18 @@ function storageKeysOf(tab: TabDef): string[] {
   return keys
 }
 
+/**
+ * 把显示名叠到「存储键 + 显示名」的字段清单上（AI 补全 / 对话引导用）。
+ * 🔴 只换 `label`，`key` 与其它属性原样保留 —— 回填仍按稳定键。空表 ⇒ 原样返回同一个数组。
+ */
+export function applyFieldLabels<T extends { key: string; label: string }>(
+  fields: readonly T[],
+  labels: Record<string, string>,
+): readonly T[] {
+  if (!Object.keys(labels).length) return fields
+  return fields.map(f => (labels[f.key] ? { ...f, label: labels[f.key] } : f))
+}
+
 /** 当前项目下这个页签的显示名表；没有改名 / 读取失败 ⇒ 空表（用原名） */
 export async function loadFieldLabels(tab: TabDef): Promise<Record<string, string>> {
   try {
