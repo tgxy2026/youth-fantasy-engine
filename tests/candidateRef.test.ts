@@ -86,6 +86,11 @@ async function main() {
     ok('⑤ 正文链在落库时上报「已采纳」', /noteCandidate\(cb\.request\?\.taskId, \{[\s\S]{0,120}state: 'adopted'/.test(ac))
     ok('⑤ 异常稿被丢弃时也留痕（作者能看出"生成了几稿"）',
       /state: 'discarded'/.test(ac))
+    const cs = readFileSync('src/lib/creative/creativeSession.ts', 'utf8')
+    ok('⑤ 设定闸门：勾选即采纳、一条没勾即丢弃',
+      /target: 'settings:bible'/.test(cs) && /picked && picked\.length > 0 \? 'adopted' : 'discarded'/.test(cs))
+    ok('⑤ 大纲闸门：采纳/否掉都留痕',
+      /target: 'outline'/.test(cs) && /ok \? 'adopted' : 'discarded'/.test(cs))
     const rg = readFileSync('src/lib/ai/aiRunLedger.ts', 'utf8')
     ok('⑤ 账本提供唯一生产者入口（不再各处手搓 candidates 数组）',
       /export function noteCandidate\(/.test(rg))

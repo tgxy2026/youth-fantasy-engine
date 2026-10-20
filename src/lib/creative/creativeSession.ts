@@ -43,7 +43,8 @@ import {
   isSuspectRewrite,
   listRewriteCandidates,
 } from '@/lib/editor/chapterRewrite'
-import { createRun, finishRun, chapterFingerprint, pickContextSnapshot, computeBasis } from '@/lib/ai/aiRunLedger'
+import { createRun, finishRun, chapterFingerprint, pickContextSnapshot, computeBasis, noteCandidate } from '@/lib/ai/aiRunLedger'
+import { hashOf } from '@/lib/semantic/chunk'
 import { lastContextAssembly } from '@/lib/ai/aiContext'
 import { checkRewriteTarget, formatGap } from '@/lib/audit/evidenceGate'
 import { countWords } from '@/lib/editor/textStats'
@@ -631,12 +632,33 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         // 闸门：把 Promise 挂在这里等 —— 组件只负责显示与 resolve，切页签不影响它
         onBibleGate: (bundle: DraftBundle) =>
           new Promise<DraftRow[] | null>(resolve => {
-            gateResolve = resolve as (v: unknown) => void
+            gateResolve = (v: unknown) => {
+              const picked = Array.isArray(v) ? (v as DraftRow[]) : null
+              // 3.2.0 · W3：设定草稿也是一批候选 —— 勾了几条算采纳，一条没勾算丢弃。
+              // 🔴 只记条数/指纹：草稿可能在作者手里被改过，记内容反而会与库里不一致。
+              noteCandidate(ledger?.id, {
+                target: 'settings:bible',
+                count: bundle.rows.length,
+                fingerprint: hashOf(bundle.rows.map(r => r.name).join('\u0000')),
+                state: picked && picked.length > 0 ? 'adopted' : 'discarded',
+              })
+              resolve(picked)
+            }
             set({ bibleGate: bundle })
           }),
         onOutlineGate: (outline: OutlineResult) =>
           new Promise<boolean>(resolve => {
-            gateResolve = resolve as (v: unknown) => void
+            gateResolve = (v: unknown) => {
+              const ok = v === true
+              // 3.2.0 · W3：大纲是"一批章节候选"—— 采纳与否都留痕，作者事后能看到当时否掉了什么
+              noteCandidate(ledger?.id, {
+                target: 'outline',
+                count: Math.max(1, outline.chapters.length),
+                fingerprint: hashOf(outline.chapters.map(c => c.title ?? '').join('\u0000')),
+                state: ok ? 'adopted' : 'discarded',
+              })
+              resolve(ok)
+            }
             set({ outlineGate: outline })
           }),
         onChapterSaved: ch => appendLog(`✅ 第${ch.no}章 ${ch.title}`),
