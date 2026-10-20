@@ -24,6 +24,7 @@ import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from '@/lib/tavern/types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from '@/lib/tavern/vars'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /** 六栏档案的存在意义、各栏行为、以及两条不容违反的规矩（对外导出便于测试与 UI 展示） */
 /** 关键事实最多保留的行数（超了要归并，不是丢弃新事 —— 见提示词里的精简纪律） */
@@ -185,7 +186,7 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
   if (messages.length === 0) return { memory: prev ?? emptyMemory(charId), journal: '' }
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildRoundEndSystem(charName, now, limits) },
@@ -266,7 +267,7 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildSummarySystem(charName, now, limits) },
@@ -347,7 +348,7 @@ export type ColdStartArgs = {
 export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> {
   const { charId, charName, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildColdStartSystem(charName, now, limits) },
@@ -451,7 +452,7 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
   const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned, notes } = args
   if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildVarExtractSystem(keys, { maxStep }) },
     {

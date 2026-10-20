@@ -50,6 +50,7 @@ import {
   type TavernSession, type TavernMessage, type TavernCast, type TavernDirectorNote,
   type FreeSession, type FreeCharacter, type FreeMemory, type VarKey,
 } from '@/lib/tavern/types'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /** 剧情模式的档位固定为叙事向（方案 §5.3：剧情默认叙事向、自由默认聊天向） */
 const PLOT_TONE = 'narrative' as const
@@ -326,7 +327,7 @@ export async function runPlotTurn(
   cb: PlotTurnCallbacks = {},
   deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<PlotTurnResult> {
-  const runChat = deps.chatFn ?? chat
+  const runChat = withIndependentAttribution(deps.chatFn ?? chat)
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const p = resolveParamsOf('plot', st, session.params)
@@ -776,7 +777,7 @@ export async function runFreeTurn(
 ): Promise<FreeTurnResult> {
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
-  const runChat = deps.chatFn ?? chat
+  const runChat = withIndependentAttribution(deps.chatFn ?? chat)
   // 与剧情模式同一条约定：null = 重说（不追加用户消息、先丢掉末尾那条 AI 回复）
   const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
   // 与剧情模式同一契约：null = 重说，必须有可重说的回复（UI 也会先判一次）
@@ -908,7 +909,7 @@ export async function runFreeAssist(
 ): Promise<{ text: string; modelName: string; fellBack: boolean }> {
   const st = deps.settings ?? await getTavernSettings()
   const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
-  const runChat = deps.chatFn ?? chat
+  const runChat = withIndependentAttribution(deps.chatFn ?? chat)
   const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider.contextWindow })
 
   // 参数解析先做（下面算历史额度要用到 contextBudget）—— 与 runFreeTurn 同口径：

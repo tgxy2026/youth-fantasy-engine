@@ -27,6 +27,7 @@ import { uid } from '@/lib/app/id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from '@/lib/tavern/types'
 import { structHintFor } from '@/lib/tavern/cardFields'
 import type { CardFieldPath, FreeCharacter, TavernMessage } from '@/lib/tavern/types'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 // 字段表与读写工具在 ./types（纯数据 + 纯函数，store 也要用；放这里会让 store→revise→engine→store 成环）
 export {
@@ -198,7 +199,7 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
   if (!transcript.trim()) return []
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   // 现有设定：**空字段也要列**（对话里新长出来的信息正是要补进去的）
   const current = CARD_FIELDS

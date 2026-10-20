@@ -30,6 +30,7 @@ import { webSearch, type SearchSettings } from '@/lib/ai/webSearch'
 import type { TavernStory, TavernStoryIndexItem, StorySettingSnapshot } from '@/lib/tavern/types'
 import { sessionStoryId } from '@/lib/tavern/types'
 import { buildWorldBookText, normalizeEntry, type WorldEntry } from '@/lib/tavern/worldBook'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 // 全局 meta 键（无项目前缀）
 const G = {
@@ -305,7 +306,7 @@ export async function draftStory(args: StoryDraftArgs): Promise<{ fields: StoryD
   })
 
   const { provider } = await resolveTavernProvider(args.providerId ? { providerId: args.providerId } : undefined)
-  const runChat = args.chatFn ?? chat
+  const runChat = withIndependentAttribution(args.chatFn ?? chat)
 
   const fence = newAuthorFence()
   const msgs: ChatMessage[] = [

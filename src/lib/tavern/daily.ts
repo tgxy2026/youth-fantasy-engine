@@ -31,6 +31,7 @@ import type { ChatFn } from '@/lib/tavern/provider'
 import {
   DAILY_ADVANCE_MS, DAILY_LOG_KEEP, type DailyState, type FreeCharacter, type FreeMemory,
 } from '@/lib/tavern/types'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /** 生活日志保留条数的内置默认（真源已上移到 ./types，这里只做转发，保持既有调用点不变） */
 export { DAILY_LOG_KEEP }
@@ -202,7 +203,7 @@ export function parseDailyReply(text: string, logKeep = DAILY_LOG_KEEP): DailyPa
 export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
   const { char, prev, memory, providerId, chatFn, signal, now = Date.now(), logKeep = DAILY_LOG_KEEP } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const base = prev ?? emptyDaily(char.id, now)
   const days = daysSince(base.lastActiveAt, now)

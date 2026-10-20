@@ -22,6 +22,7 @@ import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { emptyFreeCharacter, type FreeCharacter } from '@/lib/tavern/types'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { structFieldLines } from '@/lib/tavern/cardFields'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /** 缺失信息的标记：提示词要求模型用它，UI 据此提醒作者去补 */
 export const MISSING_TAG = '〖待补〗'
@@ -256,7 +257,7 @@ export type ConvertArgs = {
 export async function convertNovelChar(args: ConvertArgs): Promise<{ draft: CardDraft; gaps: string[] }> {
   const { name, data, source, providerId, chatFn, signal } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildImportSystem() },

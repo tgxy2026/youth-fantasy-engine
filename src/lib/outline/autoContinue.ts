@@ -27,6 +27,8 @@ import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { noteCandidate } from '@/lib/ai/aiRunLedger'
 // 3.2.0 · WQ6：批次/步骤总请求预算（补字循环 + 自检 + 设定整理一起计入）
 import { createAttemptBudget, CHAPTER_ATTEMPT_BUDGET, type AttemptBudget } from '@/lib/ai/requestLedger'
+// 3.2.0 · W4（A 策略）：有实质发现的检查才落库，双闸淘汰（每任务 5 份 / 每项目 200 份 / 32 MiB）
+import { persistCheckReports, type CheckRunLike } from '@/lib/revision/checkReports'
 import { hashOf } from '@/lib/semantic/chunk'
 // 3.2.0 · WQ8：抽取证据的原文核验（编造的证据比没有证据更糟）
 import { checkEntityEvidence, describeEvidence } from '@/lib/ai/evidenceCheck'
@@ -348,6 +350,20 @@ async function selfRefine(
     aiForeshadowReviewWithStatus(ctx.text, { signal, ...(request ? { request } : {}) }),
   ])
   const selfCheck = summarizeSelfCheck(runs)
+  // 3.2.0 · W4：检查报告落库（A 策略）—— 只存有「严重 / 中等」发现的；
+  // 没有 taskId/projectId 时（老调用、无账本场景）**不硬塞**：挂不到任务上的报告没人看得到。
+  // 🔴 旁路，绝不打断创作：`persistCheckReports` 内部不抛，这里再兜一层。
+  if (request?.taskId && request.projectId) {
+    await persistCheckReports({
+      projectId: String(request.projectId),
+      jobId: request.taskId,
+      reports: [
+        { checkId: 'continuity', source: '章节自检 · 连续性', run: runs[0] as unknown as CheckRunLike },
+        { checkId: 'ooc', source: '章节自检 · 人设', run: runs[1] as unknown as CheckRunLike },
+        { checkId: 'foreshadow', source: '章节自检 · 伏笔', run: runs[2] as unknown as CheckRunLike },
+      ],
+    }).catch(() => null)
+  }
   if (selfCheck.state !== 'completed') {
     // 必选项失败/取消：不当成通过、不进入改写分支；调用方据此暂停连写
     onPhase?.(`编辑自检未完成（${selfCheck.issues?.join('；') || selfCheck.state}），本章不自动修正`)

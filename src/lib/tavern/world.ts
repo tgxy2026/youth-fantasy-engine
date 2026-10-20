@@ -37,6 +37,7 @@ import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
 import { webSearch, type SearchSettings } from '@/lib/ai/webSearch'
 import type { TavernMessage } from '@/lib/tavern/types'
 import { buildWorldBookText, type WorldEntry, type EntryState } from '@/lib/tavern/worldBook'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /**
  * 一节背景设定。
@@ -385,7 +386,7 @@ export async function draftWorldSetting(args: WorldDraftArgs): Promise<{ fields:
   })
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
 
   const fence = newAuthorFence()
   const msgs: ChatMessage[] = [

@@ -28,6 +28,7 @@ import {
 import { EMPTY_CARD_DRAFT, type CardDraft } from '@/lib/tavern/draft'
 import { EMPTY_SCRIPT_FIELDS, type ScriptDraftFields } from '@/lib/tavern/script'
 import { EMPTY_STORY_FIELDS, type StoryDraftFields } from '@/lib/tavern/story'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 export type { InterviewTopic, InterviewTurn, InterviewReply }
 
@@ -162,7 +163,7 @@ export function tavernCallChat(
   providerId?: string,
   chatFn?: ChatFn,
 ): (msgs: ChatMessage[], opts: { signal?: AbortSignal }) => Promise<string> {
-  const runChat = chatFn ?? chat
+  const runChat = withIndependentAttribution(chatFn ?? chat)
   return async (msgs, opts) => {
     const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
     return runChat(provider, msgs, {

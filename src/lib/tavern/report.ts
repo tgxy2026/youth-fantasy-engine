@@ -21,6 +21,7 @@ import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from '@/lib/tavern/types'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 /**
  * 可被指向的表（白名单）：只允许指向**能定位到具体条目**的页签。
@@ -219,7 +220,7 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
     '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',
   ].filter(Boolean).join('\n')
 
-  const runChat = opts.chatFn ?? chat
+  const runChat = withIndependentAttribution(opts.chatFn ?? chat)
   opts.onPhase?.('分析推演记录')
   const reply = await runChat(
     provider,

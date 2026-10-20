@@ -29,6 +29,7 @@ import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import type { SearchSettings, webSearch } from '@/lib/ai/webSearch'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/editor/draftMaterial'
 import { structFieldLines } from '@/lib/tavern/cardFields'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 // ==================== 角色卡模板 ====================
 
@@ -179,7 +180,7 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
     idea, refs: a.refs, existing: a.existing, settings: a.settings, signal: a.signal, searchFn: a.searchFn,
   })
   const { provider } = await resolveTavernProvider(a.providerId ? { providerId: a.providerId } : undefined)
-  const runChat = a.chatFn ?? chat
+  const runChat = withIndependentAttribution(a.chatFn ?? chat)
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildCardDraftSystem() },
     { role: 'user', content: buildCardDraftUser({ idea, material: material.blocks }) },

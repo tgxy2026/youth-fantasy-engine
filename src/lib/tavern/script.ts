@@ -37,6 +37,7 @@ import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
 import { webSearch, type SearchSettings } from '@/lib/ai/webSearch'
 import type { TavernScript, TavernScriptIndexItem, ScriptSnapshot } from '@/lib/tavern/types'
+import { withIndependentAttribution } from '@/lib/tavern/attribution'
 
 // 全局 meta 键（无项目前缀）
 const G = {
@@ -293,7 +294,7 @@ export async function draftScript(args: ScriptDraftArgs): Promise<{ fields: Scri
   })
 
   const { provider } = await resolveTavernProvider(args.providerId ? { providerId: args.providerId } : undefined)
-  const runChat = args.chatFn ?? chat
+  const runChat = withIndependentAttribution(args.chatFn ?? chat)
 
   const fence = newAuthorFence()
   const names = (args.charNames ?? []).map(n => n.trim()).filter(Boolean)
