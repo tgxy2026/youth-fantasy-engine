@@ -62,10 +62,20 @@ export interface TimeoutConfig {
   totalTimeout: number
 }
 
+/**
+ * 三段期限的**唯一真源**（3.2.0 · WQ6）。
+ *
+ * 🔴 `idleTimeout` 取 120 秒而不是最初的 30 秒：本机 27B 在思考阶段可能几十秒不吐增量，
+ *    30 秒会把**正常慢模型**判成停滞（比多等一会儿糟得多的错误）。方案 §16.7
+ *    「流式空闲初始建议 120 秒」也是这个数。
+ * 🔴 `totalTimeout` 只用于**非流式 / 生命周期纯函数**；流式在首字节到达后会清掉总超时，
+ *    由空闲期限接管（否则长篇输出会被一刀切）。首响应沿用实测校准过的
+ *    `CHAT_TIMEOUT_MS`（方案 §16.7「保留原首响应默认值」），不在这里改。
+ */
 export const DEFAULT_TIMEOUTS: TimeoutConfig = {
   connectTimeout: 10_000,
   firstByteTimeout: 15_000,
-  idleTimeout: 30_000,
+  idleTimeout: 120_000,
   totalTimeout: 120_000,
 }
 

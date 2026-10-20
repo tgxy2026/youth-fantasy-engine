@@ -36,6 +36,24 @@ function readTsDir(dir: string): string {
   }
 }
 
+/** 读整个 `src/` 下所有 .ts（递归，按路径排序）—— 用于「全仓盘点」类断言（如统计旧写法残留） */
+export function readAllSrc(): string {
+  const walk = (dir: string): string[] => {
+    try {
+      return readdirSync(path.join(process.cwd(), dir), { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .flatMap(d => {
+          const rel = `${dir}/${d.name}`
+          if (d.isDirectory()) return walk(rel)
+          return d.name.endsWith('.ts') ? [tryRead(rel)] : []
+        })
+    } catch {
+      return []
+    }
+  }
+  return walk('src').join('\n')
+}
+
 /** ai 模块全量源码 = 门面 `ai.ts` + 实现段 `aiCore/*`（拆分前读门面就能扫全，现在必须拼上 aiCore） */
 export function readAiModule(): string {
   return tryRead('src/lib/ai.ts') + '\n' + readTsDir('src/lib/aiCore')

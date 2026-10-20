@@ -10,6 +10,7 @@
  */
 
 import { OLLAMA_DEFAULT_URL } from '@/lib/aiCore/core'
+import { DEFAULT_TIMEOUTS } from '@/lib/ai/streaming'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import type { AIProvider } from '@/lib/aiCore/core'
 
@@ -237,12 +238,10 @@ export interface ReadSseOptions {
 /**
  * 流式空闲超时的默认值。
  *
- * 🔴 取 120 秒而不是 30 秒（方案 §16.7「流式空闲初始建议 120 秒」）：
- *    本机 27B 在思考阶段可能几十秒不吐增量，30 秒会把**正常慢模型**判成停滞 ——
- *    那是比"偶尔多等一会儿"更糟的错误（作者会以为模型坏了）。
- *    真正断流的端点不会因为放宽到 120 秒而变得更难发现：它一秒数据都不会再来。
+ * 🔴 **不在这里另写数字**：真源是 `ai/streaming.ts` 的 `DEFAULT_TIMEOUTS.idleTimeout`
+ *    （此前两处各写一个值，改一处另一处必然漂移）。这个常量只是给它一个「传输层」的名字。
  */
-export const STREAM_IDLE_TIMEOUT_MS = 120_000
+export const STREAM_IDLE_TIMEOUT_MS = DEFAULT_TIMEOUTS.idleTimeout
 
 export async function readSSE(
   res: Response,
@@ -310,8 +309,9 @@ export async function readSSE(
     }
     if (buf.trim()) flushLine(buf)
   } catch (e) {
-    // 停滞 / 取消：把读取器放掉，别让底层连接悬着
-    if (idle > 0) { try { await reader.cancel() } catch { /* 忽略 */ } }
+    // 停滞 / 取消 / 断流：一律把读取器放掉，别让底层连接悬着
+    // （方案 §16.7「取消监听和 reader 由一次调用持有，直到消费完毕、失败或主动取消后统一释放」）
+    try { await reader.cancel() } catch { /* 已经结束或已取消，忽略 */ }
     throw e
   } finally {
     disarm()

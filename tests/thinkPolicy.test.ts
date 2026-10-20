@@ -7,7 +7,7 @@
 // 本测试用桩 fetch 抓真实请求体，把四条策略钉死。
 import { chat } from '../src/lib/ai'
 import type { AIProvider } from '../src/lib/ai'
-import { readAiModule } from './sourceScan'
+import { readAiModule, readAllSrc } from './sourceScan'
 import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
@@ -71,9 +71,15 @@ async function main() {
     /reasoning === 'off'/.test(protoSrc) && /const think = d\.think !== undefined/.test(protoSrc))
   ok('🔴 ollama 路径只认 ===false（true 与 undefined 都不下发）', /if \(think === false\) body\.think = false/.test(src))
 
-  // ⑥ 结构化任务盘点：显式关的比例（记录现状，防止以后回退成「到处各写一份」）
-  const jsonCount = 32
-  ok('结构化任务数量已被审计（32 处 json:true）', jsonCount === 32)
+  // ⑥ 结构化任务盘点：**真实扫描**（原写法 `const jsonCount = 32; ok(..., jsonCount === 32)`
+  //    是自己和自己比，永远为真 —— 典型的假绿，2026-10-20 自查改掉）
+  // 🔴 这是个**棘轮**：WQ5 每迁一处 `json:true` → 显式 `output/reasoning`，就把 BASELINE 调小；
+  //    数字变大说明有人又加回了旧写法，需要重走一次协议声明。
+  const countJson = (src: string) => src.split('json: true').length - 1
+  const jsonCount = countJson(readAllSrc())
+  const JSON_BASELINE = 43
+  ok(`结构化任务数量已登记（当前 ${jsonCount} 处 json:true，基线 ${JSON_BASELINE}）`,
+    jsonCount === JSON_BASELINE, String(jsonCount))
 
   console.log('\n  ' + pass + ' passed, ' + fail + ' failed')
   if (fail > 0) process.exit(1)

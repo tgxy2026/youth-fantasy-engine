@@ -134,8 +134,12 @@ async function main() {
     const src = readFileSync('src/lib/aiCore/chat.ts', 'utf8')
     const hits = src.split('idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS').length - 1
     ok('⑥ 两条通道都传了空闲超时（漏一条就等于那条会永久挂住）', hits === 2, String(hits))
-    ok('⑥ 默认值取 120 秒（方案 §16.7 的初始建议）',
-      /STREAM_IDLE_TIMEOUT_MS = 120_000/.test(readFileSync('src/lib/aiCore/transport.ts', 'utf8')))
+    // 🔴 断了「两处各写一个数字」的漂移：传输层只是给真源起个名字，真源在 `ai/streaming`
+    const tp = readFileSync('src/lib/aiCore/transport.ts', 'utf8')
+    const sm = readFileSync('src/lib/ai/streaming.ts', 'utf8')
+    ok('⑥ 空闲超时只有一个真源（传输层引用 DEFAULT_TIMEOUTS，不另写数字）',
+      /STREAM_IDLE_TIMEOUT_MS = DEFAULT_TIMEOUTS\.idleTimeout/.test(tp) && !/STREAM_IDLE_TIMEOUT_MS = \d/.test(tp))
+    ok('⑥ 真源取 120 秒（方案 §16.7 的初始建议）', /idleTimeout: 120_000/.test(sm))
   }
 
   console.log(`\n———— streamStall：${pass} 通过 / ${fail} 失败 ————`)
