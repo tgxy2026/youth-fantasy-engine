@@ -130,6 +130,26 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                           if (fb.length === 0) return null
                           return <span title="从发出请求到第一个字出现（最快的一次）"> · 首字 {(Math.min(...fb) / 1000).toFixed(1)}s</span>
                         })()}
+                        {/* 3.2.0 · WQ7：并行期间被**排除**的调用 —— 少算要说明白，不能悄悄少算 */}
+                        {r.excludedCalls && r.excludedCalls.count > 0 && (
+                          <span
+                            className="text-amber"
+                            title={r.excludedCalls.reasons.join('\n')}
+                          >
+                            {' '}· 另有 {r.excludedCalls.count} 次调用未计入
+                          </span>
+                        )}
+                        {/* 兼容归属：只在**混着**的时候提示（全是兼容归属属于当前常态，标出来只是噪音） */}
+                        {r.legacyAttributedCalls !== undefined
+                          && r.legacyAttributedCalls > 0
+                          && r.legacyAttributedCalls < r.calls.length && (
+                          <span
+                            className="text-ink-500"
+                            title="这些调用当时只有一个任务在跑，按兼容路径归属；调用方补上显式任务 ID 后会变成精确归属"
+                          >
+                            {' '}· 其中 {r.legacyAttributedCalls} 次为兼容归属
+                          </span>
+                        )}
                       </div>
                     )}
                     {r.context && (

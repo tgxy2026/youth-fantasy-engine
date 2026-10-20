@@ -46,6 +46,20 @@ export interface AiRunCandidateRef {
   state: 'pending' | 'adopted' | 'stale' | 'discarded'
 }
 
+/**
+ * 单次调用的请求上下文快照（3.2.0 · WQ7）。
+ * 🔴 存下来的是**当时自报的**归属依据；事后复盘据此判断「这条账到底属于谁」，
+ *    而不是靠「谁启动得晚就是谁」。
+ */
+export interface AiRunCallRequest {
+  /** 调用 ID（同一次逻辑调用的失败/成功共用） */
+  callId?: string
+  projectId?: string | null
+  taskId?: string
+  stepId?: string
+  taskType?: string
+}
+
 /** 单次模型调用账（供 §10.3 #6 消耗统计 + §14 拒答感知共用） */
 export interface AiRunCall {
   model: string
@@ -59,6 +73,15 @@ export interface AiRunCall {
   firstByteMs?: number
   /** 结束原因（如 `stop` / `length` / `content_filter`）—— 拒答感知的判据来源 */
   finishReason?: string
+  /** 请求上下文（WQ7）：这次调用自报属于谁 */
+  request?: AiRunCallRequest
+  /**
+   * 归属判定途径（WQ7）：
+   *  · `task-id` —— 调用方显式带了 taskId，**可作审阅依据**；
+   *  · `legacy-single-run` —— 当时只有一个任务在跑，按兼容路径归属。
+   *    🔴 统计可用，**不得**作为「候选该归谁」这类审阅依据（方案 §11 第 118 行）。
+   */
+  attributedBy?: 'task-id' | 'legacy-single-run'
   at: number
 }
 
@@ -120,4 +143,14 @@ export interface AiRun {
   error: string
   /** 本次实际装配的上下文摘要（可取不到 —— 非装配型任务 / 老数据没有这个字段） */
   context?: AiContextSnapshot | null
+  /**
+   * 本任务运行期间发生、但**不属于本任务**的其他调用（3.2.0 · WQ7）。
+   *
+   * 🔴 为什么要记：并行时（创意写作 + 编辑器伴写 / 酒馆 / 另一个项目），旧实现把
+   *    **所有**调用都算给「最近创建的那个任务」，用量与重试次数全错。现在改为如实排除，
+   *    并把「被排除了几次、为什么」摆在作者面前 —— 少算要说明白，不能悄悄少算。
+   */
+  excludedCalls?: { count: number; reasons: string[] }
+  /** 按「唯一在跑任务」兼容路径归属的调用数（调用方补上显式 taskId 后会降为 0） */
+  legacyAttributedCalls?: number
 }

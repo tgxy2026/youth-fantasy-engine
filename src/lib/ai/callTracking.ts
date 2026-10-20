@@ -242,6 +242,129 @@ export function generateReviewMaterials(
   return materials
 }
 
+// ============ 显式请求上下文与归属判定（3.2.0 · WQ7）============
+//
+// 方案 §11（第 118 行）：
+//   「Q7 的请求上下文显式携带 `projectId/taskId/stepId/callId`；每次装配直接返回本次
+//    `contextSnapshot`，账本按 ID 关联。**弃用全局「最近一次装配/当前运行任务」作为归属依据**；
+//    原接口可保留兼容包装，但不能参与新链路的审阅依据判定。」
+//
+// 本节就是这条规则的**唯一实现**：给定「谁在线」+「这次调用自报的上下文」，
+// 判定这次调用的 usage 记到哪个任务账上；判不出来就**如实说判不出来**，绝不猜。
+
+/**
+ * 一次调用的请求上下文（由调用方显式携带）。
+ *
+ * 🔴 `callId` 缺省由 `chat()` 生成 —— 调用方不必为\"每个调用一个唯一 id\"操心，
+ *    但**必须**在能拿到 `taskId` 时传上来，否则这次调用只能走兼容归属（或判为未归属）。
+ */
+export interface CallRequestContext {
+  /** 项目 ID；显式 `null` 表示「全局服务调用，不属于任何小说」（§11 第 871 行） */
+  projectId?: string | null
+  /** 任务 ID ＝ 运行账本的 run id */
+  taskId?: string
+  /** 步骤 ID（同一任务内的第几步，便于复盘定位） */
+  stepId?: string
+  /** 本次调用 ID（缺省由 `chat()` 生成） */
+  callId?: string
+  /** 任务类型（如 `creative` / `rewrite` / `ghost` / `tavern`） */
+  taskType?: string
+  /**
+   * 作用域：
+   *  - `project`：属于某个项目（默认）
+   *  - `global`：全局服务（连通性测试等），**不塞进当前打开的小说**
+   *  - `independent`：无父任务的独立调用（编辑器伴写 / 酒馆自由对话），
+   *    **永不**归属到正在运行的任务上（§13.2「一个无父任务调用」）
+   */
+  scope?: 'project' | 'global' | 'independent'
+}
+
+/** 在线任务（账本登记的一条运行记录）在归属判定里的可见信息 */
+export interface ActiveRunAttribution {
+  runId: string
+  projectId: string
+  taskType?: string
+  contextId?: string
+}
+
+/** 归属失败的原因码（界面据此说人话，不显示码本身） */
+export type AttributionMissReason =
+  | 'no-active-run'
+  | 'unknown-task'
+  | 'ambiguous-multiple-runs'
+  | 'project-mismatch'
+  | 'independent-call'
+
+export type CallAttribution =
+  | {
+    kind: 'run'
+    runId: string
+    /**
+     * 判定途径。
+     * 🔴 `legacy-single-run` 是**兼容路径**（调用方还没传 taskId，且当时只有一个任务在跑）。
+     *    它计入用量统计没问题，但**不得**作为「候选该归谁」这类审阅依据 —— 与方案第 118 行一致。
+     */
+    via: 'task-id' | 'legacy-single-run'
+  }
+  | { kind: 'none'; reason: AttributionMissReason; detail: string }
+
+const MISS_DETAIL: Record<AttributionMissReason, string> = {
+  'no-active-run': '没有正在运行的任务，这次调用不计入任何任务账',
+  'unknown-task': '调用自报的任务已不在运行（可能刚结束），这次调用不计入任何任务账',
+  'ambiguous-multiple-runs': '同时有多个任务在运行，而这次调用没有自报任务 ID，无法判定归属',
+  'project-mismatch': '调用所属项目与在跑任务的项目不一致，不并入当前任务的账',
+  'independent-call': '这是一次独立调用（无父任务），不计入在跑任务的账',
+}
+
+/**
+ * 判定一次调用的归属。
+ *
+ * 判定顺序（每一步都有明确理由，不靠\"最近一个\"）：
+ *  ① 自报 `scope: independent/global` ⇒ 永不归属任务；
+ *  ② 自报 `taskId` ⇒ 精确匹配；匹配不到就判未归属（**不**退化为\"反正只有一个任务\"）；
+ *  ③ 没自报 `taskId`：只有**恰好一个**任务在跑才走兼容归属；多个在跑判歧义（宁缺勿错）；
+ *  ④ 任何一条路径都校验 `projectId`：对不上就判未归属（切项目不改归属）。
+ */
+export function resolveCallAttribution(
+  active: readonly ActiveRunAttribution[],
+  ctx?: CallRequestContext,
+): CallAttribution {
+  const scope = ctx?.scope
+  if (scope === 'independent' || scope === 'global') {
+    return { kind: 'none', reason: 'independent-call', detail: MISS_DETAIL['independent-call'] }
+  }
+
+  const wantProject = typeof ctx?.projectId === 'string' && ctx.projectId ? ctx.projectId : null
+  const projectOk = (run: ActiveRunAttribution): boolean => wantProject === null || run.projectId === wantProject
+
+  // ② 显式 taskId
+  const taskId = ctx?.taskId
+  if (taskId) {
+    const hit = active.find(r => r.runId === taskId)
+    if (!hit) return { kind: 'none', reason: 'unknown-task', detail: MISS_DETAIL['unknown-task'] }
+    if (!projectOk(hit)) {
+      return { kind: 'none', reason: 'project-mismatch', detail: MISS_DETAIL['project-mismatch'] }
+    }
+    return { kind: 'run', runId: hit.runId, via: 'task-id' }
+  }
+
+  // ③ 没自报：仅唯一任务可兼容归属
+  if (active.length === 0) {
+    return { kind: 'none', reason: 'no-active-run', detail: MISS_DETAIL['no-active-run'] }
+  }
+  if (active.length > 1) {
+    return {
+      kind: 'none', reason: 'ambiguous-multiple-runs',
+      detail: MISS_DETAIL['ambiguous-multiple-runs'],
+    }
+  }
+  const only = active[0]
+  if (!projectOk(only)) {
+    return { kind: 'none', reason: 'project-mismatch', detail: MISS_DETAIL['project-mismatch'] }
+  }
+  return { kind: 'run', runId: only.runId, via: 'legacy-single-run' }
+}
+
 // ============ 请求去重 ============
 export interface DedupKeyResult {
   /** 去重键 */

@@ -13,11 +13,14 @@
  */
 import type { Chapter } from '@/lib/types'
 import type {
-  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunKind, AiRunOutcome, AiRunStatus,
+  AiContextSnapshot, AiRun, AiRunBasis, AiRunCall, AiRunCallRequest, AiRunKind, AiRunOutcome, AiRunStatus,
 } from '@/lib/ai/aiRunTypes'
 import { hashOf } from '@/lib/semantic/chunk'
 import { uid } from '@/lib/app/id'
-import { setUsageSink } from '@/lib/aiCore/usage'
+import { setUsageSink, type ChatUsage } from '@/lib/aiCore/usage'
+import {
+  resolveCallAttribution, type CallRequestContext,
+} from '@/lib/ai/callTracking'
 import { getAiRun, saveAiRun } from '@/lib/db/aiRuns'
 
 // ============ 一、版本基准与失效判定（纯函数）============
@@ -103,26 +106,88 @@ export function pickContextSnapshot(
 
 // ============ 二、账本编排（读写 db）============
 
-// 3.0 · W1-4：任务内调用用量**内存累积**，收尾时一次写入。
-// 🔴 为什么不逐步写：长任务几十次调用，每次读改写一遍全库不值当（桌面版整库是一份 JSON）。
-let activeRunId: string | null = null
-let activeCalls: AiRunCall[] = []
+// ============ 并行归属（3.2.0 · WQ7）============
+//
+// 🔴 旧实现：单个 `activeRunId` + 单个 `activeCalls`。后果有两个，都是真错：
+//    ① 第二个任务一 `createRun` 就把第一个挤掉 ⇒ 第一个任务的调用全记到第二个头上；
+//    ② 先结束的任务 `finishRun` 里 `setUsageSink(null)` ⇒ 还在跑的那个从此**不再记账**。
+//    方案 §13.2 的验收场景就是「两个并行 AI 任务与一个无父任务调用：各自正确归属；
+//    一个结束不截断另一个记账」，所以必须按 runId 分槽。
+//
+// 🔴 判不出来就不判：调用没自报 taskId 且同时有多个任务在跑时，**不**塞给任意一个，
+//    而是给每个在跑任务各记一笔「排除」，收尾时如实写进 `excludedCalls`。
 
-/** 把用量总线接到当前任务上 —— 任务结束后必须摘掉（见 finishRun） */
+interface ActiveRunSlot {
+  runId: string
+  projectId: string
+  kind: AiRunKind
+  calls: AiRunCall[]
+  /** 未归属到本任务的调用：原因 → 次数（只计数，不存内容） */
+  excludedReasons: Map<string, number>
+  /** 走「唯一任务」兼容路径归属的调用数 */
+  legacyAttributed: number
+}
+
+const activeRuns = new Map<string, ActiveRunSlot>()
+let sinkBound = false
+
+/** 只留归属相关的字段（`scope` 是判定用的，落库没有意义） */
+function pickRequest(r: CallRequestContext): AiRunCallRequest {
+  return {
+    ...(r.callId ? { callId: r.callId } : {}),
+    ...(r.projectId !== undefined ? { projectId: r.projectId } : {}),
+    ...(r.taskId ? { taskId: r.taskId } : {}),
+    ...(r.stepId ? { stepId: r.stepId } : {}),
+    ...(r.taskType ? { taskType: r.taskType } : {}),
+  }
+}
+
+function toRunCall(u: ChatUsage, via: 'task-id' | 'legacy-single-run'): AiRunCall {
+  return {
+    model: u.model,
+    ms: u.ms,
+    ...(u.promptTokens !== undefined ? { promptTokens: u.promptTokens } : {}),
+    ...(u.completionTokens !== undefined ? { completionTokens: u.completionTokens } : {}),
+    ...(u.tokensEstimated ? { tokensEstimated: true } : {}),
+    ...(u.firstByteMs !== undefined ? { firstByteMs: u.firstByteMs } : {}),
+    ...(u.finishReason ? { finishReason: u.finishReason } : {}),
+    ...(u.request ? { request: pickRequest(u.request) } : {}),
+    attributedBy: via,
+    at: u.at,
+  }
+}
+
+/**
+ * 接上用量总线（幂等）。
+ * 🔴 全程只挂**一个** sink、按调用逐条分派 —— 每个任务各挂一个会互相覆盖（旧实现的老毛病）。
+ */
 function bindUsageSink(): void {
+  if (sinkBound) return
+  sinkBound = true
   setUsageSink(u => {
-    if (!activeRunId) return
-    activeCalls.push({
-      model: u.model,
-      ms: u.ms,
-      ...(u.promptTokens !== undefined ? { promptTokens: u.promptTokens } : {}),
-      ...(u.completionTokens !== undefined ? { completionTokens: u.completionTokens } : {}),
-      ...(u.tokensEstimated ? { tokensEstimated: true } : {}),
-      ...(u.firstByteMs !== undefined ? { firstByteMs: u.firstByteMs } : {}),
-      ...(u.finishReason ? { finishReason: u.finishReason } : {}),
-      at: u.at,
-    })
+    const active = [...activeRuns.values()].map(r => ({
+      runId: r.runId, projectId: r.projectId, taskType: r.kind,
+    }))
+    const decision = resolveCallAttribution(active, u.request)
+    if (decision.kind === 'run') {
+      const slot = activeRuns.get(decision.runId)
+      if (!slot) return
+      slot.calls.push(toRunCall(u, decision.via))
+      if (decision.via === 'legacy-single-run') slot.legacyAttributed += 1
+      return
+    }
+    // 判不出归属：每个在跑任务都「少算了一次」，各自都要说明白 —— 而不是塞给其中一个
+    for (const slot of activeRuns.values()) {
+      slot.excludedReasons.set(decision.detail, (slot.excludedReasons.get(decision.detail) ?? 0) + 1)
+    }
   })
+}
+
+/** 摘掉总线（没有任务在跑时）—— 否则页面空闲期间的调用会一直空转 */
+function unbindUsageSinkIfIdle(): void {
+  if (activeRuns.size > 0) return
+  sinkBound = false
+  setUsageSink(null)
 }
 
 /** 组装一条新运行记录（未落库）—— `status` 一律从 `running` 起。内部用，不外导（外部一律走 createRun） */
@@ -160,9 +225,15 @@ export async function createRun(input: {
 }): Promise<AiRun> {
   const run = newRun(input)
   await saveAiRun(run)
-  // 3.0 · W1-4：接上用量总线 —— 本任务期间的每次 chat() 都会累积进 activeCalls
-  activeRunId = run.id
-  activeCalls = []
+  // 3.2.0 · WQ7：登记一条在跑槽位（不动别的槽位 —— 并行任务各记各的）
+  activeRuns.set(run.id, {
+    runId: run.id,
+    projectId: run.projectId,
+    kind: run.kind,
+    calls: [],
+    excludedReasons: new Map(),
+    legacyAttributed: 0,
+  })
   bindUsageSink()
   return run
 }
@@ -194,16 +265,26 @@ export async function finishRun(
     now?: number
   },
 ): Promise<void> {
-  // 3.0 · W1-4：把本任务累积的调用账**一次写入**（没有调用就不写这个字段）
-  const calls = activeRunId === id ? [...activeCalls] : []
+  // 3.2.0 · WQ7：只取**本任务槽位**的账一次写入；并行任务的账互不影响。
+  const slot = activeRuns.get(id)
+  const calls = slot ? [...slot.calls] : []
+  const excluded = slot && slot.excludedReasons.size > 0
+    ? {
+      count: [...slot.excludedReasons.values()].reduce((n, c) => n + c, 0),
+      reasons: [...slot.excludedReasons.keys()],
+    }
+    : null
   await patchRun(id, {
     status: patch.status,
     outcome: patch.outcome ?? null,
     error: patch.error ?? '',
     ...(patch.context !== undefined ? { context: patch.context } : {}),
     ...(calls.length ? { calls } : {}),
+    ...(excluded ? { excludedCalls: excluded } : {}),
+    ...(slot && slot.legacyAttributed > 0 ? { legacyAttributedCalls: slot.legacyAttributed } : {}),
     finishedAt: patch.now ?? Date.now(),
   })
-  // 摘掉总线 —— 否则下一次任务的调用会继续往已结束的任务里塞
-  if (activeRunId === id) { activeRunId = null; activeCalls = []; setUsageSink(null) }
+  // 只摘自己这一槽；别的任务还在跑时总线必须留着（旧实现在这里把别人一起摘了）
+  activeRuns.delete(id)
+  unbindUsageSinkIfIdle()
 }

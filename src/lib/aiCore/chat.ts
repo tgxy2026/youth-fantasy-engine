@@ -19,6 +19,8 @@ import { mergeHeaders } from '@/lib/aiCore/headers'
 import { usageFromOllama, usageFromOpenAI, usageFromStreamChunk, mergeUsage, type RealUsage } from '@/lib/aiCore/usageParse'
 // 3.2.0 · WQ6：请求生命周期（本轮只做**旁路记录**，不接管超时语义）
 import { createLifecycle, transitionLifecycle } from '@/lib/ai/streaming'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
+import { uid } from '@/lib/app/id'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
 import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
@@ -107,6 +109,15 @@ export interface ChatOptions {
    *    每一处打开都该在注释里写清为什么。
    */
   allowOverflow?: boolean
+  /**
+   * 请求上下文（3.2.0 · WQ7）：显式说明「这次调用属于哪个项目 / 哪个任务 / 哪一步」。
+   *
+   * 🔴 账本按 `request.taskId` 精确归属。不传也能跑，但含义是「调用方没声明归属」：
+   *    只有一个任务在跑时走兼容归属；多任务并行时会被如实判为**未归属**，
+   *    绝不会塞给最近创建的那个任务（那正是旧全局单归属的错法）。
+   *    独立调用（编辑器伴写 / 酒馆）应显式传 `scope: 'independent'`。
+   */
+  request?: CallRequestContext
 }
 
 interface ChatRaw {
@@ -185,6 +196,10 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   }
 
   const t0 = Date.now()
+  // 3.2.0 · WQ7：每次调用一个 callId（调用方没给就现生成）——
+  // 🔴 有了它，账本里同一次调用在「用量 / 上下文 / 错误」三处能对上号；
+  //    没有它，并行时只能靠时间戳猜，复盘等于没有。
+  const request: CallRequestContext = { ...opts.request, callId: opts.request?.callId ?? uid() }
   // 3.2.0 · WQ6（旁路第一步）：建生命周期，只**记录**首字/结局与耗时，暂不参与超时判定。
   // 🔴 为什么先旁路：现有超时是 `fetchWithTimeout` + `readSSE` 的组合，语义经过多轮实测校准；
   //    一次性换成生命周期驱动，风险是把"慢模型被一刀切"这类老问题请回来。
@@ -225,6 +240,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     const hasRealPrompt = real?.promptTokens !== undefined
     reportUsage({
       model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
+      request,
       promptTokens: hasRealPrompt ? real!.promptTokens : budget.estimates.input.tokens,
       ...(real?.completionTokens !== undefined ? { completionTokens: real.completionTokens } : {}),
       ...(real?.finishReason ? { finishReason: real.finishReason } : {}),
@@ -243,6 +259,9 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     // 统计页据此显示「被拒 N 次」，方便复盘哪段内容老被拒（§14）
     reportUsage({
       model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
+      // 🔴 失败调用也带同一份 request：同一次逻辑调用的「失败」与「成功」用同一个 taskId
+      //    串得起来 —— 只记成功那一次，会让「试了三次才通」看起来像一次就通。
+      request,
       ...(e instanceof AIRefusalError ? { finishReason: 'content_filter' } : {}),
     })
     throw e

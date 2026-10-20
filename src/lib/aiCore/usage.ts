@@ -8,11 +8,21 @@
  * 🔴 统计失败**绝不打断 AI 调用**（`reportUsage` 内 try/catch 吞掉）—— 统计是旁路。
  */
 
+// 3.2.0 · WQ7：请求上下文（显式归属）。**纯类型导入**，运行时零依赖 ——
+// `ai/callTracking` 本身不 import 任何东西，所以这里不构成 aiCore → ai 的环。
+import type { CallRequestContext } from '@/lib/ai/callTracking'
+
 export interface ChatUsage {
   /** 模型名（provider 配置里的 model） */
   model: string
   /** 本次调用耗时（毫秒） */
   ms: number
+  /**
+   * 本次调用的请求上下文（3.2.0 · WQ7）。
+   * 🔴 账本按 `request.taskId` 精确归属；缺它就只能走\"唯一任务\"兼容路径，
+   *    多任务并行时会如实判为未归属（不再塞给最近创建的那个任务）。
+   */
+  request?: CallRequestContext
   promptTokens?: number
   completionTokens?: number
   /**
