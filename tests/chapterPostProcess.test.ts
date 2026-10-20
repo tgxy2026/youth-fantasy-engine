@@ -121,7 +121,11 @@ console.log('\n—— chapterPostProcess 用例开始 ——')
 
   const pp = fs.readFileSync('src/lib/aiTasks/postProcess.ts', 'utf8')
   ok('🔴 走 aiParse（parseObjectArray），禁裸 JSON.parse', pp.includes('parseObjectArray') && !pp.includes('JSON.parse'))
-  ok('结构化必传 json: true', pp.includes('json: true'))
+  // 🔴 3.2.0 · WQ5：结构化声明已从旧 `json: true` 迁成显式 `output/reasoning`（逐字等价，
+  //    等价性由 `outputProtocol` ⑨ 证明）。这里断言语义：**必须声明 JSON 结构输出**，
+  //    别再绑死某一种写法 —— 否则每迁一处就要改一次闸（这类假红已经踩过三次）。
+  ok('结构化必传 JSON 输出声明（显式 output 或旧 json 标记）',
+    /output: 'json-object'/.test(pp) || pp.includes('json: true'))
   ok('不可信文本包裹（newAuthorFence / authorBlock）', pp.includes('newAuthorFence') && pp.includes('authorBlock'))
   // WQ1-4：早退逻辑搬进 WithStatus 内核（正文为空 ⇒ completed 的合法空，不发请求）；
   // 包装函数把 result 的 data 取出，EMPTY_CHANGES 仍是无结果时的兜底。

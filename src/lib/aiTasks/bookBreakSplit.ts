@@ -58,7 +58,7 @@ ${authorBlock(newAuthorFence(), req.sampleText)}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(P_bookbreak_split, cfg) }, { role: 'user', content: user }],
-    { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
+    { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
   )
   return parseChapterLines(text)
 }

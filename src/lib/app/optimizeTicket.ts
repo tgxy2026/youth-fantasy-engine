@@ -34,6 +34,12 @@ import {
   type RewriteCandidate,
 } from '@/lib/editor/chapterRewrite'
 import { extractAndCommitSettings } from '@/lib/outline/autoContinue'
+// 3.2.0 · WQ7：工单改写也进运行账本 —— 此前只有创意写作建账，改写花的额度完全查不到
+import { createRun, finishRun, computeBasis, pickContextSnapshot, noteCandidate } from '@/lib/ai/aiRunLedger'
+import { lastContextAssembly } from '@/lib/ai/aiContext'
+import * as db from '@/lib/db'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
+import { hashOf } from '@/lib/semantic/chunk'
 import { isCancelled } from '@/lib/ai'
 
 /** 工单条目的来源分类 */
@@ -306,6 +312,11 @@ interface RunTicketOpts {
   signal?: AbortSignal
   /** 改写过程的提示（字数校准没生效之类）—— 由调用方转成界面提示 */
   onLog?: (msg: string) => void
+  /**
+   * 由上层指定归属（3.2.0 · WQ7）：批量执行多章时，上层可以把它们记在**同一个任务**上。
+   * 不传 ⇒ 本函数自己建一条 `rewrite` 任务（一章一条，作者能看出每章花了多少）。
+   */
+  request?: CallRequestContext
 }
 
 interface RunTicketResult {
@@ -345,6 +356,58 @@ function requirementOf(items: TicketItem[]): string {
   ].join('\n')
 }
 
+interface RewriteLedgerHandle { id: string; request: CallRequestContext }
+
+/**
+ * 建一条 `rewrite` 任务账。
+ * 🔴 静默失败：账本是旁路，**绝不能**因为它写不进去而拦住改写。
+ */
+async function startRewriteLedger(title: string): Promise<RewriteLedgerHandle | null> {
+  try {
+    const run = await createRun({
+      projectId: db.getCurrentProjectId() ?? '',
+      kind: 'rewrite',
+      title: `整章改写 · ${title || '（未命名章节）'}`,
+      // 基准口径只有一处（别手搓字面量）
+      basis: computeBasis([], null),
+    })
+    return {
+      id: run.id,
+      request: {
+        scope: 'project',
+        projectId: run.projectId,
+        taskId: run.id,
+        taskType: 'rewrite',
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 收尾账本（静默）：成功 done / 中止 aborted / 异常 failed */
+async function settleRewriteLedger(
+  h: RewriteLedgerHandle | null,
+  status: 'done' | 'aborted' | 'failed',
+  err?: unknown,
+): Promise<void> {
+  if (!h) return
+  try {
+    const context = pickContextSnapshot(lastContextAssembly(), 0)
+    if (status === 'failed') {
+      await finishRun(h.id, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err ?? '改写失败'),
+        context,
+      })
+    } else if (status === 'aborted') {
+      await finishRun(h.id, { status: 'aborted', context })
+    } else {
+      await finishRun(h.id, { status: 'done', outcome: { created: 0, updated: 1, skipped: 0, failed: [] }, context })
+    }
+  } catch { /* 静默：账本不是关键路径 */ }
+}
+
 /**
  * 按章执行：把这一章的待处理条目**合并成一次改写**，落库，最新章再补一轮设定同步。
  *
@@ -371,6 +434,10 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
   const isLatest = idx === cands.length - 1
   const prevTail = idx > 0 ? (cands[idx - 1].chapter.content ?? '').trim() : ''
 
+  // 3.2.0 · WQ7：本次改写独占一条任务账（上层已指定归属就沿用，批量执行才好合并）
+  const ledger = opts.request ? { id: opts.request.taskId ?? '', request: opts.request } : await startRewriteLedger(hit.chapter.title)
+  const request = ledger?.request
+
   let text = ''
   try {
     text = await aiRewriteChapter({
@@ -382,16 +449,22 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
       ...(prevTail ? { contextTail: prevTail } : {}),
       signal: opts.signal,
       onLog: opts.onLog,
+      ...(request ? { request } : {}),
     })
   } catch (e) {
     // 🔴 中止 ⇒ 条目**保持 pending**，不是 failed（见文件头纪律 ④）
-    if (isCancelled(e) || opts.signal?.aborted) return { chapterId, items }
+    if (isCancelled(e) || opts.signal?.aborted) {
+      await settleRewriteLedger(ledger, 'aborted')
+      return { chapterId, items }
+    }
     const msg = e instanceof Error ? e.message : String(e)
+    await settleRewriteLedger(ledger, 'failed', e)
     return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg }
   }
 
   if (!text.trim()) {
     const msg = '模型没有返回可用正文，可以再试一次'
+    await settleRewriteLedger(ledger, 'failed', msg)
     return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg }
   }
 
@@ -400,13 +473,14 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
     await applyChapterRewrite(chapterId, text, 'rewritten')
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    await settleRewriteLedger(ledger, 'failed', e)
     return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg }
   }
 
   // 最新章才补跑设定同步（历史章的设定类内容按纪律整体冻结，它不产生新设定）
   if (isLatest) {
     try {
-      await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal)
+      await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request)
     } catch (e) {
       // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
       //    至少留一行日志 —— 作者可去设定表手动补。
@@ -414,5 +488,10 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
     }
   }
 
+  // 3.2.0 · W3/WQ7：改写采纳也是一条候选（指纹取改后正文），账本里能看到「改了几稿、各是什么」
+  if (ledger?.id) {
+    noteCandidate(ledger.id, { target: `chapter:${chapterId}`, fingerprint: hashOf(text), state: 'adopted' })
+  }
+  await settleRewriteLedger(ledger, 'done')
   return { chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text }
 }

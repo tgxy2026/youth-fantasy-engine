@@ -135,7 +135,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（作者未指
 
 请返回问题清单。`
     const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
-      json: true,
+      output: 'json-object', reasoning: 'off',
       timeoutMs: CHAT_TIMEOUT_MS,
       signal: opts?.signal,
       onToken: opts?.onToken,
@@ -230,7 +230,7 @@ ${entries.length ? authorBlock(fence, list) : list}
       { role: 'user', content: user },
     ],
     {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
   )
@@ -285,7 +285,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
       { role: 'user', content: user },
     ],
     {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
   )
@@ -357,7 +357,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
         { role: 'user', content: user },
       ],
       {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
     )
@@ -424,7 +424,7 @@ ${list.trim() ? authorBlock(fence, list) : '（空）'}
       { role: 'user', content: user },
     ],
     {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
   )
@@ -485,7 +485,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
       { role: 'user', content: user },
     ],
     {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
   )

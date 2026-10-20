@@ -14,6 +14,8 @@
  */
 import { chat, requireActiveProvider, stripThink, isCancelled } from '@/lib/ai'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
+import type { OutputKind, ReasoningNeed } from '@/lib/ai/outputProtocol'
+import type { AttemptBudget } from '@/lib/ai/requestLedger'
 import { countWords } from '@/lib/editor/textStats'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 
@@ -30,7 +32,14 @@ export async function ask(
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
+    /** 旧口径（兼容包装）：等价于 `output:'json-object'` + `reasoning:'off'` */
     json?: boolean
+    /**
+     * 输出结构 / 推理需求（3.2.0 · WQ5）：本包装只做**透传**，判定全在 `ai/outputProtocol`。
+     * 🔴 必须一起转给 `chat()` —— 否则调用方声明了也没人听（`json` 之外的声明会被静默丢弃）。
+     */
+    output?: OutputKind
+    reasoning?: ReasoningNeed
     /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
     request?: CallRequestContext
   } = {},
@@ -48,7 +57,14 @@ export async function askSoft(
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
+    /** 旧口径（兼容包装）：等价于 `output:'json-object'` + `reasoning:'off'` */
     json?: boolean
+    /**
+     * 输出结构 / 推理需求（3.2.0 · WQ5）：本包装只做**透传**，判定全在 `ai/outputProtocol`。
+     * 🔴 必须一起转给 `chat()` —— 否则调用方声明了也没人听（`json` 之外的声明会被静默丢弃）。
+     */
+    output?: OutputKind
+    reasoning?: ReasoningNeed
     /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
     request?: CallRequestContext
   } = {},
@@ -99,6 +115,13 @@ export async function enforceWordRange(o: {
   onToken?: (d: string) => void
   /** 请求归属（3.2.0 · WQ7）：透传到每次补写/压缩调用 */
   request?: CallRequestContext
+  /**
+   * 批次/步骤请求预算（3.2.0 · WQ6）。
+   * 🔴 补字/压缩是**唯一会自己长轮数**的地方（最多 8 轮 × 每轮 1 次逻辑调用 × 每次最多 3 次请求）。
+   *    到达上限就**停下来如实说明**，不嵌套追加（方案 §16.7）。
+   *    不传 ⇒ 行为与改造前逐字一致。
+   */
+  budget?: AttemptBudget
   onPhase?: (p: string) => void
   onBodyReplace?: (s: string) => void
   /**
@@ -130,6 +153,11 @@ export async function enforceWordRange(o: {
   // ① 偏短：紧接上文分幕补写（增量单独剥思维链后再拼，避免砍掉已写正文）
   const maxExpand = o.maxExpand ?? 4
   for (let r = 0; r < maxExpand && words < lo; r++) {
+    // 🔴 预算闸放在**轮次开头**：这一轮不该开始就一次都别打（开始后再拦等于白发一次）
+    if (o.budget?.exhausted) {
+      o.onLog?.(`${o.budget.label}的模型请求已达上限（${o.budget.used}/${o.budget.max}），停止继续补写；当前 ${words} 字，目标 ${lo}~${hi} 字`)
+      break
+    }
     o.onPhase?.(`补足篇幅（${words} → ${lo}~${hi} 汉字）`)
     const gap = Math.max(0, (o.fillTarget ?? o.target) - words)
     const add = await askSoft(o.cfg, fillSys, [
@@ -147,6 +175,8 @@ export async function enforceWordRange(o: {
       signal: o.signal, onToken: o.onToken,
       ...(o.request ? { request: o.request } : {}),
     })
+    // 一次补写 = 一次逻辑调用（它内部最多还会再打 3 次实际请求，由 `MAX_REQUESTS_PER_CALL` 兜）
+    o.budget?.consume(1)
     if (countWords(add) < 30) {
       // 无效增量：停止空转，接受偏短。🔴 但必须**说出来**（否则调用方只看到"字数没变"）
       o.onLog?.(`补写未生效（模型只返回 ${countWords(add)} 汉字，可能失败或被截断）：停在 ${words} 汉字，目标 ${o.target}`)
@@ -160,6 +190,10 @@ export async function enforceWordRange(o: {
   // ② 偏长：精简压缩到区间。安全阀：压出来过短视为模型偷懒/截断，保留原文（宁可超字也不丢情节）
   const maxShrink = o.maxShrink ?? 2
   for (let r = 0; r < maxShrink && words > hi; r++) {
+    if (o.budget?.exhausted) {
+      o.onLog?.(`${o.budget.label}的模型请求已达上限（${o.budget.used}/${o.budget.max}），停止继续压缩；当前 ${words} 字，目标 ${lo}~${hi} 字`)
+      break
+    }
     o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 汉字）`)
     const out = await askSoft(o.cfg,
       '你是资深网文编辑，擅长在不损失任何情节的前提下做「轻度」精简。只输出精简后的正文本身。',
@@ -186,6 +220,7 @@ export async function enforceWordRange(o: {
         ...(o.onToken ? { onToken: o.onToken } : {}),
         ...(o.request ? { request: o.request } : {}),
       })
+    o.budget?.consume(1)
     const ow = countWords(out)
     if (!out || ow < lo * 0.85) {
       o.onLog?.(`压缩结果异常（${ow} 汉字，低于下限 ${Math.round(lo * 0.85)}），保留原文 ${words} 汉字`)

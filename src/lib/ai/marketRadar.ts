@@ -228,7 +228,7 @@ export async function runMarketRadar(
         { role: 'system', content: composeSystemPrompt(P_market_radar, cfg) },
         { role: 'user', content: buildRadarUserPrompt(input, sources) },
       ],
-      { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal },
+      { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal },
     )
     const obj = parseLooseObject(text) ?? {}
     const report: RadarReport = {

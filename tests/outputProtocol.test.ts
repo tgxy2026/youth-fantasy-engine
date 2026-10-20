@@ -9,7 +9,8 @@ import {
 } from '@/lib/ai/outputProtocol'
 import { DEFAULT_CAPABILITIES, detectCapabilities, type ModelCapabilities } from '@/lib/ai/modelCapabilities'
 import { DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE } from '@/lib/aiCore/core'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import path from 'node:path'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -132,6 +133,64 @@ function r(d: Partial<OutputDeclaration>): ReturnType<typeof resolveOutputProtoc
     'still hardcoded')
   ok('⑧ chat() 的温度也走协议解析（不再各写一遍）',
     !/opts\.json \? JSON_TASK_TEMPERATURE/.test(src) && /protocol\.temperature/.test(src))
+}
+
+// ---------- ⑨ WQ5 逐条迁移的「等价性」证明 ----------
+// 🔴 43 处 `json:true` 已按 `output:'json-object' + reasoning:'off'` 显式声明（2026-10-20）。
+//    这是**纯机械迁移**：必须证明新写法与旧口径在每一种能力配置下产出的请求参数完全一致，
+//    否则「迁移」就成了偷偷改行为。方案 §16.6：不能全局改变旧调用的温度和思考行为。
+{
+  const variants: ModelCapabilities[] = [
+    // 未知端点（现网绝大多数）：只靠提示词约束
+    { ...DEFAULT_CAPABILITIES },
+    // 已确认支持 json-object、但不支持「推理＋结构」共存
+    { ...DEFAULT_CAPABILITIES, source: 'user-config', structuredOutput: 'json-object' },
+    // 已确认支持共存：这时两者仍应一致（旧口径也没说有 reasoning，迁移不引入 required）
+    {
+      ...DEFAULT_CAPABILITIES, source: 'isolated-test',
+      structuredOutput: 'json-object', reasoningWithStructure: true,
+    },
+  ]
+  const eq = variants.every(caps => {
+    const legacy = resolveOutputProtocol({ json: true, caps })
+    const explicit = resolveOutputProtocol({ output: 'json-object', reasoning: 'off', caps })
+    return legacy.output === explicit.output
+      && legacy.reasoning === explicit.reasoning
+      && legacy.think === explicit.think
+      && legacy.temperature === explicit.temperature
+      && legacy.wireFormat === explicit.wireFormat
+      && legacy.limitations.join('|') === explicit.limitations.join('|')
+  })
+  ok('⑨ 显式声明与旧 json:true 在三种能力配置下逐字段等价', eq)
+
+  const legacy = resolveOutputProtocol({ json: true, caps: DEFAULT_CAPABILITIES })
+  const explicit = resolveOutputProtocol({ output: 'json-object', reasoning: 'off', caps: DEFAULT_CAPABILITIES })
+  ok('⑨ 唯一差别是 legacyJson 标记（生产无消费者）', legacy.legacyJson === true && explicit.legacyJson === false)
+  ok('⑨ 温度仍是结构化低温（不是 provider 默认）',
+    explicit.temperature === legacy.temperature && explicit.temperature !== DEFAULT_TEMPERATURE,
+    String(explicit.temperature))
+  ok('⑨ think 仍是 false（旧口径关思考被完整继承）', explicit.think === false)
+  ok('⑨ 旧 json:true 若与 output 同时传也不再算 legacy（兼容判定未变）',
+    resolveOutputProtocol({ json: true, output: 'text', caps: DEFAULT_CAPABILITIES }).legacyJson === false)
+
+  // 静态：业务侧不应再有旧写法（只剩 chat() 兼容包装、酒馆〔红线文档缺失暂未动〕与注释）
+  const targets = ['src/lib/aiTasks', 'src/lib/outline']
+  const singles = ['src/lib/aiCore/template.ts', 'src/lib/ai/marketRadar.ts', 'src/lib/ai/styleFingerprint.ts']
+  const rels: string[] = [...singles]
+  for (const dir of targets) {
+    for (const d of readdirSync(path.resolve(dir), { withFileTypes: true })) {
+      if (d.isFile() && d.name.endsWith('.ts')) rels.push(`${dir}/${d.name}`)
+    }
+  }
+  const offenders: string[] = []
+  for (const rel of rels) {
+    for (const [i, line] of readFileSync(path.resolve(rel), 'utf8').split('\n').entries()) {
+      const t = line.trim()
+      if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue
+      if (line.includes('json: true')) offenders.push(`${rel}:${i + 1}`)
+    }
+  }
+  ok('⑨ 业务侧（aiTasks/outline 等）已无旧 json:true 写法', offenders.length === 0, offenders.join('、'))
 }
 
 console.log(`\n———— outputProtocol：${pass} 通过 / ${fail} 失败 ————`)

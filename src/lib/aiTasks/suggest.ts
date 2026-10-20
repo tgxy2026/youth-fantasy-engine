@@ -61,7 +61,7 @@ ${req.context.trim() || '（无）'}
 
 请给出 ${n} 个候选。`
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
-    json: true,
+    output: 'json-object', reasoning: 'off',
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: req.signal,
     onToken: req.onToken,
@@ -104,7 +104,7 @@ export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { sign
     .map((h, i) => `${i + 1}. 命中词「${h.word}」\n   上下文：${h.snippet.replace(/\s+/g, ' ').slice(0, 120)}`)
     .join('\n')
   const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: `【命中清单】\n${list}\n\n请逐条给出判断。` }], {
-    json: true,
+    output: 'json-object', reasoning: 'off',
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: opts?.signal,
     onToken: opts?.onToken,

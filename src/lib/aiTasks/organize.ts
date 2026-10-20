@@ -146,7 +146,7 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
       { role: 'system', content: composeSystemPrompt(ORGANIZE_SYS, cfg) },
       { role: 'user', content: user },
     ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, json: true },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
   )
 
   const arr = parseObjectArray(text)

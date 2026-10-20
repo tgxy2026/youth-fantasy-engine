@@ -220,7 +220,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
       // 🔴 走流式（B2 起输出变长：每类实体十几个字段）：非流式要等整段生成完才回响应头，
       //    必然撞 CHAT_TIMEOUT_MS（180s）的总超时墙 —— 与 Bible/大纲是同一类问题。
       {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true,
+      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), output: 'json-object', reasoning: 'off',
       ...(opts?.request ? { request: opts.request } : {}),
     },
     )

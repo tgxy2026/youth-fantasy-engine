@@ -333,7 +333,15 @@ export function useJieWenJiModel(props: Props) {
     postT.run(async job => {
       job.progress({ ch })
       // 🔴 用**编辑器里的最新正文**（作者可能还没保存），不读库里的滞后版本
-      const report = await collectPostProcess({ chapterId: ch, content, chapterTitle: title }, { signal: job.signal })
+      const report = await collectPostProcess(
+        { chapterId: ch, content, chapterTitle: title },
+        {
+          signal: job.signal,
+          // 3.2.0 · WQ7：编辑器助手的后处理**没有父任务**，如实标成独立调用 ——
+          // 否则它会被算到「当时恰好有唯一在跑任务」的账上（统计与重试次数都会虚高）。
+          request: { scope: 'independent' },
+        },
+      )
       return { ch, v: report.items }
     })
   }

@@ -243,7 +243,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   const scoreNum = Number(obj.score)
@@ -312,7 +312,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
     const text = await chat(
       cfg,
       [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
     )
     const parsed = parseObjectArrayDetailed(text)
     if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
@@ -378,9 +378,10 @@ ${passage.trim() ? authorBlock(fence, passage.trim()) : '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    // json: true 让 chat 内部自动采用 JSON_TASK_TEMPERATURE 低温——0.85 会让模型在 JSON
-    // 外夹带寒暄/解释，直接抬高解析失败率。温度判断收在 ai.ts 一处，此处不再手填数值。
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    // 结构输出 + 关推理：结构化任务自动采用 JSON_TASK_TEMPERATURE 低温——0.85 会让模型在
+    // JSON 外夹带寒暄/解释，直接抬高解析失败率。温度判断收在 `ai/outputProtocol` 一处，
+    // 此处不再手填数值（3.2.0 · WQ5 把「要 JSON」与「不许思考」拆成了两条独立声明）。
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   // 兜底：JSON 解析失败时才走 humanText 抽取，但抽取结果可能只剩标点残骸
@@ -424,7 +425,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
   )
   const obj = parseObjectArray(text)[0] ?? {}
   return {

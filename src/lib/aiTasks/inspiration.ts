@@ -81,7 +81,7 @@ ${req.context.trim() || '（无）'}
     const text = await chat(
       cfg,
       [{ role: 'system', content: composeSystemPrompt(P_inspiration_fuse, cfg) }, { role: 'user', content: user }],
-      { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
+      { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
     )
     return parseFusedIdeas(text, req.items.length)
   }

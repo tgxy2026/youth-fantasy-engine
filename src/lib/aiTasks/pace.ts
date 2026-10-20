@@ -67,7 +67,7 @@ ${text ? authorBlock(fence, text) : '（空）'}
   const raw = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(P_pace_analysis, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, json: true },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
   )
   return parsePaceReport(raw, text)
 }

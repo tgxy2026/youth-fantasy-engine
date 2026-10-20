@@ -226,7 +226,7 @@ export async function extractFingerprint(texts: string[], opts: ExtractOptions =
   const text = await callChat(cfg, [
     { role: 'system', content: composeSystemPrompt(P_style_fingerprint, cfg) },
     { role: 'user', content: user },
-  ], { json: true, timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken) })
+  ], { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken) })
 
   const obj = parseLooseObject(text) ?? {}
   return {

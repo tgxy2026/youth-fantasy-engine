@@ -2,6 +2,7 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #17 段）。
 // 🔴 「动作 × 章位置」纪律矩阵（详规 docs/2.2.1-续排细纲*）：历史章冻结、最新章仅改写档放开。
 //    三条纪律提示词（BASE / HISTORY_RULE / LATEST_RULE）都是可编辑项，就地声明在本文件。
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
@@ -103,6 +104,12 @@ export interface ChapterRewriteOpts {
   onLog?: (msg: string) => void
   signal?: AbortSignal
   /**
+   * 请求归属（3.2.0 · WQ7）。
+   * 🔴 整章改写是**一次逻辑调用里最贵的**（正文可能上千字，还会触发补写循环），
+   *    不带归属就只能靠「唯一任务」兼容路径 —— 工单批量改写时最容易串账。
+   */
+  request?: CallRequestContext
+  /**
    * 这一章是不是**项目最新章**（决定改写纪律，见上面两条 RULE）：
    *   `true`  = 最新章，允许创造性改写，落库后由调用方补跑设定抽取；
    *   `false` = 历史章，只做文字加工、设定类内容一律冻结。
@@ -145,6 +152,7 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       ...(o.signal ? { signal: o.signal } : {}),
       ...(o.onToken ? { onToken: o.onToken } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
+      ...(o.request ? { request: o.request } : {}),
       maxExpand: 8, // 续写可能要从 1000 补到 4000，轮数给足
       maxShrink: 0, // 🔴 绝不压缩：原文是作者写的，续写只有"往长里补"一个方向
     })
@@ -174,7 +182,12 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: lines.join('\n\n') }],
-    { timeoutMs: CHAT_TIMEOUT_MS, ...(o.signal ? { signal: o.signal } : {}), ...(o.onToken ? { onToken: o.onToken } : {}) },
+    {
+      timeoutMs: CHAT_TIMEOUT_MS,
+      ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.onToken ? { onToken: o.onToken } : {}),
+      ...(o.request ? { request: o.request } : {}),
+    },
   )
   let out = cleanChapterOutput(text)
 
@@ -187,6 +200,7 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       cfg, body: out, target: o.targetWords,
       ...(o.signal ? { signal: o.signal } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
+      ...(o.request ? { request: o.request } : {}),
       // 精简不该回头补（压到一半又补回去很荒谬）；其余动作补 2 轮
       maxExpand: o.action === 'condense' ? 0 : 2,
       maxShrink: 2,

@@ -60,7 +60,7 @@ export async function aiSummarizeFormSettings(
         { role: 'system', content: composeSystemPrompt(formSummarySys(), cfg) },
         { role: 'user', content: `〖材料〗\n${material.trim() || '（无材料）'}\n\n〖要填的字段〗\n${fieldList}\n\n【必须遵守】只输出 JSON；顶层键用上面〖〗里的页签名（不是字段名）；只写材料里有依据的字段，没把握就不写；不要新造专名；单字段 ≤ 60 字；标了「本表可有多套并列主体」的那四张表若有多套，按主体名再分一层（见〖〗下方说明与铁律 7）。${tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精炼，并务必把 JSON 完整输出到最后一个括号。' : ''}` },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
     )
     opts.onRaw?.(text)
     const obj = parseLooseObject(text) ?? {}

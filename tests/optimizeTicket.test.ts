@@ -157,8 +157,11 @@ function mk(o: MkInput): TicketItem {
   ok('🔴 设定同步策略降级为 add-only（无交互场景不弹勾选）',
     src.includes("extractAndCommitSettings(text, hit.chapter.title, 'add-only'"))
 
-  ok('🔴 中止 ⇒ 条目保持 pending（直接 return 原 items，不标 failed）',
-    /if \(isCancelled\(e\) \|\| opts\.signal\?\.aborted\) return \{ chapterId, items \}/.test(src))
+  // 3.2.0 · WQ7：中止路径多了一步「账本记 aborted」（`settleRewriteLedger`），
+  // 所以不能再断言 return 紧贴 if —— 断言语义：中止分支**原样返回 items**（不 markAll failed）。
+  ok('🔴 中止 ⇒ 条目保持 pending（原样 return items，不标 failed）',
+    /if \(isCancelled\(e\) \|\| opts\.signal\?\.aborted\) \{[\s\S]{0,160}?return \{ chapterId, items \}/.test(src)
+    && !/aborted\) \{[\s\S]{0,160}?markAll\(/.test(src))
   ok('🔴 manual 条目永远保持 pending（markAll 原样返回它）',
     src.includes('i.action === \'manual\' ? i : { ...i, status, error }'))
 

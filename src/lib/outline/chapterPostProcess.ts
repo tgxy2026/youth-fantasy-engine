@@ -20,6 +20,7 @@ import {
 } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settings/settingLedger'
 import { splitCodes } from '@/lib/audit/audit'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
 import { countWords } from '@/lib/editor/textStats'
 import type { CardRecord, TableRow } from '@/lib/types'
@@ -214,7 +215,15 @@ function entityItems(entities: ExtractedEntity[], reg: EntityRegistry): PostProc
  */
 export async function collectPostProcess(
   input: PostProcessInput,
-  opts?: { signal?: AbortSignal },
+  opts?: {
+    signal?: AbortSignal
+    /**
+     * 请求归属（3.2.0 · WQ7）。
+     * 🔴 后处理由编辑器助手直接触发，**没有父任务** —— 调用方应传 `{ scope: 'independent' }`，
+     *    否则它会被算到「当时恰好有唯一在跑任务」的账上（统计与重试次数都会虚高）。
+     */
+    request?: CallRequestContext
+  },
 ): Promise<PostProcessReport> {
   const chapterTitle = input.chapterTitle ?? ''
   const meta = await resolveMeta(input)
@@ -248,7 +257,10 @@ export async function collectPostProcess(
 
   // 实体：复用既有链路（同一份正文再抽一次实体 —— 与「补登」模式同口径）
   if (reg) {
-    const entRun = await aiExtractSettingEntitiesWithStatus(body, chapterTitle, { signal: opts?.signal })
+    const entRun = await aiExtractSettingEntitiesWithStatus(body, chapterTitle, {
+    signal: opts?.signal,
+    ...(opts?.request ? { request: opts.request } : {}),
+  })
     if (entRun.state === 'completed') {
       items.push(...entityItems(entRun.result?.data ?? [], reg))
     } else if (entRun.state === 'cancelled') {

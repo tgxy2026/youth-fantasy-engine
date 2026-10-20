@@ -25,6 +25,8 @@ import { requireProviderFor, isCancelled, stripThink } from '@/lib/ai'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 // 3.2.0 · W3 种子：把「候选产出/采纳/丢弃」记进运行账本（此前 AiRun.candidates 无生产者）
 import { noteCandidate } from '@/lib/ai/aiRunLedger'
+// 3.2.0 · WQ6：批次/步骤总请求预算（补字循环 + 自检 + 设定整理一起计入）
+import { createAttemptBudget, CHAPTER_ATTEMPT_BUDGET, type AttemptBudget } from '@/lib/ai/requestLedger'
 import { hashOf } from '@/lib/semantic/chunk'
 // 3.2.0 · WQ8：抽取证据的原文核验（编造的证据比没有证据更糟）
 import { checkEntityEvidence, describeEvidence } from '@/lib/ai/evidenceCheck'
@@ -220,6 +222,8 @@ async function generateOneChapter(opts: {
   chapterNo?: number
   signal?: AbortSignal
   request?: CallRequestContext
+  /** 本章请求预算（3.2.0 · WQ6）：补字/压缩循环到上限就停，不嵌套追加 */
+  budget?: AttemptBudget
   onToken?: (d: string) => void
   onPhase?: (p: string) => void
   onBodyReplace?: (s: string) => void
@@ -254,6 +258,7 @@ async function generateOneChapter(opts: {
     signal: opts.signal, onToken: opts.onToken,
     ...(opts.request ? { request: opts.request } : {}),
   })
+  opts.budget?.consume(1)
 
   // 异常返回（模型抽风 / 思维链剥离后只剩残片）→ 静默重试一次，不再流式以免污染预览
   if (countWords(body) < 50) {
@@ -262,6 +267,7 @@ async function generateOneChapter(opts: {
     body = await askSoft(cfg, sys, user, {
       signal: opts.signal, ...(opts.request ? { request: opts.request } : {}),
     })
+    opts.budget?.consume(1)
     opts.onBodyReplace?.(body)
   }
 
@@ -322,10 +328,13 @@ export function summarizeSelfCheck(
 async function selfRefine(
   body: string, ctx: ProjectContextResult, signal?: AbortSignal,
   onPhase?: (p: string) => void, request?: CallRequestContext,
+  budget?: AttemptBudget,
 ): Promise<SelfRefineResult> {
   if (!ctx.text.trim() || countWords(body) < 200) {
     return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
   }
+  // 3.2.0 · WQ6：三项自检 = 三次逻辑调用，先记账再发（预算耗尽时这里就该被上层拦住）
+  budget?.consume(3)
   onPhase?.('AI 编辑自检（连续性 / 人设 / 伏笔）')
   const findings: RefineFinding[] = []
   const push = (arr: readonly RefineFinding[]) => {
@@ -483,7 +492,7 @@ async function extractSettingUpdates(body: string, title: string, signal?: Abort
   const cfg = await requireProviderFor('create')
   const sys = P_setting_update_detect
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, {
-    signal, json: true, ...(request ? { request } : {}),
+    signal, output: 'json-object', reasoning: 'off', ...(request ? { request } : {}),
   })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
   // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
@@ -735,6 +744,13 @@ export async function runAutoContinue(
       ].filter(Boolean).join('\n')
 
       // ---- 初稿：生成 →（可选）作者裁决采纳 / 重写 / 中止 ----
+      // 3.2.0 · WQ6：**每章一份**预算（补字/压缩/自检/设定整理/重试全计入）。
+      // 🔴 按章而不是按任务：一章正常 6~12 次调用，40 次的上限只拦真失控
+      //（例如补写循环一直"补了但不够"），不会误伤长章。
+      const budget = createAttemptBudget({
+        label: `第 ${ordered.length + i + 1} 章`,
+        max: CHAPTER_ATTEMPT_BUDGET,
+      })
       let body = ''
       let decision: DraftDecision = 'accept'
       for (let attempt = 1; attempt <= MAX_DRAFT_ATTEMPTS; attempt++) {
@@ -746,6 +762,7 @@ export async function runAutoContinue(
           chapterNo: ordered.length + i + 1, // 🔴 范围限定：只写这一章，别把下一章的内容带进来（社区反馈）
           signal: cb.signal, onToken: cb.onBodyToken,
           ...(cb.request ? { request: cb.request } : {}),
+          budget,
           onPhase: p => cb.onPhase?.(`${tag}：${p}`),
           onBodyReplace: cb.onBodyReplace,
           onLog: cb.onLog,
@@ -776,6 +793,7 @@ export async function runAutoContinue(
             cfg: await requireProviderFor('create'), body, instruction: opts.deAi.prompt,
             signal: cb.signal, ...(cb.request ? { request: cb.request } : {}), onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
           }).catch(() => ''))
+          budget.consume(1)
           const dw = countWords(def)
           // 安全阀：润色结果显著缩水（不足原文 60%）视为模型偷懒/截断，保留原稿
           if (def && dw >= w * 0.6) {
@@ -807,7 +825,7 @@ export async function runAutoContinue(
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
       // WQ1-2：自检三项是必选项 —— 失败/取消/未完成都暂停连写，本章不落库，
       // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
-      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request)
+      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget)
       body = refined.body
       if (refined.selfCheck.state !== 'completed') {
         const sc = refined.selfCheck
@@ -861,6 +879,8 @@ export async function runAutoContinue(
       lastTitle = ch.title
 
       cb.onPhase?.(`${tag}：抽取并补登设定`)
+      // 设定整理本身是一次逻辑调用（可能 + 一次变化检测），计入本章预算
+      budget.consume(1)
       const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request)
       const dev = finalWords - opts.targetWords
       cb.onLog?.(

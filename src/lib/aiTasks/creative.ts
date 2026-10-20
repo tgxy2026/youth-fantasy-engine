@@ -124,7 +124,7 @@ export async function aiGenerateBible(
         { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。` },
       ],
       {
-        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true,
+        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
         ...(opts.request ? { request: opts.request } : {}),
       },
     )
@@ -427,7 +427,7 @@ export async function aiPlanOutline(
         },
       ],
       {
-        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true,
+        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
         ...(opts.request ? { request: opts.request } : {}),
       },
     )

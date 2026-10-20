@@ -117,7 +117,7 @@ ${authorBlock(fence, body)}
     cfg,
     [{ role: 'system', content: composeSystemPrompt(POST_PROCESS_SYS, cfg) }, { role: 'user', content: user }],
     // 走流式（与 extract 同理：非流式等整段生成完会撞总超时墙）
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), json: true },
+    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: longStream(opts?.onToken), output: 'json-object', reasoning: 'off' },
   )
     const r = parseChapterChangesDetailed(text)
     if (r.outcome === 'invalid') return one('failed', 'parse-invalid')

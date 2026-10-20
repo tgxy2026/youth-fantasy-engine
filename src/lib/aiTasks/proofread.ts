@@ -224,7 +224,7 @@ async function runProofread(
           { role: 'system', content: composeSystemPrompt(sys, cfg) },
           { role: 'user', content: user },
         ],
-        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
+        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
       )
     } catch (e) {
       if (isCancelled(e)) break
