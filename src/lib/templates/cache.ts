@@ -11,8 +11,10 @@
  *    B 书照样显示）。所以每条缓存都带 `pid`，取用前先比 —— 不一致即当未命中。
  *    （与 `settings/fieldAlias.ts` 的 `peekAliases`、`styleFingerprint` 同一手法。）
  *
- * 🔴 缓存键**不含** `semanticDigest`：摘要是**输出**，不是输入。把输出塞进键会变成
+ * 🔴 缓存键**不含解析结果的** `semanticDigest`：摘要是**输出**，不是输入。把输出塞进键会变成
  *    「摘要变了才算新键」，而摘要正是我们要用来判断「AI 候选是否过期」的东西 —— 循环。
+ *    但**采用快照自带的** `def.semanticDigest` 是输入（导入 / 恢复可能保留 revision 却换了内容），
+ *    必须进键（Q2-7）：否则同一 revision 下关掉字段权限，缓存仍会把旧的「可读」规则端给召回闸。
  *
  * 🔴 `TabDef` 一律视为**不可变**：动态分卷台账（`setVolumeTabs`）也是整批重建新对象。
  *    将来若有人原地改 TabDef，必须同时调 `invalidateTemplateCache()`，否则会读到旧结构。
@@ -76,7 +78,7 @@ export function templateCacheKeyOf(
 ): string {
   // 🔴 快照身份也要进键：作者把《种族生物》从「预设 v1」换成「我的模板」之后，
   //    若键里没有 templateId/revision，会命中换模板前那一份缓存。
-  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}` : ''
+  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}#${opts.def.semanticDigest}` : ''
   return [tabId, purpose, opts.category ?? '', opts.ignoreAppliesTo ? '1' : '0', defSig].join(SEP)
 }
 
@@ -122,7 +124,7 @@ export function resolveTemplateCached(
     : isAtlas
       ? templateCacheKeyOf(tab.id, purpose, opts)
       : templateCacheKeyOf(tab.id, '', {})
-  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}` : ''
+  const defSig = opts.def ? `${opts.def.templateId}@${opts.def.revision}#${opts.def.semanticDigest}` : ''
   const configRevision = !opts.def && isAtlas && opts.config ? (opts.config.revision ?? 0) : -1
   const aliasesSig = !opts.def && isAtlas ? aliasesSignature(opts.aliases) : ''
   const key = entryKeyOf(pid, logicalKey)

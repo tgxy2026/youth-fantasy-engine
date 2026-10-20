@@ -51,6 +51,18 @@ export async function getAllChapterLedgerRows(): Promise<TableRow[]> {
     .sort((a, b) => a.order - b.order)
 }
 
+/**
+ * 按**指定项目 id** 聚合卷台账（3.2.0 Q2 召回权限复核）。
+ * 理由同 `getCardRecordsFor`：异步任务可能已经切书，不能用"当前项目"代替。
+ */
+export async function getAllChapterLedgerRowsFor(pid: string): Promise<TableRow[]> {
+  if (!pid) return []
+  const all = await ops.getAll<TableRow>('tableRows')
+  return all
+    .filter(r => String(r.tabId).startsWith(VOL_LEDGER_PREFIX) && r.projectId === pid)
+    .sort((a, b) => a.order - b.order)
+}
+
 /** 章节移动卷后，清理其在"其它卷台账表"里的孤儿行（行 id 形如 ch-<chapterId>，跨表唯一） */
 export async function purgeLedgerRowEverywhere(chId: string, exceptVolumeId: string) {
   const rid = `ch-${chId}`

@@ -13,7 +13,7 @@
 
 import { chunkChapter, hashOf, toVectorBuffer } from '@/lib/semantic/chunk'
 import { embedTexts, type EmbedConfig } from '@/lib/semantic/embed'
-import { makeVecRow, putVectors, removeByRef, type VecKind, type VecRow } from '@/lib/semantic/store'
+import { makeVecRow, putVectors, removeByRef, type VecKind, type VecBasis, type VecRow } from '@/lib/semantic/store'
 
 /** 一个「来源」：一章正文 / 一条设定行 / 一张角色卡 / 一篇参考资料 */
 export interface IndexDoc {
@@ -24,6 +24,11 @@ export interface IndexDoc {
   text: string
   /** 来源行被标为 S 级（绝密）—— 角色视角召回时整条剔除 */
   secret: boolean
+  /**
+   * 授权依据（3.2.0 Q2）：受模板治理的设定行必须带；
+   * 章节 / 知识库 / 自由对话没有字段权限，可不传。
+   */
+  basis?: VecBasis
 }
 
 /**
@@ -68,6 +73,7 @@ export async function indexOneDoc(
       dim: vec.length,
       model: cfg.model.trim(),
       secret: doc.secret,
+      ...(doc.basis ? { basis: doc.basis } : {}),
     }))
   }
   await removeByRef(projectId, doc.refId)

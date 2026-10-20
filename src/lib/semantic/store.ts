@@ -29,6 +29,31 @@ import { chunkKey, vectorRowId } from '@/lib/semantic/chunk'
  */
 export type VecKind = 'chapter' | 'summary' | 'setting' | 'kb' | 'tavern'
 
+/**
+ * 索引块的**授权依据**（3.2.0 §16.3 Q2）。
+ *
+ * 🔴 为什么必须随块落库：向量是「当时的文本快照」。作者之后关掉字段的 AI 参考、
+ *    归档字段、改类别或删掉来源，旧块里的原文仍然在 —— 召回时不复核依据，
+ *    就等于「开关关了，AI 还是知道」。召回前拿这份依据与**当前**模板/行状态对一遍，
+ *    对不上就丢弃该块。
+ * 🔴 没有 `basis` 的旧块（3.2.0 之前建的索引）一律隔离：宁可让作者重建一次，
+ *    也不拿「无法证明授权」的原文去凑数。
+ */
+export interface VecBasis {
+  /** 依据格式版本（将来扩展时旧块按未知版本隔离） */
+  v: 1
+  /** 来源页签（`chapter-master` 表示卷台账；章节 / 知识库不适用） */
+  tabId: string
+  /** 建块时的生效模板语义摘要（含权限 / 名称 / 类型 / 类别范围） */
+  templateDigest: string
+  /** 建块时该行的「类别」值（用于识别类别变化后的跨类别残留） */
+  category: string
+  /** 来源标题的摘要（角色卡名等；标题变了也算旧块） */
+  headDigest?: string
+  /** 该块文本涉及的字段（稳定 ID + 存储键 + 当时的取值摘要） */
+  fields: { id: string; key: string; digest: string }[]
+}
+
 export interface VecRow {
   /** `${projectId}::${kind}::${refId}::${chunkIdx}`（见 chunk.vectorRowId） */
   id: string
@@ -51,6 +76,8 @@ export interface VecRow {
   model: string
   /** 来源行在表格里被标为 S 级（绝密）：角色视角召回时必须整行剔除 */
   secret: boolean
+  /** 授权依据；旧索引（3.2.0 前）没有 ⇒ 召回侧隔离 */
+  basis?: VecBasis
   updatedAt: number
 }
 
@@ -63,6 +90,11 @@ export interface VecStats {
   chunks: number
   /** 最近一次写入所用模型；空库为空串 */
   model: string
+  /**
+   * 缺少授权依据的块数（升级前的旧索引）。
+   * 🔴 >0 ⇒ 这些块在召回侧会被隔离（不注入），界面应提示作者重建。
+   */
+  baseless: number
   /** 最近写入时间；空库为 0 */
   updatedAt: number
 }
@@ -187,15 +219,18 @@ export function summarize(rows: VecRow[]): VecStats | null {
   const chapters = new Set<string>()
   let model = ''
   let updatedAt = 0
+  let baseless = 0
   for (const r of rows) {
     if (r.kind === 'chapter') chapters.add(r.refId)
+    // 章节 / 知识库 / 酒馆不依赖项目字段权限；受模板治理的块缺依据才算隔离对象
+    if ((r.kind === 'setting' || r.kind === 'summary') && !r.basis) baseless++
     if (r.updatedAt >= updatedAt) {
       updatedAt = r.updatedAt
       model = r.model
     }
   }
   const docs = new Set(rows.map(r => `${r.kind}::${r.refId}`))
-  return { chapters: chapters.size, docs: docs.size, chunks: rows.length, model, updatedAt }
+  return { chapters: chapters.size, docs: docs.size, chunks: rows.length, model, baseless, updatedAt }
 }
 
 // ============ 后端注入 ============
@@ -290,6 +325,8 @@ export function makeVecRow(input: {
   dim: number
   model: string
   secret: boolean
+  /** 授权依据（受模板治理的来源必须给；章节 / 知识库 / 酒馆可不传） */
+  basis?: VecBasis
   updatedAt?: number
 }): VecRow {
   return {

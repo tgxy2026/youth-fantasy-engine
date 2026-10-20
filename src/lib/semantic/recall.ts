@@ -15,7 +15,7 @@
 import { tokenize } from '@/lib/editor/tokenize'
 import { fromVectorBuffer } from '@/lib/semantic/chunk'
 import { embedOne, type EmbedConfig } from '@/lib/semantic/embed'
-import { loadVectors, vectorIndex, type VecIndex, type VecKind, type VecRow } from '@/lib/semantic/store'
+import { loadVectors, vectorIndex, type VecIndex, type VecKind, type VecRow, type VecBasis } from '@/lib/semantic/store'
 
 export interface RecallHit {
   kind: VecKind
@@ -27,6 +27,11 @@ export interface RecallHit {
   score: number
   /** 该块来源被标为 S 级（绝密）—— 调用方可据此再作判断 */
   secret: boolean
+  /**
+   * 块的授权依据（3.2.0 Q2）。受模板治理的来源若缺失 ⇒ 注入侧必须隔离。
+   * 章节 / 知识库 / 自由对话没有字段权限，可以为空。
+   */
+  basis?: VecBasis
 }
 
 export interface RecallOptions {
@@ -202,6 +207,7 @@ export async function recallRelevant(query: string, opts: RecallOptions): Promis
     scored.push({
       kind: r.kind, refId: r.refId, chunkIdx: r.chunkIdx,
       text: r.text, title: r.title ?? '', score, secret: r.secret,
+      ...(r.basis ? { basis: r.basis } : {}),
     })
   }
 

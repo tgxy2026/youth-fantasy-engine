@@ -10,6 +10,7 @@ import {
   __resetTemplateCacheForTests, MAX_ENTRIES,
 } from '@/lib/templates/cache'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
+import type { TemplateDef } from '@/lib/templates/definition'
 import type { TabDef } from '@/lib/types'
 
 let pass = 0, fail = 0
@@ -196,6 +197,14 @@ const FORM_TAB = tabOf('master')   // 非图鉴页签（表单）
   ok('⑫ 忽略类别开关影响键', templateCacheKeyOf('races', 'detail', { ignoreAppliesTo: true }) !== templateCacheKeyOf('races', 'detail', {}))
   ok('⑫ 用途不同键不同', templateCacheKeyOf('races', 'detail') !== templateCacheKeyOf('races', 'aiRead'))
   ok('⑫ 页签不同键不同', templateCacheKeyOf('races', 'detail') !== templateCacheKeyOf('items', 'detail'))
+
+  // 🔴 Q2-7：采用快照的语义摘要也是输入 —— 导入/恢复可能保留 revision 却换了字段权限，
+  //    只认 `templateId@revision` 会把旧的「可读」规则端给召回闸。
+  const defLike = (digest: string) => ({ templateId: 'tpl_x', revision: 3, semanticDigest: digest }) as unknown as TemplateDef
+  const on = templateCacheKeyOf('races', 'index', { def: defLike('f1:on') })
+  const off = templateCacheKeyOf('races', 'index', { def: defLike('f1:off') })
+  ok('⑫ 快照摘要进键（同 revision、内容变了 ⇒ 键不同）', on !== off)
+  ok('⑫ 快照身份相同 ⇒ 键相同', on === templateCacheKeyOf('races', 'index', { def: defLike('f1:on') }))
 }
 
 // ────────────────────────── ⑬ 按 ID 的便捷入口 ──────────────────────────

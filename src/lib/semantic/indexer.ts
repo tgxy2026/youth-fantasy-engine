@@ -24,16 +24,14 @@
 import * as db from '@/lib/db'
 import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
 import { TABS } from '@/lib/schema'
-import { isAtlasTab } from '@/lib/atlas/schema'
-import { loadAtlasSchema } from '@/lib/atlas/persistence'
-import { resolveTemplateCached } from '@/lib/templates/cache'
-import { indexRulesOf, type IndexFieldRule } from '@/lib/templates/consumers'
+import { loadFieldRules, type FieldRules } from '@/lib/semantic/fieldRules'
+import type { IndexFieldRule } from '@/lib/templates/consumers'
 import { chunkChapter, hashOf, toVectorBuffer, type Chunk } from '@/lib/semantic/chunk'
 import { embedTexts, EMBED_BATCH, type EmbedConfig } from '@/lib/semantic/embed'
 import {
   makeVecRow, putVectors, removeByRef, clearProjectVectors, vectorIndex, vectorIndexStrict, vectorStats,
   refKeyOf, splitRefKey,
-  type VecIndex, type VecKind, type VecRow, type VecStats,
+  type VecIndex, type VecKind, type VecRow, type VecStats, type VecBasis,
 } from '@/lib/semantic/store'
 // ⚠️ 方向：indexer → settings → aiCore/session → db，不回头 import indexer ⇒ 不成环。
 import { loadEmbeddingSettings, resolveEmbedConfig } from '@/lib/semantic/settings'
@@ -48,78 +46,116 @@ export interface CollectInput {
   chapters: { id: string; title: string; summary?: string; content: string }[]
   /**
    * `hiddenCols` ＝ 该表的隐藏列名（调用方从 schema 取）—— 不进索引文本，见 renderRow。
-   * `fieldRules` ＝ 自定义字段的索引规则（图鉴页签才有）——
+   * `rules` ＝ 该表的字段权限规则（模板治理来源）——
    *   `cf_*` 这种内部键**绝不能**写进向量文本，且**作者关掉的字段不许进索引**，见 renderRow。
+   * `fieldRules` 是 3.2.0 前的旧形状（只描述自定义字段），保留给既有调用与测试；
+   *   新代码一律传 `rules`。
    */
   tables: {
     tabId: string
     tabName: string
     rows: { id: string; data: Record<string, string> }[]
     hiddenCols?: string[]
+    rules?: FieldRules
     fieldRules?: Record<string, AtlasIndexFieldRule>
   }[]
-  cards: { tabId: string; tabName: string; rows: { id: string; name: string; data: Record<string, string> }[]; hiddenCols?: string[] }[]
+  cards: {
+    tabId: string
+    tabName: string
+    rows: { id: string; name: string; data: Record<string, string> }[]
+    hiddenCols?: string[]
+    rules?: FieldRules
+  }[]
 }
 
 /**
- * 自定义字段进索引的规则（3.1.3 · R04）。
- *
- * 🔴 为什么不只是「键→名字」的映射：索引文本会经〖语义召回〗原样注回提示词，
- *    所以作者在图鉴里关掉的每一个开关，在这里**必须同样生效** —— 否则就成了
- *    "提示词里看不到，但语义召回能捞出来"的绕行通道（验收 R04 已复现：
- *    `aiReadable=false` + `archived=true` 的字段内容照样进了索引文本）。
- *
- * 3.2.0 · WT0-4：结构定义挪到 `templates/consumers.IndexFieldRule`（**唯一来源**），
- * 这里只留旧名字的别名 —— 两份接口定义必然漂移。
+ * 3.2.0 前的索引规则形状（只描述自定义字段）。
+ * 🔴 仅为既有调用 / 测试保留；新代码传 `FieldRules`（见 `fieldRules.ts`）。
  */
-export type AtlasIndexFieldRule = IndexFieldRule
+export interface AtlasIndexFieldRule {
+  label: string
+  aiReadable: boolean
+  appliesTo: '*' | string[]
+}
 
 /** 条目类别所在的列（图鉴四页签一致） */
 const CATEGORY_COL = '类别'
 
+function legacyRulesOf(fieldRules?: Record<string, AtlasIndexFieldRule>): FieldRules {
+  if (!fieldRules) return { kind: 'none' }
+  const rules: Record<string, IndexFieldRule> = {}
+  for (const [k, v] of Object.entries(fieldRules)) {
+    rules[k] = {
+      id: k, source: 'custom', label: v.label,
+      aiReadable: v.aiReadable, appliesTo: v.appliesTo, archived: false,
+    }
+  }
+  // 🔴 authoritative=false：旧调用只给了自定义字段规则，不能拿它去裁内置列
+  return { kind: 'rules', rules, templateDigest: '', authoritative: false }
+}
+
+interface RenderRowResult {
+  text: string
+  /** 实际进入文本的字段（含当时的取值摘要）—— 落进块依据，召回时逐字段复核 */
+  fields: VecBasis['fields']
+}
+
 /**
- * 行 → 可嵌入文本。**带列名**（"身份：剑修"）比只拼值（"剑修"）更容易被语义匹配到。
+ * 行 → 可嵌入文本 + 字段依据。
  *
  * 🔴 自定义字段的存储键是 `cf_<uid>`，**必须换成作者起的字段名**：
  *    索引文本会经〖语义召回〗原样注回提示词（`inject.renderRecallHits`），
  *    留着 `cf_mvdjsuz400001sletxf：…` 等于给模型看一串无意义字符，还稀释向量。
- *    这与 `aiContext.renderTable` 的 `labelOf` 是**同一口径**（3.1.3 补上，此前只有提示词那边换了）。
- *    拿不到规则时（配置读失败）退化成「自定义字段」—— 宁可重名，也不露内部键。
  *
- * 🔴🔴 `fieldRules` 一旦给了就是**权威**（3.1.3 · R04）：
- *      · 规则里**没有**这个 `cf_` 键 ⇒ 字段已归档或已删除 ⇒ 值一律不进索引。
- *        这些值只是历史残留，不是作者当下想让 AI 看到的东西（"我归档了却还能被召回"最伤信任）。
- *      · `aiReadable=false` ⇒ 不进索引（与提示词同一口径）。
- *      · `appliesTo` 不含本行类别 ⇒ 不进索引（同上，跨类别的旧值不算数）。
+ * 🔴🔴 规则一旦给出就是**权威**（3.2.0 Q2）：
+ *      · 模板里**没有**这个字段 ⇒ 已归档 / 已删除 / 不该给 AI 看 ⇒ 值一律不进索引。
+ *        **不能只删显示标签留下值** —— 那等于把禁读内容换个马甲塞进向量。
+ *      · `appliesTo` 不含本行类别 ⇒ 不进索引（跨类别的历史残留不算数）。
+ *      · `rules.kind === 'unavailable'`（配置读失败）⇒ 所有 `cf_*` 一律跳过：
+ *        无法证明授权就不发。内置字段是公开结构，继续用。
+ *      · `kind === 'none'`（非模板治理）⇒ `cf_*` 同样跳过，绝不退回「自定义字段」兜底。
+ *
+ * 每个进文本的字段都记一条 `{ id, key, digest }`；`digest` 是该值当时的内容摘要，
+ * 召回时与当前值比对 —— 值变了而索引还没重建，旧块也**不许**注入。
  */
 function renderRow(
   data: Record<string, string> | undefined,
-  head?: string,
-  hiddenCols?: Set<string>,
-  fieldRules?: Record<string, AtlasIndexFieldRule>,
-  category?: string,
-): string {
+  opts: { head?: string; hiddenCols?: Set<string>; rules: FieldRules; category?: string },
+): RenderRowResult {
   const lines: string[] = []
-  if (head && head.trim()) lines.push(head.trim())
+  const fields: VecBasis['fields'] = []
+  if (opts.head && opts.head.trim()) lines.push(opts.head.trim())
+  const category = (opts.category ?? '').trim()
+
   for (const [k, v] of Object.entries(data ?? {})) {
     const val = (v ?? '').trim()
     if (!val) continue
     // 内部字段（子集标记之类）不参与语义 —— 它们只是结构占位
     if (!k.trim() || k.endsWith('::')) continue
     // 🔴 隐藏列（坐标串之类）与系统元数据列（保密等级）不进索引文本 ——
-    //    与 `aiContext.renderTable` 同一口径。索引文本会经〖语义召回〗注回提示词，
-    //    所以「不进提示词」的列在这里同样要挡（2026-10-08 修）。
-    if (hiddenCols?.has(k) || SYSTEM_META_FIELDS.has(k)) continue
-    const rule = fieldRules?.[k]
-    if (k.startsWith('cf_')) {
-      if (fieldRules && !rule) continue            // 已归档 / 已删除
-      if (rule && !rule.aiReadable) continue       // 作者关了「允许 AI 参考」
-      if (rule && rule.appliesTo !== '*' && !rule.appliesTo.includes((category ?? '').trim())) continue
+    //    与 `aiContext.renderTable` 同一口径。
+    if (opts.hiddenCols?.has(k) || SYSTEM_META_FIELDS.has(k)) continue
+
+    const isCustom = k.startsWith('cf_')
+    let rule: IndexFieldRule | undefined
+    if (opts.rules.kind === 'rules') {
+      rule = opts.rules.rules[k]
+      // 自定义字段缺席 ⇒ 已归档 / 已删除 / 关闭了 AI 参考，一律不进
+      if (!rule && isCustom) continue
+      // 内置字段缺席：权威规则下视为已归档；旧形状的规则表不管内置列
+      if (!rule && opts.rules.authoritative) continue
+      if (rule && !rule.aiReadable) continue
+      if (rule && rule.appliesTo !== '*' && !rule.appliesTo.includes(category)) continue
+    } else if (isCustom) {
+      // unavailable：无法证明授权；none：没有规则可依 —— 都不许猜
+      continue
     }
-    const label = rule?.label ?? (k.startsWith('cf_') ? '自定义字段' : k)
+
+    const label = rule?.label ?? k
     lines.push(`${label}：${val}`)
+    fields.push({ id: rule?.id ?? k, key: k, digest: hashOf(val) })
   }
-  return lines.join('\n').trim()
+  return { text: lines.join('\n').trim(), fields }
 }
 
 /**
@@ -169,24 +205,47 @@ export function collectIndexDocs(input: CollectInput): IndexDoc[] {
   // 表格行
   for (const t of input.tables ?? []) {
     const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
+    const rules = t.rules ?? legacyRulesOf(t.fieldRules)
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
       // 逐行取类别：类别限定的字段只对匹配的条目进索引（R04）
       const category = typeof r.data?.[CATEGORY_COL] === 'string' ? r.data[CATEGORY_COL] : ''
-      const text = renderRow(r.data, undefined, hidden, t.fieldRules, category)
-      if (!text) continue
-      out.push({ kind: 'setting', refId: r.id, title: t.tabName, text, secret: isSecretRow(r.data) })
+      const rendered = renderRow(r.data, { hiddenCols: hidden, rules, category })
+      if (!rendered.text) continue
+      out.push({
+        kind: 'setting', refId: r.id, title: t.tabName, text: rendered.text,
+        secret: isSecretRow(r.data),
+        basis: {
+          v: 1,
+          tabId: t.tabId,
+          templateDigest: rules.kind === 'rules' ? rules.templateDigest : '',
+          category,
+          fields: rendered.fields,
+        },
+      })
     }
   }
 
   // 角色卡
   for (const t of input.cards ?? []) {
     const hidden = t.hiddenCols?.length ? new Set(t.hiddenCols) : undefined
+    const rules = t.rules ?? { kind: 'none' as const }
     for (const r of t.rows ?? []) {
       if (isPrunedForAI(r.data)) continue // 🔴 D 级：根本不进索引
-      const text = renderRow(r.data, r.name, hidden)
-      if (!text) continue
-      out.push({ kind: 'setting', refId: r.id, title: r.name || t.tabName, text, secret: isSecretRow(r.data) })
+      const rendered = renderRow(r.data, { head: r.name, hiddenCols: hidden, rules })
+      if (!rendered.text) continue
+      out.push({
+        kind: 'setting', refId: r.id, title: r.name || t.tabName, text: rendered.text,
+        secret: isSecretRow(r.data),
+        basis: {
+          v: 1,
+          tabId: t.tabId,
+          templateDigest: rules.kind === 'rules' ? rules.templateDigest : '',
+          category: '',
+          headDigest: hashOf((r.name ?? '').trim()),
+          fields: rendered.fields,
+        },
+      })
     }
   }
 
@@ -206,10 +265,13 @@ export interface LoadDocsResult {
   docs: IndexDoc[]
   /** 只要有一个来源读失败就为 true —— 此时调用方**绝不能做孤儿清理** */
   incomplete: boolean
+  /** 非致命提醒（如某页签字段配置读失败，已按「只收公开内置字段」处理） */
+  warnings?: string[]
 }
 
 export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   let incomplete = false
+  const warnings: string[] = []
   const onFail = (e: unknown): never[] => {
     incomplete = true
     console.warn('[semantic] 读取待索引来源失败（本轮视为「不确定」，不做孤儿清理）：', e)
@@ -222,26 +284,25 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
   const cards: CollectInput['cards'] = []
   // 隐藏列（如《地理风物》的「地图格子」坐标串）不进索引文本 —— 与 aiContext 同一口径
   const hiddenColsOf = (tab: (typeof TABS)[number]) => (tab.columns ?? []).filter(c => c.hidden).map(c => c.name)
+  const pid = db.getCurrentProjectId()
 
   /**
-   * 图鉴页签的自定义字段**索引规则**（存储键 → 名字 / AI 可读 / 类别范围）。
+   * 图鉴页签的字段**索引规则**（存储键 → 名字 / AI 可读 / 类别范围）。
    *
-   * 🔴🔴 走**有效模板**（`resolveTemplateCached` + `indexRulesOf`），不自己遍历配置原文的字段数组 ——
-   *    否则"提示词一套口径、索引另一套"会再次出现（R04 就是这么来的）。
+   * 🔴🔴 走**有效模板**（`loadFieldRules` 内部：采用快照 → 图鉴配置 → 内置），
+   *    与提示词侧同一口径；不自己遍历配置原文，避免"提示词一套、索引另一套"（R04）。
    *    `ignoreAppliesTo: true` 是**故意**的：这里要的是**全表字段结构**，
    *    类别是否匹配由 `renderRow` 拿每行的 `类别` 逐行判（全表视图不该先砍掉再判）。
    *
-   * 🔴 读配置失败**不影响索引**：退化成 `undefined` ⇒ renderRow 把 `cf_*` 叫「自定义字段」，
-   *    条照常入库，只是那条字段的可读名丢了（比整表跳过好）。
+   * 🔴 读配置失败时**不是**「没有规则」：`unavailable` ⇒ renderRow 跳过全部 `cf_*`，
+   *    只保留公开内置字段，并给作者一条 warning。把读失败当"没规则"才会泄漏（Q2-4）。
    */
-  const fieldRulesOf = async (tab: (typeof TABS)[number]): Promise<Record<string, AtlasIndexFieldRule> | undefined> => {
-    if (!isAtlasTab(tab.id)) return undefined
-    try {
-      const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id)).config
-      return indexRulesOf(resolveTemplateCached(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true }))
-    } catch {
-      return undefined
+  const fieldRulesOf = async (tab: (typeof TABS)[number]): Promise<FieldRules> => {
+    const rules = await loadFieldRules(pid, tab)
+    if (rules.kind === 'unavailable') {
+      warnings.push(`《${tab.name}》字段配置读取失败，本次只索引公开内置字段（${rules.reason}）`)
     }
+    return rules
   }
 
   for (const tab of TABS) {
@@ -253,12 +314,18 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
           tabName: tab.name,
           rows: rows.map(r => ({ id: r.id, data: r.data })),
           hiddenCols: hiddenColsOf(tab),
-          fieldRules: await fieldRulesOf(tab),
+          rules: await fieldRulesOf(tab),
         })
       }
     } else if (tab.type === 'card') {
       const rows = await db.getCardRecords(tab.id).catch(onFail)
-      if (rows.length) cards.push({ tabId: tab.id, tabName: tab.name, rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })), hiddenCols: hiddenColsOf(tab) })
+      if (rows.length) cards.push({
+        tabId: tab.id,
+        tabName: tab.name,
+        rows: rows.map(r => ({ id: r.id, name: r.name, data: r.data })),
+        hiddenCols: hiddenColsOf(tab),
+        rules: await fieldRulesOf(tab),
+      })
     }
   }
   // 章节台账（按卷分表存在 chapter-vol-*）单独取一次 —— 它不在 TABS 的 table 里
@@ -268,10 +335,11 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
       tabId: 'chapter-master',
       tabName: '章节总表',
       rows: ledger.map(r => ({ id: r.id, data: r.data })),
+      rules: { kind: 'none' },
     })
   }
 
-  return { docs: collectIndexDocs({ chapters, tables, cards }), incomplete }
+  return { docs: collectIndexDocs({ chapters, tables, cards }), incomplete, warnings }
 }
 
 /**
@@ -398,15 +466,17 @@ async function rebuildIndexInner(opts: RebuildOptions): Promise<RebuildResult> {
   onProgress?.({ phase: '收集', done: 0, total: 0 })
   let docs: IndexDoc[] = []
   let incomplete = false
+  let collectWarnings: string[] = []
   try {
     if (injectedCollect) {
       const rr = await injectedCollect()
       if (Array.isArray(rr)) docs = rr
-      else { docs = rr.docs; incomplete = rr.incomplete }
+      else { docs = rr.docs; incomplete = rr.incomplete; collectWarnings = rr.warnings ?? [] }
     } else {
       const r = await loadIndexDocsDetailed()
       docs = r.docs
       incomplete = r.incomplete
+      collectWarnings = r.warnings ?? []
     }
   } catch (e) {
     return { ...empty, error: `收集待索引资料失败：${e instanceof Error ? e.message : String(e)}` }
@@ -415,7 +485,10 @@ async function rebuildIndexInner(opts: RebuildOptions): Promise<RebuildResult> {
   if (docs.length === 0) {
     return incomplete
       ? { ...empty, error: '读取待索引资料时出错（没能读到任何来源），请重试' }
-      : { ok: true, docs: 0, chunks: 0, skipped: 0, removed: 0 }
+      : {
+        ok: true, docs: 0, chunks: 0, skipped: 0, removed: 0,
+        warning: collectWarnings.length > 0 ? collectWarnings.join('；') : undefined,
+      }
   }
 
   let old: VecIndex
@@ -504,6 +577,7 @@ async function rebuildIndexInner(opts: RebuildOptions): Promise<RebuildResult> {
         dim: vec.length,
         model: cfg.model.trim(),
         secret: slot.doc.secret,
+        ...(slot.doc.basis ? { basis: slot.doc.basis } : {}),
       }))
     }
     embedded = Math.min(i + EMBED_BATCH, total)
@@ -525,11 +599,14 @@ async function rebuildIndexInner(opts: RebuildOptions): Promise<RebuildResult> {
   }
   onProgress?.({ phase: '写入', done: rows.length, total: rows.length })
 
+  const warnings = [...collectWarnings]
+  if (skippedOrphanClean) {
+    warnings.push('部分来源读取失败：本轮已跳过「清理已删除来源」，索引可能残留已删内容，建议稍后重跑一次')
+  }
+
   return {
     ok: true, docs: docs.length, chunks: rows.length, skipped, removed,
-    warning: skippedOrphanClean
-      ? '部分来源读取失败：本轮已跳过「清理已删除来源」，索引可能残留已删内容，建议稍后重跑一次'
-      : undefined,
+    warning: warnings.length > 0 ? warnings.join('；') : undefined,
   }
 }
 
@@ -639,6 +716,11 @@ export interface IndexStatus {
 export async function indexStatus(projectId: string, cfg: EmbedConfig | null): Promise<IndexStatus> {
   const stats = await vectorStats(projectId)
   if (!stats || stats.chunks === 0) return { stats: stats, fresh: false, reason: '尚未建立索引' }
+  // 🔴 Q2：升级前建的索引没有字段授权依据，召回侧会整块隔离 —— 界面必须提示重建，
+  //    不能显示「索引可用」然后让作者纳闷为什么召回是空的。
+  if (stats.baseless > 0) {
+    return { stats, fresh: false, reason: `索引缺少字段权限依据（${stats.baseless} 块，升级前的旧索引），请重建` }
+  }
   if (!cfg) return { stats, fresh: false, reason: '未选择嵌入模型' }
   if (stats.model !== (cfg.model ?? '').trim()) return { stats, fresh: false, reason: '嵌入模型已变更，请重建索引' }
   return { stats, fresh: true, reason: '' }

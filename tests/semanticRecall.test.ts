@@ -14,7 +14,7 @@ import {
   chunkChapter, hashOf, vectorRowId, chunkKey, toVectorBuffer, fromVectorBuffer,
   CHUNK_TARGET, CHUNK_OVERLAP,
 } from '../src/lib/semantic/chunk'
-import { cosine, recallRelevant, checkIndexFreshness } from '../src/lib/semantic/recall'
+import { cosine, recallRelevant, checkIndexFreshness, type RecallHit } from '../src/lib/semantic/recall'
 import {
   embedPath, embedBaseOf, embedConfigError, buildEmbedRequest, parseEmbedResponse,
   embedTexts, EMBED_BATCH,
@@ -22,8 +22,14 @@ import {
 import {
   summarize, setVecBackend, refKeyOf, splitRefKey, makeVecRow,
   loadVectors, putVectors, removeByRef, clearProjectVectors, vectorStats, vectorIndex,
-  type VecBackend, type VecRow,
+  type VecBackend, type VecRow, type VecBasis,
 } from '../src/lib/semantic/store'
+import { filterRecallHitsByPermission } from '../src/lib/semantic/gate'
+import { loadFieldRules, type FieldRules } from '../src/lib/semantic/fieldRules'
+import { __resetTemplateCacheForTests } from '../src/lib/templates/cache'
+import type { IndexFieldRule } from '../src/lib/templates/consumers'
+import type { TemplateDef } from '../src/lib/templates/definition'
+import { TABS } from '../src/lib/schema'
 import {
   collectIndexDocs, rebuildIndex, indexStatus, indexOneDoc, autoIndexChapter,
   chapterIndexText, chapterFingerprint, type IndexDoc, type AutoIndexDeps,
@@ -804,7 +810,11 @@ function row(input: {
     projectId: 'p1', focusChapterId: 'c1',
     deps: {
       resolveConfig: async () => CFG,
-      loadChapters: async () => [{ id: 'c1', title: '第一章', summary: '', content: '正文' }],
+      // Q2：注入前会按当前章节集合复核来源存在性 ⇒ 命中章也必须在集合里
+      loadChapters: async () => [
+        { id: 'c1', title: '第一章', summary: '', content: '正文' },
+        { id: 'c2', title: '第二章', summary: '', content: '别处的内容' },
+      ],
       recall: async () => [{ kind: 'chapter', refId: 'c2', chunkIdx: 0, text: '别处的内容', title: '第二章', score: 0.7, secret: false }],
     },
   })
@@ -819,6 +829,275 @@ function row(input: {
     },
   })
   ok('🔴 召回抛异常 → 空串不抛', throws === '')
+}
+
+// ============ Q2 · 权限、索引与召回同源（3.2.0 §16.3）============
+//
+// 验收口径（方案原文）：先索引含唯一标记值的字段，再关闭参考权限，
+// 在**不重建 / 重建失败 / 重启 / 缓存命中**四种情况下均不能发送该值。
+{
+  const RACES = TABS.find(t => t.id === 'races')!
+  const CARD_TAB = TABS.find(t => t.type === 'card')!
+  const MARK = '唯一标记-ZQ77'
+
+  const fieldRule = (id: string, over: Partial<IndexFieldRule> = {}): IndexFieldRule => ({
+    id,
+    source: id.startsWith('cf_') ? 'custom' : 'builtin',
+    label: id === 'cf_secret' ? '密文' : id,
+    aiReadable: true,
+    appliesTo: '*',
+    archived: false,
+    ...over,
+  })
+
+  /** 权限正常：三个字段都可读 */
+  const rulesOn = (over: Partial<IndexFieldRule> = {}): FieldRules => ({
+    kind: 'rules',
+    rules: {
+      名称: fieldRule('名称'),
+      类别: fieldRule('类别'),
+      cf_secret: fieldRule('cf_secret', over),
+    },
+    templateDigest: 'tpl:on',
+    authoritative: true,
+  })
+  /** 字段被归档 / 删除后：规则里**没有** cf_secret（模板解析会把它过滤掉） */
+  const rulesOff: FieldRules = {
+    kind: 'rules',
+    rules: { 名称: fieldRule('名称'), 类别: fieldRule('类别') },
+    templateDigest: 'tpl:off',
+    authoritative: true,
+  }
+
+  const rowOn = (over: Record<string, string> = {}) => ({
+    id: 'r1',
+    data: { 名称: '霜狼', 类别: '魔兽', 保密等级: 'C', cf_secret: MARK, ...over },
+  })
+
+  const indexDocs = (
+    rules: FieldRules,
+    rows: { id: string; data: Record<string, string> }[] = [rowOn()],
+  ) => collectIndexDocs({
+    chapters: [],
+    tables: [{ tabId: 'races', tabName: '种族生物', rows, rules }],
+    cards: [],
+  })
+
+  // ---- Q2-1：索引块带上字段依据 ----
+  const doc = indexDocs(rulesOn())[0]
+  ok('Q2 索引块记录依据（v / tabId / 模板摘要 / 字段表）',
+    doc.basis?.v === 1 && doc.basis.tabId === 'races' && doc.basis.templateDigest === 'tpl:on')
+  ok('Q2 依据里逐字段记了值摘要', doc.basis?.fields.some(f => f.key === 'cf_secret' && f.digest === hashOf(MARK)) === true)
+  ok('Q2 建索引时受权字段确实进了文本（正控）', doc.text.includes(MARK))
+  ok('Q2 规则里没有的 cf_ 字段不进索引', indexDocs(rulesOff)[0].text.includes(MARK) === false)
+
+  const vecRow = makeVecRow({
+    projectId: 'p1', kind: 'setting', refId: 'r1', chunkIdx: 0,
+    text: doc.text, title: doc.title, hash: hashOf(doc.text),
+    vec: buf([1, 0]), dim: 2, model: CFG.model, secret: false,
+    basis: doc.basis,
+  })
+  ok('Q2 向量行保留依据（落库不会丢）', vecRow.basis?.templateDigest === 'tpl:on')
+
+  const beQ2 = memBackend()
+  setVecBackend(beQ2)
+  await putVectors([vecRow])
+  const rawHits = await recallRelevant('霜狼', { projectId: 'p1', cfg: CFG, embedFn: async () => [1, 0], minScore: 0 })
+  ok('Q2 召回命中透传依据', rawHits.length === 1 && rawHits[0].basis?.templateDigest === 'tpl:on')
+
+  // ---- Q2-3/4：注入前的权限闸 ----
+  type GateRowLike = { id: string; data: Record<string, string>; name?: string }
+  const gateHits = (
+    hits: RecallHit[],
+    rules: FieldRules,
+    rows: GateRowLike[] = [rowOn()],
+    extra: { hideSecretRows?: boolean; chapterIds?: Set<string> | null } = {},
+  ) => filterRecallHitsByPermission(hits, {
+    projectId: 'p1',
+    hideSecretRows: extra.hideSecretRows,
+    chapterIds: extra.chapterIds === undefined ? null : extra.chapterIds,
+    deps: {
+      loadRows: async () => rows,
+      loadRules: async () => rules,
+    },
+  })
+  const rebase = (hit: RecallHit, over: Partial<VecBasis>): RecallHit => ({
+    ...hit, basis: { ...(hit.basis as VecBasis), ...over },
+  })
+
+  ok('Q2 权限未变 ⇒ 命中保留（闸不是一律清空）', (await gateHits(rawHits, rulesOn())).length === 1)
+  ok('Q2 字段显式不可读 ⇒ 整块丢弃', (await gateHits(rawHits, rulesOn({ aiReadable: false }))).length === 0)
+  ok('Q2 字段归档/删除（规则里缺席）⇒ 整块丢弃', (await gateHits(rawHits, rulesOff)).length === 0)
+  ok('Q2 类别不再适用 ⇒ 整块丢弃', (await gateHits(rawHits, rulesOn({ appliesTo: ['灵兽'] }))).length === 0)
+  ok('Q2 类别仍适用 ⇒ 保留', (await gateHits(rawHits, rulesOn({ appliesTo: ['魔兽'] }))).length === 1)
+  ok('Q2 来源行被删 ⇒ 丢弃', (await gateHits(rawHits, rulesOn(), [])).length === 0)
+  ok('Q2 字段值已变（索引未重建）⇒ 丢弃',
+    (await gateHits(rawHits, rulesOn(), [rowOn({ cf_secret: MARK + 'X' })])).length === 0)
+  ok('Q2 D 级 ⇒ 任何视角都不给',
+    (await gateHits(rawHits, rulesOn(), [rowOn({ 保密等级: 'D' })])).length === 0)
+  ok('Q2 S 级 + 角色视角 ⇒ 丢弃',
+    (await gateHits(rawHits, rulesOn(), [rowOn({ 保密等级: 'S' })], { hideSecretRows: true })).length === 0)
+  ok('Q2 S 级 + 作者视角 ⇒ 保留',
+    (await gateHits(rawHits, rulesOn(), [rowOn({ 保密等级: 'S' })])).length === 1)
+  ok('Q2 无依据的旧块 ⇒ 隔离', (await gateHits([rebase(rawHits[0], {})], rulesOn())).length === 1
+    && (await gateHits(rawHits.map(h => ({ ...h, basis: undefined })), rulesOn())).length === 0)
+  ok('Q2 配置读失败 ⇒ 含 cf_ 的块丢弃',
+    (await gateHits(rawHits, { kind: 'unavailable', reason: '读不到配置' })).length === 0)
+
+  const builtinDoc = collectIndexDocs({
+    chapters: [],
+    tables: [{ tabId: 'races', tabName: '种族生物', rows: [{ id: 'r2', data: { 名称: '冰狼', 类别: '魔兽' } }], rules: rulesOn() }],
+    cards: [],
+  })[0]
+  const builtinHit: RecallHit = {
+    kind: 'setting', refId: 'r2', chunkIdx: 0, text: builtinDoc.text,
+    title: '种族生物', score: 0.8, secret: false, basis: builtinDoc.basis,
+  }
+  ok('Q2 配置读失败 ⇒ 纯内置字段的块保留（配置坏了不该让整表失忆）',
+    (await gateHits([builtinHit], { kind: 'unavailable', reason: '读不到配置' },
+      [{ id: 'r2', data: { 名称: '冰狼', 类别: '魔兽' } }])).length === 1)
+
+  const chapterHit: RecallHit = { kind: 'chapter', refId: 'c2', chunkIdx: 0, text: '别处', title: '第二章', score: 0.9, secret: false }
+  ok('Q2 章节已删 ⇒ 丢弃', (await gateHits([chapterHit], rulesOn(), [], { chapterIds: new Set(['c1']) })).length === 0)
+  ok('Q2 章节仍在 ⇒ 保留', (await gateHits([chapterHit], rulesOn(), [], { chapterIds: new Set(['c1', 'c2']) })).length === 1)
+
+  ok('Q2 未知页签的依据不可信 ⇒ 丢弃',
+    (await gateHits([rebase(rawHits[0], { tabId: 'no-such-tab' })], rulesOn())).length === 0)
+  ok('Q2 卷台账（chapter-master）没有 TabDef 也按来源校验',
+    (await gateHits([rebase(rawHits[0], { tabId: 'chapter-master' })], rulesOn())).length === 1)
+
+  const cardDoc = collectIndexDocs({
+    chapters: [], tables: [],
+    cards: [{
+      tabId: CARD_TAB.id, tabName: CARD_TAB.name,
+      rows: [{ id: 'k1', name: '霜狼', data: { cf_secret: MARK } }],
+      rules: rulesOn(),
+    }],
+  })[0]
+  const cardHit: RecallHit = {
+    kind: 'setting', refId: 'k1', chunkIdx: 0, text: cardDoc.text,
+    title: '霜狼', score: 0.9, secret: false, basis: cardDoc.basis,
+  }
+  ok('Q2 角色卡标题未变 ⇒ 保留',
+    (await gateHits([cardHit], rulesOn(), [{ id: 'k1', name: '霜狼', data: { cf_secret: MARK } }])).length === 1)
+  ok('Q2 角色卡改名（索引未重建）⇒ 旧标题快照不许注入',
+    (await gateHits([cardHit], rulesOn(), [{ id: 'k1', name: '改名了', data: { cf_secret: MARK } }])).length === 0)
+
+  // ---- 验收之一：不重建 ----
+  ok('Q2 场景「不重建」：旧块原样留在库里，但闸不发送标记值',
+    (await loadVectors('p1')).some(r => r.text.includes(MARK))
+    && (await gateHits(rawHits, rulesOff)).length === 0)
+
+  // ---- 验收之二：重建失败（旧块仍在）----
+  const failed = await rebuildIndex({
+    projectId: 'p1', cfg: CFG,
+    deps: {
+      collectDocs: async () => indexDocs(rulesOff),
+      embed: async () => ({ ok: false, error: '模拟嵌入失败' }),
+    },
+  })
+  ok('Q2 场景「重建失败」：如实返回失败', failed.ok === false && (failed.error ?? '').includes('模拟嵌入失败'))
+  ok('Q2 场景「重建失败」：旧索引没有被清掉', (await loadVectors('p1')).some(r => r.text.includes(MARK)))
+  ok('Q2 场景「重建失败」：闸仍不发送标记值', (await gateHits(rawHits, rulesOff)).length === 0)
+
+  // 重建成功 ⇒ 新索引里本来就没有这个字段
+  const rebuilt = await rebuildIndex({
+    projectId: 'p1', cfg: CFG,
+    deps: {
+      collectDocs: async () => indexDocs(rulesOff),
+      embed: async (texts: string[]) => ({ ok: true, vectors: texts.map(() => [1, 0]), dim: 2 }),
+    },
+  })
+  ok('Q2 重建成功 ⇒ 新索引不再含唯一标记值',
+    rebuilt.ok === true && !(await loadVectors('p1')).some(r => r.text.includes(MARK)))
+
+  // ---- 验收之三/四：重启 / 缓存命中（规则来源是当前快照，不是记忆里的旧口径）----
+  const defOf = (readable: boolean, revision = 1): TemplateDef => ({
+    formatVersion: 1,
+    templateId: 'tpl_q2',
+    name: 'Q2 测试模板',
+    tabId: 'races',
+    origin: { kind: 'builtin' },
+    groups: [{ id: 'g1', label: '基础', order: 0 }],
+    fields: [
+      {
+        id: '名称', sourceKey: '名称', source: 'builtin', label: '名称', type: 'text',
+        groupId: 'g1', order: 0, appliesTo: '*', archived: false,
+        permissions: { table: true, detail: true, search: true, aiRead: true, aiWrite: false },
+      },
+      {
+        id: 'cf_secret', sourceKey: 'cf_secret', source: 'custom', label: '密文', type: 'text',
+        groupId: 'g1', order: 1, appliesTo: '*', archived: false,
+        permissions: { table: true, detail: true, search: true, aiRead: readable, aiWrite: false },
+      },
+    ],
+    nameFieldId: '名称',
+    semanticDigest: readable ? 'f1:on' : 'f1:off',
+    revision,
+    updatedAt: 0,
+  })
+
+  __resetTemplateCacheForTests()
+  let storedDef = defOf(true, 1)
+  const loadRulesNow = async () => loadFieldRules('p1', RACES, { loadDef: async () => storedDef })
+  const warm = await loadRulesNow()
+  ok('Q2 快照权限开启 ⇒ 规则里有 cf_secret（正控）',
+    warm.kind === 'rules' && warm.rules['cf_secret']?.aiReadable === true)
+  const cached = await loadRulesNow()
+  ok('Q2 场景「缓存命中」：同一快照再次读取仍按当前规则', cached.kind === 'rules' && cached.rules['cf_secret']?.aiReadable === true)
+
+  storedDef = defOf(false, 2)
+  const changed = await loadRulesNow()
+  ok('Q2 场景「缓存命中」：revision 变了 ⇒ 不吃旧缓存，cf_secret 已不可读',
+    changed.kind === 'rules' && changed.rules['cf_secret'] === undefined)
+  ok('Q2 场景「缓存命中」：用当前规则过闸 ⇒ 标记值不发送', (await gateHits(rawHits, changed)).length === 0)
+
+  __resetTemplateCacheForTests() // 模拟重启：内存缓存清空，快照仍在
+  const afterRestart = await loadRulesNow()
+  ok('Q2 场景「重启」：清空缓存后仍读到收紧后的规则',
+    afterRestart.kind === 'rules' && afterRestart.rules['cf_secret'] === undefined)
+  ok('Q2 场景「重启」：闸仍不发送标记值', (await gateHits(rawHits, afterRestart)).length === 0)
+
+  // 导入/恢复可能保留 revision 却换了内容 ⇒ 摘要必须参与缓存身份（Q2-7）
+  __resetTemplateCacheForTests()
+  storedDef = defOf(true, 7)
+  const beforeImport = await loadRulesNow()
+  storedDef = defOf(false, 7)
+  const afterImport = await loadRulesNow()
+  ok('Q2 同 revision 但摘要变了 ⇒ 缓存未命中，规则随快照收紧',
+    beforeImport.kind === 'rules' && beforeImport.rules['cf_secret']?.aiReadable === true
+    && afterImport.kind === 'rules' && afterImport.rules['cf_secret'] === undefined)
+
+  const unavailable = await loadFieldRules('p1', RACES, {
+    loadDef: async () => null,
+    loadConfig: async () => ({ config: null as unknown as never, error: '磁盘读取失败' }),
+  })
+  ok('Q2 配置读取失败 ⇒ unavailable（不把读失败当空配置）',
+    unavailable.kind === 'unavailable' && unavailable.reason.includes('磁盘读取失败'))
+
+  // ---- 注入链路：闸必须真的接在 inject 上 ----
+  const injected = await buildSemanticRecallBlock({
+    projectId: 'p1', focusChapterId: 'c1',
+    deps: {
+      resolveConfig: async () => CFG,
+      loadChapters: async () => [{ id: 'c1', title: '第一章', summary: '', content: '正文' }],
+      recall: async () => rawHits,
+      filterHits: (hits, opts) => filterRecallHitsByPermission(hits, {
+        ...opts,
+        deps: { loadRows: async () => [rowOn()], loadRules: async () => rulesOff },
+      }),
+    },
+  })
+  ok('Q2 注入链路：权限收紧后唯一标记值不会出现在提示词段', injected === '' || !injected.includes(MARK))
+
+  // 索引状态要把「没有依据的旧索引」报成需重建
+  setVecBackend(memBackend())
+  await putVectors([row({ kind: 'setting', refId: 'legacy1', vec: [1, 0], text: '旧索引内容' })])
+  ok('Q2 无依据旧块计入 baseless', (await vectorStats('p1'))?.baseless === 1)
+  const ist = await indexStatus('p1', CFG)
+  ok('Q2 状态提示重建（不谎报可用）', ist.fresh === false && ist.reason.includes('缺少字段权限依据'))
+
+  setVecBackend(memBackend())
 }
 
 // ============ settings ============

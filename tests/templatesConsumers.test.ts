@@ -10,6 +10,11 @@ import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { tableFieldsOf, toTableFieldProjection, aiReadableTableFieldsOf, indexRulesOf } from '@/lib/templates/consumers'
 import { renderTable } from '@/lib/ai/tableRender'
 import { adaptBuiltinTab } from '@/lib/templates/legacyAdapter'
+import { loadAtlasFieldsForAI, loadAtlasAiWriteTargets } from '@/lib/ai/atlasContext'
+import { saveAtlasSchema } from '@/lib/atlas/persistence'
+import { projectTemplateKeyOf, TEMPLATE_DEF_VERSION, type TemplateDef } from '@/lib/templates/definition'
+import { __resetTemplateCacheForTests } from '@/lib/templates/cache'
+import * as db from '@/lib/db'
 import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
 import type { EffectiveField, EffectiveTemplate } from '@/lib/templates/types'
 
@@ -185,10 +190,19 @@ const cfg = mkConfig()
     }
     const tpl = resolveTemplateForTab(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
     const got = indexRulesOf(tpl)
-    const same = JSON.stringify(legacyMap) === JSON.stringify(got)
-    ok(`⑩ ${id} 索引规则与旧口径逐项一致`, same,
-      same ? '' : `\n legacy=${JSON.stringify(legacyMap)}\n got   =${JSON.stringify(got)}`)
+    // Q2：规则同时覆盖内置字段，这里只拿自定义部分与旧口径逐项对齐
+    const gotCustom: typeof legacyMap = {}
+    for (const [k, r] of Object.entries(got)) {
+      if (r.source === 'custom') gotCustom[k] = { label: r.label, aiReadable: r.aiReadable, appliesTo: r.appliesTo }
+    }
+    const same = JSON.stringify(legacyMap) === JSON.stringify(gotCustom)
+    ok(`⑩ ${id} 自定义字段规则与旧口径逐项一致`, same,
+      same ? '' : `\n legacy=${JSON.stringify(legacyMap)}\n got   =${JSON.stringify(gotCustom)}`)
     ok(`⑩ ${id} 对照组有效（确实有自定义字段）`, Object.keys(legacyMap).length > 0)
+    // 🔴 Q2：内置字段也纳入规则（此前只收 custom，内置禁读将来没有对应项）
+    const builtinKeys = tpl.fields.filter(f => f.source === 'builtin').map(f => f.sourceKey)
+    ok(`⑩ ${id} 内置字段纳入索引规则（Q2）`,
+      builtinKeys.length > 0 && builtinKeys.every(k => got[k]?.source === 'builtin'))
   }
 }
 
@@ -205,12 +219,13 @@ const cfg = mkConfig()
     ...over,
   })
 
-  // 🔴 内置字段不进规则：内置列没有「关掉 AI 参考」的开关，名字就是存储键，交给原逻辑处理
+  // 🔴 Q2：内置字段也在规则里（"缺席即不可读"必须对内置同样成立）
   const onlyBuiltin = mk([field({ id: '名称', sourceKey: '名称', source: 'builtin', label: '名称' })])
-  ok('⑪ 只有内置字段 ⇒ undefined（走降级）', indexRulesOf(onlyBuiltin) === undefined)
+  const builtinOnly = indexRulesOf(onlyBuiltin)
+  ok('⑪ 只有内置字段 ⇒ 仍给出规则', Object.keys(builtinOnly).join(',') === '名称' && builtinOnly['名称'].source === 'builtin')
 
-  // 一条规则都没有 ⇒ undefined（保持旧口径，让调用方降级把 cf_* 叫「自定义字段」）
-  ok('⑪ 无字段 ⇒ undefined', indexRulesOf(mk([])) === undefined)
+  // 一条规则都没有 ⇒ **权威空集**（不是 undefined；undefined 会被理解成"不过滤"）
+  ok('⑪ 无字段 ⇒ 权威空集 {}', Object.keys(indexRulesOf(mk([]))).length === 0)
 
   // aiRead 开关照常透传（模板侧已过滤 false，这里钉住"缺席即不可读"的契约）
   const withRule = mk([field({ id: 'cf_b', sourceKey: 'cf_b', label: '备注', appliesTo: ['角色'] })])
@@ -219,6 +234,79 @@ const cfg = mkConfig()
   ok('⑪ 带上当前显示名', r.cf_b.label === '备注')
   ok('⑪ aiReadable 透传', r.cf_b.aiReadable === true)
   ok('⑪ appliesTo 透传（类别逐行判，规则不预先砍）', JSON.stringify(r.cf_b.appliesTo) === JSON.stringify(['角色']))
+}
+
+// ────────────────────────── ⑬ AI 直接上下文与索引/召回同源（Q2）──────────────────────────
+{
+  const RACES = tabOf('races')
+  const pid = (await db.createProject('Q2 同源测试', '', '')).id
+  db.setCurrentProject(pid)
+
+  // 旧图鉴配置：两个自定义字段都「可读可写」—— 若直接上下文只读配置，它们会漏给模型
+  const ctxConfig = {
+    formatVersion: 1,
+    revision: 1,
+    fields: [
+      { id: 'cf_secret', label: '密文', type: 'text', description: '', options: [], appliesTo: '*', groupId: 'g1', order: 0, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: true },
+      { id: 'cf_legacy', label: '旧字段', type: 'text', description: '', options: [], appliesTo: '*', groupId: 'g1', order: 1, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: true },
+    ],
+    groups: [{ id: 'g1', label: '扩展', order: 0 }],
+    builtinPresentation: {},
+    summaryKeys: [],
+  } as unknown as AtlasSchemaConfig
+  await saveAtlasSchema(pid, 'races', ctxConfig)
+
+  // 项目采用的快照：cf_secret 禁读；cf_fill 只写不读；cf_legacy 已被移除
+  const def: TemplateDef = {
+    formatVersion: TEMPLATE_DEF_VERSION,
+    templateId: 'tpl_q2_ctx',
+    name: 'Q2 上下文模板',
+    tabId: 'races',
+    origin: { kind: 'builtin' },
+    groups: [{ id: 'g1', label: '基础', order: 0 }],
+    fields: [
+      {
+        id: '名称', sourceKey: '名称', source: 'builtin', label: '名称', type: 'text',
+        groupId: 'g1', order: 0, appliesTo: '*', archived: false,
+        permissions: { table: true, detail: true, search: true, aiRead: true, aiWrite: true },
+      },
+      {
+        id: 'cf_secret', sourceKey: 'cf_secret', source: 'custom', label: '密文', type: 'text',
+        groupId: 'g1', order: 1, appliesTo: '*', archived: false,
+        permissions: { table: true, detail: true, search: true, aiRead: false, aiWrite: false },
+      },
+      {
+        id: 'cf_fill', sourceKey: 'cf_fill', source: 'custom', label: '待补全', type: 'text',
+        groupId: 'g1', order: 2, appliesTo: '*', archived: false,
+        permissions: { table: true, detail: true, search: true, aiRead: false, aiWrite: true },
+      },
+    ],
+    nameFieldId: '名称',
+    semanticDigest: 'f1:q2ctx',
+    revision: 1,
+    updatedAt: 0,
+  }
+  await db.setSettingFor(pid, projectTemplateKeyOf('races'), def)
+  __resetTemplateCacheForTests()
+
+  const readFields = (await loadAtlasFieldsForAI(RACES)) ?? []
+  const readKeys = readFields.map(f => f.key)
+  ok('⑬ 采用快照后 AI 读取不再从旧配置漏出已禁读字段', !readKeys.includes('cf_secret'), readKeys.join(','))
+  ok('⑬ 快照已移除的字段不会从旧配置复活', !readKeys.includes('cf_legacy'))
+  ok('⑬ 快照内的内置字段照常可读', readKeys.includes('名称'))
+  ok('⑬ 可读 / 可写独立：可写但禁读的空字段不进读取清单', !readKeys.includes('cf_fill'))
+
+  const write = await loadAtlasAiWriteTargets(RACES, pid)
+  ok('⑬ 可写但禁读的空字段仍可补全', write.allowedKeys.has('cf_fill') && !write.lockedReason)
+  ok('⑬ 快照里禁写的字段不可写', !write.allowedKeys.has('cf_secret'))
+  ok('⑬ 旧配置有、快照里没有的字段不可写', !write.allowedKeys.has('cf_legacy'))
+  ok('⑬ 内置可写列仍在', write.allowedKeys.has('名称'))
+
+  // 负控：拿掉快照后旧配置字段重新可见（证明上面的差异来自快照，不是配置里本来就没有）
+  await db.delSettingFor(pid, projectTemplateKeyOf('races'))
+  __resetTemplateCacheForTests()
+  const legacyKeys = ((await loadAtlasFieldsForAI(RACES)) ?? []).map(f => f.key)
+  ok('⑬ 负控：未采用快照时旧配置字段照常可见', legacyKeys.includes('cf_secret') && legacyKeys.includes('cf_legacy'))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

@@ -148,32 +148,50 @@ export function writeTargetsOf(template: EffectiveTemplate): WriteTargets {
 }
 
 /**
- * 语义索引的**字段规则**（自定义字段进不进索引文本、叫什么名、对哪些类别有效）。
+ * 语义索引的**字段规则**（哪些字段进索引文本、叫什么名、对哪些类别有效）。
  *
  * 🔴 为什么必须与提示词同源：索引文本会经〖语义召回〗原样注回提示词。
  *    作者在图鉴里关掉「允许 AI 参考」之后，如果索引还能把内容捞出来，
  *    就等于开了一条**绕行通道**（3.1.3 · R04 实测复现过）。
- * 🔴 只有**自定义**字段需要规则：内置列的名字就是存储键，且没有「关掉 AI 参考」的开关。
+ *
+ * 🔴 3.2.0 Q2：规则**同时覆盖内置与自定义字段**。
+ *    此前只收 `custom`，内置字段的禁读/归档在索引侧没有对应项 ——
+ *    将来内置字段开放归档后就会成为第二条绕行通道。模板解析已经按用途筛过，
+ *    所以这里拿到的字段就是「本用途允许」的全集；**缺席即不可读**。
  */
 export interface IndexFieldRule {
+  /** 稳定字段 ID（自定义字段 = `cf_*`） */
+  id: string
+  /** 字段来源：内置 / 自定义 */
+  source: 'builtin' | 'custom'
   label: string
   aiReadable: boolean
   appliesTo: '*' | string[]
+  /** 归档字段（`purpose:'index'` 解析时已被排除，保留字段便于诊断） */
+  archived: boolean
 }
 
 /**
- * 从 `purpose:'aiRead'` 的模板取索引规则。
- * 返回 `undefined` 与旧口径一致（**一条规则都没有**时让调用方走降级：把 `cf_*` 叫「自定义字段」）。
- * 🔴 注意：`aiReadable=false` 的字段**根本不会出现在模板里**（解析侧已过滤），
- *    所以这里拿到的规则 `aiReadable` 恒为 true —— 这是刻意的：缺席即不可读。
+ * 从 `purpose:'index'`（＝ AI 可读口径）的模板取索引规则。
+ *
+ * 🔴 返回**权威空集** `{}`，不再返回 `undefined`（Q2-6）：
+ *    · `undefined` 会被调用方理解成「没有规则」⇒ 退化成不过滤；
+ *    · `{}` 明确表示「有效配置里没有任何可读字段」。
+ *    非模板治理的来源由调用方自己决定走哪条路，本函数不做那个判断。
  */
-export function indexRulesOf(template: EffectiveTemplate): Record<string, IndexFieldRule> | undefined {
+export function indexRulesOf(template: EffectiveTemplate): Record<string, IndexFieldRule> {
   const map: Record<string, IndexFieldRule> = {}
   for (const f of template.fields) {
-    if (f.source !== 'custom') continue
-    map[f.sourceKey] = { label: f.label, aiReadable: f.permissions.aiRead, appliesTo: f.appliesTo }
+    map[f.sourceKey] = {
+      id: f.id,
+      source: f.source,
+      label: f.label,
+      aiReadable: f.permissions.aiRead,
+      appliesTo: f.appliesTo,
+      archived: f.archived,
+    }
   }
-  return Object.keys(map).length > 0 ? map : undefined
+  return map
 }
 
 /**

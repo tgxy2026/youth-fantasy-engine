@@ -27,7 +27,7 @@ export {
 export * from '@/lib/db/projects'
 // volumes / meta 用**显式名单**：这两个模块内部还有跨域要用、但不该对外的成员
 // （`VOL_LEDGER_PREFIX`、`addDailyWords`），用 export * 会把它们泄漏进公开 API。
-export { getAllVolumes, saveVolume, deleteVolume, getAllChapterLedgerRows, purgeLedgerRowEverywhere } from '@/lib/db/volumes'
+export { getAllVolumes, saveVolume, deleteVolume, getAllChapterLedgerRows, getAllChapterLedgerRowsFor, purgeLedgerRowEverywhere } from '@/lib/db/volumes'
 export * from '@/lib/db/chapters'
 export * from '@/lib/db/tabs'
 // 世界观 · 力量体系的「子级」（C10 · 2.4.2）：子项增删改 + 活跃开关。

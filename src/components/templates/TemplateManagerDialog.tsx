@@ -44,6 +44,7 @@ import {
   blockingMigrationOf, type MigrationLog,
 } from '@/lib/templates/migrationLog'
 import { migrationStateLabel } from '@/lib/templates/migrationGuard'
+import { invalidateIndex } from '@/lib/semantic/indexer'
 import type { TemplateDef } from '@/lib/templates/definition'
 import type { EffectiveField, TemplateFieldPermissions, TemplateFieldType } from '@/lib/templates/types'
 import { previewLibraryUpgrade } from '@/lib/templates/library'
@@ -229,6 +230,16 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
           showToast(`模板已切换；有 ${res.log.failures.length + res.log.manualFields.length} 项需人工处理`, 'error', 8000)
         } else {
           showToast('模板已采用', 'success')
+        }
+        // 🔴 Q2-2：字段权限/含义变了，旧向量块立刻作废（本地先清，重建由作者在「语义检索」里做）。
+        //    只比语义摘要：纯布局 / 分组顺序变化不该逼作者重建索引。
+        if (res.state !== 'noop' && to.semanticDigest !== (current?.semanticDigest ?? '')) {
+          try {
+            await invalidateIndex(pid)
+            showToast('字段权限或含义已变更，旧语义索引已作废 —— 请在「语义检索」里重建', 'error', 6000)
+          } catch {
+            showToast('旧语义索引作废失败，请到「语义检索」手动重建', 'error')
+          }
         }
         setCurrent(await loadTemplateDef(pid, tab.id))
         setBlocking(await blockingMigrationOf(pid, tab.id))

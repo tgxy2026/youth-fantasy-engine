@@ -70,6 +70,18 @@ export async function getCardRecords(tabId: string): Promise<CardRecord[]> {
   const all = await ops.getAll<CardRecord>('cardRecords')
   return all.filter(r => r.projectId === currentProjectId && r.tabId === tabId).sort((a, b) => a.order - b.order)
 }
+
+/**
+ * 按**指定项目 id** 读卡片记录（3.2.0 Q2 召回权限复核）。
+ *
+ * 🔴 与 `getTableRowsFor` 同一理由：异步任务执行期间作者可能已经切书，
+ *    用 `getCardRecords` 会拿"当前项目"去复核**另一本**书的来源状态。
+ */
+export async function getCardRecordsFor(pid: string, tabId: string): Promise<CardRecord[]> {
+  if (!pid || !tabId) return []
+  const all = await ops.getAll<CardRecord>('cardRecords')
+  return all.filter(r => r.projectId === pid && r.tabId === tabId).sort((a, b) => a.order - b.order)
+}
 export async function saveCardRecord(rec: CardRecord) {
   const pid = rec.projectId || currentProjectId
   // 创建时间（2.4.0 · A4 遗留补全）：**首次落库写一次，之后编辑不改动它**。

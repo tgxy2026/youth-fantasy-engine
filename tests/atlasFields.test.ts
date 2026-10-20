@@ -618,8 +618,12 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('⑳ 负向：aiContext 不许再自己实现一份 renderTable', !/function renderTable\(/.test(ctx))
   // 加载与过滤抽到了 ai/atlasContext（aiContext 已贴 1200 行上限）
   const atlasCtx = read('src/lib/ai/atlasContext.ts')
+  // Q2：解析统一走 `resolveTemplateForAI`（采用快照 → 图鉴配置），再用 aiReadable 投影
+  //    —— 闸只认"调用了什么"，不认字面参数字面量（helper 抽走后字面量自然会变）。
   ok('⑳ AI 上下文按 aiReadable 过滤（口径在 atlasContext）',
-    atlasCtx.includes("purpose: 'aiRead'") && ctx.includes('loadAtlasFieldsForAI'))
+    atlasCtx.includes('aiReadableTableFieldsOf(r.tpl)')
+    && atlasCtx.includes("'aiRead')")
+    && ctx.includes('loadAtlasFieldsForAI'))
   ok('⑳ 负向：保密等级 / 作者侧字段的过滤对图鉴字段同样生效',
     renderSrc.includes('SYSTEM_META_FIELDS.has(c)') && renderSrc.includes('AUTHOR_SIDE_FIELDS.has(c)'))
 }
@@ -739,10 +743,11 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const withMap = mk({ 名称: '霜狼', cf_abc: '肉食' }, { cf_abc: { label: '食性', aiReadable: true, appliesTo: '*' } })
   ok('㉓ 索引文本用字段名（cf_ 换成「食性」）', withMap.includes('食性：肉食'))
   ok('㉓ 负向：索引文本里不出现 cf_ 键名', !withMap.includes('cf_abc'))
-  // 拿不到映射时退化，也绝不漏内部键（宁可重名）
+  // 🔴 Q2：拿不到规则 ⇒ 无法证明字段授权 ⇒ cf_* 一律不索引（不再"换个名字照收"）
   const noMap = mk({ 名称: '霜狼', cf_abc: '肉食' })
-  ok('㉓ 无映射时退化成「自定义字段」', noMap.includes('自定义字段：肉食'))
-  ok('㉓ 负向：无映射时也不露 cf_ 键名', !noMap.includes('cf_abc'))
+  ok('㉓ 无规则时自定义字段不索引（无法证明授权）', !noMap.includes('肉食') && !noMap.includes('自定义字段'))
+  ok('㉓ 负向：无规则时也不露 cf_ 键名', !noMap.includes('cf_abc'))
+  ok('㉓ 无规则时内置字段照常索引（公开结构不受配置缺失连累）', noMap.includes('名称：霜狼'))
   // 内置列名照旧（不能被映射逻辑连累）
   ok('㉓ 内置列名原样保留', withMap.includes('名称：霜狼'))
 
@@ -785,9 +790,11 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     ok('㉓ R04：不限类别的字段不受影响',
       r({ 类别: '灵兽', cf_any: '通用' }, { cf_any: { label: '通用项', aiReadable: true, appliesTo: '*' } }).includes('通用项：通用'))
 
-    // ④ 拿不到规则（配置读失败）时**不**因此丢内容 —— 权限信息缺失不是"一律禁止"的理由
-    ok('㉓ R04：无规则时仍保守入索引（只换名字，不静默丢作者的资料）',
-      r({ 名称: '霜狼', cf_abc: '肉食' }).includes('自定义字段：肉食'))
+    // ④ 拿不到规则（配置读失败）：内置照旧、自定义一律不索引
+    //    —— 权限信息缺失不能证明授权，宁可少发也不能多发（Q2-6 权威空集 / fail-closed）
+    const noRules = r({ 名称: '霜狼', cf_abc: '肉食' })
+    ok('㉓ R04：无规则时自定义字段不索引', !noRules.includes('肉食') && !noRules.includes('自定义字段'))
+    ok('㉓ R04：无规则时内置字段照常索引', noRules.includes('名称：霜狼'))
 
     // ⑥ 权限改动 ⇒ 必须作废旧索引（否则改了开关旧向量照样能召回）
     const f = (id: string, aiReadable = true, archived = false) => ({ id, aiReadable, archived })
@@ -804,21 +811,23 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     ok('㉓ R04：保存字段配置时校验 AI 可见性变化',
       model.includes('atlasAiVisibilityChanged') && model.includes('invalidateIndex'))
 
-    // ⑤ 负向守卫：同一份数据、只是**不给规则**（修复前的状态）⇒ 密文照样进来
+    // ⑤ 负向守卫：同一份数据、把权限**放开** ⇒ 密文确实会进来
     //    证明上面几条"不见了"不是因为值碰巧为空 —— 闸本身有效。
-    const leaky = r({ 名称: '霜狼', cf_secret: '不应进入AI的密文' })
-    ok('㉓ R04 负向：不给规则 ⇒ 密文确实会进索引（闸本身有效）', leaky.includes('不应进入AI的密文'), leaky)
+    const leaky = r({ 名称: '霜狼', cf_secret: '不应进入AI的密文' },
+      { cf_secret: { label: '密文', aiReadable: true, appliesTo: '*' } })
+    ok('㉓ R04 负向：权限放开 ⇒ 密文确实会进索引（闸本身有效）', leaky.includes('不应进入AI的密文'), leaky)
   }
 
-  // 索引侧也要拿到映射（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
+  // 索引侧也要拿到规则（否则前面那些纯函数对了，实际跑起来仍然是 raw key）
   const idxSrc = read('src/lib/semantic/indexer.ts')
-  ok('㉓ 索引器为图鉴表加载字段规则', idxSrc.includes('fieldRulesOf') && idxSrc.includes('loadAtlasSchema'))
-  // 🔴 2026-10-20（WT0-4）：索引侧改走**有效模板**（`resolveTemplateCached` + `indexRulesOf`），
-  //    与提示词侧同一口径；闸同步改成认"调用了什么函数"，不认字面参数（搬过三次，别再踩）。
-  ok('㉓ 索引侧走有效模板（不自己读配置原文，避免两套口径）',
-    idxSrc.includes('resolveTemplateCached') && idxSrc.includes('indexRulesOf') && !/cfg\.fields/.test(idxSrc))
-  ok('㉓ 负向：读不到字段配置时不影响索引（退化成 undefined 而不是抛错）',
-    /catch \{\s*return undefined\s*\}/.test(idxSrc))
+  const rulesSrc = read('src/lib/semantic/fieldRules.ts')
+  // 🔴 2026-10-20（Q2）：规则入口只剩 `loadFieldRules` 一处 —— 索引侧与召回侧共用，
+  //    不许再各自拼一套；闸同步改成认"调用了什么函数"，不认字面参数（搬过三次，别再踩）。
+  ok('㉓ 索引器经唯一入口加载字段规则', idxSrc.includes('loadFieldRules') && !idxSrc.includes('loadAtlasSchema'))
+  ok('㉓ 规则入口走有效模板（不自己读配置原文，避免两套口径）',
+    rulesSrc.includes('resolveTemplateCached') && rulesSrc.includes('indexRulesOf') && !/cfg\.fields/.test(rulesSrc))
+  ok('㉓ 负向：读不到字段配置时 fail-closed（不把读失败当空配置）',
+    /if \(loaded\.error\)/.test(rulesSrc) && rulesSrc.includes("kind: 'unavailable'"))
 }
 
 // ---------- ㉓b R02（2026-10-19 修）：类别限定字段在表格/详情/检索里不再整体消失 ----------

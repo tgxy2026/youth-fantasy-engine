@@ -15,10 +15,45 @@ import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
 import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
+import { loadTemplateDef } from '@/lib/templates/store'
+import type { EffectiveTemplate, TemplatePurpose } from '@/lib/templates/types'
 import type { TableFieldProjection, WriteFieldProjection } from '@/lib/templates/consumers'
 import { aiReadableTableFieldsOf, writeTargetsOf, fieldHintForAI, toWriteFieldProjection } from '@/lib/templates/consumers'
 import { effectiveFieldOfAtlas } from '@/lib/templates/legacyAdapter'
 import * as db from '@/lib/db'
+
+/**
+ * 取当前项目对这个页签的有效模板：**采用快照 → 图鉴配置 → 内置**。
+ *
+ * 🔴 Q2：与索引 / 召回闸同一优先级。此前这里只读图鉴配置 —— 项目采用模板后，
+ *    表格已经看不到的字段仍会经直接上下文发给模型，等于「同一个权限两套口径」。
+ * 🔴 `purpose` 决定权限位：`aiRead` 看 `aiReadable`，`aiWrite` 看 `aiWritable`；
+ *    两者独立，不能用一个开关代替另一个。
+ */
+async function resolveTemplateForAI(
+  tab: TabDef,
+  pid: string,
+  purpose: Extract<TemplatePurpose, 'aiRead' | 'aiWrite'>,
+): Promise<{
+  tpl: EffectiveTemplate
+  revision: number
+  /** 图鉴配置读取失败的原因（快照路径为空） */
+  readFailed?: string
+}> {
+  const def = await loadTemplateDef(pid, tab.id)
+  if (def) {
+    return {
+      tpl: resolveTemplateCached(tab, { def, purpose, ignoreAppliesTo: true }, pid),
+      revision: def.revision,
+    }
+  }
+  const loaded = await loadAtlasSchema(pid, tab.id as Parameters<typeof loadAtlasSchema>[1])
+  return {
+    tpl: resolveTemplateCached(tab, { config: loaded.config, purpose, ignoreAppliesTo: true }, pid),
+    revision: loaded.config.revision,
+    ...(loaded.error ? { readFailed: loaded.error } : {}),
+  }
+}
 
 /**
  * 读当前项目的图鉴字段（含自定义字段），失败时返回 `null`。
@@ -33,9 +68,8 @@ export async function loadAtlasFieldsForAI(tab: TabDef): Promise<TableFieldProje
   // 这里显式收口一次，既让类型收窄到 AtlasTabId，也避免将来有人误用拿到空清单。
   if (!isAtlasTab(tab.id)) return null
   try {
-    const cfg = (await loadAtlasSchema(db.getCurrentProjectId(), tab.id)).config
-    const tpl = resolveTemplateCached(tab, { config: cfg, purpose: 'aiRead', ignoreAppliesTo: true })
-    return aiReadableTableFieldsOf(tpl)
+    const r = await resolveTemplateForAI(tab, db.getCurrentProjectId(), 'aiRead')
+    return aiReadableTableFieldsOf(r.tpl)
   } catch {
     return null
   }
@@ -80,6 +114,25 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
     const keys = (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name)
     return { allowedKeys: new Set(keys), fields: new Map(), revision: 0 }
   }
+
+  // 🔴 Q2：采用快照优先。只读图鉴配置时，快照里已归档 / 已禁写的字段仍会被 AI 回填，
+  //    「可写」与页面结构再次分叉。读快照失败 ⇒ 锁写（不能退回权限更大的旧配置）。
+  let def: Awaited<ReturnType<typeof loadTemplateDef>>
+  try {
+    def = await loadTemplateDef(projectId, tab.id)
+  } catch (e) {
+    return {
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: 0,
+      lockedReason: `读取项目模板失败：${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+  if (def) {
+    const targets = writeTargetsOf(resolveTemplateCached(
+      tab, { def, purpose: 'aiWrite', ignoreAppliesTo: true }, projectId,
+    ))
+    return { allowedKeys: new Set(targets.keys), fields: targets.custom, revision: def.revision }
+  }
+
   let loaded: { config: AtlasSchemaConfig; newerFormat: boolean; error?: string }
   try {
     loaded = await loadAtlasSchema(projectId, tab.id)

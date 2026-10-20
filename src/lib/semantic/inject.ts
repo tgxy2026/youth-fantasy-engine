@@ -13,6 +13,7 @@
 import * as db from '@/lib/db'
 import { clipText } from '@/lib/editor/textClip'
 import { recallRelevant, type RecallHit } from '@/lib/semantic/recall'
+import { filterRecallHitsByPermission } from '@/lib/semantic/gate'
 import type { VecKind } from '@/lib/semantic/store'
 import { resolveEmbedConfig } from '@/lib/semantic/settings'
 
@@ -39,6 +40,7 @@ export interface SemanticInjectOptions {
     loadChapters?: () => Promise<{ id: string; title?: string; summary?: string; content?: string }[]>
     resolveConfig?: typeof resolveEmbedConfig
     recall?: typeof recallRelevant
+    filterHits?: typeof filterRecallHitsByPermission
   }
 }
 
@@ -100,7 +102,15 @@ export async function buildSemanticRecallBlock(opts: SemanticInjectOptions): Pro
       excludeRefIds: new Set([opts.focusChapterId]),
       signal: opts.signal,
     })
-    return renderRecallHits(hits)
+    // 🔴🔴 Q2-3：注入前按**当前**权限与来源状态再复核一遍。
+    //    召回只按索引里的元数据筛过；作者可能在建索引之后关了字段参考 / 归档 / 删了行。
+    //    这一步失败（读库 / 读配置异常）时，含模板资料的块会被丢弃 —— 宁可不给，也不越权。
+    const allowed = await (opts.deps?.filterHits ?? filterRecallHitsByPermission)(hits, {
+      projectId: opts.projectId,
+      hideSecretRows: opts.hideSecretRows === true,
+      chapterIds: new Set(chapters.map(c => c.id)),
+    })
+    return renderRecallHits(allowed)
   } catch {
     return ''
   }
