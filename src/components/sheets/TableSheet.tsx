@@ -27,7 +27,7 @@ import FeedbackAIPanel from '@/components/ai/FeedbackAIPanel'
 import TermDedupPanel from '@/components/tools/TermDedupPanel'
 import CalendarRuleModal from '@/components/common/CalendarRuleModal'
 import FieldAliasButton, { tableAliasTargets } from '@/components/sheets/FieldAliasButton'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldRenames } from '@/lib/templates/useFieldRenames'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import MentionPanel from '@/components/app/MentionPanel'
 import { Button } from '@/components/common/Button'
@@ -77,7 +77,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     [tab],
   )
   const aliasCols = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
-  const { map: aliasMap, labels: aliasLabels, save: saveAliases } = useFieldAliases(tab.id, aliasCols)
+  const { labels: aliasLabels, renamed: aliasRenamed, save: saveRenames } = useFieldRenames(tab.id, aliasCols)
 
   /**
    * 表头显示名 / 悬停说明（3.1.3）：自定义字段用它的**字段名**，内置字段仍走别名单。
@@ -87,8 +87,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const colTitleOf = (col: AtlasColumn) => col.atlasField
     ? (col.atlasField.description || `自定义字段（存储键 ${col.name}，改名不影响已填内容）`)
     : (col.templateLabel && col.templateLabel !== col.name
-      ? `${col.name}（模板显示名；存储键不变，AI 仍按这个原字段名理解）`
-      : aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`)
+      ? `${col.name}（模板显示名；存储键不变）`
+      : aliasLabels[col.name] === col.name ? undefined : `${col.name}（存储键不变，AI 按当前名称理解）`)
 
   const {
     // 落库与装载
@@ -758,8 +758,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           config={atlasConfig}
           readOnly={atlasNewerFormat}
           aliasKeys={aliasCols}
-          aliases={aliasMap}
-          onSaveAliases={saveAliases}
+          aliases={aliasRenamed}
+          onSaveAliases={next => saveRenames(next, {})}
           onSave={saveAtlasConfig}
           onClose={() => setShowFieldMgr(false)}
         />

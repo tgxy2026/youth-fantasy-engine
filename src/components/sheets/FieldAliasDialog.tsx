@@ -4,11 +4,11 @@
  * 🔴 只改「界面显示的名字」，**不动存储键**（表格＝列名，表单与卡片＝`模块名::字段名`）
  *    —— 已填的数据一行都不会丢，想改回默认把输入框清空即可。
  *
- * 🔴🔴 必须在界面上把「改名 ≠ 改语义」讲清楚：AI 读表用的仍是**原字段名**。
- *    若作者把「契约/驯化关系」改名成「外勤预约」后往里填别的性质的东西，
- *    AI 会**按原名理解**这一列 —— 补全 / 整理 / 写作辅助全跑偏，且不报错。
- *    所以顶部有醒目提醒条，每项还标出「原本能填什么」，让人自己对照。
- *    反之：不用 AI 的作者纯按自己看着舒服改，零影响（弹窗里也这么写）。
+ * 🔴🔴 3.2.0 · T3 起，改名会同步给 AI（模型按**当前名称**理解这一项），所以必须区分两件事：
+ *    · 只是换个叫法（所属势力 → 效忠组织）⇒「含义不变」，原用途照常运行；
+ *    · 字段含义也变了（修炼境界 → 社会声望）⇒「含义已改变」并写明新含义。
+ *    历史别名迁移来的改名默认「待确认」，不替作者默认任何一边；未确认前该字段不进入
+ *    AI 上下文 / 索引 / 补全目标（界面照常显示）。
  */
 import { useMemo, useState } from 'react'
 import { AlertTriangle, RotateCcw, Save, Type } from 'lucide-react'
@@ -16,6 +16,7 @@ import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
 import HelpPopover from '@/components/common/HelpPopover'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
+import type { MeaningDecision, PendingRename } from '@/lib/templates/useFieldRenames'
 import { foldVh } from '@/lib/settings/theme'
 
 /** 弹窗的一项＝一个可改名的字段 */
@@ -35,6 +36,7 @@ export default function FieldAliasDialog({
   intro,
   targets,
   initial,
+  pending,
   onSave,
   onClose,
 }: {
@@ -42,12 +44,16 @@ export default function FieldAliasDialog({
   /** 顶部那句说明（各页签自己写，如「填的是这一页的字段」） */
   intro: string
   targets: AliasTarget[]
-  /** 当前别名表（存储键 → 显示名） */
+  /** 当前显示名（存储键 → 名字；只含改过名的，未改名的留空回退原名） */
   initial: AliasMap
-  onSave: (next: AliasMap) => Promise<void> | void
+  /** 待确认含义的改名（历史别名迁移来的） */
+  pending?: Record<string, PendingRename>
+  onSave: (next: AliasMap, meanings: Record<string, MeaningDecision>) => Promise<void> | void
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<AliasMap>(() => ({ ...initial }))
+  const [meanings, setMeanings] = useState<Record<string, MeaningDecision>>({})
+  const [formErr, setFormErr] = useState('')
   const [saving, setSaving] = useState(false)
 
   const keys = useMemo(() => targets.map(t => t.key), [targets])
@@ -73,11 +79,35 @@ export default function FieldAliasDialog({
     return validateAliasInput(keys, draft, key, input)
   }
 
+  const pendingKeys = useMemo(
+    () => Object.keys(pending ?? {}).filter(k => targets.some(t => t.key === k)),
+    [pending, targets],
+  )
+  /** 输入框被清空的待确认项＝作者选择恢复原名，不再需要确认含义 */
+  const livePending = pendingKeys.filter(k => (draft[k] ?? '').trim())
+  const undecided = livePending.filter(k => !meanings[k])
+
+  const setMeaning = (key: string, m: MeaningDecision) => {
+    setFormErr('')
+    setMeanings(prev => ({ ...prev, [key]: m }))
+  }
+
   const save = async () => {
+    if (undecided.length > 0) {
+      setFormErr(`还有 ${undecided.length} 条改名没确认含义：选「含义不变」或「含义已改变」后再保存`)
+      return
+    }
+    const changedWithoutDesc = livePending.find(k => meanings[k]?.status === 'changed' && !meanings[k]?.description?.trim())
+    if (changedWithoutDesc) {
+      setFormErr(`「${pending?.[changedWithoutDesc]?.label ?? changedWithoutDesc}」标为「含义已改变」时，请写明它现在是什么意思`)
+      return
+    }
     setSaving(true)
     try {
-      await onSave(clean)
+      await onSave(clean, meanings)
       onClose()
+    } catch (e) {
+      setFormErr(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
     }
@@ -90,25 +120,47 @@ export default function FieldAliasDialog({
       <div className="space-y-3">
         <p className="text-12 text-ink-400 leading-relaxed">
           {intro}
-          <span className="text-ink-200">只改界面上显示的字，不动您已经填好的内容</span>—— 留空即用原名。
+          <span className="text-ink-200">名称会同步给 AI 读取这一项时使用，不动您已经填好的内容与存储键</span>—— 留空即用原名。
         </p>
 
-        {/* 🔴 硬提醒：改名不改语义，AI 仍按原字段名理解 */}
+        {/* 🔴 硬提醒：现在 AI 按新名称理解，但「含义变没变」只有作者知道 */}
         <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2.5 flex items-start gap-2">
           <AlertTriangle size={14} className="text-amber shrink-0 mt-0.5" />
           <div className="text-12 text-ink-300 leading-relaxed">
-            <span className="text-amber font-medium">改名不等于改含义，AI 读表用的仍是原来的字段名。</span>
+            <span className="text-amber font-medium">改名后，AI 会按新名称理解这一项。</span>
             <span className="block mt-1">
-              · 改名后，这一项<strong className="text-ink-100">填的内容仍要和原字段的语义一致</strong>：
-              每行下面都标了「原本能填什么」，请对照着填。填成完全不同的性质时，AI 补全 / AI 整理 /
-              写作辅助会按原字段名去理解，这一项就会跑偏（且不会报错）。
+              · <strong className="text-ink-100">只是换个叫法</strong>（如「所属势力」→「效忠组织」）：
+              选「含义不变」即可，原用途照常运行。
             </span>
             <span className="block mt-1">
-              · <strong className="text-ink-100">不使用 AI 功能的话</strong>，纯按自己看着舒服改即可，
-              没有任何影响 —— 显示名只出现在您看到的界面上。
+              · <strong className="text-ink-100">字段含义也变了</strong>（如「修炼境界」→「社会声望」）：
+              必须选「含义已改变」并写明新含义。未确认前，这一项不会进入 AI 上下文、索引与 AI 补全。
+            </span>
+            <span className="block mt-1">
+              · 已填的内容一个字节都不会动；保存后旧版「字段名」的记录也会收进这份定义，不再两处各说各话。
             </span>
           </div>
         </div>
+
+        {livePending.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg border border-amber/25 bg-ink-850/50">
+            <span className="text-12 text-ink-200">待确认含义 {livePending.length} 项</span>
+            <span className="text-10 text-ink-500">这些改名来自旧版「字段名」，先确认含义再交给 AI</span>
+            <Button
+              variant="secondary" size="xs" className="ml-auto"
+              onClick={() => {
+                setFormErr('')
+                setMeanings(prev => {
+                  const next = { ...prev }
+                  for (const k of livePending) if (!next[k]) next[k] = { status: 'unchanged' }
+                  return next
+                })
+              }}
+            >
+              全部标为含义不变
+            </Button>
+          </div>
+        )}
 
         {/* 🔴 高度走 foldVh（与 AIOrganize / AITemplateFill 的 42vh 同一口径）：
             CSS 类里的 vh 不随界面 zoom 折算，132% 缩放下会顶出弹窗。 */}
@@ -140,7 +192,54 @@ export default function FieldAliasDialog({
                           {err && <div className="mt-0.5 text-10 text-danger">{err}</div>}
                           {alias && !err && (
                             <div className="mt-0.5 text-10 text-amber truncate">
-                              显示为「{alias}」· AI 仍按「{t.label}」理解这一项
+                              {pending?.[t.key] && !meanings[t.key]
+                                ? `显示为「${alias}」· 含义未确认前不会交给 AI`
+                                : `显示为「${alias}」· AI 按这个名字理解这一项`}
+                            </div>
+                          )}
+                          {pending?.[t.key] && (draft[t.key] ?? '').trim() && (
+                            <div className="mt-2 rounded-lg border border-amber/25 bg-amber/5 px-2.5 py-2">
+                              <div className="text-10 text-ink-400">
+                                旧名「{pending[t.key].defaultLabel ?? t.label}」
+                                <span className="text-ink-600"> → </span>
+                                现名「{(draft[t.key] ?? '').trim() || pending[t.key].label}」
+                                {pending[t.key].description && (
+                                  <span className="block text-ink-500 mt-0.5 truncate" title={pending[t.key].description}>
+                                    原说明：{pending[t.key].description}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                <Button
+                                  variant="toggle" size="xs"
+                                  selected={meanings[t.key]?.status === 'unchanged'}
+                                  onClick={() => setMeaning(t.key, { status: 'unchanged' })}
+                                >
+                                  含义不变
+                                </Button>
+                                <Button
+                                  variant="toggle" size="xs"
+                                  selected={meanings[t.key]?.status === 'changed'}
+                                  onClick={() => setMeaning(t.key, {
+                                    status: 'changed',
+                                    ...(meanings[t.key]?.description ? { description: meanings[t.key].description } : {}),
+                                  })}
+                                >
+                                  含义已改变
+                                </Button>
+                                {meanings[t.key]?.status === 'unchanged' && (
+                                  <span className="text-10 text-ink-500">原用途保持不变，AI 继续按这个字段的用途使用</span>
+                                )}
+                              </div>
+                              {meanings[t.key]?.status === 'changed' && (
+                                <input
+                                  className="mt-1.5 w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-11 px-2.5 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600"
+                                  value={meanings[t.key]?.description ?? ''}
+                                  maxLength={500}
+                                  placeholder="写明它现在是什么意思，例如：角色在修真社会中的声望等级"
+                                  onChange={e => setMeaning(t.key, { status: 'changed', description: e.target.value })}
+                                />
+                              )}
                             </div>
                           )}
                         </div>
@@ -153,14 +252,19 @@ export default function FieldAliasDialog({
           ))}
         </div>
 
+        {formErr && (
+          <div className="px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">{formErr}</div>
+        )}
+
         <div className="flex items-center justify-between gap-2">
           <span className="text-11 text-ink-500 flex items-center gap-1.5">
             <HelpPopover title="显示名的三条规矩" width="20rem" size={13}>
-              {`· 只影响「您看到的字」：表头、字段名、关系分组视图里显示的都是它。
-· 已填的数据一个字节都不会动，导出与 AI 上下文照旧按原字段名走（不会错位）。
+              {`· 影响「您看到的字」和 AI 理解这一项时用的名字；已填数据与存储键一个字节都不会动。
+· 含义没变选「含义不变」；含义变了必须写明新含义，否则 AI 会按旧含义解释新名称。
 · 不能和同页其它字段重名，也不能超过 ${MAX_ALIAS_LEN} 个字 —— 重名会让人分不清是哪一项，会自动退回原名。`}
             </HelpPopover>
             已改名 {renamed.length} / {targets.length}
+            {livePending.length > 0 && <span className="text-amber">· 待确认 {livePending.length}</span>}
           </span>
           {/* 🔴 2026-10-12 主人反馈「并排按钮一高一矮」：这三个键同处一条 flex 行，
               必须同 size。原先「全部恢复默认 / 取消」走 bare（**无 size 类，高度随内容 ≈20px**），

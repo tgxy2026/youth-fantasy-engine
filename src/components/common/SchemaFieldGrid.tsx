@@ -11,7 +11,7 @@ import { useMemo } from 'react'
 import { Info } from 'lucide-react'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import type { TabDef } from '@/lib/types'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 
 interface Props {
   /** schema 的模块清单 */
@@ -38,7 +38,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
     () => modules.flatMap(m => m.fields.map(f => `${m.name}::${f.name}`)),
     [modules],
   )
-  const { labels: aliasLabels } = useFieldAliases(tabId ?? '', keys)
+  const aliasLabels = useFieldDisplayLabels(tabId ?? '', keys)
   return (
     <div className={twoColumn
       ? 'grid grid-cols-1 xl:grid-cols-2 gap-5 items-start'
@@ -59,7 +59,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                   <div>
                     <div
                       className="text-13 font-medium text-ink-100"
-                      title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
+                      title={aliasLabels[key] === field.name ? undefined : `${field.name}（存储键不变，AI 按当前名称理解）`}
                     >{aliasLabels[key]}</div>
                     {field.desc && <div className="field-desc mt-1">{field.desc}</div>}
                   </div>

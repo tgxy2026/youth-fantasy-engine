@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { Type } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import FieldAliasDialog, { type AliasTarget } from '@/components/sheets/FieldAliasDialog'
-import { aliasCount, useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldRenames } from '@/lib/templates/useFieldRenames'
 
 export default function FieldAliasButton({
   tabId,
@@ -30,8 +30,9 @@ export default function FieldAliasButton({
 }) {
   const [open, setOpen] = useState(false)
   const keys = useMemo(() => targets.map(t => t.key), [targets])
-  const { map, save } = useFieldAliases(tabId, keys)
-  const renamed = aliasCount(keys, map)
+  const { renamed, pending, save } = useFieldRenames(tabId, keys)
+  const renamedCount = Object.keys(renamed).length
+  const pendingCount = Object.keys(pending).length
 
   if (targets.length === 0) return null
 
@@ -41,18 +42,24 @@ export default function FieldAliasButton({
         variant={variant}
         size={size}
         onClick={() => setOpen(true)}
-        title="给这一页的字段起你自己看得懂的名字：只改界面显示，不动已填内容；AI 读表仍按原字段名理解"
+        title="给这一页的字段起你自己看得懂的名字：只改显示与 AI 的理解，不动已填内容与存储键"
         className="gap-1.5"
       >
         <Type size={12} /> 字段名
-        {renamed > 0 && <span className="text-amber">{renamed}</span>}
+        {renamedCount > 0 && <span className="text-amber">{renamedCount}</span>}
+        {pendingCount > 0 && (
+          <span className="px-1 py-px text-10 rounded bg-amber/15 text-amber border border-amber/30" title="有待确认含义的改名">
+            {pendingCount} 待确认
+          </span>
+        )}
       </Button>
       {open && (
         <FieldAliasDialog
           title={`字段显示名 · ${tabName}`}
           intro={intro}
           targets={targets}
-          initial={map}
+          initial={renamed}
+          pending={pending}
           onSave={save}
           onClose={() => setOpen(false)}
         />

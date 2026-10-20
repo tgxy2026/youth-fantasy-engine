@@ -15,6 +15,7 @@ import AboutPage from '@/components/app/AboutPage'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
 import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from '@/lib/schema'
+import { migrateAliasesToFieldDefinitions } from '@/lib/templates/fieldDefinition'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from '@/lib/schemaTemplates/index'
 import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
@@ -367,6 +368,10 @@ export default function App() {
     // 内部顺序：项目形态归一化 → ledger 拆表 → 全局连续编号（numbering 依赖 ledger 的结果）
     await db.runMigrations()
     await refreshVolumeTabs() // UI 侧缓存刷新，db 层不引用 schema 以免循环依赖
+    // 3.2.0 · T3：把历史「字段名」幂等迁移成轻量定义（默认待确认）。
+    // 🔴 放后台跑，不拖慢进项目；迁移每写完一个页签都会 emit，已挂载的字段名按钮 / 确认清单自行刷新。
+    //    失败不阻断打开（下次打开会重试），但也不会把未迁移的改名当成「含义已确认」。
+    void migrateAliasesToFieldDefinitions(id).catch(() => { /* 下次打开重试 */ })
     // 题材包（2.7.1）：决定「世界设定 / 力量体系 / 四个制度页签」用哪套模板、哪些页签可见。
     // 🔴 必须在任何页签渲染之前设好 —— TABS 里那六个页签的 name/modules 是 getter，读的就是这里。
     //    （故在 setVisCtx / setActiveTab 之前调用，避开「renderContent 先跑、包还没设」的竞态。）

@@ -14,7 +14,7 @@
 import type { TabDef } from '@/lib/types'
 import { getCurrentProjectId } from '@/lib/db'
 import { loadAliases } from '@/lib/settings/fieldAlias'
-import { sanitizeAliases } from '@/lib/settings/aliasCore'
+import { defaultLabelOf, sanitizeAliases } from '@/lib/settings/aliasCore'
 import { loadTemplateDef } from './store'
 import { resolveTemplateCached } from './cache'
 import { loadFieldDefinitions, overrideLabelsOf } from './fieldDefinition'
@@ -65,7 +65,11 @@ export async function loadFieldLabels(tab: TabDef): Promise<Record<string, strin
     }, pid)
     const out: Record<string, string> = {}
     for (const f of tpl.fields) {
-      if (renamed.has(f.sourceKey) && f.label) out[f.sourceKey] = f.label
+      // 只有真的和原名不同才需要叠加：轻量定义可以「只改说明」或「恢复原名」，
+      // 那两种情况都该让调用方回退 schema 原名（别再被旧别名顶回来）。
+      if (renamed.has(f.sourceKey) && f.label && f.label !== defaultLabelOf(f.sourceKey)) {
+        out[f.sourceKey] = f.label
+      }
     }
     return out
   } catch {

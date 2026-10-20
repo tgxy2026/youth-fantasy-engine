@@ -728,8 +728,10 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const sheet = read('src/components/sheets/TableSheet.tsx')
   ok('㉒ 图鉴页签不再并排「字段名」与「字段设置」',
     sheet.includes('aliasCols.length > 0 && !isAtlasCapable'))
-  ok('㉒ 字段设置面板收到别名三件套（键 / 当前值 / 保存）',
-    sheet.includes('aliasKeys={aliasCols}') && sheet.includes('aliases={aliasMap}') && sheet.includes('onSaveAliases={saveAliases}'))
+  // 3.2.0 · T3：改名写入轻量定义（与 AI 同口径），旧别名在同一次保存里收走
+  ok('㉒ 字段设置面板收到显示名三件套（键 / 当前值 / 保存）',
+    sheet.includes('aliasKeys={aliasCols}') && sheet.includes('aliases={aliasRenamed}')
+    && sheet.includes('saveRenames(next, {})') && sheet.includes('useFieldRenames'))
   const mgr = read('src/components/atlas/AtlasFieldManager.tsx')
   ok('㉒ 显示名编辑在字段设置面板里（同一套校验与清洗）',
     mgr.includes('内置字段显示名') && mgr.includes('sanitizeAliases') && mgr.includes('validateAliasInput'))

@@ -23,7 +23,7 @@ import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { LoadingState } from '@/components/common/LoadingState'
 import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldRenames } from '@/lib/templates/useFieldRenames'
 import {
   addCustomField, addGroup, archiveField, fieldsOfGroup, finalizeTemplateDef, moveField,
   moveGroup, orderedGroups, patchField, removeGroup, renameGroup, renameTemplate,
@@ -91,7 +91,8 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
       : moduleAliasTargets(tab.modules).map(t => t.key)),
     [isAtlas, tab],
   )
-  const { map: aliasMap } = useFieldAliases(tab.id, aliasKeys)
+  // 采用快照要吸收作者当前的显示名：轻量定义里的名字优先于旧别名（与 AI 上下文同口径）
+  const { renamed: aliasMap } = useFieldRenames(tab.id, aliasKeys)
   const categories = useMemo(() => atlasCategoryOptions(tab), [tab])
 
   /** 映射检查用完整结构：不受任何类别 / 展示开关影响，作者才看得到每个用途能落到哪 */

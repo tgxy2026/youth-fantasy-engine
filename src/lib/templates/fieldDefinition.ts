@@ -146,6 +146,9 @@ export function overrideLabelsOf(
  *
  * 🔴 只改 `label` / `description` / `meaningStatus`；`id` / `sourceKey` / 类型 / 选项 /
  *    权限全部原样 —— 回写目标与索引键不受改名影响。
+ * 🔴 **轻量定义接管的字段不再回退到旧别名**：作者在弹窗里「恢复原名」后，别名若还生效，
+ *    名字会被顶回来，等于保存没反应。所以只要这条覆盖还在（哪怕只剩说明），
+ *    名称就按覆盖（没有 label ⇒ 原名）解析。
  * 🔴 摘要按叠完的字段重算：改名 / 改说明 / 确认状态都改变「模型看到的依据」，
  *    索引与 AI 候选必须据此判失效（T3-05）；布局因素不参与。
  * 🔴 没有覆盖 ⇒ **返回同一个对象**（调用方与缓存不必处理"等价但不同"的结果）。
@@ -164,7 +167,8 @@ export function applyFieldDefinitions(
     changed = true
     return {
       ...f,
-      ...(ov.label ? { label: ov.label, defaultLabel: ov.defaultLabel ?? f.defaultLabel ?? f.label } : {}),
+      label: ov.label ?? defaultLabelOf(f.sourceKey),
+      defaultLabel: ov.defaultLabel ?? f.defaultLabel ?? defaultLabelOf(f.sourceKey),
       ...(ov.description ? { description: ov.description } : {}),
       ...(ov.meaningStatus ? { meaningStatus: ov.meaningStatus } : {}),
     }

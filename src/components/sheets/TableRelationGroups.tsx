@@ -8,7 +8,7 @@
  */
 import { useMemo } from 'react'
 import type { VisCtx } from '@/lib/schema'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import type { TabDef } from '@/lib/types'
 import { SABC_LABELS } from '@/lib/schema'
@@ -47,7 +47,7 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
 
   /** 字段显示名（2.7.3）：与表格视图共用同一份别名映射 */
   const aliasCols = useMemo(() => (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name), [tab])
-  const { labels: aliasLabels } = useFieldAliases(tab.id, aliasCols)
+  const aliasLabels = useFieldDisplayLabels(tab.id, aliasCols)
 
   return (
     <div className="space-y-2.5">

@@ -19,7 +19,7 @@ import type { TemplateField } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { contentHeight, CARD_SHEET_CHROME_PX } from '@/lib/settings/theme'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
@@ -132,10 +132,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   )
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
-  const { labels: aliasLabels } = useFieldAliases(
-    tab.id,
-    useMemo(() => aliasTargets.map(t => t.key), [aliasTargets]),
-  )
+  const aliasKeys = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
+  const aliasLabels = useFieldDisplayLabels(tab.id, aliasKeys)
   /**
    * 3.2.0：本页签采用的模板快照。
    * 🔴 有快照 ⇒ 卡片的模块 / 字段 / 显示名全部按快照渲染；
@@ -930,7 +928,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                       const labelTitle = field.atlasField
                         ? (field.desc || `自定义字段（存储键 ${key}，改名不影响已填内容）`)
                         : field.label !== field.name
-                          ? `${field.name}（AI 仍按这个原字段名理解）`
+                          ? `${field.name}（存储键不变，AI 按当前名称理解）`
                           : undefined
                       return (
                         <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${

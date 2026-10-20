@@ -10,7 +10,9 @@ import TableRefSelect from '@/components/sheets/TableRefSelect'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
-import { useAliasRevision, loadAliases, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
+import { useAliasRevision, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
+import { loadFieldLabels } from '@/lib/templates/labels'
+import { useFieldDefinitionRevision } from '@/lib/templates/useFieldRenames'
 // 卡片页签的字段键与「字段名」按钮**同源**（moduleAliasTargets）—— 各算一份必然漂移
 import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { Button } from '@/components/common/Button'
@@ -75,6 +77,8 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   const [reloadKey, setReloadKey] = useState(0)
   /** 别名版本号：任何页签改了字段显示名 → +1 ⇒ 重建索引（否则检索里还印着旧字段名） */
   const aliasRev = useAliasRevision()
+  /** 轻量定义（改名 / 含义确认）变更 → 重建索引，否则检索里还印着旧字段名 */
+  const defRev = useFieldDefinitionRevision()
   const [editing, setEditing] = useState<{ key: string; idx: number } | null>(null)
   const [draft, setDraft] = useState('')
   const [savingField, setSavingField] = useState(false)
@@ -114,11 +118,12 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     let cancelled = false
     ;(async () => {
       const { tableRows, cardRecords } = await db.loadAllData()
-      // 别名表：一次并发读齐本页用得到的页签（缓存命中时近乎零成本），供下面逐字段取显示名。
+      // 显示名：与 AI 上下文同一口径（采用模板 > 轻量定义 > 别名 > 原名），
+      // 一次并发读齐本页用得到的页签，供下面逐字段取名字。
       const aliasOf = new Map<string, AliasMap>()
       await Promise.all(
         TABS.filter(t => !hiddenTabs.has(t.id)).map(async t => {
-          aliasOf.set(t.id, await loadAliases(t.id))
+          aliasOf.set(t.id, await loadFieldLabels(t))
         }),
       )
       if (cancelled) return
@@ -278,7 +283,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     // hiddenTabs 的内容变化由 hiddenTabsKey 等价代表（见其定义处说明）；
     // 直接依赖 hiddenTabs 这个 Set 会因引用每次重建把 effect 拖进循环，故刻意不加。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey, hiddenTabsKey, aliasRev])
+  }, [reloadKey, hiddenTabsKey, aliasRev, defRev])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])

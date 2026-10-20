@@ -18,7 +18,7 @@ import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
-import { useFieldAliases } from '@/lib/settings/fieldAlias'
+import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { LoadingState } from '@/components/common/LoadingState'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import type { TemplateField, FillContext } from '@/lib/ai'
@@ -90,10 +90,8 @@ export default function OutlineSheet({ tab }: Props) {
 
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
-  const { labels: aliasLabels } = useFieldAliases(
-    tab.id,
-    useMemo(() => aliasTargets.map(t => t.key), [aliasTargets]),
-  )
+  const aliasKeys = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
+  const aliasLabels = useFieldDisplayLabels(tab.id, aliasKeys)
 
   // ---- R4a · 2.6.0 结构模板节拍对照（章节细纲页只读展示） ----
   useEffect(() => { hydrateCreativeSession() }, [])
@@ -599,7 +597,7 @@ export default function OutlineSheet({ tab }: Props) {
                             <div>
                               <div
                                 className="text-12 font-medium text-ink-100"
-                                title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
+                                title={aliasLabels[key] === field.name ? undefined : `${field.name}（存储键不变，AI 按当前名称理解）`}
                               >{aliasLabels[key]}</div>
                               {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                             </div>

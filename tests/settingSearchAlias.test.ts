@@ -34,7 +34,8 @@ async function main() {
   const search = read('src/components/settings/SettingSearch.tsx')
 
   // ---------- ① 检索页确实接了别名（只读展示） ----------
-  ok('源码闸：检索页引入了别名读取', (search.includes("from '../lib/fieldAlias'") || search.includes("from '@/lib/settings/fieldAlias'")) && search.includes('loadAliases'))
+  // 3.2.0 · T3：显示名统一走「采用模板 > 轻量定义 > 别名」的解析层，不再单独读别名
+  ok('源码闸：检索页按统一口径读显示名（含轻量定义）', search.includes('loadFieldLabels'))
   ok('🔴 源码闸：卡片字段键与「字段名」按钮**同源**（moduleAliasTargets，别自己再拼一份）',
     search.includes("import { moduleAliasTargets } from './FieldAliasButton'")
     || search.includes("import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'"))
@@ -43,7 +44,8 @@ async function main() {
     (search.match(/f\.alias \?\? f\.label/g) ?? []).length >= 2)
   ok('源码闸：检索匹配也认作者起的名字（否则「看见了却搜不到」）',
     /\(f\.alias \?\? ''\)/.test(search))
-  ok('源码闸：别名变了要重建检索索引', /\[reloadKey, hiddenTabsKey, aliasRev\]/.test(search))
+  ok('源码闸：别名 / 轻量定义变了都要重建检索索引',
+    /\[reloadKey, hiddenTabsKey, aliasRev, defRev\]/.test(search) && search.includes('useFieldDefinitionRevision'))
   ok('源码闸：帮助文案写明「只读不改」', search.includes('这里只读不改'))
 
   // ---------- ② 🔴 只读页签不许出现第二个改名入口 ----------

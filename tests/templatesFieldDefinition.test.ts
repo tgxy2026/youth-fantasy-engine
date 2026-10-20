@@ -6,6 +6,8 @@
 //   · 轻量定义只在没有采用快照时生效（快照 label 优先）；
 //   · 脏名称（撞名 / 超长 / 未知键）一律丢弃，与别名同一口径；
 //   · 名称 / 说明 / 确认状态变化进入语义摘要（索引与 AI 候选据此失效）。
+import { readFileSync } from 'node:fs'
+import * as path from 'node:path'
 import { TABS } from '@/lib/schema'
 import type { TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
@@ -219,6 +221,50 @@ async function main() {
     const ctx = await buildProjectContext({ budget: 200000, onlyTabIds: [MASTER.id] })
     ok('⑦ 提示词里出现轻量定义的当前名称', ctx.text.includes('主线新名：ZZ主线值'), ctx.text.slice(0, 300))
     ok('⑦ 不再出现旧名与别名', !ctx.text.includes('主线一句话：ZZ主线值') && !ctx.text.includes('别名主线：ZZ主线值'))
+  }
+
+  // ────────────────────────── ⑧ 轻量定义接管后，旧别名不再把名字顶回来 ──────────────────────────
+  {
+    await saveFieldDefinition(pid, MASTER.id, KEY, { label: null }) // 说明还在 ⇒ 覆盖仍然有效
+    const labels = await loadFieldLabels(MASTER)
+    ok('⑧ 恢复原名后不被旧别名顶回来', !labels[KEY], JSON.stringify(labels[KEY]))
+    const doc = await loadFieldDefinitions(pid, MASTER.id)
+    const tpl = resolveTemplateForTab(MASTER, {
+      aliases: { [KEY]: '别名主线' },
+      fieldDefinitions: doc,
+    })
+    ok('⑧ 解析层同样以轻量定义为准（名字回原名）', fieldOf(tpl, KEY)?.label === '主线一句话')
+  }
+
+  // ────────────────────────── ⑨ 接线闸：弹窗确认 + 按钮写轻量定义 + 打开项目迁移 ──────────────────────────
+  {
+    const srcOf = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8')
+    const dialog = srcOf('src/components/sheets/FieldAliasDialog.tsx')
+    ok('🔴 源码：改名弹窗承载含义确认', dialog.includes('含义已改变') && dialog.includes('MeaningDecision'))
+    ok('🔴 源码：弹窗不再声称 AI 按旧名理解', !dialog.includes('AI 仍按「'))
+    ok('🔴 源码：字段名按钮改走轻量定义', srcOf('src/components/sheets/FieldAliasButton.tsx').includes('useFieldRenames'))
+    ok('🔴 源码：打开项目时幂等迁移历史别名',
+      srcOf('src/App.tsx').includes('migrateAliasesToFieldDefinitions'))
+  }
+
+  // ────────────────────────── ⑩ 界面显示名与 AI 同口径（定义 > 别名） ──────────────────────────
+  {
+    const srcOf = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8')
+    ok('🔴 源码：显示名 hook 与 AI 合并解析共用一份',
+      srcOf('src/lib/templates/useFieldRenames.ts').includes('export function useFieldDisplayLabels'))
+    // 保存后旧别名会被收走：这些界面若仍只读别名，名字会当场「变回原名」
+    for (const p of [
+      'src/components/sheets/TableSheet.tsx',
+      'src/components/sheets/TableRelationGroups.tsx',
+      'src/components/outline/OutlineSheet.tsx',
+      'src/components/world/CharacterSheet.tsx',
+      'src/components/common/SchemaFieldGrid.tsx',
+      'src/components/templates/TemplateManagerDialog.tsx',
+    ]) {
+      ok(`🔴 源码：${p} 使用合并后的显示名`, srcOf(p).includes('useFieldDisplay') || srcOf(p).includes('useFieldRenames'))
+    }
+    ok('🔴 源码：设定检索按同一口径读显示名（含轻量定义）',
+      srcOf('src/components/settings/SettingSearch.tsx').includes('loadFieldLabels'))
   }
 
   console.log(`\ntemplatesFieldDefinition: ${pass} 通过 / ${fail} 失败`)
