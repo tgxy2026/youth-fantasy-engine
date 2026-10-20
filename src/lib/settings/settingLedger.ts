@@ -217,6 +217,7 @@ function mappedSlotsOf(
   ctx: DraftMappingContext, candidate: Record<string, string>,
 ): Map<string, { field: string; value: string }> | null {
   const wr = resolveSemanticWrite(ctx.template, ctx.plan, ctx.slots, candidate)
+
   const out = new Map<string, { field: string; value: string }>()
   for (const a of wr.accepted) out.set(a.slot, { field: a.fieldKey, value: a.value })
   return out.has('name') ? out : null
@@ -281,9 +282,13 @@ export async function commitEntities(
         await db.saveCardRecord(rec)
       } else {
         const rows = await db.getTableRows(tabId)
-        const data: Record<string, string> = {}
+        // 查找同名已有行：缺资料时「不覆盖、不重复创建」—— 只合并本次有值的部分
+        const existing = rows.find(r => (r.data['名称'] ?? '').trim() === item.name.trim())
+        const data: Record<string, string> = existing ? { ...existing.data } : {}
         // 先按 schema 真列铺空（改名只换 label，列名仍是程序契约）
-        for (const col of tab?.columns ?? []) data[col.name] = ''
+        if (!existing) {
+          for (const col of tab?.columns ?? []) data[col.name] = ''
+        }
         if (ctx) {
           const candidate: Record<string, string> = { name: item.name }
           if (item.desc) candidate.desc = item.desc
@@ -297,19 +302,22 @@ export async function commitEntities(
           if (descCol && item.desc) data[descCol] = item.desc
           if (item.type === '术语' && chapterTitle) data['首次出现章节'] = chapterTitle
         }
-        // 编号一律由 autoCode 生成（不接受外部值）；存储键固定为「编号」
-        data['编号'] = nextAutoCode(tabId, rows)
+        // 编号一律由 autoCode 生成（不接受外部值）；已有行不重生成编号
+        if (!existing) {
+          data['编号'] = nextAutoCode(tabId, rows)
+        }
         const row: TableRow = {
-          id: uid(),
+          id: existing?.id ?? uid(),
           projectId: db.getCurrentProjectId(),
           tabId,
+          name: item.name,
           data,
-          order: rows.length,
-          createdAt: Date.now(),
+          order: existing?.order ?? rows.length,
+          createdAt: existing?.createdAt ?? Date.now(),
         }
         await db.saveTableRow(row)
       }
-      created++
+      if (!existing) created++
     } catch {
       failed.push(item.name)
     }

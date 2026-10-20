@@ -26,15 +26,9 @@ const PID = 'p-ledger-map'
 function mkField(over: Partial<EffectiveField> = {}): EffectiveField {
   const id = over.id ?? `cf_${Math.random().toString(36).slice(2, 8)}`
   return {
-    id,
-    sourceKey: over.sourceKey ?? id,
-    source: 'custom',
-    label: over.label ?? `字段${id}`,
-    type: 'text',
-    groupId: 'g1',
-    order: 0,
-    appliesTo: '*',
-    archived: false,
+    id, sourceKey: over.sourceKey ?? id, source: 'custom',
+    label: over.label ?? `字段${id}`, type: 'text', groupId: 'g1', order: 0,
+    appliesTo: '*', archived: false,
     permissions: { table: true, detail: true, search: true, aiRead: true, aiWrite: true },
     ...over,
   }
@@ -42,15 +36,10 @@ function mkField(over: Partial<EffectiveField> = {}): EffectiveField {
 
 function mkTpl(tabId: string, fields: EffectiveField[]): EffectiveTemplate {
   return {
-    templateId: `t:${tabId}`,
-    version: TEMPLATE_DEF_VERSION,
-    revision: 1,
-    semanticDigest: 'semantic-1',
-    tabId,
-    purpose: 'export',
+    templateId: `t:${tabId}`, version: TEMPLATE_DEF_VERSION, revision: 1,
+    semanticDigest: 'semantic-1', tabId, purpose: 'export',
     groups: [{ id: 'g1', label: '基础', order: 0 }],
-    fields: fields.filter(f => !f.archived),
-    diagnostics: [],
+    fields: fields.filter(f => !f.archived), diagnostics: [],
   }
 }
 
@@ -144,10 +133,7 @@ async function case5() {
   __resetMockStores()
   await db.setCurrentProject(PID)
   const def: TemplateDef = {
-    formatVersion: TEMPLATE_DEF_VERSION,
-    templateId: 't:terms',
-    name: '术语',
-    tabId: 'terms',
+    formatVersion: TEMPLATE_DEF_VERSION, templateId: 't:terms', name: '术语', tabId: 'terms',
     origin: { kind: 'builtin' },
     groups: [{ id: 'g1', label: '基础', order: 0 }],
     fields: [
@@ -155,10 +141,7 @@ async function case5() {
       mkField({ id: '定义（一句话）', sourceKey: '定义（一句话）', source: 'builtin', label: '释义（改）' }),
       mkField({ id: 'cf_desc', sourceKey: 'cf_desc', label: '自定义定义' }),
     ],
-    nameFieldId: '名称',
-    semanticDigest: 's1',
-    revision: 1,
-    updatedAt: 1,
+    nameFieldId: '名称', semanticDigest: 's1', revision: 1, updatedAt: 1,
     bindings: { desc: ['cf_desc'] },
   }
   const saved = await saveTemplateDef(PID, def)
