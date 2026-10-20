@@ -138,13 +138,16 @@ export interface WriteTargets {
  * 🔴 谁负责过滤：模板解析。**这里不再判断权限** ——
  *    调用方传入的是 `purpose:'aiWrite'` 的模板，自定义字段已按 `aiWritable` 筛过，
  *    隐藏内置列也已排除（实测四页签与旧口径逐字一致）。再判一次就是第二套规则。
+ * 🔴 含义未确认（`meaningStatus:'pending'`）的字段**不是写回目标**（方案 §3.12.3.3）：
+ *    在确认用途之前，AI 不该往一个"可能是新义、也可能是旧义"的栏里写字。
  */
 export function writeTargetsOf(template: EffectiveTemplate): WriteTargets {
+  const fields = template.fields.filter(f => f.meaningStatus !== 'pending')
   const custom = new Map<string, WriteFieldProjection>()
-  for (const f of template.fields) {
+  for (const f of fields) {
     if (f.source === 'custom') custom.set(f.sourceKey, toWriteFieldProjection(f))
   }
-  return { keys: template.fields.map(f => f.sourceKey), custom }
+  return { keys: fields.map(f => f.sourceKey), custom }
 }
 
 /**
@@ -186,7 +189,10 @@ export function indexRulesOf(template: EffectiveTemplate): Record<string, IndexF
       id: f.id,
       source: f.source,
       label: f.label,
-      aiReadable: f.permissions.aiRead,
+      // 含义未确认 ⇒ 相关字段暂不进入索引 / 召回（方案 §3.12.3.3）。
+      // 🔴 规则要**保留**（而不是省略）：召回闸靠"规则存在但不可读"判旧块失效；
+      //    省略会让非权威来源走"未知键继续"的分支，等于放行。
+      aiReadable: f.permissions.aiRead && f.meaningStatus !== 'pending',
       appliesTo: f.appliesTo,
       archived: f.archived,
     }
@@ -206,11 +212,13 @@ export interface AiWriteFieldSet {
   custom: WriteFieldProjection[]
 }
 
-/** 从模板取 AI 输出目标（内置 + 可写自定义） */
+/** 从模板取 AI 输出目标（内置 + 可写自定义；含义未确认的字段不参与） */
 export function aiWriteFieldsOf(template: EffectiveTemplate): AiWriteFieldSet {
   const { custom } = writeTargetsOf(template)
   return {
-    builtinKeys: template.fields.filter(f => f.source === 'builtin').map(f => f.sourceKey),
+    builtinKeys: template.fields
+      .filter(f => f.source === 'builtin' && f.meaningStatus !== 'pending')
+      .map(f => f.sourceKey),
     custom: [...custom.values()],
   }
 }
@@ -220,9 +228,12 @@ export function aiWriteFieldsOf(template: EffectiveTemplate): AiWriteFieldSet {
  * 按 `aiReadable` 过滤、忽略类别适用范围、归档不参与 —— 这些都由**模板解析**负责。
  * 这里的 `aiRead` 过滤只是**兜底**（防有人传了 `purpose:'detail'` 的模板进来），
  * 不是第二套规则：解析侧已经按用途筛过一遍，两处结论必然一致。
+ * 🔴 含义未确认的字段同样不出现（方案 §3.12.3.3）：确认前既不按旧名解释、也不推断新义。
  */
 export function aiReadableTableFieldsOf(template: EffectiveTemplate): TableFieldProjection[] {
-  return template.fields.filter(f => f.permissions.aiRead).map(toTableFieldProjection)
+  return template.fields
+    .filter(f => f.permissions.aiRead && f.meaningStatus !== 'pending')
+    .map(toTableFieldProjection)
 }
 
 /**

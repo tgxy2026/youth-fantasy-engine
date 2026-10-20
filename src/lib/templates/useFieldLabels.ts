@@ -11,23 +11,30 @@ import { TABS } from '@/lib/schema'
 import { useAliasRevision } from '@/lib/settings/fieldAlias'
 import { subscribeTemplateStore } from './store'
 import { subscribeFieldDefinitions } from './fieldDefinition'
-import { loadFieldLabels } from './labels'
+import { loadFieldGating, type FieldGating } from './labels'
 
-export function useFieldLabels(tabId?: string): Record<string, string> {
-  const [labels, setLabels] = useState<Record<string, string>>({})
+const EMPTY: FieldGating = { labels: {}, pending: new Set() }
+
+/**
+ * 显示名 + 待确认字段（AI 弹窗用）。
+ * 🔴 `pending` 里的键不得发给模型 / 写回：按方案 §3.12.3.3，未确认的改名既不按旧名解释、
+ *    也不推断新义，先整项屏蔽，作者确认后再恢复。
+ */
+export function useFieldGating(tabId?: string): FieldGating {
+  const [gating, setGating] = useState<FieldGating>(EMPTY)
   const aliasRev = useAliasRevision()
 
   useEffect(() => {
     const tab = tabId ? TABS.find(t => t.id === tabId) : undefined
     if (!tab) {
-      setLabels({})
+      setGating(EMPTY)
       return
     }
     let alive = true
     const load = () => {
-      void loadFieldLabels(tab)
-        .then(m => { if (alive) setLabels(m) })
-        .catch(() => { if (alive) setLabels({}) })
+      void loadFieldGating(tab)
+        .then(g => { if (alive) setGating(g) })
+        .catch(() => { if (alive) setGating(EMPTY) })
     }
     load()
     const offTemplate = subscribeTemplateStore(load)
@@ -37,8 +44,12 @@ export function useFieldLabels(tabId?: string): Record<string, string> {
       offTemplate()
       offDefs()
     }
-    // aliasRev 只作为「有人改了别名」的信号：真实数据由 loadFieldLabels 重读
+    // aliasRev 只作为「有人改了别名」的信号：真实数据由 loadFieldGating 重读
   }, [tabId, aliasRev])
 
-  return labels
+  return gating
+}
+
+export function useFieldLabels(tabId?: string): Record<string, string> {
+  return useFieldGating(tabId).labels
 }

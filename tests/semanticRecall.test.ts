@@ -29,6 +29,7 @@ import { loadFieldRules, type FieldRules } from '../src/lib/semantic/fieldRules'
 import { __resetTemplateCacheForTests } from '../src/lib/templates/cache'
 import type { IndexFieldRule } from '../src/lib/templates/consumers'
 import type { TemplateDef } from '../src/lib/templates/definition'
+import type { FieldDefinitionDoc } from '../src/lib/templates/fieldDefinition'
 import { TABS } from '../src/lib/schema'
 import {
   collectIndexDocs, rebuildIndex, indexStatus, indexOneDoc, autoIndexChapter,
@@ -1142,6 +1143,63 @@ function row(input: {
   // 🔴 密钥不落进 aiEmbedding（EXCLUDED_META_KEYS 无需收纳它）
   const setSrc = read('src/lib/semantic/settings.ts')
   ok('🔴 源码：aiEmbedding 不存密钥（无 apiKey 字段）', !setSrc.includes('apiKey') || setSrc.includes('不新增密钥载体'))
+}
+
+// ============ T3-B3：含义未确认 ⇒ 索引不可读（快照 / 轻量定义两条来源）============
+{
+  const races = TABS.find(t => t.id === 'races')!
+  const mkDef = (status: 'pending' | 'confirmed'): TemplateDef => ({
+    formatVersion: 1,
+    templateId: 'tpl_pending',
+    name: '待确认测试',
+    tabId: 'races',
+    origin: { kind: 'builtin' },
+    groups: [{ id: 'g1', label: '基础', order: 0 }],
+    fields: [{
+      id: '名称', sourceKey: '名称', source: 'builtin', label: '种族名', type: 'text',
+      groupId: 'g1', order: 0, appliesTo: '*', archived: false, meaningStatus: status,
+      permissions: { table: true, detail: true, search: true, aiRead: true, aiWrite: true },
+    }],
+    nameFieldId: '名称',
+    semanticDigest: `pending:${status}`,
+    revision: 1,
+    updatedAt: 0,
+  })
+  __resetTemplateCacheForTests()
+  const pend = await loadFieldRules('p1', races, { loadDef: async () => mkDef('pending') })
+  ok('T3-B3 快照里含义未确认 ⇒ 索引规则不可读',
+    pend.kind === 'rules' && pend.rules['名称']?.aiReadable === false)
+  const okd = await loadFieldRules('p1', races, { loadDef: async () => mkDef('confirmed') })
+  ok('T3-B3 快照里确认后 ⇒ 索引规则恢复可读',
+    okd.kind === 'rules' && okd.rules['名称']?.aiReadable === true)
+
+  const card = TABS.find(t => t.type === 'card')!
+  const mod = card.modules![0]
+  const key = `${mod.name}::${mod.fields[0].name}`
+  const mkDoc = (status: 'pending' | 'confirmed'): FieldDefinitionDoc => ({
+    formatVersion: 1,
+    tabId: card.id,
+    // 两次写入必须是不同的修订 / 时间戳（真实 saveFieldDefinition 也如此），
+    // 否则缓存签名相同，会把「待确认」那份结果端给「已确认」的读取。
+    revision: status === 'pending' ? 1 : 2,
+    updatedAt: status === 'pending' ? 1 : 2,
+    fields: { [key]: { label: '作者起的名字', meaningStatus: status, source: 'author', updatedAt: 1 } },
+  })
+
+  const none = await loadFieldRules('p1', card, { loadDefs: async () => null })
+  ok('T3-B3 卡片页签没有轻量定义 ⇒ 仍为 none（老行为不变）', none.kind === 'none')
+
+  const cp = await loadFieldRules('p1', card, { loadDefs: async () => mkDoc('pending') })
+  ok('T3-B3 卡片待确认字段 ⇒ 非权威规则里标不可读',
+    cp.kind === 'rules' && cp.authoritative === false && cp.rules[key]?.aiReadable === false)
+  const cc = await loadFieldRules('p1', card, { loadDefs: async () => mkDoc('confirmed') })
+  ok('T3-B3 卡片确认后 ⇒ 恢复可读', cc.kind === 'rules' && cc.rules[key]?.aiReadable === true)
+
+  const failRead = await loadFieldRules('p1', card, {
+    loadDefs: async () => { throw new Error('定义库坏了') },
+  })
+  ok('T3-B3 轻量定义读取失败 ⇒ unavailable（不静默放行）',
+    failRead.kind === 'unavailable' && failRead.reason.includes('定义库坏了'))
 }
 
 // ============ 源码断言：分层与红线 ============

@@ -27,7 +27,7 @@ function main() {
   ok('🔴 AI 补全：新增独立状态 setShowFillExisting(true)', cs.includes('const [showFillExisting, setShowFillExisting] = useState(false)') && cs.includes('onClick={() => setShowFillExisting(true)}'))
   // WT2：existing 只带「允许 AI 参考」的已填值（禁读字段的值不进模型材料）
   ok('🔴 AI 补全：传进来的已填值只含可参考字段（已填字段锁定、只补空白）',
-    cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)\) out\[k\] = v/.test(cs))
+    cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)/.test(cs) && cs.includes('out[k] = v'))
   ok('🔴 AI 补全：弹窗标题带当前卡名', cs.includes('AI 补全 · ${draft.name}'))
   ok('🔴 AI 补全：未选卡时禁用（!aiReady || !draft）', cs.includes('disabled={!aiReady || !draft}'))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet 同口径）',

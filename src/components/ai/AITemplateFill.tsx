@@ -40,7 +40,7 @@ import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { applyFieldLabels } from '@/lib/templates/labels'
-import { useFieldLabels } from '@/lib/templates/useFieldLabels'
+import { useFieldGating } from '@/lib/templates/useFieldLabels'
 
 interface Props {
   /** 该实体的全部字段（key 约定见 TemplateField） */
@@ -184,23 +184,36 @@ export default function AITemplateFill({
     setBrought(true)
   }
 
+  // 3.2.0 · T3：作者当前显示名（改名不影响 key，回填仍按存储键）。
+  // 🔴 `pending` 里的字段含义未确认（方案 §3.12.3.3）：既不当 AI 填写目标，已填值也不发给模型。
+  const gating = useFieldGating(tabId)
+  const labels = gating.labels
+  const pendingKeys = gating.pending
+  const activeFields = useMemo(
+    () => (pendingKeys.size ? fields.filter(f => !pendingKeys.has(f.key)) : fields),
+    [fields, pendingKeys],
+  )
+  const hiddenPendingCount = fields.length - activeFields.length
+  const labeledFields = useMemo(() => applyFieldLabels(activeFields, labels), [activeFields, labels])
+
   /**
-   * 剥掉「内部字段」（`__` 前缀，如设定草稿箱）后的已填值。
+   * 剥掉「内部字段」（`__` 前缀，如设定草稿箱）与「含义未确认字段」后的已填值。
    *
    * 🔴 为什么必须剥：`existing` 会被摊平进 `existingText` 发给模型（对话引导的起点、
    *    补全的"已有什么"）。草稿箱是作者明确标注「不发给 AI」的那一段，
    *    顺着这条路漏出去，界面上的承诺就成了空话 —— 且它是**静默**的，谁也看不出来。
+   * 🔴 T3：待确认字段的值同理（确认前既不能按旧名解释，也不能推断新义）。
    */
   const safeExisting = useMemo(() => {
     if (!existing) return undefined
     const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(existing)) if (!isInternalFieldKey(k)) out[k] = v
+    for (const [k, v] of Object.entries(existing)) {
+      if (isInternalFieldKey(k)) continue
+      if (pendingKeys.has(k)) continue
+      out[k] = v
+    }
     return out
-  }, [existing])
-
-  // 3.2.0 · T3：作者当前显示名（改名不影响 key，回填仍按存储键）
-  const labels = useFieldLabels(tabId)
-  const labeledFields = useMemo(() => applyFieldLabels(fields, labels), [fields, labels])
+  }, [existing, pendingKeys])
 
   // 锁定 / 已填字段不发给模型；其余才是 AI 真正补全的对象
   const sendFields = useMemo(
@@ -366,6 +379,16 @@ export default function AITemplateFill({
             只有点感觉、说不清 → 用「对话引导」，AI 按模板提纲一轮轮问你，聊出来的内容最后汇总成草稿。
           </p>
         </div>
+
+        {hiddenPendingCount > 0 && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-ink-800/60 border border-ink-700 text-11 text-ink-400">
+            <AlertCircle size={13} className="mt-0.5 shrink-0 text-amber" />
+            <span>
+              有 {hiddenPendingCount} 个字段改了名但还没确认含义，本次不参与 AI 补全，已填的值也不会发给模型。
+              先在「字段改名」里确认后再回来。
+            </span>
+          </div>
+        )}
 
         {sendFields.length === 0 ? (
           <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber/8 border border-amber/25 text-12 text-amber">

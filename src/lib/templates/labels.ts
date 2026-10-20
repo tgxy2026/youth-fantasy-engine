@@ -32,8 +32,18 @@ export function applyFieldLabels<T extends { key: string; label: string }>(
   return fields.map(f => (labels[f.key] ? { ...f, label: labels[f.key] } : f))
 }
 
-/** 当前项目下这个页签的显示名表；没有改名 / 读取失败 ⇒ 空表（用原名） */
-export async function loadFieldLabels(tab: TabDef): Promise<Record<string, string>> {
+export interface FieldGating {
+  /** 当前显示名（只含真正改过名的字段；其余回退原名） */
+  labels: Record<string, string>
+  /**
+   * 含义未确认的字段（方案 §3.12.3.3）。
+   * 🔴 AI 读取 / 索引 / 回填目标一律跳过这些键；界面照常显示名称与内容。
+   */
+  pending: Set<string>
+}
+
+/** 当前项目下这个页签的显示名与待确认字段；读取失败 ⇒ 空表 / 空集（用原名） */
+export async function loadFieldGating(tab: TabDef): Promise<FieldGating> {
   try {
     // 不校验 pid 是否为空：`loadAliases` 沿用既有口径（无项目时按空表处理），
     // 这里多一道空判会让「项目尚未建立」的调用方拿到与旧行为不同的结果。
@@ -42,9 +52,13 @@ export async function loadFieldLabels(tab: TabDef): Promise<Record<string, strin
     if (def) {
       // export 口径：不受展示开关限制，拿到作者维护的完整字段名（归档字段不计）
       const tpl = resolveTemplateCached(tab, { def, purpose: 'export', ignoreAppliesTo: true }, pid)
-      const out: Record<string, string> = {}
-      for (const f of tpl.fields) out[f.sourceKey] = f.label
-      return out
+      const labels: Record<string, string> = {}
+      const pending = new Set<string>()
+      for (const f of tpl.fields) {
+        labels[f.sourceKey] = f.label
+        if (f.meaningStatus === 'pending') pending.add(f.sourceKey)
+      }
+      return { labels, pending }
     }
     const keys = storageKeysOf(tab)
     const [aliases, doc] = await Promise.all([
@@ -54,7 +68,8 @@ export async function loadFieldLabels(tab: TabDef): Promise<Record<string, strin
     // 与界面同一份清洗：不存在的键、撞名、超长一律丢弃（两条通道口径一致）
     const aliasLabels = sanitizeAliases(keys, aliases)
     const overrideLabels = overrideLabelsOf(doc, keys)
-    if (!Object.keys(aliasLabels).length && !Object.keys(overrideLabels).length) return {}
+    const empty: FieldGating = { labels: {}, pending: new Set() }
+    if (!Object.keys(aliasLabels).length && !Object.keys(overrideLabels).length) return empty
     // 取解析结果里的最终名称：轻量定义 > 别名，且只收真正改过名的字段（其余回退原名）
     const renamed = new Set([...Object.keys(aliasLabels), ...Object.keys(overrideLabels)])
     const tpl = resolveTemplateCached(tab, {
@@ -63,16 +78,28 @@ export async function loadFieldLabels(tab: TabDef): Promise<Record<string, strin
       ...(Object.keys(aliasLabels).length ? { aliases } : {}),
       ...(doc ? { fieldDefinitions: doc } : {}),
     }, pid)
-    const out: Record<string, string> = {}
+    const labels: Record<string, string> = {}
+    const pending = new Set<string>()
     for (const f of tpl.fields) {
+      if (f.meaningStatus === 'pending') pending.add(f.sourceKey)
       // 只有真的和原名不同才需要叠加：轻量定义可以「只改说明」或「恢复原名」，
       // 那两种情况都该让调用方回退 schema 原名（别再被旧别名顶回来）。
       if (renamed.has(f.sourceKey) && f.label && f.label !== defaultLabelOf(f.sourceKey)) {
-        out[f.sourceKey] = f.label
+        labels[f.sourceKey] = f.label
       }
     }
-    return out
+    return { labels, pending }
   } catch {
-    return {}
+    return { labels: {}, pending: new Set() }
   }
+}
+
+/** 当前项目下这个页签的显示名表；没有改名 / 读取失败 ⇒ 空表（用原名） */
+export async function loadFieldLabels(tab: TabDef): Promise<Record<string, string>> {
+  return (await loadFieldGating(tab)).labels
+}
+
+/** 只取「含义未确认」的存储键（AI 读取 / 索引 / 回填的屏蔽清单） */
+export async function loadPendingFieldKeys(tab: TabDef): Promise<Set<string>> {
+  return (await loadFieldGating(tab)).pending
 }

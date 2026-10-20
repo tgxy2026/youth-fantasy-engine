@@ -98,6 +98,11 @@ export type RenderOpts = {
    * 🔴 图鉴页签的 `atlasFields` 自带 label，优先于本表（见 `labelOf`）。
    */
   labels?: Record<string, string>
+  /**
+   * 3.2.0 · T3：含义**未确认**的字段（方案 §3.12.3.3）。
+   * 🔴 整列不发送：既不出现列名，也不出现值；界面照常显示。
+   */
+  hidePending?: ReadonlySet<string>
 }
 
 /** 各表最多带入的条目数（防止长篇几百行表格直接吃满预算） */
@@ -144,6 +149,8 @@ export function renderTable(
     : (tab.columns ?? []).filter(c => !c.hidden).map(c => c.name))
     .filter(c => !SYSTEM_META_FIELDS.has(c))
     .filter(c => !(o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(c)))
+    // T3：含义未确认的字段整列不发给 AI（连列名都不出现）
+    .filter(c => !o.hidePending?.has(c))
   if (cols.length === 0) return ''
   const cap = ROW_CAP[tab.id] ?? DEFAULT_ROW_CAP
   // 🔴 D 级（任何视角）与 S 级（仅角色视角）都先剔除（同 renderCards：正文与「另有 N 行未列出」的计数都不算它）

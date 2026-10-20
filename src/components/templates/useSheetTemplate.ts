@@ -14,6 +14,7 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import { getCurrentProjectId } from '@/lib/db'
 import { loadTemplateDef, subscribeTemplateStore } from '@/lib/templates/store'
+import { loadFieldDefinitions, subscribeFieldDefinitions, type FieldDefinitionDoc } from '@/lib/templates/fieldDefinition'
 import { resolveTemplateCached } from '@/lib/templates/cache'
 import { atlasColumnsOf, type AtlasColumn } from '@/lib/atlas/columns'
 import { tableColumnsOfTemplate } from '@/lib/templates/render'
@@ -35,6 +36,12 @@ export function useSheetTemplate(
 ): SheetTemplateState {
   const pid = getCurrentProjectId()
   const [def, setDef] = useState<TemplateDef | null>(null)
+  /**
+   * T3 轻量定义（未采用模板时的名称 / 说明 / 含义确认）。
+   * 🔴 AI 写回目标要吃它：含义未确认的字段在 `writeTargetsOf` 里被排除，
+   *    不带这份定义的话，界面已经标「待确认」，AI 却照旧往里写。
+   */
+  const [defDoc, setDefDoc] = useState<FieldDefinitionDoc | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -42,10 +49,14 @@ export function useSheetTemplate(
       void loadTemplateDef(pid, tab.id)
         .then(d => { if (alive) setDef(d) })
         .catch(() => { if (alive) setDef(null) })
+      void loadFieldDefinitions(pid, tab.id)
+        .then(d => { if (alive) setDefDoc(d) })
+        .catch(() => { if (alive) setDefDoc(null) })
     }
     reload()
-    const off = subscribeTemplateStore(reload)
-    return () => { alive = false; off() }
+    const offTemplate = subscribeTemplateStore(reload)
+    const offDefs = subscribeFieldDefinitions(reload)
+    return () => { alive = false; offTemplate(); offDefs() }
   }, [pid, tab.id])
 
   const tableTemplate = useMemo(
@@ -53,8 +64,9 @@ export function useSheetTemplate(
       ...(def ? { def } : {}),
       config: atlasConfig,
       purpose: 'table',
+      ...(defDoc ? { fieldDefinitions: defDoc } : {}),
     }, pid),
-    [tab, atlasConfig, def, pid],
+    [tab, atlasConfig, def, defDoc, pid],
   )
 
   const aiWriteTemplate = useMemo(
@@ -63,8 +75,9 @@ export function useSheetTemplate(
       config: atlasConfig,
       purpose: 'aiWrite',
       ignoreAppliesTo: true,
+      ...(defDoc ? { fieldDefinitions: defDoc } : {}),
     }, pid),
-    [tab, atlasConfig, def, pid],
+    [tab, atlasConfig, def, defDoc, pid],
   )
 
   const effectiveColumns = useMemo<AtlasColumn[]>(

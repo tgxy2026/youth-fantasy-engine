@@ -35,7 +35,7 @@ import { isPrunedForAI, isSecretRow, sortBySecrecy } from '@/lib/ai/secrecy'
 import { segCapOf } from '@/lib/ai/segBudget'
 import { createContextAssembler } from '@/lib/ai/contextAssembler'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
-import { loadFieldLabels } from '@/lib/templates/labels'
+import { loadFieldGating } from '@/lib/templates/labels'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
@@ -309,6 +309,8 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
       if (SYSTEM_META_FIELDS.has(f.name)) continue
       if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(f.name)) continue
       const key = `${mod.name}::${f.name}`
+      // T3：含义未确认的字段不进上下文（界面照常显示）
+      if (o.hidePending?.has(key)) continue
       const v = data[key] ?? data[f.name] ?? ''
       used.add(key)
       // 3.2.0 · T3：模型看到作者当前的名字；存储键不变
@@ -322,6 +324,8 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
     //    本循环本就是「schema 里没登记过的键也照样渲染」的兜底，不挡就等于把作者
     //    标明「不发给 AI」的整段草稿塞进提示词（见 worldSets.ts 的 FREE_DRAFT_KEY）。
     if (isInternalFieldKey(k)) continue
+    // T3：待确认含义的字段（含历史遗留键）同样不发送
+    if (o.hidePending?.has(k)) continue
     const fn = fieldName(k)
     if (SYSTEM_META_FIELDS.has(fn)) continue
     if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue
@@ -440,8 +444,13 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
   try {
     // 3.2.0 · T3：模型看到作者当前的字段名（采用模板 / 别名）；读不到就退回 schema 原名。
-    const labels = await loadFieldLabels(tab)
-    const ro: RenderOpts = Object.keys(labels).length ? { ...o, labels: { ...o.labels, ...labels } } : o
+    // 🔴 同时取出「含义未确认」的字段：整段不发送（方案 §3.12.3.3），但界面照常显示。
+    const { labels, pending } = await loadFieldGating(tab)
+    const ro: RenderOpts = {
+      ...o,
+      ...(Object.keys(labels).length ? { labels: { ...o.labels, ...labels } } : {}),
+      ...(pending.size ? { hidePending: pending } : {}),
+    }
     if (tab.type === 'form') {
       // 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
       //    资料全在 `<tabId>-sub` 那批条目里 ⇒ 直接渲染活跃条目段，**不读也不带「全书统一」层**。

@@ -18,6 +18,7 @@ import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
 import { indexRulesOf, type IndexFieldRule } from '@/lib/templates/consumers'
 import { loadTemplateDef } from '@/lib/templates/store'
+import { loadFieldDefinitions, type FieldDefinitionDoc } from '@/lib/templates/fieldDefinition'
 import type { TemplateDef } from '@/lib/templates/definition'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 
@@ -41,6 +42,8 @@ export type FieldRules =
 export interface FieldRulesDeps {
   loadDef?: (pid: string, tabId: string) => Promise<TemplateDef | null>
   loadConfig?: (pid: string, tabId: string) => Promise<{ config: AtlasSchemaConfig; error?: string }>
+  /** 轻量字段定义（T3）；测试注入用，生产走 `loadFieldDefinitions` */
+  loadDefs?: (pid: string, tabId: string) => Promise<FieldDefinitionDoc | null>
 }
 
 function rulesOfTemplate(template: ReturnType<typeof resolveTemplateCached>): FieldRules {
@@ -49,6 +52,48 @@ function rulesOfTemplate(template: ReturnType<typeof resolveTemplateCached>): Fi
     rules: indexRulesOf(template),
     templateDigest: template.semanticDigest,
     authoritative: true,
+  }
+}
+
+/** 轻量定义里是否有作者动过的字段（名称 / 说明 / 确认状态） */
+function hasDefinitionOverrides(doc: FieldDefinitionDoc | null): boolean {
+  return !!doc && Object.keys(doc.fields).length > 0
+}
+
+/**
+ * 卡片 / 表单页签（非图鉴）的规则：为 T3 的字段定义服务。
+ *
+ * 🔴 没有轻量定义 ⇒ 仍返回 `none`，老项目一个字节都不动。
+ * 🔴 有定义 ⇒ 返回**非权威**规则（`authoritative: false`）：只用来把待确认字段标成
+ *    不可读、把改名后的 label 带进索引文本；其余未知键照旧放行 ——
+ *    卡片字段是 `模块::字段`，索引侧本来就不按模板裁剪。
+ */
+async function loadNonAtlasRules(
+  pid: string,
+  tab: TabDef,
+  deps: FieldRulesDeps,
+): Promise<FieldRules> {
+  let doc: FieldDefinitionDoc | null
+  try {
+    doc = await (deps.loadDefs ?? loadFieldDefinitions)(pid, tab.id)
+  } catch (e) {
+    return { kind: 'unavailable', reason: `读取字段定义失败：${e instanceof Error ? e.message : String(e)}` }
+  }
+  if (!hasDefinitionOverrides(doc)) return { kind: 'none' }
+  try {
+    const tpl = resolveTemplateCached(tab, {
+      purpose: 'index',
+      ignoreAppliesTo: true,
+      ...(doc ? { fieldDefinitions: doc } : {}),
+    }, pid)
+    return {
+      kind: 'rules',
+      rules: indexRulesOf(tpl),
+      templateDigest: tpl.semanticDigest,
+      authoritative: false,
+    }
+  } catch (e) {
+    return { kind: 'unavailable', reason: `解析字段定义失败：${e instanceof Error ? e.message : String(e)}` }
   }
 }
 
@@ -63,7 +108,8 @@ export async function loadFieldRules(
   tab: TabDef,
   deps: FieldRulesDeps = {},
 ): Promise<FieldRules> {
-  if (!pid || !isAtlasTab(tab.id)) return { kind: 'none' }
+  if (!pid) return { kind: 'none' }
+  if (!isAtlasTab(tab.id)) return loadNonAtlasRules(pid, tab, deps)
 
   let def: TemplateDef | null
   try {
@@ -74,15 +120,29 @@ export async function loadFieldRules(
 
   try {
     if (def) {
+      // 快照自带含义确认状态，轻量定义不再叠加（采用后结构由作者接管）
       return rulesOfTemplate(resolveTemplateCached(tab, { def, purpose: 'index', ignoreAppliesTo: true }, pid))
     }
     const loaded = await (deps.loadConfig ?? loadAtlasSchema)(pid, tab.id as Parameters<typeof loadAtlasSchema>[1])
     if (loaded.error) {
       return { kind: 'unavailable', reason: `读取字段配置失败：${loaded.error}` }
     }
+    // 🔴 T3：未采用模板的页签，含义确认状态在轻量定义里。读不到定义 ⇒ 无法证明哪些字段
+    //    待确认，按 Q2-4 的口径直接判 `unavailable`（宁可不给资料，也不放行未确认内容）。
+    let doc: FieldDefinitionDoc | null
+    try {
+      doc = await (deps.loadDefs ?? loadFieldDefinitions)(pid, tab.id)
+    } catch (e) {
+      return { kind: 'unavailable', reason: `读取字段定义失败：${e instanceof Error ? e.message : String(e)}` }
+    }
     return rulesOfTemplate(resolveTemplateCached(
       tab,
-      { config: loaded.config, purpose: 'index', ignoreAppliesTo: true },
+      {
+        config: loaded.config,
+        purpose: 'index',
+        ignoreAppliesTo: true,
+        ...(doc ? { fieldDefinitions: doc } : {}),
+      },
       pid,
     ))
   } catch (e) {

@@ -8,7 +8,7 @@
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { resolveTemplateCached } from '@/lib/templates/cache'
-import { loadFieldLabels } from '@/lib/templates/labels'
+import { loadFieldGating } from '@/lib/templates/labels'
 import { parsePlainObject } from '@/lib/ai/aiParse'
 import { chat } from '@/lib/aiCore/chat'
 import { requireProviderFor } from '@/lib/ai/aiRouting'
@@ -84,20 +84,35 @@ export const WORLD_CONTEXT_GROUPS: WorldContextGroup[] = [
  *      宁可名字难听，也不能把作者已经填好的内容丢掉。
  */
 export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
-  /** 表单页签的字段（存储键 + 当前显示名） */
-  const fieldsOf = async (tabId: string): Promise<{ key: string; label: string }[]> => {
+  /**
+   * 表单页签的字段（存储键 + 当前显示名；含义未确认的字段**不在清单里**）。
+   * `blocked` 是同一批字段的**字段名**（`模块::字段` 的最后一段）——`pick` 的兜底扫描
+   * 按字段名找值时，必须知道哪些名字此刻不能发。
+   */
+  const fieldsOf = async (tabId: string): Promise<{
+    fields: { key: string; label: string }[]
+    blocked: Set<string>
+  }> => {
     const tab = TABS.find(t => t.id === tabId)
-    if (!tab) return []
-    // 3.2.0 · T3：显示名统一走 `loadFieldLabels`（采用模板 > 别名 > schema 原名），
+    if (!tab) return { fields: [], blocked: new Set() }
+    // 3.2.0 · T3：显示名统一走 `loadFieldGating`（采用模板 > 别名 > schema 原名），
     // 读失败返回空表 ⇒ 退回模板原名。存储键不变（取值仍用 `f.sourceKey`）。
-    const labels = await loadFieldLabels(tab)
+    const { labels, pending } = await loadFieldGating(tab)
     const tpl = resolveTemplateCached(tab)
-    return tpl.fields.map(f => ({ key: f.sourceKey, label: labels[f.sourceKey] ?? f.label }))
+    const blocked = new Set<string>()
+    for (const k of pending) blocked.add(k.slice(k.lastIndexOf('::') + 2))
+    return {
+      fields: tpl.fields
+        .filter(f => !pending.has(f.sourceKey))
+        .map(f => ({ key: f.sourceKey, label: labels[f.sourceKey] ?? f.label })),
+      blocked,
+    }
   }
   const pick = (
     data: Record<string, string> | undefined,
     names: string[],
     fields: { key: string; label: string }[],
+    blocked: ReadonlySet<string>,
   ): string[] => {
     if (!data) return []
     /** 老式扫描：任何 `模块::字段名` 或纯字段名都算（题材包换过、历史数据模块名不同时靠它兜底） */
@@ -109,6 +124,8 @@ export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
     }
     const out: string[] = []
     for (const n of names) {
+      // T3：含义未确认的字段（含兜底扫描能扫到的旧键）一律不发送
+      if (blocked.has(n)) continue
       const f = fields.find(x => x.key === n || x.key.endsWith(`::${n}`))
       // 🔴 先按模板的真实存储键取，取不到再退回全表扫描 ——
       //    只认模板键是不够的：题材包换过之后，老数据的模块前缀可能与当前 schema 不同，
@@ -129,15 +146,18 @@ export async function buildWorldContext(onlyKeys?: string[]): Promise<string> {
   ])
   const byTab: Record<string, Record<string, string> | undefined> = { worldbase: world, power, positioning: pos }
   const [fWorld, fPower, fPos] = await Promise.all([
-    need.has('worldbase') ? fieldsOf('worldbase') : Promise.resolve([]),
-    need.has('power') ? fieldsOf('power') : Promise.resolve([]),
-    need.has('positioning') ? fieldsOf('positioning') : Promise.resolve([]),
+    need.has('worldbase') ? fieldsOf('worldbase') : Promise.resolve({ fields: [], blocked: new Set<string>() }),
+    need.has('power') ? fieldsOf('power') : Promise.resolve({ fields: [], blocked: new Set<string>() }),
+    need.has('positioning') ? fieldsOf('positioning') : Promise.resolve({ fields: [], blocked: new Set<string>() }),
   ])
-  const fieldsByTab: Record<string, { key: string; label: string }[]> = {
+  const fieldsByTab: Record<string, { fields: { key: string; label: string }[]; blocked: Set<string> }> = {
     worldbase: fWorld, power: fPower, positioning: fPos,
   }
   const lines: string[] = []
-  for (const g of groups) lines.push(...pick(byTab[g.tabId], g.names, fieldsByTab[g.tabId] ?? []))
+  for (const g of groups) {
+    const info = fieldsByTab[g.tabId]
+    lines.push(...pick(byTab[g.tabId], g.names, info?.fields ?? [], info?.blocked ?? new Set()))
+  }
   return lines.join('\n')
 }
 

@@ -16,6 +16,7 @@ import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
 import { loadTemplateDef } from '@/lib/templates/store'
+import { loadFieldDefinitions, type FieldDefinitionDoc } from '@/lib/templates/fieldDefinition'
 import type { EffectiveTemplate, TemplatePurpose } from '@/lib/templates/types'
 import type { TableFieldProjection, WriteFieldProjection } from '@/lib/templates/consumers'
 import { aiReadableTableFieldsOf, writeTargetsOf, fieldHintForAI, toWriteFieldProjection } from '@/lib/templates/consumers'
@@ -48,8 +49,16 @@ async function resolveTemplateForAI(
     }
   }
   const loaded = await loadAtlasSchema(pid, tab.id as Parameters<typeof loadAtlasSchema>[1])
+  // T3：未采用模板 ⇒ 含义确认状态在轻量定义里；带上它，`aiReadableTableFieldsOf`
+  // 等投影才会把「待确认」字段排除在模型材料之外。
+  const defDoc = await loadFieldDefinitions(pid, tab.id).catch(() => null)
   return {
-    tpl: resolveTemplateCached(tab, { config: loaded.config, purpose, ignoreAppliesTo: true }, pid),
+    tpl: resolveTemplateCached(tab, {
+      config: loaded.config,
+      purpose,
+      ignoreAppliesTo: true,
+      ...(defDoc ? { fieldDefinitions: defDoc } : {}),
+    }, pid),
     revision: loaded.config.revision,
     ...(loaded.error ? { readFailed: loaded.error } : {}),
   }
@@ -168,7 +177,23 @@ export async function loadAtlasAiWriteTargets(tab: TabDef, projectId: string): P
   // 3.2.0 · WT0-4：改从有效模板取（连带缓存）。
   // 实测四页签的 `keys` 与旧口径逐字一致；隐藏内置列（如《地理风物》的「地图格子」）
   // 由模板解析排除，不再靠这里单独 filter。
-  const tpl = resolveTemplateCached(tab, { config: loaded.config, purpose: 'aiWrite', ignoreAppliesTo: true })
+  // 🔴 T3：未采用模板时含义确认状态在轻量定义里 —— 读不到就**锁写**（fail-closed），
+  //    否则「待确认字段不是 AI 写回目标」这条会静默失效。
+  let defDoc: FieldDefinitionDoc | null
+  try {
+    defDoc = await loadFieldDefinitions(projectId, tab.id)
+  } catch (e) {
+    return {
+      allowedKeys: builtinAllowKeys(tab), fields: new Map(), revision: loaded.config.revision, basis: '',
+      lockedReason: `读取字段定义失败：${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+  const tpl = resolveTemplateCached(tab, {
+    config: loaded.config,
+    purpose: 'aiWrite',
+    ignoreAppliesTo: true,
+    ...(defDoc ? { fieldDefinitions: defDoc } : {}),
+  })
   const targets = writeTargetsOf(tpl)
   return {
     allowedKeys: new Set(targets.keys),

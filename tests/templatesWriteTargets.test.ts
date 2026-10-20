@@ -6,7 +6,8 @@
 import { TABS } from '@/lib/schema'
 import { resolveAtlasFields } from '@/lib/atlas/schema'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
-import { writeTargetsOf, toWriteFieldProjection, fieldHintForAI } from '@/lib/templates/consumers'
+import { writeTargetsOf, aiWriteFieldsOf, aiReadableTableFieldsOf, indexRulesOf, toWriteFieldProjection, fieldHintForAI } from '@/lib/templates/consumers'
+import type { FieldDefinitionDoc } from '@/lib/templates/fieldDefinition'
 import { coerceAiValue } from '@/lib/atlas/values'
 import { effectiveFieldOfAtlas } from '@/lib/templates/legacyAdapter'
 import { atlasFieldHintForAI } from '@/lib/ai/atlasContext'
@@ -196,6 +197,53 @@ const cfgWithLocked = mkConfig([
   ok('⑧ 说明透传', custom.some(p => p.description === '这是什么'))
   ok('⑧ 类别范围透传', custom.some(p => Array.isArray(p.appliesTo) && p.appliesTo.includes('魔兽')))
   ok('⑧ 不限类别的字段不写 appliesTo（不制造噪音）', custom.some(p => p.appliesTo === undefined))
+}
+
+// ────────────────────────── ⑨ 含义未确认的字段：读 / 写 / 索引一律屏蔽 ──────────────────────────
+//
+// 方案 §3.12.3.3：确认之前，AI 既不按旧名解释、也不推断新义 —— 相关字段暂不进入
+// 上下文 / 索引，也不作为 AI 填写目标；确认后按原授权恢复。
+{
+  const tab = tabOf('races')
+  const mkDoc = (meaningStatus: 'pending' | 'confirmed'): FieldDefinitionDoc => ({
+    formatVersion: 1,
+    tabId: 'races',
+    revision: 1,
+    updatedAt: 1,
+    fields: {
+      名称: { label: '种族名', meaningStatus, source: 'alias-migrated', updatedAt: 1 },
+    },
+  })
+
+  const pendingDoc = mkDoc('pending')
+  const wTpl = resolveTemplateForTab(tab, {
+    config: cfgFull, purpose: 'aiWrite', ignoreAppliesTo: true, fieldDefinitions: pendingDoc,
+  })
+  const w = writeTargetsOf(wTpl)
+  ok('⑨ 待确认字段不是 AI 写回目标', !w.keys.includes('名称'), JSON.stringify(w.keys))
+  ok('⑨ aiWriteFieldsOf 的内置键同样排除', !aiWriteFieldsOf(wTpl).builtinKeys.includes('名称'))
+
+  const rTpl = resolveTemplateForTab(tab, {
+    config: cfgFull, purpose: 'aiRead', ignoreAppliesTo: true, fieldDefinitions: pendingDoc,
+  })
+  ok('⑨ 待确认字段不出现在 AI 读取清单',
+    !aiReadableTableFieldsOf(rTpl).some(f => f.key === '名称'))
+
+  const iTpl = resolveTemplateForTab(tab, {
+    config: cfgFull, purpose: 'index', ignoreAppliesTo: true, fieldDefinitions: pendingDoc,
+  })
+  const rule = indexRulesOf(iTpl)['名称']
+  ok('⑨ 索引规则保留该键但标为不可读（召回闸据此判旧块失效）', !!rule && rule.aiReadable === false)
+
+  // 确认后恢复：名称回到读 / 写 / 索引目标里
+  const confirmedTpl = resolveTemplateForTab(tab, {
+    config: cfgFull, purpose: 'aiWrite', ignoreAppliesTo: true, fieldDefinitions: mkDoc('confirmed'),
+  })
+  ok('⑨ 确认后恢复为可写目标', writeTargetsOf(confirmedTpl).keys.includes('名称'))
+  const confirmedRead = resolveTemplateForTab(tab, {
+    config: cfgFull, purpose: 'aiRead', ignoreAppliesTo: true, fieldDefinitions: mkDoc('confirmed'),
+  })
+  ok('⑨ 确认后恢复为 AI 可读字段', aiReadableTableFieldsOf(confirmedRead).some(f => f.key === '名称'))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

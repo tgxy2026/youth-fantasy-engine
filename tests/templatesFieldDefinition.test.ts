@@ -214,10 +214,16 @@ async function main() {
       && racesDoc2?.fields['名称']?.meaningStatus === 'pending')
   }
 
-  // ────────────────────────── ⑦ 端到端：AI 上下文使用确认后的当前名称 ──────────────────────────
+  // ────────────────────────── ⑦ 端到端：待确认先屏蔽，确认后使用当前名称 ──────────────────────────
   {
     const cur = await db.getFormData(MASTER.id)
     await db.saveFormData(MASTER.id, { ...cur, [KEY]: 'ZZ主线值' })
+    // 此时 KEY 仍是「主线新名 + 含义未确认」⇒ 整项不进上下文（T3-B3 · 方案 §3.12.3.3）
+    const pendingCtx = await buildProjectContext({ budget: 200000, onlyTabIds: [MASTER.id] })
+    ok('⑦ 含义未确认 ⇒ 字段与值都不进提示词',
+      !pendingCtx.text.includes('ZZ主线值') && !pendingCtx.text.includes('主线新名'), pendingCtx.text.slice(0, 300))
+
+    await saveFieldDefinition(pid, MASTER.id, KEY, { label: '主线新名', meaningStatus: 'confirmed' })
     const ctx = await buildProjectContext({ budget: 200000, onlyTabIds: [MASTER.id] })
     ok('⑦ 提示词里出现轻量定义的当前名称', ctx.text.includes('主线新名：ZZ主线值'), ctx.text.slice(0, 300))
     ok('⑦ 不再出现旧名与别名', !ctx.text.includes('主线一句话：ZZ主线值') && !ctx.text.includes('别名主线：ZZ主线值'))

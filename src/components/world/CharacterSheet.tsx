@@ -20,6 +20,7 @@ import { useAIReady } from '@/lib/ai/useAIReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
+import { useFieldGating } from '@/lib/templates/useFieldLabels'
 import { contentHeight, CARD_SHEET_CHROME_PX } from '@/lib/settings/theme'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
@@ -134,6 +135,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
   const aliasKeys = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
   const aliasLabels = useFieldDisplayLabels(tab.id, aliasKeys)
+  // T3：含义未确认字段（§3.12.3.3）—— 卡片页签自行收口：不当 AI 填写目标，值也不进材料。
+  const cardPending = useFieldGating(tab.id).pending
   /**
    * 3.2.0：本页签采用的模板快照。
    * 🔴 有快照 ⇒ 卡片的模块 / 字段 / 显示名全部按快照渲染；
@@ -257,15 +260,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    * 🔴 未采用模板时沿用 `cardFields`：老项目没有快照，行为一个字节都不动。
    */
   const cardAiFields = useMemo<TemplateField[]>(() => {
-    if (!templateDef) return cardFields
-    const tpl = resolveTemplateForTab(tab, { def: templateDef, purpose: 'aiWrite', ignoreAppliesTo: true })
-    return tpl.fields.map(f => ({
-      key: f.sourceKey,
-      label: f.label,
-      ...(f.description ? { desc: f.description } : {}),
-      ...(f.example ? { example: f.example } : {}),
-    }))
-  }, [tab, templateDef, cardFields])
+    const base = !templateDef
+      ? cardFields
+      : resolveTemplateForTab(tab, { def: templateDef, purpose: 'aiWrite', ignoreAppliesTo: true }).fields
+        .map(f => ({
+          key: f.sourceKey,
+          label: f.label,
+          ...(f.description ? { desc: f.description } : {}),
+          ...(f.example ? { example: f.example } : {}),
+        }))
+    return cardPending.size ? base.filter(f => !cardPending.has(f.key)) : base
+  }, [tab, templateDef, cardFields, cardPending])
 
   /**
    * AI **可参考**的键（`purpose:'aiRead'`）。
@@ -277,17 +282,21 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const cardAiReadKeys = useMemo<Set<string> | null>(() => {
     if (!templateDef) return null
     const tpl = resolveTemplateForTab(tab, { def: templateDef, purpose: 'aiRead', ignoreAppliesTo: true })
-    return new Set(tpl.fields.map(f => f.sourceKey))
-  }, [tab, templateDef])
+    // 待确认字段同样不许参考（确认前不按旧名解释、也不推断新义）
+    return new Set(tpl.fields.filter(f => !cardPending.has(f.sourceKey)).map(f => f.sourceKey))
+  }, [tab, templateDef, cardPending])
 
-  /** 只把可参考字段的已填值交给 AI（禁读字段的值一律不出现在材料里） */
+  /** 只把可参考字段的已填值交给 AI（禁读 / 待确认字段的值一律不出现在材料里） */
   const cardAiExisting = useMemo(() => {
     if (!draft) return undefined
-    if (!cardAiReadKeys) return draft.data
+    if (!cardAiReadKeys && !cardPending.size) return draft.data
     const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(draft.data)) if (cardAiReadKeys.has(k)) out[k] = v
+    for (const [k, v] of Object.entries(draft.data)) {
+      if (cardPending.has(k) || (cardAiReadKeys && !cardAiReadKeys.has(k))) continue
+      out[k] = v
+    }
     return out
-  }, [draft, cardAiReadKeys])
+  }, [draft, cardAiReadKeys, cardPending])
 
   /**
    * 「AI 补全」的字段清单：**已填但禁读**的字段标 `locked`。
