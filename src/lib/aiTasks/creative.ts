@@ -3,6 +3,7 @@
 // 方案见 docs/2.2.0-全自动AI小说创作工作流方案.md。
 // 🔴 生成与落库严格分离：本文件只产出内存对象，**绝不触达 db**；写库一律由用户在草稿界面上确认。
 // 🔴 输出与「一键拆书」的 ExtractedEntity[] 同形状（复用 lib/flow 的判重→草稿→审阅→落库管线）。
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { longStream } from '@/lib/aiTasks/stream'
@@ -102,7 +103,14 @@ export function collectBibleEntities(obj: Record<string, unknown>, c: BibleCount
  */
 export async function aiGenerateBible(
   seed: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; counts?: Partial<BibleCounts>; onRaw?: (raw: string) => void } = {},
+  opts: {
+    signal?: AbortSignal
+    onToken?: (d: string) => void
+    counts?: Partial<BibleCounts>
+    onRaw?: (raw: string) => void
+    /** 请求归属（3.2.0 · WQ7）：带上 taskId 才能把用量记到具体任务账上 */
+    request?: CallRequestContext
+  } = {},
 ): Promise<ExtractedEntity[]> {
   const cfg = await requireProviderFor('create')
   const counts = { ...DEFAULT_BIBLE_COUNTS, ...(opts.counts ?? {}) }
@@ -115,7 +123,10 @@ export async function aiGenerateBible(
         // 同样把数量与体量约束重申在**消息末尾**（system 里的铁律容易被忽略）
         { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。` },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
+      {
+        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true,
+        ...(opts.request ? { request: opts.request } : {}),
+      },
     )
     opts.onRaw?.(text)
     // 🔴 宽松解析：小模型常在 JSON **结构位**塞杂散字符（实测 qwen3:4b 会插「、」甚至孤立引号），
@@ -346,7 +357,13 @@ export interface PlanOutlineInput {
  */
 export async function aiPlanOutline(
   material: string,
-  opts: PlanOutlineInput & { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void },
+  opts: PlanOutlineInput & {
+    signal?: AbortSignal
+    onToken?: (d: string) => void
+    onRaw?: (raw: string) => void
+    /** 请求归属（3.2.0 · WQ7）：大纲是一次性大调用，必须能记到具体任务账上 */
+    request?: CallRequestContext
+  },
 ): Promise<OutlineResult> {
   const cfg = await requireProviderFor('create')
   const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
@@ -409,7 +426,10 @@ export async function aiPlanOutline(
               : ''),
         },
       ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true },
+      {
+        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), json: true,
+        ...(opts.request ? { request: opts.request } : {}),
+      },
     )
     opts.onRaw?.(text)
     // 同 aiGenerateBible：宽松解析 + 顶层键中英双认（只认英文键会表现为"生成成功但 0 章"）

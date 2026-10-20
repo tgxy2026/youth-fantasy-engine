@@ -607,6 +607,18 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         structureId: inp.structureId,
         ...(inp.inspirations?.length ? { inspirations: inp.inspirations } : {}),
         signal: ctl.signal,
+        // 3.2.0 · WQ7：**显式归属**。建了账本就把 run id 交给下游，
+        // 调用账按 taskId 精确入账 —— 不再靠"最近创建的那个任务"猜。
+        ...(ledger
+          ? {
+            request: {
+              scope: 'project' as const,
+              projectId: db.getCurrentProjectId() ?? '',
+              taskId: ledger.id,
+              taskType: 'creative',
+            },
+          }
+          : {}),
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {
           gotResume = r

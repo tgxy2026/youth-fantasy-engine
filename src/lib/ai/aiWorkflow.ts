@@ -41,6 +41,7 @@ import { getStoryTemplate, formatStructureHint } from '@/lib/outline/storyStruct
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from '@/lib/outline/autoContinue'
 import * as db from '@/lib/db'
+import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { commitDraftRows } from '@/lib/flow/commit'
 import { buildDraftBundle, defaultPicked } from '@/lib/flow/draft'
 import { resolveSlot } from '@/lib/flow/fieldMap'
@@ -563,6 +564,14 @@ export interface CreativeWritingOptions {
   /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
   onResume?: (r: CreativeResume) => void
   signal?: AbortSignal
+  /**
+   * 请求归属（3.2.0 · WQ7）：由**建了运行账本**的调用方传入（`taskId` = run id）。
+   *
+   * 🔴 只传给当前真正接了归属的下游（设定奠基 / 大纲规划）；正文连写链
+   *    （`runAutoContinue → wordRange.ask`）还没穿下去 —— 见 WQ7 遗留清单，
+   *    在那之前正文调用仍走「唯一任务」兼容归属（统计可用，但并行时会被排除）。
+   */
+  request?: CallRequestContext
 }
 
 export interface CreativeWritingResult {
@@ -660,6 +669,7 @@ export async function runCreativeWriting(
     let got = 0
     const entities = await aiGenerateBible(inp.seed, {
       signal: ctx.signal,
+      ...(opts.request ? { request: opts.request } : {}),
       onToken: d => {
         got += d.length
         if (got % 400 < d.length) ctx.report(0.5, `生成设定草稿… 已收到 ${got} 字`)
@@ -742,6 +752,7 @@ export async function runCreativeWriting(
     const raw = await aiPlanOutline(material, {
       volumes: plannedVolumes,
       chaptersPerVolume: perVolume,
+      ...(opts.request ? { request: opts.request } : {}),
       fromNo,
       fromVolumeNo,
       extending,
