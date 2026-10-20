@@ -29,6 +29,17 @@ export type TemplateFieldType =
   | 'character' | 'characters'  // 角色引用
   | 'other'       // 未知/未识别类型（只读展示，不参与自动写入）
 
+/**
+ * 3.2.0 · T3：字段含义是否已被作者确认。
+ *
+ * · `confirmed`（缺省）：旧字段未改名、内置字段、直接新建的自定义字段 —— 作者声明即确认；
+ * · `pending`：从未经确认的旧别名迁移来的改名 —— 名称照常显示，但 AI 不按它理解 / 回写，
+ *   等作者在确认清单里选「含义不变」或改写说明后才恢复。
+ *
+ * 🔴 缺省当 `confirmed` 是兼容要求：没有这个字段的历史数据不能被一律冻结。
+ */
+export type FieldMeaningStatus = 'confirmed' | 'pending'
+
 /** 字段权限（五种消费面各自独立，不合并成一个开关） */
 export interface TemplateFieldPermissions {
   table: boolean
@@ -59,6 +70,13 @@ export interface EffectiveField {
   source: TemplateFieldSource
   /** 显示名（内置字段取别名，自定义字段取 label）—— 界面与 AI 共用 */
   label: string
+  /**
+   * 3.2.0 · T3：改名前/未改名时的原始显示名（仅兼容、界面展示与迁移诊断用）。
+   * 🔴 不参与语义摘要：它是历史来源，不是模型理解依据（旧含义不得混进事实正文）。
+   */
+  defaultLabel?: string
+  /** 含义确认状态；缺省 = `confirmed`（见 `FieldMeaningStatus`） */
+  meaningStatus?: FieldMeaningStatus
   /** 字段含义说明（人看，也发给 AI） */
   description?: string
   /** 填写示例（人看，也发给 AI；不参与值语义） */

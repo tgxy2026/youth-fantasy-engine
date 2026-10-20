@@ -17,18 +17,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getSetting, setSetting, getCurrentProjectId } from '@/lib/db'
-import { labelMapOf, sanitizeAliases, type AliasMap } from './aliasCore'
+import { aliasKeyOf, labelMapOf, sanitizeAliases, type AliasMap } from './aliasCore'
 
 // 纯函数核心在 `aliasCore.ts`（模板解析层也要用，那一层不能依赖 React）。
 // 这里原样再导出，既有 import 路径保持不变。
 export {
-  MAX_ALIAS_LEN, defaultLabelOf, sanitizeAliases, labelOf, labelMapOf, aliasCount, validateAliasInput,
+  MAX_ALIAS_LEN, aliasKeyOf, defaultLabelOf, sanitizeAliases, labelOf, labelMapOf, aliasCount, validateAliasInput,
 } from './aliasCore'
 export type { AliasMap } from './aliasCore'
-
-export function aliasKeyOf(tabId: string): string {
-  return `fieldAlias::${tabId}`
-}
 
 /* ────────────────────────── 跨组件共享（表头 / 关系分组 / 设定检索同表共用一份） ────────────────────────── */
 

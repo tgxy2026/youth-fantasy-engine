@@ -5,9 +5,9 @@
  * 改名成「世界称呼」之后，界面跟着变了，提示词却还在说「世界名称」——
  * 模型按旧名理解、按旧名回填，作者会以为改名没生效（方案 §3.12）。
  *
- * 🔴 优先级：**采用快照的 label > 别名 > schema 原名**。
- *    采用快照后结构由作者自己维护，模板里的名字就是当前名字；别名是尚未采用模板的
- *    老项目的改名通道。两者都只影响**显示**。
+ * 🔴 优先级：**采用快照的 label > 轻量定义 > 别名 > schema 原名**。
+ *    采用快照后结构由作者自己维护，模板里的名字就是当前名字；轻量定义是尚未采用模板的
+ *    页签的改名 / 说明 / 确认落点；别名是老项目的改名通道。三者都只影响**显示**。
  * 🔴 存储键一个字节都不动：返回值只用于渲染，取值 / 回填 / 检索仍按 `sourceKey`。
  * 🔴 读失败 ⇒ 空表（调用方退回 schema 原名），绝不因为改名功能把上下文搞崩。
  */
@@ -17,15 +17,8 @@ import { loadAliases } from '@/lib/settings/fieldAlias'
 import { sanitizeAliases } from '@/lib/settings/aliasCore'
 import { loadTemplateDef } from './store'
 import { resolveTemplateCached } from './cache'
-
-/** 页签在 schema 里的全部存储键（列名 / `模块名::字段名`） */
-function storageKeysOf(tab: TabDef): string[] {
-  const keys = (tab.columns ?? []).map(c => c.name)
-  for (const m of tab.modules ?? []) {
-    for (const f of m.fields) keys.push(`${m.name}::${f.name}`)
-  }
-  return keys
-}
+import { loadFieldDefinitions, overrideLabelsOf } from './fieldDefinition'
+import { storageKeysOf } from './schemaKeys'
 
 /**
  * 把显示名叠到「存储键 + 显示名」的字段清单上（AI 补全 / 对话引导用）。
@@ -53,10 +46,28 @@ export async function loadFieldLabels(tab: TabDef): Promise<Record<string, strin
       for (const f of tpl.fields) out[f.sourceKey] = f.label
       return out
     }
-    const aliases = await loadAliases(tab.id).catch(() => ({}))
-    if (!Object.keys(aliases).length) return {}
-    // 与界面同一份清洗：不存在的键、撞名、超长一律丢弃
-    return sanitizeAliases(storageKeysOf(tab), aliases)
+    const keys = storageKeysOf(tab)
+    const [aliases, doc] = await Promise.all([
+      loadAliases(tab.id).catch(() => ({})),
+      loadFieldDefinitions(pid, tab.id).catch(() => null),
+    ])
+    // 与界面同一份清洗：不存在的键、撞名、超长一律丢弃（两条通道口径一致）
+    const aliasLabels = sanitizeAliases(keys, aliases)
+    const overrideLabels = overrideLabelsOf(doc, keys)
+    if (!Object.keys(aliasLabels).length && !Object.keys(overrideLabels).length) return {}
+    // 取解析结果里的最终名称：轻量定义 > 别名，且只收真正改过名的字段（其余回退原名）
+    const renamed = new Set([...Object.keys(aliasLabels), ...Object.keys(overrideLabels)])
+    const tpl = resolveTemplateCached(tab, {
+      purpose: 'export',
+      ignoreAppliesTo: true,
+      ...(Object.keys(aliasLabels).length ? { aliases } : {}),
+      ...(doc ? { fieldDefinitions: doc } : {}),
+    }, pid)
+    const out: Record<string, string> = {}
+    for (const f of tpl.fields) {
+      if (renamed.has(f.sourceKey) && f.label) out[f.sourceKey] = f.label
+    }
+    return out
   } catch {
     return {}
   }

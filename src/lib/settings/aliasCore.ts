@@ -10,6 +10,11 @@
 /** 存储键 → 显示名 */
 export type AliasMap = Record<string, string>
 
+/** 别名的 settingsKV 键（项目级；迁移与解析都要按这个精确读取） */
+export function aliasKeyOf(tabId: string): string {
+  return `fieldAlias::${tabId}`
+}
+
 /** 显示名最长字数（表头是单行，超长会被 truncate 吃掉） */
 export const MAX_ALIAS_LEN = 20
 

@@ -292,6 +292,9 @@ export function semanticDigestOf(fields: readonly EffectiveField[]): string {
       appliesTo: f.appliesTo,
       permissions: f.permissions,
       ...(f.fixedOptions ? { fixedOptions: true } : {}),
+      // T3：确认状态改变「AI 能不能按这个字段理解 / 回写」⇒ 属于语义依据。
+      // 缺省（undefined）不写键，历史模板的摘要逐字不变。
+      ...(f.meaningStatus ? { meaningStatus: f.meaningStatus } : {}),
     }))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   return 'f1:' + fnv1a(JSON.stringify(canon))

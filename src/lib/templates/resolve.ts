@@ -15,6 +15,8 @@ import {
   adaptAtlasTab, adaptBuiltinTab, canAdaptAsAtlas, TEMPLATE_FORMAT_VERSION,
 } from './legacyAdapter'
 import { adaptTemplateDef } from './defAdapter'
+import { applyFieldDefinitions, type FieldDefinitionDoc } from './fieldDefinition'
+import { storageKeysOf } from './schemaKeys'
 import type { EffectiveTemplate, TemplatePurpose } from './types'
 import type { TemplateDef } from './definition'
 
@@ -41,6 +43,12 @@ export interface ResolveTemplateOptions {
    */
   def?: TemplateDef | null
   /**
+   * 项目**轻量字段定义**（T3，`fieldDefinition32:<tabId>`）：
+   * 尚未采用模板的页签，用名称 / 说明 / 含义确认状态覆盖内置字段。
+   * 🔴 只在**没有**采用快照时生效 —— 快照的 label 是作者接管的当前结构，优先级最高。
+   */
+  fieldDefinitions?: FieldDefinitionDoc | null
+  /**
    * 返回**未过滤的完整结构**（仅派生快照时用，见 `snapshot.ts`）。
    * 🔴 常规解析一律不传 —— 归档字段不参与展示 / AI / 索引；
    *    用途过滤也照常生效（某视图隐藏某列，在该视图里就是不该出现）。
@@ -59,6 +67,9 @@ export interface ResolveTemplateOptions {
  */
 export function resolveTemplateForTab(tab: TabDef, opts: ResolveTemplateOptions = {}): EffectiveTemplate {
   const purpose = opts.purpose ?? 'detail'
+  /** T3：无采用快照时，把轻量定义叠到内置 / 图鉴适配结果上（有快照则不叠，快照优先） */
+  const withLocalDefs = (t: EffectiveTemplate): EffectiveTemplate =>
+    opts.fieldDefinitions ? applyFieldDefinitions(t, opts.fieldDefinitions, storageKeysOf(tab)) : t
   // 🔴 快照优先：采用过模板的页签，结构由快照决定，与内置 schema 解耦
   if (opts.def) return adaptTemplateDef(opts.def, {
     purpose,
@@ -84,12 +95,12 @@ export function resolveTemplateForTab(tab: TabDef, opts: ResolveTemplateOptions 
         detail: `字段配置版本 ${String((raw as { formatVersion?: unknown }).formatVersion)} 高于本程序可读的 ${ATLAS_CONFIG_READ_VERSION}；已按内置模板降级，自定义字段暂不显示`,
       })
     }
-    return template
+    return withLocalDefs(template)
   }
-  return adaptBuiltinTab(tab, {
+  return withLocalDefs(adaptBuiltinTab(tab, {
     ...(opts.revision != null ? { revision: opts.revision } : {}),
     ...(opts.aliases ? { aliases: opts.aliases } : {}),
-  })
+  }))
 }
 
 /**

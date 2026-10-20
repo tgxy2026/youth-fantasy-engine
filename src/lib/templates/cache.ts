@@ -26,6 +26,7 @@
 import { getCurrentProjectId } from '@/lib/db'
 import type { TabDef } from '@/lib/types'
 import { canAdaptAsAtlas } from './legacyAdapter'
+import { fieldDefinitionSig } from './fieldDefinition'
 import { resolveTemplateForTab, type ResolveTemplateOptions } from './resolve'
 import type { EffectiveTemplate } from './types'
 
@@ -51,6 +52,8 @@ interface CacheEntry {
   aliasesSig: string
   /** 项目采用快照的身份（`templateId@revision`）；未采用模板时为空串 */
   defSig: string
+  /** 轻量字段定义的签名（`revision@updatedAt`）；未传 / 未采用快照时为空串 */
+  defDocSig: string
   template: EffectiveTemplate
 }
 
@@ -130,6 +133,8 @@ export function resolveTemplateCached(
   const configRevision = !opts.def && isAtlas && opts.config ? (opts.config.revision ?? 0) : -1
   // 别名两边都吃：图鉴走 `resolveAtlasFields`，内置走 `adaptBuiltinTab`（T3）。
   const aliasesSig = !opts.def ? aliasesSignature(opts.aliases) : ''
+  // 轻量定义同理：它改 label / 说明 / 确认状态，不进比对就会在作者确认后继续端出旧结果。
+  const defDocSig = !opts.def ? fieldDefinitionSig(opts.fieldDefinitions) : ''
   const key = entryKeyOf(pid, logicalKey)
   const revision = opts.revision ?? 0
 
@@ -142,6 +147,7 @@ export function resolveTemplateCached(
     && hit.configRevision === configRevision
     && hit.aliasesSig === aliasesSig
     && hit.defSig === defSig
+    && hit.defDocSig === defDocSig
   ) {
     stats.hits++
     // 保持「最近使用在末尾」，淘汰时从最旧开始
@@ -158,7 +164,7 @@ export function resolveTemplateCached(
     return template
   }
 
-  cache.set(key, { pid, tab, revision, configRevision, aliasesSig, defSig, template })
+  cache.set(key, { pid, tab, revision, configRevision, aliasesSig, defSig, defDocSig, template })
   while (cache.size > MAX_ENTRIES) {
     const oldest = cache.keys().next()
     if (oldest.done) break
