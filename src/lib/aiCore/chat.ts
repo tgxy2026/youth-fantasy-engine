@@ -424,6 +424,18 @@ export const OPENAI_SAFE_SAMPLING = ['top_p', 'presence_penalty', 'frequency_pen
  */
 const HYBRID_THINKING_RE = /(^|[/_\-. ])(qwen3|qwen-3|qwq)/i
 
+/**
+ * 一次**逻辑调用**最多允许几次实际请求（3.2.0 · WQ6）。
+ *
+ * 方案 §16.7：「每次逻辑调用默认最多两次实际请求；已登记的旧接口三级参数兼容路径
+ * 允许上限三次，并在同一尝试预算内计数，**不能三级降级之后再额外乘两轮网络重试**」。
+ *
+ * 现状：full → noToggle → bare 已经是三级；「流式解析失败 → 非流式重试」是第四条。
+ * 所以这里给出硬上限，第 4 条必须被拦住 —— 否则一个坏端点能被我们打 4 次，
+ * 作者付 4 次钱、等 4 轮超时，还以为只试了一次。
+ */
+export const MAX_REQUESTS_PER_CALL = 3
+
 function openaiSampling(o: CallOpts): Record<string, number> {
   const src = o.extraOptions
   if (!src) return {}
@@ -554,6 +566,14 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       // 🔴 2.5.2 中转站兼容：部分中转对流式返回**非标准体**（每行 JSON.parse 失败被 readSSE
       //    静默跳过）→ content 恒为空，用户看到的就是「跑不通」。自动降级**非流式**重试一次——
       //    宁可多等一整轮，也要把「跑不通」变成「慢一点但能跑」。
+      // ⚠️ 但这条是"第四条请求"：已用满预算时不再发，如实报「请求次数到了上限」。
+      if (attempts >= MAX_REQUESTS_PER_CALL) {
+        throw new Error(
+          `接口没有返回可用内容，且本次调用已发出 ${attempts} 次请求（上限 ${MAX_REQUESTS_PER_CALL}）：`
+          + '已停止重试。请确认接口地址与模型名是否匹配该中转站的文档。',
+        )
+      }
+      attempts += 1
       const retry = await fetchWithTimeout(
         `${base}/chat/completions`,
         {
@@ -579,7 +599,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
           const out = stripThink(c)
           o.onToken?.(out)
           // 一次逻辑调用发了**两次**实际请求（流式失败 + 非流式重试）—— 次数必须可核对
-          return { content: out, loadMs: 0, usage: { ...usageFromOpenAI(data), attempts: attempts + 1 } }
+          return { content: out, loadMs: 0, usage: { ...usageFromOpenAI(data), attempts } }
         }
       }
       throw new Error('API 未返回内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 OpenAI 流式格式——请确认中转站文档给出的接口地址与模型名，或换官方接口测试。')

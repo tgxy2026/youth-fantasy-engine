@@ -21,7 +21,7 @@ function ok(name: string, cond: boolean, extra = '') {
 const PID = 'wq6-proto'
 
 type Mode = 'ok' | 'no-done' | 'error-mid' | 'garbage-then-json' | 'ollama-error'
-  | '400-model' | '400-empty-then-ok'
+  | '400-model' | '400-empty-then-ok' | 'garbage-after-degrade'
 let mode: Mode = 'ok'
 let hits = 0
 
@@ -41,6 +41,14 @@ const server = http.createServer((req, res) => {
     if (mode === '400-model') {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: { message: 'model `fake-404` not found' } }))
+      return
+    }
+    // 400 两次（参数不被接受）→ 第三次仍返回垃圾流：用于验证「请求次数上限」拦得住第 4 次
+    if (mode === 'garbage-after-degrade') {
+      if (hits <= 2) { res.writeHead(400); res.end(''); return }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write('还是不是 JSON\n')
+      res.end()
       return
     }
     // 400：响应体为空（老中转站常见）⇒ 仍降级到裸请求，第三次成功
@@ -125,6 +133,9 @@ async function main() {
     id: 'p1', name: '假端点', type: 'openai',
     baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'k', model: 'fake', local: false,
   }
+  // 云端 qwen3：`thinkToggle` 生效 ⇒ 请求链是 full → noToggle → bare（三级），
+  // 正好用来验证"三级之后不许再来第四条"。
+  const openaiQwen: AIProvider = { ...openai, id: 'p3', model: 'qwen3-max' }
   const ollama: AIProvider = {
     id: 'p2', name: '假 Ollama', type: 'ollama',
     baseUrl: `http://127.0.0.1:${port}`, apiKey: '', model: 'qwen3:8b', local: true,
@@ -200,6 +211,16 @@ async function main() {
     ok('⑥ 降级次数记进账本（attempts=2：原始请求 + 裸请求）', call?.attempts === 2, String(call?.attempts))
   }
 
+  // ---------- ⑥-b 请求次数上限 ----------
+  mode = 'garbage-after-degrade'
+  {
+    hits = 0
+    const { out } = await run(openaiQwen)
+    ok('🔴 ⑥-b 已经用满 3 次请求 ⇒ 第 4 次（非流式降级）被拦住',
+      Boolean(out.err) && (out.err ?? '').includes('上限'), out.err ?? '')
+    ok('🔴 ⑥-b 实际只打了 3 次（不为一个坏端点打 4 次）', hits === 3, String(hits))
+  }
+
   // 纯函数判据
   {
     const { shouldDegradeOn400 } = await import('../src/lib/aiCore/chat')
@@ -222,6 +243,9 @@ async function main() {
     const tp = readFileSync('src/lib/aiCore/transport.ts', 'utf8')
     ok('⑥ readSSE 认两种结束标记（[DONE] 与 done:true）',
       tp.includes("payload === '[DONE]'") && tp.includes('.done === true'))
+    ok('⑥ 单次调用请求上限有明确常量（不是散落的魔数）',
+      /export const MAX_REQUESTS_PER_CALL = 3/.test(src)
+      && /attempts >= MAX_REQUESTS_PER_CALL/.test(src))
   }
 
   server.close()

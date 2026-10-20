@@ -26,6 +26,8 @@ import type { CallRequestContext } from '@/lib/ai/callTracking'
 // 3.2.0 · W3 种子：把「候选产出/采纳/丢弃」记进运行账本（此前 AiRun.candidates 无生产者）
 import { noteCandidate } from '@/lib/ai/aiRunLedger'
 import { hashOf } from '@/lib/semantic/chunk'
+// 3.2.0 · WQ8：抽取证据的原文核验（编造的证据比没有证据更糟）
+import { checkEntityEvidence, describeEvidence } from '@/lib/ai/evidenceCheck'
 import { withAiAssist } from '@/lib/ai/aiAssist'
 // 🔴 「补写 / 压缩到目标字数」的校准逻辑已抽到 `lib/wordRange.ts`（整章改写侧也要用它，
 //    而那边不能 import 本文件 —— 会与 aiTasks 门面形成循环）。这里再导出一次常量，
@@ -429,6 +431,9 @@ export async function extractAndCommitSettings(
   }
   const entities = entRun.result?.data ?? []
   if (!entities.length) return { created: 0, failed: [] }
+  // 3.2.0 · WQ8：核验「原文原句证据」是否真在正文里。
+  // 🔴 只报告不丢弃：模型可能把两句合并转述，丢掉会丢真信息；但**编造的证据**必须让作者看见。
+  const evidenceNote = describeEvidence(checkEntityEvidence(entities, body))
   const reg = await loadRegistry().catch(() => null)
   if (!reg) return { created: 0, failed: [] }
   const items = classify(entities, reg)
@@ -441,14 +446,21 @@ export async function extractAndCommitSettings(
     // 仅限新增：只补登新实体，绝不碰已登记设定
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title, { pid }).catch(() => empty)
-    return { created: r.created, failed: r.failed }
+    return {
+      created: r.created, failed: r.failed,
+      ...(evidenceNote ? { errors: [evidenceNote] } : {}),
+    }
   }
   if (strategy === 'auto-update') {
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title, { pid }).catch(() => empty)
     const w = await applySettingUpdates(body, title, signal, request)
-    const errs = [...r.failed.length ? [] : [], ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : [])]
+    const errs = [
+      ...(r.failed.length ? [] : []),
+      ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : []),
+      ...(evidenceNote ? [evidenceNote] : []),
+    ]
     return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
   }
   // confirm：把新实体与疑似重复项交给用户勾选
@@ -457,9 +469,12 @@ export async function extractAndCommitSettings(
   const chosen = await onConfirm?.(cands)
   if (chosen && chosen.length) {
     const r = await commitEntities(chosen, title, { pid }).catch(() => empty)
-    return { created: r.created, failed: r.failed }
+    return {
+      created: r.created, failed: r.failed,
+      ...(evidenceNote ? { errors: [evidenceNote] } : {}),
+    }
   }
-  return empty
+  return evidenceNote ? { ...empty, errors: [evidenceNote] } : empty
 }
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============

@@ -56,6 +56,23 @@ export async function saveRevisionPayload(payload: RevisionPayload): Promise<voi
   await ops.put('revisionPayloads', payload)
 }
 
+/**
+ * 某任务的载荷列表（3.2.0 · W3）。
+ *
+ * 🔴 为什么要全表扫再过滤：载荷 store **没有 jobId 索引**（方案只要求按项目限额 200 条），
+ *    为一个很少用到的读取路径加索引不值当。单项目上限 200 条，扫一遍是毫秒级。
+ */
+export async function listJobRevisionPayloads(jobId: string): Promise<RevisionPayload[]> {
+  const all = await ops.getAll<RevisionPayload>('revisionPayloads')
+  return all.filter(p => p.jobId === jobId).sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/** 某项目的载荷列表（配额校验用：条数 200 / 总量 32 MiB） */
+export async function listProjectRevisionPayloads(projectId: string): Promise<RevisionPayload[]> {
+  const all = await ops.getAll<RevisionPayload>('revisionPayloads')
+  return all.filter(p => p.projectId === projectId)
+}
+
 export async function deleteRevisionPayload(id: string): Promise<void> {
   await ops.del('revisionPayloads', id)
 }
