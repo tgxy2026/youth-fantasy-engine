@@ -28,7 +28,8 @@ export interface SlotBinding {
 
 export interface UnmappedSlot {
   slot: string
-  reason: 'no-field' | 'ambiguous'
+  /** `declined` = 作者明确设为「仅作为补充资料」，不是缺字段 */
+  reason: 'no-field' | 'ambiguous' | 'declined'
   /** `ambiguous` 时列出冲突字段，便于界面直接展示 */
   candidateIds?: string[]
 }
@@ -43,6 +44,11 @@ export interface SemanticMappingPlan {
   digest: string
   bindings: SlotBinding[]
   unmapped: UnmappedSlot[]
+  /**
+   * 作者明确设为「仅作为补充资料」的槽位（声明了空绑定）。
+   * 🔴 必须进摘要：它改变的是「这个用途还能不能自动写」，不是「暂时没字段」。
+   */
+  declined: string[]
   /**
    * 同一个字段被多个槽位绑定（如「人物」的 `desc` 与 `identity` 都指向「身份定位」）。
    * 🔴 这不是错，是 `KIND_MAP` 里既有的事实；但**同一次写回**里两个槽位给不同值时必须拒后一个，
@@ -72,9 +78,18 @@ export function buildMappingPlan(
   const byId = new Map(usable.map(f => [f.id, f]))
   const bindings: SlotBinding[] = []
   const unmapped: UnmappedSlot[] = []
+  const declined: string[] = []
 
   for (const def of slotDefs) {
-    const declaredIds = toIds(declared[def.slot]).filter(id => byId.has(id))
+    const hasDeclared = Object.prototype.hasOwnProperty.call(declared, def.slot)
+    const requested = toIds(declared[def.slot])
+    // 显式空数组 = 作者选择「仅作为补充资料」：不回落派生匹配，也不自动写
+    if (hasDeclared && requested.length === 0) {
+      declined.push(def.slot)
+      unmapped.push({ slot: def.slot, reason: 'declined' })
+      continue
+    }
+    const declaredIds = requested.filter(id => byId.has(id))
     if (declaredIds.length) {
       bindings.push({ slot: def.slot, fieldIds: declaredIds, origin: 'declared' })
       continue
@@ -104,9 +119,10 @@ export function buildMappingPlan(
   return {
     tabId: template.tabId,
     version: PLAN_VERSION,
-    digest: digestOf(template.tabId, bindings),
+    digest: digestOf(template.tabId, bindings, declined),
     bindings,
     unmapped,
+    declined,
     sharedFields: sharedFieldsOf(bindings),
   }
 }
@@ -164,14 +180,16 @@ function dedupe(ids: string[]): string[] {
 }
 
 /**
- * 映射摘要：`slot=fieldId,fieldId|origin` 排序后哈希。
- * 🔴 **不含** `unmapped` —— 「某个槽位暂时没字段」不改变已有绑定关系，
+ * 映射摘要：`slot=fieldId,fieldId|origin` 排序后哈希；作者明确不绑定的槽位记为 `slot=!declined`。
+ * 🔴 **不含** `unmapped` 里的「缺字段」——「某个槽位暂时没字段」不改变已有绑定关系，
  *    把它算进摘要会让「新建一个无关字段」引发全量候选失效（方案 §3.10.4 明令禁止）。
+ *    但 `declined` 必须计入：它是作者的显式决定，改变了该用途能否自动写。
  */
-function digestOf(tabId: string, bindings: readonly SlotBinding[]): string {
-  const canon = [...bindings]
-    .map(b => `${b.slot}=${[...b.fieldIds].sort().join(',')}|${b.origin}`)
-    .sort()
+function digestOf(tabId: string, bindings: readonly SlotBinding[], declined: readonly string[]): string {
+  const canon = [
+    ...bindings.map(b => `${b.slot}=${[...b.fieldIds].sort().join(',')}|${b.origin}`),
+    ...declined.map(slot => `${slot}=!|declined`),
+  ].sort()
   return 'm1:' + fnv1a(tabId + '\u0001' + canon.join('\u0001'))
 }
 

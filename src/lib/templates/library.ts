@@ -28,6 +28,7 @@ import { newTemplateId } from './snapshot'
 import { isTemplateDef, loadTemplateDef } from './store'
 import { planTemplateChange, type TemplateChangePlan } from './plan'
 import { countValuesForFields } from './migrate'
+import { canonicalBindingText, normalizeBindingsShape } from './mappingConfirm'
 
 export const LIBRARY_FORMAT_VERSION = 1 as const
 /** 库目录索引（可重建，不作为定义权威 —— 定义仍以 `v<version>` 记录为准） */
@@ -86,6 +87,7 @@ export type PublishResult =
  *    白名单重建是唯一靠得住的口径（未知键一律丢弃，不做"应该没事"的假设）。
  */
 export function structureOf(def: TemplateDef): TemplateDef {
+  const bindings = normalizeBindingsShape(def.bindings ?? {})
   return {
     formatVersion: TEMPLATE_DEF_VERSION,
     templateId: String(def.templateId),
@@ -117,6 +119,9 @@ export function structureOf(def: TemplateDef): TemplateDef {
       ...(f.example ? { example: f.example } : {}),
     })),
     nameFieldId: String(def.nameFieldId ?? ''),
+    // 🔴 映射确认随模板版本走（方案 §3.10.2「分享时一起带走」）。
+    //    空对象不写：没有确认过的模板，序列化结果必须与 3.2.0 之前逐字节一致。
+    ...(Object.keys(bindings).length ? { bindings } : {}),
     semanticDigest: String(def.semanticDigest ?? ''),
     revision: Number(def.revision ?? 0),
     updatedAt: Number(def.updatedAt ?? Date.now()),
@@ -138,7 +143,11 @@ export function contentDigestOf(def: TemplateDef): string {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map(g => `${g.id}|${g.label}|${g.order}`)
     .join(';')
-  return `c1:${semanticDigestOf(d.fields)}|${d.name}|${d.nameFieldId}|${groups}`
+  const base = `c1:${semanticDigestOf(d.fields)}|${d.name}|${d.nameFieldId}|${groups}`
+  // 🔴 没有映射确认时保持原摘要格式（老版本已发布记录的 contentDigest 不能凭空变化）；
+  //    有确认时把映射并入：同版本但绑定不同，也是一份不同的模板内容。
+  const bindings = canonicalBindingText(d.bindings)
+  return bindings ? `${base}|b:${bindings}` : base
 }
 
 // ────────────────────────── 索引 ──────────────────────────

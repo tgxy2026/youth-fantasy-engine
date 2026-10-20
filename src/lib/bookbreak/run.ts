@@ -23,6 +23,7 @@
 import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/ai/aiTasks'
 import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
+import { getCurrentProjectId } from '@/lib/db'
 import { isCancelled } from '@/lib/ai'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'
 import { formDraftRows } from '@/lib/flow/formMap'
@@ -220,6 +221,8 @@ export function planResume(
 export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Promise<BookBreakResult | null> {
   const maxUnitChars = opts.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS
   const maxUnits = opts.maxUnits ?? DEFAULT_MAX_UNITS
+  /** 本次拆书归属的项目：全程固定，避免中途切书后草稿按另一本书的模板落点 */
+  const pid = getCurrentProjectId()
   /** 阶段内断点：已完成多少个抽取单元（extract 每处理完一个就更新） */
   let doneUnits = opts.resume?.doneUnits ?? 0
   /** 本次切分出的单元总数 —— 中止时交回界面，用于"改了原文就别续跑"的校验 */
@@ -373,7 +376,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   flow.on('draft', async (ctx: StageCtx) => {
     const batches = (ctx.bag.extract as EntityBatch[]) ?? []
     ctx.report(0.2)
-    const bundle = await buildDraftBundle(batches, { rawText: raw })
+    const bundle = await buildDraftBundle(batches, { rawText: raw, ...(pid ? { pid } : {}) })
     ctx.report(1, `整理出 ${bundle.stats.total} 条草稿`)
     return bundle
   })

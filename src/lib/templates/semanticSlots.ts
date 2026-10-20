@@ -94,16 +94,27 @@ export function slotsForKind(kind: string): SemanticSlotDef[] {
   const map = (KIND_MAP as Record<string, import('@/lib/flow/fieldMap').KindMap | undefined>)[kind]
   if (!map) return []
   const out: SemanticSlotDef[] = []
+  const index = new Map<string, SemanticSlotDef>()
   const push = (slot: string, targets: (string | undefined)[]) => {
     const t = targets.filter((x): x is string => !!x && x.trim().length > 0)
     if (!t.length) return
-    out.push({
+    // 🔴 同一槽位可能同时来自记录级声明（`firstFields`）与扩展 `slots`
+    //    （人物的 `firstAppear` 就是如此）。不去重的话，映射方案里会出现两条同槽位绑定，
+    //    界面重复一行、`bindingOf` 只认第一条 —— 作者改了第二条也不生效。
+    const prev = index.get(slot)
+    if (prev) {
+      prev.targets = [...new Set([...prev.targets, ...t])]
+      return
+    }
+    const def: SemanticSlotDef = {
       slot,
       label: SLOT_LABELS[slot] ?? slot,
       targets: t,
       read: 'first',
       write: MANUAL_WRITE_SLOTS.has(slot) ? 'manual' : 'single',
-    })
+    }
+    index.set(slot, def)
+    out.push(def)
   }
   push('name', [map.nameField])
   push('alias', [map.aliasField])
@@ -111,6 +122,36 @@ export function slotsForKind(kind: string): SemanticSlotDef[] {
   push('firstAppear', map.firstFields ?? [])
   for (const s of map.slots ?? []) push(s.from, s.to)
   return out
+}
+
+/**
+ * 某个页签上可能出现的语义种类（人物三张卡 → 「人物」；其余表格一一对应）。
+ *
+ * 🔴 反向查 `KIND_MAP` 而不是在模板里另存一份 kind —— 页签与实体类型的对应
+ *    只能有一个真理源，否则 `KIND_MAP` 调整后映射页会静默指向旧类型。
+ */
+export function kindsForTab(tabId: string): SettingEntityType[] {
+  const out: SettingEntityType[] = []
+  for (const kind of Object.keys(KIND_MAP) as SettingEntityType[]) {
+    const m = KIND_MAP[kind]
+    if (m.tabId === tabId || Object.values(m.tabByTier ?? {}).includes(tabId)) out.push(kind)
+  }
+  return out
+}
+
+/** 某页签可用的语义槽位目录；不属于六类实体 ⇒ 空数组（该页签不参与语义映射） */
+export function slotsForTab(tabId: string): SemanticSlotDef[] {
+  const kinds = kindsForTab(tabId)
+  if (kinds.length <= 1) return kinds.length ? slotsForKind(kinds[0]) : []
+  const merged = new Map<string, SemanticSlotDef>()
+  for (const kind of kinds) {
+    for (const d of slotsForKind(kind)) {
+      const prev = merged.get(d.slot)
+      if (!prev) merged.set(d.slot, { ...d, targets: [...d.targets] })
+      else prev.targets = [...new Set([...prev.targets, ...d.targets])]
+    }
+  }
+  return [...merged.values()]
 }
 
 /** 判断某个槽位是否属于记录级（读取时先于扩展槽位） */

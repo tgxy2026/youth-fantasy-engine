@@ -47,10 +47,14 @@ import { migrationStateLabel } from '@/lib/templates/migrationGuard'
 import { invalidateIndex } from '@/lib/semantic/indexer'
 import type { TemplateDef } from '@/lib/templates/definition'
 import type { EffectiveField, TemplateFieldPermissions, TemplateFieldType } from '@/lib/templates/types'
+import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { previewLibraryUpgrade } from '@/lib/templates/library'
+import { normalizeBindingsForDef } from '@/lib/templates/mappingConfirm'
+import { slotsForTab } from '@/lib/templates/semanticSlots'
 import TemplateFieldEditor, { TYPE_LABEL } from './TemplateFieldEditor'
 import TemplatePlanView from './TemplatePlanView'
 import TemplateLibraryPanel from './TemplateLibraryPanel'
+import TemplateMappingView from './TemplateMappingView'
 
 const INPUT = 'w-full text-12 px-2 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-ink-100 outline-none focus:border-amber/50'
 
@@ -89,6 +93,20 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
   )
   const { map: aliasMap } = useFieldAliases(tab.id, aliasKeys)
   const categories = useMemo(() => atlasCategoryOptions(tab), [tab])
+
+  /** 映射检查用完整结构：不受任何类别 / 展示开关影响，作者才看得到每个用途能落到哪 */
+  const mappingTemplate = useMemo(
+    () => resolveTemplateForTab(tab, current
+      ? { def: current, purpose: 'export', ignoreAppliesTo: true }
+      : {
+          aliases: aliasMap,
+          config: atlasConfig,
+          purpose: 'export',
+          ignoreAppliesTo: true,
+          unfiltered: true,
+        }),
+    [tab, current, aliasMap, atlasConfig],
+  )
 
   useEffect(() => {
     let alive = true
@@ -323,6 +341,14 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
         revision: (current?.revision ?? 0) + 1,
         origin: { kind: 'library', templateId: libDef.templateId, version, fromName: libDef.name },
       }
+      // 升级只换结构，不悄悄换掉作者确认过的落点：项目绑定逐槽位覆盖库绑定；
+      // 失效的字段由 normalizeBindingsForDef 收成「明确不绑定」，绝不回落到同名匹配。
+      const merged = normalizeBindingsForDef(libDef, slotsForTab(tab.id), {
+        ...(libDef.bindings ?? {}),
+        ...(current?.bindings ?? {}),
+      }).bindings
+      if (Object.keys(merged).length) to.bindings = merged
+      else delete to.bindings
       setDraft(to)
       setPlan(preview.plan)
       setPlanFrom(current)
@@ -449,6 +475,19 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
                 current={current}
                 busy={busy}
                 onUpgrade={(def, version) => void upgradeFromLibrary(def, version)}
+              />
+
+              {/* WT2：旧引擎（拆书 / 设定补登）的语义落点检查与确认 */}
+              <TemplateMappingView
+                key={`${tab.id}:${current?.templateId ?? 'builtin'}:${current?.revision ?? 0}`}
+                tab={tab}
+                def={current}
+                template={mappingTemplate}
+                onSaved={() => {
+                  void loadTemplateDef(pid, tab.id)
+                    .then(d => setCurrent(d))
+                    .catch(() => { /* 读失败时保留旧快照，store 订阅之后还会再刷一次 */ })
+                }}
               />
 
               {result && !result.ok && result.log && (

@@ -13,6 +13,9 @@ import type { ExtractedEntity, SettingEntityType } from '@/lib/ai/aiTasks'
 import { TABS } from '@/lib/schema'
 import { classify, loadRegistry, normName, type EntityRegistry } from '@/lib/settings/settingLedger'
 import { KIND_MAP, resolveFieldPath, resolveSlot, targetTabOf } from '@/lib/flow/fieldMap'
+import { bindingOf } from '@/lib/templates/mappingPlan'
+import { resolveSemanticWrite } from '@/lib/templates/semanticWrite'
+import { loadDraftMappingContexts, type DraftMappingContext } from '@/lib/flow/draftMapping'
 import type { DraftBundle, DraftConflict, DraftField, DraftRow, DraftStatus } from '@/lib/flow/types'
 
 /** 一批来自同一章节（或同一分块）的抽取结果 */
@@ -34,6 +37,13 @@ export interface BuildDraftOptions {
    * 关掉后所有写法各自成行，由作者手工去重 —— 排障时用它对比归并前后的差异。
    */
   foldVariants?: boolean
+  /**
+   * 项目 ID：读取已采用模板的用途映射。
+   * 🔴 不传 ⇒ 完全沿用 `KIND_MAP` 旧口径（老项目 / 测试行为一个字节都不动）。
+   */
+  pid?: string
+  /** 已加载的映射上下文（调用方复用 / 测试注入；不传则按 `pid` 现读） */
+  mappings?: ReadonlyMap<string, DraftMappingContext>
 }
 
 /** 默认勾选阈值：低于它的草稿在界面上默认不勾（用户仍可手动勾） */
@@ -360,7 +370,69 @@ function scoreOf(o: { quoteHit: boolean; sources: number; conflicts: number }): 
 }
 
 /** 用 fieldMap 把合并结果落成「目标表真实键 → 值」（带显示名，UI 直接渲染） */
-function fieldsOf(m: MergedEntity, tabId: string): { fields: DraftField[]; nameKey: string; descKey?: string } {
+function fieldsOf(
+  m: MergedEntity,
+  tabId: string,
+  ctx: DraftMappingContext | undefined,
+): { fields: DraftField[]; nameKey: string; descKey?: string } {
+  if (ctx) return mappedFieldsOf(m, tabId, ctx)
+  return legacyFieldsOf(m, tabId)
+}
+
+/**
+ * 采用模板后的落点：槽位 → 映射方案 → `resolveSemanticWrite`。
+ *
+ * 🔴 写回一律 fail-closed：未绑定 / 多字段歧义 / 作者设为补充资料 / 权限或类型不符
+ *    都**不写**，绝不回落到旧字段名去猜 —— 回落正是「改名后写进另一栏」的来源。
+ * 🔴 值经过 `resolveSemanticWrite` 归一（数字、是非、多选、候选项），
+ *    与落库时保存器的校验同一口径，避免「界面看着写进去了、保存时被拒」。
+ */
+function mappedFieldsOf(
+  m: MergedEntity,
+  tabId: string,
+  ctx: DraftMappingContext,
+): { fields: DraftField[]; nameKey: string; descKey?: string } {
+  const map = KIND_MAP[m.type]
+  /** 候选顺序＝写回优先级：明确的槽位先占，摘要类 desc 最后让位（与旧口径一致） */
+  const candidate: Record<string, unknown> = { name: m.name }
+  if (map.aliasField && m.aliases.length) candidate.alias = m.aliases.join('、')
+  for (const slot of map.slots ?? []) {
+    const v = (m.extra[slot.from] ?? '').trim()
+    if (v) candidate[slot.from] = v
+  }
+  if (m.desc) candidate.desc = m.desc
+  const firstSource = m.from[0]?.source
+  if (firstSource) candidate.firstAppear = firstSource
+
+  // 类别只用于自定义字段的适用范围校验；拿不到就用「未给类别」，限类别字段会被拒（不猜）
+  const category = (m.extra.category ?? '').trim()
+  const wr = resolveSemanticWrite(ctx.template, ctx.plan, ctx.slots, candidate, category ? { category } : {})
+  const accepted = new Map(wr.accepted.map(a => [a.slot, a]))
+  const fields: DraftField[] = wr.accepted.map(a => ({ key: a.fieldKey, label: a.label, value: a.value }))
+  const nameKey = accepted.get('name')?.fieldKey ?? ''
+  let descKey = accepted.get('desc')?.fieldKey
+  // desc 常与 identity 抢同一栏：写回被拒（field-conflict）时，界面摘要仍应指向那一格
+  if (!descKey) {
+    const b = bindingOf(ctx.plan, 'desc')
+    if (b?.fieldIds.length === 1) descKey = ctx.template.fields.find(f => f.id === b.fieldIds[0])?.sourceKey
+  }
+  // 「人物状态」不是语义槽位（它由新建通道决定，不是抽取事实），沿用旧口径按字段名查。
+  // 🔴 但模板里已归档 / 没有这个字段时不写 —— 模板之外多出一个键就是幽灵数据。
+  if (map.statusValue) {
+    const key = resolveSlot(tabId, '人物状态')
+    const inTemplate = !!key && ctx.template.fields.some(f => f.sourceKey === key && !f.archived)
+    if (key && inTemplate && !fields.some(f => f.key === key)) {
+      fields.push({ key, label: '人物状态', value: map.statusValue })
+    }
+  }
+  return { fields, nameKey, ...(descKey ? { descKey } : {}) }
+}
+
+/** 未采用模板时的旧口径（方案：老项目行为一个字节都不动） */
+function legacyFieldsOf(
+  m: MergedEntity,
+  tabId: string,
+): { fields: DraftField[]; nameKey: string; descKey?: string } {
   const map = KIND_MAP[m.type]
   const out: DraftField[] = []
   const put = (fieldName: string | undefined, value: string): string | undefined => {
@@ -415,6 +487,14 @@ export async function buildDraftBundle(
     : foldNameVariants(rawMerged)
   const merged = folds.items
   const reg = opts.registry ?? await loadRegistry().catch(() => null)
+  /**
+   * 映射上下文按「实际会写到的页签」预读一次。
+   * 只读已采用模板的页签；没采用的页签不在表里 ⇒ `fieldsOf` 走旧口径。
+   */
+  const mappings = opts.mappings ?? await loadDraftMappingContexts(
+    opts.pid,
+    merged.map(m => targetTabOf(m.type, m.tier)),
+  )
 
   // 复用 settingLedger 的三档判重（registered / duplicate / new）—— 口径只此一处
   // 取双方共有的最小形状：登记表缺失时（离线/读失败）退化为「全部视作新建」，不阻断拆书
@@ -440,7 +520,7 @@ export async function buildDraftBundle(
   merged.forEach((m, i) => {
     const it = items[i]
     const tabId = targetTabOf(m.type, m.tier)
-    const fo = fieldsOf(m, tabId)
+    const fo = fieldsOf(m, tabId, mappings.get(tabId))
     // 主名落点不存在（schema 改过字段名 / 目标表无此字段）→ 这条草稿根本落不了库。
     // 宁可少一条，也不给界面一条"点写入什么都不会发生"的死条目。
     if (!fo.nameKey) return

@@ -669,7 +669,9 @@ export async function runCreativeWriting(
       throw new Error('模型没有产出任何设定 —— 请把想法写得更具体些（题材 / 主角 / 核心冲突）')
     }
     // source 传空串：生成型入口没有原文，「首次出场」这种字段不该被填上"设定奠基"
-    const bundle = await buildDraftBundle([{ source: '', index: 1, entities }])
+    const bundle = await buildDraftBundle([{ source: '', index: 1, entities }], {
+      pid: db.getCurrentProjectId(),
+    })
     ctx.report(1, `生成 ${bundle.stats.total} 条设定草稿，等待确认…`)
     const picked = opts.onBibleGate
       ? await opts.onBibleGate(bundle)
