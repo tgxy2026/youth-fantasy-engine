@@ -50,8 +50,20 @@ export type PackParseResult =
   | { ok: true; defs: TemplateDef[]; warnings: PackIssue[] }
   | { ok: false; code: PackIssueCode; detail: string; issues: PackIssue[] }
 
-/** 字段存储键的形状：字母开头 + 字母数字下划线（`cf_xxx` / 内置键都在此范围内） */
+/** 自定义字段 ID 的形状：字母开头 + 字母数字下划线（`cf_xxx` / 空白模板的 `tpl_name`） */
 const STORAGE_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*$/
+/** 任何来源都不许用的键（原型污染 / 保留属性） */
+const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** 键的基础安全检查（两种来源都要过） */
+function keySafetyIssue(id: string): string | null {
+  if (!id) return '存储键为空'
+  if (id.length > 200) return '存储键超过 200 字'
+  if (id.trim() !== id) return '存储键首尾不能有空白'
+  if (RESERVED_KEYS.has(id)) return `存储键「${id}」是保留属性名`
+  if (/[\u0000-\u001f\u007f]/.test(id)) return '存储键含控制字符'
+  return null
+}
 
 // ────────────────────────── 导出 ──────────────────────────
 
@@ -234,10 +246,19 @@ function readOneDef(
   for (const f of fields) {
     const id = String(f.id ?? '')
     const label = String(f.label ?? '')
-    if (!STORAGE_KEY_RE.test(id)) {
+    /**
+     * 🔴 内置键不是"字母开头 + 下划线"：表格列名是中文（`名称`），卡片键是
+     *    `模块名::字段名`。3.1.3 的旧规则只适用于 `cf_*` 自定义字段，
+     *    套到七页签的内置字段上会让任何默认模板都导不出去。
+     *    故自定义字段继续严校验，内置字段只做"不能是保留属性 / 控制字符"的安全检查。
+     */
+    const source = f.source === 'builtin' ? 'builtin' : 'custom'
+    const safety = keySafetyIssue(id)
+    if (safety || (source === 'custom' && !STORAGE_KEY_RE.test(id))) {
       issues.push({
         code: 'bad-storage-key',
-        detail: `${where}（${templateId}）字段「${label || id}」的存储键「${id}」非法：只允许字母开头 + 字母数字下划线`,
+        detail: `${where}（${templateId}）字段「${label || id}」的存储键「${id}」非法：${safety
+          ?? '自定义字段只允许字母开头 + 字母数字下划线'}`,
         templateId,
         ...(id ? { fieldId: id } : {}),
       })

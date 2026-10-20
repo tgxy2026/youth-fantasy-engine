@@ -6,7 +6,7 @@ import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search, FileDown, FileUp, ArrowRightLeft } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, ImagePlus, X, Loader2, Wand2, Search, FileDown, FileUp, ArrowRightLeft, LayoutTemplate } from 'lucide-react'
 import { readPortraitFile, dataUrlBytes, PORTRAIT_ACCEPT } from '@/lib/media/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '@/lib/media/portraitSpec'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -36,6 +36,15 @@ import { characterCardTargets, isCharacterCardTab, planCardMove } from '@/lib/wo
 import CardMoveDialog from '@/components/world/CardMoveDialog'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { ImportRowResult } from '@/lib/storage/tableIO'
+import { useSheetTemplate } from '@/components/templates/useSheetTemplate'
+import { resolveTemplateForTab } from '@/lib/templates/resolve'
+import { cardGroupsOfTemplate } from '@/lib/templates/render'
+import type { TemplateFieldType } from '@/lib/templates/types'
+import TemplateManagerDialog from '@/components/templates/TemplateManagerDialog'
+import { isTemplateTab } from '@/lib/templates/eligible'
+import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGuard'
+import AtlasCellInput from '@/components/atlas/AtlasCellInput'
+import type { ResolvedAtlasField } from '@/lib/atlas/types'
 
 /**
  * 长文本字段**不封顶**的卡片页签（单一判据）：名单内的页签，其文本字段随内容一路长高、
@@ -44,6 +53,29 @@ import type { ImportRowResult } from '@/lib/storage/tableIO'
  * 🔴 新页签想要同样手感 → **只往这个 Set 加 tab.id**，别在渲染处加 if。
  */
 const UNBOUNDED_CARD_TABS = new Set(['misc-settings'])
+
+/** 3.2.0：卡片渲染的统一模型（内置模块 / 模板分组都折算成它） */
+interface CardFieldView {
+  key: string
+  /** 原字段名（内置字段的特殊控件仍按它匹配） */
+  name: string
+  label: string
+  desc?: string
+  example?: string
+  type: TemplateFieldType
+  /** 下拉候选（模板里改过类型的字段才有） */
+  options?: string[]
+  customType?: ResolvedAtlasField['customType']
+  atlasField?: ResolvedAtlasField
+  source: 'builtin' | 'custom'
+}
+interface CardGroupView {
+  id: string
+  label: string
+  /** 立绘列只在这一组渲染（沿用原判据：组名含「基础信息」） */
+  isBasic: boolean
+  fields: CardFieldView[]
+}
 
 interface Props {
   tab: TabDef
@@ -87,6 +119,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const [showImport, setShowImport] = useState(false)
   /** 跨页签移动弹窗（3.1.3）：主要 / 次要 / NPC 三张角色卡之间搬运 */
   const [moveOpen, setMoveOpen] = useState(false)
+  /** 3.2.0：模板管理弹窗（三张角色卡） */
+  const [showTemplate, setShowTemplate] = useState(false)
   /**
    * 可移动到的目标页签。只认「角色管理组的三张角色卡」——
    * 「其他设定」虽然也是 card 型，但它不是人物档案，字段语义对不上，不该出现在这里。
@@ -101,6 +135,57 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     tab.id,
     useMemo(() => aliasTargets.map(t => t.key), [aliasTargets]),
   )
+  /**
+   * 3.2.0：本页签采用的模板快照。
+   * 🔴 有快照 ⇒ 卡片的模块 / 字段 / 显示名全部按快照渲染；
+   *    没有 ⇒ 逐字沿用 `tab.modules`，老项目行为不变。
+   */
+  const { def: templateDef } = useSheetTemplate(tab, null)
+  const templateView = useMemo(
+    () => (templateDef
+      ? resolveTemplateForTab(tab, { def: templateDef, purpose: 'detail', ignoreAppliesTo: true })
+      : null),
+    [tab, templateDef],
+  )
+  /** 统一的渲染模型：内置模块与模板分组都折算成同一形状，渲染处不再分支 */
+  const cardGroups = useMemo<CardGroupView[]>(() => {
+    if (!templateDef || !templateView) {
+      return (tab.modules ?? []).map(m => ({
+        id: m.name,
+        label: m.name,
+        isBasic: m.name.includes('基础信息'),
+        fields: m.fields.map(f => {
+          const key = `${m.name}::${f.name}`
+          return {
+            key,
+            name: f.name,
+            label: aliasLabels[key] ?? f.name,
+            ...(f.desc ? { desc: f.desc } : {}),
+            ...(f.example ? { example: f.example } : {}),
+            type: (f.kind === 'numeric' ? 'number' : 'textarea') as TemplateFieldType,
+            source: 'builtin' as const,
+          }
+        }),
+      }))
+    }
+    return cardGroupsOfTemplate(tab, templateView).map(g => ({
+      id: g.id,
+      label: g.label,
+      isBasic: g.isBasic,
+      fields: g.fields.map(f => ({
+        key: f.key,
+        name: f.name || f.label,
+        label: f.label,
+        ...(f.desc ? { desc: f.desc } : {}),
+        ...(f.example ? { example: f.example } : {}),
+        type: f.type,
+        ...(f.options ? { options: [...f.options] } : {}),
+        ...(f.customType ? { customType: f.customType } : {}),
+        ...(f.atlasField ? { atlasField: f.atlasField } : {}),
+        source: f.source,
+      })),
+    }))
+  }, [tab, templateDef, templateView, aliasLabels])
   const statusOf = (rec: CardRecord) => {
     const k = Object.keys(rec.data).find(kk => kk.endsWith('::人物状态'))
     return k ? (rec.data[k] || '').trim() : ''
@@ -146,17 +231,57 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       ? '没有匹配的角色'
       : '已退场的角色已隐藏'
   const cardFields = useMemo<TemplateField[]>(
-    () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
-      key: `${m.name}::${f.name}`,
-      label: f.name,
-      desc: f.desc,
-      example: f.example,
-    }))),
-    // 🔴 这里读的是 tab.modules，依赖就必须锚在 tab 本身。
+    () => (templateDef
+      ? cardGroups.flatMap(g => g.fields.map(f => ({
+        key: f.key,
+        label: f.label,
+        desc: f.desc,
+        example: f.example,
+      })))
+      // 未采用模板：逐字保持原口径（标签用原字段名，不用别名）
+      : (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
+        key: `${m.name}::${f.name}`,
+        label: f.name,
+        desc: f.desc,
+        example: f.example,
+      })))),
+    // 🔴 这里读的是 tab.modules / 模板快照，依赖就必须锚在它们本身。
     //    只写 tab.id 时，同一页签的字段结构被改动（如项目形态/自定义页签重算 schema）
     //    不会重算，AI 补全弹窗会继续用旧字段表。
-    [tab],
+    [tab, templateDef, cardGroups],
   )
+  /**
+   * 标题改名时要顺带补「姓名」的存储键。
+   * 🔴 采用模板后以模板的 `nameFieldId` 为准 —— 作者可能把姓名换成了别的字段，
+   *    继续用 `cardNamePath` 会往一个已经隐藏/归档的旧槽位里写值。
+   */
+  const nameStorageKey = useMemo(() => {
+    if (templateDef) {
+      const f = templateDef.fields.find(x => x.id === templateDef.nameFieldId)
+      if (f) return f.sourceKey
+    }
+    return cardNamePath(tab)
+  }, [templateDef, tab])
+  /**
+   * 3.2.0：迁移期间**不许落库**（方案 §3.6）。
+   *
+   * 🔴 静默路径（卸载 / 切页签 / 切卡）也用同一个判据：这些路径以前直接 `saveCardRecord`，
+   *    迁移窗口里正好会把旧结构的草稿灌进新结构。拦掉只是「这次没自动存」，
+   *    草稿仍在内存里（切页签会丢，但那是迁移场景下唯一不制造脏数据的选择）。
+   */
+  const saveDraftIfAllowed = useCallback(async (rec: CardRecord): Promise<boolean> => {
+    if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
+    await saveCardRecord(rec)
+    return true
+  }, [])
+
+  /** 用户主动触发的写入：冲突要**说出来**，并把下一步做法一起给出 */
+  const blockedByMigration = useCallback(async (source: TabWriteSource): Promise<boolean> => {
+    const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, source)
+    if (!conflict) return false
+    showToast(`${conflict.message}${conflict.hint}`, 'error')
+    return true
+  }, [tab.id])
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
@@ -184,13 +309,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    * 注意：同页签内切卡（activeId 变化）不会重挂，那条守卫仍然有效，与此条互补。
    */
   useEffect(() => () => {
-    if (dirtyRef.current && draftRef.current) void saveCardRecord(draftRef.current)
-  }, [])
+    if (dirtyRef.current && draftRef.current) void saveDraftIfAllowed(draftRef.current)
+  }, [saveDraftIfAllowed])
 
   useEffect(() => {
     // 切到别的页签前，先把当前卡片未保存的修改落库（之前会静默丢弃）
     if (dirtyRef.current && draftRef.current) {
-      void saveCardRecord(draftRef.current)
+      void saveDraftIfAllowed(draftRef.current)
     }
     tabIdRef.current = tab.id
     // 🔴 补 alive 守卫（2026-10-10 六维审计）：读写途中卸载会往已卸载组件 setState。
@@ -209,7 +334,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       setLoaded(true)
     })
     return () => { alive = false }
-  }, [tab.id])
+  }, [tab.id, saveDraftIfAllowed])
 
   // 切换 active（同一页签内不同卡片）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿
   useEffect(() => {
@@ -217,7 +342,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     // 仅当「确实切到了另一张仍存在的卡」才存旧卡草稿；因删除导致的切换不存档（避免复活已删卡）
     if (prev && prev !== activeId && dirtyRef.current && draftRef.current && records.some(r => r.id === prev)) {
       const done = draftRef.current
-      void saveCardRecord(done)
+      void saveDraftIfAllowed(done)
       // 🔴 落库后必须同步刷新内存 records：否则切回来时用**库里的旧记录**回灌，
       //    刚保存的编辑在界面上又消失（数据其实已入库，但用户看到的是「白改了」，
       //    且此后 dirty 归零，再改一处保存就会把它覆盖回去）。2026-09-18 实机抓到：
@@ -232,7 +357,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     if (draftRef.current?.id === activeId && dirtyRef.current) return
     const rec = records.find(r => r.id === activeId)
     setDraft(rec ? { ...rec, data: { ...rec.data } } : null)
-  }, [activeId, records])
+  }, [activeId, records, saveDraftIfAllowed])
 
   // v1.6：新增/改名走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
   const [namePrompt, setNamePrompt] = useState<null | { kind: 'add' | 'rename'; def?: string }>(null)
@@ -260,6 +385,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const flushCurrentDraft = useCallback(async (silent = false): Promise<boolean> => {
     const cur = draftRef.current
     if (!dirtyRef.current || !cur) return true
+    // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）—— 不写 = 不制造串字段的脏数据
+    const conflict = await guardTabWrite(cur.projectId, cur.tabId, 'autosave')
+    if (conflict) {
+      if (!silent) showToast(`${conflict.message}${conflict.hint}`, 'error')
+      return false
+    }
     try {
       await saveCardRecord(cur)
       // 同步内存副本：否则切回来时用库里的旧记录回灌，刚保存的编辑又「消失」
@@ -281,6 +412,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
     // R8：建卡后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止）
+    if (await blockedByMigration('ai-writeback')) return
     if (!await flushCurrentDraft()) return
     const nameKey = Object.keys(values).find(k => k.endsWith('::姓名'))
     const name = (nameKey ? values[nameKey] : '')?.trim() || `未命名${noun}`
@@ -328,7 +460,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       if (!draft || v === draft.name) return
       // R9：标题改了但「姓名」字段还空着 → 顺手补上，免得导出 / 判重时两边对不上。
       // 已填过姓名的不动 —— 作者可能故意让标题与姓名不同（标题「陈渊（主角）」、姓名「陈渊」）。
-      const np = cardNamePath(tab)
+      // 3.2.0：采用模板后「姓名栏」以模板的 nameFieldId 为准（见 nameStorageKey）。
+      const np = nameStorageKey
       const next: CardRecord = { ...draft, name: v }
       if (np && !(draft.data[np] ?? '').trim()) next.data = { ...draft.data, [np]: v }
       setDraft(next)
@@ -397,6 +530,9 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    并发发起且不等待会把失败静默吞掉（界面已加进来、库里其实没写进去，重开这一页就消失）。
    */
   const handleImport = async (picked: ImportRowResult[]) => {
+    // 3.2.0：迁移期间整行导入会让新旧结构混在一张卡里（方案 §3.6）⇒ 抛出原因，让弹窗保留粘贴内容
+    const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'import')
+    if (conflict) throw new Error(`${conflict.message}${conflict.hint}`)
     // R8：导入后会自动切到第一张新卡，先把当前卡的脏草稿落库。
     // 🔴 失败必须**抛错**，不能静默 return —— 弹窗的 apply() 只在 onAdd 抛错时才不关窗；
     //    直接 return 会让它照常 onClose()，粘贴的内容连同「重试」的机会一起没了。
@@ -488,6 +624,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return
+    // 3.2.0：迁移窗口内不写旧结构（方案 §3.6）；作者可据此决定等迁移完再存
+    if (await blockedByMigration('draft')) return
     setSaving(true)
     try {
       await saveCardRecord(draft)
@@ -499,7 +637,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     } finally {
       setSaving(false)
     }
-  }, [draft, dirty, records])
+  }, [draft, dirty, records, blockedByMigration])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)
@@ -536,12 +674,28 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
-          <FieldAliasButton
-            tabId={tab.id}
-            tabName={tab.name}
-            intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。"
-            targets={aliasTargets}
-          />
+          {/* 3.2.0：模板入口（七张可模板化页签之一）。采用模板后卡片按快照渲染，
+              「字段显示名」也以模板为准 ⇒ 旧的别名按钮让位，避免两套改名入口打架。 */}
+          {isTemplateTab(tab.id) && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowTemplate(true)}
+              className="flex items-center gap-1.5"
+              title={templateDef
+                ? `模板「${templateDef.name}」第 ${templateDef.revision} 版：编辑字段与分组、预览变更、恢复到迁移前`
+                : '套用模板：把当前结构固定成一份可编辑快照，或从空白开始设计这一页'}
+            >
+              <LayoutTemplate size={12} /> {templateDef ? '模板' : '套用模板'}
+            </Button>
+          )}
+          {!templateDef && (
+            <FieldAliasButton
+              tabId={tab.id}
+              tabName={tab.name}
+              intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。"
+              targets={aliasTargets}
+            />
+          )}
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
@@ -671,15 +825,15 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   </Button>
                 )}
               </div>
-              {tab.modules!.map(mod => {
-                // ⚠️ 模块名在 schema 里带序号（「一、基础信息」）—— 别用全等去比，
-                //    否则条件永远不成立、立绘位静默不渲染（2026-09-22 实机踩过）。
-                const isBasicMod = mod.name.includes('基础信息')
+              {cardGroups.map(group => {
+                // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好
+                //    （模板可以改名，不再按名字现场比 —— 2026-09-22 曾因此静默不渲染）。
+                const isBasicMod = group.isBasic
                 return (
-                <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+                <section key={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                   <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                     <span className="w-1 h-3 rounded-full bg-amber/70" />
-                    <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
+                    <h3 className="text-12 font-semibold text-ink-100">{group.label}</h3>
                   </div>
                   {/* 🔴 B7：只在「基础信息」模块里做左右分栏 ——
                       这一模块的字段都极短（姓名 / 别称 / 保密等级 / 身份定位），
@@ -692,9 +846,14 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   <div className={isBasicMod ? 'flex items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
                   <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0 flex flex-col justify-center' : ''}`}>
-                    {mod.fields.map(field => {
-                      const key = `${mod.name}::${field.name}`
+                    {group.fields.map(field => {
+                      const key = field.key
                       const val = draft.data[key] ?? ''
+                      const labelTitle = field.atlasField
+                        ? (field.desc || `自定义字段（存储键 ${key}，改名不影响已填内容）`)
+                        : field.label !== field.name
+                          ? `${field.name}（AI 仍按这个原字段名理解）`
+                          : undefined
                       return (
                         <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
                           isBasicMod ? 'grid-cols-[104px_1fr]' : 'grid-cols-[140px_1fr]'
@@ -702,16 +861,22 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                           <div>
                             <div
                               className="text-12 font-medium text-ink-100"
-                              title={aliasLabels[key] === field.name ? undefined : `${field.name}（AI 仍按这个原字段名理解）`}
-                            >{aliasLabels[key]}</div>
+                              title={labelTitle}
+                            >{field.label}</div>
                             {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
                           </div>
                           {/* ⚠️ 2026-09-22 **二次返工**：上一版把这里收在 `max-w-[26rem]`，结果输入框与立绘
                               之间空出一大块（老大原话「中间你打算放啥呢」）。正确做法是让输入框**吃满字段区**：
                               它的宽度上限本来就由「卡片宽 − 立绘列」自然决定，不该再人为设一个更小的上限。 */}
                           <div>
-                            {/* 所属势力 / 种族 等字段：从其他设定表取值，禁止手动输入（根治同名异写导致的归属错乱） */}
-                            {CARD_TABLE_REF_FIELDS[field.name] ? (
+                            {/* 自定义字段（模板新增）走图鉴那套六类型控件；内置字段仍按原业务映射渲染 */}
+                            {field.customType && field.atlasField ? (
+                              <AtlasCellInput
+                                field={field.atlasField}
+                                value={val}
+                                onChange={v => updateField(key, v)}
+                              />
+                            ) : CARD_TABLE_REF_FIELDS[field.name] ? (
                               <TableRefSelect
                                 value={val}
                                 onChange={v => updateField(key, v)}
@@ -728,6 +893,27 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               >
                                 {CARD_SELECT_FIELDS[field.name].map(o => (
                                   <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            ) : field.type === 'boolean' ? (
+                              <select
+                                value={val}
+                                onChange={e => updateField(key, e.target.value)}
+                                className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
+                              >
+                                <option value="">—</option>
+                                <option value="true">是</option>
+                                <option value="false">否</option>
+                              </select>
+                            ) : field.type === 'select' && (field.options?.length ?? 0) > 0 ? (
+                              <select
+                                value={val}
+                                onChange={e => updateField(key, e.target.value)}
+                                className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
+                              >
+                                <option value="">—</option>
+                                {field.options!.map(o => (
+                                  <option key={o} value={o}>{o}</option>
                                 ))}
                               </select>
                             ) : (
@@ -883,6 +1069,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           onAdd={handleImport}
           onClose={() => setShowImport(false)}
         />
+      )}
+
+      {/* 3.2.0：模板管理（采用 / 编辑 / 预览迁移 / 恢复） */}
+      {isTemplateTab(tab.id) && showTemplate && (
+        <TemplateManagerDialog tab={tab} onClose={() => setShowTemplate(false)} />
       )}
 
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}

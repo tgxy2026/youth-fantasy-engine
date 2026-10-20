@@ -61,6 +61,8 @@ export interface EffectiveField {
   label: string
   /** 字段含义说明（人看，也发给 AI） */
   description?: string
+  /** 填写示例（人看，也发给 AI；不参与值语义） */
+  example?: string
   type: TemplateFieldType
   options?: string[]
   /** 分组 ID（展示分组，不参与数据语义） */

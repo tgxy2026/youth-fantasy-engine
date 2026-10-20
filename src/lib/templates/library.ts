@@ -114,6 +114,7 @@ export function structureOf(def: TemplateDef): TemplateDef {
       ...(f.fixedOptions ? { fixedOptions: true } : {}),
       ...(f.unit ? { unit: f.unit } : {}),
       ...(f.description ? { description: f.description } : {}),
+      ...(f.example ? { example: f.example } : {}),
     })),
     nameFieldId: String(def.nameFieldId ?? ''),
     semanticDigest: String(def.semanticDigest ?? ''),
@@ -299,7 +300,14 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
  *    强行升版本会让下游分不清"这是同一套结构的演进"还是"另一套东西"。
  */
 export function publishAsNewTemplate(def: TemplateDef): Promise<PublishResult> {
-  return publishTemplateDef({ ...structureOf(def), templateId: newTemplateId() })
+  const src = structureOf(def)
+  return publishTemplateDef({
+    ...src,
+    templateId: newTemplateId(),
+    // 🔴 换了 id 就必须同时换出处：否则新模板的 `origin.templateId` 还指着旧的，
+    //    下次「发布新版本」会显得它来自另一条版本线。
+    origin: { kind: 'copy', fromTemplateId: src.templateId, fromName: src.name },
+  })
 }
 
 // ────────────────────────── 升级预览 ──────────────────────────

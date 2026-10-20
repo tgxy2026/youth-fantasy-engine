@@ -16,6 +16,8 @@ import type { AtlasSchemaConfig, CustomFieldType, ResolvedAtlasField } from './t
 
 /** 表格列 + 自定义字段标记（内置列没有这个属性） */
 export interface AtlasColumn extends TableColumn {
+  /** 采用模板后的显示名（内置列也允许改名；存储键仍是 `name`） */
+  templateLabel?: string
   atlasField?: ResolvedAtlasField
 }
 

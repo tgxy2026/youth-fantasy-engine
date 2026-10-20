@@ -240,7 +240,10 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 
   const sheet = read('src/components/sheets/TableSheet.tsx')
   ok('⑩ 表头有「字段」设置入口且只在图鉴页签出现',
-    sheet.includes('setShowFieldMgr') && /isAtlasCapable && \(\s*<Button variant="secondary" onClick=\{\(\) => setShowFieldMgr\(true\)\}/.test(sheet))
+    sheet.includes('setShowFieldMgr') && /isAtlasCapable && !templateDef && \(\s*<Button variant="secondary" onClick=\{\(\) => setShowFieldMgr\(true\)\}/.test(sheet))
+  // 3.2.0：采用模板后字段结构由模板快照决定 ⇒ 旧入口让位，避免两套改名入口打架
+  ok('⑩ 采用模板后改由「模板」入口管理字段',
+    /isTemplateTab\(tab\.id\)/.test(sheet) && sheet.includes('<LayoutTemplate'))
 }
 
 // ---------- ⑪ AI 回填值校验（方案 §7.3：不合法值不写库） ----------

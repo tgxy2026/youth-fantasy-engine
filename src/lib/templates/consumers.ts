@@ -36,9 +36,14 @@ const TYPE_TO_CUSTOM: Partial<Record<TemplateFieldType, CustomFieldType>> = {
   boolean: 'boolean',
 }
 
+/** 自定义字段的图鉴类型；内置字段恒为 undefined（内置列不走新控件） */
+export function customTypeOf(f: EffectiveField): CustomFieldType | undefined {
+  return f.source === 'custom' ? TYPE_TO_CUSTOM[f.type] : undefined
+}
+
 /** 单个字段的投影 */
 export function toTableFieldProjection(f: EffectiveField): TableFieldProjection {
-  const kind = f.source === 'custom' ? TYPE_TO_CUSTOM[f.type] : undefined
+  const kind = customTypeOf(f)
   return {
     key: f.sourceKey,
     label: f.label,
@@ -68,13 +73,15 @@ export interface WriteFieldProjection {
   unit?: string
   /** 作者写的字段说明（一并交给模型，否则它只能瞎编） */
   description?: string
+  /** 作者写的填写示例（同样是给模型的参考） */
+  example?: string
   /** 类别适用范围（只对某些类别有意义的字段要告诉模型） */
   appliesTo?: '*' | string[]
 }
 
 /** 单个字段的写回投影 */
 export function toWriteFieldProjection(f: EffectiveField): WriteFieldProjection {
-  const type = f.source === 'custom' ? TYPE_TO_CUSTOM[f.type] : undefined
+  const type = customTypeOf(f)
   return {
     key: f.sourceKey,
     label: f.label,
@@ -82,6 +89,7 @@ export function toWriteFieldProjection(f: EffectiveField): WriteFieldProjection 
     ...(f.options?.length ? { options: f.options } : {}),
     ...(f.unit ? { unit: f.unit } : {}),
     ...(f.description?.trim() ? { description: f.description.trim() } : {}),
+    ...(f.example?.trim() ? { example: f.example.trim() } : {}),
     ...(f.appliesTo !== '*' ? { appliesTo: f.appliesTo } : {}),
   }
 }
@@ -110,6 +118,7 @@ export function fieldHintForAI(p: WriteFieldProjection): string {
   if (p.unit) parts.push(`单位：${p.unit}`)
   if (p.options?.length) parts.push(`候选：${p.options.join(' / ')}`)
   if (p.description?.trim()) parts.push(p.description.trim())
+  if (p.example?.trim()) parts.push(`示例：${p.example.trim()}`)
   if (p.appliesTo && p.appliesTo !== '*' && (p.appliesTo as string[]).length) {
     parts.push(`只对类别「${(p.appliesTo as string[]).join('、')}」有意义`)
   }

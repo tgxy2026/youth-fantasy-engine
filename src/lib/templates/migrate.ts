@@ -279,6 +279,38 @@ function sameDefIdentity(a: TemplateDef | null, b: TemplateDef | null): boolean 
 }
 
 /**
+ * 内容是否一字不差（**不含** revision / updatedAt）。
+ *
+ * 🔴 只给「计划判为 no-op、但目标定义可能与库里不同」的分支用：
+ *    纯布局变化（字段顺序、分组改名、模板改名）不会产生值迁移，
+ *    `planIsNoop()` 为真；但定义本身仍要落库，否则作者拖了半天顺序，
+ *    一点「采用」却什么都没保存。
+ */
+function sameTemplateContent(a: TemplateDef | null, b: TemplateDef | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  const canon = (d: TemplateDef) => JSON.stringify({
+    tabId: d.tabId,
+    templateId: d.templateId,
+    name: d.name,
+    nameFieldId: d.nameFieldId,
+    groups: [...d.groups]
+      .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+      .map(g => [g.id, g.label, g.order]),
+    fields: [...d.fields]
+      .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+      .map(f => [
+        f.id, f.sourceKey, f.source, f.label, f.type, f.groupId, f.order,
+        f.appliesTo, f.archived, Boolean(f.fixedOptions), f.unit ?? '',
+        f.description ?? '', f.example ?? '', f.options ?? [],
+        f.permissions.table, f.permissions.detail, f.permissions.search,
+        f.permissions.aiRead, f.permissions.aiWrite,
+      ]),
+  })
+  return canon(a) === canon(b)
+}
+
+/**
  * 配置基准：库里现状是否仍是"计划算的时候那份定义"。
  *
  * 🔴 为什么必须核：计划是异步算出来的，作者可能在另一个窗口又改了一版模板；
@@ -506,6 +538,97 @@ export function applyTemplateMigration(req: MigrationRequest): Promise<Migration
   return enqueue(() => runMigration(req))
 }
 
+/**
+ * 「没有值需要迁移」的采用：只把模板定义落库（纯布局 / 改名 / 分组调整）。
+ *
+ * 🔴 为什么不能复用主流程：主流程会先做备份、再写值。这里一条值都不动，
+ *    强行走备份只会留下一个"备份了什么也没改"的日志。但目录索引、缓存失效
+ *    与读回校验一件都不能省 —— 它们保证作者点完「采用」后页面真的换了结构。
+ */
+async function saveLayoutOnly(
+  pid: string,
+  tabId: string,
+  to: TemplateDef,
+  previous: TemplateDef | null,
+): Promise<MigrationResult> {
+  const release = beginTabMigrationLock(pid, tabId)
+  const log: MigrationLog = {
+    formatVersion: MIGRATION_LOG_VERSION,
+    pid,
+    tabId,
+    state: 'prepared',
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+    fromTemplateId: previous?.templateId ?? '<none>',
+    toTemplateId: to.templateId,
+    fromRevision: previous?.revision ?? null,
+    toRevision: to.revision,
+    steps: [step('verify', true, '无值需要迁移（仅布局 / 分组 / 名称变化）')],
+    failures: [],
+    manualFields: [],
+    backupVerified: false,
+    writtenValues: 0,
+  }
+  try {
+    log.state = 'writing'
+    const saved = await saveTemplateDef(pid, to)
+    if (!saved.ok) {
+      const detail = saved.violations.map(v => v.detail).join('；')
+      throw new MigrationAbort('template-rejected', `目标模板未通过校验：${detail}`)
+    }
+    log.steps.push(step('template', true, `已切换到 ${to.templateId}`))
+
+    const idx = await loadTemplateIndex(pid)
+    const hit = idx.entries.find(e => e.tabId === tabId)
+    if (!hit || hit.templateId !== to.templateId || hit.revision !== to.revision) {
+      throw new MigrationAbort('index-stale', '模板目录索引与定义不一致（索引没跟上），请重试或从项目备份恢复')
+    }
+    log.steps.push(step('index', true, '目录索引一致'))
+    invalidateTemplateCache(tabId)
+    log.steps.push(step('invalidate', true, '模板缓存已失效'))
+
+    log.state = 'done'
+    log.note = '模板已保存；本次没有值需要迁移（未建立值备份）'
+    log.updatedAt = Date.now()
+    await saveMigrationLog(log)
+    return { ok: true, state: 'done', log }
+  } catch (e) {
+    // 只回写模板定义（值没动过，不需要值恢复）
+    const problems: string[] = []
+    try {
+      if (previous) {
+        const r = await saveTemplateDef(pid, previous)
+        if (!r.ok) problems.push(`旧模板回写被拒：${r.violations.map(v => v.detail).join('；')}`)
+      } else {
+        await deleteTemplateDef(pid, tabId)
+      }
+      invalidateTemplateCache(tabId)
+      const now = await loadTemplateDef(pid, tabId)
+      if (!sameDefIdentity(now, previous)) problems.push('旧模板回写后读回不一致')
+    } catch (err) {
+      problems.push(`恢复过程异常：${err instanceof Error ? err.message : String(err)}`)
+    }
+    const code: MigrationFailCode = e instanceof MigrationAbort ? e.code : 'write-failed'
+    const detail = e instanceof Error ? e.message : String(e)
+    log.state = problems.length === 0 ? 'rolled-back' : 'rollback-failed'
+    log.note = problems.length === 0
+      ? `保存模板未完成，已恢复到保存前：${detail}`
+      : `保存模板未完成，且恢复不完整（${problems.join('；')}）：${detail}`
+    log.updatedAt = Date.now()
+    log.steps.push(step('template', false, detail))
+    await saveMigrationLog(log).catch(() => { /* 日志写不进去时，调用方仍拿到失败结果 */ })
+    return {
+      ok: false,
+      code: problems.length === 0 ? code : 'rollback-failed',
+      detail: log.note,
+      log,
+      recovered: problems.length === 0,
+    }
+  } finally {
+    release()
+  }
+}
+
 async function runMigration(req: MigrationRequest): Promise<MigrationResult> {
   const { pid, tabId, plan, to } = req
 
@@ -527,7 +650,11 @@ async function runMigration(req: MigrationRequest): Promise<MigrationResult> {
   }
 
   // 幂等：同一份目标重复执行必须识别为 no-op（方案 §3.6 第 208 行）
-  if (planIsNoop(plan)) return { ok: true, state: 'noop' }
+  if (planIsNoop(plan)) {
+    const current = await loadTemplateDef(pid, tabId)
+    if (sameTemplateContent(current, to)) return { ok: true, state: 'noop' }
+    return saveLayoutOnly(pid, tabId, to, current)
+  }
 
   const current = await loadTemplateDef(pid, tabId)
   const cfg = checkConfigBaseline(current, req.expectedFrom, plan)

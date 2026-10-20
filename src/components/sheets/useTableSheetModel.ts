@@ -32,10 +32,11 @@ import {
   ATLAS_TABS, atlasAiVisibilityChanged, emptyAtlasSchema, isAtlasTab,
 } from '@/lib/atlas/schema'
 import { loadAtlasAiWriteTargets, type AtlasAiWriteTargets } from '@/lib/ai/atlasContext'
-import { resolveTemplateCached } from '@/lib/templates/cache'
 import { aiWriteFieldsOf, fieldHintForAI } from '@/lib/templates/consumers'
 import { invalidateIndex } from '@/lib/semantic/indexer'
-import { atlasColumnsOf, customColumnWidth, type AtlasColumn } from '@/lib/atlas/columns'
+import { customColumnWidth } from '@/lib/atlas/columns'
+import { useSheetTemplate } from '@/components/templates/useSheetTemplate'
+import { guardTabWrite } from '@/lib/templates/migrationGuard'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import { coerceAiValue } from '@/lib/atlas/values'
 import { ATLAS_TOTAL_LIMIT, atlasImageUsageOf, checkAtlasBudget } from '@/lib/atlas/quota'
@@ -44,7 +45,7 @@ import { packageRowId, planAtlasImport, type AtlasPackage } from '@/lib/atlas/pa
 import {
   colWidthsKey, migrateColWidths, sortRows, TABLE_VIEW_MODES, type TableViewMode,
 } from '@/components/sheets/tableSheetOrder'
-import { revertDraftCells } from '@/components/sheets/tableSheetDraftOps'
+import { revertDraftCells, flushDrafts } from '@/components/sheets/tableSheetDraftOps'
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
@@ -144,12 +145,10 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   /**
    * 本页签实际渲染的列（内置列原样 + 自定义字段）。
-   * 🔴 非 races／items 页签配置恒为 null ⇒ 结果与原来的 `tab.columns` 等价，行为不变。
+   * 🔴 采用过模板 ⇒ 结构由快照决定（`useSheetTemplate`），内置 schema 再变也不动；
+   *    没采用 ⇒ 图鉴配置 / `tab.columns`，行为与 3.1.3 逐字一致。
    */
-  const effectiveColumns = useMemo<AtlasColumn[]>(
-    () => atlasColumnsOf(tab, atlasConfig),
-    [tab, atlasConfig],
-  )
+  const { def: templateDef, effectiveColumns, aiWriteTemplate } = useSheetTemplate(tab, atlasConfig)
 
   /**
    * 保存字段配置：revision 自增在 persistence 里做，界面状态必须用**返回值**覆盖。
@@ -270,9 +269,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *    不看 `tableVisible`（隐藏列＝不占地方，≠ 不许 AI 写）。
    * 3.2.0 · WT0-4：改从有效模板取 —— 内置＝`source==='builtin'`，自定义＝已筛过 `aiWritable` 的投影。
    */
-  const aiFieldTargets = useMemo(() => aiWriteFieldsOf(resolveTemplateCached(tab, {
-    config: atlasConfig, purpose: 'aiWrite', ignoreAppliesTo: true,
-  })), [tab, atlasConfig])
+  const aiFieldTargets = useMemo(() => aiWriteFieldsOf(aiWriteTemplate), [aiWriteTemplate])
 
   /**
    * 交给 AI 的字段清单（AI 新增 / 补全本行 / 整理共用同一份）。
@@ -305,6 +302,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    */
   const verifyAiWriteBase = useCallback(async (): Promise<AtlasAiWriteTargets | null> => {
     const pid = getCurrentProjectId()
+    // 3.2.0：迁移期间**在途 AI 结果不许回填**（方案 §3.6）—— 它们出自旧字段清单
+    const conflict = await guardTabWrite(pid, tab.id, 'ai-writeback')
+    if (conflict) { showToast(`${conflict.message}${conflict.hint}`, 'error'); return null }
     const targets = await loadAtlasAiWriteTargets(tab, pid)
     if (targets.lockedReason) {
       showToast(`已放弃本次 AI 回填：${targets.lockedReason}`, 'error')
@@ -353,11 +353,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   useEffect(() => () => {
     const pending = draftsRef.current
     if (!pending || Object.keys(pending).length === 0) return
-    const snapshot = rowsRef.current
-    for (const rowId of Object.keys(pending)) {
-      const orig = snapshot.find(r => r.id === rowId)
-      if (orig) void saveTableRow({ ...orig, data: { ...orig.data, ...pending[rowId] } })
-    }
+    // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）
+    void flushDrafts(getCurrentProjectId(), tabIdRef.current, rowsRef.current, pending)
   }, [])
 
   // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮
@@ -461,11 +458,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     const prevId = tabIdRef.current
     const prevDrafts = draftsRef.current
     if (prevId !== tab.id && prevDrafts && Object.keys(prevDrafts).length > 0) {
-      const prevRows = rowsRef.current
-      for (const rowId of Object.keys(prevDrafts)) {
-        const orig = prevRows.find(r => r.id === rowId)
-        if (orig) void saveTableRow({ ...orig, data: { ...orig.data, ...prevDrafts[rowId] } })
-      }
+      // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）
+      void flushDrafts(getCurrentProjectId(), prevId, rowsRef.current, prevDrafts)
     }
     tabIdRef.current = tab.id
     const loadRows = tab.id === 'chapter-master'
@@ -620,6 +614,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   const saveAll = useCallback(async () => {
     if (dirtyKeys.length === 0) return
+    // 3.2.0：迁移窗口内不把旧结构的草稿写进库（方案 §3.6）
+    const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'draft')
+    if (conflict) { showToast(`${conflict.message}${conflict.hint}`, 'error'); return }
     // 编号防重复校验：不通过则拒绝保存并提示
     const err = validateCodes()
     if (err) {
@@ -650,7 +647,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     }
     // codeCol / retiredCodes / tab.id 已被 validateCodes 一并封装进它的依赖，
     // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
-  }, [dirtyKeys, drafts, rows, validateCodes])
+  }, [dirtyKeys, drafts, rows, validateCodes, tab.id])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void saveAll(), dirtyKeys.length > 0)
@@ -940,6 +937,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 行的构造（含编号补号）交给 lib/tableIO.buildImportRows（纯函数，可单测）。
    */
   const handleImport = async (picked: ImportRowResult[]) => {
+    // 3.2.0：迁移期间整行导入会让新旧结构混在一行里（方案 §3.6）
+    const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'import')
+    if (conflict) throw new Error(`${conflict.message}${conflict.hint}`)
     const created = buildImportRows(picked, tab, rows, getCurrentProjectId(), uid, drafts)
     // 🔴 2026-10-02 六维审计 P1：逐行落库时若中途失败（IPC / IDB 写失败），旧实现会让**已写进库的行**
     //    停在内存之外 —— setRows 不执行 ⇒ 界面看不到它们；作者点重试，这些行会被**再写一遍**（重复条目）。
@@ -1182,6 +1182,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, atlasConfigError, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
+    // 采用模板（3.2.0）
+    templateDef,
     // 人物关系分组
     relationGroups, relGroupOpen, setRelGroupOpen, relRowOpen, setRelRowOpen,
     // 历法

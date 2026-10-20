@@ -16,6 +16,9 @@ import {
   atlasCardBadges, atlasFieldsForCategory, atlasSections, atlasSummaryFields, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import type { AtlasImage, AtlasSchemaConfig } from '@/lib/atlas/types'
+import type { TemplateDef } from '@/lib/templates/definition'
+import { resolveTemplateForTab } from '@/lib/templates/resolve'
+import { atlasFieldsOfTemplate } from '@/lib/templates/render'
 import { foldVh } from '@/lib/settings/theme'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 import { Button } from '@/components/common/Button'
@@ -34,6 +37,11 @@ interface Props {
    *    而且不报任何错（本轮实测就踩过一次）。
    */
   config?: AtlasSchemaConfig | null
+  /**
+   * 3.2.0：项目已采用的模板快照。
+   * 🔴 有它 ⇒ 字段 / 分组全部按快照解析，图鉴配置只在“未采用模板”时生效。
+   */
+  templateDef?: TemplateDef | null
   /** 「在表格中编辑」：切回表格视图（共享草稿与保存流程不变） */
   onEditInTable: () => void
   /** 主图保存（即选即存，落库由 model 负责） */
@@ -75,7 +83,7 @@ const MIN_CARD_W: Record<Density, number> = { compact: 150, standard: 180, loose
 const DENSITY_LABEL: Record<Density, string> = { compact: '紧凑', standard: '标准', loose: '宽松' }
 
 export default function AtlasView({
-  tab, rows, aliases, config, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
+  tab, rows, aliases, config, templateDef, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
   cellValue, onCellChange, dirtyOf, saving, onSave, onRevert,
 }: Props) {
   const pkgInputRef = useRef<HTMLInputElement>(null)
@@ -101,7 +109,20 @@ export default function AtlasView({
     return () => ro.disconnect()
   }, [])
 
-  const nameKey = tab.displayCol ?? '名称'
+  const nameKey = templateDef
+    ? templateDef.fields.find(f => f.id === templateDef.nameFieldId)?.sourceKey ?? tab.displayCol ?? '名称'
+    : tab.displayCol ?? '名称'
+  /** 采用模板后，图鉴字段与分组都以快照为准（图鉴配置不再参与） */
+  const templateFields = useMemo(
+    () => (templateDef
+      ? atlasFieldsOfTemplate(resolveTemplateForTab(tab, {
+        def: templateDef,
+        purpose: 'detail',
+        ignoreAppliesTo: true,
+      }))
+      : null),
+    [tab, templateDef],
+  )
   /**
    * 🔴 详情按**选中条目自己的类别**解析（3.1.3 · R02）。
    *    之前这里完全没传类别 ⇒ 凡是"只适用某类别"的字段在详情里一律不显示
@@ -110,24 +131,42 @@ export default function AtlasView({
    */
   const detailFields = useMemo(
     () => atlasFieldsForCategory(
-      resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
+      templateFields ?? resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
       selectedId ? rows.find(r => r.id === selectedId)?.data?.['类别'] : undefined,
     ),
-    [tab, aliases, config, selectedId, rows],
+    [tab, aliases, config, templateFields, selectedId, rows],
   )
   /** 摘要候选取全量（作者在字段设置里显式挑的展示项，不受类别砍） */
   const allSummaryFields = useMemo(
     () => atlasSummaryFields(
       tab.id,
-      resolveAtlasFields(tab, { aliases, config, purpose: 'export', ignoreAppliesTo: true }),
+      templateDef
+        ? atlasFieldsOfTemplate(resolveTemplateForTab(tab, {
+          def: templateDef,
+          purpose: 'export',
+          ignoreAppliesTo: true,
+        }))
+        : resolveAtlasFields(tab, { aliases, config, purpose: 'export', ignoreAppliesTo: true }),
       config,
     ),
-    [tab, aliases, config],
+    [tab, aliases, config, templateDef],
   )
-  const sections = useMemo(
-    () => atlasSections(tab, detailFields, config),
-    [tab, detailFields, config],
-  )
+  const sections = useMemo(() => {
+    if (!templateFields) return atlasSections(tab, detailFields, config)
+    // 采用模板：分组名与顺序取快照，字段取“已按类别过滤”的详情字段
+    const groups = templateDef!.groups
+    const labelOf = new Map(groups.map(g => [g.id, g.label]))
+    const orderOf = new Map(groups.map(g => [g.id, g.order]))
+    const byGroup = new Map<string, typeof detailFields>()
+    for (const f of detailFields) {
+      const arr = byGroup.get(f.groupId)
+      if (arr) arr.push(f)
+      else byGroup.set(f.groupId, [f])
+    }
+    return [...byGroup.entries()]
+      .map(([id, fields]) => ({ id, label: labelOf.get(id) ?? id, fields }))
+      .sort((a, b) => (orderOf.get(a.id) ?? 0) - (orderOf.get(b.id) ?? 0))
+  }, [tab, config, detailFields, templateFields, templateDef])
 
   // 筛选变化把选中条目筛掉时关闭详情，**不**自动跳到别的条目（方案 §3.4）
   useEffect(() => {

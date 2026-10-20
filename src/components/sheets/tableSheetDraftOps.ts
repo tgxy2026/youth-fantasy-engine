@@ -6,8 +6,32 @@
  *
  * 类型声明与 model 里的 `drafts` 同构：行 id → { 存储键: 值 }。
  */
+import { saveTableRow } from '@/lib/db'
+import type { TableRow } from '@/lib/types'
+import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGuard'
 
 export type DraftMap = Record<string, Record<string, string>>
+
+/**
+ * 冲刷一批待保存草稿（切页签 / 卸载时的静默落库）。
+ *
+ * 🔴 迁移窗口内**整批跳过**（方案 §3.6）：旧结构的草稿灌进新结构会串字段，
+ *    宁可这次不自动存，也不能写出一份没有任何界面能看出错了的数据。
+ */
+export async function flushDrafts(
+  pid: string,
+  tabId: string,
+  rows: readonly TableRow[],
+  drafts: DraftMap,
+  source: TabWriteSource = 'autosave',
+): Promise<boolean> {
+  if (await guardTabWrite(pid, tabId, source)) return false
+  for (const rowId of Object.keys(drafts)) {
+    const orig = rows.find(r => r.id === rowId)
+    if (orig) await saveTableRow({ ...orig, data: { ...orig.data, ...drafts[rowId] } })
+  }
+  return true
+}
 
 /**
  * 把某一行若干字段的草稿**回滚到给定的值**（详情面板「撤销本次改动」）。

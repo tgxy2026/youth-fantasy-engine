@@ -9,7 +9,7 @@ import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
 import { addCustomItem, deleteTableRow } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2 } from 'lucide-react'
+import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
 import StoryTimeline from '@/components/outline/StoryTimeline'
 import StorylineView from '@/components/outline/StorylineView'
@@ -39,6 +39,8 @@ import { useTableSheetModel, ROW_ACTION_COL_W } from '@/components/sheets/useTab
 import TableMoreMenu, { type MoreMenuItem } from '@/components/sheets/TableMoreMenu'
 import AtlasView from '@/components/atlas/AtlasView'
 import AtlasFieldManager from '@/components/atlas/AtlasFieldManager'
+import TemplateManagerDialog from '@/components/templates/TemplateManagerDialog'
+import { isTemplateTab } from '@/lib/templates/eligible'
 import type { AtlasColumn } from '@/lib/atlas/columns'
 import type { CustomFieldType } from '@/lib/atlas/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
@@ -67,6 +69,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
   /** 3.1.3：字段设置弹窗（自定义字段增删改、归档恢复、排序） */
   const [showFieldMgr, setShowFieldMgr] = useState(false)
+  /** 3.2.0：模板管理弹窗（七个页签；采用后结构由模板快照决定） */
+  const [showTemplate, setShowTemplate] = useState(false)
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
   const aliasTargets = useMemo(
     () => tableAliasTargets((tab.columns ?? []).filter(c => !c.hidden)),
@@ -79,10 +83,12 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 表头显示名 / 悬停说明（3.1.3）：自定义字段用它的**字段名**，内置字段仍走别名单。
    * 🔴 两者都只影响显示 —— 存储键永远是 `col.name`（内置＝列名，自定义＝`cf_*`）。
    */
-  const colLabelOf = (col: AtlasColumn) => col.atlasField?.label ?? aliasLabels[col.name] ?? col.name
+  const colLabelOf = (col: AtlasColumn) => col.templateLabel ?? col.atlasField?.label ?? aliasLabels[col.name] ?? col.name
   const colTitleOf = (col: AtlasColumn) => col.atlasField
     ? (col.atlasField.description || `自定义字段（存储键 ${col.name}，改名不影响已填内容）`)
-    : (aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`)
+    : (col.templateLabel && col.templateLabel !== col.name
+      ? `${col.name}（模板显示名；存储键不变，AI 仍按这个原字段名理解）`
+      : aliasLabels[col.name] === col.name ? undefined : `${col.name}（AI 仍按这个原字段名理解）`)
 
   const {
     // 落库与装载
@@ -101,6 +107,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, 
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
+    // 采用模板（3.2.0）
+    templateDef,
     // 人物关系分组
     relationGroups, 
     // 历法
@@ -356,7 +364,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           {/* 字段显示名 + 字段设置＝同一件事的两个入口（2026-10-18 主人反馈）。
               图鉴页签把它并进「字段设置」面板，这里就不再单独出现；其他表格没有那个面板，
               仍用「字段名」按钮 —— 两边写的是同一份 `fieldAlias` 存储。 */}
-          {aliasCols.length > 0 && !isAtlasCapable && (
+          {aliasCols.length > 0 && !isAtlasCapable && !templateDef && (
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
@@ -364,8 +372,20 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               targets={aliasTargets}
             />
           )}
+          {/* 3.2.0 T1：模板管理（七个页签）。采用过模板后，字段设置 / 字段名都收进这里 ——
+              结构只认一份快照，避免两个入口各改一半。 */}
+          {isTemplateTab(tab.id) && (
+            <Button variant="secondary" onClick={() => setShowTemplate(true)}
+              className="flex items-center gap-1.5"
+              title={templateDef
+                ? `模板「${templateDef.name}」第 ${templateDef.revision} 版：编辑字段与分组、预览变更、恢复到迁移前`
+                : '套用模板：把当前结构固定成一份可编辑快照，或从空白开始设计这一页'}
+            >
+              <LayoutTemplate size={12} /> {templateDef ? '模板' : '套用模板'}
+            </Button>
+          )}
           {/* 3.1.3：字段设置（自定义字段增删改 / 归档恢复 / 排序 + 内置字段显示名），只对图鉴页签出现 */}
-          {isAtlasCapable && (
+          {isAtlasCapable && !templateDef && (
             <Button variant="secondary" onClick={() => setShowFieldMgr(true)}
               className="flex items-center gap-1.5"
               title="字段设置：加自定义字段（例如魔兽的「食性」、丹药的「副作用」），改内置字段的显示名，可归档 / 恢复 / 调整顺序"
@@ -531,6 +551,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           rows={filteredRows}
           aliases={aliasLabels}
           config={atlasConfig}
+          templateDef={templateDef}
           onEditInTable={() => setViewMode('table')}
           onSaveImage={saveRowImage}
           imageUsage={atlasImageUsage}
@@ -739,6 +760,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           onSaveAliases={saveAliases}
           onSave={saveAtlasConfig}
           onClose={() => setShowFieldMgr(false)}
+        />
+      )}
+      {isTemplateTab(tab.id) && showTemplate && (
+        <TemplateManagerDialog
+          tab={tab}
+          atlasConfig={atlasConfig}
+          onClose={() => setShowTemplate(false)}
         />
       )}
       {showCalRule && (
