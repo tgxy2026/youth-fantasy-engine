@@ -62,6 +62,8 @@ export const PORTABLE_KEY_FIELDS: Record<string, string> = {
   cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id',
   formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
   tavernReports: 'id', aiRuns: 'id', worlds: 'id',
+  // 3.2.0 · W2 修订任务与载荷（与 desktop.KEY_PATHS 逐项一致）
+  revisionJobs: 'id', revisionPayloads: 'id',
   // ---- 便携版专属（语义检索 / 知识库并入整库，方案 A）----
   vecRows: 'id', kbDocs: 'id', kbBodies: 'id',
 }

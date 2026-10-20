@@ -16,6 +16,8 @@ export const KEY_PATHS: Record<string, string> = {
   // 3.0 · 多世界：本桩原先漏了这一项（`?? 'id'` 兜底让它静默没炸 —— 主键恰好也是 id）。
   // 由 tests/portableBackend.test.ts 的四表一致性守卫抓出（2026-10-11 审计）。
   worlds: 'id',
+  // 3.2.0 · W2 工作产物存储：revisionJobs 项目级、revisionPayloads 本地专属
+  revisionJobs: 'id', revisionPayloads: 'id',
 }
 
 const stores = new Map<string, Map<string, unknown>>()

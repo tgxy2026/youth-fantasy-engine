@@ -271,3 +271,20 @@ export function migrateV12toV13(db: Vdb) {
   // 按 updatedAt 建索引：世界引擎列表按最近改动倒序
   store.createIndex('updatedAt', 'updatedAt', { unique: false })
 }
+
+/** v13 → v14 迁移（3.2.0 · W2 工作产物存储）：新增 revisionJobs / revisionPayloads */
+export function migrateV13toV14(db: Vdb) {
+  // 🔴 revisionJobs：项目级元数据 —— 随项目走，导出项目时带走、删项目时一并清理。
+  //    按 projectId 建索引：任务列表按当前项目过滤，避免列清单就全表扫。
+  const jobsStore = db.createObjectStore('revisionJobs', { keyPath: 'id' })
+  jobsStore.createIndex('projectId', 'projectId', { unique: false })
+  // 按 status 建索引：快速筛选未结束任务（running / awaiting-review / paused / interrupted）
+  jobsStore.createIndex('status', 'status', { unique: false })
+
+  // 🔴 revisionPayloads：本地专属载荷 —— 不参与云盘同步（见 syncCore.LOCAL_ONLY_STORES）。
+  //    不可变报告、改前文本、候选全文、Q1 暂停草稿；每次重生成用新载荷 ID。
+  //    桌面/便携按 ID 外置，IDB 独立 store；按需读取。
+  const payloadsStore = db.createObjectStore('revisionPayloads', { keyPath: 'id' })
+  payloadsStore.createIndex('projectId', 'projectId', { unique: false })
+  payloadsStore.createIndex('jobId', 'jobId', { unique: false })
+}

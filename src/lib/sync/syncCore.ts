@@ -27,28 +27,28 @@ import { SENSITIVE_META_KEYS, isSensitiveMetaKey } from '@/lib/storage/sensitive
 export const SYNC_STORES = [
   'projects', 'volumes', 'chapters', 'formData', 'tableRows', 'cardRecords',
   'meta', 'snapshots', 'dailyStats', 'settingsKV', 'trash', 'backups', 'backupPayloads', 'tavernReports',
-  'aiRuns', 'worlds',
+  'aiRuns', 'worlds', 'revisionJobs',
+  // 🔴 revisionPayloads 是**本地专属**（LOCAL_ONLY_STORES），但仍要登记在这里：
+  //    这份清单是「对象库对账依据」，漏登记会让 seed/对账逻辑与库里的 store 数量对不上
+  //    （cloudStoreWrapper 的守恒断言就是这么红的）。
+  'revisionPayloads',
 ] as const
 
 // 各 store 的主键字段（keyPath）
 export const KEY_FIELD: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id', tavernReports: 'id',
-  aiRuns: 'id', worlds: 'id',
+  aiRuns: 'id', worlds: 'id', revisionJobs: 'id', revisionPayloads: 'id',
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
 /**
  * **本地专属 store**（云端永不参与其增删）—— 唯一判据，所有路径都从这里取。
  *
- * 🔴 为什么要收成一个常量（C2 · 2.4.2）：原先「backups 是本地专属」这件事被**写死在 6 处**
- *    （上传侧剔除 / 合并读取 / 播种跳过 / 落盘快照跳过 / 云包装层短路 ×2），
- *    每加一个本地专属 store 就要把这 6 处**一处不落地**找齐 —— 漏一处的后果是静默的：
- *    记录进了云端 cache 被上传，或本地写被挡在云端而刷新即丢。
- *    （2026-09-22 六维审计那条「同一个病的所有路径要一次找齐」就是这类。）
- *    ⇒ 现在新增本地专属 store 只需往这里加一个名字。
+ * 🔴 当前包含：backups / backupPayloads / revisionPayloads。
+ *    revisionJobs 是项目级数据，随项目走，故**不在**本地专属清单中。
  */
-export const LOCAL_ONLY_STORES = ['backups', 'backupPayloads'] as const
+export const LOCAL_ONLY_STORES = ['backups', 'backupPayloads', 'revisionPayloads'] as const
 export function isLocalOnlyStore(store: string): boolean {
   return (LOCAL_ONLY_STORES as readonly string[]).includes(store)
 }

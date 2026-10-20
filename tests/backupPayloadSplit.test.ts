@@ -29,7 +29,12 @@ db.setCurrentProject(pid)
   ok('backups 属本地专属', isLocalOnlyStore('backups'))
   ok('backupPayloads 属本地专属', isLocalOnlyStore('backupPayloads'))
   ok('普通 store 不算本地专属', !isLocalOnlyStore('projects') && !isLocalOnlyStore('chapters'))
-  ok('本地专属清单里没有混入业务表', LOCAL_ONLY_STORES.length === 2, LOCAL_ONLY_STORES.join(','))
+  // 🔴 3.2.0 新增 revisionPayloads（W2：修订载荷本地专属，方案 §9.2）。
+  //    这里必须跟着改 —— 漏改就等于放行"业务表混进本地专属"这类事故。
+  ok('本地专属清单里没有混入业务表',
+    LOCAL_ONLY_STORES.length === 3
+    && LOCAL_ONLY_STORES.every(x => x === 'backups' || x === 'backupPayloads' || x === 'revisionPayloads'),
+    LOCAL_ONLY_STORES.join(','))
   ok('backupPayloads 已登记进 SYNC_STORES（作为对账依据）', (SYNC_STORES as readonly string[]).includes('backupPayloads'))
 }
 

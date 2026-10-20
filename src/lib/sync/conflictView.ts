@@ -54,6 +54,7 @@ const STORE_LABELS: Record<string, string> = {
   tavernReports: '推演报告',
   aiRuns: 'AI 记录',
   worlds: '世界包',
+  revisionJobs: '修订任务',
 }
 
 export function conflictStoreLabel(store: string): string {

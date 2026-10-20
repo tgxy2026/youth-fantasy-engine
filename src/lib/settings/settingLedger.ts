@@ -270,16 +270,17 @@ export async function commitEntities(
           if (firstPath && chapterTitle) data[firstPath] = chapterTitle
           if (statusPath) data[statusPath] = '已登场'
         }
-        const existing = await db.getCardRecords(tabId)
+        const all = await db.getCardRecords(tabId)
         const rec: CardRecord = {
           id: uid(),
           projectId: db.getCurrentProjectId(),
           tabId,
           name: item.name,
           data,
-          order: existing.length,
+          order: all.length,
         }
         await db.saveCardRecord(rec)
+        created++
       } else {
         const rows = await db.getTableRows(tabId)
         // 查找同名已有行：缺资料时「不覆盖、不重复创建」—— 只合并本次有值的部分
@@ -306,18 +307,19 @@ export async function commitEntities(
         if (!existing) {
           data['编号'] = nextAutoCode(tabId, rows)
         }
+        // 🔴 `TableRow` 没有 `name` 字段：名字住在 `data` 里的名称列（列名是程序契约）。
+        //    原先写 `name: item.name` 既过不了类型检查，也会在落库时被丢掉 —— 看着写了、其实没写。
         const row: TableRow = {
           id: existing?.id ?? uid(),
           projectId: db.getCurrentProjectId(),
           tabId,
-          name: item.name,
           data,
           order: existing?.order ?? rows.length,
           createdAt: existing?.createdAt ?? Date.now(),
         }
         await db.saveTableRow(row)
+        if (!existing) created++
       }
-      if (!existing) created++
     } catch {
       failed.push(item.name)
     }

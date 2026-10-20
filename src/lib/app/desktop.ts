@@ -439,6 +439,10 @@ export const KEY_PATHS: Record<string, string> = {
   //    虽有 `?? 'id'` 兜底（worlds 主键恰好也是 id，行为上没炸），但两份口径必须逐项一致，
   //    否则下一个换主键的新表会在这里静默走错（正是本注释上一段要防的漂移）。
   worlds: 'id',
+  // 3.2.0 · W2：修订任务（项目级，随项目落盘）。🔴 与 syncCore.KEY_FIELD 同步。
+  revisionJobs: 'id',
+  // 3.2.0 · W2：修订载荷（**本地专属**：不进云同步，但必须落本机盘 —— 漏了就是"重启即丢候选"）。
+  revisionPayloads: 'id',
 }
 
 export interface DesktopState {
