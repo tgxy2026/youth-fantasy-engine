@@ -31,6 +31,8 @@ import { getStoryTemplate } from '@/lib/outline/storyStructures'
 
 interface Props {
   tab: TabDef
+  focusRowId?: string | null
+  onFocusConsumed?: () => void
 }
 
 /**
@@ -38,7 +40,7 @@ interface Props {
  * 左侧目录列表：新增 / 改名 / 删除 / 复制 / 上移下移排序
  * 右侧编辑区：全宽双栏模块表单，编辑"卷名/章节号"字段时自动同步目录名
  */
-export default function OutlineSheet({ tab }: Props) {
+export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props) {
   const isVolume = tab.id === 'volume-outline'
   const noun = isVolume ? '分卷' : '章节'
   // 编辑该字段时自动同步目录列表名
@@ -367,6 +369,13 @@ export default function OutlineSheet({ tab }: Props) {
     setActiveId(id)
     return true
   }, [records])
+
+  useEffect(() => {
+    if (!focusRowId || !records.some(record => record.id === focusRowId)) return
+    void switchTo(focusRowId).then(switched => {
+      if (switched) onFocusConsumed?.()
+    })
+  }, [focusRowId, records, onFocusConsumed, switchTo])
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return

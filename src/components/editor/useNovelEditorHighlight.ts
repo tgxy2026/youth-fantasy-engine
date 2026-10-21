@@ -58,14 +58,16 @@ export function useNovelEditorHighlight({
     let cancelled = false
     ;(async () => {
       const names: RefName[] = []
+      const projectId = db.getCurrentProjectId()
       for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
         const recs = await db.getCardRecords(tabId)
         for (const r of recs) {
           if (r.name && r.name.trim()) {
             const nm = r.name.trim()
-            names.push({ name: nm, type: 'character', tabId })
+            const ref = { kind: 'card' as const, projectId, tabId, id: r.id }
+            names.push({ name: nm, type: 'character', tabId, ref })
             for (const a of readAliases(tabId, r.data)) {
-              if (a !== nm) names.push({ name: a, type: 'character', tabId, aliasOf: nm })
+              if (a !== nm) names.push({ name: a, type: 'character', tabId, ref, aliasOf: nm })
             }
           }
         }
@@ -77,9 +79,10 @@ export function useNovelEditorHighlight({
           const v = r.data[tab.displayCol as string]
           if (v && v.trim()) {
             const nm = v.trim()
-            names.push({ name: nm, type: 'setting', tabId: tab.id })
+            const ref = { kind: 'row' as const, projectId, tabId: tab.id, id: r.id }
+            names.push({ name: nm, type: 'setting', tabId: tab.id, ref })
             for (const a of readAliases(tab.id, r.data)) {
-              if (a !== nm) names.push({ name: a, type: 'setting', tabId: tab.id, aliasOf: nm })
+              if (a !== nm) names.push({ name: a, type: 'setting', tabId: tab.id, ref, aliasOf: nm })
             }
           }
         }

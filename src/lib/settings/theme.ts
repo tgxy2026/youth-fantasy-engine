@@ -245,6 +245,11 @@ export function foldVh(v?: string): string | undefined {
     .replace(/(\d+(?:\.\d+)?)vw/g, 'calc($1vw / var(--ui-zoom, 1))')
 }
 
+/** 将 rem / px 等固定尺寸折回界面缩放，保持浮层边距与宽度对应视口的固定物理尺寸。 */
+export function foldZoomLength(length?: string): string | undefined {
+  return length ? `calc(${length} / var(--ui-zoom, 1))` : length
+}
+
 /**
  * 把 `getBoundingClientRect()` 量到的**视觉像素**折算成**可直接写进 style 的像素**（3.0.2 立）。
  *

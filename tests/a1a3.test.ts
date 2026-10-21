@@ -10,6 +10,8 @@
 //   ⑦ 影响证据生成
 //   ⑧ 直接依据与相关性复核
 //   ⑨ 事件去重与上限
+import { readFileSync } from 'node:fs'
+import * as path from 'node:path'
 
 import {
   groupMaterialsByTemplate,
@@ -20,6 +22,9 @@ import {
   createMaterialPanelState,
   switchTab,
   switchChapter,
+  normalizeChapterContextBinding,
+  findOutlineReferenceSuggestions,
+  outlinePurposeForField,
   type ChapterMaterial,
 } from '../src/lib/revision/chapterContext'
 import {
@@ -133,6 +138,53 @@ function case6() {
 
   const switched = switchChapter(state, 'ch2')
   ok('⑥③ 切章', switched.currentChapterId === 'ch2' && switched.refreshContent)
+
+  const ref = { kind: 'card' as const, projectId: 'p1', tabId: 'char-main', id: 'c1' }
+  const binding = normalizeChapterContextBinding({
+    schema: 1, outlineId: 'o1', pinnedRefs: [ref, ref, { ...ref, projectId: 'p2' }], updatedAt: 123,
+  }, 'p1')
+  ok('⑥④ 绑定记录仅保留同项目稳定引用并去重',
+    binding.outlineId === 'o1' && binding.pinnedRefs.length === 1 && binding.pinnedRefs[0].id === 'c1')
+  ok('⑥⑤ 细纲用途识别依赖字段元数据且不限场景槽数量',
+    outlinePurposeForField({ id: '二、场景细纲::场景7', sourceKey: '二、场景细纲::场景7', label: '第七段', defaultLabel: '场景7' }) === '场景')
+  ok('⑥⑥ 自定义/未知字段仍可展示且不误标用途',
+    outlinePurposeForField({ id: 'cf_custom', sourceKey: 'cf_custom', label: '作者自定义字段' }) === undefined)
+  const suggestions = findOutlineReferenceSuggestions([{
+    id: '出场人物', sourceKey: '一、本章定位::出场人物', label: '出场人物', value: '陈渊与F0001有关',
+  }], [
+    { ref: { kind: 'card', projectId: 'p1', tabId: 'char-main', id: 'c1' }, name: '陈渊', source: '主要角色', matchTerms: ['陈渊'] },
+    { ref: { kind: 'card', projectId: 'p1', tabId: 'char-secondary', id: 'c2' }, name: '陈渊', source: '次要角色', matchTerms: ['陈渊'] },
+    { ref: { kind: 'row', projectId: 'p1', tabId: 'foreshadow', id: 'f1' }, name: '胎记', source: '伏笔追踪', matchTerms: ['胎记', 'F0001'] },
+  ])
+  const duplicate = suggestions.find(item => item.term === '陈渊')
+  const code = suggestions.find(item => item.term === 'F0001')
+  ok('⑥⑦ 细纲按登记名称/编号提出精确匹配建议', suggestions.length === 2 && code?.candidates[0]?.name === '胎记')
+  ok('⑥⑧ 同名记录保留多候选供作者选择', duplicate?.candidates.length === 2)
+}
+
+function case6a() {
+  const read = (file: string) => readFileSync(path.join(process.cwd(), file), 'utf8')
+  const panel = read('src/components/editor/ChapterContextPanel.tsx')
+  const editor = read('src/components/editor/NovelEditor.tsx')
+  const app = read('src/App.tsx')
+  const outline = read('src/components/outline/OutlineSheet.tsx')
+  const dataHook = read('src/components/editor/useChapterContextData.ts')
+  ok('⑥⑦ A1 有细纲/关联资料/正文引用三项切换',
+    panel.includes("['outline', '细纲']") && panel.includes("['materials', '关联资料']") && panel.includes("['quotes', '正文引用']"))
+  ok('⑥⑧ 细纲与固定资料按项目设置持久化',
+    dataHook.includes('chapterContext32:') && dataHook.includes('getSettingFor') && dataHook.includes('setSettingFor'))
+  ok('⑥⑨ 正文编辑器接入资料抽屉，引用使用稳定记录 ID',
+    editor.includes('<ChapterContextPanel') && editor.includes('detail: { tabId: ref.tabId, rowId: ref.id }'))
+  ok('⑥⑩ 记录跳转支持章节细纲卡并经过草稿安全切换',
+    app.includes('focusRowId={focusRowId}') && outline.includes('switchTo(focusRowId)'))
+  ok('⑥⑪ 抽屉视图与资料加载/保存逻辑分离',
+    panel.includes('useChapterContextData') && dataHook.includes('normalizeChapterContextBinding'))
+  ok('⑥⑫ 抽屉打开时检索列收起并恢复正文宽度',
+    editor.includes('!focusMode && showSearch && !showRefs') && editor.includes('!showSearch || showRefs'))
+  ok('⑥⑬ 抽屉固定于视口并按缩放折算尺寸',
+    panel.includes('className="fixed right-3') && panel.includes("foldZoomLength('3.5rem')") && panel.includes("foldZoomLength('18rem')"))
+  ok('⑥⑭ 细纲命中只作为手动固定建议，不改变 AI 输入',
+    dataHook.includes('findOutlineReferenceSuggestions') && panel.includes('不会自动加入 AI 请求') && panel.includes('onClick={() => pin(candidate.ref)}'))
 }
 
 // ───────────────── ⑦ 变化事件创建 ─────────────────
@@ -275,6 +327,7 @@ async function main() {
   case4()
   case5()
   case6()
+  case6a()
   case7()
   case8()
   case9()

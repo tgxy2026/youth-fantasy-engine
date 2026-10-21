@@ -7,7 +7,7 @@
 //      48px 宽的框只剩 22px 可用、「132」只显示成「1」，且高度比同排控件高一截。
 // 判据：autoZoom 的纯函数映射 + 两处源码契约。
 import fs from 'node:fs'
-import { autoZoom, getStoredZoom } from '../src/lib/settings/theme'
+import { autoZoom, foldZoomLength, getStoredZoom } from '../src/lib/settings/theme'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -16,6 +16,8 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 console.log('\n—— themeZoom 用例开始 ——')
+
+ok('固定浮层尺寸按界面缩放折算', foldZoomLength('18rem') === 'calc(18rem / var(--ui-zoom, 1))')
 
 // ---------- ① autoZoom：窗口宽 → 缩放百分比（1280 宽起 100%，上限 140%） ----------
 // 🔴 用最小 window 桩：theme.ts 的 autoZoom 只在 `typeof window !== 'undefined'` 时读 innerWidth

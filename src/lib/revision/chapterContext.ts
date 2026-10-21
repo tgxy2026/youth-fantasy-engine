@@ -8,6 +8,127 @@
 //    ③ 资料绑定与跳转
 //    ④ 缺用途降级
 
+import type { RecordRef } from '@/lib/revision/revisionTypes'
+
+/** 项目设置里的章节绑定；只保存稳定 ID，不复制细纲或设定正文。 */
+export interface ChapterContextBinding {
+  schema: 1
+  outlineId?: string
+  pinnedRefs: RecordRef[]
+  updatedAt: number
+}
+
+export function emptyChapterContextBinding(): ChapterContextBinding {
+  return { schema: 1, pinnedRefs: [], updatedAt: Date.now() }
+}
+
+/** 容忍旧值/损坏值；过滤跨项目引用和不完整 ID，避免切项目后串资料。 */
+export function normalizeChapterContextBinding(
+  raw: unknown,
+  projectId: string,
+): ChapterContextBinding {
+  const value = raw && typeof raw === 'object' ? raw as Partial<ChapterContextBinding> : {}
+  const refs = Array.isArray(value.pinnedRefs) ? value.pinnedRefs.filter((ref): ref is RecordRef => {
+    if (!ref || typeof ref !== 'object') return false
+    const candidate = ref as Partial<RecordRef>
+    return ['chapter', 'outline', 'card', 'row', 'form', 'sub'].includes(String(candidate.kind))
+      && candidate.projectId === projectId
+      && typeof candidate.tabId === 'string' && candidate.tabId.length > 0
+      && typeof candidate.id === 'string' && candidate.id.length > 0
+  }) : []
+  const unique = new Map(refs.map(ref => [`${ref.kind}|${ref.tabId}|${ref.id}`, ref]))
+  return {
+    schema: 1,
+    ...(typeof value.outlineId === 'string' && value.outlineId ? { outlineId: value.outlineId } : {}),
+    pinnedRefs: [...unique.values()],
+    updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
+  }
+}
+
+/** 稳定引用的身份键；名称变化不影响固定关系。 */
+export function chapterContextRefKey(ref: RecordRef): string {
+  return `${ref.kind}|${ref.tabId}|${ref.id}`
+}
+
+export type OutlinePurpose = '事件' | '人物' | '场景' | '伏笔' | '衔接'
+
+/**
+ * 用当前有效字段的稳定键、名称和说明识别细纲用途。
+ * 场景按字段元数据识别，因此新增场景槽无需改代码；未知字段仍照常展示。
+ */
+export function outlinePurposeForField(field: {
+  id: string
+  sourceKey: string
+  label: string
+  defaultLabel?: string
+  description?: string
+}): OutlinePurpose | undefined {
+  const text = [field.id, field.sourceKey, field.label, field.defaultLabel, field.description]
+    .filter(Boolean).join(' ').toLocaleLowerCase()
+  if (/(伏笔|foreshadow)/i.test(text)) return '伏笔'
+  if (/(场景|scene)/i.test(text)) return '场景'
+  if (/(出场人物|人物|角色|character)/i.test(text)) return '人物'
+  if (/(承接|衔接|过渡|下章预告|continuity|transition)/i.test(text)) return '衔接'
+  if (/(一句话事件|核心事件|剧情事件|事件概要|event)/i.test(text)) return '事件'
+  return undefined
+}
+
+export interface OutlineReferenceField {
+  id: string
+  sourceKey: string
+  label: string
+  defaultLabel?: string
+  description?: string
+  value: string
+}
+
+export interface OutlineReferenceItem {
+  ref: RecordRef
+  name: string
+  source: string
+  matchTerms: string[]
+}
+
+export interface OutlineReferenceSuggestion {
+  fieldKey: string
+  fieldLabel: string
+  purpose?: OutlinePurpose
+  term: string
+  candidates: Pick<OutlineReferenceItem, 'ref' | 'name' | 'source'>[]
+}
+
+/** 只提出名称/编号的字面匹配；重复匹配保留所有候选，由作者选中后才固定。 */
+export function findOutlineReferenceSuggestions(
+  fields: readonly OutlineReferenceField[],
+  records: readonly OutlineReferenceItem[],
+): OutlineReferenceSuggestion[] {
+  const suggestions = new Map<string, OutlineReferenceSuggestion>()
+  for (const field of fields) {
+    const value = field.value.toLocaleLowerCase()
+    if (!value) continue
+    for (const record of records) {
+      const term = [...new Set(record.matchTerms.map(item => item.trim()).filter(item => item.length >= 2))]
+        .sort((a, b) => b.length - a.length)
+        .find(item => value.includes(item.toLocaleLowerCase()))
+      if (!term) continue
+      const key = `${field.sourceKey}\u0000${term.toLocaleLowerCase()}`
+      const purpose = outlinePurposeForField(field)
+      const suggestion = suggestions.get(key) ?? {
+        fieldKey: field.sourceKey,
+        fieldLabel: field.label,
+        ...(purpose ? { purpose } : {}),
+        term,
+        candidates: [],
+      }
+      if (!suggestion.candidates.some(item => chapterContextRefKey(item.ref) === chapterContextRefKey(record.ref))) {
+        suggestion.candidates.push({ ref: record.ref, name: record.name, source: record.source })
+      }
+      suggestions.set(key, suggestion)
+    }
+  }
+  return [...suggestions.values()]
+}
+
 // ============ 资料项类型 ============
 export type MaterialKind = 'event' | 'character' | 'scene' | 'foreshadow' | 'connection' | 'other'
 

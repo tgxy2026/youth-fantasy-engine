@@ -20,7 +20,7 @@ import {
   Save, ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
-  Command, Highlighter, BookOpen, Users, X, Sparkles, Loader2, Wand2, Layers, PenTool,
+  Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
   Undo2, Redo2, FilePlus2
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -65,6 +65,8 @@ const STATUS_LIST = Object.keys(STATUS_META) as ChapterStatus[]
 
 import { useNovelEditorModel } from '@/components/editor/useNovelEditorModel'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
+import ChapterContextPanel from '@/components/editor/ChapterContextPanel'
+import * as db from '@/lib/db'
 
 export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, ctx = { type: 'full', features: [] } }: Props) {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。
@@ -103,6 +105,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 就绪与导出
     aiReady, runExport,
   } = model
+
+  // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
+  const searchVisible = !focusMode && showSearch && !showRefs
 
   // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
   // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
@@ -267,7 +272,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       )}
 
       {/* 左侧 1/3：设定检索栏 */}
-      {!focusMode && showSearch && (
+      {searchVisible && (
         <div
           className="relative shrink-0 flex flex-col"
           // 🔴 用**保底后的** searchPaneW（窄窗口下自动让位给码字区）；用户拖出来的偏好仍留在 localStorage 里
@@ -402,7 +407,7 @@ style={{ zIndex: Z.pageHandle }}
               <Button variant="icon-amber" onClick={() => onOpenSearch?.()} className="p-1 shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
                 <Command size={14} />
               </Button>
-              <Button variant="bare" iconOnly size="sm" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章引用侧栏：列出本章提到的角色 / 设定条目（可点击直达）">
+              <Button variant="bare" iconOnly size="sm" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} />
               </Button>
               <Button variant="bare" iconOnly size="sm" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
@@ -500,10 +505,13 @@ style={{ zIndex: Z.pageHandle }}
               </Button>
               <div className="w-px h-4 bg-ink-700" />
               <Button variant="icon-amber"
-                onClick={() => setShowSearch(!showSearch)}
+                onClick={() => {
+                  if (showRefs) setShowRefs(false)
+                  else setShowSearch(!showSearch)
+                }}
                 className="p-1 shrink-0"
-                title={showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
-                {showSearch ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                title={showRefs ? '收起本章资料并恢复设定检索栏' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
+                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
               </Button>
               <Button variant="icon-amber"
                 onClick={() => setFocusMode(!focusMode)}
@@ -546,7 +554,7 @@ style={{ zIndex: Z.pageHandle }}
             {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应 */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden" ref={scrollRef}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
-              <div className={`${pageWide ? 'w-full' : focusMode || !showSearch ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
+              <div className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
                 {/* 段首缩进参考线（2.4.0 · A5 遗留补全）：极淡竖线标出每级缩进的位置，方便对齐多级缩进。
                     纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
                     垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。
@@ -691,52 +699,23 @@ style={{ zIndex: Z.pageHandle }}
               </HelpPopover>
             </div>
 
-            {/* v1.3 本章引用侧栏（抽屉式）：列出本章正文里出现的已登记角色 / 术语，点击直达。
-                层号走 zLayer 的 Z（禁裸 z-20）：与其它页内浮层同一套刻度。 */}
+            {/* A1 本章资料抽屉复用原右侧栏位置；层号走 zLayer，不遮挡弹窗层。 */}
             {showRefs && active && (
-              <div className="absolute right-3 top-14 bottom-10 w-72 bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col" style={{ zIndex: Z.pageBase }}>
-                <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
-                  <Users size={13} className="text-amber" />
-                  <span className="text-12 font-semibold text-ink-200 flex-1">本章引用</span>
-                  <span className="text-10 text-ink-500">{referenced.length} 处</span>
-                  <Button variant="icon-muted" onClick={() => setShowRefs(false)} className="p-1" title="收起"><X size={16} /></Button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2">
-                  {referenced.length === 0 ? (
-                    <div className="text-ink-500 text-11 p-3 leading-relaxed">
-                      本章正文未匹配到已登记的角色名 / 设定条目名。<br />
-                      先在「主要角色」「世界构建」各设定表（国家 / 地理 / 种族 / 物品 / 历史 / 术语…）登记，写作时用到会自动出现在这里，并可一键直达。
-                    </div>
-                  ) : (
-                    (['character', 'setting'] as const).map(t => {
-                      const items = referenced.filter(r => r.type === t)
-                      if (!items.length) return null
-                      return (
-                        <div key={t}>
-                          <div className="text-10 text-ink-500 px-1 py-1">{t === 'character' ? '角色' : '设定'} · {items.length}</div>
-                          {items.map(r => (
-                            <Button variant="bare"
-                              key={r.name + (r.aliasOf ?? '')}
-                              onClick={() => onNavigate?.(r.tabId)}
-                              className="w-full text-left !justify-start px-2 py-1.5 rounded hover:bg-ink-800 flex items-center gap-2 text-ink-100 text-12 transition-colors"
-                              title={`直达「${r.tabId}」`}
-                            >
-                              <span className="truncate flex-1">
-                                {r.name}
-                                {r.aliasOf && <span className="text-ink-500 text-10 ml-1.5">（{r.aliasOf} 的别称）</span>}
-                              </span>
-                              <span className="text-9 text-ink-500">→</span>
-                            </Button>
-                          ))}
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-                <div className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 leading-relaxed">
-                  点击条目直达对应角色卡 / 设定表；高亮开关在工具栏（<Highlighter size={10} className="inline" />）。
-                </div>
-              </div>
+              <ChapterContextPanel
+                key={`${db.getCurrentProjectId()}:${active.id}`}
+                projectId={db.getCurrentProjectId()}
+                chapterId={active.id}
+                chapterTitle={active.title}
+                chapterNo={chapterSeqs.get(active.id) ?? 0}
+                bodyText={draftContent}
+                referenced={referenced}
+                ctx={ctx}
+                onClose={() => setShowRefs(false)}
+                onNavigate={id => onNavigate?.(id)}
+                onOpenRecord={ref => window.dispatchEvent(new CustomEvent('yfe:navigate', {
+                  detail: { tabId: ref.tabId, rowId: ref.id },
+                }))}
+              />
             )}
           </>
         ) : (

@@ -11,6 +11,7 @@
  *   （避免「陈渊」抢在「陈渊清欢」之前匹配）、超长正文降级只读纯文本、零宽匹配防御，全照原样。
  */
 import type { Volume, Chapter } from '@/lib/types'
+import type { RecordRef } from '@/lib/revision/revisionTypes'
 import { chapterSeqMap, flattenChapters, flattenAll } from '@/lib/outline/chapterSeq'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
 
@@ -61,7 +62,7 @@ export function scanRefHighlight(text: string, names: string[]): RefScan {
 
 /** 工作区可用的引用名（角色卡 + 世界构建设定表条目），用于本章引用侧栏与内联高亮。
  *  别称条目也在此登记（aliasOf 指向原本名称），正文出现别称时高亮并归入原名条目。 */
-export interface RefName { name: string; type: 'character' | 'setting'; tabId: string; aliasOf?: string }
+export interface RefName { name: string; type: 'character' | 'setting'; tabId: string; ref: RecordRef; aliasOf?: string }
 
 // ---- AI 伴写（2.2.0）常量 ----
 /** 停笔多久才请求。本地 27B 出一句话约 1~3s，太快会在正常停顿处疯狂起请求 */
