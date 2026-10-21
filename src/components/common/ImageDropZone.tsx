@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
-import { hasFilePayload, planImageDrop } from '@/lib/media/imageDrop'
+import { hasDroppedFilePayload, hasFilePayload, planImageDrop } from '@/lib/media/imageDrop'
 
 export interface ImageDropOptions {
   /** 该处接受的图片格式（沿用各模块已有的 ACCEPT 常量，别另写一份） */
@@ -92,7 +92,7 @@ export function useImageDrop(opts: ImageDropOptions): ImageDropApi {
   }, [])
 
   const onDrop = useCallback((e: DragEvent<HTMLElement>) => {
-    if (!hasFilePayload(e.dataTransfer?.types)) return
+    if (!hasDroppedFilePayload(e.dataTransfer?.types, e.dataTransfer?.files.length ?? 0)) return
     e.preventDefault()
     e.stopPropagation()
     reset()

@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import {
-  acceptLabel, hasFilePayload, matchAccept, planImageDrop, type DroppedFileLike,
+  acceptLabel, hasDroppedFilePayload, hasFilePayload, matchAccept, planImageDrop, type DroppedFileLike,
 } from '@/lib/media/imageDrop'
 
 let pass = 0, fail = 0
@@ -30,6 +30,8 @@ function main() {
     ok('① 正文拖动选区（text/plain）不算文件', !hasFilePayload(['text/plain']))
     ok('① types 缺失/为空一律不算（宁可不拦，也不误拦）',
       !hasFilePayload(undefined) && !hasFilePayload(null) && !hasFilePayload([]))
+    ok('① drop 的 types 为空时按实际文件列表兜底',
+      hasDroppedFilePayload([], 1) && hasDroppedFilePayload(undefined, 2) && !hasDroppedFilePayload([], 0))
     ok('① 大小写不敏感以外不做联想：小写 files 不认（浏览器恒为首字母大写 Files）',
       !hasFilePayload(['files']))
   }
@@ -111,10 +113,10 @@ function main() {
     }
 
     const hook = read('src/components/common/ImageDropZone.tsx')
-    // enter / over / drop 三个必须判「是不是文件」（否则会误拦章节拖拽与正文选区拖动）
+    // enter / over 判 types；drop 以实际 files 列表兜底（types 可能已被浏览器清空）
     ok('⑤ 进/悬停/落 三处都先判「是不是文件」',
-      (hook.match(/hasFilePayload\(e\.dataTransfer\?\.types\)/g) ?? []).length === 3,
-      String((hook.match(/hasFilePayload\(e\.dataTransfer\?\.types\)/g) ?? []).length))
+      (hook.match(/hasFilePayload\(e\.dataTransfer\?\.types\)/g) ?? []).length === 2 &&
+      hook.includes('hasDroppedFilePayload(e.dataTransfer?.types, e.dataTransfer?.files.length ?? 0)'))
     // 🔴 dragleave 反而**不能**判 types：实测空数组，判了就会漏减计数 ⇒ 覆盖层卡死（实机踩过）
     ok('⑤ dragleave 不以 types 为判据（否则空 types 时覆盖层卡住不走）',
       !/onDragLeave[\s\S]{0,240}hasFilePayload\(/.test(hook) && hook.includes('if (depth.current === 0) return'))
@@ -133,7 +135,7 @@ function main() {
 
     const guard = read('src/lib/app/dropGuard.ts')
     ok('⑤ 全局兜底只在拖文件时拦（拖到页面空白处不会把整页顶掉）',
-      guard.includes('hasFilePayload') && guard.includes("addEventListener('drop'"))
+      guard.includes('hasFilePayload') && guard.includes('hasDroppedFilePayload') && guard.includes("addEventListener('drop'"))
     ok('⑤ 兜底已挂载到入口', read('src/main.tsx').includes('installFileDropGuard()'))
 
     ok('⑤ 角色卡：立绘两格由独立组件承载（拆出去后别把渲染点一起删了）',

@@ -34,6 +34,17 @@ export function hasFilePayload(types: readonly string[] | null | undefined): boo
   return Array.isArray(types) ? types.includes('Files') : false
 }
 
+/**
+ * Drop 阶段判定文件时，以实际文件列表兜底。浏览器可能在 drop 事件里清空 `types`，
+ * 但 `files` 仍然包含用户拖入的文件；只看 `types` 会让图片区漏接、全局防导航也失效。
+ */
+export function hasDroppedFilePayload(
+  types: readonly string[] | null | undefined,
+  fileCount: number,
+): boolean {
+  return hasFilePayload(types) || fileCount > 0
+}
+
 /** mime → 给作者看的短名（说明文案用，不认识就返回空串） */
 const MIME_LABEL: Record<string, string> = {
   'image/png': 'PNG',

@@ -11,7 +11,7 @@
 // 【不提示"没放对位置"】落点判断在具体区域里（`useImageDrop`），这里只兜浏览器默认行为。
 // 额外弹一句"请拖到图片区域"反而会盖住正常操作时的 toast。
 
-import { hasFilePayload } from '@/lib/media/imageDrop'
+import { hasDroppedFilePayload, hasFilePayload } from '@/lib/media/imageDrop'
 
 let installed = false
 
@@ -21,7 +21,10 @@ export function installFileDropGuard() {
   installed = true
 
   const block = (e: DragEvent) => {
-    if (!hasFilePayload(e.dataTransfer?.types)) return
+    const isFile = e.type === 'drop'
+      ? hasDroppedFilePayload(e.dataTransfer?.types, e.dataTransfer?.files.length ?? 0)
+      : hasFilePayload(e.dataTransfer?.types)
+    if (!isFile) return
     e.preventDefault()
   }
   // dragover 不拦 ⇒ 落点不会亮；drop 不拦 ⇒ 浏览器拿这个文件导航。
