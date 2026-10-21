@@ -85,22 +85,25 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     })
     return () => {
       alive = false
-      if (payloadRequestRef.current === requestId) payloadRequestRef.current++
     }
   }, [tabId, colName])
 
   // 选项被别处改动时同步刷新（同一列可能同时渲染多个下拉，且地图编辑图例也依赖此广播）
   useEffect(() => {
+    let alive = true
     const onChanged = (e: Event) => {
       const d = (e as CustomEvent<{ tabId: string; colName: string }>).detail
       if (!d || d.tabId !== tabId || d.colName !== colName) return
       const requestId = ++payloadRequestRef.current
       void getCustomOptions(tabId, colName).then(p => {
-        if (requestId === payloadRequestRef.current) setPayload(p)
+        if (alive && requestId === payloadRequestRef.current) setPayload(p)
       })
     }
     window.addEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
-    return () => window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
+    return () => {
+      alive = false
+      window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
+    }
   }, [tabId, colName])
 
   /** 写入后统一：更新本地状态 + 广播，让同列其它下拉与图例跟随刷新 */
