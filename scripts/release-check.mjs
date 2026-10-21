@@ -88,7 +88,8 @@ try {
     alias: { '@': path.join(ROOT, 'src') },
     outfile: probe, logLevel: 'error',
   })
-  const r = await run(process.execPath, ['-e', `const m=require(${JSON.stringify(probe)});const t=m.TABS||[];const g=new Set(t.map(x=>x.group));if(m.EDITOR_TAB)g.add(m.EDITOR_TAB.group);process.stdout.write('\\n@@JSON@@'+JSON.stringify({n:t.length,g:g.size}))`], 30000)
+  // 口径：README 的功能总览把「正文编辑」也计入页签 ⇒ 总数取 TABS + EDITOR_TAB
+  const r = await run(process.execPath, ['-e', `const m=require(${JSON.stringify(probe)});const t=m.TABS||[];const g=new Set(t.map(x=>x.group));let n=t.length;if(m.EDITOR_TAB){g.add(m.EDITOR_TAB.group);n++}process.stdout.write('\\n@@JSON@@'+JSON.stringify({n,g:g.size}))`], 30000)
   const m = r.out.match(/@@JSON@@(\{.*?\})\s*$/)
   if (m) { const o = JSON.parse(m[1]); tabTotal = o.n; groupTotal = o.g; tabsExact = true }
 } catch (e) {
