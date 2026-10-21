@@ -131,7 +131,11 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
                 <Button size="sm" variant="secondary" onClick={() => discardRewrite()}>丢弃这次结果</Button>
                 {s.rewrite.suspect
                   ? <span className="text-10 text-amber">结果与期望的约 {s.rewrite.expectWords} 字相差过大（实际 {countWords(s.rewrite.text)} 字），已锁住替换 —— 请重新生成。</span>
-                  : <span className="text-10 text-ink-500">替换前会自动把旧稿存进「时光机 · 本章版本历史」，可随时恢复。</span>}
+                  : <span className="text-10 text-ink-500">
+                      替换前会自动把旧稿存进「时光机 · 本章版本历史」，可随时恢复。
+                      {s.rewrite.candidateId ? ' 这份稿子也已登记到「创作轨迹 → 候选审阅」，关掉页面仍能找回。' : ''}
+                      {s.rewrite.candidateError ? ` 候选没能保存：${s.rewrite.candidateError}` : ''}
+                    </span>}
               </div>
             )}
           </div>

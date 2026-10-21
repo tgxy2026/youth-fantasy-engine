@@ -49,6 +49,8 @@ import { lastContextAssembly } from '@/lib/ai/aiContext'
 import { checkRewriteTarget, formatGap } from '@/lib/audit/evidenceGate'
 import { countWords } from '@/lib/editor/textStats'
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · W3：改写产出同时登记成「候选审阅」里的一份候选（关掉页面也找得回）
+import { recordRewriteCandidate, markCandidateApplied, markCandidateDiscarded } from '@/lib/revision/candidateIntake'
 // 3.2.0 · WQ6：手动改写入口与改写后的设定同步各自记账（到上限暂停，不嵌套追加）
 import {
   createAttemptBudget, isRequestBudgetExhausted,
@@ -189,6 +191,17 @@ export interface RewriteState {
    * 采纳前与当前正文比对 —— 不符（正文被改过）则拒绝替换，见 `applyChapterRewrite`。
    */
   baseFingerprint: string
+  /**
+   * 3.2.0 · W3：这份产出登记到「候选审阅」后的候选 id。
+   * 🔴 有了它，「替换该章正文」成功后才能把候选标成 `applied` ——
+   *    不标的话候选列表会一直挂着已经生效的稿子，作者点第二次就再覆盖一遍正文。
+   */
+  candidateId?: string
+  /**
+   * 3.2.0 · W3：候选没存成的原因（配额满 / 超过 256 KiB）。
+   * 🔴 **不影响改写结果**，只是这句提示让作者知道"这次找不回命令行式的候选"。
+   */
+  candidateError?: string
 }
 
 export interface CreativeNotice {
@@ -880,8 +893,39 @@ export async function startChapterRewrite(p: {
     if (suspect) {
       notice(`模型返回 ${outWords} 字，与期望的约 ${expectWords} 字相差过大 —— 已锁住替换，请重新生成`, 'error')
     }
+    // 3.2.0 · W3：把产出登记成一份候选（关掉页面 / 切页签后仍能在「候选审阅」找回）。
+    // 🔴 **先登记、再放开按钮**：反过来的话有一个几毫秒的空窗 —— 界面已允许「替换该章正文」
+    //    而候选 id 还没回来，此刻点下去不会给候选标 applied，列表里就留着一份已经生效的稿子，
+    //    作者再点一次会把同一段正文覆盖第二遍（还会盖掉他这期间的新编辑）。
+    // 🔴 可疑结果（suspect）**不登记**：界面已经锁住替换，再留一份"看着像正文"的候选只会误导。
+    let candidateId = ''
+    let candidateError = ''
+    if (!suspect) {
+      try {
+        const rec = await recordRewriteCandidate({
+          projectId: db.getCurrentProjectId() ?? '',
+          chapterId: hit.chapter.id,
+          text,
+          beforeText: hit.chapter.content,
+          summary: `${CHAPTER_REWRITE_META[p.action].label}：${fromWords} → ${outWords} 字`,
+        })
+        if (rec.candidateId) candidateId = rec.candidateId
+        else candidateError = rec.detail ?? '候选没能保存'
+      } catch (e) {
+        // 候选只是"多一份保障"，存不下也不能让已经拿到的改写结果消失
+        console.warn('[creativeSession] 候选登记没跑成（改写结果不受影响）：', e)
+      }
+    }
     const cur = snap.rewrite
-    if (cur) set({ rewrite: { ...cur, text: buf, running: false, suspect } })
+    if (cur) {
+      set({
+        rewrite: {
+          ...cur, text: buf, running: false, suspect,
+          ...(candidateId ? { candidateId } : {}),
+          ...(candidateError ? { candidateError } : {}),
+        },
+      })
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     // 🔴 判据走 isCancelled（真源 lib/ai.ts）：原先的 message 正则会把含「取消 / abort」的真失败
@@ -941,6 +985,13 @@ export async function applyRewrite() {
       // （扩写不得新增设定、精简不得删设定交代），所以这一轮无需同步。
       extra = '；这是历史章，设定类内容已冻结，未改动设定表'
     }
+    // 3.2.0 · W3：正文既然已经换了，那份候选必须标成「已应用」。
+    // 🔴 不标它就一直挂在「候选审阅」里，作者点第二次会把同一段正文覆盖第二遍，
+    //    连带盖掉他这段期间在正文编辑里做的新改动。
+    if (r.candidateId) {
+      const marked = await markCandidateApplied(r.candidateId).catch(() => false)
+      if (!marked) extra += '；候选状态没来得及更新（不影响正文，可在「候选审阅」里放弃那份）'
+    }
     notice(
       `已替换《${r.title}》正文：${r.fromWords} → ${words} 字${extra}。` +
       '旧稿已存进「时光机 · 本章版本历史」（正文编辑里可随时恢复）。',
@@ -962,7 +1013,15 @@ export async function applyRewrite() {
 /** 丢弃改写结果（不写库） */
 export function discardRewrite() {
   if (snap.rewrite?.running) return
+  const candidateId = snap.rewrite?.candidateId
   set({ rewrite: null })
+  // 3.2.0 · W3：作者刚说"不要这次结果" ⇒ 候选一起标成已放弃。
+  // 🔴 不标它就一直挂在「候选审阅」里，隔天他可能又点一次「应用」，
+  //    把一份自己已经决定不要的改写写进正文。
+  if (candidateId) {
+    void markCandidateDiscarded(candidateId, '作者在创意写作页丢弃了这次结果')
+      .catch(() => false)
+  }
 }
 
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */
