@@ -1,4 +1,4 @@
-import { BookOpen, Lightbulb, ListOrdered } from 'lucide-react'
+import { BookOpen, Lightbulb, ListOrdered, Sparkles } from 'lucide-react'
 import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '@/lib/schema'
 import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
@@ -40,6 +40,37 @@ const TIPS: { title: string; body: string }[] = [
   { title: '改设定先过设定变更', body: '连载中要改设定，先登记旧值新值、影响范围、已发布冲突——冲突未处理前不发布后续章节。' },
   { title: '知情权限随时登记', body: '读者对「谁知道什么」记得比你牢；每当有角色知悉秘密当天登记，防泄密穿帮。' },
   { title: '灵感即时入库', body: '灵感出现的当天就登记；写细纲卡壳先翻素材库再硬编。' },
+]
+
+/**
+ * 3.2.0 新增能力（本版主题＝「修订与核对」）——**不新增页签**，补的是几个入口的用法。
+ * 🔴 只写作者真能看见、真会用到的；不写实现细节（那是 docs 的事）。
+ */
+const REVISION_TIPS: { title: string; body: string }[] = [
+  {
+    title: 'AI 产出的稿先审阅再应用',
+    body: '「创作轨迹 → 候选审阅」里，AI 改写出的稿子先躺在那里。点应用前会比对正文：你要是自己改过，它会直接拒绝，不会盖掉你的编辑。',
+  },
+  {
+    title: '改写完看「复检」',
+    body: '工单里每章标题旁会写：原问题已清 / N 条没解决 / 复检没跑成。「已改写」只代表改过了，复检才回答「改好了没」。',
+  },
+  {
+    title: '检查报告能翻回去看',
+    body: '「创作轨迹 → 检查报告」留着过去查到的问题（只有冲突/注意级才留档，全绿不占空间），每条带原文引文与「引文 N/M 可定位」。',
+  },
+  {
+    title: '实体保留自检只提示不判定',
+    body: '改写后哪些已登记的人物/势力名没再出现，会列在每章标题旁。少提一个名字常常是正常润色 —— 丢没丢设定，你自己判断。',
+  },
+  {
+    title: '结构化输出：确认了再开',
+    body: '「模型设置」里可声明端点支持结构化输出，开了之后 JSON 类任务更稳。不确定端点支不支持就保持关闭（默认关，不会偷偷发）。',
+  },
+  {
+    title: '额度有上限，撞顶会停',
+    body: '一次整章改写最多 6 次调用、一次性任务 3 次；到上限会停下来并如实告诉你，不会在后台一直重试把额度烧完。',
+  },
 ]
 
 export default function GuidePage({ onNavigate, ctx }: Props) {
@@ -128,6 +159,26 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
                 </div>
               </div>
             ))}
+        </div>
+      </section>
+
+      {/* 3.2.0 新增能力（不新增页签，补的是入口用法） */}
+      <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+        <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+          <Sparkles size={14} className="text-amber" />
+          <h2 className="text-13 font-semibold text-ink-100">3.2.0 · 修订与核对</h2>
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">本版新增</span>
+          <HelpPopover title="这一版改了什么" width="22rem">
+            {'这一版没有新页签，改的是「改稿靠不靠得住」：\n\n· 稿子先生成候选、你审阅后才落正文；\n· 落库前会比对正文，改过了就拒绝；\n· 改完自动复检，告诉你问题解决没；\n· 检查结论留档可回看，带原文引文与定位结果；\n· 额度有硬上限，撞到就停。\n\n所有结论只如实呈现：没查到就写没查到，做不到就写做不到。'}
+          </HelpPopover>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+          {REVISION_TIPS.map(tip => (
+            <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
+              <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
+              <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>
+            </div>
+          ))}
         </div>
       </section>
 
