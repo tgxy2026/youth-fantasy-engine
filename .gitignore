@@ -56,3 +56,11 @@ Desktop.ini
 #   .workbuddy 下其余散件（一次性脚本如 process-bg.py 等）一律不进
 .workbuddy/*.py
 dist-verify-*/
+
+#   AI 其它客户端自带的会话/偏好状态（Codex 的 .arts、opencode 的 .opencode）——
+#   工具状态不是项目内容，别混进提交里
+.arts/
+.opencode/
+#   .workbuddy 根下这份 HANDOFF 是 2026-10-16 的陈旧副本（正文第一行就写着"请先读 memory/HANDOFF.md"），
+#   留着是历史留档、不进仓库；真源在 .workbuddy/memory/HANDOFF.md
+.workbuddy/HANDOFF.md
