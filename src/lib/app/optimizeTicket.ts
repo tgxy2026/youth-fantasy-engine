@@ -41,6 +41,9 @@ import * as db from '@/lib/db'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { hashOf } from '@/lib/semantic/chunk'
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · WQ1 贯通：识别流式停滞（错误自带 partialText，见 transport.AIStreamStalledError）
+import { isStreamStalled } from '@/lib/aiCore/transport'
+import { countWords } from '@/lib/editor/textStats'
 // 3.2.0 · WQ8 文本守卫（方案 A：登记实体 + 只报告不判定）
 import { checkFactRetention, type FactGuardReport } from '@/lib/ai/factGuard'
 import { loadRegistry } from '@/lib/settings/settingLedger'
@@ -628,6 +631,22 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
       opts.onLog?.(msg)
       await settleRewriteLedger(ledger, 'aborted')
       return { chapterId, items, error: msg, budget: budget.snapshot() }
+    }
+    // 3.2.0 · WQ1 贯通：流式**停滞**——错误自带停滞前已收片段（partialText）。
+    // 🔴 半截正文**不能整章落库**（applyChapterRewrite 是整章覆盖，落一半比不落更糟）；
+    //    这里做的两件事：① 条目如实标 failed 并注明「已收到 N 字未采用」（作者知道模型
+    //    不是没干活，是断在半路）；② 片段字数如实报告，由 onLog 告知 —— 片段本体已随
+    //    onToken 流到调用方界面（若作者想捞，编辑器里还有），不在结果里伪造"改写完成"。
+    if (isStreamStalled(e)) {
+      const partial = (e as import('@/lib/aiCore/transport').AIStreamStalledError).partialText ?? ''
+      const chars = partial.trim() ? countWords(partial) : 0
+      const baseMsg = e instanceof Error ? e.message : String(e)
+      const msg = chars > 0
+        ? `${baseMsg}（已收到 ${chars} 字未采用；可重试，或换响应更稳的模型）`
+        : baseMsg
+      opts.onLog?.(msg)
+      await settleRewriteLedger(ledger, 'failed', e)
+      return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg, budget: budget.snapshot() }
     }
     const msg = e instanceof Error ? e.message : String(e)
     await settleRewriteLedger(ledger, 'failed', e)

@@ -41,6 +41,8 @@ function pacedBody(parts: string[], gapMs: number): Response {
 }
 
 const line = (s: string) => `data: ${JSON.stringify({ message: { content: s } })}\n`
+/** OpenAI 兼容格式的增量行（chat() 的 openai 通道读 choices[0].delta.content） */
+const oline = (s: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: s } }] })}\n`
 
 const OPENAI: AIProvider = {
   id: 'oa', name: '云端兼容', type: 'openai', baseUrl: 'https://example.test/v1',
@@ -117,7 +119,7 @@ async function main() {
     const real = globalThis.fetch
     let err: unknown = null
     try {
-      globalThis.fetch = (async () => stalledBody([line('前半段')])) as unknown as typeof fetch
+      globalThis.fetch = (async () => stalledBody([oline('前半段')])) as unknown as typeof fetch
       await chat(OPENAI, [{ role: 'user', content: 'hi' }], {
         onToken: () => {},
         timeoutMs: 5000,
@@ -126,6 +128,24 @@ async function main() {
     } catch (e) { err = e } finally { globalThis.fetch = real }
     ok('🔴 ⑤ chat() 把停滞原样抛出（不翻译成"接口响应超时"）', isStreamStalled(err), String(err))
     ok('⑤ 作者能看到"已收到 1 段后停滞"', /停滞/.test((err as Error).message), (err as Error).message)
+    // 3.2.0 · WQ1 贯通：chat() 必须把已收片段挂在错误上（否则调用方无从「保留片段标 incomplete」）
+    ok('🔴 ⑤ chat() 停滞错误带 partialText（片段随错误带出，不当场丢失）',
+      (err as AIStreamStalledError).partialText === '前半段', JSON.stringify((err as AIStreamStalledError).partialText))
+  }
+
+  // ---------- 五b、askSoft 不吞停滞（WQ1 贯通） ----------
+  {
+    const real = globalThis.fetch
+    let err: unknown = null
+    try {
+      globalThis.fetch = (async () => stalledBody([oline('写了半截')])) as unknown as typeof fetch
+      const cfg = { ...OPENAI, type: 'openai' } as const
+      const { askSoft } = await import('@/lib/editor/wordRange')
+      await askSoft(cfg, 'sys', 'user', { signal: undefined as unknown as AbortSignal })
+    } catch (e) { err = e } finally { globalThis.fetch = real }
+    ok('🔴 ⑤b askSoft 不把停滞吞成空串（空串＝伪装成"模型没吐内容"）', isStreamStalled(err), String(err))
+    ok('⑤b askSoft 上抛的停滞带片段', isStreamStalled(err) && (err as AIStreamStalledError).partialText === '写了半截',
+      JSON.stringify(isStreamStalled(err) ? (err as AIStreamStalledError).partialText : null))
   }
 
   // ---------- 六、闸：生产路径必须真的传空闲超时 ----------

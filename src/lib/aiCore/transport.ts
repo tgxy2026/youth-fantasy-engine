@@ -78,6 +78,14 @@ export class AIStreamStalledError extends Error {
     readonly idleMs: number,
     /** 停滞前已收到的增量行数（0 ＝ 连第一段内容都没来） */
     readonly chunksBeforeStall: number,
+    /**
+     * 停滞前已收到的正文片段（3.2.0 · WQ1 贯通）。
+     * 🔴 为什么放在错误上而不是返回值：停滞发生在 SSE 读循环里，那一刻函数只有「抛错」一条
+     *    出口；片段若不随错误带出就会当场丢失。调用方拿到后可「保留片段标 incomplete」，
+     *    而不是把作者等了几分钟的内容整段扔掉。
+     * 空串 ＝ 一段内容都没收到（此时没有可保留的东西）。
+     */
+    partialText: string = '',
   ) {
     super(
       chunksBeforeStall > 0
@@ -85,7 +93,14 @@ export class AIStreamStalledError extends Error {
         : `模型 ${Math.round(idleMs / 1000)} 秒没有返回任何内容，已停止等待（可稍后重试或换模型）。`,
     )
     this.name = 'AIStreamStalledError'
+    this.partialText = partialText
   }
+  /**
+   * 停滞前已收到的正文片段（可能为空串）。
+   * 🔴 非构造期只读：SSE 读循环里构造时还不知道正文（正文在 chat 层逐块拼），
+   *    chat 层 catch 时**补写**此字段再上抛 —— 所以这里必须是可写的。
+   */
+  partialText: string
 }
 export function isStreamStalled(e: unknown): boolean {
   return e instanceof Error && e.name === 'AIStreamStalledError'

@@ -5,7 +5,7 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, type StreamReport, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, type SseChunk } from '@/lib/aiCore/transport'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, AIStreamStalledError, type SseChunk, type StreamReport } from '@/lib/aiCore/transport'
 import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, precheck,
@@ -407,7 +407,8 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
       // 停滞（3.2.0 · WQ6）原样抛：它自带「收到了几段、等了多久」，比一句"超时"有用得多
-      if (isStreamStalled(e)) throw e
+      // 3.2.0 · WQ1 贯通：把已收片段挂到错误上 —— 调用方可「保留片段标 incomplete」而非整段丢弃
+      if (isStreamStalled(e)) { (e as AIStreamStalledError).partialText = content; throw e }
       if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试；若长期超时建议换用更小的模型。`)
       throw e
     }
@@ -613,7 +614,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
       }, () => clearTimer?.(), { idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS })
     } catch (e) {
       if (o.signal?.aborted) throw new AICancelled()
-      if (isStreamStalled(e)) throw e
+      // 3.2.0 · WQ1 贯通：同 Ollama 侧 —— 停滞时把已收片段挂到错误上，供调用方保留
+      if (isStreamStalled(e)) { (e as AIStreamStalledError).partialText = content; throw e }
       if (isAbortError(e)) throw new Error(`接口响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络；若连的是本机 / 局域网服务，确认它已经启动。`)
       throw e
     }

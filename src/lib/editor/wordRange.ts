@@ -13,6 +13,8 @@
  *    模型默认按 token 或字符估，写出来必然偏长（实测：目标 4000 写成 5000，超 25%）。
  */
 import { chat, requireActiveProvider, stripThink, isCancelled } from '@/lib/ai'
+// 3.2.0 · WQ1 贯通：askSoft 不得吞停滞错误（片段随错误上抛，见 transport.AIStreamStalledError）
+import { isStreamStalled } from '@/lib/aiCore/transport'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import type { OutputKind, ReasoningNeed } from '@/lib/ai/outputProtocol'
 import type { AttemptBudget } from '@/lib/ai/requestLedger'
@@ -73,6 +75,9 @@ export async function askSoft(
     return await ask(cfg, sys, user, opts)
   } catch (e) {
     if (isCancelled(e)) throw e
+    // 3.2.0 · WQ1 贯通：流式停滞**必须原样上抛**——它自带「收到几段、等了多久、停滞前片段」，
+    // 吞成空串会把「断流」伪装成「模型没吐内容」，作者重试也只是再等一轮同样的停滞。
+    if (isStreamStalled(e)) throw e
     return ''
   }
 }
