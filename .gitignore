@@ -55,3 +55,4 @@ Desktop.ini
 .workbuddy/automations/
 #   .workbuddy 下其余散件（一次性脚本如 process-bg.py 等）一律不进
 .workbuddy/*.py
+dist-verify-*/
