@@ -16,6 +16,7 @@
 import type { AuditIssue, IssueSeverity } from '@/lib/audit/audit'
 import type { ChapterCheckReport } from '@/lib/outline/chapterCheck'
 import type { CheckFindingLike, CheckRunLike } from './checkReports'
+import { locateEvidence, type TicketEvidence } from './findingAdapters'
 
 /**
  * 本地诊断这条链的**固定任务 id**。
@@ -95,4 +96,37 @@ export function chapterReportToFindings(rep: ChapterCheckReport): CheckFindingLi
  */
 export function chapterReportToRun(rep: ChapterCheckReport): CheckRunLike {
   return { state: 'completed', result: { data: chapterReportToFindings(rep) } }
+}
+
+// ============ 证据快照（落库那一刻的定位，不是"现在的"） ============
+
+/**
+ * 发现列表 → 证据快照（每条一个引文 + 段号 + 是否定位成功）。
+ *
+ * 🔴 为什么落库时要定位一次（工单侧还会再定位一次，看着像重复）：
+ *    落库那一刻，正文就是**被检查的正文**，此刻算出的段号是「当时的证据」。
+ *    之后正文被改写，工单侧按**当前正文**重新定位会得到"现在定位不到"——
+ *    这两件事都如实才对：一份回答"当时有没有证据"，另一份回答"现在还在不在"。
+ *    合成一个就没法回答前者，而前者才是报告留档的意义（A 策略：回看当时的结论）。
+ *
+ * 🔴 没有 `where` 的发现 ⇒ `located:false` 且 quote 为空：不编引文、不编段号。
+ */
+export function evidenceOfFindings(
+  findings: readonly CheckFindingLike[],
+  bodyText: string,
+): TicketEvidence[] {
+  const body = bodyText ?? ''
+  return findings.map(f => {
+    const where = (f.where ?? '').trim()
+    if (!where) return { quote: '', located: false }
+    const loc = locateEvidence(where, body)
+    return loc.located
+      ? { quote: loc.matchedQuote ?? where, paragraphIndex: loc.paragraphIndex, located: true }
+      : { quote: where, located: false }
+  })
+}
+
+/** 证据快照的统计（一句话给界面/摘要用；没有引文时 total 为 0，别说"0/0 可定位"） */
+export function summarizeEvidence(ev: readonly TicketEvidence[]): { total: number; located: number } {
+  return { total: ev.length, located: ev.filter(e => e.located).length }
 }

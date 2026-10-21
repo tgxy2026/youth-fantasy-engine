@@ -45,8 +45,11 @@ import { isCancelled } from '@/lib/ai'
 import { joinCheckReportsToTicket, type ChapterRef } from '@/lib/revision/ticketIntake'
 // 3.2.0 · W4：本地诊断也要留档 —— 此前只有连写自检（AI 侧）的报告会落库，
 //    作者「一键诊断」出的问题当天看得见、隔天查不到，链条缺一环。
-import { chapterReportToFindings, chapterReportToRun, LOCAL_TICKET_JOB_ID } from '@/lib/revision/checkAdapters'
+import {
+  chapterReportToFindings, chapterReportToRun, evidenceOfFindings, LOCAL_TICKET_JOB_ID,
+} from '@/lib/revision/checkAdapters'
 import { persistCheckReports, type CheckRunLike, type PersistCheckReportsResult } from '@/lib/revision/checkReports'
+import type { TicketEvidence } from '@/lib/revision/findingAdapters'
 // 3.2.0 · WQ1：检查项状态列表 —— 某章检查抛错时不再被吞成「诊断完成、没有问题」
 import {
   calculateCoverage, type CheckItemResult, type CheckSummary,
@@ -203,6 +206,7 @@ export async function buildTicketDetailed(opts: BuildTicketOpts = {}): Promise<T
     checkId: string
     source: string
     run: CheckRunLike
+    evidence?: TicketEvidence[]
     chapterId: string
     chapterNo: number
   }[] = []
@@ -244,6 +248,8 @@ export async function buildTicketDetailed(opts: BuildTicketOpts = {}): Promise<T
     })
     pending.push({
       checkId: 'chapter-check', source: 'local', run: chapterReportToRun(rep),
+      // 证据快照：按**被检查的正文**定位一次（工单侧之后按当前正文再定位，两件事都要如实）
+      evidence: evidenceOfFindings(findings, c.chapter.content ?? ''),
       chapterId: c.chapter.id, chapterNo: c.no,
     })
     done++
@@ -643,6 +649,8 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
           checkId: 'chapter-check',
           source: 'local-recheck',
           run: chapterReportToRun(after),
+          // 证据快照按**改后的正文**定位（这才是复检看到的正文）
+          evidence: evidenceOfFindings(findings, text),
           chapterId,
           chapterNo: hit.no,
         }],

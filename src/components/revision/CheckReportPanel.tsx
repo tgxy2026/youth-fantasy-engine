@@ -125,6 +125,12 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
                       {r.minor > 0 && <span className="text-amber">注意 {r.minor}</span>}
                       {r.info > 0 && <span>提示 {r.info}</span>}
                       <span>{r.checkId}</span>
+                      {/* 落库那一刻的证据快照：回答"当时到底有没有证据"，与工单侧按当前正文的定位是两回事 */}
+                      {r.evidence && r.evidence.total > 0 && (
+                        <span title="落库时按被检查的正文逐字定位；定位不到不代表问题不存在，只代表当时没有可引用的原句">
+                          引文 {r.evidence.located}/{r.evidence.total} 可定位
+                        </span>
+                      )}
                     </div>
 
                     <ul className="mt-2 space-y-1.5">
@@ -135,7 +141,7 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
                           {f.detail ? <span className="text-ink-400"> —— {f.detail}</span> : null}
                           {f.where
                             ? <span className="ml-1 text-ink-500" title="可定位的原文片段（工单拿它算段号）">〔{f.where}〕</span>
-                            : null}
+                            : <span className="ml-1 text-ink-600" title="这条发现没有带可引用的原句">〔无引文〕</span>}
                         </li>
                       ))}
                       {r.findings.length === 0 && (

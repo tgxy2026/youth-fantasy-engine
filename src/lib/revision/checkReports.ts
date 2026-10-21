@@ -166,6 +166,12 @@ export interface CheckReportView {
   serious: number
   minor: number
   info: number
+  /**
+   * 落库那一刻的证据快照（3.2.0 · W4）。
+   * 🔴 老报告没有这个字段 ⇒ `undefined`（界面写"当时未记录证据"，不假装有）。
+   *    有它时 `total` 是引文条数、`located` 是逐字定位成功的条数。
+   */
+  evidence?: { total: number; located: number }
 }
 
 /** 报告来源的人话（作者看的不是 `local-recheck` 这种键） */
@@ -187,6 +193,10 @@ export async function listCheckReportViews(
     const r = (p.report ?? {}) as Record<string, unknown>
     const findings = Array.isArray(r.result) ? (r.result as CheckFindingLike[]) : []
     const c = countFindings(findings)
+    const ev = Array.isArray(r.evidence) ? (r.evidence as { quote?: string; located?: boolean }[]) : null
+    // 🔴 空数组与"没有这个字段"同义：落库时没引文（`evidence: []`），
+    //    界面不该显示「引文 0/0 可定位」这种废话 —— 与"老报告没记证据"分开也无意义。
+    const hasEv = !!ev && ev.length > 0
     out.push({
       id: p.id,
       jobId: p.jobId,
@@ -201,6 +211,7 @@ export async function listCheckReportViews(
       serious: c.serious,
       minor: c.minor,
       info: c.info,
+      ...(hasEv ? { evidence: { total: ev.length, located: ev.filter(e => e.located).length } } : {}),
     })
   }
   out.sort((a, b) => b.createdAt - a.createdAt)

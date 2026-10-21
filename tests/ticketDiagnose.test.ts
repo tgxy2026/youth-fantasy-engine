@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import './mock-memory'
 import {
-  chapterReportToFindings, chapterReportToRun, levelOfSeverity, LOCAL_TICKET_JOB_ID,
+  chapterReportToFindings, chapterReportToRun, evidenceOfFindings, levelOfSeverity, LOCAL_TICKET_JOB_ID,
+  summarizeEvidence,
 } from '@/lib/revision/checkAdapters'
 import {
   persistCheckReports, listCheckReportViews, summarizeReportViews, reportSourceLabel,
@@ -175,6 +176,45 @@ async function main() {
       && reportSourceLabel('self-refine') === '连写自检')
   }
 
+  // ---------- 四之三、证据快照：落库那一刻的定位，不是"现在的" ----------
+  {
+    const body = '甲推开门。\n他看着墙上的按装图纸。\n这是一种毒药。'
+    const ev = evidenceOfFindings(chapterReportToFindings(rep), body)
+    const sum = summarizeEvidence(ev)
+    ok('④ 每条发现都有一个引文（含定位不到的）', ev.length === 5, String(ev.length))
+    ok('🔴 ④ 错别字引文逐字命中 ⇒ located 且带段号',
+      ev[3].located === true && ev[3].paragraphIndex === 1, JSON.stringify(ev[3]))
+    ok('🔴 ④ 敏感词引文逐字命中 ⇒ located 且带段号',
+      ev[2].located === true && ev[2].paragraphIndex === 2, JSON.stringify(ev[2]))
+    ok('🔴 ④ 伏笔问题没有引文 ⇒ 不编引文也不编段号',
+      ev[1].located === false && ev[1].quote === '', JSON.stringify(ev[1]))
+    ok('🔴 ④ 审计问题的 hint 不在正文 ⇒ located:false 但保留引文本身（作者自己核对）',
+      ev[0].located === false && ev[0].quote === '他抬起头', JSON.stringify(ev[0]))
+    ok('④ 统计：可定位数 ≤ 总数', sum.total === 5 && sum.located === 2, JSON.stringify(sum))
+    ok('④ 空正文 ⇒ 全部定位不到（不是崩，也不是"都没问题"）',
+      evidenceOfFindings(chapterReportToFindings(rep), '').every(e => !e.located))
+    ok('④ 空发现列表 ⇒ 0/0（界面不说"0/0 可定位"）',
+      summarizeEvidence([]).total === 0 && evidenceOfFindings([], 'x').length === 0)
+
+    // 落库后的回看里要能看到"当时的证据"（老报告没有该字段 ⇒ 不假装有）
+    const withEv = await persistCheckReports({
+      projectId: PID,
+      jobId: LOCAL_TICKET_JOB_ID,
+      reports: [{
+        checkId: 'chapter-check', source: 'local',
+        run: runOf([{ level: '严重', title: '新问题 9', detail: '第 9 次', where: '按装' }]),
+        evidence: evidenceOfFindings([{ level: '严重', title: '新问题 9', where: '按装' }], body),
+        chapterId: 'c9', chapterNo: 9,
+      }],
+    })
+    ok('④ 带证据快照的报告照样落库', withEv.saved === 1, `saved=${withEv.saved}`)
+    const row = (await listCheckReportViews(PID)).find(r => r.chapterId === 'c9')
+    ok('🔴 ④ 回看能读到落库时的证据统计', row?.evidence?.total === 1 && row?.evidence?.located === 1,
+      JSON.stringify(row?.evidence))
+    const old = (await listCheckReportViews(PID)).find(r => r.chapterId === 'c1')
+    ok('④ 老报告（无证据字段）⇒ evidence 为 undefined，不假装有', old?.evidence === undefined)
+  }
+
   // ---------- 五、改完复检：标"已改写" ≠ "问题解决了" ----------
   {
     const before = ['错别字：按装 → 安装', '敏感词：毒', '三段连用同一句式']
@@ -221,6 +261,10 @@ async function main() {
       lib.includes('persistCheckReports') && lib.includes('LOCAL_TICKET_JOB_ID'))
     ok('🔴 ④ 改写落库后跑复检（本地引擎、零额度）',
       /runChapterCheck\(\{ \.\.\.hit\.chapter, content: text \}\)/.test(lib))
+    ok('🔴 ④ 两处落库都带证据快照（诊断按被检查正文、复检按改后正文）',
+      (lib.match(/evidenceOfFindings\(/g) ?? []).length === 2
+      && lib.includes("evidence: evidenceOfFindings(findings, c.chapter.content ?? '')")
+      && lib.includes("evidence: evidenceOfFindings(findings, text)"))
     ok('🔴 ④ 复检报告也留档，来源标 local-recheck（与诊断侧的报告区分开）',
       lib.includes("source: 'local-recheck'") && lib.includes('chapterReportToRun(after)'))
     ok('🔴 ④ 复检是旁路：跑失败不把已落库的正文报成失败（有 catch + warn）',
