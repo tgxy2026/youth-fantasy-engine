@@ -30,6 +30,7 @@ import {
   SOURCE_LABEL, actionLabelOf, buildTicketDetailed, groupByChapter, groupByIssue, runTicketChapter,
   type TicketItem, type TicketDiagnose, type RunRecheck,
 } from '@/lib/app/optimizeTicket'
+import type { FactGuardReport } from '@/lib/ai/factGuard'
 
 const OWNER_TAB = 'check-tools'
 const KIND_GEN = 'optimize-ticket'
@@ -48,6 +49,8 @@ interface RunChapterOut {
   afterText?: string
   /** 改完复检（本地引擎，零额度）；没跑成就没有 —— 界面如实说"没跑成"，不装作"已解决" */
   recheck?: RunRecheck
+  /** 实体保留自检（WQ8 方案 A：只报告不判定）；一切正常就不带这个字段 */
+  facts?: FactGuardReport
 }
 interface RunResult { chapters: RunChapterOut[] }
 interface RunProgress { done: number; total: number; title?: string }
@@ -172,6 +175,7 @@ export default function OptimizeTicketPanel() {
           ...(r.beforeText !== undefined ? { beforeText: r.beforeText } : {}),
           ...(r.afterText !== undefined ? { afterText: r.afterText } : {}),
           ...(r.recheck ? { recheck: r.recheck } : {}),
+          ...(r.facts ? { facts: r.facts } : {}),
         })
         done++
         // 🔴 每章跑完就把「已完成」的产物写进 resume：任务结束时 `result` 会被清掉
@@ -191,9 +195,11 @@ export default function OptimizeTicketPanel() {
         const ok = result.chapters.filter(c => c.afterText !== undefined).length
         // 🔴 复检如实带一句：改完不等于改好，有多少章仍有未解决项要说出来
         const stuck = result.chapters.filter(c => c.recheck && c.recheck.stillOpen.length).length
+        const dropped = result.chapters.filter(c => c.facts && c.facts.lost.length).length
         return {
           text: `逐章修订完成：${ok}/${result.chapters.length} 章已改写`
             + (stuck ? `（其中 ${stuck} 章复检后仍有未解决项，见每章标题旁）` : '')
+            + (dropped ? `（${dropped} 章改写后有登记实体没再出现，仅供参考）` : '')
             + '（旧稿都在「时光机 · 本章版本历史」里）',
           kind: 'success' as const,
         }
@@ -209,6 +215,10 @@ export default function OptimizeTicketPanel() {
   const recheckOf = (chapterId: string): RunRecheck | undefined =>
     (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
       ?.chapters.find(c => c.chapterId === chapterId)?.recheck
+  /** 实体保留自检（WQ8 方案 A：只报告，一切正常就不渲染） */
+  const factsOf = (chapterId: string): FactGuardReport | undefined =>
+    (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
+      ?.chapters.find(c => c.chapterId === chapterId)?.facts
 
   return (
     <Panel>
@@ -403,6 +413,17 @@ export default function OptimizeTicketPanel() {
                       return (
                         <span className={`text-10 ${rc.findings ? 'text-ink-400' : 'text-success'}`}>
                           · 复检：原问题已清{rc.findings ? `，还剩 ${rc.findings} 个` : ''}
+                        </span>
+                      )
+                    })()}
+                    {/* 实体保留自检：只提示不判定 —— 丢没丢设定由作者自己判断 */}
+                    {(() => {
+                      const fc = factsOf(g.chapterId)
+                      if (!fc) return null
+                      return (
+                        <span className="text-10 text-amber"
+                          title={`${fc.summary}——这只是参考：改写后少提一个名字常常是正常润色，请自行判断`}>
+                          · {fc.summary}
                         </span>
                       )
                     })()}

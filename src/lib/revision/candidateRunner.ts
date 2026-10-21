@@ -17,6 +17,8 @@
  */
 import * as db from '@/lib/db'
 import { applyChapterRewrite } from '@/lib/editor/chapterRewrite'
+import { checkFactRetention, type FactGuardReport } from '@/lib/ai/factGuard'
+import { loadRegistry } from '@/lib/settings/settingLedger'
 import { saveCandidate, listJobCandidates } from './candidateStore'
 import { applyCandidate, type ApplyOutcome } from './candidateApply'
 import type { RevisionCandidate } from './revisionCandidate'
@@ -60,7 +62,7 @@ export async function chapterBodyOf(chapterId: string): Promise<string> {
  * 🔴 用类型别名而不是 interface extends：`ApplyOutcome` 是**联合类型**，interface 没法继承它。
  */
 export type RunApplyResult =
-  | (Extract<ApplyOutcome, { ok: true }> & { invalidatedSaved: number })
+  | (Extract<ApplyOutcome, { ok: true }> & { invalidatedSaved: number; facts?: FactGuardReport })
   | (Extract<ApplyOutcome, { ok: false }> & { invalidatedSaved: number })
 
 /**
@@ -68,6 +70,10 @@ export type RunApplyResult =
  *
  * 顺序完全由 `applyCandidate` 决定（校验 → 记意图 → 写 → 回读 → 回执），
  * 这里只负责把每一步接到真实的读/写/存。
+ *
+ * 3.2.0 · WQ8：应用成功后再跑一次**实体保留自检**（方案 A：只报告不判定）。
+ * 🔴 全程不抛：它回答的是"改写后哪些登记实体没再出现"，属于给作者看的参考，
+ *    绝不能因为它把已经落库的正文说成有问题；跑不成就没有 `facts` 字段，界面不渲染。
  */
 export async function runApplyCandidate(
   candidate: RevisionCandidate,
@@ -102,14 +108,22 @@ export async function runApplyCandidate(
   const out = await applyCandidate(job, candidate, deps)
 
   let invalidatedSaved = 0
+  let facts: FactGuardReport | undefined
   if (out.ok) {
     for (const c of out.invalidated) {
       const r = await saveCandidate(c).catch(() => null)
       if (r) invalidatedSaved++
     }
+    // 实体保留自检（旁路）：正文已落库、回执已写，这里只是给作者多一句参考
+    try {
+      facts = await checkFactRetention(await loadRegistry(), candidate.beforeText ?? '', candidate.text ?? '')
+      if (!facts.summary) facts = undefined
+    } catch (e) {
+      console.warn('[candidateRunner] 实体保留自检没跑成（正文已落库）：', e)
+    }
   } else {
     // 失败也要持久化：候选可能停在 `applying` 并带着 intent —— 崩溃核对全靠它
     await saveCandidate(out.candidate).catch(() => null)
   }
-  return { ...out, invalidatedSaved }
+  return { ...out, invalidatedSaved, ...(facts ? { facts } : {}) }
 }

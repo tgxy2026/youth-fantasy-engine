@@ -58,7 +58,7 @@ export default function CandidatePanel({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
   const [busyId, setBusyId] = useState('')
   const [confirmId, setConfirmId] = useState('')
-  const [note, setNote] = useState<{ id: string; ok: boolean; text: string } | null>(null)
+  const [note, setNote] = useState<{ id: string; ok: boolean; text: string; facts?: string } | null>(null)
   const [titles, setTitles] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
@@ -90,6 +90,8 @@ export default function CandidatePanel({ onClose }: { onClose: () => void }) {
           text: r.resumed
             ? `上次已经写过，这次只补回了回执（新增 ${d.added} / 删去 ${d.removed} / 改动 ${d.changed}）`
             : `已应用（新增 ${d.added} / 删去 ${d.removed} / 改动 ${d.changed}）`,
+          // 实体保留自检（WQ8 方案 A）：只报告不判定，跑不成就没有这句
+          facts: r.facts?.summary,
         })
       } else {
         setNote({ id: c.id, ok: false, text: failureText(r.code, r.detail) })
@@ -172,6 +174,11 @@ export default function CandidatePanel({ onClose }: { onClose: () => void }) {
 
                     {note?.id === c.id && (
                       <div className={`mt-2 text-11 ${note.ok ? 'text-success' : 'text-danger'}`}>{note.text}</div>
+                    )}
+                    {note?.id === c.id && note.ok && note.facts && (
+                      <div className="mt-1 text-11 text-amber" title="只是参考：改写后少提一个名字常常是正常润色，请自行判断">
+                        {note.facts}
+                      </div>
                     )}
 
                     <div className="mt-2.5 flex items-center gap-2">

@@ -41,6 +41,9 @@ import * as db from '@/lib/db'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { hashOf } from '@/lib/semantic/chunk'
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · WQ8 文本守卫（方案 A：登记实体 + 只报告不判定）
+import { checkFactRetention, type FactGuardReport } from '@/lib/ai/factGuard'
+import { loadRegistry } from '@/lib/settings/settingLedger'
 // 3.2.0 · W4：「加入工单」—— 把已落库的 AI 检查结论挂到按章的工单上
 import { joinCheckReportsToTicket, type ChapterRef } from '@/lib/revision/ticketIntake'
 // 3.2.0 · W4：本地诊断也要留档 —— 此前只有连写自检（AI 侧）的报告会落库，
@@ -433,6 +436,12 @@ interface RunTicketResult {
   error?: string
   /** 改完复检（3.2.0 · W4 闭环：本地引擎，零额度；没跑成就没有这个字段） */
   recheck?: RunRecheck
+  /**
+   * 实体保留自检（3.2.0 · WQ8 方案 A：只报告不判定）。
+   * 🔴 只在**真有话要说**时才带（`summary` 非空）—— 一切正常就不占字段，
+   *    界面也不会多出一行"0 个丢失"的废话。
+   */
+  facts?: FactGuardReport
 }
 
 /** 改完复检的结论 */
@@ -637,6 +646,7 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
   // 🔴 条目标 `done` 只代表"这一章改过了"，不代表"问题解决了" —— 不复检，作者看到的就是
   //    「执行完一片绿」，而错别字/敏感词可能一个没动。复检免费，所以没有不做的理由。
   let recheck: RunRecheck | undefined
+  let facts: FactGuardReport | undefined
   if (!opts.signal?.aborted) {
     try {
       const after = await runChapterCheck({ ...hit.chapter, content: text })
@@ -667,11 +677,20 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
       //    只是这一章没有「改完到底改好没」的记录，界面会如实说"复检没跑成"。
       console.warn('[optimizeTicket] 改完复检没跑成（正文已落库）：', e)
     }
+
+    // 3.2.0 · WQ8 文本守卫（方案 A：只报告不判定）—— 登记实体改写后还在不在。
+    // 🔴 同样全程不抛：宁可没有这份自检，也不能因为它把已落库的正文说成有问题。
+    try {
+      facts = await checkFactRetention(await loadRegistry(), body, text)
+    } catch (e) {
+      console.warn('[optimizeTicket] 实体保留自检没跑成（正文已落库）：', e)
+    }
   }
 
   await settleRewriteLedger(ledger, 'done')
   return {
     chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text,
     ...(recheck ? { recheck } : {}),
+    ...(facts?.summary ? { facts } : {}),
   }
 }
