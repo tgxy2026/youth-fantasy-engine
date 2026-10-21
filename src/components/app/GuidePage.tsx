@@ -79,6 +79,10 @@ const REVISION_TIPS: { title: string; body: string }[] = [
     title: '中文标点会自己配成对',
     body: '打「“」「《」「「」「（」这些左半个，会自动补上右半个、光标停在中间。改用哪家输入法都一样（不用再依赖搜狗/微信自己的设置）；英文引号与粘贴不受影响。',
   },
+  {
+    title: '图片可以直接拖进来',
+    body: '头像、项目封面、图鉴主图、地图底图、看板娘、人物立绘 —— 把图片拖到那块区域里就上传，不必先点按钮。拖错东西会明确告诉你原因（不是图片 / 拖的是文件夹 / 文件是空的）。',
+  },
 ]
 
 export default function GuidePage({ onNavigate, ctx }: Props) {
@@ -177,7 +181,7 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
           <h2 className="text-13 font-semibold text-ink-100">3.2.0 · 修订与核对</h2>
           <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">本版新增</span>
           <HelpPopover title="这一版改了什么" width="22rem">
-            {'这一版没有新页签，改的是「改稿靠不靠得住」：\n\n· 稿子先生成候选、你审阅后才落正文；\n· 落库前会比对正文，改过了就拒绝；\n· 改完自动复检，告诉你问题解决没；\n· 检查结论留档可回看，带原文引文与定位结果；\n· 额度有硬上限，撞到就停。\n\n所有结论只如实呈现：没查到就写没查到，做不到就写做不到。'}
+            {'这一版没有新页签，改的是「改稿靠不靠得住」：\n\n· 稿子先生成候选、你审阅后才落正文；\n· 落库前会比对正文，改过了就拒绝；\n· 改完自动复检，告诉你问题解决没；\n· 检查结论留档可回看，带原文引文与定位结果；\n· 额度有硬上限，撞到就停。\n\n另有几处顺手改进：图鉴可按编号/名称/最近编辑三种顺序看、中文标点自动配对、图片可直接拖拽上传。\n\n所有结论只如实呈现：没查到就写没查到，做不到就写做不到。'}
           </HelpPopover>
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">

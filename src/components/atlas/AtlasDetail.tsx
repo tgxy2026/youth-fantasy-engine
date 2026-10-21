@@ -23,6 +23,7 @@ import { ATLAS_IMAGE_ACCEPT, readAtlasImage } from '@/lib/atlas/image'
 import { ATLAS_TOTAL_LIMIT, atlasUsageRatio, atlasUsageText, checkAtlasBudget } from '@/lib/atlas/quota'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
 
@@ -201,6 +202,9 @@ export default function AtlasDetail({
     if (await commitImage(null)) showToast('已移除主图（文字内容不受影响）')
   }
 
+  // 3.2.0：主图可直接拖到预览框上（与「上传主图」同一个 pickImage，压缩 / 容量检查 / 串行落库全复用）
+  const drop = useImageDrop({ accept: ATLAS_IMAGE_ACCEPT, onFile: pickImage, disabled: busy })
+
   /** 容量提示的成色：≥80% 琥珀、超限红（和方案 §6.2 的提示口径一致） */
   const usageRatio = atlasUsageRatio(projectImageBytes, imageLimit)
   const usageClass = usageRatio >= 1 ? 'text-danger' : usageRatio >= 0.8 ? 'text-amber' : 'text-ink-600'
@@ -257,17 +261,20 @@ export default function AtlasDetail({
         </div>
       </header>
 
-      {/* 主图（方案 §3.2：详情查看大图）*/}
+      {/* 主图（方案 §3.2：详情查看大图）；3.2.0 起这块也是拖拽落点 */}
       <div className="shrink-0 border-b border-ink-700 px-4 py-3">
-        {image ? (
-          <div className="relative rounded-lg overflow-hidden border border-ink-700 bg-ink-900" style={{ aspectRatio: '16 / 9' }}>
-            <img src={image.dataUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-ink-700 px-3 py-5 text-center text-11 text-ink-500">
-            还没有主图 —— 点下面「上传主图」选一张
-          </div>
-        )}
+        <div className="relative" {...drop.dropProps}>
+          {image ? (
+            <div className="relative rounded-lg overflow-hidden border border-ink-700 bg-ink-900" style={{ aspectRatio: '16 / 9' }}>
+              <img src={image.dataUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-ink-700 px-3 py-5 text-center text-11 text-ink-500">
+              还没有主图 —— 点下面「上传主图」选一张，或把图片直接拖到这里
+            </div>
+          )}
+          {drop.dragging && <DropOverlay label={image ? '松开即可换成本图' : '松开即可设为主图'} />}
+        </div>
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"

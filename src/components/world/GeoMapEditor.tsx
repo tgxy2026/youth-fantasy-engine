@@ -6,6 +6,7 @@ import type { TabDef } from '@/lib/types'
 import HelpPopover from '@/components/common/HelpPopover'
 import { MAP_SPACE_FALLBACK } from '@/lib/settings/palette'
 import { Button } from '@/components/common/Button'
+import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import { useGeoMapModel } from '@/components/world/useGeoMapModel'
 import { GeoMapList, DrawDialog, AddMarkerForm, DetailPanel } from '@/components/world/GeoMapParts'
 import { LAYER_COLORS, G, CELL_KM_STEPS } from '@/components/world/geoMapGeometry'
@@ -64,6 +65,10 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       showToast(e instanceof Error ? e.message : '这张图不能用作底图', 'error')
     }
   }
+
+  // 3.2.0：底图可以直接拖到画布上（落点＝整块画布，不必先找准「上传底图」那个小按钮）。
+  // 与按钮同一条通路：压缩、体积上限、落库、切到图片模式都由 onPickMapImage 负责。
+  const dropMap = useImageDrop({ accept: MAP_IMAGE_ACCEPT, onFile: f => onPickMapImage(f), disabled: loading })
 
   // 底图尺寸必须**解码后**才知道；`SVGImageElement` 没有 `naturalWidth`，
   // 所以用一张 HTMLImage 预加载来测，再把尺寸回报给 model（fitView 要用）。
@@ -183,7 +188,9 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
           onChanged={() => void load()}
           disabled={loading}
         />
-        <div ref={wrapRef} className="flex-1 min-w-0 relative overflow-hidden" style={{ background: 'rgb(var(--ink-900))' }}>
+        <div {...dropMap.dropProps} ref={wrapRef} className="flex-1 min-w-0 relative overflow-hidden" style={{ background: 'rgb(var(--ink-900))' }}>
+          {/* 拖图进画布 ⇒ 直接设成底图（覆盖层 pointer-events-none，不影响继续拖动画布） */}
+          {dropMap.dragging && <DropOverlay label="松开即可用作地图底图" radius="" />}
           {/* 空态提示必须 pointer-events-none，否则会挡住「单击空白新增」 */}
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center text-ink-500 text-sm pointer-events-none" style={{ zIndex: Z.pageHandle }}>加载地理数据…</div>

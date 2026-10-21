@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
+import { useImageDrop, DropOverlay, type ImageDropApi } from '@/components/common/ImageDropZone'
 import HelpPopover from '@/components/common/HelpPopover'
 // 与 ProjectHub 保持一致用 WebP 版本（249 KB vs 4.18 MB）。
 // 🔴 两处必须同步：这个弹窗是「恢复默认」时的预览源，若它还指向 PNG，
@@ -66,6 +67,15 @@ export default function MascotSettingsDialog({ onClose, onSaved }: {
     }
   }
 
+  // 3.2.0：预览框兼作拖拽落点 —— 与「上传图片」同一个 onFile（同一条压缩/落库通路）。
+  // 拒绝原因写本弹窗的错误行（与选错文件的提示位置一致），不再额外弹 toast。
+  const drop = useImageDrop({
+    accept: PORTRAIT_ACCEPT,
+    onFile,
+    disabled: busy,
+    onReject: reason => setErr(reason),
+  })
+
   return (
     <Modal
       open
@@ -98,7 +108,7 @@ export default function MascotSettingsDialog({ onClose, onSaved }: {
         </div>
 
         {/* ② 预览（当前生效图：自定义优先，否则内置默认）—— 由 ProjectHub 传下来的当前生效图渲染 */}
-        <PreviewBox custom={custom} />
+        <PreviewBox custom={custom} drop={drop} />
 
         {/* ③ 上传 / 恢复默认 */}
         <div className="flex items-center gap-2">
@@ -132,15 +142,21 @@ export default function MascotSettingsDialog({ onClose, onSaved }: {
 }
 
 /** 预览框：无自定义 → 内置默认图（与 ProjectHub 同一资源）；有 → 自定义 dataURL */
-function PreviewBox({ custom }: { custom: string | null }) {
+function PreviewBox({ custom, drop }: { custom: string | null; drop: ImageDropApi }) {
   return (
-    <div className="flex items-center justify-center rounded-lg border border-ink-700 bg-ink-900/60 p-3" style={{ minHeight: 160 }}>
+    <div
+      {...drop.dropProps}
+      className="relative flex items-center justify-center rounded-lg border border-ink-700 bg-ink-900/60 p-3"
+      style={{ minHeight: 160 }}
+    >
       <img
         src={custom ?? DEFAULT_SRC}
         alt="看板娘预览"
         draggable={false}
         className="h-40 w-auto select-none object-contain"
       />
+      {/* 3.2.0：图片可以直接拖到这块预览上（拒绝原因走本弹窗自己的错误行，不弹 toast） */}
+      {drop.dragging && <DropOverlay label="松开即可用作看板娘" />}
     </div>
   )
 }

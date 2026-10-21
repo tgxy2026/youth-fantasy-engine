@@ -11,6 +11,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import Avatar from '@/components/common/Avatar'
 import { Button } from '@/components/common/Button'
+import { useImageDrop } from '@/components/common/ImageDropZone'
 import { showToast } from '@/components/dialogs/dialogs'
 import { AVATAR_ACCEPT, AVATAR_HINT_SPEC, readAvatarFile } from '@/lib/media/imageAvatar'
 
@@ -48,8 +49,18 @@ export default function AvatarPicker({ src, name, size = 64, onChange, hint, act
     }
   }
 
+  // 3.2.0：图片可直接拖到这行任意位置 —— 与点按钮走**同一条**通路（同一个 pick），
+  // 校验、裁方、压缩、toast 都复用，不存在"拖进来的和点选进来的规则不一样"。
+  const drop = useImageDrop({ accept: AVATAR_ACCEPT, onFile: pick, disabled: busy })
+
   return (
-    <div className="flex items-center gap-3">
+    <div
+      {...drop.dropProps}
+      // 3.2.0：整行都是拖拽落点 —— 头像是 64px 的小方块，只盯着那块拖太挑手
+      className={`flex items-center gap-3 rounded-xl transition-colors ${
+        drop.dragging ? 'ring-2 ring-amber/60 bg-amber/5' : ''
+      }`}
+    >
       <Avatar src={src} name={name} size={size} title={name || '头像'} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -72,7 +83,9 @@ export default function AvatarPicker({ src, name, size = 64, onChange, hint, act
           {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
         <p className="mt-1 text-10 text-ink-500 leading-relaxed">
-          {hint ?? '不设也能用 —— 会用名字首字代替。'}
+          {drop.dragging
+            ? <span className="text-amber">松开鼠标即可换上这张图</span>
+            : (hint ?? '不设也能用 —— 会用名字首字代替；也可以直接把图片拖到这里。')}
         </p>
         <p className="mt-0.5 text-10 text-ink-600 leading-relaxed">{AVATAR_HINT_SPEC}</p>
       </div>

@@ -31,6 +31,7 @@ import workbenchBg from '@/assets/workbench-bg.png'
 //    要换回 PNG 只需把这行改回去，别删源文件。
 import jiewenjiGufeng from '@/assets/jiewenji-gufeng.webp'
 import { Button } from '@/components/common/Button'
+import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import MascotSettingsDialog from '@/components/settings/MascotSettingsDialog'
 import AppIconDialog from '@/components/settings/AppIconDialog'
 import { appIconSupported } from '@/lib/app/desktop'
@@ -123,6 +124,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     reader.onload = () => setEditForm(f => ({ ...f, cover: String(reader.result) }))
     reader.readAsDataURL(file)
   }
+
+  // 3.2.0：封面支持拖拽（新建弹窗 / 编辑弹窗各一处，落点就是那张 88×123 的封面位）。
+  // 🔴 顺带补上一个老洞：`pickCover` 原先**只查体积不查类型**，选中一个 .txt 也会被 base64 进封面，
+  //    现在非图片在 `planImageDrop` 就被挡下并说明原因。
+  const dropCreateCover = useImageDrop({ accept: 'image/*', onFile: pickCover })
+  const dropEditCover = useImageDrop({ accept: 'image/*', onFile: pickEditCover })
 
   const startEdit = (p: Row) => {
     const isCustom = (p.projectType ?? 'full') === 'custom'
@@ -338,12 +345,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               <Button variant="icon-muted" onClick={() => setCreating(false)} title="关闭" aria-label="关闭"><X size={16} /></Button>
             </div>
             <div className="flex gap-5">
-              {/* 封面上传 */}
-              <div className="shrink-0">
+              {/* 封面上传（也可把图片直接拖到这张封面位上） */}
+              <div className="relative shrink-0" {...dropCreateCover.dropProps}>
                 <Button variant="bare"
                   onClick={() => coverRef.current?.click()}
                   className="group relative w-[88px] h-[123px] rounded-lg border border-dashed border-ink-600 hover:border-amber/50 overflow-hidden transition-colors flex items-center justify-center"
-                  title="上传封面（可选，2MB 以内）"
+                  title="上传封面（可选，2MB 以内；也可以把图片直接拖到这里）"
                 >
                   {form.cover ? (
                     <>
@@ -363,6 +370,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     </div>
                   )}
                 </Button>
+                {dropCreateCover.dragging && <DropOverlay compact label="松开上传" />}
                 <input
                   ref={coverRef}
                   type="file"
@@ -491,29 +499,32 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   /* 编辑模式：修改书名与封面 */
                   <div>
                     <div className="flex items-start gap-4">
-                      <Button variant="bare"
-                        onClick={() => editCoverRef.current?.click()}
-                        className="group/cover relative w-[92px] h-[128px] rounded-md border border-dashed border-ink-600 hover:border-amber/50 overflow-hidden transition-colors flex items-center justify-center shrink-0"
-                        title="上传封面（可选，2MB 以内）"
-                      >
-                        {editForm.cover ? (
-                          <>
-                            <img src={editForm.cover} alt="封面预览" className="w-full h-full object-cover" />
-                            <span
-                              onClick={e => { e.stopPropagation(); setEditForm(f => ({ ...f, cover: '' })) }}
-                              className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover/cover:opacity-100 transition-opacity"
-                              title="移除封面"
-                            >
-                              <X size={11} />
-                            </span>
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center gap-1.5 text-ink-500 group-hover/cover:text-amber/70 transition-colors">
-                            <ImageIcon size={16} />
-                            <span className="text-10">上传封面</span>
-                          </div>
-                        )}
-                      </Button>
+                      <div className="relative shrink-0" {...dropEditCover.dropProps}>
+                        <Button variant="bare"
+                          onClick={() => editCoverRef.current?.click()}
+                          className="group/cover relative w-[92px] h-[128px] rounded-md border border-dashed border-ink-600 hover:border-amber/50 overflow-hidden transition-colors flex items-center justify-center shrink-0"
+                          title="上传封面（可选，2MB 以内；也可以把图片直接拖到这里）"
+                        >
+                          {editForm.cover ? (
+                            <>
+                              <img src={editForm.cover} alt="封面预览" className="w-full h-full object-cover" />
+                              <span
+                                onClick={e => { e.stopPropagation(); setEditForm(f => ({ ...f, cover: '' })) }}
+                                className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover/cover:opacity-100 transition-opacity"
+                                title="移除封面"
+                              >
+                                <X size={11} />
+                              </span>
+                            </>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5 text-ink-500 group-hover/cover:text-amber/70 transition-colors">
+                              <ImageIcon size={16} />
+                              <span className="text-10">上传封面</span>
+                            </div>
+                          )}
+                        </Button>
+                        {dropEditCover.dragging && <DropOverlay compact radius="rounded-md" label="松开上传" />}
+                      </div>
                       <input
                         ref={editCoverRef}
                         type="file"
