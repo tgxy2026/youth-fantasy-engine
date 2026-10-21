@@ -42,7 +42,7 @@ import {
 } from '@/lib/ai'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
-import { TestResultBar, TestingBar, ContextWindowField, TemperatureField } from '@/components/settings/AIConfigFields'
+import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, StructureCapabilityField } from '@/components/settings/AIConfigFields'
 
 /**
  * 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读。
@@ -746,6 +746,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 value={editing.temperature}
                 local={editing.type === 'ollama' || !!editing.local}
                 onChange={v => setEditing(prev => (prev ? { ...prev, temperature: v } : prev))}
+              />
+
+              {/* 3.2.0 · WQ5：结构化输出能力（默认关闭）—— 实现在 AIConfigFields.tsx */}
+              <StructureCapabilityField
+                structured={editing.structuredOutput}
+                reasoningWithStructure={editing.reasoningWithStructure}
+                onChange={patch => setEditing(prev => (prev ? { ...prev, ...patch } : prev))}
               />
 
               {testing && <TestingBar model={editing.model} />}

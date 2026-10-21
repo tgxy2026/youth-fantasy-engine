@@ -50,8 +50,8 @@ export interface VecBasis {
   category: string
   /** 来源标题的摘要（角色卡名等；标题变了也算旧块） */
   headDigest?: string
-  /** 该块文本涉及的字段（稳定 ID + 存储键 + 当时的取值摘要） */
-  fields: { id: string; key: string; digest: string }[]
+  /** 该块文本涉及的字段（稳定 ID + 存储键 + 当时的取值摘要 + 当时的显示名） */
+  fields: { id: string; key: string; digest: string; label?: string }[]
 }
 
 export interface VecRow {

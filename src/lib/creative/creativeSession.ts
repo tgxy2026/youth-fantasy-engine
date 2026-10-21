@@ -49,6 +49,11 @@ import { lastContextAssembly } from '@/lib/ai/aiContext'
 import { checkRewriteTarget, formatGap } from '@/lib/audit/evidenceGate'
 import { countWords } from '@/lib/editor/textStats'
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · WQ6：手动改写入口与改写后的设定同步各自记账（到上限暂停，不嵌套追加）
+import {
+  createAttemptBudget, isRequestBudgetExhausted,
+  ONE_SHOT_ATTEMPT_BUDGET, REWRITE_ATTEMPT_BUDGET,
+} from '@/lib/ai/requestLedger'
 import type { LedgerItem } from '@/lib/settings/settingLedger'
 
 /** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
@@ -827,6 +832,8 @@ export async function startChapterRewrite(p: {
   })
   // 上一章结尾当衔接样本（改写后仍要接得上）；改的是首章就没有
   const prevTail = idx > 0 ? (cands[idx - 1].chapter.content ?? '').trim() : ''
+  // 3.2.0 · WQ6：这一次改写**自己一份**预算（主改写 / 补写 / 压缩）；不与连写、也不与别的任务共用
+  const budget = createAttemptBudget({ label: `第 ${hit.no} 章改写`, max: REWRITE_ATTEMPT_BUDGET })
   // 流式累积 + 节流刷新：每个 token 都 set 会让组件逐字重渲染
   let buf = ''
   let lastFlush = 0
@@ -851,6 +858,7 @@ export async function startChapterRewrite(p: {
       // 🔴 字数校准**没生效**时如实提示（模型失败 / 被截断）——
       //    否则作者只看到「2202 → 2202 字」，分不清是"模型没干活"还是"本来就不用补"。
       onLog: msg => notice(msg, 'info'),
+      budget,
     })
     buf = text
     if (!text.trim()) {
@@ -879,7 +887,12 @@ export async function startChapterRewrite(p: {
     // 🔴 判据走 isCancelled（真源 lib/ai.ts）：原先的 message 正则会把含「取消 / abort」的真失败
     //    显示成「已中止改写（没有写入任何内容）」，把错误盖成 info。
     const aborted = isCancelled(e)
-    notice(aborted ? '已中止改写（没有写入任何内容）' : '改写失败：' + msg, aborted ? 'info' : 'error')
+    // 3.2.0 · WQ6：预算耗尽是**我方主动暂停**，不是模型报错 —— 文案与重试建议都不一样
+    const budgetHit = isRequestBudgetExhausted(e)
+    notice(
+      budgetHit ? msg : aborted ? '已中止改写（没有写入任何内容）' : '改写失败：' + msg,
+      budgetHit || aborted ? 'info' : 'error',
+    )
     set({ rewrite: null })
   } finally {
     rewriteCtl = null
@@ -912,8 +925,14 @@ export async function applyRewrite() {
     if (r.isLatest) {
       const strategy = snap.inputs.strategy === 'confirm' ? 'add-only' : snap.inputs.strategy
       try {
-        const res = await extractAndCommitSettings(r.text, r.title, strategy, undefined)
-        extra = res.created > 0 ? `；已同步设定 +${res.created} 条` : '；没有需要新增的设定'
+        // 3.2.0 · WQ6：设定同步是一次性入口 —— 自己一份小预算，到上限就如实说"没同步完"
+        const syncBudget = createAttemptBudget({ label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET })
+        const res = await extractAndCommitSettings(r.text, r.title, strategy, undefined, undefined, undefined, syncBudget)
+        extra = res.created > 0
+          ? `；已同步设定 +${res.created} 条`
+          : res.errors?.length
+            ? `；设定同步未完整完成（${res.errors.join('；')}），可到设定表手动补`
+            : '；没有需要新增的设定'
       } catch {
         extra = '；设定同步未能完成（不影响正文，可到表格页用「AI 整理」补）'
       }

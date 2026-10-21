@@ -44,6 +44,11 @@ import { isCancelled } from '@/lib/ai'
 // 3.2.0 · WQ8 文本守卫（方案 A：登记实体 + 只报告不判定）
 import { checkFactRetention, type FactGuardReport } from '@/lib/ai/factGuard'
 import { loadRegistry } from '@/lib/settings/settingLedger'
+// 3.2.0 · WQ6：改写步骤自带预算（主改写 / 补写 / 压缩 / 设定整理都计入），到上限暂停
+import {
+  createAttemptBudget, isRequestBudgetExhausted,
+  REWRITE_ATTEMPT_BUDGET, type AttemptBudgetSnapshot,
+} from '@/lib/ai/requestLedger'
 // 3.2.0 · W4：「加入工单」—— 把已落库的 AI 检查结论挂到按章的工单上
 import { joinCheckReportsToTicket, type ChapterRef } from '@/lib/revision/ticketIntake'
 // 3.2.0 · W4：本地诊断也要留档 —— 此前只有连写自检（AI 侧）的报告会落库，
@@ -212,6 +217,7 @@ export async function buildTicketDetailed(opts: BuildTicketOpts = {}): Promise<T
     evidence?: TicketEvidence[]
     chapterId: string
     chapterNo: number
+    chapterTitle: string
   }[] = []
   let done = 0
   for (const c of targets) {
@@ -253,7 +259,7 @@ export async function buildTicketDetailed(opts: BuildTicketOpts = {}): Promise<T
       checkId: 'chapter-check', source: 'local', run: chapterReportToRun(rep),
       // 证据快照：按**被检查的正文**定位一次（工单侧之后按当前正文再定位，两件事都要如实）
       evidence: evidenceOfFindings(findings, c.chapter.content ?? ''),
-      chapterId: c.chapter.id, chapterNo: c.no,
+      chapterId: c.chapter.id, chapterNo: c.no, chapterTitle: c.chapter.title,
     })
     done++
     opts.onProgress?.(done, targets.length)
@@ -442,6 +448,12 @@ interface RunTicketResult {
    *    界面也不会多出一行"0 个丢失"的废话。
    */
   facts?: FactGuardReport
+  /**
+   * 本章改写的请求预算快照（3.2.0 · WQ6）。
+   * 🔴 界面据此如实显示「预计范围 / 上限 / 实际花了多少」—— 作者事前能看见量级，
+   *    事后能核对额度有没有被循环偷偷吃掉。
+   */
+  budget?: AttemptBudgetSnapshot
 }
 
 /** 改完复检的结论 */
@@ -586,6 +598,9 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
   // 3.2.0 · WQ7：本次改写独占一条任务账（上层已指定归属就沿用，批量执行才好合并）
   const ledger = opts.request ? { id: opts.request.taskId ?? '', request: opts.request } : await startRewriteLedger(hit.chapter.title)
   const request = ledger?.request
+  // 3.2.0 · WQ6：**每章一份**改写预算（不是全局单例）—— 并行任务各记各的，到上限暂停不嵌套追加。
+  // 🔴 与连写侧同口径：主改写、补写、压缩、最新章设定整理都从这一份里扣。
+  const budget = createAttemptBudget({ label: `第 ${hit.no} 章改写`, max: REWRITE_ATTEMPT_BUDGET })
 
   let text = ''
   try {
@@ -599,16 +614,24 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
       signal: opts.signal,
       onLog: opts.onLog,
       ...(request ? { request } : {}),
+      budget,
     })
   } catch (e) {
     // 🔴 中止 ⇒ 条目**保持 pending**，不是 failed（见文件头纪律 ④）
     if (isCancelled(e) || opts.signal?.aborted) {
       await settleRewriteLedger(ledger, 'aborted')
-      return { chapterId, items }
+      return { chapterId, items, budget: budget.snapshot() }
+    }
+    // 🔴 预算耗尽也是**暂停**：标 failed 会让人以为"这条修不了"，重试还会继续烧额度
+    if (isRequestBudgetExhausted(e)) {
+      const msg = e instanceof Error ? e.message : '模型请求已达上限'
+      opts.onLog?.(msg)
+      await settleRewriteLedger(ledger, 'aborted')
+      return { chapterId, items, error: msg, budget: budget.snapshot() }
     }
     const msg = e instanceof Error ? e.message : String(e)
     await settleRewriteLedger(ledger, 'failed', e)
-    return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg }
+    return { chapterId, items: markAll(items, ids, 'failed', msg), error: msg, budget: budget.snapshot() }
   }
 
   if (!text.trim()) {
@@ -628,12 +651,18 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
 
   // 最新章才补跑设定同步（历史章的设定类内容按纪律整体冻结，它不产生新设定）
   if (isLatest) {
-    try {
-      await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request)
-    } catch (e) {
-      // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
-      //    至少留一行日志 —— 作者可去设定表手动补。
-      console.warn('[optimizeTicket] 最新章改写后设定同步失败（正文已落库，可去设定表手动补）：', e)
+    if (budget.exhausted) {
+      // 🔴 预算到顶就**暂停**，不嵌套追加：正文已落库，设定整理留待作者手动补（如实说）
+      opts.onLog?.(`${budget.describe()} —— 设定整理已跳过（正文已落库，可去设定表手动补）`)
+    } else {
+      try {
+        // 设定整理也计入本章预算（抽取 1 次；auto-update 策略的变化检测同样从这份里扣）
+        await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request, budget)
+      } catch (e) {
+        // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
+        //    至少留一行日志 —— 作者可去设定表手动补。
+        console.warn('[optimizeTicket] 最新章改写后设定同步失败（正文已落库，可去设定表手动补）：', e)
+      }
     }
   }
 
@@ -663,6 +692,7 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
           evidence: evidenceOfFindings(findings, text),
           chapterId,
           chapterNo: hit.no,
+          chapterTitle: hit.chapter.title,
         }],
       })
       recheck = {
@@ -692,5 +722,6 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
     chapterId, items: markAll(items, ids, 'done', ''), beforeText: body, afterText: text,
     ...(recheck ? { recheck } : {}),
     ...(facts?.summary ? { facts } : {}),
+    budget: budget.snapshot(),
   }
 }

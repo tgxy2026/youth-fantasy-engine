@@ -852,7 +852,7 @@ function row(input: {
   })
 
   /** 权限正常：三个字段都可读 */
-  const rulesOn = (over: Partial<IndexFieldRule> = {}): FieldRules => ({
+  const rulesOn = (over: Partial<IndexFieldRule> = {}): Extract<FieldRules, { kind: 'rules' }> => ({
     kind: 'rules',
     rules: {
       名称: fieldRule('名称'),
@@ -889,6 +889,8 @@ function row(input: {
   ok('Q2 索引块记录依据（v / tabId / 模板摘要 / 字段表）',
     doc.basis?.v === 1 && doc.basis.tabId === 'races' && doc.basis.templateDigest === 'tpl:on')
   ok('Q2 依据里逐字段记了值摘要', doc.basis?.fields.some(f => f.key === 'cf_secret' && f.digest === hashOf(MARK)) === true)
+  ok('Q2 依据里记下当时的显示名（T3-05 改名判定用）',
+    doc.basis?.fields.find(f => f.key === 'cf_secret')?.label === '密文')
   ok('Q2 建索引时受权字段确实进了文本（正控）', doc.text.includes(MARK))
   ok('Q2 规则里没有的 cf_ 字段不进索引', indexDocs(rulesOff)[0].text.includes(MARK) === false)
 
@@ -983,6 +985,34 @@ function row(input: {
     (await gateHits([cardHit], rulesOn(), [{ id: 'k1', name: '霜狼', data: { cf_secret: MARK } }])).length === 1)
   ok('Q2 角色卡改名（索引未重建）⇒ 旧标题快照不许注入',
     (await gateHits([cardHit], rulesOn(), [{ id: 'k1', name: '改名了', data: { cf_secret: MARK } }])).length === 0)
+
+  // ---- T3-05：另一台设备同步来新定义（改名 / 同键重建）后，旧块不可注入 ----
+  // 场景：块是在旧定义下建的（label「密文」），当前快照已把它改名。键与值都没变，
+  // 只比存储键 / 字段 ID 抓不到 —— 必须用块里记下的旧显示名比对。
+  ok('🔴 T3-05 字段改名（键与值未变）⇒ 旧块整块丢弃',
+    (await gateHits(rawHits, rulesOn({ label: '绝密' }))).length === 0)
+  ok('T3-05 字段 ID 换了（存储键复用重建）⇒ 旧块丢弃',
+    (await gateHits(rawHits, {
+      ...rulesOn(),
+      rules: { ...rulesOn().rules, cf_secret: fieldRule('cf_reborn') },
+    })).length === 0)
+  {
+    const un = rulesOn()
+    const unrelated: FieldRules = {
+      ...un,
+      rules: { ...un.rules, cf_other: fieldRule('cf_other', { label: '另一个字段改了名' }) },
+    }
+    ok('T3-05 与块无关的字段改名 ⇒ 不连带作废', (await gateHits(rawHits, unrelated)).length === 1)
+    ok('T3-05 布局重排（label 不变）⇒ 块仍有效', (await gateHits(rawHits, rulesOn())).length === 1)
+  }
+  {
+    const legacy = rawHits.map(h => ({
+      ...h,
+      basis: h.basis ? { ...h.basis, fields: h.basis.fields.map(f => ({ id: f.id, key: f.key, digest: f.digest })) } : undefined,
+    }))
+    ok('T3-05 历史块没记显示名 ⇒ 不凭空判失效（旧口径照常）',
+      (await gateHits(legacy, rulesOn())).length === 1)
+  }
 
   // ---- 验收之一：不重建 ----
   ok('Q2 场景「不重建」：旧块原样留在库里，但闸不发送标记值',

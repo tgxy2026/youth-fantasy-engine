@@ -44,6 +44,8 @@ export interface ChatUsage {
   protocol?: {
     output: string
     reasoning: string
+    /** **实际下发**的结构格式（缺省＝只靠提示词约束；旧 `json:true` 恒不下发） */
+    wireFormat?: string
     /** 与声明不一致的地方（空/缺省＝声明被完整满足） */
     limitations?: string[]
   }

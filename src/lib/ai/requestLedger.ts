@@ -19,6 +19,21 @@
 /** 一章的默认预算（逻辑调用次数）。 */
 export const CHAPTER_ATTEMPT_BUDGET = 40
 
+/**
+ * 一次**整章改写**步骤的预算（逻辑调用次数）。
+ *
+ * 正常最坏路径＝主改写 1 ＋ 字数校准（补写 2 / 压缩 2）＋ 最新章设定整理 1 ＝ 6。
+ * 🔴 这不是「预计会花 6 次」，而是「超过 6 次就属于失控」—— 到上限就停，不再嵌套追加。
+ */
+export const REWRITE_ATTEMPT_BUDGET = 6
+
+/**
+ * **一次性入口**（点一下只做一件事：设定同步 / 单次抽取）的预算。
+ *
+ * 正常 1~2 次逻辑调用（抽取 ＋ 可选的变化检测），3 次留给降级与重试的余量。
+ */
+export const ONE_SHOT_ATTEMPT_BUDGET = 3
+
 /** 一次逻辑调用最多能打几次实际请求（与 `aiCore/chat.ts` 的 `MAX_REQUESTS_PER_CALL` 同口径） */
 export const MAX_REQUESTS_PER_LOGICAL_CALL = 3
 

@@ -159,6 +159,8 @@ export interface CheckReportView {
   source: string
   chapterId?: string
   chapterNo?: number
+  /** 落档那一刻的章节名（T3-06；老报告没有 ⇒ 界面退回当前章名） */
+  chapterTitle?: string
   createdAt: number
   bytes: number
   summary: string
@@ -204,6 +206,7 @@ export async function listCheckReportViews(
       source: typeof r.source === 'string' ? r.source : '',
       ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
       ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
+      ...(typeof r.chapterTitle === 'string' && r.chapterTitle ? { chapterTitle: r.chapterTitle } : {}),
       createdAt: p.createdAt,
       bytes: p.bytes,
       summary: p.summary ?? '',
@@ -252,6 +255,8 @@ export interface PersistCheckReportsInput {
   chapterId?: string
   /** 计划章号（新章落库前只有这个可用；有它才能按章分组淘汰） */
   chapterNo?: number
+  /** 归属章名（落档快照；单条报告也可各自覆盖） */
+  chapterTitle?: string
   /**
    * 本次跑过的检查（顺序无关）。
    * 🔴 单条可自带归属章（3.2.0 · W4 工单诊断：一次调用要落**多章**的报告）；
@@ -264,6 +269,8 @@ export interface PersistCheckReportsInput {
     evidence?: TicketEvidence[]
     chapterId?: string
     chapterNo?: number
+    /** 落档那一刻的章节名（T3-06：之后改名不影响历史报告） */
+    chapterTitle?: string
   }[]
 }
 
@@ -313,6 +320,7 @@ export async function persistCheckReports(
       const { serious, minor } = countFindings(findings)
       const chapterId = r.chapterId ?? input.chapterId
       const chapterNo = r.chapterNo ?? input.chapterNo
+      const chapterTitle = r.chapterTitle ?? input.chapterTitle
       const res = await persistCheckResult(
         input.jobId,
         input.projectId,
@@ -321,8 +329,12 @@ export async function persistCheckReports(
         findings,
         r.evidence,
         `检查 ${r.checkId}：严重 ${serious} / 中等 ${minor}`,
-        (chapterId || chapterNo !== undefined)
-          ? { ...(chapterId ? { chapterId } : {}), ...(chapterNo !== undefined ? { chapterNo } : {}) }
+        (chapterId || chapterNo !== undefined || chapterTitle)
+          ? {
+            ...(chapterId ? { chapterId } : {}),
+            ...(chapterNo !== undefined ? { chapterNo } : {}),
+            ...(chapterTitle ? { chapterTitle } : {}),
+          }
           : undefined,
       )
       if (res.ok) { out.saved++; seen.add(fp) }

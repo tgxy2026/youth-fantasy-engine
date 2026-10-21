@@ -81,7 +81,7 @@ export interface AiRunCall {
    * 输出协议与降级（3.2.0 · WQ5）：这一次实际按什么形态请求、哪条声明没被满足。
    * 🔴 与「当前设置」不是一回事 —— 设置会变，这条记录不会。
    */
-  protocol?: { output: string; reasoning: string; limitations?: string[] }
+  protocol?: { output: string; reasoning: string; wireFormat?: string; limitations?: string[] }
   /**
    * 归属判定途径（WQ7）：
    *  · `task-id` —— 调用方显式带了 taskId，**可作审阅依据**；

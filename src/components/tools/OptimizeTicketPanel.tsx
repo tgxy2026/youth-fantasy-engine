@@ -31,6 +31,7 @@ import {
   type TicketItem, type TicketDiagnose, type RunRecheck,
 } from '@/lib/app/optimizeTicket'
 import type { FactGuardReport } from '@/lib/ai/factGuard'
+import { MAX_REQUESTS_PER_LOGICAL_CALL, type AttemptBudgetSnapshot } from '@/lib/ai/requestLedger'
 
 const OWNER_TAB = 'check-tools'
 const KIND_GEN = 'optimize-ticket'
@@ -51,6 +52,8 @@ interface RunChapterOut {
   recheck?: RunRecheck
   /** 实体保留自检（WQ8 方案 A：只报告不判定）；一切正常就不带这个字段 */
   facts?: FactGuardReport
+  /** 本次改写的请求预算快照（WQ6）：当面告诉作者花了多少、上限多少 */
+  budget?: AttemptBudgetSnapshot
 }
 interface RunResult { chapters: RunChapterOut[] }
 interface RunProgress { done: number; total: number; title?: string }
@@ -176,6 +179,7 @@ export default function OptimizeTicketPanel() {
           ...(r.afterText !== undefined ? { afterText: r.afterText } : {}),
           ...(r.recheck ? { recheck: r.recheck } : {}),
           ...(r.facts ? { facts: r.facts } : {}),
+          ...(r.budget ? { budget: r.budget } : {}),
         })
         done++
         // 🔴 每章跑完就把「已完成」的产物写进 resume：任务结束时 `result` 会被清掉
@@ -219,6 +223,10 @@ export default function OptimizeTicketPanel() {
   const factsOf = (chapterId: string): FactGuardReport | undefined =>
     (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
       ?.chapters.find(c => c.chapterId === chapterId)?.facts
+  /** 请求预算快照（WQ6）：预计范围 + 上限都要说清，只报一个"用了 N 次"等于没说 */
+  const budgetOf = (chapterId: string): AttemptBudgetSnapshot | undefined =>
+    (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
+      ?.chapters.find(c => c.chapterId === chapterId)?.budget
 
   return (
     <Panel>
@@ -424,6 +432,18 @@ export default function OptimizeTicketPanel() {
                         <span className="text-10 text-amber"
                           title={`${fc.summary}——这只是参考：改写后少提一个名字常常是正常润色，请自行判断`}>
                           · {fc.summary}
+                        </span>
+                      )
+                    })()}
+                    {/* 请求预算（WQ6）：预计范围与硬上限都给出，额度有没有被循环吃掉一眼可见 */}
+                    {(() => {
+                      const b = budgetOf(g.chapterId)
+                      if (!b) return null
+                      return (
+                        <span className={`text-10 ${b.exhausted ? 'text-amber' : 'text-ink-500'}`}
+                          title={`预计 ${b.estimatedRange[0]}~${b.estimatedRange[1]} 次逻辑调用；`
+                            + `上限 ${b.max} 次（按每次最多 ${MAX_REQUESTS_PER_LOGICAL_CALL} 次实际请求计约 ${b.max * MAX_REQUESTS_PER_LOGICAL_CALL} 次）`}>
+                          · 调用 {b.used}/{b.max}
                         </span>
                       )
                     })()}

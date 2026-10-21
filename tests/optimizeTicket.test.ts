@@ -153,15 +153,16 @@ function mk(o: MkInput): TicketItem {
     !/\bdb\.(saveChapter|createSnapshot)\s*\(/.test(src))
 
   ok('🔴 只有最新章才跑设定同步（历史章冻结）',
-    /if \(isLatest\) \{\n\s*try \{\n\s*await extractAndCommitSettings\(/.test(src))
+    /if \(isLatest\) \{[\s\S]{0,400}?await extractAndCommitSettings\(/.test(src))
   ok('🔴 设定同步策略降级为 add-only（无交互场景不弹勾选）',
     src.includes("extractAndCommitSettings(text, hit.chapter.title, 'add-only'"))
 
-  // 3.2.0 · WQ7：中止路径多了一步「账本记 aborted」（`settleRewriteLedger`），
-  // 所以不能再断言 return 紧贴 if —— 断言语义：中止分支**原样返回 items**（不 markAll failed）。
+  // 3.2.0 · WQ7：中止路径多了一步「账本记 aborted」（`settleRewriteLedger`）；
+  // 3.2.0 · WQ6：返回值多带一份预算快照。
+  // 断言语义不变：中止分支**原样返回 items**（不 markAll failed）。
   ok('🔴 中止 ⇒ 条目保持 pending（原样 return items，不标 failed）',
-    /if \(isCancelled\(e\) \|\| opts\.signal\?\.aborted\) \{[\s\S]{0,160}?return \{ chapterId, items \}/.test(src)
-    && !/aborted\) \{[\s\S]{0,160}?markAll\(/.test(src))
+    /if \(isCancelled\(e\) \|\| opts\.signal\?\.aborted\) \{[\s\S]{0,200}?return \{ chapterId, items(?:, budget: budget\.snapshot\(\))? \}/.test(src)
+    && !/if \(isCancelled\(e\) \|\| opts\.signal\?\.aborted\) \{[\s\S]{0,200}?markAll\(/.test(src))
   ok('🔴 manual 条目永远保持 pending（markAll 原样返回它）',
     src.includes('i.action === \'manual\' ? i : { ...i, status, error }'))
 

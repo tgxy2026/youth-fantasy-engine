@@ -30,6 +30,8 @@ import { DEFAULT_TAVERN_SETTINGS, memoryLimitsOf, type TavernSettings } from '@/
 import { runRoundEnd, pendingMessages, type RoundEndProgress, type RoundEndResult } from '@/lib/tavern/roundEnd'
 // 🔴 3.0 · W2-5a（§11.1 L1）：收尾的长任务状态交给模块级任务中心（切页签不丢）
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
+// 3.2.0 · WQ6：一次性收尾也要有请求预算（逐角色记忆 + 数值 + 设定审查，次数随角色数增长）
+import { createAttemptBudget } from '@/lib/ai/requestLedger'
 import type { CardRevision } from '@/lib/tavern/revise'
 import type { FreeCharacter, FreeSession, FreeMemory, VarKey } from '@/lib/tavern/types'
 
@@ -161,6 +163,12 @@ export function useFreeRoundEnd({
     //    原先只 toast 一句，作者切走就再也看不到。
     const lockToken = acquireSummaryLock(Date.now(), lim.lockTtlMs)
     if (!lockToken) throw new Error('另一个窗口正在收尾')
+    // 3.2.0 · WQ6：**每场收尾一份**预算，正常花销 = 逐角色记忆 1 + 数值 1 + 逐角色设定审查 1
+    //   ＝ 2×角色数 + 1；再留 1 次余量，超过就是失控（例如某个子步骤开始循环重试）。
+    const budget = createAttemptBudget({
+      label: '结束本轮对话',
+      max: Math.max(3, castCards.length * 2 + 2),
+    })
     try {
       const res = await runRoundEnd({
         session: s,
@@ -177,6 +185,7 @@ export function useFreeRoundEnd({
         onProgress: ctx.progress,
         signal: ctx.signal,
         assertLock: () => assertSummaryLock(lockToken),
+        budget,
       })
 
       // 水位线推进到最后一条 + 写回数值 + 打上归档戳
@@ -244,8 +253,10 @@ export function useFreeRoundEnd({
         const r = result as RoundEndResult | null
         if (!r) return { text: '本轮已结束', kind: 'success' as const }
         const n = Object.keys(r.journals).length
+        // 3.2.0 · WQ6：如实报本次调用量（WQ6：预计范围与上限由预算对象给出，这里只报实际花费）
+        const spend = r.budget ? `（模型调用 ${r.budget.used}/${r.budget.max} 次）` : ''
         return {
-          text: `本轮已结束 —— ${r.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}`
+          text: `本轮已结束 —— ${r.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}${spend}`
             + (r.warnings.length ? `\n⚠️ ${r.warnings.join('\n⚠️ ')}` : ''),
           kind: (r.warnings.length ? 'info' : 'success') as 'info' | 'success',
         }

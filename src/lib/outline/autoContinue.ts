@@ -453,9 +453,22 @@ export async function extractAndCommitSettings(
    * `optimizeTicket`）还是老调用，不传就是兼容归属，行为零变化。
    */
   request?: CallRequestContext,
+  /**
+   * 本步骤的请求预算（3.2.0 · WQ6）。
+   * 🔴 设定整理也是逻辑调用：抽取 1 次、变化检测再 1 次。到上限就**跳过并如实说明**，
+   *    不嵌套追加；不传 ⇒ 与改造前逐字一致。
+   */
+  budget?: AttemptBudget,
 ): Promise<{ created: number; failed: string[]; errors?: string[] }> {
+  if (budget?.exhausted) {
+    return {
+      created: 0, failed: [],
+      errors: [`${budget.label}的模型请求已达上限（${budget.used}/${budget.max}），设定整理已跳过`],
+    }
+  }
   // WQ1-4：解析失败/请求失败与"本章无新实体"分开 —— 失败要经 errors 上报，
   // 不再静默 return { created: 0 } 让 UI 显示"新增 0 条"像正常一样
+  budget?.consume(1)
   const entRun = await aiExtractSettingEntitiesWithStatus(body, title, { signal, ...(request ? { request } : {}) })
   if (entRun.state !== 'completed') {
     return { created: 0, failed: [], errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'] }
@@ -486,10 +499,20 @@ export async function extractAndCommitSettings(
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
     const r = await commitEntities(news, title, { pid }).catch(() => empty)
-    const w = await applySettingUpdates(body, title, signal, request)
+    // 变化检测是第二次逻辑调用：预算到顶就跳过，不硬打
+    let w: { applied: number; state: StepResultState } = { applied: 0, state: 'failed' }
+    let skippedByBudget = false
+    if (budget?.exhausted) {
+      skippedByBudget = true
+    } else {
+      budget?.consume(1)
+      w = await applySettingUpdates(body, title, signal, request)
+    }
     const errs = [
       ...(r.failed.length ? [] : []),
-      ...(w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : []),
+      ...(w.state === 'failed'
+        ? [skippedByBudget ? '设定变化检测因请求预算到上限已跳过' : '设定变化检测失败（解析或请求异常）']
+        : []),
       ...(evidenceNote ? [evidenceNote] : []),
     ]
     return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
@@ -880,9 +903,16 @@ export async function runAutoContinue(
       }
 
       cb.onPhase?.(`${tag}：生成标题并保存`)
-      const title = await suggestTitle(body, cb.signal, cb.request)
+      // 3.2.0 · WQ6：标题与摘要是本章第 2 个步骤的两条逻辑调用，同样计入预算。
+      // 🔴 预算到顶就跳过（标题退回占位、摘要留空），**不追加**请求。
+      let title = '未命名章节'
+      if (!budget.exhausted) {
+        title = await suggestTitle(body, cb.signal, cb.request)
+        budget.consume(1)
+      }
       // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
-      const sum = await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
+      const sum = budget.exhausted ? '' : await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
+      if (!budget.exhausted) budget.consume(1)
       // 🔴 本章的**计划章号** ＝ 库里已有章数 + 本轮第几章（与上面取细纲的 `ordered.length + i + 1` 同一个数）。
       //    按它问调用方"这一章该落进哪一卷" —— 长篇跨卷时第 21 章要进卷二，而不是留在锚点所在的卷一。
       const plannedNo = ordered.length + i + 1
@@ -901,9 +931,9 @@ export async function runAutoContinue(
       lastTitle = ch.title
 
       cb.onPhase?.(`${tag}：抽取并补登设定`)
-      // 设定整理本身是一次逻辑调用（可能 + 一次变化检测），计入本章预算
-      budget.consume(1)
-      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request)
+      // 设定整理计入本章预算：由 `extractAndCommitSettings` 按**实际逻辑调用**逐次记账
+      //（抽取 1 次；auto-update 再 +1 次变化检测），不再在这里笼统扣 1 次
+      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request, budget)
       const dev = finalWords - opts.targetWords
       cb.onLog?.(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`

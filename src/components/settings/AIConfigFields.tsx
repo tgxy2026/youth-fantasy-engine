@@ -119,6 +119,55 @@ export function ContextWindowField({ value, local, onChange }: {
 }
 
 /**
+ * 结构化输出能力（3.2.0 · WQ5）· **默认关闭**。
+ *
+ * 🔴 为什么必须由作者确认：同一个 OpenAI 兼容接口下，有的中转认 `response_format`、
+ *    有的直接 400；Ollama 的 `format` 也分版本。按模型名猜不可靠，猜错等于整条链路静默失败。
+ *    不打开时只靠提示词约束 —— 请求体与 3.1.x 逐字节一致。
+ */
+export function StructureCapabilityField({ structured, reasoningWithStructure, onChange }: {
+  structured: 'json-object' | 'json-schema' | undefined
+  reasoningWithStructure: boolean | undefined
+  onChange: (patch: { structuredOutput?: 'json-object' | 'json-schema'; reasoningWithStructure?: boolean }) => void
+}) {
+  const on = structured === 'json-object' || structured === 'json-schema'
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+        <label className="block text-11 text-ink-500">结构化输出能力<span className="text-ink-600"> · 高级 · 默认关闭</span></label>
+      </div>
+      <div className="space-y-2 rounded-lg border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+        <label className="flex items-start gap-2 text-12 text-ink-200">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-amber"
+            checked={on}
+            onChange={e => onChange(e.target.checked
+              ? { structuredOutput: 'json-object' }
+              : { structuredOutput: undefined, reasoningWithStructure: undefined })}
+          />
+          <span>该端点支持下发 JSON 对象格式（OpenAI 兼容走 <code>response_format</code>，Ollama 走 <code>format</code>）</span>
+        </label>
+        <label className={`flex items-start gap-2 text-12 ${on ? 'text-ink-200' : 'text-ink-600'}`}>
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-amber"
+            disabled={!on}
+            checked={on && reasoningWithStructure === true}
+            onChange={e => onChange({ reasoningWithStructure: e.target.checked })}
+          />
+          <span>已确认「思考 + 结构输出」可以同时使用（打开后，要求推理的结构化任务才不会被降级为不推理）</span>
+        </label>
+        <p className="text-10 leading-relaxed text-ink-600">
+          不确定就保持关闭：关闭时只靠提示词约束，请求体与升级前完全一致。
+          打开后若端点返回 400，会自动撤掉这个可选参数重试一次；老式的 JSON 任务不受影响。
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/**
  * 采样温度档位（2.4.0 · A1 遗留补全）：**按 provider 存、随模型走**。
  * 本地小模型与云端大模型合适的温度差别很大，做成全局常量必然两头都不合适
  * （见 `lib/ai` 的 AIProvider.temperature 与 TEMPERATURE_TIERS）。

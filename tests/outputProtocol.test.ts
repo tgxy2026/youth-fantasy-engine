@@ -7,7 +7,7 @@
 import {
   resolveOutputProtocol, describeProtocol, type OutputDeclaration,
 } from '@/lib/ai/outputProtocol'
-import { DEFAULT_CAPABILITIES, detectCapabilities, type ModelCapabilities } from '@/lib/ai/modelCapabilities'
+import { DEFAULT_CAPABILITIES, detectCapabilities, capabilitiesOf, type ModelCapabilities } from '@/lib/ai/modelCapabilities'
 import { DEFAULT_TEMPERATURE, JSON_TASK_TEMPERATURE } from '@/lib/aiCore/core'
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
@@ -88,9 +88,15 @@ function r(d: Partial<OutputDeclaration>): ReturnType<typeof resolveOutputProtoc
     schemaOnlyObject.wireFormat === 'json-object'
     && schemaOnlyObject.limitations.some(x => x.includes('schema')), JSON.stringify(schemaOnlyObject))
 
-  const schemaFull = resolveOutputProtocol({ output: 'json-schema', caps: SCHEMA_OK })
-  ok('④ 端点确认到 json-schema ⇒ 全量下发',
+  const schemaFull = resolveOutputProtocol({ output: 'json-schema', caps: SCHEMA_OK, schema: { type: 'object' } })
+  ok('④ 端点确认到 json-schema 且本次给了 schema ⇒ 全量下发',
     schemaFull.wireFormat === 'json-schema' && schemaFull.limitations.length === 0)
+
+  const schemaNoPayload = resolveOutputProtocol({ output: 'json-schema', caps: SCHEMA_OK })
+  ok('④ 端点支持 schema 但本次没给 schema ⇒ 降为 json-object 并说明（不假装下发了细约束）',
+    schemaNoPayload.wireFormat === 'json-object'
+    && schemaNoPayload.limitations.some(x => x.includes('没有提供 JSON schema')),
+    JSON.stringify(schemaNoPayload.limitations))
 
   const both = resolveOutputProtocol({ output: 'json-object', reasoning: 'required', caps: CONFIRMED })
   ok('🔴 ④ 端点确认「推理＋结构」共存 ⇒ 推理与 JSON 同时成立',
@@ -191,6 +197,43 @@ function r(d: Partial<OutputDeclaration>): ReturnType<typeof resolveOutputProtoc
     }
   }
   ok('⑨ 业务侧（aiTasks/outline 等）已无旧 json:true 写法', offenders.length === 0, offenders.join('、'))
+}
+
+// ---------- 十、作者确认的能力才是下发凭据 ----------
+{
+  const plain = capabilitiesOf('qwen3:8b')
+  ok('⑩ 没在模型配置里确认 ⇒ 仍是 unknown（名字不是证据）', plain.source === 'unknown')
+
+  const confirmed = capabilitiesOf('qwen3:8b', { structuredOutput: 'json-object' })
+  ok('⑩ 作者确认支持 json-object ⇒ 来源升级为 user-config',
+    confirmed.source === 'user-config' && confirmed.structuredOutput === 'json-object')
+  ok('⑩ 只确认结构、没确认共存 ⇒ reasoningWithStructure 仍是 false',
+    confirmed.reasoningWithStructure === false)
+
+  const both = capabilitiesOf('qwen3:8b', { structuredOutput: 'json-object', reasoningWithStructure: true })
+  ok('⑩ 两项都确认 ⇒ 推理与结构可共存', both.reasoningWithStructure === true)
+
+  const onlyReasoning = capabilitiesOf('qwen3:8b', { reasoningWithStructure: true })
+  ok('⑩ 只勾「共存」但没开结构格式 ⇒ 不升级（没有结构可共存）',
+    onlyReasoning.source === 'unknown' && onlyReasoning.reasoningWithStructure === false)
+
+  const p = resolveOutputProtocol({ output: 'json-object', caps: confirmed })
+  ok('⑩ 确认后显式 JSON 任务才真的下发格式', p.wireFormat === 'json-object')
+}
+
+// ---------- 十一、通道真的把格式发出去了（不是只判定） ----------
+{
+  const chat = readFileSync('src/lib/aiCore/chat.ts', 'utf8')
+  ok('⑪ chat() 用作者确认过的能力解析协议（capabilitiesOf）', /capabilitiesOf\(config\.model, config\)/.test(chat))
+  ok('⑪ wireFormat 传进通道层', /wireFormat !== 'none' \? \{ wireFormat \}/.test(chat))
+  ok('⑪ 旧 json:true 口径强制不下发（legacyJson ⇒ none）',
+    /protocol\.legacyJson \? 'none' : protocol\.wireFormat/.test(chat))
+  ok('⑪ OpenAI 兼容通道下发 response_format', /response_format: responseFormat/.test(chat))
+  ok('⑪ Ollama 通道下发 format', /body\.format = 'json'/.test(chat))
+  ok('⑪ 400 时只撤可选参数（按错误文案点名格式）', /FORMAT_REJECTED_RE\.test\(errorText\)/.test(chat))
+
+  const fields = readFileSync('src/components/settings/AIConfigFields.tsx', 'utf8')
+  ok('⑪ 模型设置里有默认关闭的能力开关', /结构化输出能力/.test(fields) && /默认关闭/.test(fields))
 }
 
 console.log(`\n———— outputProtocol：${pass} 通过 / ${fail} 失败 ————`)

@@ -88,6 +88,11 @@ function fieldsStillValid(hit: RecallHit, row: GateRow, rules: FieldRules): bool
       if (f.key.startsWith('cf_') || rules.authoritative) return false
       continue
     }
+    // 🔴 字段被删后重建（存储键复用、稳定 ID 换了）⇒ 旧块写的是另一个字段，丢弃
+    if (rule.id !== f.id) return false
+    // 🔴 改名（只动 label、键与值都没变）⇒ 旧块文本里仍是旧名字，丢弃这一块；
+    //    没有 `label` 的历史块跳过（当时的索引没记，不能凭空判它失效）。
+    if (f.label !== undefined && f.label !== rule.label) return false
     if (!rule.aiReadable) return false
     if (rule.appliesTo !== '*' && !rule.appliesTo.includes(category)) return false
   }

@@ -107,6 +107,33 @@ export function detectCapabilities(modelId: string): ModelCapabilities {
   return { ...DEFAULT_CAPABILITIES, modelId }
 }
 
+// ============ 作者确认的能力 ============
+/** 模型配置里可明确声明的能力（选项与 `AIProvider.structuredOutput` 同源） */
+export interface CapabilityOverrides {
+  structuredOutput?: 'json-object' | 'json-schema'
+  reasoningWithStructure?: boolean
+}
+
+/**
+ * 把作者在「模型配置」里**明确确认**的能力并进检测结果（3.2.0 · WQ5）。
+ *
+ * 🔴 只有作者选了结构格式，来源才升级为 `user-config` —— 这是 `resolveOutputProtocol`
+ *    下发 `format` / `response_format` 的唯一凭据。没选时保持 `unknown`：
+ *    模型名不是证据，检测表里的 `jsonOutput: true` 也只代表「提示词约束下大概能出 JSON」，
+ *    同样不能当下发凭据。
+ */
+export function capabilitiesOf(modelId: string, overrides?: CapabilityOverrides): ModelCapabilities {
+  const caps = detectCapabilities(modelId)
+  const structuredOutput = overrides?.structuredOutput
+  if (structuredOutput !== 'json-object' && structuredOutput !== 'json-schema') return caps
+  return {
+    ...caps,
+    source: 'user-config',
+    structuredOutput,
+    reasoningWithStructure: overrides?.reasoningWithStructure === true,
+  }
+}
+
 // ============ JSON 输出能力声明 ============
 /** 是否应启用 JSON 模式（向请求同步声明 schema/format） */
 export function shouldUseJsonMode(caps: ModelCapabilities): boolean {

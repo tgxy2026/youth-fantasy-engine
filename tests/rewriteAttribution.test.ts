@@ -126,7 +126,8 @@ async function main() {
     ok('④ 成功时记一条 adopted 候选（改写也算候选）',
       /noteCandidate\(ledger\.id/.test(src) && /state: 'adopted'/.test(src))
     ok('④ 设定同步带上同一份归属（不另起一套）',
-      /extractAndCommitSettings\(text, hit\.chapter\.title, 'add-only', undefined, opts\.signal, request\)/.test(src))
+      // 3.2.0 · WQ6：末尾多传一份本章预算；归属仍在 request 位
+      /extractAndCommitSettings\(text, hit\.chapter\.title, 'add-only', undefined, opts\.signal, request, budget\)/.test(src))
   }
 
   // ---------- 五、改写链内部三处调用都透传 ----------

@@ -21,7 +21,7 @@ import { usageFromOllama, usageFromOpenAI, usageFromStreamChunk, mergeUsage, typ
 import { createLifecycle, transitionLifecycle } from '@/lib/ai/streaming'
 // 3.2.0 · WQ5：输出结构与推理需求分开解析（唯一口径）
 import { resolveOutputProtocol, type OutputKind, type ReasoningNeed } from '@/lib/ai/outputProtocol'
-import { detectCapabilities } from '@/lib/ai/modelCapabilities'
+import { capabilitiesOf } from '@/lib/ai/modelCapabilities'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { uid } from '@/lib/app/id'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
@@ -55,6 +55,12 @@ export interface ChatOptions {
    * 不会静默地既开推理又输出坏 JSON。
    */
   reasoning?: ReasoningNeed
+  /**
+   * `output: 'json-schema'` 时要下发的 schema（3.2.0 · WQ5）。
+   * 🔴 只有端点已确认支持、且本次确实传了 schema 才会真正下发；
+   *    缺 schema 时协议层降级为 JSON 对象并留下限制说明，不假装下发了细约束。
+   */
+  schema?: Record<string, unknown>
   /**
    * 采样温度，默认按 DEFAULT_TEMPERATURE（0.85，偏创意）；
    * 若同时传了 json:true 且未显式给 temperature，则默认改用 JSON_TASK_TEMPERATURE（0.3）。
@@ -164,6 +170,13 @@ interface CallOpts {
   extraOptions?: Record<string, number>
   /** 流式空闲超时（见 ChatOptions.idleTimeoutMs） */
   idleTimeoutMs?: number
+  /**
+   * 本次要下发的结构格式（3.2.0 · WQ5）。
+   * 🔴 只有协议层确认（作者配置过端点能力）才会非 `none`；旧 `json:true` 口径恒为 `none`。
+   */
+  wireFormat?: 'none' | 'json-object' | 'json-schema'
+  /** `wireFormat === 'json-schema'` 时随请求下发的 schema */
+  jsonSchema?: Record<string, unknown>
 }
 
 /** 内部统一分发：带元信息，供测试面板展示「其中加载耗时」 */
@@ -187,13 +200,17 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   const protocol = resolveOutputProtocol({
     ...(opts.output ? { output: opts.output } : {}),
     ...(opts.reasoning ? { reasoning: opts.reasoning } : {}),
+    ...(opts.schema ? { schema: opts.schema } : {}),
     ...(opts.json ? { json: true } : {}),
     ...(opts.think !== undefined ? { think: opts.think } : {}),
     ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     ...(config.temperature !== undefined ? { providerTemperature: config.temperature } : {}),
-    caps: detectCapabilities(config.model),
+    caps: capabilitiesOf(config.model, config),
   })
   const think = protocol.think
+  // 🔴 旧口径 `json:true` 即便端点已确认支持结构格式也**不下发** ——
+  //    「给新链路加格式」与「保持老调用点逐字节不变」是两件事，不能顺手改前者。
+  const wireFormat = protocol.legacyJson ? 'none' : protocol.wireFormat
   // 温度在此处统一解析（唯一真源）：显式 temperature 优先；否则按是否 JSON 任务取默认值。
   // 下游 ollamaChatRaw / openaiChat 只管用 o.temperature，不再各自做缺省判断。
   // 2.4.0：创意生成的默认温度可由 provider 自带（见 AIProvider.temperature）——
@@ -260,6 +277,8 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       //    ⚠️ 只抑制**兜底来源**：显式传入的 `opts.extraOptions` 一律照发 ——
       //       酒馆走的就是显式那一路，它有自己的参数面板，不该被这里改动。
       extraOptions: opts.extraOptions ?? (protocol.output !== 'text' ? undefined : samplingOptionsOf(config)),
+      ...(wireFormat !== 'none' ? { wireFormat } : {}),
+      ...(wireFormat === 'json-schema' && opts.schema ? { jsonSchema: opts.schema } : {}),
       ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: opts.idleTimeoutMs } : {}),
     })
     lifecycle = transitionLifecycle(lifecycle, 'completed')
@@ -274,6 +293,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       protocol: {
         output: protocol.output,
         reasoning: protocol.reasoning,
+        ...(wireFormat !== 'none' ? { wireFormat } : {}),
         ...(protocol.limitations.length ? { limitations: protocol.limitations } : {}),
       },
       promptTokens: hasRealPrompt ? real!.promptTokens : budget.estimates.input.tokens,
@@ -321,21 +341,25 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
     options: { temperature: o.temperature, ...(o.extraOptions ?? {}) },
   }
   if (think === false) body.think = false
+  // 3.2.0 · WQ5：作者确认过的端点才下发 `format`（默认只靠提示词约束）
+  if (o.wireFormat === 'json-schema' && o.jsonSchema) body.format = o.jsonSchema
+  else if (o.wireFormat === 'json-object' || o.wireFormat === 'json-schema') body.format = 'json'
   let res: Response
   let clearTimer: (() => void) | null = null
+  const doFetch = () => fetchWithTimeout(
+    `${base}/api/chat`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+    o.signal,
+    // 流式：把清总超时交出去，由 readSSE 在首 token 时调用，避免慢模型被一刀切
+    o.onToken ? (ct) => { clearTimer = ct } : undefined,
+  )
   try {
-    res = await fetchWithTimeout(
-      `${base}/api/chat`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      timeoutMs,
-      o.signal,
-      // 流式：把清总超时交出去，由 readSSE 在首 token 时调用，避免慢模型被一刀切
-      o.onToken ? (ct) => { clearTimer = ct } : undefined,
-    )
+    res = await doFetch()
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) {
@@ -345,6 +369,21 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
       )
     }
     throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。')
+  }
+  // 🔴 格式是可选参数：端点临时不认（旧版 / 中转返回 400）时**只撤掉它**重发一次，
+  //    其余参数（温度、采样、think）原样不动 —— 不因一个可选字段把整个功能弄坏。
+  if (!res.ok && res.status === 400 && body.format !== undefined) {
+    const txt = await res.text().catch(() => '')
+    if (shouldDegradeOn400(txt)) {
+      delete body.format
+      try {
+        res = await doFetch()
+      } catch (e) {
+        if (isCancelled(e)) throw e
+        if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试。`)
+        throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。')
+      }
+    }
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
@@ -462,6 +501,28 @@ export function shouldDegradeOn400(errorText: string): boolean {
   return !/(model|messages|api[-_ ]?key|unauthor|forbidden|auth|quota|balance|content[_ ]?policy|context length)/i.test(t)
 }
 
+/**
+ * OpenAI 兼容请求的可选参数开关（3.2.0 · WQ5）。
+ * 🔴 每降一级只关掉**一个**可选参数：先撤被明确点名的格式，再撤思考开关，最后撤采样。
+ */
+interface OpenAIFlags {
+  thinkToggle: boolean
+  sampling: boolean
+  format: boolean
+}
+
+/** 错误文案是否明确指向结构格式参数（response_format / json_schema） */
+const FORMAT_REJECTED_RE = /(response[_ ]?format|json[_ ]?schema|structured[_ ]?output|\bformat\b)/i
+
+/** 下一级请求参数；`null` ＝ 已无可撤的可选参数 */
+function nextOpenAIFlags(f: OpenAIFlags, errorText: string): OpenAIFlags | null {
+  if (f.format && FORMAT_REJECTED_RE.test(errorText)) return { ...f, format: false }
+  if (f.thinkToggle) return { ...f, thinkToggle: false }
+  if (f.sampling) return { ...f, sampling: false, ...(f.format ? { format: false } : {}) }
+  if (f.format) return { ...f, format: false }
+  return null
+}
+
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOpts): Promise<ChatRaw> {
   const { timeoutMs } = o
   const base = openaiBaseOf(config.baseUrl || '')
@@ -471,12 +532,28 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
   let clearTimer: (() => void) | null = null
   /** 本次逻辑调用实际发了几次请求（3.2.0 · WQ6：重试次数可核对） */
   let attempts = 0
+  /** 已读取的 400 响应体 —— 不重读（流已被消费），否则错误原因会变成空串 */
+  let lastErrorText = ''
   // 云端 Qwen3 系：思考开着就拿不到 content，等于静默废掉所有 AI 功能 —— 默认关掉（`think:true` 可显式保留）
   const thinkToggle = !config.local && o.think !== true && HYBRID_THINKING_RE.test(config.model)
-  // 三级请求体：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
+  // 3.2.0 · WQ5：只有作者确认过端点能力才会走到这里（wireFormat 由协议层给出）
+  const responseFormat = o.wireFormat === 'json-schema' && o.jsonSchema
+    ? { type: 'json_schema', json_schema: { name: 'response', schema: o.jsonSchema } }
+    : o.wireFormat === 'json-object' || o.wireFormat === 'json-schema'
+      ? { type: 'json_object' }
+      : undefined
+  let flags: OpenAIFlags = { thinkToggle, sampling: true, format: !!responseFormat }
+  // 请求体由开关决定：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
   //   → bare（再去 temperature 与采样惩罚——推理系模型（o1 / deepseek-r1 等）对 temperature ≠ 1 会直接 400；
-  //     部分中转站也会拒绝不认识的字段。每级只在上一级 400 时才降）
-  const doFetch = (variant: 'full' | 'noToggle' | 'bare') => fetchWithTimeout(
+  //     部分中转站也会拒绝不认识的字段）。响应格式是**独立**的一档，只在 400 时按需撤。
+  const buildBody = (f: OpenAIFlags, stream: boolean): Record<string, unknown> => ({
+    model: config.model, messages,
+    ...(f.sampling ? { temperature: o.temperature, ...openaiSampling(o) } : {}),
+    stream,
+    ...(f.thinkToggle ? { enable_thinking: false } : {}),
+    ...(f.format && responseFormat ? { response_format: responseFormat } : {}),
+  })
+  const doFetch = (f: OpenAIFlags) => fetchWithTimeout(
     `${base}/chat/completions`,
     {
       method: 'POST',
@@ -485,31 +562,23 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
         'Content-Type': 'application/json',
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       }, config.headers),
-      body: JSON.stringify({
-        model: config.model, messages,
-        ...(variant !== 'bare' ? { temperature: o.temperature, ...openaiSampling(o) } : {}),
-        stream: !!o.onToken,
-        ...(variant === 'full' && thinkToggle ? { enable_thinking: false } : {}),
-      }),
+      body: JSON.stringify(buildBody(f, !!o.onToken)),
     },
     timeoutMs,
     o.signal,
     o.onToken ? (ct) => { clearTimer = ct } : undefined,
   )
   try {
-    res = await doFetch(thinkToggle ? 'full' : 'noToggle')
-    attempts = 1
-    // 该端点不认 enable_thinking（返回 400）→ 丢掉这个字段重试一次。
-    // 宁可少一个优化，也绝不因为多发一个字段把功能弄坏。
-    if (res.status === 400 && thinkToggle) {
+    for (;;) {
+      res = await doFetch(flags)
+      attempts += 1
+      if (res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
       const txt = await res.text().catch(() => '')
-      if (shouldDegradeOn400(txt)) { res = await doFetch('noToggle'); attempts += 1 }
-    }
-    // 🔴 中转站兼容：部分端点 / 推理系模型对 temperature、采样字段校验严格（HTTP 400）→ 再降一级
-    //    ⚠️ 但只有「不像别的原因」时才降 —— 否则模型名写错也会被降成裸请求，错误原因全变味。
-    if (res.status === 400) {
-      const txt = await res.text().catch(() => '')
-      if (shouldDegradeOn400(txt)) { res = await doFetch('bare'); attempts += 1 }
+      // 🔴 只降「不像别的原因」的 400 —— 模型名写错也降成裸请求的话，错误原因全变味
+      if (!shouldDegradeOn400(txt)) { lastErrorText = txt; break }
+      const next = nextOpenAIFlags(flags, txt)
+      if (!next) { lastErrorText = txt; break }
+      flags = next
     }
   } catch (e) {
     if (isCancelled(e)) throw e
@@ -517,7 +586,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     throw new Error('无法连接该 API 地址：请检查网络与接口地址；若连的是本机 / 局域网服务，确认它已启动（浏览器 / 桌面端也可能因 CORS 拦下跨域请求）。')
   }
   if (!res.ok) {
-    const txt = await res.text().catch(() => '')
+    const txt = lastErrorText || await res.text().catch(() => '')
     // 3.0 · W1-3：先判「内容被平台拒绝」—— 它混在 400 / 403 里，别一律归因配置（§14.1）
     if (isRefusalStatus(res.status) && looksLikeSafetyMessage(txt)) {
       throw new AIRefusalError('safety-http', extractPlatformMessage(txt))
@@ -582,11 +651,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
             'Content-Type': 'application/json',
             ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
           }, config.headers),
-          body: JSON.stringify({
-            model: config.model, messages, temperature: o.temperature,
-            ...openaiSampling(o), stream: false,
-            ...(thinkToggle ? { enable_thinking: false } : {}),
-          }),
+          // 同一组参数换成非流式：格式开关沿用已经谈好的 flags，不再从头赌一次
+          body: JSON.stringify(buildBody(flags, false)),
         },
         timeoutMs, o.signal,
       )

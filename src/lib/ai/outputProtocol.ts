@@ -27,6 +27,8 @@ export type ReasoningNeed = 'default' | 'off' | 'required'
 export interface OutputDeclaration {
   output?: OutputKind
   reasoning?: ReasoningNeed
+  /** `output: 'json-schema'` 时下发的实际 schema（缺省则降级为 JSON 对象下发并说明） */
+  schema?: Record<string, unknown>
   /** 旧口径（兼容包装）：等价于「输出 JSON + 关推理」，但走的是旧的固定默认 */
   json?: boolean
   think?: boolean
@@ -95,6 +97,11 @@ export function resolveOutputProtocol(d: OutputDeclaration): ResolvedProtocol {
       }
     } else if (output === 'json-schema') {
       limitations.push('该端点未确认支持结构格式：schema 只能靠提示词约束，返回后仍会做本地解析与校验。')
+    }
+    // 端点确认支持 schema，但这次任务没给 schema —— 别假装下发了细约束
+    if (wireFormat === 'json-schema' && !d.schema) {
+      wireFormat = 'json-object'
+      limitations.push('本次没有提供 JSON schema：按 JSON 对象下发，字段结构仍由提示词约定。')
     }
   }
 

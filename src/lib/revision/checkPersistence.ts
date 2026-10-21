@@ -38,6 +38,8 @@ export interface CheckPayload {
   chapterId?: string
   /** 计划章号（新章落库前只有这个可用） */
   chapterNo?: number
+  /** 落档那一刻的章节名（T3-06：作者改名后，历史报告仍按当时名称回看） */
+  chapterTitle?: string
   /** 摘要 */
   summary: string
   /** 字节数 */
@@ -74,7 +76,7 @@ export async function persistCheckResult(
    * 🔴 必须存：检查报告的下一站是「加入工单」，而工单是按**章**分组的；
    *    只存 jobId 时，一个连写任务跨多章，报告就再也挂不回具体哪一章了。
    */
-  opts?: { chapterId?: string; chapterNo?: number },
+  opts?: { chapterId?: string; chapterNo?: number; chapterTitle?: string },
 ): Promise<CheckPersistResult> {
   try {
     const payloadId = `check-${uid()}`
@@ -86,6 +88,8 @@ export async function persistCheckResult(
       // 🔴 连写新章在自检那一刻**还没有 id**（`createChapterAfter` 之后才有），
       //    所以同时记计划章号：报告能立刻落库不丢，事后再靠章号挂回工单。
       ...(opts?.chapterNo !== undefined ? { chapterNo: opts.chapterNo } : {}),
+      // 3.2.0 · T3-06：章节名是**当时**的快照 —— 作者之后改名，历史报告不能跟着变
+      ...(opts?.chapterTitle ? { chapterTitle: opts.chapterTitle } : {}),
     }
     const resultStr = JSON.stringify(report)
     const bytes = byteCount(resultStr)
@@ -124,6 +128,7 @@ export async function loadCheckResult(payloadId: string): Promise<CheckPayload |
     ...(Array.isArray(r.evidence) ? { evidence: r.evidence as TicketEvidence[] } : {}),
     ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
     ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
+    ...(typeof r.chapterTitle === 'string' && r.chapterTitle ? { chapterTitle: r.chapterTitle } : {}),
     summary: p.summary,
     bytes: p.bytes,
     createdAt: p.createdAt,

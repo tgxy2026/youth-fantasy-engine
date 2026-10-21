@@ -34,6 +34,9 @@ import type { SummaryLimits } from '@/lib/tavern/summarize'
 import { renderFreeCharacter } from '@/lib/tavern/engine'
 // isCancelled 从 '../ai' 取（与 revise.ts 同源）：它不是「酒馆专属」概念，别从 ./provider 绕
 import { isCancelled } from '@/lib/ai'
+// 3.2.0 · WQ6：收尾是**一次性任务**（逐角色记忆 + 数值 + 设定审查），调用数随角色数增长，
+//    必须有上限；到顶就跳过剩余步骤并如实说，不嵌套追加。
+import type { AttemptBudget, AttemptBudgetSnapshot } from '@/lib/ai/requestLedger'
 import type { ChatFn } from '@/lib/tavern/provider'
 import type {
   FreeSession, FreeCharacter, FreeMemory, TavernMessage,
@@ -75,6 +78,8 @@ export type RoundEndResult = {
    */
   memoryDegraded: boolean
   endedAt: number
+  /** 本次收尾的请求预算快照（3.2.0 · WQ6）—— 界面显示「花了多少次 / 上限多少」 */
+  budget?: AttemptBudgetSnapshot
 }
 
 export type RoundEndArgs = {
@@ -105,6 +110,12 @@ export type RoundEndArgs = {
   signal?: AbortSignal
   /** 写入持久状态前验证跨窗口摘要租约仍由当前任务持有。 */
   assertLock?: () => void
+  /**
+   * 本次收尾的请求预算（3.2.0 · WQ6）。
+   * 🔴 三个阶段的每次逻辑调用都计入；到上限就**跳过剩余步骤并留警告**，不硬打。
+   *    不传 ⇒ 与改造前逐字一致（测试与老调用零影响）。
+   */
+  budget?: AttemptBudget
 }
 
 /** 待整理的对话：水位线之后的全部（半途崩过也不会重复整理同一段） */
@@ -119,7 +130,7 @@ export function pendingMessages(session: FreeSession): TavernMessage[] {
  *    ②③ 失败一律吞掉并留空 —— 面板少一块，也不能把已经落库的记忆弄丢。
  */
 export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
-  const { session, cards, providerId, limits, varKeys, maxStep, nameOf, chatFn, onProgress, signal, assertLock } = args
+  const { session, cards, providerId, limits, varKeys, maxStep, nameOf, chatFn, onProgress, signal, assertLock, budget } = args
   const pending = pendingMessages(session)
   const total = Math.max(cards.length, 1)
 
@@ -146,6 +157,16 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   const warnings: string[] = []
   /** 与 warnings 分开记（见 RoundEndResult.memoryDegraded 的说明） */
   let memoryDegraded = false
+  /**
+   * 预算闸：返回 true ＝ 已到上限，**这一步不要开始**。
+   * 🔴 每个阶段只留一次警告（否则多角色会刷屏），且如实给出已用/上限。
+   */
+  const budgetStop = (phase: string): boolean => {
+    if (!budget?.exhausted) return false
+    const note = `${budget.label}：${phase}因模型请求已达上限（${budget.used}/${budget.max}）已跳过`
+    if (!warnings.includes(note)) warnings.push(note)
+    return true
+  }
   // 🔴🔴 2026-09-22 六维审计 P0：**必须定长**，不能 push ——
   //    下面读记忆失败会 `continue`，push 版会让数组比 `cards` 短，而落库循环按 `cards[i]`
   //    取 `computed[i]` ⇒ **把一个角色的记忆写进另一个角色的档案**（不可逆），末位还越界抛错。
@@ -154,6 +175,11 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
     new Array(cards.length).fill(undefined)
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i]
+    // 3.2.0 · WQ6：预算到顶就停 —— 记忆没整理全 ⇒ 按"退化"处理，**不许推进水位线**
+    if (budgetStop('记忆整理')) {
+      memoryDegraded = true
+      break
+    }
     onProgress?.({ stage: 'memory', cur: i + 1, total, name: c.name || '未命名角色' })
     // 🔴 读失败**必须**与「还没有记忆」区分（2026-09-20 六维审计 P2）：
     //    `getMemory` 对"没有记忆"返回的是**空记忆对象**（内部 `db.getMeta(key, emptyMemory(...))`），
@@ -193,6 +219,8 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
         warnings.push(`${c.name || '一位角色'}的记忆：${reason}`)
       },
     }
+    // 一位角色 = 一次逻辑调用（记忆 + 日记是一次产出两样）
+    budget?.consume(1)
     const got = c.id === session.userCharId
       ? { memory: await summarizeMemory(shared), journal: '' }
       : await summarizeRound(shared)
@@ -235,9 +263,10 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   // 主角色卡（回写落点）；拿它的当前备注当抽取上下文，并作为回写时的备注基底
   const primary = args.primaryCharId ? cards.find(c => c.id === args.primaryCharId) : undefined
   const primaryNotes = primary?.vars?.notes
-  if (varKeys.length > 0 && pending.length > 0) {
+  if (varKeys.length > 0 && pending.length > 0 && !budgetStop('本场数值')) {
     onProgress?.({ stage: 'vars', cur: total, total })
     const base = args.vars ?? emptyVars(varKeys)
+    budget?.consume(1)
     try {
       const ex = await extractSessionVars({
         keys: varKeys,
@@ -284,11 +313,14 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
 
   // ---- ③ 设定审查（只产建议，不落卡） ----
   let proposals: CardRevision[] = []
-  if (session.messages.length > 0) {
+  if (session.messages.length > 0 && !budgetStop('设定审查')) {
     onProgress?.({ stage: 'revise', cur: total, total })
     try {
       const out: CardRevision[] = []
       for (const c of cards) {
+        // 每位角色一次逻辑调用；到顶就带着已有建议停下（只产建议，不落卡）
+        if (budgetStop('设定审查')) break
+        budget?.consume(1)
         // 说话人名字：多角色同场时，「谁对谁说了什么」是判断的关键一半
         const rows = await proposeCardRevisions({
           char: c,
@@ -334,7 +366,11 @@ export async function runRoundEnd(args: RoundEndArgs): Promise<RoundEndResult> {
   }
 
   onProgress?.({ stage: 'done', cur: total, total })
-  return { memories, journals, vars: nextVars, varChanges, proposals, warnings, memoryDegraded, endedAt: Date.now() }
+  return {
+    memories, journals, vars: nextVars, varChanges, proposals, warnings, memoryDegraded,
+    endedAt: Date.now(),
+    ...(budget ? { budget: budget.snapshot() } : {}),
+  }
 }
 
 /** 组装一条日记：记的是「这一场发生了什么」，供作者回头翻，不进任何提示词 */

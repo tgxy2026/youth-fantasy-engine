@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { __resetMockStores } from './mock-memory'
 import {
   isWorthPersisting, isSeriousLevel, countFindings, findingsFingerprint,
-  planCheckReportPrune, persistCheckReports, CHECK_REPORT_LIMITS,
+  planCheckReportPrune, persistCheckReports, CHECK_REPORT_LIMITS, listCheckReportViews,
   type CheckFindingLike,
 } from '@/lib/revision/checkReports'
 import { listProjectRevisionPayloads, saveRevisionPayload } from '@/lib/db/revisionJobs'
@@ -161,6 +161,41 @@ async function main() {
     ok('⑤ 三项审校各自登记 checkId',
       ['continuity', 'ooc', 'foreshadow'].every(k => new RegExp(`checkId: '${k}'`).test(src)))
     ok('🔴 ⑤ 落库失败不打断创作（有 catch）', /persistCheckReports\(\{[\s\S]{0,600}?\}\)\.catch\(/.test(src))
+  }
+
+  // ---------- 六、T3-06 历史报告保留当时名称 ----------
+  {
+    __resetMockStores()
+    await persistCheckReports({
+      projectId: PID, jobId: 'job-name',
+      reports: [{
+        checkId: 'chapter-check', source: 'local', run: run([F_SERIOUS]),
+        chapterId: 'ch-old', chapterNo: 3, chapterTitle: '雪夜旧名',
+      }],
+    })
+    const snap = await listCheckReportViews(PID)
+    ok('⑥ 落档时把当时的章名存进报告', snap.length === 1 && snap[0].chapterTitle === '雪夜旧名',
+      JSON.stringify(snap[0]?.chapterTitle))
+
+    // 老报告（没有快照）不能凭空造一个名字出来 —— 界面退回当前章名/章号
+    await persistCheckReports({
+      projectId: PID, jobId: 'job-name',
+      reports: [{
+        checkId: 'chapter-check', source: 'local', run: run([F_MID]),
+        chapterId: 'ch-old', chapterNo: 3,
+      }],
+    })
+    const rows2 = await listCheckReportViews(PID)
+    ok('⑥ 老报告没有章名快照 ⇒ 字段缺省（不编名字）',
+      rows2.length === 2 && rows2.filter(r => r.chapterTitle === undefined).length === 1,
+      rows2.map(r => r.chapterTitle ?? '(none)').join(' | '))
+
+    // 接线：诊断与复检都传当时的章名；回看面板优先快照
+    const ticketSrc = readFileSync('src/lib/app/optimizeTicket.ts', 'utf8')
+    ok('⑥ 诊断与复检落档都带章名快照',
+      /chapterTitle: c\.chapter\.title/.test(ticketSrc) && /chapterTitle: hit\.chapter\.title/.test(ticketSrc))
+    const panelSrc = readFileSync('src/components/revision/CheckReportPanel.tsx', 'utf8')
+    ok('⑥ 回看面板优先用快照（不是永远读当前章名）', /if \(r\.chapterTitle\) return r\.chapterTitle/.test(panelSrc))
   }
 
   console.log(`\n———— checkReports：${pass} 通过 / ${fail} 失败 ————`)

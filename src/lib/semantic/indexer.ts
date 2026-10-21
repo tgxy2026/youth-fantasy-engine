@@ -153,7 +153,9 @@ function renderRow(
 
     const label = rule?.label ?? k
     lines.push(`${label}：${val}`)
-    fields.push({ id: rule?.id ?? k, key: k, digest: hashOf(val) })
+    // 🔴 记下当时的显示名：另一台设备同步来新定义（改名）后，旧块文本里仍是旧名字，
+    //    召回闸据此整块丢弃 —— 只比存储键 / 字段 ID 抓不到「只改 label」。
+    fields.push({ id: rule?.id ?? k, key: k, digest: hashOf(val), label })
   }
   return { text: lines.join('\n').trim(), fields }
 }

@@ -61,6 +61,8 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
 
   const sum = rows ? summarizeReportViews(rows) : null
   const chapterName = (r: CheckReportView): string => {
+    // 3.2.0 · T3-06：优先用落档时的章名 —— 之后改名 / 删章，历史报告仍说当时的名字
+    if (r.chapterTitle) return r.chapterTitle
     if (r.chapterId) return titles[r.chapterId] ?? '（这一章已不在项目里）'
     if (r.chapterNo !== undefined) return `第 ${r.chapterNo} 章`
     return '（未记录章节）'

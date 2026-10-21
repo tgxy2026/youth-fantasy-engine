@@ -18,6 +18,8 @@ import { JOURNAL_HEAD } from '../src/lib/tavern/summarize'
 import { memoryToText } from '../src/lib/tavern/memory'
 import { proposeCardRevisions } from '../src/lib/tavern/revise'
 import type { ChatFn } from '../src/lib/tavern/provider'
+// 3.2.0 · WQ6：一次性收尾的请求预算
+import { createAttemptBudget } from '../src/lib/ai/requestLedger'
 import { JOURNAL_KEEP, type FreeCharacter, type FreeSession, type TavernMessage, type VarKey } from '../src/lib/tavern/types'
 
 let pass = 0, fail = 0
@@ -171,6 +173,41 @@ async function main() {
     const back = await store.getFreeSession(s.id)
     ok('收尾不自行推进水位线（由界面统一处理）', back?.watermark === s.watermark)
     ok('收尾不自行打归档戳（由界面统一处理）', back?.endedAt === undefined)
+  }
+
+  // ---------- 2b) WQ6：一次性收尾的请求预算 ----------
+  {
+    let s = await store.createFreeSession([A.id, B.id], '预算受限的一场', { providerId: STUB_PROVIDER.id }, {})
+    s = await push(s, [{ role: 'user', content: '今晚谁值班？' }])
+    const cards = [A, B]
+
+    // 只给 1 次：两位角色只整理得完一位，后面的设定审查必须一次都不发
+    const tight = createAttemptBudget({ label: '结束本轮对话', max: 1 })
+    const tightChat = makeFakeChat(replyWith('她记得今晚。', '今晚雨很大。'))
+    const res = await runRoundEnd({
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: () => '角色', chatFn: tightChat.chatFn, budget: tight,
+    })
+    ok('🔴 预算只够一位 ⇒ 只打一次模型调用（设定审查一次都不发）',
+      tightChat.calls.length === 1, String(tightChat.calls.length))
+    ok('🔴 记忆没整理全 ⇒ memoryDegraded=true（调用方不许推进水位线）', res.memoryDegraded)
+    ok('如实说哪一步因上限被跳过',
+      res.warnings.some(w => /记忆整理/.test(w) && /上限/.test(w)), res.warnings.join(' | '))
+    ok('预算快照回传（界面能显示实际花费 / 上限）', res.budget?.used === 1 && res.budget?.max === 1)
+
+    // 给足 4 次（2 记忆 + 2 设定审查）：行为与不传预算时逐字一致
+    const enough = createAttemptBudget({ label: '结束本轮对话', max: 4 })
+    const enoughChat = makeFakeChat(replyWith('她记得今晚。', '今晚雨很大。'))
+    const res2 = await runRoundEnd({
+      session: s, cards, providerId: STUB_PROVIDER.id,
+      varKeys: [], vars: undefined, maxStep: 5,
+      nameOf: () => '角色', chatFn: enoughChat.chatFn, budget: enough,
+    })
+    ok('预算充足 ⇒ 四步照常跑完，记账与实际调用一致',
+      enoughChat.calls.length === 4 && enough.used === 4, `calls=${enoughChat.calls.length} used=${enough.used}`)
+    ok('预算充足 ⇒ 不产生「因上限跳过」的警告',
+      !res2.warnings.some(w => /上限/.test(w)), res2.warnings.join(' | '))
   }
 
   // ---------- 3) 日记滚动上限与删除 ----------

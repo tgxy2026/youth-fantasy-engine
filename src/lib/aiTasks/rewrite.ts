@@ -11,6 +11,10 @@ import { enforceWordRange, WORD_TOLERANCE } from '@/lib/editor/wordRange'
 import { countWords } from '@/lib/editor/textStats'
 import { deAiGenerateRule } from '@/lib/ai/deAiStyle'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
+// 3.2.0 · WQ6：改写步骤也要有预算 —— 主改写 / 补写 / 压缩逐次记账，到上限暂停
+import {
+  AIRequestBudgetExhaustedError, type AttemptBudget,
+} from '@/lib/ai/requestLedger'
 
 // ---------- 整章改写（润色 / 扩写 / 精简 / 续写 / 改写） ----------
 //
@@ -117,6 +121,12 @@ export interface ChapterRewriteOpts {
   isLatest: boolean
   /** 🔴 收字回调：**同时就是流式开关**。整章可能上千字，不传 onToken 会走非流式并撞总超时墙 */
   onToken?: (d: string) => void
+  /**
+   * 本次改写步骤的预算（3.2.0 · WQ6）。主改写、补写、压缩都计入；
+   * 已耗尽时**一个请求都不发**，直接抛 `AIRequestBudgetExhaustedError`（暂停，不硬打）。
+   * 不传 ⇒ 与改造前逐字一致（老调用零影响）。
+   */
+  budget?: AttemptBudget
 }
 
 /**
@@ -124,6 +134,8 @@ export interface ChapterRewriteOpts {
  * @returns 清洗后的正文；**返回空串表示模型没吐出可用正文**（调用方提示重试）
  */
 export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
+  // 3.2.0 · WQ6：预算已耗尽 ⇒ **一个请求都不发**（继续只会烧额度，由作者决定是否再试）
+  if (o.budget?.exhausted) throw new AIRequestBudgetExhaustedError(o.budget.snapshot())
   const cfg = await requireProviderFor('create')
   const fenceId = newAuthorFence()
   // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
@@ -153,6 +165,7 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       ...(o.onToken ? { onToken: o.onToken } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
       ...(o.request ? { request: o.request } : {}),
+      ...(o.budget ? { budget: o.budget } : {}),
       maxExpand: 8, // 续写可能要从 1000 补到 4000，轮数给足
       maxShrink: 0, // 🔴 绝不压缩：原文是作者写的，续写只有"往长里补"一个方向
     })
@@ -189,6 +202,8 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       ...(o.request ? { request: o.request } : {}),
     },
   )
+  // 一次主改写 = 一次逻辑调用（内部最多再打 3 次实际请求，由 `MAX_REQUESTS_PER_CALL` 兜）
+  o.budget?.consume(1)
   let out = cleanChapterOutput(text)
 
   // ── 🔴 字数**硬校准**（±WORD_TOLERANCE）──
@@ -201,6 +216,7 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       ...(o.signal ? { signal: o.signal } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
       ...(o.request ? { request: o.request } : {}),
+      ...(o.budget ? { budget: o.budget } : {}),
       // 精简不该回头补（压到一半又补回去很荒谬）；其余动作补 2 轮
       maxExpand: o.action === 'condense' ? 0 : 2,
       maxShrink: 2,

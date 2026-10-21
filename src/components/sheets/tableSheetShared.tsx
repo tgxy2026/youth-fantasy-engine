@@ -54,6 +54,34 @@ export function rowBadgeClass(tabId: string, data: Record<string, string>): stri
  * 表格文本单元格：自动换行、随内容撑高，但最多约 3 行（≈78px）即封顶并裁切；
  * 超长内容通过原生 title 在悬停时以"小窗"展示全文，避免表格行高被无限撑大。
  */
+const CELL_MAX_H = 78
+
+/**
+ * 单元格撑高时机的**全局批处理**（3.2.0 · L4 容量基准）。
+ *
+ * 🔴 为什么不能每个组件各自量：原实现每个 textarea 一个 effect，内部依次
+ *    `height='auto'` → 读 `scrollHeight` → 写回高度。每写一次再读下一个都会强制同步布局，
+ *    100 行 × 60 字段（≈5 千个 textarea）实测首屏 38 秒、清空筛选 33 秒 —— O(n²) 布局抖动。
+ *    现在把同一帧内所有待测量的单元格攒起来：先全部写 auto，再一次性读，最后一次性写回
+ *    ⇒ 整帧只付一次布局成本。视觉结果与逐个数完全相同（同样封顶 78px）。
+ */
+const pendingHeight = new Set<HTMLTextAreaElement>()
+let heightRaf = 0
+
+function flushCellHeights() {
+  heightRaf = 0
+  const els = [...pendingHeight].filter(el => el.isConnected)
+  pendingHeight.clear()
+  for (const el of els) el.style.height = 'auto'
+  const heights = els.map(el => Math.min(el.scrollHeight, CELL_MAX_H))
+  els.forEach((el, i) => { el.style.height = heights[i] + 'px' })
+}
+
+function scheduleCellHeight(el: HTMLTextAreaElement) {
+  pendingHeight.add(el)
+  if (!heightRaf) heightRaf = requestAnimationFrame(flushCellHeights)
+}
+
 export function CellTextarea({ value, onChange, invalid, title, nowrap }: {
   value: string
   onChange: (v: string) => void
@@ -70,9 +98,9 @@ export function CellTextarea({ value, onChange, invalid, title, nowrap }: {
   useEffect(() => {
     const ta = ref.current
     if (!ta) return
-    ta.style.height = 'auto'
-    const MAX = 78 // 约 3 行高度，超过则截断（由悬停 title 展示全文）
-    ta.style.height = Math.min(ta.scrollHeight, MAX) + 'px'
+    scheduleCellHeight(ta)
+    // 卸载早于本帧时把引用摘掉，避免批处理碰已离场的元素
+    return () => { pendingHeight.delete(ta) }
   }, [value])
   return (
     <textarea

@@ -46,6 +46,24 @@ export interface AIProvider {
    */
   temperature?: number
   /**
+   * 该端点**已确认**支持结构格式下发（3.2.0 · WQ5）。
+   *
+   * · `json-object` ⇒ OpenAI 兼容通道下发 `response_format: { type: 'json_object' }`，
+   *   Ollama 通道下发 `format: 'json'`；
+   * · `json-schema` ⇒ 额外携带任务给的 schema（未提供时协议层会降级为 JSON 对象并说明）。
+   *
+   * 🔴 **默认不填 ＝ 未确认**：只靠提示词约束，请求体与 3.1.x 逐字节一致。
+   *    不按模型名猜的理由与上下文窗口相同 —— 同一个兼容接口下，有的中转认这个字段、
+   *    有的直接 400；模型名认不出端点的实现。
+   */
+  structuredOutput?: 'json-object' | 'json-schema'
+  /**
+   * 是否**确认**该端点能同时「思考 + 下发结构格式」（默认 false）。
+   * 🔴 只有确认后，任务声明 `reasoning: 'required'` 与 JSON 输出才允许共存；
+   *    未确认时协议层会降级为不推理并留下限制说明，绝不赌「既推理又吐完整 JSON」。
+   */
+  reasoningWithStructure?: boolean
+  /**
    * 文本生成微调（2.9.2 · 六个采样参数，见 `lib/modelSampling.ts`）。
    *
    * 🔴 **留空或全都不填 ⇒ 不下发**（`samplingOptionsOf()` 返回 undefined），

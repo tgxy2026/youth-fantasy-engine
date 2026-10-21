@@ -5,11 +5,15 @@
 //   ② 补字/压缩循环**真的**在预算耗尽时一次都不发（不是"发了才发现超了"）；
 //   ③ 不传预算 ⇒ 行为与改造前逐字一致（默认不改变任何老路径）。
 import http from 'node:http'
+import { readFileSync } from 'node:fs'
 import {
   createAttemptBudget, AIRequestBudgetExhaustedError, isRequestBudgetExhausted,
   CHAPTER_ATTEMPT_BUDGET, MAX_REQUESTS_PER_LOGICAL_CALL,
+  REWRITE_ATTEMPT_BUDGET, ONE_SHOT_ATTEMPT_BUDGET,
 } from '@/lib/ai/requestLedger'
 import { enforceWordRange } from '@/lib/editor/wordRange'
+import { aiRewriteChapter } from '@/lib/ai/aiTasks'
+import { extractAndCommitSettings } from '@/lib/outline/autoContinue'
 import { saveActiveId, saveProviders, type AIProvider } from '../src/lib/ai'
 
 let pass = 0, fail = 0
@@ -70,6 +74,10 @@ async function main() {
       c.consume(0)
       return c.used === 0
     })())
+    ok('① 改写步骤预算＝6（主改写 1 + 补写 2 + 压缩 2 + 设定整理 1）',
+      REWRITE_ATTEMPT_BUDGET === 6, String(REWRITE_ATTEMPT_BUDGET))
+    ok('① 一次性入口预算＝3（抽取 1 + 变化检测 1 + 降级余量）',
+      ONE_SHOT_ATTEMPT_BUDGET === 3, String(ONE_SHOT_ATTEMPT_BUDGET))
   }
 
   // ---------- 二、并行任务各记各的（绝不能是单例） ----------
@@ -147,6 +155,72 @@ async function main() {
   {
     const r4 = await runOnce()
     ok('🔴 ④ 不传预算 ⇒ 行为逐字不变（老调用零影响）', r4.hits === 2, String(r4.hits))
+  }
+
+  // ---------- 五、整章改写：预算耗尽时一个请求都不发 ----------
+  {
+    const exhausted = createAttemptBudget({ label: '第 5 章改写', max: 1 })
+    exhausted.consume(1)
+    hits = 0
+    let caught: unknown
+    try {
+      await aiRewriteChapter({
+        title: '第五章', body: BODY, action: 'polish', requirement: '', isLatest: false,
+        budget: exhausted,
+      })
+    } catch (e) { caught = e }
+    ok('🔴 ⑤ 改写预算已耗尽 ⇒ 直接暂停，不发请求',
+      isRequestBudgetExhausted(caught) && hits === 0, `hits=${hits} err=${String(caught)}`)
+  }
+
+  {
+    const b = createAttemptBudget({ label: '第 6 章改写', max: REWRITE_ATTEMPT_BUDGET })
+    hits = 0
+    const out = await aiRewriteChapter({
+      title: '第六章', body: BODY, action: 'polish', requirement: '', isLatest: false, budget: b,
+    })
+    ok('⑤ 主改写计入预算（一次逻辑调用 = 1）', b.used === 1 && hits === 1, `used=${b.used} hits=${hits}`)
+    ok('⑤ 不传 targetWords 时不跑字数校准（只花这一次）', out.length > 0 && b.used === 1)
+  }
+
+  // ---------- 六、一次性入口（设定整理）到上限就跳过 ----------
+  {
+    const b = createAttemptBudget({ label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET })
+    b.consume(ONE_SHOT_ATTEMPT_BUDGET)
+    hits = 0
+    const r = await extractAndCommitSettings('他推门走了出去。', '第七章', 'add-only', undefined, undefined, undefined, b)
+    ok('🔴 ⑥ 设定整理预算耗尽 ⇒ 一条请求都不发、如实说明已跳过',
+      hits === 0 && r.created === 0 && /已达上限/.test(r.errors?.join('') ?? ''),
+      `hits=${hits} errors=${r.errors?.join('|') ?? ''}`)
+  }
+
+  // ---------- 七、接线（真源里确实建了各自的预算） ----------
+  {
+    const rewriteSrc = readFileSync('src/lib/aiTasks/rewrite.ts', 'utf8')
+    const ticketSrc = readFileSync('src/lib/app/optimizeTicket.ts', 'utf8')
+    const creativeSrc = readFileSync('src/lib/creative/creativeSession.ts', 'utf8')
+    const autoSrc = readFileSync('src/lib/outline/autoContinue.ts', 'utf8')
+    const panelSrc = readFileSync('src/components/tools/OptimizeTicketPanel.tsx', 'utf8')
+
+    ok('⑦ 改写入口：预算耗尽先抛（发请求之前）',
+      /if \(o\.budget\?\.exhausted\) throw new AIRequestBudgetExhaustedError/.test(rewriteSrc))
+    ok('⑦ 改写入口：字数校准（补写/压缩）共用同一份预算',
+      (rewriteSrc.match(/\.\.\.\(o\.budget \? \{ budget: o\.budget \} : \{\}\)/g) ?? []).length === 2)
+
+    ok('⑦ 工单改写：每章一份预算（不是全局单例）',
+      /createAttemptBudget\(\{ label: `第 \$\{hit\.no\} 章改写`, max: REWRITE_ATTEMPT_BUDGET \}\)/.test(ticketSrc))
+    ok('⑦ 工单改写：预算快照回传界面', /budget: budget\.snapshot\(\)/.test(ticketSrc))
+    ok('⑦ 工单改写：设定整理从本章预算扣',
+      /extractAndCommitSettings\(text, hit\.chapter\.title, 'add-only', undefined, opts\.signal, request, budget\)/.test(ticketSrc))
+    ok('⑦ 工单面板：显示已用/上限（不是只报一个模糊数）',
+      /调用 \{b\.used\}\/\{b\.max\}/.test(panelSrc) && /MAX_REQUESTS_PER_LOGICAL_CALL/.test(panelSrc))
+
+    ok('⑦ 手动改写入口：各自一份改写预算 + 一次性设定同步预算',
+      /max: REWRITE_ATTEMPT_BUDGET/.test(creativeSrc)
+      && /label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET/.test(creativeSrc))
+    ok('⑦ 连写侧：设定整理改为按实际调用逐次记账',
+      /cb\.signal, cb\.request, budget\)/.test(autoSrc)
+      && /budget\?\.consume\(1\)[\s\S]{0,120}aiExtractSettingEntitiesWithStatus/.test(autoSrc))
   }
 
   console.log(`\n———— requestLedger：${pass} 通过 / ${fail} 失败 ————`)
