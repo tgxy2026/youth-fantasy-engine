@@ -154,6 +154,13 @@ async function main() {
     const ui = readFileSync(path.join(root, 'src/components/creative/CreativeRewriteSection.tsx'), 'utf8')
     ok('⑥ 界面告诉作者"已登记到候选审阅"', ui.includes('候选审阅'))
     ok('⑥ 候选存不下时如实显示原因', ui.includes('candidateError'))
+
+    const panel = readFileSync(path.join(root, 'src/components/revision/CandidatePanel.tsx'), 'utf8')
+    // 🔴 实机 10-21 抓到：应用成功后该条离开列表，挂在条目上的提示会跟着消失 ⇒ 作者不知道成没成
+    ok('🔴 ⑥ 结果提示渲染在列表外面（rows.map 之前），不会随条目被移除而消失',
+      panel.indexOf('{note && (') < panel.indexOf('rows.map('),
+      `note@${panel.indexOf('{note && (')} map@${panel.indexOf('rows.map(')}`)
+    ok('⑥ 不再把结果提示挂在条目里', !/<li key=\{c\.id\}[\s\S]{0,900}note\?\.id === c\.id/.test(panel))
   }
 
   console.log(`\n▶ candidateIntake: ${pass} passed, ${fail} failed`)

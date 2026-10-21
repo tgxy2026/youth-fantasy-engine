@@ -133,6 +133,26 @@ export default function CandidatePanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/*
+            🔴 结果提示放在**列表外面**（3.2.0 实机 2026-10-21 发现）：
+               原先它渲染在对应条目的 <li> 里，而应用成功后 `load()` 会把这条从
+               待审阅列表里移走 —— 提示跟着条目一起消失，作者只看到面板变空，
+               根本不知道"到底应用成功了没有"，只能去正文里数字数。
+               放弃同理（那条也离开了列表）。提示属于"刚才发生了什么"，不该挂在条目上。
+          */}
+          {note && (
+            <div className={`mb-3 rounded-lg px-3 py-2 text-11 border ${note.ok
+              ? 'text-success bg-success/5 border-success/30'
+              : 'text-danger bg-danger/5 border-danger/30'}`}>
+              {note.text}
+              {note.ok && note.facts && (
+                <div className="mt-1 text-amber" title="只是参考：改写后少提一个名字常常是正常润色，请自行判断">
+                  {note.facts}
+                </div>
+              )}
+            </div>
+          )}
+
           {rows === null && (
             <div className="flex items-center justify-center py-10 gap-2 text-ink-400">
               <Loader2 size={18} className="animate-spin text-amber" />
@@ -172,14 +192,10 @@ export default function CandidatePanel({ onClose }: { onClose: () => void }) {
                       {c.staleReasons?.length ? <span title={c.staleReasons.join('；')}>{c.staleReasons.length} 条过期原因</span> : null}
                     </div>
 
-                    {note?.id === c.id && (
-                      <div className={`mt-2 text-11 ${note.ok ? 'text-success' : 'text-danger'}`}>{note.text}</div>
-                    )}
-                    {note?.id === c.id && note.ok && note.facts && (
-                      <div className="mt-1 text-11 text-amber" title="只是参考：改写后少提一个名字常常是正常润色，请自行判断">
-                        {note.facts}
-                      </div>
-                    )}
+                    {/*
+                      结果提示已提到列表外面（见上方注释）：应用成功后这条会离开列表，
+                      挂在条目上的提示会跟着消失。
+                    */}
 
                     <div className="mt-2.5 flex items-center gap-2">
                       {c.status === 'pending' || c.status === 'applying' || c.status === 'needs-reconcile' ? (
