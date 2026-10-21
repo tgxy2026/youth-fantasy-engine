@@ -30,7 +30,7 @@ export default function FieldAliasButton({
 }) {
   const [open, setOpen] = useState(false)
   const keys = useMemo(() => targets.map(t => t.key), [targets])
-  const { renamed, pending, save } = useFieldRenames(tabId, keys)
+  const { renamed, pending, save, adopted } = useFieldRenames(tabId, keys)
   const renamedCount = Object.keys(renamed).length
   const pendingCount = Object.keys(pending).length
 
@@ -42,7 +42,9 @@ export default function FieldAliasButton({
         variant={variant}
         size={size}
         onClick={() => setOpen(true)}
-        title="给这一页的字段起你自己看得懂的名字：只改显示与 AI 的理解，不动已填内容与存储键"
+        title={adopted
+          ? '本页已采用模板：改显示名与含义确认会写进模板定义，只改显示与 AI 的理解，不动已填内容与存储键'
+          : '给这一页的字段起你自己看得懂的名字：只改显示与 AI 的理解，不动已填内容与存储键'}
         className="gap-1.5"
       >
         <Type size={12} /> 字段名
@@ -56,7 +58,9 @@ export default function FieldAliasButton({
       {open && (
         <FieldAliasDialog
           title={`字段显示名 · ${tabName}`}
-          intro={intro}
+          intro={adopted
+            ? `${intro}（本页已采用模板：保存会写进模板定义，其它采用同一模板的页签同步生效）`
+            : intro}
           targets={targets}
           initial={renamed}
           pending={pending}

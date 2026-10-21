@@ -16,13 +16,15 @@ import { __resetMockStores } from './mock-memory'
 import { __resetTemplateCacheForTests, resolveTemplateCached, templateCacheStats } from '@/lib/templates/cache'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import {
-  applyFieldDefinitions, fieldDefinitionKeyOf, isFieldDefinitionDoc,
-  loadFieldDefinitions, migrateAliasesToFieldDefinitions, saveFieldDefinition,
+  absorbFieldDefinitions, applyDefinitionEditsToTemplate, applyFieldDefinitions,
+  fieldDefinitionKeyOf, isFieldDefinitionDoc, loadFieldDefinitions,
+  migrateAliasesToFieldDefinitions, saveFieldDefinition,
   type FieldDefinitionDoc, type FieldDefinitionOverride,
 } from '@/lib/templates/fieldDefinition'
 import { loadFieldLabels } from '@/lib/templates/labels'
+import { semanticDigestOf } from '@/lib/templates/legacyAdapter'
 import { snapshotOfBuiltin } from '@/lib/templates/snapshot'
-import { saveTemplateDef } from '@/lib/templates/store'
+import { loadTemplateDef, saveTemplateDef } from '@/lib/templates/store'
 import { loadAliases, saveAliases } from '@/lib/settings/fieldAlias'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 
@@ -271,6 +273,128 @@ async function main() {
     }
     ok('🔴 源码：设定检索按同一口径读显示名（含轻量定义）',
       srcOf('src/components/settings/SettingSearch.tsx').includes('loadFieldLabels'))
+  }
+
+  // ────────────────────────── ⑪ 采用模板时吸收轻量定义（结构仍由快照负责） ──────────────────────────
+  {
+    const base = snapshotOfBuiltin(RACES)
+    const doc = await loadFieldDefinitions(pid, RACES.id) // ⑥ 迁移出的「名称 → 种族称谓 · 待确认」
+    const absorbed = absorbFieldDefinitions(base, doc)
+    const f = fieldOf(resolveTemplateForTab(RACES, { def: absorbed }), '名称')
+    ok('⑪ 名称 / 旧名 / 确认状态一起吸收', f?.label === '种族称谓'
+      && f?.defaultLabel === '名称' && f?.meaningStatus === 'pending', JSON.stringify(f))
+    ok('⑪ 存储键与稳定身份原样', f?.sourceKey === '名称' && f?.id === '名称')
+    ok('⑪ 吸收后语义摘要变化', absorbed.semanticDigest !== base.semanticDigest)
+    ok('⑪ 重复吸收幂等（返回同一对象）', absorbFieldDefinitions(absorbed, doc) === absorbed)
+    ok('⑪ 没有覆盖 ⇒ 同一对象', absorbFieldDefinitions(base, null) === base)
+    ok('⑪ 全是未知键的覆盖 ⇒ 同一对象',
+      absorbFieldDefinitions(base, docOf({ '不存在的字段': { label: '幽灵', source: 'author', updatedAt: 1 } })) === base)
+  }
+
+  // ────────────────────────── ⑫ 已采用页签的语义修改落在快照上 ──────────────────────────
+  {
+    const base = snapshotOfBuiltin(MASTER)
+    const edited = applyDefinitionEditsToTemplate(base, {
+      [KEY]: { label: '故事主干', description: '新的说明', meaningStatus: 'confirmed' },
+    })
+    const f = fieldOf(resolveTemplateForTab(MASTER, { def: edited }), KEY)
+    ok('⑫ 改名 / 说明 / 确认状态写入快照', f?.label === '故事主干'
+      && f?.description === '新的说明' && f?.meaningStatus === 'confirmed', JSON.stringify(f))
+    ok('⑫ 改名时固化旧名', f?.defaultLabel === '主线一句话')
+    ok('⑫ 结构与存储键不动', f?.sourceKey === KEY && f?.id === KEY && f?.type === 'textarea')
+    ok('⑫ 语义摘要随之变化', edited.semanticDigest !== base.semanticDigest)
+
+    const reverted = applyDefinitionEditsToTemplate(edited, { [KEY]: { label: null, meaningStatus: null } })
+    const rf = fieldOf(resolveTemplateForTab(MASTER, { def: reverted }), KEY)
+    ok('⑫ 恢复原名 ⇒ 名称回默认、确认状态清除（说明保留）',
+      rf?.label === '主线一句话' && rf?.meaningStatus === undefined && rf?.description === '新的说明',
+      JSON.stringify(rf))
+    ok('⑫ 说明清空',
+      fieldOf(resolveTemplateForTab(MASTER, {
+        def: applyDefinitionEditsToTemplate(reverted, { [KEY]: { description: null } }),
+      }), KEY)?.description === undefined)
+
+    ok('⑫ 没有编辑 ⇒ 同一对象', applyDefinitionEditsToTemplate(base, {}) === base)
+    ok('⑫ 未知键 ⇒ 同一对象（不产生无意义新版本）',
+      applyDefinitionEditsToTemplate(base, { '不存在的字段': { label: '幽灵' } }) === base)
+  }
+
+  // ────────────────────────── ⑬ 项目导出 / 导入带上定义与确认状态 ──────────────────────────
+  {
+    const bundle = await db.exportProject(pid)
+    const relKeys = (bundle.settings ?? []).map(s => s.key)
+    ok('⑬ 导出包带轻量定义', relKeys.includes(fieldDefinitionKeyOf(MASTER.id)), JSON.stringify(relKeys.slice(0, 5)))
+    ok('⑬ 导出包带已采用模板', relKeys.includes('projectTemplate32:positioning'))
+
+    const newPid = await db.importProject(bundle)
+    const movedDoc = await loadFieldDefinitions(newPid, MASTER.id)
+    ok('⑬ 导入后定义随项目回来', movedDoc?.tabId === MASTER.id && movedDoc?.fields[KEY]?.description === 'ZZ说明',
+      JSON.stringify(movedDoc?.fields[KEY]))
+    const movedDef = await loadTemplateDef(newPid, POS.id)
+    ok('⑬ 导入后模板定义随项目回来', movedDef?.fields.find(x => x.sourceKey === POS_KEY)?.label === '模板书名')
+    ok('⑬ 新项目 id 不串旧数据', newPid !== pid
+      && (await loadFieldDefinitions(pid, MASTER.id))?.fields[KEY]?.description === 'ZZ说明')
+  }
+
+  // ────────────────────────── ⑭ T3-01..T3-06 自动化可验部分 ──────────────────────────
+  {
+    // T3-01：表格 / 表单 / 卡片三类页签的内置字段改名都只换显示名，存储键不动
+    await saveFieldDefinition(pid, 'char-main', '一、基础信息::姓名', {
+      label: '角色名', meaningStatus: 'confirmed',
+    })
+    const cardLabels = await loadFieldLabels(tabOf('char-main'))
+    ok('T3-01 卡片页签按当前名称显示', cardLabels['一、基础信息::姓名'] === '角色名', JSON.stringify(cardLabels['一、基础信息::姓名']))
+    const cardTpl = resolveTemplateForTab(tabOf('char-main'), {
+      fieldDefinitions: await loadFieldDefinitions(pid, 'char-main'),
+    })
+    ok('T3-01 卡片写回目标仍是存储键', fieldOf(cardTpl, '一、基础信息::姓名')?.sourceKey === '一、基础信息::姓名')
+    const racesLabels = await loadFieldLabels(RACES)
+    ok('T3-01 表格页签按当前名称显示（待确认也照样显示）', racesLabels['名称'] === '种族称谓')
+    ok('T3-01 表单页签恢复原名后不被别名顶回', !(await loadFieldLabels(MASTER))[KEY])
+
+    // T3-02：改义不改结构 —— 类型 / 选项 / 存储键原样，说明进入 AI 依据
+    const selectCol = TABS.flatMap(t => (t.columns ?? []).map(c => ({ tab: t, key: c.name, options: c.options ?? [] })))
+      .find(x => x.options.length > 0)
+    if (selectCol) {
+      const before = resolveTemplateForTab(selectCol.tab)
+      await saveFieldDefinition(pid, selectCol.tab.id, selectCol.key, {
+        label: '业务占位名', description: '现在表示另一种含义', meaningStatus: 'confirmed',
+      })
+      const after = resolveTemplateForTab(selectCol.tab, {
+        fieldDefinitions: await loadFieldDefinitions(pid, selectCol.tab.id),
+      })
+      const a = fieldOf(before, selectCol.key)
+      const b = fieldOf(after, selectCol.key)
+      ok('T3-02 改义后选项原样保留', JSON.stringify(a?.options) === JSON.stringify(b?.options),
+        JSON.stringify({ before: a?.options, after: b?.options }))
+      ok('T3-02 类型与存储键不动', a?.type === b?.type && b?.sourceKey === selectCol.key)
+      ok('T3-02 新说明改变 AI 依据', b?.description === '现在表示另一种含义' && b?.label === '业务占位名')
+    } else {
+      ok('T3-02 选项字段缺失（跳过）', false, 'schema 里找不到带选项的列')
+    }
+
+    // T3-05：语义变化才作废旧索引 —— 改义/确认改变摘要，纯布局顺序不改变
+    const base = snapshotOfBuiltin(RACES)
+    ok('T3-05 布局顺序不改变语义摘要',
+      semanticDigestOf([...base.fields].reverse()) === base.semanticDigest)
+    const renamed = absorbFieldDefinitions(base, await loadFieldDefinitions(pid, RACES.id))
+    ok('T3-05 改名改变语义摘要', renamed.semanticDigest !== base.semanticDigest)
+
+    // T3-06：世界包只搬内容，不搬定义（引用方自己的定义不被覆盖）
+    const srcOf = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8')
+    const pack = srcOf('src/lib/world/worldPack.ts')
+    const importer = srcOf('src/lib/world/worldImport.ts')
+    ok('T3-06 世界包不读取字段定义', !pack.includes('fieldDefinition') && !pack.includes('loadTemplateDef'))
+    ok('T3-06 引入世界不写字段定义', !importer.includes('fieldDefinition') && !importer.includes('saveTemplateDef'))
+
+    // T3-C 接线：采用时吸收、确认写进快照、按钮说明写进模板定义
+    const manager = srcOf('src/components/templates/TemplateManagerDialog.tsx')
+    ok('🔴 采用模板时吸收轻量定义', manager.includes('absorbFieldDefinitions'))
+    const renames = srcOf('src/lib/templates/useFieldRenames.ts')
+    ok('🔴 已采用页签的确认写进快照', renames.includes('applyDefinitionEditsToTemplate')
+      && renames.includes('saveTemplateDef'))
+    ok('🔴 字段名按钮说明会写进模板定义',
+      srcOf('src/components/sheets/FieldAliasButton.tsx').includes('adopted'))
   }
 
   console.log(`\ntemplatesFieldDefinition: ${pass} 通过 / ${fail} 失败`)

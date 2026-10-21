@@ -15,10 +15,12 @@ import { getCurrentProjectId } from '@/lib/db'
 import { defaultLabelOf, labelMapOf, sanitizeAliases, type AliasMap } from '@/lib/settings/aliasCore'
 import { loadAliases, saveAliases, useAliasRevision } from '@/lib/settings/fieldAlias'
 import {
-  loadFieldDefinitions, overrideLabelsOf, sanitizeFieldDefinitionDoc,
-  saveFieldDefinition, subscribeFieldDefinitions,
-  type FieldDefinitionDoc,
+  applyDefinitionEditsToTemplate, loadFieldDefinitions, overrideLabelsOf,
+  sanitizeFieldDefinitionDoc, saveFieldDefinition, subscribeFieldDefinitions,
+  type FieldDefinitionDoc, type FieldDefinitionEdit,
 } from './fieldDefinition'
+import { loadTemplateDef, saveTemplateDef, subscribeTemplateStore } from './store'
+import type { TemplateDef } from './definition'
 
 /** 待确认的一条改名（来自历史别名迁移） */
 export interface PendingRename {
@@ -43,8 +45,11 @@ export interface FieldRenames {
   /**
    * 保存：`next` 是改后的显示名（空 = 恢复原名），`meanings` 只给待确认项。
    * 🔴 待确认项没有选择 ⇒ 抛错（调用方显示原因），绝不替作者默认「含义不变」。
+   * 🔴 已采用页签：写入**模板快照**，不再写 `fieldDefinition32`（避免被快照遮蔽）。
    */
   save: (next: AliasMap, meanings: Record<string, MeaningDecision>) => Promise<void>
+  /** 该页签已采用完整模板：显示名与确认状态以快照为准，保存也落在快照上 */
+  adopted: boolean
 }
 
 export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
@@ -52,6 +57,7 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
   const aliasRev = useAliasRevision()
   const [aliasMap, setAliasMap] = useState<AliasMap>({})
   const [doc, setDoc] = useState<FieldDefinitionDoc | null>(null)
+  const [def, setDef] = useState<TemplateDef | null>(null)
   const keysRef = useRef(keys)
   keysRef.current = keys
   // 分隔符用转义写法：源码里不出现控制字符（否则扫描器会把文件当 binary，见 fieldAlias 的教训）
@@ -63,18 +69,22 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
       void Promise.all([
         loadAliases(tabId).catch(() => ({})),
         loadFieldDefinitions(pid, tabId).catch(() => null),
-      ]).then(([a, d]) => {
+        loadTemplateDef(pid, tabId).catch(() => null),
+      ]).then(([a, d, t]) => {
         if (!alive) return
         setAliasMap(a)
         setDoc(d)
+        setDef(t)
       })
     }
     load()
     // 确认 / 改说明都会 emit；别名变化由 aliasRev 触发本 effect 重跑
     const off = subscribeFieldDefinitions(load)
+    const offDef = subscribeTemplateStore(load)
     return () => {
       alive = false
       off()
+      offDef()
     }
   }, [pid, tabId, aliasRev])
 
@@ -86,13 +96,23 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
 
   const labels = useMemo(() => {
     const base = labelMapOf(keysRef.current, aliasMap)
+    // 🔴 快照优先（与解析层 / loadFieldGating 同口径）：采用后名称由模板维护，
+    //    轻量定义与旧别名都只是历史来源，不能反过来把名字顶回去。
+    if (def) {
+      const byKey = new Map(def.fields.map(f => [f.sourceKey, f.label]))
+      for (const key of keysRef.current) {
+        const label = byKey.get(key)
+        if (label) base[key] = label
+      }
+      return base
+    }
     const defined = clean?.fields ?? {}
     // 轻量定义接管的字段不再回退到旧别名：否则作者在弹窗里「恢复原名」会被别名顶回来
     for (const key of Object.keys(defined)) base[key] = defaultLabelOf(key)
     for (const [key, label] of Object.entries(overrideLabelsOf(clean, keysRef.current))) base[key] = label
     return base
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aliasMap, clean, keysKey])
+  }, [aliasMap, clean, def, keysKey])
 
   const renamed = useMemo(() => {
     const out: AliasMap = {}
@@ -106,6 +126,19 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
 
   const pending = useMemo(() => {
     const out: Record<string, PendingRename> = {}
+    // 已采用页签的待确认状态在快照里（采用时已吸收）——这里漏读会让确认清单凭空少一项
+    if (def) {
+      const wanted = new Set(keysRef.current)
+      for (const f of def.fields) {
+        if (f.meaningStatus !== 'pending' || !wanted.has(f.sourceKey)) continue
+        out[f.sourceKey] = {
+          label: f.label,
+          ...(f.defaultLabel ? { defaultLabel: f.defaultLabel } : {}),
+          ...(f.description ? { description: f.description } : {}),
+        }
+      }
+      return out
+    }
     for (const [key, ov] of Object.entries(clean?.fields ?? {})) {
       if (ov.meaningStatus !== 'pending' || !ov.label) continue
       out[key] = {
@@ -115,11 +148,50 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
       }
     }
     return out
-  }, [clean])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clean, def, keysKey])
 
   const save = useCallback(async (next: AliasMap, meanings: Record<string, MeaningDecision>) => {
     const tabKeys = keysRef.current
     const cleanNext = sanitizeAliases(tabKeys, next)
+
+    // 已采用模板：语义修改写进快照（方案 §3.12.3.4「停止旧覆盖的可写入口」）
+    if (def) {
+      const edits: Record<string, FieldDefinitionEdit> = {}
+      for (const key of tabKeys) {
+        const desired = (cleanNext[key] ?? '').trim()
+        const current = labels[key] ?? defaultLabelOf(key)
+        const decision = meanings[key]
+        if (decision) {
+          if (!desired) {
+            // 清空输入框 = 恢复原名：改名与说明一并清掉
+            edits[key] = { label: null, description: null, meaningStatus: null }
+            continue
+          }
+          if (decision.status === 'changed' && !decision.description?.trim()) {
+            throw new Error(`「${current}」标为「含义已改变」时，请写明它现在是什么意思`)
+          }
+          edits[key] = {
+            label: desired,
+            ...(decision.status === 'changed' ? { description: decision.description!.trim() } : {}),
+            meaningStatus: 'confirmed',
+          }
+          continue
+        }
+        if (desired === current) continue
+        edits[key] = { label: desired || null }
+      }
+      const edited = applyDefinitionEditsToTemplate(def, edits)
+      if (edited === def) return
+      const saved = await saveTemplateDef(pid, {
+        ...edited,
+        revision: def.revision + 1,
+        updatedAt: Date.now(),
+      })
+      if (!saved.ok) throw new Error(saved.violations.map(v => v.detail).join('；'))
+      return
+    }
+
     const aliasesToDrop = new Set<string>()
 
     for (const key of tabKeys) {
@@ -159,9 +231,9 @@ export function useFieldRenames(tabId: string, keys: string[]): FieldRenames {
       for (const key of aliasesToDrop) delete rest[key]
       await saveAliases(tabId, tabKeys, rest)
     }
-  }, [aliasMap, labels, pid, tabId])
+  }, [aliasMap, def, labels, pid, tabId])
 
-  return { labels, renamed, pending, save }
+  return { labels, renamed, pending, save, adopted: !!def }
 }
 
 /** 轻量定义变更信号（设定检索这类「一次读多张表」的组件用） */

@@ -34,6 +34,9 @@ import {
   snapshotOfAtlas, snapshotOfBlank, snapshotOfBuiltin,
 } from '@/lib/templates/snapshot'
 import { deleteTemplateDef, loadTemplateDef, subscribeTemplateStore } from '@/lib/templates/store'
+import {
+  absorbFieldDefinitions, loadFieldDefinitions, subscribeFieldDefinitions, type FieldDefinitionDoc,
+} from '@/lib/templates/fieldDefinition'
 import { checkTemplateDef } from '@/lib/templates/limits'
 import { planTemplateChange, type TemplateChangePlan } from '@/lib/templates/plan'
 import {
@@ -83,6 +86,8 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
   const [err, setErr] = useState('')
   const [result, setResult] = useState<MigrationResult | null>(null)
   const [blocking, setBlocking] = useState<MigrationLog | null>(null)
+  /** 轻量定义：采用时原样吸收进快照（方案 §3.12.3.4），采用后不再参与解析 */
+  const [defDoc, setDefDoc] = useState<FieldDefinitionDoc | null>(null)
 
   const isAtlas = isAtlasTab(tab.id)
   const aliasKeys = useMemo(
@@ -118,22 +123,28 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
       void blockingMigrationOf(pid, tab.id)
         .then(l => { if (alive) setBlocking(l) })
         .catch(() => { /* 读不到日志时按“无阻断”处理，迁移本身仍会再核一次 */ })
+      void loadFieldDefinitions(pid, tab.id)
+        .then(d => { if (alive) setDefDoc(d) })
+        .catch(() => { if (alive) setDefDoc(null) })
     }
     reload()
     const off = subscribeTemplateStore(reload)
-    return () => { alive = false; off() }
+    const offDoc = subscribeFieldDefinitions(reload)
+    return () => { alive = false; off(); offDoc() }
   }, [pid, tab.id])
 
+  /**
+   * 从当前结构生成快照。
+   * 🔴 采用前把轻量定义**原样吸收**：名称 / 说明 / 含义确认状态都是作者的当前定义，
+   *    不能因为换成快照存储就退回 schema 原名或丢掉「待确认」状态（方案 §3.12.3.4）。
+   */
   const snapshot = (kind: 'builtin' | 'blank'): TemplateDef => {
-    if (kind === 'blank') return snapshotOfBlank(tab)
-    if (isAtlas) {
-      return snapshotOfAtlas(tab, {
-        aliases: aliasMap,
-        config: atlasConfig,
-        name: `${tab.name}·自定义`,
-      })
-    }
-    return snapshotOfBuiltin(tab, { aliases: aliasMap, name: `${tab.name}·自定义` })
+    const base = kind === 'blank'
+      ? snapshotOfBlank(tab)
+      : isAtlas
+        ? snapshotOfAtlas(tab, { aliases: aliasMap, config: atlasConfig, name: `${tab.name}·自定义` })
+        : snapshotOfBuiltin(tab, { aliases: aliasMap, name: `${tab.name}·自定义` })
+    return absorbFieldDefinitions(base, defDoc)
   }
 
   const startEdit = (kind: 'builtin' | 'blank') => {

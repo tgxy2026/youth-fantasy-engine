@@ -22,7 +22,8 @@ import { aliasKeyOf, defaultLabelOf, sanitizeAliases } from '@/lib/settings/alia
 import { storageKeysOf } from './schemaKeys'
 import { loadTemplateDef } from './store'
 import { semanticDigestOf } from './legacyAdapter'
-import type { EffectiveTemplate, FieldMeaningStatus } from './types'
+import type { TemplateDef } from './definition'
+import type { EffectiveField, EffectiveTemplate, FieldMeaningStatus } from './types'
 
 export const FIELD_DEFINITION_VERSION = 1
 export const FIELD_DEFINITION_PREFIX = 'fieldDefinition32:'
@@ -175,6 +176,99 @@ export function applyFieldDefinitions(
   })
   if (!changed) return tpl
   return { ...tpl, fields, semanticDigest: semanticDigestOf(fields) }
+}
+
+/**
+ * 采用完整模板时**原样吸收**轻量覆盖（方案 §3.12.3.4）。
+ *
+ * 🔴 只搬 `label` / `description` / `meaningStatus`：结构、类型、权限、存储键仍由快照负责。
+ * 🔴 吸收后快照就是当前定义；旧 `fieldDefinition32` 文档保留作恢复来源，但不再参与解析。
+ * 🔴 没有可用覆盖 ⇒ **返回同一个对象**（缓存与幂等调用不必处理等价新对象）。
+ */
+export function absorbFieldDefinitions(
+  def: TemplateDef,
+  doc: FieldDefinitionDoc | null | undefined,
+): TemplateDef {
+  const clean = sanitizeFieldDefinitionDoc(doc, def.fields.map(f => f.sourceKey))
+  if (!clean || !Object.keys(clean.fields).length) return def
+  let changed = false
+  const fields = def.fields.map(f => {
+    const ov = clean.fields[f.sourceKey]
+    if (!ov) return f
+    const next: EffectiveField = {
+      ...f,
+      // 与 `applyFieldDefinitions` 同口径：有覆盖就不再回退旧别名（没有 label ⇒ 原名）
+      label: ov.label ?? defaultLabelOf(f.sourceKey),
+      defaultLabel: ov.defaultLabel ?? f.defaultLabel ?? defaultLabelOf(f.sourceKey),
+      ...(ov.description ? { description: ov.description } : {}),
+      ...(ov.meaningStatus ? { meaningStatus: ov.meaningStatus } : {}),
+    }
+    if (sameSemanticOf(f, next)) return f
+    changed = true
+    return next
+  })
+  if (!changed) return def
+  return { ...def, fields, semanticDigest: semanticDigestOf(fields) }
+}
+
+/** 作者对已采用页签的**语义**修改（不含结构）；规则与 `saveFieldDefinition` 一致 */
+export interface FieldDefinitionEdit {
+  label?: string | null
+  description?: string | null
+  meaningStatus?: FieldMeaningStatus | null
+}
+
+/**
+ * 把改名 / 说明 / 确认状态写进**已采用快照**（T3-C）。
+ *
+ * 🔴 采用后不再写 `fieldDefinition32`：否则界面从快照读、确认写进被遮蔽的覆盖，
+ *    作者会看到「保存了但没反应」（方案 §3.12.3.4「停止旧覆盖的可写入口」）。
+ * 🔴 恢复原名一并清掉确认状态：没有改名就不存在「这条改名是否改义」。
+ * 🔴 只重算语义摘要，不碰 revision / updatedAt —— 那两项由调用方在落库前推进。
+ */
+export function applyDefinitionEditsToTemplate(
+  def: TemplateDef,
+  edits: Record<string, FieldDefinitionEdit>,
+): TemplateDef {
+  if (!Object.keys(edits).length) return def
+  let changed = false
+  const fields = def.fields.map(f => {
+    const e = edits[f.sourceKey]
+    if (!e) return f
+    const next: EffectiveField = { ...f }
+    if (e.label !== undefined) {
+      const label = (e.label ?? '').trim()
+      if (label && label !== defaultLabelOf(f.sourceKey)) {
+        next.label = label
+        if (!next.defaultLabel) next.defaultLabel = defaultLabelOf(f.sourceKey)
+      } else {
+        next.label = defaultLabelOf(f.sourceKey)
+        delete next.meaningStatus
+      }
+    }
+    if (e.description !== undefined) {
+      const desc = (e.description ?? '').trim()
+      if (desc) next.description = desc
+      else delete next.description
+    }
+    if (e.meaningStatus !== undefined) {
+      if (e.meaningStatus) next.meaningStatus = e.meaningStatus
+      else delete next.meaningStatus
+    }
+    if (sameSemanticOf(f, next)) return f
+    changed = true
+    return next
+  })
+  if (!changed) return def
+  return { ...def, fields, semanticDigest: semanticDigestOf(fields) }
+}
+
+/** 只比较参与语义摘要的四项（布局 / 权限等不在本文件的职责内） */
+function sameSemanticOf(a: EffectiveField, b: EffectiveField): boolean {
+  return a.label === b.label
+    && a.defaultLabel === b.defaultLabel
+    && a.description === b.description
+    && a.meaningStatus === b.meaningStatus
 }
 
 // ────────────────────────── 读写 ──────────────────────────
