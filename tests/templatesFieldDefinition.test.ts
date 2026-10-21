@@ -6,7 +6,7 @@
 //   · 轻量定义只在没有采用快照时生效（快照 label 优先）；
 //   · 脏名称（撞名 / 超长 / 未知键）一律丢弃，与别名同一口径；
 //   · 名称 / 说明 / 确认状态变化进入语义摘要（索引与 AI 候选据此失效）。
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import * as path from 'node:path'
 import { TABS } from '@/lib/schema'
 import type { TabDef } from '@/lib/types'
@@ -27,6 +27,10 @@ import { snapshotOfBuiltin } from '@/lib/templates/snapshot'
 import { loadTemplateDef, saveTemplateDef } from '@/lib/templates/store'
 import { loadAliases, saveAliases } from '@/lib/settings/fieldAlias'
 import { buildInlineBriefing, buildProjectContext } from '@/lib/ai/aiContext'
+import { saveAtlasSchema } from '@/lib/atlas/persistence'
+import type { AtlasSchemaConfig } from '@/lib/atlas/types'
+import { buildMappingPlan } from '@/lib/templates/mappingPlan'
+import { slotsForTab } from '@/lib/templates/semanticSlots'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -398,6 +402,91 @@ async function main() {
       && renames.includes('saveTemplateDef'))
     ok('🔴 字段名按钮说明会写进模板定义',
       srcOf('src/components/sheets/FieldAliasButton.tsx').includes('adopted'))
+  }
+
+  // ────────────────────────── ⑮ 读侧守护：改名不丢资料、未绑定的新字段仍进一般阅读 ──────────────────────────
+  {
+    const guardPid = (await db.createProject('T3 读侧守护', '', '')).id
+    db.setCurrentProject(guardPid)
+
+    // ① 作者自建的新字段：不在 schema 里、也没绑任何语义槽位 —— 一般阅读照样要看得到
+    const atlasConfig = {
+      formatVersion: 1,
+      revision: 1,
+      fields: [
+        {
+          id: 'cf_lore', label: '自建渊源', type: 'text', description: '', options: [], appliesTo: '*',
+          groupId: 'g1', order: 0, tableVisible: true, detailVisible: true, searchable: true,
+          aiReadable: true, aiWritable: true,
+        },
+      ],
+      groups: [{ id: 'g1', label: '扩展', order: 0 }],
+      builtinPresentation: {},
+      summaryKeys: [],
+    } as unknown as AtlasSchemaConfig
+    await saveAtlasSchema(guardPid, 'races', atlasConfig)
+    await db.saveTableRow({
+      id: 'row-lore', projectId: guardPid, tabId: 'races', order: 0,
+      data: { 名称: '霜族', cf_lore: '自冰原深处迁徙而来' },
+    })
+    __resetTemplateCacheForTests()
+    const atlasCtx = await buildProjectContext({ onlyTabIds: ['races'], budget: 4000 })
+    ok('⑮ 未绑语义槽位的新字段仍进一般阅读',
+      atlasCtx.text.includes('自建渊源') && atlasCtx.text.includes('自冰原深处迁徙而来'),
+      atlasCtx.text.slice(0, 500))
+    // 先把「确实没绑槽位」钉死，上面的读侧断言才有意义
+    const atlasTpl = resolveTemplateForTab(tabOf('races'), { config: atlasConfig, purpose: 'aiRead' })
+    const atlasPlan = buildMappingPlan(atlasTpl, slotsForTab('races'))
+    ok('⑮ 该字段确实没有语义槽位绑定',
+      !atlasPlan.bindings.some(b => b.fieldIds.includes('cf_lore')),
+      JSON.stringify(atlasPlan.bindings.filter(b => b.fieldIds.includes('cf_lore'))))
+
+    // ② ⑧ 简报：人物状态 / 伏笔回收状态改了栏目名，内容不能跟着消失
+    await db.saveCardRecord({
+      id: 'card-guard', projectId: guardPid, tabId: 'char-main', name: '沈砚', order: 0,
+      data: { '一、基础信息::姓名': '沈砚', '一、基础信息::人物状态': '断臂重生，性情大变' },
+    })
+    await db.saveTableRow({
+      id: 'row-guard', projectId: guardPid, tabId: 'foreshadow', order: 0,
+      data: { 编号: 'F0001', 伏笔内容: '破碎玉佩的来历', 状态: '未回收' },
+    })
+    await saveFieldDefinition(guardPid, 'char-main', '一、基础信息::人物状态', {
+      label: '当前处境', meaningStatus: 'confirmed',
+    })
+    await saveFieldDefinition(guardPid, 'foreshadow', '状态', {
+      label: '回收进度', meaningStatus: 'confirmed',
+    })
+    __resetTemplateCacheForTests()
+    const guardCtx = await buildProjectContext({ onlyTabIds: ['char-main', 'foreshadow'], budget: 6000 })
+    ok('⑧ 角色状态改栏目名后内容仍在', guardCtx.text.includes('断臂重生，性情大变'), guardCtx.text.slice(0, 600))
+    ok('⑧ 角色状态按新栏目名渲染',
+      guardCtx.text.includes('当前处境：') && !guardCtx.text.includes('人物状态：'), guardCtx.text.slice(0, 600))
+    ok('⑧ 伏笔回收状态改栏目名后内容仍在',
+      guardCtx.text.includes('破碎玉佩的来历') && guardCtx.text.includes('未回收'), guardCtx.text.slice(0, 600))
+    ok('⑧ 伏笔状态按新栏目名渲染', guardCtx.text.includes('回收进度'), guardCtx.text.slice(0, 600))
+
+    __resetTemplateCacheForTests()
+    db.setCurrentProject(pid)
+  }
+
+  // ────────────────────────── ⑯ 酒馆不接项目模板：聊天不因模板缺「状态」被关掉 ──────────────────────────
+  // 方案 §3.11：酒馆自身字段**有意不接**模板 —— 能不能聊天只取决于角色卡 / 模型，
+  // 与项目模板有没有绑「状态」槽位无关。这里用源码闸钉住这条红线：
+  // 一旦有人把模板解析或迁移闸接进酒馆，聊天就会跟着项目模板的"合规检查"一起被拦掉。
+  {
+    const walk = (d: string): string[] =>
+      readdirSync(path.join(process.cwd(), d), { withFileTypes: true })
+        .flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])
+    const tavernFiles = ['src/lib/tavern', 'src/components/tavern']
+      .flatMap(d => walk(d))
+      .filter(f => /\.(ts|tsx)$/.test(f))
+    const wired = tavernFiles.filter(f => {
+      const src = readFileSync(path.join(process.cwd(), f), 'utf8')
+      return src.includes('lib/templates') || src.includes('../templates/')
+    })
+    ok('⑩ 酒馆不依赖项目模板（聊天不因模板缺状态而关闭）', wired.length === 0,
+      wired.map(f => path.relative(process.cwd(), f)).join('、'))
+    ok('⑩ 酒馆文件确实被扫到（防止闸空转）', tavernFiles.length >= 30, String(tavernFiles.length))
   }
 
   console.log(`\ntemplatesFieldDefinition: ${pass} 通过 / ${fail} 失败`)
