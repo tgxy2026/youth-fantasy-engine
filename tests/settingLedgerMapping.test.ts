@@ -257,6 +257,29 @@ async function case9() {
   ok('⑨ firstAppear 写进作者绑定的「自定义备注」字段', row?.data['cf_note'] === '第1章', JSON.stringify(row?.data))
 }
 
+// ───────────────── ⑩ 缺资料：同名已有行只合并非空槽位（不覆盖、不重复创建） ─────────────────
+async function case10() {
+  __resetMockStores()
+  await db.setCurrentProject(PID)
+  const fields = [
+    mkField({ id: '名称', sourceKey: '名称', label: '名称' }),
+    mkField({ id: 'cf_desc', sourceKey: 'cf_desc', label: '自定义定义' }),
+  ]
+  const ctx = ctxOf('terms', fields, { name: ['名称'], desc: ['cf_desc'] })
+  await db.saveTableRow({
+    id: 'row-1', projectId: PID, tabId: 'terms', order: 0,
+    data: { '名称': '玄脉', 'cf_desc': '修行体系', '首次出现章节': '第1章' },
+  })
+  // 本次抽取只有名字、没有描述，也没有章节（事实缺失）⇒ 空槽位不发送
+  await commitEntities([item({ type: '术语', name: '玄脉', desc: '' })], '', {
+    mappings: new Map([['terms', ctx]]),
+  })
+  const rows = await db.getTableRows('terms')
+  ok('⑩ 缺资料不重复建行', rows.length === 1, JSON.stringify(rows.length))
+  ok('⑩ 缺资料不覆盖已有描述', rows[0]?.data['cf_desc'] === '修行体系', JSON.stringify(rows[0]?.data))
+  ok('⑩ 缺资料不清空其它列', rows[0]?.data['首次出现章节'] === '第1章', JSON.stringify(rows[0]?.data))
+}
+
 async function main() {
   await case1()
   await case2()
@@ -267,6 +290,7 @@ async function main() {
   await case7()
   await case8()
   await case9()
+  await case10()
   console.log(`\nsettingLedgerMapping: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }

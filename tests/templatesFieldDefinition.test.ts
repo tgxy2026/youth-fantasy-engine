@@ -26,7 +26,7 @@ import { semanticDigestOf } from '@/lib/templates/legacyAdapter'
 import { snapshotOfBuiltin } from '@/lib/templates/snapshot'
 import { loadTemplateDef, saveTemplateDef } from '@/lib/templates/store'
 import { loadAliases, saveAliases } from '@/lib/settings/fieldAlias'
-import { buildProjectContext } from '@/lib/ai/aiContext'
+import { buildInlineBriefing, buildProjectContext } from '@/lib/ai/aiContext'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -348,6 +348,9 @@ async function main() {
       fieldDefinitions: await loadFieldDefinitions(pid, 'char-main'),
     })
     ok('T3-01 卡片写回目标仍是存储键', fieldOf(cardTpl, '一、基础信息::姓名')?.sourceKey === '一、基础信息::姓名')
+    // ③ 伴写：改名后简报跟着换名（伴写只产出文本，可写目标为空，故只需断言读侧）
+    const brief = await buildInlineBriefing({ budget: 3000 })
+    ok('T3-01 伴写简报使用当前名称', brief.includes('角色名：') && !brief.includes('姓名：'), brief.slice(0, 400))
     const racesLabels = await loadFieldLabels(RACES)
     ok('T3-01 表格页签按当前名称显示（待确认也照样显示）', racesLabels['名称'] === '种族称谓')
     ok('T3-01 表单页签恢复原名后不被别名顶回', !(await loadFieldLabels(MASTER))[KEY])
