@@ -3,7 +3,7 @@
   "private": true,
   "version": "3.2.0",
   "type": "module",
-  "description": "青春幻想引擎 · 小说创作管理应用（Windows 桌面版）",
+  "description": "青春幻想引擎 · 把世界观、角色、大纲、正文串成一条线的长篇创作工作台（桌面版 Windows / 便携版 / 网页版）",
   "author": "青春幻想引擎开发组",
   "main": "electron/main.cjs",
   "scripts": {
