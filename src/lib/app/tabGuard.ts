@@ -38,7 +38,10 @@ function showBanner() {
     'display:flex',
     'align-items:center',
     'gap:10px',
-    'max-width:calc(100vw - 32px)',
+    // 🔴 `vw` **不随 `<html>` 的 zoom 缩放**：界面缩放设到 132% 时，写 `100vw` 的元素
+    //    实际会占 132vw，右侧被视口裁掉（这条与 `foldVh()` 同一口径，2026-10-21 六维审计抓出）。
+    //    留白那 32px 不必折 —— 放大一点只是更松，不折 vw 才会溢出。
+    'max-width:calc(100vw / var(--ui-zoom, 1) - 32px)',
     'padding:8px 14px',
     'border-radius:999px',
     'background:rgb(var(--ink-950) / .94)',
