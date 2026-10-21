@@ -21,6 +21,8 @@ import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { atlasFieldsOfTemplate } from '@/lib/templates/render'
 import { foldVh } from '@/lib/settings/theme'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
+// 卡片排序（纯函数 + 单测钉住；编号比较与表格同口径，见该文件头）
+import { ATLAS_ORDERS, sortAtlasRows, type AtlasOrder } from '@/lib/atlas/order'
 import { Button } from '@/components/common/Button'
 import AtlasCard from './AtlasCard'
 import AtlasDetail from './AtlasDetail'
@@ -92,6 +94,17 @@ export default function AtlasView({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // 卡片密度（本机偏好：只影响显示，不进项目配置）
   const [density, setDensity] = usePersistedEnum<Density>('atlas-density', ['compact', 'standard', 'loose'], 'standard')
+  /**
+   * 卡片排序（3.2.0 · 2026-10-21 新增）。
+   *
+   * 🔴 原先图鉴顺序**完全跟着表格的自动排序走**（有「编号」列 ⇒ 编号升序，空白沉底），
+   *    作者想按名字找条目只能回表格翻 —— 所以这里给它一个显式开关。
+   * 🔴 只改**展示顺序**：不写库、不动 `row.order`、不影响导出与表格视图
+   *    （要真正改顺序请改「编号」列，那才是数据层的唯一真源）。
+   */
+  const [orderKey, setOrderKey] = usePersistedEnum<AtlasOrder>(
+    'atlas-order', ['code', 'name', 'recent'], 'code',
+  )
 
   /**
    * 🔴 量 `offsetWidth` 而不是用媒体查询 / vw：
@@ -173,6 +186,9 @@ export default function AtlasView({
     if (selectedId && !rows.some(r => r.id === selectedId)) setSelectedId(null)
   }, [rows, selectedId])
 
+  /** 卡片展示顺序（纯函数在 lib/atlas/order.ts，这里只负责接状态） */
+  const orderedRows = useMemo(() => sortAtlasRows(tab, rows, orderKey), [tab, rows, orderKey])
+
   const selected = selectedId ? rows.find(r => r.id === selectedId) ?? null : null
 
   return (
@@ -192,6 +208,23 @@ export default function AtlasView({
             {/* 工具条：条数 + 密度 + 资料包（方案 §3.1 必交付项） */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="text-10 text-ink-500 mr-auto">共 {rows.length} 条 · 点卡片看完整资料</span>
+              {/* 排序（3.2.0）：只改展示顺序，不改数据；想真正改顺序请改「编号」列 */}
+              <div className="flex items-center gap-0.5 rounded-lg border border-ink-700 bg-ink-800 p-0.5"
+                title="只影响这一屏的排列顺序，不改动任何数据">
+                {ATLAS_ORDERS.map(o => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => setOrderKey(o.id)}
+                    title={o.hint}
+                    className={`text-10 px-2 h-7 rounded-md transition-colors ${orderKey === o.id
+                      ? 'bg-amber/20 text-amber'
+                      : 'text-ink-400 hover:text-ink-100 hover:bg-ink-700/60'}`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
               {onImportPackage && (
                 <>
                   <button
@@ -247,7 +280,7 @@ export default function AtlasView({
               className="grid gap-3 pb-1"
               style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_CARD_W[density]}px, 1fr))` }}
             >
-              {rows.map(row => (
+              {orderedRows.map(row => (
                 <AtlasCard
                   key={row.id}
                   row={row}

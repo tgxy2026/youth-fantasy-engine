@@ -12,6 +12,8 @@ import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
 import FormatModal from '@/components/dialogs/FormatModal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/editor/indent'
+// 3.2.0：中文标点自动配对（原先完全依赖输入法 ⇒ 微信有、搜狗没有，见 punctPair 文件头）
+import { planPunctPair } from '@/lib/editor/punctPair'
 import { nextVolumeNo } from '@/lib/outline/freeVolume'
 import {
   FolderPlus, Trash2, PenLine,
@@ -605,7 +607,22 @@ style={{ zIndex: Z.pageHandle }}
                 <textarea
                   ref={taRef}
                   value={draftContent}
-                  onChange={e => onContentChange(e.target.value)}
+                  onChange={e => {
+                    const ta = e.currentTarget
+                    const next = ta.value
+                    // 🔴 输入法选字 / 上屏期间一律不插手：这时 selectionStart 指向的是候选词边界，
+                    //    补标点会把上屏打断（与本文件 handleEditorKeyDown 里挡 Enter/Tab 同一条纪律）。
+                    if ((e.nativeEvent as InputEvent).isComposing) { onContentChange(next); return }
+                    const plan = planPunctPair(draftContent, next, ta.selectionStart)
+                    if (!plan) { onContentChange(next); return }
+                    onContentChange(plan.value)
+                    // 光标要落在两个标点中间。必须等 React 把新 value 写进 DOM 之后再设，
+                    // 否则受控回写会把光标推到末尾（放在 rAF 里最稳）。
+                    requestAnimationFrame(() => {
+                      const el = taRef.current
+                      if (el) el.setSelectionRange(plan.caret, plan.caret)
+                    })
+                  }}
                   onKeyUp={() => { syncTypewriter(draftContent); syncSel() }}
                   onKeyDown={handleEditorKeyDown}
                   onPaste={handlePaste}
