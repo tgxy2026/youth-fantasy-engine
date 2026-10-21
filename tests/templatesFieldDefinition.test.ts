@@ -489,6 +489,15 @@ async function main() {
     ok('⑩ 酒馆文件确实被扫到（防止闸空转）', tavernFiles.length >= 30, String(tavernFiles.length))
   }
 
+  // ────────────────────────── ⑰ 术语查重按存储键取数：改显示名不影响输入 ──────────────────────────
+  // 查重面板直接按存储键挑列（不是按显示名去"找"），所以作者把「名称」改成「术语称谓」
+  // 之后，送进 AI 的仍是同一批术语 —— 改名只影响显示与模型的称呼，不影响取数。
+  {
+    const panel = readFileSync(path.join(process.cwd(), 'src/components/tools/TermDedupPanel.tsx'), 'utf8')
+    ok('⑰ 术语查重按存储键取列', panel.includes("r['名称']") && panel.includes("r['类别']") && panel.includes("r['定义（一句话）']"))
+    ok('⑰ 术语查重不按显示名找列', !panel.includes('loadFieldLabels') && !panel.includes('.labels['))
+  }
+
   console.log(`\ntemplatesFieldDefinition: ${pass} 通过 / ${fail} 失败`)
   if (fail > 0) process.exitCode = 1
 }
