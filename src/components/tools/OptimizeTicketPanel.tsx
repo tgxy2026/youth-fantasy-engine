@@ -30,6 +30,7 @@ import {
   SOURCE_LABEL, actionLabelOf, buildTicketDetailed, groupByChapter, groupByIssue, runTicketChapter,
   type TicketItem, type TicketDiagnose, type RunRecheck,
 } from '@/lib/app/optimizeTicket'
+import { loadRecheckMemos, memoText, memoWhen, type RecheckMemo } from '@/lib/revision/recheckMemo'
 import type { FactGuardReport } from '@/lib/ai/factGuard'
 import { MAX_REQUESTS_PER_LOGICAL_CALL, type AttemptBudgetSnapshot } from '@/lib/ai/requestLedger'
 
@@ -81,6 +82,8 @@ export default function OptimizeTicketPanel() {
   const [diffChapter, setDiffChapter] = useState('')
   /** 2.9.2：工单视图 —— 「按章」（执行流）／「按类型」（看全局）。默认按章，**原有行为一字不变** */
   const [view, setView] = useState<'chapter' | 'issue'>('chapter')
+  /** 3.2.1 · T-11：复检结论备忘（项目级 settingsKV）—— 刷新 / 重启后仍能回答「上次改完到底改好没」 */
+  const [memos, setMemos] = useState<Map<string, RecheckMemo>>(new Map())
 
   const gen = useTaskRunner<GenResult, GenProgress>({ ownerTab: OWNER_TAB, kind: KIND_GEN, title: '生成优化工单' })
   const exe = useTaskRunner<RunResult, RunProgress>({ ownerTab: OWNER_TAB, kind: KIND_RUN, title: '逐章自动修订' })
@@ -103,6 +106,13 @@ export default function OptimizeTicketPanel() {
       return prev.map(i => { const p = patch.get(i.id); return p ? { ...p, picked: i.picked } : i })
     })
   }, [exe.result, exe.task?.resume])
+
+  // 复检备忘：挂载读一次；执行结果变化后再读一次（刚跑完那章的结论要立刻出现）
+  useEffect(() => {
+    let alive = true
+    loadRecheckMemos().then(m => { if (alive) setMemos(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [exe.result])
 
   const picked = useMemo(() => items.filter(i => i.picked), [items])
   // 「需手动处理」的不进执行队列（连续性 / 伏笔的根子在设定表，改正文只会掩盖矛盾）
@@ -216,9 +226,26 @@ export default function OptimizeTicketPanel() {
   const genProgress = gen.task?.progress
   const curDiff = exe.result?.chapters.find(c => c.chapterId === diffChapter)
   /** 改完复检的结论（两个来源都读：`result` 与中止时保留的 `resume`，与上面状态合并同源） */
-  const recheckOf = (chapterId: string): RunRecheck | undefined =>
-    (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
+  const recheckOf = (chapterId: string): RunRecheck | undefined => {
+    const live = (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
       ?.chapters.find(c => c.chapterId === chapterId)?.recheck
+    if (live) return live
+    // 3.2.1 · T-11：当次会话没有 ⇒ 回落到项目级备忘（刷新 / 重启后仍显示上次结论）
+    const m = memos.get(chapterId)
+    if (!m || m.state !== 'done') return undefined
+    return {
+      findings: m.findings ?? 0,
+      critical: m.critical ?? 0,
+      stillOpen: m.stillOpen ?? [],
+      resolved: m.resolved ?? 0,
+      saved: m.saved ?? false,
+    }
+  }
+  /** 备忘里的失败态 —— 与「从没跑过」分开说，别混成一句 */
+  const recheckFailedOf = (chapterId: string): RecheckMemo | undefined => {
+    const m = memos.get(chapterId)
+    return m && m.state === 'failed' ? m : undefined
+  }
   /** 实体保留自检（WQ8 方案 A：只报告，一切正常就不渲染） */
   const factsOf = (chapterId: string): FactGuardReport | undefined =>
     (exe.result ?? (exe.task?.resume as RunResult | null | undefined))
@@ -292,6 +319,28 @@ export default function OptimizeTicketPanel() {
         <div className="text-11 text-ink-500">
           <Eye size={11} className="inline -mt-0.5 mr-1" />
           点右上「生成工单」：可可会把全书的问题汇成一张可勾选的表。诊断不发 AI 请求，不花额度。
+        </div>
+      )}
+
+      {/* 3.2.1 · T-11：刷新 / 重启后工单会清空，但「上次改完到底改好没」不该一起消失。
+          只列**有记录**的章（没有记录＝未运行，不显示，绝不写成「已清」）。 */}
+      {!gen.running && memos.size > 0 && (
+        <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+          <div className="text-11 text-ink-300 mb-1">最近复检记录（刷新后仍保留）</div>
+          <ul className="space-y-0.5">
+            {[...memos.values()].sort((a, b) => b.at - a.at).slice(0, 8).map(m => (
+              <li key={m.chapterId} className="text-11 text-ink-400">
+                <span className="text-ink-300">
+                  {m.chapterNo ? `第${m.chapterNo}章 · ` : ''}{m.chapterTitle || '（未命名）'}
+                </span>
+                <span className="ml-2 text-ink-500">{memoWhen(m)}</span>
+                <span className={`ml-2 ${m.state === 'failed' || (m.stillOpen?.length ?? 0) > 0 ? 'text-amber' : 'text-success'}`}>
+                  {memoText(m)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {memos.size > 8 && <div className="mt-1 text-10 text-ink-500">另有 {memos.size - 8} 章记录未显示</div>}
         </div>
       )}
 
@@ -407,6 +456,14 @@ export default function OptimizeTicketPanel() {
                       const rewritten = exe.result?.chapters.some(c => c.chapterId === g.chapterId && c.afterText !== undefined)
                         || (exe.task?.resume as RunResult | null | undefined)?.chapters.some(c => c.chapterId === g.chapterId && c.afterText !== undefined)
                       if (!rc) {
+                        const fm = recheckFailedOf(g.chapterId)
+                        if (fm) {
+                          return (
+                            <span className="text-10 text-ink-500" title={`上次复检没跑成：${fm.error ?? '未知原因'}（不影响正文）`}>
+                              · 复检没跑成（{memoWhen(fm)}）
+                            </span>
+                          )
+                        }
                         return rewritten
                           ? <span className="text-10 text-ink-500" title="改完没跑成复检（本地检查，不影响正文）">· 复检没跑成</span>
                           : null

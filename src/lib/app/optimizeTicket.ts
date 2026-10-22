@@ -60,6 +60,7 @@ import {
   chapterReportToFindings, chapterReportToRun, evidenceOfFindings, LOCAL_TICKET_JOB_ID,
 } from '@/lib/revision/checkAdapters'
 import { persistCheckReports, type CheckRunLike, type PersistCheckReportsResult } from '@/lib/revision/checkReports'
+import { saveRecheckMemo } from '@/lib/revision/recheckMemo'
 import type { TicketEvidence } from '@/lib/revision/findingAdapters'
 // 3.2.0 · WQ1：检查项状态列表 —— 某章检查抛错时不再被吞成「诊断完成、没有问题」
 import {
@@ -721,10 +722,25 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
         resolved: delta.resolved,
         saved: saved.saved > 0,
       }
+      // 3.2.1 · T-11：结论**跨刷新可见**。
+      // checkReports 有 `isWorthPersisting` 闸（只收「严重 / 中等」发现），
+      // 于是「复检后原问题已清」这种最理想的情况反而不留痕 ⇒ 这里补一份轻量备忘。
+      // 存项目级 settingsKV（随项目同步/备份走），失败内部兜住，不影响正文。
+      await saveRecheckMemo({
+        chapterId, chapterNo: hit.no, chapterTitle: hit.chapter.title, at: Date.now(),
+        state: 'done', findings: recheck.findings, critical: recheck.critical,
+        stillOpen: delta.stillOpen, resolved: delta.resolved, saved: recheck.saved,
+      })
     } catch (e) {
       // 🔴 复检是**旁路**：跑了更好，跑不成也不该把已落库的正文报成失败 ——
       //    只是这一章没有「改完到底改好没」的记录，界面会如实说"复检没跑成"。
       console.warn('[optimizeTicket] 改完复检没跑成（正文已落库）：', e)
+      // 3.2.1 · T-11：失败也留痕，否则刷新后与「从没跑过」无法区分。
+      await saveRecheckMemo({
+        chapterId, chapterNo: hit.no, chapterTitle: hit.chapter.title, at: Date.now(),
+        state: 'failed',
+        error: e instanceof Error ? e.message.slice(0, 120) : String(e).slice(0, 120),
+      })
     }
 
     // 3.2.0 · WQ8 文本守卫（方案 A：只报告不判定）—— 登记实体改写后还在不在。
