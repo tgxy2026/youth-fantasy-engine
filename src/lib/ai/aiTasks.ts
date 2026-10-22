@@ -19,6 +19,7 @@
 // ⚠️ 注册顺序 = 设置页显示顺序，见下方 PROMPT_ORDER（原注册表的书写顺序逐条还原）。
 import { registerPrompt } from '@/lib/ai/promptSettings'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import { PLAN_COMPARE_PROMPTS } from '@/lib/aiTasks/planCompareAi'
 import { ORGANIZE_PROMPTS } from '@/lib/aiTasks/organize'
 import { PROOFREAD_PROMPTS } from '@/lib/aiTasks/proofread'
 import { SUGGEST_PROMPTS } from '@/lib/aiTasks/suggest'
@@ -102,6 +103,9 @@ export type { StyleProfile, StyleMetrics, ExtractOptions } from '@/lib/ai/styleF
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
 export { aiExtractChapterChanges, aiExtractChapterChangesWithStatus, parseChapterChanges, parseChapterChangesDetailed, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from '@/lib/aiTasks/postProcess'
+// 3.2.1 · T-09：细纲与正文对照（AI 语义判定 + 本地引文闸）
+export { aiComparePlanWithBody, reviewPlanCompare, MAX_PLAN_COMPARE_ITEMS, PLAN_COMPARE_PROMPTS } from '@/lib/aiTasks/planCompareAi'
+export type { PlanItemInput, PlanCompareReview, PlanCompareAiOutcome } from '@/lib/aiTasks/planCompareAi'
 
 /**
  * 提示词的**注册顺序**（🔴 有语义：`listPrompts()` 只按 group 稳定排序，组内保持登记顺序）。
@@ -151,6 +155,8 @@ const PROMPT_ORDER = [
   'continue-passage',
   // 3.0 追加在末尾：章后整理抽取（W2-1）—— 只往末尾加，不动其它条目的既有 UI 顺序
   'chapter-post-process',
+  // 3.2.1 追加在末尾：细纲与正文对照（T-09）—— 只往末尾加，不动其它条目的既有 UI 顺序
+  'plan-compare',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -171,6 +177,7 @@ const PROMPT_SETS: PromptDef[][] = [
   MARKET_RADAR_PROMPTS,
   STYLE_FINGERPRINT_PROMPTS,
   POST_PROCESS_PROMPTS,
+  PLAN_COMPARE_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()
