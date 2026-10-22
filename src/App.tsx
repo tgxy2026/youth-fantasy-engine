@@ -14,6 +14,7 @@ import ProjectHub from '@/components/app/ProjectHub'
 import AboutPage from '@/components/app/AboutPage'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
+import { abortRunIfProjectChanged } from '@/lib/creative/creativeSession'
 import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from '@/lib/schema'
 import { migrateAliasesToFieldDefinitions } from '@/lib/templates/fieldDefinition'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from '@/lib/schemaTemplates/index'
@@ -362,6 +363,11 @@ export default function App() {
     if (!p) return
     // 2.6.3 · 跨页签任务存活：换项目才清后台任务（同项目重开则保留 —— 被中止的任务可「继续」）
     if (lastProjectRef.current !== id) resetTaskCenter()
+    // 🔴 3.2.2：创意写作**不走任务中心**（它有自己的一条通道），必须单独判 ——
+    //    它的读写全走 db.*（隐式取当前项目），切过去就会把上个项目的产出写进这个项目。
+    //    放在 setCurrentProject **之前**：比较的是"即将切到的项目"，没有时间窗。
+    //    同项目重开（lastProjectRef 相同）不会触发，与上面 resetTaskCenter 的语义一致。
+    abortRunIfProjectChanged(id)
     lastProjectRef.current = id
     db.setCurrentProject(id)
     // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
@@ -394,6 +400,9 @@ export default function App() {
     // 2.6.3 · 跨页签任务存活：退出项目 → **中止**所有在跑的后台任务
     //（🔴 不中止就会在项目已关闭后继续烧额度；任务记录保留，重开同项目能接着「继续」）
     abortAllTasks()
+    // 🔴 3.2.2：创意写作不在任务中心里，单独停 —— 退出后 currentProjectId 变 ''，
+    //    再往下走它的落库会带着空 projectId 写进库。
+    abortRunIfProjectChanged('')
     backupStop.current?.()
     backupStop.current = null
     db.setMeta('lastProject', '')

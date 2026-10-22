@@ -520,6 +520,17 @@ async function bindProject() {
 
 // ============ 运行控制（任务跑在这里，不在组件里） ============
 
+/**
+ * 本次运行认的**项目 id**（`null` = 当前没有任务在跑）。
+ *
+ * 🔴 2026-10-23 · 3.2.2：修「创意写作跨项目串任务」。
+ *    任务里的读与写全走 `db.*`（隐式取当前项目），而切项目会立刻改掉那个单例 ——
+ *    所以要在这里记下**开跑那一刻**的项目，切项目时据此判断"跑的是不是这个项目"。
+ *    不记的话，A 的产出会带着 B 的 projectId 落库（实测链路：切项目 → currentProjectId 改
+ *    → `createChapterAfter` 动态取 pid → `saveChapter` 写进 B）。
+ */
+let runProjectId: string | null = null
+
 let abortCtl: AbortController | null = null
 let gateResolve: ((v: unknown) => void) | null = null
 let draftResolve: ((v: DraftDecision) => void) | null = null
@@ -592,6 +603,8 @@ async function settleCreativeLedger(
 export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
   await bindProject()
+  // 🔴 绑定本次运行的项目（切项目时据此判断，见 abortRunIfProjectChanged）
+  runProjectId = db.getCurrentProjectId() ?? ''
   const inp = snap.inputs
   // ⚠️ 「库里还没有大纲时必须先写一句话想法」这条校验放在**面板**做（它读得到项目现状，
   //    能把按钮直接禁用并写明原因）。这里不拦：编排器会给出同样的中文提示，
@@ -740,6 +753,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
     gateResolve = null
     draftResolve = null
     candsResolve = null
+    runProjectId = null
     set({ running: false, bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null })
   }
 }
@@ -762,6 +776,45 @@ export function stopCreativeRun() {
     gateResolve = null
     set({ bibleGate: null, outlineGate: null })
   }
+}
+
+/**
+ * 切项目 / 退出项目**之前**调用：正在跑的任务不属于 `nextPid` 就立刻停止。
+ *
+ * @param nextPid 即将切换到的项目 id（退出项目传 `''`）
+ * @returns 是否真的中止了任务
+ *
+ * 🔴 为什么必须"停"而不是"继续跑、只是写回原项目"：
+ *   落库全走 `db.*`（隐式取当前项目），要让它写回原项目得给整条链路加显式 pid 参数（B 档），
+ *   改动面太大；而**写错项目是不可逆的数据事故** —— 宁可停，并在界面说清"没有写入任何项目"。
+ *
+ * 🔴 为什么传 `nextPid` 而不是比较"当前项目"：
+ *   App 里是"先判再切"，若比较当前项目，切换前它和启动项目**必然相等** ⇒ 永远不触发。
+ *   传目标项目才没有时间窗（切换瞬间不会漏掉一章写入）。
+ */
+/**
+ * 判定表（导出以便单测锁住）：正在跑的任务是否**属于** `nextPid`。
+ *
+ * `!active` 或 `runPid === null` 都返回 true（= 不冲突）—— 后者是**保守选择**：
+ * 老状态没有绑定项目时不打断，宁可少停一次，也不要误杀一次正在正常跑的任务。
+ */
+export function runBelongsTo(runPid: string | null, active: boolean, nextPid: string): boolean {
+  if (!active) return true
+  if (runPid === null) return true
+  return runPid === nextPid
+}
+
+export function abortRunIfProjectChanged(nextPid: string): boolean {
+  const active = snap.running || Boolean(snap.rewrite?.running)
+  if (!active) { runProjectId = null; return false }
+  // 同项目重开（App 允许：被中止的任务可「继续」）⇒ 不动
+  if (runBelongsTo(runProjectId, active, nextPid)) return false
+  // 复用停止逻辑：它会一并 resolve 掉三个挂起的弹窗 Promise，否则编排器永远 await
+  stopCreativeRun()
+  set({ running: false, rewrite: snap.rewrite ? { ...snap.rewrite, running: false } : null })
+  notice('项目已切换，本次创意写作已停止 —— 它的产出没有写入任何项目。', 'info')
+  runProjectId = null
+  return true
 }
 
 /** 闸门决策：把作者的选择交回编排器 */
@@ -810,6 +863,8 @@ export async function startChapterRewrite(p: {
 }) {
   if (snap.running || snap.rewrite?.running) return
   await bindProject()
+  // 🔴 改写同样是"跑在某个项目里"的任务：它也会登记候选、写正文（见 B 档待办）
+  runProjectId = db.getCurrentProjectId() ?? ''
   let cands: Awaited<ReturnType<typeof listRewriteCandidates>>
   try {
     cands = await listRewriteCandidates()
@@ -940,6 +995,7 @@ export async function startChapterRewrite(p: {
     set({ rewrite: null })
   } finally {
     rewriteCtl = null
+    runProjectId = null
   }
 }
 
