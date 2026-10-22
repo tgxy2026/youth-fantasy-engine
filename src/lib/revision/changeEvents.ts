@@ -40,19 +40,6 @@ export interface ChangeEvent {
 }
 
 // ============ 变化事件记录 ============
-export interface ChangeEventRecord {
-  /** 记录 ID */
-  recordId: string
-  /** 项目 ID */
-  projectId: string
-  /** 事件列表 */
-  events: ChangeEvent[]
-  /** 创建时间 */
-  createdAt: number
-  /** 更新时间 */
-  updatedAt: number
-}
-
 // ============ 创建变化事件 ============
 export function createChangeEvent(
   type: ChangeEventType,

@@ -15,6 +15,20 @@ export function isEmptyValue(raw: string | undefined | null): boolean {
   return (raw ?? '').trim().length === 0
 }
 
+/**
+ * 六种自定义字段类型的中文名（**单一真源**）。
+ * 危险点：这六个字在字段管理面板、导入预览、资料包说明里都要用 ——
+ * 各写一份的结果是改一处漏三处（六维审计 C2/C3 的典型形态）。
+ */
+export const ATLAS_FIELD_TYPE_LABEL: Record<CustomFieldType, string> = {
+  text: '短文本',
+  longText: '长文本',
+  number: '数字',
+  select: '单选',
+  multiSelect: '多选',
+  boolean: '是/否',
+}
+
 /** 多选的存储形态：JSON 字符串数组。解析失败一律当空（不抛、不猜） */
 export function parseMultiSelectValues(raw: string | undefined | null): string[] {
   const s = (raw ?? '').trim()

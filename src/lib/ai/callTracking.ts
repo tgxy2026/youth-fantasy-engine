@@ -51,29 +51,6 @@ export interface UsageRecord {
 }
 
 // ============ 任务上下文快照 ============
-export interface TaskContextSnapshot {
-  /** 快照 ID */
-  snapshotId: string
-  /** 请求 ID */
-  requestId: string
-  /** 任务 ID */
-  jobId?: string
-  /** 上下文摘要（截断到 500 字符） */
-  contextSummary: string
-  /** 提示词摘要（截断到 200 字符） */
-  promptSummary: string
-  /** 材料清单 */
-  materials: string[]
-  /** 权限快照 */
-  permissions: {
-    canRead: boolean
-    canWrite: boolean
-    fields: string[]
-  }
-  /** 快照时间 */
-  snapshotAt: number
-}
-
 // ============ 提示词摘要 ============
 export interface PromptSummary {
   /** 系统提示词摘要 */

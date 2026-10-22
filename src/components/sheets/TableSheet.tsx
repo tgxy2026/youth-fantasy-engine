@@ -44,7 +44,8 @@ import { isTemplateTab } from '@/lib/templates/eligible'
 import type { AtlasColumn } from '@/lib/atlas/columns'
 import type { CustomFieldType } from '@/lib/atlas/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
-import { buildAtlasPackage, parseAtlasPackage, previewAtlasImport } from '@/lib/atlas/packageIO'
+import { buildAtlasPackage, parseAtlasPackage, previewAtlasImport, typeLabelsOf } from '@/lib/atlas/packageIO'
+import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { foldVh } from '@/lib/settings/theme'
@@ -197,6 +198,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     }
 
     const p = previewAtlasImport(r.pkg, atlasConfig, atlasCategoryOptions(tab))
+    // 这份包涉及哪些字段类型：单选 / 多选导入后需要配选项，作者提前知道能少一次意外
+    const pkgTypes = typeLabelsOf(r.pkg.schema.fields)
+    const typeNote = pkgTypes.length > 0
+      ? `（类型：${pkgTypes.map(t => ATLAS_FIELD_TYPE_LABEL[t]).join(' / ')}）`
+      : ''
     // 🔴 R08：名字撞车但定义不同的字段会另建并改名 —— **导入前**就要说清楚，
     //    否则导完凭空多一个「食性（2）」，作者只会以为是 bug。
     const conflictNote = p.conflicts.length > 0
@@ -207,7 +213,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       : ''
     const ok = await confirmDialog({
       title: '导入图鉴资料包',
-      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
     })
     if (!ok) return
 

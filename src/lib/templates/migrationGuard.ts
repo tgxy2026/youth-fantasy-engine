@@ -75,6 +75,23 @@ export function isAnyTabMigrationActive(): boolean {
   return active.size > 0
 }
 
+/**
+ * 当前正在迁移的页签 id（可按项目过滤）。
+ *
+ * 为什么要"点名"：只说「有页签正在迁移」作者无从判断该等哪个页签 ——
+ * 他可能正在另一个页签里反复试保存，以为是自己写坏了。横幅必须点出页签名。
+ */
+export function activeMigrationTabIds(pid?: string): string[] {
+  const out: string[] = []
+  for (const k of active) {
+    const sep = k.indexOf('::')
+    if (sep < 0) continue
+    const kPid = k.slice(0, sep)
+    if (!pid || kPid === pid) out.push(k.slice(sep + 2))
+  }
+  return out
+}
+
 export function subscribeMigrationLock(fn: () => void): () => void {
   subs.add(fn)
   return () => { subs.delete(fn) }

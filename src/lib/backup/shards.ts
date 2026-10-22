@@ -25,13 +25,6 @@ export type ShardId = 'core' | 'settings' | 'media' | 'stats'
 
 export const SHARD_IDS: readonly ShardId[] = ['core', 'settings', 'media', 'stats']
 
-export const SHARD_LABEL: Record<ShardId, string> = {
-  core: '正文与结构',
-  settings: '设定与角色',
-  media: '图片',
-  stats: '统计与账本',
-}
-
 // ============ 片结构 ============
 
 export interface CoreShard {

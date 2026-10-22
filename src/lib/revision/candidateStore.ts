@@ -17,6 +17,7 @@
  */
 import {
   MAX_PAYLOAD_BYTES, MAX_PAYLOADS_PER_PROJECT, MAX_PAYLOAD_TOTAL_BYTES,
+  ORPHAN_PAYLOAD_RETENTION_DAYS,
   type RevisionPayload,
 } from './jobTypes'
 import type { RevisionCandidate, RevisionCandidateStatus } from './revisionCandidate'
@@ -115,6 +116,34 @@ export type SaveCandidateResult =
   | { ok: false; code: 'too-large' | 'quota-count' | 'quota-bytes' | 'readback-mismatch'; detail: string }
 
 /**
+ * 回收「终态 + 超龄」的候选载荷（2026-10-22 · 配额只增不减的修复）。
+ *
+ * 为什么必须有它：候选的存储形态就是载荷，而放弃 / 应用 / 过期**都不删载荷** ——
+ * 攒满 200 份后新候选永远存不进来，提示的「请先清理旧候选」也无从下手
+ * （候选列表里看不到已放弃的那些载荷）。
+ *
+ * @param now 注入时钟，便于单测（默认当前时间）
+ * @returns 实际回收的份数
+ */
+export async function reclaimStaleCandidates(projectId: string, now: number = Date.now()): Promise<number> {
+  const list = await listProjectRevisionPayloads(projectId)
+  if (list.length === 0) return 0
+  const cutoff = now - ORPHAN_PAYLOAD_RETENTION_DAYS * 24 * 60 * 60 * 1000
+  let reclaimed = 0
+  for (const p of list) {
+    // 未超龄的一律不动：30 天宽限期是给"想回看上一稿"留的余地
+    if ((p.createdAt ?? 0) > cutoff) continue
+    const c = payloadToCandidate(p)
+    if (!c) continue
+    // 🔴 在途的不动：待审 / 应用中等核对 —— 删了就是删作者的稿子
+    if (c.status === 'pending' || c.status === 'applying' || c.status === 'needs-reconcile') continue
+    await deleteRevisionPayload(p.id)
+    reclaimed++
+  }
+  return reclaimed
+}
+
+/**
  * 存候选（含配额与回读校验）。
  *
  * 🔴 顺序：**先查配额 → 再写 → 再回读**。反过来先写再查配额，超限时就只能删掉刚写的那份，
@@ -130,8 +159,17 @@ export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidate
     }
   }
 
-  const existing = await listProjectRevisionPayloads(c.projectId)
-  const others = existing.filter(p => p.id !== c.id)
+  let existing = await listProjectRevisionPayloads(c.projectId)
+  let others = existing.filter(p => p.id !== c.id)
+  // 配额不够时先回收「终态 + 超龄」的旧稿（3.2.1：原回收器从没被调用过 ⇒ 只增不减）
+  if (others.length >= MAX_PAYLOADS_PER_PROJECT
+    || others.reduce((n, p) => n + (p.bytes || 0), 0) + payload.bytes > MAX_PAYLOAD_TOTAL_BYTES) {
+    const reclaimed = await reclaimStaleCandidates(c.projectId)
+    if (reclaimed > 0) {
+      existing = await listProjectRevisionPayloads(c.projectId)
+      others = existing.filter(p => p.id !== c.id)
+    }
+  }
   if (others.length >= MAX_PAYLOADS_PER_PROJECT) {
     return {
       ok: false, code: 'quota-count',

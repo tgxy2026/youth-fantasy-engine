@@ -26,6 +26,7 @@ import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave,
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
+import { MigrationLockBanner } from '@/components/templates/MigrationLockBanner'
 import DataDock from '@/components/app/DataDock'
 import BackupReminder from '@/components/app/BackupReminder'
 import { markExported } from '@/lib/sync/backupReminder'
@@ -630,6 +631,8 @@ export default function App() {
     <div key={`proj-${projectId}`} className="relative flex h-screen overflow-hidden bg-transparent">
       <DesktopWriteLockBanner />
       <PortableWriteLockBanner />
+      {/* 3.2.1：某页签正在换模板时点名告知（写入拦截早就在 planTabWrite 层，这里补可见性） */}
+      <MigrationLockBanner projectId={projectId} />
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。
           负 z-index 子元素绘制于 body 背景之上、半透明面板之下，故可从面板后透出；
           父容器设为 bg-transparent，避免不透明背景把装饰层盖住；

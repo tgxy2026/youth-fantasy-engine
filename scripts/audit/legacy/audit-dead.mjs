@@ -57,6 +57,14 @@ function walkAny(dir, out = []) {
     //    实测：排掉后死导出候选 178 → 240（多出的正是被长期掩盖的真死导出）。
     if (e.name.startsWith('.')) continue
     const p = path.join(dir, e.name)
+    // 🔴 2026-10-22 修：**审计脚本自己不能当引用源**。
+    //    病灶：本文件的 `KEEP` 表 key 是字符串 `'src/lib/xxx.ts:符号名'`，而 stripComments
+    //    **刻意保留字符串内容**（类名 / data-* 里的符号名也算命中）⇒ 凡进了白名单的符号
+    //    都会被自己这张表的 key 算成"外部有人用"，于是 A2「白名单保留」**永远显示 0 个**，
+    //    白名单看着像在自动消账、实际靠的是这个字符串副作用。
+    //    同轮还发现 A 类会被本文件注释里列举的符号名一起污染（15 个真死代码一度全变 0）。
+    //    排除范围取整个 `scripts/audit`（六支扫描器都在这儿，谁都不该给谁作证）。
+    if (/(^|[\\/])scripts[\\/]audit([\\/]|$)/.test(p)) continue
     if (e.isDirectory()) walkAny(p, out)
     else if (/\.(ts|tsx|mjs|cjs|js)$/.test(e.name)) out.push(p)
   }
@@ -150,6 +158,30 @@ const KEEP = {
   'src/lib/outline/outlineCard.ts:VolumeRange':
     '「正文切卷」尚未落地的预留类型：零运行时开销的导出 interface，删掉只会让 ' +
     'docs/2.5.2-开发记录.md 的引用悬空。2026-10-03 六维审计 D6 判定保留',
+
+  // 📌 2026-10-22 死代码清算（3.2.1）：只登记**有文档引用**的契约类型。
+  //    判据：`.workbuddy/memory` 与源码注释里逐条点名过它 —— 删掉不会减小任何产物，
+  //    只会让那些引用悬空（`jobTypes.ts` 第 7 / 20 行的注释明确拿它做对照）。
+  //    零引用又零提及的类型**不进本表**（本轮就直接删了：TaskContextSnapshot /
+  //    ChangeEventRecord / ContextSnapshot —— 没有任何东西引用它们，留着只是噪音）。
+  //
+  // 🔴 同一轮清算里另外 10 个「实现完整但没接 UI」的符号（failureReceipt /
+  //    linkCheckToCandidate / rollbackMigration / useFieldAliases / loadPendingFieldKeys /
+  //    moveFieldToGroup / canSemanticRead / isRecordSlot / atlasHasValue / serializeCustomValue）
+  //    **故意不进本表** —— 它们该做的是"接入口"，进了白名单就等于给"该做没做"发免责条款。
+  'src/lib/revision/revisionTypes.ts:TaskRunState':
+    '契约类型：jobTypes.ts 的注释（第 7、20 行）明确拿它做「同名但不同层」的对照说明；' +
+    '零运行时开销，删了那段注释会指向空气',
+  'src/lib/revision/revisionTypes.ts:CommitReceipt':
+    '契约类型：jobTypes.ts 注释逐条点名（与提交回执同族）；零运行时开销，删了注释悬空',
+
+  // 📌 2026-10-22：修掉本脚本「审计脚本自己给符号作证」的 bug 后**新暴露**的一条
+  //    （之前一直被本文件的字符串 mask 住，属于"修工具才发现的真候选"）。
+  'src/lib/sync/syncCore.ts:EXCLUDED_META_KEYS':
+    '真源已下沉后的**兼容 re-export**（`lib/storage/sensitiveMeta.ts` 才是真源，' +
+    'syncCore 自己用的也是 SENSITIVE_META_KEYS / isSensitiveMetaKey）⇒ 安全上不留缺口。' +
+    '保留理由：`electron/main.cjs:448` 与 4 个 src 文件的注释、以及 audit-sec 的 S4 文案' +
+    '都逐条点名它，删了会让这些说明指向空气；且它就是"清单已下沉"这件事的唯一代码锚点',
 }
 const isKept = r => Object.prototype.hasOwnProperty.call(KEEP, `${r.file}:${r.name}`)
 

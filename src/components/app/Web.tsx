@@ -4,7 +4,6 @@ import {
   getPortableState, subscribePortable, flushPortable,
   exportPortableData, importPortableData, pickLocalFile,
 } from '@/lib/storage/fileBackend'
-import { WEB_CLOUD } from '@/lib/app/platform'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import AccountExit from '@/components/app/AccountExit'
@@ -178,6 +177,3 @@ export function WebDataBar() {
     </div>
   )
 }
-
-/** 是否该用「网页云端」这条数据条（桌面版 / 便携版恒 false，不会影响它们） */
-export const useWebDataBar = WEB_CLOUD

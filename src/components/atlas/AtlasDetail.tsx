@@ -19,7 +19,13 @@ import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'luci
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
 import type { AtlasImage, AtlasResolvedSection, ResolvedAtlasField } from '@/lib/atlas/types'
-import { ATLAS_IMAGE_ACCEPT, readAtlasImage } from '@/lib/atlas/image'
+import {
+  ATLAS_IMAGE_ACCEPT,
+  ATLAS_IMAGE_HINT,
+  ATLAS_IMAGE_MAX_EDGE,
+  ATLAS_IMAGE_MAX_INPUT_BYTES,
+  readAtlasImage,
+} from '@/lib/atlas/image'
 import { ATLAS_TOTAL_LIMIT, atlasUsageRatio, atlasUsageText, checkAtlasBudget } from '@/lib/atlas/quota'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
@@ -296,10 +302,13 @@ export default function AtlasDetail({
               <Trash2 size={11} /> 移除
             </button>
           )}
-          <span className="ml-auto text-10 text-ink-600 text-right leading-tight">
+          <span
+            className="ml-auto text-10 text-ink-600 text-right leading-tight"
+            title={ATLAS_IMAGE_HINT}
+          >
             {image
               ? `${Math.round(image.bytes / 1024)}KB · ${image.width}×${image.height}`
-              : 'PNG / JPG / WebP · ≤8MB · 自动缩到 1024px'}
+              : `PNG / JPG / WebP · ≤${ATLAS_IMAGE_MAX_INPUT_BYTES / 1024 / 1024}MB · 自动缩到 ${ATLAS_IMAGE_MAX_EDGE}px`}
             <span className={`block ${usageClass}`}>
               项目图片 {atlasUsageText(projectImageBytes, imageLimit)}
             </span>

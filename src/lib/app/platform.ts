@@ -33,12 +33,3 @@ export const WEB_GUEST: boolean = !!flags.__YFE_GUEST__
  *    所以任何 `PORTABLE ? ... : ...` 的分支在网页版里都必须**先判 WEB**，否则会显示成便携版。
  */
 export const WEB_CLOUD: boolean = !!flags.__YFE_WEB__ && !flags.__YFE_GUEST__
-
-/**
- * 取当前平台的称呼，用于文案里的「某某版」。
- * @example `${platformLabel()}不提供在线更新`
- */
-export function platformLabel(): string {
-  if (WEB) return '网页版'
-  return '便携版'
-}

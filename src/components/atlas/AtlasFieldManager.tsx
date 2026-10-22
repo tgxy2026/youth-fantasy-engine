@@ -19,6 +19,7 @@ import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Check, Pencil, Plus, Rotat
 import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import { atlasBadgeKeys, atlasCategoryOptions, atlasGroupsOf } from '@/lib/atlas/schema'
+import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { newFieldId } from '@/lib/atlas/persistence'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
 import { Modal } from '@/components/dialogs/Modal'
@@ -40,14 +41,6 @@ interface Props {
   onSaveAliases?: (next: AliasMap) => void | Promise<void>
 }
 
-const TYPE_LABEL: Record<CustomFieldType, string> = {
-  text: '短文本',
-  longText: '长文本',
-  number: '数字',
-  select: '单选',
-  multiSelect: '多选',
-  boolean: '是/否',
-}
 
 /** 输入框统一样式（与表头筛选保持一致的低调风格） */
 const INPUT = 'w-full text-12 px-2 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-ink-100 outline-none focus:border-amber/50'
@@ -264,7 +257,7 @@ export default function AtlasFieldManager({
                     <div className="flex items-center gap-2">
                       <span className="text-13 text-ink-100 truncate">{f.label}</span>
                       <span className="shrink-0 text-10 px-1.5 py-0.5 rounded bg-ink-900 border border-ink-700 text-ink-400">
-                        {TYPE_LABEL[f.type]}
+                        {ATLAS_FIELD_TYPE_LABEL[f.type]}
                       </span>
                       <span className="shrink-0 text-10 text-ink-500">
                         {groups.find(g => g.id === f.groupId)?.label ?? '补充资料'}
@@ -328,8 +321,8 @@ export default function AtlasFieldManager({
                   <span className="text-11 text-ink-400">类型{editingId ? '（建立后不可改）' : ''}</span>
                   <select className={`mt-1 ${INPUT}`} value={draft.type} disabled={!!editingId}
                     onChange={e => patch({ type: e.target.value as CustomFieldType })}>
-                    {(Object.keys(TYPE_LABEL) as CustomFieldType[]).map(t => (
-                      <option key={t} value={t}>{TYPE_LABEL[t]}</option>
+                    {(Object.keys(ATLAS_FIELD_TYPE_LABEL) as CustomFieldType[]).map(t => (
+                      <option key={t} value={t}>{ATLAS_FIELD_TYPE_LABEL[t]}</option>
                     ))}
                   </select>
                 </label>
@@ -548,7 +541,7 @@ export default function AtlasFieldManager({
               {archived.map(f => (
                 <li key={f.id} className="flex items-center gap-2 text-12 text-ink-400">
                   <span className="truncate">{f.label}</span>
-                  <span className="text-10 text-ink-600">{TYPE_LABEL[f.type]}</span>
+                  <span className="text-10 text-ink-600">{ATLAS_FIELD_TYPE_LABEL[f.type]}</span>
                   {!readOnly && (
                     <Button variant="bare" size="xs" onClick={() => setArchived(f, false)} disabled={busy}
                       className="ml-auto flex items-center gap-1 text-ink-400 hover:text-amber">

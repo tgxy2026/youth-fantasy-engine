@@ -130,34 +130,6 @@ export interface RunAssociation {
   attemptId: string
 }
 
-/**
- * 一次装配直接返回的快照，由当前调用接收。
- * 🔴 不在生成结束后重新读取最新记录充当「当时依据」；
- *    账本只存摘要与引用，不存完整正文与密钥。
- */
-export interface ContextSnapshot {
-  association: RunAssociation
-  /** 实际来源引用 / 读取修订 */
-  sourceRefs: Array<{ ref: RecordRef; revision?: string; summary?: string }>
-  /** 包含 / 裁剪 / 遗漏范围 */
-  included: string[]
-  trimmed: string[]
-  omitted: string[]
-  /** 检索状态：hit / no-match / disabled / stale-index / unavailable / forbidden */
-  retrieval: 'hit' | 'no-match' | 'disabled' | 'stale-index' | 'unavailable' | 'forbidden'
-  /** 字段定义及权限依据（只存依据摘要） */
-  fieldBasis?: string[]
-  /** 实际模型 / 参数 / 提示词版本与用户覆盖摘要 */
-  model?: string
-  params?: Record<string, unknown>
-  promptVersion?: string
-  promptOverrideDigest?: string
-  /** 输出协议与预算 */
-  outputProtocol?: string
-  budget?: { window: number; reservedOutput: number; materialAllowance: number }
-  capturedAt: number
-}
-
 /** usage 记录：不提供的值保存 unknown，禁止填 0 或当成精确费用 */
 export interface UsageRecord {
   association: RunAssociation

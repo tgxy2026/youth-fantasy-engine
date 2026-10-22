@@ -33,11 +33,11 @@ export async function deleteRevisionJob(id: string): Promise<void> {
   await ops.del('revisionJobs', id)
 }
 
-/** 级联删除：删任务同时清理其载荷引用（载荷本身由 cleanupOrphanPayloads 回收） */
+/** 级联删除：删任务同时清理其载荷引用（载荷本身由 `candidateStore.reclaimStaleCandidates` 按「终态 + 超龄」回收） */
 export async function deleteRevisionJobWithCleanup(id: string, payloadId?: string): Promise<void> {
   await deleteRevisionJob(id)
   if (payloadId) {
-    // 不立即删载荷：可能还有其他任务引用，由 cleanupOrphanPayloads 统一回收
+    // 不立即删载荷：可能还有其他任务引用 —— 交给 reclaimStaleCandidates 按「终态 + 超龄」统一回收
   }
 }
 
@@ -75,18 +75,4 @@ export async function listProjectRevisionPayloads(projectId: string): Promise<Re
 
 export async function deleteRevisionPayload(id: string): Promise<void> {
   await ops.del('revisionPayloads', id)
-}
-
-/** 清理孤儿载荷：无任务引用的载荷（保留 30 天宽限期，本版先做立即清理） */
-export async function cleanupOrphanPayloads(keepIds: Set<string>): Promise<number> {
-  // 全表扫：载荷量级有限（每项目 200 个），首屏不预读全部候选
-  const all = await ops.getAll<RevisionPayload>('revisionPayloads')
-  let cleaned = 0
-  for (const p of all) {
-    if (!keepIds.has(p.id)) {
-      await deleteRevisionPayload(p.id)
-      cleaned++
-    }
-  }
-  return cleaned
 }
