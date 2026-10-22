@@ -94,6 +94,7 @@ async function closeModal(page) {
   await ctx.addInitScript(() => { try { localStorage.setItem('novel-companion', '1') } catch {} })
   const page = await ctx.newPage()
   /** 抓真实请求体：区分'伴写'与'precheck/其他旁路'，否则断言失败时说不清是谁发的 */
+  page.on('console', (m) => { const t = m.text(); if (t.includes('[PROBE]')) console.log('  [console]', t) })
   const wire = []
   page.on('request', (r) => {
     if (!r.url().includes('/chat/completions')) return

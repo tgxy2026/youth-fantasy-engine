@@ -49,9 +49,17 @@ function sseChunk(text, extra = {}) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}:${PORT}`)
+  // 🔴 跨端口调用 = 跨域：不带这些头，浏览器会拦掉响应，客户端只能报「无法连接」（踩过）
+  const CORS = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': '*',
+    'access-control-max-age': '600',
+  }
+  if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end() }
   const json = (obj, code = 200) => {
     const body = JSON.stringify(obj)
-    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) })
+    res.writeHead(code, { ...CORS, 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) })
     res.end(body)
   }
 
@@ -60,7 +68,7 @@ const server = http.createServer(async (req, res) => {
     let raw = ''
     for await (const c of req) raw += c
     try { mode = (JSON.parse(raw || '{}').mode || 'normal') } catch { mode = 'normal' }
-    res.writeHead(200, { 'content-type': 'application/json' })
+    res.writeHead(200, { ...CORS, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, mode }))
   }
   if (url.pathname === '/_stats') return json({ mode, requests })
@@ -120,6 +128,7 @@ const server = http.createServer(async (req, res) => {
 
   // 流式
   res.writeHead(200, {
+    ...CORS,
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache',
     connection: 'keep-alive',
