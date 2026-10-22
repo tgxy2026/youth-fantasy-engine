@@ -7,6 +7,9 @@ import { getTab } from '@/lib/schema'
 import { chapterContextRefKey, locateBodyQuote } from '@/lib/revision/chapterContext'
 import type { RefName } from '@/components/editor/novelEditorHelpers'
 import { Button } from '@/components/common/Button'
+import { showToast } from '@/components/dialogs/dialogs'
+import { runPlanCompareForChapter, describePlanCompareRun } from '@/lib/app/planCompareRun'
+import type { PlanCompareReview } from '@/lib/aiTasks/planCompareAi'
 import { Z } from '@/lib/app/zLayer'
 import { foldZoomLength } from '@/lib/settings/theme'
 import { useChapterContextData } from '@/components/editor/useChapterContextData'
@@ -33,6 +36,9 @@ export default function ChapterContextPanel({
   onClose, onNavigate, onOpenRecord,
 }: Props) {
   const [activeTab, setActiveTab] = useState<'outline' | 'materials' | 'quotes'>('outline')
+  /** 3.2.1 · T-09：正文与细纲对照的即时结果（落档另存检查报告，这里只做当次展示） */
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planReview, setPlanReview] = useState<PlanCompareReview | null>(null)
   const {
     binding, bindingLoaded, outlineCards, catalogLoaded, query, setQuery, loadingError,
     outline, groups, pinned, outlineSuggestions, results, pin, unpin, selectOutline,
@@ -87,6 +93,59 @@ export default function ChapterContextPanel({
               <div className="flex items-center justify-between gap-2 text-10 text-ink-500">
                 <span className="truncate">资料来源：章节细纲 · {outline.name}</span>
                 <button type="button" className="text-amber hover:text-amber/80 shrink-0" onClick={() => onOpenRecord({ kind: 'outline', projectId, tabId: 'chapter-outline', id: outline.id })}>打开原卡 →</button>
+              </div>
+              <div className="rounded-lg border border-ink-700/80 bg-ink-900/45 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-10 text-ink-300">正文与细纲对照</span>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    disabled={planBusy}
+                    onClick={async () => {
+                      setPlanBusy(true)
+                      try {
+                        const r = await runPlanCompareForChapter({
+                          projectId, chapterId, chapterNo, chapterTitle, bodyText, outline,
+                        })
+                        setPlanReview(r.review ?? null)
+                        showToast(describePlanCompareRun(r), r.state === 'completed' ? 'success' : 'error')
+                      } finally {
+                        setPlanBusy(false)
+                      }
+                    }}
+                  >
+                    {planBusy ? '对照中…' : '开始核对'}
+                  </Button>
+                </div>
+                <p className="mt-1 text-9 text-ink-500 leading-relaxed">
+                  用本章细纲里已填的计划逐条对照正文，判定「已体现 / 部分体现 / 未找到体现 / 与计划不同 / 证据不足」。引文必须逐字来自正文，摘不出原句就判证据不足。
+                </p>
+                {planReview && (
+                  <ul className="mt-1.5 space-y-1">
+                    {planReview.items.map(it => {
+                      const label = it.status === 'completed' ? '已体现'
+                        : it.status === 'partial' ? '部分体现'
+                          : it.status === 'not-found' ? '未找到体现'
+                            : it.status === 'different' ? '与计划不同' : '证据不足'
+                      const tone = it.status === 'completed' ? 'text-success'
+                        : it.status === 'not-found' ? 'text-danger'
+                          : it.status === 'different' ? 'text-amber'
+                            : it.status === 'partial' ? 'text-amber' : 'text-ink-500'
+                      return (
+                        <li key={it.planFieldId} className="border-t border-ink-700/60 pt-1 text-10 leading-relaxed">
+                          <span className={`${tone} mr-1`}>{label}</span>
+                          <span className="text-ink-300">{it.planQuote.slice(0, 40)}{it.planQuote.length > 40 ? '…' : ''}</span>
+                          <div className="text-9 text-ink-500">
+                            {it.reason}
+                            {it.bodyQuotes.length > 0 && (
+                              <span className="ml-1 text-ink-400">· 正文依据：{it.bodyQuotes[0].slice(0, 30)}</span>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </div>
               {groups.length ? groups.map((group, index) => (
                 <div key={`${group.label}-${index}`} className="rounded-lg border border-ink-700/80 bg-ink-900/45 p-2">
