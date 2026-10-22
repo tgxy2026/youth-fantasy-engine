@@ -15,7 +15,8 @@ import { useMemo, useState } from 'react'
 import { Copy, GitCompare } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
-import { showToast } from '@/components/dialogs/dialogs'
+import { copyText } from '@/components/dialogs/dialogs'
+import { foldVh } from '@/lib/settings/theme'
 import { diffWorldVersions, formatDiffAsMarkdown, type WorldDiffKind } from '@/lib/world/worldDiff'
 import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 
@@ -72,14 +73,10 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
   )
   const shown = changed.slice(0, MAX_ROWS)
 
-  const copyMarkdown = async () => {
+  const copyMarkdown = () => {
     if (!diff) return
-    try {
-      await navigator.clipboard.writeText(formatDiffAsMarkdown(diff))
-      showToast('差异已复制为 Markdown', 'success')
-    } catch {
-      showToast('复制失败：浏览器拒绝了剪贴板访问', 'error')
-    }
+    // 🔴 走 copyText()：非安全上下文（file:// 便携版）裸 clipboard 直接不可用，它会兜底 execCommand
+    void copyText(formatDiffAsMarkdown(diff), '差异已复制为 Markdown')
   }
 
   const versionBtn = (v: (typeof versions)[number], selected: boolean, onPick: () => void) => (
@@ -141,7 +138,7 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
                 </span>
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto pr-1" style={{ maxHeight: '46vh' }}>
+              <div className="space-y-2 overflow-y-auto pr-1" style={{ maxHeight: foldVh('46vh') }}>
                 {shown.map(e => (
                   <div key={`${e.tabId}::${e.kind}::${e.rowId}`} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-1.5">
                     <div className="flex items-center gap-2">
@@ -207,7 +204,7 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
         )}
 
         <div className="flex items-center justify-end gap-2 border-t border-ink-700 pt-2">
-          <Button variant="ghost" size="sm" onClick={copyMarkdown} disabled={!diff}>
+          <Button variant="secondary" size="sm" onClick={copyMarkdown} disabled={!diff}>
             <Copy size={12} /> 复制 Markdown
           </Button>
           <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>

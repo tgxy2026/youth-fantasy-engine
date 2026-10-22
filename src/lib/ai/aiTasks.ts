@@ -56,7 +56,7 @@ export type { BookBreakSplitRequest } from '@/lib/aiTasks/bookBreakSplit'
 // 与「AI 整理」分工：整理是「从正文抽尚未登记的事实」（判重+增量），本任务是「把粘进来的内容解析成行」（不判重）
 export { aiSplitTableRows } from '@/lib/aiTasks/tableImport'
 export type { ImportSplitColumn, ImportSplitRequest, ImportSplitResult } from '@/lib/aiTasks/tableImport'
-export { aiContinuityAudit, aiContinuityAuditWithStatus, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReview, aiForeshadowReviewWithStatus, aiDedupTerms, aiStyleCheck } from '@/lib/aiTasks/audit'
+export { aiContinuityAuditWithStatus, aiAnalyzeFeedback, aiDiagnoseProject, aiForeshadowReviewWithStatus, aiDedupTerms, aiStyleCheck } from '@/lib/aiTasks/audit'
 export type { ContinuityFinding, FeedbackEntry, FeedbackAnalysis, ProjectDiagnosis, ForeshadowReviewFinding, TermDupGroup, StyleCheckFinding } from '@/lib/aiTasks/audit'
 export { aiEditorDiagnosis, aiChapterReview, aiOocCheck, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiBriefing, aiChapterSummary } from '@/lib/aiTasks/jieWenJi'
 export type { EditorDiagnosis, ReviewDimension, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, ContinueAsk, PleasureReport, OpeningReport, BriefingReport } from '@/lib/aiTasks/jieWenJi'
@@ -101,7 +101,7 @@ export {
 export type { StyleProfile, StyleMetrics, ExtractOptions } from '@/lib/ai/styleFingerprint'
 // 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
-export { aiExtractChapterChanges, aiExtractChapterChangesWithStatus, parseChapterChanges, parseChapterChangesDetailed, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
+export { aiExtractChapterChangesWithStatus, parseChapterChanges, parseChapterChangesDetailed, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from '@/lib/aiTasks/postProcess'
 // 3.2.1 · T-09：细纲与正文对照（AI 语义判定 + 本地引文闸）
 export { aiComparePlanWithBody, reviewPlanCompare, MAX_PLAN_COMPARE_ITEMS, PLAN_COMPARE_PROMPTS } from '@/lib/aiTasks/planCompareAi'

@@ -152,17 +152,17 @@ export default function TemplateLibraryPanel({ tab, current, busy, onUpgrade }: 
             <Button variant="secondary" size="sm" onClick={() => void publishNext()} disabled={disabled}>
               发布新版本
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void publishAsNew()} disabled={disabled} title="换一个模板标识另存，不影响当前模板的版本线">
+            <Button variant="secondary" size="sm" onClick={() => void publishAsNew()} disabled={disabled} title="换一个模板标识另存，不影响当前模板的版本线">
               另存为新模板
             </Button>
           </>
         )}
         {current && (
-          <Button variant="ghost" size="sm" onClick={() => void exportPack()} disabled={disabled} className="flex items-center gap-1.5">
+          <Button variant="secondary" size="sm" onClick={() => void exportPack()} disabled={disabled} className="flex items-center gap-1.5">
             <Download size={12} /> 导出模板包
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()} disabled={disabled} className="flex items-center gap-1.5">
+        <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={disabled} className="flex items-center gap-1.5">
           <Upload size={12} /> 导入模板包
         </Button>
         <input

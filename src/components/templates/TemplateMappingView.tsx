@@ -287,7 +287,7 @@ export default function TemplateMappingView({ tab, def, template, onSaved }: Pro
         >
           {busy ? '保存中…' : <><Check size={12} /> 保存映射</>}
         </Button>
-        <Button variant="ghost" size="sm" disabled={!dirty || busy} onClick={reset} className="flex items-center gap-1.5">
+        <Button variant="secondary" size="sm" disabled={!dirty || busy} onClick={reset} className="flex items-center gap-1.5">
           <Unlink size={12} /> 撤销改动
         </Button>
         <span className="text-10 text-ink-500">

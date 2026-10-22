@@ -638,7 +638,7 @@ function EditView({
             >
               创建
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setNewGroup(null)}>取消</Button>
+            <Button variant="secondary" size="sm" onClick={() => setNewGroup(null)}>取消</Button>
           </div>
         )}
 

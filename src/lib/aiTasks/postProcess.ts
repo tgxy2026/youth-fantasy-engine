@@ -79,19 +79,6 @@ export interface ChapterChanges {
 
 const EMPTY_CHANGES: ChapterChanges = { foreshadows: [], relations: [], statuses: [] }
 
-/**
- * 从本章正文抽「伏笔 / 关系 / 状态」三类变化候选。
- * 正文为空 ⇒ 直接返回空（不发请求）。
- */
-export async function aiExtractChapterChanges(
-  chapterText: string,
-  chapterTitle: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
-): Promise<ChapterChanges> {
-  const r = await aiExtractChapterChangesWithStatus(chapterText, chapterTitle, opts)
-  return r.result?.data ?? { ...EMPTY_CHANGES }
-}
-
 /** WQ1-4：带状态版本（判定口径同 aiExtractSettingEntitiesWithStatus） */
 export async function aiExtractChapterChangesWithStatus(
   chapterText: string,

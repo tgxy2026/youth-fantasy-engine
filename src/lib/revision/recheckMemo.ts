@@ -142,12 +142,3 @@ export async function saveRecheckMemo(memo: RecheckMemo): Promise<boolean> {
     return false
   }
 }
-
-/** 清空（项目删除 / 测试用；失败不报错，下次写入自然覆盖） */
-export async function clearRecheckMemos(): Promise<void> {
-  try {
-    await db.setSetting(SETTING_KEY, { v: STORE_VERSION, items: [] })
-  } catch {
-    // 清不掉不报错
-  }
-}

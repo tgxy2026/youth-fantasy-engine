@@ -394,7 +394,15 @@ export function atlasDisplayValue(field: ResolvedAtlasField, raw: string | undef
   return s
 }
 
-/** 该行在某字段上是否有内容（卡片摘要 / 详情「未填」判定共用） */
+/**
+ * 该行在某字段上是否有内容（判**已解析 record 值**，与 `isEmptyValue` 同口径）。
+ *
+ * ⚠️ 口径修正（2026-10-22 六维审计）：原注释写「卡片摘要 / 详情『未填』判定共用」——
+ *   实测**无人调用**，详情页走的是 `atlasDisplayValue(...).length > 0`（判的是**格式化后**
+ *   的显示串，所以 `false → '否'` 算已填）。两者语义不同、不可互换：
+ *   本函数判原始值，格式化后才为空的情形它看不出来。
+ *   → 保留为备用口径（零运行时开销），要用时先想清"判原始还是判显示"。
+ */
 export function atlasHasValue(data: Record<string, string>, field: ResolvedAtlasField): boolean {
   return !isEmptyValue(data[field.key])
 }

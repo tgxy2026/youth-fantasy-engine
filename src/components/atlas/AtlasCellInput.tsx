@@ -124,9 +124,3 @@ export default function AtlasCellInput({ field, value, onChange }: Props) {
     />
   )
 }
-
-/** 供配置面板复用的空值判定（与表格同口径：`0` / `false` 都不算空） */
-export function atlasCellHasValue(field: ResolvedAtlasField, raw: string): boolean {
-  if (field.customType === 'multiSelect') return parseMultiSelectValues(raw).length > 0
-  return (raw ?? '').trim().length > 0
-}

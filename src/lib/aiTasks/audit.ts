@@ -98,15 +98,6 @@ type ReviewAiOpts = {
   request?: CallRequestContext
 }
 
-export async function aiContinuityAudit(
-  projectContext: string,
-  chapterText: string,
-  opts?: ReviewAiOpts,
-): Promise<ContinuityFinding[]> {
-  const r = await aiContinuityAuditWithStatus(projectContext, chapterText, opts)
-  return r.result?.data ?? []
-}
-
 /**
  * WQ1（3.2.0）：连续性审查的**带状态**版本。
  *
@@ -323,14 +314,6 @@ export interface ForeshadowReviewFinding {
   title: string
   detail: string
   where: string
-}
-
-export async function aiForeshadowReview(
-  projectContext: string,
-  opts?: ReviewAiOpts,
-): Promise<ForeshadowReviewFinding[]> {
-  const r = await aiForeshadowReviewWithStatus(projectContext, opts)
-  return r.result?.data ?? []
 }
 
 /** WQ1：伏笔审查的带状态版本（判定口径同 `aiContinuityAuditWithStatus`） */
