@@ -22,6 +22,7 @@ import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
+import WorldVersionDiffDialog from '@/components/world/WorldVersionDiffDialog'
 
 function fmt(ts: number): string {
   if (!ts) return '—'
@@ -38,6 +39,8 @@ export default function WorldLibraryPanel() {
   const [name, setName] = useState('')
   /** 哪些世界的版本历史展开着（UI 态，不放记录里） */
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
+  /** 正在看差异的世界（null＝弹窗关闭）。只读视图，不改任何数据 */
+  const [diffWorld, setDiffWorld] = useState<WorldStoredRecord | null>(null)
   /** 正在行内改名的世界 id ＋ 草稿（🔴 用行内输入，不用原生 prompt —— 项目禁原生弹窗） */
   const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null)
   /** 本项目当前世界的**溯源**（引自哪个世界、哪一版）—— 引入时写入 `settingsKV` */
@@ -292,6 +295,15 @@ export default function WorldLibraryPanel() {
                       </button>
                       {expanded && (
                         <div className="mt-1 space-y-1 border-l-2 border-ink-700 pl-2">
+                          {w.versions.length >= 2 && (
+                            <button
+                              type="button"
+                              className="text-10 text-amber hover:underline"
+                              onClick={() => setDiffWorld(w)}
+                            >
+                              对比两个版本…
+                            </button>
+                          )}
                           {w.versions.slice().reverse().map(v => (
                             <div key={v.v} className="flex items-center gap-2 text-10 leading-relaxed text-ink-400">
                               <span className="text-ink-200">v{v.v}</span> · {fmt(v.at)} ·
@@ -314,6 +326,10 @@ export default function WorldLibraryPanel() {
           </div>
         )}
       </div>
+
+      {diffWorld && (
+        <WorldVersionDiffDialog world={diffWorld} open onClose={() => setDiffWorld(null)} />
+      )}
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import type { WorldVersion } from './worldTypes'
+
 // ============ C1 封存版本差异查看 · 世界差异 ============
 // 2026-10-20 · 方案 §10.1 / C1 (3.2.x)
 //
@@ -284,4 +286,51 @@ export function formatDiffAsMarkdown(diff: WorldVersionDiff): string {
   }
 
   return lines.join('\n')
+}
+
+// ============ 从封存版本取可比较条目（C1 界面入口用） ============
+
+/**
+ * 把一版封存快照摊平成可比较的条目列表。
+ *
+ * 🔴 为什么必须只有这一处：`compareWorldVersions` 只认 `WorldVersionEntry[]`，
+ *    而库里存的是 `{ tables, activeSubs }`。两版若用不同摊平口径，diff 结果就是假的。
+ * · `fields` 直接用 `row.data`（键是「模块名::字段名」），与指纹算法同源；
+ * · `active` 取 `activeSubs[tabId]` 是否包含该行 —— 抽包（`worldPack.ts`）对每张表都会写这个键。
+ */
+export function entriesOfVersion(
+  version: Pick<WorldVersion, 'tables' | 'activeSubs'>,
+): WorldVersionEntry[] {
+  const out: WorldVersionEntry[] = []
+  for (const t of version.tables ?? []) {
+    const activeIds = new Set(version.activeSubs?.[t.tabId] ?? [])
+    for (const row of t.rows ?? []) {
+      const entry: WorldVersionEntry = {
+        tabId: t.tabId,
+        kind: t.kind,
+        rowId: row.id,
+        name: row.name ?? '',
+        fields: (row.data ?? {}) as Record<string, unknown>,
+        contentFingerprint: '',
+        active: activeIds.has(row.id),
+      }
+      // 指纹按同一套「忽略非语义字段 + 排序」规则算（与 compareWorldVersions 内部完全一致）
+      entry.contentFingerprint = computeFingerprint(entry)
+      out.push(entry)
+    }
+  }
+  return out
+}
+
+/** 比较同一世界的两个封存版本（界面一行调用；显示名用 `v1 → v2`） */
+export function diffWorldVersions(
+  oldVersion: Pick<WorldVersion, 'v' | 'tables' | 'activeSubs'>,
+  newVersion: Pick<WorldVersion, 'v' | 'tables' | 'activeSubs'>,
+): WorldVersionDiff {
+  return compareWorldVersions(
+    `v${oldVersion.v}`,
+    `v${newVersion.v}`,
+    entriesOfVersion(oldVersion),
+    entriesOfVersion(newVersion),
+  )
 }
