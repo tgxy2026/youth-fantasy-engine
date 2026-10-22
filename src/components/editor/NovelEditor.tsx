@@ -620,8 +620,13 @@ style={{ zIndex: Z.pageHandle }}
                     const next = ta.value
                     // 🔴 输入法选字 / 上屏期间一律不插手：这时 selectionStart 指向的是候选词边界，
                     //    补标点会把上屏打断（与本文件 handleEditorKeyDown 里挡 Enter/Tab 同一条纪律）。
-                    if ((e.nativeEvent as InputEvent).isComposing) { onContentChange(next); return }
+                    // 🔴 3.2.1 · T-13 修正：**组合态不能一律早退** —— 中文输入法上屏标点时
+                    //    `isComposing` 仍为 true，原先的早退让「打“自动补”」在搜狗 / 微软拼音下
+                    //    永远不生效（2026-10-22 实测复现：非组合态三条符号全补，组合态只出左半边）。
+                    //    这里只放行「恰好插入一个中文左标点」这一种情况：选字中途的候选上屏是多字符或
+                    //    非标点，`planPunctPair` 返回 null，仍按原逻辑早退，不会打断上屏。
                     const plan = planPunctPair(draftContent, next, ta.selectionStart)
+                    if ((e.nativeEvent as InputEvent).isComposing && !plan) { onContentChange(next); return }
                     if (!plan) { onContentChange(next); return }
                     onContentChange(plan.value)
                     // 光标要落在两个标点中间。必须等 React 把新 value 写进 DOM 之后再设，

@@ -6,7 +6,8 @@
 //   ③ 结果文案如实：没填细纲、失败、有伪引文都要说清。
 import './mock-memory'
 import { collectPlanItems, planFindingsFromReview, describePlanCompareRun } from '@/lib/app/planCompareRun'
-import type { PlanCompareReview, PlanCompareResult } from '@/lib/aiTasks/planCompareAi'
+import type { PlanCompareReview } from '@/lib/aiTasks/planCompareAi'
+import type { PlanCompareResult } from '@/lib/aiTasks/planCompare'
 import { MAX_PLAN_COMPARE_ITEMS } from '@/lib/aiTasks/planCompareAi'
 
 let pass = 0, fail = 0

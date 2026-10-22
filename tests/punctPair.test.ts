@@ -4,7 +4,10 @@
 //   ① 打左标点就补右半边，光标落在两个标点**中间**；
 //   ② 后面已经紧跟右标点 ⇒ 不重复补（否则出现 “””）；
 //   ③ 粘贴 / 撤销 / 替换多字符、英文引号、普通文字 ⇒ 一律不插手；
-//   ④ 接线守住了 IME（`isComposing` 期间不补）—— 这条错了中文打字会被打断。
+//   ④ 接线守住了 IME：**组合态只在命中「单个中文左标点」时才补，其余一律早退**。
+//      ⚠️ 3.2.1 · T-13 修正：旧契约是「isComposing 一律早退」，实测在搜狗 / 微软拼音下
+//      上屏标点时 isComposing 仍为 true ⇒ 功能永远不生效（左半边出、右半边不补）。
+//      现在把配对判断放在前面，只有「多字符 / 非标点候选」才会走到早退，照样不打断上屏。
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { planPunctPair, CN_PUNCT_PAIRS } from '@/lib/editor/punctPair'
@@ -71,10 +74,13 @@ function main() {
     const root = process.cwd()
     const ed = readFileSync(path.join(root, 'src/components/editor/NovelEditor.tsx'), 'utf8')
     ok('🔴 ④ 正文输入接了 planPunctPair', /planPunctPair\(draftContent, next, ta\.selectionStart\)/.test(ed))
-    ok('🔴 ④ 输入法选字期间不补（isComposing 早于配对判断）',
-      ed.indexOf('isComposing) { onContentChange(next); return }') > 0
-      && ed.indexOf('isComposing) { onContentChange(next); return }') < ed.indexOf('planPunctPair(draftContent'),
-      '顺序错了会把中文上屏打断')
+    ok('🔴 ④ 组合态只在命中单个左标点时才补，其余早退（不打断上屏）',
+      /isComposing && !plan\) \{ onContentChange\(next\); return \}/.test(ed),
+      '缺少「组合态 + 未命中 ⇒ 早退」这条守卫')
+    ok('🔴 ④ 配对判断在组合态早退之前（否则真实输入法下永远不补）',
+      ed.indexOf('planPunctPair(draftContent') > 0
+      && ed.indexOf('planPunctPair(draftContent') < ed.indexOf('isComposing && !plan)'),
+      '顺序错了：真实输入法上屏标点时 isComposing 仍为 true，先早退就永远补不上')
     ok('🔴 ④ 光标用 rAF 在 React 写完 DOM 之后再设（否则被推到末尾）',
       /requestAnimationFrame\(\(\) => \{[\s\S]{0,200}setSelectionRange\(plan\.caret/.test(ed))
     ok('④ 不补时仍把原文交给 onContentChange（不吞字）', /if \(!plan\) \{ onContentChange\(next\); return \}/.test(ed))
