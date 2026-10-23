@@ -14,7 +14,7 @@ import FormatModal from '@/components/dialogs/FormatModal'
 import { Modal } from '@/components/dialogs/Modal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/editor/indent'
 // 3.2.0：中文标点自动配对（原先完全依赖输入法 ⇒ 微信有、搜狗没有，见 punctPair 文件头）
-import { planPunctPair } from '@/lib/editor/punctPair'
+import { planPunctPair, planPunctPairAtCaret } from '@/lib/editor/punctPair'
 import { nextVolumeNo } from '@/lib/outline/freeVolume'
 import {
   FolderPlus, Trash2, PenLine,
@@ -639,19 +639,37 @@ style={{ zIndex: Z.pageHandle }}
                   onChange={e => {
                     const ta = e.currentTarget
                     const next = ta.value
-                    // 🔴 输入法选字 / 上屏期间一律不插手：这时 selectionStart 指向的是候选词边界，
-                    //    补标点会把上屏打断（与本文件 handleEditorKeyDown 里挡 Enter/Tab 同一条纪律）。
-                    // 🔴 3.2.1 · T-13 修正：**组合态不能一律早退** —— 中文输入法上屏标点时
-                    //    `isComposing` 仍为 true，原先的早退让「打“自动补”」在搜狗 / 微软拼音下
-                    //    永远不生效（2026-10-22 实测复现：非组合态三条符号全补，组合态只出左半边）。
-                    //    这里只放行「恰好插入一个中文左标点」这一种情况：选字中途的候选上屏是多字符或
-                    //    非标点，`planPunctPair` 返回 null，仍按原逻辑早退，不会打断上屏。
-                    const plan = planPunctPair(draftContent, next, ta.selectionStart)
-                    if ((e.nativeEvent as InputEvent).isComposing && !plan) { onContentChange(next); return }
+                    const ev = e.nativeEvent as InputEvent
+                    // 🔴🔴 3.2.2（2026-10-23 读者反馈修复）：**组合态一律不碰 DOM**。
+                    //
+                    //    历史：3.2.1 的 T-13 为了修「搜狗/微软拼音打“不补右半边」，放行了组合态里的补标点。
+                    //    那个放行是错的 —— 组合期间的 `input` 事件里，`value` 是**未提交的预览串**；
+                    //    我们补上 `”` 并把光标移回中间后，输入法提交自己的 `“` 时会插到我们移动后的光标处。
+                    //    实测（CDP 模拟输入法）：`“` ⇒ `““”`，再按一下 ⇒ `“““”`，越打越多。
+                    //    正解不是"组合态也补"，而是**等提交之后再补**：提交那个 `input` 事件的
+                    //    `isComposing` 已经是 false，且 `data` 就是被提交的字符 ⇒ 走下面同一条判据即可。
+                    //    （这同时修好了 T-13 想修的问题，且不破坏输入法。）
+                    if (ev.isComposing) { onContentChange(next); return }
+                    // 判据看**这次输入事件自带的 data**，不再用「prev/next 长度差」——
+                    // 长度差在组合态下从来对不上，是上一个 bug 的根源。
+                    const plan = planPunctPair(next, ta.selectionStart, ev.data)
                     if (!plan) { onContentChange(next); return }
                     onContentChange(plan.value)
                     // 光标要落在两个标点中间。必须等 React 把新 value 写进 DOM 之后再设，
                     // 否则受控回写会把光标推到末尾（放在 rAF 里最稳）。
+                    requestAnimationFrame(() => {
+                      const el = taRef.current
+                      if (el) el.setSelectionRange(plan.caret, plan.caret)
+                    })
+                  }}
+                  onCompositionEnd={e => {
+                    // 🔴 3.2.2：组合结束是**另一个合法时机**，必须也补 —— 有些输入法把字留在组合里
+                    //    就不再发提交 input 事件（实测 CDP 模拟如此），只靠 onChange 会一直不补。
+                    //    与 onChange 那条判据结果相同、且幂等（右侧已有右标点就返回 null）。
+                    const ta = e.currentTarget
+                    const plan = planPunctPairAtCaret(ta.value, ta.selectionStart)
+                    if (!plan) return
+                    onContentChange(plan.value)
                     requestAnimationFrame(() => {
                       const el = taRef.current
                       if (el) el.setSelectionRange(plan.caret, plan.caret)
