@@ -374,10 +374,33 @@ function schedulePersist() {
   }, 1000)
 }
 
-async function persistNow(): Promise<boolean> {
+/**
+ * 丢掉「已排队但还没写」的落盘。
+ *
+ * 🔴 3.2.2 遗留修复：切项目时必须调用。`set()` 每次都会排一次 1 秒防抖，而
+ * `persistNow()` 不传 pid 时读**全局当前项目** —— 切换之后这个定时器才触发，
+ * 就会把「属于旧项目的状态」写进**新项目**的键里（本次修复的正是这条链）。
+ * 正确做法是先把有价值的状态显式写回旧项目（`flushPersist(owner)`），再取消队列。
+ */
+function cancelScheduledPersist() {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+}
+
+/**
+ * 落盘。`pid` 不传时读全局「当前项目」。
+ *
+ * 🔴 3.2.2 遗留修复（2026-10-23）：**必须能指定项目**。
+ *    原先它无条件读 `db.getCurrentProjectId()`，而 App 切项目是"先判再切"——
+ *    只要写盘发生在切换之后（防抖计时器的 1 秒里作者点了切换），这份会话就会被写进
+ *    **新项目**的键里，原项目那边反而没了。这正是审计/实机里"填完 1 秒内就点开始会丢想法"的病灶。
+ */
+async function persistNow(pid?: string): Promise<boolean> {
   try {
-    const pid = db.getCurrentProjectId()
-    if (!pid) return false
+    const target = pid ?? db.getCurrentProjectId()
+    if (!target) return false
     // 断点只存里程，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
     const resume = snap.resume
       ? {
@@ -387,7 +410,7 @@ async function persistNow(): Promise<boolean> {
           label: snap.resume.label,
         }
       : null
-    await db.setMeta(keyOf(pid), {
+    await db.setMeta(keyOf(target), {
       inputs: snap.inputs,
       log: snap.log.slice(-60),
       resume,
@@ -418,13 +441,15 @@ async function persistNow(): Promise<boolean> {
  *
  * 「保存」按钮、「清空」都用它 —— 作者点了按钮就应当立刻写下去；
  * 若仍走防抖，那 1 秒里关软件 / 切项目，这次点击就等于没发生。
+ *
+ * @param pid 写到哪个项目（不传＝当前项目）。切项目途中必须显式传**原项目**，见 `persistNow` 的说明。
  */
-export async function flushPersist(): Promise<boolean> {
+export async function flushPersist(pid?: string): Promise<boolean> {
   if (persistTimer) {
     clearTimeout(persistTimer)
     persistTimer = null
   }
-  return persistNow()
+  return persistNow(pid)
 }
 
 /** 切项目必须清掉的**运行态**：闸门 / 弹窗 / 改写 —— 它们都属于上一个项目，留着会串味 */
@@ -806,14 +831,42 @@ export function runBelongsTo(runPid: string | null, active: boolean, nextPid: st
 
 export function abortRunIfProjectChanged(nextPid: string): boolean {
   const active = snap.running || Boolean(snap.rewrite?.running)
+
+  /**
+   * 🔴 3.2.2 遗留修复（2026-10-23）：**先落盘，再判断要不要停**。
+   *
+   * 病灶：想法（seed / intent / 目标 / 策略）走 1 秒防抖写盘，而 `persistNow()` 原先读全局
+   * "当前项目"。作者填完想法 1 秒内切项目 ⇒ 防抖在**切换之后**才触发 ⇒ 这份想法被写进
+   * **新项目**的键，原项目里反而没有（实机遗留第 2 条）。
+   * 修法：切项目**之前**把未落盘的草稿显式写回**它所属的项目**——
+   * 归属取 `runProjectId`（本次运行认的项目）或 `hydratedFor`（当前会话读的是谁）。
+   *
+   * ⚠️ 与"有没有任务在跑"无关：没在跑也要落 —— 那时丢的是想法，比丢进度更常见。
+   */
+  const owner = runProjectId ?? hydratedFor
+  if (owner && owner !== nextPid) void flushPersist(owner)
+
   if (!active) { runProjectId = null; return false }
   // 同项目重开（App 允许：被中止的任务可「继续」）⇒ 不动
   if (runBelongsTo(runProjectId, active, nextPid)) return false
   // 复用停止逻辑：它会一并 resolve 掉三个挂起的弹窗 Promise，否则编排器永远 await
   stopCreativeRun()
-  set({ running: false, rewrite: snap.rewrite ? { ...snap.rewrite, running: false } : null })
+  /**
+   * 🔴 除了 running，结果类字段也必须清（`SESSION_BLANK`）。
+   * 理由：那些字段属于**上一个项目**。只清 running 的话，切到 B 的当下 B 面板会显示
+   * A 的「已中止 · 继续写作」，要等刷新才消失（实机遗留第 1 条：内存态短暂跨项目）。
+   * 清除是安全的：A 的会话已在上面落盘，回到 A 会重新 hydrate，断点照样能「继续」。
+   */
+  set({
+    running: false,
+    rewrite: snap.rewrite ? { ...snap.rewrite, running: false } : null,
+    ...SESSION_BLANK,
+  })
   notice('项目已切换，本次创意写作已停止 —— 它的产出没有写入任何项目。', 'info')
   runProjectId = null
+  // 🔴 最后**必须**取消上面 set() 排下的落盘：1 秒后全局 pid 已换成新项目，
+  //    那个定时器会把"清空后的会话"写进新项目的键 —— 等于用空壳覆盖 B 自己的会话。
+  cancelScheduledPersist()
   return true
 }
 
