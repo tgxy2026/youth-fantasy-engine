@@ -17,7 +17,9 @@
 //    不用 UA / 端口启发式：那些都能被误判，而误判的后果是「读不到数据」或「数据落到别处」。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
 import { normalizePortableData, isPortableDataFile } from '@/lib/storage/storeOps'
-import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
+// keyOfRecord / PORTABLE_KEY_FIELDS 的真源已上移到 storeOps（3.2.2 · D2），本文件下方 re-export
+import { keyOfRecord } from '@/lib/storage/storeOps'
+import type { SidecarApi, SidecarSpec, SidecarExportIssue } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { PORTABLE_FILE_VERSION, describeDataFileReject } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
@@ -51,33 +53,10 @@ function apiBase(): string {
 /**
  * 各 store 的主键字段 —— 与 `syncCore.KEY_FIELD` / `app/desktop.KEY_PATHS` 同口径（三处一致）。
  *
- * 🔴 `vecRows` / `kbDocs` / `kbBodies` 是**便携版专属**（2026-10-10 方案 A）：
- *    桌面版把语义向量与参考资料放在**两个独立 IDB 库**（`-vec` / `-kb`）里，刻意不进整库 JSON；
- *    但便携版是 U 盘自包含、IDB 不跟盘走 ⇒ 这两库的数据必须并入整库 JSON 才能随盘携带。
- *    故便携版在运行时把两库后端**注入**成「读写这三个 store」（见 `storage/portableVecKb.ts`）。
- *    ⚠️ 桌面端的 `syncCore.KEY_FIELD` / `desktop.KEY_PATHS` **不该**加这三项 —— 它们不属于主库。
+ * 🔴 3.2.2 起**真源已上移到 `storeOps.ts`**（数据格式所在地），这里只 re-export 供既有调用方
+ *    （`portableVecKb` / 测试）沿用原路径。别再在本文件里另写一份表 —— 两份必漂移。
  */
-export const PORTABLE_KEY_FIELDS: Record<string, string> = {
-  projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
-  cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id',
-  formData: 'tabId', meta: 'key', dailyStats: 'key', settingsKV: 'key',
-  tavernReports: 'id', aiRuns: 'id', worlds: 'id',
-  // 3.2.0 · W2 修订任务与载荷（与 desktop.KEY_PATHS 逐项一致）
-  revisionJobs: 'id', revisionPayloads: 'id',
-  // ---- 便携版专属（语义检索 / 知识库并入整库，方案 A）----
-  vecRows: 'id', kbDocs: 'id', kbBodies: 'id',
-}
-
-/**
- * 取某条记录的主键值（字符串化）。
- * @returns 主键字符串；记录为 null/undefined 或主键缺失时返回 ''（调用方应据此跳过该条）
- */
-export function keyOfRecord(store: string, rec: unknown): string {
-  if (rec == null) return ''
-  const kf = PORTABLE_KEY_FIELDS[store] ?? 'id'
-  const v = (rec as Record<string, unknown>)[kf]
-  return v == null ? '' : String(v)
-}
+export { PORTABLE_KEY_FIELDS, keyOfRecord } from '@/lib/storage/storeOps'
 
 /**
  * 把一批记录 upsert 进某 store 的行数组（**不改入参**，返回新数组）。
@@ -548,18 +527,31 @@ export function replacePortableData(parsed: unknown): void {
  *    ⇒ 时间戳写进**导出副本**，内存状态保持真实（= 上次真正落盘的时间）。
  */
 export async function portableDataJSON(): Promise<string> {
+  return (await portableDataJSONReport()).json
+}
+
+/**
+ * 同 `portableDataJSON`，但**把缺了什么一并带回来**（3.2.2 · 审计 C1）。
+ *
+ * 🔴 为什么要多一个入口：导出的成功文案原先无条件写"这就是本机数据的完整副本"，
+ *    而某份历史备份读不出来时那份数据根本没进包（审计实测：2 份坏 1 份 ⇒ 两份都没带走）。
+ *    作者据"完整副本"把它当唯一保险，真出事才发现少了 —— 所以完整性必须回传，由界面改口径。
+ */
+export async function portableDataJSONReport(): Promise<{
+  json: string
+  missing: SidecarExportIssue[]
+}> {
   // 🔴 外置数据必须**内联回来**：否则导出的文件会静默丢掉全部备份载荷
   //    （列表还在、看起来正常，等要恢复时才说"载荷缺失"—— 最危险的失败形态）
-  const inline = await collectSidecarForExport(portableStore, PORTABLE_SIDECAR)
+  const collected = await collectSidecarForExport(portableStore, PORTABLE_SIDECAR)
   // 🔴 2026-10-13（社区反馈）：导出前剥掉敏感 meta（AI 密钥 / 检索密钥）——
   //    这份 JSON 就是给作者拷走 / 丢云盘的，与桌面版 exportDesktopData 同一取舍。
   //    ⚠️ stripSensitiveMeta 返回**新对象**，不会动内存里的 data。
-  const { stores } = stripSensitiveMeta({ ...data.stores, ...inline })
-  return JSON.stringify({
-    ...data,
-    savedAt: Date.now(),
-    stores,
-  })
+  const { stores } = stripSensitiveMeta({ ...data.stores, ...collected.data })
+  return {
+    json: JSON.stringify({ ...data, savedAt: Date.now(), stores }),
+    missing: collected.issues,
+  }
 }
 
 // ---------- 便携版专属动作（导出 / 导入 / 打开数据文件夹） ----------
@@ -593,6 +585,8 @@ export async function exportPortableData(): Promise<{
   error?: string
   /** 被剥掉的敏感 meta 键名（供 UI 如实告知作者）；空数组 = 本机没有需要剥的 */
   strippedSecrets?: string[]
+  /** 没被带进导出包的外置数据（3.2.2 · 审计 C1）；有值 ⇒ 只能说"部分导出" */
+  missingSidecar?: SidecarExportIssue[]
 }> {
   if (!PORTABLE) return { ok: false, error: '当前版本不支持导出数据文件（仅便携版可用）' }
   if (writeLocked) {
@@ -603,7 +597,7 @@ export async function exportPortableData(): Promise<{
   }
   try {
     // await：外置数据要一份份读回来内联（见 portableDataJSON 的注释）
-    const text = await portableDataJSON()
+    const { json: text, missing } = await portableDataJSONReport()
     const d = new Date()
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
     const fileName = `youth-fantasy-engine-data-${stamp}.json`
@@ -620,7 +614,8 @@ export async function exportPortableData(): Promise<{
     // 剥了哪些键：只读 `data.stores`（敏感 meta 全在这里，与 portableDataJSON 的剥离同源），
     // 不重复读外置载荷 —— 只为给界面一句如实提示，不值当再跑一次全量收集。
     const { removed } = stripSensitiveMeta(data.stores)
-    return { ok: true, fileName, strippedSecrets: removed }
+    // 🔴 3.2.2（审计 C1）：有缺失就**不许**再被判成"完整导出"，由界面改说"部分导出"
+    return { ok: true, fileName, strippedSecrets: removed, ...(missing.length ? { missingSidecar: missing } : {}) }
   } catch (e) {
     const msg = '导出失败：' + (e instanceof Error ? e.message : String(e))
     lastError = msg

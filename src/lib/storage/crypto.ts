@@ -62,10 +62,31 @@ export async function decryptJSON<T>(text: string, password: string): Promise<T>
     throw new Error('迁移包内容不是合法的 JSON 格式')
   }
   if (!env || env.encrypted !== true) throw new Error('该文件不是加密迁移包')
-  const key = await deriveKey(password, fromB64(env.salt))
-  const ct = fromB64(env.data)
-  const iv = fromB64(env.iv)
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct)
+  // 三个字段一起解析：坏一份就整包不可解，逐个别报错反而说不清是哪儿坏了
+  let salt: Uint8Array<ArrayBuffer>
+  let ct: Uint8Array<ArrayBuffer>
+  let iv: Uint8Array<ArrayBuffer>
+  try {
+    salt = fromB64(env.salt)
+    ct = fromB64(env.data)
+    iv = fromB64(env.iv)
+  } catch {
+    throw new Error('迁移包已损坏：加密字段不是合法的 Base64（原数据未改动）')
+  }
+  const key = await deriveKey(password, salt)
+  /**
+   * 🔴 3.2.2 · 审计 D6（P2）：解密失败必须给出**能读懂的理由**。
+   *
+   * WebCrypto 在 AES-GCM 校验失败时抛的 `OperationError` 在 Chromium 里 **message 是空串**，
+   * 于是界面只剩「导入失败：」—— 冒号后面什么都没有。作者会误判成"软件卡死 / 原稿丢了"。
+   * 这里统一翻成一句可操作的话（密码错与文件损坏在密码学上无法区分，故一并说明）。
+   */
+  let plain: ArrayBuffer
+  try {
+    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct)
+  } catch {
+    throw new Error('密码错误或文件已损坏（解密校验未通过）—— 已有项目未受影响，请确认密码后重试')
+  }
   try {
     return JSON.parse(dec.decode(plain)) as T
   } catch {

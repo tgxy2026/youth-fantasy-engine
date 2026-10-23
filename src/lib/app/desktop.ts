@@ -9,7 +9,7 @@
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
 import { normalizePortableData, isPortableDataFile, describeDataFileReject, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
-import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
+import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi, type SidecarExportIssue } from '@/lib/storage/sidecar'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 import { markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syncTombstone'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 叶子模块，不会与 sync 层成环
@@ -37,10 +37,13 @@ export interface ElectronStoreAPI {
   isCustomPath(): Promise<boolean>
   /** 选择数据文件的新存放位置，返回完整文件路径或 null（取消） */
   chooseDataDir(): Promise<string | null>
-  /** 迁移数据文件到新位置；adopted=目标已有数据文件、改用那份 */
-  setDataPath(target: string, text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
-  /** 恢复默认存放位置 */
-  resetDataPath(text: string): Promise<{ ok: boolean; path: string; adopted: boolean; error: string | null }>
+  /**
+   * 迁移数据文件到新位置；adopted=目标已有数据文件、改用那份。
+   * `copied` = 本次一并搬走的外置备份文件数（3.2.2 · 审计 C2；旧主进程不返回，按 0 处理）
+   */
+  setDataPath(target: string, text: string): Promise<{ ok: boolean; path: string; adopted: boolean; copied?: number; error: string | null }>
+  /** 恢复默认存放位置（同样会搬外置文件，`copied` 含义同上） */
+  resetDataPath(text: string): Promise<{ ok: boolean; path: string; adopted: boolean; copied?: number; error: string | null }>
   // ---- 外置大块数据（sidecar）：备份载荷存独立文件，主 JSON 只留元数据 ----
   /** 读一条外置记录；`missing:true` 表示还没有（不是错误） */
   payloadRead(store: string, id: string): Promise<{ ok: boolean; missing?: boolean; value?: unknown; error?: string }>
@@ -702,8 +705,34 @@ function scheduleSave() {
   emit()
 }
 
-/** 立即写盘（手动保存 / 导入后调用） */
-export async function flushDesktop(): Promise<boolean> {
+/**
+ * 把底层文件错误翻成**作者能照着做**的说法（3.2.2 · 审计 D4）。
+ *
+ * 审计现场：只读文件时界面弹的是 `EPERM: operation not permitted, rename …` ——
+ * 作者看不懂该干什么。这里先给动作，原始错误仍附在后面（排查要用）。
+ * @returns 可操作说明；认不出的错误返回 ''（调用方回落到原始信息）
+ */
+export function explainWriteError(raw: string): string {
+  const s = String(raw ?? '')
+  if (/EROFS/i.test(s)) return '目标磁盘是只读的（只读 U 盘 / 网络盘）—— 请换到可写目录'
+  if (/ENOSPC/i.test(s)) return '磁盘空间不足 —— 请清理磁盘后重试'
+  if (/EPERM|EACCES/i.test(s)) return '文件只读或没有写入权限（被设为只读、或被杀软/同步盘占用）—— 请恢复写权限后重试'
+  if (/EBUSY/i.test(s)) return '文件正被其它程序占用（同步盘 / 杀毒软件）—— 请稍后重试'
+  return ''
+}
+
+/**
+ * 写盘失败的完整提示文案：`写入本地数据文件失败：<能照做的说明>（原始错误：…）`。
+ * 抽成一行函数是为了让两条写盘路径（异步 / 关窗前同步）口径完全一致。
+ */
+function writeFailureText(raw: string | null | undefined): string {
+  const why = explainWriteError(raw ?? '')
+  return '写入本地数据文件失败：'
+    + (why || raw || '未知错误')
+    + (why && raw ? `（原始错误：${raw}）` : '')
+}
+
+/** 立即写盘（手动保存 / 导入后调用） */export async function flushDesktop(): Promise<boolean> {
   if (!inited || saving) return false
   if (writeLocked) return false // 🔴 锁定期绝不落盘（见 writeLocked 说明）
   saving = true
@@ -714,7 +743,7 @@ export async function flushDesktop(): Promise<boolean> {
     data.savedAt = Date.now()
     const r = await api().save(JSON.stringify(data))
     if (!r.ok) {
-      lastError = '写入本地数据文件失败：' + (r.error ?? '未知错误')
+      lastError = writeFailureText(r.error)
       return false
     }
     savedSeq = seqAtStart
@@ -761,9 +790,13 @@ export function flushDesktopSync(): void {
     //    否则关窗前的最后一次编辑就没了。
     const verdict = interpretSaveSyncResult(api().saveSync(JSON.stringify(data)))
     if (!verdict.ok) {
-      lastError = '写入本地数据文件失败：' + verdict.error
+      /**
+       * 🔴 失败分支必须是 `return`（保留 dirty，供下次启动补救），不能继续往下清 dirty。
+       * 文案里带可操作说明（只读/无权限/磁盘满）—— 原先只把 EPERM 原样抛给作者，看不懂。
+       */
+      lastError = writeFailureText(verdict.error)
       emit() // 🔴 窗口随后就关了，不广播的话这次失败谁都看不到
-      return // 保留 dirty，供下次启动补救
+      return
     }
     savedSeq = writeSeq
     dirty = writeSeq !== savedSeq
@@ -789,6 +822,11 @@ export async function exportDesktopData(): Promise<{
   error?: string
   /** 被剥掉的敏感 meta 键名（空数组 = 本机没有需要剥的） */
   strippedSecrets?: string[]
+  /**
+   * 读不出来、因此**没被带进导出包**的外置数据（3.2.2 · 审计 C1）。
+   * 有值就说明这次是「部分导出」—— 界面不许再写"完整副本"。
+   */
+  missingSidecar?: SidecarExportIssue[]
 }> {
   if (!DESKTOP || !inited) return { ok: false, error: '当前版本不支持导出数据文件（仅桌面版可用）' }
   // 🔴 锁写盘期间内存里是空库/残缺数据 —— 导出会造出一个**看起来正常**的空备份，
@@ -804,7 +842,8 @@ export async function exportDesktopData(): Promise<{
   // 🔴 同时**不改动**内存里的 `data.savedAt`（与便携版同口径，2026-10-11）：
   //    导出是纯读操作，改了它，导出的文件会声称"保存于此刻"，而磁盘上并没有这一刻的写入
   //    ⇒ 作者据此以为「已经存好了」，实际那份数据只在导出位置。
-  const inline = await collectSidecarForExport(desktopStore, DESKTOP_SIDECAR)
+  const collected = await collectSidecarForExport(desktopStore, DESKTOP_SIDECAR)
+  const inline = collected.data
   // 🔴🔴 2026-10-13（社区反馈）：导出前**剥掉敏感 meta**（AI 密钥 / 检索密钥）。
   //    这份副本被文案引导为「留档 / 搬机」，作者会把它丢进云盘、发给别人 ——
   //    而它原本是整库原样倒出，`meta.aiProviders` 里的 apiKey 明文一起走。
@@ -817,7 +856,16 @@ export async function exportDesktopData(): Promise<{
     // 🔴 2026-10-07 六维审计 P2：取消与失败**必须分开返回** —— 混成一个 null 会让
     //    「用户点了取消」和「真的出错了」在界面上长得一模一样（口径与 exportPdfDocument 对齐）。
     if (!p) return { ok: false, cancelled: true }
-    return { ok: true, path: p, strippedSecrets: removed }
+    /**
+     * 🔴 3.2.2（审计 C1 · P1）：**完整性必须回传**。
+     *    以前只要写文件成功就报"已导出全部数据 / 这就是本机数据的完整副本"，
+     *    哪怕某份历史备份读不出来（审计实测：2 份里坏 1 份 ⇒ 两份都没带走，界面照样说完整）。
+     *    `missingSidecar` 非空时，界面必须改说"部分导出、缺了什么"，不能再用完整措辞。
+     */
+    return {
+      ok: true, path: p, strippedSecrets: removed,
+      ...(collected.complete ? {} : { missingSidecar: collected.issues }),
+    }
   } catch (e) {
     const msg = '导出失败：' + (e instanceof Error ? e.message : String(e))
     lastError = msg
@@ -926,36 +974,36 @@ export async function chooseDesktopDataDir(): Promise<string | null> {
  */
 export async function relocateDesktopDataFile(
   target: string,
-): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
-  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+): Promise<{ ok: boolean; path: string; adopted: boolean; copied: number; error?: string }> {
+  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, copied: 0, error: '桌面存储未就绪' }
   // 🔴 锁定期换位置＝把「空库/残缺数据」写成新位置的一份有效文件（原文件虽保留，
   //    但用户会以为数据搬过去了）。要换就先按顶部红条显式解除锁定。
   if (writeLocked) {
-    return { ok: false, path: '', adopted: false, error: '数据文件读取失败期间不能更换存放位置：请先按顶部红条处理原文件，或解除锁定后再试' }
+    return { ok: false, path: '', adopted: false, copied: 0, error: '数据文件读取失败期间不能更换存放位置：请先按顶部红条处理原文件，或解除锁定后再试' }
   }
   await flushDesktop() // 先把内存数据落盘，避免带着未保存改动换位置
   data.savedAt = Date.now()
   const r = await api().setDataPath(target, JSON.stringify(data))
-  if (!r.ok) return { ok: false, path: '', adopted: false, error: r.error ?? '未知错误' }
+  if (!r.ok) return { ok: false, path: '', adopted: false, copied: 0, error: r.error ?? '未知错误' }
   dataFilePath = r.path
   isCustomPath = true
-  return { ok: true, path: r.path, adopted: r.adopted }
+  return { ok: true, path: r.path, adopted: r.adopted, copied: r.copied ?? 0 }
 }
 
 /** 恢复默认存放位置（userData 目录）。原位置的数据文件不会被删除。 */
-export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: string; adopted: boolean; error?: string }> {
-  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, error: '桌面存储未就绪' }
+export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: string; adopted: boolean; copied: number; error?: string }> {
+  if (!DESKTOP || !inited) return { ok: false, path: '', adopted: false, copied: 0, error: '桌面存储未就绪' }
   // 同 relocateDesktopDataFile：锁定期不落盘
   if (writeLocked) {
-    return { ok: false, path: '', adopted: false, error: '数据文件读取失败期间不能恢复默认位置：请先按顶部红条处理原文件，或解除锁定后再试' }
+    return { ok: false, path: '', adopted: false, copied: 0, error: '数据文件读取失败期间不能恢复默认位置：请先按顶部红条处理原文件，或解除锁定后再试' }
   }
   await flushDesktop()
   data.savedAt = Date.now()
   const r = await api().resetDataPath(JSON.stringify(data))
-  if (!r.ok) return { ok: false, path: '', adopted: false, error: r.error ?? '未知错误' }
+  if (!r.ok) return { ok: false, path: '', adopted: false, copied: 0, error: r.error ?? '未知错误' }
   dataFilePath = r.path
   isCustomPath = false
-  return { ok: true, path: r.path, adopted: r.adopted }
+  return { ok: true, path: r.path, adopted: r.adopted, copied: r.copied ?? 0 }
 }
 
 // ---------- 外置大块数据（sidecar）----------

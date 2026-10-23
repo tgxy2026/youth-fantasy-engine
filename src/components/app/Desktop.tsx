@@ -57,7 +57,20 @@ export function DesktopDataBar() {
         const tip = r.strippedSecrets?.length
           ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
           : ''
-        showToast(`已导出全部数据到：\n${r.path}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+        /**
+         * 🔴 3.2.2（审计 C1 · P1）：**只有真完整才敢说"完整副本"**。
+         * 读不出来的历史备份不会被带进包（以前照样报完整，作者拿它当唯一保险）。
+         */
+        const missing = r.missingSidecar ?? []
+        if (missing.length) {
+          const n = missing.length
+          showToast(
+            `已导出可读取的内容到：\n${r.path}\n\n⚠️ 有 ${n} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。\n可以继续用它救急，但别把旧的那份覆盖掉。${tip}`,
+            'error', 12000,
+          )
+        } else {
+          showToast(`已导出全部数据到：\n${r.path}\n\n本机数据已完整导出（含历史备份）：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+        }
       } else if (!r.cancelled) showToast(r.error || '导出失败', 'error')
     } catch (e) {
       showToast('导出失败：' + (e instanceof Error ? e.message : String(e)), 'error')
@@ -109,7 +122,9 @@ export function DesktopDataBar() {
       title: '更改数据文件位置',
       message:
         `数据文件将迁移到：\n${target}\n\n` +
-        '· 若该位置已有数据文件（例如另一台设备同步过来的），将改用那份数据；\n' +
+        '· 历史备份文件会跟着一起搬过去，并在切换前逐个校验；\n' +
+        '· 若该位置已有数据文件（例如另一台设备同步过来的），将改用那份数据，\n' +
+        '  本机已有的历史备份不会混进去；\n' +
         '· 本机当前的数据文件不会被删除，仍留在原处。\n\n' +
         '⚠️ 放进云盘同步目录可实现跨设备同步，但云盘是「文件级」同步：\n' +
         '· 不要在多台设备上同时打开本软件编辑，冲突会导致整库覆盖；\n' +
@@ -121,7 +136,15 @@ export function DesktopDataBar() {
     try {
       const r = await relocateDesktopDataFile(target)
       if (r.ok) {
-        location.reload() // 重新加载让新路径生效（落地后即为新位置的数据）
+        // 🔴 3.2.2（审计 C2）：把「历史备份有没有跟着走」如实说出来。
+        //    没说 = 作者以为搬走的是完整资料集，等恢复时才发现载荷全在旧目录。
+        if (r.adopted) {
+          showToast('已改用目标位置的数据文件（该处原有数据，本机历史备份未混入）')
+        } else if (r.copied > 0) {
+          showToast(`已迁移，${r.copied} 份历史备份一并搬走并校验通过`)
+        }
+        // 留 1.2s 让上面那句提示看得见，再重载让新路径生效（重载会清掉弹层）
+        setTimeout(() => location.reload(), 1200)
       } else {
         showToast('迁移失败：' + (r.error ?? '未知错误'), 'error')
       }
@@ -138,6 +161,7 @@ export function DesktopDataBar() {
       title: '恢复默认存放位置',
       message:
         '数据文件将改回系统默认位置（用户数据目录）。\n\n' +
+        '· 历史备份文件会跟着一起搬回去，并在切换前逐个校验；\n' +
         '· 当前位置的数据文件不会被删除，可以手动取回；\n' +
         '· 若默认位置原本已有数据文件，将改用那份数据。\n\n' +
         '确定继续？切换后应用会重新加载。',
@@ -148,7 +172,9 @@ export function DesktopDataBar() {
     try {
       const r = await resetDesktopDataPath()
       if (r.ok) {
-        location.reload()
+        if (r.adopted) showToast('已改用默认位置原有的数据文件')
+        else if (r.copied > 0) showToast(`已切回默认位置，${r.copied} 份历史备份一并搬回并校验通过`)
+        setTimeout(() => location.reload(), 1200)
       } else {
         showToast('恢复失败：' + (r.error ?? '未知错误'), 'error')
       }

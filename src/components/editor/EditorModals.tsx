@@ -123,12 +123,19 @@ interface ScopeState {
   skipped: number
   scanned: number
   error: string
+  /**
+   * 🔴 3.2.2（审计 A2）：有块没校对成功 / 一共多少块。
+   * 没有这两个数就会出现「全部 401 ⇒ 界面说未发现问题」这种假通过。
+   */
+  failedChunks: number
+  totalChunks: number
 }
 /** 任务中心的进度载荷（`ProofreadOptions.onProgress(done,total)` + 章节归属戳） */
 type ProofProgress = ChProgress & { done: number; total: number }
 const blankScope = (): ScopeState => ({
   issues: [], loading: false, done: false, cancelled: false,
   progress: { done: 0, total: 0 }, skipped: 0, scanned: 0, error: '',
+  failedChunks: 0, totalChunks: 0,
 })
 
 export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
@@ -185,7 +192,12 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
         patches[scope] = { ...blankScope(), loading: true, progress: (task.progress as ProofProgress | null) ?? { ch, done: 0, total: 0 } }
       } else if (task.status === 'done') {
         const r = task.result?.v
-        patches[scope] = { ...blankScope(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0 }
+        patches[scope] = {
+          ...blankScope(), done: true,
+          issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0,
+          // 老任务结果（升级前跑完的）没有这两个字段 ⇒ 按"未记录"处理，不冒充完整
+          failedChunks: r?.failedChunks ?? 0, totalChunks: r?.totalChunks ?? 0,
+        }
       } else if (task.status === 'failed') {
         patches[scope] = { ...blankScope(), done: true, error: task.error }
       } else {
@@ -214,6 +226,15 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
         context: ctxText, signal: job.signal,
         onProgress: (d, t) => job.progress({ ch, done: d, total: t }), // ⚠️ 带 ch，别把章节戳冲掉
       })
+      /**
+       * 🔴 3.2.2（审计 A2 · P1）：**一块都没成 = 这次任务其实失败了**。
+       * 原先这种情况仍以 done 收尾 ⇒ 任务中心弹「已完成」、面板亮绿色「未发现问题 ✓」，
+       * 401 被彻底吞掉。现在把它降级成 failed，让通知与红字都如实说话。
+       * （部分失败不走这里：那有实际结果，交给面板上的"部分已校对"说明。）
+       */
+      if (res.totalChunks > 0 && res.failedChunks >= res.totalChunks) {
+        throw new Error('全部分段都没能校对成功（模型未配置、密钥失效或网络中断）')
+      }
       return { ch, v: res }
     }, ({ status, error }) => (status === 'failed'
       // 失败要说出来 —— 作者此刻可能已经切走了，面板上的红字他看不见
@@ -372,15 +393,32 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                   <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{st.error}</span>
                 </div>
               )}
+              {/**
+                * 🔴 3.2.2（审计 A2 · P1）：**失败不许装成通过**。
+                * 以前不论跑没跑成，只要 issues 为空就亮绿色「未发现问题 ✓」——
+                * 端点 401 全挂时也这么说（审计实测）。现在先判覆盖情况：
+                *   全部失败 ⇒ 明说"本次未完成校对"；部分失败 ⇒ 说清查了几块；
+                *   只有「确实校过、没有失败、没有取消」才允许出现"未发现"。
+                */}
+              {st.done && !st.error && st.failedChunks > 0 && (
+                <div className="px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger">
+                  {st.failedChunks >= st.totalChunks
+                    ? '本次未完成校对：所有分段都没能拿到结果（可能是模型未配置、密钥失效或网络中断）。下面的"0 处"不代表没有问题。'
+                    : `部分已校对：${st.totalChunks - st.failedChunks}/${st.totalChunks} 段完成，其余 ${st.failedChunks} 段失败未检查。未覆盖的部分不能当作"没有问题"。`}
+                </div>
+              )}
               {st.done && st.cancelled && (
                 <div className="px-3 py-2 rounded-lg bg-ink-800/60 border border-ink-700 text-11 text-ink-400">
                   已停止（保留已查出的 {st.issues.length} 处）
                 </div>
               )}
-              {st.done && !st.error && st.issues.length === 0 && (
+              {st.done && !st.error && !st.cancelled && st.failedChunks === 0 && st.scanned > 0 && st.issues.length === 0 && (
                 <div className="py-2 text-12 text-success">
                   {scope === 'text' ? '未发现错别字 / 语病 / 标点问题 ✓' : '未发现逻辑矛盾或设定冲突 ✓'}
                 </div>
+              )}
+              {st.done && !st.error && !st.cancelled && st.failedChunks === 0 && st.scanned === 0 && (
+                <div className="py-2 text-12 text-ink-400">没有可校对的正文（内容为空或太短）。</div>
               )}
               {st.issues.length > 0 && (
                 <div className="space-y-2">

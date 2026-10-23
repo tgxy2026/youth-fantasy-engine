@@ -136,7 +136,13 @@ export default function HelpPopover({
         {...(triggerIconBox ? { iconOnly: true, size: 'sm' as const } : {})}
         disabled={triggerDisabled}
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-        className={triggerClassName ?? `p-0.5 rounded transition-colors ${open ? 'text-amber' : 'text-ink-500 hover:text-amber'}`}
+        /**
+         * 🔴 3.2.2（审计 U2）：**点击区不得小于 24×24 CSS px**。
+         * 原先 `p-0.5`（图标 13 + 4）实测只有约 19.7×19.7 —— 图标可以小，
+         * 但手指/鼠标要能点中。`p-1.5` 把它撑到约 25×25，视觉大小几乎不变
+         * （图标本身没变大，只是透明内边距），不必为此改版式。
+         */
+        className={triggerClassName ?? `p-1.5 rounded transition-colors ${open ? 'text-amber' : 'text-ink-500 hover:text-amber'}`}
         title={triggerTitle ?? `${title}（点击查看说明）`}
         aria-label={triggerTitle ?? title}
       >

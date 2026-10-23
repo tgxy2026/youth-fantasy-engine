@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef } from '@/lib/types'
-import { getFormData, saveFormData } from '@/lib/db'
+import { getFormDataFor, saveFormDataFor, getCurrentProjectId } from '@/lib/db'
 import { Save, RotateCcw, Info, Check, Sparkles, Radar } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import { isNumericPowerField } from '@/lib/schema'
@@ -93,6 +93,17 @@ export default function FormSheet({ tab }: Props) {
   const dataRef = useRef(data)
   const dirtyRef = useRef(dirty)
   const tabIdRef = useRef(tab.id)
+  /**
+   * 🔴 3.2.2（审计 C3 · P1）：**本表单属于哪个项目，必须在挂载时绑定**，落库一律用它。
+   *
+   * 病根：`App.exitProject()` 先把全局 `currentProjectId` 清成 `''`，随后本组件卸载触发补存，
+   * 而 `saveFormData()` 拼的正是那个全局值 ⇒ 草稿被写进 `::positioning` 这种**无项目归属**的键，
+   * 重开原项目时最后一次修改消失（前一次的还在）。审计实测就是这个现象。
+   *
+   * 为什么挂载时抓就够：`App.tsx` 的主 return 用 `key={`proj-${projectId}`}`，换项目整体重挂，
+   * 所以本 ref 的初值恒等于「这份表单属于谁」，与之后全局值怎么变无关。
+   */
+  const pidRef = useRef(getCurrentProjectId())
   useEffect(() => { dataRef.current = data }, [data])
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
@@ -101,17 +112,20 @@ export default function FormSheet({ tab }: Props) {
    * [tab.id] 守卫里的 tabIdRef 初值即新 id，分支永不执行。
    */
   useEffect(() => () => {
-    if (dirtyRef.current) void saveFormData(tabIdRef.current, dataRef.current)
+    if (dirtyRef.current && pidRef.current) {
+      void saveFormDataFor(pidRef.current, tabIdRef.current, dataRef.current)
+    }
   }, [])
 
   useEffect(() => {
     // 切到别的页签前，先把当前页签未保存的修改落库（之前会静默丢弃）
     const prevId = tabIdRef.current
-    if (dirtyRef.current && prevId && prevId !== tab.id) {
-      void saveFormData(prevId, dataRef.current)
+    if (dirtyRef.current && prevId && prevId !== tab.id && pidRef.current) {
+      void saveFormDataFor(pidRef.current, prevId, dataRef.current)
     }
     tabIdRef.current = tab.id
-    getFormData(tab.id).then(d => {
+    // 读也走显式 pid：退出项目那一瞬全局值已被清空，读全局会拿到别的书的空白表单
+    getFormDataFor(pidRef.current, tab.id).then(d => {
       setData(d)
       setLoaded(true)
       setDirty(false)
@@ -127,7 +141,8 @@ export default function FormSheet({ tab }: Props) {
   const save = useCallback(async () => {
     setSaving(true)
     try {
-      await saveFormData(tab.id, data)
+      // 显式 pid（同 C3 修复）：组件还活着时全局值通常是对的，但没有理由再依赖它
+      await saveFormDataFor(pidRef.current, tab.id, data)
       setDirty(false)
       setSaved(true)
       savedTimer.current = setTimeout(() => setSaved(false), 1500)

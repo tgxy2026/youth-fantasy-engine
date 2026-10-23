@@ -61,6 +61,16 @@ export interface SidecarApi {
 /** withSidecar 额外提供仅供迁移使用的严格批量写入，避免迁移失败时删掉主库源数据。 */
 export type SidecarStoreOps = StoreOps & {
   bulkPutForMigration(store: string, values: unknown[]): Promise<void>
+  /**
+   * 严格写：**真实落盘成功**才返回，失败抛错。
+   *
+   * 🔴 3.2.2 · 审计 C1（P1）：常规 `put/write` 失败只走告警出口、随后正常返回 ——
+   *    这是**刻意的**（普通写入不该让整条业务链崩掉），但它导致备份链路出现最坏的一种失败：
+   *    `createAutoBackup()` 的 `await` 顺利返回 ⇒ 继续登记元数据 ⇒ 列表里多出一份
+   *    **既没有载荷、看起来又能恢复**的备份，等作者真去恢复才说"载荷缺失"。
+   *    ⇒ 备份载荷这类"不落盘就等于撒谎"的写，必须走这里拿可判断的结果。
+   */
+  putStrict(store: string, value: unknown): Promise<void>
 }
 
 /** 该 store 是否已外置 */
@@ -168,6 +178,35 @@ export function withSidecar(
     await writeAll(store, upsertInto(s, await readAll(store, s), values), throwOnFailure)
   }
 
+  /**
+   * 单条写入。`throwOnFailure=true` 时任何不落盘都抛错（备份载荷专用）。
+   * `put` 与 `putStrict` 共用这一份实现，避免两套语义漂移。
+   */
+  async function writeOne(store: string, value: unknown, throwOnFailure: boolean): Promise<void> {
+    const s = specOf(store)
+    if (!s) {
+      // 未外置的 store 走底层：IDB / 文件后端的 put 本身就会抛，交给调用方
+      return base.put(store, value)
+    }
+    if (s.layout === 'per-id') {
+      const k = keyOf(s, value)
+      if (!k) {
+        const message = `外置 store「${store}」写入的记录缺少主键「${s.keyField}」`
+        onError(message + '，已跳过')
+        if (throwOnFailure) throw new Error(message)
+        return
+      }
+      const ok = await api.write(store, k, value)
+      if (!ok) {
+        const message = `外置 store「${store}」记录 ${k} 写入失败（数据未落盘）`
+        onError(message)
+        if (throwOnFailure) throw new Error(message)
+      }
+      return
+    }
+    await writeAll(store, upsertInto(s, await readAll(store, s), [value]), throwOnFailure)
+  }
+
   return {
     async getAll<T>(store: string): Promise<T[]> {
       const s = specOf(store)
@@ -185,16 +224,12 @@ export function withSidecar(
     },
 
     async put(store: string, value: unknown): Promise<void> {
-      const s = specOf(store)
-      if (!s) return base.put(store, value)
-      if (s.layout === 'per-id') {
-        const k = keyOf(s, value)
-        if (!k) { onError(`外置 store「${store}」写入的记录缺少主键「${s.keyField}」，已跳过`); return }
-        const ok = await api.write(store, k, value)
-        if (!ok) onError(`外置 store「${store}」记录 ${k} 写入失败`)
-        return
-      }
-      await writeAll(store, upsertInto(s, await readAll(store, s), [value]))
+      await writeOne(store, value, false)
+    },
+
+    /** 严格写（见类型上的说明）：落盘失败一律抛错，让备份登记方拿到可判断的结果 */
+    async putStrict(store: string, value: unknown): Promise<void> {
+      await writeOne(store, value, true)
     },
 
     async del(store: string, key: string): Promise<void> {
@@ -244,6 +279,22 @@ export function withSidecar(
   }
 }
 
+/** 导出时一条外置记录的读取失败（原样交给上层，用来告诉作者"少了什么"） */
+export interface SidecarExportIssue {
+  store: string
+  /** 具体哪一条（per-id 布局时有值；整表布局时为 undefined） */
+  id?: string
+  error: string
+}
+
+/** 导出收集结果：数据 + 缺失清单 + 是否完整 */
+export interface SidecarExportResult {
+  data: Record<string, unknown[]>
+  issues: SidecarExportIssue[]
+  /** `issues.length === 0` 才叫完整。部分成功时数据仍可救急，但**必须**告诉作者缺了什么 */
+  complete: boolean
+}
+
 /**
  * 把外置数据**读回来**，用于导出。
  *
@@ -252,24 +303,61 @@ export function withSidecar(
  *    等真要恢复时才说"载荷缺失"。这种"看起来成功的失败"比报错更危险。
  *
  *    ⇒ 对外契约保持「单文件带走全部」：导出时内联回来，导入后再拆开（走 migrateSidecar）。
+ *
+ * 🔴 3.2.2 · 审计 C1（P1）—— **一条坏掉不能带走全部**：
+ *    原实现是 `await ops.getAll(name)`，只要一条记录抛错就中断整批读取，
+ *    catch 里只 `console.warn` 然后省略整个 store，上层照样返回成功。
+ *    审计实测：2 份历史备份里坏 1 份 ⇒ 导出包里**两份都没了**，界面还写"这就是完整副本"。
+ *    现在 per-id 布局改为**逐条读**，坏的记进 `issues`，好的照常带走；
+ *    上层必须把 `complete:false` 如实呈现给作者（不能只写控制台）。
  */
 export async function collectSidecarForExport(
   ops: StoreOps,
   spec: SidecarSpec,
-): Promise<Record<string, unknown[]>> {
-  const out: Record<string, unknown[]> = {}
+): Promise<SidecarExportResult> {
+  const data: Record<string, unknown[]> = {}
+  const issues: SidecarExportIssue[] = []
+  const api = currentSidecarApi()
+
   for (const name of Object.keys(spec)) {
-    try {
-      const rows = await ops.getAll(name)
-      if (rows.length) out[name] = rows
-    } catch (e) {
-      // 单个 store 读不出来不该让整次导出失败：作者至少还能拿到其余数据。
-      // 🔴 但**必须留痕**（2026-10-12 全量审计 P2）：导出/备份外置时静默吞掉读失败，会产出
-      //    「元数据齐全、载荷全缺」的包，恢复时才暴露 —— 口径同 projects.ts 的 kbInBackupOf。
-      console.warn(`[sidecar] 外置 store「${name}」读取失败，本次导出不含其数据：`, e)
+    const s = spec[name]
+    const rows: unknown[] = []
+    // per-id 且有通道 ⇒ 逐条读（一条损坏只丢那一条）
+    if (api && s.layout === 'per-id') {
+      let ids: string[] = []
+      try {
+        ids = await api.listIds(name)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        issues.push({ store: name, error: msg })
+        console.warn(`[sidecar] 外置 store「${name}」列出记录失败，本次导出不含其数据：`, e)
+        continue
+      }
+      for (const id of ids) {
+        try {
+          const v = await api.read(name, id)
+          if (v != null) rows.push(v)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          issues.push({ store: name, id, error: msg })
+          console.warn(`[sidecar] 外置 store「${name}」记录 ${id} 读取失败（本次导出缺这一条）：`, e)
+        }
+      }
+    } else {
+      try {
+        rows.push(...await ops.getAll(name))
+      } catch (e) {
+        // 整表布局无法逐条容错：如实记为"整块缺失"。
+        // 🔴 留痕是硬要求（2026-10-12 全量审计 P2 / 结构闸 ⑪-a）：静默吞掉会产出
+        //    「元数据齐全、载荷全缺」的包，恢复时才暴露 —— 口径同 projects.ts 的 kbInBackupOf。
+        const msg = e instanceof Error ? e.message : String(e)
+        issues.push({ store: name, error: msg })
+        console.warn(`[sidecar] 外置 store「${name}」读取失败，本次导出不含其数据：`, e)
+      }
     }
+    if (rows.length) data[name] = rows
   }
-  return out
+  return { data, issues, complete: issues.length === 0 }
 }
 
 /**

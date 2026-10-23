@@ -35,9 +35,26 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
   const [editingId, setEditingId] = useState('')
 
   // 重新读一遍（保存/还原后、或模型配置变了之后）
-  const reload = () => {
+  /**
+   * 🔴 3.2.2 · 审计 A9（P2）：**不能一保存就清空全部草稿**。
+   *
+   * 现场：展开两条提示词、各改一段，只点第一条「保存」 ⇒ 第二条的未保存文本被还原成原值。
+   * 根因是保存后统一 `reload()`，而它内部 `setDrafts({})` 把**所有**条目的草稿都清了。
+   * 现在默认保留其它草稿，只有显式「全部还原」才清全场。
+   */
+  const reload = (opts?: { dropAllDrafts?: boolean }) => {
     setEntries(listPrompts())
-    setDrafts({})
+    if (opts?.dropAllDrafts) setDrafts({})
+  }
+
+  /** 只丢掉某一条的草稿（它自己的值已经落库/还原，留着会顶着旧文本） */
+  const dropDraft = (id: string) => {
+    setDrafts((d) => {
+      if (!(id in d)) return d
+      const next = { ...d }
+      delete next[id]
+      return next
+    })
   }
   useEffect(() => { reload() }, [refreshKey])
 
@@ -58,6 +75,8 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
     setBusy(true)
     try {
       await savePromptOverride(e.id, text)
+      // 只清这一条的草稿；别的条目正在改的内容原样保留（审计 A9）
+      dropDraft(e.id)
       reload()
       showToast('已保存，下一次调用即生效')
     } catch (err) {
@@ -69,6 +88,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
     setBusy(true)
     try {
       await resetPromptOverride(e.id)
+      dropDraft(e.id)
       reload()
       showToast(`「${e.name}」已还原为出厂设置`)
     } catch (err) {
@@ -80,7 +100,8 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
     setBusy(true)
     try {
       await resetAllPromptOverrides()
-      reload()
+      // 全部还原是显式全局操作 ⇒ 这里才清全场草稿
+      reload({ dropAllDrafts: true })
       showToast('全部提示词已还原为出厂设置')
     } catch (err) {
       showToast('还原失败：' + (err instanceof Error ? err.message : String(err)), 'error')

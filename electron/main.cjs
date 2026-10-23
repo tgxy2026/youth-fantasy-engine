@@ -19,6 +19,45 @@ const appIcon = require('./appIcon.cjs')
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 // 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
 const ICON_SELFTEST = process.argv.includes('--app-icon-selftest')
+/**
+ * 3.2.2 · 审计 D1（P1）：是否**放行**多实例。
+ *
+ * 🔴 默认**不允许**：两个进程用同一个资料区时，各自持有整库内存快照，
+ *    谁后写盘谁赢 —— 另一窗口的修改会被静默覆盖（审计实测：窗口 A 写 `AUDIT-A` 已落盘，
+ *    窗口 B 在旧稿上写 `AUDIT-B` 后，磁盘只剩 B，A 的内容消失，而两个窗口都显示"已保存"）。
+ *    原子写盘只能防"写了一半"，防不住"拿旧数据覆盖新数据"。
+ *
+ * 保留开关是给**审计/回归**用的：要验证「双开不互相覆盖」必须真起两个进程，
+ * 而在单实例锁下第二个进程会直接退出、根本造不出现场。
+ */
+const ALLOW_MULTI_INSTANCE = process.argv.includes('--multi-instance')
+
+/**
+ * 单实例锁：拿不到锁 = 已有实例在跑 ⇒ 聚焦它、本进程立刻退出（不建窗口、不注册 IPC）。
+ *
+ * ⚠️ 锁的作用域是 **userData 目录**：用不同 `--user-data-dir` 启动的两个实例各自拿锁、互不影响
+ *    （实机回归正是靠这一点隔离测试资料区）。
+ * ⚠️ `--smoke-test` / `--app-icon-selftest` 也走这道锁：它们本就该用临时 user-data-dir 单独跑。
+ */
+if (!ALLOW_MULTI_INSTANCE) {
+  const gotLock = app.requestSingleInstanceLock()
+  if (!gotLock) {
+    // 🔴 只 quit 不够：下面 app.whenReady() 仍会排队，可能在退出前把窗口建出来。
+    //    CommonJS 顶层 return 是合法的（模块被包在函数里）⇒ 直接结束本模块。
+    app.quit()
+    return
+  }
+  app.on('second-instance', () => {
+    // 用户重复启动：把已有窗口叫到前面（最小化过就先还原），不要让第二个进程另起炉灶
+    const w = BrowserWindow.getAllWindows()[0]
+    if (!w || w.isDestroyed()) return
+    try {
+      if (w.isMinimized()) w.restore()
+      if (!w.isVisible()) w.show()
+      w.focus()
+    } catch { /* 窗口正在销毁：忽略 */ }
+  })
+}
 
 /**
  * 自定义数据文件位置的配置。
@@ -335,6 +374,56 @@ app.whenReady().then(() => {
     return path.join(r.filePaths[0], 'youth-fantasy-engine-data.json')
   })
 
+  /**
+   * 把外置目录（`<数据文件目录>/blobs`）整棵搬到新数据文件旁边。
+   *
+   * 🔴 3.2.2 · 审计 C2（P1）：`blobRoot()` 跟着 `dataFile()` 走，而 `store:setDataPath`
+   *    原先**只写主 JSON**。于是换完位置后：备份列表（元数据在主 JSON 里）全在，
+   *    点恢复却说"载荷缺失" —— 真正的外置文件还躺在旧目录。审计实测就是这条。
+   *    ⇒ 资料集 = 主文件 + 外置文件，迁移必须**先搬齐、再校验、最后才切配置**。
+   *
+   * ⚠️ 不用 `fs.cpSync`：本项目实测它会连带杀进程（见 MEMORY 环境坑），改为手工递归。
+   * @returns `{ ok, copied, error }`；`ok:false` 时**绝不切配置**，原位置一律保持可用。
+   */
+  async function copyBlobsAlong(oldFile, newFile) {
+    const src = path.join(path.dirname(oldFile), 'blobs')
+    const dst = path.join(path.dirname(newFile), 'blobs')
+    if (path.resolve(src) === path.resolve(dst)) return { ok: true, copied: 0, error: null }
+    if (!fs.existsSync(src)) return { ok: true, copied: 0, error: null } // 没有外置数据 = 无需搬
+    const expect = [] // [相对路径, 字节数]，用于搬完逐一校验
+    try {
+      const walk = async (rel) => {
+        const abs = rel ? path.join(src, rel) : src
+        const entries = await fsp.readdir(abs, { withFileTypes: true })
+        for (const ent of entries) {
+          const r = rel ? path.join(rel, ent.name) : ent.name
+          if (ent.isDirectory()) { await walk(r); continue }
+          if (!ent.isFile()) continue
+          const from = path.join(src, r)
+          const to = path.join(dst, r)
+          await fsp.mkdir(path.dirname(to), { recursive: true })
+          await fsp.copyFile(from, to)
+          expect.push([r, (await fsp.stat(from)).size])
+        }
+      }
+      await walk('')
+    } catch (e) {
+      return { ok: false, copied: 0, error: String(e && e.message ? e.message : e) }
+    }
+    // 校验：每份搬过去的文件大小必须与源一致（大小不符 = 截断，宁可中止也不切配置）
+    try {
+      for (const [rel, size] of expect) {
+        const st = await fsp.stat(path.join(dst, rel))
+        if (st.size !== size) {
+          return { ok: false, copied: 0, error: `外置文件校验失败：${rel}（应为 ${size} 字节，实际 ${st.size}）` }
+        }
+      }
+    } catch (e) {
+      return { ok: false, copied: 0, error: '外置文件校验失败：' + String(e && e.message ? e.message : e) }
+    }
+    return { ok: true, copied: expect.length, error: null }
+  }
+
   /** 迁移数据文件到新位置。目标已存在数据文件时「改用那份」（adopted），不覆盖。 */
   ipcMain.handle('store:setDataPath', async (_e, target, text) => {
     try {
@@ -342,15 +431,27 @@ app.whenReady().then(() => {
       if (!p || !path.isAbsolute(p)) return { ok: false, path: null, adopted: false, error: '路径无效' }
       await fsp.mkdir(path.dirname(p), { recursive: true })
       let adopted = false
+      let copied = 0
       try {
         await fsp.access(p)
         adopted = true // 目标已有数据文件 → 通常是另一台设备同步过来的，改用那份
+        // 🔴 接管别人的资料时**不搬外置文件**：两套备份混进同一个 blobs 目录会互相覆盖。
+        //    提示口径由渲染层负责（adopted 已回传），这里只保证不静默混库。
       } catch {
+        // 真正"搬家"：先把外置目录整棵搬过去并校验，成功才动主 JSON 与配置
+        const moved = await copyBlobsAlong(dataFile(), p)
+        if (!moved.ok) {
+          return {
+            ok: false, path: null, adopted: false,
+            error: `历史备份文件没能一起搬过去，已取消迁移（原位置未改动）：${moved.error}`,
+          }
+        }
+        copied = moved.copied
         await writeAtomic(p, String(text ?? ''))
       }
       await fsp.writeFile(locationFile(), JSON.stringify({ path: p }), 'utf-8')
       customDataPath = p
-      return { ok: true, path: p, adopted, error: null }
+      return { ok: true, path: p, adopted, copied, error: null }
     } catch (err) {
       return { ok: false, path: null, adopted: false, error: String(err) }
     }
@@ -361,10 +462,20 @@ app.whenReady().then(() => {
     try {
       const p = path.join(app.getPath('userData'), 'youth-fantasy-engine-data.json')
       let adopted = false
+      let copied = 0
       try {
         await fsp.access(p)
         adopted = true // 默认位置原本就有数据 → 沿用那份
       } catch {
+        // 同上：回迁也要把外置目录带回去，否则「换了位置再换回来」备份就断链
+        const moved = await copyBlobsAlong(dataFile(), p)
+        if (!moved.ok) {
+          return {
+            ok: false, path: null, adopted: false,
+            error: `历史备份文件没能一起搬回去，已取消切换（当前位置未改动）：${moved.error}`,
+          }
+        }
+        copied = moved.copied
         await writeAtomic(p, String(text ?? ''))
       }
       try {
@@ -373,7 +484,7 @@ app.whenReady().then(() => {
         /* 本来就没有自定义配置 */
       }
       customDataPath = null
-      return { ok: true, path: p, adopted, error: null }
+      return { ok: true, path: p, adopted, copied, error: null }
     } catch (err) {
       return { ok: false, path: null, adopted: false, error: String(err) }
     }
@@ -475,7 +586,16 @@ app.whenReady().then(() => {
         return { ok: false, error: '当前 Electron 版本不支持设置代理' }
       }
       const clean = (v, max) => String(v ?? '')
-        .replace(/[^a-zA-Z0-9.\-_:,;=<>\s*]/g, '').slice(0, max)
+        /**
+         * 🔴 3.2.2 · 审计 C4（P2）：白名单里**必须允许 `/`**。
+         *
+         * 原先这里没有 `/`，而下一段校验用的正则要求 `scheme://` ——
+         * 于是界面示例里写的 `http://127.0.0.1:8080` 先被洗成 `http:127.0.0.1:8080`，
+         * 再被 `^(https?|socks5?):\/\/…$` 判为格式错误，而裸 `127.0.0.1:8080` 反而通过。
+         * 作者照着帮助文字填就必错（审计实测：「代理地址格式不正确」，本地偏好却记成已启用）。
+         * 加上 `/` 之后两条正则才自洽；注入面仍由下面那条严格正则兜住（不接受多规则语法）。
+         */
+        .replace(/[^a-zA-Z0-9.\-_:,;=<>\s*/]/g, '').slice(0, max)
       if (!c.enabled) {
         // 🔴 停用必须回到 mode:'system'（跟随系统代理/PAC）而不是 'direct'——
         //    Electron 默认就是 system；推 direct 会把「系统挂了代理」的用户的全部请求
@@ -591,6 +711,17 @@ app.whenReady().then(() => {
 
   ipcMain.handle('net:fetch', async (_e, url, init) => {
     const opts = init || {}
+    /**
+     * 🔴 3.2.2 · 审计 C6（P2）：**超时必须覆盖正文消费**。
+     *
+     * 原实现在 `await fetch()` 返回响应头后就在 finally 里 `clearTimeout` ——
+     * 于是"服务端给了 200 和一点正文然后挂住"这种情况完全没有保护：
+     * 审计实测等到 **33.0 秒**仍未完成，而这里承诺的是 30 秒。
+     * 现在定时器一路留到读完正文（含 `arrayBuffer` 兜底路径）；`netTimedOut` 让 catch
+     * 能把「真的超时」与「底层报个别的错」分开说，不再依赖错误对象的 name（undici 中断时
+     * 未必是 AbortError）。
+     */
+    let netTimedOut = false
     try {
       const target = new URL(String(url))
       if (target.protocol !== 'http:' && target.protocol !== 'https:') {
@@ -604,52 +735,52 @@ app.whenReady().then(() => {
         headers[k] = String(v)
       }
       const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), NET_TIMEOUT_MS)
-      let res
+      const timer = setTimeout(() => { netTimedOut = true; ctrl.abort() }, NET_TIMEOUT_MS)
+      // 🔴 定时器的 finally 包住**整个请求 + 读正文**（不是只包 fetch）
       try {
-        res = await fetch(target.toString(), {
+        const res = await fetch(target.toString(), {
           method,
           headers,
           body: (method === 'GET' || method === 'HEAD') ? undefined : (opts.body == null ? undefined : String(opts.body)),
           redirect: 'follow',
           signal: ctrl.signal,
         })
+        if (res.url && !/^https?:/i.test(res.url)) {
+          return { ok: false, error: '被重定向到非 http(s) 地址，已中止' }
+        }
+        // 流式读并在超限时立刻中止（不要先全读进内存再判大小）
+        const reader = res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null
+        const chunks = []
+        let received = 0
+        if (reader) {
+          for (;;) {
+            const step = await reader.read()
+            if (step.done) break
+            received += step.value.byteLength
+            if (received > NET_MAX_BYTES) {
+              try { await reader.cancel() } catch { /* 忽略 */ }
+              return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+            }
+            chunks.push(Buffer.from(step.value))
+          }
+        } else {
+          const buf = Buffer.from(await res.arrayBuffer())
+          received = buf.byteLength
+          if (received > NET_MAX_BYTES) {
+            return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
+          }
+          chunks.push(buf)
+        }
+        return {
+          ok: true, status: res.status, statusText: res.statusText,
+          text: Buffer.concat(chunks).toString('utf-8'),
+        }
       } finally {
         clearTimeout(timer)
       }
-      if (res.url && !/^https?:/i.test(res.url)) {
-        return { ok: false, error: '被重定向到非 http(s) 地址，已中止' }
-      }
-      // 流式读并在超限时立刻中止（不要先全读进内存再判大小）
-      const reader = res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null
-      const chunks = []
-      let received = 0
-      if (reader) {
-        for (;;) {
-          const step = await reader.read()
-          if (step.done) break
-          received += step.value.byteLength
-          if (received > NET_MAX_BYTES) {
-            try { await reader.cancel() } catch { /* 忽略 */ }
-            return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
-          }
-          chunks.push(Buffer.from(step.value))
-        }
-      } else {
-        const buf = Buffer.from(await res.arrayBuffer())
-        received = buf.byteLength
-        if (received > NET_MAX_BYTES) {
-          return { ok: false, error: '响应超过 ' + Math.round(NET_MAX_BYTES / 1024 / 1024) + 'MB 上限，已中止' }
-        }
-        chunks.push(buf)
-      }
-      return {
-        ok: true, status: res.status, statusText: res.statusText,
-        text: Buffer.concat(chunks).toString('utf-8'),
-      }
     } catch (err) {
-      const msg = err && err.name === 'AbortError'
-        ? '请求超时（' + Math.round(NET_TIMEOUT_MS / 1000) + 's）'
+      const msg = (netTimedOut || (err && err.name === 'AbortError'))
+        ? '请求超时（' + Math.round(NET_TIMEOUT_MS / 1000) + 's，含等待响应正文）'
         : String(err && err.message ? err.message : err)
       return { ok: false, error: msg }
     }

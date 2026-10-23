@@ -203,5 +203,29 @@ await db.saveChapter(chap('c3', 'v2', 0, '第二章 承', '原文二。'.repeat(
   ok('不传 expectedFingerprint 时不做校验（兼容旧调用）', noCheck.words > 0)
 }
 
+// ---------- ⑤ 3.2.2 · 审计 A1（P1）：字数校准必须继承不变量 ----------
+//
+// 现场：整章改写首轮 system 有「历史章冻结」与作者要求，但进入 enforceWordRange 后
+// 全部丢失，且补写指令还写着「情节要实质推进」——同一个历史章任务前后自相矛盾。
+// 审计用原始函数复现：补写返回里新造"城主"，810 字落在 1000±300 内被直接接受。
+{
+  const wSrc = fs.readFileSync('src/lib/editor/wordRange.ts', 'utf8')
+  const rSrc = fs.readFileSync('src/lib/aiTasks/rewrite.ts', 'utf8')
+
+  ok('⑤-a enforceWordRange 接受 invariants', /invariants\?:\s*string/.test(wSrc))
+  ok('⑤-a 补写阶段重申不变量', /本次不变量（优先级\*\*高于\*\*篇幅目标/.test(wSrc))
+  ok('⑤-a 压缩阶段也重申不变量', /本次不变量（优先级\*\*高于\*\*篇幅目标）：[\s\S]{0,200}o\.invariants\.trim\(\)/.test(wSrc))
+  ok('⑤-a 🔴 有冻结约束时不再要求"情节要实质推进"',
+    /o\.invariants\?\.trim\(\)\s*\n?\s*\?\s*'要求：[\s\S]{0,220}不新增剧情事件/.test(wSrc))
+  ok('⑤-a 无约束时保持原措辞（老调用零影响）',
+    /:\s*'要求：[^']*情节要实质推进/.test(wSrc))
+
+  ok('⑤-b 改写侧拼出不变量（含范围纪律）', /const invariants = \[[\s\S]{0,200}scopeRule/.test(rSrc))
+  ok('⑤-b 不变量含作者本次要求', /作者本次要求：\$\{o\.requirement\.trim\(\)\}/.test(rSrc))
+  // 两处调用（续写分支 + 字数校准）都必须带上
+  const passed = (rSrc.match(/invariants,/g) ?? []).length
+  ok('⑤-b 🔴 两个 enforceWordRange 调用点都传了 invariants', passed >= 2, `实际 ${passed} 处`)
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} 共 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)
 if (fail) process.exit(1)

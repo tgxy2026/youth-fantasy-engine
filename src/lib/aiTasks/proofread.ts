@@ -172,6 +172,23 @@ export interface ProofreadResult {
   scanned: number
   /** 因超出块数上限未校对的字符数 */
   skipped: number
+  /**
+   * 🔴 3.2.2 · 审计 A2（P1）：**失败要能和"查过了、没问题"区分开**。
+   *
+   * 现场：隔离端点全部返回 401，界面仍显示「共 0 处 · 已校对 0 字」+ 绿色
+   * 「未发现逻辑矛盾或设定冲突 ✓」+「已完成」通知 —— 一次完全没跑成的校对被报成通过。
+   * 根因是 `runProofread` 把单块异常 `continue` 掉，返回里没有任何失败痕迹。
+   *
+   * 语义：
+   *   · `failedChunks` > 0 ⇒ 有块没校对成功，**不能**说"未发现问题"；
+   *   · `cancelled` ⇒ 用户主动中止，也不是"查过了"；
+   *   · 只有 `scanned > 0 && failedChunks === 0 && !cancelled` 才是真正的"校对完成且无问题"。
+   */
+  failedChunks: number
+  /** 本次一共切了多少块（用于"3/5 块已完成"这类范围说明） */
+  totalChunks: number
+  /** 用户取消（AbortSignal）导致提前结束 */
+  cancelled: boolean
 }
 
 /**
@@ -198,6 +215,9 @@ async function runProofread(
   const seen = new Set<string>()
   let scanned = 0
   let offset = 0
+  // 失败/取消的记账（审计 A2）：没有这两个计数，界面无法区分「查过且没问题」与「根本没跑成」
+  let failedChunks = 0
+  let cancelled = false
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
@@ -227,8 +247,10 @@ async function runProofread(
         { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
       )
     } catch (e) {
-      if (isCancelled(e)) break
-      // 单块失败不整轮报废，继续下一块
+      if (isCancelled(e)) { cancelled = true; break }
+      // 单块失败不整轮报废，继续下一块 —— 但**必须记账**，否则"全部失败"会被上层当成"无问题"
+      failedChunks++
+      console.warn(`[proofread] 第 ${i + 1}/${chunks.length} 块校对失败（已跳过，稍后在结果里如实告知作者）：`, e)
       opts.onProgress?.(i + 1, chunks.length)
       continue
     }
@@ -263,7 +285,7 @@ async function runProofread(
   }
 
   issues.sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
-  return { issues, scanned, skipped }
+  return { issues, scanned, skipped, failedChunks, totalChunks: chunks.length, cancelled }
 }
 
 /**

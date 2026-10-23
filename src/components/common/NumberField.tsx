@@ -36,10 +36,17 @@ interface Props {
   onClamped?: (v: number, dir: 'min' | 'max') => void
   /** 提交完成（失焦/回车）后回调一次 —— 需要"改写就持久化"的场景用它，别在 onChange 里存盘 */
   onCommit?: () => void
+  /**
+   * 可访问名称（3.2.2 · 审计 U2）。
+   * 🔴 `type="number"` 的输入框旁边那行说明文字**不是**它的标签 —— 没有 label/for 关联时，
+   *    读屏软件只念"编辑框 300"，作者根本不知道这是"请求超时"还是"资料预算"。
+   *    视觉上不需要额外文字，所以用 `aria-label`（不占版面）。
+   */
+  ariaLabel?: string
 }
 
 export default function NumberField({
-  value, onChange, min, max, step, precision, disabled, className, title, placeholder, allowEmpty, onClamped, onCommit,
+  value, onChange, min, max, step, precision, disabled, className, title, placeholder, allowEmpty, onClamped, onCommit, ariaLabel,
 }: Props) {
   const textOf = (v: number | undefined) => (v === undefined ? '' : String(v))
   const [text, setText] = useState(textOf(value))
@@ -93,6 +100,7 @@ export default function NumberField({
       {...(max !== undefined ? { max } : {})}
       {...(step !== undefined ? { step } : {})}
       disabled={disabled}
+      {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
       {...(title ? { title } : {})}
       {...(placeholder !== undefined ? { placeholder } : {})}
       onChange={e => onInput(e.target.value)}

@@ -130,5 +130,30 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     /文字层不读设定/.test(read('src/lib/ai/aiWriterBudget.ts')))
 }
 
+// ---------- ⑦ 3.2.2 · 审计 A2（P1）：失败不许装成"未发现问题" ----------
+//
+// 现场：隔离端点全部 401 ⇒ 界面「共 0 处 · 已校对 0 字」+ 绿色「未发现逻辑矛盾 ✓」+「已完成」。
+// 这条链上有三个环节各自都可能"看起来正常"，所以三环都要钉：
+//   ① 执行体必须记账（failedChunks / cancelled / totalChunks）；
+//   ② 界面必须**先判覆盖**再决定要不要说"未发现"；
+//   ③ 全段失败时任务必须降级为 failed（否则任务中心仍弹"已完成"）。
+{
+  const proofreadSrc = read('src/lib/aiTasks/proofread.ts')
+  ok('⑦-a 执行体统计失败分块（failedChunks++）', /failedChunks\+\+/.test(proofreadSrc))
+  ok('⑦-a 取消单独记账（cancelled = true，不再与"查过"混同）', /cancelled\s*=\s*true/.test(proofreadSrc))
+  ok('⑦-a 结果里带总块数（用于"3/5 段已完成"的范围说明）', /totalChunks:\s*chunks\.length/.test(proofreadSrc))
+  ok('⑦-a 单块失败留痕（不许静默 continue）', /console\.warn\(`\[proofread\]/.test(proofreadSrc))
+
+  const modalSrc = read('src/components/editor/EditorModals.tsx')
+  // 关键判据：说"未发现"的那一行必须同时被 failedChunks===0 / scanned>0 / !cancelled 三重守住
+  const notFoundCond = /st\.done && !st\.error && !st\.cancelled && st\.failedChunks === 0 && st\.scanned > 0/.test(modalSrc)
+  ok('⑦-b 🔴「未发现…✓」只在「真校过 + 无失败 + 未取消」时出现', notFoundCond)
+  ok('⑦-b 全部失败时明说"本次未完成校对"', /本次未完成校对/.test(modalSrc))
+  ok('⑦-b 部分失败时给出覆盖范围（N/M 段完成）', /部分已校对/.test(modalSrc))
+  ok('⑦-b 🔴 全段失败 ⇒ 任务降级为 failed（不能再弹"已完成"）',
+    /res\.failedChunks >= res\.totalChunks[\s\S]{0,120}throw new Error/.test(modalSrc))
+  ok('⑦-b 空正文有自己的说法（不冒充"未发现问题"）', /没有可校对的正文/.test(modalSrc))
+}
+
 console.log(`\n—— proofreadSplit 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

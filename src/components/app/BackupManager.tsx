@@ -134,6 +134,13 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       // #012：手动备份用独立类型，不参与自动滚动淘汰（用户主动留档不该被系统删掉）
       await db.createAutoBackup(projectId, 'manual', `手动备份 ${new Date().toLocaleString()}`)
       await load()
+    } catch (e) {
+      /**
+       * 🔴 3.2.2（审计 C1）：载荷写失败现在会**抛出来**（以前只打告警、然后照样登记元数据）。
+       * 这里必须如实告诉作者「这份备份没成」—— 否则列表一刷新看不到新的，
+       * 作者只会以为按钮没反应，而真正的情况是磁盘上没写成。
+       */
+      showToast('备份没有写成：' + (e instanceof Error ? e.message : String(e)) + '（现有备份未受影响）', 'error')
     } finally {
       setBusy(false)
     }
@@ -210,7 +217,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       onImported?.(newPid)
       onClose()
     } catch (err) {
-      showToast('导入失败：' + (err as Error).message, 'error')
+      // 兜底文案：底层异常可能没有 message（WebCrypto 就是空串），不能让冒号后面空着
+      showToast('导入失败：' + ((err as Error)?.message || '未知原因（原数据未改动）'), 'error')
     } finally {
       setBusy(false)
     }
@@ -225,7 +233,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       const bundle = await decryptJSON<db.ProjectBundle>(p.importText, pwd)
       await finishImport(bundle)
     } catch (err) {
-      showToast('导入失败：' + (err as Error).message, 'error')
+      // 兜底文案：底层异常可能没有 message（WebCrypto 就是空串），不能让冒号后面空着
+      showToast('导入失败：' + ((err as Error)?.message || '未知原因（原数据未改动）'), 'error')
       setBusy(false)
     }
   }
@@ -246,7 +255,8 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       }
       await finishImport(JSON.parse(text) as db.ProjectBundle)
     } catch (err) {
-      showToast('导入失败：' + (err as Error).message, 'error')
+      // 兜底文案：底层异常可能没有 message（WebCrypto 就是空串），不能让冒号后面空着
+      showToast('导入失败：' + ((err as Error)?.message || '未知原因（原数据未改动）'), 'error')
       setBusy(false)
     }
   }

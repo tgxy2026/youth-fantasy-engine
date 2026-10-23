@@ -163,6 +163,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
         <label className="text-12 text-ink-300">资料预算基准</label>
         <NumberField
           value={draft}
+          ariaLabel="正文写作资料预算基准（字）"
           min={WRITER_BASE_LIMITS.min}
           max={WRITER_BASE_LIMITS.max}
           step={WRITER_BASE_LIMITS.step}

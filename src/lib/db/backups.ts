@@ -9,15 +9,30 @@ import { exportProject, remapSettingValue, type ProjectBundle, getProject } from
 import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
 import { isDemoProjectName } from '@/lib/constants'
 import { currentSidecarApi } from '@/lib/storage/sidecar'
+// 只借类型：恢复后要把原快照重新指到新章 id（3.2.2 · D3）。运行时不依赖 chapters 模块。
+import type { Snapshot } from '@/lib/db/chapters'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 import {
   splitBundle, mergeShards, applyMediaToBundle, mediaPayloadIdOf, mediaShardForPayload, composeBackupMedia,
   type MediaShard, type MediaLink,
 } from '@/lib/backup/shards'
 
+/**
+ * 写一份备份载荷，**严格**：没真正落盘就抛错。
+ *
+ * 🔴 3.2.2 · 审计 C1（P1）。背景见 `createAutoBackup` 里的长注释 ——
+ *    一句话：载荷写失败还继续登记元数据 = 给作者一份"看起来能恢复"的假备份。
+ *
+ * 走 `putStrict`（外置层实现）；IDB / 内存后端没有这个能力，但它们的 `put` 本身就会抛，
+ * 所以 `?? put` 不会放宽语义。
+ */
+async function putPayloadStrict(payload: BackupPayload): Promise<void> {
+  if (ops.putStrict) { await ops.putStrict('backupPayloads', payload); return }
+  await ops.put('backupPayloads', payload)
+}
+
 // ============ 自动备份（v1.3 备份策略加固） ============
-// 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；
-// 三类：'auto5min'（打开项目时每 5 分钟滚动，最多保留 MAX_AUTO_BACKUPS 份）、
+// 每个项目一份独立「备份夹」（逻辑上按 projectId 归组），删除项目不掉备份；// 三类：'auto5min'（打开项目时每 5 分钟滚动，最多保留 MAX_AUTO_BACKUPS 份）、
 //       'daily'（每天首次打开自动 1 份，最多保留 MAX_DAILY_BACKUPS 份）、
 //       'manual'（用户手动「立即备份」，不设上限 —— 主动留档不该被系统删掉）。
 // #012：每日备份此前不限量，写一年即 365 份全量快照，便携版（单 JSON 全量写盘）会持续膨胀。
@@ -243,7 +258,11 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   }
   // 先写载荷再写元数据：元数据是「列表看得见的东西」，载荷缺失时列表会立刻暴露（而不是留一份空壳）
   // 🔴 mediaLinks 随本次文字快照落盘 ⇒ 每份备份各记各的归属，改归属不会污染别的备份。
-  await ops.put('backupPayloads', {
+  // 🔴 3.2.2（审计 C1 · P1）：载荷写必须**严格**（`putStrict`）——失败就抛，下面一行不会执行。
+  //    原先走 `put`：外置写失败只打一条告警然后正常返回，`await` 顺利过关 ⇒ 照样登记元数据
+  //    ⇒ 列表里多出一份「没有载荷、可点恢复」的假备份，等作者真去恢复才提示"载荷缺失"。
+  //    只加一个 await 或改注释都不解决问题：**登记方必须拿到可判断的成败**。
+  await putPayloadStrict({
     id, projectId, kind: 'text', bundle: textBundle, mediaLinks,
   } satisfies BackupPayload)
   if (mediaId) {
@@ -252,7 +271,7 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
     // 🔴 写进去的媒体片**不带** links（mediaShardForPayload）—— 共用片里存归属表就是 R01 的病根。
     const existing = await ops.get<BackupPayload>('backupPayloads', mediaId)
     if (!existing) {
-      await ops.put('backupPayloads', {
+      await putPayloadStrict({
         id: mediaId, projectId, kind: 'media', media: mediaShardForPayload(shards.media.blobs),
       } satisfies BackupPayload)
     }
@@ -323,7 +342,8 @@ export async function createFrozenVersion(projectId: string, input: FrozenVersio
     ...(note ? { note } : {}),
   }
   // 先写载荷再写元数据（同 createAutoBackup：列表能立刻暴露载荷缺失，而不是留一份空壳）
-  await ops.put('backupPayloads', { id, projectId, bundle } satisfies BackupPayload)
+  // 🔴 同样必须严格（3.2.2 · C1）：冻结版是作者主动留的档，写失败却登记成"已冻结"最伤人。
+  await putPayloadStrict({ id, projectId, bundle } satisfies BackupPayload)
   await ops.put('backups', meta)
   return meta
 }
@@ -586,6 +606,27 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
     const nid = uid()
     chMap.set(c.id, nid)
     await ops.put('chapters', { ...c, id: nid, projectId: targetPid, volumeId: volMap.get(c.volumeId) ?? c.volumeId })
+  }
+  /**
+   * 🔴 3.2.2 · 审计 D3（P2）：**把既有章节快照重新指到新章 id 上**。
+   *
+   * 病根：上面给每章都换了新 id，而快照是**刻意不删的**（见下方「不删快照」那段 —— 它们是
+   * 历史版本，不是本次备份的产物）。不重映射的直接后果：旧快照全指向已经不存在的 chapterId，
+   * 作者点「时光机」看到"暂无历史版本"，而数据其实完好躺在库里。
+   * 审计原话：「记录没删除」不等于「旧稿还能恢复」。
+   *
+   * 口径：
+   *   · 能在本次备份里找到对应章的 ⇒ 就地改指（`chMap` 只含"备份里有的章"，天然安全）；
+   *   · 对应不上的（那章在备份里已被删掉）⇒ **保持原样**，不删也不猜。
+   *     ⚠️ 绝不按章节标题去猜：同名章会串档，那是比"查不到"更糟的错。
+   */
+  {
+    const snaps = await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', targetPid)
+    for (const s of snaps) {
+      const nid = chMap.get(s.chapterId)
+      if (!nid || nid === s.chapterId) continue
+      await ops.put('snapshots', { ...s, chapterId: nid })
+    }
   }
   for (const f of bundle.formData) {
     await ops.put('formData', { tabId: `${targetPid}::${f.tabId}`, data: f.data })

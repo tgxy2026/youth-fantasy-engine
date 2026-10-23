@@ -79,8 +79,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）
     expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
-    // 正文与保存
-    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, todayWords, load,
+    // 正文与保存（diskError/diskPending = 真实落盘状态）
+    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
     highlightHTML, referenced, highlightRef, scheduleHighlightSync,
     // 编辑区 refs 与光标同步
@@ -316,6 +316,9 @@ style={{ zIndex: Z.pageHandle }}
               <input
                 value={active.title}
                 onChange={e => updateMeta({ title: e.target.value })}
+                // 🔴 3.2.2（审计 U2）：这里的标题**视觉上就是输入框本身**，没有 label 可关联 ——
+                //    给读屏软件一个准确名称，否则只念"编辑框"。
+                aria-label="章节标题"
                 className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 min-w-0 hover:!border-ink-600 focus:!border-amber/50 font-serif"
               />
               <select
@@ -661,8 +664,20 @@ style={{ zIndex: Z.pageHandle }}
               <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「只算汉字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
                 <Flame size={10} />今日 {todayWords} 字
               </span>
-              <span className={`flex items-center gap-1 transition-colors ${savedFlash ? 'text-success' : ''}`}>
-                <Save size={10} />{saving ? '保存中…' : savedFlash ? '已保存' : '自动保存已开启'}
+              {/**
+                * 🔴 3.2.2（审计 D4）：**磁盘结论优先**。
+                * 只有真落盘确认（或至少没有错误、没有待写）时才说「已保存」；
+                * 有错就说「未写入磁盘」，还在写就说「正在写入」——
+                * 不许再出现「全局栏说保存出错、这里还说已保存」的两种结论。
+                */}
+              <span
+                className={`flex items-center gap-1 transition-colors ${diskError ? 'text-red-400' : savedFlash ? 'text-success' : ''}`}
+                title={diskError ? `尚未写入磁盘：${diskError}` : undefined}
+              >
+                <Save size={10} />
+                {diskError
+                  ? '未写入磁盘'
+                  : saving ? '保存中…' : diskPending ? '正在写入…' : savedFlash ? '已保存' : '自动保存已开启'}
               </span>
               <div className="flex-1" />
               {/* 「铺满 / 限宽」：只在正文列宽到能看出差别时才出现（窄列下 max-w 不生效 = 点了没反应） */}

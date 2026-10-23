@@ -509,6 +509,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 <div className="flex items-center gap-2">
                   <NumberField
                     value={timeoutSec}
+                    ariaLabel="请求超时（秒）"
                     min={AI_TIMEOUT_MIN_SEC} max={AI_TIMEOUT_MAX_SEC} step={10}
                     className="w-24 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
                     onChange={v => { if (v !== undefined) void changeTimeout(v) }}

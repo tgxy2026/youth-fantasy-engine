@@ -26,8 +26,22 @@ export async function getSubSets(tabId: string): Promise<CardRecord[]> {
 
 /** 新建或更新一个子项（tabId 由本函数统一写，避免调用方传错落到别的表下） */
 export async function saveSubSet(tabId: string, rec: CardRecord): Promise<void> {
-  await ops.put('cardRecords', { ...rec, projectId: currentProjectId, tabId: subTabIdOf(tabId) })
-  touchProject(currentProjectId)
+  await saveSubSetFor(currentProjectId, tabId, rec)
+}
+
+/**
+ * 按**指定项目 id** 存子项（3.2.2 · 审计 C3 同族）。
+ *
+ * 🔴 为什么必须补：`WorldSetSheet` 卸载时会补存草稿，而 `exitProject()` 先把全局
+ *    `currentProjectId` 清成 `''` —— 走上面那个版本会把子世界写进**无项目归属**的记录，
+ *    重开原书时那一层改动消失（与表单草稿同一个病根）。
+ *    凡"要动的不是当前项目 / 时机可能在切换之后"一律用带 `For` 的版本。
+ */
+export async function saveSubSetFor(pid: string, tabId: string, rec: CardRecord): Promise<void> {
+  // ⚠️ 不在这里对空 pid 早退：`saveSubSet` 历史上允许空 pid（worldPack 收集等纯逻辑场景就传 ''），
+  //    凭空加一道静默跳过会改掉既有契约。需要"空就不写"的调用方（组件卸载补存）自己在调用处判。
+  await ops.put('cardRecords', { ...rec, projectId: pid, tabId: subTabIdOf(tabId) })
+  touchProject(pid)
 }
 
 /**

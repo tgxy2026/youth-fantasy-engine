@@ -53,5 +53,57 @@ function ok(name: string, cond: boolean, extra = '') {
   ok('负向控制：整库 normalize 不受影响（stores 原样）', normalizePortableData({ kind: 'portable-data', stores: { a: { x: 1 } } }).stores.a.x === 1)
 }
 
+// ---------- 3.2.2 · 审计 D2：数组形态必须按真实主键重建索引 ----------
+//
+// 🔴 现场：便携端写盘保留的是**记录数组**，桌面端归一化时 `{...rows}` 展开数组
+//    ⇒ 键变成 "0"/"1"，项目列表（Object.values）看得见、按真实 id 查却查不到，
+//    项目永久打不开（审计实测：项目 store 键为 ['0']，按 id 查询失败）。
+{
+  // ① 数组 → 主键（id 型 store）
+  const n1 = normalizePortableData({
+    kind: 'portable-data',
+    stores: { projects: [{ id: 'p1', name: '甲' }, { id: 'p2', name: '乙' }] },
+  })
+  ok('D2 ① 数组按 id 重建键', Object.keys(n1.stores.projects).join(',') === 'p1,p2', JSON.stringify(Object.keys(n1.stores.projects)))
+  ok('D2 ① 按真实 id 能取到记录', (n1.stores.projects.p2 as { name: string }).name === '乙')
+  ok('D2 ① 不再出现数字索引键', !('0' in n1.stores.projects))
+
+  // ② 主键不是 id 的 store（formData.tabId / meta.key / settingsKV.key）
+  const n2 = normalizePortableData({
+    kind: 'portable-data',
+    stores: {
+      formData: [{ tabId: 'p1::positioning', data: {} }],
+      meta: [{ key: 'lastProject', value: 'p1' }],
+      settingsKV: [{ key: 'p1::x', value: 1 }],
+    },
+  })
+  ok('D2 ② formData 取 tabId', 'p1::positioning' in n2.stores.formData)
+  ok('D2 ② meta 取 key', 'lastProject' in n2.stores.meta)
+  ok('D2 ② settingsKV 取 key', 'p1::x' in n2.stores.settingsKV)
+
+  // ③ 已损坏的旧文件（键全是数字索引）也要救回来
+  const n3 = normalizePortableData({
+    kind: 'portable-data',
+    stores: { projects: { 0: { id: 'p1', name: '甲' }, 1: { id: 'p2', name: '乙' } } },
+  })
+  ok('D2 ③ 数字索引键按记录真实 id 修复', Object.keys(n3.stores.projects).join(',') === 'p1,p2', JSON.stringify(Object.keys(n3.stores.projects)))
+
+  // ④ 正常对象形态**不能**被误改（负向控制）
+  const n4 = normalizePortableData({
+    kind: 'portable-data',
+    stores: { projects: { p1: { id: 'p1', name: '甲' } } },
+  })
+  ok('D2 ④ 正常键原样保留', Object.keys(n4.stores.projects).join(',') === 'p1')
+
+  // ⑤ 缺主键的记录不能丢（丢＝静默删数据）
+  const n5 = normalizePortableData({
+    kind: 'portable-data',
+    stores: { chapters: [{ id: 'c1', title: '有主键' }, { title: '没主键' }] },
+  })
+  ok('D2 ⑤ 缺主键记录仍可见（getAll 口径）', Object.values(n5.stores.chapters).length === 2,
+    JSON.stringify(Object.keys(n5.stores.chapters)))
+  ok('D2 ⑤ 有主键的仍按 id 可查', 'c1' in n5.stores.chapters)
+}
+
 console.log(`\ndescribeDataFileReject: ${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1

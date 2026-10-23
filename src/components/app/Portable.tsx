@@ -49,7 +49,16 @@ export function PortableDataBar() {
         const tip = r.strippedSecrets?.length
           ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
           : ''
-        showToast(`已导出全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n这就是本机数据的完整副本：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+        // 🔴 3.2.2（审计 C1）：读不出来的历史备份没进包 ⇒ 不许再说"完整副本"
+        const missing = r.missingSidecar ?? []
+        if (missing.length) {
+          showToast(
+            `已导出可读取的内容（浏览器下载）：\n${r.fileName ?? ''}\n\n⚠️ 有 ${missing.length} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。${tip}`,
+            'error', 12000,
+          )
+        } else {
+          showToast(`已导出全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n本机数据已完整导出（含历史备份）：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+        }
       } else showToast(r.error || '导出失败', 'error')
     } finally {
       setBusy(null)

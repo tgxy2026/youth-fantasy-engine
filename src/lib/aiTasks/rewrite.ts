@@ -147,6 +147,19 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   const fpNote = await activeFingerprintNote()
   const sys = [CHAPTER_REWRITE_BASE, CHAPTER_REWRITE_ACTION_RULES[o.action], scopeRule, ...(fpNote ? [fpNote] : []), deAiGenerateRule('full')].join('\n\n')
 
+  /**
+   * 🔴 3.2.2 · 审计 A1（P1）：**跨阶段不变量**。
+   *
+   * 首轮 system 里有历史章冻结纪律与作者要求，但字数偏短/偏长进入 `enforceWordRange()`
+   * 时它们**一个字都没带下去** ⇒ 同一个历史章任务前半程"一律冻结"、后半程"情节要实质推进"，
+   * 字数合格掩盖了设定越界（审计实测：补写里新造"城主"，810 字落在区间内被接受）。
+   * 这里把两者拼成一份原文，随每次补写/压缩重申；篇幅目标明确排在它之后。
+   */
+  const invariants = [
+    scopeRule,
+    o.requirement.trim() ? `作者本次要求：${o.requirement.trim()}` : '',
+  ].filter(Boolean).join('\n')
+
   // ── 🔴 续写：原文由**我们自己保留**，模型只吐"新增片段" ──
   //    「原文一字不动」靠提示词是**做不到**的（模型总会顺手把原段润色一遍）；
   //    所以走结构上保证的路径 —— 直接复用 `enforceWordRange` 的增量补写循环
@@ -161,6 +174,8 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       // 🔴 补写到**区间下界**为止，别按正中补：续写不能压缩（原文一字不动），
       //    按正中补一旦补多就永远超上限（实测目标 3500 补到了 3968）。
       fillTarget: Math.max(inWords, target - WORD_TOLERANCE),
+      // 🔴 审计 A1：续写补字同样重申冻结纪律（原文由我们保留，但新写的部分必须守同一套事实）
+      invariants,
       ...(o.signal ? { signal: o.signal } : {}),
       ...(o.onToken ? { onToken: o.onToken } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
@@ -213,6 +228,8 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
     out = await enforceWordRange({
       // ⚠️ 同上：不传 `sys`（补写要用"只吐新增片段"的提示词，不用整章改写那套）
       cfg, body: out, target: o.targetWords,
+      // 🔴 审计 A1：**校准阶段继续沿用同一份不变量** —— 这正是原实现丢掉的那一段
+      invariants,
       ...(o.signal ? { signal: o.signal } : {}),
       ...(o.onLog ? { onLog: o.onLog } : {}),
       ...(o.request ? { request: o.request } : {}),

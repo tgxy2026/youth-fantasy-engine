@@ -128,6 +128,8 @@ export default function WorldSetSheet({ tab }: Props) {
   const draftRef = useRef(draft)
   const selRef = useRef(sel)
   const subsRef = useRef(subs)
+  /** 本面板属于哪个项目 —— 挂载时绑定（换项目会因 App 的 key 整体重挂，见 FormSheet 同名说明） */
+  const pidRef = useRef(db.getCurrentProjectId())
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
   useEffect(() => { draftRef.current = draft }, [draft])
   useEffect(() => { selRef.current = sel }, [sel])
@@ -136,10 +138,14 @@ export default function WorldSetSheet({ tab }: Props) {
     if (!dirtyRef.current) return
     const d = draftRef.current
     const cur = selRef.current
-    if (cur === MAIN) void db.saveFormData(tab.id, d)
+    // 🔴 3.2.2（审计 C3 同族）：卸载补存必须带**挂载时绑定的项目 id**。
+    //    `exitProject()` 会先把全局 currentProjectId 清成 ''，此刻再让存储层去读全局，
+    //    写进去的就是无归属记录 —— 重开原书这层改动会消失。
+    if (!pidRef.current) return
+    if (cur === MAIN) void db.saveFormDataFor(pidRef.current, tab.id, d)
     else {
       const sub = subsRef.current.find(s => s.id === cur)
-      if (sub) void db.saveSubSet(tab.id, { ...sub, data: d })
+      if (sub) void db.saveSubSetFor(pidRef.current, tab.id, { ...sub, data: d })
     }
   }, [tab.id])
 
@@ -162,13 +168,15 @@ export default function WorldSetSheet({ tab }: Props) {
   /** 把当前层的草稿落库（切层 / 点保存 / 卸载前都走它） */
   const flush = useCallback(async (silent = false) => {
     if (!dirty) return
+    // 没有绑定到项目（异常状态）就不落库 —— 写进无归属记录等于制造脏数据
+    if (!pidRef.current) return
     setSaving(true)
     try {
       if (isMain) {
-        await db.saveFormData(tab.id, draft)
+        await db.saveFormDataFor(pidRef.current, tab.id, draft)
         setMain(draft)
       } else if (selSub) {
-        await db.saveSubSet(tab.id, { ...selSub, data: draft })
+        await db.saveSubSetFor(pidRef.current, tab.id, { ...selSub, data: draft })
         setSubs(prev => prev.map(s => (s.id === sel ? { ...s, data: draft } : s)))
       }
       setDirty(false)

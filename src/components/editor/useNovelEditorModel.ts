@@ -42,6 +42,8 @@ import { readSetPref, writeSetPref, readStringPref, writeStringPref, usePersiste
 import { DEFAULT_INDENT_UNIT, INDENT_UNIT_IDS, type IndentUnit } from '@/lib/editor/indent'
 import { aiChapterSummary } from '@/lib/ai/aiTasks'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
+import { DESKTOP, getDesktopState, subscribeDesktop } from '@/lib/app/desktop'
+import { getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { autoIndexChapter, chapterFingerprint } from '@/lib/semantic/indexer'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
@@ -100,6 +102,31 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overKey, setOverKey] = useState<null | { kind: 'vol' | 'ch'; id: string; pos: 'before' | 'after' }>(null)
   const [savedFlash, setSavedFlash] = useState(false)
+  /**
+   * 🔴 3.2.2 · 审计 D4（P2）：底部状态栏**不能只看"内存提交成功"就说「已保存」**。
+   *
+   * 现场：把数据文件设为只读后，全局存储栏显示「保存出错」（EPERM），而正文底部仍亮着绿色
+   * 「已保存」—— 同一个界面两种结论，作者不知道信哪个。根因是这两处读的不是同一个事实：
+   * `savedFlash` 只代表「已交给存储层（内存/IDB）」，真正落盘是之后的防抖写。
+   * ⇒ 这里订阅**真实落盘状态**：有错就压过「已保存」，还在写就显示「正在写入」。
+   */
+  const [diskError, setDiskError] = useState('')
+  const [diskPending, setDiskPending] = useState(false)
+  useEffect(() => {
+    const sync = () => {
+      if (DESKTOP) {
+        const s = getDesktopState()
+        setDiskError(s.lastError || (s.writeLocked ? s.writeLockReason : ''))
+        setDiskPending(s.dirty || s.saving)
+      } else {
+        const s = getPortableState()
+        setDiskError(s.lastError || (s.writeLocked ? s.writeLockReason : ''))
+        setDiskPending(s.dirty || s.saving)
+      }
+    }
+    sync()
+    return DESKTOP ? subscribeDesktop(sync) : subscribePortable(sync)
+  }, [])
   const [focusMode, setFocusMode] = useState(false)
   /**
    * 设定检索栏显隐（编辑器右上「面板」按钮）。
@@ -1076,8 +1103,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）；setExpanded 已是持久化包装（签名兼容 Dispatch）
     expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
-    // 正文与保存
-    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, todayWords, load,
+    // 正文与保存（diskError/diskPending = 真实落盘状态，见 savedFlash 附近的说明）
+    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
     highlightHTML, referenced, highlightRef, scheduleHighlightSync,
     // 编辑区 refs 与光标同步

@@ -450,8 +450,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   <GenrePackSelect value={form.genre} onChange={g => setForm(f => ({ ...f, genre: g }))} className="w-full" />
                 </div>
                 <div className="flex-1">
-                  <label className="text-11 text-ink-400 mb-1 block">书名 *</label>
+                  <label htmlFor="create-project-name" className="text-11 text-ink-400 mb-1 block">书名 *</label>
                   <input
+                    id="create-project-name"
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) create() }}
@@ -533,8 +534,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         onChange={e => { const f = e.target.files?.[0]; if (f) pickEditCover(f); e.target.value = '' }}
                       />
                       <div className="min-w-0 flex-1">
-                        <label className="text-11 text-ink-400 mb-1 block">书名 *</label>
+                        {/* 🔴 3.2.2（审计 U2）：看得见 ≠ 有名称 —— label 必须用 htmlFor 真正关联到输入框 */}
+                        <label htmlFor="edit-project-name" className="text-11 text-ink-400 mb-1 block">书名 *</label>
                         <input
+                          id="edit-project-name"
                           value={editForm.name}
                           onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveEdit() }}

@@ -5,7 +5,7 @@
 //    便携版不能」这类**双端不一致** —— 正是本项目最忌讳的同构被打破，且极难排查。
 import type { StoreOps } from '../src/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '../src/lib/storage/sidecar'
-import { withSidecar, extractSidecarRows, isSidecarStore, SIDECAR_WHOLE_KEY } from '../src/lib/storage/sidecar'
+import { withSidecar, extractSidecarRows, isSidecarStore, SIDECAR_WHOLE_KEY, collectSidecarForExport, registerSidecarApi } from '../src/lib/storage/sidecar'
 
 let pass = 0
 let fail = 0
@@ -205,6 +205,75 @@ const SPEC_WHOLE: SidecarSpec = { vecRows: { layout: 'whole', keyField: 'id' } }
   ok('⑤ 数字 id 与字符串 id 视为同一个',
     orphanPayloadIdsOf([1, 2] as unknown as string[], ['1']).length === 1)
   ok('⑤ 入参容忍 null（防御外部数据）', orphanPayloadIdsOf(null as unknown as string[], null as unknown as string[]).length === 0)
+}
+
+// ============ ③ 严格写 + 导出完整性（3.2.2 · 审计 C1 · P1）============
+//
+// 🔴 现场两条：
+//   · 假备份：外置写失败只告警然后正常返回 ⇒ `createAutoBackup` 的 await 过关 ⇒ 照样登记元数据
+//     ⇒ 列表里多一份"没有载荷、可点恢复"的备份。
+//   · 假完整：2 份历史备份里坏 1 份 ⇒ 整批读取中断 ⇒ 整个 store 被省略 ⇒ 两份都没带走，
+//     界面还写"这就是完整副本"。
+//   修法：备份载荷走 putStrict（失败即抛）；导出逐条收集并把缺失项回传。
+class FlakyApi extends MemApi {
+  failRead = new Set<string>()
+  async read(store: string, id: string): Promise<unknown | undefined> {
+    if (this.failRead.has(`${store}/${id}`)) throw new Error('模拟：这份外置文件损坏')
+    return super.read(store, id)
+  }
+}
+
+{
+  const api = new MemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_PER_ID, (m) => errs.push(m))
+
+  // putStrict：落盘失败必须抛（调用方才能据此**不登记**元数据）
+  api.failNextWrite = true
+  let threw = false
+  try { await ops.putStrict('backupPayloads', { id: 'x1' }) } catch { threw = true }
+  ok('③ putStrict 落盘失败会抛错', threw)
+  ok('③ putStrict 失败时告警出口仍记一条', errs.length === 1, JSON.stringify(errs))
+
+  // 与普通 put 的差异必须保留（普通 put 不抛 = StoreOps 契约不变）
+  api.failNextWrite = true
+  let putThrew = false
+  try { await ops.put('backupPayloads', { id: 'x2' }) } catch { putThrew = true }
+  ok('③ 普通 put 仍然不抛（不影响其它业务）', !putThrew)
+
+  // putStrict 成功路径
+  await ops.putStrict('backupPayloads', { id: 'x3' })
+  ok('③ putStrict 成功时真落盘', api.files.has('backupPayloads/x3'))
+
+  // 主键缺失也必须抛（无法定位 = 等于没写）
+  let noKeyThrew = false
+  try { await ops.putStrict('backupPayloads', { bytes: 1 }) } catch { noKeyThrew = true }
+  ok('③ putStrict 主键缺失会抛错', noKeyThrew)
+}
+
+{
+  // 导出：一份坏、一份好 ⇒ 好的必须带走，坏的必须被列出来
+  const api = new FlakyApi()
+  const base = new MemBase()
+  const ops = withSidecar(base, api, SPEC_PER_ID)
+  await ops.put('backupPayloads', { id: 'good1', kind: 'text' })
+  await ops.put('backupPayloads', { id: 'good2', kind: 'text' })
+  await ops.put('backupPayloads', { id: 'bad', kind: 'text' })
+  api.failRead.add('backupPayloads/bad')
+  registerSidecarApi(api)
+
+  const r = await collectSidecarForExport(ops, SPEC_PER_ID)
+  const got = (r.data['backupPayloads'] ?? []).map((x) => (x as { id: string }).id).sort()
+  ok('③ 导出：好的两份仍然带走', JSON.stringify(got) === '["good1","good2"]', JSON.stringify(got))
+  ok('③ 导出：坏的那份记进缺失清单', r.issues.length === 1 && r.issues[0].id === 'bad', JSON.stringify(r.issues))
+  ok('③ 导出：有缺失 ⇒ complete=false（界面据此不能说"完整副本"）', r.complete === false)
+
+  // 全好时必须是 complete
+  api.failRead.clear()
+  const r2 = await collectSidecarForExport(ops, SPEC_PER_ID)
+  ok('③ 导出：全部可读 ⇒ complete=true', r2.complete === true && r2.issues.length === 0)
+  ok('③ 导出：三条全带走', (r2.data['backupPayloads'] ?? []).length === 3)
+  registerSidecarApi(null)
 }
 
 console.log(`\nsidecar: ${pass} passed, ${fail} failed`)
