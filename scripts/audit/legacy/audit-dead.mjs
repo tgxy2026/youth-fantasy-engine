@@ -169,6 +169,23 @@ const KEEP = {
   //    linkCheckToCandidate / rollbackMigration / useFieldAliases / loadPendingFieldKeys /
   //    moveFieldToGroup / canSemanticRead / isRecordSlot / atlasHasValue / serializeCustomValue）
   //    **故意不进本表** —— 它们该做的是"接入口"，进了白名单就等于给"该做没做"发免责条款。
+  // 📌 2026-10-24（3.2.2 审计复核）：上面"另外 10 个故意不进本表"这句**本轮部分修订**。
+  //    逐条回源码核过后，其中 3 个的结论不是"该接"而是"**不该接**"——继续留在候选里
+  //    只会变成永久误报（每轮人工重判一次，最后必然被当成噪音无视）。判据与证据见
+  //    docs/3.2.2-零引用符号重判-2026-10-23.md。剩下 6 条仍留在候选：它们是真的"该接没接"。
+  'src/lib/templates/draftOps.ts:moveFieldToGroup':
+    '“模板编辑里把字段换分组”是**尚未实现的新交互**，不是"实现完了没接线"：函数体只是纯数据变换，' +
+    '缺的是拖拽/选分组界面本身。与 promptText、VolumeRange 同一类（预留 API）⇒ 不是接线缺口。' +
+    '留它回候选清单的唯一后果是每轮都要重判一次',
+  'src/lib/templates/semanticSlots.ts:isRecordSlot':
+    '“记录级槽位读取时先于扩展槽位”这条规则**已由 tableDigest.preferKeys 实现**（tableRender 传 ' +
+    'preferKeys 先保名称列），该谓词因此没有天然调用点；且列投影（TableFieldProjection）里不带槽位信息，' +
+    '要接就得把映射链一路传进渲染层 —— 那是链路改造，不是补一行。属"已被替代"而非"该接未接"',
+  'src/lib/atlas/schema.ts:atlasHasValue':
+    '与详情页现用的 `atlasDisplayValue().length > 0` **不可互换**：前者判"解析后的值是否为空"，' +
+    '后者判"显示串是否为空"，在自定义类型/格式化之后两者可以给出不同结论。换成它会改变详情页的' +
+    '显示与折叠判定 ⇒ 那不是补接线，是改行为（源码注释已写明这处差异）',
+
   'src/lib/revision/revisionTypes.ts:TaskRunState':
     '契约类型：jobTypes.ts 的注释（第 7、20 行）明确拿它做「同名但不同层」的对照说明；' +
     '零运行时开销，删了那段注释会指向空气',
