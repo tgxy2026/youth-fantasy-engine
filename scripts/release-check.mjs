@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * 发版检查（只读，不写任何文件）· 3.2.1 T-07
+ * 发版检查（不修改源码和发布产物；临时 schema 探针写入 .workbuddy/tmp）· 3.2.1 T-07
  *
  * 定位：把发版前「靠人肉核对」的那几项变成可复核的机器输出。
  * 🔴 三条纪律：
- *   ① **只读**：不删不改任何文件（包括 dist / release）；
+ *   ① 不删改源码、dist / release；只在 tmp 生成用于精确统计页签的临时探针；
  *   ② **不把外链不可访问判为构建失败** —— 离线、墙、临时故障都会误报，联网检查只在 `--net` 下跑且只记 INFO；
  *   ③ **不伪造绿灯**：取不到值就写 INFO「未取到」，FAIL 必须是明确的不一致或越界。
  *
@@ -12,6 +12,7 @@
  *   node scripts/release-check.mjs           # 常规（不联网）
  *   node scripts/release-check.mjs --net     # 附带外链可达性探测（只记 INFO）
  *   node scripts/release-check.mjs --json    # 机器可读输出
+ *   node scripts/release-check.mjs --source-only --dist <目录> # 封装前源码准备检查；不代表正式产物就绪
  *
  * 退出码：存在 FAIL ⇒ 1；否则 0。
  */
@@ -20,21 +21,24 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import artifactChecks from './release-artifacts.cjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const NET = process.argv.includes('--net')
 const JSON_OUT = process.argv.includes('--json')
+const SOURCE_ONLY = process.argv.includes('--source-only')
+const distIndex = process.argv.indexOf('--dist')
+if (distIndex >= 0 && (!process.argv[distIndex + 1] || process.argv[distIndex + 1].startsWith('--'))) {
+  console.error('--dist 需要提供构建目录'); process.exit(2)
+}
 
 /** 阈值（都可复核：改这里要写理由） */
 const LIMIT = {
-  portableZipMiB: 50,     // 便携包体积提醒线（历史 6.3 → 2.5 MiB）
-  setupExeMiB: 100,       // Gitee 附件上限（红线）
   mainBundleKB: 700,      // Vite 提示线（已知限制，非阻断 ⇒ 只 WARN）
 }
 
 const rows = []
 const add = (level, item, detail) => rows.push({ level, item, detail })
-const MiB = (n) => (n / 1024 / 1024).toFixed(2) + ' MiB'
 const KiB = (n) => (n / 1024).toFixed(2) + ' kB'
 const read = (p) => { try { return fs.readFileSync(p, 'utf8') } catch { return null } }
 const exists = (p) => { try { fs.accessSync(p); return true } catch { return false } }
@@ -56,13 +60,12 @@ function run(cmd, args, timeout = 15000) {
 const pkg = JSON.parse(read(path.join(ROOT, 'package.json')) || '{}')
 const version = pkg.version || null
 add(version ? 'OK' : 'FAIL', '版本 · package.json', version ?? '未取到')
+for (const row of artifactChecks.checkLockVersion(version, JSON.parse(read(path.join(ROOT, 'package-lock.json')) || '{}'))) rows.push(row)
 
 const relDir = path.join(ROOT, 'release')
-const relFiles = exists(relDir) ? fs.readdirSync(relDir).filter((f) => !fs.statSync(path.join(relDir, f)).isDirectory()) : []
-const relVersions = [...new Set(relFiles.map((f) => (f.match(/(\d+\.\d+\.\d+)/) || [])[1]).filter(Boolean))]
-if (relVersions.length === 0) add('INFO', '版本 · release 产物', '未找到带版本号的产物（未封装属正常）')
-else if (relVersions.length > 1) add('FAIL', '版本 · release 产物', `存在多个版本：${relVersions.join(' / ')}（应只留当前版本）`)
-else add(relVersions[0] === version ? 'OK' : 'FAIL', '版本 · release 产物', `产物 ${relVersions[0]} vs package.json ${version}`)
+const artifacts = artifactChecks.checkArtifacts(relDir, version, { sourceOnly: SOURCE_ONLY })
+rows.push(...artifacts.rows)
+if (SOURCE_ONLY) add('INFO', '检查阶段', '仅检查源码准备；未验收正式安装包/便携包，不能据此宣布可发布')
 
 // ==================== 2. 页签与板块（README 声明 vs 源码真源） ====================
 //
@@ -116,27 +119,15 @@ if (groupTotal !== null && declaredGroups !== null) {
 }
 
 // ==================== 3. 产物体积 ====================
-for (const f of relFiles) {
-  const p = path.join(relDir, f)
-  const size = fs.statSync(p).size
-  const mib = size / 1024 / 1024
-  if (/\.zip$/i.test(f)) add(mib > LIMIT.portableZipMiB ? 'WARN' : 'OK', `体积 · ${f}`, `${MiB(size)}（提醒线 ${LIMIT.portableZipMiB} MiB）`)
-  else if (/\.exe$/i.test(f)) add(mib > LIMIT.setupExeMiB ? 'FAIL' : 'OK', `体积 · ${f}`, `${MiB(size)}（Gitee 附件上限 ${LIMIT.setupExeMiB} MiB）`)
-}
-const setupDir = path.join(relDir, '桌面安装版')
-if (exists(setupDir)) {
-  for (const f of fs.readdirSync(setupDir).filter((x) => /\.exe$/i.test(x))) {
-    const size = fs.statSync(path.join(setupDir, f)).size
-    add(size / 1024 / 1024 > LIMIT.setupExeMiB ? 'FAIL' : 'OK', `体积 · 桌面安装版/${f}`, `${MiB(size)}（上限 ${LIMIT.setupExeMiB} MiB）`)
-  }
-}
-
-const distDir = path.join(ROOT, 'dist')
-if (!exists(distDir)) add('INFO', '构建产物 · dist', '未构建（发版前需 vite build）')
+const distDir = distIndex >= 0 ? path.resolve(ROOT, process.argv[distIndex + 1]) : path.join(ROOT, 'dist')
+add('INFO', '构建目录', path.relative(ROOT, distDir))
+if (!exists(distDir)) add('FAIL', '构建产物 · dist', '构建目录不存在，须先生成前端生产构建')
 else {
+  const indexHtml = path.join(distDir, 'index.html')
+  add(exists(indexHtml) && fs.statSync(indexHtml).size > 0 ? 'OK' : 'FAIL', '构建产物 · 入口', 'index.html 必须存在且非空')
   const assets = path.join(distDir, 'assets')
   const js = exists(assets) ? fs.readdirSync(assets).filter((f) => /^index-.*\.js$/.test(f)) : []
-  if (js.length === 0) add('INFO', '构建产物 · 主包', 'dist/assets 下未找到 index-*.js')
+  if (js.length === 0) add('FAIL', '构建产物 · 主包', 'dist/assets 下未找到 index-*.js')
   else {
     const p = path.join(assets, js[0])
     const buf = fs.readFileSync(p)
@@ -229,11 +220,11 @@ const warn = count('WARN')
 const verdict = fail ? 'FAIL' : warn ? 'PASS_WITH_WARNINGS' : 'PASS'
 
 if (JSON_OUT) {
-  console.log(JSON.stringify({ version, tabTotal, verdict, fail, warn, rows }, null, 2))
+  console.log(JSON.stringify({ stage: SOURCE_ONLY ? 'source' : 'artifacts', artifactsReady: artifacts.ready, version, tabTotal, verdict, fail, warn, rows }, null, 2))
 } else {
-  console.log('=== 发版检查（只读）===')
+  console.log(`=== ${SOURCE_ONLY ? '源码准备检查（正式产物另验）' : '发版产物检查'} ===`)
   for (const r of rows) console.log(`[${r.level.padEnd(4)}] ${r.item} :: ${r.detail}`)
   console.log(`\nFAIL ${fail} ／ WARN ${warn} ／ OK ${count('OK')} ／ INFO ${count('INFO')}`)
-  console.log(`RELEASE_CHECK: ${verdict}`)
+  console.log(`${SOURCE_ONLY ? 'SOURCE_CHECK' : 'RELEASE_CHECK'}: ${verdict}`)
 }
 process.exit(fail ? 1 : 0)

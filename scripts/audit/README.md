@@ -1,5 +1,23 @@
 # 审计工具与历史入口
 
+## 3.2.2 发布前与窗口适配探针
+
+在仓库根目录依次运行（需要本机 Node、Playwright、Edge 与 Electron）：
+
+```powershell
+node scripts/audit/probes/workspace-layout-probe.cjs
+node scripts/audit/probes/tablet-interaction-probe.cjs
+node scripts/audit/probes/sidebar-layout-probe.cjs
+node scripts/audit/probes/revision-reliability-probe.cjs
+node node_modules/vite/bin/vite.js build --outDir .workbuddy/tmp/pre-release-3.2.2/build
+node scripts/audit/probes/pre-release-runtime-probe.cjs
+node scripts/release-check.mjs --source-only --dist .workbuddy/tmp/pre-release-3.2.2/build
+```
+
+布局探针检查全部可见项目页签和 7 组窗口/缩放组合，实际操作探针使用带触摸标记的独立浏览器上下文。侧栏和修订探针使用隔离的 Electron userData/appData；生产探针使用本次构建、真实便携服务、临时文件和本机假模型。原生文件窗口的返回值替换、迁移锁注入等边界在各脚本中明确标注。
+
+结果与截图保留在各次新建的 `.workbuddy/tmp/` 目录；开发探针各用独立缓存，建议依次执行以减少资源竞争。不得用源码阶段通过代替安装包验收；不带 `--source-only` 的发布检查会要求本版两个便携包和一个安装包，旧包不能充当本版产物。记录见 `docs/3.2.2-发布前检查与待办-2026-10-23.md` 与 `docs/3.2.2-窗口适配验收-2026-10-23.md`。
+
 ## 三端兼容专项（2026-10-18新增）
 
 ```powershell
