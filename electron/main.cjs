@@ -15,6 +15,8 @@ const { assertSyncPath } = require('./syncPath.cjs')
 const { webdavRequest, s3Request } = require('./remoteSync.cjs')
 // 3.1.2 · 应用图标（桌面快捷方式）切换内核：内置三套预设图标 → 解包到 userData → 改写 .lnk
 const appIcon = require('./appIcon.cjs')
+// 3.2.2 · 审计 C2：换数据位置时把外置目录（blobs）一起搬走的内核（可被单测直接验）
+const blobMove = require('./blobMove.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 // 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
@@ -382,46 +384,11 @@ app.whenReady().then(() => {
    *    点恢复却说"载荷缺失" —— 真正的外置文件还躺在旧目录。审计实测就是这条。
    *    ⇒ 资料集 = 主文件 + 外置文件，迁移必须**先搬齐、再校验、最后才切配置**。
    *
-   * ⚠️ 不用 `fs.cpSync`：本项目实测它会连带杀进程（见 MEMORY 环境坑），改为手工递归。
-   * @returns `{ ok, copied, error }`；`ok:false` 时**绝不切配置**，原位置一律保持可用。
+   * 🔴 内核已抽到 `electron/blobMove.cjs`（2026-10-23）：埋在 main.cjs 里没法单测，
+   *    要跑它就得起整个 Electron。抽出去后可用真实临时目录直接验「复制 / 校验 / 失败不切」。
    */
   async function copyBlobsAlong(oldFile, newFile) {
-    const src = path.join(path.dirname(oldFile), 'blobs')
-    const dst = path.join(path.dirname(newFile), 'blobs')
-    if (path.resolve(src) === path.resolve(dst)) return { ok: true, copied: 0, error: null }
-    if (!fs.existsSync(src)) return { ok: true, copied: 0, error: null } // 没有外置数据 = 无需搬
-    const expect = [] // [相对路径, 字节数]，用于搬完逐一校验
-    try {
-      const walk = async (rel) => {
-        const abs = rel ? path.join(src, rel) : src
-        const entries = await fsp.readdir(abs, { withFileTypes: true })
-        for (const ent of entries) {
-          const r = rel ? path.join(rel, ent.name) : ent.name
-          if (ent.isDirectory()) { await walk(r); continue }
-          if (!ent.isFile()) continue
-          const from = path.join(src, r)
-          const to = path.join(dst, r)
-          await fsp.mkdir(path.dirname(to), { recursive: true })
-          await fsp.copyFile(from, to)
-          expect.push([r, (await fsp.stat(from)).size])
-        }
-      }
-      await walk('')
-    } catch (e) {
-      return { ok: false, copied: 0, error: String(e && e.message ? e.message : e) }
-    }
-    // 校验：每份搬过去的文件大小必须与源一致（大小不符 = 截断，宁可中止也不切配置）
-    try {
-      for (const [rel, size] of expect) {
-        const st = await fsp.stat(path.join(dst, rel))
-        if (st.size !== size) {
-          return { ok: false, copied: 0, error: `外置文件校验失败：${rel}（应为 ${size} 字节，实际 ${st.size}）` }
-        }
-      }
-    } catch (e) {
-      return { ok: false, copied: 0, error: '外置文件校验失败：' + String(e && e.message ? e.message : e) }
-    }
-    return { ok: true, copied: expect.length, error: null }
+    return blobMove.copyBlobsAlong(oldFile, newFile)
   }
 
   /** 迁移数据文件到新位置。目标已存在数据文件时「改用那份」（adopted），不覆盖。 */

@@ -6,6 +6,8 @@
 import type { StoreOps } from '../src/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '../src/lib/storage/sidecar'
 import { withSidecar, extractSidecarRows, isSidecarStore, SIDECAR_WHOLE_KEY, collectSidecarForExport, registerSidecarApi } from '../src/lib/storage/sidecar'
+// ③-b 只读源码做契约守卫（生产适配器在 app/desktop.ts，跑真身要起 Electron）
+import { readFileSync } from 'node:fs'
 
 let pass = 0
 let fail = 0
@@ -274,6 +276,19 @@ class FlakyApi extends MemApi {
   ok('③ 导出：全部可读 ⇒ complete=true', r2.complete === true && r2.issues.length === 0)
   ok('③ 导出：三条全带走', (r2.data['backupPayloads'] ?? []).length === 3)
   registerSidecarApi(null)
+
+  /**
+   * 🔴 ③-b 生产适配器的两态必须分开（`app/desktop.ts` 的 `ipcSidecarApi`）：
+   *    · `missing:true` ⇒ 返回 undefined（还没写过这份 ＝ 正常）
+   *    · `ok:false`    ⇒ **必须 throw**（文件坏了 ≠ 不存在）
+   *    若把后者也当 undefined，损坏的备份会被"静默跳过"，`complete` 永远是 true ——
+   *    界面就又会说"完整导出"，正是审计 C1 那条假完整。
+   */
+  const desktopSrc = readFileSync('src/lib/app/desktop.ts', 'utf8')
+  const apiBlock = /const ipcSidecarApi[\s\S]*?\n\}/.exec(desktopSrc)?.[0] ?? ''
+  ok('③-b 缺文件（missing）走 undefined，不算错误', /if \(r\.missing\) return undefined/.test(apiBlock))
+  ok('🔴 ③-b 读失败（!r.ok）必须抛，不许当"不存在"', /if \(!r\.ok\) throw new Error/.test(apiBlock))
+  ok('③-b 列目录失败同样抛（否则整批被当成空）', /payloadList[\s\S]{0,120}throw new Error/.test(apiBlock))
 }
 
 console.log(`\nsidecar: ${pass} passed, ${fail} failed`)
