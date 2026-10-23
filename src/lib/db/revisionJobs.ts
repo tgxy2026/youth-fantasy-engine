@@ -5,6 +5,8 @@
 //    但载荷（revisionPayloads）是**本地专属**，不参与云盘同步。
 import type { RevisionJob, RevisionPayload, RevisionJobStatus } from '@/lib/revision/jobTypes'
 import { ops } from '@/lib/db/core'
+import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/app/desktop'
+import { PORTABLE, flushPortable, getPortableState } from '@/lib/storage/fileBackend'
 
 // ============ 修订任务元数据（revisionJobs store） ============
 // 小元数据留主库，按项目索引。
@@ -53,7 +55,17 @@ export async function getRevisionPayload(id: string): Promise<RevisionPayload | 
 export async function saveRevisionPayload(payload: RevisionPayload): Promise<void> {
   // 🔴 严格写盘：写入成功并回读摘要一致后才发布元数据引用
   // 调用方应先写载荷、再写元数据；本函数不负责回读校验（由调用方按 §9.2 执行）
-  await ops.put('revisionPayloads', payload)
+  if (ops.putStrict) await ops.putStrict('revisionPayloads', payload)
+  else await ops.put('revisionPayloads', payload)
+  // 文件后端 put 只更新内存；意图/回执必须等真正写盘，才能允许下一步替换正文或报告成功。
+  if (DESKTOP || PORTABLE) {
+    const state = DESKTOP ? getDesktopState : getPortableState
+    const flush = DESKTOP ? flushDesktop : flushPortable
+    const deadline = Date.now() + 10000
+    // 防抖保存可能已经在途：先等它结束，再提交包含本次状态的新快照。
+    while (state().saving && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20))
+    if (state().saving || !await flush()) throw new Error('修订产物未能写入数据文件，请检查保存状态后重试')
+  }
 }
 
 /**

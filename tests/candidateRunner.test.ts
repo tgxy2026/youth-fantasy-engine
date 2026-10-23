@@ -12,6 +12,7 @@ import * as db from '@/lib/db'
 import { runApplyCandidate, jobForCandidate, chapterBodyOf } from '@/lib/revision/candidateRunner'
 import { saveCandidate, loadCandidate, listProjectCandidates } from '@/lib/revision/candidateStore'
 import { setCurrentProject } from '@/lib/db/core'
+import { __setFlushDesktopResult } from './mock-desktop'
 import type { RevisionCandidate } from '@/lib/revision/revisionCandidate'
 import { hashOf } from '@/lib/semantic/chunk'
 
@@ -179,6 +180,21 @@ async function main() {
         .every(c => tsx.includes(`'${c}':`) || tsx.includes(`${c}:`)))
     ok('⑨ 明确告知「应用前会先比对正文」', /先比对正文/.test(tsx))
     ok('⑨ 组件挂在「创作轨迹」页', /CandidatePanel/.test(readFileSync('src/components/audit/TrajectoryPanel.tsx', 'utf8')))
+  }
+
+  // ---------- 十、文件后端只接受内存写入不等于正文可以被替换 ----------
+  __resetMockStores()
+  await seedChapter(CH_ID, BEFORE)
+  {
+    const c = mk({ id: 'persist-failed' })
+    await saveCandidate(c)
+    __setFlushDesktopResult(false)
+    try {
+      const r = await runApplyCandidate(c)
+      ok('⑩ 意图写盘返回失败 ⇒ 应用被拒绝', !r.ok && r.code === 'write-failed')
+      ok('⑩ 写盘失败时正文完全保留', await chapterBodyOf(CH_ID) === BEFORE)
+      ok('⑩ 没有标记为已应用', (await loadCandidate(c.id))?.status !== 'applied')
+    } finally { __setFlushDesktopResult(true) }
   }
 
   console.log(`\n———— candidateRunner：${pass} 通过 / ${fail} 失败 ————`)

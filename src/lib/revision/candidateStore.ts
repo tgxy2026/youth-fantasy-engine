@@ -186,10 +186,11 @@ export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidate
 
   await saveRevisionPayload(payload)
 
-  // 严格写盘：回读比对正文摘要（只比正文，元数据是本地生成的小对象）
+  // 同一候选更新 intent / receipt 时正文不变；仅比较正文会把旧状态回读误判为保存成功。
   const back = await getRevisionPayload(c.id)
-  if (!back || typeof back.candidateText !== 'string' || hashOf(back.candidateText) !== hashOf(c.text)) {
-    return { ok: false, code: 'readback-mismatch', detail: '候选写入后回读与写入内容不一致（可能磁盘写满）' }
+  if (!back || typeof back.candidateText !== 'string' || hashOf(back.candidateText) !== hashOf(c.text)
+    || back.beforeText !== payload.beforeText || JSON.stringify(back.report) !== JSON.stringify(payload.report)) {
+    return { ok: false, code: 'readback-mismatch', detail: '候选写入后回读与正文或应用状态不一致（可能磁盘写满）' }
   }
   return { ok: true, bytes: payload.bytes }
 }

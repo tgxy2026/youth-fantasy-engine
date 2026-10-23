@@ -100,7 +100,10 @@ export async function runApplyCandidate(
     },
     // 🔴 真的**再读一次**（不是复用内存变量）：回读不一致正是要抓的故障
     readBack: () => chapterBodyOf(chapterId),
-    persist: (c: RevisionCandidate) => saveCandidate(c).then(() => undefined),
+    persist: async (c: RevisionCandidate) => {
+      const saved = await saveCandidate(c)
+      if (!saved.ok) throw new Error(saved.detail)
+    },
     // 同章其它候选：应用成功后要标 stale（不是 discarded —— 作者没看过它们）
     siblings,
   }
@@ -112,7 +115,7 @@ export async function runApplyCandidate(
   if (out.ok) {
     for (const c of out.invalidated) {
       const r = await saveCandidate(c).catch(() => null)
-      if (r) invalidatedSaved++
+      if (r?.ok) invalidatedSaved++
     }
     // 实体保留自检（旁路）：正文已落库、回执已写，这里只是给作者多一句参考
     try {

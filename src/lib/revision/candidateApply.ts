@@ -113,7 +113,11 @@ export async function applyCandidate(
       if (!done.ok || !done.candidate || !done.receipt) {
         return { ok: false, code: 'needs-reconcile', detail: done.error ?? '补回执失败', candidate }
       }
-      await deps.persist(done.candidate)
+      try {
+        await deps.persist(done.candidate)
+      } catch (e) {
+        return { ok: false, code: 'needs-reconcile', detail: `正文已是候选内容，但应用回执未保存：${errText(e)}`, candidate }
+      }
       return {
         ok: true,
         candidate: done.candidate,
@@ -159,7 +163,12 @@ async function doWrite(
   }
 
   // ② 先把 intent 落盘 —— 崩溃后能靠它判断"写到哪了"
-  await deps.persist(prepared.candidate).catch(() => undefined)
+  try {
+    await deps.persist(prepared.candidate)
+  } catch (e) {
+    // 没有可靠的 intent，崩溃后就无法核对这次替换；此时正文必须保持原样。
+    return { ok: false, code: 'write-failed', detail: `提交意图未保存，尚未替换正文：${errText(e)}`, candidate }
+  }
 
   // ③ 严格写盘：写入值必须与回读值一致（否则等于没写成）
   const expect = candidate.text
@@ -188,7 +197,12 @@ async function doWrite(
     // 极端情形：写成功但回执构造失败 ⇒ 如实报"需核对"，下次进来会走"补回执"分支
     return { ok: false, code: 'needs-reconcile', detail: done.error ?? '回执构造失败', candidate: prepared.candidate }
   }
-  await deps.persist(done.candidate)
+  try {
+    await deps.persist(done.candidate)
+  } catch (e) {
+    // 正文已写，仍返回带 intent 的 applying 状态；重试走补回执分支，不重写正文。
+    return { ok: false, code: 'needs-reconcile', detail: `正文已写入，但应用回执未保存：${errText(e)}`, candidate: prepared.candidate }
+  }
   return {
     ok: true,
     candidate: done.candidate,

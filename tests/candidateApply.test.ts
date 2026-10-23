@@ -197,6 +197,41 @@ async function main() {
     ok('⑨ 原因写明细纲', !r.ok && r.detail.includes('细纲'), !r.ok ? r.detail : '')
   }
 
+  // ---------- ⑩ 提交意图保存失败时，正文必须完全不动 ----------
+  {
+    const t = mkDeps({ body: BEFORE })
+    t.deps.persist = async () => { throw new Error('候选载荷写盘失败') }
+    let r
+    try { r = await applyCandidate(mkJob(digest(BEFORE)), mkCandidate(), t.deps) }
+    catch { /* 不能吞意图失败后继续改正文，也不能只抛最后一次写回执的错误 */ }
+    ok('⑩ 意图未落盘 ⇒ 明确返回写入失败', r?.ok === false && r.code === 'write-failed')
+    ok('⑩ 没有恢复依据时绝不开始替换正文', t.writes() === 0 && t.disk.body === BEFORE)
+    ok('⑩ 失败仍返回原候选，可在恢复存储后重试', r?.ok === false && r.candidate.status === 'pending')
+  }
+
+  // ---------- ⑪ 正文已写但回执失败：保留 applying，重试只补回执 ----------
+  {
+    const t = mkDeps({ body: BEFORE })
+    const persist = t.deps.persist
+    t.deps.persist = async c => {
+      if (c.status === 'applied') throw new Error('回执写盘失败')
+      await persist(c)
+    }
+    let result
+    try { result = await applyCandidate(mkJob(digest(BEFORE)), mkCandidate(), t.deps) }
+    catch { /* 下方断言要求返回明确的恢复状态，不能只抛异常 */ }
+    ok('⑪ 回执失败返回需核对状态', result?.ok === false && result.code === 'needs-reconcile')
+    ok('⑪ 已写正文保留且 intent 仍在', t.disk.body === AFTER && t.persisted.at(-1)?.status === 'applying')
+    if (result && !result.ok) {
+      const stillFailed = await applyCandidate(mkJob(digest(BEFORE)), result.candidate, t.deps)
+      ok('⑪ 恢复时回执仍写不成也如实返回需核对', !stillFailed.ok && stillFailed.code === 'needs-reconcile')
+      ok('⑪ 重复回执失败不会重复替换正文', t.writes() === 1)
+      t.deps.persist = persist
+      const resumed = await applyCandidate(mkJob(digest(BEFORE)), result.candidate, t.deps)
+      ok('⑪ 重试只补回执，不重复替换正文', resumed.ok && resumed.resumed && t.writes() === 1)
+    }
+  }
+
   console.log(`\n———— candidateApply：${pass} 通过 / ${fail} 失败 ————`)
   if (fail > 0) process.exit(1)
 }

@@ -5,7 +5,7 @@
 //   ② **不猜**：报告载荷 / 缺元数据的载荷不会被当成候选读出来（否则界面会显示不存在的候选）；
 //   ③ 单份 > 256 KiB **拒绝不截断**（截断的候选等于废稿）；
 //   ④ 配额：单项目 200 份、总量 32 MiB，超限明确报错。
-import { __resetMockStores } from './mock-memory'
+import { __resetMockStores, memoryOps } from './mock-memory'
 import {
   saveCandidate, loadCandidate, listJobCandidates, listApplicableCandidates, deleteCandidate,
   candidateToPayload, payloadToCandidate,
@@ -131,6 +131,22 @@ async function main() {
     await deleteCandidate('del-1')
     ok('⑥ 删除后读不到（不是残留空壳）', (await loadCandidate('del-1')) === null)
     ok('⑥ 删除不抛（幂等）', await deleteCandidate('del-1').then(() => true, () => false))
+  }
+
+  // ---------- ⑦ 正文相同但提交状态没存进去，也必须判回读失败 ----------
+  __resetMockStores()
+  {
+    const c = mk({ id: 'old-state' })
+    await saveCandidate(c)
+    const put = memoryOps.put
+    memoryOps.put = async (store, value) => {
+      if (store !== 'revisionPayloads') await put(store, value)
+    }
+    try {
+      const r = await saveCandidate({ ...c, status: 'applying', updatedAt: c.updatedAt + 1 })
+      ok('⑦ 正文相同但状态仍是旧值 ⇒ 不报告保存成功', !r.ok && r.code === 'readback-mismatch')
+      ok('⑦ 旧候选仍可找回', (await loadCandidate(c.id))?.status === 'pending')
+    } finally { memoryOps.put = put }
   }
 
   console.log(`\n———— candidateStore：${pass} 通过 / ${fail} 失败 ————`)

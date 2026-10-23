@@ -39,9 +39,9 @@ function failureText(code: string, detail: string): string {
   const hint: Record<string, string> = {
     state: '这份候选当前状态不允许应用，请重新生成。',
     stale: '这一章在你产出后又被改动过 —— 直接替换会覆盖你的编辑，已停止。请重新生成改写结果。',
-    'write-failed': '写盘失败，正文没有被改动。可以重试一次；仍失败请检查磁盘与项目状态。',
+    'write-failed': '未能确认写入成功，已停止。请检查磁盘与项目状态，并核对当前正文后重试。',
     'readback-mismatch': '写下去和读回来的内容不一致，已停止（绝不当作成功）。请重试，或重启后回来核对。',
-    'needs-reconcile': '上次可能中断过，且正文既不是改前也不是改后 —— 需要你人工确认后再处理。',
+    'needs-reconcile': '应用过程尚未完成核对，请先查看当前正文，再重试或人工处理。',
   }
   return hint[code] ? `${hint[code]}（${detail}）` : detail
 }
