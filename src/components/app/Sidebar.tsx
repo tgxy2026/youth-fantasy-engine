@@ -4,13 +4,13 @@ import BrandMark from '@/components/common/BrandMark'
 import HelpPopover from '@/components/common/HelpPopover'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import NumberField from '@/components/common/NumberField'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { GROUPS, TABS, EDITOR_TAB, tabVisible, getVolumeTabs, getVolumeLedgerTabId, getVolumeIdFromLedgerTab, refreshVolumeTabs, type VisCtx } from '@/lib/schema'
 import type { TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { nextVolumeNo, nextVolumeOrder, isFreeVolume } from '@/lib/outline/freeVolume'
-import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme } from '@/lib/settings/theme'
+import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme, foldVh } from '@/lib/settings/theme'
 import { DESKTOP, HAS_WINDOW_BRIDGE, toggleFullscreen } from '@/lib/app/desktop'
 import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
@@ -43,6 +43,9 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
 }
 
 interface Props {
+  /** 窄窗口的导航抽屉使用父容器宽度，不沿用桌面拖拽宽度。 */
+  overlay?: boolean
+  focusTools?: boolean
   activeTab: string
   onNavigate: (id: string) => void
   collapsed: boolean
@@ -53,7 +56,7 @@ interface Props {
   ctx: VisCtx
 }
 
-export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx }: Props) {
+export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false }: Props) {
   // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
   //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
   //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
@@ -67,6 +70,14 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   //   ⚠️ 键与项目管理页的 `DataDock` **共用**（`dock-collapsed`）—— 两者是同一个「左下角工具栏」
   //   在"有侧栏 / 无侧栏"两种形态下的呈现，共用一个记忆才符合直觉（在哪页收起，换页也是收起的）。
   const [footerCollapsed, setFooterCollapsed] = usePersistedBool('dock-collapsed', false)
+  const [appearanceOpen, setAppearanceOpen] = usePersistedBool('sidebar-appearance-open', false)
+  const toolsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!focusTools) return
+    setFooterCollapsed(false)
+    const frame = requestAnimationFrame(() => toolsRef.current?.scrollIntoView({ block: 'end' }))
+    return () => cancelAnimationFrame(frame)
+  }, [focusTools, setFooterCollapsed])
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())
   const [zoom, setZoom] = useState(getStoredZoom())
@@ -151,16 +162,16 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
 
   return (
     <aside
-      className="relative h-full flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0"
-      style={{ width: sidebar.size, minWidth: sidebar.size }}
+      className={`relative h-full min-h-0 flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0 ${overlay ? 'overflow-y-auto' : ''}`}
+      style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 200 }}
     >
       {/* 拖拽调整侧栏宽度 */}
-      <div
+      {!overlay && <div
         onMouseDown={sidebar.onDragStart}
         className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
 style={{ zIndex: Z.pageBase }}
         title="拖拽调整侧栏宽度"
-      />
+      />}
       {/* Logo */}
       <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
@@ -180,20 +191,20 @@ style={{ zIndex: Z.pageBase }}
           <div className="flex gap-1 mt-2">
             <Button onClick={onExitProject}
               
-              title="返回项目列表" variant="secondary" size="md" className="flex-1 flex items-center justify-center rounded">
-              <ArrowLeft size={10} /> 切换项目
+              title="返回项目列表" variant="secondary" size="xs" className="min-w-0 flex-1 !gap-1 !whitespace-nowrap rounded">
+              <ArrowLeft size={10} className="shrink-0" /> 切换项目
             </Button>
             <Button onClick={onExport}
               
-              title="导出当前项目 JSON 备份" variant="secondary" size="md" className="flex-1 flex items-center justify-center rounded">
-              <Upload size={10} /> 备份
+              title="导出当前项目 JSON 备份" variant="secondary" size="xs" className="min-w-0 flex-1 !gap-1 !whitespace-nowrap rounded">
+              <Upload size={10} className="shrink-0" /> 备份
             </Button>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+      <nav className={`min-h-0 py-2 px-2 space-y-0.5 ${overlay ? 'shrink-0' : 'flex-1 overflow-y-auto'}`}>
         {GROUPS.map(group => {
           const isOpen = !collapsedGroups.has(group)
           const tabs = group === '正文写作'
@@ -289,9 +300,9 @@ style={{ zIndex: Z.pageBase }}
       </nav>
 
       {/* Footer */}
-      {/* 🔴 收起态整体固定 h-10（border-box 含 border-t 自身 1px）——露出的上边框与编辑器状态条 /
-          检索栏底条三条横线对齐（2.5.2 UI 修复）；展开态高度由内容撑，不用管 */}
-      <div className={`border-t border-ink-700 shrink-0 flex flex-col ${footerCollapsed ? 'h-10' : ''}`}>
+      {/* 高度按侧栏自身限制，随界面缩放一起变化；展开的设置在内部滚动，给菜单保留空间。 */}
+      <div className={`min-h-0 border-t border-ink-700 shrink-0 flex flex-col ${footerCollapsed ? 'h-10' : ''}`}
+        style={{ maxHeight: overlay ? undefined : 'min(45%, max(2.5rem, calc(100% - 18rem)))' }}>
         {/* 🔴 B6（2026-09-22 老大新增）：左下角工具栏折叠把手。
             收起后内容高度归零，上方页签区（`nav.flex-1`）自动吃掉释放的空间 —— 即"菜单栏自然延伸"。
             把手带 title / aria-label / aria-expanded，键盘与读屏可达。 */}
@@ -301,24 +312,31 @@ style={{ zIndex: Z.pageBase }}
           title={footerCollapsed ? '展开左下角工具栏（主题 / 界面缩放 / 存储 / 云盘文件同步）' : '收起左下角工具栏（收起后菜单区变高）'}
           aria-label={footerCollapsed ? '展开左下角工具栏' : '收起左下角工具栏'}
           aria-expanded={!footerCollapsed}
-          className={`w-full flex items-center justify-center text-ink-500 hover:text-amber hover:bg-ink-800/40 transition-colors ${
-            footerCollapsed ? 'flex-1' : 'py-1'
+          className={`w-full shrink-0 flex items-center justify-between gap-2 px-3 text-11 text-ink-400 hover:text-amber hover:bg-ink-800/40 transition-colors ${
+            footerCollapsed ? 'flex-1' : 'h-8'
           }`}
         >
+          <span>界面与数据</span>
           {footerCollapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
         </button>
-        {/* 内容层：收起用 max-height 归零 —— 🔴 不写死 vh（<html> 的 zoom 变化时 vh 不随动，项目红线） */}
-        <div className={`px-4 space-y-2.5 overflow-hidden transition-[max-height,opacity] duration-200 ${
-          footerCollapsed ? 'max-h-0 opacity-0' : 'max-h-[30rem] opacity-100 pb-3'
-        }`}>
+        {/* 保持组件挂载以订阅保存/后台任务状态；收起时不留下可被键盘聚焦的隐藏控件。 */}
+        <div ref={toolsRef} data-sidebar-tools className={`min-h-0 space-y-2 px-3 pb-2 ${overlay ? '' : 'overflow-y-auto overscroll-contain'} ${footerCollapsed ? 'hidden' : ''}`}>
         {/* 后台任务（2.6.3 · 跨页签任务存活）：有任务才渲染，无任务时整节不占位。
             🔴 内嵌进这块既有工具栏，**不新开浮层**（项目红线：左下角只准一个浮层）。 */}
         <TaskIndicator onNavigate={onNavigate} activeTab={activeTab} />
-        {/* 主题切换 */}
-        <div>
+        {/* 低频外观设置按需展开，主题/字体/全屏不再常驻堆在缩放周围。 */}
+        <section className="rounded-lg border border-ink-700 bg-ink-800/30">
+          <Button variant="bare" onClick={() => setAppearanceOpen(!appearanceOpen)}
+            aria-label={appearanceOpen ? '收起外观设置' : '展开外观设置'} aria-expanded={appearanceOpen}
+            className="flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-11 text-ink-300 hover:text-amber">
+            <Palette size={12} className="shrink-0" />
+            <span>外观设置</span>
+            <span className="ml-auto truncate text-ink-500">{THEMES.find(t => t.id === theme)?.name}</span>
+            <ChevronDown size={11} className={`shrink-0 transition-transform ${appearanceOpen ? 'rotate-180' : ''}`} />
+          </Button>
+          <div className={`space-y-2 px-2 pb-2 ${appearanceOpen ? '' : 'hidden'}`}>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Palette size={11} />
-            <span>主题</span>
+            <span className="text-11 text-ink-400">主题与字体</span>
             {/* 字体设置入口（2026-09-28 · 社区需求）：正文编辑器 + 界面全站两口 */}
             <Button
               variant="ghost" iconOnly size="xs" type="button"
@@ -340,11 +358,12 @@ style={{ zIndex: Z.pageBase }}
               <SlidersHorizontal size={11} />
             </Button>
           </div>
-          {/* 允许换行：主题增至 10 套（九预制 + 自定义）后单行会挤压色块，侧栏偏窄时自动折行 */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="grid grid-cols-5 justify-items-center gap-2">
             {THEMES.map(t => (
               <Button variant="bare"
                 key={t.id}
+                aria-label={`${t.name}主题`}
+                aria-pressed={theme === t.id}
                 title={t.id === 'custom'
                   ? `${t.name}（${t.desc}）—— 点这里${getStoredCustomTheme() ? '切换，旁边的滑杆图标可调整参数' : '开始配置'}`
                   : `${t.name}（${t.desc}）`}
@@ -358,15 +377,13 @@ style={{ zIndex: Z.pageBase }}
               />
             ))}
           </div>
-        </div>
+          <AppearanceToggles />
+          </div>
+        </section>
 
-        {/* 界面缩放
-            🔴 2026-10-09：这行原先 `flex items-center gap-2` + 只有「自动」带 shrink-0，
-            而「界面缩放」标签默认可压缩 ⇒ 侧栏内容区只有 192px、这行需求约 210px，
-            多出来的 18px **全由标签承担** ⇒ 被压成一个字宽、「界面缩放」竖排。
-            改成允许折行 + 标签不可压缩：折行后第一行是「标签 + 自动」，第二行是右侧那组，
-            两组都完整。 */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
+        {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
           <span className="flex shrink-0 items-center gap-1">界面缩放
             <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
               {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
@@ -376,11 +393,12 @@ style={{ zIndex: Z.pageBase }}
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
-          <div className="flex items-center gap-1 ml-auto">
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} className="p-0.5" title="缩小界面">
+          </div>
+          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面">
               <ZoomOut size={12} />
             </Button>
-            <span className="flex items-center gap-0.5">
+            <span className="flex min-w-0 items-center justify-center gap-1">
               {/* U-1 · 2.6.0：改走 NumberField（允许自由输入、提交时钳到 80~160），替换手写 type=number + blur 提交 */}
               {/* 🔴 3.0 修复（2026-10-10）：此处原先的类名**大半是无效的** —— index.css 里那条全局
                   `input, textarea, select` 规则**不在 @layer 内**，而未分层样式优先于 Tailwind 的
@@ -393,19 +411,17 @@ style={{ zIndex: Z.pageBase }}
                 onChange={(v) => { if (typeof v === 'number') { setZoom(applyZoom(v, { manual: true })); setZoomAuto(false) } }}
                 min={80}
                 max={160}
+                ariaLabel="界面缩放百分比"
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
                 className="h-6 w-12 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
               />
               <span className="text-ink-400 text-xs">%</span>
             </span>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} className="p-0.5" title="放大界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面">
               <ZoomIn size={12} />
             </Button>
           </div>
         </div>
-        {/* 真·全屏（2.5.1 · B2）+ 内置背景开关（2.6.1）：同一行两组，填满版面。
-            🔴 只有全屏组受 HAS_WINDOW_BRIDGE 门控——背景任何窗口形态都该可关（实机浏览器验证踩过） */}
-        <AppearanceToggles />
         {/* 本机存储：数据文件保存 / 导出 / 导入。
             内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。
             便携版改用浏览器等价实现（导出=下载 / 导入=选文件 / 路径可复制）—— 2026-10-10 便携版 WP-2b */}
@@ -433,9 +449,8 @@ style={{ zIndex: Z.pageBase }}
 }
 
 /**
- * 外观开关行（2.6.1）：全屏 + 内置背景，两组同排。
- * —— 主人哥哥的要求：全屏开关紧跟「全屏」两字和问号（不再甩到行尾），后边并排一个背景开关，
- *    把中间的空白填上。背景组不受 HAS_WINDOW_BRIDGE 门控（任何形态的窗口都有背景可关）。
+ * 外观开关：全屏与背景各占一行，保证 200px 侧栏与大比例缩放时不互相挤压。
+ * 背景组不受 HAS_WINDOW_BRIDGE 门控（任何形态的窗口都有背景可关）。
  * 背景图 = 金色书本与房子的线条图案（assets/workbench-bg.png），App / 首页 / 向导三处共用同一偏好键。
  */
 function AppearanceToggles() {
@@ -450,9 +465,9 @@ function AppearanceToggles() {
     return () => { alive = false; unsub?.() }
   }, [])
   return (
-    <div className="flex items-center gap-2">
-      {HAS_WINDOW_BRIDGE && (<>
-        <span className="flex items-center gap-1"><Maximize2 size={11} />全屏
+    <div className="space-y-1.5 text-11 text-ink-300">
+      {HAS_WINDOW_BRIDGE && (<div className="flex items-center justify-between gap-2">
+        <span className="flex shrink-0 items-center gap-1"><Maximize2 size={11} />全屏
           <HelpPopover title="全屏模式" width="20rem" size={11}>
             {'进入无边框全屏，再按 F11 或 ESC 退出（ESC 仅在全屏时生效，不影响弹窗关闭）。\n\n· 旁边的开关与实际状态实时同步 —— 直接按 F11 它也会跟着变；\n· 启动时不会自动进入全屏，仍是常规的最大化窗口；\n· 该设置不跨启动记忆，重启后恢复普通窗口。'}
           </HelpPopover>
@@ -462,8 +477,9 @@ function AppearanceToggles() {
           title={on ? '退出全屏（F11 / ESC）' : '进入无边框全屏（F11）'}>
           {on ? '已开' : '关'}
         </Button>
-      </>)}
-      <span className={`${HAS_WINDOW_BRIDGE ? 'ml-auto' : ''} flex items-center gap-1`}><ImageIcon size={11} />背景
+      </div>)}
+      <div className="flex items-center justify-between gap-2">
+      <span className="flex shrink-0 items-center gap-1"><ImageIcon size={11} />背景
         <HelpPopover title="内置背景" width="20rem" size={11}>
           {'界面底层的金色书本与房子线条图案。关掉后只留主题底色，界面更素净、对截屏和低配设备更友好；随时可以再打开。\n\n· 三处一起生效：工作区、项目管理首页、新手向导；\n· 该设置跨启动记忆。'}
         </HelpPopover>
@@ -473,6 +489,7 @@ function AppearanceToggles() {
         title={bgHidden ? '显示内置背景图案' : '隐藏内置背景图案'}>
         {!bgHidden ? '显示中' : '已隐藏'}
       </Button>
+      </div>
     </div>
   )
 }

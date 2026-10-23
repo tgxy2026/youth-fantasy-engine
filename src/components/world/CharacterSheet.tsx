@@ -928,9 +928,9 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                            于是立绘跑到**左侧**去了；
                         ② 尺寸 144px → 256 / 288px（xl），文本框同时收窄（见下方 max-w）。
                       其余模块（外貌 / 性格…）字段可长可短，一栏到底更合适，不动。 */}
-                  <div className={isBasicMod ? 'flex items-stretch' : ''}>
+                  <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
-                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-0 flex flex-col justify-center' : ''}`}>
+                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-center' : ''}`}>
                     {group.fields.map(field => {
                       const key = field.key
                       const val = draft.data[key] ?? ''
@@ -941,7 +941,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                           : undefined
                       return (
                         <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
-                          isBasicMod ? 'grid-cols-[104px_1fr]' : 'grid-cols-[140px_1fr]'
+                          isBasicMod ? 'grid-cols-1 @min-[28rem]/workspace:grid-cols-[104px_minmax(0,1fr)]' : 'grid-cols-1 @min-[40rem]/workspace:grid-cols-[140px_minmax(0,1fr)]'
                         }`}>
                           <div>
                             <div

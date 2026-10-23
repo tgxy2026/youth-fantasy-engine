@@ -66,6 +66,9 @@ interface Props {
   guideBuilder?: (tab: TabDef) => string
 }
 
+// 缺省列也必须保持引用稳定，否则 prepared 每次渲染重算、默认勾选 effect 会循环更新。
+const EMPTY_EXTRA_COLUMNS: NonNullable<Props['extraColumns']> = []
+
 /**
  * 表格批量导入弹窗（2.6.4 起；2.7.0 加「AI 智能拆分」）。
  *
@@ -82,7 +85,7 @@ interface Props {
  *   2. **不擅自替作者决定**：AI 拆出来的行与本地解析的行走**同一套校验与预览**，
  *      重复 / 缺必填 / 悬空都标出来，勾不勾、导不导由作者定。
  */
-export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, extraColumns = [], fieldTypes, onCreateFields, onAdd, onClose, guideBuilder }: Props) {
+export default function TableImportDialog({ tab, existing, calendars = [], visCtx = { type: 'full', features: [] }, extraColumns = EMPTY_EXTRA_COLUMNS, fieldTypes, onCreateFields, onAdd, onClose, guideBuilder }: Props) {
   const [raw, setRaw] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)

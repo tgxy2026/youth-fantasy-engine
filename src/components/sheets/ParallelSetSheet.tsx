@@ -354,7 +354,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   return (
     // 🔴 2026-10-17：根容器锁高 + 恒双栏独立滚动 —— 与 WorldSetSheet / MasterDetail 同范式
     //    （主人 3.1.2 要求主从双栏全局一致：左栏条目自滚、右栏表单自滚，页头按钮常驻）。
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-master="parallel" className="page-enter flex h-full flex-col overflow-hidden">
       <header className="mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>

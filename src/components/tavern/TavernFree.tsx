@@ -120,7 +120,7 @@ export default function TavernFree() {
   if (loading) return <div className="page-enter"><LoadingState /></div>
 
   return (
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
       <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
@@ -212,7 +212,7 @@ export default function TavernFree() {
           新用户就永远看不到「可以用「」指挥 Ta」这条。这里常驻可见。 */}
       <TavernEchoHints className="mt-3 shrink-0" />
 
-      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+      <div data-conversation-layout className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左栏：会话列表（全局，跨角色 —— 页面不再有角色列表） */}
         <TavernFreeSessionList model={model} />
 

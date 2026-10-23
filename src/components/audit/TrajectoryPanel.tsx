@@ -208,7 +208,7 @@ export default function TrajectoryPanel() {
     // 🔴 2026-10-17：根容器锁高 + 恒双栏独立滚动 —— 与 MasterDetail（角色卡 / 大纲卡）同范式
     //    （主人 3.1.2 要求主从双栏全局一致）。顶部总览 / AI 占比 shrink-0 常驻，
     //    章节列表与轨迹详情各自滚；窄窗并排挤一挤，不堆叠（堆叠必压瘪一栏）。
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-master="trajectory" className="page-enter flex h-full flex-col overflow-hidden">
       {/* 3.0 · W1-1：AI 运行账本（只读留痕） */}
       {ledgerOpen && <RunLedgerPanel onClose={() => setLedgerOpen(false)} />}
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}

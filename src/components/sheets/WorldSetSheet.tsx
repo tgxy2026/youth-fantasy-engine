@@ -301,7 +301,7 @@ export default function WorldSetSheet({ tab }: Props) {
     //    与角色卡 / 大纲卡 / 酒馆各页签统一为「两栏各自独立滚动」（主人 3.1.2 要求全局一致，
     //    不能再有的页签改了有的没改）。此前是 `w-full` 跟页滚：右栏表单被整页拖着滚，
     //    左栏层目录滚出视野后想切层得先滚回顶部。
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-master="world" className="page-enter flex h-full flex-col overflow-hidden">
       <header className="mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>

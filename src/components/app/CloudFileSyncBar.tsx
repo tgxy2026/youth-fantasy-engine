@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Cloud, FolderOpen, LogOut, History, Server, HardDrive, AlertTriangle } from 'lucide-react'
+import { Cloud, FolderOpen, LogOut, History, Server, HardDrive, AlertTriangle, ChevronDown } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import HelpPopover from '@/components/common/HelpPopover'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
@@ -43,6 +43,7 @@ const rowBtn =
  */
 export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'panel' | 'sidebar' }) {
   const [busy, setBusy] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   // 冲突告知：冲突副本由 db/core.ts 的 saveConflictCopy 落到**当前平台本地存储**的 meta
   // （key 以 syncConflict: 开头，受 isExcludedMetaKey 保护、永不上云）。
@@ -223,7 +224,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   }
 
   const headCls = inSidebar
-    ? 'flex items-center gap-1.5 pt-1 text-12 text-ink-300'
+    ? 'flex min-w-0 flex-wrap items-center gap-1.5 pt-1 text-11 text-ink-300'
     : 'flex items-center gap-1.5 text-xs text-ink-300'
 
   return (
@@ -231,13 +232,21 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       {/* 标题行 */}
       <div className={headCls}>
         <Cloud size={13} className="text-info/90" />
-        <span className="font-medium">云盘文件同步</span>
+        {inSidebar ? (
+          <Button variant="bare" onClick={() => setDetailsOpen(!detailsOpen)}
+            aria-label={detailsOpen ? '收起云盘文件同步设置' : '展开云盘文件同步设置'} aria-expanded={detailsOpen}
+            className="flex min-w-0 items-center gap-1 py-1 font-medium hover:text-amber">
+            <span>云盘文件同步</span>
+            <ChevronDown size={11} className={`shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
+          </Button>
+        ) : <span className="font-medium">云盘文件同步</span>}
         {connected && (
           <span className="ml-auto flex items-center gap-1.5 text-11 text-ink-300">
             <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
             {meta.text || '待命'}
           </span>
         )}
+        {inSidebar && !connected && <span className="ml-auto text-10 text-ink-500">未开启</span>}
         <SyncConflictCenter compact />
         <HelpPopover title="云盘文件同步说明" side="right" width="24rem">
           {`支持三档同步方式，本软件全程不经过自建服务器：
@@ -260,6 +269,18 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
         </HelpPopover>
       </div>
 
+      {/* 同步故障始终可见，不随配置区域收起。 */}
+      {connected && syncGracePassed && !active && (
+        <div role="alert"
+          title="启动时没能接上同步目标，当前改动只写在本机，未上云。"
+          className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber/40 bg-amber/10 px-2 py-1.5 text-11 text-amber">
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1">同步未生效：改动只写在本机</span>
+          <Button variant="bare" onClick={() => location.reload()}
+            className="shrink-0 rounded border border-amber/40 px-1.5 py-0.5 text-11 text-amber hover:bg-amber/20">重试</Button>
+        </div>
+      )}
+      <div className={inSidebar && !detailsOpen ? 'hidden' : 'flex flex-col gap-1.5'}>
       {!connected ? (
         /* —— 未开启：先选方式；WebDAV / S3 点按钮开**弹窗**填写（侧栏窄且不可滚，表单放不下） —— */
         <>
@@ -326,24 +347,6 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       ) : (
         /* —— 已开启：状态 + 目标名 + 操作 —— */
         <>
-          {/* 🔴 「标记已开启、实态却是本地」必须自己说出来（否则作者以为一直在同步，其实一直没同步） */}
-          {syncGracePassed && !active && (
-            <div
-              role="alert"
-              title="启动时没能接上同步目标（网盘目录未就绪 / 同步文件不可读，原因见控制台 [db] 告警）。当前改动只写在本机，未上云。"
-              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber/40 bg-amber/10 px-2 py-1.5 text-11 text-amber"
-            >
-              <AlertTriangle size={12} className="shrink-0" />
-              <span className="flex-1">同步未生效：改动只写在本机</span>
-              <button
-                type="button"
-                onClick={() => location.reload()}
-                className="shrink-0 rounded border border-amber/40 px-1.5 py-0.5 text-11 text-amber transition-colors hover:bg-amber/20"
-              >
-                重试
-              </button>
-            </div>
-          )}
           <div className="flex items-center gap-1.5 text-11 text-ink-400" title={targetName ? '当前同步目标' : undefined}>
             {mode === 'dir' ? <FolderOpen size={12} className="shrink-0 text-ink-500" />
               : mode === 'webdav' ? <Server size={12} className="shrink-0 text-ink-500" />
@@ -376,6 +379,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

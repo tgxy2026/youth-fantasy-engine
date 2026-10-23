@@ -757,8 +757,8 @@ app.whenReady().then(() => {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 1000,
-    minHeight: 640,
+    minWidth: 768,
+    minHeight: 600,
     // 🔴 2026-09-17 老大反馈：桌面版点开后默认是个小窗，希望**窗口化全屏**。
     //    show:false 是配套动作 —— 否则会先闪一下 1280×820 的小窗、再跳成最大化，很难看。
     show: false,

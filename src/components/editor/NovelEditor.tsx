@@ -1,4 +1,4 @@
-import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
@@ -11,6 +11,7 @@ import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
 import FormatModal from '@/components/dialogs/FormatModal'
+import { Modal } from '@/components/dialogs/Modal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/editor/indent'
 // 3.2.0：中文标点自动配对（原先完全依赖输入法 ⇒ 微信有、搜狗没有，见 punctPair 文件头）
 import { planPunctPair } from '@/lib/editor/punctPair'
@@ -91,7 +92,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
-    wrapRef, searchPaneW, showPageWide,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
@@ -107,7 +108,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   } = model
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
-  const searchVisible = !focusMode && showSearch && !showRefs
+  const [chapterDrawer, setChapterDrawer] = useState(false)
+  const [searchDrawer, setSearchDrawer] = useState(false)
+  const searchVisible = !focusMode && showSearch && !showRefs && searchFits
 
   // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
   // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
@@ -235,14 +238,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     }
   }
 
-  return (
-    // 🔴 ref 供「正文列保底」测量容器宽度（检索栏压多少、铺满开关显示与否都按它算）
-    <div ref={wrapRef} className="flex h-full page-enter overflow-hidden">
-      {/* 章节树 */}
-      {/* 章节树（已抽成独立组件，见 NovelEditorChapterTree.tsx） */}
-      {!focusMode && (
+  const chapterTree = (
         <NovelEditorChapterTree
-          pane={chapterPane}
+          pane={chapterCompact ? { ...chapterPane, size: 280 } : chapterPane}
           projectName={projectName}
           volumes={volumes}
           chapters={chapters}
@@ -258,7 +256,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setNamePrompt={setNamePrompt}
           nextChapterNo={nextChapterNo}
           activeId={activeId}
-          openChapter={openChapter}
+          openChapter={id => { openChapter(id); setChapterDrawer(false) }}
           chapterSeqs={chapterSeqs}
           removeVolume={removeVolume}
           removeChapter={removeChapter}
@@ -269,7 +267,21 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setExportFormatTab={setExportFormatTab}
           setImportOpen={setImportOpen}
         />
-      )}
+  )
+  return (
+    // 🔴 ref 供「正文列保底」测量容器宽度（检索栏压多少、铺满开关显示与否都按它算）
+    <div ref={wrapRef} className="flex h-full page-enter overflow-hidden">
+      {!focusMode && !chapterCompact && chapterTree}
+      <Modal open={chapterCompact && chapterDrawer} onClose={() => setChapterDrawer(false)}
+        title="章节目录" align="left" width={280} maxHeight="100vh"
+        className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex [&>div]:flex-1">
+        {chapterTree}
+      </Modal>
+      <Modal open={!searchFits && searchDrawer} onClose={() => setSearchDrawer(false)}
+        title="设定检索" align="left" width={360} maxHeight="100vh"
+        className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex flex-col">
+        <SettingSearch onNavigate={id => { setSearchDrawer(false); onNavigate?.(id) }} ctx={ctx} />
+      </Modal>
 
       {/* 左侧 1/3：设定检索栏 */}
       {searchVisible && (
@@ -291,6 +303,9 @@ style={{ zIndex: Z.pageHandle }}
 
       {/* 右侧 2/3：编辑区 */}
       <div className="flex-1 flex flex-col min-w-0 bg-ink-950/92 relative">
+        {chapterCompact && !active && <div className="shrink-0 border-b border-ink-700 p-2">
+          <Button variant="secondary" size="sm" onClick={() => setChapterDrawer(true)} title="打开章节目录"><BookOpen size={14} />章节目录</Button>
+        </div>}
         {active ? (
           <>
             {/* 工具栏：按钮较多（21 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
@@ -299,6 +314,8 @@ style={{ zIndex: Z.pageHandle }}
                 所以这里可以放心用 `overflow-y-hidden`。以后若再往工具栏塞菜单，必须先放开纵向裁剪
                 （`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器 ⇒ 菜单只剩 44px 高、「点了不出现」）。 */}
             <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
+              {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
+                title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
               <div className="flex items-center gap-1">
                 <Button variant="ghost" disabled={activeIdx <= 0} onClick={() => openChapter(flat[activeIdx - 1].id)} iconOnly size="sm" className="p-1 disabled:opacity-30 transition-colors shrink-0" title="上一章">
                   <ArrowLeft size={14} />
@@ -510,10 +527,11 @@ style={{ zIndex: Z.pageHandle }}
               <Button variant="icon-amber"
                 onClick={() => {
                   if (showRefs) setShowRefs(false)
+                  else if (!searchFits) setSearchDrawer(true)
                   else setShowSearch(!showSearch)
                 }}
                 className="p-1 shrink-0"
-                title={showRefs ? '收起本章资料并恢复设定检索栏' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
+                title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
               </Button>
               <Button variant="icon-amber"
@@ -648,7 +666,7 @@ style={{ zIndex: Z.pageHandle }}
                   onScroll={scheduleHighlightSync}
                   placeholder="落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）"
                   className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6"
-                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined, paddingBottom: foldVh('40vh') }}
+                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined, paddingBottom: chapterCompact ? '2rem' : foldVh('40vh') }}
                   spellCheck={false}
                 />
               </div>
@@ -656,7 +674,7 @@ style={{ zIndex: Z.pageHandle }}
 
             {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号
                 🔴 h-10 与检索栏底条（SettingSearch）/ 侧栏左下角把手（Sidebar）统一高度，三条上边框对齐 */}
-            <div className="h-10 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-4 px-5 text-11 text-ink-400">
+            <div className="h-10 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-3 px-3 text-11 text-ink-400 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 [&>*]:whitespace-nowrap">
               {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
               <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '汉字＋标点' : '只算汉字'}口径 · 可在写作面板的「字数口径」里切换）`}>
                 <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字

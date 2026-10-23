@@ -245,6 +245,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     return () => ro.disconnect()
   }, [loaded])
   const sideW = focusMode ? 0 : chapterPane.size
+  const chapterCompact = wrapW > 0 && wrapW < 760
+  const searchFits = wrapW === 0 || wrapW - (chapterCompact ? 0 : sideW) >= MAIN_MIN_W + SEARCH_MIN_W
   const searchPaneW = (focusMode || !showSearch)
     ? 0
     : (wrapW > 0
@@ -1116,7 +1118,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
-    wrapRef, searchPaneW, showPageWide,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉

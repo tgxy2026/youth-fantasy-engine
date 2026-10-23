@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
-import Sidebar from '@/components/app/Sidebar'
+import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
 import Dashboard from '@/components/app/Dashboard'
 import NovelEditor from '@/components/editor/NovelEditor'
 import FormSheet from '@/components/sheets/FormSheet'
@@ -654,7 +654,7 @@ export default function App() {
         aria-hidden
       />
       )}
-      <Sidebar
+      <WorkspaceSidebar
         activeTab={activeTab}
         onNavigate={navigate}
         collapsed={false}
@@ -672,8 +672,8 @@ export default function App() {
           的 `h-full` 会退化成 auto ⇒ 撑不满：短内容的页面**下方留一大块空白**（实测剧情推演/自由对话
           各留 ~490px），长内容的页面则**高出窗口被 main 裁掉且滚不到**（实测编辑器根高 1391 而可用仅 926）。
           补 `h-full` 后与「padding 还在 main 上」时的几何完全一致（内容高 = main 高 − 上下 padding）。 */}
-      <main className={`flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
-        <div className={`h-full ${isEditor ? '' : 'p-6 lg:p-8'}`}>
+      <main className={`@container/workspace min-w-0 flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
+        <div className={`workspace-content h-full ${isEditor ? '' : 'p-3 @min-[40rem]/workspace:p-6 @min-[64rem]/workspace:p-8'}`}>
           {/* fallback 用 min-h-* 而不是 h-full：它是**加载占位**，只需撑住视觉高度；
               用 min-h 可避免在某些中间态下被压成 0 */}
           {/* 🔴 2026-09-22 六维审计 P2：`50vh` 走 foldVh（界面缩放后 vh 不随 zoom 缩，

@@ -623,6 +623,43 @@
    ⚠️ 本段必须留在 @tailwind utilities 之后，否则会被 Tailwind 的同名工具类盖回去。
    ============================================================ */
 :root { --ui-zoom: 1; }
+/* 项目内适配按 main 的实际宽度，而非整块屏幕宽度。侧栏和界面缩放都会占用布局空间。 */
+@container workspace (width < 64rem) {
+  .workspace-content header > .flex { flex-wrap: wrap; align-items: flex-start; }
+  .workspace-content header > .flex > div:first-child { min-width: 0; flex: 1 1 100%; }
+  .workspace-content header h1 { flex-shrink: 0; }
+  .workspace-content header > .flex > .flex:last-child,
+  .workspace-content header .ml-auto.flex {
+    flex-wrap: wrap; justify-content: flex-start; margin-left: 0; max-width: 100%;
+  }
+  .workspace-content header [data-button-variant] {
+    height: 1.75rem; padding-inline: .5rem; font-size: .75rem; white-space: nowrap; flex-shrink: 0;
+  }
+  .workspace-content header [data-button-variant][aria-label] { padding-inline: .25rem; }
+  [data-adaptive-conversation] { height: auto; min-height: 100%; overflow: visible; }
+  [data-conversation-layout] { flex-direction: column; }
+  [data-conversation-layout] > aside:first-child { width: 100%; height: 9rem; max-height: 9rem; }
+  [data-conversation-layout] > div { flex: none; min-height: 28rem; }
+  [data-conversation-layout] > aside:last-child:not(:first-child) { width: 100%; max-height: 28rem; }
+  [data-adaptive-map] { height: auto; min-height: 100%; }
+  [data-adaptive-map] > .flex-1 { flex-wrap: wrap; }
+  [data-adaptive-map] > .flex-1 > .flex-1 { min-height: 28rem; min-width: min(100%, 20rem); }
+  [data-adaptive-map] > .flex-1 > aside:last-child:not(:first-child) { width: 100%; max-height: 24rem; }
+}
+@container workspace (width < 40rem) {
+  /* 目录和详情仍各自滚动，窄屏改上下排列，避免固定目录挤出输入框。 */
+  [data-master-detail], [data-adaptive-master] > .flex.flex-1 {
+    flex-direction: column; height: 32rem !important; min-height: 32rem; gap: .75rem;
+  }
+  [data-master-detail] > [data-master-list],
+  [data-adaptive-master] > .flex.flex-1 > :first-child {
+    width: 100%; flex: 0 0 8rem; max-height: 8rem; min-height: 0;
+  }
+  [data-master-detail] > :last-child,
+  [data-adaptive-master] > .flex.flex-1 > :last-child { min-width: 0; min-height: 0; flex: 1 1 0; }
+  [data-adaptive-master] { height: auto; min-height: 100%; overflow: visible; }
+  [data-adaptive-master="trajectory"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .h-screen { height: calc(100vh / var(--ui-zoom, 1)); }
 .min-h-screen { min-height: calc(100vh / var(--ui-zoom, 1)); }
 

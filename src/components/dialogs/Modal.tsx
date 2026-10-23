@@ -108,7 +108,7 @@ export interface ModalProps {
   maxHeight?: string
 
   // ---- 对齐 ----
-  align?: 'center' | 'top'
+  align?: 'center' | 'top' | 'left'
   /** align='top' 时的顶部留白，默认 '12vh' */
   topOffset?: string
 
@@ -216,7 +216,7 @@ export function Modal({
         ? 'bg-black/60'
         : 'bg-ink-950'
   const overlayAlign =
-    align === 'center' ? 'items-center justify-center p-4' : 'items-start justify-center'
+    align === 'left' ? 'items-stretch justify-start' : align === 'center' ? 'items-center justify-center p-4' : 'items-start justify-center'
   const overlayStyle = align === 'top' ? { paddingTop: foldVh(topOffset) } : undefined
 
   const panelSurface = surface === '900' ? 'bg-ink-900' : 'bg-ink-850'
@@ -242,7 +242,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={`${panelSurface} ${panelAccent} rounded-2xl shadow-2xl flex flex-col outline-none ${className}`}
-        style={{ width: `${widthPx}px`, maxWidth: foldVh('92vw'), maxHeight: foldVh(maxHeight) }}
+        style={{ width: `${widthPx}px`, maxWidth: foldVh('92vw'), maxHeight: foldVh(maxHeight), height: align === 'left' ? foldVh('100vh') : undefined }}
         onMouseDown={e => e.stopPropagation()}
       >
         {!hideHeader && (

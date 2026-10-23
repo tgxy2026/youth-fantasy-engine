@@ -40,9 +40,9 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
   )
   const aliasLabels = useFieldDisplayLabels(tabId ?? '', keys)
   return (
-    <div className={twoColumn
+    <div className={`@container/fields ${twoColumn
       ? 'grid grid-cols-1 xl:grid-cols-2 gap-5 items-start'
-      : 'grid grid-cols-1 2xl:grid-cols-2 gap-5 items-start'}>
+      : 'grid grid-cols-1 2xl:grid-cols-2 gap-5 items-start'}`}>
       {modules.map(mod => (
         <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden h-full">
           <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
@@ -55,7 +55,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
               const key = `${mod.name}::${field.name}`
               const val = data[key] ?? ''
               return (
-                <div key={key} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-2 md:gap-4 hover:bg-ink-800/40 transition-colors">
+                <div key={key} className="px-3 py-3 grid grid-cols-1 @min-[32rem]/fields:grid-cols-[160px_minmax(0,1fr)] gap-2 @min-[32rem]/fields:gap-4 hover:bg-ink-800/40 transition-colors">
                   <div>
                     <div
                       className="text-13 font-medium text-ink-100"

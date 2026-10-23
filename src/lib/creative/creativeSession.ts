@@ -811,7 +811,7 @@ export function stopCreativeRun() {
  *
  * 🔴 为什么必须"停"而不是"继续跑、只是写回原项目"：
  *   落库全走 `db.*`（隐式取当前项目），要让它写回原项目得给整条链路加显式 pid 参数（B 档），
- *   改动面太大；而**写错项目是不可逆的数据事故** —— 宁可停，并在界面说清"没有写入任何项目"。
+ *   改动面太大；而**写错项目是不可逆的数据事故** —— 切项目时停止，并说明已落库内容仍保留。
  *
  * 🔴 为什么传 `nextPid` 而不是比较"当前项目"：
  *   App 里是"先判再切"，若比较当前项目，切换前它和启动项目**必然相等** ⇒ 永远不触发。
@@ -862,7 +862,7 @@ export function abortRunIfProjectChanged(nextPid: string): boolean {
     rewrite: snap.rewrite ? { ...snap.rewrite, running: false } : null,
     ...SESSION_BLANK,
   })
-  notice('项目已切换，本次创意写作已停止 —— 它的产出没有写入任何项目。', 'info')
+  notice('项目已切换，本次创意写作已停止。已写入原项目的内容会保留，未完成的部分已停止。', 'info')
   runProjectId = null
   // 🔴 最后**必须**取消上面 set() 排下的落盘：1 秒后全局 pid 已换成新项目，
   //    那个定时器会把"清空后的会话"写进新项目的键 —— 等于用空壳覆盖 B 自己的会话。

@@ -112,5 +112,23 @@ const ok = (name: string, cond: boolean, extra = '') => {
   ok('G 编号列默认宽 110 → 130', model.includes("if (col.name === '编号' || col.name === '章节号') return 130"))
 }
 
-console.log(`\n视觉巡检 A–G 闸: ${pass} passed, ${fail} failed`)
+// ---------- H 平板与窄窗口 ----------
+{
+  const app = read('src/App.tsx')
+  const nav = read('src/components/app/WorkspaceSidebar.tsx')
+  const sidebar = read('src/components/app/Sidebar.tsx')
+  const editor = read('src/components/editor/NovelEditor.tsx')
+  const css = read('src/index.css')
+  ok('H 主内容允许缩小并提供实际宽度容器', app.includes('@container/workspace min-w-0'))
+  ok('H 窄窗口导航同时考虑界面缩放', nav.includes('window.innerWidth / currentUiZoom()') && nav.includes('width < 900'))
+  ok('H 导航抽屉关闭后仍订阅后台任务', nav.includes('!open && <div className="hidden">{sidebar}</div>'))
+  ok('H 抽屉导航与界面设置都有明确入口', nav.includes('打开项目菜单') && nav.includes('界面与数据设置'))
+  ok('H 设置入口展开工具栏并滚到可操作区域', sidebar.includes('setFooterCollapsed(false)') && sidebar.includes('scrollIntoView'))
+  ok('H 窄窗口章节和检索保留可打开的抽屉', editor.includes('title="章节目录"') && editor.includes('title="设定检索"') && editor.includes('chapterCompact && !active'))
+  ok('H 正文状态栏控件可以横向滚动到达', editor.includes('overflow-x-auto overflow-y-hidden [&>*]:shrink-0'))
+  ok('H 目录和详情按内容区宽度重排', css.includes('@container workspace (width < 40rem)') && css.includes('[data-master-detail]'))
+  ok('H 桌面窗口允许常规平板宽度', read('electron/main.cjs').includes('minWidth: 768'))
+}
+
+console.log(`\n视觉巡检 A–H 闸: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1
