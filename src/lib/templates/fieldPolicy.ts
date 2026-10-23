@@ -13,7 +13,18 @@
  */
 import type { EffectiveField } from './types'
 
-/** 语义读取是否允许（按字段的 AI 读取权限） */
+/**
+ * 语义读取是否允许（按字段的 AI 读取权限）。
+ *
+ * 🔴 3.2.2：**读取闸只许走这里**（`semanticView` 已改）。以下几处仍直接读
+ *    `f.permissions.aiRead` 是**刻意**的，别顺手替换：
+ *    · `templates/render.ts` —— 构造字段投影（`aiReadable` / `aiWritable` 都取裸值），
+ *      它不是闸，替换一个不替换另一个会造成不对称；
+ *    · `templates/defAdapter.ts` —— `key → 原始值` 的适配器，返回裸值是它的职责；
+ *    · `templates/consumers.ts`（两处）—— 规则表要在**裸值之上再叠** `meaningStatus !== 'pending'`，
+ *      且必须**保留规则本身**（召回闸靠"规则存在但不可读"判旧块失效）；
+ *    · `templates/migrate.ts` —— 迁移指纹里记裸值，口径变了会误判"模板变过"。
+ */
 export function canSemanticRead(f: EffectiveField): boolean {
   return f.permissions.aiRead
 }

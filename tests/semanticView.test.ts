@@ -3,6 +3,7 @@
 // 这一层的验收标准不是「能跑」，而是**不该写的时候一定不写**：
 // 槽位没绑定、绑定不唯一、字段归档、权限没放开、类型对不上、候选项里没有、
 // 两个槽位抢同一栏 —— 每一条都必须拒绝且说清原因，不许「差不多就写进去」。
+import { readFileSync } from 'node:fs'
 import { TABS } from '@/lib/schema'
 import { adaptBuiltinTab, adaptAtlasTab } from '@/lib/templates/legacyAdapter'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
@@ -151,10 +152,10 @@ const peopleSlots = slotsForKind('人物')
   ]
   const rec = { id: 'c', data: { '一、基础信息::别称': '小昭', '一、基础信息::身份定位': '主角' } }
   const e = readSemanticView(peopleTpl, rec, buildMappingPlan(peopleTpl, defs), defs)[0]
-  ok('⑦ 多来源 concat 拼接', e.value === '小昭\n主角', JSON.stringify(e.value))
-  ok('⑦ 两个来源都留痕', e.sources.length === 2)
-  ok('⑦ 多来源 ⇒ 标 ambiguous-target', e.limitations.some(l => l.code === 'ambiguous-target'))
-  ok('⑦ 多来源不自动写（无 writableTarget）', e.writableTarget === undefined)
+  ok('⑬ 多来源 concat 拼接', e.value === '小昭\n主角', JSON.stringify(e.value))
+  ok('⑬ 两个来源都留痕', e.sources.length === 2)
+  ok('⑬ 多来源 ⇒ 标 ambiguous-target', e.limitations.some(l => l.code === 'ambiguous-target'))
+  ok('⑬ 多来源不自动写（无 writableTarget）', e.writableTarget === undefined)
 }
 
 // ────────────────────────── ⑧ 读写权限分叉 ──────────────────────────
@@ -316,6 +317,34 @@ const peopleSlots = slotsForKind('人物')
     }
     return buildMappingPlan(extra, peopleSlots).digest === plan.digest
   })())
+}
+
+// ────────────────────────── ⑬ 读取闸：未开放 AI 读取的字段必须跳过并说明 ──────────────────────────
+//
+// 3.2.2：`semanticView` 的读取闸改走 `canSemanticRead(f)`（原先直接读 `f.permissions.aiRead`）。
+// 这两条同时钉住「行为」与「接线」：
+//   · 行为：aiRead=false 的字段**不进值**，且如实给出 not-ai-readable 限制（作者知道为什么没读到）；
+//   · 接线：源码里那一行必须走 helper —— 否则 helper 又变回零引用，下次审计还会报"该接没接"。
+{
+  const plan = buildMappingPlan(peopleTpl, peopleSlots)
+  const locked: EffectiveTemplate = {
+    ...peopleTpl,
+    fields: peopleTpl.fields.map(f => (f.sourceKey === '一、基础信息::身份定位'
+      ? { ...f, permissions: { ...f.permissions, aiRead: false } }
+      : f)),
+  }
+  const rec = { id: 'card-2', data: { '一、基础信息::身份定位': '主角·杂役弟子' } }
+  const entries = readSemanticView(locked, rec, plan, peopleSlots)
+  const identity = entries.find(e => e.slot === 'identity')!
+  ok('⑬ 未开放读取 ⇒ 值不进视图', identity.value === '', identity.value)
+  ok('⑬ 未开放读取 ⇒ 如实标 not-ai-readable',
+    identity.limitations.some(l => l.code === 'not-ai-readable'))
+  ok('⑬ 限制文案点名是哪个字段（作者能对上号）',
+    (identity.limitations.find(l => l.code === 'not-ai-readable')?.detail ?? '').includes('身份定位'))
+
+  // 接线闸：读取闸只许走 canSemanticRead
+  const src = readFileSync('src/lib/templates/semanticView.ts', 'utf8')
+  ok('🔴 ⑬ 读取闸走 canSemanticRead（不再直接读裸字段）', /if \(!canSemanticRead\(f\)\)/.test(src))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

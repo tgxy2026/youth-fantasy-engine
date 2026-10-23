@@ -10,7 +10,7 @@
  *   `{ slot, value, sources[], mappingId, transform, writableTarget?, limitations }`
  */
 import type { EffectiveField, EffectiveTemplate } from './types'
-import { canSemanticWrite, writeDeniedReason } from './fieldPolicy'
+import { canSemanticRead, canSemanticWrite, writeDeniedReason } from './fieldPolicy'
 import { bindingOf, isAutoWritable, type SemanticMappingPlan } from './mappingPlan'
 import type { SemanticSlotDef } from './semanticSlots'
 
@@ -110,7 +110,9 @@ export function readSemanticView(
     for (const f of fields) {
       const raw = (record.data?.[f.sourceKey] ?? '').trim()
       if (!raw) continue
-      if (!f.permissions.aiRead) {
+      // 🔴 3.2.2：读取闸统一走 `canSemanticRead`，不再直接读裸字段 ——
+      //    这样"什么算可读"只有一处真源；将来若给读取加新条件（如含义未确认），改 helper 即可生效。
+      if (!canSemanticRead(f)) {
         limitations.push({ code: 'not-ai-readable', detail: `字段「${f.label}」未开放 AI 读取，已跳过` })
         continue
       }
