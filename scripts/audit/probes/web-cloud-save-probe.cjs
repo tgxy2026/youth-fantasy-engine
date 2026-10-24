@@ -49,6 +49,59 @@ const mkData = marker => JSON.stringify({
   stores: { chapters: [{ id: 'ch-' + marker, projectId: 'p1', volumeId: 'v1', title: '账号验收章', content: '账号正文-' + marker }] },
 })
 
+// ---------- write-failure 段落用的固定件 ----------
+const PROJECT_ID = 'cloud-save-project', VOLUME_ID = 'cloud-save-volume', CHAPTER_ID = 'cloud-save-chapter'
+const PROJECT_TITLE = '云端保存故障临时作品'
+const ORIGINAL = '隔离云端模式的原始手稿。'
+const DRAFT = '云端配额超限时仍保留这份草稿。'
+const DRAFT2 = '服务端写盘失败时同样保留这份草稿。'
+const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
+
+/**
+ * 富整库：带真实项目/卷/章，才能在页面上真的打开编辑器敲字。
+ * 🔴 行形态必须是**键化对象**（与桌面/云端导出一致）；数组形态是游客那份，
+ *    两者都是合法 portable-data，但只有键化能被这三端按主键读回。
+ */
+const mkRichData = () => {
+  const now = Date.now()
+  return JSON.stringify({
+    app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 2, savedAt: now,
+    stores: {
+      projects: { [PROJECT_ID]: { id: PROJECT_ID, name: PROJECT_TITLE, genre: '玄幻', intro: '', projectType: 'full', createdAt: now, updatedAt: now } },
+      volumes: { [VOLUME_ID]: { id: VOLUME_ID, projectId: PROJECT_ID, title: '验收卷', description: '', order: 0, createdAt: now } },
+      chapters: { [CHAPTER_ID]: { id: CHAPTER_ID, projectId: PROJECT_ID, volumeId: VOLUME_ID, title: '云端验收章', content: ORIGINAL, summary: '', wordCount: ORIGINAL.length, order: 0, status: '草稿', tags: [], createdAt: now, updatedAt: now } },
+      meta: { welcomeDone: { key: 'welcomeDone', value: '1' } },
+    },
+  })
+}
+
+/**
+ * 从整库文本里取本章（🔴 行形态两种都要认）。
+ * 实测：**云端/便携写盘时 store 是数组**，桌面写的是主键→记录对象；
+ * 只按 `stores.chapters[ID]` 取会在云端永远读到 undefined —— 那不是"没落盘"，是取错了形状。
+ */
+const chapterOf = text => {
+  const rows = JSON.parse(text)?.stores?.chapters
+  const list = Array.isArray(rows) ? rows : Object.values(rows ?? {})
+  return list.find(row => row && row.id === CHAPTER_ID)
+}
+const chapterContent = text => chapterOf(text)?.content
+
+/** 打开这本临时作品并切到「正文编辑」——与桌面探针同一套真实交互 */
+async function openProjectEditor(page) {
+  await page.getByRole('heading', { name: PROJECT_TITLE, exact: true }).waitFor({ timeout: 45000 })
+  for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+    const button = page.getByRole('button', { name, exact: true })
+    if (await button.isVisible().catch(() => false)) await button.click()
+  }
+  await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: PROJECT_TITLE, exact: true }) })
+    .getByRole('button', { name: '打开项目', exact: true }).click()
+  await page.getByRole('navigation').waitFor()
+  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
+  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
+  await page.getByPlaceholder(EDITOR).waitFor()
+}
+
 async function main() {
   const buildArg = arg('--build-dir')
   if (!buildArg) throw new Error('--build-dir is required; old builds are not selected implicitly')
@@ -80,6 +133,41 @@ async function main() {
   let server, serverLog = '', error = null
   const pageErrors = []
   const contexts = []
+  /** 写失败段落注入的「空目录挡在数据文件位置」是否仍在生效（清理要幂等，见 restoreBlocker） */
+  let blocked = false
+  let activeDataFile = ''
+  let keptDataFile = ''
+  /**
+   * 解除「用空目录挡住 data.json」的注入（幂等）。
+   * · 目标仍是空目录 ⇒ 先移除它，**然后等服务端自己写回来**；
+   * · 已被服务端写回 ⇒ 保留那一份，删掉暂存；
+   * · 服务端 15s 内确实没写 ⇒ 才把旧字节补回去兜底。
+   * 🔴 不能"撤掉目录就立刻补旧字节"：与桌面探针同一坑 —— rmdir 与服务端的 write→rename 撞车时，
+   *    会把刚写成功的那份覆盖掉，后面的 retry-readback 读到旧正文、误判成没落盘。
+   * 任何情况下都不许抛错：清理阶段一旦中断，服务端就下不了线，整步会被判超时。
+   */
+  const restoreBlocker = async () => {
+    try {
+      if (!blocked || !activeDataFile) return
+      let isDir = false
+      try { isDir = (await fs.stat(activeDataFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
+      if (isDir) await fs.rmdir(activeDataFile)
+      blocked = false
+      const end = Date.now() + 15000
+      let written = false
+      while (Date.now() < end) {
+        written = await fs.stat(activeDataFile).then(s => s.isFile(), () => false)
+        if (written) break
+        await new Promise(r => setTimeout(r, 150))
+      }
+      if (written) await fs.rm(keptDataFile).catch(() => {})
+      else if (await fs.stat(keptDataFile).then(() => true, () => false)) await fs.rename(keptDataFile, activeDataFile)
+    } catch (e) {
+      serverLog += '[probe] 恢复空目录挡板失败（已记录，不影响结论）: ' + (e instanceof Error ? e.message : String(e)) + '\n'
+    } finally {
+      blocked = false
+    }
+  }
   const openContext = async (name, reuseDir) => {
     const dir = reuseDir ?? await fs.mkdtemp(path.join(runRoot, 'profile-' + name + '-'))
     const ctx = await chromium.launchPersistentContext(dir, { channel: 'msedge', headless: true,
@@ -245,6 +333,97 @@ async function main() {
       await reopened.page.screenshot({ path: path.join(runRoot, 'restart-readback.png') })
     }
 
+    // ---------- ⑧ write-failure：服务端真实配额拒绝（413）与真实写盘失败（500） ----------
+    // 🔴 两种故障都不给产品加开关：
+    //   · 413 走服务端**真实配额校验**，只是把本次临时账号的 quotaBytes 调小（隔离环境里的数据，不是产品逻辑）；
+    //   · 500 把真实 data.json 换成空目录，让原子写的 rename 真的失败 —— 与桌面探针同一手法。
+    // 断言口径同方案 §6.1：不误报已保存、草稿不丢、旧数据不被覆盖、恢复后能重试落盘。
+    {
+      const usersFile = path.join(data, 'users.json')
+      const readUsersDb = async () => JSON.parse(await fs.readFile(usersFile, 'utf8'))
+      const db0 = await readUsersDb()
+      const self = Object.values(db0.users).find(u => u.name === USER_A)
+      if (!self) throw new Error('Cannot locate the throwaway account record')
+      const uid = self.id
+      const originalQuota = self.quotaBytes
+      activeDataFile = path.join(data, 'users', uid, 'data.json')
+      keptDataFile = activeDataFile + '.probe-kept'
+
+      /** 服务端此刻真正落盘的整库文本（挡板生效期间旧字节在 .probe-kept） */
+      const persistedText = async () => {
+        try { return await fs.readFile(activeDataFile, 'utf8') } catch { return await fs.readFile(keptDataFile, 'utf8') }
+      }
+      /** 编辑器底栏真实渲染出来的落盘错误（来源 getPortableState().lastError） */
+      const diskErrorTitle = async () => {
+        const span = A.page.locator('span[title*="尚未写入磁盘"]')
+        if (!(await span.count())) return ''
+        return (await span.first().getAttribute('title')) ?? ''
+      }
+      const setQuota = async bytes => {
+        const db = await readUsersDb()
+        db.users[uid].quotaBytes = bytes
+        await fs.writeFile(usersFile, JSON.stringify(db, null, 2))
+        // 服务端按 mtime 热读用户表；留一点间隔，避免同毫秒内两次写被缓存吞掉
+        await new Promise(r => setTimeout(r, 150))
+      }
+
+      // 🔴 上一段（restart-readback）用另一个上下文登录了同一个账号，单会话机制已把 A 的会话顶掉。
+      //    这里必须重新登录，否则下面的 PUT 全是 401 —— 那不是"写失败取证"，是会话过期。
+      await login(A.ctx, USER_A)
+      const seed = await A.ctx.request.put(origin + '/api/data', {
+        headers: { 'Content-Type': 'application/json' }, data: mkRichData(),
+      })
+      check('write-failure-seed', seed.ok(), String(seed.status()))
+      await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await waitUser(A.page)
+      await openProjectEditor(A.page)
+      const editor = A.page.getByPlaceholder(EDITOR)
+      check('write-failure-fixture', (await editor.inputValue()) === ORIGINAL, await editor.inputValue())
+      // 等启动期那次自动保存落完：否则挡板一上来就被它吃掉，后面看到的错会变成"假故障"
+      await until(async () => !(await A.page.getByText('正在写入', { exact: true }).count())
+        && !(await A.page.getByText('保存中…', { exact: true }).count()), 30000)
+      await new Promise(r => setTimeout(r, 400))
+
+      // ---- ① 配额 413：服务端自己拒绝，不是前端假报 ----
+      await setQuota(512)
+      await editor.fill(DRAFT)
+      await A.page.keyboard.press('Control+s')
+      await until(async () => /HTTP 413/.test(await diskErrorTitle()), 30000)
+      check('quota-rejected-visible', /HTTP 413/.test(await diskErrorTitle()), await diskErrorTitle())
+      check('quota-preserves-draft', (await editor.inputValue()) === DRAFT)
+      const afterQuota = chapterContent(await persistedText())
+      check('quota-not-persisted', afterQuota === ORIGINAL, afterQuota)
+      await A.page.screenshot({ path: path.join(runRoot, 'quota-rejected.png') })
+
+      // ---- ② 写盘 500：先上挡板再恢复配额，保证重试不会抢先落盘 ----
+      await fs.rename(activeDataFile, keptDataFile)
+      await fs.mkdir(activeDataFile)
+      blocked = true
+      const keptBytes = await fs.readFile(keptDataFile)
+      await setQuota(originalQuota)
+      await editor.fill(DRAFT2)
+      await A.page.keyboard.press('Control+s')
+      await until(async () => /HTTP 500/.test(await diskErrorTitle()), 40000)
+      check('server-error-visible', /HTTP 500/.test(await diskErrorTitle()), await diskErrorTitle())
+      check('failure-preserves-draft', (await editor.inputValue()) === DRAFT2)
+      const stillDir = (await fs.stat(activeDataFile)).isDirectory()
+      check('accepted-vs-persisted',
+        stillDir && hash(await fs.readFile(keptDataFile)) === hash(keptBytes)
+        && chapterContent(keptBytes) === ORIGINAL,
+        JSON.stringify({ stillDir }))
+      await A.page.screenshot({ path: path.join(runRoot, 'write-failure.png') })
+
+      // ---- ③ 恢复后重试：草稿自动落盘，无需重新输入 ----
+      await restoreBlocker()
+      await until(async () => {
+        try { return chapterContent(await fs.readFile(activeDataFile, 'utf8')) === DRAFT2 } catch { return false }
+      }, 30000)
+      check('retry-readback', true, DRAFT2)
+      await until(async () => (await diskErrorTitle()) === '', 20000)
+      check('recovery-visible', (await diskErrorTitle()) === '' && !(await A.page.getByText('未写入磁盘', { exact: true }).count()))
+      await A.page.screenshot({ path: path.join(runRoot, 'recovery.png') })
+    }
+
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
@@ -254,6 +433,8 @@ async function main() {
       if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
     }
   } finally {
+    // 挡板必须先撤（幂等），否则服务端数据目录会留着空目录，下一次运行读到 500
+    if (blocked) await restoreBlocker()
     for (const c of contexts) await c.ctx.close().catch(() => {})
     if (server) {
       const closed = new Promise(resolve => server.once('close', resolve))

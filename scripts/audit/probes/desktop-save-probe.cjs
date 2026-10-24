@@ -84,9 +84,13 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
   const calls = () => app.evaluate(() => global.__desktopProbe.calls)
   /**
    * 解除"用空目录挡住目标文件"的注入（幂等）。
-   * · 目标仍是空目录 ⇒ 移除它，再把原字节放回；
+   * · 目标仍是空目录 ⇒ 先移除它，**然后让应用自己写回来**；
    * · 目标已被应用自己写回（先删后改名）⇒ 保留应用那份，删掉我们暂存的旧字节；
-   * · 目标不存在 ⇒ 直接把旧字节放回。
+   * · 应用 15s 内确实没写 ⇒ 才把旧字节补回去兜底（保证后续重启回读有料可读）。
+   *
+   * 🔴 为什么不"撤掉目录就立刻补回旧字节"：实测踩过 —— rmdir 与应用的 write→rename 撞在一起，
+   *    应用刚写成功的 DRAFT 被探针补回的旧字节覆盖，随后 retry-readback 读到旧正文、
+   *    整步被判超时（2026-10-24，reliability-SU3mP6）。挡板是我们造的，撤掉后应该等应用自己说结果。
    * 任何情况下都不许抛错，否则清理阶段会中断、Electron 不退出，整步被判超时。
    */
   async function restoreFromBlocker() {
@@ -94,9 +98,16 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       let isDir = false
       try { isDir = (await fs.stat(activeFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
       if (isDir) await fs.rmdir(activeFile)
-      const exists = await fs.stat(activeFile).then(() => true, () => false)
-      if (!exists) await fs.rename(keptFile, activeFile)
-      else await fs.rm(keptFile).catch(() => {})
+      blocked = false
+      const end = Date.now() + 15000
+      let written = false
+      while (Date.now() < end) {
+        written = await fs.stat(activeFile).then(s => s.isFile(), () => false)
+        if (written) break
+        await new Promise(resolve => setTimeout(resolve, 150))
+      }
+      if (written) await fs.rm(keptFile).catch(() => {})
+      else if (await fs.stat(keptFile).then(() => true, () => false)) await fs.rename(keptFile, activeFile)
     } catch (e) {
       console.warn('[desktop-probe] 恢复阶段未能完全还原（不影响本次结论，已记录）：', e instanceof Error ? e.message : String(e))
     } finally {

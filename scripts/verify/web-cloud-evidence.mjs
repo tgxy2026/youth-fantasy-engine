@@ -10,7 +10,12 @@ export const WEB_CLOUD_CASE_IDS = [
   'backend-selection', 'restart-readback-write', 'restart-readback',
   'two-accounts', 'same-browser-account-switch', 'switch-back-restores-own-data',
   'expired-session', 'stale-write-did-not-land', 'guest-never-writes-server', 'guest-to-account',
-  'guest-local-data-intact', 'no-pageerror', 'unchanged-inputs',
+  'guest-local-data-intact',
+  // write-failure：配额 413 与服务端写盘 500 —— 三个必需子场景必须各自有检查项
+  'write-failure-seed', 'write-failure-fixture', 'quota-rejected-visible', 'quota-preserves-draft',
+  'quota-not-persisted', 'server-error-visible', 'failure-preserves-draft', 'accepted-vs-persisted',
+  'retry-readback', 'recovery-visible',
+  'no-pageerror', 'unchanged-inputs',
 ]
 export const WEB_CLOUD_ARTIFACTS = ['server.log', 'result.json'].filter(name => name !== 'result.json')
 const within = (root, file) => {

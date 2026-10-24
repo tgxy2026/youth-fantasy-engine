@@ -188,13 +188,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       await auditRuntime('desktop', 'desktop', ['boot-store', 'write-failure'], process.platform + '; isolated Electron appData/userData; production file renderer; real preload/IPC/filesystem failure, draft export and process restart; native chooser destination stubbed')
       return verified.assertions
     }],
-    // 3.2.3 · R4：web-cloud 账号隔离 —— 真实本地 server + 临时账号 + 两个独立浏览器上下文。
-    // ⚠️ 只点亮 account-isolation（四个子场景齐）；boot-store 的 restart-readback 与 write-failure 的导出/配额未覆盖，不点亮。
-    ['storage.web-cloud-save', ['scripts/audit/probes/web-cloud-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'web-cloud-runtime.json')], 300000, async () => {
+    // 3.2.3 · R4：web-cloud —— 真实本地 server + 临时账号 + 两个独立浏览器上下文。
+    // boot-store / account-isolation / write-failure 三个单元各自子场景齐（write-failure = 真实配额 413 + 真实写盘 500）。
+    ['storage.web-cloud-save', ['scripts/audit/probes/web-cloud-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'web-cloud-runtime.json')], 420000, async () => {
       const verified = await validateWebCloudEvidence(realRoot, path.join(runRoot, 'web-cloud-runtime.json'), {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
-      await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; browser process restart; no production account')
+      await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation', 'write-failure'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; real quota rejection and real data-file rename failure; browser process restart; no production account')
       return verified.assertions
     }],
   ]
