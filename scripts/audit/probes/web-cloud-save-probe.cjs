@@ -64,6 +64,9 @@ async function main() {
   const { hashPaths } = await import(pathToFileURL(path.join(ROOT, 'scripts/verify/evidence.mjs')).href)
   const sourceFingerprint = snapshot(ROOT).fingerprint
   const buildManifest = await hashPaths(build, ['.'])
+  const dbSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
+  const databaseName = /const DB_NAME = '([^']+)'/.exec(dbSource)?.[1]
+  if (!databaseName) throw new Error('Cannot determine actual database name')
 
   const port = await new Promise((resolve, reject) => {
     const listener = net.createServer()
@@ -77,21 +80,23 @@ async function main() {
   let server, serverLog = '', error = null
   const pageErrors = []
   const contexts = []
-  const openContext = async name => {
-    const dir = await fs.mkdtemp(path.join(runRoot, 'profile-' + name + '-'))
+  const openContext = async (name, reuseDir) => {
+    const dir = reuseDir ?? await fs.mkdtemp(path.join(runRoot, 'profile-' + name + '-'))
     const ctx = await chromium.launchPersistentContext(dir, { channel: 'msedge', headless: true,
       viewport: { width: 1440, height: 1000 }, args: ['--no-proxy-server'], env })
+    /** 页面发出的实际请求（用于证明"数据来自服务端"而不是浏览器本地库） */
+    const requests = []
     await ctx.route('**/*', route => {
       const request = route.request(), url = new URL(request.url())
-      if (url.origin === origin) return route.continue()
+      if (url.origin === origin) { requests.push({ method: request.method(), pathname: url.pathname }); return route.continue() }
       if (['data:', 'blob:'].includes(url.protocol)) return route.continue()
       return route.abort()
     })
     const page = ctx.pages()[0] ?? await ctx.newPage()
     page.setDefaultTimeout(15000)
     page.on('pageerror', value => pageErrors.push(String(value)))
-    contexts.push(ctx)
-    return { ctx, page }
+    contexts.push({ ctx, dir })
+    return { ctx, page, dir, requests }
   }
   const register = async (ctx, name) => {
     const res = await ctx.request.post(origin + '/api/auth/register', { data: { name, password: PASSWORD } })
@@ -149,6 +154,13 @@ async function main() {
     check('write-readback', putA.status === 200, putA.status + ' ' + putA.body.slice(0, 120))
     const readA = await dataStatus(A.ctx)
     check('data-scoped-to-account', readA.status === 200 && JSON.parse(readA.body).text.includes('账号正文-a-1'), readA.status)
+
+    // ---------- ②-b backend-selection：主库来自服务端，不是浏览器本地 IndexedDB ----------
+    {
+      const fetchedFromServer = A.requests.some(r => r.method === 'GET' && r.pathname === '/api/data')
+      const localDb = await A.page.evaluate(name => indexedDB.databases().then(list => list.some(d => d.name === name)), databaseName)
+      check('backend-selection', fetchedFromServer && !localDb, JSON.stringify({ fetchedFromServer, localDb, databaseName }))
+    }
 
     // ---------- ③ two-accounts：另一设备/另一账号看不到 A 的数据 ----------
     const B = await openContext('b')
@@ -214,16 +226,35 @@ async function main() {
     }))
     check('guest-local-data-intact', guestStillOwn === '游客草稿-不许进账号', String(guestStillOwn))
 
+    // ---------- ⑦ restart-readback：关掉浏览器再开，账号库仍从服务端读回同一份 ----------
+    {
+      const D = await openContext('d')
+      await login(D.ctx, USER_A)
+      const restartWrite = await putData(D.ctx, 'restart-1')
+      check('restart-readback-write', restartWrite.status === 200, String(restartWrite.status))
+      await D.ctx.close()
+      const reopened = await openContext('d', D.dir)
+      await reopened.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      const nameAfterRestart = await waitUser(reopened.page)
+      const afterRestart = await dataStatus(reopened.ctx)
+      const fetchedAgain = reopened.requests.some(r => r.method === 'GET' && r.pathname === '/api/data')
+      check('restart-readback',
+        nameAfterRestart === USER_A && afterRestart.status === 200
+        && JSON.parse(afterRestart.body).text.includes('账号正文-restart-1') && fetchedAgain,
+        JSON.stringify({ nameAfterRestart, status: afterRestart.status, fetchedAgain }))
+      await reopened.page.screenshot({ path: path.join(runRoot, 'restart-readback.png') })
+    }
+
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
     error = String(value.stack ?? value)
-    for (const ctx of contexts) {
-      const page = ctx.pages()[0]
+    for (const c of contexts) {
+      const page = c.ctx.pages()[0]
       if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
     }
   } finally {
-    for (const ctx of contexts) await ctx.close().catch(() => {})
+    for (const c of contexts) await c.ctx.close().catch(() => {})
     if (server) {
       const closed = new Promise(resolve => server.once('close', resolve))
       server.kill()

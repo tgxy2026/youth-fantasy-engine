@@ -194,7 +194,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const verified = await validateWebCloudEvidence(realRoot, path.join(runRoot, 'web-cloud-runtime.json'), {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
-      await auditRuntime('web-cloud', 'web-cloud', ['account-isolation'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; no production account')
+      await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; browser process restart; no production account')
       return verified.assertions
     }],
   ]

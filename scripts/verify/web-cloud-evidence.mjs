@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 // 账号必须是探针自建的临时账号（前缀 probe-）——生产账号哪怕跑通了也不算证据。
 export const WEB_CLOUD_CASE_IDS = [
   'page-renders-account', 'initial-flags', 'boot-store', 'write-readback', 'data-scoped-to-account',
+  'backend-selection', 'restart-readback-write', 'restart-readback',
   'two-accounts', 'same-browser-account-switch', 'switch-back-restores-own-data',
   'expired-session', 'stale-write-did-not-land', 'guest-never-writes-server', 'guest-to-account',
   'guest-local-data-intact', 'no-pageerror', 'unchanged-inputs',
