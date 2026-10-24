@@ -100,6 +100,21 @@ export async function exportGuestData(): Promise<{
 }
 
 /**
+ * 把某个 store 的原始值摊平成「行数组」。
+ *
+ * 🔴 3.2.3 · R4（P0 修复）：三端导出虽然同为 `kind:'portable-data'`，但 `stores` 的行形态不同 ——
+ *    游客导出是**行数组**（`collectAll()`），桌面/便携写出的是**主键→记录的对象**（`data.stores`）。
+ *    旧实现只认数组，键化形态被当成空数组；而下面又是「先清空再写入」——
+ *    结果是**清库 + 导入 0 条 + 返回成功**（实测复现：游客导入桌面备份后整库变空）。
+ *    现在按 `normalizePortableData` 同口径两种都收：数组直接用，对象取 `Object.values`。
+ */
+function rowsOf(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw
+  if (raw && typeof raw === 'object') return Object.values(raw as Record<string, unknown>)
+  return []
+}
+
+/**
  * 用一份 JSON 覆盖本机全部数据。
  * 🔴 语义是「替换」而不是「合并」：导入的是一份完整快照，合并会产生主键冲突与半新半旧的状态，
  *    比直接替换更难解释。调用方必须在导入成功后刷新页面（内存缓存全部失效）。
@@ -114,14 +129,26 @@ export async function importGuestData(text: string): Promise<{ ok: boolean; erro
     return { ok: false, error: '文件已损坏（不是有效的 JSON）' }
   }
 
-  const o = parsed as { app?: string; kind?: string; stores?: Record<string, unknown[]> }
+  const o = parsed as { app?: string; kind?: string; stores?: Record<string, unknown> }
   if (o?.app !== 'youth-fantasy-engine' || o?.kind !== 'portable-data' || !o.stores || typeof o.stores !== 'object') {
     return { ok: false, error: '这不是本软件导出的数据文件（缺少格式标识）' }
   }
 
+  // ---- 先规划、后动库：一条可导入记录都没有时**绝不**清空本机数据 ----
+  const plan = new Map<string, unknown[]>()
+  let total = 0
+  for (const name of GUEST_STORES) {
+    const rows = rowsOf(o.stores[name]).filter(r => keyOf(name, r) !== '')
+    plan.set(name, rows)
+    total += rows.length
+  }
+  if (Object.keys(o.stores).length > 0 && total === 0) {
+    return { ok: false, error: '这份文件里没有可导入的记录（可能来自不同版本或已损坏），已取消导入，本机数据未改动' }
+  }
+
   try {
     for (const name of GUEST_STORES) {
-      const incoming = Array.isArray(o.stores[name]) ? (o.stores[name] as unknown[]) : []
+      const rows = plan.get(name) ?? []
 
       // 先清空：不先删的话，旧库里多出来的记录会残留，形成「导入后仍看到已删内容」的怪状态
       const existing = (await ops.getAll(name)) as unknown[]
@@ -130,7 +157,6 @@ export async function importGuestData(text: string): Promise<{ ok: boolean; erro
         if (keys.length) await ops.bulkDel(name, keys)
       }
 
-      const rows = incoming.filter((r) => keyOf(name, r) !== '')
       if (rows.length) await ops.bulkPut(name, rows)
     }
     return { ok: true }
