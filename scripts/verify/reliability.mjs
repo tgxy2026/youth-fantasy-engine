@@ -6,6 +6,7 @@ import { runProcess } from './process.mjs'
 import { readTestPlan } from './test-plan.mjs'
 import { captureInputs, hashPaths, scopeVerdict, writeReports } from './evidence.mjs'
 import { validateGuestEvidence } from './web-guest-evidence.mjs'
+import { validateDesktopEvidence } from './desktop-evidence.mjs'
 import { snapshot } from '../audit/platform/source.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -21,6 +22,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
   const runRoot = await fs.mkdtemp(path.join(realParent, 'reliability-'))
   const contracts = PLAN.contracts
   const results = []
+  const runtimeEntries = []
   const startedAt = new Date().toISOString()
   const inputs = await captureInputs(realRoot)
   const pkg = JSON.parse(await fs.readFile(path.join(realRoot, 'package.json'), 'utf8'))
@@ -45,9 +47,40 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     try {
       const assertions = await inspect(result)
       if (!Number.isInteger(assertions) || assertions < 1) throw new Error('No verified samples')
-      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : id === 'storage.web-guest-save' ? ['guest-runtime.json', 'guest-ledger.json', 'guest-platform-report.json', 'guest-platform.log'] : []
+      const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop' }[id]
+      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : runtimePrefix ? [runtimePrefix + '-runtime.json', runtimePrefix + '-ledger.json', runtimePrefix + '-platform-report.json', runtimePrefix + '-platform.log'] : []
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
+  }
+  async function auditRuntime(prefix, profile, caseIds, environment) {
+    const sourceFingerprint = snapshot(realRoot).fingerprint
+    const evidenceFile = path.join(runRoot, prefix + '-runtime.json')
+    const artifact = (await hashPaths(runRoot, [prefix + '-runtime.json'])).entries[0]
+    // Explicit producer coverage: a future policy requirement must fail the audit, not auto-promote itself.
+    const coveredScenarios = {
+      'boot-store': ['initial-flags', 'backend-selection', 'restart-readback'],
+      'write-failure': ['accepted-vs-persisted', 'failure-preserves-draft', 'retry-readback'],
+    }
+    const additions = caseIds.map(id => {
+      const scenarios = coveredScenarios[id]
+      if (!scenarios?.length) throw new Error('Unknown runtime cell ' + id)
+      return { id, profile, status: 'passed', samples: scenarios.length, scenarios, environment,
+        artifact: { path: path.relative(realRoot, evidenceFile), sha256: artifact.sha256 } }
+    })
+    const runtime = [...runtimeEntries, ...additions]
+    const ledgerFile = path.join(runRoot, prefix + '-ledger.json')
+    await fs.writeFile(ledgerFile, JSON.stringify({ sourceFingerprint, decisions: [], runtime }, null, 2))
+    const matrix = await runProcess(process.execPath, ['scripts/audit/platform/run.mjs', '--evidence', ledgerFile], { cwd: realRoot, timeoutMs: 180000, signal })
+    await fs.writeFile(path.join(runRoot, prefix + '-platform.log'), matrix.out)
+    if (![0, 2].includes(matrix.exitCode) || matrix.signal || matrix.timedOut || matrix.aborted || matrix.error || matrix.outputLimit) throw new Error('Runtime platform evidence audit failed')
+    const reportPath = /^Report: (.+\.md)\s*$/m.exec(matrix.stdout)?.[1]?.trim()
+    if (!reportPath) throw new Error('Platform audit report missing')
+    const platformReport = JSON.parse(await fs.readFile(reportPath.replace(/\.md$/, '.json'), 'utf8'))
+    const passed = platformReport.runtime.filter(item => item.status === 'passed')
+    if (platformReport.sourceFingerprint !== sourceFingerprint || passed.length !== runtime.length || runtime.some(expected => !passed.some(item => item.id === expected.id && item.profile === expected.profile))) throw new Error('Runtime cells were not independently verified')
+    await fs.writeFile(path.join(runRoot, prefix + '-platform-report.json'), JSON.stringify(platformReport, null, 2))
+    runtimeEntries.push(...additions)
+    report.runtimeMatrix = { verified: passed.length, total: platformReport.runtime.length, evidence: prefix + '-ledger.json' }
   }
   let ready = true
   try {
@@ -97,8 +130,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       return Number(summary[1])
     }],
     // 3.2.3 · R2 §6.1：便携配置的真实 HTTP 写盘失败（500 / 断连 / 响应丢失 / 401 / 在途再编辑）。
-    // ⚠️ 这只是四配置里的一项：desktop 需 Electron IPC、web-cloud 需真实服务、web-guest 需 IDB，
-    //    三者在本机 Node 夹具里不可得 ⇒ `storage.four-profiles` 仍然阻塞，不许拿这条冒充四配置通过。
+    // This HTTP fixture is one profile, not full four-profile acceptance.
     ['storage.portable-save', ['tests/build-test.mjs', 'portableSaveFailure'], 180000, result => {
       const summary = /portableSaveFailure：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
       if (!summary) throw new Error('Portable save suite printed no summary')
@@ -123,22 +155,15 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const expectedSourceFingerprint = snapshot(realRoot).fingerprint
       const evidenceFile = path.join(runRoot, 'guest-runtime.json')
       const verified = await validateGuestEvidence(realRoot, evidenceFile, { expectedBuildHash: report.build.sha256, expectedSourceFingerprint })
-      const artifact = (await hashPaths(runRoot, ['guest-runtime.json'])).entries[0]
       // Only promote boot-store: export during a failed save and full roundtrip are not yet covered.
-      const ledger = { sourceFingerprint: expectedSourceFingerprint, decisions: [], runtime: [{ id: 'boot-store', profile: 'web-guest', status: 'passed', samples: 3,
-        scenarios: ['initial-flags', 'backend-selection', 'restart-readback'], environment: process.platform + '; isolated Edge persistent profile; real server/IndexedDB; browser process restart',
-        artifact: { path: path.relative(realRoot, evidenceFile), sha256: artifact.sha256 } }] }
-      const ledgerFile = path.join(runRoot, 'guest-ledger.json')
-      await fs.writeFile(ledgerFile, JSON.stringify(ledger, null, 2))
-      const matrix = await runProcess(process.execPath, ['scripts/audit/platform/run.mjs', '--evidence', ledgerFile], { cwd: realRoot, timeoutMs: 180000, signal })
-      await fs.writeFile(path.join(runRoot, 'guest-platform.log'), matrix.out)
-      if (![0, 2].includes(matrix.exitCode) || matrix.signal || matrix.timedOut || matrix.aborted || matrix.error || matrix.outputLimit) throw new Error('Guest platform evidence audit failed')
-      const reportPath = /^Report: (.+\.md)\s*$/m.exec(matrix.stdout)?.[1]?.trim()
-      if (!reportPath) throw new Error('Platform audit report missing')
-      const platformReport = JSON.parse(await fs.readFile(reportPath.replace(/\.md$/, '.json'), 'utf8'))
-      if (platformReport.sourceFingerprint !== expectedSourceFingerprint || platformReport.runtime.find(item => item.id === 'boot-store' && item.profile === 'web-guest')?.status !== 'passed' || platformReport.runtime.filter(item => item.status === 'passed').length !== 1) throw new Error('Guest boot-store cell was not independently verified')
-      await fs.writeFile(path.join(runRoot, 'guest-platform-report.json'), JSON.stringify(platformReport, null, 2))
-      report.runtimeMatrix = { verified: 1, total: platformReport.runtime.length, evidence: 'guest-ledger.json' }
+      await auditRuntime('guest', 'web-guest', ['boot-store'], process.platform + '; isolated Edge persistent profile; real server/IndexedDB; browser process restart')
+      return verified.assertions
+    }],
+    ['storage.desktop-save', ['scripts/audit/probes/desktop-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'desktop-runtime.json')], 180000, async () => {
+      const verified = await validateDesktopEvidence(realRoot, path.join(runRoot, 'desktop-runtime.json'), {
+        expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      await auditRuntime('desktop', 'desktop', ['boot-store', 'write-failure'], process.platform + '; isolated Electron appData/userData; production file renderer; real preload/IPC/filesystem failure, draft export and process restart; native chooser destination stubbed')
       return verified.assertions
     }],
   ]
