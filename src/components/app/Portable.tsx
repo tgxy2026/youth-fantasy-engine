@@ -101,6 +101,9 @@ export function PortableDataBar() {
 
   return (
     <div className="flex flex-col gap-1.5 pt-1">
+      {/* 🔴 3.2.5：便携版也接条件写了 —— 数据文件被另一个窗口改过时，本窗口停写并常驻提示，
+          别让作者以为"还在自动保存"（那会把刚写的草稿真丢掉）。与网页云端栏同一口径。 */}
+      {state.saveConflict && <p role="alert" className="text-xs text-red-400">{state.lastError || '本窗口保存已停止。请先导出全部数据保留草稿，再重新打开并合并；请勿直接刷新。'}</p>}
       {/* 第一行：保存状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
         <Button variant="bare"

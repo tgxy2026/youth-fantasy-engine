@@ -39,7 +39,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rename
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, createHash } from 'node:crypto'
 
 // 【路径解析】直接用 import.meta.url 定位本脚本所在目录。
 //   （2026-10-14：Node SEA 单文件 exe 方案已放弃 —— 原因见 memory/2026-10-14.md。
@@ -255,6 +255,33 @@ function atomicWrite(text) {
   }
 }
 
+// ============ 整库条件写（revision + If-Match，与云端同口径） ============
+//
+// 【为什么便携版也要】便携服务是**本机单用户**，但同一个 U 盘/同一台机器上，
+//   作者完全可能开两个浏览器标签（甚至两个浏览器）同时编辑同一份数据。
+//   没有条件写时，后保存的整库会静默覆盖先保存的 —— 与网页版修复前是同一个缺陷。
+//
+// 【算法与云端一致】revision = 强 ETag `"yfe-<sha256(owner \0 正文)>"`：
+//   · 便携版没有账号，owner 用固定值 'portable'，于是**换机拷走数据文件后版本仍然一致**；
+//   · 不写版本文件、不改 data.json 格式、无需迁移。
+const PORTABLE_OWNER = 'portable'
+function dataRevision(text) {
+  const body = text === null ? 'missing' : 'text\0' + text
+  return '"yfe-' + createHash('sha256').update(PORTABLE_OWNER + '\0' + body).digest('hex') + '"'
+}
+/** 读当前版本的唯一入口（文件不存在 = missing 版本，与 GET 404 的 ETag 同值） */
+function currentRevision() {
+  if (!existsSync(DATA_FILE)) return dataRevision(null)
+  return dataRevision(readFileSync(DATA_FILE, 'utf8'))
+}
+/** 同进程内串行化「比较 + 原子替换」：不许先比、等别的请求写完、再拿旧权限落盘 */
+let writeQueue = Promise.resolve()
+function withWriteLock(action) {
+  const pending = writeQueue.catch(() => {}).then(action)
+  writeQueue = pending.catch(() => {})
+  return pending
+}
+
 /**
  * 外置记录的原子写。🔴 tmp 名必须**每次唯一**：与主 JSON 同一条教训
  * （main.cjs 里 `store:save` 与 `store:save-sync` 曾因共用 tmp 而互相写坏）。
@@ -288,12 +315,21 @@ const server = createServer(async (req, res) => {
 
       if (url.startsWith('/api/data')) {
         if (req.method === 'GET') {
-          if (!existsSync(DATA_FILE)) {
-            // 404 = 首次使用（文件还不存在），前端据此按空库启动，**不是错误**
-            return sendJson(res, 404, { missing: true, path: DATA_FILE })
+          // 读失败必须明确 500：把异常直接抛出去会让整个服务进程退出，
+          // 作者只会看到「页面连不上」，无从知道是数据文件读不出来。
+          let text = null
+          try {
+            if (existsSync(DATA_FILE)) text = readFileSync(DATA_FILE, 'utf8')
+          } catch {
+            return sendJson(res, 500, { ok: false, error: '数据文件读取失败，未改动原文件' })
           }
-          const text = readFileSync(DATA_FILE, 'utf8')
-          return sendJson(res, 200, { text, path: DATA_FILE })
+          const revision = dataRevision(text)
+          res.setHeader('ETag', revision)
+          if (text === null) {
+            // 404 = 首次使用（文件还不存在），前端据此按空库启动，**不是错误**；版本照给，后续写入才能带前置条件
+            return sendJson(res, 404, { missing: true, path: DATA_FILE, revision })
+          }
+          return sendJson(res, 200, { text, path: DATA_FILE, revision })
         }
         if (req.method === 'PUT' || req.method === 'POST') {
           const buf = await readBody(req).catch(e => {
@@ -317,8 +353,32 @@ const server = createServer(async (req, res) => {
           } catch {
             return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' })
           }
-          atomicWrite(text)
-          return sendJson(res, 200, { ok: true, path: DATA_FILE })
+          // ---- 条件写：缺前置条件 428、版本不符 409（都不动磁盘）----
+          const expected = req.headers['if-match']
+          return withWriteLock(() => {
+            let current
+            try { current = currentRevision() } catch {
+              return sendJson(res, 500, { ok: false, error: '数据文件读取失败，未改动原文件' })
+            }
+            if (!expected) {
+              return sendJson(res, 428, {
+                ok: false, code: 'REVISION_REQUIRED',
+                error: '请刷新页面后再保存（数据文件现在要求带版本提交，重开本页即可）',
+                revision: current,
+              })
+            }
+            if (expected !== current) {
+              return sendJson(res, 409, {
+                ok: false, code: 'DATA_CONFLICT',
+                error: '数据文件已在另一个窗口更新；请先导出本窗口草稿，再重新打开并合并',
+                revision: current,
+              })
+            }
+            atomicWrite(text)
+            const revision = dataRevision(text)
+            res.setHeader('ETag', revision)
+            return sendJson(res, 200, { ok: true, path: DATA_FILE, revision })
+          })
         }
         return sendJson(res, 405, { ok: false, error: 'method not allowed' })
       }

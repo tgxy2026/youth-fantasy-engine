@@ -56,7 +56,9 @@ function showBanner() {
    */
   text.textContent = WEB_CLOUD
     ? '检测到另一个窗口也在用这个账号：两边都是整库保存，云端会拒绝旧版本。发生冲突时请先导出草稿，再重新打开并合并。建议只留一个窗口编辑。'
-    : '检测到另一个窗口也在用这个账号：两边都是整库保存，后保存的会覆盖先保存的，先写的内容会丢失。建议只留一个窗口编辑。'
+    // 🔴 3.2.5：便携服务也接了条件写，旧版本的整库会被拒绝 —— 旧文案「后写的覆盖先写的、先写的内容会丢失」
+    //    已不成立，继续这么说等于让作者以为"反正都会丢"。
+    : '检测到另一个窗口也在用这份数据：两边都是整库保存，旧版本会被拒绝。发生冲突时请先导出草稿，再重新打开并合并。建议只留一个窗口编辑。'
   text.setAttribute('style', 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis')
 
   const closeBtn = document.createElement('button')

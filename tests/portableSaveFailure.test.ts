@@ -8,6 +8,7 @@
 // 保存中继续编辑，不能被这次回执把新草稿清掉。
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { createHash } from 'node:crypto'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -19,6 +20,14 @@ type Mode = 'ok' | 'missing' | 'http500' | 'drop' | 'lost-response' | 'session-r
 let mode: Mode = 'missing'
 let lastPutBody = ''
 let putCount = 0
+/**
+ * 服务端真实状态（整库正文）。
+ * 🔴 3.2.5 起便携服务也要求条件写（与云端同口径），夹具必须给出**真版本**：
+ *    否则前端会把「服务端没给 revision」判成不可兼容并锁写盘 —— 那不是被测的产品行为。
+ */
+let currentText: string | null = null
+const revisionOf = (text: string | null) =>
+  '"yfe-' + createHash('sha256').update('portable\0' + (text === null ? 'missing' : 'text\0' + text)).digest('hex') + '"'
 
 const server = http.createServer((req, res) => {
   const chunks: Buffer[] = []
@@ -28,14 +37,24 @@ const server = http.createServer((req, res) => {
     const pathname = (req.url ?? '').split('?')[0]
     if (pathname !== '/api/data') { res.writeHead(404); res.end('{}'); return }
     if (req.method === 'GET') {
-      if (mode === 'missing') { res.writeHead(404); res.end('{}'); return }
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ text: null, missing: true }))
+      const revision = revisionOf(currentText)
+      res.setHeader('ETag', revision)
+      res.setHeader('Content-Type', 'application/json')
+      if (mode === 'missing' || currentText === null) { res.writeHead(404); res.end(JSON.stringify({ missing: true, revision })); return }
+      res.writeHead(200)
+      res.end(JSON.stringify({ text: currentText, revision }))
       return
     }
     if (req.method !== 'PUT') { res.writeHead(405); res.end(); return }
     putCount++
     lastPutBody = body
+    const replyOk = () => {
+      currentText = body
+      const revision = revisionOf(currentText)
+      res.setHeader('ETag', revision)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, revision }))
+    }
     switch (mode) {
       case 'http500':
         res.writeHead(500); res.end('boom'); return
@@ -43,17 +62,23 @@ const server = http.createServer((req, res) => {
         // 连接中断：请求收到了，响应一个字节都不发就断掉
         req.socket.destroy(); return
       case 'lost-response':
-        // 提交后响应丢失：服务端已经收到并"落了盘"，但回应在网络上没了
+        // 提交后响应丢失：服务端已经收到并真的落了盘，但回应在网络上没了
+        currentText = body
         req.socket.destroy(); return
       case 'session-replaced':
         res.writeHead(401, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ code: 'SESSION_REPLACED' })); return
       case 'slow':
-        setTimeout(() => { res.writeHead(200); res.end('{"ok":true}') }, 250)
+        setTimeout(replyOk, 250)
         return
-      default:
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end('{"ok":true}')
+      default: {
+        // 条件写：缺前置条件 428、版本不符 409（与便携服务实现一致）
+        const expected = req.headers['if-match']
+        if (!expected) { res.writeHead(428, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, code: 'REVISION_REQUIRED' })); return }
+        const current = revisionOf(currentText)
+        if (expected !== current) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, code: 'DATA_CONFLICT', revision: current })); return }
+        replyOk()
+      }
     }
   })
 })

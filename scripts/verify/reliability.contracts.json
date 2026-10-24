@@ -21,7 +21,7 @@
     { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置已有各自保存故障证据；desktop/web-cloud 已接真实导出再导入的端到端检查。仍缺 portable/web-guest 端到端往返，以及各配置 schema-version/sidecars/secret-stripping/restore-failure 完整矩阵与在途编辑等补证；游客失败导出不能包含未保存草稿，用户已选提示方案，不能报四配置全部完成" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
     { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
-    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 已接单服务进程按账号条件写、双标签冲突草稿导出及退出守卫；portable 仍无条件写，云端真实关页在途/多服务进程/sidecar 并发还未覆盖。synthetic beforeunload 不计为真实关页，concurrency 格暂不提升" },
+    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 与 portable 均已接条件写（单服务进程内的版本比较 + 原子替换、冲突停写保草稿、退出带前置条件），并各有测试与探针；仍未覆盖：真实关页在途、多服务进程共享同一数据目录、sidecar 并发。synthetic beforeunload 不计为真实关页，concurrency 格暂不提升" },
     { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
     { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },
     { "id": "audit.contracts", "stage": "business", "minAssertions": 1, "pending": "Required runtime audit probes still need repository-owned evidence producers" }
