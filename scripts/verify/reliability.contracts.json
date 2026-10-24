@@ -8,6 +8,7 @@
     { "id": "source.build", "stage": "foundation", "minAssertions": 1 },
     { "id": "source.release-check", "stage": "foundation", "minAssertions": 1 },
     { "id": "proofread.protocol", "stage": "business", "minAssertions": 40 },
+    { "id": "backup.migration", "stage": "business", "minAssertions": 30 },
     { "id": "storage.portable-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置只完成 portable（见 storage.portable-save）；desktop 需 Electron IPC 主进程故障注入、web-cloud 需隔离服务与临时账号、web-guest 需 IDB 事务 abort/QuotaExceeded 夹具 —— 三者在本机 Node 夹具中不可得，如实阻塞" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },

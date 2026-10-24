@@ -236,6 +236,12 @@ export async function migratePortableSidecar(): Promise<void> {
       console.log(`[portable] 已把 ${total} 条大块数据迁出为独立文件：`, r.moved)
     }
     if (r.failed.length) lastError = `部分大块数据迁移失败（下次启动会重试）：${r.failed.join('；')}`
+    /**
+     * 🔴 3.2.3 · R2 §6.3：`moved > 0` 但 `ok === false` ⇒ 外置写成功了，**主数据文件却没写下去**。
+     *    此时内存里已删掉这些 store，而磁盘上的老主 JSON 还留着它们：下次启动会再迁一遍（幂等，不会丢），
+     *    但这一轮必须如实说出来 —— 原先只写一条 console.log，作者看不到任何异常。
+     */
+    else if (total > 0 && !r.ok) lastError = '大块数据已迁出，但主数据文件未写成功（下次启动会自动重试，期间请勿关闭页面）'
   } catch (e) {
     lastError = '大块数据迁移失败：' + (e instanceof Error ? e.message : String(e))
   }
