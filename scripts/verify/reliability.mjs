@@ -87,6 +87,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Protocol suite has failing assertions')
       return Number(summary[1])
     }],
+    // 3.2.3 · R2：候选应用的**真实进程终止**与重启核对（不是内存异常冒充崩溃）。
+    ['revision.recovery', ['tests/build-test.mjs', 'candidateCrash'], 300000, result => {
+      const summary = /candidateCrash：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Crash suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Crash suite has failing assertions')
+      return Number(summary[1])
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {
