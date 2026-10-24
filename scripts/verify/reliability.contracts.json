@@ -24,6 +24,6 @@
     { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 与 portable 均已接条件写（单服务进程内的版本比较 + 原子替换、冲突停写保草稿、退出带前置条件），并各有测试与探针；仍未覆盖：真实关页在途、多服务进程共享同一数据目录、sidecar 并发。synthetic beforeunload 不计为真实关页，concurrency 格暂不提升" },
     { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
     { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },
-    { "id": "audit.contracts", "stage": "business", "minAssertions": 1, "pending": "Required runtime audit probes still need repository-owned evidence producers" }
+    { "id": "audit.contracts", "stage": "business", "minAssertions": 6 }
   ]
 }

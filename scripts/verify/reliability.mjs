@@ -8,6 +8,8 @@ import { captureInputs, hashPaths, scopeVerdict, writeReports } from './evidence
 import { validateGuestEvidence } from './web-guest-evidence.mjs'
 import { validateDesktopEvidence } from './desktop-evidence.mjs'
 import { validateWebCloudEvidence } from './web-cloud-evidence.mjs'
+import { validateAuditBundle } from './audit-contracts.mjs'
+import auditContext from '../audit/context.cjs'
 import { snapshot } from '../audit/platform/source.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -49,7 +51,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const assertions = await inspect(result)
       if (!Number.isInteger(assertions) || assertions < 1) throw new Error('No verified samples')
       const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop', 'storage.web-cloud-save': 'web-cloud' }[id]
-      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : runtimePrefix ? [runtimePrefix + '-runtime.json', runtimePrefix + '-ledger.json', runtimePrefix + '-platform-report.json', runtimePrefix + '-platform.log'] : []
+      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : id === 'audit.contracts' ? ['audit-contracts'] : runtimePrefix ? [runtimePrefix + '-runtime.json', runtimePrefix + '-ledger.json', runtimePrefix + '-platform-report.json', runtimePrefix + '-platform.log'] : []
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
   }
@@ -209,6 +211,11 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const summary = /E2E_ROUNDTRIP ok=(\d+)/.exec(result.out)
       if (!summary) throw new Error('E2E roundtrip printed no summary')
       return Number(summary[1])
+    }],
+    ['audit.contracts', ['scripts/verify/audit-contracts.mjs', '--out-dir', path.join(runRoot, 'audit-contracts')], 1800000, async () => {
+      return validateAuditBundle(realRoot, path.join(runRoot, 'audit-contracts'), {
+        inputHash: inputs.combined, sourceFingerprint: auditContext.sourceFingerprint(realRoot),
+      })
     }],
   ]
   try {

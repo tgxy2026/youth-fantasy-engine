@@ -8,10 +8,11 @@
 // 🔴 纪律：
 //   · 每个生产者都必须**真跑**；failed>0 或非 0 退出 ⇒ evidence 里如实标 failed，不丢弃、不改写。
 //   · 指纹取当前工作树（含未提交改动）；writer 与 reader 之间若源码变了，run.mjs 会自己判失效。
-//   · 尚未实现的生产者（draft.failure / mono.rendered）不写进 checks —— 缺就是缺，不占位充数。
+//   · 四个生产者均已入库；少项、异常退出或输入变化不能占位充数。
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { runProcess } from './process.mjs'
+import { captureInputs } from './evidence.mjs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -43,53 +44,48 @@ const PRODUCERS = [
   },
 ]
 
-function run(args, env = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, {
-      cwd: ROOT, windowsHide: true,
-      env: { ...process.env, ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let out = ''
-    child.stdout.on('data', (v) => { out += v })
-    child.stderr.on('data', (v) => { out += v })
-    child.once('error', (error) => resolve({ code: -1, out: out + '\n' + error.message }))
-    child.once('close', (code) => resolve({ code, out }))
-  })
-}
-
 async function main() {
   const only = process.argv.includes('--only')
     ? String(process.argv[process.argv.indexOf('--only') + 1] ?? '')
     : ''
   const fingerprint = sourceFingerprint(ROOT)
+  const inputs = await captureInputs(ROOT)
+  const dirAt = process.argv.indexOf('--out-dir')
+  if (dirAt >= 0 && (!process.argv[dirAt + 1] || process.argv[dirAt + 1].startsWith('--'))) throw new Error('--out-dir requires a value')
+  await fs.mkdir(path.join(ROOT, '.workbuddy/tmp'), { recursive: true })
+  const temp = await fs.realpath(path.join(ROOT, '.workbuddy/tmp'))
+  const outDir = dirAt >= 0 ? path.resolve(process.argv[dirAt + 1]) : await fs.mkdtemp(path.join(temp, 'contracts-evidence-'))
+  if (!outDir.startsWith(temp + path.sep)) throw new Error('Evidence output must be inside workspace tmp')
+  await fs.mkdir(outDir, { recursive: true })
   const checks = []
   const runs = []
   let dirty = false
 
   for (const producer of PRODUCERS) {
     if (only && !producer.id.includes(only)) continue
-    const result = await run([producer.script])
+    console.log('Producer ' + producer.id)
+    const result = await runProcess(process.execPath, [producer.script], { cwd: ROOT, timeoutMs: 240000 })
+    await fs.writeFile(path.join(outDir, producer.id + '.log'), result.out)
     const summary = producer.summary.exec(result.out)
-    const artifactLine = /artifact=(\S+)/.exec(result.out)?.[1] ?? ''
+    const artifactLine = /^artifact=(.+)$/m.exec(result.out)?.[1]?.trim() ?? ''
     if (!summary) {
       // 没有汇总行 = 生产者自己没跑成，如实标 failed（run.mjs 会据此判红）
       dirty = true
       checks.push({ id: producer.id, status: 'failed', samples: 0, cases: producer.cases, artifact: '', reason: `${producer.label} 未打印汇总行（exit=${result.code}）` })
-      runs.push({ id: producer.id, exitCode: result.code, log: result.out.slice(-4000) })
+      runs.push({ id: producer.id, ...result, stdout: undefined, stderr: undefined, out: undefined })
       continue
     }
     const samples = Number(summary[1])
     const failed = Number(summary[3])
-    const status = failed === 0 && result.code === 0 && samples > 0 ? 'passed' : 'failed'
+    const status = failed === 0 && result.ok && samples > 0 && Number(summary[2]) === samples ? 'passed' : 'failed'
     if (status === 'failed') dirty = true
     checks.push({ id: producer.id, status, samples, cases: producer.cases, artifact: artifactLine, ...(producer.theme ? { theme: producer.theme } : {}) })
-    runs.push({ id: producer.id, exitCode: result.code, samples, failed, log: result.out.slice(-2000) })
+    runs.push({ id: producer.id, ...result, stdout: undefined, stderr: undefined, out: undefined, samples, failed })
   }
 
-  const stamp = Date.now()
-  const file = path.join(ROOT, '.workbuddy/tmp', `contracts-evidence-${stamp}.json`)
-  await fs.writeFile(file, JSON.stringify({ sourceFingerprint: fingerprint, checks, runs, at: new Date().toISOString() }, null, 2))
+  if (!checks.length || (await captureInputs(ROOT)).combined !== inputs.combined) dirty = true
+  const file = path.join(outDir, 'producer-evidence.json')
+  await fs.writeFile(file, JSON.stringify({ sourceFingerprint: fingerprint, inputHash: inputs.combined, checks, runs, at: new Date().toISOString(), dirty }, null, 2))
   for (const c of checks) console.log(`${c.status === 'passed' ? 'PASS' : 'FAIL'} ${c.id} samples=${c.samples} artifact=${c.artifact || '-'}`)
   console.log(`EVIDENCE ${path.relative(ROOT, file).replaceAll('\\', '/')}`)
   console.log(`fingerprint=${fingerprint.slice(0, 12)} checks=${checks.length} dirty=${dirty}`)

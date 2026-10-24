@@ -131,9 +131,9 @@ else {
   add(bid.length ? 'OK' : 'INFO', '构建产物 · BUILD_ID', bid.length ? bid.join(', ') : 'dist 下无 BUILD_ID 文件（部署时由 deploy.sh 写入包内）')
 }
 
-// ==================== 4. 文档引用（T-08 接线，工具不在则跳过） ====================
-const docRefTool = path.join(ROOT, '.workbuddy/tools/check-doc-refs.cjs')
-if (!exists(docRefTool)) add('INFO', '文档引用 · check-doc-refs', '工具不存在，已跳过')
+// ==================== 4. 文档引用（随仓必需工具，新克隆不得静默跳过） ====================
+const docRefTool = path.join(ROOT, 'scripts/verify/check-doc-refs.cjs')
+if (!exists(docRefTool)) add('FAIL', '文档引用 · check-doc-refs', '仓库内必需工具不存在')
 else {
   const r = await run(process.execPath, [docRefTool, '--inuse'], 60000)
   const head = (r.out.match(/可判定引用\s*(\d+)\s*处/) || [])[1]
@@ -170,7 +170,7 @@ else {
     return false
   }
   const real = items.filter((it) => !isIgnored(it))
-  if (Number.isNaN(bad)) add('WARN', '文档引用 · check-doc-refs --inuse', `无法解析工具输出（exit=${r.code}）：${r.out.slice(0, 120)}`)
+  if (!r.ok || Number.isNaN(bad)) add('FAIL', '文档引用 · check-doc-refs --inuse', `工具执行或汇总解析失败（exit=${r.exitCode}）：${r.out.slice(0, 120)}`)
   else if (real.length === 0) add('OK', '文档引用 · check-doc-refs --inuse', `工具报 ${bad} 处，按已知误报规则（行号后缀 / 占位 / 临时与历史产物）剔净 ⇒ 剩 0 处待处理（共 ${head ?? '?'} 处引用）`)
   else add('WARN', '文档引用 · check-doc-refs --inuse', `${real.length} 处待人工判断（工具报 ${bad}，已剔 ${bad - real.length} 处已知误报）：${real.slice(0, 8).map((x) => `${x.doc} → ${x.ref}`).join('；')}`)
 }
