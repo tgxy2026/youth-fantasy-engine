@@ -146,6 +146,19 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Roundtrip suite has failing assertions')
       return Number(summary[1])
     }],
+    // 3.2.3 · R4：游客导入行形态（P0 回归）+ 保存失败/多标签提示文案闸。
+    ['storage.import-shape', ['tests/build-test.mjs', 'guestImportShape'], 120000, result => {
+      const summary = /guestImportShape：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Guest import suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Guest import suite has failing assertions')
+      return Number(summary[1])
+    }],
+    ['copy.failure-hints', ['tests/build-test.mjs', 'saveFailureHint'], 120000, result => {
+      const summary = /saveFailureHint：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Copy suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Copy suite has failing assertions')
+      return Number(summary[1])
+    }],
     // 3.2.3 · R2 §6.3：备份外置数据的迁移／损坏／主 JSON+blobs 同时恢复／失败重试。
     ['backup.migration', ['tests/build-test.mjs', 'sidecarMigration'], 180000, result => {
       const summary = /sidecarMigration：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)

@@ -82,6 +82,27 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     await openEditor(page)
   }
   const calls = () => app.evaluate(() => global.__desktopProbe.calls)
+  /**
+   * 解除"用空目录挡住目标文件"的注入（幂等）。
+   * · 目标仍是空目录 ⇒ 移除它，再把原字节放回；
+   * · 目标已被应用自己写回（先删后改名）⇒ 保留应用那份，删掉我们暂存的旧字节；
+   * · 目标不存在 ⇒ 直接把旧字节放回。
+   * 任何情况下都不许抛错，否则清理阶段会中断、Electron 不退出，整步被判超时。
+   */
+  async function restoreFromBlocker() {
+    try {
+      let isDir = false
+      try { isDir = (await fs.stat(activeFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
+      if (isDir) await fs.rmdir(activeFile)
+      const exists = await fs.stat(activeFile).then(() => true, () => false)
+      if (!exists) await fs.rename(keptFile, activeFile)
+      else await fs.rm(keptFile).catch(() => {})
+    } catch (e) {
+      console.warn('[desktop-probe] 恢复阶段未能完全还原（不影响本次结论，已记录）：', e instanceof Error ? e.message : String(e))
+    } finally {
+      blocked = false
+    }
+  }
   try {
     await launch()
     check('initial-flags', await page.evaluate(() => !!window.electronStore && !window.__YFE_PORTABLE__ && !window.__YFE_WEB__ && !window.__YFE_GUEST__))
@@ -109,7 +130,9 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     check('export-preserves-failure', (await fs.stat(activeFile)).isDirectory() && hash(await fs.readFile(keptFile)) === hash(originalBytes) && (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT)
     await page.screenshot({ path: path.join(runRoot, 'failure-export.png') })
     // Restore only the empty directory just created here; keep the original bytes until recovery.
-    await fs.rmdir(activeFile); await fs.rename(keptFile, activeFile); blocked = false
+    // 🔴 幂等：应用自己的写盘若「先删目标再 rename」，会在我们恢复前把空目录换掉 ——
+    //    这时 rmdir 会 ENOENT（实测踩过，导致清理阶段抛错、Electron 没关、整步被 180s 超时判红）。
+    await restoreFromBlocker()
     await until(async () => JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH].content === DRAFT)
     check('retry-readback', true)
     await page.getByRole('button', { name: '已保存', exact: true }).waitFor()
@@ -127,8 +150,8 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     error = String(value.stack ?? value)
     if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
   } finally {
-    if (blocked) { await fs.rmdir(activeFile); await fs.rename(keptFile, activeFile) }
-    if (app) { await fs.writeFile(path.join(runRoot, 'ipc-final.json'), JSON.stringify(await calls().catch(() => []), null, 2)); await app.close().catch(() => {}) }
+    if (blocked) await restoreFromBlocker()
+    if (app) { await fs.writeFile(path.join(runRoot, 'ipc-final.json'), JSON.stringify(await calls().catch(() => []), null, 2)).catch(() => {}); await app.close().catch(() => {}) }
     await fs.writeFile(path.join(runRoot, 'electron.log'), runtimeLog)
     const artifacts = []
     for (const file of await fs.readdir(runRoot)) if (/\.(png|json|log)$/.test(file) && !['result.json', 'package.json'].includes(file)) artifacts.push({ path: path.relative(ROOT, path.join(runRoot, file)), sha256: hash(await fs.readFile(path.join(runRoot, file))) })

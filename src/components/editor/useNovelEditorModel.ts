@@ -28,6 +28,7 @@ import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draf
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
+import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '@/lib/ai/aiAssist'
 
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
@@ -531,7 +532,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
           return next
         })
           .then(() => onStatsChangeRef.current?.())
-          .catch((e: unknown) => showToast('自动保存失败：' + (e instanceof Error ? e.message : String(e)), 'error'))
+          .catch((e: unknown) => showToast(saveFailureMessage('自动保存失败：', e), 'error'))
       }
     }
     prevActiveIdRef.current = activeId
@@ -630,7 +631,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     } catch (e) {
       // 🔴 落库失败必须复位 saving 并如实报错 —— 原先没有 try/finally，一旦抛错按钮会永久停在
       //    「保存中…」，还会产生未捕获 rejection（2026-09-19 六维审计 P1-5）。
-      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+      showToast(saveFailureMessage('保存失败：', e), 'error')
     } finally {
       setSaving(false)
     }

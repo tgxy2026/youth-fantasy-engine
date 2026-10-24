@@ -11,6 +11,8 @@
     { "id": "backup.migration", "stage": "business", "minAssertions": 30 },
     { "id": "storage.portable-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.roundtrip", "stage": "business", "minAssertions": 12 },
+    { "id": "storage.import-shape", "stage": "business", "minAssertions": 15 },
+    { "id": "copy.failure-hints", "stage": "business", "minAssertions": 12 },
     { "id": "storage.web-guest-save", "stage": "business", "minAssertions": 14 },
     { "id": "storage.desktop-save", "stage": "business", "minAssertions": 15 },
     { "id": "storage.web-cloud-save", "stage": "business", "minAssertions": 14 },

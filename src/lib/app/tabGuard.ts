@@ -54,7 +54,13 @@ function showBanner() {
   ].join(';'))
 
   const text = document.createElement('span')
-  text.textContent = '检测到另一个窗口也在用这个账号，同时编辑会互相覆盖'
+  /**
+   * 🔴 3.2.3 · R4（并发实测后按方案 A 落文案）：实测已确认「两标签同账号 ⇒ 后保存的整库覆盖先保存的，
+   *    先写的内容静默消失，服务端没有版本判据」（见 docs/3.2.3-R4云端并发实测-2026-10-24.md）。
+   *    旧文案只说"会互相覆盖"，没说清**整库**、也没给动作建议；作者点掉「知道了」继续写就真丢了。
+   *    现在写清三件事：整库保存、后写的吃掉先写的、应当只留一个窗口。
+   */
+  text.textContent = '检测到另一个窗口也在用这个账号：两边都是整库保存，后保存的会覆盖先保存的，先写的内容会丢失。建议只留一个窗口编辑。'
   text.setAttribute('style', 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis')
 
   const closeBtn = document.createElement('button')
