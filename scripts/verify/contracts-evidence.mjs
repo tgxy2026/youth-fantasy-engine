@@ -18,6 +18,8 @@ import { createRequire } from 'node:module'
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const require = createRequire(import.meta.url)
 const { sourceFingerprint } = require('../audit/context.cjs')
+/** 契约定义（cases 的真源）：mono.rendered 的 cases 就是这里的 charts 列表 */
+const CONTRACTS = require('../audit/contracts.json')
 
 /** 已实现的生产者；`summary` 用于解析各自打印的汇总行 */
 const PRODUCERS = [
@@ -33,6 +35,11 @@ const PRODUCERS = [
     // 需要 vite dev server + Edge（约 40 秒）：真实浏览器里注入一次 IDB 写失败，验切换守卫
     id: 'draft.failure', script: 'scripts/verify/draft-failure.mjs', cases: ['save-failure', 'preserve-selection', 'preserve-storage'],
     summary: /DRAFT_FAILURE samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'DRAFT_FAILURE',
+  },
+  {
+    // 需要 vite dev server + Edge（约 45 秒）：8 个图表在 mono 主题下的真实绘制采样
+    id: 'mono.rendered', script: 'scripts/verify/mono-charts.mjs', cases: CONTRACTS.charts, theme: 'mono',
+    summary: /MONO_CHARTS samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'MONO_CHARTS',
   },
 ]
 
@@ -76,7 +83,7 @@ async function main() {
     const failed = Number(summary[3])
     const status = failed === 0 && result.code === 0 && samples > 0 ? 'passed' : 'failed'
     if (status === 'failed') dirty = true
-    checks.push({ id: producer.id, status, samples, cases: producer.cases, artifact: artifactLine })
+    checks.push({ id: producer.id, status, samples, cases: producer.cases, artifact: artifactLine, ...(producer.theme ? { theme: producer.theme } : {}) })
     runs.push({ id: producer.id, exitCode: result.code, samples, failed, log: result.out.slice(-2000) })
   }
 
