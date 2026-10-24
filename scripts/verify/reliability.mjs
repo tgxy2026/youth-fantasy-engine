@@ -94,6 +94,15 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Crash suite has failing assertions')
       return Number(summary[1])
     }],
+    // 3.2.3 · R2 §6.1：便携配置的真实 HTTP 写盘失败（500 / 断连 / 响应丢失 / 401 / 在途再编辑）。
+    // ⚠️ 这只是四配置里的一项：desktop 需 Electron IPC、web-cloud 需真实服务、web-guest 需 IDB，
+    //    三者在本机 Node 夹具里不可得 ⇒ `storage.four-profiles` 仍然阻塞，不许拿这条冒充四配置通过。
+    ['storage.portable-save', ['tests/build-test.mjs', 'portableSaveFailure'], 180000, result => {
+      const summary = /portableSaveFailure：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Portable save suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Portable save suite has failing assertions')
+      return Number(summary[1])
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {
