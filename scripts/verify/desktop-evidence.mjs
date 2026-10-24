@@ -5,14 +5,14 @@ import { createHash } from 'node:crypto'
 export const DESKTOP_CASE_IDS = [
   'initial-flags', 'isolated-paths', 'fixture-readback', 'failure-visible', 'failure-preserves-draft',
   'accepted-vs-persisted', 'dirty-retry', 'failure-export', 'export-preserves-failure', 'retry-readback',
-  'recovery-visible', 'backend-selection', 'restart-readback',
+  'recovery-barrier', 'recovery-visible', 'backend-selection', 'restart-readback',
   // 端到端往返：真实导出 → 改库落盘 → 真实导入 → 重启回读
   'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback', 'roundtrip-restart-readback',
   'no-pageerror', 'unchanged-inputs',
 ]
 export const DESKTOP_ARTIFACTS = ['write-failure.png', 'failure-export.png', 'restart-readback.png',
   'roundtrip-import.png', 'failure-export.json', 'roundtrip-export.json', 'chapter-readback.json',
-  'ipc-before-restart.json', 'electron.log']
+  'ipc-before-restart.json', 'filesystem-before-restart.json', 'save-barriers.json', 'electron.log']
 const within = (root, file) => { const relative = path.relative(root, file); return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative) }
 
 export async function validateDesktopEvidence(root, file, { expectedBuildHash, expectedSourceFingerprint }) {
@@ -32,5 +32,13 @@ export async function validateDesktopEvidence(root, file, { expectedBuildHash, e
     if (!within(runRoot, actual)) throw new Error('Desktop artifact escapes run directory')
     if (createHash('sha256').update(await fs.readFile(actual)).digest('hex') !== artifact.sha256) throw new Error('Desktop artifact hash mismatch')
   }
+  const barriers = JSON.parse(await fs.readFile(path.join(runRoot, 'save-barriers.json'), 'utf8'))
+  if (!Array.isArray(barriers) || barriers.length !== 2 || barriers[0].phase !== 'install-blocker' || barriers[1].phase !== 'remove-blocker' || barriers.some(item => item.paused !== true || item.active !== 0 || !Number.isFinite(item.at) || !Number.isFinite(item.mutatedAt) || item.mutatedAt < item.at)) throw new Error('Desktop blocker changed while save was active')
+  const chapter = JSON.parse(await fs.readFile(path.join(runRoot, 'chapter-readback.json'), 'utf8'))
+  const calls = JSON.parse(await fs.readFile(path.join(runRoot, 'ipc-before-restart.json'), 'utf8'))
+  const successfulSaves = Array.isArray(calls) ? calls.filter(item => item.channel === 'store:save' && item.result?.ok === true) : []
+  if (typeof chapter.content !== 'string' || !successfulSaves.some(item => item.body === chapter.content) || successfulSaves.some(item => typeof item.body !== 'string' || item.diskAtReturn?.body !== item.body)) throw new Error('Desktop successful IPC lacks matching disk readback')
+  const filesystem = JSON.parse(await fs.readFile(path.join(runRoot, 'filesystem-before-restart.json'), 'utf8'))
+  if (!Array.isArray(filesystem) || !filesystem.some(item => item.name === 'rename' && item.ok === true) || !filesystem.some(item => item.name === 'rename' && typeof item.error === 'string')) throw new Error('Desktop real rename failure/recovery trace missing')
   return { assertions: result.checks.length, result }
 }

@@ -19,9 +19,16 @@ async function rejects(name: string, value: GuestRuntimeResult) {
 try {
   await fs.mkdir(runRoot, { recursive: true })
   const artifacts = []
+  const semanticFixtures: Record<string, unknown> = {
+    'save-barriers.json': ['install-blocker', 'remove-blocker'].map(phase => ({ phase, paused: true, active: 0, at: 1, mutatedAt: 2 })),
+    'chapter-readback.json': { content: 'saved draft' },
+    'ipc-before-restart.json': [{ channel: 'store:save', result: { ok: true }, body: 'saved draft', diskAtReturn: { body: 'saved draft' } }],
+    'filesystem-before-restart.json': [{ name: 'rename', error: 'EPERM' }, { name: 'rename', ok: true }],
+  }
   for (const name of DESKTOP_ARTIFACTS) {
-    await fs.writeFile(path.join(runRoot, name), 'fixture-' + name)
-    artifacts.push({ path: path.relative(root, path.join(runRoot, name)), sha256: hash('fixture-' + name) })
+    const bytes = name in semanticFixtures ? JSON.stringify(semanticFixtures[name]) : 'fixture-' + name
+    await fs.writeFile(path.join(runRoot, name), bytes)
+    artifacts.push({ path: path.relative(root, path.join(runRoot, name)), sha256: hash(bytes) })
   }
   const good: GuestRuntimeResult = { profile: 'desktop', runRoot, sourceFingerprint: expected.expectedSourceFingerprint,
     buildManifest: { sha256: expected.expectedBuildHash }, passed: DESKTOP_CASE_IDS.length, failed: 0, error: null,
@@ -48,6 +55,16 @@ try {
   await fs.writeFile(path.join(root, 'outside.txt'), 'outside')
   await rejects('越界产物', { ...good, artifacts: [...artifacts, { path: 'outside.txt', sha256: hash('outside') }] })
   await rejects('非隔离资料区', { ...good, runRoot: root })
+  for (const [name, value, label] of [
+    ['save-barriers.json', [{ phase: 'install-blocker', paused: true, active: 1, at: 1, mutatedAt: 2 }, { phase: 'remove-blocker', paused: true, active: 0, at: 3, mutatedAt: 4 }], '有写入在途时不得撤挡板'],
+    ['ipc-before-restart.json', [{ channel: 'store:save', result: { ok: true }, body: 'saved draft', diskAtReturn: { body: 'saved draft' } }, { channel: 'store:save', result: { ok: true }, body: 'saved draft', diskAtReturn: { error: 'ENOENT' } }], '一次成功不能掩盖另一次IPC成功但磁盘无文件'],
+    ['filesystem-before-restart.json', [{ name: 'rename', ok: true }], '没有真实rename失败不能通过'],
+  ] as const) {
+    const bytes = JSON.stringify(value)
+    await fs.writeFile(path.join(runRoot, name), bytes)
+    await rejects(label, { ...good, artifacts: artifacts.map(item => item.path === path.relative(root, path.join(runRoot, name)) ? { ...item, sha256: hash(bytes) } : item) })
+    await fs.writeFile(path.join(runRoot, name), JSON.stringify(semanticFixtures[name]))
+  }
   console.log('desktopEvidence: ' + passed + ' passed')
 } finally {
   const target = await fs.realpath(root)

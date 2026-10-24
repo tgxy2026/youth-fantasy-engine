@@ -72,12 +72,35 @@ async function main() {
   await fs.writeFile(path.join(runRoot, 'bootstrap.cjs'), `
 const {app,ipcMain,dialog}=require('electron');
 app.setPath('appData',${JSON.stringify(appData)});app.setPath('userData',${JSON.stringify(profile)});
-global.__desktopProbe={calls:[]};
+const disk=require('node:fs/promises');
+global.__desktopProbe={calls:[],filesystem:[],barrier:require(${JSON.stringify(path.join(ROOT, 'scripts/audit/probes/save-barrier.cjs'))}).createSaveBarrier()};
+// Node's main-process fetch is outside Electron session.webRequest. Disable it before startup too.
+globalThis.fetch=async()=>{throw new Error('Network disabled in isolated desktop storage probe');};
+const target=${JSON.stringify(activeFile)};
+for(const name of ['rename','unlink','rmdir']){
+ const original=disk[name].bind(disk);
+ disk[name]=async(...args)=>{
+  const observed=args.some(value=>typeof value==='string'&&value.startsWith(target));
+  const event=observed?{name,args,at:Date.now()}:null;
+  if(event)global.__desktopProbe.filesystem.push(event);
+  try{const result=await original(...args);if(event)event.ok=true;return result;}
+  catch(error){if(event)event.error=String(error);throw error;}
+  finally{if(event)event.doneAt=Date.now();}
+ };
+}
 const handle=ipcMain.handle.bind(ipcMain);
 ipcMain.handle=(channel,fn)=>handle(channel,async(...args)=>{
  const entry={channel,at:Date.now()};global.__desktopProbe.calls.push(entry);
  if(channel==='store:save')entry.body=JSON.parse(args[1]).stores.chapters[${JSON.stringify(CH)}]?.content;
- const result=await fn(...args);entry.result=result;entry.doneAt=Date.now();return result;
+ const invoke=async()=>{
+  const result=await fn(...args);entry.result=result;entry.doneAt=Date.now();
+  if(channel==='store:save'){
+   try{const bytes=await disk.readFile(target,'utf8');entry.diskAtReturn={body:JSON.parse(bytes).stores.chapters[${JSON.stringify(CH)}]?.content,bytes:Buffer.byteLength(bytes)};}
+   catch(error){entry.diskAtReturn={error:String(error)};}
+  }
+  return result;
+ };
+ return channel==='store:save'?global.__desktopProbe.barrier.run(invoke):invoke();
 });
 dialog.showSaveDialog=async()=>({canceled:false,filePath:global.__desktopProbe.savePath||${JSON.stringify(exportFile)}});
 // 导入用的文件选择器：只对 openFile 生效（openDirectory 用于云同步选目录，保持取消，别误触发）
@@ -101,26 +124,30 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     await openEditor(page)
   }
   const calls = () => app.evaluate(() => global.__desktopProbe.calls)
+  const barriers = []
+  async function withPausedSaves(phase, mutate) {
+    await app.evaluate(() => global.__desktopProbe.barrier.pause())
+    try {
+      const state = await app.evaluate(() => global.__desktopProbe.barrier.state)
+      if (!state.paused || state.active !== 0) throw new Error('Fault environment is not quiescent')
+      const event = { phase, at: Date.now(), ...state }
+      barriers.push(event)
+      await mutate()
+      event.mutatedAt = Date.now()
+    } finally { await app.evaluate(() => global.__desktopProbe.barrier.resume()) }
+    await fs.writeFile(path.join(runRoot, 'save-barriers.json'), JSON.stringify(barriers, null, 2))
+  }
   /**
-   * 解除"用空目录挡住目标文件"的注入（幂等）——**只撤挡板，绝不写回任何字节**。
-   *
-   * 🔴 3.2.3 踩过的两次坑都出在"探针顺手帮忙"上：
-   *    ① 撤掉目录后立刻判 `exists` 并把暂存的旧字节 rename 回去 —— 与应用的 write→rename 撞车时，
-   *       应用刚写成功的草稿被旧字节覆盖，`retry-readback` 读到旧正文（reliability-SU3mP6）。
-   *    ② 改成"先等 15s 再兜底"后仍有窗口（reliability-Ri594d）：应用报了 ok，文件 mtime 却停在第一次写入。
-   *    ⇒ 结论：挡板是我们造的，撤掉之后这个文件的**每一次写都必须是产品自己的**。
-   *       旧字节只作审计留档（keptFile 不删），不参与任何恢复。
+   * Serialize probe-owned environment changes against actual saves; never restore old bytes.
+   * The old intermittent failure was not reproduced with tracing, so do not claim a product root cause.
    */
   async function restoreFromBlocker() {
-    try {
+    await withPausedSaves('remove-blocker', async () => {
       let isDir = false
       try { isDir = (await fs.stat(activeFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
       if (isDir) await fs.rmdir(activeFile)
-    } catch (e) {
-      console.warn('[desktop-probe] 撤挡板未能完全还原（不影响本次结论，已记录）：', e instanceof Error ? e.message : String(e))
-    } finally {
       blocked = false
-    }
+    })
   }
   try {
     await launch()
@@ -128,9 +155,9 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     const locations = await app.evaluate(({ app }) => ({ userData: app.getPath('userData'), appData: app.getPath('appData') }))
     check('isolated-paths', locations.userData === profile && locations.appData === appData && (await page.evaluate(() => window.electronStore.dataPath())) === activeFile, locations)
     check('fixture-readback', (await page.getByPlaceholder(EDITOR).inputValue()) === ORIGINAL && JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH].content === ORIGINAL)
-    // Wait for startup persistence to settle before moving only this probe's known file.
-    await until(async () => !(await calls()).some(call => call.channel === 'store:save' && !call.doneAt))
-    await fs.rename(activeFile, keptFile); await fs.mkdir(activeFile); blocked = true
+    await withPausedSaves('install-blocker', async () => {
+      await fs.rename(activeFile, keptFile); await fs.mkdir(activeFile); blocked = true
+    })
     const originalBytes = await fs.readFile(keptFile)
     await page.getByPlaceholder(EDITOR).fill(DRAFT); await page.keyboard.press('Control+s')
     await until(async () => (await calls()).some(call => call.channel === 'store:save' && call.body === DRAFT && call.result?.ok === false))
@@ -148,10 +175,8 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     check('failure-export', true)
     check('export-preserves-failure', (await fs.stat(activeFile)).isDirectory() && hash(await fs.readFile(keptFile)) === hash(originalBytes) && (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT)
     await page.screenshot({ path: path.join(runRoot, 'failure-export.png') })
-    // Restore only the empty directory just created here; keep the original bytes until recovery.
-    // 🔴 幂等：应用自己的写盘若「先删目标再 rename」，会在我们恢复前把空目录换掉 ——
-    //    这时 rmdir 会 ENOENT（实测踩过，导致清理阶段抛错、Electron 没关、整步被 180s 超时判红）。
     await restoreFromBlocker()
+    check('recovery-barrier', barriers.length === 2 && barriers.every(item => item.paused && item.active === 0 && item.mutatedAt >= item.at))
     // 撤掉挡板后按一次 Ctrl+S —— 作者在「请恢复写权限后重试」之后真正会做的动作。
     // 「没有新输入也会自己重试」已由上面的 dirty-retry 单独证明；这里要证的是「故障排除后能存进去」。
     await page.keyboard.press('Control+s')
@@ -159,8 +184,12 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     check('retry-readback', true)
     await page.getByRole('button', { name: '已保存', exact: true }).waitFor()
     check('recovery-visible', !(await page.getByRole('button', { name: '保存出错', exact: true }).count()))
-    check('backend-selection', (await calls()).some(call => call.channel === 'store:load' && call.result?.path === activeFile) && (await calls()).some(call => call.channel === 'store:save' && call.body === DRAFT && call.result?.ok === true))
+    const actualCalls = await calls(), successfulSaves = actualCalls.filter(call => call.channel === 'store:save' && call.result?.ok === true)
+    check('backend-selection', actualCalls.some(call => call.channel === 'store:load' && call.result?.path === activeFile)
+      && successfulSaves.some(call => call.body === DRAFT)
+      && successfulSaves.every(call => call.diskAtReturn?.body === call.body), successfulSaves)
     await fs.writeFile(path.join(runRoot, 'ipc-before-restart.json'), JSON.stringify(await calls(), null, 2))
+    await fs.writeFile(path.join(runRoot, 'filesystem-before-restart.json'), JSON.stringify(await app.evaluate(() => global.__desktopProbe.filesystem), null, 2))
     await app.close(); app = null
     await launch()
     check('restart-readback', (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT && JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH].content === DRAFT)
@@ -212,8 +241,12 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     error = String(value.stack ?? value)
     if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
   } finally {
-    if (blocked) await restoreFromBlocker()
-    if (app) { await fs.writeFile(path.join(runRoot, 'ipc-final.json'), JSON.stringify(await calls().catch(() => []), null, 2)).catch(() => {}); await app.close().catch(() => {}) }
+    if (blocked) await restoreFromBlocker().catch(value => { error = [error, 'Blocker cleanup failed: ' + value].filter(Boolean).join('\n') })
+    if (app) {
+      await fs.writeFile(path.join(runRoot, 'ipc-final.json'), JSON.stringify(await calls().catch(() => []), null, 2)).catch(() => {})
+      await fs.writeFile(path.join(runRoot, 'filesystem-final.json'), JSON.stringify(await app.evaluate(() => global.__desktopProbe.filesystem).catch(() => []), null, 2)).catch(() => {})
+      await app.close().catch(() => {})
+    }
     await fs.writeFile(path.join(runRoot, 'electron.log'), runtimeLog)
     const artifacts = []
     for (const file of await fs.readdir(runRoot)) if (/\.(png|json|log)$/.test(file) && !['result.json', 'package.json'].includes(file)) artifacts.push({ path: path.relative(ROOT, path.join(runRoot, file)), sha256: hash(await fs.readFile(path.join(runRoot, file))) })
