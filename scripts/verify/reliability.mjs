@@ -139,6 +139,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Portable save suite has failing assertions')
       return Number(summary[1])
     }],
+    // 3.2.3 · R4：三端数据格式往返（游客数组形态 ↔ 桌面/便携键化形态，归一化幂等）。
+    ['storage.roundtrip', ['tests/build-test.mjs', 'profileRoundtrip'], 120000, result => {
+      const summary = /profileRoundtrip：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Roundtrip suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Roundtrip suite has failing assertions')
+      return Number(summary[1])
+    }],
     // 3.2.3 · R2 §6.3：备份外置数据的迁移／损坏／主 JSON+blobs 同时恢复／失败重试。
     ['backup.migration', ['tests/build-test.mjs', 'sidecarMigration'], 180000, result => {
       const summary = /sidecarMigration：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
