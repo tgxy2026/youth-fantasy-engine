@@ -19,7 +19,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { spawn } from 'node:child_process'
+import { runProcess } from './verify/process.mjs'
 import { fileURLToPath } from 'node:url'
 import artifactChecks from './release-artifacts.cjs'
 
@@ -43,17 +43,10 @@ const KiB = (n) => (n / 1024).toFixed(2) + ' kB'
 const read = (p) => { try { return fs.readFileSync(p, 'utf8') } catch { return null } }
 const exists = (p) => { try { fs.accessSync(p); return true } catch { return false } }
 
-function run(cmd, args, timeout = 15000) {
-  return new Promise((resolve) => {
-    let out = '', code = 0
-    let child
-    try { child = spawn(cmd, args, { cwd: ROOT, windowsHide: true }) } catch (e) { return resolve({ code: -1, out: String(e) }) }
-    const t = setTimeout(() => { try { child.kill() } catch {} resolve({ code: -2, out: out }) }, timeout)
-    child.stdout.on('data', (d) => { out += d })
-    child.stderr.on('data', (d) => { out += d })
-    child.on('close', (c) => { clearTimeout(t); code = c ?? 0; resolve({ code, out }) })
-    child.on('error', (e) => { clearTimeout(t); resolve({ code: -1, out: String(e) }) })
-  })
+async function run(cmd, args, timeout = 15000) {
+  const result = await runProcess(cmd, args, { cwd: ROOT, timeoutMs: timeout })
+  if (!result.ok) add('FAIL', '检查子进程未成功', `${path.basename(cmd)}: exit=${result.exitCode} signal=${result.signal ?? '-'} timeout=${result.timedOut} ${result.error ?? ''}`)
+  return result
 }
 
 // ==================== 1. 版本一致性 ====================
@@ -94,7 +87,7 @@ try {
   // 口径：README 的功能总览把「正文编辑」也计入页签 ⇒ 总数取 TABS + EDITOR_TAB
   const r = await run(process.execPath, ['-e', `const m=require(${JSON.stringify(probe)});const t=m.TABS||[];const g=new Set(t.map(x=>x.group));let n=t.length;if(m.EDITOR_TAB){g.add(m.EDITOR_TAB.group);n++}process.stdout.write('\\n@@JSON@@'+JSON.stringify({n,g:g.size}))`], 30000)
   const m = r.out.match(/@@JSON@@(\{.*?\})\s*$/)
-  if (m) { const o = JSON.parse(m[1]); tabTotal = o.n; groupTotal = o.g; tabsExact = true }
+  if (r.ok && m) { const o = JSON.parse(m[1]); tabTotal = o.n; groupTotal = o.g; tabsExact = true }
 } catch (e) {
   add('INFO', '页签 · 精确统计', `esbuild 实跑不可用：${String(e).slice(0, 120)}`)
 }

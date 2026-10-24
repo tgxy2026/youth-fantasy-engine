@@ -18,8 +18,9 @@
     "test": "node tests/run-all.mjs",
     "release-check": "node scripts/release-check.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src tests --max-warnings 0",
     "verify": "npm run typecheck && npm run lint && npm test",
+    "verify:reliability": "node scripts/verify/reliability.mjs --profile local",
     "cleanup": "node scripts/cleanup-residual.mjs"
   },
   "devDependencies": {

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contracts": [
+    { "id": "tooling.preflight", "stage": "foundation", "minAssertions": 1 },
+    { "id": "source.typecheck", "stage": "foundation", "minAssertions": 1 },
+    { "id": "source.lint", "stage": "foundation", "minAssertions": 1 },
+    { "id": "source.tests", "stage": "foundation", "minAssertions": 1 },
+    { "id": "source.build", "stage": "foundation", "minAssertions": 1 },
+    { "id": "source.release-check", "stage": "foundation", "minAssertions": 1 },
+    { "id": "proofread.protocol", "stage": "business", "minAssertions": 1, "pending": "R1 protocol cases and runtime adapter not implemented" },
+    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "R2/R3 full four-profile storage cases not wired" },
+    { "id": "revision.recovery", "stage": "business", "minAssertions": 1, "pending": "Existing 16-check development probe needs scoped evidence adapter and expanded crash cases" },
+    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "Local server account, expiration and stale-write cases not wired" },
+    { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
+    { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },
+    { "id": "audit.contracts", "stage": "business", "minAssertions": 1, "pending": "Required runtime audit probes still need repository-owned evidence producers" }
+  ]
+}
