@@ -6,6 +6,7 @@
 import { Loader2, CheckCircle2, Sparkles, SpellCheck } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
+import { isReplaceable } from '@/lib/ai/aiTasks'
 import { PROOF_ORDER, PROOF_META, renderReport } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
@@ -76,26 +77,40 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                   )}
                   {st.issues.length > 0 && (
                     <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                      {st.issues.map((iss, i) => (
-                        <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
-                            <span className="text-11 text-danger line-through">{iss.quote}</span>
-                            <span className="text-10 text-ink-500">→</span>
-                            <span className="text-11 text-success">{iss.fix}</span>
+                      {st.issues.map((iss, i) => {
+                        // 3.2.3 · R1：建议类只展示、不提供替换（`fix` 可能是一句建议，不是改写文本）
+                        const repl = isReplaceable(iss)
+                        return (
+                          <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
+                              <span className="text-11 text-danger line-through">{iss.quote}</span>
+                              <span className="text-10 text-ink-500">{repl ? '→' : '建议'}</span>
+                              <span className={`text-11 ${repl ? 'text-success' : 'text-ink-200'}`}>{repl ? iss.fix : (iss.suggestion || '（无具体建议）')}</span>
+                            </div>
+                            {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
+                            {iss.stale && <div className="text-10 text-amber/80 mt-0.5">正文已改动，这条的位置失效了</div>}
+                            {repl && !iss.stale && (
+                              <Button variant="bare"
+                                onClick={() => replaceOne(scope, iss)}
+                                className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
+                              >
+                                替换此条
+                              </Button>
+                            )}
                           </div>
-                          {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
-                          <Button variant="bare"
-                            onClick={() => replaceOne(scope, iss)}
-                            className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
-                          >
-                            替换此条
-                          </Button>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
-                  {st.done && !st.cancelled && st.issues.length === 0 && (
+                  {st.done && !st.cancelled && (st.unparsedChunks > 0 || st.protocolIssues.length > 0 || st.unlocated > 0) && (
+                    <div className="text-10 text-amber px-1">
+                      {st.unparsedChunks > 0 && <div>有 {st.unparsedChunks} 段返回无法解析，不能当作"没有问题"。</div>}
+                      {st.protocolIssues.length > 0 && <div>有 {st.protocolIssues.length} 条结果格式不合法已忽略：{st.protocolIssues.join('；')}</div>}
+                      {st.unlocated > 0 && <div>有 {st.unlocated} 条引文定位不到，已忽略。</div>}
+                    </div>
+                  )}
+                  {st.done && !st.cancelled && st.issues.length === 0 && st.unparsedChunks === 0 && st.protocolIssues.length === 0 && (
                     <div className="text-center text-11 text-success py-1">
                       <CheckCircle2 size={13} className="inline mr-1" /> 未发现问题
                     </div>

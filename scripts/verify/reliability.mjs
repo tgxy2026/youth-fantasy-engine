@@ -80,6 +80,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (check.stage !== 'source' || check.fail !== 0 || !['PASS', 'PASS_WITH_WARNINGS'].includes(check.verdict)) throw new Error('Invalid source check result')
       return check.rows.filter(row => row.level === 'OK').length
     }],
+    // 3.2.3 · R1：校对协议要有**当次**的定向证据（全量里也跑，但这里要能单独追责）。
+    ['proofread.protocol', ['tests/build-test.mjs', 'proofreadProtocol'], 180000, result => {
+      const summary = /proofreadProtocol 用例结束：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Protocol suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Protocol suite has failing assertions')
+      return Number(summary[1])
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {

@@ -97,10 +97,15 @@ export interface ProofState {
   done: boolean
   error: string
   cancelled: boolean
+  /** 3.2.3 · R1：解析不了 / kind 非法 / 引文定位不到 —— 有值就不能说"未发现问题" */
+  unparsedChunks: number
+  protocolIssues: string[]
+  unlocated: number
 }
 export const blankProof = (): ProofState => ({
   loading: false, issues: [], scanned: 0, skipped: 0,
   progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false,
+  unparsedChunks: 0, protocolIssues: [], unlocated: 0,
 })
 
 /** 轻量 markdown 渲染：支持 ## 小标题 / 数字与 - 列表 / **加粗**，其余按段落展示 */

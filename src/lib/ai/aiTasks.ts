@@ -42,8 +42,12 @@ export { rowFingerprint, aiOrganizeRows, keyRowToLine } from '@/lib/aiTasks/orga
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from '@/lib/aiTasks/organize'
 // 2026-09-20 拆分：`aiProofread`（混查五类）→ `aiProofreadText`（错别字/语病/标点，不读设定）
 // 与 `aiProofreadLogic`（逻辑/设定矛盾，读设定）。两条独立提示词、两个独立入口。
-export { aiProofreadText, aiProofreadLogic } from '@/lib/aiTasks/proofread'
-export type { ProofreadIssue, ProofreadOptions, ProofreadResult } from '@/lib/aiTasks/proofread'
+// 3.2.3 · R1：结果分「建议 / 替换」两类，只有 replacement 能改进正文（`isReplaceable` 即判据）。
+export { aiProofreadText, aiProofreadLogic, isReplaceable, parseProofreadReply } from '@/lib/aiTasks/proofread'
+export type {
+  ProofreadIssue, ProofreadOptions, ProofreadResult,
+  ProofKind, ProofreadSuggestion, ProofreadReplacement,
+} from '@/lib/aiTasks/proofread'
 export { aiSuggestNames, aiReviewSensitive } from '@/lib/aiTasks/suggest'
 export type { NameSuggestRequest, NameSuggestion, SensitiveHitInput, SensitiveReview } from '@/lib/aiTasks/suggest'
 // 2026-09-26（2.5.1·A3）：灵感融合 —— 勾选灵感夹条目 → 融合成情节创意卡落推演画布；basedOn 溯源

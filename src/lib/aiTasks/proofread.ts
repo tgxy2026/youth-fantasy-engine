@@ -14,7 +14,7 @@
 //   ② 提示词里**不写 markdown 星号**：模型会模仿输出格式，正文里就会混进 `**`。
 //      要强调就用「」（本项目文案规范同此）。
 import { chat, requireProviderFor, isCancelled, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { parseObjectArray, parsePlainObject, stripCodeFence, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { stripEmphasis } from '@/lib/storage/mdLite'
 import { longStream } from '@/lib/aiTasks/stream'
@@ -66,12 +66,15 @@ let PROOFREAD_TEXT_SYS = `你是中文出版级的文字校对员，负责逐字
 · 同一处只报一次；同一类错误出现在多处，每处单独列一条，不要合并成一条。
 
 【输出】
-- 返回 JSON 数组，元素形如 {"type":"错别字","quote":"原文片段","fix":"改后的片段","why":"简短原因"}。
+- 返回一个 JSON 对象，外壳固定为 {"schemaVersion":1,"issues":[…]}；没有问题时 issues 给空数组。
+- issues 的每个元素必须写明 kind，二选一：
+  · kind 为「replacement」：你已经能确定改成什么时才用；必须另给 replacement 字段，写「quote 对应位置改好后的完整片段」，长度尽量与 quote 接近。
+  · kind 为「suggestion」：你判断确有疑问、但无法在不改作者原意的前提下直接改写时用；把说明写进 suggestion 字段，不要给 replacement。
+- replacement 必须非空，且不能与 quote 完全相同；做不到就改用 suggestion。
+- 每条还要有 type 与 why：元素形如 {"kind":"replacement","type":"错别字","quote":"原文片段","replacement":"改后的片段","why":"简短原因"}。
 - quote 必须逐字照抄原文（含标点，6~40 字，能唯一定位），一个字都不许改、不许省略中间内容 —— 程序要靠它在正文里找到位置。
-- fix 只给 quote 对应位置改好后的完整片段，长度尽量与 quote 接近。
 - type 只能是：错别字 / 语病 / 标点。
-- 没有发现问题就返回 []。
-- 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+- 只输出这个 JSON 对象，不要解释、不要 markdown 代码块标记。`
 
 // ---------- 校对 · 逻辑层（逻辑 / 设定矛盾） ----------
 
@@ -100,23 +103,133 @@ let PROOFREAD_LOGIC_SYS = `你是中文网络小说的一致性审校员，负�
 · 同一处只报一次；多处要分别列条。
 
 【输出】
-- 返回 JSON 数组，元素形如 {"type":"逻辑","quote":"原文片段","fix":"改后的片段","why":"简短原因"}。
+- 返回一个 JSON 对象，外壳固定为 {"schemaVersion":1,"issues":[…]}；没有问题时 issues 给空数组。
+- issues 的每个元素必须写明 kind，二选一：
+  · kind 为「replacement」：只有「替换掉这段引文就能消除矛盾、且不会改坏情节」时才用；必须另给 replacement 字段，写改好后的完整片段。
+  · kind 为「suggestion」：无法在不改情节的前提下改好时用 —— 把「建议怎么改」写进 suggestion 字段。它只是一句话建议，程序不会拿它替换正文，所以不要给 replacement，也不要把建议写进 replacement。
+- 每条还要有 type 与 why：元素形如 {"kind":"suggestion","type":"逻辑","quote":"原文片段","suggestion":"解释人物改变决定的原因","why":"本段缺少动机过渡"}。
 - quote 必须逐字照抄原文（含标点，6~40 字，能唯一定位），一个字都不许改。
-- fix 给「改成什么才不矛盾」的完整片段；若在不改情节的前提下无法改好，就把你的修改建议写进 fix，它同样会被替换到 quote 的位置。
 - type 只能是：逻辑 / 设定矛盾。
-- 没有发现问题就返回 []。
-- 只输出 JSON 数组，不要解释、不要 markdown 代码块标记。`
+- 只输出这个 JSON 对象，不要解释、不要 markdown 代码块标记。`
 
-export interface ProofreadIssue {
+/**
+ * 校对结果的两种性质 —— 3.2.3 · R1 的根因就在这里。
+ *
+ * 旧协议只有一个 `fix` 字段：模型能直接改写时它是替换文本，改不动时它被提示词允许写成
+ * 「一句修改建议」，而界面不看区别、一律拿 `fix` 去替换正文 ⇒ **建议句被当成正文写进去**。
+ * 现在按性质显式分开：只有 `replacement` 能进替换函数，`suggestion` 只展示/复制。
+ */
+export type ProofKind = 'suggestion' | 'replacement'
+
+interface ProofIssueBase {
+  /** 问题类型（错别字 / 语病 / 标点 / 逻辑 / 设定矛盾…） */
   type: string
   /** 原文片段（逐字引用，前端据此定位） */
   quote: string
-  /** 建议改成 */
-  fix: string
   /** 简短原因 */
   why: string
-  /** 前端定位到的正文下标；-1 表示未能精确定位；undefined 表示定位已失效（重叠替换后），下次替换走全文搜索兜底 */
+  /** 前端定位到的正文下标；undefined 表示未能精确定位或定位已失效 */
   at?: number
+  /** 正文变动导致该条失效：仍展示，但禁止替换（3.2.3 · R1） */
+  stale?: boolean
+}
+
+/** 建议类：只能看、只能复制，**不许**替换正文 */
+export interface ProofreadSuggestion extends ProofIssueBase {
+  kind: 'suggestion'
+  /** 建议内容（可能是操作说明，不是可直接替换的文本） */
+  suggestion: string
+}
+
+/** 替换类：`fix` 是改好后的完整片段，可以替换 */
+export interface ProofreadReplacement extends ProofIssueBase {
+  kind: 'replacement'
+  fix: string
+}
+
+export type ProofreadIssue = ProofreadSuggestion | ProofreadReplacement
+
+/** 是否可以直接替换正文（界面按钮的判据，不要各处自己写 `!!iss.fix`） */
+export function isReplaceable(issue: ProofreadIssue): issue is ProofreadReplacement {
+  return issue.kind === 'replacement'
+}
+
+/** 结果里最多列出几个「协议问题」样例，避免把整篇回复塞进界面 */
+const PROTOCOL_SAMPLE_LIMIT = 3
+
+/**
+ * 一条模型原始条目 → 内部判别联合。
+ *
+ * 兼容旧格式（历史结果、以及仍按旧协议输出的模型）：
+ *   · 缺 `kind` ⇒ 一律按**建议**处理 —— 不靠关键词猜「这看起来像能替换的」；
+ *   · `fix` / `建议` / `suggestion` / `replacement` 都是候选文本，但只有 kind=replacement 才进替换位。
+ */
+function toIssue(item: Record<string, unknown>): { issue?: ProofreadIssue; invalid?: string } {
+  const quote = asText(item.quote ?? item['原文'] ?? item.text)
+  const type = asText(item.type ?? item['类型']) || '其他'
+  const why = asText(item.why ?? item['原因'] ?? item.reason)
+  const rawKind = asText(item.kind ?? item['性质']).trim().toLowerCase()
+  const fixText = asText(item.replacement ?? item.fix ?? item['改后'] ?? item['建议'] ?? item.suggestion)
+  if (!quote || quote.length < 2) return { invalid: '缺少可用引文（quote）' }
+
+  if (!rawKind) {
+    // 旧协议：没有 kind。历史 `fix` 的全部按建议展示，绝不自动解锁替换。
+    return { issue: { kind: 'suggestion', type, quote, why, suggestion: fixText } }
+  }
+  if (rawKind === 'suggestion' || rawKind === '建议') {
+    return { issue: { kind: 'suggestion', type, quote, why, suggestion: fixText } }
+  }
+  if (rawKind === 'replacement' || rawKind === '替换') {
+    // 声明可替换但没给文本 / 与原文相同 ⇒ 降级为建议，而不是丢掉这条（作者仍看得到问题）
+    if (!fixText.trim()) return { issue: { kind: 'suggestion', type, quote, why, suggestion: '（模型未给出替换文本，请按原因自行修改）' } }
+    if (fixText === quote) return { issue: { kind: 'suggestion', type, quote, why, suggestion: '（模型给出的替换文本与原文相同，未做替换）' } }
+    return { issue: { kind: 'replacement', type, quote, why, fix: fixText } }
+  }
+  return { invalid: `未知的 kind：「${rawKind}」` }
+}
+
+export interface ProofreadParseOutcome {
+  /** 结构合法的条目 */
+  issues: ProofreadIssue[]
+  /** 整段回复无法解析成约定结构（含拒答、空回复、错外壳） */
+  unparsed: boolean
+  /** 条目级协议问题描述（逐条，最多保留若干样例） */
+  protocolIssues: string[]
+}
+
+/**
+ * 解析一块校对的模型回复。
+ *
+ * 新协议是对象外壳 `{schemaVersion, issues:[…]}`；旧协议的顶层数组仍然收 ——
+ * 历史结果要能回看，但**没有 kind 的一律按建议展示**，不能因为「它以前能替换」就继续替换。
+ */
+export function parseProofreadReply(raw: string): ProofreadParseOutcome {
+  const text = stripCodeFence(String(raw ?? '')).trim()
+  if (!text) return { issues: [], unparsed: true, protocolIssues: [] }
+  let items: Record<string, unknown>[] | null = null
+  if (text.startsWith('{')) {
+    const obj = parsePlainObject(text)
+    if (obj && Array.isArray(obj.issues)) items = obj.issues as Record<string, unknown>[]
+  } else if (text.startsWith('[')) {
+    items = parseObjectArray(text)
+  } else {
+    // 模型偶尔会先写一句话再给 JSON：交给宽松解析再试一次
+    const obj = parsePlainObject(text)
+    if (obj && Array.isArray(obj.issues)) items = obj.issues as Record<string, unknown>[]
+    else items = parseObjectArray(text)
+    if (!items.length) items = null
+  }
+  if (!items) return { issues: [], unparsed: true, protocolIssues: [] }
+
+  const issues: ProofreadIssue[] = []
+  const protocolIssues: string[] = []
+  for (const item of items) {
+    if (!item || typeof item !== 'object') { protocolIssues.push('条目不是对象'); continue }
+    const { issue, invalid } = toIssue(item)
+    if (issue) issues.push(issue)
+    else if (invalid) protocolIssues.push(invalid)
+  }
+  return { issues, unparsed: false, protocolIssues: protocolIssues.slice(0, PROTOCOL_SAMPLE_LIMIT) }
 }
 
 /**
@@ -189,6 +302,15 @@ export interface ProofreadResult {
   totalChunks: number
   /** 用户取消（AbortSignal）导致提前结束 */
   cancelled: boolean
+  /**
+   * 🔴 3.2.3 · R1：模型返回协议不合法（整块解析不了）的段数。
+   * 有值就不能说"未发现问题" —— 那一段的内容我们根本没读懂。
+   */
+  unparsedChunks: number
+  /** 条目级协议问题样例（未知 kind、条目不是对象等），用于界面如实提示 */
+  protocolIssues: string[]
+  /** 引文在正文里定位不到、被忽略的条数（作者看到的条数会比模型报的少，要说清） */
+  unlocated: number
 }
 
 /**
@@ -218,6 +340,11 @@ async function runProofread(
   // 失败/取消的记账（审计 A2）：没有这两个计数，界面无法区分「查过且没问题」与「根本没跑成」
   let failedChunks = 0
   let cancelled = false
+  // 🔴 3.2.3 · R1：协议层也要记账 —— 解析不了、kind 非法都被当成"0 问题"的话，
+  //    「未发现 ✓」就会在模型胡言乱语时错误亮起。
+  let unparsedChunks = 0
+  let unlocated = 0
+  const protocolIssues: string[] = []
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
@@ -256,13 +383,18 @@ async function runProofread(
     }
 
     scanned += chunk.length
-    for (const it of parseObjectArray(reply)) {
-      const quote = asText(it.quote ?? it['原文'] ?? it.text)
-      const fix = asText(it.fix ?? it['建议'] ?? it.suggestion)
-      const type = asText(it.type ?? it['类型']) || '其他'
-      const why = asText(it.why ?? it['原因'] ?? it.reason)
-      if (!quote || quote.length < 2) continue
-      // 必须能在原文里定位，否则作者点了也没法改。
+    const parsed = parseProofreadReply(reply)
+    if (parsed.unparsed) {
+      // 🔴 3.2.3 · R1：解析不了**不等于**没有发现问题。旧实现把它当空数组 ⇒ 界面亮绿「未发现 ✓」。
+      unparsedChunks++
+      console.warn(`[proofread] 第 ${i + 1}/${chunks.length} 块返回无法解析（已如实记账，不会当作"没有问题"）：`, reply.slice(0, 200))
+      opts.onProgress?.(i + 1, chunks.length)
+      continue
+    }
+    if (parsed.protocolIssues.length) protocolIssues.push(...parsed.protocolIssues)
+    for (const issue of parsed.issues) {
+      const quote = issue.quote
+      // 必须能在原文里定位：替换类定位不到就改不了；建议类定位不到也没法指出位置。
       // 🔴 模型有时给引文自行加了 markdown 强调（**…**）：先原样定位，不行再剥一次
       //    （否则 quote 定位不到 → 这条问题被静默丢掉，白烧一轮 token）。
       let q = quote
@@ -274,18 +406,18 @@ async function runProofread(
           rel = chunk.indexOf(clean)
         }
       }
-      if (rel < 0) continue
+      if (rel < 0) { unlocated++; continue }
       const at = chunkStart + rel
       const dedup = `${at}::${q}`
       if (seen.has(dedup)) continue
       seen.add(dedup)
-      issues.push({ type, quote: q, fix, why, at })
+      issues.push({ ...issue, quote: q, at })
     }
     opts.onProgress?.(i + 1, chunks.length)
   }
 
   issues.sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
-  return { issues, scanned, skipped, failedChunks, totalChunks: chunks.length, cancelled }
+  return { issues, scanned, skipped, failedChunks, totalChunks: chunks.length, cancelled, unparsedChunks, protocolIssues: protocolIssues.slice(0, 5), unlocated }
 }
 
 /**

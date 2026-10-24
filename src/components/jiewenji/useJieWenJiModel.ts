@@ -23,7 +23,7 @@ import { buildProjectContext, getContinuationSources } from '@/lib/ai/aiContext'
 import { checkContinuationFocus, formatGap } from '@/lib/audit/evidenceGate'
 import { styleContextForAI } from '@/lib/ai/styleAudit'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
-import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, BriefingReport } from '@/lib/ai/aiTasks'
+import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, ProofreadResult, BriefingReport } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settings/settingLedger'
 import * as db from '@/lib/db'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
@@ -32,11 +32,12 @@ import { useAIReady } from '@/lib/ai/useAIReady'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { showToast } from '@/components/dialogs/dialogs'
+import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import type { Props } from '@/components/jiewenji/jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from '@/components/jiewenji/jieWenJiParts'
 
-/** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 */
-type ProofreadOutcome = { issues: ProofreadIssue[]; scanned: number; skipped: number }
+/** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 + 失败与协议记账 */
+type ProofreadOutcome = ProofreadResult
 /** 校对进度（喂给 `onProgress`） */
 type ProofProgress = ChProgress & { done: number; total: number }
 
@@ -131,7 +132,11 @@ export function useJieWenJiModel(props: Props) {
         patches[scope] = { ...blankProof(), loading: true, progress: (task.progress as ProofProgress | null) ?? { ch, done: 0, total: 0 } }
       } else if (task.status === 'done') {
         const r = task.result?.v
-        patches[scope] = { ...blankProof(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0 }
+        patches[scope] = {
+          ...blankProof(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0,
+          // 3.2.3 · R1：协议层记账同样要同步，否则诊室这边仍会把"没读懂"显示成"没问题"
+          unparsedChunks: r?.unparsedChunks ?? 0, protocolIssues: r?.protocolIssues ?? [], unlocated: r?.unlocated ?? 0,
+        }
       } else if (task.status === 'failed') {
         patches[scope] = { ...blankProof(), done: true, error: task.error }
       } else {
@@ -143,34 +148,28 @@ export function useJieWenJiModel(props: Props) {
   }, [textProofTask, logicProofTask, ch])
 
   /**
-   * 替换单条校对结果：优先用 AI 标注位置，替换后把**两块**的其余问题都按位移重锚定
-   *  （重叠/失效的置空，走全文定位兜底）。只重锚定自己那块的话，切到另一块再点就是"定位失败"。
+   * 替换单条校对结果（3.2.3 · R1 与编辑器校对弹窗共用同一套判据）：
+   * 只有替换类能改正文；定位只认「标注位置」或「全文唯一命中」；
+   * 相交的结果标记失效而不是"置空后走 indexOf 兜底"（那会把旧下标套到新正文上）。
    */
   const replaceOne = (scope: ProofScope, iss: ProofreadIssue) => {
-    let idx = -1
-    if (iss.at != null && content.slice(iss.at, iss.at + iss.quote.length) === iss.quote) idx = iss.at
-    else idx = content.indexOf(iss.quote)
-    if (idx < 0) { showToast('定位失败：原文可能已改动', 'error'); return }
-    const delta = iss.fix.length - iss.quote.length
-    const next = content.slice(0, idx) + iss.fix + content.slice(idx + iss.quote.length)
+    const out = applyProofReplacement(content, iss)
+    if (!out.ok) { showToast(APPLY_FAILURE_TEXT[out.reason], 'error'); return }
+    const next = out.next
+    const removed = iss.quote.length
+    const inserted = removed + out.delta
     onApplyContent?.(next)
     setProofs(prev => {
-      const out = { ...prev }
+      const updated = { ...prev }
       for (const k of PROOF_ORDER) {
-        out[k] = {
-          ...prev[k],
-          issues: prev[k].issues
-            .filter(i => !(k === scope && i === iss))
-            .map(i => {
-              if (i.at == null) return i
-              // 替换点之后的坐标整体位移；之前或重叠的按新文本校验，失效则置空，下次替换走 indexOf 兜底
-              const na = i.at > idx ? i.at + delta : i.at
-              return next.slice(na, na + i.quote.length) === i.quote ? { ...i, at: na } : { ...i, at: undefined }
-            })
-            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
-        }
+        const anchor = reanchorIssues(
+          prev[k].issues,
+          { from: out.index, removed, inserted, next },
+          k === scope ? iss : undefined,
+        )
+        updated[k] = { ...prev[k], issues: anchor.issues }
       }
-      return out
+      return updated
     })
   }
 

@@ -10,7 +10,8 @@ import { diffLines, diffStats } from '@/lib/editor/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
-import { aiProofreadText, aiProofreadLogic, type ProofreadIssue, type ProofreadResult } from '@/lib/ai/aiTasks'
+import { aiProofreadText, aiProofreadLogic, isReplaceable, type ProofreadIssue, type ProofreadResult } from '@/lib/ai/aiTasks'
+import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { confirmDialog } from '@/components/dialogs/dialogs'
@@ -129,13 +130,19 @@ interface ScopeState {
    */
   failedChunks: number
   totalChunks: number
+  /** 3.2.3 · R1：模型返回解析不了的段数（有值就不能说"未发现问题"） */
+  unparsedChunks: number
+  /** 3.2.3 · R1：条目级协议问题样例 */
+  protocolIssues: string[]
+  /** 3.2.3 · R1：引文定位不到被忽略的条数 */
+  unlocated: number
 }
 /** 任务中心的进度载荷（`ProofreadOptions.onProgress(done,total)` + 章节归属戳） */
 type ProofProgress = ChProgress & { done: number; total: number }
 const blankScope = (): ScopeState => ({
   issues: [], loading: false, done: false, cancelled: false,
   progress: { done: 0, total: 0 }, skipped: 0, scanned: 0, error: '',
-  failedChunks: 0, totalChunks: 0,
+  failedChunks: 0, totalChunks: 0, unparsedChunks: 0, protocolIssues: [], unlocated: 0,
 })
 
 export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
@@ -197,6 +204,8 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
           issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0,
           // 老任务结果（升级前跑完的）没有这两个字段 ⇒ 按"未记录"处理，不冒充完整
           failedChunks: r?.failedChunks ?? 0, totalChunks: r?.totalChunks ?? 0,
+          unparsedChunks: r?.unparsedChunks ?? 0, protocolIssues: r?.protocolIssues ?? [],
+          unlocated: r?.unlocated ?? 0,
         }
       } else if (task.status === 'failed') {
         patches[scope] = { ...blankScope(), done: true, error: task.error }
@@ -244,35 +253,46 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
 
   const stopScope = (scope: ProofScope) => runnerOf(scope).stop()
 
-  /** 替换单条 AI 校对结果。
-   * 优先用 AI 标注的精确位置 iss.at 定位——正文里同一句话重复出现时，
-   * 用 indexOf 会永远命中第一个，导致改错位置；定位不到再回退 indexOf。
-   * 替换后把**两块**里剩余的问题都按位移重新锚定：正文变了，另一层记录的下标也一起漂，
-   * 只重锚定自己那一块的话，切过去再点就是"定位失败"。 */
+  /** 替换单条 AI 校对结果（3.2.3 · R1 重写）。
+   *
+   * 三条硬规则（旧实现全都缺）：
+   *   ① **只有「替换类」能改进正文** —— 「建议类」`fix` 里可能是一句"解释人物改变决定的原因"，
+   *      旧代码直接拼进正文，等于把建议写成小说；
+   *   ② 定位只认「模型标注的 at」或「全文唯一命中」。旧实现在 at 失效时无条件
+   *      `indexOf` 回退 ⇒ 同一句出现多次必定改错位置；
+   *   ③ 正文或其它替换已经动过这段 ⇒ 标记失效、禁止再改（`stale`），不拿旧下标改新正文。
+   * 替换后**两块**一起重锚定：之后整体平移，相交的标记失效。 */
+  const [applyError, setApplyError] = useState('')
+  const [copiedKey, setCopiedKey] = useState('')
   const replaceIssue = (scope: ProofScope, iss: ProofreadIssue) => {
-    let idx = -1
-    if (iss.at != null && text.slice(iss.at, iss.at + iss.quote.length) === iss.quote) {
-      idx = iss.at
-    } else {
-      idx = text.indexOf(iss.quote)
-    }
-    if (idx < 0) return
-    const delta = iss.fix.length - iss.quote.length
-    const next = text.slice(0, idx) + iss.fix + text.slice(idx + iss.quote.length)
+    const out = applyProofReplacement(text, iss)
+    if (!out.ok) { setApplyError(APPLY_FAILURE_TEXT[out.reason]); return }
+    setApplyError('')
+    const next = out.next
+    const removed = iss.quote.length
+    const inserted = removed + out.delta
     setText(next); onApply(next)
     setScopes(prev => {
-      const out = { ...prev }
+      const updated = { ...prev }
       for (const k of SCOPE_ORDER) {
-        out[k] = {
-          ...prev[k],
-          issues: prev[k].issues
-            .filter(i => !(k === scope && i === iss))
-            .map(i => (i.at != null && i.at > idx ? { ...i, at: i.at + delta } : i))
-            .sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
-        }
+        const anchor = reanchorIssues(
+          prev[k].issues,
+          { from: out.index, removed, inserted, next },
+          // 刚应用的那一条从它所属的块里移除（另一块里若有同一条也不该再点）
+          k === scope ? iss : undefined,
+        )
+        updated[k] = { ...prev[k], issues: anchor.issues }
       }
-      return out
+      return updated
     })
+  }
+
+  /** 建议类：只能复制，不能替换（复制用系统剪贴板，不写入正文） */
+  const copySuggestion = (key: string, text: string) => {
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(k => (k === key ? '' : k)), 1500)
+    }, () => setApplyError('复制失败：浏览器拒绝了剪贴板写入，请手动选中复制。'))
   }
 
   const replaceTypoAll = () => {
@@ -287,7 +307,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
     <ToolModal title="校对（本章）" icon={<span className="text-amber">校</span>} onClose={onClose} wide
       help={
         <HelpPopover title="校对怎么用" width="22rem">
-          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改正文，另一块的定位会自动跟着位移。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
+          {'· 「本地错别字」：内置常见错别字词典（如「帐号→账号」），无需模型，随时可用，可一键替换。\n· 「查错别字与语病」：接入模型后逐字逐句读本章正文，找错别字、语病、标点问题；不读设定资料，所以更快。\n· 「查逻辑与设定矛盾」：读项目设定资料，判前后矛盾、时间与空间错乱、与既有设定冲突。\n· 两块互相独立：可以只跑一块、分别看结果；点「替换此条」会直接改正文，另一块的定位会自动跟着位移。\n· 结果分两类：只有「替换类」（模型给了确切改写文本）才有替换按钮；「建议类」只展示与复制，绝不会写进正文。\n· 未接入模型时两块按钮都禁用，但本地错别字检测与本章所有手动功能不受影响。'}
           <AIDataSourceNote feature="proofread" />
           <AIDataSourceNote feature="proofread-logic" />
         </HelpPopover>
@@ -412,7 +432,20 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                   已停止（保留已查出的 {st.issues.length} 处）
                 </div>
               )}
-              {st.done && !st.error && !st.cancelled && st.failedChunks === 0 && st.scanned > 0 && st.issues.length === 0 && (
+              {/* 3.2.3 · R1：模型返回读不懂 ≠ 没有问题；定位不到的条目也要说清数量 */}
+              {st.done && !st.error && !st.cancelled && (st.unparsedChunks > 0 || st.protocolIssues.length > 0 || st.unlocated > 0) && (
+                <div className="px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-11 text-amber mb-2">
+                  {st.unparsedChunks > 0 && <div>有 {st.unparsedChunks} 段返回无法解析（不是"没有问题"，是这段的内容没读懂），建议重跑。</div>}
+                  {st.protocolIssues.length > 0 && <div>有 {st.protocolIssues.length} 条结果格式不合法已忽略：{st.protocolIssues.join('；')}</div>}
+                  {st.unlocated > 0 && <div>有 {st.unlocated} 条引文在正文里定位不到，已忽略（原文可能已改动）。</div>}
+                </div>
+              )}
+              {applyError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger mb-2">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{applyError}</span>
+                </div>
+              )}
+              {st.done && !st.error && !st.cancelled && st.failedChunks === 0 && st.scanned > 0 && st.unparsedChunks === 0 && st.protocolIssues.length === 0 && st.issues.length === 0 && (
                 <div className="py-2 text-12 text-success">
                   {scope === 'text' ? '未发现错别字 / 语病 / 标点问题 ✓' : '未发现逻辑矛盾或设定冲突 ✓'}
                 </div>
@@ -422,24 +455,46 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
               )}
               {st.issues.length > 0 && (
                 <div className="space-y-2">
-                  {st.issues.map((iss, i) => (
-                    <div key={i} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
-                      <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-ink-200">
-                          「<span className="text-amber/90">{iss.quote}</span>」→「<span className="text-success">{iss.fix}</span>」
+                  {st.issues.map((iss, i) => {
+                    // 🔴 3.2.3 · R1：建议类与替换类分开渲染 —— 建议类不出现「替换此条」，
+                    //    避免作者一点就把一句修改建议写进正文。
+                    const repl = isReplaceable(iss)
+                    const key = `${scope}-${i}`
+                    return (
+                      <div key={key} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
+                        <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-ink-200">
+                            「<span className="text-amber/90">{iss.quote}</span>」
+                            {repl
+                              ? <>→「<span className="text-success">{iss.fix}</span>」</>
+                              : <span className="text-ink-400"> 建议：<span className="text-ink-200">{iss.suggestion || '（无具体建议）'}</span></span>}
+                          </div>
+                          {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
+                          {iss.stale && (
+                            <div className="text-amber/80 mt-0.5">正文已改动，这条的位置失效了 —— 请重新校对后再处理。</div>
+                          )}
                         </div>
-                        {iss.why && <div className="text-ink-500 mt-0.5">{iss.why}</div>}
+                        {repl && !iss.stale ? (
+                          <Button variant="bare"
+                            onClick={() => replaceIssue(scope, iss)}
+                            className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
+                            title="在正文中替换这一处"
+                          >
+                            替换此条
+                          </Button>
+                        ) : (
+                          <Button variant="bare"
+                            onClick={() => copySuggestion(key, repl ? iss.fix : iss.suggestion)}
+                            className="shrink-0 px-2 py-1 bg-ink-700 text-ink-300 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
+                            title="只复制，不改正文"
+                          >
+                            {copiedKey === key ? '已复制' : '复制建议'}
+                          </Button>
+                        )}
                       </div>
-                      <Button variant="bare"
-                        onClick={() => replaceIssue(scope, iss)}
-                        className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
-                        title="在正文中替换这一处"
-                      >
-                        替换此条
-                      </Button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
