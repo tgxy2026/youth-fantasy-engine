@@ -340,7 +340,7 @@ function renderIndex(user) {
   const script = user
     ? `<script>window.__YFE_PORTABLE__={apiBase:""};window.__YFE_WEB__=1;`
       + `window.__YFE_USER__=${JSON.stringify({
-        name: user.name, quotaBytes: user.quotaBytes, usedBytes: user.usedBytes,
+        id: user.id, name: user.name, quotaBytes: user.quotaBytes, usedBytes: user.usedBytes,
       })};</script>`
     // 🔴 游客也必须是「网页版」：`__YFE_WEB__` 决定前端是否把「便携版」字样换成「网页版」。
     //    漏注入的后果是游客看到「便携版不提供在线更新」「本机存储 ./data/…」——全是错的说法。
@@ -489,9 +489,12 @@ async function handleApi(req, res, url) {
     if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
 
     if (req.method === 'GET') {
-      const r = readUserData(user.id)
-      if (r.missing) return sendJSON(res, 404, { missing: true, path: userDataFile(user.id) })
-      return sendJSON(res, 200, { text: r.text, path: userDataFile(user.id) })
+      try {
+        const r = readUserData(user.id)
+        res.setHeader('ETag', r.revision)
+        if (r.missing) return sendJSON(res, 404, { ...r, path: userDataFile(user.id) })
+        return sendJSON(res, 200, { ...r, path: userDataFile(user.id) })
+      } catch { return sendJSON(res, 500, { ok: false, error: '云端数据读取失败，未授权覆盖原文件' }) }
     }
 
     // PUT（便携版常规写盘）与 POST（beforeunload 的 sendBeacon）都要接受
@@ -536,13 +539,18 @@ async function handleApi(req, res, url) {
       }
 
       try {
-        await writeUserData(user.id, text)
+        const result = await writeUserData(user.id, text, req.headers['if-match'], () => {
+          const fresh = authCheck(req)
+          return fresh.user?.id === user.id ? null : sessionCode(fresh.reason)
+        })
+        if (result.revision) res.setHeader('ETag', result.revision)
+        if (!result.ok) return sendJSON(res, result.status, result)
+        setUsedBytes(user.id, incoming + blobsBytes)
+        return sendJSON(res, 200, result)
       } catch (e) {
         console.error('[data] 写入失败', user.name, e instanceof Error ? e.message : e)
         return sendJSON(res, 500, { ok: false, error: '服务器写入失败，请稍后重试' })
       }
-      setUsedBytes(user.id, incoming + blobsBytes)
-      return sendJSON(res, 200, { ok: true })
     }
     return sendJSON(res, 405, { ok: false, error: 'Method Not Allowed' })
   }

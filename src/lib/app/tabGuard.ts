@@ -1,18 +1,15 @@
 // ============ 网页版 · 多标签页互斥提示（WEB-02 的前半部分） ============
 //
 // 【要解决什么】网页版的数据是「整库读入内存 → 改动 → 全量写回」，
-// 同一个账号在两个标签页里同时编辑，后保存的会整体覆盖前一个，**先写的内容静默丢失**。
-// 桌面版靠单进程独占文件天然没有这个问题，网页版没有这层保护。
+// 便携版仍可能整库覆盖；云端服务已接条件写，冲突窗口需要保留草稿再合并。
 //
-// 【为什么只做「提示」而不做「锁」】真正的互斥需要服务端版本号（`revision` + `If-Match`）——
-// 那是跨设备也能生效的方案，但要动前端整条保存链路。
-// 同浏览器多标签页这一半，用 BroadcastChannel 探测就够了：**不拦人，只把风险摆到眼前**。
-// 强行禁止写会让「我就是要开两个窗口对照着看」的用户没法用，那反而更糟。
+// 本条只负责 BroadcastChannel 提示，不控制写权限。云端的版本保护在服务端和 fileBackend，
+// 便携版仍只有提示。允许打开多个窗口对照，云端旧快照提交时再明确拒绝并保留本地草稿。
 //
 // 【为什么不写进 React】App.tsx 有四处 early-return 分支各自渲染横幅，逐个加容易漏；
 // 而这里用原生 DOM 挂一条 fixed 浮层，不占布局、不依赖任何组件树，也不会影响桌面版与便携版
 // （非网页版在第一行就返回了）。
-import { WEB } from '@/lib/app/platform'
+import { WEB, WEB_CLOUD } from '@/lib/app/platform'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 
 const CHANNEL = 'yfe-web-tab-guard'
@@ -55,12 +52,11 @@ function showBanner() {
 
   const text = document.createElement('span')
   /**
-   * 🔴 3.2.3 · R4（并发实测后按方案 A 落文案）：实测已确认「两标签同账号 ⇒ 后保存的整库覆盖先保存的，
-   *    先写的内容静默消失，服务端没有版本判据」（见 docs/3.2.3-R4云端并发实测-2026-10-24.md）。
-   *    旧文案只说"会互相覆盖"，没说清**整库**、也没给动作建议；作者点掉「知道了」继续写就真丢了。
-   *    现在写清三件事：整库保存、后写的吃掉先写的、应当只留一个窗口。
+   * Cloud conditional writes now reject stale versions. Portable retains the explicit legacy risk notice.
    */
-  text.textContent = '检测到另一个窗口也在用这个账号：两边都是整库保存，后保存的会覆盖先保存的，先写的内容会丢失。建议只留一个窗口编辑。'
+  text.textContent = WEB_CLOUD
+    ? '检测到另一个窗口也在用这个账号：两边都是整库保存，云端会拒绝旧版本。发生冲突时请先导出草稿，再重新打开并合并。建议只留一个窗口编辑。'
+    : '检测到另一个窗口也在用这个账号：两边都是整库保存，后保存的会覆盖先保存的，先写的内容会丢失。建议只留一个窗口编辑。'
   text.setAttribute('style', 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis')
 
   const closeBtn = document.createElement('button')

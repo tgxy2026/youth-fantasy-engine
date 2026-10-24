@@ -62,8 +62,7 @@ const IMPORT_TITLE = '导入数据文件：选择之前导出的 JSON，替换�
 
 /**
  * 富整库：带真实项目/卷/章，才能在页面上真的打开编辑器敲字。
- * 🔴 行形态必须是**键化对象**（与桌面/云端导出一致）；数组形态是游客那份，
- *    两者都是合法 portable-data，但只有键化能被这三端按主键读回。
+ * 两种行形态都合法；本夹具用桌面键化格式，读取时统一兼容云端保存的数组格式。
  */
 const mkRichData = () => {
   const now = Date.now()
@@ -140,20 +139,35 @@ async function main() {
   let blocked = false
   let activeDataFile = ''
   let keptDataFile = ''
+  let activeUserId = '', controlId = 0
+  const control = (operation, uid) => new Promise((resolve, reject) => {
+    const id = ++controlId
+    const timer = setTimeout(() => { server.off('message', listener); reject(new Error('Server barrier timeout: ' + operation)) }, 15000)
+    const listener = message => { if (message.id === id) { clearTimeout(timer); server.off('message', listener); message.error ? reject(new Error(message.error)) : resolve() } }
+    server.on('message', listener); server.send({ id, operation, uid })
+  })
+  const mutateDataFile = async action => {
+    await control('pause', activeUserId)
+    try { return await action() } finally { await control('resume', activeUserId) }
+  }
   /**
-   * 解除「用空目录挡住 data.json」的注入（幂等）——**只撤挡板，绝不写回任何字节**。
-   * 与桌面探针同一个教训：撤掉挡板后这个文件的每一次写都必须是产品自己的；
-   * 探针补一次旧字节，就可能把刚写成功的内容覆盖掉（retry-readback 假红）。
-   * 旧字节留在 keptDataFile 作审计留档，不参与恢复。
+   * Restore the probe's exact baseline under a browser request barrier. Active writes are drained,
+   * new writes parked, and the directory blocks every actual commit. Thus no successful user write
+   * can be overwritten; only this artificial fault is removed, keeping the real CAS baseline stable.
    */
   const restoreBlocker = async () => {
     try {
       if (!blocked || !activeDataFile) return
       let isDir = false
       try { isDir = (await fs.stat(activeDataFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
-      if (isDir) await fs.rmdir(activeDataFile)
+      await mutateDataFile(async () => {
+        if (isDir) await fs.rmdir(activeDataFile)
+        // Restore the exact immutable baseline while all browser PUTs are parked and drained.
+        // CAS must not interpret our temporary missing file as a real external revision change.
+        await fs.rename(keptDataFile, activeDataFile)
+      })
     } catch (e) {
-      serverLog += '[probe] 撤挡板失败（已记录，不影响结论）: ' + (e instanceof Error ? e.message : String(e)) + '\n'
+      error = [error, '[probe] 恢复隔离基线失败: ' + String(e)].filter(Boolean).join('\n')
     } finally {
       blocked = false
     }
@@ -164,9 +178,12 @@ async function main() {
       viewport: { width: 1440, height: 1000 }, args: ['--no-proxy-server'], env })
     /** 页面发出的实际请求（用于证明"数据来自服务端"而不是浏览器本地库） */
     const requests = []
-    await ctx.route('**/*', route => {
+    await ctx.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url())
-      if (url.origin === origin) { requests.push({ method: request.method(), pathname: url.pathname }); return route.continue() }
+      if (url.origin === origin) {
+        requests.push({ method: request.method(), pathname: url.pathname })
+        return route.continue()
+      }
       if (['data:', 'blob:'].includes(url.protocol)) return route.continue()
       return route.abort()
     })
@@ -189,8 +206,9 @@ async function main() {
     return { status: res.status(), body: await res.text() }
   }
   const putData = async (ctx, marker) => {
+    const current = await ctx.request.get(origin + '/api/data')
     const res = await ctx.request.put(origin + '/api/data', {
-      headers: { 'Content-Type': 'application/json' }, data: mkData(marker),
+      headers: { 'Content-Type': 'application/json', 'If-Match': current.headers().etag ?? '' }, data: mkData(marker),
     })
     return { status: res.status(), body: await res.text() }
   }
@@ -204,10 +222,24 @@ async function main() {
   }
 
   try {
-    server = spawn(process.execPath, [path.join(ROOT, 'server/index.mjs')], { cwd: ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const bootstrap = path.join(runRoot, 'server-bootstrap.mjs')
+    await fs.writeFile(bootstrap, `
+import {withUserDataLock} from ${JSON.stringify(pathToFileURL(path.join(ROOT, 'server/lib/userdata.mjs')).href)};
+await import(${JSON.stringify(pathToFileURL(path.join(ROOT, 'server/index.mjs')).href)});
+let release,held;
+process.on('message',async message=>{
+ try{
+  if(message.operation==='pause'){
+   held=withUserDataLock(message.uid,async()=>{process.send({id:message.id});await new Promise(resolve=>{release=resolve});});
+   held.catch(error=>process.send({id:message.id,error:String(error)}));
+  }else{release();await held;process.send({id:message.id});}
+ }catch(error){process.send({id:message.id,error:String(error)});}
+});`)
+    server = spawn(process.execPath, [bootstrap], { cwd: ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
     server.on('error', v => { serverLog += String(v) })
-    server.stdout.on('data', v => { serverLog += v })
-    server.stderr.on('data', v => { serverLog += v })
+    const log = v => { serverLog += v; fs.appendFile(path.join(runRoot, 'server-live.log'), v).catch(() => {}) }
+    server.stdout.on('data', log)
+    server.stderr.on('data', log)
     await until(async () => { try { return (await fetch(origin + '/api/ping', { signal: AbortSignal.timeout(1000) })).ok } catch { return false } })
 
     // ---------- ① 账号 A：注册 → 真实页面启动标记 ----------
@@ -335,6 +367,7 @@ async function main() {
       const self = Object.values(db0.users).find(u => u.name === USER_A)
       if (!self) throw new Error('Cannot locate the throwaway account record')
       const uid = self.id
+      activeUserId = uid
       const originalQuota = self.quotaBytes
       activeDataFile = path.join(data, 'users', uid, 'data.json')
       keptDataFile = activeDataFile + '.probe-kept'
@@ -360,8 +393,9 @@ async function main() {
       // 🔴 上一段（restart-readback）用另一个上下文登录了同一个账号，单会话机制已把 A 的会话顶掉。
       //    这里必须重新登录，否则下面的 PUT 全是 401 —— 那不是"写失败取证"，是会话过期。
       await login(A.ctx, USER_A)
+      const baseline = await A.ctx.request.get(origin + '/api/data')
       const seed = await A.ctx.request.put(origin + '/api/data', {
-        headers: { 'Content-Type': 'application/json' }, data: mkRichData(),
+        headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(),
       })
       check('write-failure-seed', seed.ok(), String(seed.status()))
       await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
@@ -386,8 +420,10 @@ async function main() {
       await A.page.screenshot({ path: path.join(runRoot, 'quota-rejected.png') })
 
       // ---- ② 写盘 500：先上挡板再恢复配额，保证重试不会抢先落盘 ----
-      await fs.rename(activeDataFile, keptDataFile)
-      await fs.mkdir(activeDataFile)
+      await mutateDataFile(async () => {
+        await fs.rename(activeDataFile, keptDataFile)
+        await fs.mkdir(activeDataFile)
+      })
       blocked = true
       const keptBytes = await fs.readFile(keptDataFile)
       await setQuota(originalQuota)
@@ -450,6 +486,38 @@ async function main() {
       await A.page.screenshot({ path: path.join(runRoot, 'roundtrip-import.png') })
     }
 
+    // Real UI writes from two tabs sharing a session; no direct API PUT stands in for editing.
+    {
+      const stale = await A.ctx.newPage()
+      stale.on('pageerror', value => pageErrors.push(String(value)))
+      await stale.goto(origin + '/', { waitUntil: 'domcontentloaded' }); await openProjectEditor(stale)
+      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      const winner = DRAFT2 + '第一窗口成功提交。', loser = DRAFT2 + '第二窗口的冲突草稿。'
+      await A.page.getByPlaceholder(EDITOR).fill(winner); await A.page.keyboard.press('Control+s')
+      await until(async () => chapterContent(await fs.readFile(activeDataFile, 'utf8')) === winner)
+      check('two-tabs-conditional-write', true)
+      let puts = 0
+      stale.on('request', request => { if (new URL(request.url()).pathname === '/api/data' && request.method() === 'PUT') puts++ })
+      const rejected = stale.waitForResponse(reply => new URL(reply.url()).pathname === '/api/data' && reply.request().method() === 'PUT' && reply.status() === 409)
+      await stale.getByPlaceholder(EDITOR).fill(loser); await stale.keyboard.press('Control+s')
+      await rejected
+      await stale.getByRole('alert').filter({ hasText: '已停止本窗口保存' }).waitFor()
+      check('stale-save-rejected', true)
+      check('conflict-keeps-draft', (await stale.getByPlaceholder(EDITOR).inputValue()) === loser)
+      check('conflict-preserves-server', chapterContent(await fs.readFile(activeDataFile, 'utf8')) === winner)
+      const downloaded = stale.waitForEvent('download')
+      await stale.getByTitle(EXPORT_TITLE, { exact: true }).click()
+      const target = path.join(runRoot, 'conflict-export.json')
+      await (await downloaded).saveAs(target)
+      check('conflict-export', chapterContent(await fs.readFile(target, 'utf8')) === loser)
+      const before = puts
+      await stale.waitForTimeout(1200)
+      check('conflict-stops-retry', puts === before)
+      check('conflict-leave-blocked', await stale.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented
+      }))
+      await stale.screenshot({ path: path.join(runRoot, 'conflict.png') })
+    }
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
@@ -461,6 +529,7 @@ async function main() {
   } finally {
     // 挡板必须先撤（幂等），否则服务端数据目录会留着空目录，下一次运行读到 500
     if (blocked) await restoreBlocker()
+    await fs.writeFile(path.join(runRoot, 'server.log'), serverLog)
     for (const c of contexts) await c.ctx.close().catch(() => {})
     if (server) {
       const closed = new Promise(resolve => server.once('close', resolve))

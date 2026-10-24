@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { WEB_CLOUD_CASE_IDS, validateWebCloudEvidence, type WebCloudRuntimeResult } from '../scripts/verify/web-cloud-evidence.mjs'
+import { WEB_CLOUD_CASE_IDS, WEB_CLOUD_ARTIFACTS, validateWebCloudEvidence, type WebCloudRuntimeResult } from '../scripts/verify/web-cloud-evidence.mjs'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-cloud-evidence-'))
 const runRoot = path.join(root, '.workbuddy/tmp/web-cloud-save-fixture')
@@ -22,7 +22,7 @@ async function rejects(name: string, value: WebCloudRuntimeResult) {
 try {
   await fs.mkdir(path.join(runRoot, 'server-data'), { recursive: true })
   const artifacts = []
-  for (const name of ['server.log']) {
+  for (const name of WEB_CLOUD_ARTIFACTS) {
     const full = path.join(runRoot, name)
     await fs.writeFile(full, 'fixture-' + name)
     artifacts.push({ path: path.relative(root, full), sha256: hash('fixture-' + name) })

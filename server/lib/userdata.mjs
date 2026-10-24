@@ -7,7 +7,7 @@
 //   PUT  /api/blob?store=&id=
 //   DELETE /api/blob?store=&id=
 //   GET  /api/blob/list?store=
-// 于是前端一个字节都不用改（它只认 `window.__YFE_PORTABLE__` 这个注入标记）。
+// 云端复用 fileBackend，但整库保存另要求账号绑定的 ETag/If-Match；便携服务尚未接条件写。
 //
 // 磁盘布局
 //   <DATA_DIR>/users/<uid>/data.json
@@ -17,6 +17,7 @@
 //    「先转义再拼接」永远比「过滤危险字符」可靠 —— 过滤法总漏变体。
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { USERS_DATA_DIR } from './config.mjs'
 import { writeTextAtomic, dirBytesSync } from './atomic.mjs'
 
@@ -46,15 +47,36 @@ const encId = (id) => Buffer.from(String(id), 'utf8').toString('base64url')
 /** 读取用户整库文本；不存在返回 missing */
 export function readUserData(uid) {
   const file = userDataFile(uid)
-  if (!existsSync(file)) return { missing: true, text: null }
+  if (!existsSync(file)) return { missing: true, text: null, revision: dataRevision(uid, null), ownerId: uid }
   const text = readFileSync(file, 'utf8')
-  return { missing: false, text }
+  return { missing: false, text, revision: dataRevision(uid, text), ownerId: uid }
 }
 
-/** 写入用户整库（调用方已做配额校验） */
-export async function writeUserData(uid, text) {
-  ensureUserDir(uid)
-  await writeTextAtomic(userDataFile(uid), text)
+// Opaque, account-bound strong ETag; no separate metadata file or data-format migration.
+export function dataRevision(uid, text) {
+  return '"yfe-' + createHash('sha256').update(uid + '\0' + (text === null ? 'missing' : 'text\0' + text)).digest('hex') + '"'
+}
+const dataWrites = new Map()
+
+/** Compare and replace within one account queue in this server process. Never bypass a missing precondition. */
+export async function withUserDataLock(uid, action) {
+  const previous = dataWrites.get(uid) ?? Promise.resolve()
+  const pending = previous.catch(() => {}).then(action)
+  dataWrites.set(uid, pending)
+  try { return await pending }
+  finally { if (dataWrites.get(uid) === pending) dataWrites.delete(uid) }
+}
+export async function writeUserData(uid, text, expectedRevision, authorize = () => null) {
+  return withUserDataLock(uid, async () => {
+    const authError = authorize()
+    if (authError) return { status: 401, ok: false, code: authError, error: '会话已失效' }
+    if (!expectedRevision) return { status: 428, ok: false, code: 'REVISION_REQUIRED', error: '请更新或重新打开页面后再保存' }
+    const current = readUserData(uid)
+    if (expectedRevision !== current.revision) return { status: 409, ok: false, code: 'DATA_CONFLICT', error: '云端数据已在另一窗口更新；请先导出本窗口草稿', revision: current.revision }
+    ensureUserDir(uid)
+    await writeTextAtomic(userDataFile(uid), text)
+    return { status: 200, ok: true, revision: dataRevision(uid, text) }
+  })
 }
 
 /**

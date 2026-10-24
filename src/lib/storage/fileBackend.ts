@@ -25,6 +25,7 @@ import { PORTABLE_FILE_VERSION, describeDataFileReject } from '@/lib/storage/sto
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 与桌面版 exportDesktopData 同口径
 import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
+import { WEB_CLOUD } from '@/lib/app/platform'
 
 /** 服务注入到 window 的便携标记（见 portable-server.mjs 的注入注释） */
 declare global {
@@ -111,6 +112,17 @@ let dataFilePath = ''
  */
 let writeLocked = false
 let writeLockReason = ''
+let cloudRevision: string | null = null
+let saveConflict = false
+let uncertainText: string | null = null
+const validRevision = (value: string | null): value is string => !!value && /^"yfe-[a-f0-9]{64}"$/.test(value)
+const cloudOwnerId = () => (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id
+function blockCloudSave(message = '云端已在另一窗口更新，已停止本窗口保存。草稿仍在本窗口，请先导出全部数据，再重新打开并合并；请勿直接刷新。') {
+  saveConflict = true
+  dirty = true
+  lastError = message
+  if (saveTimer !== null) { clearTimeout(saveTimer); saveTimer = null }
+}
 
 const listeners = new Set<() => void>()
 export function subscribePortable(fn: () => void): () => void {
@@ -129,16 +141,18 @@ export interface PortableState {
   lastError: string
   writeLocked: boolean
   writeLockReason: string
+  saveConflict: boolean
 }
 
 export function getPortableState(): PortableState {
   return {
     connected: inited, fileName: '便携数据文件', dataPath: dataFilePath, dirty, saving,
-    lastSavedAt, lastError, writeLocked, writeLockReason,
+    lastSavedAt, lastError, writeLocked, writeLockReason, saveConflict,
   }
 }
 
 export function unlockPortableWrite(): void {
+  if (saveConflict) return
   writeLocked = false
   writeLockReason = ''
   lastError = ''
@@ -146,10 +160,10 @@ export function unlockPortableWrite(): void {
 }
 
 /** 读一次数据文件（GET /api/data）；返回形状与桌面版 `DataFileLoadResult` 对齐 */
-async function loadFromServer(): Promise<{ text?: string | null; error?: string | null; missing?: boolean; path?: string; needReauth?: boolean }> {
+async function loadFromServer(): Promise<{ text?: string | null; error?: string | null; missing?: boolean; path?: string; needReauth?: boolean; revision?: string; incompatible?: boolean }> {
   try {
     const res = await fetch(apiBase() + '/api/data', { cache: 'no-store' })
-    if (!res.ok) {
+    if (!res.ok && !(WEB_CLOUD && res.status === 404)) {
       // 404 = 数据文件尚不存在（首次使用），由服务显式返回，不是错误
       if (res.status === 404) return { text: null, missing: true, error: null }
       // 🔴 401 = 会话过期 / 未登录（WEB-08）。**绝不能**当成「读取失败」走 lock 分支：
@@ -158,8 +172,11 @@ async function loadFromServer(): Promise<{ text?: string | null; error?: string 
       if (res.status === 401) return { text: null, error: null, needReauth: true }
       return { text: null, error: `HTTP ${res.status}` }
     }
-    const j = (await res.json()) as { text?: string | null; path?: string; missing?: boolean }
-    return { text: j.text ?? null, path: j.path, missing: j.missing === true, error: null }
+    const j = (await res.json()) as { text?: string | null; path?: string; missing?: boolean; revision?: string; ownerId?: string }
+    if (WEB_CLOUD && (!validRevision(j.revision ?? null) || res.headers.get('ETag') !== j.revision || !cloudOwnerId() || j.ownerId !== cloudOwnerId())) {
+      return { error: '云端账号或保存协议已变化，请先保留草稿并重新打开页面；未授权覆盖云端数据', incompatible: true }
+    }
+    return { text: j.text ?? null, path: j.path, missing: j.missing === true, error: null, revision: j.revision }
   } catch (e) {
     return { text: null, error: e instanceof Error ? e.message : String(e) }
   }
@@ -182,6 +199,7 @@ export async function initPortableStore(): Promise<void> {
       return
     }
     dataFilePath = r.path ?? './data/youth-fantasy-engine-data.json'
+    if (WEB_CLOUD && !r.error) cloudRevision = r.revision ?? null
     if (r.error) {
       lock(`数据文件读取失败：${r.error}`, `读取便携数据文件失败：${r.error}。为免用空库覆盖原文件，已暂停写入。`)
     } else if (r.missing) {
@@ -251,7 +269,7 @@ function scheduleSave() {
   writeSeq++
   dirty = true
   if (saveTimer != null) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => { saveTimer = null; void flushPortable() }, SAVE_DEBOUNCE_MS)
+  if (!saveConflict) saveTimer = setTimeout(() => { saveTimer = null; void flushPortable() }, SAVE_DEBOUNCE_MS)
   emit()
 }
 
@@ -259,18 +277,34 @@ function scheduleSave() {
 export async function flushPortable(): Promise<boolean> {
   if (!inited || saving) return false
   if (writeLocked) return false
+  if (saveConflict) return false
   saving = true
   // 写盘开始时的版本号：await 期间若又发生修改（writeSeq 递增），成功后不能清 dirty
   const seqAtStart = writeSeq
   emit()
+  let attemptedText: string | null = null
   try {
+    if (WEB_CLOUD) {
+      if (!cloudRevision) { blockCloudSave('云端保存缺少版本凭据，请先导出当前数据并重新打开页面'); return false }
+      if (uncertainText !== null) {
+        const current = await loadFromServer()
+        if (current.needReauth) { lastError = '登录已过期，请先导出当前数据再重新登录'; return false }
+        if (current.incompatible) { blockCloudSave(current.error ?? undefined); return false }
+        if (current.error) { lastError = current.error; return false }
+        if (!current.revision || (current.revision !== cloudRevision && current.text !== uncertainText)) { blockCloudSave(); return false }
+        cloudRevision = current.revision
+        uncertainText = null
+      }
+    }
     data.savedAt = Date.now()
+    attemptedText = JSON.stringify(data)
     const res = await fetch(apiBase() + '/api/data', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json', ...(WEB_CLOUD && cloudRevision ? { 'If-Match': cloudRevision } : {}) },
+      body: attemptedText,
     })
     if (!res.ok) {
+      if (WEB_CLOUD && (res.status === 409 || res.status === 428)) { blockCloudSave(); return false }
       // 🔴 401 单独说清原因（WEB-08 / WEB-02 单会话）：只显示「写入失败 HTTP 401」的话，
       //    作者不知道要去重新登录，还会以为数据存坏了。
       //    服务端用 code 区分两种情形，前端必须说成两句不同的话 ——
@@ -286,18 +320,24 @@ export async function flushPortable(): Promise<boolean> {
       lastError = `写入便携数据文件失败：HTTP ${res.status}`
       return false
     }
+    if (WEB_CLOUD) {
+      const revision = res.headers.get('ETag')
+      if (!validRevision(revision)) { blockCloudSave('云端未返回保存版本，暂不确认已保存；请先导出当前数据并重新打开页面'); return false }
+      cloudRevision = revision
+    }
     savedSeq = seqAtStart
     dirty = writeSeq !== savedSeq
     lastSavedAt = Date.now()
     lastError = ''
     return true
   } catch (e) {
+    if (WEB_CLOUD && attemptedText !== null) uncertainText = attemptedText
     lastError = '写入便携数据文件失败：' + (e instanceof Error ? e.message : String(e))
     return false
   } finally {
     saving = false
     emit()
-    if (dirty) scheduleSave()
+    if (dirty && !saveConflict) scheduleSave()
   }
 }
 
@@ -312,8 +352,27 @@ export async function flushPortable(): Promise<boolean> {
  */
 export function flushPortableBeacon(): boolean {
   if (!PORTABLE || !inited || !dirty || writeLocked) return false
+  if (saveConflict) return false
   data.savedAt = Date.now()
   const text = JSON.stringify(data)
+
+  // Cloud exits must carry a precondition and receive acknowledgement; queued beacon is not confirmation.
+  if (WEB_CLOUD) {
+    if (saving || !cloudRevision || uncertainText !== null) return false
+    try {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', apiBase() + '/api/data', false)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      xhr.setRequestHeader('If-Match', cloudRevision)
+      xhr.send(text)
+      if (xhr.status === 409 || xhr.status === 428) { blockCloudSave(); emit(); return false }
+      const revision = xhr.getResponseHeader('ETag')
+      if (xhr.status >= 200 && xhr.status < 300 && validRevision(revision)) {
+        cloudRevision = revision; savedSeq = writeSeq; dirty = false; lastError = ''; emit(); return true
+      }
+    } catch { /* retain dirty and allow beforeunload to block leaving */ }
+    return false
+  }
 
   // ① 首选：sendBeacon（pagehide 时仍被允许发出，不像普通 fetch 会被取消）
   if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
@@ -638,6 +697,7 @@ export async function importPortableData(
   text: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!PORTABLE || !inited) return { ok: false, error: '便携存储未就绪' }
+  if (saveConflict) return { ok: false, error: '请先导出本窗口草稿并重新打开云端数据，再合并导入；当前保存冲突尚未处理' }
   if (!text.trim()) return { ok: false, error: '所选文件是空文件' }
   let parsed: unknown
   try {

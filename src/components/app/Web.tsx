@@ -136,6 +136,7 @@ export function WebDataBar() {
 
   return (
     <div className="flex flex-col gap-1.5 pt-1">
+      {state.saveConflict && <p role="alert" className="text-xs text-red-400">{state.lastError || '本窗口保存已停止。请先导出全部数据保留草稿，再重新打开并合并；请勿直接刷新。'}</p>}
       {/* 第一行：同步状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
         <Button variant="bare"

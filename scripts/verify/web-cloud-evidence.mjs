@@ -17,9 +17,11 @@ export const WEB_CLOUD_CASE_IDS = [
   'retry-readback', 'recovery-visible',
   // 端到端往返：浏览器真实下载 → 改库落盘 → 真实选文件导入 → 回读
   'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback',
+  'two-tabs-conditional-write', 'stale-save-rejected', 'conflict-keeps-draft', 'conflict-preserves-server',
+  'conflict-export', 'conflict-stops-retry', 'conflict-leave-blocked',
   'no-pageerror', 'unchanged-inputs',
 ]
-export const WEB_CLOUD_ARTIFACTS = ['server.log', 'result.json'].filter(name => name !== 'result.json')
+export const WEB_CLOUD_ARTIFACTS = ['server.log', 'conflict-export.json', 'conflict.png']
 const within = (root, file) => {
   const relative = path.relative(root, file)
   return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)
