@@ -83,9 +83,11 @@ export default function AppIconDialog({ onClose }: { onClose: () => void }) {
           {/* 设置类说明窗：按 HelpPopover 的约定传 pin（鼠标移出不关，只有再点/点外/Esc 才关） */}
           <HelpPopover title="这个开关改的是什么" pin>
             <div className="space-y-1.5 leading-relaxed">
-              <p>· 只改**桌面与开始菜单的快捷方式**图标，随时可以换回来；</p>
-              <p>· **程序自身的图标不变** —— 那属于程序文件的一部分，改装它要重写二进制，本版不做；</p>
-              <p>· 覆盖安装新版本后快捷方式会被重建，本程序**下次启动会自动把图标补回**；</p>
+              {/* 强调必须用 <strong>：这里写 markdown 的 `**…**` 会**原样显示成星号**（3.2.3 审计 #8 抓到）。
+                  与 BackupReminder / AboutPage 的既有写法保持一致。 */}
+              <p>· 只改<strong className="text-ink-200">桌面与开始菜单的快捷方式</strong>图标，随时可以换回来；</p>
+              <p>· <strong className="text-ink-200">程序自身的图标不变</strong> —— 那属于程序文件的一部分，改装它要重写二进制，本版不做；</p>
+              <p>· 覆盖安装新版本后快捷方式会被重建，本程序<strong className="text-ink-200">下次启动会自动把图标补回</strong>；</p>
               <p>· 这些图标都在本机，不上传、不联网。</p>
             </div>
           </HelpPopover>

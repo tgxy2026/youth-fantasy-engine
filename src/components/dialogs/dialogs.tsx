@@ -113,13 +113,18 @@ export function showToast(message: string, type: ToastType = 'success', duration
  * （点了没反应，用户只会以为功能坏了）。
  *
  * ⚠️ 别再在组件里各写一份：本项目已多次踩「同一套交互写两遍、改一处忘一处」。
+ *
+ * @param options.silent 不弹 toast，由调用方自己给行内反馈（例如按钮变「已复制」）。
+ *   即便静默，失败也一定要让调用方拿到 `false` —— 静默的是提示，不是失败。
+ * @returns 是否真的写进了剪贴板
  */
-export async function copyText(text: string, okMsg: string) {
+export async function copyText(text: string, okMsg: string, options: { silent?: boolean } = {}): Promise<boolean> {
+  const notify = (message: string, type: ToastType = 'success') => { if (!options.silent) showToast(message, type) }
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
-      showToast(okMsg)
-      return
+      notify(okMsg)
+      return true
     }
     const ta = document.createElement('textarea')
     ta.value = text
@@ -129,9 +134,11 @@ export async function copyText(text: string, okMsg: string) {
     ta.select()
     const ok = document.execCommand('copy')
     document.body.removeChild(ta)
-    showToast(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
+    notify(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
+    return ok
   } catch {
-    showToast('复制失败，请手动选中复制', 'error')
+    notify('复制失败，请手动选中复制', 'error')
+    return false
   }
 }
 

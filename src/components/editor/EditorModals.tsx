@@ -14,7 +14,7 @@ import { aiProofreadText, aiProofreadLogic, isReplaceable, type ProofreadIssue, 
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
-import { confirmDialog } from '@/components/dialogs/dialogs'
+import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
 import { Modal as BaseModal } from '@/components/dialogs/Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
@@ -287,12 +287,17 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
     })
   }
 
-  /** 建议类：只能复制，不能替换（复制用系统剪贴板，不写入正文） */
-  const copySuggestion = (key: string, text: string) => {
-    void navigator.clipboard?.writeText(text).then(() => {
-      setCopiedKey(key)
-      setTimeout(() => setCopiedKey(k => (k === key ? '' : k)), 1500)
-    }, () => setApplyError('复制失败：浏览器拒绝了剪贴板写入，请手动选中复制。'))
+  /**
+   * 建议类：只能复制，不能替换（复制用系统剪贴板，不写入正文）。
+   * 🔴 必须走 `copyText()`：非安全上下文（http 局域网 / 部分 file://）没有 navigator.clipboard，
+   *    统一入口里有 execCommand 兜底；直接调裸 API 会让作者点了没反应还以为功能坏了。
+   *    这里传 silent，因为按钮自己有「已复制」行内反馈，不需要再弹 toast。
+   */
+  const copySuggestion = async (key: string, text: string) => {
+    const ok = await copyText(text, '已复制这条建议', { silent: true })
+    if (!ok) { setApplyError('复制失败：浏览器拒绝了剪贴板写入，请手动选中复制。'); return }
+    setCopiedKey(key)
+    setTimeout(() => setCopiedKey(k => (k === key ? '' : k)), 1500)
   }
 
   const replaceTypoAll = () => {
