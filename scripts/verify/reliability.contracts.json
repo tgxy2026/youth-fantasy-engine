@@ -12,6 +12,7 @@
     { "id": "storage.portable-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置只完成 portable（见 storage.portable-save）；desktop 需 Electron IPC 主进程故障注入、web-cloud 需隔离服务与临时账号、web-guest 需 IDB 事务 abort/QuotaExceeded 夹具 —— 三者在本机 Node 夹具中不可得，如实阻塞" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
+    { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
     { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "Local server account, expiration and stale-write cases not wired" },
     { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
     { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },

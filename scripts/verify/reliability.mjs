@@ -110,6 +110,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Sidecar migration suite has failing assertions')
       return Number(summary[1])
     }],
+    // 3.2.3 · R3：平台矩阵的证据闸 —— 少场景／缺产物／哈希不符／指纹过期都不得变 verified。
+    ['platform.matrix', ['tests/build-test.mjs', 'platformMatrix'], 180000, result => {
+      const summary = /platformMatrix：(\d+) 通过 \/ (\d+) 失败/.exec(result.out)
+      if (!summary) throw new Error('Platform matrix suite printed no summary')
+      if (Number(summary[2]) !== 0) throw new Error('Platform matrix suite has failing assertions')
+      return Number(summary[1])
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {
