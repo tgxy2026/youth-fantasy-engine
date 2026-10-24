@@ -1,5 +1,5 @@
 /** Serializable Playwright page.evaluate callback. No Node dependencies inside. */
-function scanRenderedPaint({ binary = true } = {}) {
+function scanRenderedPaint({ binary = true, minSvgSize = 0 } = {}) {
   const violations = [], unknown = []
   let painted = 0
   const alpha = v => Number.isFinite(Number.parseFloat(v)) ? Number.parseFloat(v) : 1
@@ -55,7 +55,22 @@ function scanRenderedPaint({ binary = true } = {}) {
     }
     return opacity > 0 ? opacity : null
   }
-  for (const el of document.querySelectorAll('svg path,svg line,svg circle,svg ellipse,svg rect,svg polygon,svg polyline,svg text')) {
+  /**
+   * 扫描范围。
+   * 🔴 `minSvgSize > 0` 时只扫「画布级」svg（宽或高 ≥ 该像素）：整页扫会把 16px 的小图标、
+   *    下拉箭头也算成图表绘制样本 —— mono.rendered 契约要的是**图表**的绘制，
+   *    图标带 40% 透明描边并不违反图表黑白二值，混进去只会让它永远判不过。
+   */
+  const svgRoots = minSvgSize > 0
+    ? [...document.querySelectorAll('svg')].filter((svg) => {
+        const r = svg.getBoundingClientRect()
+        return Math.max(r.width, r.height) >= minSvgSize
+      })
+    : null
+  const elements = svgRoots
+    ? svgRoots.flatMap((svg) => [...svg.querySelectorAll('path,line,circle,ellipse,rect,polygon,polyline,text')])
+    : [...document.querySelectorAll('svg path,svg line,svg circle,svg ellipse,svg rect,svg polygon,svg polyline,svg text')]
+  for (const el of elements) {
     // Definitions are not rendered in isolation. Record referenced paint servers separately.
     if (el.closest('defs')) continue
     const opacity = visible(el)
