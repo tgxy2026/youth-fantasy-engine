@@ -29,6 +29,11 @@ const PRODUCERS = [
     id: 'io.roundtrip', script: 'scripts/verify/card-io-roundtrip.mjs', cases: ['legacy-name', 'duplicate', 'roundtrip'],
     summary: /CARD_IO samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'CARD_IO',
   },
+  {
+    // 需要 vite dev server + Edge（约 40 秒）：真实浏览器里注入一次 IDB 写失败，验切换守卫
+    id: 'draft.failure', script: 'scripts/verify/draft-failure.mjs', cases: ['save-failure', 'preserve-selection', 'preserve-storage'],
+    summary: /DRAFT_FAILURE samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'DRAFT_FAILURE',
+  },
 ]
 
 function run(args, env = {}) {
