@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { runProcess } from './process.mjs'
 import { readTestPlan } from './test-plan.mjs'
 import { captureInputs, hashPaths, scopeVerdict, writeReports } from './evidence.mjs'
+import { validateGuestEvidence } from './web-guest-evidence.mjs'
+import { snapshot } from '../audit/platform/source.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const PLAN = JSON.parse(await fs.readFile(new URL('./reliability.contracts.json', import.meta.url), 'utf8'))
@@ -43,7 +45,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     try {
       const assertions = await inspect(result)
       if (!Number.isInteger(assertions) || assertions < 1) throw new Error('No verified samples')
-      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : []
+      const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : id === 'storage.web-guest-save' ? ['guest-runtime.json', 'guest-ledger.json', 'guest-platform-report.json', 'guest-platform.log'] : []
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
   }
@@ -117,9 +119,34 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[2]) !== 0) throw new Error('Platform matrix suite has failing assertions')
       return Number(summary[1])
     }],
+    ['storage.web-guest-save', ['scripts/audit/probes/web-guest-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'guest-runtime.json')], 180000, async () => {
+      const expectedSourceFingerprint = snapshot(realRoot).fingerprint
+      const evidenceFile = path.join(runRoot, 'guest-runtime.json')
+      const verified = await validateGuestEvidence(realRoot, evidenceFile, { expectedBuildHash: report.build.sha256, expectedSourceFingerprint })
+      const artifact = (await hashPaths(runRoot, ['guest-runtime.json'])).entries[0]
+      // Only promote boot-store: export during a failed save and full roundtrip are not yet covered.
+      const ledger = { sourceFingerprint: expectedSourceFingerprint, decisions: [], runtime: [{ id: 'boot-store', profile: 'web-guest', status: 'passed', samples: 3,
+        scenarios: ['initial-flags', 'backend-selection', 'restart-readback'], environment: process.platform + '; isolated Edge persistent profile; real server/IndexedDB; browser process restart',
+        artifact: { path: path.relative(realRoot, evidenceFile), sha256: artifact.sha256 } }] }
+      const ledgerFile = path.join(runRoot, 'guest-ledger.json')
+      await fs.writeFile(ledgerFile, JSON.stringify(ledger, null, 2))
+      const matrix = await runProcess(process.execPath, ['scripts/audit/platform/run.mjs', '--evidence', ledgerFile], { cwd: realRoot, timeoutMs: 180000, signal })
+      await fs.writeFile(path.join(runRoot, 'guest-platform.log'), matrix.out)
+      if (![0, 2].includes(matrix.exitCode) || matrix.signal || matrix.timedOut || matrix.aborted || matrix.error || matrix.outputLimit) throw new Error('Guest platform evidence audit failed')
+      const reportPath = /^Report: (.+\.md)\s*$/m.exec(matrix.stdout)?.[1]?.trim()
+      if (!reportPath) throw new Error('Platform audit report missing')
+      const platformReport = JSON.parse(await fs.readFile(reportPath.replace(/\.md$/, '.json'), 'utf8'))
+      if (platformReport.sourceFingerprint !== expectedSourceFingerprint || platformReport.runtime.find(item => item.id === 'boot-store' && item.profile === 'web-guest')?.status !== 'passed' || platformReport.runtime.filter(item => item.status === 'passed').length !== 1) throw new Error('Guest boot-store cell was not independently verified')
+      await fs.writeFile(path.join(runRoot, 'guest-platform-report.json'), JSON.stringify(platformReport, null, 2))
+      report.runtimeMatrix = { verified: 1, total: platformReport.runtime.length, evidence: 'guest-ledger.json' }
+      return verified.assertions
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {
+      if (stage === 'foundation' && contracts.find(contract => contract.id === id)?.stage !== 'foundation') {
+        record(id, 'not-run', 0, 'Business suite not selected in foundation stage'); continue
+      }
       if (!ready || signal?.aborted) { record(id, 'not-run', 0, 'Prerequisite failed or run cancelled'); continue }
       ready = await command(id, args, timeoutMs, inspect)
     }
