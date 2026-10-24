@@ -197,6 +197,14 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation', 'write-failure'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; real quota rejection and real data-file rename failure; browser process restart; no production account')
       return verified.assertions
     }],
+    // 3.2.3 · R4：端到端导出→导入（桌面 + 云端）。
+    // 🔴 不重跑探针，只聚合同一轮已产出的两份结果 —— 但要求两边指纹一致、检查项齐全且全真，
+    //    任一份缺失或来自另一轮源码就直接失败（不拿"各自都说自己过了"当整体过）。
+    ['storage.e2e-roundtrip', ['scripts/verify/e2e-roundtrip.mjs', '--run-root', runRoot], 60000, async result => {
+      const summary = /E2E_ROUNDTRIP ok=(\d+)/.exec(result.out)
+      if (!summary) throw new Error('E2E roundtrip printed no summary')
+      return Number(summary[1])
+    }],
   ]
   try {
     for (const [id, args, timeoutMs, inspect] of steps) {

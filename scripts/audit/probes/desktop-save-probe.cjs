@@ -10,7 +10,20 @@ const ROOT = path.resolve(__dirname, '../../..')
 const PID = 'desktop-save-project', VID = 'desktop-save-volume', CH = 'desktop-save-chapter'
 const TITLE = '桌面保存故障临时作品', ORIGINAL = '隔离桌面模式的原始手稿。'
 const DRAFT = '桌面写盘失败时仍保留这份草稿，恢复后无需重新输入。'
+const AFTER = '导入之前先改成这样，看导入能不能把它换回导出那一刻。'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
+const EXPORT_TITLE = '导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑'
+const IMPORT_TITLE = '导入数据文件：选择之前导出的数据文件，替换本机全部数据'
+/**
+ * 从整库文本里取本章（行形态两种都要认）。
+ * 桌面保存写的是主键→记录对象；云端/便携写的是数组。同一个 `portable-data` 形态因端而异，
+ * 只认一种会静默读成 undefined（3.2.3 云端探针实测踩过）。
+ */
+const chapterOf = text => {
+  const rows = JSON.parse(text)?.stores?.chapters
+  const list = Array.isArray(rows) ? rows : Object.values(rows ?? {})
+  return list.find(row => row && row.id === CH)
+}
 const checks = [], pageErrors = []
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
 const arg = name => { const at = process.argv.indexOf(name); if (at < 0) return; const value = process.argv[at + 1]; if (!value || value.startsWith('--')) throw new Error(name + ' requires a value'); return value }
@@ -66,7 +79,13 @@ ipcMain.handle=(channel,fn)=>handle(channel,async(...args)=>{
  if(channel==='store:save')entry.body=JSON.parse(args[1]).stores.chapters[${JSON.stringify(CH)}]?.content;
  const result=await fn(...args);entry.result=result;entry.doneAt=Date.now();return result;
 });
-dialog.showSaveDialog=async()=>({canceled:false,filePath:${JSON.stringify(exportFile)}});
+dialog.showSaveDialog=async()=>({canceled:false,filePath:global.__desktopProbe.savePath||${JSON.stringify(exportFile)}});
+// 导入用的文件选择器：只对 openFile 生效（openDirectory 用于云同步选目录，保持取消，别误触发）
+dialog.showOpenDialog=async(opts)=>{
+ const properties=(opts&&opts.properties)||[];
+ if(properties.includes('openFile'))return {canceled:false,filePaths:[global.__desktopProbe.savePath||${JSON.stringify(exportFile)}]};
+ return {canceled:true,filePaths:[]};
+};
 require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
 `)
   const env = { ...process.env, ELECTRON_START_URL: pathToFileURL(path.join(build, 'index.html')).href }
@@ -83,33 +102,22 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
   }
   const calls = () => app.evaluate(() => global.__desktopProbe.calls)
   /**
-   * 解除"用空目录挡住目标文件"的注入（幂等）。
-   * · 目标仍是空目录 ⇒ 先移除它，**然后让应用自己写回来**；
-   * · 目标已被应用自己写回（先删后改名）⇒ 保留应用那份，删掉我们暂存的旧字节；
-   * · 应用 15s 内确实没写 ⇒ 才把旧字节补回去兜底（保证后续重启回读有料可读）。
+   * 解除"用空目录挡住目标文件"的注入（幂等）——**只撤挡板，绝不写回任何字节**。
    *
-   * 🔴 为什么不"撤掉目录就立刻补回旧字节"：实测踩过 —— rmdir 与应用的 write→rename 撞在一起，
-   *    应用刚写成功的 DRAFT 被探针补回的旧字节覆盖，随后 retry-readback 读到旧正文、
-   *    整步被判超时（2026-10-24，reliability-SU3mP6）。挡板是我们造的，撤掉后应该等应用自己说结果。
-   * 任何情况下都不许抛错，否则清理阶段会中断、Electron 不退出，整步被判超时。
+   * 🔴 3.2.3 踩过的两次坑都出在"探针顺手帮忙"上：
+   *    ① 撤掉目录后立刻判 `exists` 并把暂存的旧字节 rename 回去 —— 与应用的 write→rename 撞车时，
+   *       应用刚写成功的草稿被旧字节覆盖，`retry-readback` 读到旧正文（reliability-SU3mP6）。
+   *    ② 改成"先等 15s 再兜底"后仍有窗口（reliability-Ri594d）：应用报了 ok，文件 mtime 却停在第一次写入。
+   *    ⇒ 结论：挡板是我们造的，撤掉之后这个文件的**每一次写都必须是产品自己的**。
+   *       旧字节只作审计留档（keptFile 不删），不参与任何恢复。
    */
   async function restoreFromBlocker() {
     try {
       let isDir = false
       try { isDir = (await fs.stat(activeFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
       if (isDir) await fs.rmdir(activeFile)
-      blocked = false
-      const end = Date.now() + 15000
-      let written = false
-      while (Date.now() < end) {
-        written = await fs.stat(activeFile).then(s => s.isFile(), () => false)
-        if (written) break
-        await new Promise(resolve => setTimeout(resolve, 150))
-      }
-      if (written) await fs.rm(keptFile).catch(() => {})
-      else if (await fs.stat(keptFile).then(() => true, () => false)) await fs.rename(keptFile, activeFile)
     } catch (e) {
-      console.warn('[desktop-probe] 恢复阶段未能完全还原（不影响本次结论，已记录）：', e instanceof Error ? e.message : String(e))
+      console.warn('[desktop-probe] 撤挡板未能完全还原（不影响本次结论，已记录）：', e instanceof Error ? e.message : String(e))
     } finally {
       blocked = false
     }
@@ -144,7 +152,10 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     // 🔴 幂等：应用自己的写盘若「先删目标再 rename」，会在我们恢复前把空目录换掉 ——
     //    这时 rmdir 会 ENOENT（实测踩过，导致清理阶段抛错、Electron 没关、整步被 180s 超时判红）。
     await restoreFromBlocker()
-    await until(async () => JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH].content === DRAFT)
+    // 撤掉挡板后按一次 Ctrl+S —— 作者在「请恢复写权限后重试」之后真正会做的动作。
+    // 「没有新输入也会自己重试」已由上面的 dirty-retry 单独证明；这里要证的是「故障排除后能存进去」。
+    await page.keyboard.press('Control+s')
+    await until(async () => { try { return chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT } catch { return false } }, 45000)
     check('retry-readback', true)
     await page.getByRole('button', { name: '已保存', exact: true }).waitFor()
     check('recovery-visible', !(await page.getByRole('button', { name: '保存出错', exact: true }).count()))
@@ -155,6 +166,46 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     check('restart-readback', (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT && JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH].content === DRAFT)
     await page.screenshot({ path: path.join(runRoot, 'restart-readback.png') })
     await fs.writeFile(path.join(runRoot, 'chapter-readback.json'), JSON.stringify(JSON.parse(await fs.readFile(activeFile, 'utf8')).stores.chapters[CH], null, 2))
+    // ---------- 端到端往返：真实导出 → 改库落盘 → 真实导入 → 重启核对 ----------
+    // 方案要的是「各配置**端到端**导出→导入（实际落文件再导回）」，不是格式层拼装。
+    // 全程真实 UI + 真实文件；只把文件选择器的目的地指到本次临时目录（原生弹窗无法自动化）。
+    {
+      const roundtripFile = path.join(runRoot, 'roundtrip-export.json')
+      await app.evaluate((_electron, target) => { global.__desktopProbe.savePath = target }, roundtripFile)
+      await page.getByTitle(EXPORT_TITLE, { exact: true }).click()
+      await until(async () => {
+        try { return chapterOf(await fs.readFile(roundtripFile, 'utf8'))?.content === DRAFT } catch { return false }
+      }, 20000)
+      check('roundtrip-export', true, 'exported snapshot holds the current draft')
+
+      // 先把库改成别的样子 —— 不改的话，「导入回到导出那一刻」什么都证明不了
+      await page.getByPlaceholder(EDITOR).fill(AFTER)
+      await page.keyboard.press('Control+s')
+      await until(async () => chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === AFTER, 25000)
+      check('roundtrip-changed', true, 'library now differs from the export')
+
+      // 导入：确认框 →「继续导入」→ 应用会 location.reload()
+      // 🔴 必须真的等这次 reload：点了「继续导入」后页面还停在编辑器里，此时若按"textarea 在不在"判断，
+      //    会立刻判成"已经回到编辑器"，然后 reload 一来又被打回项目中心（第一轮就这么超时的）。
+      await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      const reloaded = page.waitForEvent('load', { timeout: 45000 })
+      await page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await reloaded
+      await openEditor(page)
+      await until(async () => chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT, 25000)
+      check('roundtrip-import-readback',
+        (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT
+        && chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT,
+        await page.getByPlaceholder(EDITOR).inputValue())
+      await page.screenshot({ path: path.join(runRoot, 'roundtrip-import.png') })
+
+      await app.close(); app = null
+      await launch()
+      check('roundtrip-restart-readback',
+        (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT
+        && chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT)
+    }
+
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint && (await hashPaths(build, ['.'])).sha256 === buildManifest.sha256)
   } catch (value) {

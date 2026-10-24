@@ -15,6 +15,8 @@ export const WEB_CLOUD_CASE_IDS = [
   'write-failure-seed', 'write-failure-fixture', 'quota-rejected-visible', 'quota-preserves-draft',
   'quota-not-persisted', 'server-error-visible', 'failure-preserves-draft', 'accepted-vs-persisted',
   'retry-readback', 'recovery-visible',
+  // 端到端往返：浏览器真实下载 → 改库落盘 → 真实选文件导入 → 回读
+  'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback',
   'no-pageerror', 'unchanged-inputs',
 ]
 export const WEB_CLOUD_ARTIFACTS = ['server.log', 'result.json'].filter(name => name !== 'result.json')

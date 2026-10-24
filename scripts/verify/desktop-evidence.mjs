@@ -5,10 +5,14 @@ import { createHash } from 'node:crypto'
 export const DESKTOP_CASE_IDS = [
   'initial-flags', 'isolated-paths', 'fixture-readback', 'failure-visible', 'failure-preserves-draft',
   'accepted-vs-persisted', 'dirty-retry', 'failure-export', 'export-preserves-failure', 'retry-readback',
-  'recovery-visible', 'backend-selection', 'restart-readback', 'no-pageerror', 'unchanged-inputs',
+  'recovery-visible', 'backend-selection', 'restart-readback',
+  // 端到端往返：真实导出 → 改库落盘 → 真实导入 → 重启回读
+  'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback', 'roundtrip-restart-readback',
+  'no-pageerror', 'unchanged-inputs',
 ]
 export const DESKTOP_ARTIFACTS = ['write-failure.png', 'failure-export.png', 'restart-readback.png',
-  'failure-export.json', 'chapter-readback.json', 'ipc-before-restart.json', 'electron.log']
+  'roundtrip-import.png', 'failure-export.json', 'roundtrip-export.json', 'chapter-readback.json',
+  'ipc-before-restart.json', 'electron.log']
 const within = (root, file) => { const relative = path.relative(root, file); return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative) }
 
 export async function validateDesktopEvidence(root, file, { expectedBuildHash, expectedSourceFingerprint }) {

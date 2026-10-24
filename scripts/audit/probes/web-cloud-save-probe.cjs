@@ -55,7 +55,10 @@ const PROJECT_TITLE = '云端保存故障临时作品'
 const ORIGINAL = '隔离云端模式的原始手稿。'
 const DRAFT = '云端配额超限时仍保留这份草稿。'
 const DRAFT2 = '服务端写盘失败时同样保留这份草稿。'
+const AFTER = '导入之前先改成这样，看导入能不能把它换回导出那一刻。'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
+const EXPORT_TITLE = '导出全部数据：下载一个 JSON 文件（与桌面版格式一致，可直接导入桌面版）'
+const IMPORT_TITLE = '导入数据文件：选择之前导出的 JSON，替换云端账号的全部数据'
 
 /**
  * 富整库：带真实项目/卷/章，才能在页面上真的打开编辑器敲字。
@@ -138,13 +141,10 @@ async function main() {
   let activeDataFile = ''
   let keptDataFile = ''
   /**
-   * 解除「用空目录挡住 data.json」的注入（幂等）。
-   * · 目标仍是空目录 ⇒ 先移除它，**然后等服务端自己写回来**；
-   * · 已被服务端写回 ⇒ 保留那一份，删掉暂存；
-   * · 服务端 15s 内确实没写 ⇒ 才把旧字节补回去兜底。
-   * 🔴 不能"撤掉目录就立刻补旧字节"：与桌面探针同一坑 —— rmdir 与服务端的 write→rename 撞车时，
-   *    会把刚写成功的那份覆盖掉，后面的 retry-readback 读到旧正文、误判成没落盘。
-   * 任何情况下都不许抛错：清理阶段一旦中断，服务端就下不了线，整步会被判超时。
+   * 解除「用空目录挡住 data.json」的注入（幂等）——**只撤挡板，绝不写回任何字节**。
+   * 与桌面探针同一个教训：撤掉挡板后这个文件的每一次写都必须是产品自己的；
+   * 探针补一次旧字节，就可能把刚写成功的内容覆盖掉（retry-readback 假红）。
+   * 旧字节留在 keptDataFile 作审计留档，不参与恢复。
    */
   const restoreBlocker = async () => {
     try {
@@ -152,18 +152,8 @@ async function main() {
       let isDir = false
       try { isDir = (await fs.stat(activeDataFile)).isDirectory() } catch (e) { if (e.code !== 'ENOENT') throw e }
       if (isDir) await fs.rmdir(activeDataFile)
-      blocked = false
-      const end = Date.now() + 15000
-      let written = false
-      while (Date.now() < end) {
-        written = await fs.stat(activeDataFile).then(s => s.isFile(), () => false)
-        if (written) break
-        await new Promise(r => setTimeout(r, 150))
-      }
-      if (written) await fs.rm(keptDataFile).catch(() => {})
-      else if (await fs.stat(keptDataFile).then(() => true, () => false)) await fs.rename(keptDataFile, activeDataFile)
     } catch (e) {
-      serverLog += '[probe] 恢复空目录挡板失败（已记录，不影响结论）: ' + (e instanceof Error ? e.message : String(e)) + '\n'
+      serverLog += '[probe] 撤挡板失败（已记录，不影响结论）: ' + (e instanceof Error ? e.message : String(e)) + '\n'
     } finally {
       blocked = false
     }
@@ -415,6 +405,9 @@ async function main() {
 
       // ---- ③ 恢复后重试：草稿自动落盘，无需重新输入 ----
       await restoreBlocker()
+      // 撤挡板后按一次 Ctrl+S：作者在「排除问题后按 Ctrl+S 重试」之后会做的动作。
+      // 「没有新输入也会自己重试」由 ② 的连续失败计数单独证明，这里证的是「故障排除后能存进去」。
+      await A.page.keyboard.press('Control+s')
       await until(async () => {
         try { return chapterContent(await fs.readFile(activeDataFile, 'utf8')) === DRAFT2 } catch { return false }
       }, 30000)
@@ -422,6 +415,39 @@ async function main() {
       await until(async () => (await diskErrorTitle()) === '', 20000)
       check('recovery-visible', (await diskErrorTitle()) === '' && !(await A.page.getByText('未写入磁盘', { exact: true }).count()))
       await A.page.screenshot({ path: path.join(runRoot, 'recovery.png') })
+    }
+
+    // ---------- ⑨ 端到端往返：浏览器真实下载 → 改库 → 真实选文件导入 → reload ----------
+    // 与桌面同一套口径：全程真实 UI + 真实文件，只让浏览器把下载落到本次临时目录。
+    // 不改库就直接导入的话，"导入回到导出那一刻"什么都证明不了，所以中间先改成别的样子并落盘。
+    {
+      const roundtripFile = path.join(runRoot, 'roundtrip-export.json')
+      const editor = A.page.getByPlaceholder(EDITOR)
+      const downloadPromise = A.page.waitForEvent('download', { timeout: 30000 })
+      await A.page.getByTitle(EXPORT_TITLE, { exact: true }).click()
+      await (await downloadPromise).saveAs(roundtripFile)
+      const exported = chapterContent(await fs.readFile(roundtripFile, 'utf8'))
+      check('roundtrip-export', exported === DRAFT2, String(exported))
+
+      await editor.fill(AFTER)
+      await A.page.keyboard.press('Control+s')
+      await until(async () => chapterContent(await fs.readFile(activeDataFile, 'utf8')) === AFTER, 25000)
+      check('roundtrip-changed', true, 'server library now differs from the export')
+
+      // 先注册 chooser/load 的等待再点确认：确认之后才会弹文件选择，导入成功才会 reload
+      const chooser = A.page.waitForEvent('filechooser', { timeout: 30000 })
+      const reloaded = A.page.waitForEvent('load', { timeout: 45000 })
+      await A.page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      await A.page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await (await chooser).setFiles(roundtripFile)
+      await reloaded
+      await waitUser(A.page)
+      await openProjectEditor(A.page)
+      await until(async () => chapterContent(await fs.readFile(activeDataFile, 'utf8')) === DRAFT2, 30000)
+      const shown = await A.page.getByPlaceholder(EDITOR).inputValue()
+      check('roundtrip-import-readback',
+        shown === DRAFT2 && chapterContent(await fs.readFile(activeDataFile, 'utf8')) === DRAFT2, shown)
+      await A.page.screenshot({ path: path.join(runRoot, 'roundtrip-import.png') })
     }
 
     check('no-pageerror', pageErrors.length === 0, pageErrors)
