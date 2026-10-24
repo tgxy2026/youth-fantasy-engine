@@ -7,6 +7,7 @@ import { readTestPlan } from './test-plan.mjs'
 import { captureInputs, hashPaths, scopeVerdict, writeReports } from './evidence.mjs'
 import { validateGuestEvidence } from './web-guest-evidence.mjs'
 import { validateDesktopEvidence } from './desktop-evidence.mjs'
+import { validateWebCloudEvidence } from './web-cloud-evidence.mjs'
 import { snapshot } from '../audit/platform/source.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -47,7 +48,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     try {
       const assertions = await inspect(result)
       if (!Number.isInteger(assertions) || assertions < 1) throw new Error('No verified samples')
-      const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop' }[id]
+      const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop', 'storage.web-cloud-save': 'web-cloud' }[id]
       const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : runtimePrefix ? [runtimePrefix + '-runtime.json', runtimePrefix + '-ledger.json', runtimePrefix + '-platform-report.json', runtimePrefix + '-platform.log'] : []
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
@@ -60,6 +61,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     const coveredScenarios = {
       'boot-store': ['initial-flags', 'backend-selection', 'restart-readback'],
       'write-failure': ['accepted-vs-persisted', 'failure-preserves-draft', 'retry-readback'],
+      'account-isolation': ['two-accounts', 'guest-to-account', 'same-browser-account-switch', 'expired-session'],
     }
     const additions = caseIds.map(id => {
       const scenarios = coveredScenarios[id]
@@ -164,6 +166,15 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
       await auditRuntime('desktop', 'desktop', ['boot-store', 'write-failure'], process.platform + '; isolated Electron appData/userData; production file renderer; real preload/IPC/filesystem failure, draft export and process restart; native chooser destination stubbed')
+      return verified.assertions
+    }],
+    // 3.2.3 · R4：web-cloud 账号隔离 —— 真实本地 server + 临时账号 + 两个独立浏览器上下文。
+    // ⚠️ 只点亮 account-isolation（四个子场景齐）；boot-store 的 restart-readback 与 write-failure 的导出/配额未覆盖，不点亮。
+    ['storage.web-cloud-save', ['scripts/audit/probes/web-cloud-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'web-cloud-runtime.json')], 300000, async () => {
+      const verified = await validateWebCloudEvidence(realRoot, path.join(runRoot, 'web-cloud-runtime.json'), {
+        expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      await auditRuntime('web-cloud', 'web-cloud', ['account-isolation'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; no production account')
       return verified.assertions
     }],
   ]

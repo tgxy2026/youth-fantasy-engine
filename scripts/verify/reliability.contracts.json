@@ -12,10 +12,11 @@
     { "id": "storage.portable-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.web-guest-save", "stage": "business", "minAssertions": 14 },
     { "id": "storage.desktop-save", "stage": "business", "minAssertions": 15 },
-    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "portable 已有 HTTP 保存夹具，web-guest 已有真实 IDB quota/abort/重启探针，desktop 已有真实 IPC 文件替换失败/故障导出/恢复重启；web-cloud 临时账号、游客故障导出与各配置完整跨形态往返仍缺证据，不能报四配置全部完成" },
+    { "id": "storage.web-cloud-save", "stage": "business", "minAssertions": 14 },
+    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "portable HTTP、web-guest 真实 IDB、desktop 真实 IPC、web-cloud 临时账号隔离均已各自取证；仍缺各配置完整跨形态往返（roundtrip）、web-cloud 的重启回读与配额写失败，不能报四配置全部完成" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
     { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
-    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "Local server account, expiration and stale-write cases not wired" },
+    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "account-isolation/web-cloud 已由真实本地服务+临时账号+双上下文验证并通过矩阵；concurrency（同浏览器多标签写、退出兜底、会话替换下的并发保护）仍只有提示、未取证" },
     { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
     { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },
     { "id": "audit.contracts", "stage": "business", "minAssertions": 1, "pending": "Required runtime audit probes still need repository-owned evidence producers" }
