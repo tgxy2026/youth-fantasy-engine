@@ -23,7 +23,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2
+  Undo2, Redo2, FilePlus2, ChevronDown
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -269,6 +269,38 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setImportOpen={setImportOpen}
         />
   )
+  const secondaryTools = (
+    <HelpPopover title="编辑工具" triggerTitle="编辑工具" triggerVariant="secondary" triggerClassName="shrink-0 aria-expanded:border-amber/50"
+      trigger={<>工具 <ChevronDown size={12} /></>} pin focusOnOpen width="22rem">
+      {(close: () => void) => <div role="group" aria-label="编辑工具选项" className="space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-12 font-semibold text-ink-100">整理与检查</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('format') }}><AlignLeft size={14} /> 排版与缩进</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('sensitive') }}><ShieldAlert size={14} /> 敏感词检测（本章）</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('typo') }}><SpellCheck size={14} /> 校对（本章）</Button>
+          {!isLite && <>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('foreshadow') }}><GitBranch size={14} /> 伏笔闭环看板</Button>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('continuity') }}><Link2 size={14} /> 连续性校验</Button>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('style') }}><Feather size={14} /> 文风体检（本章）</Button>
+          </>}
+        </div>
+        <div className="space-y-1 border-t border-ink-700 pt-2">
+          <h3 className="text-12 font-semibold text-ink-100">版本与检索</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('history') }}><History size={14} /> 时光机 · 版本历史</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('trash') }}><Trash2 size={14} /> 回收站</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onOpenSearch?.() }}><Command size={14} /> 全文检索</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('search') }}><Search size={14} /> 全书搜索替换</Button>
+        </div>
+        <div className="space-y-1 border-t border-ink-700 pt-2">
+          <h3 className="text-12 font-semibold text-ink-100">写作视图</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onNavigate?.('chapter-outline') }}><BookOpen size={14} /> 前往本章细纲</Button>
+          <Button variant="ghost" size="sm" aria-pressed={highlightOn} className="w-full !justify-start" onClick={() => { close(); setHighlightOn(value => !value) }}><Highlighter size={14} /> 引用名内联高亮：{highlightOn ? '已开启' : '已关闭'}</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('lock') }}><Lock size={14} /> 小黑屋 · 强制码字</Button>
+        </div>
+      </div>}
+    </HelpPopover>
+  )
+
   return (
     // 🔴 ref 供「正文列保底」测量容器宽度（检索栏压多少、铺满开关显示与否都按它算）
     <div ref={wrapRef} className="flex h-full page-enter overflow-hidden">
@@ -304,12 +336,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         </div>}
         {active ? (
           <>
-            {/* 工具栏：按钮较多（21 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
-                改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达。
-                ⚠️ 工具栏内**不再有**绝对定位下拉 —— 导出菜单 2.8.0 已迁到左侧章节树头部，
-                所以这里可以放心用 `overflow-y-hidden`。以后若再往工具栏塞菜单，必须先放开纵向裁剪
-                （`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器 ⇒ 菜单只剩 44px 高、「点了不出现」）。 */}
-            <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
+            {/* 标题/状态/保存常驻；次工具按用途收纳，行高随实际内容分配。 */}
+            <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2" data-editor-primary>
               {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
                 title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
               <div className="flex items-center gap-1">
@@ -332,17 +361,33 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 // 🔴 3.2.2（审计 U2）：这里的标题**视觉上就是输入框本身**，没有 label 可关联 ——
                 //    给读屏软件一个准确名称，否则只念"编辑框"。
                 aria-label="章节标题"
-                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 min-w-0 hover:!border-ink-600 focus:!border-amber/50 font-serif"
+                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 basis-40 min-w-32 hover:!border-ink-600 focus:!border-amber/50 font-serif"
               />
               <select
                 value={active.status}
                 onChange={e => updateMeta({ status: e.target.value as ChapterStatus })}
                 className="!py-0.5 !px-1.5 text-11 shrink-0"
-                title={`章节状态：${active.status}`}
+                aria-label="章节状态" title={`章节状态：${active.status}`}
               >
                 {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <div className="w-px h-4 bg-ink-700" />
+              {/* 保存始终在标题行可见，按钮条件与提交机制沿用原逻辑。 */}
+              <Button variant="primary" size="sm" aria-label="保存正文"
+                onClick={() => commitContent()}
+                disabled={saving || draftContent === active.content}
+                className={`relative p-1 rounded transition-colors shrink-0
+                  ${draftContent !== active.content
+                    ? 'text-amber hover:bg-amber/15'
+                    : 'text-ink-500 cursor-not-allowed'}`}
+                title={diskError ? `尚未写入磁盘：${diskError}` : saving ? '保存中…' : diskPending ? '正在写入…' : draftContent !== active.content ? '保存（Ctrl+S）' : '当前正文无待保存改动'}
+              >
+                <Save size={14} /> {saving ? '保存中…' : '保存'}
+                {draftContent !== active.content && !saving && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
+                )}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-700/50 px-4 py-1.5" data-editor-utilities>
               {/* E1（2.6.2）撤销 / 恢复：直接调 execCommand 驱动**原生撤销栈** —— 与 Ctrl+Z / Ctrl+Y
                   完全同一栈，不另建自绘撤销栈（AI 插入 / 一键排版 / 缩进都走 execCommand('insertText')，
                   天然在栈里）。点击先把焦点还给正文 textarea：execCommand 的作用对象是聚焦的可编辑元素。 */}
@@ -360,74 +405,16 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               >
                 <Redo2 size={14} />
               </Button>
-              {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="敏感词检测（本章）">
-                <ShieldAlert size={14} />
-              </Button>
-              <Button variant="icon-amber"
-                onClick={() => setModal('format')}
-                className="p-1 shrink-0"
-                title="排版：设置缩进单位 + 一键排版（默认保留你已有的缩进，不再抹平）">
-                <AlignLeft size={14} />
-              </Button>
-              <div className="w-px h-4 bg-ink-700" />
-              {/* 审计工具组：伏笔闭环 / 连续性校验 / 错别字 / 文风体检 */}
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('foreshadow')} className="p-1 shrink-0" title="伏笔闭环看板（全局）">
-                <GitBranch size={14} />
-              </Button>
-              )}
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('continuity')} className="p-1 shrink-0" title="连续性校验器（全局）">
-                <Link2 size={14} />
-              </Button>
-              )}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('typo')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="校对（本章）：本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型">
-                <SpellCheck size={14} />
-              </Button>
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('style')} className="p-1 shrink-0" title="文风体检（本章）">
-                <Feather size={14} />
-              </Button>
-              )}
-              <div className="w-px h-4 bg-ink-700" />
-              <Button variant="bare" iconOnly size="sm"
+              <Button variant="secondary" size="sm" aria-pressed={jieWenJiOpen}
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
                 title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
-                <Wand2 size={14} />
+                <Wand2 size={14} /> 颉文姬
               </Button>
               <div className="w-px h-4 bg-ink-700" />
-              {/* 保存：图标化，有未保存的改动时琥珀高亮+圆点 */}
-              <Button variant="bare" iconOnly size="sm"
-                onClick={() => commitContent()}
-                disabled={saving || draftContent === active.content}
-                className={`relative p-1 rounded transition-colors shrink-0
-                  ${draftContent !== active.content
-                    ? 'text-amber hover:bg-amber/15'
-                    : 'text-ink-500 cursor-not-allowed'}`}
-                title={saving ? '保存中…' : draftContent !== active.content ? '保存（Ctrl+S）' : '已全部保存'}
-              >
-                <Save size={14} />
-                {draftContent !== active.content && !saving && (
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-                )}
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('history')} className="p-1 shrink-0" title="时光机 · 版本历史">
-                <History size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('trash')} className="p-1 shrink-0" title="回收站（恢复误删章节）">
-                <Trash2 size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => onOpenSearch?.()} className="p-1 shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
-                <Command size={14} />
-              </Button>
-              <Button variant="bare" iconOnly size="sm" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
-                <Users size={14} />
-              </Button>
-              <Button variant="bare" iconOnly size="sm" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
-                <Highlighter size={14} />
+              <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+                <Users size={14} /> 本章资料
               </Button>
               {/* 2.2.0 AI 伴写：**点钢笔直接弹出「说明 + 设置 + 开关」**，总开关放在设置下方。
                   为什么不再单设一个开关图标 + 一个并列的问号：同一件事有两个入口既重复、又难扫；
@@ -510,17 +497,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   </div>
                 </div>
               </HelpPopover>
-              <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章细纲">
-                <BookOpen size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('search')} className="p-1 shrink-0" title="全文搜索替换（本书）">
-                <Search size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('lock')} className="p-1 shrink-0" title="小黑屋 · 强制码字">
-                <Lock size={14} />
-              </Button>
-              <div className="w-px h-4 bg-ink-700" />
-              <Button variant="icon-amber"
+              {secondaryTools}
+              <Button variant="secondary" size="sm" aria-pressed={searchVisible || searchDrawer}
                 onClick={() => {
                   if (showRefs) setShowRefs(false)
                   else if (!searchFits) setSearchDrawer(true)
@@ -528,18 +506,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 }}
                 className="p-1 shrink-0"
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
-                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} 设定检索
               </Button>
-              <Button variant="icon-amber"
+              <Button variant="secondary" size="sm" aria-pressed={focusMode}
                 onClick={() => setFocusMode(!focusMode)}
                 className="p-1 shrink-0"
                 title={focusMode ? '退出专注模式' : '专注模式'}>
-                {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {focusMode ? '退出专注' : '专注'}
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、本章资料、AI 伴写、设定检索与专注。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
+            </div>
             </div>
 
             {/* 摘要行：自适应高度，内容多时自动展开完整显示 AI 压缩摘要 */}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { HelpCircle } from 'lucide-react'
@@ -8,7 +8,7 @@ import { foldVh, currentUiZoom } from '@/lib/settings/theme'
 
 interface Props {
   title: string
-  children: React.ReactNode
+  children: React.ReactNode | ((close: () => void) => React.ReactNode)
   className?: string
   size?: number
   /** 弹窗宽度（支持 '20rem' / '320px'），默认 18rem */
@@ -20,6 +20,8 @@ interface Props {
   trigger?: React.ReactNode
   /** 自定义触发键 class。**给了它就不再套默认问号样式**，选中态配色由调用方自带（本组件不介入） */
   triggerClassName?: string
+  /** Named action disclosures can use standard button sizing, including interface density. */
+  triggerVariant?: 'bare' | 'secondary'
   /** 自定义触发键的 title / aria-label（默认 `${title}（点击查看说明）`） */
   triggerTitle?: string
   triggerDisabled?: boolean
@@ -30,6 +32,8 @@ interface Props {
    * 设置类内容（里面要点的控件多）必须传它 —— 否则鼠标一挪到弹窗里的控件上就容易误关。
    */
   pin?: boolean
+  /** Action disclosures can focus their first control; passive help keeps its existing focus behavior. */
+  focusOnOpen?: boolean
 }
 
 const remToPx = (v: string) => {
@@ -48,14 +52,20 @@ const remToPx = (v: string) => {
  */
 export default function HelpPopover({
   title, children, className = '', size = 13, width = '18rem', side = 'left',
-  trigger, triggerClassName, triggerTitle, triggerDisabled, triggerIconBox, pin = false,
+  trigger, triggerClassName, triggerVariant = 'bare', triggerTitle, triggerDisabled, triggerIconBox, pin = false, focusOnOpen = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number; w: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const portalHost = usePopupLayer(open, () => setOpen(false), btnRef)
   const popRef = useRef<HTMLDivElement>(null)
+  const popupId = useId()
   const closeTimer = useRef<ReturnType<typeof setTimeout>>()
+  const closeContent = useCallback(() => {
+    // A selected action may mount a Modal in the same commit; save a connected return target first.
+    btnRef.current?.focus({ preventScroll: true })
+    setOpen(false)
+  }, [])
 
   const scheduleClose = () => {
     clearTimeout(closeTimer.current)
@@ -99,9 +109,12 @@ export default function HelpPopover({
     if (!open) { setPos(null); return }
     update()
     // 二次校正：待弹窗渲染后按真实高度修正 top（避免被底部裁切）
-    const r = requestAnimationFrame(update)
+    const r = requestAnimationFrame(() => {
+      update()
+      if (focusOnOpen) popRef.current?.querySelector<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]')?.focus({ preventScroll: true })
+    })
     return () => cancelAnimationFrame(r)
-  }, [open, update])
+  }, [open, update, focusOnOpen])
 
   // 滚动 / 尺寸变化时跟随；Esc 与外部点击关闭
   useEffect(() => {
@@ -130,10 +143,12 @@ export default function HelpPopover({
       className={`relative inline-flex items-center ${className}`}
       {...leave}
     >
-      <Button variant="bare"
+      <Button variant={triggerVariant}
         ref={btnRef}
         aria-expanded={open}
+        aria-controls={open ? popupId : undefined}
         type="button"
+        {...(triggerVariant === 'secondary' ? { size: 'sm' as const } : {})}
         {...(triggerIconBox ? { iconOnly: true, size: 'sm' as const } : {})}
         disabled={triggerDisabled}
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
@@ -151,6 +166,7 @@ export default function HelpPopover({
       </Button>
       {open && createPortal(
         <div
+          id={popupId}
           ref={popRef}
           {...leave}
           style={{
@@ -166,7 +182,7 @@ export default function HelpPopover({
           <div className="font-semibold text-amber mb-1.5 flex items-center gap-1">
             <HelpCircle size={11} /> {title}
           </div>
-          <div className="whitespace-pre-wrap">{children}</div>
+          <div className="whitespace-pre-wrap">{typeof children === 'function' ? children(closeContent) : children}</div>
         </div>,
         portalHost()
       )}
