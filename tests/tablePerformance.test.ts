@@ -67,9 +67,14 @@ test('nearest-rank统计保留原始顺序，拒绝低样本/异常数字', () =
   assert.deepEqual(a, [50, 10, 40, 20, 30])
   assert.throws(() => summarize([], 1)); assert.throws(() => summarize([NaN])); assert.throws(() => summarize([-1]))
   assert.throws(() => validateSamples({ open: [1], input: [1], save: [1] }))
+  // 新增指标（筛选/清筛选/滚动）同样要够样本，缺一就拒绝
+  const full = { open: Array(5).fill(1), input: Array(30).fill(1), save: Array(10).fill(1), filter: Array(5).fill(1), clear: Array(5).fill(1), scroll: Array(40).fill(1) }
+  assert.doesNotThrow(() => validateSamples(full))
+  assert.throws(() => validateSamples({ ...full, scroll: Array(39).fill(1) }))
 })
 test('基线比较拒绝环境/夹具/工具漂移、smoke冒充以及篡改原始样本', () => {
-  const metricsSamples = { open: Array(5).fill(10) as number[], input: Array(30).fill(20) as number[], save: Array(10).fill(30) as number[] }
+  const metricsSamples = { open: Array(5).fill(10) as number[], input: Array(30).fill(20) as number[], save: Array(10).fill(30) as number[],
+    filter: Array(5).fill(40) as number[], clear: Array(5).fill(45) as number[], scroll: Array(40).fill(16) as number[] }
   const current = { measurementVersion: MEASUREMENT_VERSION, measurementHash: 'tool-v1', environmentHash: 'machine', fixtureHash: 'fixture', backend: 'web-guest', samplePlan: SAMPLE_PLAN, thresholds: {}, metricsSamples }
   const body = { ...current, baselineId: comparisonKey(current), mode: 'measure', status: 'baseline-recorded', checks: [{ name: 'readback', ok: true }] }
   const baseline = { ...body, integrityHash: hash(body) }
@@ -77,5 +82,6 @@ test('基线比较拒绝环境/夹具/工具漂移、smoke冒充以及篡改原�
   for (const key of ['measurementHash', 'environmentHash', 'fixtureHash', 'backend']) assert.throws(() => compareBaseline({ ...current, [key]: 'changed' }, baseline))
   assert.throws(() => compareBaseline(current, { ...baseline, mode: 'smoke' }))
   assert.throws(() => compareBaseline(current, { ...baseline, metricsSamples: { ...metricsSamples, save: [1] } }))
+  assert.throws(() => compareBaseline(current, { ...baseline, metricsSamples: { ...metricsSamples, filter: [] } }))
 })
 console.log(`tablePerformance：${passed} 通过 / 0 失败`)

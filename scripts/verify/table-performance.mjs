@@ -100,13 +100,15 @@ async function readStores(page, backend, dataFile) {
 async function measure(browser, fixture, opt, runRoot, buildDir, environment, inputHash, buildHash, measurementHash) {
   const directory = path.join(runRoot, opt.backend + '-' + fixture.name)
   await fs.mkdir(directory)
-  const plan = opt.mode === 'smoke' ? { warmup: 1, open: 1, input: 2, save: 1 } : SAMPLE_PLAN
+  const plan = opt.mode === 'smoke'
+    ? { warmup: 1, open: 1, input: 2, save: 1, filter: 1, clear: 1, scroll: 4 }
+    : SAMPLE_PLAN
   const result = { schemaVersion: 1, measurementVersion: MEASUREMENT_VERSION, mode: opt.mode, backend: opt.backend, fixture: fixture.name,
     inputHash, buildHash, measurementHash, fixtureHash: fixture.manifest.sha256, environmentHash: hash(environment), environment,
     samplePlan: plan, quantile: 'nearest-rank', thresholds: THRESHOLDS[fixture.name] ?? null,
     featureFlags: { production: true, productInstrumentation: false },
-    metricsSamples: { open: [], input: [], save: [] }, operations: [], checks: [], status: 'failed',
-    boundaries: ['project-switch and longbook timing pending', 'cold-project and filter/locate/continuous-scroll metrics pending', 'mounted-row budget is observational before P2', 'real IME and device checks pending'] }
+    metricsSamples: { open: [], input: [], save: [], filter: [], clear: [], scroll: [] }, operations: [], checks: [], status: 'failed',
+    boundaries: ['project-switch and longbook timing pending', 'cold-project and remote-locate metrics pending', 'mounted-row budget is observational (window active above 80 rows)', 'real IME and device checks pending'] }
   let server, context, page
   const check = (name, ok) => { result.checks.push({ name, ok }); if (!ok) throw new Error('Functional prerequisite failed: ' + name) }
   const timed = async (name, action, record = true) => {
@@ -171,7 +173,9 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     if (!await tableButton.isVisible()) await nav.getByRole('button', { name: fixture.tab.group, exact: true }).click()
     const first = fixture.stores.tableRows[0], last = fixture.stores.tableRows.at(-1)
     const column = name => fixture.columns.findIndex(c => c.key === name) + 2
-    const cell = name => page.locator('table tbody tr').first().locator('td').nth(column(name)).locator('textarea,input').first()
+    // 🔴 P2 行窗口化后 tbody 首尾各有一条「撑高占位行」（data-row-spacer），数据行必须排除它们
+  const dataRow = nth => page.locator('table tbody tr:not([data-row-spacer])').nth(nth)
+  const cell = name => dataRow(0).locator('td').nth(column(name)).locator('textarea,input').first()
     const ready = async () => {
       await cell('别称').waitFor({ state: 'visible' })
       check('first row identity', await cell('名称').inputValue() === first.data['名称'])
@@ -192,7 +196,7 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     // First/last marks are verified by real scrolling; opening never waits for all logical rows in DOM.
     await page.locator('[data-table-scroll]').evaluate(e => { e.scrollTop = e.scrollHeight })
     await frames(page)
-    const lastName = page.locator('table tbody tr').last().locator('td').nth(column('名称')).locator('textarea,input').first()
+    const lastName = dataRow(-1).locator('td').nth(column('名称')).locator('textarea,input').first()
     check('last row identity after scroll', await lastName.inputValue() === last.data['名称'])
     await page.locator('[data-table-scroll]').evaluate(e => { e.scrollTop = 0 })
     await frames(page)
@@ -223,6 +227,59 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
       check('save still shows current input ' + i, await input.inputValue() === expected)
       console.log(`${opt.backend}/${fixture.name} save ${i}/${plan.save}`)
     }
+    // ---------- 筛选 / 清筛选 / 连续滚动（3.2.3 · P0 余项）----------
+    // 判据口径：
+    //   · 行数以界面自己的「共 N 行」为准（虚拟化之后挂载行数已不代表筛选结果）；
+    //   · 期望值由夹具独立算出（不是读界面），并对首行身份做一次交叉核对。
+    const shownRows = () => page.evaluate(() => {
+      const el = [...document.querySelectorAll('span')].find(n => /^共 \d+ 行/.test((n.textContent || '').trim()))
+      return el ? Number((el.textContent || '').match(/\d+/)?.[0] ?? -1) : -1
+    })
+    const filterInput = page.locator('thead th').nth(column('名称')).locator('input').first()
+    const query = '-条目01'
+    const matching = fixture.stores.tableRows.filter(r => String(r.data['名称'] ?? '').includes(query)).sort((a, b) => a.order - b.order)
+    check('filter fixture has matches', matching.length > 0 && matching.length < fixture.manifest.rows)
+    const filterRounds = plan.filter
+    for (let i = 0; i < filterRounds; i++) {
+      await timed('filter', async () => {
+        await filterInput.fill(query)
+        const deadline = Date.now() + 60000
+        for (;;) {
+          if (await shownRows() === matching.length) break
+          if (Date.now() > deadline) throw new Error('Filtered row count timeout')
+          await sleep(20)
+        }
+        check('filtered first row identity ' + i, await cell('名称').inputValue() === matching[0].data['名称'])
+        await frames(page)
+      })
+      await timed('clear', async () => {
+        await filterInput.fill('')
+        const deadline = Date.now() + 60000
+        for (;;) {
+          if (await shownRows() === fixture.manifest.rows) break
+          if (Date.now() > deadline) throw new Error('Cleared row count timeout')
+          await sleep(20)
+        }
+        check('cleared first row identity ' + i, await cell('名称').inputValue() === first.data['名称'])
+        await frames(page)
+      })
+      console.log(`${opt.backend}/${fixture.name} filter+clear ${i + 1}/${filterRounds}`)
+    }
+    // 连续滚动：每次滚一步、等一帧，取的是「滚到这一屏并画出来」的耗时分布
+    const scrollBox = page.locator('[data-table-scroll]')
+    const maxTop = await scrollBox.evaluate(el => Math.max(0, el.scrollHeight - el.clientHeight))
+    for (let i = 1; i <= plan.scroll; i++) {
+      const top = Math.round(maxTop * i / plan.scroll)
+      await timed('scroll', async () => {
+        await scrollBox.evaluate((el, value) => { el.scrollTop = value }, top)
+        await frames(page)
+      })
+      if (i % 10 === 0) console.log(`${opt.backend}/${fixture.name} scroll ${i}/${plan.scroll}`)
+    }
+    check('last row identity after continuous scroll', await lastName.inputValue() === last.data['名称'])
+    await scrollBox.evaluate(el => { el.scrollTop = 0 })
+    await frames(page)
+
     const after = await readStores(page, opt.backend, server.dataFile)
     await write(path.join(directory, 'readback-after.json'), after)
     const expectedRows = fixture.stores.tableRows.map(r => r.id === first.id ? { ...r, data: { ...r.data, 别称: value } } : r)
@@ -243,7 +300,11 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     result.absolute = result.thresholds ? {
       openP50: result.stats.open.p50 <= result.thresholds.openP50, openMax: result.stats.open.worst <= result.thresholds.openMax,
       inputP95: result.stats.input.p95 <= result.thresholds.inputP95, saveP95: result.stats.save.p95 <= result.thresholds.saveP95,
+      filterP95: result.stats.filter.p95 <= result.thresholds.filterP95, clearP95: result.stats.clear.p95 <= result.thresholds.clearP95,
     } : null
+    // 滚动只记录分布，不参与通过/失败判定（阈值待 P3 优化后冻结，见 table-metrics 注释）
+    result.informational = { scrollP50: result.stats.scroll.p50, scrollP95: result.stats.scroll.p95, scrollWorst: result.stats.scroll.worst,
+      mountedRows: result.resources?.mountedRows ?? null, note: 'scroll distribution is recorded only; no threshold until P3 row-subscription work' }
     result.status = opt.mode === 'smoke' ? 'smoke-passed' : 'baseline-recorded'
     if (opt.mode === 'measure') result.baselineId = comparisonKey(result)
     if (opt.mode === 'compare') {
