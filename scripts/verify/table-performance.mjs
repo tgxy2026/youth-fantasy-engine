@@ -10,7 +10,7 @@ import { chromium } from 'playwright'
 import { captureInputs, hashPaths } from './evidence.mjs'
 import { runProcess } from './process.mjs'
 import { FIXTURE_NAMES, generateTableFixture, hash } from './fixtures/table-fixtures.mjs'
-import { SAMPLE_PLAN, MEASUREMENT_VERSION, THRESHOLDS, validateSamples, compareBaseline, comparisonKey } from './table-metrics.mjs'
+import { SAMPLE_PLAN, SCROLL_STEP_PX, MEASUREMENT_VERSION, THRESHOLDS, validateSamples, compareBaseline, comparisonKey } from './table-metrics.mjs'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -101,7 +101,7 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
   const directory = path.join(runRoot, opt.backend + '-' + fixture.name)
   await fs.mkdir(directory)
   const plan = opt.mode === 'smoke'
-    ? { warmup: 1, open: 1, input: 2, save: 1, filter: 1, clear: 1, scroll: 4 }
+    ? { warmup: 1, open: 1, input: 2, save: 1, filter: 1, clear: 1, scroll: 8 }
     : SAMPLE_PLAN
   const result = { schemaVersion: 1, measurementVersion: MEASUREMENT_VERSION, mode: opt.mode, backend: opt.backend, fixture: fixture.name,
     inputHash, buildHash, measurementHash, fixtureHash: fixture.manifest.sha256, environmentHash: hash(environment), environment,
@@ -265,17 +265,30 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
       })
       console.log(`${opt.backend}/${fixture.name} filter+clear ${i + 1}/${filterRounds}`)
     }
-    // 连续滚动：每次滚一步、等一帧，取的是「滚到这一屏并画出来」的耗时分布
+    // 连续滚动（3.2.3 · 计量 v4）：**固定 120px/步、在页面内计时**。
+    // 🔴 旧口径「每步推进 1/40 全表」在 large 一步就是 1000px（约 25 行），既不是真实滚轮步长，
+    //    又把「新挂 20 行 vs 0 行」混成一个数字（诊断：800px/20 行=125ms，1px/0 行=19ms）。
+    //    改成页内一次性跑完：省掉 Playwright 往返开销，量到的才是「滚一步并画出来」本身。
     const scrollBox = page.locator('[data-table-scroll]')
-    const maxTop = await scrollBox.evaluate(el => Math.max(0, el.scrollHeight - el.clientHeight))
-    for (let i = 1; i <= plan.scroll; i++) {
-      const top = Math.round(maxTop * i / plan.scroll)
-      await timed('scroll', async () => {
-        await scrollBox.evaluate((el, value) => { el.scrollTop = value }, top)
-        await frames(page)
-      })
-      if (i % 10 === 0) console.log(`${opt.backend}/${fixture.name} scroll ${i}/${plan.scroll}`)
-    }
+    // 🔴 Locator.evaluate 的第 1 个参数是**元素本身**，参数对象是第 2 个 —— 第一版写反了，
+    //    结果 steps 是 undefined、一次都没滚，样本为空直接被样本校验拒掉。
+    const scrollSeries = await scrollBox.evaluate(async (el, { steps, stepPx }) => {
+      const out = []
+      el.scrollTop = 0
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      for (let i = 0; i < steps; i++) {
+        const t0 = performance.now()
+        el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, (i + 1) * stepPx)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        out.push(performance.now() - t0)
+      }
+      return out
+    }, { steps: plan.scroll, stepPx: SCROLL_STEP_PX })
+    for (const ms of scrollSeries) result.metricsSamples.scroll.push(ms)
+    console.log(`${opt.backend}/${fixture.name} scroll ${plan.scroll}×${SCROLL_STEP_PX}px done`)
+    // 滚到底（若 60 步还没到底）：末行身份仍要能读到
+    await scrollBox.evaluate(el => { el.scrollTop = el.scrollHeight })
+    await frames(page)
     check('last row identity after continuous scroll', await lastName.inputValue() === last.data['名称'])
     await scrollBox.evaluate(el => { el.scrollTop = 0 })
     await frames(page)
@@ -301,10 +314,9 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
       openP50: result.stats.open.p50 <= result.thresholds.openP50, openMax: result.stats.open.worst <= result.thresholds.openMax,
       inputP95: result.stats.input.p95 <= result.thresholds.inputP95, saveP95: result.stats.save.p95 <= result.thresholds.saveP95,
       filterP95: result.stats.filter.p95 <= result.thresholds.filterP95, clearP95: result.stats.clear.p95 <= result.thresholds.clearP95,
+      scrollP95: result.stats.scroll.p95 <= result.thresholds.scrollP95,
     } : null
-    // 滚动只记录分布，不参与通过/失败判定（阈值待 P3 优化后冻结，见 table-metrics 注释）
-    result.informational = { scrollP50: result.stats.scroll.p50, scrollP95: result.stats.scroll.p95, scrollWorst: result.stats.scroll.worst,
-      mountedRows: result.resources?.mountedRows ?? null, note: 'scroll distribution is recorded only; no threshold until P3 row-subscription work' }
+    result.scrollDefinition = { stepPx: SCROLL_STEP_PX, steps: plan.scroll, timing: 'in-page (set scrollTop → wait 2 rAF)' }
     result.status = opt.mode === 'smoke' ? 'smoke-passed' : 'baseline-recorded'
     if (opt.mode === 'measure') result.baselineId = comparisonKey(result)
     if (opt.mode === 'compare') {
