@@ -43,6 +43,31 @@ const lineOf = (src, i) => src.slice(0, i).split('\n').length
 const rel = f => path.relative(ROOT, f).replace(/\\/g, '/')
 const uneven = vals => vals.length >= 2 && new Set(vals.map(han)).size >= 2
 
+/**
+ * 取 `<Button …>儿童</Button>` 的可见中文文案。
+ * 🔴 不能用 `head.lastIndexOf('>')` 硬切：儿童里只要出现 `{cond ? 'A' : 'B'}` 或 `<Icon />`，
+ *    最后一个 `>` 就可能落在表达式或自闭合标签里，切出来的文案会带一个 `}` 前缀 ——
+ *    2026-10-25 全量审计实测的「}看板娘设置」「}卸载旧版」全是这种假报。
+ * 做法：① 按「花括号深度 + 引号」找到开标签真正结束的 `>`；② 再剥掉儿童里的表达式与标签。
+ */
+function labelOf(blk) {
+  const close = blk.lastIndexOf('</Button>')
+  const end = close >= 0 ? close : blk.length
+  let i = 0, depth = 0, quote = ''
+  for (; i < end; i++) {
+    const c = blk[i]
+    if (quote) { if (c === quote && blk[i - 1] !== '\\') quote = ''; continue }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue }
+    if (c === '{') depth++
+    else if (c === '}') depth--
+    else if (c === '>' && depth === 0) { i++; break }
+  }
+  let text = blk.slice(i, end), prev
+  do { prev = text; text = text.replace(/\{[^{}]*\}/g, ' ') } while (text !== prev)
+  // 剥掉表达式后会留下空括号（`正文章节摘要（{n}）` → `正文章节摘要（）`），一并清掉
+  return clean(text.replace(/<[^>]*\/>/g, ' ').replace(/<\/?[^>]+>/g, ' ').replace(/[（(]\s*[)）]/g, ''))
+}
+
 const files = walk(SRC)
 
 // ───────────── A. <Button variant="toggle"> 相邻组 ─────────────
@@ -54,8 +79,7 @@ for (const file of files.filter(f => f.endsWith('.tsx'))) {
   let m
   while ((m = re.exec(src))) {
     const blk = m[0]
-    const head = blk.slice(0, blk.lastIndexOf('</Button>'))
-    const txt = clean(head.slice(head.lastIndexOf('>') + 1))
+    const txt = labelOf(blk)
     if (!txt || han(txt) === 0 || txt.length > 14) continue
     hits.push({ line: lineOf(src, m.index), val: txt })
   }
@@ -77,8 +101,7 @@ for (const file of files.filter(f => f.endsWith('.tsx'))) {
   let m
   while ((m = re.exec(src))) {
     const blk = m[0]
-    const head = blk.slice(0, blk.lastIndexOf('</Button>'))
-    const txt = clean(head.slice(head.lastIndexOf('>') + 1))
+    const txt = labelOf(blk)
     if (!txt || han(txt) === 0 || txt.length > 12 || BAD.test(txt)) continue
     hits.push({ line: lineOf(src, m.index), val: txt })
   }

@@ -200,8 +200,14 @@ P(`## 4. 类型逃逸（any / ts-ignore / non-null）\n`)
 const anySites = []
 const tsIgnore = []
 const bangSites = []
+/**
+ * 🔴 必须用**去注释后**的行（maskLines）：原先读原始行，于是注释里讲解「为什么不用
+ *    `as any`」「原先 `data: any`」的说明文字被当成真实类型逃逸。
+ *    2026-10-25 全量审计实测：两处命中（schema.ts:30、materialRef.ts:68）全是注释，
+ *    真正需要看的 0 处被这两个假报盖住 —— 红线扫描器给出假报比不给更糟。
+ */
 for (const f of files) {
-  const ls = linesMap.get(f)
+  const ls = maskLines.get(f)
   ls.forEach((l, i) => {
     if (/:\s*any\b|as\s+any\b|<any>/.test(l)) anySites.push(`${rel(f)}:${i + 1}`)
     if (/@ts-(ignore|expect-error)/.test(l)) tsIgnore.push(`${rel(f)}:${i + 1}`)
@@ -217,10 +223,18 @@ P('')
 // ── 5. eslint-disable ─────────────────────────────
 P(`## 5. eslint-disable\n`)
 const dis = []
+let disNoReason = 0
 for (const f of files) {
-  linesMap.get(f).forEach((l, i) => { if (/eslint-disable/.test(l)) dis.push(`${rel(f)}:${i + 1} ${l.trim().slice(0, 90)}`) })
+  linesMap.get(f).forEach((l, i) => {
+    if (!/eslint-disable/.test(l)) return
+    // 有 `--` 说明的才算「写清了为什么」；没有的下一轮得回头补（本项目只在 TableSheet 一处写了原因）
+    const explained = /eslint-disable[^\n]*--/.test(l)
+    if (!explained) disNoReason++
+    dis.push(`${rel(f)}:${i + 1}${explained ? '' : ' 〔无原因〕'} ${l.trim().slice(0, 90)}`)
+  })
 }
 P(dis.length ? dis.map(d => `- ${d}`).join('\n') : '（无）')
+P(`\n共 ${dis.length} 处，其中 **${disNoReason} 处没写原因**（`+"`-- 为什么可以禁用`"+`）：下次动到这些文件时顺手补，不要为了补注释单独改一遍。`)
 P('')
 
 // ── 6. 红线违规：window.prompt/confirm/alert ───────
@@ -236,12 +250,21 @@ P('')
 
 // ── 7. 🔴 红线：getBoundingClientRect ─────────────
 P(`## 7. 🔴 红线：getBoundingClientRect 使用点（界面缩放 108%，量尺寸应走 offsetHeight）\n`)
-const gbcr = []
+const gbcr = [], gbcrExpected = []
 for (const f of files) {
-  maskLines.get(f).forEach((l, i) => { if (/getBoundingClientRect/.test(l)) gbcr.push(`${rel(f)}:${i + 1}  ${l.trim().slice(0, 110)}`) })
+  maskLines.get(f).forEach((l, i) => {
+    if (!/getBoundingClientRect/.test(l)) return
+    const line = `${rel(f)}:${i + 1}  ${l.trim().slice(0, 110)}`
+    // 下拉/浮层定位要的是**视口坐标**，这里用 rect 是对的；红线针对的是「拿它量元素高度/宽度」。
+    // 判据取「同一行内交给 computeDropdownPos」这种可静态证实的写法，其余一律留在待复核里人工判。
+    if (/computeDropdownPos\(/.test(l)) gbcrExpected.push(line)
+    else gbcr.push(line)
+  })
 }
-P(`共 ${gbcr.length} 处`)
-P(gbcr.map(d => `- ${d}`).join('\n'))
+P(`- 〔预期〕浮层定位（吃视口坐标，必须用 rect）：${gbcrExpected.length} 处`)
+P(gbcrExpected.map(d => `  - ${d}`).join('\n') || '  （无）')
+P(`- 待复核（可能是量尺寸/布局用途）：${gbcr.length} 处`)
+P(gbcr.map(d => `- ${d}`).join('\n') || '- （无）')
 P('')
 
 // ── 8. 字符串/数字魔法值 ───────────────────────────
