@@ -5,21 +5,41 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { chromium } = require('playwright')
-const { sourceFingerprint } = require('../context.cjs')
+/**
+ * 源码指纹用统一验收那份实现（`audit/platform/source.mjs` 的 `snapshot`）。
+ * 🔴 仓里另有一份老的 `audit/context.cjs#sourceFingerprint`，两边算出来不一样，
+ *    用错会让证据被判「与当前源码不符」（本轮实测踩到）。
+ */
+let sourceFingerprintOf = null // 在 main() 里动态加载（.cjs 不能顶层 await）
 const ROOT = path.resolve(__dirname, '../../..')
 async function main() {
+  sourceFingerprintOf = (await import('../platform/source.mjs')).snapshot
+  /** `--result-file <path>`：把结果另存一份到固定路径，供验收执行器直接校验（3.2.6 接线用） */
+  const ri = process.argv.indexOf('--result-file')
+  const resultFile = ri >= 0 && process.argv[ri + 1] && !process.argv[ri + 1].startsWith('--') ? path.resolve(process.argv[ri + 1]) : null
   for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']) delete process.env[k]
   const out = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/workspace-layout-'))
-  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprint(ROOT), out, cases: [], errors: [] }
+  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, out, cases: [], errors: [] }
   let server, browser
   try {
     const { createServer } = await import('vite')
     server = await createServer({ root: ROOT, cacheDir: path.join(out, 'vite-cache'), logLevel: 'silent', server: { host: '127.0.0.1', port: 5213, strictPort: true } }); await server.listen()
+    /**
+     * 🔴 `vite.listen()` 只代表端口通了，首屏模块图还没编译完。
+     *    2026-10-25 实测：冷缓存 + 机器刚跑完别的探针，直接 goto 45s 超时整步红
+     *    （同一份代码单独重跑又正常）。这里是**取证工具的等待上限**，不是被测行为。
+     */
+    let ready = false
+    for (let i = 0; i < 240; i++) {
+      try { const r = await fetch('http://127.0.0.1:5213/'); if (r.ok) { ready = true; break } } catch { /* 还没起来 */ }
+      await new Promise(r => setTimeout(r, 500))
+    }
+    if (!ready) throw new Error('vite dev server 120 秒内没有返回首页')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1000, height: 640 } })
     page.setDefaultTimeout(12000)
     page.on('pageerror', e => result.errors.push(e.message))
-    await page.goto('http://127.0.0.1:5213', { waitUntil: 'domcontentloaded', timeout: 45000 })
+    await page.goto('http://127.0.0.1:5213', { waitUntil: 'domcontentloaded', timeout: 120000 })
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
@@ -85,10 +105,12 @@ async function main() {
     }
   } catch (e) { result.error = e.stack; throw e }
   finally {
-    result.stale = result.sourceFingerprint !== sourceFingerprint(ROOT)
+    result.stale = result.sourceFingerprint !== sourceFingerprintOf(ROOT).fingerprint
     await browser?.close().catch(() => {}); await server?.close().catch(() => {})
-    await fs.writeFile(path.join(out, 'results.json'), JSON.stringify(result, null, 2))
-    console.log('EVIDENCE ' + path.join(out, 'results.json'))
+    const body = JSON.stringify(result, null, 2)
+    await fs.writeFile(path.join(out, 'results.json'), body)
+    if (resultFile) { await fs.mkdir(path.dirname(resultFile), { recursive: true }); await fs.writeFile(resultFile, body) }
+    console.log('EVIDENCE ' + (resultFile || path.join(out, 'results.json')))
   }
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

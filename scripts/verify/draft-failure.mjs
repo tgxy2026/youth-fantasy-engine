@@ -70,7 +70,12 @@ async function main() {
     // 🔴 60s 不够：vite 冷缓存 + 机器正忙时，首屏模块图编译会顶到 60s 边界
     //    （实测 reliability-T7pF8Z：整个 audit.contracts 就挂在这一步，单独重跑又 3/3 通过）。
     //    这是取证工具的等待上限，不是被测行为 —— 放宽到 120s。
-    await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 120000 })
+    /**
+     * 与 `mono-charts` 同口径：`domcontentloaded` 要等模块脚本执行完，冷缓存 + 机器忙时会顶穿。
+     * 改成「文档提交 + 等 React 真挂上 #root」，并且**把超时留给真正的首屏可用**。
+     */
+    await page.goto(origin, { waitUntil: 'commit', timeout: 120000 })
+    await page.waitForFunction(() => (document.querySelector('#root')?.childElementCount ?? 0) > 0, null, { timeout: 180000 })
     // 示范项目：真实入口「先看看示例」
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()

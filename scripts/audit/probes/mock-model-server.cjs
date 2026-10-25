@@ -10,7 +10,8 @@
  *   node scripts/audit/probes/mock-model-server.cjs --port 8799
  *
  * 控制端点（取证脚本调用）：
- *   POST /_mode   {"mode":"normal|refusal|slow|cancel|http400|http401|empty"}   设当前模式
+ *   POST /_mode   {"mode":"normal|refusal|slow|cancel|hang|http400|http401|empty"}   设当前模式
+ *   `hang`：收下请求后**永不响应**（保持连接），用来验客户端「请求超时」路径，不是取消路径
  *   GET  /_stats  返回每次请求的记录（含首字节时间，用于首字分布）
  *   POST /_reset  清空记录
  *
@@ -96,8 +97,28 @@ const server = http.createServer(async (req, res) => {
     arrivedAt: Date.now(),
     firstByteAt: null,
     doneAt: null,
+    abortedAt: null, // 客户端主动断开（取消/超时）时由 res close 记下
   }
   requests.push(rec)
+  /**
+   * `finished` = 我们**真的把响应交付完**（JSON 写完 / 写完 [DONE]）。
+   * 只有它才能区分「正常收尾」与「客户端中途放弃」——close 在正常结束后也会触发。
+   */
+  let finished = false
+  res.on('close', () => { if (!finished && !rec.abortedAt) rec.abortedAt = Date.now() })
+
+  /**
+   * hang：**连响应头都不发**，一直挂着直到客户端放弃。
+   *
+   * 🔴 必须放在 `res.writeHead` 之前：客户端（`fetchWithTimeout`）的超时定时器在**收到响应头**
+   *    时就清掉了，只等 body 的话永远不会超时（实测：回了头再挂 90 秒，界面一声不响）。
+   *    「响应超时」保护的正是「连响应都不给」这一段。
+   */
+  if (mode === 'hang') {
+    await new Promise(resolve => res.on('close', resolve))
+    rec.doneAt = Date.now()
+    return
+  }
 
   const markFirst = () => { if (!rec.firstByteAt) rec.firstByteAt = Date.now() }
 
@@ -119,6 +140,7 @@ const server = http.createServer(async (req, res) => {
     markFirst()
     rec.responded = 'json'
     rec.doneAt = Date.now()
+    finished = true
     return json({
       id: 'mock-1', object: 'chat.completion', model: 'mock-model',
       choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
@@ -161,7 +183,7 @@ const server = http.createServer(async (req, res) => {
     res.write(sseChunk(c))
     await sleep(gap)
   }
-  if (!res.destroyed) res.write('data: [DONE]\n\n')
+  if (!res.destroyed) { res.write('data: [DONE]\n\n'); finished = true }
   rec.doneAt = Date.now()
   res.end()
 })

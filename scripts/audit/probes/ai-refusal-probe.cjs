@@ -117,7 +117,10 @@ async function closeModal(page) {
 
   // 注入假模型配置（走整库 meta，不点 UI：配置链路本身有单测覆盖，这里要验的是呈现）
   const injected = await page.evaluate(async (mockBase) => {
-    const raw = await (await fetch('/api/data')).json()
+    // 🔴 便携服务 3.2.5 起要求条件写（缺 If-Match ⇒ 428），探针必须跟着守协议
+    const current = await fetch('/api/data')
+    const raw = await current.json()
+    const revision = raw.revision || current.headers.get('etag')
     const doc = JSON.parse(raw.text || '{}')
     doc.stores = doc.stores || {}
     const provider = {
@@ -128,10 +131,14 @@ async function closeModal(page) {
     const meta = (doc.stores.meta || []).filter((m) => m.key !== 'aiProviders' && m.key !== 'aiActiveProviderId')
     meta.push({ key: 'aiProviders', value: [provider] }, { key: 'aiActiveProviderId', value: 'mock' })
     doc.stores.meta = meta
-    const r = await fetch('/api/data', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(doc) })
-    return { status: r.status, hasProviders: true }
+    const r = await fetch('/api/data', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
+      body: JSON.stringify(doc),
+    })
+    return { status: r.status, hasProviders: true, hasRevision: !!revision }
   }, MOCK)
-  check('假模型配置注入成功（整库 meta）', injected.status === 200, JSON.stringify(injected))
+  check('假模型配置注入成功（整库 meta，带版本）', injected.status === 200 && injected.hasRevision === true, JSON.stringify(injected))
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await sleep(5000)

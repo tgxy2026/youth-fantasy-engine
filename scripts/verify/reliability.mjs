@@ -10,6 +10,8 @@ import { validateDesktopEvidence } from './desktop-evidence.mjs'
 import { validateWebCloudEvidence } from './web-cloud-evidence.mjs'
 import { validateAuditBundle } from './audit-contracts.mjs'
 import { validateInflightEvidence } from './inflight-evidence.mjs'
+import { validateModelFailureEvidence } from './model-failure-evidence.mjs'
+import { validateLayoutEvidence } from './layout-evidence.mjs'
 import auditContext from '../audit/context.cjs'
 import { snapshot } from '../audit/platform/source.mjs'
 
@@ -283,6 +285,22 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     ['storage.inflight-desktop', ['scripts/audit/probes/inflight-desktop.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'inflight-desktop.json')], 300000, async () => {
       const verified = await validateInflightEvidence(realRoot, path.join(runRoot, 'inflight-desktop.json'), {
         profile: 'desktop', expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      return verified.assertions
+    }],
+    // 3.2.6 · R2：**假模型**的拒答 / 取消 / 超时（契约 `model.failure`）。
+    // 🔴 只证明「给定这种响应，客户端怎么呈现与收尾」，不代表真实端点已验证（见探针头注释）。
+    //   取消的口径来自代码本身：`fireGhost()` 开头就 abort 上一次在途请求 —— 不是流式截断。
+    ['model.failure', ['scripts/audit/probes/model-failure.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'model-failure.json')], 420000, async () => {
+      const verified = await validateModelFailureEvidence(realRoot, path.join(runRoot, 'model-failure.json'), {
+        expectedSourceFingerprint: snapshot(realRoot).fingerprint, buildDir: path.join(runRoot, 'build'),
+      })
+      return verified.assertions
+    }],
+    // 3.2.6 · 本次 UI 改动涉及的布局（契约 `layout.affected`）：全部页签 × 多组窗口/缩放逐页量溢出。
+    ['layout.affected', ['scripts/audit/probes/workspace-layout-probe.cjs', '--result-file', path.join(runRoot, 'layout.json')], 600000, async () => {
+      const verified = await validateLayoutEvidence(realRoot, path.join(runRoot, 'layout.json'), {
+        expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
       return verified.assertions
     }],

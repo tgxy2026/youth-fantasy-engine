@@ -72,7 +72,13 @@ async function main() {
     page.setDefaultTimeout(20000)
     page.on('pageerror', (e) => pageErrors.push(String(e.message)))
 
-    await page.goto('http://127.0.0.1:' + PORT, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    /**
+     * 🔴 `domcontentloaded` 要等模块脚本全部执行完 —— 冷缓存下 vite 逐个 transform，
+     *    机器一忙就顶穿 60s（实测 `reliability-cpW2Do`：readiness 已通过，goto 仍 60s 红）。
+     *    改成「只要文档提交 + 等 React 真挂上 #root」：这才是「首屏可用」，也不受模块编译拖累。
+     */
+    await page.goto('http://127.0.0.1:' + PORT, { waitUntil: 'commit', timeout: 120000 })
+    await page.waitForFunction(() => (document.querySelector('#root')?.childElementCount ?? 0) > 0, null, { timeout: 180000 })
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
