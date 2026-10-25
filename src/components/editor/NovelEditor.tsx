@@ -1,3 +1,4 @@
+import ResizeHandle from '@/components/common/ResizeHandle'
 import { useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
@@ -291,12 +292,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           style={{ width: searchPaneW, minWidth: searchPaneW }}
         >
           {/* 拖拽调整设定检索栏宽度 */}
-          <div
-            onMouseDown={searchPane.onDragStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-style={{ zIndex: Z.pageHandle }}
-            title="拖拽调整检索栏宽度"
-          />
+          <ResizeHandle pane={searchPane} label="检索栏宽度" layer={Z.pageHandle} />
           <SettingSearch onNavigate={onNavigate} ctx={ctx} />
         </div>
       )}

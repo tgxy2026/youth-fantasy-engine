@@ -1,9 +1,10 @@
+import ResizeHandle, { type ResizablePane } from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
 import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
-import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
 import { useEffect, useMemo, useRef } from 'react'
 import { foldVh } from '@/lib/settings/theme'
@@ -33,7 +34,7 @@ const STATUS_DOT: Record<ChapterStatus, string> = {
 
 interface Props {
   /** 栏目宽度与拖拽手柄（useResizable 的返回值，整体传进来） */
-  pane: { size: number; onDragStart: (e: ReactMouseEvent) => void }
+  pane: ResizablePane
   projectName: string
   volumes: Volume[]
   chapters: Chapter[]
@@ -101,12 +102,7 @@ export default function NovelEditorChapterTree({
         style={{ width: pane.size, minWidth: pane.size }}
       >
         {/* 拖拽调整章节树宽度 */}
-        <div
-          onMouseDown={pane.onDragStart}
-          className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-  style={{ zIndex: Z.pageHandle }}
-          title="拖拽调整章节栏宽度"
-        />
+        <ResizeHandle pane={pane} label="章节栏宽度" layer={Z.pageHandle} />
         <div className="flex items-center justify-between px-3.5 h-11 border-b border-ink-700 shrink-0">
           <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节

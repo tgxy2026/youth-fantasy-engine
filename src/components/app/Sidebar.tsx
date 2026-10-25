@@ -1,3 +1,4 @@
+import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
 import BrandMark from '@/components/common/BrandMark'
@@ -167,12 +168,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
       style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 200 }}
     >
       {/* 拖拽调整侧栏宽度 */}
-      {!overlay && <div
-        onMouseDown={sidebar.onDragStart}
-        className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-style={{ zIndex: Z.pageBase }}
-        title="拖拽调整侧栏宽度"
-      />}
+      {!overlay && <ResizeHandle pane={sidebar} label="侧栏宽度" layer={Z.pageBase} />}
       {/* Logo */}
       <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
