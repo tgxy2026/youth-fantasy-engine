@@ -1,3 +1,4 @@
+import FailureNotice from '@/components/common/FailureNotice'
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
@@ -84,7 +85,7 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false)
   const [updateLatest, setUpdateLatest] = useState<LatestRelease | null>(null)
   /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
-  const [bootError, setBootError] = useState('')
+  const [bootError, setBootError] = useState<{ cause: unknown } | null>(null)
   /**
    * 首启向导开关（2.4.0 · A1）：仅在「从没走过向导」且「库里一个项目都没有」时为 true。
    * 走过一次即写全局 meta `welcomeDone`，此后不再出现。
@@ -291,7 +292,7 @@ export default function App() {
       //    那件事已交给首启向导与 `welcomeDone`。
       } catch (e) {
         console.error('[boot] 启动流程失败：', e)
-        setBootError(e instanceof Error ? e.message : String(e))
+        setBootError({ cause: e })
       } finally {
         setBooted(true)
       }
@@ -488,14 +489,13 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         <PortableWriteLockBanner />
-        <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
-          <div className="text-base font-semibold">启动失败</div>
-          <div className="max-w-xl text-13 leading-relaxed text-ink-400">{bootError}</div>
-          <Button variant="secondary" onClick={() => location.reload()}>重新加载</Button>
-          <div className="max-w-xl text-12 text-ink-500">
-            若反复失败，请先备份数据文件（左下角「数据坞」），再重新加载。
-          </div>
-        </div>
+        <FailureNotice title="启动失败" error={bootError.cause}
+          description="工作台尚未完成初始化。请保留技术摘要，再尝试重新加载。"
+          actions={<Button variant="primary" size="md" onClick={() => location.reload()}>重新加载工作台</Button>}>
+          {DESKTOP || PORTABLE
+            ? '当前页面尚未载入数据管理工具。需要排障时，请先通过系统文件管理器复制已有数据文件和备份，避免覆盖原文件。'
+            : '请保留当前站点数据，避免直接清理浏览器存储。此时数据管理工具尚未载入，请勿依赖库内导出入口。'}
+        </FailureNotice>
       </>
     )
   }
@@ -505,7 +505,10 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         <PortableWriteLockBanner />
-        <div className="h-screen bg-ink-950" />
+        <main role="status" aria-label="正在打开创作工作台" className="flex flex-col items-center justify-center gap-2 bg-surface-app p-6 text-center" style={{ minHeight: foldVh('100vh') }}>
+          <p className="text-14 font-semibold text-content-primary">正在打开创作工作台…</p>
+          <p className="text-12 text-content-muted">正在读取工作台数据与设置，请稍候。</p>
+        </main>
       </>
     )
   }
