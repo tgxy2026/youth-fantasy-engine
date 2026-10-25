@@ -214,6 +214,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[3]) !== 0) throw new Error('Portable roundtrip has failing checks')
       return Number(summary[1])
     }],
+    // 3.2.6 · R4：游客配置的端到端导出→导入（真实 /guest + 真实浏览器 + 真实 IndexedDB）
+    ['storage.web-guest-roundtrip', ['scripts/verify/web-guest-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build')], 240000, result => {
+      const summary = /WEB_GUEST_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)
+      if (!summary) throw new Error('Web guest roundtrip printed no summary')
+      if (Number(summary[3]) !== 0) throw new Error('Web guest roundtrip has failing checks')
+      return Number(summary[1])
+    }],
     ['storage.e2e-roundtrip', ['scripts/verify/e2e-roundtrip.mjs', '--run-root', runRoot], 60000, async result => {
       const summary = /E2E_ROUNDTRIP ok=(\d+)/.exec(result.out)
       if (!summary) throw new Error('E2E roundtrip printed no summary')
