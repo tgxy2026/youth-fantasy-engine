@@ -9,6 +9,7 @@ import { validateGuestEvidence } from './web-guest-evidence.mjs'
 import { validateDesktopEvidence } from './desktop-evidence.mjs'
 import { validateWebCloudEvidence } from './web-cloud-evidence.mjs'
 import { validateAuditBundle } from './audit-contracts.mjs'
+import { validateInflightEvidence } from './inflight-evidence.mjs'
 import auditContext from '../audit/context.cjs'
 import { snapshot } from '../audit/platform/source.mjs'
 
@@ -263,6 +264,27 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (Number(summary[3]) !== 0) throw new Error('Web guest roundtrip has failing checks')
       await promoteRoundtrip('guest-rt', 'web-guest')
       return Number(summary[1])
+    }],
+    // 3.2.6 · R4：在途编辑 / 切项目 / 关窗写失败 —— `storage.four-profiles` 最后一块。
+    // 🔴 三端各跑一遍真环境：便携（真服务+真浏览器+真磁盘）、游客（真 IndexedDB）、桌面（真 Electron/IPC/文件）。
+    //    在途不是「等一会儿看看」：便携/云端延迟 HTTP PUT，游客延迟 IDB 落库，桌面在真实 handler 里加延迟。
+    ['storage.inflight-portable', ['scripts/audit/probes/inflight-portable.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'inflight-portable.json')], 300000, async () => {
+      const verified = await validateInflightEvidence(realRoot, path.join(runRoot, 'inflight-portable.json'), {
+        profile: 'portable', expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      return verified.assertions
+    }],
+    ['storage.inflight-guest', ['scripts/audit/probes/inflight-guest.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'inflight-guest.json')], 300000, async () => {
+      const verified = await validateInflightEvidence(realRoot, path.join(runRoot, 'inflight-guest.json'), {
+        profile: 'web-guest', expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      return verified.assertions
+    }],
+    ['storage.inflight-desktop', ['scripts/audit/probes/inflight-desktop.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'inflight-desktop.json')], 300000, async () => {
+      const verified = await validateInflightEvidence(realRoot, path.join(runRoot, 'inflight-desktop.json'), {
+        profile: 'desktop', expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+      })
+      return verified.assertions
     }],
     ['storage.e2e-roundtrip', ['scripts/verify/e2e-roundtrip.mjs', '--run-root', runRoot], 60000, async result => {
       const summary = /E2E_ROUNDTRIP ok=(\d+)/.exec(result.out)
