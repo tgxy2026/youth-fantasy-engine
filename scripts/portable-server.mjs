@@ -246,11 +246,43 @@ function readBody(req) {
   })
 }
 
+/** 同步等待（仅在写盘失败重试时用，总量 < 1 秒） */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/**
+ * rename 覆盖目标文件：**必须重试**。
+ *
+ * 🔴 3.2.6 实测踩到：大表夹具（1000×74，整库 4.6 MB）连续保存到第 3 次时，
+ *    Windows 上 `renameSync` 抛 `EPERM: operation not permitted`（网盘客户端/杀软/索引器
+ *    正在扫这个刚写完的文件）。旧代码不重试 ⇒ 这次保存**被静默丢弃**，
+ *    而前端还以为是「正在保存」；探针那一轮直接干等 180 秒超时。
+ *    作者真实场景就是「数据放在 OneDrive/坚果云/百度网盘同步目录里」—— 这个坑一定会再遇到。
+ *
+ * 退避 20/40/80/160/320ms（合计约 0.6 秒）足以跨过一次扫描窗口；仍失败则抛给上层回 500。
+ */
+function renameWithRetry(from, to) {
+  const delays = [20, 40, 80, 160, 320]
+  for (let attempt = 0; ; attempt++) {
+    try { return renameSync(from, to) } catch (e) {
+      const transient = e && ['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY'].includes(e.code)
+      if (!transient || attempt >= delays.length) throw e
+      sleepSync(delays[attempt])
+    }
+  }
+}
+
 /** 原子写：先写 .tmp 再 rename（与桌面版同口径，防断电/同步中断留半个文件） */
 function atomicWrite(text) {
-  writeFileSync(TMP_FILE, text, 'utf8')
-  try { renameSync(TMP_FILE, DATA_FILE) } catch (e) {
-    // Windows 上 rename 覆盖已存在文件是允许的（会替换）；失败一般是文件被占用
+  // 🔴 写 tmp 也要包进来：tmp 目录被占、磁盘满、路径只读，都是「写不进去」，
+  //    不能只在 rename 一层兜 —— 否则作者看到的是裸 `EISDIR/EACCES`（实测被测试逮到）。
+  try {
+    writeFileSync(TMP_FILE, text, 'utf8')
+    renameWithRetry(TMP_FILE, DATA_FILE)
+  } catch (e) {
+    // 写不进去就把 tmp 清掉，别让半个文件留在数据目录里误导作者（原文件未被动过）
+    try { unlinkSync(TMP_FILE) } catch { /* 删不掉也只是残留，下次写会覆盖 */ }
     throw new Error(`写入数据文件失败（可能被网盘客户端占用）：${e.message}`)
   }
 }
@@ -293,7 +325,7 @@ function atomicWriteBlob(abs, text) {
   mkdirSync(path.dirname(abs), { recursive: true })
   try {
     writeFileSync(tmp, text, 'utf8')
-    renameSync(tmp, abs)
+    renameWithRetry(tmp, abs)
   } catch (e) {
     try { unlinkSync(tmp) } catch { /* 清理失败无所谓：名字唯一，不会污染后续写 */ }
     throw new Error(`写入外置记录失败（可能被网盘客户端占用）：${e.message}`)
@@ -374,7 +406,16 @@ const server = createServer(async (req, res) => {
                 revision: current,
               })
             }
-            atomicWrite(text)
+            try {
+              atomicWrite(text)
+            } catch (e) {
+              /**
+               * 🔴 这里必须自己接住：抛出去会变成「未处理的 Promise 拒绝」，HTTP 响应永远不发，
+               *    前端就一直停在「正在保存」（实测 large 连续保存第 3 次，探针干等 180 秒）。
+               *    回 500 + 明确文案，前端才能如实报「保存失败、数据未改动」。
+               */
+              return sendJson(res, 500, { ok: false, code: 'WRITE_FAILED', error: String(e?.message ?? e) })
+            }
             const revision = dataRevision(text)
             res.setHeader('ETag', revision)
             return sendJson(res, 200, { ok: true, path: DATA_FILE, revision })

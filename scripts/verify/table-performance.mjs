@@ -10,7 +10,7 @@ import { chromium } from 'playwright'
 import { captureInputs, hashPaths } from './evidence.mjs'
 import { runProcess } from './process.mjs'
 import { FIXTURE_NAMES, generateTableFixture, hash } from './fixtures/table-fixtures.mjs'
-import { SAMPLE_PLAN, SCROLL_STEP_PX, MEASUREMENT_VERSION, THRESHOLDS, validateSamples, compareBaseline, comparisonKey } from './table-metrics.mjs'
+import { SAMPLE_PLAN, SCROLL_STEP_PX, MEASUREMENT_VERSION, thresholdsFor, REGRESSION_LIMITS, validateSamples, compareBaseline, comparisonKey } from './table-metrics.mjs'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -105,7 +105,7 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     : SAMPLE_PLAN
   const result = { schemaVersion: 1, measurementVersion: MEASUREMENT_VERSION, mode: opt.mode, backend: opt.backend, fixture: fixture.name,
     inputHash, buildHash, measurementHash, fixtureHash: fixture.manifest.sha256, environmentHash: hash(environment), environment,
-    samplePlan: plan, quantile: 'nearest-rank', thresholds: THRESHOLDS[fixture.name] ?? null,
+    samplePlan: plan, quantile: 'nearest-rank', thresholds: thresholdsFor(opt.backend, fixture.name),
     featureFlags: { production: true, productInstrumentation: false },
     metricsSamples: { open: [], input: [], save: [], filter: [], clear: [], scroll: [] }, operations: [], checks: [], status: 'failed',
     boundaries: ['project-switch and longbook timing pending', 'cold-project and remote-locate metrics pending', 'mounted-row budget is observational (window active above 80 rows)', 'real IME and device checks pending'] }
@@ -252,9 +252,38 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
       return el ? Number((el.textContent || '').match(/\d+/)?.[0] ?? -1) : -1
     })
     const filterInput = page.locator('thead th').nth(column('名称')).locator('input').first()
-    const query = '-条目01'
-    const matching = fixture.stores.tableRows.filter(r => String(r.data['名称'] ?? '').includes(query)).sort((a, b) => a.order - b.order)
-    check('filter fixture has matches', matching.length > 0 && matching.length < fixture.manifest.rows)
+    /**
+     * 🔴 查询词必须**从夹具数据里算**，不能写死。上一版写死 `-条目01`：
+     *    small 只有 30 行（编号 0001~0030）⇒ 一条都不命中 ⇒ `filter fixture has matches` 直接判整轮失败。
+     *    这里按候选词依次试，取第一个「命中数 > 0 且 < 总行数」的，顺便让这条检查变成真的前置断言。
+     */
+    const nameOf = r => String(r.data['名称'] ?? '')
+    const picked = (() => {
+      // 从第 2 行起取名称**末尾 2~4 字**当查询词：这是数据自带的编号后缀，天然是严格子集
+      for (const len of [2, 3, 4]) {
+        for (const row of fixture.stores.tableRows.slice(1, 20)) {
+          const name = nameOf(row)
+          if (name.length <= len) continue
+          const q = name.slice(-len)
+          const n = fixture.stores.tableRows.filter(r => nameOf(r).includes(q)).length
+          if (n > 0 && n < fixture.manifest.rows) return { q, n }
+        }
+      }
+      return null
+    })()
+    check('filter fixture has a strict subset to search', !!picked, JSON.stringify(picked))
+    const query = picked.q
+    const matching = fixture.stores.tableRows.filter(r => nameOf(r).includes(query)).sort((a, b) => a.order - b.order)
+    /**
+     * 首行身份不能直接拿 `matching[0]`：树形夹具（有「上级」列）渲染的是**层级序** ——
+     * 先出「父级不在筛选结果里」的根，再递归子行。这里按同样的规则独立算出期望首行，
+     * 而不是读界面对答案（读界面就等于没断言）。
+     */
+    const matchingNames = new Set(matching.map(nameOf))
+    const isTree = fixture.stores.tableRows.some(r => String(r.data['上级'] ?? '').trim() !== '')
+    const roots = isTree ? matching.filter(r => { const p = String(r.data['上级'] ?? '').trim(); return !p || !matchingNames.has(p) }) : matching
+    const expectedFirst = (roots[0] ?? matching[0]) && nameOf(roots[0] ?? matching[0])
+    check('filter fixture has matches', matching.length > 0 && matching.length < fixture.manifest.rows, `${picked.n}/${fixture.manifest.rows} by「${query}」`)
     const filterRounds = plan.filter
     for (let i = 0; i < filterRounds; i++) {
       await timed('filter', async () => {
@@ -265,7 +294,7 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
           if (Date.now() > deadline) throw new Error('Filtered row count timeout')
           await sleep(20)
         }
-        check('filtered first row identity ' + i, await cell('名称').inputValue() === matching[0].data['名称'])
+        check('filtered first row identity ' + i, await cell('名称').inputValue() === expectedFirst, `${await cell('名称').inputValue()} vs ${expectedFirst}`)
         await frames(page)
       })
       await timed('clear', async () => {
@@ -336,8 +365,20 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     result.status = opt.mode === 'smoke' ? 'smoke-passed' : 'baseline-recorded'
     if (opt.mode === 'measure') result.baselineId = comparisonKey(result)
     if (opt.mode === 'compare') {
-      result.relativeChanges = compareBaseline(result, JSON.parse(await fs.readFile(path.resolve(opt.baseline), 'utf8')))
-      result.status = result.absolute && Object.values(result.absolute).every(Boolean) ? 'comparison-passed' : 'threshold-failed'
+      const { changes, regressions } = compareBaseline(result, JSON.parse(await fs.readFile(path.resolve(opt.baseline), 'utf8')))
+      result.relativeChanges = changes
+      result.regressionLimits = REGRESSION_LIMITS
+      result.regressions = regressions
+      /**
+       * 判定顺序（3.2.3 · 计量 v6）：
+       *   ① 相对退化（比基线慢超限）⇒ `regression-failed`，**任何夹具都适用**；
+       *   ② 有绝对阈值的夹具（medium/large）再判阈值；
+       *   ③ 都没有（small/tree/mixed）才算 `comparison-passed`。
+       * 🔴 旧写法把 ② 当成唯一条件：阈值缺失时 `absolute` 为 null ⇒ 永远 `threshold-failed`，
+       *    小表/树形/混合等于没有退化闸；而「比上次慢 5 倍但没超上限」还会被判通过。
+       */
+      const absoluteOk = !result.absolute || Object.values(result.absolute).every(Boolean)
+      result.status = regressions.length ? 'regression-failed' : (absoluteOk ? 'comparison-passed' : 'threshold-failed')
     }
   } catch (e) {
     result.error = String(e.stack ?? e)

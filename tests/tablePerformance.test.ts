@@ -68,17 +68,34 @@ test('nearest-rank统计保留原始顺序，拒绝低样本/异常数字', () =
   assert.throws(() => summarize([], 1)); assert.throws(() => summarize([NaN])); assert.throws(() => summarize([-1]))
   assert.throws(() => validateSamples({ open: [1], input: [1], save: [1] }))
   // 新增指标（筛选/清筛选/滚动）同样要够样本，缺一就拒绝
-  const full = { open: Array(5).fill(1), input: Array(30).fill(1), save: Array(10).fill(1), filter: Array(5).fill(1), clear: Array(5).fill(1), scroll: Array(SAMPLE_PLAN.scroll).fill(1) }
+  const full = { open: Array(5).fill(1), input: Array(30).fill(1), save: Array(SAMPLE_PLAN.save).fill(1), filter: Array(SAMPLE_PLAN.filter).fill(1), clear: Array(SAMPLE_PLAN.clear).fill(1), scroll: Array(SAMPLE_PLAN.scroll).fill(1) }
   assert.doesNotThrow(() => validateSamples(full))
   assert.throws(() => validateSamples({ ...full, scroll: Array(SAMPLE_PLAN.scroll - 1).fill(1) }))
 })
 test('基线比较拒绝环境/夹具/工具漂移、smoke冒充以及篡改原始样本', () => {
-  const metricsSamples = { open: Array(5).fill(10) as number[], input: Array(30).fill(20) as number[], save: Array(10).fill(30) as number[],
-    filter: Array(5).fill(40) as number[], clear: Array(5).fill(45) as number[], scroll: Array(SAMPLE_PLAN.scroll).fill(16) as number[] }
+  const metricsSamples = { open: Array(5).fill(10) as number[], input: Array(30).fill(20) as number[], save: Array(SAMPLE_PLAN.save).fill(30) as number[],
+    filter: Array(SAMPLE_PLAN.filter).fill(40) as number[], clear: Array(SAMPLE_PLAN.clear).fill(45) as number[], scroll: Array(SAMPLE_PLAN.scroll).fill(16) as number[] }
   const current = { measurementVersion: MEASUREMENT_VERSION, measurementHash: 'tool-v1', environmentHash: 'machine', fixtureHash: 'fixture', backend: 'web-guest', samplePlan: SAMPLE_PLAN, thresholds: {}, metricsSamples }
   const body = { ...current, baselineId: comparisonKey(current), mode: 'measure', status: 'baseline-recorded', checks: [{ name: 'readback', ok: true }] }
   const baseline = { ...body, integrityHash: hash(body) }
   assert.ok(compareBaseline(current, baseline))
+  // 3.2.3 · 计量 v6：相对退化闸 —— 与基线同速时不得报退化
+  assert.deepEqual(compareBaseline(current, baseline).regressions, [])
+  // 同一份代码抖动 +3ms（save 30→33）落在噪声地板（max(5ms, 20%)=6ms）内，不判退
+  const noisy = { ...current, metricsSamples: { ...metricsSamples, save: Array(SAMPLE_PLAN.save).fill(33) } }
+  assert.deepEqual(compareBaseline(noisy, baseline).regressions, [])
+  // open 10→40ms（+300%）远未触及任何绝对阈值，但**必须**被判为退化
+  const slow = { ...current, metricsSamples: { ...metricsSamples, open: Array(5).fill(40) } }
+  const flagged = compareBaseline(slow, baseline)
+  assert.equal(flagged.regressions.length, 2)
+  assert.ok(flagged.regressions.every(r => r.key === 'open' && r.baselineMs === 10 && r.currentMs === 40))
+  assert.equal(flagged.changes.open.p50Relative, 3)
+  // 3.2.3 · v9：P95 的「绝对毫秒抖动」不算退化 —— input 20→29.8ms（+9.7ms）在 15ms 地板内
+  const jitter = { ...current, metricsSamples: { ...metricsSamples, input: [...Array(29).fill(20), 29.8] } }
+  assert.deepEqual(compareBaseline(jitter, baseline).regressions, [])
+  // 但真的慢了必须报：input 20→45ms（+25ms，超 15ms 地板与 30% 比例）
+  const slower = { ...current, metricsSamples: { ...metricsSamples, input: Array(30).fill(45) } }
+  assert.ok(compareBaseline(slower, baseline).regressions.some(r => r.key === 'input'))
   for (const key of ['measurementHash', 'environmentHash', 'fixtureHash', 'backend']) assert.throws(() => compareBaseline({ ...current, [key]: 'changed' }, baseline))
   assert.throws(() => compareBaseline(current, { ...baseline, mode: 'smoke' }))
   assert.throws(() => compareBaseline(current, { ...baseline, metricsSamples: { ...metricsSamples, save: [1] } }))

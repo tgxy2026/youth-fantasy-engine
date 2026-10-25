@@ -67,7 +67,10 @@ async function main() {
     page.setDefaultTimeout(20000)
     page.on('pageerror', (e) => pageErrors.push(String(e.message)))
 
-    await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    // 🔴 60s 不够：vite 冷缓存 + 机器正忙时，首屏模块图编译会顶到 60s 边界
+    //    （实测 reliability-T7pF8Z：整个 audit.contracts 就挂在这一步，单独重跑又 3/3 通过）。
+    //    这是取证工具的等待上限，不是被测行为 —— 放宽到 120s。
+    await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 120000 })
     // 示范项目：真实入口「先看看示例」
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
