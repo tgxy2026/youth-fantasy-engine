@@ -7,7 +7,7 @@
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
-import { normalizePortableData, isPortableDataFile, describeDataFileReject, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
+import { normalizePortableData, isPortableDataFile, describeDataFileReject, describeFileVersionProblem, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi, type SidecarExportIssue } from '@/lib/storage/sidecar'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
@@ -621,6 +621,16 @@ export function decideDataFileLoad(r: DataFileLoadResult): DataFileOutcome {
         error: '本地数据文件不是本软件写出的（缺少格式标识）。为免覆盖它，已暂停写入。',
       }
     }
+    // 🔴 更新版本的库：放行写入 = 把本版本不认识的新字段整库抹平（不可逆）。
+    //    所以照样读出来给人看，但**锁写盘**，并让人去升级。
+    const versionProblem = describeFileVersionProblem(parsed)
+    if (versionProblem) {
+      return {
+        kind: 'lock',
+        reason: '数据文件格式版本高于本版本',
+        error: `${versionProblem}。为免用旧格式覆盖它，已暂停写入，请升级软件后再打开。`,
+      }
+    }
     return { kind: 'ready', data: normalizePortableData(parsed) }
   } catch {
     return {
@@ -918,6 +928,9 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
     const guide = describeDataFileReject(parsed)
     return { ok: false, error: guide ?? '这不是有效的小说工坊数据文件（请选择便携版创建的 .json 数据文件）' }
   }
+  // 🔴 格式版本闸必须在 `data = ...` 之前（理由同便携版：替换后再拒绝就晚了）
+  const versionProblem = describeFileVersionProblem(parsed)
+  if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
   data = normalizePortableData(parsed)
   dirty = true
   // 🔴 导入一个**校验通过**的数据文件正是「锁写盘」的恢复手段：锁着 flushDesktop 直接返回 false，

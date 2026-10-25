@@ -27,7 +27,13 @@ const PORT = Number(process.env.YFE_PROBE_PORT || 8781)
  */
 const buildArg = (() => { const i = process.argv.indexOf('--build-dir'); return i >= 0 ? process.argv[i + 1] : '' })()
 const BASE = `http://127.0.0.1:${PORT}`
+/** 矩阵要的运行时证据落点（统一验收传；不传则只写到本次 runRoot） */
+const resultFile = (() => { const i = process.argv.indexOf('--result-file'); return i >= 0 ? process.argv[i + 1] : '' })()
 const MARKER = '便携往返注入的改动，导入后应当消失。'
+/** 密钥剥离场景用的假密钥（只为证明它不会出现在导出文件里） */
+const SECRET = 'sk-probe-portable-secret-do-not-export'
+/** 侧车场景用的向量行（便携把 vecRows 存成 /api/blob 的整表文件，导出时必须内联回单文件） */
+const VEC_ID = 'vec-probe-1'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
 const EXPORT_TITLE = '导出数据文件：把全部数据导出为一个 JSON 文件（浏览器下载），用于留档或搬到别的电脑'
 const IMPORT_TITLE = '导入数据文件：选择之前导出的数据文件，替换本机全部数据'
@@ -157,7 +163,49 @@ async function main() {
     const original = await editorBox.inputValue()
     if (!original.trim()) throw new Error('示范项目正文为空，无法验证往返')
 
-    // ---------- ① 导出：浏览器真实下载 ----------
+    // ---------- ① 播种：密钥 + 侧车（都走真实 HTTP，不碰产品开关）----------
+    //
+    // 为什么必须播种再导出：
+    //   · 不先放一枚密钥，「导出里没有密钥」是句空话（本来就没有）；
+    //   · 不先放一行向量，`sidecars` 场景无从判断"外置数据有没有被内联回单文件"。
+    // 两者都只改**本次临时数据根**里的内容：数据文件用服务端自己的条件写 PUT，
+    // 侧车用服务端自己的 /api/blob —— 与产品走同一条路。
+    const apiText = async () => {
+      const r = await fetch(BASE + '/api/data', { cache: 'no-store' })
+      if (!r.ok) throw new Error('读取服务端数据文件失败 HTTP ' + r.status)
+      const j = await r.json()
+      return { text: j.text, etag: r.headers.get('etag') || '' }
+    }
+    async function seedSecretAndSidecar() {
+      const cur = await apiText()
+      const file = JSON.parse(cur.text)
+      file.stores = file.stores || {}
+      // 行形态两可：对象（主键→记录）或数组（历史遗留）—— 统一成对象再塞一行
+      const metaRows = file.stores.meta
+      const asMap = Array.isArray(metaRows)
+        ? Object.fromEntries(metaRows.filter((r) => r && r.key).map((r) => [r.key, r]))
+        : { ...(metaRows || {}) }
+      asMap.aiProviders = { key: 'aiProviders', value: { activeId: 'probe', providers: [{ id: 'probe', apiKey: SECRET }] } }
+      file.stores.meta = asMap
+      const put = await fetch(BASE + '/api/data', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'If-Match': cur.etag },
+        body: JSON.stringify(file),
+      })
+      if (!put.ok) throw new Error('播种密钥失败 HTTP ' + put.status)
+      const blob = await fetch(BASE + '/api/blob?store=vecRows&id=__all__', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([{ id: VEC_ID, projectId: 'probe', dim: 3, vector: [0.1, 0.2, 0.3], updatedAt: 1 }]),
+      })
+      if (!blob.ok) throw new Error('播种侧车失败 HTTP ' + blob.status)
+    }
+    await seedSecretAndSidecar()
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await dismiss(page)
+    await openEditor(page)
+
+    // ---------- ② 导出：浏览器真实下载 ----------
     const downloadPromise = page.waitForEvent('download', { timeout: 40000 })
     await page.getByTitle(EXPORT_TITLE, { exact: true }).click()
     await (await downloadPromise).saveAs(exported)
@@ -169,6 +217,24 @@ async function main() {
     const exportedList = Array.isArray(exportedRows) ? exportedRows : Object.values(exportedRows ?? {})
     check('export-file', exportedList.some((row) => row && row.content === original), `导出文件里是否有与页面一致的那一章（页面 ${original.length} 字 / 导出 ${exportedList.length} 章）`)
     check('export-is-portable-data', JSON.parse(exportedText).kind === 'portable-data')
+
+    // 密钥剥离：先证明"服务端确实存着这枚密钥"，再证明"导出文件里没有它"
+    const serverHasSecret = (await apiText()).text.includes(SECRET)
+    check('secret-stripping.secret-present-before', serverHasSecret, serverHasSecret ? undefined : '服务端数据文件里没有播种的密钥，本场景无效')
+    const exportedMeta = exportedJson?.stores?.meta
+    const exportedMetaKeys = Array.isArray(exportedMeta)
+      ? exportedMeta.map((r) => String(r?.key ?? ''))
+      : Object.keys(exportedMeta ?? {})
+    check('secret-stripping.absent-after-export',
+      !exportedText.includes(SECRET) && !exportedMetaKeys.includes('aiProviders'),
+      `文件里含密钥=${exportedText.includes(SECRET)} / meta 含 aiProviders=${exportedMetaKeys.includes('aiProviders')}`)
+
+    // 侧车：便携把 vecRows 存成 /api/blob 的整表文件，导出必须**内联回单文件**
+    const exportedVec = exportedJson?.stores?.vecRows
+    const exportedVecList = Array.isArray(exportedVec) ? exportedVec : Object.values(exportedVec ?? {})
+    check('sidecars.inlined-on-export',
+      exportedVecList.some((row) => row && row.id === VEC_ID),
+      `导出 ${exportedVecList.length} 行向量${exportedVecList.some((r) => r && r.id === VEC_ID) ? '（含探针行）' : '（缺探针行）'}`)
 
     // ---------- ② 改库并落盘：不然后面的"导回"证明不了任何事 ----------
     const changed = original + MARKER
@@ -242,7 +308,54 @@ async function main() {
     }
     check('import-disk-readback', diskRestored, '磁盘里应有与导出时一致的那一章')
 
-    // ---------- ④ 重启浏览器：确认导入真的落盘，不只是内存 ----------
+    // 导入时侧车内联在单文件里 ⇒ 导入后必须**再拆回** blob，否则等于每次导入都把外置数据搬回主文件
+    let vecRestored = false
+    for (let i = 0; i < 80; i++) {
+      const r = await fetch(BASE + '/api/blob?store=vecRows&id=__all__', { cache: 'no-store' })
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}))
+        const rows = Array.isArray(j.value) ? j.value : []
+        if (rows.some((row) => row && row.id === VEC_ID)) { vecRestored = true; break }
+      }
+      await sleep(250)
+    }
+    check('sidecars.restored-after-import', vecRestored, '导入后侧车 blob 里应有探针向量行')
+
+    // ---------- ⑤ 两个必须被拒的导入：版本闸与损坏文件 ----------
+    const beforeReject = await diskText()
+    async function importExpectRefusal(file, pattern, label) {
+      await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      const ch = page.waitForEvent('filechooser', { timeout: 30000 })
+      await page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await (await ch).setFiles(file)
+      const toast = page.getByText(pattern).first()
+      await toast.waitFor({ timeout: 25000 })
+      const text = (await toast.textContent()) || ''
+      check(label, true, text.trim().slice(0, 120))
+      return text
+    }
+    // 版本闸：把导出文件的 fileVersion 改成本版本 + 1（模拟"新版本软件写的数据文件"）
+    const newerVersionFile = path.join(runRoot, 'newer-version.json')
+    {
+      const f = JSON.parse(exportedText)
+      f.fileVersion = 999
+      await fs.writeFile(newerVersionFile, JSON.stringify(f))
+    }
+    await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
+    const afterVersionReject = await diskText()
+    check('schema-version.data-unchanged', beforeReject === afterVersionReject,
+      beforeReject === afterVersionReject ? undefined : '被拒的导入居然改动了数据文件')
+
+    // 恢复失败：结构损坏的 JSON
+    const corruptFile = path.join(runRoot, 'corrupt.json')
+    await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
+    await importExpectRefusal(corruptFile, /数据文件已损坏/, 'restore-failure.corrupt-rejected')
+    const afterCorruptReject = await diskText()
+    check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject,
+      afterVersionReject === afterCorruptReject ? undefined : '损坏文件被拒后数据文件却变了')
+    await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
+
+    // ---------- ⑥ 重启浏览器：确认导入真的落盘，不只是内存 ----------
     await browser.close()
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page2 = await browser.newPage({ viewport: { width: 1440, height: 940 } })
@@ -265,8 +378,20 @@ async function main() {
     if (browser) await browser.close().catch(() => {})
     if (server) { const c = server; server = null; const closed = new Promise((r) => c.once('close', r)); c.kill(); await Promise.race([closed, sleep(3000)]) }
     const passed = checks.filter((c) => c.ok).length
+    // 🔴 场景是**算出来的**，不是写死的：某个场景只要有一条检查没走完/没过，就不出现在这份清单里。
+    //    矩阵那边的 `auditRuntime` 会拿它跟 policy.json 要求的四个场景比对，缺一个就不点亮。
+    const scenarioGroups = {
+      'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
+      sidecars: ['sidecars.inlined-on-export', 'sidecars.restored-after-import'],
+      'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],
+      'restore-failure': ['restore-failure.corrupt-rejected', 'restore-failure.data-unchanged'],
+    }
+    const passedIds = new Set(checks.filter((c) => c.ok).map((c) => c.id))
+    const scenarios = Object.entries(scenarioGroups)
+      .filter(([, ids]) => ids.every((id) => passedIds.has(id)))
+      .map(([name]) => name)
     const payload = {
-      schemaVersion: 1, contract: 'storage.portable-roundtrip', profile: 'portable',
+      schemaVersion: 1, contract: 'storage.portable-roundtrip', profile: 'portable', scenarios,
       at: new Date().toISOString(), samples: checks.length, passed, failed: checks.length - passed,
       environment: `Windows · Playwright headless(msedge) · portable-server :${PORT} · 隔离数据根`,
       buildDir: buildArg ? path.relative(ROOT, path.resolve(buildArg)).replaceAll('\\', '/') : 'dist',
@@ -275,6 +400,10 @@ async function main() {
     }
     const artifact = path.join(runRoot, 'result.json')
     await fs.writeFile(artifact, JSON.stringify(payload, null, 2)).catch(() => {})
+    if (resultFile) {
+      await fs.mkdir(path.dirname(path.resolve(resultFile)), { recursive: true })
+      await fs.writeFile(path.resolve(resultFile), JSON.stringify(payload, null, 2))
+    }
     console.log(`PORTABLE_ROUNDTRIP samples=${checks.length} passed=${passed} failed=${payload.failed}`)
     console.log('artifact=' + path.relative(ROOT, artifact).replaceAll('\\', '/'))
     console.log('sha256=' + createHash('sha256').update(JSON.stringify(payload)).digest('hex'))

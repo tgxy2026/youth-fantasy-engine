@@ -28,10 +28,23 @@ const TITLE = '游客往返临时作品'
 const ORIGINAL = '隔离游客模式的原始手稿。\n这一段在导出后会被改动，导入后必须原样回来。'
 const MARKER = '游客往返注入的改动，导入后应当消失。'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
+/** 密钥剥离场景用的假密钥（只为证明它不会出现在导出文件里） */
+const SECRET = 'sk-probe-guest-secret-do-not-export'
+/** 矩阵要的运行时证据落点 */
+const resultFile = (() => { const i = process.argv.indexOf('--result-file'); return i >= 0 ? process.argv[i + 1] : '' })()
 const EXPORT_TITLE = '导出全部数据：下载一个 JSON 文件，用于留档或换设备'
 const IMPORT_TITLE = '导入数据文件：选择之前导出的 JSON，替换当前浏览器里的全部数据'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const step = (name, detail) => console.log('[step] ' + name + (detail ? ' :: ' + detail : ''))
+/**
+ * 🔴 `page.evaluate` **没有超时**：里面的 Promise 若不 resolve（IDB 事务卡住 / 库被别处占着），
+ *    整个脚本会静默挂死 —— 2026-10-25 实测挂到 7 分钟没有任何输出。所有碰 IDB 的 evaluate 都必须包这层。
+ */
+const withTimeout = (promise, ms, label) => Promise.race([
+  promise,
+  sleep(ms).then(() => { throw new Error(`${label} 超时（${ms}ms）：页面里的 IDB 操作没有返回`) }),
+])
 const argOf = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : '' }
 
 async function main() {
@@ -53,7 +66,7 @@ async function main() {
   const readChapter = async (ctx) => {
     const pages = ctx.pages().filter((p) => !p.isClosed())
     const page = pages[0] ?? await ctx.newPage()
-    return page.evaluate(({ databaseName, CH }) => new Promise((resolve, reject) => {
+    return withTimeout(page.evaluate(({ databaseName, CH }) => new Promise((resolve, reject) => {
       const request = indexedDB.open(databaseName)
       request.onerror = () => reject(request.error)
       request.onupgradeneeded = () => { request.transaction.abort(); reject(new Error('expected existing database')) }
@@ -67,7 +80,7 @@ async function main() {
         tx.oncomplete = () => { database.close(); resolve(value ?? null) }
         tx.onabort = () => { database.close(); reject(tx.error ?? new Error('read aborted')) }
       }
-    }), { databaseName, CH })
+    }), { databaseName, CH }), 20000, 'readChapter')
   }
 
   /** 首启可能弹提醒框，会挡住点击 */
@@ -154,7 +167,8 @@ async function main() {
     await page.waitForFunction(async (name) => (await indexedDB.databases()).some((d) => d.name === name), databaseName, { timeout: 30000 })
 
     // 播种一个已知项目：WelcomeWizard 已跳过，进项目中心就能看到
-    await page.evaluate(({ databaseName, PID, VID, CH, TITLE, ORIGINAL }) => new Promise((resolve, reject) => {
+    step('seed-start')
+    await withTimeout(page.evaluate(({ databaseName, PID, VID, CH, TITLE, ORIGINAL, SECRET }) => new Promise((resolve, reject) => {
       const request = indexedDB.open(databaseName)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
@@ -165,16 +179,20 @@ async function main() {
         tx.objectStore('volumes').put({ id: VID, projectId: PID, title: '验收卷', description: '', order: 0, createdAt: now })
         tx.objectStore('chapters').put({ id: CH, projectId: PID, volumeId: VID, title: '游客往返章', content: ORIGINAL, summary: '', wordCount: ORIGINAL.length, order: 0, status: '草稿', tags: [], createdAt: now, updatedAt: now })
         tx.objectStore('meta').put({ key: 'welcomeDone', value: '1' })
+        // 密钥剥离场景的种子：全局 meta 里的 AI 配置（导出时必须被剥掉）
+        tx.objectStore('meta').put({ key: 'aiProviders', value: { activeId: 'probe', providers: [{ id: 'probe', apiKey: SECRET }] } })
         tx.oncomplete = () => { database.close(); resolve(true) }
         tx.onabort = () => { database.close(); reject(tx.error) }
       }
-    }), { databaseName, PID, VID, CH, TITLE, ORIGINAL })
+    }), { databaseName, PID, VID, CH, TITLE, ORIGINAL, SECRET }), 20000, 'seed')
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await openEditor(page)
     const editorBox = page.getByPlaceholder(EDITOR)
     const original = await editorBox.inputValue()
     if (original !== ORIGINAL) throw new Error('编辑框正文与播种内容不一致：' + JSON.stringify(original.slice(0, 40)))
+
+    step('editor-open', `正文 ${original.length} 字`)
 
     // ---------- ① 导出：游客走浏览器真实下载 ----------
     const downloadPromise = page.waitForEvent('download', { timeout: 40000 })
@@ -190,6 +208,42 @@ async function main() {
     check('export-is-portable-data', exportedJson?.kind === 'portable-data' && exportedJson?.app === 'youth-fantasy-engine',
       `kind=${String(exportedJson?.kind)} app=${String(exportedJson?.app)}`)
 
+    // 密钥剥离：先确认"库里真的存着这枚密钥"，再确认"导出文件里没有它"
+    step('export-done', `导出 ${original.length} 字`)
+    const seededSecret = await withTimeout(page.evaluate(({ databaseName }) => new Promise((resolve, reject) => {
+      const request = indexedDB.open(databaseName)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('meta', 'readonly')
+        const read = tx.objectStore('meta').get('aiProviders')
+        let value
+        read.onsuccess = () => { value = read.result }
+        tx.oncomplete = () => { db.close(); resolve(JSON.stringify(value ?? null)) }
+        tx.onabort = () => { db.close(); reject(tx.error) }
+      }
+    }), { databaseName }), 20000, 'seededSecret')
+    check('secret-stripping.secret-present-before', seededSecret.includes(SECRET), seededSecret.slice(0, 120))
+    const exportedMeta = exportedJson?.stores?.meta
+    const exportedMetaKeys = Array.isArray(exportedMeta)
+      ? exportedMeta.map((row) => String(row?.key ?? ''))
+      : Object.keys(exportedMeta ?? {})
+    check('secret-stripping.absent-after-export',
+      !exportedText.includes(SECRET) && !exportedMetaKeys.includes('aiProviders'),
+      `文件里含密钥=${exportedText.includes(SECRET)} / meta 含 aiProviders=${exportedMetaKeys.includes('aiProviders')}`)
+
+    // 侧车：游客的语义向量与知识库在**两个独立 IDB**里，按设计不进整库 JSON ——
+    // 但这属于"必须说清楚"的缺口，所以既要断言"文件里没有"，也要断言"界面说了没有"。
+    const sidecarKeys = ['vecRows', 'kbDocs', 'kbBodies'].filter((k) => Object.prototype.hasOwnProperty.call(exportedJson?.stores ?? {}, k))
+    const exportToast = await page.evaluate(() => {
+      const nodes = [...document.querySelectorAll('div,p,span')].map((d) => (d.textContent || '').trim())
+      return nodes.filter((t) => t.includes('已导出')).slice(-1)[0] || ''
+    })
+    check('sidecars.excluded-and-declared',
+      sidecarKeys.length === 0 && /语义检索索引与知识库不在这份文件里/.test(exportToast),
+      `文件里含侧车键=${JSON.stringify(sidecarKeys)} / 提示是否说明=${/语义检索索引/.test(exportToast)}`)
+
+    step('export-checks-done')
     // ---------- ② 改库：不然后面的"导回"证明不了任何事 ----------
     const changed = original + MARKER
     await editorBox.fill(changed)
@@ -202,6 +256,7 @@ async function main() {
     }
     check('changed-in-indexeddb', idbChanged, idbChanged ? undefined : 'IndexedDB 里仍没有改动内容（游客的"落盘"就是它）')
 
+    step('changed-in-idb')
     // ---------- ③ 导入：确认框 → 真实 filechooser → 应用 reload ----------
     await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
     const chooser = page.waitForEvent('filechooser', { timeout: 30000 })
@@ -243,7 +298,61 @@ async function main() {
     }
     check('import-indexeddb-readback', idbRestored, 'IndexedDB 里应有与导出时一致的那一章')
 
-    // ---------- ④ 重启浏览器：确认导入真的写进 IDB，不只是内存 ----------
+    step('import-restored')
+    // ---------- ④ 两个必须被拒的导入：版本闸与损坏文件 ----------
+    const idbFingerprint = async () => {
+      const row = await readChapter(context)
+      const projects = await withTimeout(page.evaluate(({ databaseName }) => new Promise((resolve, reject) => {
+        const request = indexedDB.open(databaseName)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          const db = request.result
+          const tx = db.transaction('projects', 'readonly')
+          const read = tx.objectStore('projects').getAll()
+          let rows = []
+          read.onsuccess = () => { rows = read.result }
+          tx.oncomplete = () => { db.close(); resolve(rows.map((r) => r.id).sort()) }
+          tx.onabort = () => { db.close(); reject(tx.error) }
+        }
+      }), { databaseName }), 20000, 'idbFingerprint')
+      return JSON.stringify({ chapter: row?.content ?? null, projects })
+    }
+    async function importExpectRefusal(file, pattern, label) {
+      await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      const ch = page.waitForEvent('filechooser', { timeout: 30000 })
+      await page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await (await ch).setFiles(file)
+      const toast = page.getByText(pattern).first()
+      await toast.waitFor({ timeout: 25000 })
+      check(label, true, ((await toast.textContent()) || '').trim().slice(0, 120))
+    }
+    const beforeReject = await idbFingerprint()
+
+    const newerVersionFile = path.join(runRoot, 'newer-version.json')
+    {
+      const f = JSON.parse(exportedText)
+      f.fileVersion = 999
+      await fs.writeFile(newerVersionFile, JSON.stringify(f))
+    }
+    await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
+    {
+      const after = await idbFingerprint()
+      check('schema-version.data-unchanged', after === beforeReject,
+        after === beforeReject ? undefined : '被拒的导入居然改动了 IndexedDB')
+    }
+
+    const corruptFile = path.join(runRoot, 'corrupt.json')
+    await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
+    await importExpectRefusal(corruptFile, /已损坏/, 'restore-failure.corrupt-rejected')
+    {
+      const after = await idbFingerprint()
+      check('restore-failure.data-unchanged', after === beforeReject,
+        after === beforeReject ? undefined : '损坏文件被拒后 IndexedDB 却变了')
+    }
+    await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
+
+    step('rejections-done')
+    // ---------- ⑤ 重启浏览器：确认导入真的写进 IDB，不只是内存 ----------
     await context.close()
     context = null
     const second = await launch()
@@ -265,8 +374,19 @@ async function main() {
     if (context) await context.close().catch(() => {})
     if (server) { const c = server; server = null; const closed = new Promise((r) => c.once('close', r)); c.kill(); await Promise.race([closed, sleep(3000)]) }
     const passed = checks.filter((c) => c.ok).length
+    // 场景是**算出来的**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵那边据此比对 policy）
+    const scenarioGroups = {
+      'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
+      sidecars: ['sidecars.excluded-and-declared'],
+      'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],
+      'restore-failure': ['restore-failure.corrupt-rejected', 'restore-failure.data-unchanged'],
+    }
+    const passedIds = new Set(checks.filter((c) => c.ok).map((c) => c.id))
+    const scenarios = Object.entries(scenarioGroups)
+      .filter(([, ids]) => ids.every((id) => passedIds.has(id)))
+      .map(([name]) => name)
     const payload = {
-      schemaVersion: 1, contract: 'storage.web-guest-roundtrip', profile: 'web-guest',
+      schemaVersion: 1, contract: 'storage.web-guest-roundtrip', profile: 'web-guest', scenarios,
       at: new Date().toISOString(), samples: checks.length, passed, failed: checks.length - passed,
       environment: 'Windows · Playwright headless(msedge) · 真实 server/index.mjs /guest · 隔离数据根 · 持久化 profile（重启后仍读同一 IndexedDB）',
       note: '导出＝浏览器真实下载；导入＝真实 filechooser；改库直接读 IndexedDB 确认；导入后重启浏览器复核',
@@ -274,6 +394,10 @@ async function main() {
     }
     const artifact = path.join(runRoot, 'result.json')
     await fs.writeFile(artifact, JSON.stringify(payload, null, 2)).catch(() => {})
+    if (resultFile) {
+      await fs.mkdir(path.dirname(path.resolve(resultFile)), { recursive: true })
+      await fs.writeFile(path.resolve(resultFile), JSON.stringify(payload, null, 2))
+    }
     console.log(`WEB_GUEST_ROUNDTRIP samples=${checks.length} passed=${passed} failed=${payload.failed}`)
     console.log('artifact=' + path.relative(ROOT, artifact).replaceAll('\\', '/'))
     console.log('sha256=' + createHash('sha256').update(JSON.stringify(payload)).digest('hex'))

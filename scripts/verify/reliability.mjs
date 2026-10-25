@@ -55,6 +55,22 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
   }
+  /**
+   * 把一次往返取证提升为矩阵的 `roundtrip/<profile>`。
+   *
+   * 🔴 不看"脚本退出码 0"就完事：必须读 payload.scenarios（脚本自行算出、缺一项就不写）
+   *    与 policy.json 里该 case 要求的场景逐条比对，缺任何一项直接失败 ——
+   *    宁可这一格不亮，也不许拿"跑过了"冒充"四个场景都验了"。
+   */
+  async function promoteRoundtrip(prefix, profile) {
+    const policy = JSON.parse(await fs.readFile(path.join(realRoot, 'scripts/audit/platform/policy.json'), 'utf8'))
+    const required = policy.runtimeCases.find((c) => c.id === 'roundtrip')?.scenarios ?? []
+    const payload = JSON.parse(await fs.readFile(path.join(runRoot, prefix + '-runtime.json'), 'utf8'))
+    const declared = Array.isArray(payload.scenarios) ? payload.scenarios : []
+    const missing = required.filter((s) => !declared.includes(s))
+    if (missing.length) throw new Error(`Roundtrip evidence misses scenarios: ${missing.join(', ')}`)
+    await auditRuntime(prefix, profile, ['roundtrip'], `${process.platform}; isolated ${profile} runtime, real export/import through product UI and storage; scenario checks computed by the probe, not declared by hand`)
+  }
   async function auditRuntime(prefix, profile, caseIds, environment) {
     const sourceFingerprint = snapshot(realRoot).fingerprint
     const evidenceFile = path.join(runRoot, prefix + '-runtime.json')
@@ -64,6 +80,9 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       'boot-store': ['initial-flags', 'backend-selection', 'restart-readback'],
       'write-failure': ['accepted-vs-persisted', 'failure-preserves-draft', 'retry-readback'],
       'account-isolation': ['two-accounts', 'guest-to-account', 'same-browser-account-switch', 'expired-session'],
+      // roundtrip 的四个子场景由往返脚本自己"算出来"并写进 payload.scenarios，
+      // 这里只声明「该 case 需要这四个」；脚本没算出来的不会出现在 payload 里，比对就会失败。
+      roundtrip: ['schema-version', 'sidecars', 'secret-stripping', 'restore-failure'],
     }
     const additions = caseIds.map(id => {
       const scenarios = coveredScenarios[id]
@@ -222,17 +241,19 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       return evidence.asserts.length
     }],
     // 3.2.6 · R4：便携配置的端到端导出→导入（真实便携服务 + 真实浏览器下载/选文件）
-    ['storage.portable-roundtrip', ['scripts/verify/portable-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build')], 240000, result => {
+    ['storage.portable-roundtrip', ['scripts/verify/portable-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'portable-rt-runtime.json')], 300000, async result => {
       const summary = /PORTABLE_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)
       if (!summary) throw new Error('Portable roundtrip printed no summary')
       if (Number(summary[3]) !== 0) throw new Error('Portable roundtrip has failing checks')
+      await promoteRoundtrip('portable-rt', 'portable')
       return Number(summary[1])
     }],
     // 3.2.6 · R4：游客配置的端到端导出→导入（真实 /guest + 真实浏览器 + 真实 IndexedDB）
-    ['storage.web-guest-roundtrip', ['scripts/verify/web-guest-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build')], 240000, result => {
+    ['storage.web-guest-roundtrip', ['scripts/verify/web-guest-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'guest-rt-runtime.json')], 300000, async result => {
       const summary = /WEB_GUEST_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)
       if (!summary) throw new Error('Web guest roundtrip printed no summary')
       if (Number(summary[3]) !== 0) throw new Error('Web guest roundtrip has failing checks')
+      await promoteRoundtrip('guest-rt', 'web-guest')
       return Number(summary[1])
     }],
     ['storage.e2e-roundtrip', ['scripts/verify/e2e-roundtrip.mjs', '--run-root', runRoot], 60000, async result => {

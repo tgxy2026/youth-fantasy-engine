@@ -15,6 +15,7 @@
 //    所以游客导出**不含**这两块 —— 导入后语义检索需要重新建档（界面要如实告知，别让用户以为丢了）。
 import { ops } from '@/lib/db/core'
 import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
+import { PORTABLE_FILE_VERSION, describeFileVersionProblem } from '@/lib/storage/storeOps'
 
 /** 主库全部 store（与 `db/core.ts` 的 DB_VERSION=13 建表清单严格一致） */
 export const GUEST_STORES = [
@@ -60,7 +61,7 @@ export async function guestDataObject(): Promise<{ data: Record<string, unknown>
     data: {
       app: 'youth-fantasy-engine',
       kind: 'portable-data',
-      fileVersion: 1,
+      fileVersion: PORTABLE_FILE_VERSION,
       savedAt: Date.now(),
       stores: stripped.stores,
     },
@@ -133,6 +134,10 @@ export async function importGuestData(text: string): Promise<{ ok: boolean; erro
   if (o?.app !== 'youth-fantasy-engine' || o?.kind !== 'portable-data' || !o.stores || typeof o.stores !== 'object') {
     return { ok: false, error: '这不是本软件导出的数据文件（缺少格式标识）' }
   }
+  // 🔴 格式版本闸：必须在下面「先清空再写入」**之前**。
+  //    游客导入的语义是"替换整库"，晚一步拒绝就等于已经清过库了。
+  const versionProblem = describeFileVersionProblem(parsed)
+  if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
 
   // ---- 先规划、后动库：一条可导入记录都没有时**绝不**清空本机数据 ----
   const plan = new Map<string, unknown[]>()

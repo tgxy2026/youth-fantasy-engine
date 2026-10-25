@@ -16,7 +16,7 @@
 //    服务在托管 `index.html` 前把这一行注入 <head>（见 portable-server.mjs）。
 //    不用 UA / 端口启发式：那些都能被误判，而误判的后果是「读不到数据」或「数据落到别处」。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
-import { normalizePortableData, isPortableDataFile } from '@/lib/storage/storeOps'
+import { normalizePortableData, isPortableDataFile, describeFileVersionProblem } from '@/lib/storage/storeOps'
 // keyOfRecord / PORTABLE_KEY_FIELDS 的真源已上移到 storeOps（3.2.2 · D2），本文件下方 re-export
 import { keyOfRecord } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec, SidecarExportIssue } from '@/lib/storage/sidecar'
@@ -220,6 +220,14 @@ export async function initPortableStore(): Promise<void> {
         if (!isPortableDataFile(parsed)) {
           lock('数据文件缺少本软件的格式标识（kind="portable-data"）',
             '便携数据文件不是本软件写出的（缺少格式标识）。为免覆盖它，已暂停写入。')
+        } else if (describeFileVersionProblem(parsed)) {
+          // 🔴 更新版本的库：**读出来给人看，但一个字都不许回写**。
+          //    放行写入的后果是：本版本把不认识的新字段整库抹平（不可逆），
+          //    而这通常发生在「用旧便携包打开新版本写过的数据」——作者完全不会预期。
+          data = normalizePortableData(parsed)
+          lastSavedAt = data.savedAt || Date.now()
+          lock('数据文件格式版本高于本版本',
+            `${describeFileVersionProblem(parsed)}。为免用旧格式覆盖它，已暂停写入，请升级软件后再打开。`)
         } else {
           data = normalizePortableData(parsed)
           lastSavedAt = data.savedAt || Date.now()
@@ -735,6 +743,10 @@ export async function importPortableData(
     const guide = describeDataFileReject(parsed)
     return { ok: false, error: guide ?? '这不是有效的小说工坊数据文件（请选择本软件导出的数据文件）' }
   }
+  // 🔴 格式版本闸必须在 `replacePortableData` **之前**：一旦替换，内存已经是新文件的空壳，
+  //    再拒绝就晚了（旧数据在内存里也没了，下次写盘变真丢）。
+  const versionProblem = describeFileVersionProblem(parsed)
+  if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
   replacePortableData(parsed)
   // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）
   await migratePortableSidecar()

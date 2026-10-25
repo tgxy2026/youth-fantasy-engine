@@ -136,6 +136,38 @@ export function normalizePortableData(parsed: unknown): PortableData {
 }
 
 /**
+ * 本版本**能读的最老格式**。
+ *
+ * 1 = 没有 `fileVersion` 字段的老文件（1.x 写出的整库）。再老的不存在 ——
+ * 所以这条下界是「防脏数据」，不是「还要支持更老的格式」。
+ */
+export const PORTABLE_FILE_MIN_VERSION = 1
+
+/**
+ * 数据文件的**格式版本**是否可接受。返回 null = 可读；返回字符串 = 人话原因。
+ *
+ * 🔴 为什么必须有这道闸（2026-10-25 · 矩阵 `roundtrip/schema-version`）：
+ *    此前 `checkDataVersion()`（`lib/revision/faultInjection.ts`）只被单测调用，
+ *    **导入路径一处都没用**：`normalizePortableData` 是容错归一化，它把
+ *    `fileVersion` 原样搬过来、不认识的新字段直接丢掉。
+ *    于是「用新版本软件写的文件，拿到旧版本里导入」会被**静默接受**，
+ *    再存一次就把新版本才有的字段整库抹平 —— 属于不可逆丢数据。
+ *    反向（文件比当前旧）必须能读：那是正常的重装/换机场景，老文件没有 `fileVersion` 也算 v1。
+ */
+export function describeFileVersionProblem(parsed: unknown): string | null {
+  const raw = (parsed as { fileVersion?: unknown } | null | undefined)?.fileVersion
+  // 缺字段 = 1.x 的老文件，按 v1 收（不因历史文件缺字段把作者锁死）
+  const version = raw === undefined || raw === null ? 1 : Number(raw)
+  if (!Number.isInteger(version) || version < PORTABLE_FILE_MIN_VERSION) {
+    return `数据文件的格式版本无法识别（fileVersion=${JSON.stringify(raw) ?? 'undefined'}）`
+  }
+  if (version > PORTABLE_FILE_VERSION) {
+    return `这份数据文件由更新版本的软件导出（格式 v${version}，本版本最高支持 v${PORTABLE_FILE_VERSION}）`
+  }
+  return null
+}
+
+/**
  * 这份 JSON 是不是**本软件写出的**数据文件（只看身份标识，不看内容）。
  *
  * 🔴 为什么必须有这一步（2026-09-20 六维审计 P1-2）：`normalizePortableData` 是**容错**归一化 ——
