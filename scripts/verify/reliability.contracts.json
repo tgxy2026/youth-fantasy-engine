@@ -24,7 +24,7 @@
     { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置的保存故障、端到端导出→导入、以及 roundtrip 四个子场景（schema-version/sidecars/secret-stripping/restore-failure）均已各自取证，矩阵 roundtrip/* 四格全亮。仍缺：在途编辑、切项目、关窗时的写失败（四配置均未覆盖），以及安装包/实体设备的真实环境 —— 故仍报四配置未全部完成" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
     { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
-    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 与 portable 均已接条件写（单服务进程内的版本比较 + 原子替换、冲突停写保草稿、退出带前置条件），并各有测试与探针；仍未覆盖：真实关页在途、多服务进程共享同一数据目录、sidecar 并发。synthetic beforeunload 不计为真实关页，concurrency 格暂不提升" },
+    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 已补真实关页在途（page.close 后数据文件仍完整、内容只可能是旧或新、重开可读）与会话替换（401 SESSION_REPLACED 拒绝、草稿保留、服务端不变），concurrency/web-cloud 已点亮；portable 仍缺同等三条，且 portable 无「会话」概念（replace-session 是否适用于该配置需要 policy 层面判定，本轮不改 policy）。多服务进程共享同一数据目录、sidecar 并发仍未覆盖" },
     { "id": "model.failure", "stage": "business", "minAssertions": 1, "pending": "Mock refusal, cancel and timeout evidence adapters not wired" },
     { "id": "layout.affected", "stage": "business", "minAssertions": 1, "pending": "Changed-UI selection and layout evidence adapter not wired" },
     { "id": "audit.contracts", "stage": "business", "minAssertions": 6 }

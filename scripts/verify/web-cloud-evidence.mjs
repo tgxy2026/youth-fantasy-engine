@@ -23,6 +23,9 @@ export const WEB_CLOUD_CASE_IDS = [
   'schema-version.reject-newer', 'schema-version.data-unchanged',
   'restore-failure.corrupt-rejected', 'restore-failure.data-unchanged',
   'two-tabs-conditional-write', 'stale-save-rejected', 'conflict-keeps-draft', 'conflict-preserves-server',
+  // concurrency（3.2.6）：关页在途 + 会话被替换（真实关页 / 真实 401，不用合成 beforeunload）
+  'close-during-save.valid-file', 'close-during-save.old-or-new', 'close-during-save.reopen-readback',
+  'replace-session.rejected', 'replace-session.draft-kept', 'replace-session.server-unchanged',
   'conflict-export', 'conflict-stops-retry', 'conflict-leave-blocked',
   'no-pageerror', 'unchanged-inputs',
 ]

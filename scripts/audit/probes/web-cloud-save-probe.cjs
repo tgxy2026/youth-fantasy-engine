@@ -605,6 +605,57 @@ process.on('message',async message=>{
       }))
       await stale.screenshot({ path: path.join(runRoot, 'conflict.png') })
     }
+    // ---------- ⑪ concurrency：关页在途 + 会话被替换 ----------
+    // 这两条只能真跑：合成 beforeunload 不算"真实关页"，401 也必须在真会话替换后才出现。
+    {
+      // ① close-during-save：保存请求在途时直接关页 —— 数据文件必须仍是完整 JSON，内容只可能是"旧的"或"新的"
+      const beforeText = await fs.readFile(activeDataFile, 'utf8')
+      const beforeChapter = chapterContent(beforeText)
+      const slowDraft = '关页那一刻正在写的草稿（这一笔可能落盘、也可能没有）。'
+      await A.page.route('**/api/data', async route => {
+        if (route.request().method() === 'PUT') await new Promise(r => setTimeout(r, 4000))
+        await route.continue().catch(() => {})
+      })
+      await A.page.getByPlaceholder(EDITOR).fill(slowDraft)
+      await A.page.keyboard.press('Control+s')
+      await new Promise(r => setTimeout(r, 800))
+      await A.page.close()                       // 🔴 真实关页，不是派发 beforeunload
+      await new Promise(r => setTimeout(r, 6000)) // 等服务端把可能在途的写入做完
+      const afterText = await fs.readFile(activeDataFile, 'utf8')
+      let valid = false, afterChapter = null
+      try { JSON.parse(afterText); valid = true; afterChapter = chapterContent(afterText) } catch { valid = false }
+      check('close-during-save.valid-file', valid && typeof afterChapter === 'string' && afterChapter.length > 0,
+        valid ? `正文长度 ${String(afterChapter).length}` : '数据文件已不是完整 JSON')
+      check('close-during-save.old-or-new', afterChapter === beforeChapter || afterChapter === slowDraft,
+        `关页前=${String(beforeChapter).slice(0, 12)}… 关页后=${String(afterChapter).slice(0, 12)}…`)
+
+      // 重开一页：应用必须还能正常读到数据（不是"文件还在但打不开"）
+      const reopened = await A.ctx.newPage()
+      reopened.on('pageerror', value => pageErrors.push(String(value)))
+      await reopened.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await waitUser(reopened)
+      await openProjectEditor(reopened)
+      const reopenedText = await reopened.getByPlaceholder(EDITOR).inputValue()
+      check('close-during-save.reopen-readback', reopenedText === afterChapter, reopenedText.slice(0, 24))
+      A.page = reopened
+
+      // ② replace-session：同账号在别处登录 ⇒ 本页保存被 401 SESSION_REPLACED 拒绝
+      //    要求：说清原因、草稿不丢、服务端文件不动（绝不能静默当已保存）
+      const B2 = await openContext('a-replace')
+      await login(B2.ctx, USER_A)
+      const beforeReplace = await fs.readFile(activeDataFile, 'utf8')
+      const draft = '账号在别处登录时正在写的草稿：不许丢，也不许静默当已保存。'
+      await A.page.getByPlaceholder(EDITOR).fill(draft)
+      await A.page.keyboard.press('Control+s')
+      const toast = A.page.getByText(/已在别处登录/).first()
+      await toast.waitFor({ timeout: 25000 })
+      check('replace-session.rejected', true, ((await toast.textContent()) || '').trim().slice(0, 120))
+      check('replace-session.draft-kept', (await A.page.getByPlaceholder(EDITOR).inputValue()) === draft)
+      check('replace-session.server-unchanged', (await fs.readFile(activeDataFile, 'utf8')) === beforeReplace,
+        '会话被拒后服务端数据竟然变了')
+      await B2.ctx.close().catch(() => {})
+      await A.page.screenshot({ path: path.join(runRoot, 'replace-session.png') })
+    }
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
@@ -631,6 +682,10 @@ process.on('message',async message=>{
     }
     // 场景清单**算出来**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵据此比对 policy）
     const scenarioGroups = {
+      // concurrency（web-cloud）：两条标签 + 关页在途 + 会话替换
+      'two-tabs': ['two-tabs-conditional-write'],
+      'close-during-save': ['close-during-save.valid-file', 'close-during-save.old-or-new', 'close-during-save.reopen-readback'],
+      'replace-session': ['replace-session.rejected', 'replace-session.draft-kept', 'replace-session.server-unchanged'],
       'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
       sidecars: ['sidecars.seeded', 'sidecars.inlined-on-export', 'sidecars.restored-after-import'],
       'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],

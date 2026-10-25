@@ -87,6 +87,8 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       // roundtrip 的四个子场景由往返脚本自己"算出来"并写进 payload.scenarios，
       // 这里只声明「该 case 需要这四个」；脚本没算出来的不会出现在 payload 里，比对就会失败。
       roundtrip: ['schema-version', 'sidecars', 'secret-stripping', 'restore-failure'],
+      // concurrency：两条标签（条件写互斥）+ 关页在途 + 会话被替换
+      concurrency: ['two-tabs', 'replace-session', 'close-during-save'],
     }
     const additions = caseIds.map(id => {
       const scenarios = coveredScenarios[id]
@@ -229,7 +231,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
       await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation', 'write-failure'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; real quota rejection and real data-file rename failure; browser process restart; no production account')
-      await promoteRoundtrip('cloud-rt', 'web-cloud', path.join(runRoot, 'web-cloud-runtime.json'))
+      await promoteRoundtrip('cloud-rt', 'web-cloud', path.join(runRoot, 'web-cloud-runtime.json'), ['roundtrip', 'concurrency'])
       return verified.assertions
     }],
     // 3.2.3 · R4：端到端导出→导入（桌面 + 云端）。

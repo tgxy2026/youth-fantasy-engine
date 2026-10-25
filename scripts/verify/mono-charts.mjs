@@ -55,6 +55,17 @@ async function main() {
       server: { host: '127.0.0.1', port: PORT, strictPort: true },
     })
     await vite.listen()
+    // 🔴 与 draft-failure 同因：listen() 成功 ≠ 首屏编译好。完整验收里第一次请求可能几十秒，
+    //    先轮询首页再开浏览器，否则会以 "page.goto 超时" 的形式整步红。
+    {
+      const deadline = Date.now() + 90000
+      let ready = false
+      while (Date.now() < deadline) {
+        try { if ((await fetch('http://127.0.0.1:' + PORT + '/', { signal: AbortSignal.timeout(5000) })).ok) { ready = true; break } } catch { /* 还在编译 */ }
+        await new Promise(r => setTimeout(r, 500))
+      }
+      if (!ready) throw new Error('vite dev server 90 秒内没有返回首页')
+    }
     const { chromium } = require('playwright')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1440, height: 950 } })

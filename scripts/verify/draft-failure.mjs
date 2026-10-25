@@ -43,6 +43,24 @@ async function main() {
     })
     await vite.listen()
     const origin = 'http://127.0.0.1:' + PORT
+    /**
+     * 🔴 `vite.listen()` 返回只代表监听成功，**首屏模块图还没编译好**。
+     *    在完整验收里（前面刚跑完 Electron + 多个浏览器）第一次请求常要几十秒，
+     *    直接 goto 会 60s 超时 —— 实测 `draft.failure` 因此整步红（reliability-MEqZl9）。
+     *    这里先轮询一个页面请求，确认 dev server 真能出 HTML 再开浏览器。
+     */
+    {
+      const deadline = Date.now() + 90000
+      let ready = false
+      while (Date.now() < deadline) {
+        try {
+          const r = await fetch(origin + '/', { signal: AbortSignal.timeout(5000) })
+          if (r.ok) { ready = true; break }
+        } catch { /* 还在编译 */ }
+        await new Promise(r => setTimeout(r, 500))
+      }
+      if (!ready) throw new Error('vite dev server 90 秒内没有返回首页')
+    }
     const { chromium } = require('playwright')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
