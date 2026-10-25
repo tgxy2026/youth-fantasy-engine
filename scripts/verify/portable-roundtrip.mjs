@@ -124,19 +124,13 @@ async function main() {
     await waitServer()
 
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
-    const page = await browser.newPage({ viewport: { width: 1440, height: 940 }, acceptDownloads: true })
-    page.setDefaultTimeout(25000)
-    page.on('pageerror', (e) => pageErrors.push(String(e.message)))
-    page.on('response', async (res) => {
-      const url = res.url()
-      if (!url.includes('/api/data')) return
-      const req = res.request()
-      dataCalls.push({ method: req.method(), status: res.status(), ifMatch: (req.headers()['if-match'] || '').slice(0, 18), etag: (res.headers()['etag'] || '').slice(0, 18) })
-    })
-
-    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    // 🔴 在页面里包一层 fetch 记录 /api/data（Playwright 的 response 事件在这里没抓到，别依赖它）
-    await page.evaluate(() => {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 940 }, acceptDownloads: true })
+    /**
+     * 🔴 必须在**每次导航前**都装（addInitScript），不能只在首屏 evaluate 一次：
+     *    本用例中间会 reload（播种后、导入后），一次性安装的补丁会随页面消失，
+     *    于后面读 __apiLog 永远是 0 —— 看起来像"没走后端"，其实是记录器没了。
+     */
+    await ctx.addInitScript(() => {
       window.__apiLog = []
       const original = window.fetch
       window.fetch = function patched(input, init) {
@@ -151,6 +145,26 @@ async function main() {
         })
       }
     })
+    const page = await ctx.newPage()
+    page.setDefaultTimeout(25000)
+    page.on('pageerror', (e) => pageErrors.push(String(e.message)))
+    page.on('response', async (res) => {
+      const url = res.url()
+      if (!url.includes('/api/data')) return
+      const req = res.request()
+      dataCalls.push({ method: req.method(), status: res.status(), ifMatch: (req.headers()['if-match'] || '').slice(0, 18), etag: (res.headers()['etag'] || '').slice(0, 18) })
+    })
+
+    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    // boot-store/initial-flags：便携服务真的注入了 PORTABLE（不是网页版 / 游客 / 桌面）
+    const flags = await page.evaluate(() => ({
+      web: !!window.__YFE_WEB__,
+      portable: !!window.__YFE_PORTABLE__,
+      guest: !!window.__YFE_GUEST__,
+      electron: !!window.electronStore,
+    }))
+    check('initial-flags', flags.portable && !flags.web && !flags.guest && !flags.electron, JSON.stringify(flags))
+
     // 示范项目：真实入口
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
@@ -253,6 +267,14 @@ async function main() {
       await sleep(250)
     }
     check('changed-on-disk', diskChanged, diskChanged ? undefined : '磁盘仍没有改动内容；界面状态：' + lastState)
+
+    // boot-store/backend-selection：数据确实走便携服务的 HTTP 通道（不是本地 IDB 冒充）
+    // 🔴 必须在这里读：导入会 location.reload()，页面里包的 fetch 记录会随页面一起没掉（末尾读永远是 0）。
+    {
+      const apiLog = await page.evaluate(() => window.__apiLog || []).catch(() => [])
+      const puts = apiLog.filter((item) => item.method === 'PUT' && item.status === 200)
+      check('backend-selection', puts.length > 0 && !flags.electron, `PUT /api/data 200 次数=${puts.length}`)
+    }
     // 🔴 **故意不等待**：落盘后立刻导入，正是「导入撞上在途保存」的场景。
     //    flushPortable 现在会排队等上一笔写完（3.2.6），这里就是要证明它不再随机失败；
     //    若产品退回"在途即 return false"，本用例会红。
@@ -380,7 +402,17 @@ async function main() {
     const passed = checks.filter((c) => c.ok).length
     // 🔴 场景是**算出来的**，不是写死的：某个场景只要有一条检查没走完/没过，就不出现在这份清单里。
     //    矩阵那边的 `auditRuntime` 会拿它跟 policy.json 要求的四个场景比对，缺一个就不点亮。
+    /**
+     * 场景名必须与 `scripts/audit/platform/policy.json` 里写的一模一样 —— 执行器是拿它逐项比对的。
+     * 🔴 别用"我自己的分组名"（例如 boot-store）去填：那一格里 policy 要的是 initial-flags /
+     *    backend-selection / restart-readback 三条**场景名**，填组名会被判成"缺场景"（踩过）。
+     */
     const scenarioGroups = {
+      // boot-store 的三条（restart-readback 由 import-restart-readback 这条检查证明）
+      'initial-flags': ['initial-flags'],
+      'backend-selection': ['backend-selection'],
+      'restart-readback': ['import-restart-readback'],
+      // roundtrip 的四条：每条由 2~3 个检查共同证明
       'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
       sidecars: ['sidecars.inlined-on-export', 'sidecars.restored-after-import'],
       'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],

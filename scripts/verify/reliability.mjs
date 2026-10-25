@@ -62,9 +62,10 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
    *    与 policy.json 里该 case 要求的场景逐条比对，缺任何一项直接失败 ——
    *    宁可这一格不亮，也不许拿"跑过了"冒充"四个场景都验了"。
    */
-  async function promoteRoundtrip(prefix, profile, sourceFile) {
+  async function promoteRoundtrip(prefix, profile, sourceFile, caseIds = ['roundtrip']) {
     const policy = JSON.parse(await fs.readFile(path.join(realRoot, 'scripts/audit/platform/policy.json'), 'utf8'))
-    const required = policy.runtimeCases.find((c) => c.id === 'roundtrip')?.scenarios ?? []
+    // 一份证据可能同时覆盖多个单元（例如便携往返顺带验了 boot-store），按单元取并集逐项核对
+    const required = [...new Set(caseIds.flatMap((id) => policy.runtimeCases.find((c) => c.id === id)?.scenarios ?? []))]
     // 桌面/云端是**同一轮探针**同时产出 write-failure 与 roundtrip 的证据：复制一份再按不同
     // prefix 提升，避免同一台机器跑两遍 Electron/浏览器（也保证两份证据来自同一轮源码与构建）。
     if (sourceFile) await fs.copyFile(sourceFile, path.join(runRoot, prefix + '-runtime.json'))
@@ -72,7 +73,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     const declared = Array.isArray(payload.scenarios) ? payload.scenarios : []
     const missing = required.filter((s) => !declared.includes(s))
     if (missing.length) throw new Error(`Roundtrip evidence misses scenarios: ${missing.join(', ')}`)
-    await auditRuntime(prefix, profile, ['roundtrip'], `${process.platform}; isolated ${profile} runtime, real export/import through product UI and storage; scenario checks computed by the probe, not declared by hand`)
+    await auditRuntime(prefix, profile, caseIds, `${process.platform}; isolated ${profile} runtime, real export/import through product UI and storage; scenario checks computed by the probe, not declared by hand`)
   }
   async function auditRuntime(prefix, profile, caseIds, environment) {
     const sourceFingerprint = snapshot(realRoot).fingerprint
@@ -250,7 +251,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const summary = /PORTABLE_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)
       if (!summary) throw new Error('Portable roundtrip printed no summary')
       if (Number(summary[3]) !== 0) throw new Error('Portable roundtrip has failing checks')
-      await promoteRoundtrip('portable-rt', 'portable')
+      await promoteRoundtrip('portable-rt', 'portable', undefined, ['roundtrip', 'boot-store'])
       return Number(summary[1])
     }],
     // 3.2.6 · R4：游客配置的端到端导出→导入（真实 /guest + 真实浏览器 + 真实 IndexedDB）
