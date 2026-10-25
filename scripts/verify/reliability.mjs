@@ -207,6 +207,17 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     // 3.2.3 · R4：端到端导出→导入（桌面 + 云端）。
     // 🔴 不重跑探针，只聚合同一轮已产出的两份结果 —— 但要求两边指纹一致、检查项齐全且全真，
     //    任一份缺失或来自另一轮源码就直接失败（不拿"各自都说自己过了"当整体过）。
+    // 3.2.6 · 矩阵 write-failure/portable：真实便携服务 + 真实浏览器 + 真实请求中断。
+    // 🔴 这个探针此前只在人工命令里跑过，从没进统一验收 —— 探针存在 ≠ 矩阵点亮。
+    ['storage.portable-save-runtime', ['scripts/audit/probes/write-failure-portable.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'portable-wf-runtime.json')], 300000, async result => {
+      const summary = /PASS (\d+)\/(\d+)/.exec(result.out)
+      if (!summary) throw new Error('Portable write-failure probe printed no summary')
+      if (summary[1] !== summary[2]) throw new Error('Portable write-failure probe has failing checks')
+      const evidence = JSON.parse(await fs.readFile(path.join(runRoot, 'portable-wf-runtime.json'), 'utf8'))
+      if (evidence.status !== 'passed' || !Array.isArray(evidence.asserts) || evidence.asserts.length < 3) throw new Error('Portable write-failure evidence is incomplete')
+      await auditRuntime('portable-wf', 'portable', ['write-failure'], process.platform + '; isolated portable server and data dir; production renderer; real PUT abort; disk-level readback; draft preserved; retry after recovery')
+      return evidence.asserts.length
+    }],
     // 3.2.6 · R4：便携配置的端到端导出→导入（真实便携服务 + 真实浏览器下载/选文件）
     ['storage.portable-roundtrip', ['scripts/verify/portable-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build')], 240000, result => {
       const summary = /PORTABLE_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)

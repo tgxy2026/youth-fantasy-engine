@@ -16,6 +16,7 @@
     { "id": "storage.e2e-roundtrip", "stage": "business", "minAssertions": 7 },
     { "id": "storage.portable-roundtrip", "stage": "business", "minAssertions": 7 },
     { "id": "storage.web-guest-roundtrip", "stage": "business", "minAssertions": 7 },
+    { "id": "storage.portable-save-runtime", "stage": "business", "minAssertions": 5 },
     { "id": "storage.web-guest-save", "stage": "business", "minAssertions": 14 },
     { "id": "storage.desktop-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.web-cloud-save", "stage": "business", "minAssertions": 38 },

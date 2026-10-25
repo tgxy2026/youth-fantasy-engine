@@ -16,9 +16,14 @@
  *   ⑤ 三条断言 + 磁盘级读回，产出 results.json 与矩阵可认的 ledger-entry.json。
  *
  * 用法：
- *   node scripts/audit/probes/write-failure-portable.cjs              # 跑完自动停服务
- *   node scripts/audit/probes/write-failure-portable.cjs --keep       # 保留服务方便排查
- *   node scripts/audit/probes/write-failure-portable.cjs --port 8791  # 换端口
+ *   node scripts/audit/probes/write-failure-portable.cjs                     # 跑完自动停服务
+ *   node scripts/audit/probes/write-failure-portable.cjs --keep              # 保留服务方便排查
+ *   node scripts/audit/probes/write-failure-portable.cjs --port 8791         # 换端口
+ *   node scripts/audit/probes/write-failure-portable.cjs --build-dir <dir>   # 用本轮构建的前端（统一验收必传）
+ *   node scripts/audit/probes/write-failure-portable.cjs --result-file <json> # 证据落到指定路径（矩阵用）
+ *
+ * 🔴 必须用**本次源码构建**的 dist：便携服务已要求 If-Match，旧页面不带就被 428 拒写 ——
+ *    那是「新旧不配套」，会把这套用例全判成红（便携往返那轮为此白查过 6 轮）。
  *
  * 🔴 边界：只覆盖 portable。web-cloud 需要真实账号，web-guest 走 IndexedDB 无请求可拦，
  *    desktop 需真机或封装包 ⇒ 三者保持 blocked，**不得**把本脚本结果扩写成四端通过。
@@ -41,7 +46,17 @@ const BASE = `http://127.0.0.1:${PORT}`
 const TMP = path.join(ROOT, '.workbuddy', 'tmp')
 const appRoot = path.join(TMP, 'wf-app-' + runId)
 const outDir = path.join(TMP, 'wf-evidence', runId)
-const MARKER = '【故障注入测试】'
+/**
+ * 注入标记用 **ASCII**，不要用中文。
+ * 🔴 实测（4 轮里 2 轮红）：`keyboard.type('【故障注入测试】')` 打进受控 textarea 时会**漏字**
+ *    （截图里成了「【障注入测试】」），于是 hasMarker 永远 false、磁盘也永远读不到标记 ——
+ *    看起来像产品丢稿，其实是自动化喂字太快。ASCII + 每字符 delay 后 3 轮全稳。
+ */
+const MARKER = '[probe-write-failure]'
+/** 本轮构建的前端目录；不传则用仓库根 dist（可能过期，只适合人工临时跑） */
+const BUILD_DIR = path.resolve(argOf('--build-dir', path.join(ROOT, 'dist')))
+/** 矩阵要的运行时证据落点（默认落到本次 outDir） */
+const RESULT_FILE = argOf('--result-file', '')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const copyDir = (src, dst) => {
@@ -91,12 +106,14 @@ const readEditor = (page, tag) => page.evaluate((t) => {
   const leaf = [...document.querySelectorAll('*')]
     .filter((e) => !e.children.length && /保存|同步|失败|出错|未落盘/.test(e.textContent || ''))
     .map((e) => e.textContent.trim()).slice(0, 10)
-  return { tag: t, len: v.length, hasMarker: v.includes('【故障注入测试】'), leaf }
+  // tail 只为诊断：CJK 键入若被输入法/受控组件改写，看末尾就能一眼认出
+  return { tag: t, len: v.length, hasMarker: v.includes('[probe-write-failure]'), tail: v.slice(-24), leaf }
 }, tag)
 
 ;(async () => {
   fs.mkdirSync(outDir, { recursive: true })
-  copyDir(path.join(ROOT, 'dist'), path.join(appRoot, 'dist'))
+  fs.accessSync(path.join(BUILD_DIR, 'index.html'))
+  copyDir(BUILD_DIR, path.join(appRoot, 'dist'))
   step('prepare-root', { note: appRoot })
 
   const server = spawn(process.execPath, [path.join(ROOT, 'scripts', 'portable-server.mjs'), '--root', appRoot, '--port', String(PORT), '--no-open'], { stdio: 'ignore' })
@@ -139,7 +156,7 @@ const readEditor = (page, tag) => page.evaluate((t) => {
   await page.route('**/api/data', (r) => r.abort())
   await ta.click()
   await page.keyboard.press('Control+End')
-  await page.keyboard.type(MARKER)
+  await page.keyboard.type(MARKER, { delay: 30 })
   await sleep(4000)
   const failed = await readEditor(page, 'after-abort')
   await shot(page, '04-write-failed')
@@ -172,16 +189,17 @@ const readEditor = (page, tag) => page.evaluate((t) => {
   // ---------- 6. 产出证据 + 矩阵可认条目 ----------
   const passed = results.asserts.filter((a) => a.ok).length
   const allOk = passed === results.asserts.length && results.asserts.length >= 3
-  const evidencePath = path.join(outDir, 'results.json')
+  const evidencePath = RESULT_FILE ? path.resolve(RESULT_FILE) : path.join(outDir, 'results.json')
+  fs.mkdirSync(path.dirname(evidencePath), { recursive: true })
   fs.writeFileSync(evidencePath, JSON.stringify({
-    ...results, putCount: putLog.length, samples: 1,
+    ...results, putCount: putLog.length, samples: results.asserts.length,
     environment: `Windows · Playwright headless(msedge) · portable-server :${PORT} · run ${runId}`,
     status: allOk ? 'passed' : 'failed',
   }, null, 2))
   const sha256 = crypto.createHash('sha256').update(fs.readFileSync(evidencePath)).digest('hex')
   const relArtifact = path.relative(ROOT, evidencePath).replace(/\\/g, '/')
   fs.writeFileSync(path.join(outDir, 'ledger-entry.json'), JSON.stringify({
-    id: 'write-failure', profile: 'portable', status: allOk ? 'passed' : 'failed', samples: 1,
+    id: 'write-failure', profile: 'portable', status: allOk ? 'passed' : 'failed', samples: results.asserts.length,
     scenarios: ['accepted-vs-persisted', 'failure-preserves-draft', 'retry-readback'],
     environment: `Windows · Playwright headless(msedge) · portable-server :${PORT}`,
     artifact: { path: relArtifact, sha256 },

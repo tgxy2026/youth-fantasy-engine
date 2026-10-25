@@ -86,17 +86,26 @@ async function main() {
   /**
    * 进正文编辑器（与云端探针同一路径）：示范项目可能停在项目中心，也可能已经进项目。
    * 有「打开项目」就先开，再点导航里的「正文编辑」。
+   *
+   * 🔴 不能写成 `if (await opener.isVisible())` —— **isVisible() 不等待渲染**：
+   *    重启浏览器后 goto 刚回来时项目卡还没画出来，它立刻返回 false，于是跳过点击、
+   *    直接去等一个只有进项目后才会出现的 navigation，白等 40 秒判超时。
+   *    单跑时机器空闲、渲染快，看不出来；完整验收里同时跑别的探针时就会红（实测
+   *    `reliability-6YIUYD`：6 项里 5 项 PASS，只在这条上超时）。
+   *    改成「先等『打开项目』或导航任一个出现」，再决定要不要点。
    */
   const openEditor = async (page) => {
     const opener = page.getByRole('button', { name: '打开项目', exact: true }).first()
-    if (await opener.isVisible().catch(() => false)) {
-      await opener.click()
-      await page.getByRole('navigation').waitFor({ timeout: 40000 })
-    }
-    await page.getByRole('navigation').waitFor({ timeout: 40000 })
+    const nav = page.getByRole('navigation').first()
+    await Promise.race([
+      opener.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+      nav.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+    ])
+    if (await opener.isVisible().catch(() => false)) await opener.click()
+    await nav.waitFor({ timeout: 45000 })
     await dismiss(page)
     await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-    await page.getByPlaceholder(EDITOR).waitFor({ timeout: 40000 })
+    await page.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
   }
 
   try {
