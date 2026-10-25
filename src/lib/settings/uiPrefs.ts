@@ -99,7 +99,7 @@ export function usePersistedSet(
  *   ⚠️ 只同步「挂载中的同键 hook」；用 `readBoolPref` 直读的自持 state（如 MascotSettingsDialog
  *   的调用方）仍需回调里手动重读。
  */
-const PREF_EVENT = 'yfe-ui-pref'
+export const PREF_EVENT = 'yfe-ui-pref'
 
 export function usePersistedBool(key: string, def: boolean): [boolean, Dispatch<SetStateAction<boolean>>] {
   const [pair, setPair] = useState<{ key: string; v: boolean }>(() => ({ key, v: readBoolPref(key, def) }))
@@ -141,11 +141,13 @@ export function usePersistedBool(key: string, def: boolean): [boolean, Dispatch<
 }
 
 /** 写一个自由字符串偏好（读取侧一律走带校验的 readEnumPref，别直接 getItem） */
-export function writeStringPref(key: string, v: string): void {
+export function writeStringPref(key: string, v: string): boolean {
   try {
     localStorage.setItem(PREFIX + key, v)
+    return true
   } catch {
     /* 同 writeBoolPref：写不进去只影响跨会话记忆，不影响本次会话 */
+    return false
   }
 }
 
@@ -167,13 +169,28 @@ export function readStringPref(key: string): string | null {
  *    拿回来的就是 undefined —— 表现为"按 Tab 没反应"，且极难定位。
  *    偏好不好用不该让功能静默失效，所以非法值一律退回默认。
  */
-function readEnumPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+const volatileEnums = new Map<string, string>()
+
+export function clearEnumSession(key?: string): void {
+  if (key === undefined) volatileEnums.clear()
+  else volatileEnums.delete(key)
+}
+
+export function readEnumPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
-    const raw = localStorage.getItem(PREFIX + key)
+    const raw = volatileEnums.get(key) ?? localStorage.getItem(PREFIX + key)
     return allowed.includes(raw as T) ? (raw as T) : fallback
   } catch {
     return fallback
   }
+}
+
+/** Failed persistence still retains a validated enum for this application session, across component remounts. */
+export function writeEnumPref<T extends string>(key: string, value: T, allowed: readonly T[], fallback: T): T {
+  const next = allowed.includes(value) ? value : fallback
+  if (writeStringPref(key, next)) volatileEnums.delete(key)
+  else volatileEnums.set(key, next)
+  return next
 }
 
 /** 持久化的枚举字符串偏好（如编辑器的缩进单位）；默认值由调用方给，模块不替它猜 */
@@ -186,10 +203,34 @@ export function usePersistedEnum<T extends string>(
   if (pair.key !== key) {
     setPair({ key, v: readEnumPref(key, allowed, fallback) })
   }
+  useEffect(() => {
+    const sync = (e: Event) => {
+      let next: T
+      if (e.type === 'storage') {
+        const storageEvent = e as StorageEvent
+        if (storageEvent.key !== PREFIX + key && storageEvent.key !== null) return
+        clearEnumSession(key)
+        next = readEnumPref(key, allowed, fallback)
+      } else {
+        const detail = (e as CustomEvent<{ key: string; value?: string }>).detail
+        if (detail?.key !== key) return
+        // The event value keeps mounted controls in sync even when preferences cannot be persisted.
+        next = allowed.includes(detail.value as T) ? detail.value as T : readEnumPref(key, allowed, fallback)
+      }
+      setPair(prev => prev.key === key && prev.v === next ? prev : { key, v: next })
+    }
+    window.addEventListener(PREF_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(PREF_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [key, allowed, fallback])
   const update = useCallback((v: T) => {
-    writeStringPref(key, v)
-    setPair({ key, v })
-  }, [key])
+    const next = writeEnumPref(key, v, allowed, fallback)
+    setPair({ key, v: next })
+    window.dispatchEvent(new CustomEvent(PREF_EVENT, { detail: { key, value: next } }))
+  }, [key, allowed, fallback])
   return [pair.v, update]
 }
 

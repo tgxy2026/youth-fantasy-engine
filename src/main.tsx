@@ -7,6 +7,9 @@ import { installGlobalErrorHooks } from '@/lib/app/errorLog'
 import { installWebTabGuard } from '@/lib/app/tabGuard'
 import { installMobileHint } from '@/lib/app/mobileHint'
 import { installFileDropGuard } from '@/lib/app/dropGuard'
+import { initializeAppearance } from '@/lib/settings/appearance'
+
+initializeAppearance()
 
 // 全局错误留痕（2026-10-06 · 可观测性）：脚本错误与未处理的 Promise 拒绝都记进内存环形缓冲，
 // 供「关于打赏 → 复制诊断信息」带上。不落盘、不外发、不弹窗（取舍见 lib/errorLog.ts 顶部）。

@@ -41,6 +41,18 @@
   --color-amber: rgb(var(--amber));
   --color-amber-soft: rgb(var(--amber-soft));
 
+  /* 3.3.0 semantic roles: reuse every existing theme, including custom and strict mono. */
+  --color-surface-app: rgb(var(--ink-950));
+  --color-surface-nav: rgb(var(--ink-900));
+  --color-surface-panel: rgb(var(--ink-850));
+  --color-surface-raised: rgb(var(--ink-800));
+  --color-content-primary: rgb(var(--ink-100));
+  --color-content-secondary: rgb(var(--ink-300));
+  --color-content-muted: rgb(var(--ink-400));
+  --color-line-subtle: rgb(var(--ink-700));
+  --color-line-control: rgb(var(--ink-500));
+  --color-focus-ring: rgb(var(--amber));
+
   /* ---- 字体栈 ----
      2026-09-28 字体配置：栈首挂 CSS 变量（fontPrefs.ts 按需写入 --font-ui / --font-editor）。
      🔴 变量未定义时求值为括号内默认名 → 与旧版栈完全一致（零变化红线）。 */
@@ -795,5 +807,36 @@ button:disabled { cursor: not-allowed; }
   @apply border-amber/40 -translate-y-0.5;
   /* U-8 · 2.6.0：阴影色走 amber 变量（原写死默认主题 217,160,74，自定义主题下不跟随） */
   box-shadow: 0 4px 24px rgb(var(--amber) / 0.08);
+}
+
+/* Density is independent of zoom and manuscript typography. Compact deliberately preserves legacy sizes.
+   Content-sized buttons (navigation/cards) and bespoke micro-controls keep their own layout contract. */
+[data-density='comfortable'] {
+  --ui-control-xs: 28px;
+  --ui-control-sm: 36px;
+  --ui-control-md: 40px;
+  --ui-control-lg: 44px;
+}
+[data-density='comfortable'] [data-button-sizing]:not([data-button-sizing='content'])[data-button-size='xs'] { min-height: var(--ui-control-xs); }
+[data-density='comfortable'] [data-button-sizing]:not([data-button-sizing='content'])[data-button-size='sm'] { min-height: var(--ui-control-sm); }
+[data-density='comfortable'] [data-button-sizing]:not([data-button-sizing='content'])[data-button-size='md'] { min-height: var(--ui-control-md); }
+[data-density='comfortable'] [data-button-sizing]:not([data-button-sizing='content'])[data-button-size='lg'] { min-height: var(--ui-control-lg); }
+[data-density='comfortable'] [data-button-sizing='icon'][data-button-size='xs'] { min-width: var(--ui-control-xs); }
+[data-density='comfortable'] [data-button-sizing='icon'][data-button-size='sm'] { min-width: var(--ui-control-sm); }
+[data-density='comfortable'] [data-button-sizing='icon'][data-button-size='md'] { min-width: var(--ui-control-md); }
+[data-density='comfortable'] [data-button-sizing='icon'][data-button-size='lg'] { min-width: var(--ui-control-lg); }
+[data-density='comfortable'] [data-button-sizing='standard'][data-button-size='xs'] { font-size: 12px; }
+[data-density='comfortable'] [data-button-sizing='standard'][data-button-size='sm'] { font-size: 13px; }
+[data-density='comfortable'] [data-button-sizing='standard'][data-button-size='md'] { font-size: 14px; }
+[data-density='comfortable'] [data-button-sizing='standard'][data-button-size='lg'] { font-size: 15px; }
+[data-density='comfortable'] [data-ui-panel] { padding: 24px; }
+button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible {
+  outline: 2px solid rgb(var(--amber));
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .pulse-soft { animation: none; }
+  .card-hover { transition: none; }
+  .card-hover:hover { transform: none; }
 }
 

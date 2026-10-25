@@ -408,18 +408,24 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
-              <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{`这是「${tab.name}」大纲，按${noun}拆分规划：
+              <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{`${tab.description}
+
+这是「${tab.name}」大纲，按${noun}拆分规划：
 
 · 左侧目录用「新建${noun}」新增；悬停可上移 / 下移排序、删除、复制。
 · 编辑「卷名 / 章节号·标题」时会自动同步左侧目录名。
 · 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
 · 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。`}</HelpPopover>
             </div>
-            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">{tab.description}</p>
+            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">
+              <span className="hidden @min-[64rem]/workspace:inline">{tab.description}</span>
+              <span className="@min-[64rem]/workspace:hidden">按{noun}规划故事，选择目录后填写，修改后保存。完整说明见标题旁帮助。</span>
+            </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">
             <span className="text-11 text-ink-500">{records.length} 个{noun}</span>
-            <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
+            {/* Narrow toolbars already show the save button state; don't reserve another invisible status slot. */}
+            <span className={`hidden @min-[64rem]/workspace:inline text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
               <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
             </span>
             <FieldAliasButton

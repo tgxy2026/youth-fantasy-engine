@@ -41,8 +41,7 @@ import PlotCanvas from '@/components/outline/PlotCanvas'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
-import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
-import { applyStoredFontPrefs } from '@/lib/settings/fontPrefs'
+import { applyZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
 import { applyStoredNetProxy } from '@/lib/settings/netPrefs'
 import { loadPromptOverrides } from '@/lib/ai/promptSettings'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
@@ -299,11 +298,8 @@ export default function App() {
     })()
   }, [fileReady])
 
-  // 应用上次选择的主题、界面缩放与字体（在首次渲染前设置，避免闪烁）
+  // 外观已在 main.tsx 挂载 React 前应用；主进程代理仍在应用生命周期内同步。
   useEffect(() => {
-    applyTheme(getStoredTheme())
-    applyZoom(getStoredZoom())
-    applyStoredFontPrefs()   // 2026-09-28 · 字体配置：--font-editor / --font-ui（fontPrefs.ts）
     void applyStoredNetProxy()   // 2026-09-28 · 网络代理：主进程 session 代理每次启动由渲染层重推（仅桌面）
   }, [])
 

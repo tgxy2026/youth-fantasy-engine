@@ -13,13 +13,16 @@ const { chromium } = require('playwright')
 let sourceFingerprintOf = null // 在 main() 里动态加载（.cjs 不能顶层 await）
 const ROOT = path.resolve(__dirname, '../../..')
 async function main() {
+  const densityAt = process.argv.indexOf('--density')
+  const density = densityAt >= 0 ? process.argv[densityAt + 1] : 'compact'
+  if (!['compact', 'comfortable'].includes(density)) throw new Error('Expected --density compact|comfortable')
   sourceFingerprintOf = (await import('../platform/source.mjs')).snapshot
   /** `--result-file <path>`：把结果另存一份到固定路径，供验收执行器直接校验（3.2.6 接线用） */
   const ri = process.argv.indexOf('--result-file')
   const resultFile = ri >= 0 && process.argv[ri + 1] && !process.argv[ri + 1].startsWith('--') ? path.resolve(process.argv[ri + 1]) : null
   for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']) delete process.env[k]
   const out = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/workspace-layout-'))
-  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, out, cases: [], errors: [] }
+  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, density, out, cases: [], errors: [] }
   let server, browser
   try {
     const { createServer } = await import('vite')
@@ -46,6 +49,11 @@ async function main() {
     await page.getByRole('navigation').waitFor()
     const later = page.getByRole('button', { name: '稍后再说', exact: true })
     if (await later.isVisible()) await later.click()
+    await page.evaluate(async value => {
+      const { DENSITIES, DENSITY_PREF, applyDensity } = await import('/src/lib/settings/density.ts')
+      const { writeEnumPref } = await import('/src/lib/settings/uiPrefs.ts')
+      applyDensity(writeEnumPref(DENSITY_PREF, value, DENSITIES, 'compact'))
+    }, density)
     // 不能只验酒馆空态：通过真实存储入口建立故事、角色和一场已有对话。
     await page.evaluate(async () => {
       const story = await import('/src/lib/tavern/story.ts')
@@ -94,7 +102,7 @@ async function main() {
           if (header && header.height > m.height * .6) issues.push({ kind: 'header-crowding', height: header.height })
           return { mainWidth: m.width, mainHeight: m.height, scrollWidth: main.scrollWidth, headerHeight: header?.height, issues }
         })
-        const row = { ...scenario, ...tab, ...measurement }
+        const row = { ...scenario, density, ...tab, ...measurement }
         result.cases.push(row)
         if (measurement.issues.length || ['editor','dashboard','char-main','worldbase','positioning','volume-outline','tavern-free','creative-writing','trajectory','geography-map'].includes(tab.id)) {
           row.screenshot = `${scenario.width}-${scenario.zoom}-${tab.id}.png`

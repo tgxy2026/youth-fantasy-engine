@@ -27,6 +27,7 @@ import { APP_VERSION_LABEL } from '@/lib/app/env'
 import { Button } from '@/components/common/Button'
 import CustomThemeDialog from '@/components/settings/CustomThemeDialog'
 import FontSettingsDialog from '@/components/settings/FontSettingsDialog'
+import DensityControl from '@/components/settings/DensityControl'
 import TaskIndicator from '@/components/common/TaskIndicator'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
@@ -378,6 +379,7 @@ style={{ zIndex: Z.pageBase }}
             ))}
           </div>
           <AppearanceToggles />
+          <DensityControl />
           </div>
         </section>
 

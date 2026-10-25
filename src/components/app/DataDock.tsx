@@ -13,6 +13,7 @@ import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import DensityControl from '@/components/settings/DensityControl'
 
 /**
  * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。
@@ -85,6 +86,7 @@ export default function DataDock() {
           )}
 
           <div className="flex flex-col gap-1.5">
+            <DensityControl />
             <div className="flex items-center gap-1.5 text-xs text-ink-300">
               {/* 标题随形态变：桌面/便携说「本机」，云端说「云端」，游客说「本地」 */}
               <span className="font-medium">

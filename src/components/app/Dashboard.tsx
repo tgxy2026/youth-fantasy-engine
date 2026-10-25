@@ -19,6 +19,7 @@ import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '@/lib/ai/aiTasks'
 import { Button } from '@/components/common/Button'
+import PageHeader from '@/components/common/PageHeader'
 import { LoadingState } from '@/components/common/LoadingState'
 import { useWordCountWithPunct } from '@/lib/editor/wordCountMode'
 import { countWords } from '@/lib/editor/textStats'
@@ -302,15 +303,11 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">写作面板</h1>
+      <PageHeader title="写作面板" description="继续创作，掌握作品进度。" help={
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
             {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
-        </div>
-        <p className="mt-1 text-13 text-ink-300">创作全景一览 · 数据实时同步自各页签</p>
-      </header>
+      } />
 
       <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
         foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} />
@@ -338,16 +335,16 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
       {/* 统计卡 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {statCards.filter(c => !(c.label === '未回收伏笔' && !showForeshadowCard)).map(card => (
-          <div key={card.label} className="bg-ink-850 border border-ink-700 rounded-xl p-4 card-hover">
+          <div key={card.label} className="bg-surface-panel border border-line-subtle rounded-xl p-4 card-hover">
             <div className={`flex items-center gap-2 ${card.color}`}>
               {card.icon}
-              <span className="text-11 text-ink-400">{card.label}</span>
+              <span className="text-13 text-content-secondary">{card.label}</span>
               <HelpPopover title={card.label} width="18rem" size={11}>
                 {card.help}
               </HelpPopover>
             </div>
-            <div className="mt-2 text-2xl font-bold text-ink-50 tracking-tight">{card.value}</div>
-            <div className="mt-1 text-10 text-ink-500">{card.sub}</div>
+            <div className="mt-2 text-2xl font-semibold text-content-primary tracking-tight">{card.value}</div>
+            <div className="mt-1 text-12 text-content-muted">{card.sub}</div>
           </div>
         ))}
       </div>
