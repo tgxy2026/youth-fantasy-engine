@@ -9,7 +9,7 @@
 //
 // 🔴 已知缺口（不在本文件断言）：`importGuestData` 只接受数组形态，喂键化形态会**先清空再导入空**。
 //    实测见 `tests/importGuestShapeProbe.ts`（手动探针）与
-//    `docs/3.2.3-R4游客导入形态缺口-2026-10-24.md`。这里不写成红用例，避免把已知缺陷混进绿灯基线。
+//    `docs/归档/3.2/3.2.3-R4游客导入形态缺口-2026-10-24.md`。这里不写成红用例，避免把已知缺陷混进绿灯基线。
 import { normalizePortableData, keyOfRecord, isPortableDataFile } from '../src/lib/storage/storeOps'
 import { ops } from '../src/lib/db/core'
 import { importGuestData, guestDataObject } from '../src/lib/db/guestData'

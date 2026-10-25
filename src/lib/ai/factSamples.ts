@@ -7,7 +7,7 @@
 //
 // 🔴 隐私边界：真实样本放**本地不入库**的 `.workbuddy/eval-samples/samples.json`
 //    （与 `.workbuddy/` 同级，git 忽略）；**绝不进 `src/`、绝不进 docs/**。
-//    规范见 `docs/3.2.0-WQ8-固定样本对照-评测集规范-2026-10-21.md`。
+//    规范见 `docs/归档/3.2/3.2.0-WQ8-固定样本对照-评测集规范-2026-10-21.md`。
 
 import type { FixedSample } from './qualityGuard'
 
