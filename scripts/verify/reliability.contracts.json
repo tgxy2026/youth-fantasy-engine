@@ -21,7 +21,7 @@
     { "id": "storage.desktop-save", "stage": "business", "minAssertions": 20 },
     { "id": "storage.web-cloud-save", "stage": "business", "minAssertions": 38 },
     { "id": "identity.cloud-conditional", "stage": "business", "minAssertions": 30 },
-    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置保存故障与端到端导出→导入均已各自取证；roundtrip 的四个子场景（schema-version/sidecars/secret-stripping/restore-failure）已在 portable 与 web-guest 两端跑通并点亮矩阵格。仍缺：desktop 与 web-cloud 的同样四子场景，以及在途编辑、切项目、关窗时的写失败 —— 所以仍报四配置未全部完成" },
+    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置的保存故障、端到端导出→导入、以及 roundtrip 四个子场景（schema-version/sidecars/secret-stripping/restore-failure）均已各自取证，矩阵 roundtrip/* 四格全亮。仍缺：在途编辑、切项目、关窗时的写失败（四配置均未覆盖），以及安装包/实体设备的真实环境 —— 故仍报四配置未全部完成" },
     { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
     { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
     { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 与 portable 均已接条件写（单服务进程内的版本比较 + 原子替换、冲突停写保草稿、退出带前置条件），并各有测试与探针；仍未覆盖：真实关页在途、多服务进程共享同一数据目录、sidecar 并发。synthetic beforeunload 不计为真实关页，concurrency 格暂不提升" },

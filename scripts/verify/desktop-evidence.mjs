@@ -8,10 +8,15 @@ export const DESKTOP_CASE_IDS = [
   'recovery-barrier', 'recovery-visible', 'backend-selection', 'restart-readback',
   // 端到端往返：真实导出 → 改库落盘 → 真实导入 → 重启回读
   'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback', 'roundtrip-restart-readback',
+  // roundtrip 四子场景（3.2.6）：外置载荷 / 密钥剥离 / 格式版本闸 / 损坏文件
+  'sidecars.seeded', 'sidecars.inlined-on-export', 'sidecars.restored-after-import',
+  'secret-stripping.secret-present-before', 'secret-stripping.absent-after-export',
+  'schema-version.reject-newer', 'schema-version.data-unchanged',
+  'restore-failure.corrupt-rejected', 'restore-failure.data-unchanged',
   'no-pageerror', 'unchanged-inputs',
 ]
 export const DESKTOP_ARTIFACTS = ['write-failure.png', 'failure-export.png', 'restart-readback.png',
-  'roundtrip-import.png', 'failure-export.json', 'roundtrip-export.json', 'chapter-readback.json',
+  'roundtrip-import.png', 'rejected-imports.png', 'failure-export.json', 'roundtrip-export.json', 'chapter-readback.json',
   'ipc-before-restart.json', 'filesystem-before-restart.json', 'save-barriers.json', 'electron.log']
 const within = (root, file) => { const relative = path.relative(root, file); return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative) }
 

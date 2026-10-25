@@ -10,6 +10,8 @@ const ROOT = path.resolve(__dirname, '../../..')
 const PID = 'desktop-save-project', VID = 'desktop-save-volume', CH = 'desktop-save-chapter'
 const TITLE = '桌面保存故障临时作品', ORIGINAL = '隔离桌面模式的原始手稿。'
 const DRAFT = '桌面写盘失败时仍保留这份草稿，恢复后无需重新输入。'
+/** 密钥剥离场景用的假密钥（只为证明它不会出现在导出文件里） */
+const SECRET = 'sk-probe-desktop-secret-do-not-export'
 const AFTER = '导入之前先改成这样，看导入能不能把它换回导出那一刻。'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
 const EXPORT_TITLE = '导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑'
@@ -200,12 +202,49 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     // 全程真实 UI + 真实文件；只把文件选择器的目的地指到本次临时目录（原生弹窗无法自动化）。
     {
       const roundtripFile = path.join(runRoot, 'roundtrip-export.json')
+
+      // ---------- 子场景 ①：sidecars（桌面把备份载荷外置成文件，导出必须内联回来）----------
+      // 桌面与便携的取舍不同：vec/kb 留在独立 IDB（按设计不进整库 JSON），
+      // 真正外置的是 backupPayloads（per-id 一份一个文件）。这里经**真实 IPC** 写一条载荷，
+      // 再要求导出把它内联、导入把它拆回 —— 与便携侧那套同构。
+      const PAYLOAD_ID = 'payload-probe-1'
+      const payloadBody = JSON.stringify({ id: PAYLOAD_ID, projectId: PID, chapters: [{ id: 'c-payload', content: '外置载荷探针' }], at: 1 })
+      await page.evaluate(({ id, body }) => window.electronStore.payloadWrite('backupPayloads', id, body), { id: PAYLOAD_ID, body: payloadBody })
+      const payloadListed = await page.evaluate(() => window.electronStore.payloadList('backupPayloads'))
+      check('sidecars.seeded', Array.isArray(payloadListed?.ids) && payloadListed.ids.includes('payload-probe-1'), JSON.stringify(payloadListed).slice(0, 120))
+
+      // ---------- 子场景 ②：secret-stripping 的种子 ----------
+      // 密钥住在数据文件的 meta 行里，只能让应用**从文件里读**才能证明"导出会剥掉"。
+      // 所以：关掉应用 → 直接往数据文件塞一行 → 重新启动（应用读到的就是这枚密钥）。
+      await app.close(); app = null
+      {
+        const raw = JSON.parse(await fs.readFile(activeFile, 'utf8'))
+        raw.stores = raw.stores || {}
+        raw.stores.meta = raw.stores.meta || {}
+        raw.stores.meta.aiProviders = { key: 'aiProviders', value: { activeId: 'probe', providers: [{ id: 'probe', apiKey: SECRET }] } }
+        await fs.writeFile(activeFile, JSON.stringify(raw))
+      }
+      await launch()
+      const seededFile = await fs.readFile(activeFile, 'utf8')
+      check('secret-stripping.secret-present-before', seededFile.includes(SECRET), '数据文件里应能看到播种的密钥')
+
       await app.evaluate((_electron, target) => { global.__desktopProbe.savePath = target }, roundtripFile)
       await page.getByTitle(EXPORT_TITLE, { exact: true }).click()
       await until(async () => {
         try { return chapterOf(await fs.readFile(roundtripFile, 'utf8'))?.content === DRAFT } catch { return false }
       }, 20000)
       check('roundtrip-export', true, 'exported snapshot holds the current draft')
+
+      const exportedJson = JSON.parse(await fs.readFile(roundtripFile, 'utf8'))
+      const exportedPayloads = exportedJson?.stores?.backupPayloads
+      const exportedPayloadList = Array.isArray(exportedPayloads) ? exportedPayloads : Object.values(exportedPayloads ?? {})
+      check('sidecars.inlined-on-export', exportedPayloadList.some(row => row && row.id === PAYLOAD_ID),
+        `导出 ${exportedPayloadList.length} 份载荷${exportedPayloadList.some(r => r && r.id === PAYLOAD_ID) ? '（含探针载荷）' : '（缺探针载荷）'}`)
+      const exportedMeta = exportedJson?.stores?.meta
+      const exportedMetaKeys = Array.isArray(exportedMeta) ? exportedMeta.map(r => String(r?.key ?? '')) : Object.keys(exportedMeta ?? {})
+      check('secret-stripping.absent-after-export',
+        !(await fs.readFile(roundtripFile, 'utf8')).includes(SECRET) && !exportedMetaKeys.includes('aiProviders'),
+        `meta 含 aiProviders=${exportedMetaKeys.includes('aiProviders')}`)
 
       // 先把库改成别的样子 —— 不改的话，「导入回到导出那一刻」什么都证明不了
       await page.getByPlaceholder(EDITOR).fill(AFTER)
@@ -227,6 +266,41 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
         && chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT,
         await page.getByPlaceholder(EDITOR).inputValue())
       await page.screenshot({ path: path.join(runRoot, 'roundtrip-import.png') })
+
+      // 导入的文件里载荷是内联的 ⇒ 导入后必须再拆回外置文件，否则每次导入都把外置数据搬回主 JSON
+      let payloadRestored = false
+      for (let i = 0; i < 40; i++) {
+        const listed = await page.evaluate(() => window.electronStore.payloadList('backupPayloads'))
+        if (Array.isArray(listed?.ids) && listed.ids.includes('payload-probe-1')) {
+          const back = await page.evaluate(() => window.electronStore.payloadRead('backupPayloads', 'payload-probe-1'))
+          if (back?.ok && JSON.stringify(back.value) === payloadBody) { payloadRestored = true; break }
+        }
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+      check('sidecars.restored-after-import', payloadRestored, '导入后外置载荷应回到文件里且内容一致')
+
+      // ---------- 子场景 ③④：两个必须被拒的导入（版本闸 / 损坏文件）----------
+      const beforeReject = await fs.readFile(activeFile, 'utf8')
+      const importExpectRefusal = async (file, pattern, label) => {
+        await app.evaluate((_electron, target) => { global.__desktopProbe.savePath = target }, file)
+        await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+        await page.getByRole('button', { name: '继续导入', exact: true }).click()
+        const toast = page.getByText(pattern).first()
+        await toast.waitFor({ timeout: 25000 })
+        check(label, true, ((await toast.textContent()) || '').trim().slice(0, 120))
+      }
+      const newerVersionFile = path.join(runRoot, 'newer-version.json')
+      await fs.writeFile(newerVersionFile, JSON.stringify({ ...exportedJson, fileVersion: 999 }))
+      await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
+      const afterVersionReject = await fs.readFile(activeFile, 'utf8')
+      check('schema-version.data-unchanged', beforeReject === afterVersionReject, '被拒的导入居然改动了数据文件')
+
+      const corruptFile = path.join(runRoot, 'corrupt.json')
+      await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
+      await importExpectRefusal(corruptFile, /已损坏/, 'restore-failure.corrupt-rejected')
+      const afterCorruptReject = await fs.readFile(activeFile, 'utf8')
+      check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject, '损坏文件被拒后数据文件却变了')
+      await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
 
       await app.close(); app = null
       await launch()
@@ -250,7 +324,16 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     await fs.writeFile(path.join(runRoot, 'electron.log'), runtimeLog)
     const artifacts = []
     for (const file of await fs.readdir(runRoot)) if (/\.(png|json|log)$/.test(file) && !['result.json', 'package.json'].includes(file)) artifacts.push({ path: path.relative(ROOT, path.join(runRoot, file)), sha256: hash(await fs.readFile(path.join(runRoot, file))) })
-    const result = { schemaVersion: 1, profile: 'desktop', scope: 'Production build via file URL; real Electron main/preload/IPC/files; rename blocked by isolated empty directory; chooser destination stubbed, no native-dialog/install/disk-full claim', runRoot, sourceFingerprint, build, buildManifest, at: new Date().toISOString(), passed: checks.filter(item => item.passed).length, failed: checks.filter(item => !item.passed).length + (error ? 1 : 0), checks, artifacts, pageErrors, error }
+    // 场景清单**算出来**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵据此比对 policy）
+    const scenarioGroups = {
+      'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
+      sidecars: ['sidecars.seeded', 'sidecars.inlined-on-export', 'sidecars.restored-after-import'],
+      'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],
+      'restore-failure': ['restore-failure.corrupt-rejected', 'restore-failure.data-unchanged'],
+    }
+    const passedIds = new Set(checks.filter(item => item.passed).map(item => item.id))
+    const scenarios = Object.entries(scenarioGroups).filter(([, ids]) => ids.every(id => passedIds.has(id))).map(([name]) => name)
+    const result = { schemaVersion: 1, profile: 'desktop', scenarios, scope: 'Production build via file URL; real Electron main/preload/IPC/files; rename blocked by isolated empty directory; chooser destination stubbed, no native-dialog/install/disk-full claim', runRoot, sourceFingerprint, build, buildManifest, at: new Date().toISOString(), passed: checks.filter(item => item.passed).length, failed: checks.filter(item => !item.passed).length + (error ? 1 : 0), checks, artifacts, pageErrors, error }
     const target = path.join(runRoot, 'result.json')
     await fs.writeFile(target, JSON.stringify(result, null, 2))
     if (output) await fs.writeFile(path.resolve(output), JSON.stringify(result, null, 2))

@@ -62,9 +62,12 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
    *    与 policy.json 里该 case 要求的场景逐条比对，缺任何一项直接失败 ——
    *    宁可这一格不亮，也不许拿"跑过了"冒充"四个场景都验了"。
    */
-  async function promoteRoundtrip(prefix, profile) {
+  async function promoteRoundtrip(prefix, profile, sourceFile) {
     const policy = JSON.parse(await fs.readFile(path.join(realRoot, 'scripts/audit/platform/policy.json'), 'utf8'))
     const required = policy.runtimeCases.find((c) => c.id === 'roundtrip')?.scenarios ?? []
+    // 桌面/云端是**同一轮探针**同时产出 write-failure 与 roundtrip 的证据：复制一份再按不同
+    // prefix 提升，避免同一台机器跑两遍 Electron/浏览器（也保证两份证据来自同一轮源码与构建）。
+    if (sourceFile) await fs.copyFile(sourceFile, path.join(runRoot, prefix + '-runtime.json'))
     const payload = JSON.parse(await fs.readFile(path.join(runRoot, prefix + '-runtime.json'), 'utf8'))
     const declared = Array.isArray(payload.scenarios) ? payload.scenarios : []
     const missing = required.filter((s) => !declared.includes(s))
@@ -215,6 +218,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
       await auditRuntime('desktop', 'desktop', ['boot-store', 'write-failure'], process.platform + '; isolated Electron appData/userData; production file renderer; real preload/IPC/filesystem failure, draft export and process restart; native chooser destination stubbed')
+      await promoteRoundtrip('desktop-rt', 'desktop', path.join(runRoot, 'desktop-runtime.json'))
       return verified.assertions
     }],
     // 3.2.3 · R4：web-cloud —— 真实本地 server + 临时账号 + 两个独立浏览器上下文。
@@ -224,6 +228,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
         expectedBuildHash: report.build.sha256, expectedSourceFingerprint: snapshot(realRoot).fingerprint,
       })
       await auditRuntime('web-cloud', 'web-cloud', ['boot-store', 'account-isolation', 'write-failure'], process.platform + '; isolated local server and data dir; throwaway accounts; two independent browser contexts; real sessions/cookies; real quota rejection and real data-file rename failure; browser process restart; no production account')
+      await promoteRoundtrip('cloud-rt', 'web-cloud', path.join(runRoot, 'web-cloud-runtime.json'))
       return verified.assertions
     }],
     // 3.2.3 · R4：端到端导出→导入（桌面 + 云端）。

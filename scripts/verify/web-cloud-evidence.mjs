@@ -17,6 +17,11 @@ export const WEB_CLOUD_CASE_IDS = [
   'retry-readback', 'recovery-visible',
   // 端到端往返：浏览器真实下载 → 改库落盘 → 真实选文件导入 → 回读
   'roundtrip-export', 'roundtrip-changed', 'roundtrip-import-readback',
+  // roundtrip 四子场景（3.2.6）：侧车内联/拆回、密钥剥离、格式版本闸、损坏文件
+  'sidecars.seeded', 'sidecars.inlined-on-export', 'sidecars.restored-after-import',
+  'secret-stripping.secret-present-before', 'secret-stripping.absent-after-export',
+  'schema-version.reject-newer', 'schema-version.data-unchanged',
+  'restore-failure.corrupt-rejected', 'restore-failure.data-unchanged',
   'two-tabs-conditional-write', 'stale-save-rejected', 'conflict-keeps-draft', 'conflict-preserves-server',
   'conflict-export', 'conflict-stops-retry', 'conflict-leave-blocked',
   'no-pageerror', 'unchanged-inputs',

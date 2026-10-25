@@ -56,6 +56,10 @@ const ORIGINAL = '隔离云端模式的原始手稿。'
 const DRAFT = '云端配额超限时仍保留这份草稿。'
 const DRAFT2 = '服务端写盘失败时同样保留这份草稿。'
 const AFTER = '导入之前先改成这样，看导入能不能把它换回导出那一刻。'
+/** 密钥剥离场景用的假密钥（只为证明它不会出现在导出文件里） */
+const SECRET = 'sk-probe-cloud-secret-do-not-export'
+/** 侧车场景的向量行（云端与便携一样把 vecRows 外置到 /api/blob） */
+const VEC_ID = 'vec-probe-1'
 const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）'
 const EXPORT_TITLE = '导出全部数据：下载一个 JSON 文件（与桌面版格式一致，可直接导入桌面版）'
 const IMPORT_TITLE = '导入数据文件：选择之前导出的 JSON，替换云端账号的全部数据'
@@ -459,11 +463,56 @@ process.on('message',async message=>{
     {
       const roundtripFile = path.join(runRoot, 'roundtrip-export.json')
       const editor = A.page.getByPlaceholder(EDITOR)
+
+      // ---------- 播种：密钥 + 侧车（走页面自己的登录会话，与产品同一条接口）----------
+      // 不先放一枚密钥 / 一行向量，「导出里没有密钥」「侧车有没有内联」都是空话。
+      const seeded = await A.page.evaluate(async ({ SECRET, VEC_ID }) => {
+        const get = await fetch('/api/data', { cache: 'no-store' })
+        const etag = get.headers.get('etag') || ''
+        const j = await get.json()
+        const file = JSON.parse(j.text)
+        file.stores = file.stores || {}
+        const metaRows = file.stores.meta
+        const asMap = Array.isArray(metaRows)
+          ? Object.fromEntries(metaRows.filter(r => r && r.key).map(r => [r.key, r]))
+          : { ...(metaRows || {}) }
+        asMap.aiProviders = { key: 'aiProviders', value: { activeId: 'probe', providers: [{ id: 'probe', apiKey: SECRET }] } }
+        file.stores.meta = asMap
+        const put = await fetch('/api/data', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'If-Match': etag },
+          body: JSON.stringify(file),
+        })
+        const blob = await fetch('/api/blob?store=vecRows&id=__all__', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([{ id: VEC_ID, projectId: 'probe', dim: 3, vector: [0.1, 0.2, 0.3], updatedAt: 1 }]),
+        })
+        return { put: put.status, blob: blob.status, secretInFile: JSON.stringify(file).includes(SECRET) }
+      }, { SECRET, VEC_ID })
+      check('sidecars.seeded', seeded.put === 200 && seeded.blob === 200, JSON.stringify(seeded))
+
+      // 重新载入，让应用读到的就是这份带密钥的库
+      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      check('secret-stripping.secret-present-before', (await fs.readFile(activeDataFile, 'utf8')).includes(SECRET), '服务端数据文件里应能看到播种的密钥')
+
       const downloadPromise = A.page.waitForEvent('download', { timeout: 30000 })
       await A.page.getByTitle(EXPORT_TITLE, { exact: true }).click()
       await (await downloadPromise).saveAs(roundtripFile)
       const exported = chapterContent(await fs.readFile(roundtripFile, 'utf8'))
       check('roundtrip-export', exported === DRAFT2, String(exported))
+
+      const exportedText = await fs.readFile(roundtripFile, 'utf8')
+      const exportedJson = JSON.parse(exportedText)
+      const exportedVec = exportedJson?.stores?.vecRows
+      const exportedVecList = Array.isArray(exportedVec) ? exportedVec : Object.values(exportedVec ?? {})
+      check('sidecars.inlined-on-export', exportedVecList.some(row => row && row.id === VEC_ID),
+        `导出 ${exportedVecList.length} 行向量${exportedVecList.some(r => r && r.id === VEC_ID) ? '（含探针行）' : '（缺探针行）'}`)
+      const exportedMeta = exportedJson?.stores?.meta
+      const exportedMetaKeys = Array.isArray(exportedMeta) ? exportedMeta.map(r => String(r?.key ?? '')) : Object.keys(exportedMeta ?? {})
+      check('secret-stripping.absent-after-export',
+        !exportedText.includes(SECRET) && !exportedMetaKeys.includes('aiProviders'),
+        `文件里含密钥=${exportedText.includes(SECRET)} / meta 含 aiProviders=${exportedMetaKeys.includes('aiProviders')}`)
 
       await editor.fill(AFTER)
       await A.page.keyboard.press('Control+s')
@@ -484,6 +533,44 @@ process.on('message',async message=>{
       check('roundtrip-import-readback',
         shown === DRAFT2 && chapterContent(await fs.readFile(activeDataFile, 'utf8')) === DRAFT2, shown)
       await A.page.screenshot({ path: path.join(runRoot, 'roundtrip-import.png') })
+
+      // 导入时侧车内联在单文件里 ⇒ 导入后必须再拆回 blob
+      let vecRestored = false
+      for (let i = 0; i < 80; i++) {
+        const rows = await A.page.evaluate(async ({ VEC_ID }) => {
+          const r = await fetch('/api/blob?store=vecRows&id=__all__', { cache: 'no-store' })
+          if (!r.ok) return []
+          const j = await r.json().catch(() => ({}))
+          return Array.isArray(j.value) ? j.value.map(row => row && row.id) : []
+        }, { VEC_ID })
+        if (rows.includes(VEC_ID)) { vecRestored = true; break }
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+      check('sidecars.restored-after-import', vecRestored, '导入后侧车 blob 里应有探针向量行')
+
+      // ---------- 两个必须被拒的导入（版本闸 / 损坏文件）----------
+      const beforeReject = await fs.readFile(activeDataFile, 'utf8')
+      const importExpectRefusal = async (file, pattern, label) => {
+        await A.page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+        const chooserInner = A.page.waitForEvent('filechooser', { timeout: 30000 })
+        await A.page.getByRole('button', { name: '继续导入', exact: true }).click()
+        await (await chooserInner).setFiles(file)
+        const toast = A.page.getByText(pattern).first()
+        await toast.waitFor({ timeout: 25000 })
+        check(label, true, ((await toast.textContent()) || '').trim().slice(0, 120))
+      }
+      const newerVersionFile = path.join(runRoot, 'newer-version.json')
+      await fs.writeFile(newerVersionFile, JSON.stringify({ ...exportedJson, fileVersion: 999 }))
+      await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
+      const afterVersionReject = await fs.readFile(activeDataFile, 'utf8')
+      check('schema-version.data-unchanged', beforeReject === afterVersionReject, '被拒的导入居然改动了云端数据文件')
+
+      const corruptFile = path.join(runRoot, 'corrupt.json')
+      await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
+      await importExpectRefusal(corruptFile, /已损坏/, 'restore-failure.corrupt-rejected')
+      const afterCorruptReject = await fs.readFile(activeDataFile, 'utf8')
+      check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject, '损坏文件被拒后云端数据文件却变了')
+      await A.page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
     }
 
     // Real UI writes from two tabs sharing a session; no direct API PUT stands in for editing.
@@ -542,8 +629,17 @@ process.on('message',async message=>{
       if (!/\.(png|json|log)$/.test(file) || file === 'result.json') continue
       artifacts.push({ path: path.relative(ROOT, path.join(runRoot, file)), sha256: hash(await fs.readFile(path.join(runRoot, file))) })
     }
+    // 场景清单**算出来**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵据此比对 policy）
+    const scenarioGroups = {
+      'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
+      sidecars: ['sidecars.seeded', 'sidecars.inlined-on-export', 'sidecars.restored-after-import'],
+      'secret-stripping': ['secret-stripping.secret-present-before', 'secret-stripping.absent-after-export'],
+      'restore-failure': ['restore-failure.corrupt-rejected', 'restore-failure.data-unchanged'],
+    }
+    const passedIds = new Set(checks.filter(item => item.passed).map(item => item.id))
+    const scenarios = Object.entries(scenarioGroups).filter(([, ids]) => ids.every(id => passedIds.has(id))).map(([name]) => name)
     const result = {
-      schemaVersion: 1, profile: 'web-cloud',
+      schemaVersion: 1, profile: 'web-cloud', scenarios,
       scope: 'Production renderer; actual local server with isolated data dir and throwaway accounts; real sessions/cookies; two independent browser contexts; no production account or service touched',
       runRoot, sourceFingerprint, build, buildManifest, at: new Date().toISOString(),
       passed: checks.filter(item => item.passed).length,
