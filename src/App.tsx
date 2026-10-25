@@ -533,11 +533,11 @@ export default function App() {
 
   const renderContent = () => {
     if (activeTab === 'dashboard') {
-      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
+      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} projectName={projectName} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
     }
     const guardTab = getTab(activeTab)
     if (guardTab && !tabVisible(guardTab.id, visCtx)) {
-      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
+      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} projectName={projectName} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
     }
     if (activeTab === 'editor') {
       return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} ctx={visCtx} />

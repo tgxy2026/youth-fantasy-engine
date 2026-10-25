@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, Compass, FileText, History } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
@@ -20,11 +20,13 @@ interface Props {
   ctx: VisCtx
   onNavigate: (id: string, chapterId?: string) => void
   onExport: () => void | Promise<void>
+  /** The dashboard owns its metrics; this slot places them ahead of optional planning panels. */
+  summary?: ReactNode
 }
 
 const finished = new Set<Chapter['status']>(['完稿', '已发布'])
 
-export default function WritingWorkflow({ projectId, chapters, chapterOutlines, volumes, ideas, foreshadows, ctx, onNavigate, onExport }: Props) {
+export default function WritingWorkflow({ projectId, chapters, chapterOutlines, volumes, ideas, foreshadows, ctx, onNavigate, onExport, summary }: Props) {
   const [guideHidden, setGuideHidden] = usePersistedBool(`writing-guide-hidden:${projectId}`, chapters.length > 0)
   const [ignored, setIgnored] = useState<Set<string>>(() => new Set(readSetPref(`writing-next-ignored:${projectId}`) ?? []))
   const [snoozed, setSnoozed] = useState<Record<string, number>>(() => {
@@ -46,11 +48,13 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     const tab = getTab(id)
     return !tab || tabVisible(tab.id, ctx)
   }
-  const recent = useMemo(() => {
+  const { recent, recentSource } = useMemo(() => {
     const lastOpened = readStringPref(`editor-last-chapter:${projectId}`)
-    return chapters.find(c => c.id === lastOpened) ?? [...chapters].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    const opened = chapters.find(c => c.id === lastOpened)
+    return { recent: opened ?? [...chapters].sort((a, b) => b.updatedAt - a.updatedAt)[0], recentSource: opened ? '最近打开' : '最近更新' }
   }, [chapters, projectId])
   const recentVolume = volumes.find(v => v.id === recent?.volumeId)
+  const recentTimestamp = recent && Number.isFinite(recent.updatedAt) && recent.updatedAt > 0 ? recent.updatedAt : null
   const unfinished = useMemo(() => [...chapters].filter(c => !finished.has(c.status)).sort((a, b) => b.updatedAt - a.updatedAt)[0], [chapters])
   const unusedIdeas = ideas.filter(r => r.data['状态'] === '未用').length
   const openForeshadows = foreshadows.filter(r => r.data['状态'] === '未回收').length
@@ -60,7 +64,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     ...(unfinished ? [{ key: `chapter:${unfinished.id}`, title: `继续「${unfinished.title || '未命名章'}」`, detail: `${unfinished.status} · ${unfinished.wordCount} 字`, tab: 'editor', chapterId: unfinished.id }] : []),
     ...(unusedIdeas > 0 && visible('ideas') ? [{ key: 'ideas', title: `查看 ${unusedIdeas} 条未用灵感`, detail: '来自灵感素材', tab: 'ideas', chapterId: undefined }] : []),
     ...(openForeshadows > 0 && visible('foreshadow') ? [{ key: 'foreshadow', title: `点检 ${openForeshadows} 条未回收伏笔`, detail: '来自伏笔追踪', tab: 'foreshadow', chapterId: undefined }] : []),
-  ].filter(i => !ignored.has(i.key) && !(snoozed[i.key] > Date.now()))
+  ].filter(i => i.key !== 'create' && i.key !== `chapter:${recent?.id}` && !ignored.has(i.key) && !(snoozed[i.key] > Date.now()))
 
   const dismiss = (key: string) => {
     const next = new Set(ignored)
@@ -108,26 +112,43 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
 
   return (
     <div className="space-y-4 mb-6">
-      <Panel>
+      <Panel className="border-amber/25" aria-labelledby="continue-writing-title" data-continue-writing>
         {/* 🔴 快捷钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
             钮紧随 h2（gap-2）；窗口不够时 flex-wrap 让它整条落到下一行，也不挤成一条缝。 */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2"><Compass size={14} className="text-amber" /> 继续创作</h2>
-          {recent && <Button variant="bare" className="text-11 text-amber" onClick={() => onNavigate('editor', recent.id)}>
-            回到{recentVolume?.title ? `「${recentVolume.title}」` : ''}{recent.title || '未命名章'} <ChevronRight size={12} />
-          </Button>}
+          <h2 id="continue-writing-title" className="text-14 font-semibold text-content-primary flex items-center gap-2"><Compass size={16} className="text-amber" /> 继续创作</h2>
+          <Button variant="primary" size="sm" onClick={() => onNavigate('editor', recent?.id)} aria-label={recent ? `继续写作：${recent.title || '未命名章'}` : '进入正文编辑，建立第一章'}>
+            {recent ? '继续写作' : '开始建立章节'} <ChevronRight size={14} />
+          </Button>
         </div>
+        {recent ? <div className="mb-4 min-w-0" data-continue-target={recent.id}>
+          <p className="text-12 text-content-muted [overflow-wrap:anywhere]">{recentSource}{recentVolume?.title ? ` · ${recentVolume.title}` : ''}</p>
+          <h3 className="mt-1 text-xl font-semibold leading-relaxed text-content-primary [overflow-wrap:anywhere]">{recent.title || '未命名章'}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-12 text-content-secondary">
+            <span className="rounded border border-line-subtle px-2 py-0.5">{recent.status}</span>
+            <span>{Number.isFinite(recent.wordCount) ? `${recent.wordCount.toLocaleString()} 字` : '字数待统计'}</span>
+            <time dateTime={recentTimestamp ? new Date(recentTimestamp).toISOString() : undefined} title={recentTimestamp ? new Date(recentTimestamp).toLocaleString() : undefined}>
+              {recentTimestamp ? `更新于 ${humanAgo(recentTimestamp)}` : '更新时间未知'}
+            </time>
+          </div>
+        </div> : <div className="mb-4 text-13 leading-relaxed text-content-secondary">
+          <p className="font-medium text-content-primary">项目还没有章节</p>
+          <p className="mt-1">进入正文编辑器，新建或导入章节；之后可以在这里接着上次的创作。</p>
+        </div>}
+        {items.length > 0 && <h3 className="mb-2 text-12 font-medium text-content-secondary">接下来可以处理</h3>}
         {items.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {items.map(item => <div key={item.key} className="flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/60 p-2.5">
-            <Button variant="bare" className="min-w-0 flex-1 text-left text-12 text-ink-200 hover:text-amber" onClick={() => onNavigate(item.tab, item.chapterId)}>
-              <span className="block truncate">{item.title}</span><span className="block text-10 text-ink-500">{item.detail}</span>
+            <Button variant="bare" className="min-w-0 flex-1 !justify-start text-left text-12 text-ink-200 hover:text-amber" onClick={() => onNavigate(item.tab, item.chapterId)}>
+              <span className="min-w-0"><span className="block [overflow-wrap:anywhere]">{item.title}</span><span className="mt-1 block text-11 text-content-muted">{item.detail}</span></span>
             </Button>
-            <Button variant="bare" className="text-10 text-ink-500 hover:text-ink-200" onClick={() => postpone(item.key)} title="24 小时后再显示">稍后</Button>
-            <Button variant="bare" className="text-10 text-ink-500 hover:text-ink-200" onClick={() => dismiss(item.key)} title="仅在本机隐藏这条建议">忽略</Button>
+            <Button variant="ghost" size="xs" onClick={() => postpone(item.key)} aria-label={`稍后处理：${item.title}`} title="24 小时后再显示">稍后</Button>
+            <Button variant="ghost" size="xs" onClick={() => dismiss(item.key)} aria-label={`忽略建议：${item.title}`} title="仅在本机隐藏这条建议">忽略</Button>
           </div>)}
         </div> : <div className="text-12 text-ink-500">暂无待处理建议。{(ignored.size > 0 || Object.keys(snoozed).length > 0) && <Button variant="bare" className="ml-2 text-amber" onClick={resetIgnored}>恢复隐藏建议</Button>}</div>}
         {items.length > 0 && (ignored.size > 0 || Object.keys(snoozed).length > 0) && <Button variant="bare" className="mt-2 text-10 text-ink-500 hover:text-amber" onClick={resetIgnored}>恢复隐藏建议</Button>}
       </Panel>
+
+      {summary}
 
       <Panel>
         {/* 🔴 折叠钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
