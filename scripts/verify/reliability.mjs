@@ -184,8 +184,11 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       const expectedSourceFingerprint = snapshot(realRoot).fingerprint
       const evidenceFile = path.join(runRoot, 'guest-runtime.json')
       const verified = await validateGuestEvidence(realRoot, evidenceFile, { expectedBuildHash: report.build.sha256, expectedSourceFingerprint })
-      // Only promote boot-store: export during a failed save and full roundtrip are not yet covered.
-      await auditRuntime('guest', 'web-guest', ['boot-store'], process.platform + '; isolated Edge persistent profile; real server/IndexedDB; browser process restart')
+      // write-failure 三个必需子场景在游客探针里是**逐条断言**的（quota / abort 两种故障各一遍）：
+      //   `<mode>.accepted-vs-persisted` / `<mode>.failure-preserves-draft` / `<mode>.retry-readback`，
+      //   且这三个 id 都在 validateGuestEvidence 的必查清单里 —— 不是靠"探针跑过"推断出来的。
+      // roundtrip 仍不提升：矩阵要的 schema-version/sidecars/secret-stripping/restore-failure 还没做。
+      await auditRuntime('guest', 'web-guest', ['boot-store', 'write-failure'], process.platform + '; isolated Edge persistent profile; real server/IndexedDB; real quota and abort injection on chapter writes; disk-level readback via IndexedDB; draft preserved; retry after recovery; browser process restart')
       return verified.assertions
     }],
     ['storage.desktop-save', ['scripts/audit/probes/desktop-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'desktop-runtime.json')], 180000, async () => {
