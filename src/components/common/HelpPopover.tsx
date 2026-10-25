@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { HelpCircle } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
@@ -52,6 +53,7 @@ export default function HelpPopover({
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number; w: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const portalHost = usePopupLayer(open, () => setOpen(false), btnRef)
   const popRef = useRef<HTMLDivElement>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout>>()
 
@@ -105,20 +107,18 @@ export default function HelpPopover({
   useEffect(() => {
     if (!open) return
     const onMove = () => update()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     const onDown = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return
       setOpen(false)
     }
     window.addEventListener('scroll', onMove, true)
     window.addEventListener('resize', onMove)
-    window.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onDown)
     return () => {
       window.removeEventListener('scroll', onMove, true)
       window.removeEventListener('resize', onMove)
-      window.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
   }, [open, update])
@@ -132,6 +132,7 @@ export default function HelpPopover({
     >
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         {...(triggerIconBox ? { iconOnly: true, size: 'sm' as const } : {})}
         disabled={triggerDisabled}
@@ -167,7 +168,7 @@ export default function HelpPopover({
           </div>
           <div className="whitespace-pre-wrap">{children}</div>
         </div>,
-        document.body
+        portalHost()
       )}
     </span>
   )

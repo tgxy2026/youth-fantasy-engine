@@ -913,6 +913,7 @@ style={{ maxWidth: foldVh('90vw') }}>
         onClose={() => setShowPwd(false)}
         width={360}
         hideHeader
+        ariaLabel="退出专注写作确认"
         footer={
           <div className="flex gap-2">
             <Button variant="primary" onClick={() => setShowPwd(false)} className="flex-1 py-2.5 rounded-lg text-13 transition-colors">继续写</Button>

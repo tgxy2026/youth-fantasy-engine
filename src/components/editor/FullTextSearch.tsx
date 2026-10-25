@@ -77,7 +77,7 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
   let runningIdx = -1
 
   return (
-    <Modal open onClose={onClose} hideHeader align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
+    <Modal open onClose={onClose} hideHeader ariaLabel="全文检索" align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
       <div onKeyDown={onKey}>
         {/* 搜索框 */}
         <div className="flex items-center gap-2 px-4 h-12 border-b border-ink-700">

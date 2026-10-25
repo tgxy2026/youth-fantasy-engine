@@ -57,7 +57,7 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate }: Pro
   const totalHits = useMemo(() => (hits ?? []).reduce((s, h) => s + h.hits, 0), [hits])
 
   return (
-    <Modal open onClose={onClose} hideHeader align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
+    <Modal open onClose={onClose} hideHeader ariaLabel="提及检索" align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
       {/* 头部：资料名 + 别称徽标 + 关闭 */}
       <div className="flex items-center gap-2 px-4 h-12 border-b border-ink-700">
         <Search size={15} className="text-amber shrink-0" />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import {
   getCustomOptions,
   addCustomItem,
@@ -153,6 +154,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       closeAll()
@@ -168,6 +170,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     setQ('')
     setShowRemoved(false)
   }
+
+  const portalHost = usePopupLayer(open, closeAll, btnRef)
 
   // 内置项 → 应用 renamed 替换；过滤 hidden
   const renamedMap = payload.renamed ?? {}
@@ -315,6 +319,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => {
           // 🔴 关闭走 closeAll（清掉添加/重命名/编辑/已移除展开/搜索词的残留态）——
@@ -368,7 +373,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     onChange={e => setRenameDraft(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitRenameBuiltin() }
-                      if (e.key === 'Escape') { setRenaming(null); setRenameDraft('') }
+                      if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setRenaming(null); setRenameDraft('') }
                     }}
                     className="flex-1 !py-0.5 text-12 min-w-0"
                   />
@@ -390,7 +395,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   onChange={e => setEditDraft(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitEditUser() }
-                    if (e.key === 'Escape') { setEditing(null); setEditDraft('') }
+                    if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setEditing(null); setEditDraft('') }
                   }}
                   className="flex-1 !py-0.5 text-12 min-w-0"
                 />
@@ -499,7 +504,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitDraft() }
-                  if (e.key === 'Escape') { setAdding(false); setDraft('') }
+                  if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setAdding(false); setDraft('') }
                 }}
                 placeholder="输入新选项"
                 className="flex-1 !py-0.5 text-12 min-w-0"
@@ -517,7 +522,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             </Button>
           )}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

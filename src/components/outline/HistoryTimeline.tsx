@@ -466,7 +466,7 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
 
       {/* 事件详情弹窗 */}
       {selected && (
-        <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
+        <Modal open onClose={() => setSelected(null)} hideHeader ariaLabel="历史事件详情" width={480} maxHeight="85vh" bodyClassName="!p-0">
           {/* 🔴 2.4.4 六维审计：Modal 的 body 不是 flex 容器 —— 自绘头部必须自带 flex 行，
               否则 flex-1 / shrink-0 全部失效（关闭按钮换行、长标题不截断） */}
           <div className="flex items-start gap-2 p-3">

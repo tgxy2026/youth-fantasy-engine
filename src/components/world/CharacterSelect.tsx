@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { getCardRecords } from '@/lib/db'
 import type { CardRecord } from '@/lib/types'
 import { tabVisible, type VisCtx, TABS } from '@/lib/schema'
@@ -30,6 +31,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   const [q, setQ] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const portalHost = usePopupLayer(open, () => setOpen(false), btnRef)
   const dropRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<DropdownPos | null>(null)
 
@@ -76,6 +78,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       setOpen(false); setQ('')
@@ -104,6 +107,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
@@ -148,7 +152,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
             </Button>
           ))}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

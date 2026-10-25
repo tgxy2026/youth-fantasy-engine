@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { Calendar } from 'lucide-react'
 import { todayKey } from '@/lib/app/date'
 import { Button } from '@/components/common/Button'
@@ -37,6 +38,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
   const [view, setView] = useState({ y: init?.y ?? today.getFullYear(), m: init?.m ?? today.getMonth() + 1 })
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const portalHost = usePopupLayer(open, () => setOpen(false), btnRef)
   const dropRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<DropdownPos | null>(null)
 
@@ -60,6 +62,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       setOpen(false)
@@ -91,6 +94,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
     <div className="relative inline-block w-full" ref={wrapRef}>
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-1.5 !justify-start w-full text-left px-1.5 py-1 text-12 bg-ink-800/60 border border-ink-700 rounded text-ink-100 hover:border-amber/50 transition-colors"
@@ -134,7 +138,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
               覆盖宽度才没炸，属于脆弱依赖（2026-10-12 同批收敛）。文字键用 secondary。 */}
           <Button variant="secondary" type="button" onClick={() => { onChange(''); setOpen(false) }} className="mt-2 w-full text-11">清除日期</Button>
         </div>,
-        document.body,
+        portalHost(),
       )}
     </div>
   )

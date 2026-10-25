@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { getTableRows } from '@/lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { Button } from '@/components/common/Button'
@@ -82,6 +83,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       setOpen(false); setQ('')
@@ -91,6 +93,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   }, [open])
 
   const close = () => { setOpen(false); setQ('') }
+  const portalHost = usePopupLayer(open, close, btnRef)
   const selectedNames = multi
     ? (value || '').split(/[，,]/).map(x => x.trim()).filter(Boolean)
     : (value ? [value] : [])
@@ -123,6 +126,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
@@ -151,7 +155,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               onKeyDown={e => {
                 // 🔴 2.4.4 六维审计：下拉键盘可达 —— Esc 关闭；Enter 确认（精确匹配选中之，
                 //    否则按「使用手动输入」走，与下方按钮同语义）
-                if (e.key === 'Escape') { e.stopPropagation(); close() }
+                // Escape uses the shared popup scope, including focus return.
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   if (exact) toggle(names.find(n => n.toLowerCase() === ql)!)
@@ -188,7 +192,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             </div>
           )}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

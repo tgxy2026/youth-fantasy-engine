@@ -66,10 +66,11 @@ try {
   await page.getByRole('button', { name: /先看看示例/ }).click()
   await page.getByRole('button', { name: '下一步', exact: true }).click()
   await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-  await page.getByRole('navigation').waitFor()
+  await page.locator('nav').waitFor()
   console.log('Isolated demo ready')
   const later = page.getByRole('button', { name: '稍后再说', exact: true })
-  if (await later.isVisible()) await later.click()
+  await later.click()
+  await page.getByRole('navigation').waitFor()
   const inventory = await page.evaluate(async () => {
     const schema = await import('/src/lib/schema.ts')
     const { THEMES } = await import('/src/lib/settings/theme.ts')

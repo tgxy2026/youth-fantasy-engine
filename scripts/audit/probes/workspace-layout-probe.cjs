@@ -46,9 +46,10 @@ async function main() {
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
+    await page.locator('nav').waitFor()
     const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    if (await later.isVisible()) await later.click()
+    await later.click()
+  await page.getByRole('navigation').waitFor()
     await page.evaluate(async value => {
       const { DENSITIES, DENSITY_PREF, applyDensity } = await import('/src/lib/settings/density.ts')
       const { writeEnumPref } = await import('/src/lib/settings/uiPrefs.ts')
