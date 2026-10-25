@@ -252,6 +252,8 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
     }
   } catch (e) {
     result.error = String(e.stack ?? e)
+    // 🔴 compare 不可比（环境/夹具/阈值/指纹不符）绝不能被当成「已记录基线」：那会 exit 0 报成功。
+    if (opt.mode === 'compare') result.status = 'failed'
     if (page) await bounded(page.screenshot({ path: path.join(directory, 'failure.png'), timeout: 5000 }), 'failure capture', 6000).catch(e => { result.failureCaptureError = String(e) })
   } finally {
     await context?.close().catch(e => { result.cleanupError = String(e); result.status = 'failed' })

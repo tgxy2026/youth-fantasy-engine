@@ -4,7 +4,7 @@
  * 本文件**只负责长相**：状态、effect、派生值与动作全部在 `useTableSheetModel()`（2026-09-19 拆出）。
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
 import { addCustomItem, deleteTableRow } from '@/lib/db'
@@ -48,6 +48,7 @@ import { buildAtlasPackage, parseAtlasPackage, previewAtlasImport, typeLabelsOf 
 import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
+import { useRowWindow } from '@/components/sheets/useRowWindow'
 import { foldVh } from '@/lib/settings/theme'
 
 interface Props {
@@ -61,6 +62,9 @@ interface Props {
   onFocusConsumed?: () => void
 }
 
+
+/** 行窗口化阈值：小表全量渲染（零行为变化），超过就先窗口化再做别的优化 */
+const ROW_WINDOW_THRESHOLD = 80
 
 export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', features: [] }, focusRowId, onFocusConsumed }: Props) {
   const model = useTableSheetModel({ tab, focusRowId, onFocusConsumed })
@@ -287,6 +291,34 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 🔴 必须放在 `if (!loaded) return` **之前** —— React 要求 hook 的调用顺序每次渲染都一致。
    */
   const pan = usePanScroll<HTMLDivElement>()
+
+  /**
+   * 行窗口化（3.2.3 · P2）：行数超过阈值时只挂视口附近的行。
+   * 实测依据见 `docs/3.2.3-P1行级读取上提-2026-10-25.md` —— 取数放大修完后，
+   * 300 行 × 74 列的首屏 12.7 s 全部花在「22,200 个单元格全量挂 DOM」上。
+   * 🔴 阈值以下是全量渲染（小表零行为变化）；跳转聚焦的行用 `pinnedId` 强制留在窗口里。
+   */
+  const rowIds = useMemo(() => model.bodyRows.map(entry => entry.row.id), [model.bodyRows])
+  /** 跳转聚焦：只在目标行**变化**时滚一次（否则高亮期间每次输入都会把容器拉回去） */
+  const lastFocusId = useRef<string | null>(null)
+  const rowWindow = useRowWindow({
+    ids: rowIds,
+    rowRefs: model.rowRefs,
+    scrollRef: pan.ref,
+    enabled: rowIds.length > ROW_WINDOW_THRESHOLD,
+    pinnedId: focusRowId ?? null,
+  })
+  const revealRow = rowWindow.revealId
+
+  /**
+   * 跳转聚焦先「滚到附近」：虚拟化后目标行可能压根没挂载，靠 scrollIntoView 会扑空。
+   * 模型侧再用有界轮询接住高亮（见 `useTableSheetModel` 的 focusRowId effect）。
+   */
+  useEffect(() => {
+    if (!focusRowId || lastFocusId.current === focusRowId) return
+    lastFocusId.current = focusRowId
+    revealRow(focusRowId)
+  }, [focusRowId, revealRow])
 
   /**
    * 「右边还有内容」渐隐提示（3.1.2 视觉巡检 C 条）：
@@ -658,18 +690,29 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   </td>
                 </tr>
               )}
-              {bodyRows.map((entry, i) => (
+              {/* 窗口上方的行用一条撑高占位行顶上：表格结构不变（sticky 表头 / table-fixed 列宽 / 拖拽平移都不受影响） */}
+              {rowWindow.topPad > 0 && (
+                <tr aria-hidden data-row-spacer="top">
+                  <td colSpan={effectiveColumns.length + 2} style={{ height: rowWindow.topPad, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {bodyRows.slice(rowWindow.start, rowWindow.end).map((entry, i) => (
                 <TableSheetRow
                   key={entry.row.id}
                   tab={tab}
                   model={model}
                   entry={entry}
-                  index={i}
+                  index={rowWindow.start + i}
                   onNavigate={onNavigate}
                   onOpenMentions={(name, aliases) => setMention({ name, aliases })}
                   ctx={ctx}
                 />
               ))}
+              {rowWindow.bottomPad > 0 && (
+                <tr aria-hidden data-row-spacer="bottom">
+                  <td colSpan={effectiveColumns.length + 2} style={{ height: rowWindow.bottomPad, padding: 0, border: 0 }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

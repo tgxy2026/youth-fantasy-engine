@@ -1,6 +1,14 @@
 import { hash } from './fixtures/table-fixtures.mjs'
 
-export const MEASUREMENT_VERSION = 1
+/**
+ * 计量实现版本。
+ * 🔴 v2（2026-10-25 16:40）：修一处**假绿** —— `--mode compare` 遇到环境/夹具/阈值不兼容时，
+ *    错误被 catch 吞掉、状态仍停在 `baseline-recorded`，执行器据此 exit 0，等于「比不了也算过」。
+ *    修法与影响：compare 失败必须落 `failed`；因为改了执行器，指纹随之变化，
+ *    v1 的旧基线（`.workbuddy/tmp/table-performance-024EoR/`，node v22.23.2 采）**不再可比**，
+ *    需要在 v2 下重采基线 —— 这是有意的，不是回归。
+ */
+export const MEASUREMENT_VERSION = 2
 export const SAMPLE_PLAN = Object.freeze({ warmup: 1, open: 5, input: 30, save: 10 })
 export const THRESHOLDS = Object.freeze({
   medium: { openP50: 1000, openMax: 2000, inputP95: 100, saveP95: 1000 },

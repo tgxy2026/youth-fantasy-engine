@@ -39,6 +39,7 @@ import { useSheetTemplate, useAiWriteBasis } from '@/components/templates/useShe
 import { guardTabWrite } from '@/lib/templates/migrationGuard'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import { useTableRefOptions } from '@/components/sheets/useTableRefOptions'
+import { useRowFocusHighlight } from '@/components/sheets/useRowFocusHighlight'
 import { coerceAiValue } from '@/lib/atlas/values'
 import { ATLAS_TOTAL_LIMIT, atlasImageUsageOf, checkAtlasBudget } from '@/lib/atlas/quota'
 import { WEB_CLOUD } from '@/lib/app/platform'
@@ -82,7 +83,6 @@ type Args = {
 export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const [rows, setRows] = useState<TableRow[]>([])
   // 数据体检 / 跨组件跳转：聚焦并高亮目标行
-  const [hlRowId, setHlRowId] = useState<string | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const [loaded, setLoaded] = useState(false)
   // history / timeline 两个页签提供"表格 ⇄ 时间轴"视图切换
@@ -354,21 +354,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     void flushDrafts(getCurrentProjectId(), tabIdRef.current, rowsRef.current, pending)
   }, [])
 
-  // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮
-  useEffect(() => {
-    if (!focusRowId) return
-    const el = rowRefs.current[focusRowId]
-    if (!el) return
-    setHlRowId(focusRowId)
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    const timer = setTimeout(() => {
-      setHlRowId(null)
-      onFocusConsumed?.()
-    }, 2600)
-    return () => clearTimeout(timer)
-    // onFocusConsumed 由 App.tsx 用 useCallback 钉住引用（clearFocusRow），
-    // 依赖它不会导致 effect 每次渲染重跑。
-  }, [focusRowId, rows, onFocusConsumed])
+  // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮。
+  // 只挂视口附近的行之后，目标行可能还没挂载 ⇒ 实现里带**有界轮询**（见 useRowFocusHighlight）。
+  const hlRowId = useRowFocusHighlight({ focusRowId, rowRefs, rows, onFocusConsumed })
 
   // 列宽（按表独立记忆）：表头可拖拽调整，默认列宽更合理
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
