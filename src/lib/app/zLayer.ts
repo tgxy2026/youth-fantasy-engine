@@ -41,18 +41,10 @@ export const Z = {
    */
   banner: 60,
 
-  // ---- 以下为「浮层」层，全部 createPortal 到 body ----
-  //
-  // ⚠️ 为什么下拉要**高于** modal 与 prompt，而不是像直觉那样排在它们下面：
-  //   这些下拉会出现在**弹窗内部**——例如 AIOrganize 本身就是一个 Modal，其中用了
-  //   CustomSelect / resolveOptions；表格单元格的日期、日历选择也可能位于编辑弹窗内。
-  //   它们既已 Portal 到 body，只是把层号降到 modal 之下，弹窗内的下拉就会被弹窗盖住
-  //   而完全不可用。故维持「浮层在弹窗之上」这一既有约定。
-  //
-  // 📌 已知张力（未擅自改动，留待需要时决定）：prompt(3000) 目前低于下列浮层，
-  //    理论上「下拉展开时又弹出确认框」会出现确认框被下拉遮住的情况；因下拉随失焦/外部
-  //    点击即刻收起，实际极少同时出现。若要收紧，把 prompt 提到 dropdown 之上即可——
-  //    现在只需改这一处。
+  // ---- 所属容器内的浮层顺序 ----
+  // 3.3.0：六类浮层由 overlayScope 送到所属弹窗面板；页面浮层在
+  // Z.modal - 1 的独立宿主中。这些较大值只在各自宿主内竞争，
+  // 不再使页面下拉盖过独立确认框；toast 仍是全局反馈层。
   /** 下拉浮层：CustomSelect / CharacterSelect / TableRefSelect / CalendarPicker */
   dropdown: 9999,
   /** 帮助气泡 HelpPopover：略高于下拉，避免被邻近下拉压住 */

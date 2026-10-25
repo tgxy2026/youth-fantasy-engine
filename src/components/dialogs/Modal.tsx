@@ -126,7 +126,8 @@ export function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const parentScope = useContext(OverlayContext)
-  const scope = useMemo(() => ({ panel: panelRef, ancestors: parentScope ? [...parentScope.ancestors, parentScope.panel] : [] }), [parentScope])
+  const resolvedLayer = layer ?? (parentScope ? parentScope.layer + 1 : Z.modal)
+  const scope = useMemo(() => ({ panel: panelRef, ancestors: parentScope ? [...parentScope.ancestors, parentScope.panel] : [], layer: resolvedLayer }), [parentScope, resolvedLayer])
   const titleId = useId()
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -174,7 +175,7 @@ export function Modal({
       // 层级只走 style.zIndex（取自 zLayer 真源）。此前这里同时写了 class `z-[2000]`
       // 与 style.zIndex 两份，后者胜出、前者纯属误导，已删。
       className={`fixed inset-0 flex ${overlayVariant} ${overlayAlign}`}
-      style={{ zIndex: layer ?? Z.modal, ...overlayStyle }}
+      style={{ zIndex: resolvedLayer, ...overlayStyle }}
       onMouseDown={e => {
         if (overlayClose && e.target === e.currentTarget) onCloseRef.current()
       }}

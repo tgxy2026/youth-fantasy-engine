@@ -4,6 +4,7 @@ import { Z } from './zLayer'
 export interface OverlayScope {
   panel: RefObject<HTMLDivElement>
   ancestors: RefObject<HTMLDivElement>[]
+  layer: number
 }
 export const OverlayContext = createContext<OverlayScope | null>(null)
 
@@ -26,6 +27,7 @@ let bodyObserver: MutationObserver | null = null
 let pagePopupHost: HTMLDivElement | null = null
 let rootReturn: Element | null = null
 const topDialog = () => dialogs[dialogs.length - 1]
+export const getActiveOverlayScope = () => topDialog()?.scope ?? null
 /** Covered popups must not react to pointer events inside a newer dialog. */
 export const isOverlayObscured = (trigger: HTMLElement | null) => {
   const top = topDialog()
@@ -122,6 +124,7 @@ export function registerDialog(scope: OverlayScope, close: () => void, canClose:
   const childIndex = dialogs.findIndex(candidate => candidate.scope.ancestors.includes(scope.panel))
   if (childIndex < 0) dialogs.push(entry)
   else dialogs.splice(childIndex, 0, entry)
+  dialogs.sort((a, b) => a.scope.layer - b.scope.layer)
   syncListener()
   syncBackground()
   const frame = requestAnimationFrame(() => { if (topDialog() === entry) focus(panel) })

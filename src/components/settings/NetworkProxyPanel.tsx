@@ -64,10 +64,10 @@ export default function NetworkProxyPanel() {
   }
 
   // Ctrl/Cmd+S 保存代理设置（2.7.3 补：本页是「改完点保存」，此前没挂快捷键）
-  useSaveHotkey(() => void save(), dirty && !saving)
+  const saveScope = useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
-    <section className="rounded-lg border border-ink-700 bg-ink-850/30">
+    <section data-save-scope={saveScope} className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
           <Globe size={13} className="text-amber" />

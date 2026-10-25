@@ -95,10 +95,10 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
   const preview = previewAt(draft)
 
   // Ctrl/Cmd+S 保存额度设置（2.7.3 补）
-  useSaveHotkey(() => void commit(draft), dirty && !saving)
+  const saveScope = useSaveHotkey(() => void commit(draft), dirty && !saving)
 
   return (
-    <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
+    <section data-save-scope={saveScope} className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
       <div className="flex items-center gap-2">
         <Database size={14} className="shrink-0 text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">正文写作 AI 额度</h2>
