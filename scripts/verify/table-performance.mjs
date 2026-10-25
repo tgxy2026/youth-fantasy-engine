@@ -216,11 +216,27 @@ async function measure(browser, fixture, opt, runRoot, buildDir, environment, in
         await page.getByTitle('保存全部（Ctrl+S）', { exact: true }).click()
         const deadline = Date.now() + 180000
         for (;;) {
-          const stores = await readStores(page, opt.backend, server.dataFile)
-          const row = stores.tableRows.find(r => r.id === first.id)
-          if (row?.data['别称'] === expected) break
+          /**
+           * 🔴 计量 v5：轮询必须**便宜**。原来每轮 `readStores()` 要开库 + getAll(tableRows)
+           *    + getAll(projects)，large 单次约 40ms —— 产品保存本身只要 13~45ms，
+           *    却被探针自己的轮询量成 450ms。这里改成按主键读单条（约 2~5ms）。
+           *    整表回读仍保留，但只做一次且不计时（见下方 `complete persisted records`）。
+           */
+          const stored = opt.backend === 'portable'
+            ? JSON.parse(await fs.readFile(server.dataFile, 'utf8')).stores.tableRows
+            : await page.evaluate(async ([id]) => {
+              const db = await new Promise((resolve, reject) => { const r = indexedDB.open('youth-fantasy-engine'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error) })
+              try {
+                const tx = db.transaction('tableRows', 'readonly')
+                return await new Promise((resolve, reject) => { const rq = tx.objectStore('tableRows').get(id); rq.onsuccess = () => resolve(rq.result ?? null); rq.onerror = () => reject(rq.error) })
+              } finally { db.close() }
+            }, [first.id])
+          const content = opt.backend === 'portable'
+            ? Object.values(stored ?? {}).map(r => r).find(r => r.id === first.id)?.data?.['别称']
+            : stored?.data?.['别称']
+          if (content === expected) break
           if (Date.now() > deadline) throw new Error('Persisted save acknowledgement timeout')
-          await sleep(25)
+          await sleep(15)
         }
         await frames(page)
       }, i > 0)

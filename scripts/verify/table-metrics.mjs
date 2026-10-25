@@ -13,8 +13,12 @@ import { hash } from './fixtures/table-fixtures.mjs'
  *    medium 一步 300px、large 一步 1000px（约 25 行），既不是真实滚轮步长，又把
  *    「新挂 20 行 vs 0 行」混成了同一个数字（诊断：800px/20 行 = 125ms，1px/0 行 = 19ms）。
  *    现在改成**固定 120px/步、60 步、在页面内计时**（去掉 Playwright 往返开销），并给出阈值。
+ * 🔴 v5（2026-10-25 18:20）：**save 的计时也被探针自己污染了**。原来每 25ms 轮询一次
+ *    `readStores()`（开库 + getAll(tableRows) + getAll(projects) + 关库），large 一次约 40ms，
+ *    连产品本身只要 13~45ms 的保存被量成 450ms。现在轮询改成「按主键读单条」（约 2~5ms），
+ *    整表回读仍然做 —— 但只做**一次**、且**不计时**，作为持久化断言（`complete persisted records`）。
  */
-export const MEASUREMENT_VERSION = 4
+export const MEASUREMENT_VERSION = 5
 export const SAMPLE_PLAN = Object.freeze({ warmup: 1, open: 5, input: 30, save: 10, filter: 5, clear: 5, scroll: 60 })
 /** 滚动步长（CSS 像素，≈ 一次滚轮/触控板的一次推进量）。每步新挂 1~3 行，才是作者真实的手感 */
 export const SCROLL_STEP_PX = 120
