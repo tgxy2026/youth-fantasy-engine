@@ -207,6 +207,13 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     // 3.2.3 · R4：端到端导出→导入（桌面 + 云端）。
     // 🔴 不重跑探针，只聚合同一轮已产出的两份结果 —— 但要求两边指纹一致、检查项齐全且全真，
     //    任一份缺失或来自另一轮源码就直接失败（不拿"各自都说自己过了"当整体过）。
+    // 3.2.6 · R4：便携配置的端到端导出→导入（真实便携服务 + 真实浏览器下载/选文件）
+    ['storage.portable-roundtrip', ['scripts/verify/portable-roundtrip.mjs', '--build-dir', path.join(runRoot, 'build')], 240000, result => {
+      const summary = /PORTABLE_ROUNDTRIP samples=(\d+) passed=(\d+) failed=(\d+)/.exec(result.out)
+      if (!summary) throw new Error('Portable roundtrip printed no summary')
+      if (Number(summary[3]) !== 0) throw new Error('Portable roundtrip has failing checks')
+      return Number(summary[1])
+    }],
     ['storage.e2e-roundtrip', ['scripts/verify/e2e-roundtrip.mjs', '--run-root', runRoot], 60000, async result => {
       const summary = /E2E_ROUNDTRIP ok=(\d+)/.exec(result.out)
       if (!summary) throw new Error('E2E roundtrip printed no summary')

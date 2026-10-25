@@ -281,11 +281,27 @@ function scheduleSave() {
   emit()
 }
 
-/** 立即写盘（PUT /api/data）。锁定期直接返回 false。 */
+/**
+ * 立即写盘（PUT /api/data）。锁定期直接返回 false。
+ *
+ * 🔴 3.2.6 · 在途保存时**排队等它写完**，不再直接 return false：
+ *    原先 `if (!inited || saving) return false` 会让「上一笔还在写」被调用方（尤其是导入）
+ *    当成"写入失败"——真实浏览器实测：导出→改→**导入**，作者只要恰好落在一笔自动保存进行中，
+ *    就会得到「导入失败」，重试一次又好了，纯属随机。
+ *    这里改成短轮询等待（有上限，不会挂死），等待期间若进入锁写盘 / 冲突态则照旧放弃。
+ */
+const FLUSH_WAIT_MS = 8000
 export async function flushPortable(): Promise<boolean> {
-  if (!inited || saving) return false
+  if (!inited) return false
   if (writeLocked) return false
   if (saveConflict) return false
+  if (saving) {
+    const deadline = Date.now() + FLUSH_WAIT_MS
+    while (saving && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 60))
+    if (saving) { lastError = '上一次保存仍未结束，请稍后再试'; return false }
+    if (writeLocked) return false
+    if (saveConflict) return false
+  }
   saving = true
   // 写盘开始时的版本号：await 期间若又发生修改（writeSeq 递增），成功后不能清 dirty
   const seqAtStart = writeSeq
@@ -723,7 +739,11 @@ export async function importPortableData(
   // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）
   await migratePortableSidecar()
   const ok = await flushPortable()
-  return ok ? { ok: true } : { ok: false, error: lastError || '写入便携数据文件失败' }
+  if (ok) return { ok: true }
+  // 🔴 flushPortable 在「已有保存在途」时会**直接返回 false 且不设 lastError**
+  //    （它不排队、也不报错）。这里若照旧回 "写入便携数据文件失败"，作者会以为文件坏了；
+  //    真实原因只是「上一笔还在写」，等一下重试即可 —— 必须说准。
+  return { ok: false, error: lastError || (saving ? '上一个保存还在进行，请稍等片刻再导入' : '写入便携数据文件失败') }
 }
 
 /**
