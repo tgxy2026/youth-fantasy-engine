@@ -38,6 +38,7 @@ import { customColumnWidth } from '@/lib/atlas/columns'
 import { useSheetTemplate, useAiWriteBasis } from '@/components/templates/useSheetTemplate'
 import { guardTabWrite } from '@/lib/templates/migrationGuard'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
+import { useTableRefOptions } from '@/components/sheets/useTableRefOptions'
 import { coerceAiValue } from '@/lib/atlas/values'
 import { ATLAS_TOTAL_LIMIT, atlasImageUsageOf, checkAtlasBudget } from '@/lib/atlas/quota'
 import { WEB_CLOUD } from '@/lib/app/platform'
@@ -1033,6 +1034,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     return () => window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
   }, [loadCustomOpts, tab.id])
 
+  const refOptions = useTableRefOptions(effectiveColumns) // 跨表候选值：每列读一次（实现见该 hook）
   /**
    * 表头筛选下拉的候选值：与行内 CustomSelect 完全同口径
    * （内置项去掉 hidden、应用 renamed，再拼上用户自定义项，同名去重）。
@@ -1174,6 +1176,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     parentCol, collapsed, toggleCollapse, tree, bodyRows, addChild,
     // 编号
     codeCol, codeError,
+    refOptions, customOpts, // 跨表候选值 / 内置下拉选项：都改成「每列读一次、逐行传下去」
     // 视图与高亮
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
     // 图鉴字段配置（3.1.3）

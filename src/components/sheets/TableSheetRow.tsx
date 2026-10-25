@@ -23,6 +23,7 @@ import StoryDateInput from '@/components/common/StoryDateInput'
 import { CellTextarea, rowBadgeClass } from '@/components/sheets/tableSheetShared'
 import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import { ROW_ACTION_COL_W, type TableSheetModel } from '@/components/sheets/useTableSheetModel'
+import type { CustomOptionPayload } from '@/lib/db'
 import { readAliases } from '@/lib/settings/aliases'
 
 /**
@@ -35,6 +36,17 @@ import { readAliases } from '@/lib/settings/aliases'
  *    整句话或章节标题 —— 拿它检索正文只会空结果或误报，属幽灵入口，故不渲染。
  * 新增资料表时记得登记进来（漏登记只是少一个入口，不会出错）。
  */
+/**
+ * 跨表引用列的「候选项由表格级提供」占位。
+ *
+ * 🔴 为什么不能传 `undefined`：控件的 `options === undefined` 表示「没人给我，我自己读」——
+ *    首帧 model 的 `refOptions` 还没回来，300 行就会各自再读一次整表（实测 306 次），
+ *    等于白改。传一个稳定的空数组，语义是「等我给」，控件就不会自己读。
+ */
+const EMPTY_OPTIONS: string[] = []
+/** 同上：`undefined` 会被控件理解为「我自己读」，首帧就会触发逐行读取 */
+const EMPTY_PAYLOAD: CustomOptionPayload = { items: [], hidden: [] }
+
 const MENTION_TABS = new Set<string>([
   'relations', 'nations', 'faction-rels', 'geography', 'races', 'items', 'history', 'terms', 'subplots',
 ])
@@ -72,6 +84,8 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
     setFillRow,
     calendarRule,
     effectiveColumns,
+    refOptions,
+    customOpts,
   } = model
 
     const row = entry.row
@@ -240,6 +254,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                 <TableRefSelect
                   refTabId={col.refTab!}
                   refCol={col.refCol!}
+                  options={refOptions[col.name] ?? EMPTY_OPTIONS}
                   value={val}
                   onChange={v => setCellDraft(row.id, col.name, v)}
                   placeholder={col.name}
@@ -263,6 +278,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                   value={val}
                   onChange={v => setCellDraft(row.id, col.name, v)}
                   labelMap={col.name === '保密等级' ? SABC_LABELS : undefined}
+                  payload={customOpts[col.name] ?? EMPTY_PAYLOAD}
                   fixedOptions={col.fixedOptions}
                 />
               ) : col.type === 'number' ? (

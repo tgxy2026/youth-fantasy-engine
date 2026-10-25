@@ -22,6 +22,11 @@ interface Props {
    * 多选模式下点选项**不关闭下拉**，方便连续勾选；手动输入为追加（去重）。
    */
   multi?: boolean
+  /**
+   * 外部已算好的候选值（3.2.3 大表）：表格级一次读取后传下来，控件就不再各自读整表。
+   * 🔴 只在**大表**这种「一行一个控件」的场景传；不传时保持原行为（自己读、自己刷新）。
+   */
+  options?: string[]
 }
 
 /**
@@ -31,7 +36,7 @@ interface Props {
  * 当来源表为空 / 被项目形态隐藏（如极简项目砍掉世界构建）无法选择时，
  * 允许在搜索框中手动输入，保证字段不被完全锁死（三形态兼容）。
  */
-export default function TableRefSelect({ value, onChange, refTabId, refCol, placeholder = '选择', excludeNames, multi = false }: Props) {
+export default function TableRefSelect({ value, onChange, refTabId, refCol, placeholder = '选择', excludeNames, multi = false, options }: Props) {
   const [names, setNames] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -41,6 +46,8 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   const [pos, setPos] = useState<DropdownPos | null>(null)
 
   useEffect(() => {
+    // 外部给了候选值就直接用：大表里每行都读一次整表 = 行数×整表放大的根因（见 useTableSheetModel.refOptions）
+    if (options) { setNames(options); return }
     let alive = true
     getTableRows(refTabId).then(rows => {
       if (!alive) return
@@ -52,7 +59,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
       setNames([...s].sort((a, b) => a.localeCompare(b, 'zh')))
     })
     return () => { alive = false }
-  }, [refTabId, refCol])
+  }, [refTabId, refCol, options])
 
   const updatePos = () => {
     const btn = btnRef.current

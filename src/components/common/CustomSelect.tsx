@@ -42,6 +42,14 @@ interface Props {
    *    （排序静默失效、该档数据在角色视角下也不再被排除）。见 schema 的 `cFixed()`。
    */
   fixedOptions?: boolean
+  /**
+   * 外部已读好的选项载荷（3.2.3 大表）：表格级读一次、逐行传下来，控件不再各自读一次。
+   *
+   * 🔴 为什么必须给这一层：设置项按 `列 × 行` 各读一次 —— 300 行 × 3 个内置下拉 = **900 次读**，
+   *    实测（`scripts/verify/table-hotpath.mjs`）单次打开累计 84 万毫秒的请求等待。
+   *    不传时行为完全不变（自己读、自己监听广播），其它调用方（地图图例、检索面板）照旧。
+   */
+  payload?: CustomOptionPayload
 }
 
 /**
@@ -50,7 +58,7 @@ interface Props {
  * - 每个选项右侧菜单：编辑/删除（自定义项）/隐藏（内置项）/还原（已隐藏项）
  * - 底部"+ 添加新值…"项：输入新文本后回车即可保存
  */
-export default function CustomSelect({ tabId, colName, options, value, onChange, labelMap, onRenameBuiltin, fixedOptions }: Props) {
+export default function CustomSelect({ tabId, colName, options, value, onChange, labelMap, onRenameBuiltin, fixedOptions, payload: payloadFromParent }: Props) {
   const [payload, setPayload] = useState<CustomOptionPayload>({ items: [], hidden: [] })
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -77,19 +85,23 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     let alive = true
     const requestId = ++payloadRequestRef.current
     // 🔴 换列/换页签时先清空再读：异步读取返回前短暂显示上一列的 items/hidden 会造成错位假象
-    setPayload({ items: [], hidden: [] })
     setShowRemoved(false)
     setQ('')
+    // 由上层统一供数时不再自己读（读一次就够，见 Props.payload 注释）
+    if (payloadFromParent) { setPayload(payloadFromParent); return () => { alive = false } }
+    setPayload({ items: [], hidden: [] })
     getCustomOptions(tabId, colName).then(p => {
       if (alive && requestId === payloadRequestRef.current) setPayload(p)
     })
     return () => {
       alive = false
     }
-  }, [tabId, colName])
+  }, [tabId, colName, payloadFromParent])
 
   // 选项被别处改动时同步刷新（同一列可能同时渲染多个下拉，且地图编辑图例也依赖此广播）
   useEffect(() => {
+    // 供数模式：广播由上层（useTableSheetModel）统一监听并重算，控件不用再各挂一个监听器
+    if (payloadFromParent) return
     let alive = true
     const onChanged = (e: Event) => {
       const d = (e as CustomEvent<{ tabId: string; colName: string }>).detail
@@ -104,7 +116,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
       alive = false
       window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
     }
-  }, [tabId, colName])
+  }, [tabId, colName, payloadFromParent])
 
   /** 写入后统一：更新本地状态 + 广播，让同列其它下拉与图例跟随刷新 */
   const applyPayload = (p: CustomOptionPayload) => {
