@@ -21,15 +21,17 @@ const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8'
 function main() {
   // ── ① 角色管理组（CharacterSheet）：AI 新增（建卡）+ AI 补全（补当前卡）两个入口并存 ──
   const cs = read('src/components/world/CharacterSheet.tsx')
-  ok('角色卡右上角同时有「AI 新增」与「AI 补全」', cs.includes('AI 新增') && cs.includes('AI 补全'))
-  ok('AI 新增：点开的是新建弹窗 setShowFill(true)', cs.includes('onClick={() => setShowFill(true)}'))
+  const tools = read('src/components/world/CharacterTools.tsx')
+  ok('角色档案工具同时有「AI 新增」与「AI 补全」', tools.includes('AI 新增') && tools.includes('AI 补全'))
+  ok('AI 新增：工具调用新建弹窗 setShowFill(true)', cs.includes('onCreateAI={() => setShowFill(true)}') && tools.includes('props.onCreateAI()'))
   ok('AI 新增：弹窗标题为「AI 新增 · 页签名」', cs.includes('AI 新增 · ${tab.name}'))
-  ok('🔴 AI 补全：新增独立状态 setShowFillExisting(true)', cs.includes('const [showFillExisting, setShowFillExisting] = useState(false)') && cs.includes('onClick={() => setShowFillExisting(true)}'))
+  ok('🔴 AI 补全：独立状态和补全回调不混用', cs.includes('const [showFillExisting, setShowFillExisting] = useState(false)') && cs.includes('onFillAI={() => setShowFillExisting(true)}') && tools.includes('props.onFillAI()'))
   // WT2：existing 只带「允许 AI 参考」的已填值（禁读字段的值不进模型材料）
   ok('🔴 AI 补全：传进来的已填值只含可参考字段（已填字段锁定、只补空白）',
     cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)/.test(cs) && cs.includes('out[k] = v'))
   ok('🔴 AI 补全：弹窗标题带当前卡名', cs.includes('AI 补全 · ${draft.name}'))
-  ok('🔴 AI 补全：未选卡时禁用（!aiReady || !draft）', cs.includes('disabled={!aiReady || !draft}'))
+  ok('🔴 AI 补全：模型未就绪或未选卡时禁用', cs.includes('aiDisabledHint={!aiReady ? AI_DISABLED_HINT : undefined}')
+    && cs.includes('hasSelection={!!draft}') && tools.includes('disabled={!!props.aiDisabledHint || !props.hasSelection}'))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet 同口径）',
     /const accepted = acceptAiValues\(values\)/.test(cs)
     && /if \(v && v\.trim\(\)\) next\.data\[k\] = v/.test(cs)

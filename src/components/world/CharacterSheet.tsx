@@ -6,9 +6,11 @@ import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, Wand2, Search, FileDown, FileUp, ArrowRightLeft, LayoutTemplate } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, Check, EyeOff, Search } from 'lucide-react'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
+import CharacterTools from '@/components/world/CharacterTools'
+import FieldDescription from '@/components/common/FieldDescription'
 import CharacterPortraitPanel from '@/components/world/CharacterPortraitPanel'
 import CharacterProfileHeader from '@/components/world/CharacterProfileHeader'
 import { characterProfileFields, characterProfileFacts } from '@/lib/world/characterProfile'
@@ -197,6 +199,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       })),
     }))
   }, [tab, templateDef, templateView, aliasLabels])
+
+  const fieldPermissions = useMemo(() => new Map(templateView?.fields.map(field => [field.sourceKey, field.permissions]) ?? []), [templateView])
 
   // UX06 · 详情页现场：记住「哪些分组展开着、滚到哪」（切换卡片/换页签回来都能接上）
   // 🔴 pageId 带 tab.id：主要角色与次要角色、各种「其他设定」各记各的，记录不串。
@@ -793,28 +797,6 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
             <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
           </span>
-          {/* 3.2.0：模板入口（七张可模板化页签之一）。采用模板后卡片按快照渲染，
-              「字段显示名」也以模板为准 ⇒ 旧的别名按钮让位，避免两套改名入口打架。 */}
-          {isTemplateTab(tab.id) && (
-            <Button
-              variant="secondary"
-              onClick={() => setShowTemplate(true)}
-              className="flex items-center gap-1.5"
-              title={templateDef
-                ? `模板「${templateDef.name}」第 ${templateDef.revision} 版：编辑字段与分组、预览变更、恢复到迁移前`
-                : '套用模板：把当前结构固定成一份可编辑快照，或从空白开始设计这一页'}
-            >
-              <LayoutTemplate size={12} /> {templateDef ? '模板' : '套用模板'}
-            </Button>
-          )}
-          {!templateDef && (
-            <FieldAliasButton
-              tabId={tab.id}
-              tabName={tab.name}
-              intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。"
-              targets={aliasTargets}
-            />
-          )}
           <Button variant="toggle" selected={dirty}
             onClick={save}
             disabled={!dirty || saving}
@@ -826,31 +808,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
           </Button>
-          {/* 批量导入 / 导出（3.1.x）：对齐世界构建组表格页签那套能力（导出模板 → 填写 → 导入回项目）。
-              ⚠️ 只在角色页签出现 ——「其他设定」是兜底页、暂不铺开（需要时去掉 isCharTab 判断即可）。 */}
-          {isCharTab && (
-            <>
-              <Button variant="secondary" onClick={() => setShowImport(true)} className="flex items-center gap-1.5 font-medium transition-colors" title={`批量导入：粘贴表格 / CSV / 纯文本，或上传文件；散文式设定可用「AI 智能拆分」自动解析成多张${nounCard}`}>
-                <FileDown size={14} /> 导入
-              </Button>
-              <Button variant="secondary" onClick={exportCsv} className="flex items-center gap-1.5 font-medium transition-colors" title={`导出全部${nounCard}为 CSV（Excel 可直接打开）`}>
-                <FileUp size={14} /> 导出
-              </Button>
-            </>
-          )}
-          {aiCap !== 'none' && (
-            <>
-              {/* 🔴 2026-10-03 老大定案：这一组两个入口语义必须分清 ——
-                  「AI 新增」= 凭空建一张新卡（原「AI 补全」改名，它从来就是新建行为）；
-                  「AI 补全」= 在**当前这张卡**上补空白（与表单页 / 表格行同一口径，已填的保留）。 */}
-              <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略设定，让 AI 新建一张${noun}（不影响已有卡）`}>
-                <Sparkles size={14} /> AI 新增
-              </Button>
-              <Button variant="secondary" onClick={() => setShowFillExisting(true)} disabled={!aiReady || !draft} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : !draft ? '先选一张卡，再让 AI 补全它的空白字段' : `让 AI 补全「${draft.name}」未填写的字段（已填的会保留）`}>
-                <Wand2 size={14} /> AI 补全
-              </Button>
-            </>
-          )}
+          <CharacterTools noun={noun} isCharacter={isCharTab}
+            templateTitle={isTemplateTab(tab.id) ? (templateDef
+              ? '模板「' + templateDef.name + '」第 ' + templateDef.revision + ' 版：编辑字段与分组、预览变更、恢复到迁移前'
+              : '套用模板：固定当前结构，或从空白开始设计字段') : undefined}
+            alias={!templateDef && <FieldAliasButton tabId={tab.id} tabName={tab.name} size="sm" variant="bare"
+              intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。" targets={aliasTargets} />}
+            aiEnabled={aiCap !== 'none'} aiDisabledHint={!aiReady ? AI_DISABLED_HINT : undefined}
+            hasSelection={!!draft} canMove={moveTargets.length > 0}
+            onTemplate={() => setShowTemplate(true)} onImport={() => setShowImport(true)} onExport={exportCsv}
+            onCreateAI={() => setShowFill(true)} onFillAI={() => setShowFillExisting(true)} onMove={() => setMoveOpen(true)} />
           {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
               这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
           {isCharTab && (
@@ -924,19 +891,6 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
               <div className="flex flex-wrap items-center gap-3">
                 <CharacterProfileHeader name={draft.name} portrait={draft.portrait || draft.portrait2}
                   facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
-                {/* 跨页签移动（3.1.3）：角色卡升级 / 降级的正路 ——
-                    左右两栏挨着的页签来回切着复制粘贴，既容易漏项也会丢立绘。 */}
-                {moveTargets.length > 0 && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="ml-auto flex items-center gap-1.5"
-                    onClick={() => setMoveOpen(true)}
-                    title={`把「${draft.name}」移动到其他角色页签（按字段名对应，会先列出会丢哪些内容）`}
-                  >
-                    <ArrowRightLeft size={12} /> 移动到其他页签
-                  </Button>
-                )}
               </div>
               {cardGroups.map(group => {
                 // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好
@@ -953,6 +907,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-center' : ''}`}>
                     {group.fields.map(field => {
                       const key = field.key
+                      const permissions = fieldPermissions.get(key)
                       const val = draft.data[key] ?? ''
                       const labelTitle = field.atlasField
                         ? (field.desc || `自定义字段（存储键 ${key}，改名不影响已填内容）`)
@@ -968,7 +923,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               className="text-12 font-medium text-ink-100"
                               title={labelTitle}
                             >{field.label}</div>
-                            {field.desc && <div className="field-desc mt-0.5">{field.desc}</div>}
+                            <FieldDescription label={field.label} description={field.desc} />
+                            {cardPending.has(key) ? <p className="mt-1 text-11 text-amber">含义待确认：不供 AI 参考或填写</p>
+                              : permissions && (!permissions.aiRead || !permissions.aiWrite) && <p className="mt-1 text-11 text-ink-300">
+                                {[!permissions.aiRead && '不供 AI 参考', !permissions.aiWrite && '不允许 AI 填写'].filter(Boolean).join(' · ')}
+                              </p>}
                           </div>
                           {/* ⚠️ 2026-09-22 **二次返工**：上一版把这里收在 `max-w-[26rem]`，结果输入框与立绘
                               之间空出一大块（老大原话「中间你打算放啥呢」）。正确做法是让输入框**吃满字段区**：

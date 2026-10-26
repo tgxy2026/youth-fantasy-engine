@@ -22,6 +22,7 @@ interface Props {
   triggerClassName?: string
   /** Named action disclosures can use standard button sizing, including interface density. */
   triggerVariant?: 'bare' | 'secondary'
+  triggerSize?: 'sm' | 'md'
   /** 自定义触发键的 title / aria-label（默认 `${title}（点击查看说明）`） */
   triggerTitle?: string
   triggerDisabled?: boolean
@@ -52,7 +53,7 @@ const remToPx = (v: string) => {
  */
 export default function HelpPopover({
   title, children, className = '', size = 13, width = '18rem', side = 'left',
-  trigger, triggerClassName, triggerVariant = 'bare', triggerTitle, triggerDisabled, triggerIconBox, pin = false, focusOnOpen = false,
+  trigger, triggerClassName, triggerVariant = 'bare', triggerSize = 'sm', triggerTitle, triggerDisabled, triggerIconBox, pin = false, focusOnOpen = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number; w: number } | null>(null)
@@ -148,7 +149,7 @@ export default function HelpPopover({
         aria-expanded={open}
         aria-controls={open ? popupId : undefined}
         type="button"
-        {...(triggerVariant === 'secondary' ? { size: 'sm' as const } : {})}
+        {...(triggerVariant === 'secondary' ? { size: triggerSize } : {})}
         {...(triggerIconBox ? { iconOnly: true, size: 'sm' as const } : {})}
         disabled={triggerDisabled}
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}

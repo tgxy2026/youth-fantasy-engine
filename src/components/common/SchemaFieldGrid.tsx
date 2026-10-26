@@ -10,6 +10,7 @@
 import { useMemo } from 'react'
 import { Info } from 'lucide-react'
 import AutoTextarea from '@/components/common/AutoTextarea'
+import FieldDescription from '@/components/common/FieldDescription'
 import type { TabDef } from '@/lib/types'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 
@@ -61,10 +62,11 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                       className="text-13 font-medium text-ink-100"
                       title={aliasLabels[key] === field.name ? undefined : `${field.name}（存储键不变，AI 按当前名称理解）`}
                     >{aliasLabels[key]}</div>
-                    {field.desc && <div className="field-desc mt-1">{field.desc}</div>}
+                    <FieldDescription label={aliasLabels[key] ?? field.name} description={field.desc} />
                   </div>
                   <div>
                     <AutoTextarea
+                      ariaLabel={aliasLabels[key] ?? field.name}
                       value={val}
                       onChange={v => onFieldChange(key, v)}
                       placeholder="点击填写…"
