@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { currentWorkspaceScope } from '@/lib/settings/workspaceRuntime'
 import { workspaceViews, restoreListSelection, type ListView } from '@/lib/settings/workspaceViewState'
 import { getCurrentProjectId } from '@/lib/db'
@@ -21,14 +21,17 @@ const read = (projectId: string, pageId: string) => {
  */
 export function useListWorkspaceView(projectId: string, pageId: string) {
   const mounted = useRef(true)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  // Flip ownership in the unmount commit, before a queued promise can run another job.
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const generation = useSyncExternalStore(workspaceViews.subscribeInvalidation, workspaceViews.generation)
   useSyncExternalStore(subscribeStorageContext, getStorageContextEpoch)
   const key = contextKey(projectId, pageId)
   const [pair, setPair] = useState(() => ({ key, generation, query: read(projectId, pageId)?.query ?? '' }))
   let current = pair
   if (pair.key !== key || pair.generation !== generation) {
-    current = { key, generation, query: pair.key !== key ? read(projectId, pageId)?.query ?? '' : '' }
+    const saved = read(projectId, pageId)
+    // Another project's deletion bumps the shared generation without deleting our view.
+    current = { key, generation, query: pair.key === key && saved ? pair.query : saved?.query ?? '' }
     setPair(current)
   }
   const { query } = current

@@ -5,7 +5,7 @@ import { recordError } from '@/lib/app/errorLog'
 
 /** Root render failures stay visible without making claims about an unconfirmed save. */
 export default class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; fallback?: (error: unknown) => React.ReactNode },
   { hasError: boolean; error: unknown }
 > {
   state: { hasError: boolean; error: unknown } = { hasError: false, error: undefined }
@@ -17,6 +17,7 @@ export default class ErrorBoundary extends React.Component<
   render() {
     const { error, hasError } = this.state
     if (!hasError) return this.props.children
+    if (this.props.fallback) return this.props.fallback(error)
     return <FailureNotice title="页面渲染出错" error={error}
       description="页面出现异常。已保存内容以实际存储结果为准，未提交的修改可能需要恢复。"
       actions={<>

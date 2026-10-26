@@ -21,7 +21,7 @@ try {
   const context=await browser.newContext({viewport:{width:1366,height:900},reducedMotion:'reduce'})
   await context.route('**/*',route=>{
     const url=route.request().url()
-    if(/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url))report.modelRequests.push(route.request().method())
+    if(/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url)){report.modelRequests.push(route.request().method());return route.abort()}
     return url.startsWith(origin+'/')?route.continue():route.abort()
   })
   page=await context.newPage();page.setDefaultTimeout(120000)
@@ -56,6 +56,15 @@ try {
   const before=await rows()
   await dashboard();await page.getByRole('heading',{name:'写作面板',exact:true}).waitFor()
   await enter();await query.waitFor()
+
+  await field.evaluate(el=>{el.dataset.otherProjectProbe='same-node'})
+  await page.evaluate(async projectId=>{
+    const {workspaceViews}=await import('/src/lib/settings/workspaceViewState.ts'),{currentWorkspaceScope}=await import('/src/lib/settings/workspaceRuntime.ts')
+    workspaceViews.deleteProject({...currentWorkspaceScope(projectId,'list:chapter-outline'),projectId:'unrelated-project-fixture'})
+  },fixture.projectId)
+  await page.waitForTimeout(150)
+  check('deleting another project view preserves the live filter, selection and draft DOM',await query.inputValue()==='现场'
+    &&await pick('现场乙').getAttribute('aria-pressed')==='true'&&await field.getAttribute('data-other-project-probe')==='same-node')
   check('real page return restores outline selection and filter',await query.inputValue()==='现场'&&await pick('现场乙').getAttribute('aria-pressed')==='true')
   check('view-only navigation never modifies outline business records',await rows()===before)
   await nav.getByRole('button',{name:'分卷大纲',exact:true}).click()
@@ -106,6 +115,10 @@ try {
   await dashboard();await page.waitForFunction(()=>document.body.innerText.includes('当前大纲改动没存上'))
   check('failed page leave preserves outline DOM, draft and selection with accurate feedback',await field.inputValue()===dirty
     &&await pick('现场甲').getAttribute('aria-pressed')==='true'&&await page.evaluate(()=>window.__outlineFailedPuts>0))
+  await page.getByRole('button',{name:'切换项目',exact:true}).click()
+  await page.waitForFunction(()=>document.body.innerText.includes('还没退出项目'))
+  check('failed project exit also retains the unsaved outline in the current project',await field.inputValue()===dirty
+    &&await page.evaluate(async projectId=>(await import('/src/lib/db.ts')).getCurrentProjectId()===projectId,fixture.projectId))
   await pick('现场乙').click();await page.waitForFunction(()=>document.body.innerText.includes('上一张的改动没能保存'))
   check('failed local record switch also retains the original draft',await field.inputValue()===dirty&&await pick('现场甲').getAttribute('aria-pressed')==='true')
   await page.evaluate(()=>window.__restoreOutlinePut())
@@ -154,7 +167,7 @@ try {
   })
   await pick('现场甲').click();await page.waitForFunction(()=>typeof window.__releaseOutlineWrite==='function')
   const latest='慢完成协议：保存期间继续输入的新稿'
-  await field.fill(latest);await dashboard();await page.waitForTimeout(200)
+  await field.fill(latest);await page.keyboard.press('Control+s');await dashboard();await page.waitForTimeout(200)
   check('slow local save and page leave share one pending writer while preserving newer typing',await page.evaluate(()=>window.__outlineSerialPuts===1)
     &&await field.inputValue()===latest&&await pick('现场乙').getAttribute('aria-pressed')==='true')
   await page.evaluate(()=>window.__releaseOutlineWrite())

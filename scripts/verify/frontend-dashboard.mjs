@@ -26,7 +26,7 @@ try{
   const context=await browser.newContext({viewport:{width:1366,height:900},reducedMotion:'reduce'})
   report.modelRequests=[]
   await context.route('**/*',route=>{
-    if(/\/chat\/completions|\/api\/ai(?:\/|$)/.test(route.request().url()))report.modelRequests.push(route.request().method())
+    if(/\/chat\/completions|\/api\/ai(?:\/|$)/.test(route.request().url())){report.modelRequests.push(route.request().method());return route.abort()}
     return route.request().url().startsWith(origin+'/')?route.continue():route.abort()
   })
   page=await context.newPage();page.setDefaultTimeout(120000)

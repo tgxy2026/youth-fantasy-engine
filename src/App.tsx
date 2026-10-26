@@ -1,4 +1,6 @@
 import FailureNotice from '@/components/common/FailureNotice'
+import ErrorBoundary from '@/components/common/ErrorBoundary'
+import WorkspacePageFailure from '@/components/app/WorkspacePageFailure'
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
@@ -799,9 +801,12 @@ export default function App() {
               用 min-h 可避免在某些中间态下被压成 0 */}
           {/* 🔴 2026-09-22 六维审计 P2：`50vh` 走 foldVh（界面缩放后 vh 不随 zoom 缩，
               132% 时会溢出视口）；这也是全项目唯一残留的内联 vh 任意值类。 */}
+          <ErrorBoundary key={projectId + ':' + activeTab} fallback={error => <WorkspacePageFailure error={error}
+            returnToEditor={activeTab === 'dashboard'} onReturn={() => navigate(activeTab === 'dashboard' ? 'editor' : 'dashboard')} />}>
           <Suspense fallback={<div className="w-full flex items-center justify-center text-ink-500 text-sm" style={{ minHeight: foldVh('50vh') }}>加载中…</div>}>
             {renderContent()}
           </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，

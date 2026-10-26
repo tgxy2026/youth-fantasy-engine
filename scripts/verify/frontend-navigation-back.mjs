@@ -29,7 +29,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' })
   await context.route('**/*', route => {
     const url = route.request().url()
-    if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url)) report.modelRequests.push({ method: route.request().method(), origin: new URL(url).origin })
+    if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url)) { report.modelRequests.push({ method: route.request().method(), origin: new URL(url).origin }); return route.abort() }
     return url.startsWith(origin + '/') ? route.continue() : route.abort()
   })
   page = await context.newPage()
