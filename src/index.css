@@ -668,8 +668,8 @@
   /* Short narrow windows need outer-page scrolling as well as independent list/detail scrolling.
      Otherwise the header and list can consume the entire available height and hide the editor. */
   @media (max-height: 700px) {
-    [data-character-workspace] { height: auto; min-height: 100%; }
-    [data-character-workspace] [data-master-detail][data-master-fill] {
+    [data-character-workspace], [data-outline-workspace] { height: auto; min-height: 100%; }
+    :is([data-character-workspace], [data-outline-workspace]) [data-master-detail][data-master-fill] {
       height: 32rem !important; min-height: 32rem; flex: none;
     }
   }

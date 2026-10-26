@@ -12,7 +12,6 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import TemplateLibrary from '@/components/library/TemplateLibrary'
-import { contentHeight, OUTLINE_SHEET_CHROME_PX } from '@/lib/settings/theme'
 import { MasterDetail, MasterList, useMasterFilter } from '@/components/common/MasterDetail'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { useOutlineWorkspaceScroll } from '@/components/outline/useOutlineWorkspaceScroll'
@@ -461,9 +460,9 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0
 
   return (
-    <div className="w-full page-enter">
+    <div data-outline-workspace className="w-full page-enter h-full min-h-0 flex flex-col">
       {/* 头部 */}
-      <header className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header className="mb-4 shrink-0 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -472,10 +471,10 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
 
 这是「${tab.name}」大纲，按${noun}拆分规划：
 
-· 左侧目录用「新建${noun}」新增；悬停可上移 / 下移排序、删除、复制。
+· 左侧目录用「新建${noun}」新增；悬停或键盘聚焦可上移 / 下移排序、删除，详情中可以复制。
 · 编辑「卷名 / 章节号·标题」时会自动同步左侧目录名。
 · 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
-· 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。`}</HelpPopover>
+· 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。${tab.tips?.length ? '\n\n填写提示：\n' + tab.tips.map(tip => '· ' + tip).join('\n') : ''}`}</HelpPopover>
             </div>
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">
               <span className="hidden @min-[64rem]/workspace:inline">{tab.description}</span>
@@ -531,7 +530,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                 style={{ width: `${totalFields ? (filledCount / totalFields) * 100 : 0}%` }}
               />
             </div>
-            <span className="text-10 text-ink-400 shrink-0">{draft.name} · {filledCount} / {totalFields} 项已填</span>
+            <span className="text-10 text-ink-400 shrink-0 max-w-[65%] truncate" title={`${draft.name} · ${filledCount} / ${totalFields} 项已填`}>{draft.name} · {filledCount} / {totalFields} 项已填</span>
           </div>
         )}
       </header>
@@ -539,7 +538,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
       {/* R4a · 2.6.0 结构模板节拍对照条（章节细纲页 · 只读）：按细纲卡数折算各拍章号范围，
           当前编辑章所在拍高亮。模板选择跟随创意写作 / 全书结构配比（单一来源），此处不提供切换。 */}
       {!isVolume && beatRanges && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850/60 px-3 py-2">
+        <div data-outline-structure className="mb-3 shrink-0 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850/60 px-3 py-2">
           <span className="text-10 text-ink-500 shrink-0">结构对照 · {structureTpl!.name}</span>
           {/* 🔴 问号紧跟功能名（红线）：必须排在标签之后、chips 之前，否则被 flex-wrap 的 chips 挤到行尾 */}
           <HelpPopover title="结构对照 · 怎么用" width="22rem">
@@ -565,10 +564,8 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
         </div>
       )}
 
-      {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`（原来手抄等价式，见 `CharacterSheet` 同处说明）。 */}
-      {/* 🔴 2026-10-05：`minHeight` → **锁定 `height`** + 两栏各自滚动（与 CharacterSheet 同批）。
-          原先只有 minHeight，卷/章大纲条目一多就把整页撑高、右栏被拖着一起滚到底。 */}
-      <MasterDetail height={contentHeight(OUTLINE_SHEET_CHROME_PX)}>
+      {/* The definite-height flex shell budgets the actual wrapped header and optional structure bar. */}
+      <MasterDetail>
         {/* 目录列表（含搜索 + 独立滚动） */}
         <MasterList
           scrollRef={listScrollRef}
@@ -611,7 +608,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                     .map(([, v]) => v)[0] || '未填写'}
                 </div>
                 {/* 悬停操作：排序 / 删除 */}
-                <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div data-outline-actions className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <Button variant="bare" iconOnly size="xs"
                     disabled={i === 0}
                     onClick={e => { e.stopPropagation(); moveRecord(rec.id, -1) }}
@@ -646,12 +643,11 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
           {draft ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 flex-wrap">
-                <h2
-                  className="text-lg font-bold text-amber cursor-pointer hover:text-amber-soft"
-                  onClick={renameRecord}
-                  title="点击改名（保存后生效）"
-                >
-                  {draft.name}
+                <h2 className="min-w-0 text-lg font-bold text-amber">
+                  <button type="button" onClick={renameRecord} title="点击改名（保存后生效）"
+                    className="max-w-full [overflow-wrap:anywhere] text-left hover:text-amber-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
+                    {draft.name}
+                  </button>
                 </h2>
                 <span className="text-10 text-ink-500">点击名称可改名 · 修改后点「保存」</span>
                 <span className="flex-1" />
@@ -712,17 +708,6 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
           )}
         </div>
       </MasterDetail>
-
-      {tab.tips && tab.tips.length > 0 && (
-        <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
-          {tab.tips.map((tip, i) => (
-            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
-              <Info size={12} className="mt-0.5 shrink-0" />
-              <span>{tip}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* 浮动保存按钮 */}
       {dirty && <SaveFab onClick={save} label={`保存「${draft?.name}」修改`} />}
