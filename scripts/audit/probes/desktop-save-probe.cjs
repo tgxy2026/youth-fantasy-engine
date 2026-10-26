@@ -42,10 +42,38 @@ async function openEditor(page) {
     if (await button.isVisible().catch(() => false)) await button.click()
   }
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: TITLE, exact: true }) }).getByRole('button', { name: '打开项目', exact: true }).click()
-  await page.getByRole('navigation').waitFor()
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-  await page.getByPlaceholder(EDITOR).waitFor()
+  // 🔴 备份提醒会把背景置为 inert/aria-hidden ⇒ 背景里的 `<nav>` 从可访问性树消失，
+  //    `getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测同款问题）。
+  //    先按 CSS 等进 DOM，再循环关提醒，最后仍要求 role=导航可见。
+  const navEl = page.locator('nav')
+  await navEl.waitFor({ state: 'attached', timeout: 45000 })
+  const nav = page.getByRole('navigation')
+  const navDeadline = Date.now() + 45000
+  while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+    for (const name of ['稍后再说', '知道了']) {
+      await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
+    }
+    await page.waitForTimeout(200)
+  }
+  await nav.waitFor({ timeout: 5000 })
+  // 🔴 仅仅「导航可见」还不够：提醒层的挂载/关闭是异步的，可能在导航可见之后又盖上来
+  //    （2026-10-26 实测 storage.desktop-save：点「正文编辑」被遮挡，等满 15s 超时）。
+  //    这里改成「点一下 → 关提醒 → 再点」，直到真的进了正文编辑；进不去仍然报错。
+  const enterDeadline = Date.now() + 45000
+  let entered = false
+  while (!entered && Date.now() < enterDeadline) {
+    try {
+      await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: 4000 })
+      await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
+      entered = true
+    } catch {
+      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+        await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
+      }
+      await page.waitForTimeout(200)
+    }
+  }
+  if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
 }
 async function main() {
   const buildArg = arg('--build-dir')

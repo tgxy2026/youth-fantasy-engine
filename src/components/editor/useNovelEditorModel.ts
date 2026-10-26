@@ -26,6 +26,7 @@ import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
+import { useShortWritingArea } from '@/components/editor/useShortWritingArea'
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -266,6 +267,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     ro.observe(el)
     return () => ro.disconnect()
   }, [loaded])
+  const { shortBody, minHeight: BODY_MIN_H } = useShortWritingArea(scrollRef, loaded) // 🔴 量正文壳，不是三栏区
   const sideW = focusMode ? 0 : chapterPane.size
   const chapterCompact = wrapW > 0 && wrapW < 760
   const searchFits = wrapW === 0 || wrapW - (chapterCompact ? 0 : sideW) >= MAIN_MIN_W + SEARCH_MIN_W
@@ -725,9 +727,8 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     return true
   }
 
-  // 🔴 3.3.0 · UX06：向 `App` 登记**离页屏障** —— 换页签 / 退出项目之前先问「存干净了吗」。
-  //    判定与冲刷都在 useEditorLeaveBarrier 里（只传 ref，屏障在渲染之外被调用）。
-  //    🔴 不复用 `flushEditorDraftNow`：那个是关窗兜底，故意吞失败，拿它当「离页已保存」就是静默丢稿。
+  // 🔴 3.3.0 · UX06 离页屏障：换页签 / 退出项目前先「存成功再走」（判定在 useEditorLeaveBarrier）。
+  //    绝不复用 flushEditorDraftNow —— 那个是关窗兜底、故意吞失败。
   const commitContentRef = useRef(commitContent)
   commitContentRef.current = commitContent
   useEditorLeaveBarrier({ activeRef, draftRef, commitContentRef, metaPending, metaFlush, autosaveTimer })
@@ -1181,7 +1182,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉

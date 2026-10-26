@@ -93,7 +93,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
@@ -547,10 +547,15 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </HelpPopover>
             </div>
 
-            {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应 */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden" ref={scrollRef}>
+            {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
+                🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
+                几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
+            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
-              <div className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
+              <div
+                className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative ${shortBody ? 'shrink-0' : 'flex-1 min-h-0'} flex flex-col overflow-hidden transition-[max-width] duration-300`}
+                style={shortBody ? { minHeight: BODY_MIN_H } : undefined}
+              >
                 {/* 段首缩进参考线（2.4.0 · A5 遗留补全）：极淡竖线标出每级缩进的位置，方便对齐多级缩进。
                     纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
                     垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。

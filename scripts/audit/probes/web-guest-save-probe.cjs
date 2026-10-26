@@ -48,12 +48,37 @@ async function openEditor(page) {
   await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: 45000 })
   await dismiss(page)
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: TITLE, exact: true }) }).getByRole('button', { name: '打开项目', exact: true }).click()
-  await page.getByRole('navigation').waitFor()
-  // The backup reminder is scheduled after opening a project, not synchronously with the click.
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
+  // 🔴 备份提醒是「打开项目之后」才挂的，而它把背景节点置为 inert/aria-hidden ⇒ 背景里的
+  //    `<nav>` **从可访问性树里消失**，`getByRole('navigation')` 连 `state:'attached'` 都等不到
+  //    （2026-10-26 实测 storage.web-guest-save：等满 45s 超时，而 failure.png 里导航其实画着）。
+  //    所以先用 CSS 定位等它进 DOM，再循环「关提醒 → 看角色定位是否可见」，最后仍要求
+  //    role=导航真的可见 —— 只改准备流程，产品可用性断言不放宽。
+  const navEl = page.locator('nav')
+  await navEl.waitFor({ state: 'attached', timeout: 45000 })
+  const nav = page.getByRole('navigation')
+  const deadline = Date.now() + 45000
+  while (Date.now() < deadline && !(await nav.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 2000 }).catch(() => {})
+    await dismiss(page)
+    await page.waitForTimeout(200)
+  }
+  await nav.waitFor({ timeout: 5000 })
   await dismiss(page)
-  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-  await page.getByPlaceholder(EDITOR).waitFor()
+  // 🔴 提醒层可能在导航可见之后又盖上来（异步挂载）：改成「点一下 → 关提醒 → 再点」，
+  //    直到真的进了正文编辑；进不去仍然报错。
+  const enterDeadline = Date.now() + 45000
+  let entered = false
+  while (!entered && Date.now() < enterDeadline) {
+    try {
+      await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: 4000 })
+      await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
+      entered = true
+    } catch {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+  }
+  if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
 }
 async function main() {
   const buildArg = arg('--build-dir')

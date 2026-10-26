@@ -102,14 +102,26 @@ try{
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
       return actual
     },{zoom:scenario.zoom,density})
+    // 🔴 160% 缩放下换档 + 重排不是两个 rAF 就稳的（机器忙时实测偶发量到中间态）。
+    //    这里补一个**探针侧**的落地等待，不改任何断言阈值。
+    await page.waitForTimeout(150)
     const titleBox=await title.boundingBox(),saveBox=await save.boundingBox()
     check(`primary controls stay visible at ${density} ${scenario.width}/${scenario.zoom}`,applied===scenario.zoom&&titleBox.width>96*scenario.zoom/100&&saveBox.x>=0&&saveBox.x+saveBox.width<=scenario.width+1&&saveBox.y+saveBox.height<=scenario.height)
-    check(`writing area and DOM remain usable at ${density} ${scenario.width}/${scenario.zoom}`,await sameNode()&&await editor.evaluate(el=>el.clientHeight>=80)&&await editor.inputValue()===savedContent)
+    // 🔴 失败时要把三项分别报出来：同一句断言里混了「DOM 复用 / 写作区高度 / 正文内容」三件事，
+    //    只报一句话会让人误以为是布局问题（2026-10-26 实测踩过）。
+    const same=await sameNode()
+    const height=await editor.evaluate(el=>el.clientHeight)
+    const value=await editor.inputValue()
+    check(`writing area and DOM remain usable at ${density} ${scenario.width}/${scenario.zoom}`,same&&height>=80&&value===savedContent,{same,height,valueLen:value.length,savedLen:savedContent.length,valueTail:value.slice(-24),savedTail:savedContent.slice(-24)})
     await tools.click();await actions.waitFor()
     const last=actions.getByRole('button').last();await last.focus()
     const box=await last.boundingBox()
     check(`last tool remains reachable at ${density} ${scenario.width}/${scenario.zoom}`,box.y>=0&&box.y+box.height<=scenario.height+1)
+    // 🔴 Escape 之后必须等浮层真的收起来再进入下一档：工具浮层参与纵向排布，
+    //    它没关就换档测量，会把正文区高度量成「工具面板还占着行」的中间态
+    //    （2026-10-26 实测：链条里连跑两次 compact 1000/160 量到 56px，单独跑却 40/40）。
     await page.keyboard.press('Escape')
+    await actions.waitFor({state:'hidden'})
     check(`layout preserves writing typography at ${density} ${scenario.width}/${scenario.zoom}`,await editor.evaluate((el,style)=>getComputedStyle(el).fontSize===style.fontSize&&getComputedStyle(el).lineHeight===style.lineHeight,typography))
   }
   check('narrow layout never rewrites the wide panel preference',await page.evaluate(()=>localStorage.getItem('yfe-chapter-w'))===preference)

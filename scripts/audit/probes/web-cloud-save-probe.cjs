@@ -102,10 +102,38 @@ async function openProjectEditor(page) {
   }
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: PROJECT_TITLE, exact: true }) })
     .getByRole('button', { name: '打开项目', exact: true }).click()
-  await page.getByRole('navigation').waitFor()
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-  await page.getByPlaceholder(EDITOR).waitFor()
+  // 🔴 备份提醒是「打开项目之后」才挂的，而它把背景置为 inert/aria-hidden ⇒ 背景里的 `<nav>`
+  //    **从可访问性树消失**，`getByRole('navigation')` 连 `state:'attached'` 都等不到
+  //    （2026-10-26 实测 storage.web-guest-save / web-cloud-save：等满超时，而截图里导航画着）。
+  //    先按 CSS 等它进 DOM，再循环「关提醒 → 看角色定位是否可见」，最后仍要求 role=导航真的可见。
+  const navEl = page.locator('nav')
+  await navEl.waitFor({ state: 'attached', timeout: 45000 })
+  const nav = page.getByRole('navigation')
+  const navDeadline = Date.now() + 45000
+  while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+    for (const name of ['稍后再说', '知道了']) {
+      await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
+    }
+    await page.waitForTimeout(200)
+  }
+  await nav.waitFor({ timeout: 5000 })
+  // 🔴 提醒层可能在导航可见之后又盖上来（异步挂载）：改成「点一下 → 关提醒 → 再点」，
+  //    直到真的进了正文编辑；进不去仍然报错，不放宽进入编辑器这一前置条件。
+  const enterDeadline = Date.now() + 45000
+  let entered = false
+  while (!entered && Date.now() < enterDeadline) {
+    try {
+      await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: 4000 })
+      await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
+      entered = true
+    } catch {
+      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+        await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
+      }
+      await page.waitForTimeout(200)
+    }
+  }
+  if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
 }
 
 async function main() {
