@@ -18,6 +18,12 @@ export async function getAllChapters(): Promise<Chapter[]> {
       return a.order - b.order
     })
 }
+/** Explicit-owner lookup for navigation. Capture the project before the asynchronous read. */
+export async function chapterExistsFor(projectId: string, chapterId: string): Promise<boolean> {
+  if (!projectId || !chapterId) return false
+  const chapter = await ops.get<Chapter>('chapters', chapterId)
+  return chapter?.projectId === projectId
+}
 export async function saveChapter(c: Chapter) {
   const old = await ops.get<Chapter>('chapters', c.id)
   await ops.put('chapters', { ...c, projectId: c.projectId || currentProjectId })

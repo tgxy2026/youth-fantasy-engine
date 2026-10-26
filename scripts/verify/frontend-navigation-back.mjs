@@ -127,6 +127,15 @@ try {
   const native = await editor.evaluate(el => ({ top: el.scrollTop, line: Number.parseFloat(getComputedStyle(el).lineHeight) }))
   check('原生光标移动无需大幅补滚（命中已经可见）', Math.abs(native.top - caret.top) < native.line * 3, { caret, native })
   check('① 返回入口带来源标签（不是笼统的「返回」）', (await chip.innerText()).includes(CARD))
+  report.returnGeometry = await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('button')].find(b=>b.textContent.includes('返回：'))
+    const a = chip.getBoundingClientRect()
+    return [...document.querySelectorAll('main button,main input')].filter(el=>el!==chip).map(el=>{
+      const b=el.getBoundingClientRect()
+      return {label:el.getAttribute('aria-label')||el.getAttribute('title')||el.textContent,
+        overlap:Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top))}
+    }).filter(item=>item.overlap>0)
+  })
 
   // Real IDB failure: a failed back request must keep its retry entry and the original DOM/draft.
   await page.evaluate(() => {
@@ -248,6 +257,52 @@ try {
     return ta.selectionStart===data.start&&ta.selectionEnd===data.start+data.length
   },{start:seeded.expectedOffset,length:seeded.expectedLength})
   check('取消后新的有效定位请求仍可正常选中命中词', true)
+
+  // Destination checks are real isolated-library reads; errors must not masquerade as deletion.
+  await nav.getByRole('button', {name: '主要角色', exact: true}).click()
+  await page.getByTitle(`查看「${CARD}」在正文中的提及`).click()
+  await page.getByRole('button').filter({hasText: MARKER}).first().click()
+  await chip.waitFor(); await editor.waitFor()
+  const bodyBeforeReadFailure = await editor.inputValue()
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.getAll
+    window.__navRestoreRead = () => { IDBObjectStore.prototype.getAll = original }
+    window.__navFailedReads = 0
+    IDBObjectStore.prototype.getAll = function(...args) {
+      if (this.name === 'cardRecords') { window.__navFailedReads++; throw new DOMException('navigation read fixture', 'UnknownError') }
+      return original.apply(this, args)
+    }
+  })
+  await chip.click()
+  await page.waitForFunction(() => document.body.innerText.includes('暂时无法读取目标'))
+  check('真实读取失败留在正文且保留返回入口，不假报记录删除', await page.evaluate(() => window.__navFailedReads > 0)
+    && await chip.isVisible() && await editor.inputValue() === bodyBeforeReadFailure)
+  await page.evaluate(async () => {
+    window.__navRestoreRead()
+    await (await import('/src/lib/db.ts')).deleteCardRecord('nav-back-card')
+  })
+  await chip.click()
+  await page.waitForFunction(() => document.body.innerText.includes('目标记录已不存在'))
+  await editor.waitFor({state:'hidden'})
+  check('已删除的返回来源退回有效写作面板，成功后消费返回入口', await chip.count() === 0
+    && await nav.getByRole('button', {name:'写作面板', exact:true}).getAttribute('aria-current') === 'page')
+  const deletedCardAbsent = await page.evaluate(async () => {
+    const db = await import('/src/lib/db.ts'), {TABS} = await import('/src/lib/schema.ts')
+    const tab = TABS.find(row => row.group === '角色管理')
+    return !(await db.getCardRecords(tab.id)).some(row => row.id === 'nav-back-card')
+  })
+  check('失效返回不重建已删除角色', deletedCardAbsent)
+  await page.evaluate(async id => {
+    const db = await import('/src/lib/db.ts')
+    await db.deleteChapter(id)
+    window.dispatchEvent(new CustomEvent('yfe:navigate', {detail:{tabId:'editor',chapterId:id,offset:12}}))
+  }, seeded.chapterId)
+  await page.waitForFunction(() => document.body.innerText.includes('目标章节已不存在'))
+  check('已删除章节放弃旧偏移并留在有效面板，不打开缓存旧稿', await editor.count() === 0
+    && await page.evaluate(async id => !(await (await import('/src/lib/db.ts')).getAllChapters()).some(c=>c.id===id), seeded.chapterId))
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('yfe:navigate', {detail:'removed-unknown-tab'})))
+  await page.waitForFunction(() => document.body.innerText.includes('目标页面已隐藏或不可用'))
+  check('不可用页面有明确说明并回到写作面板', !(await page.locator('main').innerText()).includes('页签不存在'))
 
   await page.screenshot({ path: path.join(run, 'navigation-back.png'), animations: 'disabled' })
   check('全程没有模型请求', report.modelRequests.length === 0, report.modelRequests)

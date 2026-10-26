@@ -8,6 +8,7 @@ export interface PageNavigationIntent {
   position?: EditorPosition
   source?: HistoryEntry
   back?: HistoryEntry
+  notice?: 'missing-chapter' | 'missing-record' | 'unavailable-page' | 'unsupported-record'
 }
 export type NavigationIntent = PageNavigationIntent | { kind: 'exit' }
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1e9

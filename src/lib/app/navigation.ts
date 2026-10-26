@@ -48,7 +48,7 @@ export interface NavigationGateOptions<T> {
   flush: () => Promise<{ ok: true } | { ok: false; scope: 'content' | 'meta'; error: unknown }>
   commit: (intent: T) => void
   invalid: (intent: T) => void
-  failed: (intent: T, scope: 'content' | 'meta', error: unknown) => void
+  failed: (intent: T, scope: 'content' | 'meta' | 'target', error: unknown) => void
 }
 
 /** Clean ordinary navigation remains synchronous. All async work owns one context and ticket. */
@@ -62,7 +62,7 @@ export function createNavigationGate<T>(options: NavigationGateOptions<T>) {
     const invalid = () => { if (current()) options.invalid(intent) }
     options.capture()
     let checked: T | null | Promise<T | null>
-    try { checked = options.validate(intent) } catch { invalid(); return }
+    try { checked = options.validate(intent) } catch (error) { if (current()) options.failed(intent, 'target', error); return }
     if (!(checked instanceof Promise) && !options.dirty()) {
       if (!current()) return
       if (checked) options.commit(checked)
@@ -71,22 +71,29 @@ export function createNavigationGate<T>(options: NavigationGateOptions<T>) {
     }
     options.busy.current = true
     void (async () => {
+      let phase: 'target' | 'content' = 'target'
       try {
-        const target = await checked
+        let target = await checked
         if (!current()) return
         if (!target) { invalid(); return }
-        if (options.dirty()) {
-          const result = await options.flush()
+        // A slow existence/permission read can overlap new typing after the first flush.
+        // Reflush that new draft before leaving, with a bound so continuous typing cannot trap navigation.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (options.dirty()) {
+            phase = 'content'
+            const result = await options.flush()
+            if (!current()) return
+            if (!result.ok) { options.failed(intent, result.scope, result.error); return }
+          }
+          phase = 'target'
+          target = await options.validate(target)
           if (!current()) return
-          if (!result.ok) { options.failed(intent, result.scope, result.error); return }
+          if (!target) { invalid(); return }
+          if (!options.dirty()) { options.commit(target); return }
         }
-        // An object or its visibility may have changed while saving. Never commit an old target.
-        const final = await options.validate(target)
-        if (!current()) return
-        if (final) options.commit(final)
-        else invalid()
+        options.failed(intent, 'content', new Error('检查目标期间仍有新修改，请稍后重试离开'))
       } catch (error) {
-        if (current()) options.failed(intent, 'content', error)
+        if (current()) options.failed(intent, phase, error)
       } finally { if (mine === ticket) options.busy.current = false }
     })()
   }

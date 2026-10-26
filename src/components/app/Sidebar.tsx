@@ -231,6 +231,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                         <div key={tab.id}>
                           <Button variant="bare"
                             onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
+                            aria-current={active ? 'page' : undefined}
                             className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
                                 ? 'bg-amber/15 text-amber font-medium border border-amber/25'
@@ -250,6 +251,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                 <div key={v.id} className="group flex items-center gap-0.5">
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
+                                    aria-current={v.id === activeTab ? 'page' : undefined}
                                     className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-13 transition-all duration-150
                                       ${v.id === activeTab
                                         ? 'bg-amber/15 text-amber font-medium border border-amber/25'
@@ -280,6 +282,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                       <Button variant="bare"
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
+                        aria-current={active ? 'page' : undefined}
                         className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
                           ${active
                             ? 'bg-amber/15 text-amber font-medium border border-amber/25'

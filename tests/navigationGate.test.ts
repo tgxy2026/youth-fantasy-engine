@@ -12,7 +12,9 @@ const fixture = () => {
   const gate = createNavigationGate<WorkspaceTarget>({
     context: () => state.owner, busy: state.busy, capture: () => { state.order.push('capture') },
     validate: intent => { state.order.push('validate'); return state.visible ? intent : null },
-    dirty: () => { state.order.push('dirty'); return state.dirty }, flush: () => flush(),
+    dirty: () => { state.order.push('dirty'); return state.dirty }, flush: async () => {
+      const result = await flush(); if (result.ok) state.dirty = false; return result
+    },
     commit: intent => { state.order.push('commit'); state.commits.push(intent) },
     invalid: () => { state.invalid++ }, failed: (_intent, scope) => { state.failures.push(scope) },
   })

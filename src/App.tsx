@@ -26,6 +26,7 @@ import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribe
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { useNavigationGate } from '@/lib/app/useNavigationGate'
+import { resolveNavigationDestination, navigationDestinationNotice } from '@/lib/app/navigationDestination'
 import { type ReferenceJump, type WorkspaceTarget } from '@/lib/app/navigation'
 import { useNavigationHistory } from '@/lib/app/useNavigationHistory'
 import { pageNavigationIntent, referenceNavigationIntent, commitNavigationHistory, type EditorPosition, type NavigationIntent } from '@/lib/app/referenceIntent'
@@ -506,25 +507,33 @@ export default function App() {
   const navGate = useNavigationGate<NavigationIntent>({
     context: navContext, busy: navPending, capture: captureWorkspaceView,
     dirty: leaveGuardDirty, flush: runLeaveGuard,
-    validate: intent => {
-      if (intent.kind === 'exit') return intent
-      const tab = getTab(intent.target.tabId)
-      return tab && !tabVisible(tab.id, visCtx) ? null : intent
-    },
+    validate: intent => resolveNavigationDestination(intent, {
+      // Editor is intentionally outside TABS/getTab; it is a first-class route nonetheless.
+      available: id => (id === 'editor' || !!getTab(id)) && tabVisible(id, visCtx),
+      recordKind: id => { const type = getTab(id)?.type; return type === 'card' || type === 'table' ? type : null },
+      chapterExists: id => db.chapterExistsFor(projectId ?? '', id),
+      recordExists: async (kind, tabId, id) => {
+        const pid = projectId ?? ''
+        const records = await (kind === 'card' ? db.getCardRecordsFor(pid, tabId) : db.getTableRowsFor(pid, tabId))
+        return records.some(record => record.id === id)
+      },
+    }),
     commit: intent => {
       if (intent.kind === 'exit') { clearHistory(); doExitProject() }
       else {
         applyNav(intent.target.tabId, intent.target.chapterId, intent.target.rowId, intent.position)
         commitNavigationHistory(navHistory.history, intent)
+        const notice = navigationDestinationNotice(intent.notice)
+        if (notice) showToast(notice, 'info')
       }
     },
-    invalid: intent => {
-      if (intent.kind === 'page' && intent.back) commitNavigationHistory(navHistory.history, intent)
+    invalid: () => {
       showToast('目标页面当前不可见，已留在当前页面', 'info')
     },
     failed: (intent, scope, error) => { showToast(saveFailureMessage(
-      (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
-        + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
+      scope === 'target' ? '暂时无法读取目标，已留在当前页面，请稍后重试 —— '
+        : (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
+          + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
   })
   useEffect(() => {
     navGate.invalidate(); resetNavigationTargets(); clearHistory()
