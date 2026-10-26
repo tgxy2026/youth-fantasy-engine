@@ -51,6 +51,7 @@ import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGua
 import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import { useDetailWorkspaceView } from '@/components/common/useDetailWorkspaceView'
+import type { NavigateToReference } from '@/lib/app/navigation'
 
 /**
  * 长文本字段**不封顶**的卡片页签（单一判据）：名单内的页签，其文本字段随内容一路长高、
@@ -95,13 +96,19 @@ interface Props {
   /** 跳转页签 / 正文（3.1 P1「资料提及」面板的章节跳转用） */
   onNavigate?: (id: string, chapterId?: string) => void
   /**
+   * 3.3.0 UX05：带来源的关联跳转（记下来源，目标页给「返回」入口）。
+   * 第 4 参是**来源记录 id**（当前这张卡）—— 返回时按行目标选中同一张卡，
+   * 否则回来只剩页签、作者还得自己再找一遍那张卡。
+   */
+  onNavigateReference?: NavigateToReference
+  /**
    * 可见性上下文（3.1.x）：透传给批量导入弹窗，供「AI 智能拆分」注入候选值
    * （角色名 / 势力名等）。与 `TableSheet` 的 `ctx` 同一口径。
    */
   ctx?: VisCtx
 }
 
-export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate, ctx = { type: 'full', features: [] } }: Props) {
+export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate, onNavigateReference, ctx = { type: 'full', features: [] } }: Props) {
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -1111,6 +1118,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           aliases={mention.aliases}
           onClose={() => setMention(null)}
           onNavigate={onNavigate ?? (() => {})}
+          onNavigateReference={onNavigateReference
+            // 🔴 源记录 id 走**第 5 参**：第 4 参是「跳转目标的行」。传错位置会被路由校验判成
+            //    「正文页带行目标」⇒ 静默不跳（2026-10-26 实测踩到，表现为点了没反应）。
+            ? (tabId, label, chapterId) => onNavigateReference(tabId, label, chapterId, undefined, draft?.id)
+            : undefined}
         />
       )}
     </div>

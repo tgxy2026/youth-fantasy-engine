@@ -1,4 +1,10 @@
 export interface WorkspaceTarget { tabId: string; chapterId?: string; rowId?: string }
+/**
+ * 「带来源的关联跳转」签名（UX05）。
+ * 第 4 参是**目标**的行目标；第 5 参是**来源**的记录 id（返回时用它把同一张卡/同一行选回来）。
+ * 🔴 两者顺序不能串：正文页不许带行目标，传错位置会被路由校验判成非法而静默不跳。
+ */
+export type NavigateToReference = (tabId: string, label: string, chapterId?: string, rowId?: string, sourceObjectId?: string) => void
 const id = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 256 && !/[\u0000-\u001f\u007f]/.test(v)
 
 /** Copy only routing IDs. No prose, drafts or arbitrary event properties enter navigation state. */

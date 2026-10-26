@@ -27,6 +27,8 @@ import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { useNavigationGate } from '@/lib/app/useNavigationGate'
 import { parseWorkspaceNavigation, type WorkspaceTarget } from '@/lib/app/navigation'
+import { useNavigationHistory } from '@/lib/app/useNavigationHistory'
+import BackToSource from '@/components/app/BackToSource'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
@@ -516,6 +518,37 @@ export default function App() {
     if (target) navGate.request({ kind: 'page', target })
   }, [navGate])
 
+  /**
+   * 3.3.0 · UX05：**关联跳转**才记来源（正文→提及章节、角色/设定→正文…）。
+   * 普通侧栏切换不记 —— 否则返回栈会变成浏览器历史，作者点两下侧栏就回不到"该回的地方"。
+   * 只存路由 ID 与一行短标签；`scopeKey` 一变（切项目/换存储上下文）整个栈作废。
+   */
+  const navHistory = useNavigationHistory(`${projectId}:${getStorageContextEpoch()}`)
+  const navigateToReference = useCallback((tabId: string, label: string, chapterId?: string, rowId?: string, sourceObjectId?: string) => {
+    // 源位置：正文用「当前章」，表格/卡片页用「当前记录」（优先显式传入的那条，其次是高亮目标）
+    const fromRow = sourceObjectId ?? focusRowId ?? undefined
+    const from: WorkspaceTarget = {
+      tabId: activeTab,
+      ...(activeTab === 'editor' && editorTarget ? { chapterId: editorTarget } : {}),
+      ...(activeTab !== 'editor' && fromRow ? { rowId: fromRow } : {}),
+    }
+    navHistory.record(from, label)
+    navigate(tabId, chapterId, rowId)
+  }, [activeTab, editorTarget, focusRowId, navHistory, navigate])
+  /** 返回来源：目标已不可见就丢掉这条（删掉/隐藏的页面不能一直挂着） */
+  const goBackToSource = useCallback(() => {
+    const entry = navHistory.top
+    if (!entry) return
+    const tab = getTab(entry.target.tabId)
+    if (!tab || !tabVisible(tab.id, visCtx)) {
+      navHistory.takeBack()
+      showToast('要返回的页面当前不可见，已移除这条来源', 'info')
+      return
+    }
+    navHistory.takeBack()
+    navigate(entry.target.tabId, entry.target.chapterId, entry.target.rowId)
+  }, [navHistory, navigate, visCtx])
+
   const exitProject = useCallback(() => navGate.request({ kind: 'exit' }), [navGate])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）
@@ -680,7 +713,7 @@ export default function App() {
         return tab.group === '大纲规划'
           ? <OutlineSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
           // focusRowId 也要下发：card 类页签（主要/次要/NPC 角色）同样会被报告指向（审计 P1-5）
-          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} ctx={visCtx} />
+          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} onNavigateReference={navigateToReference} ctx={visCtx} />
       case 'about':
         return <AboutPage />
       case 'map':
@@ -731,6 +764,12 @@ export default function App() {
           各留 ~490px），长内容的页面则**高出窗口被 main 裁掉且滚不到**（实测编辑器根高 1391 而可用仅 926）。
           补 `h-full` 后与「padding 还在 main 上」时的几何完全一致（内容高 = main 高 − 上下 padding）。 */}
       <main className={`@container/workspace min-w-0 flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
+        {/* UX05 返回来源：sticky + 零高度容器 ⇒ 常驻可见但不占布局（避免再压短窗正文区） */}
+        {navHistory.canGoBack && navHistory.top && (
+          <div className="pointer-events-none sticky top-0 z-30 h-0">
+            <BackToSource label={navHistory.top.label} onBack={goBackToSource} />
+          </div>
+        )}
         <div className={`workspace-content h-full ${isEditor ? '' : 'p-3 @min-[40rem]/workspace:p-6 @min-[64rem]/workspace:p-8'}`}>
           {/* fallback 用 min-h-* 而不是 h-full：它是**加载占位**，只需撑住视觉高度；
               用 min-h 可避免在某些中间态下被压成 0 */}
