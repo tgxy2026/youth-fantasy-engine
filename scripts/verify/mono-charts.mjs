@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const require = createRequire(import.meta.url)
 const { scanRenderedPaint } = require('../audit/browser-scan.cjs')
+const { openEditorNavigation } = require('../audit/probes/workspace-entry.cjs')
 const PORT = Number(process.env.YFE_PROBE_PORT || 5241)
 /** 画布级门槛：图表 svg 远大于图标（16×16），160px 足够区分又不会漏掉偏小的图 */
 const MIN_SVG = 160
@@ -82,9 +83,7 @@ async function main() {
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
-    const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    if (await later.isVisible().catch(() => false)) await later.click()
+    await openEditorNavigation(page)
 
     // mono 主题：与 useMonoTheme 同一个落点（CSS 变量据此切换），不是伪造样式
     await page.evaluate(() => { document.documentElement.dataset.theme = 'mono' })
