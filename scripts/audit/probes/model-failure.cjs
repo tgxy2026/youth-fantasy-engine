@@ -19,6 +19,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { chromium } = require('playwright')
+const { openEditorNavigation } = require('./workspace-entry.cjs')
 
 for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']) delete process.env[k]
 
@@ -146,10 +147,7 @@ async function main() {
       await page.getByRole('button', { name: '打开项目' }).first().click().catch(() => {})
       await sleep(4000)
     }
-    const nav = page.getByRole('navigation').first()
-    await nav.waitFor({ timeout: 45000 })
-    await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 2000 }).catch(() => {})
-    await nav.getByRole('button', { name: '正文编辑', exact: true }).click()
+    const nav = await openEditorNavigation(page)
     await page.getByPlaceholder(/开始写|在这里写|正文/).first().waitFor({ timeout: 30000 }).catch(() => {})
     await sleep(2500)
     const ta = page.locator('textarea.novel-textarea').first()

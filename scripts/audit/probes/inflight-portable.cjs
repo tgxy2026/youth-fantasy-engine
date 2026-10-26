@@ -28,6 +28,7 @@ const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { chromium } = require('playwright')
+const { openEditorNavigation } = require('./workspace-entry.cjs')
 
 for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'NODE_OPTIONS']) delete process.env[key]
 
@@ -118,6 +119,12 @@ async function main() {
   /** /api/data 的 PUT 轨迹：在途证据靠它，不靠「等一会儿看看」 */
   const puts = []
   let putDelay = 0, putFail = false
+  const containsChapter = (entry, id, content) => {
+    try {
+      const rows = JSON.parse(entry.body)?.stores?.chapters
+      return (Array.isArray(rows) ? rows : Object.values(rows ?? {})).some(row => row?.id === id && row.content === content)
+    } catch { return false }
+  }
 
   const diskText = async () => { try { return await fs.readFile(dataFile, 'utf8') } catch { return '' } }
   const chapterOf = text => {
@@ -139,10 +146,7 @@ async function main() {
     await dismiss(target)
     await target.locator('div.card-hover').filter({ has: target.getByRole('heading', { name: title, exact: true }) })
       .getByRole('button', { name: '打开项目', exact: true }).click()
-    await target.getByRole('navigation').first().waitFor({ timeout: 45000 })
-    await target.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-    await dismiss(target)
-    await target.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
+    await openEditorNavigation(target)
     await target.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
   }
   const backToHub = async () => {
@@ -185,12 +189,12 @@ async function main() {
       const before = puts.length
       await ta().fill(TEXT_A)
       await page.keyboard.press('Control+s')
-      await sleep(900)
+      await until(() => puts.slice(before).some(entry => containsChapter(entry, CA, TEXT_A) && !entry.doneAt), 30000, 'first text PUT in flight')
       // 这一笔此刻确实还在途中：延迟 4 秒，而我们已经开始写第二笔
       await ta().fill(TEXT_B)
       const editedAt = Date.now()
       await until(async () => (await diskChapter(CA))?.content === TEXT_B, 60000, 'latest text persisted')
-      const inFlight = puts.slice(before).filter(entry => entry.body.includes(TEXT_A.slice(0, 8)) && entry.doneAt && entry.doneAt > editedAt)
+      const inFlight = puts.slice(before).filter(entry => containsChapter(entry, CA, TEXT_A) && entry.at <= editedAt && entry.doneAt > editedAt)
       check('inflight-edit.in-flight-during-edit', inFlight.length > 0,
         `在途请求 ${inFlight.length} 笔，最晚一笔在改字后 ${inFlight.length ? Math.round((inFlight[inFlight.length - 1].doneAt - editedAt) / 100) / 10 : 0}s 才结束`)
       const afterText = await diskText()
@@ -212,13 +216,14 @@ async function main() {
       await ta().fill(TEXT_C)
       await sleep(300)
       await page.keyboard.press('Control+s')
-      await sleep(700)
+      await until(() => puts.slice(before).some(entry => containsChapter(entry, CA, TEXT_C) && !entry.doneAt), 30000, 'switch text PUT in flight')
       const switchedAt = Date.now()
       await backToHub()
       await openProject(page, TB)
-      const inFlight = puts.slice(before).filter(entry => entry.body.includes(TEXT_C.slice(0, 8)) && entry.doneAt && entry.doneAt > switchedAt)
-      check('project-switch.in-flight-during-switch', inFlight.length > 0, `在途请求 ${inFlight.length} 笔`)
+      // 离页屏障允许干净页同步切换；请求此时可能仍在途中，先等真实落盘再核完成时间。
       await until(async () => (await diskChapter(CA))?.content === TEXT_C, 45000, 'first project write landed')
+      const inFlight = puts.slice(before).filter(entry => containsChapter(entry, CA, TEXT_C) && entry.at <= switchedAt && entry.doneAt > switchedAt)
+      check('project-switch.in-flight-during-switch', inFlight.length > 0, `在途请求 ${inFlight.length} 笔`)
       const other = await diskChapter(CB)
       check('project-switch.write-landed', (await diskChapter(CA))?.content === TEXT_C)
       check('project-switch.other-untouched', other?.content === ORIG_B && other?.projectId === PB, JSON.stringify(other?.content ?? '').slice(0, 24))

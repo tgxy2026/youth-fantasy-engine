@@ -23,6 +23,7 @@ const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 const { chromium } = require('playwright')
+const { openEditorNavigation } = require('./workspace-entry.cjs')
 
 for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'NODE_OPTIONS']) delete process.env[key]
 
@@ -110,10 +111,7 @@ async function main() {
     await dismiss(target)
     await target.locator('div.card-hover').filter({ has: target.getByRole('heading', { name: title, exact: true }) })
       .getByRole('button', { name: '打开项目', exact: true }).click()
-    await target.getByRole('navigation').first().waitFor({ timeout: 45000 })
-    await target.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-    await dismiss(target)
-    await target.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
+    await openEditorNavigation(target)
     await target.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
   }
   const backToHub = async () => {
