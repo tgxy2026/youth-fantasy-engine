@@ -108,7 +108,14 @@ async function main() {
       nav.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
     ])
     if (await opener.isVisible().catch(() => false)) await opener.click()
-    await nav.waitFor({ timeout: 45000 })
+    // 🔴 打开项目之后备份提醒会**异步**挂上来，并把背景置 inert/aria-hidden ⇒ 角色定位看不到
+    //    `<nav>`。所以「关一次就等」不成立：要「关 → 看是否真的可见 → 再关」，最多 45s。
+    const navDeadline = Date.now() + 45000
+    while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+    await nav.waitFor({ timeout: 10000 })
     await dismiss(page)
     await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
     await page.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
@@ -169,7 +176,19 @@ async function main() {
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
+    // 🔴 备份提醒是「打开项目之后」才挂的，且把背景置 inert/aria-hidden ⇒ 背景里的 <nav>
+    //    在可访问性树里不存在，`getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测）。
+    //    先按 CSS 等进 DOM、再关提醒，最后仍要求导航真的可见 —— 只改准备流程，不放宽断言。
+    await page.locator('nav').waitFor({ state: 'attached', timeout: 45000 })
+    // 🔴 提醒是**异步**挂上来的：可能在我们关掉之后才出现，又一次把背景置成 inert。
+    //    所以不能「关一次就等」，要「关 → 看导航是否真的可见 → 没可见就再关」，最多 45s。
+    const navRole = page.getByRole('navigation')
+    const navDeadline = Date.now() + 45000
+    while (Date.now() < navDeadline && !(await navRole.isVisible().catch(() => false))) {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+    await navRole.waitFor({ timeout: 10000 })
     await dismiss(page)
     await openEditor(page)
     const editorBox = page.getByPlaceholder(EDITOR)

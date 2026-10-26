@@ -48,6 +48,7 @@ import { isTemplateTab } from '@/lib/templates/eligible'
 import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGuard'
 import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import type { ResolvedAtlasField } from '@/lib/atlas/types'
+import { useDetailWorkspaceView } from '@/components/common/useDetailWorkspaceView'
 
 /**
  * 长文本字段**不封顶**的卡片页签（单一判据）：名单内的页签，其文本字段随内容一路长高、
@@ -196,6 +197,20 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       })),
     }))
   }, [tab, templateDef, templateView, aliasLabels])
+
+  // UX06 · 详情页现场：记住「哪些分组展开着、滚到哪」（切换卡片/换页签回来都能接上）
+  // 🔴 pageId 带 tab.id：主要角色与次要角色、各种「其他设定」各记各的，记录不串。
+  const detailRef = useRef<HTMLDivElement>(null)
+  const defaultGroups = useMemo(
+    () => cardGroups.filter((group, index) => group.isBasic || index === 0).map(group => group.id),
+    [cardGroups],
+  )
+  const { expanded, toggle } = useDetailWorkspaceView({
+    pageId: `character:${tab.id}`,
+    objectId: draft?.id ?? null,
+    defaultGroups,
+    scrollRef: detailRef,
+  })
   const statusOf = (rec: CardRecord) => {
     const k = Object.keys(rec.data).find(kk => kk.endsWith('::人物状态'))
     return k ? (rec.data[k] || '').trim() : ''
@@ -903,7 +918,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         </MasterList>
 
         {/* 编辑区（独立滚动） */}
-        <div data-character-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div ref={detailRef} data-character-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
@@ -923,12 +938,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   </Button>
                 )}
               </div>
-              {cardGroups.map((group, groupIndex) => {
+              {cardGroups.map(group => {
                 // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好
                 //    （模板可以改名，不再按名字现场比 —— 2026-09-22 曾因此静默不渲染）。
                 const isBasicMod = group.isBasic
                 return (
-                <details key={group.id} open={group.isBasic || groupIndex === 0} data-card-group={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+                <details key={group.id} open={expanded.has(group.id)} onToggle={e => toggle(group.id, e.currentTarget.open)} data-card-group={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
                   <summary className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 cursor-pointer text-12 font-semibold text-ink-100">
                     <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400">{group.fields.length} 项</span>
                   </summary>

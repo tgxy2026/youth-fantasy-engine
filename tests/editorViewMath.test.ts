@@ -91,5 +91,28 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('④ 模型行数仍守 1200 硬上限', model.split('\n').length <= 1200, String(model.split('\n').length))
 }
 
+// ---------- ⑤ 详情页现场（分组展开 + 滚动）源码闸 ----------
+{
+  const sheet = read('src/components/world/CharacterSheet.tsx')
+  const hook = read('src/components/common/useDetailWorkspaceView.ts')
+  const hookCode = hook.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+  ok('🔴 ⑤ 角色页接上详情现场 hook', /useDetailWorkspaceView\(\{/.test(sheet))
+  ok('🔴 ⑤ 分组改受控：open 由记录决定、onToggle 回写',
+    /open=\{expanded\.has\(group\.id\)\}/.test(sheet) && /onToggle=\{e => toggle\(group\.id, e\.currentTarget\.open\)\}/.test(sheet))
+  ok('🔴 ⑤ 默认展开只由「基础组 / 首组」决定（不再是硬编码 groupIndex）',
+    /group\.isBasic \|\| index === 0/.test(sheet) && !/groupIndex === 0/.test(sheet))
+  ok('🔴 ⑤ 记录按页签分开（pageId 带 tab.id）', sheet.includes('pageId: `character:${tab.id}`'))
+  ok('🔴 ⑤ hook 登记到离页捕获', /registerWorkspaceCapture\(/.test(hook))
+  ok('🔴 ⑤ 折叠与滚动停稳都实时记（多个入口，不靠"临走抓一次"）',
+    /workspaceViews\.put\(scope, record\)/.test(hook) && /addEventListener\('scroll'/.test(hook))
+  ok('🔴 ⑤ 恢复要求记录对象＝当前对象', /record\.objectId === objectId/.test(hook))
+  ok('🔴 ⑤ 分组展开会改高度 ⇒ 滚动按比例恢复', /usable\.scroll\.ratio \* max/.test(hook))
+  ok('🔴 ⑤ 程序化改 open（恢复）不算用户操作，不作废在途恢复',
+    /live\.current\.expanded\.has\(groupId\) === open\) return/.test(hook))
+  ok('🔴 ⑤ 详情现场不写 localStorage / sessionStorage', !/localStorage|sessionStorage/.test(hookCode))
+  ok('🔴 ⑤ 恢复不抢焦点', !/\.focus\(/.test(hookCode))
+}
+
 console.log(`\n———— editorViewMath：${pass} 通过 / ${fail} 失败 ————`)
 if (fail > 0) process.exit(1)
