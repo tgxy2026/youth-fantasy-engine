@@ -24,6 +24,7 @@ import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
+import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
@@ -43,6 +44,7 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
+import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { applyStoredNetProxy } from '@/lib/settings/netPrefs'
 import { loadPromptOverrides } from '@/lib/ai/promptSettings'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
@@ -138,6 +140,12 @@ export default function App() {
    * 只有打开了**另一个项目**才清（那些任务属于上一个项目，留着会串味）。
    */
   const lastProjectRef = useRef<string | null>(null)
+  /**
+   * 离页屏障在途标记（3.3.0 · UX06）：换页签 / 退出项目要先等编辑器把脏稿写完，
+   * 这段时间里再点别的入口一律忽略 —— 否则「点 A 等写盘 → 又点 B」会走出两条导航，
+   * 后到的那条会在前一条保存成功后把作者带到意料之外的页面。
+   */
+  const navPending = useRef(false)
 
   // 从本地用户数据目录加载数据（桌面版）/ 从本地服务加载（便携版）
   useEffect(() => {
@@ -393,7 +401,13 @@ export default function App() {
     backupStop.current = startAutoBackup(id)
   }, [])
 
-  const exitProject = useCallback(() => {
+  /**
+   * 真正退出项目（调用前必须已经确认编辑器没有未落库的稿）。
+   * 3.3.0 · UX06：原实现直接在这里清 `projectId`，编辑器随即卸载 —— 而脏稿只能靠卸载时的
+   * 异步冲刷兜底，那条链**故意吞失败**且界面已经消失，作者既看不到提示也没法重试。
+   * 所以拆成「先过屏障 → 再调它」，屏障失败就根本不走这里。
+   */
+  const doExitProject = useCallback(() => {
     // 2.6.3 · 跨页签任务存活：退出项目 → **中止**所有在跑的后台任务
     //（🔴 不中止就会在项目已关闭后继续烧额度；任务记录保留，重开同项目能接着「继续」）
     abortAllTasks()
@@ -412,6 +426,24 @@ export default function App() {
     setProjectName('')
   }, [])
 
+  const exitProject = useCallback(() => {
+    // 3.3.0 · UX06：仓库里还有没落库的正文 / 标题摘要时，先等它写完；写失败就**不退**。
+    if (!leaveGuardDirty()) { doExitProject(); return }
+    if (navPending.current) return
+    navPending.current = true
+    void runLeaveGuard().then(r => {
+      navPending.current = false
+      if (r.ok) { doExitProject(); return }
+      showToast(
+        saveFailureMessage(
+          r.scope === 'meta' ? '还没退出项目：本章标题或摘要没存上 —— ' : '还没退出项目：本章正文没存上 —— ',
+          r.error,
+        ),
+        'error',
+      )
+    })
+  }, [doExitProject])
+
   /** 首启向导收尾：选定/导入了项目就直接进项目；跳过一次则留在项目管理页 */
   const onWelcomeDone = useCallback((id: string | null) => {
     setNeedWelcome(false)
@@ -428,7 +460,8 @@ export default function App() {
     markExported() // 记录「已导出到外部文件」，#031 提醒据此重新计时
   }, [projectId, projectName])
 
-  const navigate = useCallback((id: string, chapterId?: string) => {
+  /** 真正执行换页签（可见性校验 + 后台任务轻提示 + 落到目标页） */
+  const applyNav = useCallback((id: string, chapterId?: string) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
     /**
@@ -450,6 +483,31 @@ export default function App() {
     //    再点侧栏「正文编辑」，打开的仍是**第 3 章**（陈旧目标压过了「上次编辑章」）。
     if (id === 'editor') setEditorTarget(chapterId ?? null)
   }, [visCtx])
+
+  /**
+   * 3.3.0 · UX06：换页签前的**离页屏障**。
+   * 干净时（没有编辑器 guard / 没有脏稿）走原来的同步路径，一次 await 都不加；
+   * 只有真的有待落库的正文或标题摘要，才先等编辑器写盘：写成功才换页，失败就留在原页
+   * —— 原 DOM、原草稿、原滚动位置全部不动，作者可以直接重试。
+   */
+  const navigate = useCallback((id: string, chapterId?: string) => {
+    const t = getTab(id)
+    if (t && !tabVisible(t.id, visCtx)) return
+    if (!leaveGuardDirty()) { applyNav(id, chapterId); return }
+    if (navPending.current) return
+    navPending.current = true
+    void runLeaveGuard().then(r => {
+      navPending.current = false
+      if (r.ok) { applyNav(id, chapterId); return }
+      showToast(
+        saveFailureMessage(
+          r.scope === 'meta' ? '已留在当前页面：本章标题或摘要没存上 —— ' : '已留在当前页面：本章正文没存上 —— ',
+          r.error,
+        ),
+        'error',
+      )
+    })
+  }, [applyNav, visCtx])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）
   // detail 兼容两种形式：字符串 tabId，或 { tabId, rowId } 对象（直达并高亮具体行）

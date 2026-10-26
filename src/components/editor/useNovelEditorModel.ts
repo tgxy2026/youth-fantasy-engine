@@ -25,6 +25,7 @@ import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
+import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -206,12 +207,32 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   //    重载即失（切章改标题是很常见的动作，不是极端场景）。
   //    按 id 记账后：同一章的补丁互相覆盖（保住防抖），跨章的各存一份，到点一起冲。
   const metaPending = useRef(new Map<string, () => Promise<void>>())
-  /** 把所有待落库的元信息补丁一起冲刷（防抖到点、组件卸载都走它；引用稳定，卸载 effect 依赖为空也不怕） */
-  const metaFlush = useRef<() => Promise<void>>(async () => {
-    const jobs = [...metaPending.current.values()]
+  /**
+   * 把所有待落库的元信息补丁一起冲刷（防抖到点、组件卸载、离页屏障都走它；引用稳定，
+   * 卸载 effect 依赖为空也不怕）。
+   *
+   * 🔴 3.3.0 · UX06：原来的实现是 `j().catch(() => {})` —— **单笔失败被吞、队列照样清空**。
+   *    配上「清完就没人知道这笔记账」⇒ 标题/摘要的落库失败是**完全静默**的：界面显示新标题，
+   *    库里还是旧的，重启即回退。现在改成：
+   *      · 逐笔收集失败并**返回成败**，由调用方决定是否放行离页 / 是否提示；
+   *      · 失败的那笔记账**放回队列**（同章覆盖语义不变），下一轮编辑或下一次离页会重试，
+   *        而不是「报一次就算了、这一笔从此消失」。
+   *    仍然保持「单笔失败不阻断其余」——省得一个坏章节把别的章一起卡住。
+   */
+  const metaFlush = useRef<() => Promise<{ ok: boolean; errors: unknown[] }>>(async () => {
+    const jobs = [...metaPending.current.entries()]
     metaPending.current.clear()
-    // 单笔失败不阻断其余（下一轮编辑会再次入账并重试）
-    await Promise.all(jobs.map(j => j().catch(() => { /* 忽略单笔失败 */ })))
+    const errors: unknown[] = []
+    await Promise.all(jobs.map(async ([id, job]) => {
+      try {
+        await job()
+      } catch (e) {
+        errors.push(e)
+        // 期间又有新编辑入账时，以新那笔为准（新的补丁含旧补丁的全部键，重试不会回退）
+        if (!metaPending.current.has(id)) metaPending.current.set(id, job)
+      }
+    }))
+    return { ok: errors.length === 0, errors }
   })
   // 章节树 / 设定检索栏宽度可拖拽调整（持久化）
   // 🔴 3.1.2 视觉巡检 A 条：1440 视口下「章节树 320 + 检索栏 480」把正文列挤到只剩 317px（一行约 25 字）。
@@ -602,13 +623,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     !!active && draftContent !== active.content,
   )
 
-  // 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）
-  const commitContent = async (content?: string) => {
+  /**
+   * 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）。
+   * 🔴 3.3.0 · UX06：**必须返回成败**。原先 catch 里只 toast、函数返回 void，于是
+   *    `openChapter` 的 `await commitContent(...)` 无论写盘成败都会继续切章 —— 失败时
+   *    作者已在下一章，原稿只剩内存快照，一刷新就没。`{ ok: true }` 也包含「本来没东西可存」，
+   *    调用方只需判 `ok === false`。
+   */
+  const commitContent = async (content?: string): Promise<{ ok: boolean; error?: unknown }> => {
     // 🔴 基准必须**现读 chaptersRef**：渲染闭包里的 active 可能是旧快照（见 enqueueSave 头注）
     const base = activeId ? chaptersRef.current.find(c => c.id === activeId) : null
-    if (!base) return
+    if (!base) return { ok: true }
     const text = content ?? draftRef.current
-    if (text === base.content) return
+    if (text === base.content) return { ok: true }
     setSaving(true)
     try {
       const written = await enqueueSave(base.id, async () => {
@@ -628,10 +655,12 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
       onStatsChange?.()
       loadTodayWords()
+      return { ok: true }
     } catch (e) {
       // 🔴 落库失败必须复位 saving 并如实报错 —— 原先没有 try/finally，一旦抛错按钮会永久停在
       //    「保存中…」，还会产生未捕获 rejection（2026-09-19 六维审计 P1-5）。
       showToast(saveFailureMessage('保存失败：', e), 'error')
+      return { ok: false, error: e }
     } finally {
       setSaving(false)
     }
@@ -669,12 +698,39 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     syncHighlightScroll()
   }
 
-  /** 切换章节：先冲刷未保存的自动保存草稿，再切换 */
-  const openChapter = async (id: string) => {
-    if (active && draftContent !== active.content) await commitContent(draftRef.current)
+  /**
+   * 切换章节：先冲刷未保存的正文与标题/摘要，**两样都成功才真的切**。
+   * 返回是否切过去了；失败返回 false —— 原章、原 DOM、原草稿一律留在原地（UX06）。
+   * 🔴 原实现 `await commitContent(...)` 不看结果：落库失败照样 `setActiveId(next)`，
+   *    作者以为切章成功，其实上一章的新稿只在内存里。
+   */
+  const openChapter = async (id: string): Promise<boolean> => {
+    const cur = activeRef.current
+    if (cur && draftRef.current !== cur.content) {
+      const r = await commitContent(draftRef.current)
+      if (!r.ok) {
+        showToast('切换章节已取消：本章正文还没存上，请重试后再切', 'error')
+        return false
+      }
+    }
+    if (metaPending.current.size > 0) {
+      const m = await metaFlush.current()
+      if (!m.ok) {
+        showToast(saveFailureMessage('切换章节已取消：本章标题或摘要还没存上：', m.errors[0]), 'error')
+        return false
+      }
+    }
     clearTimeout(autosaveTimer.current)
     setActiveId(id)
+    return true
   }
+
+  // 🔴 3.3.0 · UX06：向 `App` 登记**离页屏障** —— 换页签 / 退出项目之前先问「存干净了吗」。
+  //    判定与冲刷都在 useEditorLeaveBarrier 里（只传 ref，屏障在渲染之外被调用）。
+  //    🔴 不复用 `flushEditorDraftNow`：那个是关窗兜底，故意吞失败，拿它当「离页已保存」就是静默丢稿。
+  const commitContentRef = useRef(commitContent)
+  commitContentRef.current = commitContent
+  useEditorLeaveBarrier({ activeRef, draftRef, commitContentRef, metaPending, metaFlush, autosaveTimer })
 
   /** 正文字号调节（14~28px，本地记忆） */
   const changeFontSize = (delta: number) => {
@@ -737,7 +793,13 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 🔴 P2-8：按章节 id 入账（同章覆盖、跨章共存），不再共用一个"最新那笔"
     metaPending.current.set(next.id, run)
     clearTimeout(metaTimer.current)
-    metaTimer.current = setTimeout(() => { void metaFlush.current?.() }, 600)
+    metaTimer.current = setTimeout(() => {
+      // 🔴 UX06：防抖到点的这笔也要**报失败**（原先是静默吞掉）。这一笔记账已被放回队列，
+      //    作者下一次编辑、切章或离页都会再试，所以这里只提示、不额外造重试循环。
+      void metaFlush.current().then(r => {
+        if (!r.ok) showToast(saveFailureMessage('标题/摘要保存失败：', r.errors[0]), 'error')
+      })
+    }, 600)
   }
 
   /** AI 一键生成「章节压缩摘要」：基于正文按 ~1/10 压缩回填到 active.summary（自动同步章节总表） */
