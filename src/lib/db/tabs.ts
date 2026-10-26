@@ -82,6 +82,16 @@ export async function getCardRecordsFor(pid: string, tabId: string): Promise<Car
   const all = await ops.getAll<CardRecord>('cardRecords')
   return all.filter(r => r.projectId === pid && r.tabId === tabId).sort((a, b) => a.order - b.order)
 }
+/** Existence checks need routing metadata only, not an entire list or any draft fields.
+ * The supplied project/tab remain authoritative even if the active project changes while reading.
+ */
+export async function tabRecordExistsFor({ kind, projectId, tabId, recordId }: {
+  kind: 'card' | 'table'; projectId: string; tabId: string; recordId: string
+}): Promise<boolean> {
+  if (!projectId || !tabId || !recordId || (kind !== 'card' && kind !== 'table')) return false
+  const record = await ops.get<CardRecord | TableRow>(kind === 'card' ? 'cardRecords' : 'tableRows', recordId)
+  return record?.projectId === projectId && record.tabId === tabId
+}
 export async function saveCardRecord(rec: CardRecord) {
   const store = ops
   const pid = rec.projectId || currentProjectId

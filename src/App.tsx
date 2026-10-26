@@ -513,11 +513,7 @@ export default function App() {
       available: id => (id === 'editor' || !!getTab(id)) && tabVisible(id, visCtx),
       recordKind: id => { const type = getTab(id)?.type; return type === 'card' || type === 'table' ? type : null },
       chapterExists: id => db.chapterExistsFor(projectId ?? '', id),
-      recordExists: async (kind, tabId, id) => {
-        const pid = projectId ?? ''
-        const records = await (kind === 'card' ? db.getCardRecordsFor(pid, tabId) : db.getTableRowsFor(pid, tabId))
-        return records.some(record => record.id === id)
-      },
+      recordExists: (kind, tabId, recordId) => db.tabRecordExistsFor({ kind, projectId: projectId ?? '', tabId, recordId }),
     }),
     commit: intent => {
       if (intent.kind === 'exit') { clearHistory(); doExitProject() }

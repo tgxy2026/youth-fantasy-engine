@@ -291,10 +291,10 @@ try {
   await chip.waitFor(); await editor.waitFor()
   const bodyBeforeReadFailure = await editor.inputValue()
   await page.evaluate(() => {
-    const original = IDBObjectStore.prototype.getAll
-    window.__navRestoreRead = () => { IDBObjectStore.prototype.getAll = original }
+    const original = IDBObjectStore.prototype.get
+    window.__navRestoreRead = () => { IDBObjectStore.prototype.get = original }
     window.__navFailedReads = 0
-    IDBObjectStore.prototype.getAll = function(...args) {
+    IDBObjectStore.prototype.get = function(...args) {
       if (this.name === 'cardRecords') { window.__navFailedReads++; throw new DOMException('navigation read fixture', 'UnknownError') }
       return original.apply(this, args)
     }
