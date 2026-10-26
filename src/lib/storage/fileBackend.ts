@@ -16,6 +16,7 @@
 //    服务在托管 `index.html` 前把这一行注入 <head>（见 portable-server.mjs）。
 //    不用 UA / 端口启发式：那些都能被误判，而误判的后果是「读不到数据」或「数据落到别处」。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
+import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import { normalizePortableData, isPortableDataFile, describeFileVersionProblem } from '@/lib/storage/storeOps'
 // keyOfRecord / PORTABLE_KEY_FIELDS 的真源已上移到 storeOps（3.2.2 · D2），本文件下方 re-export
 import { keyOfRecord } from '@/lib/storage/storeOps'
@@ -610,6 +611,7 @@ if (PORTABLE) registerSidecarApi(sidecarProxy)
  */
 export function replacePortableData(parsed: unknown): void {
   data = normalizePortableData(parsed)
+  invalidateStorageContext()
   dirty = true
   if (writeLocked) unlockPortableWrite()
   void flushPortable()

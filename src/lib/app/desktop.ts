@@ -7,6 +7,7 @@
 // 它是写进用户数据文件的字面量，改名会让老数据文件无法被识别。
 // 桌面版「导出数据文件 / 导入数据文件」即基于该格式，可在设备间手工搬运。
 import type { StoreOps, PortableData } from '@/lib/storage/storeOps'
+import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import { normalizePortableData, isPortableDataFile, describeDataFileReject, describeFileVersionProblem, PORTABLE_FILE_VERSION } from '@/lib/storage/storeOps'
 import type { SidecarApi, SidecarSpec } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi, type SidecarExportIssue } from '@/lib/storage/sidecar'
@@ -932,6 +933,7 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   const versionProblem = describeFileVersionProblem(parsed)
   if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
   data = normalizePortableData(parsed)
+  invalidateStorageContext()
   dirty = true
   // 🔴 导入一个**校验通过**的数据文件正是「锁写盘」的恢复手段：锁着 flushDesktop 直接返回 false，
   //    导入的数据根本落不了盘（用户只会看到「写入本地数据失败」，莫名其妙）。
@@ -1000,6 +1002,7 @@ export async function relocateDesktopDataFile(
   if (!r.ok) return { ok: false, path: '', adopted: false, copied: 0, error: r.error ?? '未知错误' }
   dataFilePath = r.path
   isCustomPath = true
+  invalidateStorageContext()
   return { ok: true, path: r.path, adopted: r.adopted, copied: r.copied ?? 0 }
 }
 
@@ -1016,6 +1019,7 @@ export async function resetDesktopDataPath(): Promise<{ ok: boolean; path: strin
   if (!r.ok) return { ok: false, path: '', adopted: false, copied: 0, error: r.error ?? '未知错误' }
   dataFilePath = r.path
   isCustomPath = false
+  invalidateStorageContext()
   return { ok: true, path: r.path, adopted: r.adopted, copied: r.copied ?? 0 }
 }
 

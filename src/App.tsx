@@ -25,6 +25,7 @@ import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/syn
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
+import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
@@ -75,6 +76,7 @@ const TrajectoryPanel = lazy(() => import('@/components/audit/TrajectoryPanel'))
 const WorldLibraryPanel = lazy(() => import('@/components/world/WorldLibraryPanel'))
 
 export default function App() {
+  useEffect(observeWorkspaceLifecycle, [])
   const [projectId, setProjectId] = useState<string | null>(null)
   // 内置背景开关（2.6.1）：必须在所有早退 return 之前调（rules-of-hooks）
   const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
@@ -427,9 +429,10 @@ export default function App() {
   }, [])
 
   const exitProject = useCallback(() => {
+    if (navPending.current) return
+    captureWorkspaceView()
     // 3.3.0 · UX06：仓库里还有没落库的正文 / 标题摘要时，先等它写完；写失败就**不退**。
     if (!leaveGuardDirty()) { doExitProject(); return }
-    if (navPending.current) return
     navPending.current = true
     void runLeaveGuard().then(r => {
       navPending.current = false
@@ -493,8 +496,9 @@ export default function App() {
   const navigate = useCallback((id: string, chapterId?: string) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
-    if (!leaveGuardDirty()) { applyNav(id, chapterId); return }
     if (navPending.current) return
+    captureWorkspaceView()
+    if (!leaveGuardDirty()) { applyNav(id, chapterId); return }
     navPending.current = true
     void runLeaveGuard().then(r => {
       navPending.current = false

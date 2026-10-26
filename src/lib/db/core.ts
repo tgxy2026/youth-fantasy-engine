@@ -6,6 +6,7 @@
 // ⚠️ `ops` 与 `currentProjectId` 是**可重新赋值**的模块级单例（桌面版启动后由 setStoreOps 换掉；切项目时由 setCurrentProject 写入）：
 //    **故它们必须 export** —— 兄弟业务域只读、不写（对 import 进来的绑定赋值是编译错误）；ESM 活绑定保证换值后各处都读到新值。
 import { openDB, type IDBPDatabase } from 'idb'
+import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import type { Project } from '@/lib/types'
 import type { StoreOps } from '@/lib/storage/storeOps'
 import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '@/lib/app/desktop'
@@ -556,6 +557,7 @@ if (CLOUD_FILE_SYNC) {
  */
 export function setStoreOps(o: StoreOps) {
   ops = o
+  invalidateStorageContext()
 }
 
 /**

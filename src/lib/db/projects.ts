@@ -1,6 +1,7 @@
 // ============ 存储层 · 项目（CRUD / 统计 / 导出导入 / 全量装载）============
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 import type { Project, Volume, Chapter, FormData, TableRow, CardRecord } from '@/lib/types'
+import { notifyProjectDeleted } from '@/lib/storage/contextEpoch'
 import { uid } from '@/lib/app/id'
 import type { TavernReport } from '@/lib/tavern/types'
 import type { AiRun } from '@/lib/ai/aiRunTypes'
@@ -120,6 +121,7 @@ export async function updateProject(patch: Partial<Project> & { id: string }) {
 export async function deleteProject(id: string) {
   // 章节行在下面那轮按 projectId 批量删，这里不必先全表读一遍 chapters（曾只为快照守卫而读）
   await ops.del('projects', id)
+  notifyProjectDeleted(id)
   /**
    * 🔴 删项目后要把「上次打开的项目」指针一并清掉（老大 2026-09-19 遇到的怪事：
    *    删掉的项目，下次启动又被自动打开）。
