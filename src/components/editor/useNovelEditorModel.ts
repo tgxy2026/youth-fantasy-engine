@@ -27,6 +27,7 @@ import { countWords } from '@/lib/editor/textStats'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
 import { useShortWritingArea } from '@/components/editor/useShortWritingArea'
+import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -395,11 +396,9 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
 
   // 从其他页签跳转进来时，直接打开目标章节
-  // 🔴 只消费一次（2026-10-17 全量审计 P2）：原先依赖数组带 `chapters`，而**每次正文保存**
-  //    都会换新数组 ⇒ effect 重跑并无条件 setActiveId(openChapterId)，把作者手动切到的章
-  //    **弹回目标章**（从「继续书写 / 章节规划板 / 全文检索」跳进来后，除目标章以外任何一章都
-  //    写不住：一保存就弹回）。改法：按 id 记账只消费一次；章还没加载出来时保留
-  //    `chapters` 依赖做一次重试（不消费就不会被弹回）。
+  // 🔴 只消费一次（2026-10-17 审计 P2）：依赖数组带 `chapters` 会让每次保存都重跑并无条件
+  //    setActiveId(openChapterId)，把作者手动切到的章弹回目标章。按 id 记账只消费一次；
+  //    章还没加载出来时保留 `chapters` 依赖做一次重试（不消费就不会被弹回）。
   const consumedOpenIdRef = useRef<string | null>(null)
   /** 刚被删除的章 id（一次性）：置空 activeId 触发的切章冲刷要跳过它，见 removeChapter */
   const skipFlushRef = useRef<string | null>(null)
@@ -408,6 +407,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     const ch = chaptersRef.current.find(c => c.id === openChapterId)
     if (!ch) return // 章尚未加载（或已被删）：等 chapters 变化再试；消费过就不会再进来
     consumedOpenIdRef.current = openChapterId
+    captureWorkspaceView() // 显式跳章也要先记下离开章的现场（显式定位本身优先于恢复）
     setActiveId(openChapterId)
     // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
     if (!expandedRef.current.has(ch.volumeId)) {
@@ -701,12 +701,12 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   }
 
   /**
-   * 切换章节：先冲刷未保存的正文与标题/摘要，**两样都成功才真的切**。
-   * 返回是否切过去了；失败返回 false —— 原章、原 DOM、原草稿一律留在原地（UX06）。
-   * 🔴 原实现 `await commitContent(...)` 不看结果：落库失败照样 `setActiveId(next)`，
-   *    作者以为切章成功，其实上一章的新稿只在内存里。
+   * 切换章节：先冲刷未保存的正文与标题/摘要，**两样都成功才真的切**；失败返回 false，
+   * 原章、原 DOM、原草稿一律留在原地（UX06）。另有 `captureWorkspaceView()` 在切换前记现场。
    */
   const openChapter = async (id: string): Promise<boolean> => {
+    // 先记下「离开这一章时的光标/滚动」，再进保存屏障（屏障失败留在原地，现场仍有效）
+    captureWorkspaceView()
     const cur = activeRef.current
     if (cur && draftRef.current !== cur.content) {
       const r = await commitContent(draftRef.current)

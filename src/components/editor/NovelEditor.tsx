@@ -66,6 +66,7 @@ const STATUS_LIST = Object.keys(STATUS_META) as ChapterStatus[]
 /** HTML 转义（防止引用名高亮注入）。先探测再替换：绝大多数正文片段不含 <>&，可省掉多次全量 replace */
 
 import { useNovelEditorModel } from '@/components/editor/useNovelEditorModel'
+import { useEditorWorkspaceView } from '@/components/editor/useEditorWorkspaceView'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 import ChapterContextPanel from '@/components/editor/ChapterContextPanel'
 import * as db from '@/lib/db'
@@ -107,6 +108,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 就绪与导出
     aiReady, runExport,
   } = model
+
+  // UX06 · 正文工作现场：离页/切章时同步捕获，进章后按「内容摘要是否一致」决定要不要恢复光标与位置
+  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef })
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
