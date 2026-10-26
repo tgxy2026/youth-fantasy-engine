@@ -7,6 +7,7 @@
  */
 import { specOf, tavernCallChat, type InterviewKind } from '@/lib/tavern/interview'
 import InterviewChat from '@/components/creative/InterviewChat'
+import type { CandidateSubmit } from '@/lib/ai/candidateApply'
 
 export default function TavernInterviewDialog({ open, kind, subject, existing, providerId, onClose, onApply }: {
   open: boolean
@@ -18,7 +19,7 @@ export default function TavernInterviewDialog({ open, kind, subject, existing, p
   /** 这一场指定的模型（不传则用控制面板的默认模型） */
   providerId?: string
   onClose: () => void
-  onApply: (filled: Record<string, string>) => void
+  onApply: CandidateSubmit
 }) {
   if (!open) return null
   return (

@@ -528,10 +528,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
     // R8：建卡后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止）
-    if (await blockedByMigration('ai-writeback')) return
+    if (await blockedByMigration('ai-writeback')) return false
     const accepted = acceptAiValues(values)
-    if (!accepted) return
-    if (!await flushCurrentDraft()) return
+    if (!accepted) return false
+    if (!await flushCurrentDraft()) return false
     const name = (nameStorageKey ? values[nameStorageKey] : '')?.trim() || `未命名${noun}`
     const rec: CardRecord = {
       id: uid(),
@@ -554,9 +554,9 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    * 采用后只写回 draft（不落库），由作者核对后点保存；dirty 是 draft 与库中记录的比对，会自动亮起。
    */
   const handleFillExisting = (values: Record<string, string>) => {
-    if (!draft) return
+    if (!draft) return false
     const accepted = acceptAiValues(values)
-    if (!accepted) return
+    if (!accepted) return false
     const next = { ...draft, data: { ...draft.data } }
     for (const [k, v] of Object.entries(accepted)) {
       // 只补空白：生成期间作者手填的内容不覆盖（模型可能按过期空白清单返回它）

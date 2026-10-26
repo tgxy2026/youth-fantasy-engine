@@ -693,7 +693,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const handleFill = async (values: Record<string, string>) => {
     // 🔴 R12：先核基准 —— 生成期间字段定义若变过，旧结果一律作废（不拿旧清单写新库）
     const base = await verifyAiWriteBase()
-    if (!base) return
+    if (!base) return false
     const data: Record<string, string> = {}
     tab.columns!.forEach(col => { data[col.name] = '' })
     if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
@@ -737,17 +737,17 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    */
   const handleFillRow = async (row: TableRow, values: Record<string, string>) => {
     const base = await verifyAiWriteBase()
-    if (!base) { setFillRow(null); return }
+    if (!base) { setFillRow(null); return false }
     const now = rowsRef.current.find(r => r.id === row.id)
     if (!now) {
       showToast('这一行已经不在了（本次补全结果已作废）', 'error')
       setFillRow(null)
-      return
+      return false
     }
     if (JSON.stringify(now.data) !== JSON.stringify(row.data)) {
       showToast('这一行的内容在生成期间变过（为避免覆盖，本次结果已作废），请重新生成', 'error')
       setFillRow(null)
-      return
+      return false
     }
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {

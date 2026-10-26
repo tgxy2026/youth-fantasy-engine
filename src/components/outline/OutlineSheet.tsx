@@ -338,7 +338,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
       await saveCardRecord(rec)
     } catch {
       showToast(`AI 新增${noun}失败，改动没有保存 —— 请重试`, 'error')
-      return
+      return false
     }
     setRecords([rec, ...records])
     // 与「新建」同口径（2026-10-19 审计）：切到 AI 新条目之前先冲刷旧草稿，失败就留在原处
@@ -356,7 +356,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
    * 采用后只写回 draft（不落库），由作者核对后点保存；dirty 是 draft 与库中记录的比对，会自动亮起。
    */
   const handleFillExisting = (values: Record<string, string>) => {
-    if (!draft) return
+    if (!draft) return false
     const next: CardRecord = { ...draft, data: { ...draft.data } }
     for (const [k, v] of Object.entries(values)) if (v && v.trim()) next.data[k] = v
     setDraft(next)

@@ -22,7 +22,7 @@ async function main() {
   const resultFile = ri >= 0 && process.argv[ri + 1] && !process.argv[ri + 1].startsWith('--') ? path.resolve(process.argv[ri + 1]) : null
   for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']) delete process.env[k]
   const out = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/workspace-layout-'))
-  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, density, out, cases: [], errors: [] }
+  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, density, out, cases: [], errors: [], modelRequests: [] }
   let server, browser
   try {
     const { createServer } = await import('vite')
@@ -40,6 +40,14 @@ async function main() {
     if (!ready) throw new Error('vite dev server 120 秒内没有返回首页')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1000, height: 640 } })
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url())
+      if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url.pathname)) {
+        result.modelRequests.push(route.request().method())
+        return route.abort()
+      }
+      return ['localhost', '127.0.0.1'].includes(url.hostname) && url.port === '5213' ? route.continue() : route.abort()
+    })
     page.setDefaultTimeout(12000)
     page.on('pageerror', e => result.errors.push(e.message))
     await page.goto('http://127.0.0.1:5213', { waitUntil: 'domcontentloaded', timeout: 120000 })

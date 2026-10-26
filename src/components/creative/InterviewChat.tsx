@@ -29,10 +29,13 @@ import {
 } from '@/lib/creative/interviewStore'
 import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
+import { candidateApplyContext, useCandidateApply } from '@/components/common/useCandidateApply'
+import type { CandidateSubmit } from '@/lib/ai/candidateApply'
+import { getCurrentProjectId } from '@/lib/db'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 
 export default function InterviewChat({
-  subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '生成草稿并填入', headerSlot,
+  subject, spec, existing, context, callChat, onClose, onApply, applyLabel = '采用候选并填入', headerSlot,
   persistScope, persistLabel,
 }: {
   /** 「角色卡」/「剧本」/「这份设定」—— 只用于文案 */
@@ -45,7 +48,7 @@ export default function InterviewChat({
   /** 实际发请求：酒馆用会话指定的模型、全局补全用活动模型 —— 由调用方决定 */
   callChat: (msgs: ChatMessage[], opts: { signal?: AbortSignal }) => Promise<string>
   onClose: () => void
-  onApply: (filled: Record<string, string>) => void
+  onApply: CandidateSubmit
   applyLabel?: string
   /**
    * 标题栏下方的附加区（2026-10-03）—— 各调用方在这里放自己的「带哪些既有设定一起聊」选择面板。
@@ -74,6 +77,19 @@ export default function InterviewChat({
   /** 卸载守卫：异步回来后不再 setState（切页签会卸载本组件） */
   const aliveRef = useRef(true)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const archiveOwner = useRef({ pid: getCurrentProjectId(), context: candidateApplyContext() })
+  const adoption = useCandidateApply(async values => {
+    const pid = getCurrentProjectId()
+    const context = candidateApplyContext()
+    const result = await onApply(values)
+    if (result === false) return false
+    if (context !== candidateApplyContext()) return false
+    // Cleanup belongs to the accepted source project, even if the caller closes this modal.
+    appliedRef.current = true
+    if (persistScope) await clearInterviewArchive(persistScope, pid)
+    if (aliveRef.current) showToast('采用操作已完成，请在目标页核对结果和保存状态')
+    return true
+  }, onClose)
 
   useEffect(() => {
     aliveRef.current = true
@@ -88,8 +104,8 @@ export default function InterviewChat({
   useEffect(() => {
     if (!persistScope) { setArchiveLoading(false); return }
     let alive = true
-    void loadInterviewArchive(persistScope).then(a => {
-      if (!alive) return
+    void loadInterviewArchive(persistScope, Date.now(), archiveOwner.current.pid).then(a => {
+      if (!alive || archiveOwner.current.context !== candidateApplyContext()) return
       setArchive(a)
       setArchiveLoading(false)
     })
@@ -98,13 +114,13 @@ export default function InterviewChat({
 
   /** 落盘：存档不是关键数据，失败不阻断对话（串行由 interviewStore 内部保证） */
   const persist = (next: InterviewState) => {
-    if (!persistScope) return
+    if (!persistScope || archiveOwner.current.context !== candidateApplyContext()) return
     void saveInterviewArchive(persistScope, {
       state: next,
       updatedAt: Date.now(),
       applied: false,
       subject: persistLabel ?? subject,
-    })
+    }, archiveOwner.current.pid)
   }
 
   /**
@@ -142,6 +158,7 @@ export default function InterviewChat({
 
   /** 恢复上次的对话（提示条消失，不再重复出现） */
   const restoreArchive = () => {
+    if (archiveOwner.current.context !== candidateApplyContext()) return
     if (!archive) return
     setState(archive.state)
     setArchive(null)
@@ -150,12 +167,13 @@ export default function InterviewChat({
 
   /** 丢掉存档、从第一句重新开始 */
   const restartFromScratch = () => {
+    if (archiveOwner.current.context !== candidateApplyContext()) return
     setArchive(null)
     startedRef.current = true
     const fresh = emptyInterview()
     setState(fresh)
     setInput('')
-    if (persistScope) void clearInterviewArchive(persistScope)
+    if (persistScope) void clearInterviewArchive(persistScope, archiveOwner.current.pid)
     void send(null, fresh)
   }
 
@@ -165,6 +183,8 @@ export default function InterviewChat({
    * 🔴 文案要讲清「会保留存档」—— 否则作者以为一关就全丢，反而不敢关。
    */
   const requestClose = () => {
+    if (adoption.isPending()) return
+    if (adoption.blocked) { onClose(); return }
     if (state.turns.length > 0 && !appliedRef.current) {
       void confirmDialog({
         title: '对话还没填回表单',
@@ -182,11 +202,9 @@ export default function InterviewChat({
     onClose()
   }
 
-  /** 填回表单：先清存档再交给调用方（已填过的会话不该再被恢复） */
+  /** Only an accepted callback may clear the archive; failed/declined attempts retain it. */
   const applyAndClose = () => {
-    appliedRef.current = true
-    if (persistScope) void clearInterviewArchive(persistScope)
-    onApply(state.filled)
+    void adoption.apply(state.filled)
   }
 
   useEffect(() => {
@@ -208,7 +226,7 @@ export default function InterviewChat({
 
   return (
     <Modal
-      open onClose={requestClose} title={`对话引导 · 创建${subject}`} width="xl"
+      open onClose={requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending} title={`对话引导 · 创建${subject}`} width="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-11 text-ink-500">
@@ -217,17 +235,16 @@ export default function InterviewChat({
               : `已收集 ${progress.got} / ${progress.total} 栏${state.done ? ' · AI 认为可以收尾了' : ''}`}
           </span>
           <div className="flex gap-2">
-            <Button variant="secondary" size="md" onClick={requestClose}>关闭</Button>
+            <Button variant="secondary" size="md" disabled={adoption.pending} onClick={requestClose}>关闭</Button>
             <Button
               variant="primary" size="md"
-              disabled={progress.got === 0 || busy}
+              disabled={progress.got === 0 || busy || adoption.pending || adoption.blocked}
               onClick={() => {
                 if (progress.got === 0) return
                 applyAndClose()
-                showToast(`已填入 ${progress.got} 栏 —— 生成的是草稿，逐栏改完再保存`)
               }}
             >
-              {applyLabel}
+              {adoption.pending ? '正在采用…' : applyLabel}
             </Button>
           </div>
         </div>
@@ -243,8 +260,8 @@ export default function InterviewChat({
             上次在聊「{archive.subject || subject}」，聊到第 {userTurnCount} 轮回答（{archiveAgeLabel(archive.updatedAt)}）—— 要接着聊吗？
           </span>
           <div className="ml-auto flex shrink-0 gap-2">
-            <Button variant="secondary" size="sm" disabled={busy} onClick={restoreArchive}>继续上次</Button>
-            <Button variant="secondary" size="sm" disabled={busy} onClick={restartFromScratch}>重新开始</Button>
+            <Button variant="secondary" size="sm" disabled={busy || adoption.pending || adoption.blocked} onClick={restoreArchive}>继续上次</Button>
+            <Button variant="secondary" size="sm" disabled={busy || adoption.pending || adoption.blocked} onClick={restartFromScratch}>重新开始</Button>
           </div>
         </div>
       )}
@@ -274,6 +291,7 @@ export default function InterviewChat({
           {err && (
             <p className="mt-1.5 text-11 leading-relaxed text-amber">⚠️ {err}</p>
           )}
+          {adoption.error && <p role="alert" className="rounded-lg border border-danger/40 bg-surface-panel p-2 text-12 text-danger">{adoption.error}</p>}
 
           {/* 🆕 3.0.3：临时附加文件 —— 对话式规划最需要"让 AI 先看看我这份资料" */}
           <div className="mt-2">
@@ -282,10 +300,11 @@ export default function InterviewChat({
 
           <div className="mt-2 flex items-end gap-2">
             <textarea
+              disabled={adoption.pending || adoption.blocked}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && input.trim() && !busy) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && input.trim() && !busy && !adoption.isPending() && !adoption.blocked) {
                   e.preventDefault()
                   const t = input
                   setInput('')
@@ -298,7 +317,7 @@ export default function InterviewChat({
             />
             <Button
               variant="primary" size="md" className="shrink-0"
-              disabled={busy || !input.trim()}
+              disabled={busy || adoption.pending || adoption.blocked || !input.trim()}
               onClick={() => { const t = input; setInput(''); void send(t) }}
             >
               发送
