@@ -738,7 +738,7 @@ export default function App() {
       case 'card':
         // 大纲规划下的卡片页签（分卷大纲/章节细纲）使用多记录目录管理组件
         return tab.group === '大纲规划'
-          ? <OutlineSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
+          ? <OutlineSheet key={tab.id} tab={tab} focusRowId={focusRowId} focusRequestId={editorRequestId} onFocusConsumed={clearFocusRow} />
           // focusRowId 也要下发：card 类页签（主要/次要/NPC 角色）同样会被报告指向（审计 P1-5）
           : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} onNavigateReference={navigateToReference} ctx={visCtx} />
       case 'about':

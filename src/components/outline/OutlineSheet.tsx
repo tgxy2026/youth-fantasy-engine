@@ -15,6 +15,7 @@ import TemplateLibrary from '@/components/library/TemplateLibrary'
 import { contentHeight, OUTLINE_SHEET_CHROME_PX } from '@/lib/settings/theme'
 import { MasterDetail, MasterList, useMasterFilter } from '@/components/common/MasterDetail'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
+import { useOutlineWorkspaceScroll } from '@/components/outline/useOutlineWorkspaceScroll'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -35,6 +36,7 @@ import { getStoryTemplate } from '@/lib/outline/storyStructures'
 interface Props {
   tab: TabDef
   focusRowId?: string | null
+  focusRequestId?: number
   onFocusConsumed?: () => void
 }
 
@@ -43,7 +45,7 @@ interface Props {
  * 左侧目录列表：新增 / 改名 / 删除 / 复制 / 上移下移排序
  * 右侧编辑区：全宽双栏模块表单，编辑"卷名/章节号"字段时自动同步目录名
  */
-export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props) {
+export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusConsumed }: Props) {
   const isVolume = tab.id === 'volume-outline'
   const noun = isVolume ? '分卷' : '章节'
   // 编辑该字段时自动同步目录列表名
@@ -79,6 +81,11 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
   const [loadError, setLoadError] = useState<string | null>(null)
   const recordsOwner = useRef(ownerKey)
   const [draft, setDraft] = useState<CardRecord | null>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const detailScrollRef = useRef<HTMLDivElement>(null)
+  const captureScroll = useOutlineWorkspaceScroll({ pageId: tab.id, ownerKey, generation: listView.generation,
+    ready: loaded, query: listQuery, selectedId: activeId, objectId: draft?.id ?? null,
+    targetId: focusRowId ?? null, requestId: focusRequestId, listRef: listScrollRef, detailRef: detailScrollRef, isCurrent })
   // 🔴 用 ref 持有最新草稿：下面「切换卡片」的 effect 里读到的是**切换前**的那一份 —— 正是要落库的。
   //    （与 CharacterSheet 的切卡守卫同型。审计 2026-09-18 P1-3：原先直接 setDraft(新卡)，
   //      未保存的编辑静默消失，SaveFab 也一并消失、界面上没有任何提示。）
@@ -410,12 +417,13 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
         }
       }
       if (!isCurrent()) return false
+      captureScroll()
       setActiveId(id)
       return true
     } finally {
       if (switchPending.current === pending) pending.busy = false
     }
-  }, [records, isCurrent, flushDraft, ownerKey])
+  }, [records, isCurrent, flushDraft, ownerKey, captureScroll])
 
   useEffect(() => {
     if (!loaded || !focusRowId || !records.some(record => record.id === focusRowId)) return
@@ -563,6 +571,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
       <MasterDetail height={contentHeight(OUTLINE_SHEET_CHROME_PX)}>
         {/* 目录列表（含搜索 + 独立滚动） */}
         <MasterList
+          scrollRef={listScrollRef}
           widthClass="w-52 lg:w-56"
           query={listQuery}
           queryMaxLength={200}
@@ -581,6 +590,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
               <div
                 key={rec.id}
                 data-outline-record={rec.id}
+                data-workspace-record={rec.id}
                 onClick={() => void switchTo(rec.id)}
                 title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
@@ -632,7 +642,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
         </MasterList>
 
         {/* 编辑区：全宽双栏（独立滚动） */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div ref={detailScrollRef} data-outline-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 flex-wrap">
@@ -664,7 +674,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
                         const key = `${mod.name}::${field.name}`
                         const val = draft.data[key] ?? ''
                         return (
-                          <div key={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
+                          <div key={key} data-workspace-field={key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
                             <div>
                               <div
                                 className="text-12 font-medium text-ink-100"

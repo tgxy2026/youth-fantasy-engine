@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode, type Ref } from 'react'
 import { Search } from 'lucide-react'
 
 /**
@@ -51,6 +51,7 @@ export function MasterList({
   query,
   onQueryChange,
   queryMaxLength,
+  scrollRef,
   placeholder = '搜索…',
   searchHint,
   header,
@@ -65,6 +66,7 @@ export function MasterList({
   query?: string
   onQueryChange?: (v: string) => void
   queryMaxLength?: number
+  scrollRef?: Ref<HTMLDivElement>
   placeholder?: string
   /** 搜索框下方的小字提示（如「已筛出 3 / 共 40」）；也可放「新建」按钮 */
   searchHint?: ReactNode
@@ -97,7 +99,7 @@ export function MasterList({
       {header && <div className="shrink-0 mb-2">{header}</div>}
 
       {/* 🔴 唯一滚动区：`min-h-0` 必须留，否则 flex 子项 min-height:auto 会撑破锁高 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 space-y-1.5">
+      <div ref={scrollRef} data-master-scroll className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 space-y-1.5">
         {isEmpty && emptyHint
           ? (
             <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">

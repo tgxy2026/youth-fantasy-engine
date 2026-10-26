@@ -12,9 +12,10 @@ export interface EditorView {
   layout: { width: number; height: number; fontSize: number; lineHeight: number }
   focused: boolean
 }
-export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll }
+export interface ViewAnchor { id: string; offset: number }
+export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll; anchor?: ViewAnchor }
 /** Search is transient UI input, never persisted; no record fields or draft bodies are retained. */
-export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll }
+export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll; anchor?: ViewAnchor }
 export type WorkspaceView = EditorView | DetailView | ListView
 export function restoreListSelection(records: readonly { id: string }[], remembered: string | null, explicit?: string | null): string | null {
   for (const candidate of [explicit, remembered]) if (candidate && records.some(record => record.id === candidate)) return candidate
@@ -43,13 +44,17 @@ function normalize(value: unknown): WorkspaceView | null {
   if (v.version !== VIEW_VERSION || !id(v.objectId)) return null
   const scroll = scrollOf(v.scroll)
   if (!scroll) return null
+  const candidate = v.kind === 'list' || v.kind === 'detail' ? v.anchor : undefined
+  if (candidate != null && (!id(candidate.id) || typeof candidate.offset !== 'number'
+    || !Number.isFinite(candidate.offset) || Math.abs(candidate.offset) > 1e9)) return null
+  const anchor = candidate ? { id: candidate.id, offset: candidate.offset } : undefined
   if (v.kind === 'list') {
     if ((v.selectedId !== null && !id(v.selectedId)) || typeof v.query !== 'string' || v.query.length > 200) return null
-    return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll }
+    return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll, ...(anchor ? { anchor } : {}) }
   }
   if (v.kind === 'detail') {
     if (!Array.isArray(v.groups) || v.groups.length > 128 || !v.groups.every(id)) return null
-    return { version: 1, kind: 'detail', objectId: v.objectId, groups: [...new Set(v.groups)], scroll }
+    return { version: 1, kind: 'detail', objectId: v.objectId, groups: [...new Set(v.groups)], scroll, ...(anchor ? { anchor } : {}) }
   }
   if (v.kind !== 'editor' || !opaqueId(v.revision) || !number(v.length) || !Number.isInteger(v.length)) return null
   const s = v.selection, l = v.layout

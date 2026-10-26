@@ -48,9 +48,12 @@ export function useListWorkspaceView(projectId: string, pageId: string) {
     if (!isCurrent()) return
     const scope = currentWorkspaceScope(projectId, 'list:' + pageId)
     if (!scope) return
+    const previous = read(projectId, pageId)
+    const position = previous?.query === query ? previous : null
     const view: ListView = { version: 1, kind: 'list', objectId: OBJECT, selectedId, query: query.slice(0, 200),
-      scroll: { top: 0, ratio: 0, outerTop: 0, outerRatio: 0 } }
+      scroll: position?.scroll ?? { top: 0, ratio: 0, outerTop: 0, outerRatio: 0 },
+      ...(position?.anchor ? { anchor: position.anchor } : {}) }
     workspaceViews.put(scope, view, generation)
   }, [projectId, pageId, query, generation, isCurrent])
-  return { query, setQuery, choose, remember, isCurrent, ownerKey: key }
+  return { query, setQuery, choose, remember, isCurrent, ownerKey: key, generation }
 }
