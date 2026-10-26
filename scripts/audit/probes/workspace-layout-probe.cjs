@@ -101,7 +101,10 @@ async function main() {
           }
           const header = main.querySelector('header')?.getBoundingClientRect()
           if (header && header.height > m.height * .6) issues.push({ kind: 'header-crowding', height: header.height })
-          return { mainWidth: m.width, mainHeight: m.height, scrollWidth: main.scrollWidth, headerHeight: header?.height, issues }
+          // A scrollable ancestor does not make a zero-height editor reachable.
+          const detail = main.querySelector('[data-character-detail]')
+          if (detail && detail.clientHeight < 80) issues.push({ kind: 'unusable-character-detail', height: detail.clientHeight })
+          return { mainWidth: m.width, mainHeight: m.height, scrollWidth: main.scrollWidth, headerHeight: header?.height, detailHeight: detail?.clientHeight ?? null, issues }
         })
         const row = { ...scenario, density, ...tab, ...measurement }
         result.cases.push(row)

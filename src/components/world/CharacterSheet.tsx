@@ -9,7 +9,9 @@ import { uid } from '@/lib/app/id'
 import { Plus, Trash2, UserRound, Info, Save, Check, Sparkles, EyeOff, Wand2, Search, FileDown, FileUp, ArrowRightLeft, LayoutTemplate } from 'lucide-react'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
-import CharacterPortraitSlots from '@/components/world/CharacterPortraitSlots'
+import CharacterPortraitPanel from '@/components/world/CharacterPortraitPanel'
+import CharacterProfileHeader from '@/components/world/CharacterProfileHeader'
+import { characterProfileFields, characterProfileFacts } from '@/lib/world/characterProfile'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import TableRefSelect from '@/components/sheets/TableRefSelect'
 import AITemplateFill from '@/components/ai/AITemplateFill'
@@ -21,7 +23,6 @@ import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { useFieldGating } from '@/lib/templates/useFieldLabels'
-import { contentHeight, CARD_SHEET_CHROME_PX } from '@/lib/settings/theme'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
@@ -106,6 +107,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const [saved, setSaved] = useState(false)
   /** B7：立绘压缩中（压缩是异步的，要防重复点击） */
   const [portraitBusy, setPortraitBusy] = useState(false)
+  const portraitRequest = useRef({ version: 0 })
+  useEffect(() => {
+    const request = portraitRequest.current
+    request.version++
+    setPortraitBusy(false)
+    return () => { request.version++ }
+  }, [activeId, tab.id])
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
@@ -202,6 +210,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const isCharTab = tab.group === '角色管理'
   const noun = isCharTab ? '角色' : '设定'
   const nounCard = isCharTab ? '角色卡' : '设定'
+  const profileFields = useMemo(() => isCharTab ? characterProfileFields(
+    templateView ?? resolveTemplateForTab(tab, { aliases: aliasLabels, purpose: 'detail' }),
+    templateDef?.bindings, cardPending,
+  ) : cardGroups.flatMap(group => group.fields.map(field => ({ sourceKey: field.key, label: field.label }))),
+  [isCharTab, tab, templateView, templateDef, aliasLabels, cardPending, cardGroups])
   /**
    * 批量导入 / 导出用的**虚拟表格页签**（3.1.x）：把 `tab.modules` 拍平成 `columns`，
    * 让世界构建组那一整套 tableIO 逻辑（解析 / 映射 / 校验 / 模板 / 说明）原样复用 ——
@@ -670,14 +683,19 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    * `undefined` = 删除该位立绘（字段可选，删了就回到"没传"的状态）。
    */
   const updatePortrait = async (file: File | null, slot: 1 | 2 = 1) => {
+    const targetId = draft?.id
+    const targetProject = draft?.projectId
+    if (!targetId) return
     if (!file) {
       setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: undefined } : { ...d, portrait: undefined }) : d))
       return
     }
+    const request = ++portraitRequest.current.version
     setPortraitBusy(true)
     try {
       const r = await readPortraitFile(file)
-      setDraft(d => (d ? (slot === 2 ? { ...d, portrait2: r.dataUrl } : { ...d, portrait: r.dataUrl }) : d))
+      if (request !== portraitRequest.current.version || draftRef.current?.id !== targetId || draftRef.current.projectId !== targetProject) return
+      setDraft(d => (d?.id === targetId && d.projectId === targetProject ? (slot === 2 ? { ...d, portrait2: r.dataUrl } : { ...d, portrait: r.dataUrl }) : d))
       const who = slot === 2 ? '立绘 2 ' : '立绘 '
       showToast(
         r.downscaled
@@ -686,9 +704,10 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         'success',
       )
     } catch (e) {
+      if (request !== portraitRequest.current.version) return
       showToast(e instanceof Error ? e.message : '这张图不能用作立绘', 'error')
     } finally {
-      setPortraitBusy(false)
+      if (request === portraitRequest.current.version) setPortraitBusy(false)
     }
   }
 
@@ -730,8 +749,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   if (!loaded) return <LoadingState />
 
   return (
-    <div className="page-enter">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+    <div className="page-enter h-full min-h-0 flex flex-col" data-character-workspace>
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 shrink-0 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="min-w-[14rem] flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
@@ -820,7 +839,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
               这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
           {isCharTab && (
-            <Button variant="toggle" selected={hideRetired}
+            <Button variant="toggle" selected={hideRetired} aria-pressed={hideRetired}
               onClick={() => setHideRetired(v => !v)}
               className="font-medium hover:bg-amber/25"
               title="隐藏「人物状态 = 已退场」的角色，避免列表过长"
@@ -831,18 +850,14 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         </div>
       </header>
 
-      {/* 🔴 2026-09-22 六维审计 P2：内联长度走 `foldVh()`，别手抄 `calc(100vh / var(--ui-zoom,1))` ——
-          手抄的等价式在 token 名变一次就静默失效（本处原先是手写的）。 */}
-      {/* 🔴 2026-10-05：`minHeight` → **锁定 `height`** + 两栏各自滚动。
-          原先只有 minHeight，左栏角色一多就把整页撑高、右栏被拖着一起滚到底
-          （社区反馈：批量改某栏数据要上下来回滚）。见 `MasterDetail.tsx` 说明。 */}
-      <MasterDetail height={contentHeight(CARD_SHEET_CHROME_PX)}>
+      {/* The App workspace supplies a definite height; header wrapping consumes real space. */}
+      <MasterDetail>
         {/* 卡片列表（含搜索 + 独立滚动） */}
         <MasterList
           widthClass="w-44 lg:w-52"
           query={listQuery}
           onQueryChange={setListQuery}
-          placeholder="搜角色名…"
+          placeholder={`搜${noun}名…`}
           searchHint={isFiltering
             ? <span className="text-10 text-ink-500">筛出 {shownRecords.length} / 共 {records.length}</span>
             : undefined}
@@ -852,6 +867,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           {shownRecords.map(rec => {
             const isActive = activeId === rec.id
             const isDirty = isActive && dirty
+            const current = isActive && draft ? draft : rec
+            const preview = characterProfileFacts(profileFields, current.data)[0]
             return (
               <div
                 key={rec.id}
@@ -863,20 +880,22 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-2">
-                  <UserRound size={13} className="shrink-0" />
-                  <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
+                  <Button variant="bare" className="min-w-0 flex-1 !justify-start" onClick={() => setActiveId(rec.id)} aria-pressed={isActive} aria-label={'选择'+noun+'：'+current.name}>
+                    <UserRound size={13} className="shrink-0" />
+                    <span className="text-13 font-medium truncate">{current.name}</span>
+                  </Button>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
                   <Button variant="bare" iconOnly size="xs" title={`查看「${rec.name}」在正文中的提及`}
-                    onClick={e => { e.stopPropagation(); setMention({ name: rec.name, aliases: readAliases(tab.id, rec.data) }) }}
+                    onClick={e => { e.stopPropagation(); setMention({ name: current.name, aliases: readAliases(tab.id, current.data) }) }}
                     className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all">
                     <Search size={12} />
                   </Button>
-                  <Button variant="icon-danger" iconOnly size="xs" title="删除这张角色卡" onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
+                  <Button variant="icon-danger" iconOnly size="xs" title={`删除这条${nounCard}`} onClick={e => { e.stopPropagation(); removeCard(rec.id) }} className="opacity-40 group-hover:opacity-100 transition-all">
                     <Trash2 size={12} />
                   </Button>
                 </div>
-                <div className="text-10 text-ink-500 mt-0.5 truncate">
-                  {Object.values(rec.data).find(v => v) || '未填写'}
+                <div className="text-10 text-ink-500 mt-0.5 truncate" title={preview ? `${preview.label}：${preview.value}` : undefined}>
+                  {preview ? `${preview.label}：${preview.value}` : '暂无简要信息'}
                 </div>
               </div>
             )
@@ -884,18 +903,12 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
         </MasterList>
 
         {/* 编辑区（独立滚动） */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div data-character-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
-                <h2
-                  className="text-lg font-bold text-amber cursor-pointer hover:text-amber-soft"
-                  onClick={renameCard}
-                  title="点击改名（保存后生效）"
-                >
-                  {draft.name}
-                </h2>
-                <span className="text-10 text-ink-500">点击姓名可改名 · 修改后点「保存」</span>
+                <CharacterProfileHeader name={draft.name} portrait={draft.portrait || draft.portrait2}
+                  facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
                 {/* 跨页签移动（3.1.3）：角色卡升级 / 降级的正路 ——
                     左右两栏挨着的页签来回切着复制粘贴，既容易漏项也会丢立绘。 */}
                 {moveTargets.length > 0 && (
@@ -910,24 +923,16 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   </Button>
                 )}
               </div>
-              {cardGroups.map(group => {
+              {cardGroups.map((group, groupIndex) => {
                 // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好
                 //    （模板可以改名，不再按名字现场比 —— 2026-09-22 曾因此静默不渲染）。
                 const isBasicMod = group.isBasic
                 return (
-                <section key={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
-                    <span className="w-1 h-3 rounded-full bg-amber/70" />
-                    <h3 className="text-12 font-semibold text-ink-100">{group.label}</h3>
-                  </div>
-                  {/* 🔴 B7：只在「基础信息」模块里做左右分栏 ——
-                      这一模块的字段都极短（姓名 / 别称 / 保密等级 / 身份定位），
-                      输入框收窄后右侧会空出一大片，正好让立绘占住。
-                      ⚠️ 2026-09-22 返工两处：
-                        ① 立绘块必须在**字段区之后**（DOM 顺序 = 显示在右）。第一版写在字段区之前，
-                           于是立绘跑到**左侧**去了；
-                        ② 尺寸 144px → 256 / 288px（xl），文本框同时收窄（见下方 max-w）。
-                      其余模块（外貌 / 性格…）字段可长可短，一栏到底更合适，不动。 */}
+                <details key={group.id} open={group.isBasic || groupIndex === 0} data-card-group={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+                  <summary className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 cursor-pointer text-12 font-semibold text-ink-100">
+                    <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400">{group.fields.length} 项</span>
+                  </summary>
+                  {/* Uploaded portraits retain the established right-side width; empty slots fold below fields. */}
                   <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
                   <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-center' : ''}`}>
@@ -940,7 +945,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                           ? `${field.name}（存储键不变，AI 按当前名称理解）`
                           : undefined
                       return (
-                        <div key={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
+                        <div key={key} data-card-field={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
                           isBasicMod ? 'grid-cols-1 @min-[28rem]/workspace:grid-cols-[104px_minmax(0,1fr)]' : 'grid-cols-1 @min-[40rem]/workspace:grid-cols-[140px_minmax(0,1fr)]'
                         }`}>
                           <div>
@@ -972,6 +977,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               />
                             ) : CARD_SELECT_FIELDS[field.name] ? (
                               <select
+                                aria-label={field.label}
                                 value={val}
                                 onChange={e => updateField(key, e.target.value)}
                                 className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
@@ -982,6 +988,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               </select>
                             ) : field.type === 'boolean' ? (
                               <select
+                                aria-label={field.label}
                                 value={val}
                                 onChange={e => updateField(key, e.target.value)}
                                 className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
@@ -992,6 +999,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               </select>
                             ) : field.type === 'select' && (field.options?.length ?? 0) > 0 ? (
                               <select
+                                aria-label={field.label}
                                 value={val}
                                 onChange={e => updateField(key, e.target.value)}
                                 className="w-full text-12 bg-ink-800 border border-ink-700 rounded px-2 py-1"
@@ -1003,6 +1011,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                               </select>
                             ) : (
                               <AutoTextarea
+                                ariaLabel={field.label}
                                 value={val}
                                 onChange={v => updateField(key, v)}
                                 placeholder="点击填写…"
@@ -1021,33 +1030,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                       )
                     })}
                   </div>
-                  {/* 立绘位列（B7）—— 🔴 必须在字段区**之后**：DOM 顺序决定它显示在右侧。
-                      与基础信息模块**融合**：只加一条左边框做分隔，不另立卡片。
-                      ⚠️ 2026-09-22 三次调整：1 张（144px）→ 1 张（256px）→ **2 张并排**
-                      （`w-80 / xl:w-[32rem]`；xl 下每张可视宽约 234px、高约 416px）。
-                      两张的用意是把这一列**竖向占满** —— 只放一张时下方会空着一块。 */}
-                  {isBasicMod && (
-                    <div className="w-[17.5rem] shrink-0 border-l border-ink-700 px-4 py-3 flex flex-col">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-11 text-ink-400">人物立绘</span>
-                        <span className="ml-auto text-10 text-ink-500">两张 · 9:16 不裁切</span>
-                      </div>
-                      {/* 立绘两格：3.2.0 拆成独立组件（单文件行数硬上限；也各自支持拖拽） */}
-                      <CharacterPortraitSlots
-                        name={draft.name}
-                        portrait={draft.portrait}
-                        portrait2={draft.portrait2}
-                        busy={portraitBusy}
-                        onPick={(f, slot) => void updatePortrait(f, slot)}
-                        onRemove={slot => void updatePortrait(null, slot)}
-                      />
-                    </div>
-                  )}
+                  {isBasicMod && (<CharacterPortraitPanel
+                      name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
+                      onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
                   {/* 闭合「基础信息」的左右分栏容器（其余模块这个 div 不生成，类名为空也无害） */}
                   </div>
-                </section>
+                </details>
                 )
               })}
+              {!cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
+                      name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
+                      onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">
@@ -1058,7 +1051,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
       </MasterDetail>
 
       {tab.tips && tab.tips.length > 0 && (
-        <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
+        <div className="mt-3 max-h-24 shrink-0 overflow-y-auto rounded-xl border border-amber/20 bg-amber/5 p-3 space-y-1.5">
           {tab.tips.map((tip, i) => (
             <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
               <Info size={12} className="mt-0.5 shrink-0" />

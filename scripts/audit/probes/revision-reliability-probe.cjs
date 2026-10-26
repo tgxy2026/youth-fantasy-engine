@@ -9,7 +9,7 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const crypto = require('node:crypto')
-const { _electron } = require('playwright')
+const { _electron, chromium } = require('playwright')
 const ROOT = path.resolve(__dirname, '../../..')
 const PID = 'reliability-project'
 const CH = 'reliability-chapter'
@@ -25,6 +25,8 @@ function check(name, passed, detail) {
 const hash = data => crypto.createHash('sha256').update(data).digest('hex')
 
 async function main() {
+  const { snapshot } = await import('../platform/source.mjs')
+  const sourceFingerprint = snapshot(ROOT).fingerprint
   const runRoot = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/revision-reliability-'))
   const profile = path.join(runRoot, 'profile')
   const now = Date.now()
@@ -49,11 +51,28 @@ async function main() {
   const portAt = process.argv.indexOf('--port')
   const port = Number(portAt >= 0 ? process.argv[portAt + 1] : 5206)
   let server, app, page
-  const evidence = { runRoot, at: new Date().toISOString(), scope: 'Electron development renderer + real IPC/files; native chooser/save dialog return values stubbed', checks }
+  const evidence = { schemaVersion: 1, kind: 'revision-reliability', sourceFingerprint, runRoot, at: new Date().toISOString(), scope: 'Electron development renderer + real IPC/files; native chooser/save dialog return values stubbed', checks }
   try {
     const { createServer } = await import('vite')
     server = await createServer({ root: ROOT, cacheDir: path.join(runRoot, 'vite-cache'), server: { host: '127.0.0.1', port, strictPort: true } })
     await server.listen()
+    // A fresh Vite cache may need longer than the Electron debugger handshake timeout.
+    // Prepare the real module graph in a separate empty browser context, then close it.
+    // This does not seed Electron storage or replace any production IPC/action assertion.
+    const preparationStarted = Date.now()
+    const warmBrowser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
+    try {
+      const context = await warmBrowser.newContext()
+      await context.route('**/*', route => {
+        const target = new URL(route.request().url())
+        return target.port === String(port) && ['127.0.0.1', 'localhost'].includes(target.hostname) ? route.continue() : route.abort()
+      })
+      const warmPage = await context.newPage()
+      await warmPage.goto(`http://127.0.0.1:${port}`, { waitUntil: 'commit', timeout: 120000 })
+      await warmPage.getByRole('button', { name: /先看看示例/ }).waitFor({ timeout: 120000 })
+      evidence.preparation = { kind: 'isolated-browser-module-prewarm', ready: true, elapsedMs: Date.now() - preparationStarted }
+      console.log('PREPARED isolated Vite renderer')
+    } finally { await warmBrowser.close() }
     app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env: { ...process.env, ELECTRON_START_URL: `http://127.0.0.1:${port}` }, timeout: 45000 })
     page = await app.firstWindow()
     page.setDefaultTimeout(15000)
@@ -248,6 +267,9 @@ async function main() {
     await app?.close().catch(() => {})
     await server?.close().catch(() => {})
     evidence.passed = checks.filter(c => c.passed).length
+    evidence.stale = snapshot(ROOT).fingerprint !== sourceFingerprint
+    evidence.status = !evidence.error && !evidence.stale && evidence.passed === 16 && checks.every(c => c.passed) ? 'passed' : 'failed'
+    if (evidence.status !== 'passed') process.exitCode = 1
     await fs.writeFile(path.join(runRoot, 'results.json'), JSON.stringify(evidence, null, 2))
     console.log(JSON.stringify({ evidence: path.join(runRoot, 'results.json'), passed: evidence.passed, failed: checks.filter(c => !c.passed).length, error: evidence.error }))
   }

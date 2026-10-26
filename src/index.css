@@ -663,6 +663,16 @@
   [data-master-detail], [data-adaptive-master] > .flex.flex-1 {
     flex-direction: column; height: 32rem !important; min-height: 32rem; gap: .75rem;
   }
+  /* A definite-height flex workspace already accounts for its wrapped header and footer. */
+  [data-master-detail][data-master-fill] { height: auto !important; min-height: 0; }
+  /* Short narrow windows need outer-page scrolling as well as independent list/detail scrolling.
+     Otherwise the header and list can consume the entire available height and hide the editor. */
+  @media (max-height: 700px) {
+    [data-character-workspace] { height: auto; min-height: 100%; }
+    [data-character-workspace] [data-master-detail][data-master-fill] {
+      height: 32rem !important; min-height: 32rem; flex: none;
+    }
+  }
   [data-master-detail] > [data-master-list],
   [data-adaptive-master] > .flex.flex-1 > :first-child {
     width: 100%; flex: 0 0 8rem; max-height: 8rem; min-height: 0;

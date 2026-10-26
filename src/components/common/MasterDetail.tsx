@@ -29,11 +29,11 @@ export function MasterDetail({
   height,
 }: {
   children: ReactNode
-  /** 由 `contentHeight(…CHROME_PX)` 提供，切勿手抄 calc */
-  height: string
+  /** Fixed legacy layouts use contentHeight; omit inside a definite-height flex column. */
+  height?: string
 }) {
   return (
-    <div data-master-detail className="flex gap-5 min-h-0 overflow-hidden" style={{ height }}>
+    <div data-master-detail data-master-fill={!height || undefined} className={`flex gap-5 min-h-0 overflow-hidden ${height ? '' : 'flex-1'}`} style={{ height }}>
       {children}
     </div>
   )
@@ -84,6 +84,7 @@ export function MasterList({
             value={query ?? ''}
             onChange={e => onQueryChange!(e.target.value)}
             placeholder={placeholder}
+            aria-label={placeholder}
             className="w-full !pl-7 text-12"
           />
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />

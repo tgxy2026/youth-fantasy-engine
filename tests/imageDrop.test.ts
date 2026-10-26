@@ -139,7 +139,8 @@ function main() {
     ok('⑤ 兜底已挂载到入口', read('src/main.tsx').includes('installFileDropGuard()'))
 
     ok('⑤ 角色卡：立绘两格由独立组件承载（拆出去后别把渲染点一起删了）',
-      read('src/components/world/CharacterSheet.tsx').includes('<CharacterPortraitSlots'))
+      read('src/components/world/CharacterSheet.tsx').includes('<CharacterPortraitPanel') &&
+      read('src/components/world/CharacterPortraitPanel.tsx').includes('<CharacterPortraitSlots'))
 
     // 拖拽与「点按钮选图」必须是同一条通路：不能出现拖拽专用的第二条处理函数
     for (const [label, file] of zones) {

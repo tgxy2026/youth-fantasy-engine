@@ -49,6 +49,7 @@ interface Props {
   autoFocus?: boolean
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   title?: string
+  ariaLabel?: string
   /**
    * 外部 ref：需要程序化聚焦 / 选中一段文本时传（酒馆的快捷指令预填要用 ——
    * 预填后把「该改的那一段」选中，作者直接改就行）。
@@ -66,7 +67,7 @@ interface Props {
 export default function AutoTextarea({
   value, onChange, placeholder, className = '',
   minRows, minHeight, maxHeight = 360, textClass = 'text-12',
-  disabled, spellCheck, autoFocus, onKeyDown, title, inputRef,
+  disabled, spellCheck, autoFocus, onKeyDown, title, ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
 
@@ -89,6 +90,20 @@ export default function AutoTextarea({
   useEffect(() => { measure() }, [measure, value, textClass])
   // 窗口尺寸（含界面缩放）变化时重测 —— 宽度变了行数就变，旧高度会失真
   useEffect(() => subscribeResize(measure), [measure])
+  // Opening a collapsed group or resizing its parent can change width without a window resize.
+  // Observe width only so writing the measured height cannot trigger a feedback loop.
+  useEffect(() => {
+    const ta = ref.current
+    if (!ta || typeof ResizeObserver === 'undefined') return
+    let width = ta.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (ta.clientWidth === width) return
+      width = ta.clientWidth
+      if (width > 0) measure()
+    })
+    observer.observe(ta)
+    return () => observer.disconnect()
+  }, [measure])
 
   return (
     <textarea
@@ -102,6 +117,7 @@ export default function AutoTextarea({
       autoFocus={autoFocus}
       onKeyDown={onKeyDown}
       title={title}
+      aria-label={ariaLabel}
       style={minHeight ? { minHeight } : undefined}
       className={`w-full leading-relaxed resize-none overflow-y-auto ${textClass} ${className}`}
     />

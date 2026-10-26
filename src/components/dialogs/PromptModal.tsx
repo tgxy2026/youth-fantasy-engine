@@ -76,7 +76,6 @@ export default function PromptModal({
       {label && <div className="text-11 text-ink-400 leading-relaxed mb-1.5">{label}</div>}
       <input
         ref={inputRef}
-        autoFocus
         type={password ? 'password' : 'text'}
         value={val}
         onChange={e => setVal(e.target.value)}
