@@ -1119,9 +1119,8 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           onClose={() => setMention(null)}
           onNavigate={onNavigate ?? (() => {})}
           onNavigateReference={onNavigateReference
-            // 🔴 源记录 id 走**第 5 参**：第 4 参是「跳转目标的行」。传错位置会被路由校验判成
-            //    「正文页带行目标」⇒ 静默不跳（2026-10-26 实测踩到，表现为点了没反应）。
-            ? (tabId, label, chapterId) => onNavigateReference(tabId, label, chapterId, undefined, draft?.id)
+            // 对象入参：只补「来源卡 id」，目标字段原样透传（位置参数时代这里传错过，静默不跳）
+            ? jump => onNavigateReference({ ...jump, ...(draft?.id ? { sourceId: draft.id } : {}) })
             : undefined}
         />
       )}

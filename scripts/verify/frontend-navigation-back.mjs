@@ -65,8 +65,12 @@ try {
     await db.saveCardRecord({ id: 'nav-back-card', name: card, data: { '基础信息::姓名': card }, tabId: tab.id, projectId, order: 800 })
     const chapters = await db.getAllChapters()
     const target = chapters[0]
-    await db.patchChapter(target.id, { content: `${marker}${card}。\n\n${target.content ?? ''}` })
-    return { chapterId: target.id, chapterTitle: target.title ?? '' }
+    // 命中放在**正文中段**：偏移不为 0，才能验证「真的落到那一段」而不是碰巧在第一行
+    const head = '开篇雨声未歇，守门人仍站在原地。\n\n'
+    const content = `${head}${marker}${card}。\n\n${target.content ?? ''}`
+    await db.patchChapter(target.id, { content })
+    return { chapterId: target.id, chapterTitle: target.title ?? '',
+      expectedOffset: head.length + marker.length, expectedLength: card.length, contentLength: content.length }
   }, { card: CARD, marker: MARKER })
   if (!seeded.chapterId) throw new Error('示例项目没有章节，无法验证跳章返回')
 
@@ -113,6 +117,11 @@ try {
   await chip.waitFor({ timeout: 15000 })
   check('🔴 ① 从「提及」跳章后出现明确的返回入口', await chip.isVisible())
   check('🔴 ① 跳过去的正文确实是那一章（内容含标记）', (await editor.inputValue()).includes(MARKER))
+  // 段落级定位：光标应落在命中处，且把命中词选中
+  const caret = await editor.evaluate(el => ({ start: el.selectionStart, end: el.selectionEnd, top: el.scrollTop, len: el.value.length }))
+  check('🔴 ① 落在命中那一段（光标 ＝ 正文内偏移）', caret.start === seeded.expectedOffset, { caret, seeded })
+  check('🔴 ① 命中词被选中（一眼看到落在哪）', caret.end === seeded.expectedOffset + seeded.expectedLength, { caret, seeded })
+  check('① 定位后滚动位置是有限值（不越界）', Number.isFinite(caret.top) && caret.top >= 0, caret)
   check('① 返回入口带来源标签（不是笼统的「返回」）', (await chip.innerText()).includes(CARD))
 
   // ---------- ② 点返回：回到同一张卡 ----------

@@ -91,7 +91,15 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate, onNav
         {visible.map(h => (
           <Button variant="bare"
             key={h.chapterId}
-            onClick={() => { if (onNavigateReference) onNavigateReference('editor', name, h.chapterId); else onNavigate('editor', h.chapterId); onClose() }}
+            onClick={() => {
+              // 带来源 + 段落偏移：跳过去直接落在命中那一句（检索侧已按正文内偏移算好）
+              if (onNavigateReference) {
+                onNavigateReference({ tabId: 'editor', label: name, chapterId: h.chapterId,
+                  ...(h.contentOffset != null ? { offset: h.contentOffset } : {}),
+                  ...(h.matchLength != null ? { matchLength: h.matchLength } : {}) })
+              } else onNavigate('editor', h.chapterId)
+              onClose()
+            }}
             className="w-full text-left !justify-start px-4 py-2 flex items-start gap-2.5 transition-colors hover:bg-ink-800/60"
           >
             <span className="mt-0.5 text-10 px-1.5 py-px rounded shrink-0 border border-info/30 text-info max-w-28 truncate"

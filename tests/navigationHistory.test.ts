@@ -99,7 +99,7 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
   ok('🔴 ⑥ App 用来源栈并渲染返回入口', /useNavigationHistory\(/.test(app) && /<BackToSource /.test(app))
   ok('🔴 ⑥ 关联跳转先记来源再导航',
-    /navHistory\.record\(from, label\)[\s\S]{0,120}navigate\(tabId, chapterId, rowId\)/.test(app))
+    /navHistory\.record\(from, jump\.label\)[\s\S]{0,400}navigate\(jump\.tabId, jump\.chapterId, jump\.rowId\)/.test(app))
   ok('🔴 ⑥ 侧栏普通导航不记来源（navigate 里没有 record）',
     /const navigate = useCallback\([\s\S]{0,200}navGate\.request/.test(app) && !/const navigate = useCallback\([\s\S]{0,200}navHistory\.record/.test(app))
   ok('🔴 ⑥ 返回前校验目标仍可见，不可见就丢掉这条', /tabVisible\(tab\.id, visCtx\)[\s\S]{0,160}navHistory\.takeBack\(\)/.test(app))
@@ -112,17 +112,33 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     /onNavigateReference=\{onNavigateReference/.test(sheet) && /onNavigateReference/.test(mention) && /draft\?\.id/.test(sheet))
   ok('🔴 ⑥ 没有关联跳转回调时退回普通跳转（不静默失效）', /else onNavigate\('editor', h\.chapterId\)/.test(mention))
   ok('🔴 ⑥ 三处共用同一个「关联跳转」类型（不许各写一套签名）',
-    /export type NavigateToReference/.test(read('src/lib/app/navigation.ts'))
+    /export interface ReferenceJump/.test(read('src/lib/app/navigation.ts'))
       && /onNavigateReference\?: NavigateToReference/.test(sheet)
       && /onNavigateReference\?: NavigateToReference/.test(mention))
-  ok('🔴 ⑥ 源记录 id 走第 5 参（传成第 4 参会被当成行目标而静默不跳）',
-    /onNavigateReference\(tabId, label, chapterId, undefined, draft\?\.id\)/.test(sheet))
-  ok('🔴 ⑥ App 的关联跳转接收 5 参并优先用显式源记录',
-    /navigateToReference = useCallback\(\(tabId: string, label: string, chapterId\?: string, rowId\?: string, sourceObjectId\?: string\)/.test(app)
-      && /sourceObjectId \?\? focusRowId/.test(app))
+  ok('🔴 ⑥ 关联跳转用对象入参（位置参数时代传错过，静默不跳）',
+    /export type NavigateToReference = \(jump: ReferenceJump\) => void/.test(read('src/lib/app/navigation.ts'))
+      && /onNavigateReference\(\{ tabId: 'editor', label: name, chapterId: h\.chapterId/.test(mention))
+  ok('🔴 ⑥ 正文偏移只对「这次指定的那一章」生效',
+    /pending\.chapterId === chapterId/.test(app) && /openChapterId !== activeId\) return/.test(read('src/components/editor/useEditorOpenOffset.ts')))
+  ok('🔴 ⑥ 导航被拦/保存失败时丢掉待定偏移（不留脏定位）',
+    /invalid: \(\) => \{ pendingEditorOffset\.current = null/.test(app)
+      && /failed: \(intent, scope, error\) => \{ pendingEditorOffset\.current = null/.test(app))
+  ok('🔴 ⑥ 偏移由检索侧按「正文内」算（不是整章拼接串）',
+    /contentStart = c\.title\.length \+ 1 \+ \(c\.summary \?\? ''\)\.length \+ 1/.test(read('src/lib/search/mentions.ts')))
   ok('🔴 ⑥ 来源栈不写 localStorage / sessionStorage', !/localStorage|sessionStorage/.test(read('src/lib/app/navigationHistory.ts')))
   ok('🔴 ⑥ 来源栈不存正文（只有 tabId/chapterId/rowId/label）',
     !/content|draft|prose/.test(read('src/lib/app/navigationHistory.ts').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')))
+}
+
+// ---------- ⑦ 段落级定位：偏移换算成滚动位置 ----------
+{
+  const { scrollTopForOffset } = await import('../src/components/editor/useEditorOpenOffset')
+  const text = '第一行\n第二行\n第三行\n第四行'
+  ok('🔴 ⑦ 首行偏移 ⇒ 滚到顶（不会负）', scrollTopForOffset(text, 0, 30, 200, 2000) === 0)
+  ok('🔴 ⑦ 第 3 行偏移 ⇒ (行号-1)×行高 − 视口 1/3', scrollTopForOffset(text, 8, 30, 60, 2000) === 40, String(scrollTopForOffset(text, 8, 30, 60, 2000)))
+  ok('🔴 ⑦ 超过可滚范围时夹到最大值', scrollTopForOffset(text, text.length, 1000, 200, 250) === 50, String(scrollTopForOffset(text, text.length, 1000, 200, 250)))
+  ok('🔴 ⑦ 偏移越界（负/NaN/超长）不炸', scrollTopForOffset(text, -5, 30, 200, 2000) === 0 && Number.isFinite(scrollTopForOffset(text, Number.NaN, 30, 200, 2000)))
+  ok('🔴 ⑦ 行高非法时回落到 24px', scrollTopForOffset('a\nb', 2, 0, 0, 2000) === 24, String(scrollTopForOffset('a\nb', 2, 0, 0, 2000)))
 }
 
 console.log(`\n———— navigationHistory：${pass} 通过 / ${fail} 失败 ————`)

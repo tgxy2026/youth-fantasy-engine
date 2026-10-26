@@ -1,10 +1,27 @@
 export interface WorkspaceTarget { tabId: string; chapterId?: string; rowId?: string }
 /**
- * 「带来源的关联跳转」签名（UX05）。
- * 第 4 参是**目标**的行目标；第 5 参是**来源**的记录 id（返回时用它把同一张卡/同一行选回来）。
- * 🔴 两者顺序不能串：正文页不许带行目标，传错位置会被路由校验判成非法而静默不跳。
+ * 「带来源的关联跳转」（UX05）。
+ * 🔴 用**对象入参**而不是位置参数：先前用 5 个位置参数时，把「来源记录 id」写成第 4 参会
+ *    被当成「目标行」，随后被路由校验判成「正文页带行目标」而静默不跳（2026-10-26 实测踩到）。
+ *    改成具名字段后，这类顺序错误在类型层面就不成立了。
  */
-export type NavigateToReference = (tabId: string, label: string, chapterId?: string, rowId?: string, sourceObjectId?: string) => void
+export interface ReferenceJump {
+  /** 目标页签（正文为 'editor'） */
+  tabId: string
+  /** 返回按钮上显示的一行来源标签（如角色名），会被净化后截断 */
+  label: string
+  /** 目标章节（仅正文页） */
+  chapterId?: string
+  /** 目标记录行（表格 / 卡片页；正文页不可带） */
+  rowId?: string
+  /** 正文内字符偏移：段落级定位（仅正文页） */
+  offset?: number
+  /** 命中词长度：把命中的那一截选中 */
+  matchLength?: number
+  /** 来源记录 id（返回时把同一条选回来） */
+  sourceId?: string
+}
+export type NavigateToReference = (jump: ReferenceJump) => void
 const id = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 256 && !/[\u0000-\u001f\u007f]/.test(v)
 
 /** Copy only routing IDs. No prose, drafts or arbitrary event properties enter navigation state. */

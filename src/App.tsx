@@ -26,7 +26,7 @@ import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribe
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { useNavigationGate } from '@/lib/app/useNavigationGate'
-import { parseWorkspaceNavigation, type WorkspaceTarget } from '@/lib/app/navigation'
+import { parseWorkspaceNavigation, type ReferenceJump, type WorkspaceTarget } from '@/lib/app/navigation'
 import { useNavigationHistory } from '@/lib/app/useNavigationHistory'
 import BackToSource from '@/components/app/BackToSource'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
@@ -111,6 +111,8 @@ export default function App() {
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
   const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  /** 段落级定位：跳到正文时要落的字符偏移（只在显式跳转那一次有效） */
+  const [editorOffset, setEditorOffset] = useState<{ offset: number; matchLength?: number } | null>(null)
   /**
    * 跨页签跳转聚焦的「已消费」回调。
    * 🔴 必须用 useCallback 钉住引用：它是 TableSheet 滚动高亮 effect 的依赖之一，
@@ -155,6 +157,8 @@ export default function App() {
    * 后到的那条会在前一条保存成功后把作者带到意料之外的页面。
    */
   const navPending = useRef(false)
+  /** 关联跳转带过来的段落偏移，等 applyNav 真正落到目标章时才消费 */
+  const pendingEditorOffset = useRef<{ chapterId: string; offset: number; matchLength?: number } | null>(null)
   const navEpoch = useRef(0)
   const navContext = useCallback(() => JSON.stringify([db.getCurrentProjectId(), navEpoch.current, getStorageContextEpoch(),
     (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id ?? 'local']), [])
@@ -479,7 +483,15 @@ export default function App() {
     // 🔴 必须**连清空一起**处理（2026-10-16 全量审计）：旧实现只在 chapterId 非空时写、
     //    全仓没有任何清空点 ⇒ 从章节规划板跳到第 3 章之后，作者在编辑器里切到第 8 章、
     //    再点侧栏「正文编辑」，打开的仍是**第 3 章**（陈旧目标压过了「上次编辑章」）。
-    if (id === 'editor') setEditorTarget(chapterId ?? null)
+    if (id === 'editor') {
+      setEditorTarget(chapterId ?? null)
+      // 段落偏移只对「这次显式指定的那一章」生效；章不符就丢掉，免得把旧偏移套到别的章
+      const pending = pendingEditorOffset.current
+      setEditorOffset(pending && chapterId && pending.chapterId === chapterId
+        ? { offset: pending.offset, ...(pending.matchLength != null ? { matchLength: pending.matchLength } : {}) }
+        : null)
+    } else setEditorOffset(null)
+    pendingEditorOffset.current = null
   }, [visCtx])
 
   /**
@@ -500,10 +512,10 @@ export default function App() {
       if (intent.kind === 'exit') doExitProject()
       else applyNav(intent.target.tabId, intent.target.chapterId, intent.target.rowId)
     },
-    invalid: () => showToast('目标页面当前不可见，已留在当前页面', 'info'),
-    failed: (intent, scope, error) => showToast(saveFailureMessage(
+    invalid: () => { pendingEditorOffset.current = null; showToast('目标页面当前不可见，已留在当前页面', 'info') },
+    failed: (intent, scope, error) => { pendingEditorOffset.current = null; showToast(saveFailureMessage(
       (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
-        + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error'),
+        + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
   })
   useEffect(() => {
     navGate.invalidate()
@@ -524,16 +536,20 @@ export default function App() {
    * 只存路由 ID 与一行短标签；`scopeKey` 一变（切项目/换存储上下文）整个栈作废。
    */
   const navHistory = useNavigationHistory(`${projectId}:${getStorageContextEpoch()}`)
-  const navigateToReference = useCallback((tabId: string, label: string, chapterId?: string, rowId?: string, sourceObjectId?: string) => {
+  const navigateToReference = useCallback((jump: ReferenceJump) => {
     // 源位置：正文用「当前章」，表格/卡片页用「当前记录」（优先显式传入的那条，其次是高亮目标）
-    const fromRow = sourceObjectId ?? focusRowId ?? undefined
+    const fromRow = jump.sourceId ?? focusRowId ?? undefined
     const from: WorkspaceTarget = {
       tabId: activeTab,
       ...(activeTab === 'editor' && editorTarget ? { chapterId: editorTarget } : {}),
       ...(activeTab !== 'editor' && fromRow ? { rowId: fromRow } : {}),
     }
-    navHistory.record(from, label)
-    navigate(tabId, chapterId, rowId)
+    navHistory.record(from, jump.label)
+    // 段落级定位：偏移随跳转一次性带过去，由 applyNav 在确认落到同一章后消费
+    if (jump.offset != null && jump.chapterId) {
+      pendingEditorOffset.current = { chapterId: jump.chapterId, offset: jump.offset, ...(jump.matchLength != null ? { matchLength: jump.matchLength } : {}) }
+    } else pendingEditorOffset.current = null
+    navigate(jump.tabId, jump.chapterId, jump.rowId)
   }, [activeTab, editorTarget, focusRowId, navHistory, navigate])
   /** 返回来源：目标已不可见就丢掉这条（删掉/隐藏的页面不能一直挂着） */
   const goBackToSource = useCallback(() => {
@@ -632,7 +648,7 @@ export default function App() {
       return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} projectName={projectName} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
     }
     if (activeTab === 'editor') {
-      return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} ctx={visCtx} />
+      return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} openOffset={editorOffset} ctx={visCtx} />
     }
     if (activeTab === 'model-settings') {
       return <ModelSettingsPanel />
