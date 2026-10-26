@@ -166,6 +166,14 @@ async function main() {
 
   let server, serverLog = '', error = null
   const pageErrors = []
+  const transport = []
+  const pageIds = new Map()
+  const pageId = request => {
+    let page
+    try { page = request.frame().page() } catch { return 'worker' }
+    if (!pageIds.has(page)) pageIds.set(page, 'page-' + (pageIds.size + 1))
+    return pageIds.get(page)
+  }
   const contexts = []
   /** 写失败段落注入的「空目录挡在数据文件位置」是否仍在生效（清理要幂等，见 restoreBlocker） */
   let blocked = false
@@ -210,6 +218,13 @@ async function main() {
       viewport: { width: 1440, height: 1000 }, args: ['--no-proxy-server'], env })
     /** 页面发出的实际请求（用于证明"数据来自服务端"而不是浏览器本地库） */
     const requests = []
+    ctx.on('response', response => {
+      const request = response.request()
+      if (new URL(response.url()).pathname !== '/api/data') return
+      transport.push({ at: Date.now(), page: pageId(request), method: request.method(), status: response.status(),
+        ifMatch: request.headers()['if-match'], revision: response.headers().etag,
+        payloadHash: request.postData() ? hash(request.postData()) : undefined })
+    })
     await ctx.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url())
       if (url.origin === origin) {
@@ -605,6 +620,16 @@ process.on('message',async message=>{
     {
       const stale = await A.ctx.newPage()
       stale.on('pageerror', value => pageErrors.push(String(value)))
+      // Opening a project itself schedules metadata/backup writes. Park this tab's PUTs
+      // until the first writer has really committed and the stale editor has a draft.
+      // Responses and If-Match are untouched; the real server must still reject the old revision.
+      let releaseWrites
+      const writesAllowed = new Promise(resolve => { releaseWrites = resolve })
+      await stale.route('**/api/data', async route => {
+        if (route.request().method() === 'PUT') await writesAllowed
+        await route.fallback().catch(() => {})
+      })
+      try {
       await stale.goto(origin + '/', { waitUntil: 'domcontentloaded' }); await openProjectEditor(stale)
       await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
       const winner = DRAFT2 + '第一窗口成功提交。', loser = DRAFT2 + '第二窗口的冲突草稿。'
@@ -615,6 +640,7 @@ process.on('message',async message=>{
       stale.on('request', request => { if (new URL(request.url()).pathname === '/api/data' && request.method() === 'PUT') puts++ })
       const rejected = stale.waitForResponse(reply => new URL(reply.url()).pathname === '/api/data' && reply.request().method() === 'PUT' && reply.status() === 409)
       await stale.getByPlaceholder(EDITOR).fill(loser); await stale.keyboard.press('Control+s')
+      releaseWrites()
       await rejected
       await stale.getByRole('alert').filter({ hasText: '已停止本窗口保存' }).waitFor()
       check('stale-save-rejected', true)
@@ -632,6 +658,7 @@ process.on('message',async message=>{
         const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented
       }))
       await stale.screenshot({ path: path.join(runRoot, 'conflict.png') })
+      } finally { releaseWrites() }
     }
     // ---------- ⑪ concurrency：关页在途 + 会话被替换 ----------
     // 这两条只能真跑：合成 beforeunload 不算"真实关页"，401 也必须在真会话替换后才出现。
@@ -688,9 +715,12 @@ process.on('message',async message=>{
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
     error = String(value.stack ?? value)
-    for (const c of contexts) {
-      const page = c.ctx.pages()[0]
-      if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
+    for (const [ci, c] of contexts.entries()) {
+      for (const [pi, page] of c.ctx.pages().entries()) {
+        const name = `failure-c${ci}-p${pi}`
+        await page.screenshot({ path: path.join(runRoot, name + '.png') }).catch(() => {})
+        await fs.writeFile(path.join(runRoot, name + '.txt'), await page.locator('body').innerText().catch(() => 'unavailable'))
+      }
     }
   } finally {
     // 挡板必须先撤（幂等），否则服务端数据目录会留着空目录，下一次运行读到 500
@@ -711,7 +741,8 @@ process.on('message',async message=>{
     // 场景清单**算出来**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵据此比对 policy）
     const scenarioGroups = {
       // concurrency（web-cloud）：两条标签 + 关页在途 + 会话替换
-      'two-tabs': ['two-tabs-conditional-write'],
+      'two-tabs': ['two-tabs-conditional-write', 'stale-save-rejected', 'conflict-keeps-draft',
+        'conflict-preserves-server', 'conflict-export', 'conflict-stops-retry', 'conflict-leave-blocked'],
       'close-during-save': ['close-during-save.valid-file', 'close-during-save.old-or-new', 'close-during-save.reopen-readback'],
       'replace-session': ['replace-session.rejected', 'replace-session.draft-kept', 'replace-session.server-unchanged'],
       'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
@@ -727,7 +758,7 @@ process.on('message',async message=>{
       runRoot, sourceFingerprint, build, buildManifest, at: new Date().toISOString(),
       passed: checks.filter(item => item.passed).length,
       failed: checks.filter(item => !item.passed).length + (error ? 1 : 0),
-      checks, artifacts, pageErrors, error,
+      checks, artifacts, pageErrors, transport, error,
     }
     const target = path.join(runRoot, 'result.json')
     await fs.writeFile(target, JSON.stringify(result, null, 2))

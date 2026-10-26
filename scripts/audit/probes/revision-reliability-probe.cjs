@@ -50,11 +50,14 @@ async function main() {
   for (const key of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy','ELECTRON_RUN_AS_NODE','NODE_OPTIONS']) delete process.env[key]
   const portAt = process.argv.indexOf('--port')
   const port = Number(portAt >= 0 ? process.argv[portAt + 1] : 5206)
+  // Vite normalizes 127.0.0.1 documents to localhost. Electron's navigation guard must
+  // receive that same canonical origin; otherwise reload can be treated as an external page.
+  const origin = `http://localhost:${port}`
   let server, app, page
-  const evidence = { schemaVersion: 1, kind: 'revision-reliability', sourceFingerprint, runRoot, at: new Date().toISOString(), scope: 'Electron development renderer + real IPC/files; native chooser/save dialog return values stubbed', checks }
+  const evidence = { schemaVersion: 1, kind: 'revision-reliability', sourceFingerprint, devOrigin: origin, runRoot, at: new Date().toISOString(), scope: 'Electron development renderer + real IPC/files; native chooser/save dialog return values stubbed', checks }
   try {
     const { createServer } = await import('vite')
-    server = await createServer({ root: ROOT, cacheDir: path.join(runRoot, 'vite-cache'), server: { host: '127.0.0.1', port, strictPort: true } })
+    server = await createServer({ root: ROOT, cacheDir: path.join(runRoot, 'vite-cache'), server: { host: 'localhost', port, strictPort: true } })
     await server.listen()
     // A fresh Vite cache may need longer than the Electron debugger handshake timeout.
     // Prepare the real module graph in a separate empty browser context, then close it.
@@ -68,12 +71,12 @@ async function main() {
         return target.port === String(port) && ['127.0.0.1', 'localhost'].includes(target.hostname) ? route.continue() : route.abort()
       })
       const warmPage = await context.newPage()
-      await warmPage.goto(`http://127.0.0.1:${port}`, { waitUntil: 'commit', timeout: 120000 })
+      await warmPage.goto(origin, { waitUntil: 'commit', timeout: 120000 })
       await warmPage.getByRole('button', { name: /先看看示例/ }).waitFor({ timeout: 120000 })
       evidence.preparation = { kind: 'isolated-browser-module-prewarm', ready: true, elapsedMs: Date.now() - preparationStarted }
       console.log('PREPARED isolated Vite renderer')
     } finally { await warmBrowser.close() }
-    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env: { ...process.env, ELECTRON_START_URL: `http://127.0.0.1:${port}` }, timeout: 45000 })
+    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env: { ...process.env, ELECTRON_START_URL: origin }, timeout: 45000 })
     page = await app.firstWindow()
     page.setDefaultTimeout(15000)
     const dismiss = async () => {
@@ -91,7 +94,8 @@ async function main() {
     await page.getByPlaceholder('落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）').waitFor()
     await dismiss()
     const actualAppData = await app.evaluate(({ app }) => app.getPath('appData'))
-    check('使用隔离资料区启动并打开测试作品', (await page.locator('body').innerText()).includes('可靠性验收临时作品') && path.normalize(actualAppData) === path.normalize(isolatedAppData))
+    evidence.initialURL = page.url()
+    check('使用隔离资料区启动并打开测试作品', (await page.locator('body').innerText()).includes('可靠性验收临时作品') && path.normalize(actualAppData) === path.normalize(isolatedAppData) && new URL(page.url()).origin === origin)
 
     // 真实生产候选登记；随后在正文编辑器里手改，再由可见按钮应用旧候选。
     const intake = await page.evaluate(async ({ PID, CH, BEFORE, AFTER }) => {
