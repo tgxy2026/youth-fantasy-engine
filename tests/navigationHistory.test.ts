@@ -97,14 +97,16 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   const sheet = read('src/components/world/CharacterSheet.tsx')
   const hook = read('src/lib/app/useNavigationHistory.ts')
 
-  ok('🔴 ⑥ App 用来源栈并渲染返回入口', /useNavigationHistory\(/.test(app) && /<BackToSource /.test(app))
+  ok('🔴 ⑥ App 用来源栈并向项目导航传入返回入口', /useNavigationHistory\(/.test(app) && /returnSource=\{navHistory.top/.test(app))
   ok('🔴 ⑥ 关联来源仅在成功提交后入栈', app.includes('referenceNavigationIntent(jump, from)')
     && /commit: intent[\s\S]{0,350}commitNavigationHistory/.test(app) && !app.includes('navHistory.record(from, jump.label)'))
   ok('🔴 ⑥ 侧栏普通导航不携带来源', /const navigate = useCallback[\s\S]{0,220}pageNavigationIntent/.test(app))
   ok('🔴 ⑥ 返回通过同一屏障而非先pop', app.includes('back: entry') && !/const goBackToSource[\s\S]{0,450}takeBack/.test(app))
   ok('🔴 ⑥ 来源栈按完整项目/账户上下文隔离', app.includes('useNavigationHistory(navContext())') && hook.includes('key: scopeKey') && hook.includes('history.clear()'))
-  ok('🔴 ⑥ 返回入口不占布局高度（sticky + 零高 + 绝对定位）',
-    /sticky top-0 z-30 h-0/.test(app) && /absolute right-3 top-3/.test(chip))
+  ok('🔴 ⑥ 返回入口在桌面及窄窗项目导航，不覆盖主内容控件',
+    read('src/components/app/Sidebar.tsx').includes('<BackToSource {...returnSource}')
+    && read('src/components/app/WorkspaceSidebar.tsx').includes('<BackToSource {...props.returnSource} compact')
+    && !/absolute|sticky/.test(chip) && !/sticky top-0 z-30 h-0/.test(app))
   ok('🔴 ⑥ 返回按钮可键盘聚焦（原生 button + 标题说明）', /<button[\s\S]{0,200}type="button"/.test(chip) && /title=/.test(chip))
   ok('🔴 ⑥ 角色页把关联跳转透传给提及面板（并补上来源卡 id）',
     /onNavigateReference=\{onNavigateReference/.test(sheet) && /onNavigateReference/.test(mention) && /sourceId: mention\.id/.test(sheet))

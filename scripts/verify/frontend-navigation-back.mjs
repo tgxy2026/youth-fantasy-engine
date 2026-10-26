@@ -127,15 +127,35 @@ try {
   const native = await editor.evaluate(el => ({ top: el.scrollTop, line: Number.parseFloat(getComputedStyle(el).lineHeight) }))
   check('原生光标移动无需大幅补滚（命中已经可见）', Math.abs(native.top - caret.top) < native.line * 3, { caret, native })
   check('① 返回入口带来源标签（不是笼统的「返回」）', (await chip.innerText()).includes(CARD))
-  report.returnGeometry = await page.evaluate(() => {
-    const chip = [...document.querySelectorAll('button')].find(b=>b.textContent.includes('返回：'))
-    const a = chip.getBoundingClientRect()
-    return [...document.querySelectorAll('main button,main input')].filter(el=>el!==chip).map(el=>{
-      const b=el.getBoundingClientRect()
-      return {label:el.getAttribute('aria-label')||el.getAttribute('title')||el.textContent,
-        overlap:Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top))}
-    }).filter(item=>item.overlap>0)
+  report.returnGeometry = []
+  for (const density of ['compact','comfortable']) for (const layout of [{width:1366,height:900,zoom:100},{width:1000,height:640,zoom:160},{width:800,height:640,zoom:100}]) {
+    await page.setViewportSize({width:layout.width,height:layout.height})
+    await page.evaluate(async ({density,zoom}) => {
+      (await import('/src/lib/settings/density.ts')).applyDensity(density)
+      ;(await import('/src/lib/settings/theme.ts')).applyZoom(zoom,{manual:true})
+    }, {...layout,density})
+    await page.waitForTimeout(180)
+    const geometry = await page.evaluate(() => {
+      const chip = [...document.querySelectorAll('button[aria-label^="返回："]')].find(el=>el.offsetParent!==null)
+      const a=chip?.getBoundingClientRect(), save=document.querySelector('button[aria-label="保存正文"]'), b=save?.getBoundingClientRect()
+      const hit=b&&document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)
+      const overlaps=a?[...document.querySelectorAll('main button,main input')].filter(el=>{
+        const r=el.getBoundingClientRect()
+        return Math.max(a.left,r.left)<Math.min(a.right,r.right)&&Math.max(a.top,r.top)<Math.min(a.bottom,r.bottom)
+      }).map(el=>el.getAttribute('title')||el.getAttribute('aria-label')||el.textContent):['missing return']
+      return {overlaps,saveReachable:!!save&&(hit===save||save.contains(hit)),bodyHeight:document.querySelector('textarea.novel-textarea')?.clientHeight,
+        returnName:chip?.getAttribute('aria-label')}
+    })
+    report.returnGeometry.push({...layout,density,...geometry})
+    check(`返回入口不遮挡控件且保存可点，正文不少于80px：${density}/${layout.width}/${layout.zoom}%`,
+      geometry.overlaps.length===0&&geometry.saveReachable&&geometry.bodyHeight>=80&&geometry.returnName===`返回：${CARD}`, geometry)
+  }
+  await page.setViewportSize({width:1366,height:900})
+  await page.evaluate(async()=>{
+    (await import('/src/lib/settings/density.ts')).applyDensity('compact')
+    ;(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true})
   })
+  await page.waitForTimeout(200)
 
   // Real IDB failure: a failed back request must keep its retry entry and the original DOM/draft.
   await page.evaluate(() => {
@@ -197,8 +217,13 @@ try {
   await page.getByRole('button').filter({hasText: MARKER}).first().click()
   await chip.waitFor(); await editor.waitFor()
   check('查看非当前选中卡的提及时仍保留准确来源', (await chip.innerText()).includes(CARD))
-  await chip.click(); await page.getByRole('button', {name: '修改名称：'+CARD, exact:true}).waitFor()
+  await page.setViewportSize({width:800,height:640})
+  await page.waitForTimeout(180)
+  await chip.focus(); await page.keyboard.press('Enter')
+  await page.getByRole('button', {name: '修改名称：'+CARD, exact:true}).waitFor()
   check('返回的是提及来源卡而非原先选中卡', await cardButton.getAttribute('aria-pressed') === 'true')
+  await page.setViewportSize({width:1366,height:900})
+  await page.waitForTimeout(180)
 
   // Identity protocol change in this fake profile: only ephemeral navigation metadata is cleared.
   await page.getByTitle(`查看「${CARD}」在正文中的提及`).click()

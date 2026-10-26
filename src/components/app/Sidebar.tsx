@@ -2,6 +2,7 @@ import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
 import BrandMark from '@/components/common/BrandMark'
+import BackToSource, { type ReturnSource } from '@/components/app/BackToSource'
 import HelpPopover from '@/components/common/HelpPopover'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import NumberField from '@/components/common/NumberField'
@@ -48,6 +49,7 @@ interface Props {
   /** 窄窗口的导航抽屉使用父容器宽度，不沿用桌面拖拽宽度。 */
   overlay?: boolean
   focusTools?: boolean
+  returnSource?: ReturnSource
   activeTab: string
   onNavigate: (id: string) => void
   collapsed: boolean
@@ -58,7 +60,7 @@ interface Props {
   ctx: VisCtx
 }
 
-export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false }: Props) {
+export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, returnSource }: Props) {
   // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
   //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
   //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
@@ -185,6 +187,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         <div className="rounded-lg bg-ink-800/70 border border-ink-700 px-2.5 py-2">
           <div className="text-9 text-ink-500 mb-0.5">当前项目</div>
           <div className="text-13 font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
+          {returnSource && <BackToSource {...returnSource} />}
           <div className="flex gap-1 mt-2">
             <Button onClick={onExitProject}
               

@@ -30,7 +30,6 @@ import { resolveNavigationDestination, navigationDestinationNotice } from '@/lib
 import { type ReferenceJump, type WorkspaceTarget } from '@/lib/app/navigation'
 import { useNavigationHistory } from '@/lib/app/useNavigationHistory'
 import { pageNavigationIntent, referenceNavigationIntent, commitNavigationHistory, type EditorPosition, type NavigationIntent } from '@/lib/app/referenceIntent'
-import BackToSource from '@/components/app/BackToSource'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
@@ -774,6 +773,7 @@ export default function App() {
       />
       )}
       <WorkspaceSidebar
+        returnSource={navHistory.top ? { label: navHistory.top.label, onBack: goBackToSource } : undefined}
         activeTab={activeTab}
         onNavigate={navigate}
         collapsed={false}
@@ -792,12 +792,6 @@ export default function App() {
           各留 ~490px），长内容的页面则**高出窗口被 main 裁掉且滚不到**（实测编辑器根高 1391 而可用仅 926）。
           补 `h-full` 后与「padding 还在 main 上」时的几何完全一致（内容高 = main 高 − 上下 padding）。 */}
       <main className={`@container/workspace min-w-0 flex-1 overflow-y-auto ${isEditor ? '!overflow-hidden' : ''}`}>
-        {/* UX05 返回来源：sticky + 零高度容器 ⇒ 常驻可见但不占布局（避免再压短窗正文区） */}
-        {navHistory.canGoBack && navHistory.top && (
-          <div className="pointer-events-none sticky top-0 z-30 h-0">
-            <BackToSource label={navHistory.top.label} onBack={goBackToSource} />
-          </div>
-        )}
         <div className={`workspace-content h-full ${isEditor ? '' : 'p-3 @min-[40rem]/workspace:p-6 @min-[64rem]/workspace:p-8'}`}>
           {/* fallback 用 min-h-* 而不是 h-full：它是**加载占位**，只需撑住视觉高度；
               用 min-h 可避免在某些中间态下被压成 0 */}
