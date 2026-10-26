@@ -149,6 +149,7 @@ try {
     report.returnGeometry.push({...layout,density,...geometry})
     check(`返回入口不遮挡控件且保存可点，正文不少于80px：${density}/${layout.width}/${layout.zoom}%`,
       geometry.overlaps.length===0&&geometry.saveReachable&&geometry.bodyHeight>=80&&geometry.returnName===`返回：${CARD}`, geometry)
+    await page.screenshot({path:path.join(run,`return-${density}-${layout.width}-${layout.zoom}.png`),animations:'disabled'})
   }
   await page.setViewportSize({width:1366,height:900})
   await page.evaluate(async()=>{

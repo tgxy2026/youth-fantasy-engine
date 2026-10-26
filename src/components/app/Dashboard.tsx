@@ -1,5 +1,6 @@
 import Panel from '@/components/common/Panel'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useId } from 'react'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { realVolumes } from '@/lib/outline/freeVolume'
 import * as db from '@/lib/db'
@@ -56,6 +57,8 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
   const [progress, setProgress] = useState<TableRow[]>([])
   const [dailyStats, setDailyStats] = useState<db.DailyStat[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [statisticsOpen, setStatisticsOpen] = usePersistedBool('dashboard-statistics-open', false)
+  const statisticsId = useId()
   const isLite = ctx.type !== 'full'
   // 完整项目始终展示「未回收伏笔」卡；自定义项目仅在启用了「伏笔追踪」功能时展示
   const showForeshadowCard = ctx.type === 'full' || ctx.features.includes('foreshadow')
@@ -362,160 +365,16 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     <div className="w-full page-enter">
       <PageHeader title="写作面板" description={<><span className="font-medium [overflow-wrap:anywhere]">{projectName || '当前项目'}</span><span className="mx-2" aria-hidden="true">·</span>继续创作，掌握作品进度。</>} help={
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
       } />
 
       <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
         foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} summary={creationSummary} />
 
-      {/* 码字日历 · 年度热力图 + 年度数字卡（v3.1.2 · 主人拍板 C 混合方案） */}
-      <Panel className="mb-6">
-        <div className="flex flex-wrap items-center gap-6 mb-4">
-          <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
-            <CalendarDays size={14} className="text-amber" /> 码字日历
-            <HelpPopover title="码字日历怎么看" width="21rem">
-              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 年度热力图：一整年每天一格（周一开头、列＝周），颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数；\n· 「‹ 2026 ›」切换年份；\n· 右侧年度指标：全年总产量 / 打卡天数与打卡率 / 年内最长连续 / 最佳单日。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
-            </HelpPopover>
-          </h2>
-          {/* 今日产出 */}
-          <div className="flex items-center gap-3">
-            <div>
-              <div className="text-12 text-ink-100 font-semibold">
-                今日 {todayWords.toLocaleString()} 字
-              </div>
-              <div className="text-10 text-ink-500">在正文编辑器写作时自动记录</div>
-            </div>
-          </div>
-          {/* 连续打卡 */}
-          <div className="flex items-center gap-2 ml-auto">
-            <Zap size={15} className={streak > 0 ? 'text-amber' : 'text-ink-600'} />
-            <div>
-              <div className="text-15 font-bold text-ink-50 leading-none">{streak} <span className="text-11 font-normal text-ink-400">天连续码字</span></div>
-              <div className="text-10 text-ink-500 mt-0.5">{todayWords > 0 ? '今日已打卡 ✓' : '今天还没动笔，去写两章？'}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 主人二次调整：四个年度统计**横向一行**（不再竖排右栏）——
-            区块高度改由热力图决定，右侧不再撑高、热力图下方也不再留大片空白 */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
-              {/* 年份切换用 bare（非定宽图标变体）：带中文 title/aria-label 不会挤成竖排，
-                  闸 uiUxGuards 只约束 icon-amber/danger/muted 三个定宽变体 */}
-              <Button variant="bare" onClick={() => setCalYear(y => y - 1)} title="上一年" aria-label="上一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40">
-                <ChevronLeft size={14} />
-              </Button>
-              <span className="text-13 font-semibold text-ink-100 tabular-nums">{calYear} 年</span>
-              <Button variant="bare" onClick={() => setCalYear(y => Math.min(thisYear, y + 1))} disabled={calYear >= thisYear} title="下一年" aria-label="下一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 disabled:opacity-40">
-                <ChevronRight size={14} />
-              </Button>
-              {calYear !== thisYear && (
-                <Button variant="bare" className="ml-1 text-10 text-amber" onClick={() => setCalYear(thisYear)}>回到今年</Button>
-              )}
-              {/* 年度统计：横向一行，label + 值 + 备注并列；窄窗口自动换行 */}
-              <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1">
-                {[
-                  { k: '全年产量', v: fmtWords(yearGrid.total), s: `${calYear} 年累计` },
-                  { k: '打卡天数', v: `${yearGrid.wroteDays} 天`, s: `打卡率 ${Math.round(yearGrid.wroteDays / (isLeapYear(calYear) ? 366 : 365) * 100)}%` },
-                  { k: '最长连续', v: `${yearGrid.longest} 天`, s: '年内最长' },
-                  { k: '最佳单日', v: `${yearGrid.best.words.toLocaleString()} 字`, s: yearGrid.best.date || '暂无记录' },
-                ].map(c => (
-                  <div key={c.k} className="flex items-baseline gap-1.5" title={c.k + '：' + c.s}>
-                    <span className="text-10 text-ink-500">{c.k}</span>
-                    <span className="text-13 font-bold text-ink-50 tabular-nums">{c.v}</span>
-                    <span className="text-9 text-ink-600 hidden sm:inline">{c.s}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {/* 月标签行：与热力网格同列宽，每月 1 日所在列打标 */}
-            <div className="grid pb-1" style={{ gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))` }}>
-              {Array.from({ length: yearGrid.weeks }, (_, w) => {
-                const lab = yearGrid.months.find(m => m.col === w)
-                return <div key={w} className="text-9 text-ink-600 leading-none truncate">{lab ? lab.label : ''}</div>
-              })}
-            </div>
-            {/* 热力网格：列＝周（周一→周日），格子 aspect-square ⇒ 随容器宽度等比方，天然撑满 */}
-            <div
-              className="grid gap-[3px]"
-              style={{
-                gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))`,
-                gridTemplateRows: 'repeat(7, auto)',
-                gridAutoFlow: 'column',
-              }}
-            >
-              {yearGrid.cells.map(c => (
-                <div
-                  key={c.date}
-                  data-heat={c.inYear ? heatLevel(c.words) : -1}
-                  title={c.inYear ? `${c.date}：${c.words} 字` : c.date}
-                  className={`aspect-square w-full rounded-[2px] transition-colors ${c.inYear ? heatColor(c.words) : 'bg-transparent'} ${c.date === todayStr ? 'ring-1 ring-amber/70' : ''} hover:ring-1 hover:ring-amber/60`}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
-              <span>少</span>
-              <span data-heat={0} className="w-2.5 h-2.5 rounded-[2px] bg-ink-800 inline-block" />
-              <span data-heat={1} className="w-2.5 h-2.5 rounded-[2px] bg-amber/40 inline-block" />
-              <span data-heat={2} className="w-2.5 h-2.5 rounded-[2px] bg-amber/60 inline-block" />
-              <span data-heat={3} className="w-2.5 h-2.5 rounded-[2px] bg-amber/80 inline-block" />
-              <span data-heat={4} className="w-2.5 h-2.5 rounded-[2px] bg-amber inline-block" />
-              <span>多</span>
-              <span className="ml-3">数据来自编辑器自动记录（进/减字数都计入当日）</span>
-        </div>
-      </Panel>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* 近7日字数 */}
-        <Panel>
-          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-            <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数（手工登记）
-            <HelpPopover title="近 7 日写作字数（手工登记）" width="20rem">
-              {'柱子高度 = 「写作进度」里当天登记的实际字数，需要手工登记（可写目标字数与实际字数做对比复盘）。\n\n· 这是「参考视图」：上方统计卡与「码字日历」走的是编辑器自动记录（权威口径），本图是你自己登记的计划完成情况 —— 两者口径不同，不必强求一致；\n· 点下方「去登记今日字数」直接跳到进度表。'}
-            </HelpPopover>
-          </h2>
-          {weekTotal === 0 ? (
-            <div className="py-12 text-center text-12 text-ink-500">
-              在「写作进度」登记每日字数后，这里会出现柱状图
-            </div>
-          ) : (
-            <div className="flex items-end gap-2 h-32">
-              {days.map(d => (
-                // 整列撑满 h-32：列本身若靠内容撑高，柱子的百分比高度就没有可参照的确定高度 → 塌成 0
-                <div key={d.date} className="flex-1 h-full flex flex-col items-center gap-1.5 group">
-                  {/* 字数常显：原先 opacity-0 要悬停才出现，配合柱子塌陷会被误判为"没数据" */}
-                  <span className="text-9 text-ink-400 group-hover:text-amber transition-colors">{d.words}</span>
-                  {/* 图表区撑满剩余高度，给柱子的百分比高度一个确定的参照父级 */}
-                  <div className="w-full flex-1 flex items-end">
-                    {/* 柱子用实心 amber：amber/40 在浅色主题（护眼/羊皮卷）下对比度仅约 1.5:1 */}
-                    <div
-                      className="w-full rounded-t bg-amber group-hover:bg-amber-soft transition-all duration-300"
-                      style={{ height: `${Math.max((d.words / maxDay) * 100, 2)}%` }}
-                    />
-                  </div>
-                  <span className="text-9 text-ink-500">{d.date.slice(5)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* 🔴 用 bare + 显式 h-8（2026-10-12 主人反馈「去…按钮被压成竖排」）：
-              `icon-amber` 是**定宽图标键**（ICON_SIZE.sm = h-8 w-8 = 32px），
-              里面塞「去写作 + 箭头」时宽度不够 ⇒ 文字被挤成一行一个字。
-              文字型导航键必须走 bare + 显式 h-8（同 NovelEditorChapterTree 的导出键口径）。 */}
-          {/* 🔴 「写作进度」在自定义项目里可能没启用 ⇒ 此时**不渲染**这个入口（2026-10-16 全量审计）。
-              原先无条件渲染，而 `onNavigate` 在 App 层被 `tabVisible` 静默 return ——
-              按钮摆在那儿、点了毫无反应，正是「绝不静默」要禁的形态。
-              过滤口径与下方 quickLinks 的 `hiddenTabIds` 完全一致。 */}
-          {!hiddenTabIds.has('progress') && (
-            <Button variant="bare" onClick={() => onNavigate('progress')}
-              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
-              去登记今日字数 <ChevronRight size={11} />
-            </Button>
-          )}
-        </Panel>
-
         {/* 快捷入口 */}
-        <Panel>
+        <Panel className="md:col-span-2">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Flame size={14} className="text-amber" /> 快捷入口
             <HelpPopover title="快捷入口" width="19rem">
@@ -678,6 +537,164 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
         <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />
       </Panel>
 
+      <section className="mt-6" aria-labelledby={statisticsId}>
+        <h2>
+          <button type="button" id={statisticsId} aria-expanded={statisticsOpen} aria-controls={statisticsId + '-content'}
+            onClick={() => setStatisticsOpen(value => !value)}
+            className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-ink-700 bg-ink-800 px-3 py-2 text-left text-13 font-semibold text-ink-100 hover:border-amber/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
+            <TrendingUp size={15} className="shrink-0 text-amber" />
+            <span className="min-w-0 flex-1">详细统计与趋势</span>
+            <span className="text-11 font-normal text-ink-400">{statisticsOpen ? '收起' : '展开'}</span>
+            <ChevronRight size={14} className={statisticsOpen ? 'rotate-90' : ''} aria-hidden />
+          </button>
+        </h2>
+        <p className="mt-2 text-11 text-ink-400">码字日历、手工登记趋势{!isLite && '、角色出场'}与创作复盘；展开偏好仅保存在本机。</p>
+        <div id={statisticsId + '-content'} hidden={!statisticsOpen}>
+          {statisticsOpen && <div className="mt-4">
+      {/* 码字日历 · 年度热力图 + 年度数字卡（v3.1.2 · 主人拍板 C 混合方案） */}
+      <Panel className="mb-6">
+        <div className="flex flex-wrap items-center gap-6 mb-4">
+          <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
+            <CalendarDays size={14} className="text-amber" /> 码字日历
+            <HelpPopover title="码字日历怎么看" width="21rem">
+              {'完全自动记录：只要在正文编辑器里写字并保存，当天产出就会计入（删字也算变动量）。\n\n· 今日 xx 字：今天的净产出；\n· 连续码字：从今天（今天还没写则从昨天）往前数连续有产出的天数，断一天归零；\n· 年度热力图：一整年每天一格（周一开头、列＝周），颜色越亮当天写得越多（<500 / <1500 / <3000 / 3000+ 四档），鼠标悬停看具体字数；\n· 「‹ 2026 ›」切换年份；\n· 右侧年度指标：全年总产量 / 打卡天数与打卡率 / 年内最长连续 / 最佳单日。\n\n用它盯「手感」和断更风险，比看总字数更有用。'}
+            </HelpPopover>
+          </h2>
+          {/* 今日产出 */}
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="text-12 text-ink-100 font-semibold">
+                今日 {todayWords.toLocaleString()} 字
+              </div>
+              <div className="text-10 text-ink-500">在正文编辑器写作时自动记录</div>
+            </div>
+          </div>
+          {/* 连续打卡 */}
+          <div className="flex items-center gap-2 ml-auto">
+            <Zap size={15} className={streak > 0 ? 'text-amber' : 'text-ink-600'} />
+            <div>
+              <div className="text-15 font-bold text-ink-50 leading-none">{streak} <span className="text-11 font-normal text-ink-400">天连续码字</span></div>
+              <div className="text-10 text-ink-500 mt-0.5">{todayWords > 0 ? '今日已打卡 ✓' : '今天还没动笔，去写两章？'}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 主人二次调整：四个年度统计**横向一行**（不再竖排右栏）——
+            区块高度改由热力图决定，右侧不再撑高、热力图下方也不再留大片空白 */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
+              {/* 年份切换用 bare（非定宽图标变体）：带中文 title/aria-label 不会挤成竖排，
+                  闸 uiUxGuards 只约束 icon-amber/danger/muted 三个定宽变体 */}
+              <Button variant="bare" onClick={() => setCalYear(y => y - 1)} title="上一年" aria-label="上一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40">
+                <ChevronLeft size={14} />
+              </Button>
+              <span className="text-13 font-semibold text-ink-100 tabular-nums">{calYear} 年</span>
+              <Button variant="bare" onClick={() => setCalYear(y => Math.min(thisYear, y + 1))} disabled={calYear >= thisYear} title="下一年" aria-label="下一年" className="px-1.5 py-1 rounded border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 disabled:opacity-40">
+                <ChevronRight size={14} />
+              </Button>
+              {calYear !== thisYear && (
+                <Button variant="bare" className="ml-1 text-10 text-amber" onClick={() => setCalYear(thisYear)}>回到今年</Button>
+              )}
+              {/* 年度统计：横向一行，label + 值 + 备注并列；窄窗口自动换行 */}
+              <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1">
+                {[
+                  { k: '全年产量', v: fmtWords(yearGrid.total), s: `${calYear} 年累计` },
+                  { k: '打卡天数', v: `${yearGrid.wroteDays} 天`, s: `打卡率 ${Math.round(yearGrid.wroteDays / (isLeapYear(calYear) ? 366 : 365) * 100)}%` },
+                  { k: '最长连续', v: `${yearGrid.longest} 天`, s: '年内最长' },
+                  { k: '最佳单日', v: `${yearGrid.best.words.toLocaleString()} 字`, s: yearGrid.best.date || '暂无记录' },
+                ].map(c => (
+                  <div key={c.k} className="flex items-baseline gap-1.5" title={c.k + '：' + c.s}>
+                    <span className="text-10 text-ink-500">{c.k}</span>
+                    <span className="text-13 font-bold text-ink-50 tabular-nums">{c.v}</span>
+                    <span className="text-9 text-ink-600 hidden sm:inline">{c.s}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* 月标签行：与热力网格同列宽，每月 1 日所在列打标 */}
+            <div className="grid pb-1" style={{ gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))` }}>
+              {Array.from({ length: yearGrid.weeks }, (_, w) => {
+                const lab = yearGrid.months.find(m => m.col === w)
+                return <div key={w} className="text-9 text-ink-600 leading-none truncate">{lab ? lab.label : ''}</div>
+              })}
+            </div>
+            {/* 热力网格：列＝周（周一→周日），格子 aspect-square ⇒ 随容器宽度等比方，天然撑满 */}
+            <div
+              className="grid gap-[3px]"
+              style={{
+                gridTemplateColumns: `repeat(${yearGrid.weeks}, minmax(0, 1fr))`,
+                gridTemplateRows: 'repeat(7, auto)',
+                gridAutoFlow: 'column',
+              }}
+            >
+              {yearGrid.cells.map(c => (
+                <div
+                  key={c.date}
+                  data-heat={c.inYear ? heatLevel(c.words) : -1}
+                  title={c.inYear ? `${c.date}：${c.words} 字` : c.date}
+                  className={`aspect-square w-full rounded-[2px] transition-colors ${c.inYear ? heatColor(c.words) : 'bg-transparent'} ${c.date === todayStr ? 'ring-1 ring-amber/70' : ''} hover:ring-1 hover:ring-amber/60`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 mt-2 text-9 text-ink-500">
+              <span>少</span>
+              <span data-heat={0} className="w-2.5 h-2.5 rounded-[2px] bg-ink-800 inline-block" />
+              <span data-heat={1} className="w-2.5 h-2.5 rounded-[2px] bg-amber/40 inline-block" />
+              <span data-heat={2} className="w-2.5 h-2.5 rounded-[2px] bg-amber/60 inline-block" />
+              <span data-heat={3} className="w-2.5 h-2.5 rounded-[2px] bg-amber/80 inline-block" />
+              <span data-heat={4} className="w-2.5 h-2.5 rounded-[2px] bg-amber inline-block" />
+              <span>多</span>
+              <span className="ml-3">数据来自编辑器自动记录（进/减字数都计入当日）</span>
+        </div>
+      </Panel>
+
+        {/* 近7日字数 */}
+        <Panel className="mt-6">
+          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+            <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数（手工登记）
+            <HelpPopover title="近 7 日写作字数（手工登记）" width="20rem">
+              {'柱子高度 = 「写作进度」里当天登记的实际字数，需要手工登记（可写目标字数与实际字数做对比复盘）。\n\n· 这是「参考视图」：上方统计卡与「码字日历」走的是编辑器自动记录（权威口径），本图是你自己登记的计划完成情况 —— 两者口径不同，不必强求一致；\n· 点下方「去登记今日字数」直接跳到进度表。'}
+            </HelpPopover>
+          </h2>
+          {weekTotal === 0 ? (
+            <div className="py-12 text-center text-12 text-ink-500">
+              在「写作进度」登记每日字数后，这里会出现柱状图
+            </div>
+          ) : (
+            <div className="flex items-end gap-2 h-32">
+              {days.map(d => (
+                // 整列撑满 h-32：列本身若靠内容撑高，柱子的百分比高度就没有可参照的确定高度 → 塌成 0
+                <div key={d.date} className="flex-1 h-full flex flex-col items-center gap-1.5 group">
+                  {/* 字数常显：原先 opacity-0 要悬停才出现，配合柱子塌陷会被误判为"没数据" */}
+                  <span className="text-9 text-ink-400 group-hover:text-amber transition-colors">{d.words}</span>
+                  {/* 图表区撑满剩余高度，给柱子的百分比高度一个确定的参照父级 */}
+                  <div className="w-full flex-1 flex items-end">
+                    {/* 柱子用实心 amber：amber/40 在浅色主题（护眼/羊皮卷）下对比度仅约 1.5:1 */}
+                    <div
+                      className="w-full rounded-t bg-amber group-hover:bg-amber-soft transition-all duration-300"
+                      style={{ height: `${Math.max((d.words / maxDay) * 100, 2)}%` }}
+                    />
+                  </div>
+                  <span className="text-9 text-ink-500">{d.date.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 🔴 用 bare + 显式 h-8（2026-10-12 主人反馈「去…按钮被压成竖排」）：
+              `icon-amber` 是**定宽图标键**（ICON_SIZE.sm = h-8 w-8 = 32px），
+              里面塞「去写作 + 箭头」时宽度不够 ⇒ 文字被挤成一行一个字。
+              文字型导航键必须走 bare + 显式 h-8（同 NovelEditorChapterTree 的导出键口径）。 */}
+          {/* 🔴 「写作进度」在自定义项目里可能没启用 ⇒ 此时**不渲染**这个入口（2026-10-16 全量审计）。
+              原先无条件渲染，而 `onNavigate` 在 App 层被 `tabVisible` 静默 return ——
+              按钮摆在那儿、点了毫无反应，正是「绝不静默」要禁的形态。
+              过滤口径与下方 quickLinks 的 `hiddenTabIds` 完全一致。 */}
+          {!hiddenTabIds.has('progress') && (
+            <Button variant="bare" onClick={() => onNavigate('progress')}
+              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
+              去登记今日字数 <ChevronRight size={11} />
+            </Button>
+          )}
+        </Panel>
+
       {/* 角色出场分布 */}
       {!isLite && (
       <Panel className="mt-6">
@@ -774,6 +791,9 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           {review.lastDay ? ` · 最近 ${review.lastDay}` : ''}
         </div>
       </Panel>
+          </div>}
+        </div>
+      </section>
     </div>
   )
 }

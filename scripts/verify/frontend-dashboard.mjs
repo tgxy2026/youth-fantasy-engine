@@ -24,7 +24,11 @@ try{
   const origin=`http://localhost:${server.httpServer.address().port}`
   browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server']})
   const context=await browser.newContext({viewport:{width:1366,height:900},reducedMotion:'reduce'})
-  await context.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort())
+  report.modelRequests=[]
+  await context.route('**/*',route=>{
+    if(/\/chat\/completions|\/api\/ai(?:\/|$)/.test(route.request().url()))report.modelRequests.push(route.request().method())
+    return route.request().url().startsWith(origin+'/')?route.continue():route.abort()
+  })
   page=await context.newPage();page.setDefaultTimeout(120000)
   page.on('pageerror',error=>report.errors.push(error.message))
   const url=origin+'/tests/browser/dashboard.html'
@@ -102,6 +106,34 @@ try{
   const guideBox=await page.getByRole('heading',{name:'项目起步清单',exact:true}).boundingBox()
   check('creation summary precedes optional planning on screen',summaryBox&&guideBox&&summaryBox.y<guideBox.y)
   check('today summary comes from authoritative daily records',await page.getByRole('region',{name:'创作摘要',exact:true}).getByText(`今日字数变化 ${actual.todayWords.toLocaleString()} 字`,{exact:true}).isVisible())
+  const statistics=page.getByRole('button',{name:/详细统计与趋势/})
+  await statistics.waitFor()
+  check('detailed statistics default closed and do not mount secondary charts',await statistics.getAttribute('aria-expanded')==='false'
+    &&!await page.getByRole('heading',{name:/码字日历|角色出场分布|创作复盘/}).count())
+  check('quick entries and editable goals stay outside the fold',await page.getByRole('heading',{name:/快捷入口/}).isVisible()
+    &&await page.getByRole('heading',{name:/写作目标与完稿预估/}).isVisible())
+  await statistics.focus();await page.keyboard.press('Enter')
+  const controls=await statistics.getAttribute('aria-controls')
+  check('Enter opens the named controlled statistics region',await statistics.getAttribute('aria-expanded')==='true'
+    &&await page.locator(`[id="${controls}"]`).isVisible()
+    &&await page.getByRole('heading',{name:/码字日历/}).isVisible()
+    &&await page.getByRole('heading',{name:/创作复盘/}).isVisible())
+  check('automatic and manually registered metrics retain their separate provenance',await page.getByText('在正文编辑器写作时自动记录',{exact:true}).isVisible()
+    &&await page.getByRole('heading',{name:/近 7 日写作字数（手工登记）/}).isVisible())
+  await page.screenshot({path:path.join(run,'dashboard-statistics-expanded.png'),fullPage:true,animations:'disabled'})
+  await statistics.press('Space')
+  check('Space closes charts and focus stays on the disclosure',await statistics.getAttribute('aria-expanded')==='false'
+    &&await statistics.evaluate(el=>el===document.activeElement)
+    &&!await page.getByRole('heading',{name:/码字日历|角色出场分布|创作复盘/}).count())
+  await statistics.press('Enter')
+  await page.getByRole('navigation').getByRole('button',{name:'正文编辑',exact:true}).click()
+  await page.locator('textarea.novel-textarea').waitFor()
+  await page.getByRole('navigation').getByRole('button',{name:'写作面板',exact:true}).click()
+  await statistics.waitFor()
+  check('statistics open preference survives real page unmount and return',await statistics.getAttribute('aria-expanded')==='true'
+    &&await page.evaluate(async()=>(await import('/src/lib/settings/uiPrefs.ts')).readBoolPref('dashboard-statistics-open',false)))
+  await statistics.press('Space')
+  check('folding and remounting leave authoritative chapters unchanged',await page.evaluate(async()=>JSON.stringify(await(await import('/src/lib/db.ts')).getAllChapters()))===actual.chapters)
   await page.getByRole('button',{name:'汉字 ＋ 标点',exact:true}).click()
   check('word-count switch exposes its selected state',await page.getByRole('button',{name:'汉字 ＋ 标点',exact:true,pressed:true}).count()===1)
   await page.getByRole('button',{name:'字数口径说明',exact:true}).click()
@@ -114,6 +146,7 @@ try{
   const editor=page.locator('textarea.novel-textarea');await editor.waitFor()
   check('real continue action opens the authoritative chapter body',await editor.inputValue()===actual.target.content)
   check('no browser errors',report.errors.length===0,report.errors)
+  check('no model requests',report.modelRequests.length===0,report.modelRequests)
   report.status='passed'
 }catch(error){report.status='failed';report.error=error.stack||String(error);await page?.screenshot({path:path.join(run,'failure.png'),fullPage:true,animations:'disabled'}).catch(()=>{})}
 finally{
