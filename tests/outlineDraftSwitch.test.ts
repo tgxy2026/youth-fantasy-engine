@@ -99,7 +99,9 @@ if (sw) {
     sw.body.indexOf('setActiveId') > sw.body.indexOf('if (!result.ok)') && sw.body.includes('attempt < 3'))
   const flush = list.find(block => block.name === 'flushDraft')
   ok('flushDraft 接到串行资料写入器并保持真实保存入口', !!flush && /createRecordDraftFlusher<CardRecord>/.test(flush.body)
-    && /write: saveCardRecord/.test(flush.body))
+    && /write: async record =>[\s\S]{0,60}await saveCardRecord\(record\)/.test(flush.body)
+    // Recording a persistent UI failure cannot convert a failed write into a successful flush.
+    && /catch \(error\)[\s\S]{0,130}throw error/.test(flush.body))
 }
 
 console.log(`\noutlineDraftSwitch: ${pass} passed, ${fail} failed`)

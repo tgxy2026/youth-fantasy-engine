@@ -121,7 +121,14 @@ try {
     &&await page.evaluate(async projectId=>(await import('/src/lib/db.ts')).getCurrentProjectId()===projectId,fixture.projectId))
   await pick('现场乙').click();await page.waitForFunction(()=>document.body.innerText.includes('上一张的改动没能保存'))
   check('failed local record switch also retains the original draft',await field.inputValue()===dirty&&await pick('现场甲').getAttribute('aria-pressed')==='true')
+  await page.waitForTimeout(4500)
+  check('failed submission remains visible beyond the transient toast with the actual draft still intact',await page.locator('[data-outline-save-failure]').isVisible()
+    &&await page.getByRole('button',{name:'重试保存当前大纲',exact:true}).isEnabled()&&await field.inputValue()===dirty)
   await page.evaluate(()=>window.__restoreOutlinePut())
+  await page.getByRole('button',{name:'重试保存当前大纲',exact:true}).click()
+  await page.waitForFunction(()=>!document.querySelector('[data-outline-save-failure]'))
+  check('explicit retry clears the failed submission only after actual record success',await field.inputValue()===dirty
+    &&await pick('现场甲').getAttribute('aria-pressed')==='true'&&await page.getByRole('button',{name:'无待提交修改',exact:true}).isVisible())
   await pick('现场乙').click();await page.waitForFunction(()=>document.querySelector('button[aria-label="选择章节大纲：现场乙"]')?.getAttribute('aria-pressed')==='true')
   check('retry after write recovery saves the actual original record',await page.evaluate(async({field,dirty})=>
     (await(await import('/src/lib/db.ts')).getCardRecords('chapter-outline')).find(row=>row.id==='view-outline-0')?.data[field]===dirty,{field:fixture.field,dirty}))

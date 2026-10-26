@@ -96,6 +96,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const draftRef = useRef(draft)
   const prevActiveRef = useRef<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [saveErrorId, setSaveErrorId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => () => clearTimeout(savedTimer.current), [])
@@ -375,8 +376,15 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const flushDraft = useMemo(() => createRecordDraftFlusher<CardRecord>({
     current: isCurrent,
     read: () => ({ record: draftRef.current, dirty: dirtyRef.current }),
-    write: saveCardRecord,
+    write: async record => {
+      try { await saveCardRecord(record) }
+      catch (error) {
+        if (isCurrent()) setSaveErrorId(record.id)
+        throw error
+      }
+    },
     saved: current => {
+      setSaveErrorId(previous => previous === current.id ? null : previous)
       setRecords(list => list.map(record => record.id === current.id ? current : record))
       if (draftRef.current === current) dirtyRef.current = false
     },
@@ -485,7 +493,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
             <span className="text-11 text-ink-500">{records.length} 个{noun}</span>
             {/* Narrow toolbars already show the save button state; don't reserve another invisible status slot. */}
             <span className={`hidden @min-[64rem]/workspace:inline text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
-              <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
+              <Check size={11} className="inline -mt-0.5 mr-0.5" />已提交
             </span>
             <FieldAliasButton
               tabId={tab.id}
@@ -497,9 +505,9 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
               onClick={save}
               disabled={!dirty || saving}
               className="font-medium hover:bg-amber/25"
-              title={dirty ? '保存（Ctrl+S）' : '无未保存的改动'}
+              title={dirty ? '保存（Ctrl+S）' : '本页无待提交修改；实际存储状态见存储区'}
             >
-              <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
+              <Save size={13} /> {saving ? '提交中…' : (dirty ? '保存' : '无待提交修改')}
             </Button>
             <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
@@ -534,6 +542,13 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
           </div>
         )}
       </header>
+
+      {dirty && saveErrorId === draft?.id && <section data-outline-save-failure role="alert"
+        className="mb-3 shrink-0 rounded-lg border border-danger/40 bg-surface-panel px-3 py-2 text-12 text-ink-100">
+        <p className="font-medium text-danger">本次大纲修改未能提交保存</p>
+        <p className="mt-1">请保留当前页面，先查看存储状态并处理问题，再重试保存；不要直接刷新或关闭。</p>
+        <Button variant="secondary" className="mt-2" disabled={saving} onClick={() => void save()}>重试保存当前大纲</Button>
+      </section>}
 
       {/* R4a · 2.6.0 结构模板节拍对照条（章节细纲页 · 只读）：按细纲卡数折算各拍章号范围，
           当前编辑章所在拍高亮。模板选择跟随创意写作 / 全书结构配比（单一来源），此处不提供切换。 */}

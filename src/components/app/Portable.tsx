@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Save, HardDriveUpload, FileInput, FolderOpen } from 'lucide-react'
+import { HardDriveUpload, FileInput, FolderOpen } from 'lucide-react'
 import {
   getPortableState, subscribePortable, flushPortable,
   exportPortableData, importPortableData, pickLocalFile, portableDataDir, portableDataPath,
 } from '@/lib/storage/fileBackend'
 import { confirmDialog, copyText, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import StorageWriteStatus from '@/components/common/StorageWriteStatus'
 
 /**
  * 便携（U 盘）版数据管理栏 —— `DesktopDataBar` 的浏览器等价实现。
@@ -25,20 +26,6 @@ export function PortableDataBar() {
   const time = state.lastSavedAt
     ? new Date(state.lastSavedAt).toLocaleTimeString('zh-CN', { hour12: false })
     : '--:--:--'
-
-  const text = state.lastError
-    ? '保存出错'
-    : state.saving
-      ? '正在写入'
-      : state.dirty
-        ? '待保存'
-        : '已保存'
-
-  const dotColor = state.lastError
-    ? 'bg-red-500'
-    : (state.saving || state.dirty)
-      ? 'bg-yellow-400'
-      : 'bg-emerald-500'
 
   const doExport = async () => {
     setBusy('export')
@@ -106,8 +93,8 @@ export function PortableDataBar() {
       {state.saveConflict && <p role="alert" className="text-xs text-red-400">{state.lastError || '本窗口保存已停止。请先导出全部数据保留草稿，再重新打开并合并；请勿直接刷新。'}</p>}
       {/* 第一行：保存状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
-        <Button variant="bare"
-          onClick={() => void flushPortable()}
+        <StorageWriteStatus facts={state}
+          onSave={() => void flushPortable()}
           title={
             state.lastError
               ? '保存出错，点击重试'
@@ -115,12 +102,7 @@ export function PortableDataBar() {
                 ? `数据文件：${state.dataPath}\n最后保存：${time}${state.dirty ? '（有未保存的改动）' : ''}（点击立即保存）`
                 : `最后保存：${time}（点击立即保存到数据文件）`
           }
-          className="flex h-8 items-center gap-2 rounded-full border border-ink-700 bg-ink-800/60 px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100"
-        >
-          <Save size={12} className="text-amber/80" />
-          <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-          <span className="whitespace-nowrap">{text}</span>
-        </Button>
+        />
         <Button variant="bare" onClick={doExport} disabled={!!busy} title="导出数据文件：把全部数据导出为一个 JSON 文件（浏览器下载），用于留档或搬到别的电脑" className={iconBtn}>
           <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>
