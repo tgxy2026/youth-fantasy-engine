@@ -18,6 +18,8 @@ export interface ReferenceJump {
   offset?: number
   /** 命中词长度：把命中的那一截选中 */
   matchLength?: number
+  /** Search-time body revision; a changed body must not receive an old offset. */
+  revision?: string
   /** 来源记录 id（返回时把同一条选回来） */
   sourceId?: string
 }

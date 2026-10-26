@@ -54,6 +54,7 @@ import {
   GHOST_CONTEXT_CHARS, orderedChapters,
 } from '@/components/editor/novelEditorHelpers'
 import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/outline/freeVolume'
+import { useEditorChapterTarget } from '@/components/editor/useEditorChapterTarget'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
 
@@ -64,11 +65,12 @@ type Args = {
   ctx: VisCtx
   /** 顶层要求打开的章（跨页签跳转带下来） */
   openChapterId?: string | null
+  openRequestId?: number
   /** 字数变化上报 */
   onStatsChange?: () => void
 }
 
-export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args) {
+export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStatsChange }: Args) {
   const isLite = ctx.type !== 'full'
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
@@ -399,21 +401,10 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   // 🔴 只消费一次（2026-10-17 审计 P2）：依赖数组带 `chapters` 会让每次保存都重跑并无条件
   //    setActiveId(openChapterId)，把作者手动切到的章弹回目标章。按 id 记账只消费一次；
   //    章还没加载出来时保留 `chapters` 依赖做一次重试（不消费就不会被弹回）。
-  const consumedOpenIdRef = useRef<string | null>(null)
-  /** 刚被删除的章 id（一次性）：置空 activeId 触发的切章冲刷要跳过它，见 removeChapter */
+  /** A deleted chapter must not be flushed back into storage. */
   const skipFlushRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!openChapterId || consumedOpenIdRef.current === openChapterId) return
-    const ch = chaptersRef.current.find(c => c.id === openChapterId)
-    if (!ch) return // 章尚未加载（或已被删）：等 chapters 变化再试；消费过就不会再进来
-    consumedOpenIdRef.current = openChapterId
-    captureWorkspaceView() // 显式跳章也要先记下离开章的现场（显式定位本身优先于恢复）
-    setActiveId(openChapterId)
-    // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
-    if (!expandedRef.current.has(ch.volumeId)) {
-      setExpandedPersist(prev => new Set(prev).add(ch.volumeId))
-    }
-  }, [openChapterId, chapters, setExpandedPersist])
+  useEditorChapterTarget({ loaded, chapters, chapterId: openChapterId, requestId: openRequestId,
+    setActiveId, expandedRef, setExpanded: setExpandedPersist })
 
   // 记住上次编辑位置：下次打开项目直接回到这里（2.6.1 社区反馈）。null 不写——
   // 删章置空后保留旧记录，读回时本来就有存在性校验。

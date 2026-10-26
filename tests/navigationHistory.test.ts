@@ -98,18 +98,16 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   const hook = read('src/lib/app/useNavigationHistory.ts')
 
   ok('🔴 ⑥ App 用来源栈并渲染返回入口', /useNavigationHistory\(/.test(app) && /<BackToSource /.test(app))
-  ok('🔴 ⑥ 关联跳转先记来源再导航',
-    /navHistory\.record\(from, jump\.label\)[\s\S]{0,400}navigate\(jump\.tabId, jump\.chapterId, jump\.rowId\)/.test(app))
-  ok('🔴 ⑥ 侧栏普通导航不记来源（navigate 里没有 record）',
-    /const navigate = useCallback\([\s\S]{0,200}navGate\.request/.test(app) && !/const navigate = useCallback\([\s\S]{0,200}navHistory\.record/.test(app))
-  ok('🔴 ⑥ 返回前校验目标仍可见，不可见就丢掉这条', /tabVisible\(tab\.id, visCtx\)[\s\S]{0,160}navHistory\.takeBack\(\)/.test(app))
-  ok('🔴 ⑥ 切项目/换存储上下文让来源栈作废', /useNavigationHistory\(`\$\{projectId\}:\$\{getStorageContextEpoch\(\)\}`\)/.test(app)
-    && /history\.clear\(\)/.test(hook))
+  ok('🔴 ⑥ 关联来源仅在成功提交后入栈', app.includes('referenceNavigationIntent(jump, from)')
+    && /commit: intent[\s\S]{0,350}commitNavigationHistory/.test(app) && !app.includes('navHistory.record(from, jump.label)'))
+  ok('🔴 ⑥ 侧栏普通导航不携带来源', /const navigate = useCallback[\s\S]{0,220}pageNavigationIntent/.test(app))
+  ok('🔴 ⑥ 返回通过同一屏障而非先pop', app.includes('back: entry') && !/const goBackToSource[\s\S]{0,450}takeBack/.test(app))
+  ok('🔴 ⑥ 来源栈按完整项目/账户上下文隔离', app.includes('useNavigationHistory(navContext())') && hook.includes('key: scopeKey') && hook.includes('history.clear()'))
   ok('🔴 ⑥ 返回入口不占布局高度（sticky + 零高 + 绝对定位）',
     /sticky top-0 z-30 h-0/.test(app) && /absolute right-3 top-3/.test(chip))
   ok('🔴 ⑥ 返回按钮可键盘聚焦（原生 button + 标题说明）', /<button[\s\S]{0,200}type="button"/.test(chip) && /title=/.test(chip))
   ok('🔴 ⑥ 角色页把关联跳转透传给提及面板（并补上来源卡 id）',
-    /onNavigateReference=\{onNavigateReference/.test(sheet) && /onNavigateReference/.test(mention) && /draft\?\.id/.test(sheet))
+    /onNavigateReference=\{onNavigateReference/.test(sheet) && /onNavigateReference/.test(mention) && /sourceId: mention\.id/.test(sheet))
   ok('🔴 ⑥ 没有关联跳转回调时退回普通跳转（不静默失效）', /else onNavigate\('editor', h\.chapterId\)/.test(mention))
   ok('🔴 ⑥ 三处共用同一个「关联跳转」类型（不许各写一套签名）',
     /export interface ReferenceJump/.test(read('src/lib/app/navigation.ts'))
@@ -118,11 +116,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('🔴 ⑥ 关联跳转用对象入参（位置参数时代传错过，静默不跳）',
     /export type NavigateToReference = \(jump: ReferenceJump\) => void/.test(read('src/lib/app/navigation.ts'))
       && /onNavigateReference\(\{ tabId: 'editor', label: name, chapterId: h\.chapterId/.test(mention))
-  ok('🔴 ⑥ 正文偏移只对「这次指定的那一章」生效',
-    /pending\.chapterId === chapterId/.test(app) && /openChapterId !== activeId\) return/.test(read('src/components/editor/useEditorOpenOffset.ts')))
-  ok('🔴 ⑥ 导航被拦/保存失败时丢掉待定偏移（不留脏定位）',
-    /invalid: \(\) => \{ pendingEditorOffset\.current = null/.test(app)
-      && /failed: \(intent, scope, error\) => \{ pendingEditorOffset\.current = null/.test(app))
+  ok('🔴 ⑥ 偏移随已接受请求提交，不共享pending ref', app.includes('intent.position') && !app.includes('pendingEditorOffset'))
+  ok('🔴 ⑥ 章节/选区请求带代次，显式位置仲裁优先于旧现场', app.includes('openRequestId={editorRequestId}')
+    && read('src/components/editor/NovelEditor.tsx').includes('skipRestore: ownsPosition'))
   ok('🔴 ⑥ 偏移由检索侧按「正文内」算（不是整章拼接串）',
     /contentStart = c\.title\.length \+ 1 \+ \(c\.summary \?\? ''\)\.length \+ 1/.test(read('src/lib/search/mentions.ts')))
   ok('🔴 ⑥ 来源栈不写 localStorage / sessionStorage', !/localStorage|sessionStorage/.test(read('src/lib/app/navigationHistory.ts')))

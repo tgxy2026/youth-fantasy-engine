@@ -20,6 +20,7 @@
  */
 import * as db from '@/lib/db'
 import type { Chapter, Volume } from '@/lib/types'
+import { contentRevision } from '@/lib/editor/editorViewMath'
 
 export interface MentionHit {
   chapterId: string
@@ -40,6 +41,7 @@ export interface MentionHit {
   contentOffset?: number
   /** 命中词长度（用于把命中的那一截选中，作者一眼能看到落在哪） */
   matchLength?: number
+  revision?: string
 }
 
 /** snippet 截取：命中处前后各取 30 字，换行压平 */
@@ -146,7 +148,7 @@ export async function findMentions(name: string, aliases: string[]): Promise<Men
       hits: count,
       matchedTerms: matched,
       firstSnippet: firstPos >= 0 ? makeSnippet(text, firstPos, firstTermLen) : '',
-      ...(contentOffset !== undefined ? { contentOffset, matchLength: firstTermLen } : {}),
+      ...(contentOffset !== undefined ? { contentOffset, matchLength: firstTermLen, revision: contentRevision(c.content) } : {}),
     })
   }
 

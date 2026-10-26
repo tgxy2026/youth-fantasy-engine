@@ -40,6 +40,8 @@ export interface EditorWorkspaceViewArgs {
   taRef: RefObject<HTMLTextAreaElement>
   /** 正文壳（短窗时它才是滚动容器），用于外层的滚动位置 */
   scrollRef: RefObject<HTMLDivElement>
+  /** Explicit position requests arbitrate before restoration begins; hook order is not priority. */
+  skipRestore?: boolean
 }
 
 const directionOf = (value: string | null): EditorView['selection']['direction'] =>
@@ -73,7 +75,7 @@ async function settleLayout(el: HTMLTextAreaElement, cancelled: () => boolean): 
   }
 }
 
-export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef }: EditorWorkspaceViewArgs): void {
+export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, skipRestore = false }: EditorWorkspaceViewArgs): void {
   const epoch = useRef(0)
   // 捕获可能在 React 之外被同步调用（离页点击那一刻），只能读 ref 里的最新值
   const live = useRef({ enabled, activeId })
@@ -128,7 +130,8 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef }: 
 
   // ---------- 恢复：进章 / 回编辑器时，内容还是那一份才恢复选区与位置 ----------
   useEffect(() => {
-    if (!enabled || !activeId) return
+    const token = ++epoch.current
+    if (!enabled || !activeId || skipRestore) return
     const ta = taRef.current
     if (!ta) return
     const projectId = db.getCurrentProjectId()
@@ -139,8 +142,6 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef }: 
     const record = workspaceViews.get(scope, activeId)
     if (!record || record.kind !== 'editor' || record.objectId !== activeId) return
 
-    const token = epoch.current + 1
-    epoch.current = token
     const cancelled = () => token !== epoch.current || workspaceViews.generation() !== generation
     // 存储被清（换身份 / 换后端 / 整库替换）⇒ 立刻作废，别让旧会话的现场落到新上下文里
     const offInvalidate = workspaceViews.subscribeInvalidation(() => { epoch.current += 1 })
@@ -167,6 +168,6 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef }: 
         ta.focus({ preventScroll: true })
       }
     })().catch(() => { /* 恢复是可选能力，失败不能影响编辑本身 */ })
-    return offInvalidate
-  }, [enabled, activeId, taRef, scrollRef])
+    return () => { epoch.current++; offInvalidate() }
+  }, [enabled, activeId, taRef, scrollRef, skipRestore])
 }

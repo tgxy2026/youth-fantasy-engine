@@ -66,7 +66,7 @@ try {
     const chapters = await db.getAllChapters()
     const target = chapters[0]
     // 命中放在**正文中段**：偏移不为 0，才能验证「真的落到那一段」而不是碰巧在第一行
-    const head = '开篇雨声未歇，守门人仍站在原地。\n\n'
+    const head = '开篇雨声未歇，守门人仍站在原地。'.repeat(900)
     const content = `${head}${marker}${card}。\n\n${target.content ?? ''}`
     await db.patchChapter(target.id, { content })
     return { chapterId: target.id, chapterTitle: target.title ?? '',
@@ -122,8 +122,28 @@ try {
   check('🔴 ① 落在命中那一段（光标 ＝ 正文内偏移）', caret.start === seeded.expectedOffset, { caret, seeded })
   check('🔴 ① 命中词被选中（一眼看到落在哪）', caret.end === seeded.expectedOffset + seeded.expectedLength, { caret, seeded })
   check('① 定位后滚动位置是有限值（不越界）', Number.isFinite(caret.top) && caret.top >= 0, caret)
+  check('长段落软换行的命中确实滚入正文视口', caret.top > 1000, caret)
+  await editor.press('ArrowRight')
+  const native = await editor.evaluate(el => ({ top: el.scrollTop, line: Number.parseFloat(getComputedStyle(el).lineHeight) }))
+  check('原生光标移动无需大幅补滚（命中已经可见）', Math.abs(native.top - caret.top) < native.line * 3, { caret, native })
   check('① 返回入口带来源标签（不是笼统的「返回」）', (await chip.innerText()).includes(CARD))
 
+  // Real IDB failure: a failed back request must keep its retry entry and the original DOM/draft.
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put
+    window.__navRestorePut = () => { IDBObjectStore.prototype.put = original }
+    window.__navFailedPuts = 0
+    IDBObjectStore.prototype.put = function(value, ...args) {
+      if (this.name === 'chapters') { window.__navFailedPuts++; throw new DOMException('navigation fixture', 'QuotaExceededError') }
+      return original.call(this, value, ...args)
+    }
+  })
+  const edited = (await editor.inputValue()) + '\n导航返回失败后仍保留草稿'
+  await editor.fill(edited); await chip.click()
+  await page.waitForFunction(() => document.body.innerText.includes('已留在当前页面'))
+  check('真实写入失败已命中且返回入口仍保留', await page.evaluate(() => window.__navFailedPuts > 0) && await chip.isVisible())
+  check('返回失败保留当前正文和原草稿', await editor.isVisible() && await editor.inputValue() === edited)
+  await page.evaluate(() => window.__navRestorePut())
   // ---------- ② 点返回：回到同一张卡 ----------
   await chip.click()
   await page.getByRole('button', { name: '修改名称：' + CARD, exact: true }).waitFor({ timeout: 15000 })
@@ -138,6 +158,96 @@ try {
   await editor.waitFor()
   await page.waitForTimeout(600)
   check('🔴 ③ 普通侧栏导航不产生返回入口（不进历史栈）', (await chip.count()) === 0)
+
+  const revision = await page.evaluate(async id => {
+    const db = await import('/src/lib/db.ts'), {contentRevision} = await import('/src/lib/editor/editorViewMath.ts')
+    return contentRevision((await db.getAllChapters()).find(c => c.id === id).content)
+  }, seeded.chapterId)
+  const locate = () => page.evaluate(data => window.dispatchEvent(new CustomEvent('yfe:navigate', {
+    detail: { tabId: 'editor', chapterId: data.chapterId, offset: data.offset, matchLength: data.length, revision: data.revision },
+  })), { chapterId: seeded.chapterId, offset: seeded.expectedOffset, length: seeded.expectedLength, revision })
+  await locate()
+  await page.waitForFunction(start => document.querySelector('textarea.novel-textarea')?.selectionStart === start, seeded.expectedOffset)
+  await page.getByTitle('下一章', {exact: true}).click()
+  await page.waitForFunction(marker => !document.querySelector('textarea.novel-textarea')?.value.includes(marker), MARKER)
+  await locate()
+  await page.waitForFunction(data => {
+    const ta = document.querySelector('textarea.novel-textarea')
+    return ta?.value.includes(data.marker) && ta.selectionStart === data.start && ta.selectionEnd === data.start + data.length
+  }, {marker: MARKER, start: seeded.expectedOffset, length: seeded.expectedLength})
+  check('同ID同偏移重复请求在手动切章后仍准确定位', true)
+  await editor.press('ArrowRight'); await page.waitForTimeout(400)
+  const afterInteraction = await editor.evaluate(el => ({ start: el.selectionStart, end: el.selectionEnd }))
+  check('作者移动光标后不被旧显式请求拉回', afterInteraction.start === afterInteraction.end && afterInteraction.start !== seeded.expectedOffset, afterInteraction)
+
+  // Mentioning a non-selected card must return to that card, not the unrelated active draft.
+  await nav.getByRole('button', {name: '主要角色', exact: true}).click()
+  const otherCard = page.getByRole('button', {name: /^选择角色：/}).filter({hasNotText: CARD}).first()
+  await otherCard.click()
+  await page.getByTitle(`查看「${CARD}」在正文中的提及`).click()
+  await page.getByRole('button').filter({hasText: MARKER}).first().click()
+  await chip.waitFor(); await editor.waitFor()
+  check('查看非当前选中卡的提及时仍保留准确来源', (await chip.innerText()).includes(CARD))
+  await chip.click(); await page.getByRole('button', {name: '修改名称：'+CARD, exact:true}).waitFor()
+  check('返回的是提及来源卡而非原先选中卡', await cardButton.getAttribute('aria-pressed') === 'true')
+
+  // Identity protocol change in this fake profile: only ephemeral navigation metadata is cleared.
+  await page.getByTitle(`查看「${CARD}」在正文中的提及`).click()
+  await page.getByRole('button').filter({hasText: MARKER}).first().click(); await chip.waitFor()
+  await page.evaluate(() => { window.__YFE_USER__ = {id:'isolated-new-owner'}; window.dispatchEvent(new StorageEvent('storage', {key:'navigation-owner-probe'})) })
+  await chip.waitFor({state:'hidden'})
+  check('账户身份协议变化立即清理旧来源入口', true)
+
+  // A search-time offset must not be applied to a changed body, even if the length is unchanged.
+  const replacement = await page.evaluate(async id => {
+    const db = await import('/src/lib/db.ts'), {contentRevision} = await import('/src/lib/editor/editorViewMath.ts')
+    const chapter = (await db.getAllChapters()).find(c => c.id === id)
+    const previousRevision = contentRevision(chapter.content), text = '新稿' + chapter.content.slice(2)
+    await db.patchChapter(id, {content: text})
+    return {previousRevision, text}
+  }, seeded.chapterId)
+  await nav.getByRole('button', {name:'写作面板',exact:true}).click()
+  await nav.getByRole('button', {name:'正文编辑',exact:true}).click(); await editor.waitFor()
+  await page.waitForFunction(text => document.querySelector('textarea.novel-textarea')?.value === text, replacement.text)
+  await editor.evaluate(el => { el.setSelectionRange(1,1); el.scrollTop = 0 })
+  await page.evaluate(data => window.dispatchEvent(new CustomEvent('yfe:navigate', {detail:{tabId:'editor', chapterId:data.id,
+    offset:data.offset, matchLength:data.length, revision:data.revision}})),
+  {id:seeded.chapterId, offset:seeded.expectedOffset, length:seeded.expectedLength, revision:replacement.previousRevision})
+  await page.getByText('章节内容已更新，已打开章节；请重新检索定位',{exact:true}).waitFor()
+  check('同长度改稿也拒绝旧偏移并保留当前光标', await editor.evaluate(el => el.selectionStart === 1 && el.selectionEnd === 1))
+  check('过期定位不覆盖当前权威正文', await editor.inputValue() === replacement.text)
+
+  // Delayed font readiness is a controlled protocol fixture, not a physical-font/device claim.
+  await page.evaluate(() => {
+    const fonts=document.fonts, status=Object.getOwnPropertyDescriptor(fonts,'status'), ready=Object.getOwnPropertyDescriptor(fonts,'ready')
+    Object.defineProperty(fonts,'status',{configurable:true,get:()=> 'loading'})
+    Object.defineProperty(fonts,'ready',{configurable:true,value:new Promise(()=>{})})
+    window.__restoreFontReadiness=()=>{
+      if(status)Object.defineProperty(fonts,'status',status);else delete fonts.status
+      if(ready)Object.defineProperty(fonts,'ready',ready);else delete fonts.ready
+    }
+  })
+  const currentRevision = await page.evaluate(async text => (await import('/src/lib/editor/editorViewMath.ts')).contentRevision(text), replacement.text)
+  const locateFresh = () => page.evaluate(data => window.dispatchEvent(new CustomEvent('yfe:navigate',{detail:{tabId:'editor',chapterId:data.id,
+    offset:data.offset,matchLength:data.length,revision:data.revision}})),
+  {id:seeded.chapterId,offset:seeded.expectedOffset,length:seeded.expectedLength,revision:currentRevision})
+  await locateFresh();await page.waitForTimeout(80)
+  const typed = replacement.text + 'X'
+  await editor.fill(typed);await page.keyboard.press('Control+s')
+  await page.evaluate(()=>window.__restoreFontReadiness())
+  await page.waitForFunction(async data => (await (await import('/src/lib/db.ts')).getAllChapters()).find(c=>c.id===data.id)?.content===data.text,
+    {id:seeded.chapterId,text:typed})
+  await page.waitForTimeout(700)
+  check('字体延迟期间用户输入取消定位，保存后旧请求不复活', await editor.evaluate(el=>el.selectionStart===el.value.length&&el.selectionEnd===el.value.length))
+  const latestRevision = await page.evaluate(async text => (await import('/src/lib/editor/editorViewMath.ts')).contentRevision(text), typed)
+  await page.evaluate(data=>window.dispatchEvent(new CustomEvent('yfe:navigate',{detail:{tabId:'editor',chapterId:data.id,
+    offset:data.offset,matchLength:data.length,revision:data.revision}})),
+  {id:seeded.chapterId,offset:seeded.expectedOffset,length:seeded.expectedLength,revision:latestRevision})
+  await page.waitForFunction(data=>{
+    const ta=document.querySelector('textarea.novel-textarea')
+    return ta.selectionStart===data.start&&ta.selectionEnd===data.start+data.length
+  },{start:seeded.expectedOffset,length:seeded.expectedLength})
+  check('取消后新的有效定位请求仍可正常选中命中词', true)
 
   await page.screenshot({ path: path.join(run, 'navigation-back.png'), animations: 'disabled' })
   check('全程没有模型请求', report.modelRequests.length === 0, report.modelRequests)

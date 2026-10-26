@@ -134,7 +134,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   // 筛选：开启后隐藏「人物状态 = 已退场」的角色，避免角色过多时难以定位
   const [hideRetired, setHideRetired] = usePersistedBool('character-sheet-hide-retired', false)
   /** 「资料提及」面板（3.1 P1）：卡片标题行放大镜按钮打开，纯读不落库 */
-  const [mention, setMention] = useState<{ name: string; aliases: string[] } | null>(null)
+  const [mention, setMention] = useState<{ id: string; name: string; aliases: string[] } | null>(null)
   /** 批量导入弹窗（3.1.x）：角色页签的「导入」按钮打开 */
   const [showImport, setShowImport] = useState(false)
   /** 跨页签移动弹窗（3.1.3）：主要 / 次要 / NPC 三张角色卡之间搬运 */
@@ -875,7 +875,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                   </Button>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
                   <Button variant="bare" iconOnly size="xs" title={`查看「${rec.name}」在正文中的提及`}
-                    onClick={e => { e.stopPropagation(); setMention({ name: current.name, aliases: readAliases(tab.id, current.data) }) }}
+                    onClick={e => { e.stopPropagation(); setMention({ id: current.id, name: current.name, aliases: readAliases(tab.id, current.data) }) }}
                     className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all">
                     <Search size={12} />
                   </Button>
@@ -1120,7 +1120,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           onNavigate={onNavigate ?? (() => {})}
           onNavigateReference={onNavigateReference
             // 对象入参：只补「来源卡 id」，目标字段原样透传（位置参数时代这里传错过，静默不跳）
-            ? jump => onNavigateReference({ ...jump, ...(draft?.id ? { sourceId: draft.id } : {}) })
+            ? jump => onNavigateReference({ ...jump, sourceId: mention.id })
             : undefined}
         />
       )}

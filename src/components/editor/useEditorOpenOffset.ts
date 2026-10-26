@@ -1,109 +1,115 @@
-/**
- * 「跳到正文的某一段」（UX05 段落级定位）。
- *
- * 【为什么不是只打开章】
- *   作者从角色页看到「这一章提到过他 7 次」，点进去落在**第 1 行**，还得自己翻——
- *   命中位置检索侧其实算得出来（`MentionHit.contentOffset`），只要跳过去时把光标放到那儿。
- *
- * 🔴 三条约束：
- *   ① **不抢 DOM**：只对现成 textarea 调 `setSelectionRange` / `scrollTop` / `focus`，
- *      不换节点、不改内容；正文值必须已经装载好（长度 ≥ 目标偏移）才动手。
- *   ② **一次性**：同一组（章 + 偏移）只应用一次，之后的切换不再重复套。
- *   ③ **人一动手就放弃**：键入 / 输入法开始 / 滚轮 / 指针按下都视为"作者已经在自己找位置"，
- *      在途定位立刻作废 —— 跟 UX06 的现场恢复同一条纪律。
- */
 import { useEffect, useRef, type RefObject } from 'react'
+import { contentRevision } from '@/lib/editor/editorViewMath'
+import { workspaceViews } from '@/lib/settings/workspaceViewState'
+import { showToast } from '@/components/dialogs/dialogs'
 
-/** 等正文装载/布局稳定的上限帧数（60fps 下约 0.6s） */
-const STABLE_FRAMES = 36
-
+const STABLE_FRAMES = 45
 export interface EditorOpenOffsetArgs {
-  /** 章节数据是否已就绪 */
   enabled: boolean
-  /** 当前章 */
   activeId: string | null
-  /** 本次进入正文时显式指定的章（与 activeId 相等才认为"这次是为它跳来的"） */
   openChapterId: string | null
-  /** 目标字符偏移（相对正文）；null 表示不定位 */
   offset: number | null
-  /** 命中词长度：把它选中，作者一眼看到落在哪 */
   matchLength?: number | null
   taRef: RefObject<HTMLTextAreaElement>
+  requestId?: number
+  expectedRevision?: string
+  content: string | null
 }
 
-const lineHeightOf = (el: HTMLTextAreaElement): number => {
-  const style = getComputedStyle(el)
-  const parsed = Number.parseFloat(style.lineHeight)
-  if (Number.isFinite(parsed) && parsed > 0) return parsed
-  const size = Number.parseFloat(style.fontSize)
-  return Number.isFinite(size) && size > 0 ? size * 1.6 : 24
+/** Own one activation for a fresh request; manually returning to that chapter may restore its view. */
+export function createPositionOwnership() {
+  let active: string | null = null, key: string | null = null, consumed: string | null = null, owns = false
+  return (chapter: string | null, request: string | null): boolean => {
+    if (active !== chapter || key !== request) {
+      active = chapter; key = request
+      owns = request != null && request !== consumed
+      if (owns) consumed = request
+    }
+    return owns
+  }
 }
 
-/**
- * 把「字符偏移」换算成滚动目标：数前面有几个换行 → 乘行高 → 让目标行落在视口上三分之一处。
- * 纯函数（行高/尺寸都传进来），这样能单测；DOM 读取留在 hook 里。
- * 🔴 只对 `white-space: pre-wrap` 的 textarea 近似成立：硬换行才算行，自动折行不计 ——
- *    长段落会偏一点，所以定位后再由浏览器把光标滚进视野（`setSelectionRange` + 手动 scrollTop）。
- */
-export function scrollTopForOffset(
-  value: string, start: number, lineHeight: number, clientHeight: number, scrollHeight: number,
-): number {
+/** Pure fallback; measuredTop includes soft wrapping when supplied by the DOM mirror below. */
+export function scrollTopForOffset(value: string, start: number, lineHeight: number, clientHeight: number, scrollHeight: number, measuredTop?: number): number {
   const safeStart = Math.max(0, Math.min(value.length, Math.trunc(Number.isFinite(start) ? start : 0)))
   let lines = 0
-  for (let i = 0; i < safeStart; i += 1) if (value.charCodeAt(i) === 10) lines += 1
-  const max = Math.max(0, scrollHeight - clientHeight)
+  for (let i = 0; i < safeStart; i++) if (value.charCodeAt(i) === 10) lines++
   const height = Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 24
-  return Math.max(0, Math.min(max, Math.round(lines * height - clientHeight / 3)))
+  const top = measuredTop != null && Number.isFinite(measuredTop) ? measuredTop : lines * height
+  return Math.max(0, Math.min(Math.max(0, scrollHeight - clientHeight), Math.round(top - clientHeight / 3)))
 }
 
-export function useEditorOpenOffset({ enabled, activeId, openChapterId, offset, matchLength, taRef }: EditorOpenOffsetArgs): void {
-  const applied = useRef<string>('')
-  const epoch = useRef(0)
+/** A short-lived, invisible mirror measures the caret using the actual font, padding and wrapping. */
+function caretTop(ta: HTMLTextAreaElement, offset: number): number {
+  const mirror = ta.ownerDocument.createElement('div'), marker = ta.ownerDocument.createElement('span')
+  const style = getComputedStyle(ta)
+  for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'wordSpacing',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'textIndent', 'textTransform', 'tabSize', 'direction', 'wordBreak', 'overflowWrap'] as const) mirror.style[property] = style[property]
+  Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', left: '0', top: '0',
+    width: ta.clientWidth + 'px', boxSizing: 'border-box', whiteSpace: 'pre-wrap', border: '0' })
+  mirror.setAttribute('aria-hidden', 'true')
+  mirror.append(ta.ownerDocument.createTextNode(ta.value.slice(0, offset)))
+  marker.textContent = ta.value.slice(offset, offset + 1) || '\u200b'
+  mirror.append(marker); ta.ownerDocument.body.append(mirror)
+  try { return marker.offsetTop } finally { mirror.remove() }
+}
 
-  // 作者一动手就作废在途定位
+export function useEditorOpenOffset({ enabled, activeId, openChapterId, offset, matchLength, taRef, requestId, expectedRevision, content }: EditorOpenOffsetArgs): boolean {
+  const attempted = useRef(''), epoch = useRef(0), ownership = useRef(createPositionOwnership())
+  const requestKey = offset != null && activeId === openChapterId
+    ? JSON.stringify([requestId ?? 0, openChapterId, offset, matchLength ?? 0, expectedRevision ?? '']) : null
+  const ownsPosition = ownership.current(activeId, requestKey)
   useEffect(() => {
-    const ta = taRef.current
-    if (!ta || !enabled) return
-    const cancel = () => { epoch.current += 1 }
+    if (!enabled) return
+    const cancel = () => { epoch.current++ }
     const events = ['input', 'compositionstart', 'keydown', 'pointerdown', 'wheel'] as const
-    for (const name of events) ta.addEventListener(name, cancel, { capture: true, passive: true })
-    return () => { for (const name of events) ta.removeEventListener(name, cancel, { capture: true }) }
-  }, [enabled, taRef])
+    for (const name of events) document.addEventListener(name, cancel, { capture: true, passive: true })
+    window.addEventListener('blur', cancel)
+    document.addEventListener('visibilitychange', cancel)
+    const off = workspaceViews.subscribeInvalidation(cancel)
+    return () => {
+      for (const name of events) document.removeEventListener(name, cancel, { capture: true })
+      window.removeEventListener('blur', cancel); document.removeEventListener('visibilitychange', cancel); off()
+    }
+  }, [enabled])
 
   useEffect(() => {
-    if (!enabled || !activeId || offset == null) return
-    // 只对「这次跳转指定的那一章」生效；作者自己切章不该被旧偏移拽走
-    if (openChapterId !== activeId) return
-    const key = `${activeId}:${offset}:${matchLength ?? 0}`
-    if (applied.current === key) return
-
+    const token = ++epoch.current
+    if (!enabled || !ownsPosition || !activeId || openChapterId !== activeId || requestKey == null || offset == null || content == null) return
+    if (attempted.current === requestKey) return
+    attempted.current = requestKey // An interrupted request is consumed too: saving must not resurrect it.
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > content.length) return
     const ta = taRef.current
     if (!ta) return
-    const token = epoch.current + 1
-    epoch.current = token
-    const cancelled = () => token !== epoch.current
-
+    let disposed = false
+    const generation = workspaceViews.generation()
+    const cancelled = () => disposed || epoch.current !== token || workspaceViews.generation() !== generation || document.hidden || !ta.isConnected
     void (async () => {
-      // 等正文装载 + 布局稳定：装载前后 clientHeight 会跳，太早算的滚动位置会偏
-      let last = -1
-      for (let frame = 0; frame < STABLE_FRAMES; frame += 1) {
+      let fontsReady = !document.fonts || document.fonts.status === 'loaded'
+      void document.fonts?.ready.then(() => { fontsReady = true }).catch(() => {})
+      let previous = '', stable = 0
+      for (let frame = 0; frame < STABLE_FRAMES; frame++) {
         if (cancelled()) return
-        const ready = ta.value.length >= offset && ta.clientHeight > 0
-        if (ready && ta.clientHeight === last) break
-        last = ta.clientHeight
-        await new Promise<void>(resolve => { requestAnimationFrame(() => resolve()) })
+        const geometry = [ta.clientWidth, ta.clientHeight, ta.scrollHeight].join(':')
+        const ready = fontsReady && ta.value === content && ta.clientHeight > 0
+        stable = ready && geometry === previous ? stable + 1 : 0
+        previous = geometry
+        if (stable >= 2) break
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
       }
-      if (cancelled()) return
-      // 章节内容比记录短（被改短/换稿）⇒ 不硬指过去，安静放弃
-      if (ta.value.length < offset) return
-      const start = Math.max(0, Math.min(ta.value.length, Math.trunc(offset)))
-      const end = matchLength && matchLength > 0 ? Math.min(ta.value.length, start + Math.trunc(matchLength)) : start
-      try { ta.setSelectionRange(start, end, 'forward') } catch { /* 只读/未挂载时放弃选区 */ }
-      ta.scrollTop = scrollTopForOffset(ta.value, start, lineHeightOf(ta), ta.clientHeight, ta.scrollHeight)
-      // 跳过来是为了看/改这一段，把焦点交回正文（不滚走，位置已算好）
-      const active = document.activeElement
-      if (!document.querySelector('[role="dialog"]') && (!active || active === document.body)) ta.focus({ preventScroll: true })
-      applied.current = key
-    })().catch(() => { /* 定位是可选能力，失败不影响阅读 */ })
-  }, [enabled, activeId, openChapterId, offset, matchLength, taRef])
+      if (cancelled() || stable < 2 || ta.value !== content || document.querySelector('[role="dialog"]')) return
+      if (expectedRevision && contentRevision(ta.value) !== expectedRevision) {
+        showToast('章节内容已更新，已打开章节；请重新检索定位', 'info'); return
+      }
+      const length = Number.isSafeInteger(matchLength) && (matchLength ?? 0) > 0 ? matchLength! : 0
+      const end = Math.min(content.length, offset + length)
+      const top = caretTop(ta, offset)
+      ta.setSelectionRange(offset, end, 'forward')
+      ta.scrollTop = scrollTopForOffset(content, offset, Number.parseFloat(getComputedStyle(ta).lineHeight), ta.clientHeight, ta.scrollHeight, top)
+      const focused = document.activeElement
+      if (document.hasFocus() && (!focused || focused === document.body || focused === ta)) ta.focus({ preventScroll: true })
+    })().catch(() => { /* Optional positioning must never change the chapter content or saving outcome. */ })
+    return () => { disposed = true }
+  }, [enabled, ownsPosition, activeId, openChapterId, requestKey, offset, matchLength, expectedRevision, content, taRef])
+  return ownsPosition
 }

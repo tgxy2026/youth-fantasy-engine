@@ -1,7 +1,7 @@
 /**
  * 「来源上下文」的 React 绑定（UX05）。纯逻辑在 `navigationHistory.ts`，这里只做订阅与重渲染。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createNavigationHistory, type HistoryEntry, type NavigationHistory } from './navigationHistory'
 import type { WorkspaceTarget } from './navigation'
 
@@ -22,13 +22,13 @@ export interface NavigationHistoryBinding {
  * 跨项目、跨身份的返回没有意义，留着只会在别的书里跳来跳去。
  */
 export function useNavigationHistory(scopeKey: string): NavigationHistoryBinding {
-  const [history] = useState(() => createNavigationHistory())
+  // A new scope renders an empty store immediately; old callbacks can only touch the old instance.
+  const owned = useMemo(() => ({ key: scopeKey, history: createNavigationHistory() }), [scopeKey])
+  const history = owned.history
   const [version, setVersion] = useState(0)
-  const scope = useRef(scopeKey)
-  scope.current = scopeKey
 
   useEffect(() => history.subscribe(() => setVersion(v => v + 1)), [history])
-  useEffect(() => { history.clear(); setVersion(v => v + 1) }, [history, scopeKey])
+  useEffect(() => () => history.clear(), [history])
 
   const record = useCallback((from: WorkspaceTarget, label: string) => { history.push(from, label) }, [history])
   const takeBack = useCallback(() => history.pop(), [history])

@@ -96,7 +96,8 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate, onNav
               if (onNavigateReference) {
                 onNavigateReference({ tabId: 'editor', label: name, chapterId: h.chapterId,
                   ...(h.contentOffset != null ? { offset: h.contentOffset } : {}),
-                  ...(h.matchLength != null ? { matchLength: h.matchLength } : {}) })
+                  ...(h.matchLength != null ? { matchLength: h.matchLength } : {}),
+                  ...(h.revision ? { revision: h.revision } : {}) })
               } else onNavigate('editor', h.chapterId)
               onClose()
             }}

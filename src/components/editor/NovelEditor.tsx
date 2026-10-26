@@ -50,11 +50,12 @@ interface Props {
   ctx: VisCtx
   /** 从其他页签（如章节总表）跳转进来时，要直接打开的章节 id */
   openChapterId?: string | null
+  openRequestId?: number
   /**
    * 段落级定位（UX05）：跳进来时要落到的正文内字符偏移。
    * 🔴 只对 `openChapterId` 指定的那一章有效；偏移由检索侧按「正文内」算好，不是整章拼接串的偏移。
    */
-  openOffset?: { offset: number; matchLength?: number } | null
+  openOffset?: { offset: number; matchLength?: number; revision?: string } | null
 }
 
 const STATUS_META: Record<ChapterStatus, { label: string; cls: string }> = {
@@ -77,9 +78,9 @@ import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 import ChapterContextPanel from '@/components/editor/ChapterContextPanel'
 import * as db from '@/lib/db'
 
-export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, openOffset, ctx = { type: 'full', features: [] } }: Props) {
+export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, openRequestId, openOffset, ctx = { type: 'full', features: [] } }: Props) {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。
-  const model = useNovelEditorModel({ projectName, ctx, openChapterId, onStatsChange })
+  const model = useNovelEditorModel({ projectName, ctx, openChapterId, openRequestId, onStatsChange })
   /** 纯黑白主题：正文缩进导向线要去掉 alpha（半透明黑=灰，违背严格二值） */
   const mono = useMonoTheme()
 
@@ -116,10 +117,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   } = model
 
   // UX06 · 正文工作现场：离页/切章时同步捕获，进章后按「内容摘要是否一致」决定要不要恢复光标与位置
-  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef })
-  // UX05 · 段落级定位：显式跳转带了偏移时，落到那一段（优先级高于上面的现场恢复，跑在它之后）
-  useEditorOpenOffset({ enabled: loaded, activeId, openChapterId: openChapterId ?? null,
-    offset: openOffset?.offset ?? null, matchLength: openOffset?.matchLength ?? null, taRef })
+  const ownsPosition = useEditorOpenOffset({ enabled: loaded, activeId, openChapterId: openChapterId ?? null,
+    offset: openOffset?.offset ?? null, matchLength: openOffset?.matchLength ?? null, taRef, requestId: openRequestId,
+    expectedRevision: openOffset?.revision, content: active?.content ?? null })
+  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, skipRestore: ownsPosition })
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)

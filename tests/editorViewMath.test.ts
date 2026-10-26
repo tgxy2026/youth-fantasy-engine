@@ -87,7 +87,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('🔴 ④ 恢复失败不影响编辑（整段落 catch）', /\.catch\(\(\) => \{/.test(hook))
   ok('🔴 ④ 捕获/恢复不写 localStorage / sessionStorage', !/localStorage|sessionStorage/.test(hook))
   ok('🔴 ④ 模型切章前捕获（保存屏障之前）', /captureWorkspaceView\(\)[\s\S]{0,400}const r = await commitContent/.test(model))
-  ok('🔴 ④ 显式跳章也先捕获', /consumedOpenIdRef\.current = openChapterId\s*\n\s*captureWorkspaceView\(\)/.test(model))
+  const chapterTarget = read('src/components/editor/useEditorChapterTarget.ts')
+  ok('🔴 ④ 显式跳章先捕获且按请求代次消费', model.includes('useEditorChapterTarget({')
+    && /requestId \?\? 0/.test(chapterTarget) && /captureWorkspaceView\(\)[\s\S]{0,80}setActiveId/.test(chapterTarget))
   ok('④ 模型行数仍守 1200 硬上限', model.split('\n').length <= 1200, String(model.split('\n').length))
 }
 
