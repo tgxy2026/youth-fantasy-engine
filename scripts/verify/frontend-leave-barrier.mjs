@@ -136,6 +136,28 @@ try {
   check('🔴 ③ 没有脏稿时不弹「已留在当前页面」', cleanToast === false)
   check('🔴 ③ 没有脏稿时不额外写盘（屏障不介入）', (await probeHit()) === 0, { hit: await probeHit() })
 
+  // 导航事件的目标行必须跟页签一起提交，失败不能遗留给下一次普通导航。
+  await page.evaluate(async () => {
+    const db = await import('/src/lib/db.ts'), projectId = db.getCurrentProjectId()
+    for (const [index, name] of ['导航首卡', '导航目标卡'].entries()) {
+      await db.saveCardRecord({ id: 'nav-gate-card-' + index, projectId, tabId: 'char-main', name, data: {}, order: -10000 + index })
+    }
+  })
+  await openEditor(); await setFail(true)
+  await typeAt(editor, '导航目标事务正文')
+  const locateCard = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('yfe:navigate', { detail: { tabId: 'char-main', rowId: 'nav-gate-card-1' } })))
+  await locateCard()
+  await page.waitForFunction(() => document.body.innerText.includes('已留在当前页面'))
+  check('导航目标事务：真实保存失败后仍保留正文页面', await editor.isVisible())
+  await setFail(false)
+  if (!await nav('主要角色').isVisible()) await nav('角色管理').click()
+  await nav('主要角色').click()
+  await page.getByRole('button', { name: '修改名称：导航首卡', exact: true }).waitFor()
+  check('导航目标事务：失败目标不污染随后普通导航', await page.getByRole('button', { name: '修改名称：导航首卡', exact: true }).isVisible())
+  await locateCard()
+  await page.getByRole('button', { name: '修改名称：导航目标卡', exact: true }).waitFor()
+  check('导航目标事务：同页显式事件正确提交目标卡', await page.getByRole('button', { name: '修改名称：导航目标卡', exact: true }).isVisible())
+
   // ================= ④ 标题/摘要脏：也要拦住，且文案说清是哪一块 =================
   await openEditor()
   await setFail(true)

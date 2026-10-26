@@ -25,6 +25,9 @@ import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/syn
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
+import { useNavigationGate } from '@/lib/app/useNavigationGate'
+import { parseWorkspaceNavigation, type WorkspaceTarget } from '@/lib/app/navigation'
+import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
@@ -74,6 +77,8 @@ const TavernWorld = lazy(() => import('@/components/tavern/TavernWorld'))
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
 const TrajectoryPanel = lazy(() => import('@/components/audit/TrajectoryPanel'))
 const WorldLibraryPanel = lazy(() => import('@/components/world/WorldLibraryPanel'))
+
+type NavigationIntent = { kind: 'page'; target: WorkspaceTarget } | { kind: 'exit' }
 
 export default function App() {
   useEffect(observeWorkspaceLifecycle, [])
@@ -148,6 +153,9 @@ export default function App() {
    * 后到的那条会在前一条保存成功后把作者带到意料之外的页面。
    */
   const navPending = useRef(false)
+  const navEpoch = useRef(0)
+  const navContext = useCallback(() => JSON.stringify([db.getCurrentProjectId(), navEpoch.current, getStorageContextEpoch(),
+    (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id ?? 'local']), [])
 
   // 从本地用户数据目录加载数据（桌面版）/ 从本地服务加载（便携版）
   useEffect(() => {
@@ -376,6 +384,7 @@ export default function App() {
     //    同项目重开（lastProjectRef 相同）不会触发，与上面 resetTaskCenter 的语义一致。
     abortRunIfProjectChanged(id)
     lastProjectRef.current = id
+    navEpoch.current++
     db.setCurrentProject(id)
     // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
     // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
@@ -419,6 +428,7 @@ export default function App() {
     backupStop.current?.()
     backupStop.current = null
     db.setMeta('lastProject', '')
+    navEpoch.current++
     db.setCurrentProject('')
     // 题材包归位（2.7.1）：退回项目管理首页后，TABS 的 getter 应回到默认包，
     // 免得「上个项目的题材」还挂在模块级状态上（首页若渲染任何页签名会露馅）。
@@ -427,25 +437,6 @@ export default function App() {
     setProjectId(null)
     setProjectName('')
   }, [])
-
-  const exitProject = useCallback(() => {
-    if (navPending.current) return
-    captureWorkspaceView()
-    // 3.3.0 · UX06：仓库里还有没落库的正文 / 标题摘要时，先等它写完；写失败就**不退**。
-    if (!leaveGuardDirty()) { doExitProject(); return }
-    navPending.current = true
-    void runLeaveGuard().then(r => {
-      navPending.current = false
-      if (r.ok) { doExitProject(); return }
-      showToast(
-        saveFailureMessage(
-          r.scope === 'meta' ? '还没退出项目：本章标题或摘要没存上 —— ' : '还没退出项目：本章正文没存上 —— ',
-          r.error,
-        ),
-        'error',
-      )
-    })
-  }, [doExitProject])
 
   /** 首启向导收尾：选定/导入了项目就直接进项目；跳过一次则留在项目管理页 */
   const onWelcomeDone = useCallback((id: string | null) => {
@@ -464,7 +455,7 @@ export default function App() {
   }, [projectId, projectName])
 
   /** 真正执行换页签（可见性校验 + 后台任务轻提示 + 落到目标页） */
-  const applyNav = useCallback((id: string, chapterId?: string) => {
+  const applyNav = useCallback((id: string, chapterId?: string, rowId?: string) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
     /**
@@ -481,6 +472,8 @@ export default function App() {
       }
     }
     setActiveTab(id)
+    activeTabRef.current = id
+    setFocusRowId(rowId ?? null)
     // 🔴 必须**连清空一起**处理（2026-10-16 全量审计）：旧实现只在 chapterId 非空时写、
     //    全仓没有任何清空点 ⇒ 从章节规划板跳到第 3 章之后，作者在编辑器里切到第 8 章、
     //    再点侧栏「正文编辑」，打开的仍是**第 3 章**（陈旧目标压过了「上次编辑章」）。
@@ -493,40 +486,44 @@ export default function App() {
    * 只有真的有待落库的正文或标题摘要，才先等编辑器写盘：写成功才换页，失败就留在原页
    * —— 原 DOM、原草稿、原滚动位置全部不动，作者可以直接重试。
    */
-  const navigate = useCallback((id: string, chapterId?: string) => {
-    const t = getTab(id)
-    if (t && !tabVisible(t.id, visCtx)) return
-    if (navPending.current) return
-    captureWorkspaceView()
-    if (!leaveGuardDirty()) { applyNav(id, chapterId); return }
-    navPending.current = true
-    void runLeaveGuard().then(r => {
-      navPending.current = false
-      if (r.ok) { applyNav(id, chapterId); return }
-      showToast(
-        saveFailureMessage(
-          r.scope === 'meta' ? '已留在当前页面：本章标题或摘要没存上 —— ' : '已留在当前页面：本章正文没存上 —— ',
-          r.error,
-        ),
-        'error',
-      )
-    })
-  }, [applyNav, visCtx])
+  const navGate = useNavigationGate<NavigationIntent>({
+    context: navContext, busy: navPending, capture: captureWorkspaceView,
+    dirty: leaveGuardDirty, flush: runLeaveGuard,
+    validate: intent => {
+      if (intent.kind === 'exit') return intent
+      const tab = getTab(intent.target.tabId)
+      return tab && !tabVisible(tab.id, visCtx) ? null : intent
+    },
+    commit: intent => {
+      if (intent.kind === 'exit') doExitProject()
+      else applyNav(intent.target.tabId, intent.target.chapterId, intent.target.rowId)
+    },
+    invalid: () => showToast('目标页面当前不可见，已留在当前页面', 'info'),
+    failed: (intent, scope, error) => showToast(saveFailureMessage(
+      (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
+        + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error'),
+  })
+  useEffect(() => {
+    navGate.invalidate()
+    setFocusRowId(null)
+  }, [navGate, projectId])
+  useEffect(() => subscribeStorageContext(() => {
+    navGate.invalidate()
+    setFocusRowId(null)
+  }), [navGate])
+  const navigate = useCallback((id: string, chapterId?: string, rowId?: string) => {
+    const target = parseWorkspaceNavigation({ tabId: id, chapterId, rowId })
+    if (target) navGate.request({ kind: 'page', target })
+  }, [navGate])
+
+  const exitProject = useCallback(() => navGate.request({ kind: 'exit' }), [navGate])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）
   // detail 兼容两种形式：字符串 tabId，或 { tabId, rowId } 对象（直达并高亮具体行）
   useEffect(() => {
     const onNav = (e: Event) => {
-      const detail = (e as CustomEvent).detail
-      if (typeof detail === 'string') {
-        navigate(detail)
-        setFocusRowId(null)
-        return
-      }
-      if (detail && typeof detail === 'object') {
-        if (detail.tabId) navigate(detail.tabId)
-        setFocusRowId(detail.rowId ?? null)
-      }
+      const target = parseWorkspaceNavigation((e as CustomEvent).detail)
+      if (target) navigate(target.tabId, target.chapterId, target.rowId)
     }
     window.addEventListener('yfe:navigate', onNav as EventListener)
     return () => window.removeEventListener('yfe:navigate', onNav as EventListener)

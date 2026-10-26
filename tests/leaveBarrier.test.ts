@@ -106,8 +106,8 @@ async function main() {
   {
     const app = read('src/App.tsx')
     ok('🔴 ⑧ App 引入离页屏障', /from '@\/lib\/editor\/leaveBarrier'/.test(app))
-    ok('🔴 ⑧ navigate 先判脏再跳转', /const navigate = useCallback\(\(id: string, chapterId\?: string\) => \{[\s\S]{0,700}leaveGuardDirty\(\)/.test(app))
-    ok('🔴 ⑧ exitProject 先判脏再退出', /const exitProject = useCallback\(\(\) => \{[\s\S]{0,300}leaveGuardDirty\(\)/.test(app))
+    ok('🔴 ⑧ navigate 经共享事务屏障提交', app.includes('dirty: leaveGuardDirty, flush: runLeaveGuard') && app.includes("navGate.request({ kind: 'page', target })"))
+    ok('🔴 ⑧ exitProject 经过同一事务屏障', app.includes("navGate.request({ kind: 'exit' })") && app.includes("if (intent.kind === 'exit') doExitProject()"))
     ok('🔴 ⑧ 真正跳页只在 applyNav 里（屏障失败不会走到它）', /const applyNav = useCallback[\s\S]{0,1200}setActiveTab\(id\)/.test(app))
     ok('🔴 ⑧ 退出项目里清 projectId 的动作与退出入口分离', /const doExitProject = useCallback[\s\S]{0,1500}setProjectId\(null\)/.test(app))
     ok('⑧ 有在途标记，避免一次离页走出两条导航', /navPending/.test(app))
