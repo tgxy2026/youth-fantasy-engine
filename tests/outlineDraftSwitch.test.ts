@@ -94,9 +94,12 @@ for (const fn of ['submitNamePrompt', 'duplicateRecord', 'handleFillNew']) {
 const sw = list.find(x => x.name === 'switchTo')
 ok('switchTo 存在', !!sw)
 if (sw) {
-  ok('switchTo 在写盘失败时 return false', /catch\s*\{[\s\S]*?return false/.test(sw.body))
-  ok('switchTo 的 setActiveId 在 try/catch 之后（失败路径走不到它）',
-    sw.body.indexOf('setActiveId') > sw.body.indexOf('catch'))
+  ok('switchTo 检查 flushDraft 失败并 return false', /await flushDraft\(\)[\s\S]{0,100}if \(!result.ok\)[\s\S]{0,250}return false/.test(sw.body))
+  ok('失败分支在真正提交选择之前，且连续新修改有界停止',
+    sw.body.indexOf('setActiveId') > sw.body.indexOf('if (!result.ok)') && sw.body.includes('attempt < 3'))
+  const flush = list.find(block => block.name === 'flushDraft')
+  ok('抽出的 flushDraft 如实返回资料写入失败', !!flush && /await saveCardRecord\(current\)/.test(flush.body)
+    && /catch \(error\)[\s\S]{0,100}ok: false, scope: 'record'/.test(flush.body))
 }
 
 console.log(`\noutlineDraftSwitch: ${pass} passed, ${fail} failed`)

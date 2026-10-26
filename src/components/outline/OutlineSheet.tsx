@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef, CardRecord } from '@/lib/types'
-import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
+import { getCardRecordsFor, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import {
   Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2,
@@ -13,13 +13,15 @@ import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import TemplateLibrary from '@/components/library/TemplateLibrary'
 import { contentHeight, OUTLINE_SHEET_CHROME_PX } from '@/lib/settings/theme'
-import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
+import { MasterDetail, MasterList, useMasterFilter } from '@/components/common/MasterDetail'
+import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { LoadingState } from '@/components/common/LoadingState'
+import { registerLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import type { TemplateField, FillContext } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -47,7 +49,10 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
   const nameKey = isVolume ? '一、本卷定位::卷名' : '一、本章定位::章节号/标题'
 
   // 左栏搜索（A+C 的 C 项）：与 CharacterSheet 同口径
-  const [listQuery, setListQuery] = useMasterQuery()
+  const listView = useListWorkspaceView(getCurrentProjectId(), tab.id)
+  const { query: listQuery, setQuery: setListQuery, choose: chooseRecord, remember: rememberList, isCurrent, ownerKey } = listView
+  const explicitTarget = useRef(focusRowId)
+  explicitTarget.current = focusRowId
 
   /** 本页签的补全语境 —— 决定发哪条系统提示词（分卷大纲 / 章节细纲各一条；见 lib/ai.ts 的 FillContext） */
   const fillContext: FillContext = isVolume ? 'outline-volume' : 'outline-chapter'
@@ -68,7 +73,10 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
 
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  const [loadedOwner, setLoadedOwner] = useState<string | null>(null)
+  const loaded = loadedOwner === ownerKey
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const recordsOwner = useRef(ownerKey)
   const [draft, setDraft] = useState<CardRecord | null>(null)
   // 🔴 用 ref 持有最新草稿：下面「切换卡片」的 effect 里读到的是**切换前**的那一份 —— 正是要落库的。
   //    （与 CharacterSheet 的切卡守卫同型。审计 2026-09-18 P1-3：原先直接 setDraft(新卡)，
@@ -133,18 +141,28 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
   const { filtered: shownRecords, isFiltering } = useMasterFilter(records, listQuery, r => r.name)
 
   useEffect(() => {
-    getCardRecords(tab.id).then(r => {
+    let cancelled = false
+    // A new backend/identity must never flush a previous owner's stale draft into its store.
+    if (recordsOwner.current !== ownerKey) {
+      dirtyRef.current = false; draftRef.current = null; prevActiveRef.current = null
+      recordsOwner.current = ownerKey
+    }
+    setLoadError(null)
+    getCardRecordsFor(getCurrentProjectId(), tab.id).then(r => {
+      if (cancelled || !isCurrent()) return
+      const selected = chooseRecord(r, explicitTarget.current)
+      if (explicitTarget.current && r.some(record => record.id === explicitTarget.current)) setListQuery('')
       setRecords(r)
-      if (r.length > 0) {
-        setActiveId(r[0].id)
-        setDraft(r[0])
-      } else {
-        setActiveId(null)
-        setDraft(null)
-      }
-      setLoaded(true)
+      setActiveId(selected)
+      setDraft(current => current?.id === selected && dirtyRef.current ? current : r.find(record => record.id === selected) ?? null)
+      setLoadedOwner(ownerKey)
+    }).catch(() => {
+      if (!cancelled && isCurrent()) setLoadError(ownerKey)
     })
-  }, [tab.id, reloadKey])
+    return () => { cancelled = true }
+  }, [tab.id, reloadKey, ownerKey, chooseRecord, isCurrent, setListQuery])
+
+  useEffect(() => { if (loaded) rememberList(activeId) }, [loaded, activeId, rememberList])
 
   // 切换 active 时刷新 draft —— 切换前先把上一张未保存的草稿落库（不然编辑静默蒸发）
   useEffect(() => {
@@ -347,6 +365,23 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
   const dirtyRef = useRef(false)
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
+  const flushDraft = useCallback(async (): Promise<LeaveFlushResult> => {
+    const current = draftRef.current
+    if (!current || !dirtyRef.current) return { ok: true }
+    if (!isCurrent()) return { ok: false, scope: 'record', error: new Error('资料上下文已改变') }
+    try {
+      await saveCardRecord(current)
+      if (!isCurrent()) return { ok: false, scope: 'record', error: new Error('资料上下文已改变') }
+      setRecords(list => list.map(record => record.id === current.id ? current : record))
+      if (draftRef.current === current) dirtyRef.current = false
+      return { ok: true }
+    } catch (error) { return { ok: false, scope: 'record', error } }
+  }, [isCurrent])
+  useEffect(() => {
+    registerLeaveGuard({ isDirty: () => dirtyRef.current, flush: flushDraft })
+    return () => registerLeaveGuard(null)
+  }, [flushDraft])
+
   /**
    * 切换当前卡片（运行契约 draft.failure）：
    *   🔴 **先冲刷旧草稿、成功才真的换选择** —— 写盘失败就留在原地并出声。
@@ -354,47 +389,66 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
    *     旧编辑既没入库、也从 draft 里被顶掉了 ⇒ 作者看到的只有「白改了」，且无从察觉
    *     （2026-10-18 独立复核：draft.failure 契约）。
    */
+  const switchPending = useRef({ ownerKey, busy: false })
   const switchTo = useCallback(async (id: string | null, failHint?: string) => {
-    const cur = draftRef.current
-    if (cur && cur.id !== id && dirtyRef.current && records.some(r => r.id === cur.id)) {
-      try {
-        await saveCardRecord(cur)
-        // 与切换守卫同口径：落库后同步内存副本，否则切回来会用库里的旧记录回灌
-        setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
-      } catch {
-        showToast(failHint ?? '上一张的改动没能保存，已留在原处 —— 请手动保存一次再切换', 'error')
-        return false
+    if (!isCurrent()) return false
+    if (switchPending.current.ownerKey !== ownerKey) switchPending.current = { ownerKey, busy: false }
+    const pending = switchPending.current
+    if (pending.busy) return false
+    pending.busy = true
+    try {
+      const cur = draftRef.current
+      if (cur && cur.id !== id && records.some(record => record.id === cur.id)) {
+        for (let attempt = 0; attempt < 3 && dirtyRef.current; attempt++) {
+          const result = await flushDraft()
+          if (!result.ok) {
+            if (isCurrent()) showToast(failHint ?? '上一张的改动没能保存，已留在原处 —— 请手动保存一次再切换', 'error')
+            return false
+          }
+        }
+        if (dirtyRef.current) {
+          showToast('切换期间仍有新修改，已留在当前大纲，请稍后重试', 'info')
+          return false
+        }
       }
+      if (!isCurrent()) return false
+      setActiveId(id)
+      return true
+    } finally {
+      if (switchPending.current === pending) pending.busy = false
     }
-    setActiveId(id)
-    return true
-  }, [records])
+  }, [records, isCurrent, flushDraft, ownerKey])
 
   useEffect(() => {
-    if (!focusRowId || !records.some(record => record.id === focusRowId)) return
+    if (!loaded || !focusRowId || !records.some(record => record.id === focusRowId)) return
     void switchTo(focusRowId).then(switched => {
-      if (switched) onFocusConsumed?.()
+      if (switched && isCurrent()) { setListQuery(''); onFocusConsumed?.() }
     })
-  }, [focusRowId, records, onFocusConsumed, switchTo])
+  }, [focusRowId, records, onFocusConsumed, switchTo, loaded, setListQuery, isCurrent])
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return
     setSaving(true)
     try {
-      await saveCardRecord(draft)
-      setRecords(records.map(r => (r.id === draft.id ? draft : r)))
-      setSaved(true)
+      const result = await flushDraft()
+      if (!result.ok) throw result.error
+      setSaved(!dirtyRef.current)
       savedTimer.current = setTimeout(() => setSaved(false), 1500)
     } catch (e) {
       showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setSaving(false)
     }
-  }, [draft, dirty, records])
+  }, [draft, dirty, flushDraft])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)
 
+  if (loadError === ownerKey) return <section role="alert" className="rounded-lg border border-danger/30 bg-ink-850 p-5">
+    <h2 className="text-15 font-semibold text-ink-100">大纲目录暂时无法读取</h2>
+    <p className="mt-2 text-13 text-ink-400">原有资料没有被覆盖，可以重试读取。</p>
+    <Button className="mt-3" onClick={() => setReloadKey(value => value + 1)}>重试读取大纲</Button>
+  </section>
   if (!loaded) return <LoadingState />
 
   const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
@@ -513,6 +567,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
         <MasterList
           widthClass="w-52 lg:w-56"
           query={listQuery}
+          queryMaxLength={200}
           onQueryChange={setListQuery}
           placeholder={`搜${noun}名…`}
           searchHint={isFiltering
@@ -527,6 +582,7 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
             return (
               <div
                 key={rec.id}
+                data-outline-record={rec.id}
                 onClick={() => void switchTo(rec.id)}
                 title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition-all duration-150
@@ -534,11 +590,13 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
                     ? 'bg-amber/15 border-amber/30 text-amber'
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
-                <div className="flex items-center gap-1.5">
+                <button type="button" aria-label={`选择${noun}大纲：${rec.name}`} aria-pressed={isActive}
+                  onClick={event => { event.stopPropagation(); void switchTo(rec.id) }}
+                  className="flex w-full items-center gap-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
                   {isVolume ? <BookOpen size={13} className="shrink-0" /> : <FileText size={13} className="shrink-0" />}
                   <span className="text-13 font-medium truncate flex-1">{rec.name}</span>
                   {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
-                </div>
+                </button>
                 <div className="text-10 text-ink-500 mt-0.5 truncate">
                   {Object.entries(rec.data)
                     .filter(([k, v]) => v && v.trim() && k !== nameKey)

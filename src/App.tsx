@@ -532,7 +532,7 @@ export default function App() {
     failed: (intent, scope, error) => { showToast(saveFailureMessage(
       scope === 'target' ? '暂时无法读取目标，已留在当前页面，请稍后重试 —— '
         : (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
-          + (scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
+          + (scope === 'record' ? '当前大纲改动没存上 —— ' : scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
   })
   useEffect(() => {
     navGate.invalidate(); resetNavigationTargets(); clearHistory()

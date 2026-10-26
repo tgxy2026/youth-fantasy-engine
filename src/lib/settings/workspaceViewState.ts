@@ -13,7 +13,13 @@ export interface EditorView {
   focused: boolean
 }
 export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll }
-export type WorkspaceView = EditorView | DetailView
+/** Search is transient UI input, never persisted; no record fields or draft bodies are retained. */
+export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll }
+export type WorkspaceView = EditorView | DetailView | ListView
+export function restoreListSelection(records: readonly { id: string }[], remembered: string | null, explicit?: string | null): string | null {
+  for (const candidate of [explicit, remembered]) if (candidate && records.some(record => record.id === candidate)) return candidate
+  return records[0]?.id ?? null
+}
 const platforms = new Set<ViewPlatform>(['desktop', 'portable', 'web-cloud', 'web-guest', 'browser'])
 const id = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && value.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(value)
 const opaqueId = (value: unknown): value is string => typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,256}$/.test(value)
@@ -37,6 +43,10 @@ function normalize(value: unknown): WorkspaceView | null {
   if (v.version !== VIEW_VERSION || !id(v.objectId)) return null
   const scroll = scrollOf(v.scroll)
   if (!scroll) return null
+  if (v.kind === 'list') {
+    if ((v.selectedId !== null && !id(v.selectedId)) || typeof v.query !== 'string' || v.query.length > 200) return null
+    return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll }
+  }
   if (v.kind === 'detail') {
     if (!Array.isArray(v.groups) || v.groups.length > 128 || !v.groups.every(id)) return null
     return { version: 1, kind: 'detail', objectId: v.objectId, groups: [...new Set(v.groups)], scroll }

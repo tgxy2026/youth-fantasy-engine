@@ -50,6 +50,7 @@ export function MasterList({
   widthClass = 'w-44',
   query,
   onQueryChange,
+  queryMaxLength,
   placeholder = '搜索…',
   searchHint,
   header,
@@ -63,6 +64,7 @@ export function MasterList({
   /** 受控搜索词；与 `onQueryChange` 同传才渲染搜索框 */
   query?: string
   onQueryChange?: (v: string) => void
+  queryMaxLength?: number
   placeholder?: string
   /** 搜索框下方的小字提示（如「已筛出 3 / 共 40」）；也可放「新建」按钮 */
   searchHint?: ReactNode
@@ -82,6 +84,7 @@ export function MasterList({
         <div className="relative shrink-0 mb-2.5">
           <input
             value={query ?? ''}
+            maxLength={queryMaxLength}
             onChange={e => onQueryChange!(e.target.value)}
             placeholder={placeholder}
             aria-label={placeholder}

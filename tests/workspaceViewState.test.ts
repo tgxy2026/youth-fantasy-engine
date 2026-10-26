@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createWorkspaceViewStore, parseWorkspaceView, workspaceScopeKey, VIEW_LIMITS, type WorkspaceScope, type EditorView, type DetailView } from '../src/lib/settings/workspaceViewState'
+import { createWorkspaceViewStore, parseWorkspaceView, workspaceScopeKey, restoreListSelection, VIEW_LIMITS, type WorkspaceScope, type EditorView, type DetailView, type ListView } from '../src/lib/settings/workspaceViewState'
 
 const scope: WorkspaceScope = { platform: 'browser', space: 'opaque-space', identity: 'local', projectId: 'project-1', pageId: 'editor' }
 const editor = (objectId = 'chapter-1'): EditorView => ({ version: 1, kind: 'editor', objectId, revision: 'content-digest', length: 100,
@@ -92,5 +92,22 @@ check('deletion identity reset and generations reject stale asynchronous writes'
   assert.ok(store.get(other, 'chapter-1'))
   store.clear(); assert.deepEqual(store.stats(), { projects: 0, objects: 0, bytes: 0, generation: 3 })
   assert.equal(invalidations, 3); off(); store.clear(); assert.equal(invalidations, 3)
+})
+check('list records bound transient queries, copy only UI fields and remain scope isolated', () => {
+  const store = createWorkspaceViewStore()
+  const list: ListView = { version:1,kind:'list',objectId:'list-state',query:'第3章',selectedId:'outline-c',scroll:{top:0,ratio:0,outerTop:0,outerRatio:0} }
+  assert.ok(store.put(scope,{...list,draft:{content:'not stored'},name:'not stored'}))
+  assert.deepEqual(store.get(scope,'list-state'),list)
+  assert.equal(store.get({...scope,projectId:'another-project'},'list-state'),null)
+  for(const bad of [{...list,query:'字'.repeat(201)},{...list,selectedId:''},{...list,selectedId:'bad\nkey'},{...list,query:12}])assert.equal(store.put(scope,bad),false)
+  const generation=store.generation();store.clear();assert.equal(store.put(scope,list,generation),false)
+})
+check('explicit list requests beat memory, deleted selections fall back without recreating records', () => {
+  const rows=[{id:'a'},{id:'b'},{id:'c'}],before=JSON.stringify(rows)
+  assert.equal(restoreListSelection(rows,'b','c'),'c')
+  assert.equal(restoreListSelection(rows,'b'),'b')
+  assert.equal(restoreListSelection(rows,'gone'),'a')
+  assert.equal(restoreListSelection([], 'gone','c'),null)
+  assert.equal(JSON.stringify(rows),before)
 })
 console.log(`${count} workspace view state groups passed`)

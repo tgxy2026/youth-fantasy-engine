@@ -120,7 +120,25 @@ try{
     &&await page.getByRole('heading',{name:/创作复盘/}).isVisible())
   check('automatic and manually registered metrics retain their separate provenance',await page.getByText('在正文编辑器写作时自动记录',{exact:true}).isVisible()
     &&await page.getByRole('heading',{name:/近 7 日写作字数（手工登记）/}).isVisible())
-  await page.screenshot({path:path.join(run,'dashboard-statistics-expanded.png'),fullPage:true,animations:'disabled'})
+  for(const density of ['compact','comfortable'])for(const layout of [{width:1366,height:900,zoom:100},{width:1000,height:640,zoom:160},{width:800,height:640,zoom:100}]){
+    await page.setViewportSize({width:layout.width,height:layout.height})
+    await page.evaluate(async({zoom,density})=>{
+      (await import('/src/lib/settings/density.ts')).applyDensity(density)
+      ;(await import('/src/lib/settings/theme.ts')).applyZoom(zoom,{manual:true})
+    },{...layout,density})
+    await page.getByRole('heading',{name:/码字日历/}).scrollIntoViewIfNeeded()
+    await page.waitForTimeout(150)
+    const dimensions=await page.locator('main').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}))
+    check(`expanded statistics stay inside the main width: ${density}/${layout.width}/${layout.zoom}%`,dimensions.scrollWidth<=dimensions.width+2,dimensions)
+    await page.screenshot({path:path.join(run,`dashboard-statistics-${density}-${layout.width}-${layout.zoom}.png`),animations:'disabled'})
+  }
+  await page.setViewportSize({width:1366,height:900})
+  await page.evaluate(async()=>{
+    (await import('/src/lib/settings/density.ts')).applyDensity('compact')
+    ;(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true})
+  })
+  await page.getByRole('heading',{name:/创作复盘/}).scrollIntoViewIfNeeded()
+  await page.screenshot({path:path.join(run,'dashboard-review-expanded.png'),animations:'disabled'})
   await statistics.press('Space')
   check('Space closes charts and focus stays on the disclosure',await statistics.getAttribute('aria-expanded')==='false'
     &&await statistics.evaluate(el=>el===document.activeElement)

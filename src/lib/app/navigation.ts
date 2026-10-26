@@ -45,10 +45,10 @@ export interface NavigationGateOptions<T> {
   capture: () => void
   validate: (intent: T) => T | null | Promise<T | null>
   dirty: () => boolean
-  flush: () => Promise<{ ok: true } | { ok: false; scope: 'content' | 'meta'; error: unknown }>
+  flush: () => Promise<{ ok: true } | { ok: false; scope: 'content' | 'meta' | 'record'; error: unknown }>
   commit: (intent: T) => void
   invalid: (intent: T) => void
-  failed: (intent: T, scope: 'content' | 'meta' | 'target', error: unknown) => void
+  failed: (intent: T, scope: 'content' | 'meta' | 'record' | 'target', error: unknown) => void
 }
 
 /** Clean ordinary navigation remains synchronous. All async work owns one context and ticket. */

@@ -21,7 +21,7 @@
  */
 
 /** 离页冲刷失败时，失败发生在哪一块（只用于给作者一句准确的话） */
-export type LeaveScope = 'content' | 'meta'
+export type LeaveScope = 'content' | 'meta' | 'record'
 
 export type LeaveFlushResult =
   | { ok: true }

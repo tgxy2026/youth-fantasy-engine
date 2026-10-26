@@ -133,6 +133,11 @@ async function main() {
     ok('🔴 ⑨ 标题摘要防抖到点也要报失败', /metaFlush\.current\(\)\.then\(r => \{\s*if \(!r\.ok\)/.test(model))
   }
 
+  registerLeaveGuard({ isDirty: () => true, flush: async () => ({ ok: false, scope: 'record', error: 'isolated record failure' }) })
+  const recordFailure = await runLeaveGuard()
+  ok('资料页失败保持record作用域，不假报正文章节失败', !recordFailure.ok && recordFailure.scope === 'record')
+  registerLeaveGuard(null)
+
   console.log(`\n———— leaveBarrier：${pass} 通过 / ${fail} 失败 ————`)
   if (fail > 0) process.exit(1)
 }
