@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { currentWorkspaceScope } from '@/lib/settings/workspaceRuntime'
 import { workspaceViews, restoreListSelection, type ListView } from '@/lib/settings/workspaceViewState'
 import { getCurrentProjectId } from '@/lib/db'
@@ -20,6 +20,8 @@ const read = (projectId: string, pageId: string) => {
  * the view generation, and a not-yet-resolved optional identity never blocks business editing.
  */
 export function useListWorkspaceView(projectId: string, pageId: string) {
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const generation = useSyncExternalStore(workspaceViews.subscribeInvalidation, workspaceViews.generation)
   useSyncExternalStore(subscribeStorageContext, getStorageContextEpoch)
   const key = contextKey(projectId, pageId)
@@ -30,7 +32,7 @@ export function useListWorkspaceView(projectId: string, pageId: string) {
     setPair(current)
   }
   const { query } = current
-  const isCurrent = useCallback(() => key === contextKey(getCurrentProjectId(), pageId), [key, pageId])
+  const isCurrent = useCallback(() => mounted.current && key === contextKey(getCurrentProjectId(), pageId), [key, pageId])
   const setQuery = useCallback((value: string) => {
     if (!isCurrent()) return
     setPair(previous => previous.key === key ? { ...previous, query: value } : previous)

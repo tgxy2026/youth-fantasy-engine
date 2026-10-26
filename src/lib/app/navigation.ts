@@ -48,7 +48,7 @@ export interface NavigationGateOptions<T> {
   flush: () => Promise<{ ok: true } | { ok: false; scope: 'content' | 'meta' | 'record'; error: unknown }>
   commit: (intent: T) => void
   invalid: (intent: T) => void
-  failed: (intent: T, scope: 'content' | 'meta' | 'record' | 'target', error: unknown) => void
+  failed: (intent: T, scope: 'content' | 'meta' | 'record' | 'target' | 'editing', error: unknown) => void
 }
 
 /** Clean ordinary navigation remains synchronous. All async work owns one context and ticket. */
@@ -91,7 +91,7 @@ export function createNavigationGate<T>(options: NavigationGateOptions<T>) {
           if (!target) { invalid(); return }
           if (!options.dirty()) { options.commit(target); return }
         }
-        options.failed(intent, 'content', new Error('检查目标期间仍有新修改，请稍后重试离开'))
+        options.failed(intent, 'editing', new Error('检查目标期间仍有新修改，请稍后重试离开'))
       } catch (error) {
         if (current()) options.failed(intent, phase, error)
       } finally { if (mine === ticket) options.busy.current = false }

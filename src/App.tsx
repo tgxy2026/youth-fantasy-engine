@@ -529,7 +529,9 @@ export default function App() {
     invalid: () => {
       showToast('目标页面当前不可见，已留在当前页面', 'info')
     },
-    failed: (intent, scope, error) => { showToast(saveFailureMessage(
+    failed: (intent, scope, error) => {
+      if (scope === 'editing') { showToast('检查目标期间仍有新修改，已留在当前页面，请稍后重试', 'info'); return }
+      showToast(saveFailureMessage(
       scope === 'target' ? '暂时无法读取目标，已留在当前页面，请稍后重试 —— '
         : (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
           + (scope === 'record' ? '当前大纲改动没存上 —— ' : scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },

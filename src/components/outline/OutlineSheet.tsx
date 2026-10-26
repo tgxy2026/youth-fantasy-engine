@@ -21,7 +21,8 @@ import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { LoadingState } from '@/components/common/LoadingState'
-import { registerLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
+import { registerLeaveGuard } from '@/lib/editor/leaveBarrier'
+import { createRecordDraftFlusher } from '@/lib/editor/recordDraftFlush'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import type { TemplateField, FillContext } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -365,18 +366,15 @@ export default function OutlineSheet({ tab, focusRowId, onFocusConsumed }: Props
   const dirtyRef = useRef(false)
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
-  const flushDraft = useCallback(async (): Promise<LeaveFlushResult> => {
-    const current = draftRef.current
-    if (!current || !dirtyRef.current) return { ok: true }
-    if (!isCurrent()) return { ok: false, scope: 'record', error: new Error('资料上下文已改变') }
-    try {
-      await saveCardRecord(current)
-      if (!isCurrent()) return { ok: false, scope: 'record', error: new Error('资料上下文已改变') }
+  const flushDraft = useMemo(() => createRecordDraftFlusher<CardRecord>({
+    current: isCurrent,
+    read: () => ({ record: draftRef.current, dirty: dirtyRef.current }),
+    write: saveCardRecord,
+    saved: current => {
       setRecords(list => list.map(record => record.id === current.id ? current : record))
       if (draftRef.current === current) dirtyRef.current = false
-      return { ok: true }
-    } catch (error) { return { ok: false, scope: 'record', error } }
-  }, [isCurrent])
+    },
+  }), [isCurrent])
   useEffect(() => {
     registerLeaveGuard({ isDirty: () => dirtyRef.current, flush: flushDraft })
     return () => registerLeaveGuard(null)

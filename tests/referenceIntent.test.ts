@@ -170,7 +170,7 @@ await check('continuous typing during repeated reads is bounded and keeps the pa
     failed: (_v, phase) => failures.push(phase),
   })
   gate.request(intent(12)); await settle(); await settle()
-  assert.equal(commits.length, 0); assert.deepEqual(failures, ['content']); assert.equal(busy.current, false)
+  assert.equal(commits.length, 0); assert.deepEqual(failures, ['editing']); assert.equal(busy.current, false)
   assert.equal(reads, 4); assert.equal(saves, 2)
 })
 console.log('referenceIntent '+count+' passed')

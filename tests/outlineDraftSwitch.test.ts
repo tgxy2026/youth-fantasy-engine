@@ -98,8 +98,8 @@ if (sw) {
   ok('失败分支在真正提交选择之前，且连续新修改有界停止',
     sw.body.indexOf('setActiveId') > sw.body.indexOf('if (!result.ok)') && sw.body.includes('attempt < 3'))
   const flush = list.find(block => block.name === 'flushDraft')
-  ok('抽出的 flushDraft 如实返回资料写入失败', !!flush && /await saveCardRecord\(current\)/.test(flush.body)
-    && /catch \(error\)[\s\S]{0,100}ok: false, scope: 'record'/.test(flush.body))
+  ok('flushDraft 接到串行资料写入器并保持真实保存入口', !!flush && /createRecordDraftFlusher<CardRecord>/.test(flush.body)
+    && /write: saveCardRecord/.test(flush.body))
 }
 
 console.log(`\noutlineDraftSwitch: ${pass} passed, ${fail} failed`)

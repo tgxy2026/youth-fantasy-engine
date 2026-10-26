@@ -37,6 +37,7 @@ try {
     const tab=getTab('chapter-outline'),keys=tab.modules.flatMap(mod=>mod.fields.map(field=>`${mod.name}::${field.name}`))
     const nameKey='一、本章定位::章节号/标题',fieldIndex=keys.findIndex(key=>key!==nameKey),field=keys[fieldIndex]
     for(const [index,name]of ['现场甲','现场乙','现场丙'].entries())await db.saveCardRecord({id:`view-outline-${index}`,projectId:db.getCurrentProjectId(),tabId:tab.id,name,data:{[nameKey]:name},order:-500+index})
+    for(const [index,name]of ['现场卷甲','现场卷乙'].entries())await db.saveCardRecord({id:`view-volume-${index}`,projectId:db.getCurrentProjectId(),tabId:'volume-outline',name,data:{'一、本卷定位::卷名':name},order:-500+index})
     return {fieldIndex,field,projectId:db.getCurrentProjectId()}
   })
   if(!await nav.getByRole('button',{name:'章节细纲',exact:true}).isVisible())await nav.getByRole('button',{name:'大纲规划',exact:true}).click()
@@ -57,6 +58,15 @@ try {
   await enter();await query.waitFor()
   check('real page return restores outline selection and filter',await query.inputValue()==='现场'&&await pick('现场乙').getAttribute('aria-pressed')==='true')
   check('view-only navigation never modifies outline business records',await rows()===before)
+  await nav.getByRole('button',{name:'分卷大纲',exact:true}).click()
+  const volumeQuery=page.getByRole('textbox',{name:'搜分卷名…',exact:true})
+  await page.getByRole('button',{name:'选择分卷大纲：现场卷乙',exact:true}).click();await volumeQuery.fill('现场卷')
+  await enter();await query.waitFor()
+  check('chapter and volume list namespaces preserve independent filters and selected records',await query.inputValue()==='现场'&&await pick('现场乙').getAttribute('aria-pressed')==='true')
+  await nav.getByRole('button',{name:'分卷大纲',exact:true}).click();await volumeQuery.waitFor()
+  check('the volume page independently restores its own selected row and filter',await volumeQuery.inputValue()==='现场卷'
+    &&await page.getByRole('button',{name:'选择分卷大纲：现场卷乙',exact:true}).getAttribute('aria-pressed')==='true')
+  await enter();await query.waitFor()
 
   const marker='工作现场清理时仍保留这份未保存大纲'
   await field.fill(marker);await field.evaluate(el=>{el.dataset.probeIdentity='same-node'})
@@ -114,7 +124,6 @@ try {
   await page.evaluate(()=>window.__restoreOutlineRead())
   await page.getByRole('button',{name:'重试读取大纲',exact:true}).click();await query.waitFor()
   check('read retry recovers the remembered valid record',await pick('现场乙').getAttribute('aria-pressed')==='true')
-  const authoritative=await rows()
   await query.fill('现场乙')
   const memory=await page.evaluate(async projectId=>{
     const {workspaceViews}=await import('/src/lib/settings/workspaceViewState.ts'),{currentWorkspaceScope}=await import('/src/lib/settings/workspaceRuntime.ts')
@@ -122,6 +131,40 @@ try {
   },fixture.projectId)
   check('real list memory retains only bounded UI metadata and no edited field body',memory?.kind==='list'
     &&memory.selectedId==='view-outline-1'&&memory.query==='现场乙'&&!JSON.stringify(memory).includes(dirty)&&!JSON.stringify(memory).includes(marker))
+  // Delay the first real IDB put completion notification. Manual selection and page leave
+  // must share one serialized writer even when the author continues typing in between.
+  await query.fill('')
+  await field.fill('慢完成协议：旧稿')
+  await page.evaluate(()=>{
+    const originalPut=IDBObjectStore.prototype.put,originalListen=IDBRequest.prototype.addEventListener,held=new WeakSet()
+    let holdNext=true;window.__outlineSerialPuts=0;window.__releaseOutlineWrite=null
+    window.__restoreOutlineSerial=()=>{IDBObjectStore.prototype.put=originalPut;IDBRequest.prototype.addEventListener=originalListen}
+    IDBObjectStore.prototype.put=function(...args){
+      const request=originalPut.apply(this,args)
+      if(this.name==='cardRecords'){window.__outlineSerialPuts++;if(holdNext){holdNext=false;held.add(request)}}
+      return request
+    }
+    IDBRequest.prototype.addEventListener=function(type,listener,options){
+      if(type==='success'&&held.has(this)){
+        const request=this
+        return originalListen.call(this,type,event=>{window.__releaseOutlineWrite=()=>typeof listener==='function'?listener.call(request,event):listener.handleEvent(event)},options)
+      }
+      return originalListen.call(this,type,listener,options)
+    }
+  })
+  await pick('现场甲').click();await page.waitForFunction(()=>typeof window.__releaseOutlineWrite==='function')
+  const latest='慢完成协议：保存期间继续输入的新稿'
+  await field.fill(latest);await dashboard();await page.waitForTimeout(200)
+  check('slow local save and page leave share one pending writer while preserving newer typing',await page.evaluate(()=>window.__outlineSerialPuts===1)
+    &&await field.inputValue()===latest&&await pick('现场乙').getAttribute('aria-pressed')==='true')
+  await page.evaluate(()=>window.__releaseOutlineWrite())
+  await page.getByRole('heading',{name:'写作面板',exact:true}).waitFor()
+  check('queued leave completes after exactly the old and latest snapshot writes',await page.evaluate(()=>window.__outlineSerialPuts===2))
+  check('after delayed completion the authoritative record retains the newer draft',await page.evaluate(async({field,latest})=>
+    (await(await import('/src/lib/db.ts')).getCardRecords('chapter-outline')).find(row=>row.id==='view-outline-1')?.data[field]===latest,{field:fixture.field,latest}))
+  await page.evaluate(()=>window.__restoreOutlineSerial())
+  await enter();await query.waitFor();await pick('现场乙').click();await query.fill('现场乙')
+  const authoritative=await rows()
   await page.evaluate(async()=>(await import('/src/lib/storage/contextEpoch.ts')).invalidateStorageContext())
   await page.waitForFunction(()=>document.querySelector('button[aria-label="选择章节大纲：现场甲"]')?.getAttribute('aria-pressed')==='true')
   check('storage-context protocol invalidation clears old filter and selection without rewriting business data',await query.inputValue()===''&&await rows()===authoritative)

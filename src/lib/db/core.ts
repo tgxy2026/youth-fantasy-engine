@@ -701,14 +701,14 @@ export async function disableDesktopCloudSync() {
 // ============ 项目时间戳（下沉到本层）============
 // 🔴 touchProject 放在底座、而不是 ./projects：卷 / 章 / 页签 / 备份都要「顺手刷新项目更新时间」，
 //    留在 projects 里会让它们全部反向依赖 projects 并绕成环。
-export async function touchProject(id: string) {
+export async function touchProject(id: string, store: StoreOps = ops) {
   // 🔴 2026-09-22 六维审计 P2：这是「顺手刷新项目更新时间」的**附带动作**
   //    （卷 / 章 / 页签 / 备份写完都会调它），失败不该影响本次主写入 ——
   //    但它内部不兜错时，那几处**浮动调用**（`touchProject(id)` 不 await）会变成**未处理拒绝**，
   //    严重点会在控制台炸一片、且没有任何上下文。在源头兜住，调用方就能安心 fire-and-forget。
   try {
-    const old = await ops.get<Project>('projects', id)
-    if (old) await ops.put('projects', { ...old, updatedAt: Date.now() })
+    const old = await store.get<Project>('projects', id)
+    if (old) await store.put('projects', { ...old, updatedAt: Date.now() })
   } catch (e) {
     console.warn('[db] 刷新项目更新时间失败（不影响本次写入）：', e)
   }
