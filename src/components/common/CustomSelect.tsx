@@ -14,6 +14,7 @@ import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateC
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
+import SelectedValues from '@/components/common/SelectedValues'
 import { Z } from '@/lib/app/zLayer'
 import { computeDropdownPos, type DropdownPos } from '@/lib/app/dropdownPos'
 
@@ -205,7 +206,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const filtered = ql ? list.filter(i => i.display.toLowerCase().includes(ql)) : list
 
   const choose = (v: string) => {
-    onChange(v)
+    onChange(!fixedOptions && (value === v || displayOf(value) === displayOf(v)) ? '' : v)
     closeAll()
   }
 
@@ -329,7 +330,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
         }}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
-        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
+        <span className={`min-w-0 truncate ${value ? 'text-ink-100' : 'text-ink-500'}`} title={value ? displayOf(value) : undefined}>{value ? displayOf(value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
       </Button>
       {open && pos && createPortal(
@@ -340,6 +341,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
+            width: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
@@ -354,6 +356,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
               className="w-full !py-0.5 text-12"
             />
           </div>
+          {!fixedOptions && value && <SelectedValues values={[displayOf(value)]} onRemove={() => choose('')} onClear={() => choose('')} />}
           {(filtered.length === 0 && !adding && !renaming && !editing) && (
             <EmptyState text="无匹配项，可点击下方新增" />
           )}

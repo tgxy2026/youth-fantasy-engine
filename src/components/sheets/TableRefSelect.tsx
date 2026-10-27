@@ -5,6 +5,7 @@ import { getTableRows } from '@/lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
+import SelectedValues from '@/components/common/SelectedValues'
 import { Z } from '@/lib/app/zLayer'
 import { computeDropdownPos, type DropdownPos } from '@/lib/app/dropdownPos'
 
@@ -99,10 +100,15 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
     : (value ? [value] : [])
   const isSel = (n: string) => selectedNames.includes(n)
   const toggle = (n: string) => {
-    if (!multi) { onChange(n); close(); return }
+    if (!multi) { onChange(value === n ? '' : n); close(); return }
     const set = new Set(selectedNames)
     if (set.has(n)) set.delete(n); else set.add(n)
     onChange([...set].join('，'))
+  }
+  const removeSelected = (name: string) => {
+    onChange(multi ? selectedNames.filter(value => value !== name).join('，') : '')
+    if (!multi) close()
+    else requestAnimationFrame(() => dropRef.current?.querySelector('input')?.focus({ preventScroll: true }))
   }
   // 内置搜索：按输入过滤下拉项；来源表为空 / 被项目形态隐藏（如极简项目）时允许手动输入
   const ql = q.trim().toLowerCase()
@@ -142,6 +148,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
+            width: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
@@ -166,6 +173,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               className="w-full !py-0.5 text-12"
             />
           </div>
+          <SelectedValues values={selectedNames} onRemove={removeSelected} onClear={() => { onChange(''); close() }} />
           {q.trim() && !exact && (
             <Button type="button"
               onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left border-b flex items-center">

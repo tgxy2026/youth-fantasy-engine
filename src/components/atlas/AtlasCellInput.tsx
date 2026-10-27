@@ -15,6 +15,7 @@ import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import { formatMultiSelectValues, parseMultiSelectValues } from '@/lib/atlas/values'
 import NumberField from '@/components/common/NumberField'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
+import SelectedValues from '@/components/common/SelectedValues'
 
 interface Props {
   field: ResolvedAtlasField
@@ -58,15 +59,7 @@ export default function AtlasCellInput({ field, value, onChange }: Props) {
 
     return (
       <div className="w-full min-w-0">
-        {selected.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {selected.map(s => (
-              <span key={s} className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">
-                {s}
-              </span>
-            ))}
-          </div>
-        )}
+        <SelectedValues values={selected} onRemove={toggle} onClear={() => onChange('')} />
         <details className="mt-0.5">
           <summary className="text-10 text-ink-500 hover:text-amber cursor-pointer select-none">
             {selected.length > 0 ? '修改' : '选择…'}
