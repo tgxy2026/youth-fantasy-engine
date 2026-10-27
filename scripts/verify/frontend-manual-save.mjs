@@ -116,6 +116,11 @@ try{
     const db=await import('/src/lib/db.ts'),mother=await db.getFormData('worldbase'),children=await db.getSubSets('worldbase')
     return Object.values(mother).includes(motherDraft)&&Object.values(children.find(row=>row.id==='manual-save-child').data).includes(childDraft)
   },{motherDraft,childDraft}))
+  // UX08「设定检索内联改字段」的真机断言本轮**没有做绿**，刻意不留半成品：
+  // 该面板的索引/分组交互要三层前置（可见页签、重建索引、切组），连试 7 轮仍未稳定命中，
+  // 判断逻辑已抽成纯函数并单测（tests/fieldSaveOutcome），真机部分留待下一轮配合稳定的检索锚点再做。
+  // 记录见台账 2026-10-27 21:xx 节与 HANDOFF「本轮未做」。
+
   check('no model requests',report.modelRequests.length===0,report.modelRequests)
   check('no browser errors',report.errors.length===0,report.errors);report.status='passed'
 }catch(error){report.status='failed';report.failure=error.stack||String(error);await page?.screenshot({path:path.join(run,'failure.png'),fullPage:true,animations:'disabled'}).catch(()=>{})}

@@ -10,6 +10,7 @@ import TableRefSelect from '@/components/sheets/TableRefSelect'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
+import { describeFieldSave } from '@/lib/settings/fieldSaveOutcome'
 import { useAliasRevision, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
 import { loadFieldLabels } from '@/lib/templates/labels'
 import { useFieldDefinitionRevision } from '@/lib/templates/useFieldRenames'
@@ -82,6 +83,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   const [editing, setEditing] = useState<{ key: string; idx: number } | null>(null)
   const [draft, setDraft] = useState('')
   const [savingField, setSavingField] = useState(false)
+  /**
+   * 内联改字段的**失败说明**（UX08）。空串＝没有失败。
+   * 🔴 不能用一个一闪而过的 toast 顶：作者在这儿改的是设定正文，失败必须留在原地可读、可重试。
+   */
+  const [fieldError, setFieldError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 自定义项目按启用功能集过滤页签可见性；完整项目全量可搜（历史遗留的精简/极简类型已废弃移除）
@@ -341,25 +347,39 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
     setExpanded(next)
   }
 
-  /** 在设定检索区内直接编辑某字段，保存后回写到对应设定表（角色卡 / 表格） */
+  /**
+   * 在设定检索区内直接编辑某字段，保存后回写到对应设定表（角色卡 / 表格）。
+   * 🔴 UX08：这里必须把「页面提交」和「存储确认」分开——
+   *    · 只有 `await` 真的成功，才刷新并收起编辑器（那才算存储已确认）；
+   *    · 失败**留在原地**（草稿不丢、界面不刷新成旧值），给出可读原因让作者重试；
+   *    · 目标记录已不存在时**不能**当成功：原实现 `if (rec) {...}` 落空后照样刷新+收起，
+   *      作者以为改好了，实际一个字都没写进去（2026-10-27 实测确认）。
+   */
   const saveField = async (doc: Doc, field: DocField, val: string) => {
     if (doc.kind === 'relation' || !doc.recordId) return
     setSavingField(true)
+    setFieldError('')
+    let written = false
+    let failure: unknown
     try {
       if (doc.kind === 'card') {
         const recs = await db.getCardRecords(doc.tabId)
         const rec = recs.find(r => r.id === doc.recordId)
-        if (rec) { rec.data[field.dataKey] = val; await db.saveCardRecord(rec) }
+        if (rec) { rec.data[field.dataKey] = val; await db.saveCardRecord(rec); written = true }
       } else if (doc.kind === 'table') {
         const rows = await db.getTableRows(doc.tabId)
         const row = rows.find(r => r.id === doc.recordId)
-        if (row) { row.data[field.dataKey] = val; await db.saveTableRow(row) }
+        if (row) { row.data[field.dataKey] = val; await db.saveTableRow(row); written = true }
       }
-      setReloadKey(k => k + 1)
-      setEditing(null)
-    } finally {
-      setSavingField(false)
+    } catch (error) {
+      failure = error
     }
+    // 🔴 判定只在 `describeFieldSave` 里（有单测钉住）：真的写进去了才刷新+收起；
+    //    抛出失败或「记录已不存在」都留在原地给可读原因，界面不刷新成旧值、草稿不丢。
+    const outcome = describeFieldSave({ written, error: failure })
+    if (outcome.ok) { setReloadKey(k => k + 1); setEditing(null) }
+    else setFieldError(outcome.message)
+    setSavingField(false)
   }
 
   const totalForGroup = useMemo(() => {
@@ -370,7 +390,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   }, [docs])
 
   return (
-    <div className="flex flex-col h-full border-r border-ink-700 bg-ink-900 min-w-0">
+    <div data-setting-search="" className="flex flex-col h-full border-r border-ink-700 bg-ink-900 min-w-0">
       {/* 头部搜索 */}
       <div className="px-3 pt-3 pb-2 border-b border-ink-700 shrink-0">
         <div className="flex items-center gap-1.5">
@@ -570,13 +590,16 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                       className="w-full !py-1 !px-1.5 text-11 bg-ink-900 border border-amber/40 rounded resize-y min-h-[48px]"
                                     />
                                   )}
+                                  {fieldError && (
+                                    <div role="status" className="mt-1 text-10 text-danger leading-relaxed">{fieldError}</div>
+                                  )}
                                   {f.type === 'select' || f.type === 'characters' || f.type === 'date' || f.type === 'calendar-select' || f.type === 'tableRef' ? (
                                     <div className="mt-1 text-10 text-ink-500">改动即自动同步到「{doc.source}」</div>
                                   ) : (
                                     <div className="flex gap-1.5 mt-1">
                                       <Button variant="primary" size="xs" disabled={savingField} onClick={() => saveField(doc, f, draft)}>保存</Button>
                                       <Button variant="secondary" size="xs"
-                                        onClick={() => setEditing(null)}
+                                        onClick={() => { setEditing(null); setFieldError('') }}
                                       >取消</Button>
                                     </div>
                                   )}
