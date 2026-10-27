@@ -128,17 +128,19 @@ export default function InterviewChat({
    * @param base 指定起点（「重新开始」时上一句刚 setState，闭包里还是旧 state）
    */
   const send = async (text: string | null, base?: InterviewState) => {
+    const owner = candidateApplyContext()
+    if (archiveOwner.current.context !== owner) return
     const from = base ?? state
     setBusy(true)
     setErr('')
     try {
       const res = await runInterviewTurn(spec, from, text, { callChat, existing, context })
-      if (!aliveRef.current) return
+      if (!aliveRef.current || owner !== candidateApplyContext()) return
       setState(res.state)
       // 先 setState 再落盘：界面不等库（落盘失败也不该让对话卡住）
       persist(res.state)
     } catch (e) {
-      if (!aliveRef.current) return
+      if (!aliveRef.current || owner !== candidateApplyContext()) return
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
       if (aliveRef.current) setBusy(false)
@@ -224,6 +226,11 @@ export default function InterviewChat({
     [state.filled],
   )
 
+  if (adoption.blocked) return <Modal key="context-changed" open title="工作上下文已变化" width="sm"
+    onClose={adoption.requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending}>
+    <p role="alert" className="text-13 text-ink-100">当前工作上下文已变化，此窗口不再展示或提交原目标内容。已发出的操作请到原目标核对，关闭后可在目标页重新打开。</p>
+    <Button className="mt-3" disabled={adoption.pending} onClick={adoption.requestClose}>关闭</Button>
+  </Modal>
   return (
     <Modal
       open onClose={requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending} title={`对话引导 · 创建${subject}`} width="xl"

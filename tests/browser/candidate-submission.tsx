@@ -11,15 +11,17 @@ const scope='candidate-submission-protocol'
 const candidate='<script>window.__candidateScriptRan=true</script>\n'+'候选完整内容\n'.repeat(80)
 let behavior:'pending'|'throw'|'decline'|'accept'='pending',calls=0,closes=0,chatCalls=0
 let settle:((value:boolean)=>void)|null=null
+let chatReply:((value:string)=>void)|null=null
 const payloads:Record<string,string>[]=[]
 declare global {
   interface Window {
     __candidateUI:{behavior(value:typeof behavior):void;settle(value:boolean):void;counts():{calls:number;closes:number;chatCalls:number};
-      payloads():Record<string,string>[];candidate:string;seedArchive():Promise<void>;archive():Promise<unknown>;project(id:string):void}
+      payloads():Record<string,string>[];candidate:string;seedArchive():Promise<void>;archive():Promise<unknown>;project(id:string):void;settleChat(value:string):void}
   }
 }
 window.__candidateUI={behavior:value=>{behavior=value},settle:value=>{settle?.(value);settle=null},counts:()=>({calls,closes,chatCalls}),
   payloads:()=>payloads,candidate,project:setCurrentProject,
+  settleChat:value=>{chatReply?.(value);chatReply=null},
   seedArchive:async()=>{await saveInterviewArchive(scope,{state:{turns:[{role:'ai',text:'测试问题'},{role:'user',text:'测试回答'}],
     filled:{'fixture::field':candidate},done:true},updatedAt:Date.now(),applied:false,subject:'采用测试'},'candidate-ui-fixture')},
   archive:()=>loadInterviewArchive(scope,Date.now(),'candidate-ui-fixture')}
@@ -39,7 +41,7 @@ function Fixture(){
     <button onClick={()=>setMode('interview')}>打开访谈候选</button>
     {mode==='template'&&<AITemplateFill title="模板候选采用测试" fields={[{key:'fixture::field',label:'候选字段'}]} withWorldContext={false} onSubmit={submit} onClose={close}/>}
     {mode==='interview'&&<InterviewChat subject="采用测试" spec={spec} persistScope={scope}
-      callChat={async()=>{chatCalls++;throw Error('Archived fixture must not generate')}} onApply={submit} onClose={close}/>}
+      callChat={async()=>{chatCalls++;return new Promise<string>(resolve=>{chatReply=resolve})}} onApply={submit} onClose={close}/>}
   </main>
 }
 createRoot(document.getElementById('fixture-root')!).render(<Fixture/> )

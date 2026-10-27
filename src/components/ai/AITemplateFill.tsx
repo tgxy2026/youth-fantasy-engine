@@ -26,7 +26,7 @@ import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare, NotebookPen } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
-import { useCandidateApply } from '@/components/common/useCandidateApply'
+import { candidateApplyContext, useCandidateApply } from '@/components/common/useCandidateApply'
 import type { CandidateSubmit } from '@/lib/ai/candidateApply'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import { aiChatJson, aiCompleteTemplate, buildWorldContext, WORLD_CONTEXT_GROUPS, type TemplateField, type FillContext } from '@/lib/ai'
@@ -279,6 +279,8 @@ export default function AITemplateFill({
 
   const run = async () => {
     if (adoption.isPending() || !adoption.reset()) return
+    const owner = candidateApplyContext()
+    const current = () => owner === candidateApplyContext()
     if (sendFields.length === 0) {
       setError('没有需要补全的空字段（已全部填写或被锁定）。')
       return
@@ -291,6 +293,7 @@ export default function AITemplateFill({
       if (withWorldContext && useCtx) {
         try { ctx = await buildWorldContext() } catch { ctx = '' }
       }
+      if (!current()) return
       // 素材：联网检索（按设置那一档）+ 粘贴的参考 + 现有内容。
       // 查失败**不中断** —— 照样用模型知识生成，但把原因带回来如实显示。
       const material = await prepareDraftMaterial({
@@ -299,15 +302,18 @@ export default function AITemplateFill({
         existing: existingText,
         settings: search ?? { ...DEFAULT_SEARCH_SETTINGS },
       })
+      if (!current()) return
       setSource(material.source)
       const r = await aiCompleteTemplate(sendFields, sketch, {
         worldContext: ctx,
         material: material.blocks,
         context,
       })
+      if (!current()) return
       setResult(r.values)
       setAiFilled(r.aiFilled)
     } catch (e) {
+      if (!current()) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -322,6 +328,11 @@ export default function AITemplateFill({
   const setVal = (key: string, v: string) => setResult(prev => ({ ...(prev ?? {}), [key]: v }))
 
   // 对话引导：整个弹窗换成访谈界面（不套娃 —— 各用各的 Modal）
+  if (adoption.blocked) return <Modal key="context-changed" open title="工作上下文已变化" width="sm"
+    onClose={adoption.requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending}>
+    <p role="alert" className="text-13 text-ink-100">当前工作上下文已变化，此窗口不再展示或提交原目标内容。已发出的操作请到原目标核对，关闭后可在目标页重新打开。</p>
+    <Button className="mt-3" disabled={adoption.pending} onClick={adoption.requestClose}>关闭</Button>
+  </Modal>
   if (mode === 'interview' && sendFields.length > 0) {
     return (
       <InterviewChat
