@@ -10,7 +10,7 @@ export default function StorageWriteStatus({ facts, onSave, title }: {
   const status = storageWriteStatus(facts)
   return <Button variant="bare" onClick={onSave} disabled={!status.canSave}
     data-storage-write-status={status.kind}
-    title={!status.canSave ? status.description : title ?? status.description}
+    title={status.kind === 'error' || !status.canSave ? status.description : title ?? status.description}
     aria-label={`${status.label}：${status.description}`}
     className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-full border border-ink-700 bg-ink-800/60 px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100 disabled:opacity-70">
     <Save size={12} className="shrink-0 text-amber/80" aria-hidden="true" />

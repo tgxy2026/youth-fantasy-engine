@@ -1,4 +1,6 @@
 import FailureNotice from '@/components/common/FailureNotice'
+import { createStorageFailureNotice } from '@/lib/app/storageFailureNotice'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 import WorkspacePageFailure from '@/components/app/WorkspacePageFailure'
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
@@ -243,11 +245,11 @@ export default function App() {
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
   useEffect(() => {
     if (!DESKTOP && !PORTABLE) return
-    let lastErr = ''
+    const failureNotice = createStorageFailureNotice()
     const onStore = () => {
-      const e = DESKTOP ? getDesktopState().lastError : getPortableState().lastError
-      if (e && e !== lastErr) { lastErr = e; showToast('数据保存失败：' + e, 'error', 4500) }
-      else if (!e) lastErr = ''
+      const state = DESKTOP ? getDesktopState() : getPortableState()
+      const message = failureNotice(state, storageWriteContext())
+      if (message) showToast(message, 'error', 4500)
     }
     onStore()
     return DESKTOP ? subscribeDesktop(onStore) : subscribePortable(onStore)

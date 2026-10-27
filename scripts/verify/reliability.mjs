@@ -36,7 +36,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
   const dirty = await runProcess('git', ['diff', '--no-ext-diff', '--binary', 'HEAD'], { cwd: realRoot, timeoutMs: 15000, signal })
   // Fingerprints include untracked source/tooling too; Git diff alone cannot identify this workspace.
   const report = { schemaVersion: 1, runRoot, stage, profile: 'local', startedAt, version: pkg.version,
-    plannedVersion: '3.2.3', head: git.ok ? git.stdout.trim() : null, gitAvailable: git.ok,
+    plannedVersion: pkg.version, head: git.ok ? git.stdout.trim() : null, gitAvailable: git.ok,
     environment: { node: process.version, platform: process.platform, arch: process.arch }, inputs, results }
   await fs.writeFile(path.join(runRoot, 'working-tree.diff'), dirty.out)
   const record = (id, status, assertions, reason, evidencePaths = []) => {

@@ -241,7 +241,7 @@ async function main() {
       putFail = true
       await ta().fill(TEXT_D)
       await page.keyboard.press('Control+s')
-      await page.getByRole('button', { name: '保存出错', exact: true }).first().waitFor({ timeout: 30000 })
+      await page.locator('[data-storage-write-status="error"]').first().waitFor({ timeout: 30000 })
       check('close-write-failure.failure-visible', true)
       await page.screenshot({ path: path.join(runRoot, 'close-write-failure.png') })
       await page.close()                      // 🔴 真关页，不派发 beforeunload
@@ -271,7 +271,7 @@ async function main() {
       await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 60000 })
       await openProject(page, TA)
       check('close-write-failure.reopen-readback', (await ta().inputValue()) === diskContent, String(await ta().inputValue()).slice(0, 20))
-      check('close-write-failure.no-false-error', (await page.getByRole('button', { name: '保存出错', exact: true }).count()) === 0)
+      check('close-write-failure.no-false-error', (await page.locator('[data-storage-write-status="error"]').count()) === 0)
       await page.screenshot({ path: path.join(runRoot, 'close-write-failure-reopen.png') })
       putFail = false
     }
