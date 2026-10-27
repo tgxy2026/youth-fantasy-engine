@@ -17,21 +17,13 @@ function walk(dir, out = []) {
   }
   return out
 }
-const skipDir = d => /(node_modules|\.git|dist|dist-web|release)$/.test(d)
-function walkAll(dir, out = []) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name)
-    if (e.isDirectory()) { if (!skipDir(e.name)) walkAll(p, out) }
-    else if (/\.(ts|tsx|mjs|cjs|js)$/.test(e.name)) out.push(p)
-  }
-  return out
-}
 const rel = f => path.relative(ROOT, f).replace(/\\/g, '/')
 
 const tsFiles = walk(SRC)
-const allCode = walkAll(ROOT)
+// F1/F2/F3 below consume tsFiles only; F4 checks its explicit gate paths.
+// Loading unrelated build/evidence trees adds no coverage and can prevent any result.
 const src = new Map()
-for (const f of [...tsFiles, ...allCode]) if (!src.has(f)) src.set(f, fs.readFileSync(f, 'utf8'))
+for (const f of tsFiles) src.set(f, fs.readFileSync(f, 'utf8'))
 
 const tsxFiles = tsFiles.filter(f => /\.tsx$/.test(f))
 // 🔴 F1 的扫描面 = 「组件目录下的 ts + tsx」，不能只看 .tsx。
