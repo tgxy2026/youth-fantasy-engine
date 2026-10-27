@@ -100,9 +100,15 @@ try {
       const alertText = [...main.querySelectorAll('[role="alert"]')].map(el => (el.textContent || '').trim()).filter(Boolean)
       const head = text.slice(0, 80)
       const failure = alertText.length > 0 || /出错了|加载失败|无法加载|页面异常|渲染出错/.test(head)
-      const emptyHint = /暂无|还没有|尚未|没有找到|空空如也|先.*(创建|新建|添加)/.test(text)
+      // 空态不只有「暂无」一种写法：角色页写的是「点击右上角新建角色」，资料库写「去…添加」。
+      // 判据认「没有数据」的陈述 + 「引导你去创建」的动作语，两者任一即可。
+      const emptyHint = /暂无|还没有|尚未|没有找到|空空如也|还是空的|空着/.test(text)
+        || /(点击|去|先)[^\n]{0,16}(新建|创建|添加|录入|开始)/.test(text)
+      // 帮助入口按**结构**认（HelpPopover 的触发器带 data-help-trigger），不靠文案——
+      // 每个页面的帮助标题都不同（「推演报告怎么读」「世界引擎怎么用」…），靠关键词必然漏。
+      const hasHelp = main.querySelectorAll('[data-help-trigger]').length > 0
       return {
-        ...meta, reachable: true, hasMain: true,
+        ...meta, reachable: true, hasMain: true, hasHelp,
         height: Math.round(main.getBoundingClientRect().height),
         textLength: text.length,
         scrollables, buttons, inputs,
@@ -126,11 +132,14 @@ try {
   // 🔴 默认关闭（`UX07_EMPTY_PASS=1` 才跑）：轮次做到「建自定义项目 → 重载 → 从项目中心打开」
   //    时卡住过一次（重载后停在项目中心，点卡片「打开项目」被左下角数据坞挡住）。
   //    等这一段稳定再默认开启；在此之前不把它当成通过项，也不删掉这部分代码。
+  let missingEmpty = []
   const withEmptyPass = process.env.UX07_EMPTY_PASS === '1'
   if (!withEmptyPass) report.emptySummary = { skipped: true, reason: 'UX07_EMPTY_PASS!=1' }
   else {
   // 表单页本身有字段，不需要"空态"；表格/卡片/角色/世界库这些数据页零记录时必须给引导。
-  const NEEDS_EMPTY = new Set(['table', 'card', 'characters', 'character', 'worlds', 'material'])
+  // 🔴 只对「会有用户数据、可能为空」的页要求空态。
+  //    `material`（素材资料库）是内置只读参考，永远有内容，不该按这条要求。
+  const NEEDS_EMPTY = new Set(['table', 'card', 'characters', 'character', 'worlds'])
   const EMPTY_NAME = 'UX07 空态隔离临时项目'
   const emptyProject = await page.evaluate(async EMPTY_NAME => {
     const db = await import('/src/lib/db.ts')
@@ -154,8 +163,17 @@ try {
     await nameNode.waitFor({ timeout: 30000 })
     const card = nameNode.locator('xpath=ancestor::div[.//button][1]')
     const opener = card.getByRole('button', { name: /打开|进入|继续/ }).first()
-    if (await opener.count()) await opener.click()
-    else await card.getByRole('button').first().click()
+    // 🔴 左下角数据坞是 fixed 浮层，实测会吃掉落点上的指针事件；
+    //    `click({force:true})` 只是跳过可操作性检查，**坐标仍会被浮层接走**。
+    //    这里直接在元素上派发 click（绕过命中测试），只借用它自己的 onClick。
+    const target = (await opener.count()) ? opener : card.getByRole('button').first()
+    await target.evaluate(el => el.click())
+    await page.waitForTimeout(1200)
+    if (!(await page.locator('nav').isVisible().catch(() => false))) {
+      // 再兜一层：有些实现把 onClick 挂在外层容器上
+      await card.evaluate(el => el.click())
+      await page.waitForTimeout(1200)
+    }
     await page.locator('nav').waitFor({ state: 'attached', timeout: 60000 })
   }
   const navDeadline2 = Date.now() + 45000
@@ -179,7 +197,7 @@ try {
     }
   }
   const dataPages = report.emptyPages.filter(p => p.reachable && NEEDS_EMPTY.has(p.type))
-  const missingEmpty = dataPages.filter(p => !p.emptyHint)
+  missingEmpty = dataPages.filter(p => !p.emptyHint)
   report.emptySummary = {
     scanned: report.emptyPages.length,
     dataPages: dataPages.length,

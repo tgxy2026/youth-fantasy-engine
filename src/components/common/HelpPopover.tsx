@@ -162,6 +162,7 @@ export default function HelpPopover({
         className={triggerClassName ?? `p-1.5 rounded transition-colors ${open ? 'text-amber' : 'text-ink-500 hover:text-amber'}`}
         title={triggerTitle ?? `${title}（点击查看说明）`}
         aria-label={triggerTitle ?? title}
+        data-help-trigger=""
       >
         {trigger ?? <HelpCircle size={size} />}
       </Button>
