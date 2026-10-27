@@ -51,6 +51,7 @@ import { revertDraftCells, flushDrafts } from '@/components/sheets/tableSheetDra
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
 import { captureCandidateOwner } from '@/lib/ai/candidateContext'
+import { useTableWorkspaceFilters } from './useTableWorkspaceFilters'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { buildImportRows, type ImportRowResult } from '@/lib/storage/tableIO'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -372,7 +373,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *   这对监听就永久留在 window 上，越拖越积）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null)
   // 表头筛选：每列一个关键字，行内该列命中即保留
-  const [colFilters, setColFilters] = useState<Record<string, string>>({})
+  const [colFilters, setColFilters] = useTableWorkspaceFilters(tab.id, focusRowId)
   /**
    * 各下拉列的「自定义选项」载荷（用户新增项 / 隐藏项 / 内置改名）。
    * 表头筛选下拉必须与行内 CustomSelect 用同一口径（resolveOptions）渲染，

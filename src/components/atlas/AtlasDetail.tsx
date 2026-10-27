@@ -14,7 +14,7 @@
  *    之前这里直接读 `row.data`，导致「表格里刚改、点开详情还是旧值」—— 与图鉴视图
  *    "不自己去读库"的口径自相矛盾。现在由父级把 `model.cellVal` 传下来。
  */
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type RefObject } from 'react'
 import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
@@ -34,6 +34,7 @@ import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
 
 interface Props {
+  scrollRef?: RefObject<HTMLDivElement>
   /**
    * 所属页签 ID（OPT-010）：内置下拉要接「自定义选项」存储
    * （键 = customOption::<pid>::<tabId>::<列名>），必须与表格侧同一个 tabId
@@ -115,6 +116,7 @@ export default function AtlasDetail({
   tabId, row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
+  scrollRef,
 }: Props) {
   const name = ((cellValue ? cellValue(row, nameKey) : row.data[nameKey]) ?? '').trim() || '未命名条目'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -326,7 +328,7 @@ export default function AtlasDetail({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} data-atlas-detail className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-10 text-ink-500">
             {filledCount} 项已填
@@ -359,7 +361,7 @@ export default function AtlasDetail({
                     const canEdit = editing && atlasDetailEditable(field)
                     if (canEdit) {
                       return (
-                        <div key={field.key}>
+                        <div key={field.key} data-workspace-field={field.key}>
                           <dt className="text-11 text-ink-500 mb-0.5 flex items-center gap-1">
                             {field.label}
                             {field.unit && <span className="text-10 text-ink-600">{field.unit}</span>}
@@ -382,7 +384,7 @@ export default function AtlasDetail({
                       ? '这类字段（编号 / 引用 / 日期）请在表格里改'
                       : undefined
                     return (
-                      <div key={field.key} className={isLong ? '' : 'flex gap-2 items-baseline'} title={lockedHint}>
+                      <div key={field.key} data-workspace-field={field.key} className={isLong ? '' : 'flex gap-2 items-baseline'} title={lockedHint}>
                         <dt className={`text-11 text-ink-500 ${isLong ? 'mb-0.5' : 'shrink-0 w-20'} ${lockedHint ? 'opacity-70' : ''}`}>
                           {field.label}
                           {lockedHint && <span className="ml-1 text-9 text-ink-600">表格</span>}

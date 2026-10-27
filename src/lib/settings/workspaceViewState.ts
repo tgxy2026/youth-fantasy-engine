@@ -1,4 +1,5 @@
 /** Bounded session views only. No business content, persistent preferences or database writes. */
+import { normalizeWorkspaceFilters } from './workspaceFilters'
 export const VIEW_VERSION = 1
 export const VIEW_LIMITS = { projects: 10, objectsPerProject: 50, recordBytes: 16 * 1024, totalBytes: 256 * 1024 } as const
 export type ViewPlatform = 'desktop' | 'portable' | 'web-cloud' | 'web-guest' | 'browser'
@@ -15,11 +16,11 @@ export interface EditorView {
 export interface ViewAnchor { id: string; offset: number }
 export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll; anchor?: ViewAnchor }
 /** Search is transient UI input, never persisted; no record fields or draft bodies are retained. */
-export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll; anchor?: ViewAnchor }
+export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll; anchor?: ViewAnchor; filters?: Record<string, string> }
 export type WorkspaceView = EditorView | DetailView | ListView
-export function restoreListSelection(records: readonly { id: string }[], remembered: string | null, explicit?: string | null): string | null {
+export function restoreListSelection(records: readonly { id: string }[], remembered: string | null, explicit?: string | null, fallback: 'first' | 'none' = 'first'): string | null {
   for (const candidate of [explicit, remembered]) if (candidate && records.some(record => record.id === candidate)) return candidate
-  return records[0]?.id ?? null
+  return fallback === 'none' ? null : records[0]?.id ?? null
 }
 const platforms = new Set<ViewPlatform>(['desktop', 'portable', 'web-cloud', 'web-guest', 'browser'])
 const id = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && value.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(value)
@@ -50,7 +51,9 @@ function normalize(value: unknown): WorkspaceView | null {
   const anchor = candidate ? { id: candidate.id, offset: candidate.offset } : undefined
   if (v.kind === 'list') {
     if ((v.selectedId !== null && !id(v.selectedId)) || typeof v.query !== 'string' || v.query.length > 200) return null
-    return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll, ...(anchor ? { anchor } : {}) }
+    const filters = v.filters === undefined ? undefined : normalizeWorkspaceFilters(v.filters)
+    if (filters === null) return null
+    return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll, ...(anchor ? { anchor } : {}), ...(filters ? { filters } : {}) }
   }
   if (v.kind === 'detail') {
     if (!Array.isArray(v.groups) || v.groups.length > 128 || !v.groups.every(id)) return null

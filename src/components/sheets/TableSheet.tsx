@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
-import { addCustomItem, deleteTableRow } from '@/lib/db'
+import { addCustomItem, deleteTableRow, getCurrentProjectId } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
 import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
@@ -50,6 +50,7 @@ import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { useRowWindow } from '@/components/sheets/useRowWindow'
 import { foldVh } from '@/lib/settings/theme'
+import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 
 interface Props {
   tab: TabDef
@@ -109,7 +110,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 编号
     codeError,
     // 视图与高亮
-    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, 
+    viewMode, setViewMode: storeViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady,
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）
@@ -121,6 +122,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
+  const setViewMode: typeof storeViewMode = next => { captureWorkspaceView(); storeViewMode(next) }
 
   /**
    * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。
@@ -585,6 +587,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       {viewMode === 'atlas' && isAtlasCapable ? (
         /* ============ 3.1.3 图鉴视图（卡片墙 + 详情，实现已拆到 components/atlas） ============ */
         <AtlasView
+          projectId={getCurrentProjectId()}
+          focusRowId={focusRowId}
+          onFocusConsumed={onFocusConsumed}
           tab={tab}
           rows={filteredRows}
           aliases={aliasLabels}

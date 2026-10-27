@@ -46,6 +46,7 @@ export default function AtlasCard({ row, nameKey, badges, summaryFields, image, 
   return (
     <button
       type="button"
+      data-workspace-record={row.id}
       onClick={onOpen}
       aria-current={selected ? 'true' : undefined}
       className={`h-full flex flex-col text-left rounded-xl border overflow-hidden transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 ${

@@ -108,6 +108,20 @@ check('explicit list requests beat memory, deleted selections fall back without 
   assert.equal(restoreListSelection(rows,'b'),'b')
   assert.equal(restoreListSelection(rows,'gone'),'a')
   assert.equal(restoreListSelection([], 'gone','c'),null)
+  assert.equal(restoreListSelection(rows,null,undefined,'none'),null)
+  assert.equal(restoreListSelection(rows,'gone',undefined,'none'),null)
+  assert.equal(restoreListSelection(rows,'b','c','none'),'c')
   assert.equal(JSON.stringify(rows),before)
+})
+check('column filter metadata is bounded copied and distinct from business fields', () => {
+  const store=createWorkspaceViewStore(),filters={'名称':'查找','类别':'分类'}
+  const value:ListView={version:1,kind:'list',objectId:'filter-state',selectedId:null,query:'',filters,
+    scroll:{top:0,ratio:0,outerTop:0,outerRatio:0}}
+  assert.equal(store.put(scope,{...value,rows:[{data:'private body'}]}),true)
+  filters['名称']='caller mutation'
+  const got=store.get(scope,'filter-state') as ListView
+  assert.equal(got.filters?.['名称'],'查找');assert.ok(!JSON.stringify(got).includes('private body'))
+  for(const bad of [[],{'名称':'x'.repeat(201)},{'bad\nkey':'x'},{'名称':123},Object.fromEntries(Array.from({length:129},(_,i)=>['key'+i,'x']))])
+    assert.equal(store.put(scope,{...value,filters:bad}),false)
 })
 console.log(`${count} workspace view state groups passed`)

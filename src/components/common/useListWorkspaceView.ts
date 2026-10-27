@@ -19,7 +19,7 @@ const read = (projectId: string, pageId: string) => {
  * Only a real project/backend/account context change reloads records. Old writers still carry
  * the view generation, and a not-yet-resolved optional identity never blocks business editing.
  */
-export function useListWorkspaceView(projectId: string, pageId: string) {
+export function useListWorkspaceView(projectId: string, pageId: string, fallback: 'first' | 'none' = 'first') {
   const mounted = useRef(true)
   // Flip ownership in the unmount commit, before a queued promise can run another job.
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -42,8 +42,8 @@ export function useListWorkspaceView(projectId: string, pageId: string) {
   }, [key, isCurrent])
   const choose = useCallback((records: readonly { id: string }[], explicit?: string | null) => {
     const saved = isCurrent() ? read(projectId, pageId) : null
-    return restoreListSelection(records, saved?.selectedId ?? null, explicit)
-  }, [projectId, pageId, isCurrent])
+    return restoreListSelection(records, saved?.selectedId ?? null, explicit, fallback)
+  }, [projectId, pageId, isCurrent, fallback])
   const remember = useCallback((selectedId: string | null) => {
     if (!isCurrent()) return
     const scope = currentWorkspaceScope(projectId, 'list:' + pageId)
