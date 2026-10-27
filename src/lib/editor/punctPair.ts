@@ -26,6 +26,57 @@ export const CN_PUNCT_PAIRS: Readonly<Record<string, string>> = {
   '【': '】',
 }
 
+/** 右标点 → 左标点（配对的反向查表，给"输入法只给了右半边"的兜底用） */
+const CLOSE_TO_OPEN: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(CN_PUNCT_PAIRS).map(([left, right]) => [right, left]),
+)
+
+/** 光标前这段文字里，`left` 还有没有没闭合的（有 ⇒ 作者是在收尾，右标点本来就对） */
+function hasUnclosedOpen(head: string, left: string, right: string): boolean {
+  let depth = 0
+  for (const ch of head) {
+    if (ch === left) depth += 1
+    else if (ch === right && depth > 0) depth -= 1
+  }
+  return depth > 0
+}
+
+/**
+ * 「输入法只给了右引号」的兜底（2026-10-27 用户反馈 · 搜狗输入法）。
+ *
+ * 症状：打完 `，` 再按 `"`，期望是 `“”` 且光标居中，实际只出现一个 `”`。
+ * 原因：搜狗按「前一个字符是标点 ⇒ 这里该是**收尾**引号」的智能规则，直接把 `”` 上屏；
+ *      而本文件只认左标点（`CN_PUNCT_PAIRS` 的键），于是永远不配对 —— 作者看到的就是一个孤零零的右引号。
+ *      （同类输入法在别的上下文也可能这样，所以判据不认输入法、只认文本事实。）
+ *
+ * 🔴 判据收得很紧，避免破坏"正常收尾"：
+ *   ① 这次只输入了 1 个**右**标点，且它正好在光标前；
+ *   ② 这个位置之前**没有未闭合的同一个左标点** —— 有就说明作者在收尾，`”` 本来就对，绝不改。
+ * 满足就把这个右标点换成「左＋右」并把光标放回中间（等价于"作者想要开引号"）。
+ */
+export function planPunctPairFromClose(value: string, caret: number, data: string | null | undefined): PunctPairPlan | null {
+  if (!data || data.length !== 1) return null
+  return planFromCloseAt(value, caret, data)
+}
+
+/** 同上，但按光标判断（组合态结束后没有 `data` 可用时走这条） */
+export function planPunctPairFromCloseAtCaret(value: string, caret: number): PunctPairPlan | null {
+  if (!Number.isFinite(caret) || caret < 1 || caret > value.length) return null
+  return planFromCloseAt(value, caret, value[caret - 1])
+}
+
+function planFromCloseAt(value: string, caret: number, data: string | null | undefined): PunctPairPlan | null {
+  const right = typeof data === 'string' ? data : ''
+  const left = CLOSE_TO_OPEN[right]
+  if (!left) return null
+  if (!Number.isFinite(caret) || caret < 1 || caret > value.length) return null
+  // 必须是"刚打进光标前"的那一下，否则不插手
+  if (value[caret - 1] !== right) return null
+  if (hasUnclosedOpen(value.slice(0, caret - 1), left, right)) return null
+  // 把光标前这个右标点换成「左＋右」：左占 caret-1、右占 caret ⇒ 光标留在中间
+  return { value: value.slice(0, caret - 1) + left + right + value.slice(caret), caret }
+}
+
 export interface PunctPairPlan {
   /** 补好右标点后的完整正文 */
   value: string

@@ -15,7 +15,7 @@ import FormatModal from '@/components/dialogs/FormatModal'
 import { Modal } from '@/components/dialogs/Modal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/editor/indent'
 // 3.2.0：中文标点自动配对（原先完全依赖输入法 ⇒ 微信有、搜狗没有，见 punctPair 文件头）
-import { planPunctPair, planPunctPairAtCaret } from '@/lib/editor/punctPair'
+import { planPunctPair, planPunctPairAtCaret, planPunctPairFromClose, planPunctPairFromCloseAtCaret } from '@/lib/editor/punctPair'
 import { nextVolumeNo } from '@/lib/outline/freeVolume'
 import {
   FolderPlus, Trash2, PenLine,
@@ -646,7 +646,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     if (ev.isComposing) { onContentChange(next); return }
                     // 判据看**这次输入事件自带的 data**，不再用「prev/next 长度差」——
                     // 长度差在组合态下从来对不上，是上一个 bug 的根源。
+                    // 先按「左标点 ⇒ 补右」判；不成立再走**右标点兜底**——
+                    // 搜狗在 `，` 之后会把引号上屏成 `”`（智能收尾规则），只认左标点就永远不配对。
                     const plan = planPunctPair(next, ta.selectionStart, ev.data)
+                      ?? planPunctPairFromClose(next, ta.selectionStart, ev.data)
                     if (!plan) { onContentChange(next); return }
                     onContentChange(plan.value)
                     // 光标要落在两个标点中间。必须等 React 把新 value 写进 DOM 之后再设，
@@ -662,6 +665,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     //    与 onChange 那条判据结果相同、且幂等（右侧已有右标点就返回 null）。
                     const ta = e.currentTarget
                     const plan = planPunctPairAtCaret(ta.value, ta.selectionStart)
+                      ?? planPunctPairFromCloseAtCaret(ta.value, ta.selectionStart)
                     if (!plan) return
                     onContentChange(plan.value)
                     requestAnimationFrame(() => {
