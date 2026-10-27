@@ -35,7 +35,7 @@ export * from '@/lib/db/tabs'
 export * from '@/lib/db/worldSets'
 export type { DailyStat } from '@/lib/db/meta'
 export {
-  getMeta, setMeta, getDailyStats, putDailyStat,
+  getMeta, setMeta, hasMeta, getDailyStats, putDailyStat,
   getSetting, setSetting, delSetting,
   getSettingFor, setSettingFor, delSettingFor,
 } from '@/lib/db/meta'

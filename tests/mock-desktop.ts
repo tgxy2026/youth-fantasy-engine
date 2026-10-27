@@ -20,7 +20,7 @@ export function subscribeDesktop() { return () => {} }
 // 与 src/lib/app/desktop.ts 的 DesktopState 同形：db.ts 的云同步入口会读 writeLocked
 // （测试环境从不锁写盘，固定 false；将来要测「锁定期行为」就在这里放开）
 export function getDesktopState() {
-  return { ready: true, path: '', dirty: false, writeLocked: false, writeLockReason: '' }
+  return { ready: true, connected: true, path: '', dirty: false, writeLocked: false, writeLockReason: '' }
 }
 // 与 src/lib/app/desktop.ts 同名同形：db.ts 的「云端 cache → 本地库」镜像会 import 它判「本地是否已有这条」。
 // 直接复用 mock-memory 那一份，**不要在这里另写一份** —— 两份日期久了对不上就是下次事故。

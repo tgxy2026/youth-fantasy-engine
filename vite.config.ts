@@ -75,6 +75,9 @@ export default defineConfig(() => ({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   base: './',
+  // Evidence folders contain copied build HTML; they are not application entries.
+  // Fixtures can supply their own explicit entries when starting an isolated server.
+  optimizeDeps: { entries: ['index.html'] },
   define: {
     // 版本号：dev 与构建统一取 package.json 真实版本号（唯一真源）。
     // 2026-09-02 前 dev 模式显示「开发版」（本意为避免反复改号），但副作用是对外文案
@@ -88,7 +91,7 @@ export default defineConfig(() => ({
     // 交付物/产物目录不参与源码热更新监视：封装桌面版时 release/ 会凭空多出数千个
     // Chromium 解压文件，若不忽略会冲垮文件监视器（EBADF）导致 dev 服务器崩溃
     watch: {
-      ignored: ['**/node_modules/**', '**/dist/**', '**/release/**']
+      ignored: ['**/node_modules/**', '**/dist/**', '**/release/**', '**/.workbuddy/**']
     }
   },
   build: {

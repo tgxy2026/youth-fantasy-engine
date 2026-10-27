@@ -11,6 +11,10 @@ export async function getMeta<T>(key: string, def: T): Promise<T> {
 export async function setMeta(key: string, value: unknown) {
   await ops.put('meta', { key, value })
 }
+/** Existence differs from a nullable/unreadable payload; recovery must not overwrite it. */
+export async function hasMeta(key: string): Promise<boolean> {
+  return (await ops.get('meta', key)) !== undefined
+}
 
 // ============ 每日码字统计 ============
 export interface DailyStat { key: string; projectId: string; date: string; words: number }

@@ -18,6 +18,7 @@
  *   3. **库只存结构**：值、正文、图片、密钥一律不进库；写入前按白名单重建对象。
  */
 import * as db from '@/lib/db'
+import { captureSubmissionBoundary } from '@/lib/storage/submissionState'
 import {
   LIBRARY_PREFIX, TEMPLATE_DEF_VERSION,
   libraryKeyOf, type TemplateDef,
@@ -93,7 +94,7 @@ export function structureOf(def: TemplateDef): TemplateDef {
     templateId: String(def.templateId),
     name: String(def.name ?? ''),
     tabId: String(def.tabId ?? ''),
-    origin: def.origin,
+    origin: def.origin ? { ...def.origin } : def.origin,
     groups: (def.groups ?? []).map(g => ({ id: g.id, label: g.label, order: g.order })),
     fields: (def.fields ?? []).map(f => ({
       id: f.id,
@@ -206,10 +207,15 @@ function enqueue<T>(job: () => Promise<T>): Promise<T> {
  * 🔴 冲突：同版本、**内容摘要不同** ⇒ 拒绝（`version-conflict`），并明确给出出路。
  */
 export function publishTemplateDef(def: TemplateDef, opts: { version?: number } = {}): Promise<PublishResult> {
-  return enqueue(() => publishNow(def, opts))
+  const assertCurrent = captureSubmissionBoundary()
+  try {
+    const snapshot = structureOf(def), options = { ...opts }
+    return enqueue(() => publishNow(snapshot, options, assertCurrent))
+  } catch (error) { return Promise.reject(error) }
 }
 
-async function publishNow(def: TemplateDef, opts: { version?: number }): Promise<PublishResult> {
+async function publishNow(def: TemplateDef, opts: { version?: number }, assertCurrent: () => void): Promise<PublishResult> {
+  assertCurrent()
   const clean = structureOf(def)
   if (!clean.templateId || !clean.tabId) {
     return { ok: false, code: 'invalid-def', detail: '模板缺少标识或所属页签，不能发布' }
@@ -230,6 +236,7 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
   }
 
   const idx = await loadLibraryIndex()
+  assertCurrent()
   const entry = idx.entries.find(e => e.templateId === clean.templateId)
 
   // 同 templateId 的页签必须一致：跨页签复用同一个 id 会让"升级到哪个页签"无从判断
@@ -249,15 +256,19 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
       return { ok: false, code: 'bad-version', detail: `版本号必须是 ≥1 的整数（收到 ${String(opts.version)}）` }
     }
     const existing = await loadLibraryVersion(clean.templateId, version)
+    assertCurrent()
     if (existing) {
-      if (existing.contentDigest === digest) {
+      if (existing.contentDigest === digest && entry?.versions.includes(version)) {
         return { ok: true, templateId: clean.templateId, version, created: false }
       }
-      return {
-        ok: false,
-        code: 'version-conflict',
-        detail: `模板 ${clean.templateId} 的第 ${version} 版已发布过且内容不同（已发布版本不可原地覆盖）。`
-          + '请发布为新版本，或用「另存为新模板」换个 templateId。',
+      if (existing.contentDigest !== digest) {
+        if (!entry?.versions.includes(version)) await saveLibraryIndex(idx, existing, assertCurrent)
+        return {
+          ok: false,
+          code: 'version-conflict',
+          detail: `模板 ${clean.templateId} 的第 ${version} 版已发布过且内容不同（已发布版本不可原地覆盖）。`
+            + '请发布为新版本，或用「另存为新模板」换个 templateId。',
+        }
       }
     }
   } else {
@@ -265,6 +276,7 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
     const latest = entry?.latestVersion ?? 0
     if (latest > 0) {
       const rec = await loadLibraryVersion(clean.templateId, latest)
+      assertCurrent()
       if (rec && rec.contentDigest === digest) {
         return { ok: true, templateId: clean.templateId, version: latest, created: false }
       }
@@ -272,7 +284,20 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
     version = latest + 1
   }
 
-  const record: LibraryVersionRecord = {
+  const occupied = await loadLibraryVersion(clean.templateId, version)
+  assertCurrent()
+  if (!occupied) {
+    const exists = await db.hasMeta(libraryKeyOf(clean.templateId, version))
+    assertCurrent()
+    if (exists) return { ok: false, code: 'version-conflict', detail: `第 ${version} 版已有无法读取的记录，已保留且没有覆盖。请先核对个人库，或另存为新模板。` }
+  }
+  if (occupied && occupied.contentDigest !== digest) {
+    // A prior definition write may have succeeded before its index failed. Repair the index,
+    // then reject the conflicting retry instead of overwriting that immutable version.
+    await saveLibraryIndex(idx, occupied, assertCurrent)
+    return { ok: false, code: 'version-conflict', detail: `第 ${version} 版已有不同内容，已恢复库目录。请重新读取个人库后发布新版本，或另存为新模板。` }
+  }
+  const record: LibraryVersionRecord = occupied ?? {
     formatVersion: LIBRARY_FORMAT_VERSION,
     templateId: clean.templateId,
     version,
@@ -283,23 +308,34 @@ async function publishNow(def: TemplateDef, opts: { version?: number }): Promise
     publishedAt: Date.now(),
     def: clean,
   }
-  await db.setMeta(libraryKeyOf(clean.templateId, version), record)
+  if (!occupied) {
+    assertCurrent()
+    await db.setMeta(libraryKeyOf(clean.templateId, version), record)
+    assertCurrent()
+  }
+  await saveLibraryIndex(idx, record, assertCurrent)
+  return { ok: true, templateId: clean.templateId, version, created: !occupied }
+}
 
-  const nextEntries = idx.entries.filter(e => e.templateId !== clean.templateId)
+async function saveLibraryIndex(idx: LibraryIndex, record: LibraryVersionRecord, assertCurrent: () => void) {
+  const { templateId, version } = record, entry = idx.entries.find(e => e.templateId === templateId)
+  const isLatest = version >= (entry?.latestVersion ?? 0)
+  const nextEntries = idx.entries.filter(e => e.templateId !== templateId)
   nextEntries.push({
-    templateId: clean.templateId,
-    name: clean.name,
-    tabId: clean.tabId,
+    templateId,
+    name: isLatest ? record.name : (entry?.name ?? record.name),
+    tabId: record.tabId,
     latestVersion: Math.max(version, entry?.latestVersion ?? 0),
     versions: [...new Set([...(entry?.versions ?? []), version])].sort((a, b) => a - b),
-    updatedAt: record.publishedAt,
+    updatedAt: Math.max(entry?.updatedAt ?? 0, record.publishedAt),
   })
+  assertCurrent()
   await db.setMeta(LIBRARY_INDEX_KEY, {
     formatVersion: LIBRARY_FORMAT_VERSION,
     entries: nextEntries,
   } satisfies LibraryIndex)
 
-  return { ok: true, templateId: clean.templateId, version, created: true }
+  assertCurrent()
 }
 
 /**
