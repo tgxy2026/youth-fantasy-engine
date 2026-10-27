@@ -4,6 +4,7 @@ import { Z } from '@/lib/app/zLayer'
 import type { TabDef, CardRecord } from '@/lib/types'
 import { getCardRecordsFor, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { uid } from '@/lib/app/id'
+import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import {
   Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2,
 } from 'lucide-react'
@@ -327,25 +328,30 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
    *    （本页是创建时间倒序）。名称取本页的名称字段，取不到才用「未命名」。
    */
   const handleFillNew = async (values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
+    if (!owner.current()) return false
     const name = (values[nameKey] ?? '').trim() || `未命名${noun}`
     const newOrder = records.length ? Math.min(...records.map(r => r.order)) - 1 : 0
     const rec: CardRecord = {
-      id: uid(), projectId: getCurrentProjectId(), tabId: tab.id,
+      id: uid(), projectId: owner.projectId, tabId: tab.id,
       name, data: { ...values }, order: newOrder,
     }
     // 同口径：落库失败就不切换选择、也不关弹窗（作者还能改完再提交一次）
     try {
       await saveCardRecord(rec)
     } catch {
-      showToast(`AI 新增${noun}失败，改动没有保存 —— 请重试`, 'error')
+      if (owner.current()) showToast(`AI 新增${noun}失败，改动没有保存 —— 请重试`, 'error')
       return false
     }
+    if (!owner.current()) return false
     setRecords([rec, ...records])
     // 与「新建」同口径（2026-10-19 审计）：切到 AI 新条目之前先冲刷旧草稿，失败就留在原处
     if (!(await switchTo(rec.id, `「${rec.name}」已建好（在列表最上方），但当前这张的改动没能保存 —— 已留在原处，先手动保存一次再切`))) {
+      if (!owner.current()) return false
       setShowFillNew(false)   // 新条目已入库，留着弹窗再提交会建出第二张
       return
     }
+    if (!owner.current()) return false
     setDraft(rec)
     setShowFillNew(false)
   }

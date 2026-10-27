@@ -50,6 +50,7 @@ import {
 import { revertDraftCells, flushDrafts } from '@/components/sheets/tableSheetDraftOps'
 import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
+import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { buildImportRows, type ImportRowResult } from '@/lib/storage/tableIO'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -691,17 +692,20 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   // AI 补全：建行（自动编号）+ 用模型补全的单元格值填充各列（编号列 locked，不覆盖）
   const handleFill = async (values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
     // 🔴 R12：先核基准 —— 生成期间字段定义若变过，旧结果一律作废（不拿旧清单写新库）
     const base = await verifyAiWriteBase()
     if (!base) return false
+    if (!owner.current()) return false
     const data: Record<string, string> = {}
     tab.columns!.forEach(col => { data[col.name] = '' })
     if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
       data[codeCol] = nextAutoCode(tab.id, rows, drafts, codeCol)
     }
-    const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
+    const row: TableRow = { id: uid(), projectId: owner.projectId, tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
     await saveTableRow(row)
-    setRows([...rows, row])
+    if (!owner.current()) return false
+    setRows(list => [...list, row])
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
       if (k === codeCol) continue
@@ -736,7 +740,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *     作者中途手填过的话，补出来的东西就是基于过期事实的）。
    */
   const handleFillRow = async (row: TableRow, values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
     const base = await verifyAiWriteBase()
+    if (!owner.current()) return false
     if (!base) { setFillRow(null); return false }
     const now = rowsRef.current.find(r => r.id === row.id)
     if (!now) {

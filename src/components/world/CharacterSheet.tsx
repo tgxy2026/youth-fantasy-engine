@@ -6,6 +6,7 @@ import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
 import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
+import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import { Plus, Trash2, UserRound, Info, Save, Check, EyeOff, Search } from 'lucide-react'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -527,21 +528,25 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
     // R8：建卡后会自动切到新卡，先把当前卡的脏草稿落库（失败则中止）
     if (await blockedByMigration('ai-writeback')) return false
+    if (!owner.current()) return false
     const accepted = acceptAiValues(values)
     if (!accepted) return false
     if (!await flushCurrentDraft()) return false
+    if (!owner.current()) return false
     const name = (nameStorageKey ? values[nameStorageKey] : '')?.trim() || `未命名${noun}`
     const rec: CardRecord = {
       id: uid(),
-      projectId: getCurrentProjectId(),
+      projectId: owner.projectId,
       tabId: tab.id,
       name,
       data: { ...accepted },
       order: records.length,
     }
     await saveCardRecord(rec)
+    if (!owner.current()) return false
     setRecords(list => [...list, rec])
     setActiveId(rec.id)
     setDraft(rec)

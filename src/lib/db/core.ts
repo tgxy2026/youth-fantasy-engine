@@ -33,10 +33,13 @@ const DB_VERSION = 14
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
 export let currentProjectId = ''
+let projectContextEpoch = 0
 
 export function setCurrentProject(id: string) {
+  if (id !== currentProjectId) projectContextEpoch++
   currentProjectId = id
 }
+export function getProjectContextEpoch() { return projectContextEpoch }
 export function getCurrentProjectId() {
   return currentProjectId
 }

@@ -18,13 +18,24 @@ const fixtureHash=async()=>{
 }
 const fixtureFingerprint=await fixtureHash()
 const report={kind:'frontend-candidate-submission',at:new Date().toISOString(),run,fingerprint,fixtureFingerprint,
-  templateSeed:'only initial result state, not generation or backend success',checks:[],errors:[],modelRequests:[],status:'running'}
+  templateSeed:'only initial result state, not generation or backend success',validationPause:'before actual validation; its result and writes are not mocked',checks:[],errors:[],assetFailures:[],consoleErrors:[],modelRequests:[],status:'running'}
 const check=(name,passed,details)=>{report.checks.push({name,passed:!!passed,details});console.log(`${passed?'PASS':'FAIL'} ${name}`);if(!passed)throw Error(name+': '+JSON.stringify(details))}
 let server,browser,page,seedHits=0
 try{
   server=await createServer({root,cacheDir:path.join(run,'vite-cache'),logLevel:'error',server:{host:'localhost',port:0},plugins:[{
     name:'candidate-ui-initial-result-fixture',enforce:'pre',transform(code,id){
-      if(!id.replaceAll('\\','/').split('?')[0].endsWith('/src/components/ai/AITemplateFill.tsx'))return
+      const file=id.replaceAll('\\','/').split('?')[0]
+      if(file.endsWith('/src/components/world/CharacterSheet.tsx')){
+        const from="if (await blockedByMigration('ai-writeback')) return false"
+        if(code.split(from).length!==2)throw Error('Character validation pause no longer matches')
+        return code.replace(from,`if (window.__candidateOwnerPause?.kind === 'card') { window.__candidateOwnerPause.hits++; await window.__candidateOwnerPause.promise }\n    ${from}`)
+      }
+      if(file.endsWith('/src/components/sheets/useTableSheetModel.ts')){
+        const from='const base = await verifyAiWriteBase()'
+        if(!code.includes(from))throw Error('Table validation pause no longer matches')
+        return code.replaceAll(from,`if (window.__candidateOwnerPause?.kind === 'table') { window.__candidateOwnerPause.hits++; await window.__candidateOwnerPause.promise }\n    ${from}`)
+      }
+      if(!file.endsWith('/src/components/ai/AITemplateFill.tsx'))return
       const from='const [result, setResult] = useState<Record<string, string> | null>(null)'
       if(code.split(from).length!==2)throw Error('Candidate initial-result fixture no longer matches source')
       seedHits++
@@ -40,6 +51,9 @@ try{
     return url.startsWith(origin+'/')?route.continue():route.abort()
   })
   page=await context.newPage();page.setDefaultTimeout(120000);page.on('pageerror',error=>report.errors.push(error.message))
+  page.on('requestfailed',request=>{const url=new URL(request.url());if(url.origin===origin)report.assetFailures.push({path:url.pathname,error:request.failure()?.errorText})})
+  page.on('response',response=>{const url=new URL(response.url());if(url.origin===origin&&response.status()>=400)report.assetFailures.push({path:url.pathname,status:response.status()})})
+  page.on('console',message=>{if(message.type()==='error')report.consoleErrors.push(message.text().replace(/https?:\/\/\S+/g,'[url]').replace(/[A-Z]:[\\/][^\s,)]+/g,'[path]').slice(0,1500))})
   await page.goto(origin+'/tests/browser/candidate-submission.html',{waitUntil:'commit'})
   await page.getByRole('button',{name:'打开模板候选',exact:true}).click();page.setDefaultTimeout(15000)
   const dialog=page.getByRole('dialog',{name:'模板候选采用测试',exact:true})
@@ -160,6 +174,54 @@ try{
     return created.length===1&&rows.length===JSON.parse(original).length+1&&created[0].data['二、场景细纲::场景1']===candidate
       &&JSON.stringify(rows.filter(row=>row.id!==created[0].id))===original&&window.__candidateSuccessfulPuts===1
   },{original,candidate}))
+  for(const actor of [{kind:'card',tabId:'char-main',group:'角色管理',name:'主要角色'},
+    {kind:'table',tabId:'races',group:'世界构建',name:'种族生物'}]){
+    if(!await nav.getByRole('button',{name:actor.name,exact:true}).isVisible())await nav.getByRole('button',{name:actor.group,exact:true}).click()
+    await nav.getByRole('button',{name:actor.name,exact:true}).click()
+    const openActor=async()=>{
+      if(actor.kind==='card'){
+        await page.getByRole('button',{name:'档案工具',exact:true}).click()
+        await page.getByRole('group',{name:'档案工具选项',exact:true}).getByRole('button',{name:'AI 新增角色',exact:true}).click()
+      }else await page.getByRole('button',{name:'AI 新增',exact:true}).click()
+    }
+    const rows=()=>page.evaluate(async actor=>{
+      const db=await import('/src/lib/db.ts'),pid=db.getCurrentProjectId()
+      return JSON.stringify(await(actor.kind==='card'?db.getCardRecordsFor(pid,actor.tabId):db.getTableRowsFor(pid,actor.tabId)))
+    },actor)
+    const beforeControl=JSON.parse(await rows())
+    await openActor()
+    const candidateDialog=page.getByRole('dialog',{name:`AI 新增 · ${actor.name}`,exact:true});await candidateDialog.waitFor()
+    await candidateDialog.getByRole('button',{name:'采用候选',exact:true}).click();await candidateDialog.waitFor({state:'hidden'})
+    const pageSave=page.locator('main header').getByRole('button',{name:'保存',exact:true})
+    if(await pageSave.count()&&await pageSave.isEnabled()){
+      await pageSave.click()
+      await page.waitForFunction(()=>[...document.querySelectorAll('main header button')].some(button=>button.title==='无未保存的改动'&&button.disabled))
+    }
+    const baseline=await rows()
+    check(actor.kind+' real stable-owner adoption creates exactly one record',JSON.parse(baseline).length===beforeControl.length+1)
+    await page.evaluate(actor=>{
+      let release;const promise=new Promise(resolve=>{release=resolve})
+      window.__candidateOwnerPause={kind:actor.kind,promise,release,hits:0}
+      window.__candidateOwnerWrites=0;const put=IDBObjectStore.prototype.put
+      const store=actor.kind==='card'?'cardRecords':'tableRows'
+      window.__restoreCandidateOwnerPut=()=>{IDBObjectStore.prototype.put=put}
+      IDBObjectStore.prototype.put=function(...args){if(this.name===store)window.__candidateOwnerWrites++;return put.apply(this,args)}
+    },actor)
+    await openActor();await candidateDialog.waitFor()
+    await candidateDialog.getByRole('button',{name:'采用候选',exact:true}).click()
+    await page.waitForFunction(()=>window.__candidateOwnerPause.hits===1)
+    await page.evaluate(async()=>{
+      const db=await import('/src/lib/db.ts'),pid=db.getCurrentProjectId()
+      db.setCurrentProject('temporary-owner-fixture');db.setCurrentProject(pid)
+      window.__candidateOwnerPause.release()
+    })
+    await changed.getByRole('alert').waitFor()
+    check(actor.kind+' A-B-A during real validation cannot create a record or apply into a replacement view',await rows()===baseline
+      &&await page.evaluate(()=>window.__candidateOwnerWrites===0&&window.__candidateOwnerPause.hits===1)
+      &&await changed.getByRole('button',{name:'采用候选',exact:true}).count()===0)
+    await changed.getByRole('button',{name:'关闭',exact:true}).last().click();await changed.waitFor({state:'hidden'})
+    await page.evaluate(()=>{window.__restoreCandidateOwnerPut();delete window.__candidateOwnerPause})
+  }
   check('no model requests',report.modelRequests.length===0,report.modelRequests)
   check('no browser errors',report.errors.length===0,report.errors)
   report.status='passed'

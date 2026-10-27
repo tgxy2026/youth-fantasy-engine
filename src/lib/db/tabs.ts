@@ -9,8 +9,9 @@ export async function getFormData(tabId: string): Promise<Record<string, string>
   return rec?.data ?? {}
 }
 export async function saveFormData(tabId: string, data: Record<string, string>) {
-  await ops.put('formData', { tabId: `${currentProjectId}::${tabId}`, data } as FormData)
-  touchProject(currentProjectId)
+  const store = ops, pid = currentProjectId
+  await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
+  touchProject(pid, store)
 }
 
 /**
@@ -30,8 +31,9 @@ export async function getFormDataFor(pid: string, tabId: string): Promise<Record
 /** 按**指定项目 id** 写表单数据（同上；只在真有变化时调用，避免无谓 touchProject） */
 export async function saveFormDataFor(pid: string, tabId: string, data: Record<string, string>) {
   if (!pid || !tabId) return
-  await ops.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
-  touchProject(pid)
+  const store = ops
+  await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
+  touchProject(pid, store)
 }
 
 // ============ 表格行 ============
@@ -58,8 +60,9 @@ export async function getTableRowsFor(pid: string, tabId: string): Promise<Table
     .sort((a, b) => a.order - b.order)
 }
 export async function saveTableRow(row: TableRow) {
-  await ops.put('tableRows', { ...row, projectId: row.projectId || currentProjectId, updatedAt: Date.now() })
-  touchProject(currentProjectId)
+  const store = ops, pid = row.projectId || currentProjectId
+  await store.put('tableRows', { ...row, projectId: pid, updatedAt: Date.now() })
+  touchProject(pid, store)
 }
 export async function deleteTableRow(id: string) {
   await ops.del('tableRows', id)

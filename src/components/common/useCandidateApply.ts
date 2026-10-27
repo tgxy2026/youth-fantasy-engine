@@ -1,12 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { getCurrentProjectId } from '@/lib/db'
-import { getStorageContextEpoch } from '@/lib/storage/contextEpoch'
+import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { createCandidateApplyGuard, type CandidateSubmit } from '@/lib/ai/candidateApply'
 
-export function candidateApplyContext() {
-  const account = (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id ?? ''
-  return JSON.stringify([getCurrentProjectId(), getStorageContextEpoch(), account])
-}
+export { candidateApplyContext } from '@/lib/ai/candidateContext'
 export function useCandidateApply(submit: CandidateSubmit, onClose: () => void) {
   const live = useRef({ submit, onClose }); live.current = { submit, onClose }
   const context = useRef(candidateApplyContext())
