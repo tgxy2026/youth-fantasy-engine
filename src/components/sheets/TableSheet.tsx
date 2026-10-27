@@ -51,6 +51,7 @@ import { usePanScroll } from '@/lib/app/usePanScroll'
 import { useRowWindow } from '@/components/sheets/useRowWindow'
 import { foldVh } from '@/lib/settings/theme'
 import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
+import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
 
 interface Props {
   tab: TabDef
@@ -344,6 +345,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rows/totalWidth 变化会改变 scrollWidth，需重算
   }, [syncScrollHint, rows.length, totalWidth, tab.id])
 
+  if (model.loadError) return <div role="alert" className="rounded-xl border border-danger/40 p-5 text-13 text-ink-200">
+    <h1 className="mb-2 font-semibold">暂时无法读取{tab.name}</h1>
+    <p className="mb-3 text-ink-400">请确认存储连接后重新读取。</p>
+    <Button onClick={model.retry} variant="secondary">重试读取表格</Button>
+  </div>
   if (!loaded) return <LoadingState />
 
   return (
@@ -390,7 +396,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
-            <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
+            <Check size={11} className="inline -mt-0.5 mr-0.5" />已提交
           </span>
           <span className="text-10 text-ink-500">
             {tab.id === 'relations'
@@ -584,6 +590,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
 
       {/* history / timeline 页签可切到时间轴视图；人物关系可切到关系图 */}
+      <DraftSaveFeedback state={model.saveState} dirty={dirtyKeys.length > 0} onRetry={() => void saveAll()} />
       {viewMode === 'atlas' && isAtlasCapable ? (
         /* ============ 3.1.3 图鉴视图（卡片墙 + 详情，实现已拆到 components/atlas） ============ */
         <AtlasView
@@ -745,7 +752,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
       )}
 
-      {dirtyKeys.length > 0 && !isMaster && (
+      {dirtyKeys.length > 0 && !isMaster && viewMode !== 'atlas' && (
         <SaveFab onClick={saveAll} label={`保存 ${dirtyKeys.length} 行修改`} />
       )}
 

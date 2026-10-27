@@ -258,6 +258,7 @@ export default function AtlasDetail({
             )}
           </div>
           <button
+            data-atlas-close
             type="button"
             onClick={onClose}
             className="shrink-0 flex items-center gap-1 text-11 text-ink-400 hover:text-ink-100 px-2 py-1 rounded-lg border border-ink-700 hover:border-ink-600 transition-colors"

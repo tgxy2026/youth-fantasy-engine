@@ -28,6 +28,7 @@ import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { usePaneWorkspaceScroll } from '@/components/common/usePaneWorkspaceScroll'
 import AtlasCard from './AtlasCard'
 import AtlasDetail from './AtlasDetail'
+import { useAtlasDetailFocus } from './useAtlasDetailFocus'
 
 interface Props {
   projectId: string
@@ -105,7 +106,11 @@ export default function AtlasView({
   const capture = usePaneWorkspaceScroll({ pageId, detailPageId: pageId,
     ownerKey: view.ownerKey, generation: view.generation, ready: true, query: '',
     selectedId, objectId: selectedId, targetId: focusRowId ?? null, listRef, detailRef, isCurrent: view.isCurrent })
-  const select = (id: string | null) => { capture(); setSelectedId(id) }
+  const restoreFocus = useAtlasDetailFocus(narrow, selectedId, listRef, detailRef)
+  const select = (id: string | null) => {
+    capture(); setSelectedId(id)
+    if (id === null && narrow && selectedId) restoreFocus(selectedId)
+  }
   const remember = view.remember
   useEffect(() => { remember(selectedId) }, [selectedId, remember])
   useEffect(() => {
@@ -214,7 +219,8 @@ export default function AtlasView({
   return (
     <div ref={hostRef} className="relative flex gap-4 min-h-0" style={{ height: foldVh('62vh') }}>
       {/* 列表：自己滚（与右侧详情各滚各的，方案 §3.1） */}
-      <div ref={listRef} data-atlas-list className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1">
+      <div ref={listRef} data-atlas-list tabIndex={-1} role="region" aria-label="图鉴条目"
+        aria-hidden={narrow && !!selectedId ? true : undefined} className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1">
         {rows.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-2 text-ink-500">

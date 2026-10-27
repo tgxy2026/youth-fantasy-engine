@@ -102,9 +102,13 @@ try{
     &&afterZoom[kind]?.id===beforeZoom[kind].id&&Math.abs(afterZoom[kind].offset-beforeZoom[kind].offset)<8),{beforeZoom,afterZoom})
   await page.setViewportSize({width:760,height:740})
   const back=page.getByTitle('返回图鉴列表',{exact:true});await back.waitFor()
+  await page.screenshot({path:path.join(run,'atlas-narrow.png'),animations:'disabled'})
+  check('the covered narrow card wall is inert and hidden from accessibility navigation',await list().evaluate(el=>el.inert&&el.getAttribute('aria-hidden')==='true'))
   check('a narrow overlay keeps the actual selected detail and return control inside the main viewport',await selected()==='atlas-view-60'
     &&await back.evaluate(button=>{const box=button.getBoundingClientRect(),main=document.querySelector('main').getBoundingClientRect();return box.left>=main.left&&box.right<=main.right&&box.bottom<=innerHeight}))
   await back.click();await detail().waitFor({state:'hidden'})
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('data-workspace-record')==='atlas-view-60')
+  check('narrow return restores keyboard focus to the original card',await card(60).evaluate(el=>el===document.activeElement&&!el.closest('[inert]')))
   check('closing a narrow detail deliberately restores the no-selection list',await page.locator('[data-atlas-list] [aria-current="true"]').count()===0)
   await page.setViewportSize({width:1560,height:900});await page.evaluate(async()=>(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true}))
   await mode('表格');await filter().waitFor();await mode('图鉴');await list().waitFor()
@@ -123,6 +127,100 @@ try{
     return !JSON.stringify(records).includes('现场草稿不得进入视图缓存')&&!JSON.stringify(records).includes('只在隔离数据中的长资料内容')
   }))
   await page.screenshot({path:path.join(run,'atlas-workspace.png'),animations:'disabled'})
+  await card(60).click();await detail().waitFor();await edit.click()
+  const failedDraft='表格离页失败保留的草稿'
+  await input.fill(failedDraft);await input.evaluate(el=>{el.dataset.tableOwnerDom='same'})
+  check('atlas editing keeps the header and detail save controls without an overlapping save bubble',await page.getByRole('button',{name:/^保存 \d+ 行修改$/}).count()===0
+    &&await page.locator('main header').getByRole('button',{name:'保存',exact:true}).isVisible()
+    &&await page.locator('main aside footer').getByRole('button',{name:'保存',exact:true}).isVisible())
+  await page.evaluate(()=>{
+    const put=IDBObjectStore.prototype.put
+    window.__restoreTableFailure=()=>{IDBObjectStore.prototype.put=put}
+    IDBObjectStore.prototype.put=function(...args){if(this.name==='tableRows')throw new DOMException('isolated table fixture','QuotaExceededError');return put.apply(this,args)}
+  })
+  await dashboard();await page.locator('[data-draft-save-feedback="error"]').waitFor();await page.waitForTimeout(4500)
+  await page.screenshot({path:path.join(run,'table-save-failure.png'),animations:'disabled'})
+  check('failed table leave preserves the page draft DOM and persistent retry feedback',await input.inputValue()===failedDraft
+    &&await input.getAttribute('data-table-owner-dom')==='same'&&await page.getByRole('heading',{name:'种族生物',exact:true}).isVisible())
+  await page.getByRole('button',{name:'切换项目',exact:true}).click()
+  check('failed table project exit also retains its original project and editable draft',await input.inputValue()===failedDraft
+    &&await page.evaluate(async pid=>(await import('/src/lib/db.ts')).getCurrentProjectId()===pid,fixture.projectId))
+  await page.evaluate(()=>window.__restoreTableFailure())
+  await page.getByRole('button',{name:'重试保存',exact:true}).click()
+  await page.waitForFunction(()=>!document.querySelector('[data-draft-save-feedback="error"]'))
+  check('explicit table retry persists the retained draft before clearing the failure',await page.evaluate(async()=>Object.values((await(await import('/src/lib/db.ts')).getTableRows('races')).find(row=>row.id==='atlas-view-60').data).includes('表格离页失败保留的草稿')))
+  await page.evaluate(()=>{
+    const add=IDBRequest.prototype.addEventListener,put=IDBObjectStore.prototype.put,queue=[]
+    window.__tableDelayed=0;window.__tableSerialPuts=0
+    IDBObjectStore.prototype.put=function(...args){if(this.name==='tableRows')window.__tableSerialPuts++;return put.apply(this,args)}
+    IDBRequest.prototype.addEventListener=function(type,listener,...rest){
+      if(type==='success'&&this.source instanceof IDBObjectStore&&this.source.name==='tableRows')return add.call(this,type,event=>{
+        window.__tableDelayed++;queue.push(()=>typeof listener==='function'?listener.call(this,event):listener.handleEvent(event))
+      },...rest)
+      return add.call(this,type,listener,...rest)
+    }
+    window.__releaseTableReceipt=()=>{IDBRequest.prototype.addEventListener=add;for(const release of queue.splice(0))release()}
+    window.__restoreTableCounter=()=>{IDBObjectStore.prototype.put=put}
+  })
+  await input.fill('手动保存中的旧表格快照');await save.click()
+  await page.waitForFunction(()=>window.__tableDelayed>0);await input.fill('离页屏障必须保存的新表格草稿')
+  await dashboard()
+  check('page leave waits for the in-flight table snapshot without losing newer input',await input.inputValue()==='离页屏障必须保存的新表格草稿'
+    &&await page.evaluate(()=>window.__tableSerialPuts===1))
+  await page.evaluate(()=>window.__releaseTableReceipt());await page.getByRole('heading',{name:'写作面板',exact:true}).waitFor()
+  const serial=await page.evaluate(async()=>({puts:window.__tableSerialPuts,
+    latestStored:Object.values((await(await import('/src/lib/db.ts')).getTableRows('races')).find(row=>row.id==='atlas-view-60').data).includes('离页屏障必须保存的新表格草稿')}))
+  check('manual and leave saves serialize exactly two real writes and retain the latest stored value',serial.puts===2&&serial.latestStored,serial)
+  await page.evaluate(()=>window.__restoreTableCounter())
+  await enter();await detail().waitFor();await edit.click();await input.fill('不可补写进替换后端的旧私密草稿')
+  await page.evaluate(async()=>{
+    const db=await import('/src/lib/db.ts'),core=await import('/src/lib/db/core.ts'),original=core.ops,pid=db.getCurrentProjectId()
+    const isolated=await new Promise((resolve,reject)=>{const request=indexedDB.open('isolated-table-owner-records',1)
+      request.onupgradeneeded=()=>{request.result.createObjectStore('tableRows',{keyPath:'id'});request.result.createObjectStore('projects',{keyPath:'id'})}
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})
+    const request=(store,mode,operation)=>new Promise((resolve,reject)=>{
+      const tx=isolated.transaction(store,mode),req=operation(tx.objectStore(store));let value
+      req.onsuccess=()=>{value=req.result};tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)
+    })
+    await request('projects','readwrite',store=>store.put({id:pid,updatedAt:1}))
+    await request('tableRows','readwrite',store=>store.put({id:'replacement-race',projectId:pid,tabId:'races',data:{名称:'替换后端的隔离记录',编号:'Z9000'},order:0}))
+    let release;const gate=new Promise(resolve=>{release=resolve});let delayed=true,hits=0,puts=0,failing=false
+    const alternate={...original,
+      getAll:async store=>store==='tableRows'?request(store,'readonly',s=>s.getAll()):original.getAll(store),
+      get:async(store,key)=>['tableRows','projects'].includes(store)?request(store,'readonly',s=>s.get(key)):original.get(store,key),
+      put:async(store,value)=>{if(['tableRows','projects'].includes(store)){if(store==='tableRows')puts++;return request(store,'readwrite',s=>s.put(value))}return original.put(store,value)},
+      getAllByIndex:async(store,index,value)=>{
+        if(store!=='tableRows')return original.getAllByIndex(store,index,value)
+        if(failing)throw new Error('isolated replacement record read failure')
+        const rows=(await request(store,'readonly',s=>s.getAll())).filter(row=>row[index]===value)
+        if(delayed){hits++;await gate}return rows
+      },
+    }
+    window.__tableOwnerFixture={original,alternate,release,stopDelay:()=>{delayed=false},failReads:value=>{failing=value},hits:()=>hits,puts:()=>puts,
+      originalRow:()=>original.get('tableRows','atlas-view-60'),replacementRows:()=>request('tableRows','readonly',s=>s.getAll())}
+    db.setStoreOps(alternate)
+  })
+  await page.waitForFunction(()=>window.__tableOwnerFixture.hits()>0)
+  check('real backend invalidation hides the old table while the replacement records are loading',await detail().count()===0
+    &&!(await page.locator('main').innerText()).includes('不可补写进替换后端的旧私密草稿'))
+  await page.evaluate(async()=>{const db=await import('/src/lib/db.ts');db.setStoreOps(window.__tableOwnerFixture.original);window.__tableOwnerFixture.release();window.__tableOwnerFixture.stopDelay()})
+  await list().waitFor();await card(60).waitFor();await page.waitForTimeout(150)
+  check('a late replacement read cannot overwrite a restored owner or flush the old private draft',await page.locator('[data-workspace-record="replacement-race"]').count()===0
+    &&await page.evaluate(async()=>window.__tableOwnerFixture.puts()===0&&!Object.values((await window.__tableOwnerFixture.originalRow()).data).includes('不可补写进替换后端的旧私密草稿')))
+  await page.evaluate(async()=>{window.__tableOwnerFixture.failReads(true);(await import('/src/lib/db.ts')).setStoreOps(window.__tableOwnerFixture.alternate)})
+  await page.getByRole('heading',{name:'暂时无法读取种族生物',exact:true}).waitFor()
+  check('replacement record read failure exposes a real retry while keeping old records out of the page',await card(60).count()===0
+    &&await page.getByRole('button',{name:'重试读取表格',exact:true}).isEnabled())
+  await page.evaluate(()=>window.__tableOwnerFixture.failReads(false));await page.getByRole('button',{name:'重试读取表格',exact:true}).click()
+  await page.locator('[data-workspace-record="replacement-race"]').waitFor()
+  check('explicit read retry loads the replacement real IDB records without receiving old drafts',await card(60).count()===0
+    &&await page.evaluate(async()=>window.__tableOwnerFixture.puts()===0&&(await window.__tableOwnerFixture.replacementRows()).length===1))
+  await page.evaluate(async()=>(await import('/src/lib/db.ts')).setStoreOps(window.__tableOwnerFixture.original))
+  await card(60).waitFor();await card(60).click();await detail().waitFor();await edit.click();await input.fill('项目退出前提交给原项目的草稿')
+  await page.getByRole('button',{name:'切换项目',exact:true}).click()
+  await page.waitForFunction(async()=>(await import('/src/lib/db.ts')).getCurrentProjectId()==='')
+  check('successful project exit saves to the bound project before the active project is cleared',await page.evaluate(async()=>Object.values((await window.__tableOwnerFixture.originalRow()).data).includes('项目退出前提交给原项目的草稿')))
+  await page.screenshot({path:path.join(run,'table-owner-exit.png'),animations:'disabled'})
   check('no model requests',report.modelRequests.length===0,report.modelRequests);check('no browser errors',report.errors.length===0,report.errors);report.status='passed'
 }catch(error){report.status='failed';report.failure=error.stack||String(error);await page?.screenshot({path:path.join(run,'failure.png'),fullPage:true,animations:'disabled'}).catch(()=>{})}
 finally{

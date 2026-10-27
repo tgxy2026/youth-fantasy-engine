@@ -13,6 +13,16 @@ import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 
 export type DraftMap = Record<string, Record<string, string>>
 
+/** Commit only the submitted cells; edits made during the write stay in the shared draft. */
+export function commitTableDrafts(rows: readonly TableRow[], current: DraftMap, submitted: DraftMap) {
+  const remaining: DraftMap = {}
+  for (const [id, cells] of Object.entries(current)) {
+    const next = Object.fromEntries(Object.entries(cells).filter(([key, value]) => submitted[id]?.[key] !== value))
+    if (Object.keys(next).length) remaining[id] = next
+  }
+  return { rows: rows.map(row => submitted[row.id] ? { ...row, data: { ...row.data, ...submitted[row.id] } } : row), drafts: remaining }
+}
+
 /**
  * 冲刷一批待保存草稿（切页签 / 卸载时的静默落库）。
  *

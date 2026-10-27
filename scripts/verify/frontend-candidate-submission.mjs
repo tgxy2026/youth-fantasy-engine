@@ -215,11 +215,12 @@ try{
       db.setCurrentProject('temporary-owner-fixture');db.setCurrentProject(pid)
       window.__candidateOwnerPause.release()
     })
-    await changed.getByRole('alert').waitFor()
+    if(actor.kind==='card')await changed.getByRole('alert').waitFor()
+    else await candidateDialog.waitFor({state:'hidden'})
     check(actor.kind+' A-B-A during real validation cannot create a record or apply into a replacement view',await rows()===baseline
       &&await page.evaluate(()=>window.__candidateOwnerWrites===0&&window.__candidateOwnerPause.hits===1)
-      &&await changed.getByRole('button',{name:'采用候选',exact:true}).count()===0)
-    await changed.getByRole('button',{name:'关闭',exact:true}).last().click();await changed.waitFor({state:'hidden'})
+      &&(actor.kind==='card'?await changed.getByRole('button',{name:'采用候选',exact:true}).count()===0:!await candidateDialog.isVisible()))
+    if(actor.kind==='card'){await changed.getByRole('button',{name:'关闭',exact:true}).last().click();await changed.waitFor({state:'hidden'})}
     await page.evaluate(()=>{window.__restoreCandidateOwnerPut();delete window.__candidateOwnerPause})
   }
   check('no model requests',report.modelRequests.length===0,report.modelRequests)
