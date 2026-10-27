@@ -1,14 +1,17 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef, CardRecord } from '@/lib/types'
 import { CARD_TABLE_REF_FIELDS, type VisCtx } from '@/lib/schema'
-import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
+import { getCardRecords, getCardRecordsFor, saveCardRecord, deleteCardRecord, getCurrentProjectId } from '@/lib/db'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
-import { captureCandidateOwner } from '@/lib/ai/candidateContext'
+import { candidateApplyContext, captureCandidateOwner } from '@/lib/ai/candidateContext'
+import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
-import { Plus, Trash2, UserRound, Info, Save, Check, EyeOff, Search } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, EyeOff, Search } from 'lucide-react'
+import { useCardDraftSave } from './useCardDraftSave'
+import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
 import CharacterTools from '@/components/world/CharacterTools'
@@ -110,13 +113,21 @@ interface Props {
   ctx?: VisCtx
 }
 
-export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNavigate, onNavigateReference, ctx = { type: 'full', features: [] } }: Props) {
+export default function CharacterSheet(props: Props) {
+  useSyncExternalStore(subscribeStorageContext, getStorageContextEpoch)
+  return <CharacterSheetWorkspace key={candidateApplyContext()} {...props} />
+}
+
+function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate, onNavigateReference, ctx = { type: 'full', features: [] } }: Props) {
+  const [draftStorageOwner] = useState(() => {
+    const projectId = getCurrentProjectId()
+    return { projectId, ...captureStorageWriteOwner(projectId) }
+  })
   const [records, setRecords] = useState<CardRecord[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   // 当前编辑中的本地副本（dirty 状态）
   const [draft, setDraft] = useState<CardRecord | null>(null)
-  const [saved, setSaved] = useState(false)
   /** B7：立绘压缩中（压缩是异步的，要防重复点击） */
   const [portraitBusy, setPortraitBusy] = useState(false)
   const portraitRequest = useRef({ version: 0 })
@@ -126,9 +137,6 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     setPortraitBusy(false)
     return () => { request.version++ }
   }, [activeId, tab.id])
-  const [saving, setSaving] = useState(false)
-  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
-  useEffect(() => () => clearTimeout(savedTimer.current), [])
   // AI 新增弹窗（原「AI 补全」，2026-10-03 改名 —— 它实际是凭空建一张新卡）
   const [showFill, setShowFill] = useState(false)
   // AI 补全弹窗（在**当前这张卡**上补空白字段，已填的保留）
@@ -388,12 +396,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    草稿仍在内存里（切页签会丢，但那是迁移场景下唯一不制造脏数据的选择）。
    */
   const saveDraftIfAllowed = useCallback(async (rec: CardRecord): Promise<boolean> => {
-    const owner = captureStorageWriteOwner(rec.projectId)
-    if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
-    if (!owner.current()) return false
-    await saveCardRecord(rec)
-    return owner.current()
-  }, [])
+    const owner = draftStorageOwner
+    if (!owner.current() || rec.projectId !== owner.projectId) return false
+    try {
+      if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
+      if (!owner.current()) return false
+      const records = await getCardRecordsFor(rec.projectId, rec.tabId)
+      if (!owner.current() || !records.some(record => record.id === rec.id)) return false
+      await saveCardRecord(rec)
+      return owner.current()
+    } catch { return false }
+  }, [draftStorageOwner])
 
   /** 用户主动触发的写入：冲突要**说出来**，并把下一步做法一起给出 */
   const blockedByMigration = useCallback(async (source: TabWriteSource): Promise<boolean> => {
@@ -419,6 +432,17 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   // 用 ref 持有最新状态，避免切换页签时因 effect 闭包过期而丢失未保存草稿
   const draftRef = useRef(draft)
   const dirtyRef = useRef(false)
+  const selectionRequest = useRef(0)
+  useEffect(() => () => { selectionRequest.current++ }, [])
+  const manualSave = useCardDraftSave({
+    read: () => ({ value: draftRef.current, dirty: dirtyRef.current }),
+    committed: value => {
+      setRecords(list => list.map(record => record.id === value.id ? value : record))
+      if (draftRef.current !== value) return false
+      dirtyRef.current = false
+      return true
+    },
+  })
   const tabIdRef = useRef(tab.id)
   const prevActiveRef = useRef<string | null>(null)
   useEffect(() => { draftRef.current = draft }, [draft])
@@ -502,39 +526,14 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    （闭包里的旧数组）会**整个覆盖**掉本次同步 —— 表现为「库里已是新值、界面还是旧值」，
    *    作者再改一处保存就把刚才的编辑写回旧值。这是 2026-10-16 自审抓出的 R8 残留。
    */
-  const flushCurrentDraft = useCallback(async (silent = false): Promise<boolean> => {
-    const cur = draftRef.current
-    if (!dirtyRef.current || !cur) return true
-    const owner = captureCandidateOwner()
-    // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）—— 不写 = 不制造串字段的脏数据
-    const conflict = await guardTabWrite(cur.projectId, cur.tabId, 'autosave')
-    if (conflict) {
-      if (!silent) showToast(`${conflict.message}${conflict.hint}`, 'error')
-      return false
-    }
-    if (!owner.current()) return false
-    try {
-      await saveCardRecord(cur)
-      if (!owner.current()) return false
-      // 同步内存副本：否则切回来时用库里的旧记录回灌，刚保存的编辑又「消失」
-      setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
-      // 立刻归零，免得切卡 effect 把这张卡当成「还有脏草稿」再存一次
-      if (draftRef.current !== cur) {
-        if (!silent) showToast('保存期间又有修改，请保存最新草稿后再切换', 'error')
-        return false
-      }
-      dirtyRef.current = false
-      return true
-    } catch (e) {
-      if (!silent) {
-        showToast(
-          `保存当前${nounCard}失败，已取消本次操作 —— 请先手动保存后重试：${e instanceof Error ? e.message : String(e)}`,
-          'error',
-        )
-      }
-      return false
-    }
-  }, [nounCard])
+  const flushCurrentDraft = manualSave.save
+  const selectCard = async (id: string) => {
+    const request = ++selectionRequest.current, owner = captureCandidateOwner()
+    if (id === draftRef.current?.id) return
+    if (!await flushCurrentDraft()) return
+    if (!owner.current() || request !== selectionRequest.current) return
+    setActiveId(id)
+  }
 
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
   const handleFill = async (values: Record<string, string>) => {
@@ -639,7 +638,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const moveCardTo = async (to: TabDef) => {
     const cur = draftRef.current
     if (!cur) throw new Error('当前没有选中的角色卡')
-    if (!await flushCurrentDraft(true)) {
+    if (!await flushCurrentDraft()) {
       throw new Error(`当前${nounCard}未能保存，移动已取消 —— 请先手动保存后重试`)
     }
     const latest = draftRef.current ?? cur
@@ -675,7 +674,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
     // R8：导入后会自动切到第一张新卡，先把当前卡的脏草稿落库。
     // 🔴 失败必须**抛错**，不能静默 return —— 弹窗的 apply() 只在 onAdd 抛错时才不关窗；
     //    直接 return 会让它照常 onClose()，粘贴的内容连同「重试」的机会一起没了。
-    if (!await flushCurrentDraft(true)) {
+    if (!await flushCurrentDraft()) {
       throw new Error('当前角色卡未能保存，导入已取消 —— 请先手动保存后重试')
     }
     const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid)
@@ -755,7 +754,6 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const updateField = (path: string, value: string) => {
     if (!draft) return
     setDraft({ ...draft, data: { ...draft.data, [path]: value } })
-    setSaved(false)
   }
 
   // memo 化：避免每次渲染都对 draft 与源记录做两次完整 JSON 序列化
@@ -767,25 +765,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   // dirty 在上方 memo 声明；dirtyRef 已在组件顶部声明，这里只做同步
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
-  const save = useCallback(async () => {
-    if (!draft || !dirty) return
-    const owner = captureCandidateOwner()
-    // 3.2.0：迁移窗口内不写旧结构（方案 §3.6）；作者可据此决定等迁移完再存
-    if (await blockedByMigration('draft')) return
-    if (!owner.current()) return
-    setSaving(true)
-    try {
-      await saveCardRecord(draft)
-      if (!owner.current()) return
-      setRecords(list => list.map(r => (r.id === draft.id ? draft : r)))
-      setSaved(draftRef.current === draft)
-      savedTimer.current = setTimeout(() => setSaved(false), 1500)
-    } catch (e) {
-      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setSaving(false)
-    }
-  }, [draft, dirty, blockedByMigration])
+  const save = manualSave.save
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)
@@ -819,16 +799,13 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
             ⇒ 窄窗口下标题被压成一条竖缝（本页需 992px，1000px 窗口只有 728px）。
             改成「放不下就折行」：左栏 flex-1 + 保底 14rem；工具条 ml-auto + 内部可折行。 */}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
-            <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
-          </span>
           <Button variant="toggle" selected={dirty}
             onClick={save}
-            disabled={!dirty || saving}
+            disabled={!dirty || manualSave.saving}
             className="font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存的改动'}
           >
-            <Save size={12} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
+            <Save size={12} /> {manualSave.saving ? '提交中…' : (dirty ? '保存' : '已提交')}
           </Button>
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
@@ -856,6 +833,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
           )}
         </div>
       </header>
+      <DraftSaveFeedback state={manualSave} dirty={dirty} onRetry={() => void save()} />
 
       {/* The App workspace supplies a definite height; header wrapping consumes real space. */}
       <MasterDetail>
@@ -879,7 +857,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
             return (
               <div
                 key={rec.id}
-                onClick={() => setActiveId(rec.id)}
+                onClick={() => { void selectCard(rec.id) }}
                 title={rec.name}
                 className={`group cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150
                   ${isActive
@@ -887,7 +865,7 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-2">
-                  <Button variant="bare" className="min-w-0 flex-1 !justify-start" onClick={() => setActiveId(rec.id)} aria-pressed={isActive} aria-label={'选择'+noun+'：'+current.name}>
+                  <Button variant="bare" className="min-w-0 flex-1 !justify-start" onClick={event => { event.stopPropagation(); void selectCard(rec.id) }} aria-pressed={isActive} aria-label={'选择'+noun+'：'+current.name}>
                     <UserRound size={13} className="shrink-0" />
                     <span className="text-13 font-medium truncate">{current.name}</span>
                   </Button>

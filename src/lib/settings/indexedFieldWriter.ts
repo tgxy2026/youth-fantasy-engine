@@ -1,25 +1,20 @@
 import { getCardRecordsFor, getTableRowsFor, saveCardRecord, saveTableRow } from '@/lib/db'
 import { beginRecordOperation } from '@/lib/storage/recordOperation'
-import { DESKTOP, getDesktopState } from '@/lib/app/desktop'
-import { PORTABLE, getPortableState } from '@/lib/storage/fileBackend'
+import { platformSubmissionState, submissionBlockReason, type SubmissionState } from '@/lib/storage/submissionState'
 import { describeFieldSave, type FieldSaveOutcome } from './fieldSaveOutcome'
 
 export interface IndexedFieldWrite {
   kind: 'card' | 'table'; tabId: string; recordId: string; dataKey: string; value: string
 }
 const stale: FieldSaveOutcome = { ok: false, kind: 'stale', message: '当前记录或存储空间已切换，本次提交结果不再适用于此处。' }
-type WriteState = { connected: boolean; writeLocked?: boolean; saveConflict?: boolean }
-function platformWriteState(): WriteState {
-  return DESKTOP ? getDesktopState() : PORTABLE ? getPortableState() : { connected: true }
-}
-function writeBlock(state: WriteState): FieldSaveOutcome | null {
-  const reason = state.saveConflict ? '存储存在冲突' : state.writeLocked ? '存储已暂停写入' : !state.connected ? '存储尚未连接' : ''
+function writeBlock(state: SubmissionState): FieldSaveOutcome | null {
+  const reason = submissionBlockReason(state)
   // Pending/ongoing disk flushes can accept edits. An interface receipt never proves durability.
   return reason ? { ok: false, kind: 'blocked', message: `${reason}，本次修改未确认保存。请保留输入，先查看存储栏的处理说明，再重试提交。` } : null
 }
 
 /** Each mounted index owns its queue. Re-read records and preserve unrelated fields without mutating cached rows. */
-export function createIndexedFieldWriter(projectId: string, current: () => boolean, readWriteState: () => WriteState = platformWriteState) {
+export function createIndexedFieldWriter(projectId: string, current: () => boolean, readWriteState: () => SubmissionState = platformSubmissionState) {
   let tail: Promise<unknown> = Promise.resolve()
   const pending = new Map<string, Promise<FieldSaveOutcome>>()
   return (input: IndexedFieldWrite): Promise<FieldSaveOutcome> => {
