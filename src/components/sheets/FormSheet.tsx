@@ -2,7 +2,10 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef } from '@/lib/types'
 import { getFormDataFor, saveFormDataFor, getCurrentProjectId } from '@/lib/db'
-import { Save, RotateCcw, Info, Check, Sparkles, Radar } from 'lucide-react'
+import { Save, RotateCcw, Info, Sparkles, Radar } from 'lucide-react'
+import { useManualDraftSave } from '@/components/common/useManualDraftSave'
+import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import HelpPopover from '@/components/common/HelpPopover'
 import { isNumericPowerField } from '@/lib/schema'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
@@ -28,12 +31,8 @@ interface Props {
 export default function FormSheet({ tab }: Props) {
   const [data, setData] = useState<Record<string, string>>({})
   const [loaded, setLoaded] = useState(false)
-  // dirty = 是否有未保存的修改；saving = 保存中；saved = 刚保存完
+  // dirty tracks the current draft, independently of any older submission receipt.
   const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
-  useEffect(() => () => clearTimeout(savedTimer.current), [])
   // AI 补全设定弹窗（只补空字段，已填保留）
   const [showFill, setShowFill] = useState(false)
   // AI 新增弹窗（仅「全书总纲」：起草一整份新总纲，会替换已填内容 —— 见下方 openFillNew）
@@ -104,6 +103,7 @@ export default function FormSheet({ tab }: Props) {
    * 所以本 ref 的初值恒等于「这份表单属于谁」，与之后全局值怎么变无关。
    */
   const pidRef = useRef(getCurrentProjectId())
+  const [storageOwner] = useState(() => captureStorageWriteOwner(pidRef.current))
   useEffect(() => { dataRef.current = data }, [data])
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
 
@@ -112,46 +112,51 @@ export default function FormSheet({ tab }: Props) {
    * [tab.id] 守卫里的 tabIdRef 初值即新 id，分支永不执行。
    */
   useEffect(() => () => {
-    if (dirtyRef.current && pidRef.current) {
-      void saveFormDataFor(pidRef.current, tabIdRef.current, dataRef.current)
+    if (dirtyRef.current && storageOwner.current()) {
+      void saveFormDataFor(pidRef.current, tabIdRef.current, dataRef.current).catch(() => {
+        showToast('离开前保存表单失败，请回到原页面核对草稿', 'error')
+      })
     }
-  }, [])
+  }, [storageOwner])
 
   useEffect(() => {
     // 切到别的页签前，先把当前页签未保存的修改落库（之前会静默丢弃）
     const prevId = tabIdRef.current
-    if (dirtyRef.current && prevId && prevId !== tab.id && pidRef.current) {
-      void saveFormDataFor(pidRef.current, prevId, dataRef.current)
+    if (dirtyRef.current && prevId && prevId !== tab.id && storageOwner.current()) {
+      void saveFormDataFor(pidRef.current, prevId, dataRef.current).catch(() => {
+        showToast('切换前保存表单失败，请回到原页面核对草稿', 'error')
+      })
     }
     tabIdRef.current = tab.id
     // 读也走显式 pid：退出项目那一瞬全局值已被清空，读全局会拿到别的书的空白表单
+    let alive = true
     getFormDataFor(pidRef.current, tab.id).then(d => {
+      if (!alive || !storageOwner.current()) return
+      dataRef.current = d; dirtyRef.current = false
       setData(d)
       setLoaded(true)
       setDirty(false)
     })
-  }, [tab.id])
+    return () => { alive = false }
+  }, [tab.id, storageOwner])
 
   const setField = (path: string, value: string) => {
-    setData(prev => ({ ...prev, [path]: value }))
+    dataRef.current = { ...dataRef.current, [path]: value }
+    dirtyRef.current = true
+    setData(dataRef.current)
     setDirty(true)
-    setSaved(false)
   }
 
-  const save = useCallback(async () => {
-    setSaving(true)
-    try {
-      // 显式 pid（同 C3 修复）：组件还活着时全局值通常是对的，但没有理由再依赖它
-      await saveFormDataFor(pidRef.current, tab.id, data)
-      setDirty(false)
-      setSaved(true)
-      savedTimer.current = setTimeout(() => setSaved(false), 1500)
-    } catch (e) {
-      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setSaving(false)
-    }
-  }, [tab.id, data])
+  const saveState = useManualDraftSave({
+    read: () => ({ value: dataRef.current, dirty: dirtyRef.current }),
+    write: value => saveFormDataFor(pidRef.current, tab.id, value),
+    committed: value => {
+      if (dataRef.current !== value) return false
+      dirtyRef.current = false; setDirty(false)
+      return true
+    },
+  })
+  const { save, saving } = saveState
 
   // 离开页签前若有未保存，提示
   useEffect(() => {
@@ -168,7 +173,8 @@ export default function FormSheet({ tab }: Props) {
   const clearAll = useCallback(() => {
     void (async () => {
       if (!await confirmDialog({ title: `清空「${tab.name}」`, message: `确定清空「${tab.name}」的全部填写内容？`, danger: true })) return
-      setData({})
+      dataRef.current = {}; dirtyRef.current = true
+      setData(dataRef.current)
       setDirty(true)
     })()
   }, [tab.name])
@@ -188,9 +194,9 @@ export default function FormSheet({ tab }: Props) {
   const handleFillNew = (values: Record<string, string>) => {
     const produced = Object.entries(values).filter(([, v]) => v && v.trim())
     if (produced.length > 0) {
-      setData(prev => ({ ...prev, ...Object.fromEntries(produced) }))
+      dataRef.current = { ...dataRef.current, ...Object.fromEntries(produced) }; dirtyRef.current = true
+      setData(dataRef.current)
       setDirty(true)
-      setSaved(false)
     }
     setShowFillNew(false)
   }
@@ -219,7 +225,7 @@ export default function FormSheet({ tab }: Props) {
     <div className="w-full page-enter">
       {/* 头部 */}
       <header className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
@@ -229,10 +235,7 @@ export default function FormSheet({ tab }: Props) {
             </div>
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 pt-1">
-            <span className={`text-11 transition-opacity duration-300 ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
-              <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
-            </span>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
@@ -248,7 +251,7 @@ export default function FormSheet({ tab }: Props) {
             className="font-medium hover:bg-amber/25"
             title={dirty ? '保存（Ctrl+S）' : '无未保存的改动'}
           >
-            <Save size={13} /> {saving ? '保存中…' : (dirty ? '保存' : '已保存')}
+            <Save size={13} /> {saving ? '提交中…' : (dirty ? '保存' : saveState.submitted ? '已提交' : '保存')}
           </Button>
           {aiCap !== 'none' && (
             <>
@@ -283,6 +286,7 @@ export default function FormSheet({ tab }: Props) {
           </div>
           <span className="text-10 text-ink-400 shrink-0">{filledCount} / {totalFields} 项已填</span>
         </div>
+        <DraftSaveFeedback state={saveState} dirty={dirty} onRetry={() => void save()} />
       </header>
 
       {/* 模块（C10：抽成 SchemaFieldGrid —— 母级表单与子世界表单共用同一份渲染，避免漂移） */}

@@ -600,9 +600,11 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   const saveAll = useCallback(async () => {
     if (dirtyKeys.length === 0) return
+    const owner = captureCandidateOwner()
     // 3.2.0：迁移窗口内不把旧结构的草稿写进库（方案 §3.6）
     const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'draft')
     if (conflict) { showToast(`${conflict.message}${conflict.hint}`, 'error'); return }
+    if (!owner.current()) return
     // 编号防重复校验：不通过则拒绝保存并提示
     const err = validateCodes()
     if (err) {
@@ -614,12 +616,14 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     setSaving(true)
     try {
       for (const rowId of dirtyKeys) {
+        if (!owner.current()) return
         const orig = rows.find(r => r.id === rowId)
         if (!orig) continue
         const merged = { ...orig.data, ...drafts[rowId] }
         await saveTableRow({ ...orig, data: merged })
       }
       // 提交后合并回 rows，清空 drafts
+      if (!owner.current()) return
       setRows(prev => prev.map(r => drafts[r.id] ? { ...r, data: { ...r.data, ...drafts[r.id] } } : r))
       setDrafts({})
       setSaved(true)

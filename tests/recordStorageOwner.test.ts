@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import * as db from '../src/lib/db'
 import { captureCandidateOwner } from '../src/lib/ai/candidateContext'
+import { captureStorageWriteOwner } from '../src/lib/storage/writeOwner'
+import { beginTabMigrationLock, guardTabWrite } from '../src/lib/templates/migrationGuard'
+import { flushDrafts } from '../src/components/sheets/tableSheetDraftOps'
 import type { StoreOps } from '../src/lib/storage/storeOps'
 import { KEY_PATHS, memoryOps } from './mock-memory'
 
@@ -77,5 +80,48 @@ await test('same-project account replacement invalidates ownership and empty pro
     db.setCurrentProject('');assert.equal(captureCandidateOwner().current(),false)
   }finally{if(previous)Object.defineProperty(globalThis,'window',previous);else Reflect.deleteProperty(globalThis,'window')}
 })
+await test('storage ownership permits explicit old-project flushes but rejects a replaced backend',()=>{
+  db.setCurrentProject('owner-a');const old=captureStorageWriteOwner('owner-a')
+  db.setCurrentProject('owner-b');assert.equal(old.current(),true)
+  db.setStoreOps(backend().ops);assert.equal(old.current(),false)
+  assert.equal(captureStorageWriteOwner('').current(),false)
+})
+for(const change of ['backend','account','project','lock'] as const)await test(`migration validation rechecks ${change} after its asynchronous read`,async()=>{
+  const pause=deferred(),old=backend(),next=backend(),previous=Object.getOwnPropertyDescriptor(globalThis,'window')
+  const testWindow=Object.assign(new EventTarget(),{__YFE_USER__:{id:'identity-a'}})
+  Object.defineProperty(globalThis,'window',{configurable:true,value:testWindow})
+  let unlock:undefined|(()=>void)
+  try{
+    db.setStoreOps({...old.ops,get:async()=>{await pause.promise;return undefined}});db.setCurrentProject('owner-a')
+    const pending=guardTabWrite('owner-a','races','autosave');await settle()
+    if(change==='backend')db.setStoreOps(next.ops)
+    if(change==='account')testWindow.__YFE_USER__={id:'identity-b'}
+    if(change==='project')db.setCurrentProject('owner-b')
+    if(change==='lock')unlock=beginTabMigrationLock('owner-a','races')
+    pause.resolve();const conflict=await pending
+    if(change==='project')assert.equal(conflict,null)
+    else assert.equal(conflict?.code,change==='lock'?'tab-in-migration':'storage-context-changed')
+    assert.equal(old.writes.length,0);assert.equal(next.writes.length,0)
+  }finally{unlock?.();if(previous)Object.defineProperty(globalThis,'window',previous);else Reflect.deleteProperty(globalThis,'window')}
+})
+await test('batch flush stops before a second row after the first issued write changes backend',async()=>{
+  const pause=deferred(),old=backend({store:'tableRows',promise:pause.promise}),next=backend()
+  db.setStoreOps(old.ops);db.setCurrentProject('owner-a')
+  const pending=flushDrafts('owner-a','races',[row,{...row,id:'row-2'}],{row:{名称:'new'},'row-2':{名称:'second'}})
+  await settle();db.setStoreOps(next.ops);pause.resolve()
+  assert.equal(await pending,false);await settle()
+  assert.equal(old.writes.filter(w=>w.store==='tableRows').length,1)
+  assert.equal(next.writes.length,0)
+})
+await test('a delayed explicit child-world save touches only its original backend and project',async()=>{
+  const pause=deferred(),old=backend({store:'cardRecords',promise:pause.promise}),next=backend()
+  db.setStoreOps(old.ops);db.setCurrentProject('owner-a')
+  const pending=db.saveSubSetFor('owner-a','worldbase',{id:'child',projectId:'owner-a',tabId:'worldbase-sub',name:'child',data:{field:'draft'},order:0})
+  await settle();db.setCurrentProject('owner-b');db.setStoreOps(next.ops);pause.resolve();await pending;await settle()
+  assert.equal(old.writes.filter(w=>w.store==='cardRecords').length,1)
+  assert.deepEqual(old.writes.filter(w=>w.store==='projects').map(w=>(w.value as {id:string}).id),['owner-a'])
+  assert.equal(next.writes.length,0)
+})
+
 db.setStoreOps(memoryOps);db.setCurrentProject('')
 console.log(`${passed} groups passed`)

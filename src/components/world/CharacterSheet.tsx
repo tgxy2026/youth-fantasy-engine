@@ -7,6 +7,7 @@ import { getCardRecords, saveCardRecord, deleteCardRecord, getCurrentProjectId }
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { uid } from '@/lib/app/id'
 import { captureCandidateOwner } from '@/lib/ai/candidateContext'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { Plus, Trash2, UserRound, Info, Save, Check, EyeOff, Search } from 'lucide-react'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -387,9 +388,11 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
    *    草稿仍在内存里（切页签会丢，但那是迁移场景下唯一不制造脏数据的选择）。
    */
   const saveDraftIfAllowed = useCallback(async (rec: CardRecord): Promise<boolean> => {
+    const owner = captureStorageWriteOwner(rec.projectId)
     if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
+    if (!owner.current()) return false
     await saveCardRecord(rec)
-    return true
+    return owner.current()
   }, [])
 
   /** 用户主动触发的写入：冲突要**说出来**，并把下一步做法一起给出 */
@@ -502,17 +505,24 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
   const flushCurrentDraft = useCallback(async (silent = false): Promise<boolean> => {
     const cur = draftRef.current
     if (!dirtyRef.current || !cur) return true
+    const owner = captureCandidateOwner()
     // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）—— 不写 = 不制造串字段的脏数据
     const conflict = await guardTabWrite(cur.projectId, cur.tabId, 'autosave')
     if (conflict) {
       if (!silent) showToast(`${conflict.message}${conflict.hint}`, 'error')
       return false
     }
+    if (!owner.current()) return false
     try {
       await saveCardRecord(cur)
+      if (!owner.current()) return false
       // 同步内存副本：否则切回来时用库里的旧记录回灌，刚保存的编辑又「消失」
       setRecords(list => list.map(r => (r.id === cur.id ? cur : r)))
       // 立刻归零，免得切卡 effect 把这张卡当成「还有脏草稿」再存一次
+      if (draftRef.current !== cur) {
+        if (!silent) showToast('保存期间又有修改，请保存最新草稿后再切换', 'error')
+        return false
+      }
       dirtyRef.current = false
       return true
     } catch (e) {
@@ -759,20 +769,23 @@ export default function CharacterSheet({ tab, focusRowId, onFocusConsumed, onNav
 
   const save = useCallback(async () => {
     if (!draft || !dirty) return
+    const owner = captureCandidateOwner()
     // 3.2.0：迁移窗口内不写旧结构（方案 §3.6）；作者可据此决定等迁移完再存
     if (await blockedByMigration('draft')) return
+    if (!owner.current()) return
     setSaving(true)
     try {
       await saveCardRecord(draft)
-      setRecords(records.map(r => (r.id === draft.id ? draft : r)))
-      setSaved(true)
+      if (!owner.current()) return
+      setRecords(list => list.map(r => (r.id === draft.id ? draft : r)))
+      setSaved(draftRef.current === draft)
       savedTimer.current = setTimeout(() => setSaved(false), 1500)
     } catch (e) {
       showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setSaving(false)
     }
-  }, [draft, dirty, records, blockedByMigration])
+  }, [draft, dirty, blockedByMigration])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)

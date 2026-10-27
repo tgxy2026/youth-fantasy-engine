@@ -17,7 +17,11 @@
  *      删除子项时清理活跃列表的逻辑在存储层，绕过去就会留下幽灵 id。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Check, Copy, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
+import { BookOpen, Copy, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
+import { useManualDraftSave } from '@/components/common/useManualDraftSave'
+import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import type { CardRecord, TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
@@ -56,8 +60,8 @@ export default function WorldSetSheet({ tab }: Props) {
   const [sel, setSel] = useState<string>(MAIN)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const pidRef = useRef(db.getCurrentProjectId())
+  const [storageOwner] = useState(() => captureStorageWriteOwner(pidRef.current))
   const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
   const [showFill, setShowFill] = useState(false)
   /** 「AI 整理」= 拿草稿箱里那一段去填上方字段（与 showFill 的区别只是草稿已备好） */
@@ -129,25 +133,24 @@ export default function WorldSetSheet({ tab }: Props) {
   const selRef = useRef(sel)
   const subsRef = useRef(subs)
   /** 本面板属于哪个项目 —— 挂载时绑定（换项目会因 App 的 key 整体重挂，见 FormSheet 同名说明） */
-  const pidRef = useRef(db.getCurrentProjectId())
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
   useEffect(() => { draftRef.current = draft }, [draft])
   useEffect(() => { selRef.current = sel }, [sel])
   useEffect(() => { subsRef.current = subs }, [subs])
   useEffect(() => () => {
-    if (!dirtyRef.current) return
+    if (!dirtyRef.current || !storageOwner.current()) return
     const d = draftRef.current
     const cur = selRef.current
     // 🔴 3.2.2（审计 C3 同族）：卸载补存必须带**挂载时绑定的项目 id**。
     //    `exitProject()` 会先把全局 currentProjectId 清成 ''，此刻再让存储层去读全局，
     //    写进去的就是无归属记录 —— 重开原书这层改动会消失。
     if (!pidRef.current) return
-    if (cur === MAIN) void db.saveFormDataFor(pidRef.current, tab.id, d)
-    else {
+    const pending = cur === MAIN ? db.saveFormDataFor(pidRef.current, tab.id, d) : (() => {
       const sub = subsRef.current.find(s => s.id === cur)
-      if (sub) void db.saveSubSetFor(pidRef.current, tab.id, { ...sub, data: d })
-    }
-  }, [tab.id])
+      return sub ? db.saveSubSetFor(pidRef.current, tab.id, { ...sub, data: d }) : Promise.resolve()
+    })()
+    void pending.catch(() => showToast('离开前保存设定失败，请回到原页面核对草稿', 'error'))
+  }, [tab.id, storageOwner])
 
   const isMain = sel === MAIN
   /**
@@ -166,27 +169,27 @@ export default function WorldSetSheet({ tab }: Props) {
   const { active } = useMemo(() => splitActive(subs, activeIds), [subs, activeIds])
 
   /** 把当前层的草稿落库（切层 / 点保存 / 卸载前都走它） */
-  const flush = useCallback(async (silent = false) => {
-    if (!dirty) return
-    // 没有绑定到项目（异常状态）就不落库 —— 写进无归属记录等于制造脏数据
-    if (!pidRef.current) return
-    setSaving(true)
-    try {
-      if (isMain) {
-        await db.saveFormDataFor(pidRef.current, tab.id, draft)
-        setMain(draft)
-      } else if (selSub) {
-        await db.saveSubSetFor(pidRef.current, tab.id, { ...selSub, data: draft })
-        setSubs(prev => prev.map(s => (s.id === sel ? { ...s, data: draft } : s)))
+  const saveState = useManualDraftSave({
+    read: () => ({ value: { id: selRef.current, data: draftRef.current }, dirty: dirtyRef.current }),
+    write: async value => {
+      if (value.id === MAIN) await db.saveFormDataFor(pidRef.current, tab.id, value.data)
+      else {
+        const sub = subsRef.current.find(s => s.id === value.id)
+        if (!sub) throw new Error('当前子项已不存在')
+        await db.saveSubSetFor(pidRef.current, tab.id, { ...sub, data: value.data })
       }
-      setDirty(false)
-      if (!silent) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
-    } catch {
-      showToast('保存失败，请重试', 'error')
-    } finally {
-      setSaving(false)
-    }
-  }, [dirty, isMain, selSub, sel, draft, tab.id])
+    },
+    committed: value => {
+      if (value.id === MAIN) setMain(value.data)
+      else setSubs(prev => prev.map(s => s.id === value.id ? { ...s, data: value.data } : s))
+      if (selRef.current === value.id && draftRef.current === value.data) {
+        dirtyRef.current = false; setDirty(false)
+        return true
+      }
+      return false
+    },
+  })
+  const { save: flush, saving } = saveState
 
   // 🔴 2.7.2：原先这里有 `onPackSwitched`（题材切换后换模板）——
   //    题材改到「新建项目」时选了，页签里不再提供切换入口，该回调随之移除。
@@ -198,27 +201,34 @@ export default function WorldSetSheet({ tab }: Props) {
 
   const selectLayer = async (key: string) => {
     if (key === sel) return
-    await flush(true)     // 🔴 先落库再切（否则这一层刚改的字会丢）
+    if (!await flush()) return
+    selRef.current = key; dirtyRef.current = false
+    draftRef.current = key === MAIN ? main : (subsRef.current.find(s => s.id === key)?.data ?? {})
     setSel(key)
-    setDraft(key === MAIN ? main : (subs.find(s => s.id === key)?.data ?? {}))
+    setDraft(draftRef.current)
     setDirty(false)
   }
 
   const setField = (key: string, value: string) => {
-    setDraft(prev => ({ ...prev, [key]: value }))
+    draftRef.current = { ...draftRef.current, [key]: value }; dirtyRef.current = true
+    setDraft(draftRef.current)
     setDirty(true)
   }
 
   const addSub = async (name: string) => {
     const n = name.trim()
     if (!n) return
+    const owner = captureCandidateOwner()
+    if (!await flush() || !owner.current()) return
     const rec: CardRecord = {
       id: uid(), projectId: '', tabId: '', name: n, data: {}, order: subs.length,
     } as CardRecord
-    await db.saveSubSet(tab.id, rec)
+    await db.saveSubSetFor(pidRef.current, tab.id, rec)
+    if (!owner.current()) return
     // 🔴 新建即设为「活跃」：作者刚建一个子世界，显然是要写它。
     //    默认给「已完结」的话，他填了半天字却发现 AI 根本没读（提示条还写着"没有活跃子世界"）。
     await db.setSubActive(tab.id, rec.id, true)
+    if (!owner.current()) return
     setSubs(prev => [...prev, rec])
     setActiveIds(await db.getActiveSubIds(tab.id))
     setSel(rec.id)
@@ -336,7 +346,7 @@ export default function WorldSetSheet({ tab }: Props) {
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
               title={dirty ? '保存（先落库再切换层，不怕丢）' : '无未保存的改动'}
             >
-              <Save size={13} /> {saving ? '保存中…' : saved ? <><Check size={13} /> 已保存</> : '保存'}
+              <Save size={13} /> {saving ? '提交中…' : !dirty && saveState.submitted ? '已提交' : '保存'}
             </Button>
             <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady}
               className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium disabled:opacity-40"
@@ -362,6 +372,7 @@ export default function WorldSetSheet({ tab }: Props) {
             </div>
           )}
         </div>
+        <DraftSaveFeedback state={saveState} dirty={dirty} onRetry={() => void flush()} />
       </header>
 
       {/* 🔴 2026-10-17：恒双栏 + 锁高（不再堆叠）—— 与 MasterDetail（角色卡 / 大纲卡）同范式：

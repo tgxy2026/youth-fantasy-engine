@@ -16,6 +16,7 @@
  *      的日志还在 ⇒ 作者一开机就编辑，同样必须拦住。
  */
 import { loadMigrationLog, isBlockingState, type MigrationState } from './migrationLog'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 
 /** 会被旧结构污染的写入来源 */
 export type TabWriteSource = 'draft' | 'autosave' | 'ai-writeback' | 'import'
@@ -29,6 +30,16 @@ export interface MigrationTabConflict {
   /** 给作者看的一句话（说清"发生了什么"，不 blame 用户） */
   message: string
   /** 现在能做什么 —— 不许写"稍后重试"这种空话 */
+  hint: string
+}
+
+export type TabWriteConflict = MigrationTabConflict | {
+  blocked: true
+  code: 'storage-context-changed'
+  state?: never
+  tabId: string
+  source: TabWriteSource
+  message: string
   hint: string
 }
 
@@ -147,11 +158,19 @@ export async function guardTabWrite(
   pid: string,
   tabId: string,
   source: TabWriteSource,
-): Promise<MigrationTabConflict | null> {
+): Promise<TabWriteConflict | null> {
   const local = localMigrationConflict(pid, tabId, source)
   if (local) return local
   if (!pid || !tabId) return null
+  const owner = captureStorageWriteOwner(pid)
   const log = await loadMigrationLog(pid, tabId)
+  if (!owner.current()) return {
+    blocked: true, code: 'storage-context-changed', tabId, source,
+    message: '校验期间存储或账号已切换，本次未提交。',
+    hint: '请回到原来的书库与账号核对草稿，再重新保存。',
+  }
+  const acquired = localMigrationConflict(pid, tabId, source)
+  if (acquired) return acquired
   if (log && isBlockingState(log.state)) return conflictOf(tabId, source, log.state)
   return null
 }
