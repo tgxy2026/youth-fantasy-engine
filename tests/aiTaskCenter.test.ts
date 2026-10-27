@@ -305,6 +305,68 @@ async function main() {
     ok('退订后不再收到通知', hits === before, `${before} → ${hits}`)
   }
 
+  // ---------- ⑥ UX09：收尾边界（自定义 notify 抛错 / 换书后晚到的收尾） ----------
+  {
+    // 未处理拒绝必须能被观测到：先挂处理器（Node 默认会把未处理拒绝当致命错误抛出）
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown) => { rejections.push(reason) }
+    process.on('unhandledRejection', onRejection)
+
+    resetTaskCenter()
+    // ① 自定义 notify 抛错：不许变成未处理拒绝，且必须退回通用「已完成」提示
+    startTask({
+      ownerTab: 't-notify', kind: 'boom', title: '提示会炸',
+      run: async () => 42,
+      notify: () => { throw new Error('notify 内部炸了') },
+    })
+    await tick()
+    await tick()
+    const fallback = takeNotice()
+    ok('🔴 ⑥ 自定义 notify 抛错不产生未处理拒绝', rejections.length === 0, JSON.stringify(rejections.map(String)))
+    ok('🔴 ⑥ notify 抛错后仍给出「已完成」提示（不静默）',
+      !!fallback && fallback.kind === 'success' && fallback.text.includes('提示会炸'), JSON.stringify(fallback))
+    ok('⑥ 任务本身仍记为完成（不被提示故障连坐）',
+      tasksSnapshot().some(t => t.kind === 'boom' && t.status === 'done'))
+
+    // ② 失败态下 notify 抛错：退回「失败」提示
+    resetTaskCenter()
+    startTask({
+      ownerTab: 't-notify', kind: 'boom2', title: '失败的提示也会炸',
+      run: async () => { throw new Error('真正的失败原因') },
+      notify: () => { throw new Error('notify 又炸了') },
+    })
+    await tick()
+    await tick()
+    const failedNotice = takeNotice()
+    ok('🔴 ⑥ 失败态 notify 抛错 ⇒ 退回失败提示且带真实原因',
+      !!failedNotice && failedNotice.kind === 'error' && failedNotice.text.includes('真正的失败原因'),
+      JSON.stringify(failedNotice))
+
+    // ③ 换书（reset）之后旧任务才收尾：不提示、不复活
+    resetTaskCenter()
+    const late = deferred<number>()
+    startTask({ ownerTab: 't-reset', kind: 'late', title: '上一本书的任务', run: async () => late.promise })
+    await tick()
+    resetTaskCenter()
+    const noticeAtReset = noticeSnapshot()
+    late.resolve(7)
+    await tick()
+    await tick()
+    ok('🔴 ⑥ reset 之后晚到的收尾不补提示', noticeSnapshot() === noticeAtReset, JSON.stringify(noticeSnapshot()))
+    ok('🔴 ⑥ reset 之后任务列表不会被旧任务补回', tasksSnapshot().length === 0, String(tasksSnapshot().length))
+
+    // ④ 自定义 notify 返回 null 时不提示（既有语义，防回归）
+    resetTaskCenter()
+    startTask({ ownerTab: 't-notify', kind: 'quiet', title: '安静', run: async () => 1, notify: () => null })
+    await tick()
+    await tick()
+    ok('⑥ notify 返回 null 时不提示', noticeSnapshot() === null, JSON.stringify(noticeSnapshot()))
+
+    process.off('unhandledRejection', onRejection)
+    ok('🔴 ⑥ 全程没有漏出未处理拒绝', rejections.length === 0, JSON.stringify(rejections.map(String)))
+    resetTaskCenter()
+  }
+
   console.log(`\naiTaskCenter: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exit(1)
 }
