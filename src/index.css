@@ -682,13 +682,14 @@
   [data-adaptive-master] { height: auto; min-height: 100%; overflow: visible; }
   [data-adaptive-master="trajectory"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.h-screen { height: calc(100vh / var(--ui-zoom, 1)); }
-.min-h-screen { min-height: calc(100vh / var(--ui-zoom, 1)); }
+.h-screen { height: calc((100vh - var(--yfe-notice-height, 0px)) / var(--ui-zoom, 1)); }
+.min-h-screen { min-height: calc((100vh - var(--yfe-notice-height, 0px)) / var(--ui-zoom, 1)); }
 
 html, body, #root {
   height: 100%;
   margin: 0;
 }
+#root { height: auto; }
 
 body {
   @apply bg-ink-950 text-ink-100 font-sans antialiased;

@@ -48,9 +48,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 {
   const guard = read('src/lib/app/tabGuard.ts')
   ok('🔴 ④ 提示里出现"整库保存"', /整库保存/.test(guard))
-  ok('🔴 ④ 提示里说清"先写的内容会丢失"', /先写的内容会丢失/.test(guard))
+  ok('🔴 ④ 条件写拒绝旧版本与游客本机风险准确分开', /WEB_GUEST/.test(guard) && /旧版本会被拒绝/.test(guard) && /本机浏览器资料/.test(guard))
   ok('🔴 ④ 提示里给出动作建议（只留一个窗口）', /只留一个窗口/.test(guard))
-  ok('④ 仍保留可关闭的「知道了」', /知道了/.test(guard))
+  ok('④ 共用可关闭的「知道了」告知控件', /showNativeNotice/.test(guard) && /知道了/.test(read('src/lib/app/nativeNotices.ts')))
   ok('🔴 ④ 不谎称已有保护（不得出现"已锁定/已阻止"之类）', !/已锁定|已阻止|无法再保存/.test(guard))
 }
 

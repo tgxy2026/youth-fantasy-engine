@@ -52,6 +52,7 @@ import { useRowWindow } from '@/components/sheets/useRowWindow'
 import { foldVh } from '@/lib/settings/theme'
 import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import { useTableWorkspaceScroll } from './useTableWorkspaceScroll'
 
 interface Props {
   tab: TabDef
@@ -316,14 +317,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const rowIds = useMemo(() => model.bodyRows.map(entry => entry.row.id), [model.bodyRows])
   /** 跳转聚焦：只在目标行**变化**时滚一次（否则高亮期间每次输入都会把容器拉回去） */
   const lastFocusId = useRef<string | null>(null)
+  const [restoreRowId, pinRestore] = useState<string | null>(null)
   const rowWindow = useRowWindow({
     ids: rowIds,
     rowRefs: model.rowRefs,
     scrollRef: pan.ref,
-    enabled: rowIds.length > ROW_WINDOW_THRESHOLD,
-    pinnedId: focusRowId ?? null,
+    enabled: loaded && viewMode === 'table' && rowIds.length > ROW_WINDOW_THRESHOLD,
+    pinnedId: focusRowId ?? restoreRowId,
   })
   const revealRow = rowWindow.revealId
+  useTableWorkspaceScroll({ tabId: tab.id, ready: loaded && viewMode === 'table' && tab.id !== 'relations',
+    ids: rowIds, filters: colFilters, scrollRef: pan.ref, revealId: revealRow, focusRowId, pinRestore })
 
   /**
    * 跳转聚焦先「滚到附近」：虚拟化后目标行可能压根没挂载，靠 scrollIntoView 会扑空。
@@ -671,7 +675,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
                 <th className="bg-ink-800 px-1 py-2.5 align-middle" style={{ width: ROW_ACTION_COL_W }} />
                 {effectiveColumns.map(col => (
-                  <th key={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
+                  <th key={col.name} data-workspace-column={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div className="truncate" title={colTitleOf(col)}>{colLabelOf(col)}</div>
                     {col.type === 'select' && col.options ? (
                       <select

@@ -24,6 +24,7 @@ import {
 import { sendJSON, sendText, readBody, readJSONBody, parseCookies, buildCookie, clientIp } from './lib/http.mjs'
 import { rateLimit, resetLimit } from './lib/ratelimit.mjs'
 import { renderAuthPage, renderResetPage } from './lib/authPage.mjs'
+import { GUEST_BANNER } from './lib/guestNotice.mjs'
 import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
   claimInvite, createInvite, listInvites, newUserId, setActiveSession, clearActiveSession,
@@ -288,24 +289,6 @@ function serveFile(req, res, abs, ext) {
  *    即使前端渲染失败，用户也能看到「数据只在本机」并找到注册入口。
  *    用户关掉后记在 localStorage，不会每次刷新都骚扰。
  */
-const GUEST_BANNER = `
-<div id="yfe-guest-tip" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:calc(100vw - 32px);padding:8px 14px;border-radius:999px;background:rgba(28,26,23,.94);border:1px solid rgba(201,162,39,.45);color:#d8d2c6;font-size:12px;line-height:1.5;box-shadow:0 6px 24px -8px rgba(0,0,0,.65);font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
-  <span style="color:#d9a04a;font-weight:500;white-space:nowrap">游客模式</span>
-  <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">数据仅存本机浏览器，请及时导出备份</span>
-  <a href="/login" style="color:#d9a04a;text-decoration:none;border-bottom:1px solid rgba(217,160,74,.4);white-space:nowrap">注册账号</a>
-  <button type="button" onclick="__yfeDismissGuestTip()" aria-label="关闭提示" style="background:none;border:0;color:#8a8278;cursor:pointer;font-size:16px;line-height:1;padding:0 2px">&times;</button>
-</div>
-<script>
-(function () {
-  var K = 'yfe-guest-tip-off';
-  try { if (localStorage.getItem(K) === '1') { var e = document.getElementById('yfe-guest-tip'); if (e) e.style.display = 'none'; } } catch (err) {}
-  window.__yfeDismissGuestTip = function () {
-    try { localStorage.setItem(K, '1'); } catch (err) {}
-    var el = document.getElementById('yfe-guest-tip');
-    if (el) el.style.display = 'none';
-  };
-})();
-</script>`
 
 const escapeForHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -399,7 +382,7 @@ async function handleApi(req, res, url) {
     ensureUserDir(user.id)
     touchLogin(user.id) // 注册即登录，最后登录时间此刻就是现在（否则界面显示「—」）
     // 🔴 临界区结束
-    console.log(`[auth] 新用户注册：${user.name} (${user.id}) from ${ip}${inviteCode ? ` 邀请码=${inviteCode}` : ''}`)
+    console.log(`[auth] 新用户注册：${user.name} (${user.id}) from ${ip}`)
     recordStat('register')
     return sendJSON(res, 200, { ok: true, user: publicUser(user) }, {
       // 注册即登录：种会话，同时清掉游客标记（否则下次打开还会被当成游客）

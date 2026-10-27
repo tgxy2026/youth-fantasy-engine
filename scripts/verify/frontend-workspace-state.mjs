@@ -12,7 +12,7 @@ const report={kind:'frontend-workspace-state',at:new Date().toISOString(),run,fi
 const check=(name,passed,details)=>{report.checks.push({name,passed:!!passed,details});console.log(`${passed?'PASS':'FAIL'} ${name}`);if(!passed)throw new Error(name+': '+JSON.stringify(details))}
 let server,browser,page
 try{
-  server=await createServer({root,cacheDir:path.join(run,'vite-cache'),logLevel:'error',server:{host:'localhost',port:0}})
+  server=await createServer({optimizeDeps:{entries:['index.html','tests/browser/*.html']},root,cacheDir:path.join(run,'vite-cache'),logLevel:'error',server:{host:'localhost',port:0}})
   await server.listen()
   const origin=`http://localhost:${server.httpServer.address().port}`
   browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server']})

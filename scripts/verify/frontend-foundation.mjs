@@ -23,7 +23,7 @@ const check = (name, condition, details) => {
   if (!condition) throw new Error(name + ': ' + JSON.stringify(details))
 }
 try {
-  server = await createServer({ root, logLevel: 'error', cacheDir: path.join(run, 'vite-cache'), server: { host: 'localhost', port: 0 } })
+  server = await createServer({optimizeDeps:{entries:['index.html','tests/browser/*.html']}, root, logLevel: 'error', cacheDir: path.join(run, 'vite-cache'), server: { host: 'localhost', port: 0 } })
   await server.listen()
   const origin = `http://localhost:${server.httpServer.address().port}`
   await fetch(origin)

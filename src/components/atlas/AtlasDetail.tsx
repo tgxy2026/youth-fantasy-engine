@@ -32,6 +32,7 @@ import { Button } from '@/components/common/Button'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
+import { useAtlasWorkspaceOptions } from './useAtlasWorkspaceOptions'
 
 interface Props {
   scrollRef?: RefObject<HTMLDivElement>
@@ -220,7 +221,7 @@ export default function AtlasDetail({
    * 「显示未填写字段」（方案 §3.2）：默认收起未填的，减少噪音；要补全时打开它，
    * 空字段用灰色「—」占位 —— 作者能看到"这里还有一栏没写"，而不是以为字段消失了。
    */
-  const [showEmpty, setShowEmpty] = useState(false)
+  const [showEmpty, setShowEmpty] = useAtlasWorkspaceOptions(row.projectId, tabId, row.id)
 
   // 空分组不渲染（方案 §3.2：字段数为零时不出现空分组）；未填字段按开关决定去留
   const visible = sections

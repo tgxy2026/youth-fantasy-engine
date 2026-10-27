@@ -14,6 +14,7 @@ import { LogOut } from 'lucide-react'
 import { WEB_CLOUD } from '@/lib/app/platform'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import { navigateAuth } from '@/lib/app/authNavigation'
 
 interface WebUser {
   name?: string
@@ -33,7 +34,7 @@ async function logout(): Promise<void> {
     title: '退出登录',
     message: `退出后需要重新登录才能继续用云端账号${user?.name ? `（当前账号：${user.name}）` : ''}。\n\n已保存的内容都在云端，不会丢；只是当前会话会结束。`,
   })
-  if (ok) window.location.href = '/logout'
+  if (ok) await navigateAuth('/logout')
 }
 
 export default function AccountExit() {

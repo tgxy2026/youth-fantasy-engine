@@ -70,8 +70,10 @@ export function usePaneWorkspaceScroll(args: Args): () => void {
       workspaceViews.put(listScope, value, v.generation)
     }
     if (detail && detailScope && v.objectId && allowed.current.detail === v.objectId && !pending.current.detail) {
+      const previous = workspaceViews.get(detailScope, v.objectId)
       const value: DetailView = { version: 1, kind: 'detail', objectId: v.objectId, groups: [],
-        scroll: scroll(detail), anchor: anchor(detail, 'data-workspace-field') }
+        scroll: scroll(detail), anchor: anchor(detail, 'data-workspace-field'),
+        ...(previous?.kind === 'detail' && previous.showEmpty !== undefined ? { showEmpty: previous.showEmpty } : {}) }
       workspaceViews.put(detailScope, value, v.generation)
     }
   }, [])

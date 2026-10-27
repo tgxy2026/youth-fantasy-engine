@@ -14,10 +14,12 @@ export interface EditorView {
   focused: boolean
 }
 export interface ViewAnchor { id: string; offset: number }
-export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll; anchor?: ViewAnchor }
+export interface DetailView { version: 1; kind: 'detail'; objectId: string; groups: string[]; scroll: ViewScroll; anchor?: ViewAnchor; showEmpty?: boolean }
 /** Search is transient UI input, never persisted; no record fields or draft bodies are retained. */
 export interface ListView { version: 1; kind: 'list'; objectId: string; selectedId: string | null; query: string; scroll: ViewScroll; anchor?: ViewAnchor; filters?: Record<string, string> }
-export type WorkspaceView = EditorView | DetailView | ListView
+export interface TableView { version: 1; kind: 'table'; objectId: string; scroll: ViewScroll; anchor?: ViewAnchor;
+  horizontal: { left: number; ratio: number; anchor?: ViewAnchor }; filters: Record<string, string> }
+export type WorkspaceView = EditorView | DetailView | ListView | TableView
 export function restoreListSelection(records: readonly { id: string }[], remembered: string | null, explicit?: string | null, fallback: 'first' | 'none' = 'first'): string | null {
   for (const candidate of [explicit, remembered]) if (candidate && records.some(record => record.id === candidate)) return candidate
   return fallback === 'none' ? null : records[0]?.id ?? null
@@ -45,10 +47,17 @@ function normalize(value: unknown): WorkspaceView | null {
   if (v.version !== VIEW_VERSION || !id(v.objectId)) return null
   const scroll = scrollOf(v.scroll)
   if (!scroll) return null
-  const candidate = v.kind === 'list' || v.kind === 'detail' ? v.anchor : undefined
+  const candidate = v.kind === 'list' || v.kind === 'detail' || v.kind === 'table' ? v.anchor : undefined
   if (candidate != null && (!id(candidate.id) || typeof candidate.offset !== 'number'
     || !Number.isFinite(candidate.offset) || Math.abs(candidate.offset) > 1e9)) return null
   const anchor = candidate ? { id: candidate.id, offset: candidate.offset } : undefined
+  if (v.kind === 'table') {
+    const h = v.horizontal, a = h?.anchor, filters = normalizeWorkspaceFilters(v.filters)
+    if (!h || !number(h.left) || !number(h.ratio, 1) || !filters || (a != null && (!id(a.id)
+      || typeof a.offset !== 'number' || !Number.isFinite(a.offset) || Math.abs(a.offset) > 1e9))) return null
+    return { version: 1, kind: 'table', objectId: v.objectId, scroll, ...(anchor ? { anchor } : {}), filters,
+      horizontal: { left: h.left, ratio: h.ratio, ...(a ? { anchor: { id: a.id, offset: a.offset } } : {}) } }
+  }
   if (v.kind === 'list') {
     if ((v.selectedId !== null && !id(v.selectedId)) || typeof v.query !== 'string' || v.query.length > 200) return null
     const filters = v.filters === undefined ? undefined : normalizeWorkspaceFilters(v.filters)
@@ -56,8 +65,10 @@ function normalize(value: unknown): WorkspaceView | null {
     return { version: 1, kind: 'list', objectId: v.objectId, selectedId: v.selectedId, query: v.query, scroll, ...(anchor ? { anchor } : {}), ...(filters ? { filters } : {}) }
   }
   if (v.kind === 'detail') {
-    if (!Array.isArray(v.groups) || v.groups.length > 128 || !v.groups.every(id)) return null
-    return { version: 1, kind: 'detail', objectId: v.objectId, groups: [...new Set(v.groups)], scroll, ...(anchor ? { anchor } : {}) }
+    if (!Array.isArray(v.groups) || v.groups.length > 128 || !v.groups.every(id)
+      || (v.showEmpty !== undefined && typeof v.showEmpty !== 'boolean')) return null
+    return { version: 1, kind: 'detail', objectId: v.objectId, groups: [...new Set(v.groups)], scroll, ...(anchor ? { anchor } : {}),
+      ...(v.showEmpty === undefined ? {} : { showEmpty: v.showEmpty }) }
   }
   if (v.kind !== 'editor' || !opaqueId(v.revision) || !number(v.length) || !Number.isInteger(v.length)) return null
   const s = v.selection, l = v.layout

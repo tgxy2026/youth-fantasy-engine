@@ -124,4 +124,22 @@ check('column filter metadata is bounded copied and distinct from business field
   for(const bad of [[],{'名称':'x'.repeat(201)},{'bad\nkey':'x'},{'名称':123},Object.fromEntries(Array.from({length:129},(_,i)=>['key'+i,'x']))])
     assert.equal(store.put(scope,{...value,filters:bad}),false)
 })
+check('table geometry is bounded and allowlisted; hidden drafts never enter a record', () => {
+  const store = createWorkspaceViewStore()
+  const value = { version: 1, kind: 'table', objectId: 'viewport', scroll: detail('x').scroll,
+    anchor: { id: 'row-100', offset: -12 }, horizontal: { left: 250, ratio: .3, anchor: { id: '备注', offset: -3 } }, filters: { 类别: '甲' } }
+  assert.ok(store.put(scope, { ...value, drafts: { secret: '正文绝不能放这里' } }))
+  const got = store.get(scope, 'viewport')
+  assert.deepEqual(got, value)
+  for (const horizontal of [{ left: -1, ratio: 0 }, { left: 0, ratio: Infinity }, { left: 0, ratio: 0, anchor: { id: 'row', offset: NaN } }])
+    assert.equal(store.put(scope, { ...value, horizontal }), false)
+  assert.ok(!JSON.stringify(got).includes('正文'))
+})
+check('optional Atlas flags accept booleans and keep older detail records compatible', () => {
+  const store = createWorkspaceViewStore(), value = detail('atlas-row')
+  assert.ok(store.put(scope, value)); assert.deepEqual(store.get(scope, value.objectId), value)
+  assert.ok(store.put(scope, { ...value, showEmpty: true }))
+  assert.equal((store.get(scope, value.objectId) as DetailView).showEmpty, true)
+  assert.equal(store.put(scope, { ...value, showEmpty: 'private text' }), false)
+})
 console.log(`${count} workspace view state groups passed`)

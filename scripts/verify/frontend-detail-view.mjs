@@ -22,7 +22,7 @@ const CARD_B = '现场乙'
 
 let server, browser, page
 try {
-  server = await createServer({ root, cacheDir: path.join(run, 'vite-cache'), logLevel: 'error', server: { host: 'localhost', port: 0 } })
+  server = await createServer({optimizeDeps:{entries:['index.html','tests/browser/*.html']}, root, cacheDir: path.join(run, 'vite-cache'), logLevel: 'error', server: { host: 'localhost', port: 0 } })
   await server.listen()
   const origin = `http://localhost:${server.httpServer.address().port}`
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
