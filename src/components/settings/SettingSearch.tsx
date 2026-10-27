@@ -12,6 +12,7 @@ import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
 import { createIndexedFieldWriter } from '@/lib/settings/indexedFieldWriter'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { registerAuxiliaryLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { useAliasRevision, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
 import { loadFieldLabels } from '@/lib/templates/labels'
@@ -65,13 +66,14 @@ interface Doc {
 
 interface Props {
   onNavigate?: (id: string) => void
+  onDraftPendingChange?: (pending: boolean) => void
   /** 可见性上下文：精简/极简项目隐藏对应标记的页签，自定义项目按启用功能集过滤 */
   ctx: VisCtx
 }
 
 const TOP_GROUPS = ['角色管理', '世界构建', '创作管理'] as const
 
-export default function SettingSearch({ onNavigate, ctx }: Props) {
+export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }: Props) {
   const projectId = db.getCurrentProjectId(), context = candidateApplyContext()
   const workspace = useListWorkspaceView(projectId, 'setting-search')
   const isViewCurrent = workspace.isCurrent
@@ -92,10 +94,15 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   /** 轻量定义（改名 / 含义确认）变更 → 重建索引，否则检索里还印着旧字段名 */
   const defRev = useFieldDefinitionRevision()
   const [editing, setEditing] = useState<{ key: string; dataKey: string } | null>(null)
+  const editTarget = useRef<{ doc: Doc; field: DocField } | null>(null)
+  const fieldSwitch = useRef(0)
   const [draft, storeDraft] = useState('')
   const draftRef = useRef(draft), editEpoch = useRef(0)
   draftRef.current = draft
-  const setDraft = (value: string) => { draftRef.current = value; storeDraft(value) }
+  const setDraft = (value: string) => {
+    draftRef.current = value; storeDraft(value)
+    onDraftPendingChange?.(!!editTarget.current && (value !== editTarget.current.field.value || jobs.current.size > 0))
+  }
   const jobs = useRef(new Set<Promise<unknown>>())
   const [savingField, setSavingField] = useState(false)
   /**
@@ -104,10 +111,19 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
    */
   const [fieldError, setFieldError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const closeEditing = () => { editEpoch.current++; setEditing(null); setFieldError('') }
+  const closeEditing = () => { fieldSwitch.current++; editTarget.current = null; editEpoch.current++; setEditing(null); setFieldError(''); onDraftPendingChange?.(false) }
+  const pendingNotice = useRef(onDraftPendingChange)
+  pendingNotice.current = onDraftPendingChange
   useEffect(() => {
-    editEpoch.current++; setEditing(null); setFieldError(''); setSavingField(false); jobs.current.clear()
+    editTarget.current = null; fieldSwitch.current++; editEpoch.current++; setEditing(null); setFieldError(''); setSavingField(false); jobs.current.clear()
+    pendingNotice.current?.(false)
   }, [context])
+  const fieldDirty = useMemo(() => () => !!editTarget.current && (draftRef.current !== editTarget.current.field.value || jobs.current.size > 0), [])
+  const flushField = useRef<() => Promise<LeaveFlushResult>>(async () => ({ ok: true }))
+  useEffect(() => registerAuxiliaryLeaveGuard({
+    isDirty: () => current() && fieldDirty(),
+    flush: () => flushField.current(),
+  }), [current, fieldDirty])
 
   // 自定义项目按启用功能集过滤页签可见性；完整项目全量可搜（历史遗留的精简/极简类型已废弃移除）
   const hiddenTabs = useMemo(
@@ -382,20 +398,43 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
    *      作者以为改好了，实际一个字都没写进去（2026-10-27 实测确认）。
    */
   const saveField = async (doc: Doc, field: DocField, val: string) => {
-    if (doc.kind === 'relation' || !doc.recordId || !current() || doc.ownerContext !== context) return
+    if (doc.kind === 'relation' || !doc.recordId || !current() || doc.ownerContext !== context) return false
     const epoch = editEpoch.current
     setSavingField(true)
+    pendingNotice.current?.(true)
     setFieldError('')
     const job = writeField({ kind: doc.kind, tabId: doc.tabId, recordId: doc.recordId, dataKey: field.dataKey, value: val })
-    if (jobs.current.has(job)) return
+    if (jobs.current.has(job)) {
+      const outcome = await job
+      return outcome.ok && current() && epoch === editEpoch.current && draftRef.current === val
+    }
     jobs.current.add(job)
     const outcome = await job
     jobs.current.delete(job)
-    if (!current()) return
+    if (!current()) return false
     setSavingField(jobs.current.size > 0)
-    if (epoch !== editEpoch.current || draftRef.current !== val) return
-    if (outcome.ok) { setReloadKey(k => k + 1); setEditing(null) }
+    if (epoch !== editEpoch.current || draftRef.current !== val) { pendingNotice.current?.(fieldDirty()); return false }
+    if (outcome.ok) { editTarget.current = null; setReloadKey(k => k + 1); setEditing(null) }
     else setFieldError(outcome.message)
+    pendingNotice.current?.(fieldDirty())
+    return outcome.ok
+  }
+  flushField.current = async () => {
+    const target = editTarget.current
+    if (!target || !fieldDirty()) return { ok: true }
+    if (await saveField(target.doc, target.field, draftRef.current)) return { ok: true }
+    if (current() && editTarget.current === target) {
+      setTopGroup(target.doc.group as typeof TOP_GROUPS[number]); setActiveSub('all'); setQuery('')
+      setExpanded(values => new Set([...values, target.doc.key]))
+    }
+    return { ok: false, scope: 'record', error: '设定修改尚未确认提交，请保留输入并重试。' }
+  }
+  const openField = async (doc: Doc, field: DocField) => {
+    const request = ++fieldSwitch.current
+    if (fieldDirty() && !(await flushField.current()).ok) return
+    if (!current() || request !== fieldSwitch.current) return
+    editEpoch.current++; editTarget.current = { doc, field }
+    setEditing({ key: doc.key, dataKey: field.dataKey }); setDraft(field.value); setFieldError('')
   }
 
   const totalForGroup = useMemo(() => {
@@ -406,7 +445,13 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   }, [docs])
 
   return (
-    <div data-setting-search="" className="flex flex-col h-full border-r border-ink-700 bg-ink-900 min-w-0">
+    <div data-setting-search="" className="flex flex-col h-full border-r border-ink-700 bg-ink-900 min-w-0"
+      onKeyDownCapture={event => {
+        if (!editing || event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229) return
+        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return
+        event.preventDefault()
+        if (!event.repeat) void flushField.current()
+      }}>
       {/* 头部搜索 */}
       <div className="px-3 pt-3 pb-2 border-b border-ink-700 shrink-0">
         <div className="flex items-center gap-1.5">
@@ -525,7 +570,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                 {f.label && <div className="text-10 text-amber/70">{f.alias ?? f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
                                   <Button variant="bare" iconOnly size="xs"
-                                    onClick={() => { editEpoch.current++; setEditing({ key: doc.key, dataKey: f.dataKey }); setDraft(f.value); setFieldError('') }}
+                                    onClick={() => { void openField(doc, f) }}
                                     aria-label={`编辑${f.alias ?? f.label}`}
                                     className="ml-auto text-ink-600 hover:text-amber transition-colors shrink-0"
                                     title="在此直接修改并同步到设定表"

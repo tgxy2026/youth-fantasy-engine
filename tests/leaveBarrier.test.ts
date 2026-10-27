@@ -16,6 +16,7 @@ import {
   hasLeaveGuard,
   leaveGuardDirty,
   runLeaveGuard,
+  registerAuxiliaryLeaveGuard, auxiliaryLeaveGuardDirty, runAuxiliaryLeaveGuards,
 } from '../src/lib/editor/leaveBarrier'
 
 let pass = 0, fail = 0
@@ -137,6 +138,40 @@ async function main() {
   const recordFailure = await runLeaveGuard()
   ok('资料页失败保持record作用域，不假报正文章节失败', !recordFailure.ok && recordFailure.scope === 'record')
   registerLeaveGuard(null)
+
+  {
+    const order: string[] = []; let pending = true
+    registerLeaveGuard({ isDirty: () => true, flush: async () => { order.push('body'); return { ok: true } } })
+    const dispose = registerAuxiliaryLeaveGuard({ isDirty: () => pending, flush: async () => { order.push('field'); return { ok: false, scope: 'record', error: 'retained' } } })
+    ok('auxiliary: side pane contributes to the global dirty check', leaveGuardDirty() && auxiliaryLeaveGuardDirty())
+    ok('auxiliary: failed side pane blocks navigation before primary flush', !(await runLeaveGuard()).ok && order.join() === 'field')
+    pending = false
+    ok('auxiliary: clean side pane does not replace the primary guard', (await runLeaveGuard()).ok && order.join() === 'field,body')
+    dispose(); dispose(); registerLeaveGuard(null)
+    ok('auxiliary: disposal removes only its own guard and is idempotent', !hasLeaveGuard())
+  }
+  {
+    let release!: () => void, pending = true
+    const wait = new Promise<void>(yes => { release = yes })
+    const dispose = registerAuxiliaryLeaveGuard({ isDirty: () => pending, flush: async () => { await wait; pending = false; return { ok: true } } })
+    const job = runAuxiliaryLeaveGuards(); dispose()
+    const disposeNew = registerAuxiliaryLeaveGuard({ isDirty: () => false, flush: async () => ({ ok: true }) })
+    release(); ok('auxiliary: replacement during a delayed flush rejects an old receipt', !(await job).ok); disposeNew()
+  }
+  {
+    const dispose = registerAuxiliaryLeaveGuard({ isDirty: () => true, flush: async () => ({ ok: true }) })
+    ok('auxiliary: new input still dirty after a successful flush blocks leaving', !(await runAuxiliaryLeaveGuards()).ok); dispose()
+    const disposeError = registerAuxiliaryLeaveGuard({ isDirty: () => { throw Error('dirty') }, flush: async () => { throw Error('flush') } })
+    const result = await runAuxiliaryLeaveGuards()
+    ok('auxiliary: dirty/flush exceptions stay bounded with record scope', !result.ok && result.scope === 'record'); disposeError()
+  }
+  {
+    let earlierDirty = false, laterDirty = true
+    const first = registerAuxiliaryLeaveGuard({ isDirty: () => earlierDirty, flush: async () => ({ ok: true }) })
+    const second = registerAuxiliaryLeaveGuard({ isDirty: () => laterDirty, flush: async () => { earlierDirty = true; laterDirty = false; return { ok: true } } })
+    ok('auxiliary: a later flush cannot conceal new input in an earlier pane', !(await runAuxiliaryLeaveGuards()).ok)
+    second(); first()
+  }
 
   console.log(`\n———— leaveBarrier：${pass} 通过 / ${fail} 失败 ————`)
   if (fail > 0) process.exit(1)

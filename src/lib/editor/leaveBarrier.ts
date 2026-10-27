@@ -35,6 +35,35 @@ export interface LeaveGuard {
 }
 
 let guard: LeaveGuard | null = null
+const auxiliary = new Set<LeaveGuard>()
+let auxiliaryRevision = 0
+
+/** Side panes participate without replacing the editor's content/meta guard. */
+export function registerAuxiliaryLeaveGuard(next: LeaveGuard): () => void {
+  auxiliary.add(next); auxiliaryRevision++
+  return () => { if (auxiliary.delete(next)) auxiliaryRevision++ }
+}
+function dirty(g: LeaveGuard): boolean {
+  try { return g.isDirty() } catch { return true }
+}
+export function auxiliaryLeaveGuardDirty(): boolean {
+  return [...auxiliary].some(dirty)
+}
+export async function runAuxiliaryLeaveGuards(): Promise<LeaveFlushResult> {
+  const revision = auxiliaryRevision, snapshot = [...auxiliary]
+  for (const g of snapshot) {
+    if (dirty(g)) {
+      try {
+        const result = await g.flush()
+        if (!result.ok) return result
+      } catch (error) { return { ok: false, scope: 'record', error } }
+    }
+    if (revision !== auxiliaryRevision || dirty(g)) return { ok: false, scope: 'record', error: '设定编辑上下文或输入已改变，请重试。' }
+  }
+  // A later pane can yield long enough for input in an earlier pane to change.
+  if (revision !== auxiliaryRevision || auxiliaryLeaveGuardDirty()) return { ok: false, scope: 'record', error: '设定仍有新输入，请重试。' }
+  return { ok: true }
+}
 
 /** 登记 / 注销编辑器离页 guard（编辑器挂载时登记，卸载时注销） */
 export function registerLeaveGuard(next: LeaveGuard | null): void {
@@ -42,7 +71,7 @@ export function registerLeaveGuard(next: LeaveGuard | null): void {
 }
 
 export function hasLeaveGuard(): boolean {
-  return guard !== null
+  return guard !== null || auxiliary.size > 0
 }
 
 /**
@@ -51,12 +80,7 @@ export function hasLeaveGuard(): boolean {
  */
 export function leaveGuardDirty(): boolean {
   const g = guard
-  if (!g) return false
-  try {
-    return g.isDirty()
-  } catch {
-    return true
-  }
+  return (!!g && dirty(g)) || auxiliaryLeaveGuardDirty()
 }
 
 /**
@@ -66,10 +90,15 @@ export function leaveGuardDirty(): boolean {
  */
 export async function runLeaveGuard(): Promise<LeaveFlushResult> {
   const g = guard
+  const auxiliaryResult = await runAuxiliaryLeaveGuards()
+  if (!auxiliaryResult.ok) return auxiliaryResult
+  if (g !== guard) return { ok: false, scope: 'record', error: '编辑页面已改变，请重试。' }
   if (!g) return { ok: true }
-  if (!leaveGuardDirty()) return { ok: true }
+  if (!dirty(g)) return { ok: true }
   try {
-    return await g.flush()
+    const result = await g.flush()
+    if (result.ok && auxiliaryLeaveGuardDirty()) return { ok: false, scope: 'record', error: '设定仍有新输入，请重试。' }
+    return result
   } catch (error) {
     return { ok: false, scope: 'content', error }
   }

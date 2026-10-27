@@ -1,5 +1,5 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
-import { useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
@@ -7,6 +7,7 @@ import type { ChapterStatus } from '@/lib/types'
 import { countWords } from '@/lib/editor/textStats'
 import { useWordCountWithPunct, wordCountModeOf } from '@/lib/editor/wordCountMode'
 import SettingSearch from '@/components/settings/SettingSearch'
+import { auxiliaryLeaveGuardDirty, runAuxiliaryLeaveGuards } from '@/lib/editor/leaveBarrier'
 import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from '@/components/editor/EditorModals'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
@@ -125,7 +126,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
   const [searchDrawer, setSearchDrawer] = useState(false)
-  const searchVisible = !focusMode && showSearch && !showRefs && searchFits
+  const [dirtySearch, setDirtySearch] = useState<'inline' | 'drawer' | null>(null)
+  const searchDraftPending = (origin: 'inline' | 'drawer', pending: boolean) => {
+    setDirtySearch(previous => pending ? origin : previous === origin ? null : previous)
+  }
+  const searchVisible = !focusMode && showSearch && !showRefs && dirtySearch !== 'drawer' && (searchFits || dirtySearch === 'inline')
+  const searchAction = useRef(0)
+  const afterSearchSubmit = (action: () => void) => {
+    const request = ++searchAction.current
+    if (!auxiliaryLeaveGuardDirty()) { action(); return }
+    void runAuxiliaryLeaveGuards().then(result => {
+      if (result.ok && request === searchAction.current) action()
+    })
+  }
 
   // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
   // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
@@ -324,10 +337,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex [&>div]:flex-1">
         {chapterTree}
       </Modal>
-      <Modal open={!searchFits && searchDrawer} onClose={() => setSearchDrawer(false)}
+      <Modal open={(!searchFits && searchDrawer) || dirtySearch === 'drawer'} onClose={() => afterSearchSubmit(() => setSearchDrawer(false))}
         title="设定检索" align="left" width={360} maxHeight="100vh"
         className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex flex-col">
-        <SettingSearch onNavigate={id => { setSearchDrawer(false); onNavigate?.(id) }} ctx={ctx} />
+        <SettingSearch onNavigate={onNavigate} ctx={ctx} onDraftPendingChange={pending => searchDraftPending('drawer', pending)} />
       </Modal>
 
       {/* 左侧 1/3：设定检索栏 */}
@@ -335,11 +348,14 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         <div
           className="relative shrink-0 flex flex-col"
           // 🔴 用**保底后的** searchPaneW（窄窗口下自动让位给码字区）；用户拖出来的偏好仍留在 localStorage 里
-          style={{ width: searchPaneW, minWidth: searchPaneW }}
+          style={dirtySearch === 'inline' && !searchFits
+            ? { width: searchPaneW, minWidth: 0, maxWidth: '100%' }
+            : { width: searchPaneW, minWidth: searchPaneW }}
         >
           {/* 拖拽调整设定检索栏宽度 */}
-          <ResizeHandle pane={searchPane} label="检索栏宽度" layer={Z.pageHandle} />
-          <SettingSearch onNavigate={onNavigate} ctx={ctx} />
+          {searchFits && <ResizeHandle pane={searchPane} label="检索栏宽度" layer={Z.pageHandle} />}
+          {!searchFits && <div role="status" className="px-3 py-2 text-11 text-amber">设定尚未提交，暂时保留编辑面板；保存或取消后恢复布局。</div>}
+          <SettingSearch onNavigate={onNavigate} ctx={ctx} onDraftPendingChange={pending => searchDraftPending('inline', pending)} />
         </div>
       )}
 
@@ -427,7 +443,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <Wand2 size={14} /> 颉文姬
               </Button>
               <div className="w-px h-4 bg-ink-700" />
-              <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+              <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
               </Button>
               {/* 2.2.0 AI 伴写：**点钢笔直接弹出「说明 + 设置 + 开关」**，总开关放在设置下方。
@@ -513,17 +529,17 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </HelpPopover>
               {secondaryTools}
               <Button variant="secondary" size="sm" aria-pressed={searchVisible || searchDrawer}
-                onClick={() => {
+                onClick={() => afterSearchSubmit(() => {
                   if (showRefs) setShowRefs(false)
                   else if (!searchFits) setSearchDrawer(true)
                   else setShowSearch(!showSearch)
-                }}
+                })}
                 className="p-1 shrink-0"
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} 设定检索
               </Button>
               <Button variant="secondary" size="sm" aria-pressed={focusMode}
-                onClick={() => setFocusMode(!focusMode)}
+                onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
                 className="p-1 shrink-0"
                 title={focusMode ? '退出专注模式' : '专注模式'}>
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {focusMode ? '退出专注' : '专注'}
