@@ -17,18 +17,22 @@ export const FIELD_SAVE_MISSING = '这条设定已经不在了，本次修改没
 
 export type FieldSaveOutcome =
   | { ok: true }
-  | { ok: false; kind: 'missing' | 'failed'; message: string }
+  | { ok: false; kind: 'missing' | 'failed' | 'stale' | 'blocked'; message: string }
 
 /**
  * 判定一次内联保存的结果。
- * 🔴 `written` 必须是**真的写进去了**（记录找到且 await 成功），不能拿「点了保存」当依据；
- *    传 `false` 只有两种正当理由：目标记录不存在，或者写入抛错（`error`）。
+ * `written` 表示找到记录且存储接口接受了提交，不等于物理文件已经落盘。
+ * 目标缺失或写入抛错都不得收起输入；锁定和过期上下文由调用者另行判定。
  */
 export function describeFieldSave(input: { written: boolean; error?: unknown }): FieldSaveOutcome {
   if (input.written) return { ok: true }
-  if (input.error !== undefined) {
-    const raw = input.error instanceof Error ? input.error.message : String(input.error)
-    return { ok: false, kind: 'failed', message: `本次修改未确认保存：${raw}` }
+  if (Object.prototype.hasOwnProperty.call(input, 'error')) {
+    let name = 'Error'
+    try {
+      const candidate = input.error instanceof Error ? input.error.name : ''
+      if (['QuotaExceededError', 'SecurityError', 'InvalidStateError', 'NotAllowedError', 'AbortError', 'TypeError'].includes(candidate)) name = candidate
+    } catch { /* Do not expose arbitrary messages or invoke an untrusted stringifier. */ }
+    return { ok: false, kind: 'failed', message: `本次修改未确认保存（${name}）。请保留此处内容，检查存储连接后重试；最终写入状态以存储栏为准。` }
   }
   return { ok: false, kind: 'missing', message: FIELD_SAVE_MISSING }
 }

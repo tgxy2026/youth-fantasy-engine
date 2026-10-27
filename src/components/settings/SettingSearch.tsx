@@ -10,7 +10,9 @@ import TableRefSelect from '@/components/sheets/TableRefSelect'
 import StoryDateInput from '@/components/common/StoryDateInput'
 import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
-import { describeFieldSave } from '@/lib/settings/fieldSaveOutcome'
+import { createIndexedFieldWriter } from '@/lib/settings/indexedFieldWriter'
+import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { useAliasRevision, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
 import { loadFieldLabels } from '@/lib/templates/labels'
 import { useFieldDefinitionRevision } from '@/lib/templates/useFieldRenames'
@@ -48,6 +50,7 @@ const CARD_SELECT_FIELDS: Record<string, string[]> = {
 }
 
 interface Doc {
+  ownerContext?: string
   key: string
   kind: DocKind
   source: string       // 页签名（如"主要角色"）
@@ -69,19 +72,31 @@ interface Props {
 const TOP_GROUPS = ['角色管理', '世界构建', '创作管理'] as const
 
 export default function SettingSearch({ onNavigate, ctx }: Props) {
-  const [docs, setDocs] = useState<Doc[]>([])
+  const projectId = db.getCurrentProjectId(), context = candidateApplyContext()
+  const workspace = useListWorkspaceView(projectId, 'setting-search')
+  const isViewCurrent = workspace.isCurrent
+  const current = useMemo(() => () => isViewCurrent() && context === candidateApplyContext(), [isViewCurrent, context])
+  const writeField = useMemo(() => createIndexedFieldWriter(projectId, current), [projectId, current])
+  const [index, setDocs] = useState<Doc[]>([])
+  const docs = useMemo(() => index.filter(doc => doc.ownerContext === context), [index, context])
   const [query, setQuery] = useState('')
   const [topGroup, setTopGroup] = useState<typeof TOP_GROUPS[number]>('角色管理')
   const [activeSub, setActiveSub] = useState<string>('all')
-  const [loaded, setLoaded] = useState(false)
+  const [loadedContext, setLoadedContext] = useState('')
+  const loaded = loadedContext === context
+  const [indexError, setIndexError] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [reloadKey, setReloadKey] = useState(0)
   /** 别名版本号：任何页签改了字段显示名 → +1 ⇒ 重建索引（否则检索里还印着旧字段名） */
   const aliasRev = useAliasRevision()
   /** 轻量定义（改名 / 含义确认）变更 → 重建索引，否则检索里还印着旧字段名 */
   const defRev = useFieldDefinitionRevision()
-  const [editing, setEditing] = useState<{ key: string; idx: number } | null>(null)
-  const [draft, setDraft] = useState('')
+  const [editing, setEditing] = useState<{ key: string; dataKey: string } | null>(null)
+  const [draft, storeDraft] = useState('')
+  const draftRef = useRef(draft), editEpoch = useRef(0)
+  draftRef.current = draft
+  const setDraft = (value: string) => { draftRef.current = value; storeDraft(value) }
+  const jobs = useRef(new Set<Promise<unknown>>())
   const [savingField, setSavingField] = useState(false)
   /**
    * 内联改字段的**失败说明**（UX08）。空串＝没有失败。
@@ -89,6 +104,10 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
    */
   const [fieldError, setFieldError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const closeEditing = () => { editEpoch.current++; setEditing(null); setFieldError('') }
+  useEffect(() => {
+    editEpoch.current++; setEditing(null); setFieldError(''); setSavingField(false); jobs.current.clear()
+  }, [context])
 
   // 自定义项目按启用功能集过滤页签可见性；完整项目全量可搜（历史遗留的精简/极简类型已废弃移除）
   const hiddenTabs = useMemo(
@@ -117,13 +136,19 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   // 历法规则（一年几个月 / 每月几天）：这里改设定也要按它出月/日候选，否则与表格页口径不一致
   const { rule: calendarRule } = useCalendarRule()
   useEffect(() => {
-    db.getSetting<CalendarDef[]>('calendars', []).then(v => { if (v && v.length > 0) setCalendars(v) })
-  }, [])
+    let alive = true
+    db.getSettingFor<CalendarDef[]>(projectId, 'calendars', []).then(v => { if (alive && current() && v && v.length > 0) setCalendars(v) }).catch(() => {})
+    return () => { alive = false }
+  }, [projectId, current])
 
   useEffect(() => {
+    if (editing) return
     let cancelled = false
+    setLoadedContext('')
+    setIndexError('')
     ;(async () => {
       const { tableRows, cardRecords } = await db.loadAllData()
+      if (cancelled || !current()) return
       // 显示名：与 AI 上下文同一口径（采用模板 > 轻量定义 > 别名 > 原名），
       // 一次并发读齐本页用得到的页签，供下面逐字段取名字。
       const aliasOf = new Map<string, AliasMap>()
@@ -132,7 +157,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           aliasOf.set(t.id, await loadFieldLabels(t))
         }),
       )
-      if (cancelled) return
+      if (cancelled || !current()) return
       const out: Doc[] = []
       // 表单型：每个已填字段一条（不进入本检索，检索聚焦人物/世界/创作）
       // 表格型 + 卡片型：人物关系按人物汇总（见下方分组逻辑）
@@ -282,14 +307,15 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           })
         }
       }
-      setDocs(out)
-      setLoaded(true)
-    })()
+      if (cancelled || !current()) return
+      setDocs(out.map(doc => ({ ...doc, ownerContext: context })))
+      setLoadedContext(context)
+    })().catch(() => { if (!cancelled && current()) setIndexError('暂时无法读取设定索引。请检查存储连接后重试，不会修改原有设定。') })
     return () => { cancelled = true }
     // hiddenTabs 的内容变化由 hiddenTabsKey 等价代表（见其定义处说明）；
     // 直接依赖 hiddenTabs 这个 Set 会因引用每次重建把 effect 拖进循环，故刻意不加。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey, hiddenTabsKey, aliasRev, defRev])
+  }, [reloadKey, hiddenTabsKey, aliasRev, defRev, context, current, editing])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])
@@ -350,36 +376,26 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
   /**
    * 在设定检索区内直接编辑某字段，保存后回写到对应设定表（角色卡 / 表格）。
    * 🔴 UX08：这里必须把「页面提交」和「存储确认」分开——
-   *    · 只有 `await` 真的成功，才刷新并收起编辑器（那才算存储已确认）；
+   *    · 原上下文里的接口提交成功、且没有新输入时，才刷新并收起编辑器；最终写入仍看存储栏；
    *    · 失败**留在原地**（草稿不丢、界面不刷新成旧值），给出可读原因让作者重试；
    *    · 目标记录已不存在时**不能**当成功：原实现 `if (rec) {...}` 落空后照样刷新+收起，
    *      作者以为改好了，实际一个字都没写进去（2026-10-27 实测确认）。
    */
   const saveField = async (doc: Doc, field: DocField, val: string) => {
-    if (doc.kind === 'relation' || !doc.recordId) return
+    if (doc.kind === 'relation' || !doc.recordId || !current() || doc.ownerContext !== context) return
+    const epoch = editEpoch.current
     setSavingField(true)
     setFieldError('')
-    let written = false
-    let failure: unknown
-    try {
-      if (doc.kind === 'card') {
-        const recs = await db.getCardRecords(doc.tabId)
-        const rec = recs.find(r => r.id === doc.recordId)
-        if (rec) { rec.data[field.dataKey] = val; await db.saveCardRecord(rec); written = true }
-      } else if (doc.kind === 'table') {
-        const rows = await db.getTableRows(doc.tabId)
-        const row = rows.find(r => r.id === doc.recordId)
-        if (row) { row.data[field.dataKey] = val; await db.saveTableRow(row); written = true }
-      }
-    } catch (error) {
-      failure = error
-    }
-    // 🔴 判定只在 `describeFieldSave` 里（有单测钉住）：真的写进去了才刷新+收起；
-    //    抛出失败或「记录已不存在」都留在原地给可读原因，界面不刷新成旧值、草稿不丢。
-    const outcome = describeFieldSave({ written, error: failure })
+    const job = writeField({ kind: doc.kind, tabId: doc.tabId, recordId: doc.recordId, dataKey: field.dataKey, value: val })
+    if (jobs.current.has(job)) return
+    jobs.current.add(job)
+    const outcome = await job
+    jobs.current.delete(job)
+    if (!current()) return
+    setSavingField(jobs.current.size > 0)
+    if (epoch !== editEpoch.current || draftRef.current !== val) return
     if (outcome.ok) { setReloadKey(k => k + 1); setEditing(null) }
     else setFieldError(outcome.message)
-    setSavingField(false)
   }
 
   const totalForGroup = useMemo(() => {
@@ -401,6 +417,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
           </HelpPopover>
           <Button variant="bare" iconOnly size="xs"
             onClick={() => setReloadKey(k => k + 1)}
+            disabled={!!editing || savingField}
             className="text-ink-500 hover:text-amber transition-colors"
             title="重新加载设定数据"
           >
@@ -421,7 +438,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
         <div className="flex gap-1 mt-2">
           {visibleTopGroups.map(g => (
             <Button variant="bare"
-              key={g}
+              key={g} data-setting-group={g}
               onClick={() => setTopGroup(g)}
               className={`flex-1 px-2 py-1 rounded-md text-11 border transition-colors
                 ${activeTop === g
@@ -452,7 +469,11 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
 
       {/* 结果列表 */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        {!loaded ? (
+        {indexError ? (
+          <div role="alert" className="space-y-2 px-2 py-4 text-11 text-danger">
+            <p>{indexError}</p><Button variant="secondary" size="xs" onClick={() => setReloadKey(k => k + 1)}>重试读取设定</Button>
+          </div>
+        ) : !loaded ? (
           <div className="text-center py-10 text-11 text-ink-500">加载设定索引…</div>
         ) : results.length === 0 ? (
           <div className="text-center py-10 text-11 text-ink-500 leading-relaxed">
@@ -472,7 +493,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                 const open = expanded.has(doc.key)
                 const snippet = doc.matchField?.value ?? doc.subtitle ?? doc.fields[0]?.value ?? ''
                 return (
-                  <div key={doc.key} className="rounded-lg bg-ink-850/70 border border-ink-700/70 hover:border-ink-600 transition-colors">
+                  <div key={doc.key} data-setting-doc={doc.key} className="rounded-lg bg-ink-850/70 border border-ink-700/70 hover:border-ink-600 transition-colors">
                     <Button variant="bare"
                       onClick={() => toggle(doc.key)}
                       className="w-full text-left !justify-start px-2.5 py-2"
@@ -496,15 +517,16 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                         {doc.subtitle && (
                           <div className="text-10 text-amber/80 pb-1 border-b border-ink-700/60">{doc.subtitle}</div>
                         )}
-                        {doc.fields.map((f, i) => {
-                          const isEditing = editing?.key === doc.key && editing.idx === i
+                        {doc.fields.map(f => {
+                          const isEditing = editing?.key === doc.key && editing.dataKey === f.dataKey
                           return (
-                            <div key={i}>
+                            <div key={f.dataKey} data-setting-field={f.dataKey}>
                               <div className="flex items-center gap-1">
                                 {f.label && <div className="text-10 text-amber/70">{f.alias ?? f.label}</div>}
                                 {doc.kind !== 'relation' && !isEditing && (
                                   <Button variant="bare" iconOnly size="xs"
-                                    onClick={() => { setEditing({ key: doc.key, idx: i }); setDraft(f.value) }}
+                                    onClick={() => { editEpoch.current++; setEditing({ key: doc.key, dataKey: f.dataKey }); setDraft(f.value); setFieldError('') }}
+                                    aria-label={`编辑${f.alias ?? f.label}`}
                                     className="ml-auto text-ink-600 hover:text-amber transition-colors shrink-0"
                                     title="在此直接修改并同步到设定表"
                                   >
@@ -551,7 +573,7 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                           </select>
                                         )}
                                       </div>
-                                      <Button variant="icon-muted" onClick={() => setEditing(null)} className="p-1 shrink-0" title="收起（选中选项即已保存）"><X size={11} /></Button>
+                                      <Button variant="icon-muted" onClick={closeEditing} className="p-1 shrink-0" title="收起编辑（已发出的提交会继续处理）"><X size={11} /></Button>
                                     </div>
                                   ) : f.type === 'characters' ? (
                                     /* 多选角色：从已创建角色卡中选择，禁止手动输入，与原表一致 */
@@ -594,12 +616,15 @@ export default function SettingSearch({ onNavigate, ctx }: Props) {
                                     <div role="status" className="mt-1 text-10 text-danger leading-relaxed">{fieldError}</div>
                                   )}
                                   {f.type === 'select' || f.type === 'characters' || f.type === 'date' || f.type === 'calendar-select' || f.type === 'tableRef' ? (
-                                    <div className="mt-1 text-10 text-ink-500">改动即自动同步到「{doc.source}」</div>
+                                    <>
+                                    <div className="mt-1 text-10 text-ink-500">{savingField ? '正在提交修改…' : `改动即提交到「${doc.source}」，最终写入状态请查看存储栏。`}</div>
+                                    {fieldError && <Button variant="secondary" size="xs" disabled={savingField} onClick={() => saveField(doc, f, draft)}>重试提交</Button>}
+                                    </>
                                   ) : (
                                     <div className="flex gap-1.5 mt-1">
                                       <Button variant="primary" size="xs" disabled={savingField} onClick={() => saveField(doc, f, draft)}>保存</Button>
                                       <Button variant="secondary" size="xs"
-                                        onClick={() => { setEditing(null); setFieldError('') }}
+                                        onClick={closeEditing}
                                       >取消</Button>
                                     </div>
                                   )}

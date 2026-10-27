@@ -45,7 +45,7 @@ async function main() {
   ok('源码闸：检索匹配也认作者起的名字（否则「看见了却搜不到」）',
     /\(f\.alias \?\? ''\)/.test(search))
   ok('源码闸：别名 / 轻量定义变了都要重建检索索引',
-    /\[reloadKey, hiddenTabsKey, aliasRev, defRev\]/.test(search) && search.includes('useFieldDefinitionRevision'))
+    /\[reloadKey, hiddenTabsKey, aliasRev, defRev(?:, [\w]+)*\]/.test(search) && search.includes('useFieldDefinitionRevision'))
   ok('源码闸：帮助文案写明「只读不改」', search.includes('这里只读不改'))
 
   // ---------- ② 🔴 只读页签不许出现第二个改名入口 ----------
