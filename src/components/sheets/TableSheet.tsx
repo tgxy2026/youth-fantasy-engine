@@ -78,6 +78,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const [showFieldMgr, setShowFieldMgr] = useState(false)
   /** 3.2.0：模板管理弹窗（七个页签；采用后结构由模板快照决定） */
   const [showTemplate, setShowTemplate] = useState(false)
+  useEffect(() => {
+    setShowCalRule(false); setMention(null); setShowFieldMgr(false); setShowTemplate(false)
+  }, [model.recordOwnerKey])
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
   const aliasTargets = useMemo(
     () => tableAliasTargets((tab.columns ?? []).filter(c => !c.hidden)),
@@ -185,13 +188,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 不完整/超限的包在动目标项目之前就被拒绝；页签不一致会额外问一次。
    */
   const importAtlasPackageFile = async (file: File) => {
+    let owner: ReturnType<typeof model.beginOperation>
+    try { owner = model.beginOperation() } catch { return }
     let text: string
     try {
       text = await file.text()
     } catch {
-      showToast('文件读取失败', 'error')
+      if (owner.current()) showToast('文件读取失败', 'error')
       return
     }
+    if (!owner.current()) return
     const r = parseAtlasPackage(text)
     if (!r.ok) { showToast(r.reason, 'error'); return }
 
@@ -202,6 +208,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         danger: true,
       })
       if (!go) return
+      if (!owner.current()) return
     }
 
     const p = previewAtlasImport(r.pkg, atlasConfig, atlasCategoryOptions(tab))
@@ -223,12 +230,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
     })
     if (!ok) return
+    if (!owner.current()) return
 
     try {
       const res = await importAtlasPackage(r.pkg)
+      owner.assertCurrent()
       // 未知类别值登记为「类别」列的自定义选项 —— 否则行内下拉显示空白，作者会以为值丢了
       for (const v of p.unknownCategories) {
+        owner.assertCurrent()
         try { await addCustomItem(tab.id, '类别', v) } catch { /* 登记失败不影响条目本身 */ }
+        owner.assertCurrent()
       }
       const strip = res.strippedImages > 0 ? `；容量不足，有 ${res.strippedImages} 条图片未导入` : ''
       // 🔴 R11：如实报"部分成功"—— 已入库的已并入列表，失败的那几条没进来；
@@ -237,6 +248,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       const level = res.failed > 0 ? 'error' : (strip ? 'error' : 'success')
       showToast(`已导入 ${res.added} 条，新建字段 ${res.createdFields} 个${strip}${partial}`, level)
     } catch (e) {
+      if (!owner.current()) return
       showToast('导入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     }
   }

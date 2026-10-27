@@ -12,6 +12,8 @@
  */
 import { getSettingFor, setSettingFor } from '@/lib/db'
 import { uid } from '@/lib/app/id'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { beginRecordOperation } from '@/lib/storage/recordOperation'
 import { emptyAtlasSchema } from './schema'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from './types'
 
@@ -166,6 +168,7 @@ export async function saveAtlasSchema(
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
 ): Promise<AtlasSchemaConfig> {
+  const owner = beginRecordOperation(projectId, captureStorageWriteOwner(projectId).current)
   let raw: unknown = null
   try {
     raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null)
@@ -173,6 +176,7 @@ export async function saveAtlasSchema(
     throw new Error(`字段配置读取失败，已拒绝修改：${e instanceof Error ? e.message : String(e)}`)
   }
   const check = checkAtlasWritable(raw)
+  owner.assertCurrent()
   if (!check.allow) throw new Error(check.reason ?? '字段配置已锁定为只读，拒绝修改')
   const next: AtlasSchemaConfig = {
     ...config,
@@ -180,5 +184,6 @@ export async function saveAtlasSchema(
     revision: config.revision + 1,
   }
   await setSettingFor(projectId, atlasSchemaKey(tabId), next)
+  owner.assertCurrent()
   return next
 }

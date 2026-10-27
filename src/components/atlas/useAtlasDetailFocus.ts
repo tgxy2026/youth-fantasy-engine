@@ -8,8 +8,9 @@ export function useAtlasDetailFocus(overlay: boolean, selectedId: string | null,
   useLayoutEffect(() => {
     const list = listRef.current
     if (!list) return
+    const ownedFocus = list.contains(document.activeElement)
     list.inert = overlay && !!selectedId
-    if (list.inert && list.contains(document.activeElement)) {
+    if (list.inert && ownedFocus) {
       detailRef.current?.closest('aside')?.querySelector<HTMLButtonElement>('[data-atlas-close]')?.focus({ preventScroll: true })
     }
     return () => { list.inert = false }

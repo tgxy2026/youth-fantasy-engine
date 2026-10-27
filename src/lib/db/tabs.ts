@@ -2,6 +2,7 @@
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 import type { FormData, TableRow, CardRecord } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 
 // ============ 表单数据 ============
 export async function getFormData(tabId: string): Promise<Record<string, string>> {
@@ -126,41 +127,48 @@ export interface CustomOptionPayload {
 }
 
 export async function getCustomOptions(tabId: string, colName: string): Promise<CustomOptionPayload> {
-  const rec = await ops.get<{ key: string; value: CustomOptionPayload }>('settingsKV', `${CUSTOM_OPTION_PREFIX}${currentProjectId}::${tabId}::${colName}`)
-  return rec?.value ?? { items: [], hidden: [] }
+  return customOptionsAccess(tabId, colName).read()
 }
 
-async function saveCustomOptions(tabId: string, colName: string, payload: CustomOptionPayload) {
-  await ops.put('settingsKV', { key: `${CUSTOM_OPTION_PREFIX}${currentProjectId}::${tabId}::${colName}`, value: payload })
+function customOptionsAccess(tabId: string, colName: string) {
+  const store = ops, context = storageWriteContext()
+  const key = `${CUSTOM_OPTION_PREFIX}${currentProjectId}::${tabId}::${colName}`
+  return {
+    read: async () => (await store.get<{ key: string; value: CustomOptionPayload }>('settingsKV', key))?.value ?? { items: [], hidden: [] },
+    save: async (payload: CustomOptionPayload) => {
+      if (context !== storageWriteContext()) throw new Error('选项所属的存储或账号已改变，请重新操作')
+      await store.put('settingsKV', { key, value: payload })
+    },
+  }
 }
 
 /** 便捷：新增一个用户项 */
 export async function addCustomItem(tabId: string, colName: string, value: string): Promise<CustomOptionPayload> {
   const v = value.trim()
   if (!v) return getCustomOptions(tabId, colName)
-  const cur = await getCustomOptions(tabId, colName)
+  const access = customOptionsAccess(tabId, colName), cur = await access.read()
   if (cur.items.includes(v) || cur.hidden.includes(v) || Object.values(cur.renamed ?? {}).includes(v)) return cur
   const next = { ...cur, items: [...cur.items, v] }
-  await saveCustomOptions(tabId, colName, next)
+  await access.save(next)
   return next
 }
 
 /** 便捷：隐藏内置项（不会清空数据，只是不在下拉里出现） */
 export async function hideBuiltinItem(tabId: string, colName: string, name: string): Promise<CustomOptionPayload> {
-  const cur = await getCustomOptions(tabId, colName)
+  const access = customOptionsAccess(tabId, colName), cur = await access.read()
   if (cur.hidden.includes(name)) return cur
   const renamed = { ...(cur.renamed ?? {}) }
   delete renamed[name]
   const next = { ...cur, hidden: [...cur.hidden, name], renamed }
-  await saveCustomOptions(tabId, colName, next)
+  await access.save(next)
   return next
 }
 
 /** 便捷：恢复一个内置项 */
 export async function restoreBuiltinItem(tabId: string, colName: string, name: string): Promise<CustomOptionPayload> {
-  const cur = await getCustomOptions(tabId, colName)
+  const access = customOptionsAccess(tabId, colName), cur = await access.read()
   const next = { ...cur, hidden: cur.hidden.filter(h => h !== name) }
-  await saveCustomOptions(tabId, colName, next)
+  await access.save(next)
   return next
 }
 
@@ -168,20 +176,20 @@ export async function restoreBuiltinItem(tabId: string, colName: string, name: s
 export async function renameBuiltinItem(tabId: string, colName: string, oldName: string, newName: string): Promise<CustomOptionPayload> {
   const v = newName.trim()
   if (!v || v === oldName) return getCustomOptions(tabId, colName)
-  const cur = await getCustomOptions(tabId, colName)
+  const access = customOptionsAccess(tabId, colName), cur = await access.read()
   const renamed = { ...(cur.renamed ?? {}) }
   // 同名则覆盖
   for (const k of Object.keys(renamed)) if (renamed[k] === v) delete renamed[k]
   renamed[oldName] = v
   const next = { ...cur, renamed }
-  await saveCustomOptions(tabId, colName, next)
+  await access.save(next)
   return next
 }
 
 /** 便捷：删除用户自定义项 */
 export async function removeCustomItem(tabId: string, colName: string, value: string): Promise<CustomOptionPayload> {
-  const cur = await getCustomOptions(tabId, colName)
+  const access = customOptionsAccess(tabId, colName), cur = await access.read()
   const next = { ...cur, items: cur.items.filter(i => i !== value) }
-  await saveCustomOptions(tabId, colName, next)
+  await access.save(next)
   return next
 }

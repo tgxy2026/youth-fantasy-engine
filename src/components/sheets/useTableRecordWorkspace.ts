@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction 
 import { getAllChapterLedgerRows, getCurrentProjectId, getTableRowsFor } from '@/lib/db'
 import type { TableRow } from '@/lib/types'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { beginRecordOperation } from '@/lib/storage/recordOperation'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { createRecordDraftFlusher } from '@/lib/editor/recordDraftFlush'
 import { registerLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
@@ -21,6 +22,9 @@ export function useTableRecordWorkspace(tabId: string, validate: () => string | 
   const [loadedOwner, setLoadedOwner] = useState(''), [errorOwner, setErrorOwner] = useState('')
   const [revision, setRevision] = useState(0), [jobs, setJobs] = useState(0)
   const [receiptOwner, setReceiptOwner] = useState(''), [saveError, setSaveError] = useState({ owner: '', message: '' })
+  const projectId = getCurrentProjectId()
+  const isCurrent = useCallback(() => current() && source.current.key === ownerKey, [current, ownerKey])
+  const beginOperation = useCallback(() => beginRecordOperation(projectId, isCurrent), [projectId, isCurrent])
   const setRows = useCallback((action: SetStateAction<TableRow[]>) => {
     if (!current() || source.current.key !== ownerKey) return
     const next = typeof action === 'function' ? action(rowsRef.current) : action
@@ -85,5 +89,6 @@ export function useTableRecordWorkspace(tabId: string, validate: () => string | 
   }, [])
   return { rows, setRows, rowsRef, drafts, setDrafts, draftsRef, loaded: loadedOwner === ownerKey,
     loadError: errorOwner === ownerKey, retry: () => setRevision(value => value + 1), saving: jobs > 0, flushRecords, ownerKey,
-    saveState: { saving: jobs > 0, submitted: receiptOwner === ownerKey, error: saveError.owner === ownerKey ? saveError.message : '' } }
+    saveState: { saving: jobs > 0, submitted: receiptOwner === ownerKey, error: saveError.owner === ownerKey ? saveError.message : '' },
+    projectId, isCurrent, beginOperation }
 }
