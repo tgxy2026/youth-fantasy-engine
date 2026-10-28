@@ -11,7 +11,8 @@ Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
 Environment=YFE_WWW=/opt/yfe/www
-Environment=PORT=80
+Environment=PORT=8082
+Environment=HOST=127.0.0.1
 # 机器只有 1.7 GB 内存：给单个服务设上限，异常时被 OOM 杀掉的是它而不是整台机器
 MemoryMax=512M
 StandardOutput=journal

@@ -11,7 +11,7 @@ cd "$ROOT"
 TS=$(date +%Y%m%d-%H%M%S)
 OUT=".workbuddy/tmp/webcloud-runtime-evidence/$TS"
 mkdir -p "$OUT"
-B=http://115.120.232.153
+B=https://youth-fantasy-engine.online
 SSH="ssh -i C:/Users/18223/.workbuddy/deploy-keys/yfe_huawei -o BatchMode=yes root@115.120.232.153"
 LOG="$OUT/steps.txt"
 
