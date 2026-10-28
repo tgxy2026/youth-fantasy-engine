@@ -126,9 +126,12 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     await fs.writeFile(path.join(runRoot, 'preflight.json'), JSON.stringify({ actualTestEntries: plan.actualEntries, jobs: plan.jobs.length, node: process.version }, null, 2))
     record('tooling.preflight', 'passed', 1, '', ['preflight.json'])
   } catch (error) { ready = false; record('tooling.preflight', 'failed', 0, String(error)) }
+  // 🔴 下面三个时限是**墙钟余量**，不是判据：本机实测 tsc 35–60s、lint 30–55s、vite build 46s，
+  //    但杀软实时扫描新产物时 source.build 曾跑满 180s 被判超时（整轮 23 项 not-run，白跑 12 分钟）。
+  //    放宽后仍由各自的真实结果（退出码 / 断言）判过与不过 —— 不因为超时变宽就放过失败。
   const steps = [
-    ['source.typecheck', ['node_modules/typescript/bin/tsc', '--noEmit'], 120000],
-    ['source.lint', ['node_modules/eslint/bin/eslint.js', 'src', 'tests', '--max-warnings', '0'], 120000],
+    ['source.typecheck', ['node_modules/typescript/bin/tsc', '--noEmit'], 240000],
+    ['source.lint', ['node_modules/eslint/bin/eslint.js', 'src', 'tests', '--max-warnings', '0'], 240000],
     ['source.tests', ['tests/run-all.mjs', '--report', path.join(runRoot, 'tests.json')], 900000, async () => {
       const testReport = JSON.parse(await fs.readFile(path.join(runRoot, 'tests.json'), 'utf8'))
       const expected = readTestPlan(realRoot).jobs.map(job => job.id).sort()
@@ -136,7 +139,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (!testReport.ok || testReport.planned !== expected.length || testReport.passed !== expected.length || testReport.failed !== 0 || testReport.notRun !== 0 || JSON.stringify(expected) !== JSON.stringify(actual) || testReport.results.some(item => item.status !== 'passed' || !item.ok)) throw new Error('Incomplete test execution')
       return expected.length
     }],
-    ['source.build', ['node_modules/vite/bin/vite.js', 'build', '--outDir', path.join(runRoot, 'build')], 180000, async () => {
+    ['source.build', ['node_modules/vite/bin/vite.js', 'build', '--outDir', path.join(runRoot, 'build')], 420000, async () => {
       await fs.access(path.join(runRoot, 'build/index.html'))
       report.build = await hashPaths(path.join(runRoot, 'build'), ['.'])
       await fs.writeFile(path.join(runRoot, 'build-manifest.json'), JSON.stringify(report.build, null, 2))

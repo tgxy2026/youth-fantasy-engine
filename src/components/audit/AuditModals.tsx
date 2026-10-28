@@ -4,7 +4,7 @@ import { ToolModal } from '@/components/editor/EditorModals'
 import AuditPanel from '@/components/audit/AuditPanel'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
-import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle } from 'lucide-react'
+import { GitBranch, Link2, Feather, Sparkles, Loader2, AlertCircle, Square } from 'lucide-react'
 import type { ForeshadowBoardItem, ForeshadowStatus } from '@/lib/outline/foreshadowEngine'
 // 2.9.1：改走 checkLog 的包装 —— 与检查工具页 / 稿件体检面板 / 本章体检共用同一份结果（缓存），
 // 并顺手记一条台账（供「比上次多/少几条」的趋势对比）
@@ -137,6 +137,12 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
               </Button>
+              {aiLoading && (
+                <Button onClick={t.stop} variant="secondary" size="md" className="shrink-0 flex items-center rounded"
+                  title="中止本次 AI 伏笔分析（已产生的结果不会写入任何正文）" aria-label="中止 AI 伏笔分析">
+                  <Square size={11} /> 停止
+                </Button>
+              )}
             </div>
             <AuditPanel issues={issues} emptyText="伏笔网络健康 ✓ 无跨度/孤儿/状态异常" onNavigateTab={onNavigateTab} />
             {aiError && (
@@ -242,6 +248,12 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
             </Button>
+              {aiLoading && (
+                <Button onClick={t.stop} variant="secondary" size="md" className="shrink-0 flex items-center rounded"
+                  title="中止本次 AI 连续性审计（已产生的结果不会写入任何正文）" aria-label="中止 AI 连续性审计">
+                  <Square size={11} /> 停止
+                </Button>
+              )}
           </div>
           <AuditPanel
             issues={issues}
@@ -338,6 +350,12 @@ export function StyleAudit({ content, chapterId, onClose }: { content: string; c
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
             </Button>
+              {aiLoading && (
+                <Button onClick={t.stop} variant="secondary" size="md" className="shrink-0 flex items-center rounded"
+                  title="中止本次 AI 文风体检（已产生的结果不会写入任何正文）" aria-label="中止 AI 文风体检">
+                  <Square size={11} /> 停止
+                </Button>
+              )}
           </div>
           <AuditPanel issues={issues} emptyText="本章文风体检通过 ✓" />
           {aiError && (

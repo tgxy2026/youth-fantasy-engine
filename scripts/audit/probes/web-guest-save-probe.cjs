@@ -2,6 +2,13 @@
 // Production renderer + actual web server guest injection + Chromium IndexedDB.
 // Faults affect only chapter writes in this probe's isolated persistent profile.
 'use strict'
+
+/**
+ * 🔴 首屏导航单独放宽（BOOT_TIMEOUT）：这台机器上「持久化 profile + 全量路由拦截 + 冷启动大包」
+ *    实测同一导航要 41s（2026-10-28 实测；手工直连只要 112ms），15s 会稳定误判成产品故障。
+ *    断言本身仍走各页 15s 默认超时 —— 放宽的只是「等页面起来」，不是「等结果对」。
+ */
+const BOOT_TIMEOUT = 60_000
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const net = require('node:net')
@@ -132,6 +139,7 @@ async function main() {
       return route.abort()
     })
     const pg = ctx.pages()[0] ?? await ctx.newPage()
+
     pg.setDefaultTimeout(15000)
     pg.on('pageerror', value => pageErrors.push(String(value)))
     return { ctx, pg }
@@ -142,7 +150,7 @@ async function main() {
     server.stdout.on('data', value => { serverLog += value }); server.stderr.on('data', value => { serverLog += value })
     await until(async () => { try { return (await fetch(origin + '/api/ping', { signal: AbortSignal.timeout(1000) })).ok } catch { return false } })
     const first = await launch(); context = first.ctx; page = first.pg
-    await page.goto(origin + '/guest', { waitUntil: 'domcontentloaded' })
+    await page.goto(origin + '/guest', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     await page.waitForFunction(async name => (await indexedDB.databases()).some(item => item.name === name), databaseName)
     check('initial-flags', await page.evaluate(() => !!window.__YFE_WEB__ && !!window.__YFE_GUEST__ && !window.__YFE_PORTABLE__ && !window.electronStore))
     await page.evaluate(({ databaseName, PID, VID, CH, TITLE, ORIGINAL }) => new Promise((resolve, reject) => {
@@ -158,7 +166,7 @@ async function main() {
         tx.onabort = () => { database.close(); reject(tx.error) }
       }
     }), { databaseName, PID, VID, CH, TITLE, ORIGINAL })
-    await page.reload({ waitUntil: 'domcontentloaded' }); await openEditor(page)
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openEditor(page)
     check('fixture-readback', (await page.getByPlaceholder(EDITOR).inputValue()) === ORIGINAL && (await readChapter(page, databaseName)).content === ORIGINAL)
     let persisted = ORIGINAL
     for (const mode of ['quota', 'abort']) {
@@ -181,7 +189,7 @@ async function main() {
     check('backend-selection', requests.every(request => request.pathname !== '/api/data'))
     await context.close(); context = null
     const restarted = await launch(); context = restarted.ctx; page = restarted.pg
-    await page.goto(origin + '/guest', { waitUntil: 'domcontentloaded' }); await openEditor(page)
+    await page.goto(origin + '/guest', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openEditor(page)
     check('restart-readback', (await readChapter(page, databaseName)).content === persisted && (await page.getByPlaceholder(EDITOR).inputValue()) === persisted)
     check('no-pageerror', pageErrors.length === 0, pageErrors)
     await page.screenshot({ path: path.join(runRoot, 'restart-readback.png') })

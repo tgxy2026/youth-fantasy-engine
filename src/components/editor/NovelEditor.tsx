@@ -24,7 +24,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2, ChevronDown, AlertTriangle
+  Undo2, Redo2, FilePlus2, ChevronDown, AlertTriangle, Square
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -99,7 +99,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, regenFailures, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
@@ -564,11 +564,21 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 title={!aiReady ? '未配置 AI 模型' : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
                 {summarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               </Button>
-              <Button onClick={regenAllSummaries}
-                disabled={!aiReady || regenAll || !active}
-                title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
-                {regenAll ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
-              </Button>
+              {/* 🔴 UX13：长等待必须能叫停。跑起来后这个键变「中止」（同一位置、同一尺寸），
+                  已更新的章节保持已更新（中止不是回滚），未处理的章节仍是旧摘要。 */}
+              {regenAll ? (
+                <Button onClick={stopRegenAll}
+                  title="中止批量重生成（已更新的章节保持已更新）" aria-label="中止批量重生成"
+                  variant="secondary" size="md" className="shrink-0">
+                  <Square size={12} />
+                </Button>
+              ) : (
+                <Button onClick={regenAllSummaries}
+                  disabled={!aiReady || !active}
+                  title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  <Layers size={12} />
+                </Button>
+              )}
               <HelpPopover title="章节压缩摘要" width="22rem" size={12} className="shrink-0 mt-0.5">
                 {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如「陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬」。\n\n· 输入即自动同步到「章节总表」的一句话事件列；\n· 摘要出现后还会回填《章节细纲》卡的本章事件（原本为空才填 —— 你手写过的计划不会被覆盖）；\n· 它是「综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。'}
                 <AIDataSourceNote feature="chapter-summary" />

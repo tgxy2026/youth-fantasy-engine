@@ -8,6 +8,13 @@
 // 覆盖 account-isolation 的四个必需子场景：two-accounts / guest-to-account /
 // same-browser-account-switch / expired-session；外加账号库的 boot 与写读。
 'use strict'
+
+/**
+ * 🔴 首屏导航单独放宽（BOOT_TIMEOUT）：这台机器上「持久化 profile + 全量路由拦截 + 冷启动大包」
+ *    实测同一导航要 41s（2026-10-28 实测；手工直连只要 112ms），15s 会稳定误判成产品故障。
+ *    断言本身仍走各页 15s 默认超时 —— 放宽的只是「等页面起来」，不是「等结果对」。
+ */
+const BOOT_TIMEOUT = 60_000
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const net = require('node:net')
@@ -235,6 +242,7 @@ async function main() {
       return route.abort()
     })
     const page = ctx.pages()[0] ?? await ctx.newPage()
+
     page.setDefaultTimeout(15000)
     page.on('pageerror', value => pageErrors.push(String(value)))
     contexts.push({ ctx, dir })
@@ -292,7 +300,7 @@ process.on('message',async message=>{
     // ---------- ① 账号 A：注册 → 真实页面启动标记 ----------
     const A = await openContext('a')
     await register(A.ctx, USER_A)
-    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     const nameOnBoot = await waitUser(A.page)
     check('page-renders-account', nameOnBoot === USER_A, String(nameOnBoot) + ' @ ' + A.page.url())
     const flags = await A.page.evaluate(() => ({
@@ -327,7 +335,7 @@ process.on('message',async message=>{
 
     // ---------- ④ same-browser-account-switch：同浏览器换账号不串库 ----------
     await login(A.ctx, USER_B)
-    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     const asB = await waitUser(A.page)
     const bViewFromA = await dataStatus(A.ctx)
     check('same-browser-account-switch',
@@ -349,7 +357,7 @@ process.on('message',async message=>{
 
     // ---------- ⑥ guest-to-account：游客数据留在浏览器，不会被带进新账号 ----------
     const C = await openContext('c')
-    await C.page.goto(origin + '/guest', { waitUntil: 'domcontentloaded' })
+    await C.page.goto(origin + '/guest', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     await C.page.waitForFunction(async () => (await indexedDB.databases()).length > 0)
     await C.page.evaluate(() => new Promise((resolve, reject) => {
       const open = indexedDB.open('youth-fantasy-engine')
@@ -391,7 +399,7 @@ process.on('message',async message=>{
       check('restart-readback-write', restartWrite.status === 200, String(restartWrite.status))
       await D.ctx.close()
       const reopened = await openContext('d', D.dir)
-      await reopened.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await reopened.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       const nameAfterRestart = await waitUser(reopened.page)
       const afterRestart = await dataStatus(reopened.ctx)
       const fetchedAgain = reopened.requests.some(r => r.method === 'GET' && r.pathname === '/api/data')
@@ -445,7 +453,7 @@ process.on('message',async message=>{
         headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(),
       })
       check('write-failure-seed', seed.ok(), String(seed.status()))
-      await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       await waitUser(A.page)
       await openProjectEditor(A.page)
       const editor = A.page.getByPlaceholder(EDITOR)
@@ -536,7 +544,7 @@ process.on('message',async message=>{
       check('sidecars.seeded', seeded.put === 200 && seeded.blob === 200, JSON.stringify(seeded))
 
       // 重新载入，让应用读到的就是这份带密钥的库
-      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      await A.page.reload({ waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(A.page)
       check('secret-stripping.secret-present-before', (await fs.readFile(activeDataFile, 'utf8')).includes(SECRET), '服务端数据文件里应能看到播种的密钥')
 
       const downloadPromise = A.page.waitForEvent('download', { timeout: 30000 })
@@ -630,8 +638,8 @@ process.on('message',async message=>{
         await route.fallback().catch(() => {})
       })
       try {
-      await stale.goto(origin + '/', { waitUntil: 'domcontentloaded' }); await openProjectEditor(stale)
-      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      await stale.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(stale)
+      await A.page.reload({ waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(A.page)
       const winner = DRAFT2 + '第一窗口成功提交。', loser = DRAFT2 + '第二窗口的冲突草稿。'
       await A.page.getByPlaceholder(EDITOR).fill(winner); await A.page.keyboard.press('Control+s')
       await until(async () => chapterContent(await fs.readFile(activeDataFile, 'utf8')) === winner)
@@ -687,7 +695,7 @@ process.on('message',async message=>{
       // 重开一页：应用必须还能正常读到数据（不是"文件还在但打不开"）
       const reopened = await A.ctx.newPage()
       reopened.on('pageerror', value => pageErrors.push(String(value)))
-      await reopened.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await reopened.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       await waitUser(reopened)
       await openProjectEditor(reopened)
       const reopenedText = await reopened.getByPlaceholder(EDITOR).inputValue()

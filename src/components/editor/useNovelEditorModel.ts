@@ -827,6 +827,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   const regenAll = regenT.running
   /** 上一批逐章失败清单（页面据此显示「哪几章还是旧摘要」；新一批发起时自然被替换） */
   const regenFailures = regenT.result?.failed ?? []
+  /** 中止批量重生成（UX13：长等待必须能由作者叫停，已更新的章节保持已更新） */
+  const stopRegenAll = () => regenT.stop()
   const regenAllSummaries = async () => {
     if (!aiReady || regenT.running) return
     const ok = await confirmDialog({
@@ -1167,7 +1169,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, regenFailures, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
