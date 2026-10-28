@@ -39,7 +39,7 @@ try {
     })
     page = await context.newPage(); page.setDefaultTimeout(20000); page.on('pageerror', e => report.errors.push(e.message))
     await page.goto(origin + '/'); const pwd = () => page.locator('#pwd'), name = () => page.locator('#name'), msg = () => page.locator('#msg')
-    check(mode + ' identity page works without any main application bundle', await page.getByRole('button', { name: '登录', exact: true }).last().isVisible() && await pwd().getAttribute('autocomplete') === 'current-password')
+    check(mode + ' identity page works without any main application bundle', await page.getByRole('button', { name: '进入创作空间', exact: true }).isVisible() && await pwd().getAttribute('autocomplete') === 'current-password')
     check(mode + ' narrow layout and touch inputs remain readable', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('input')].every(input => getComputedStyle(input).fontSize === '16px')))
     await page.screenshot({ path: path.join(run, mode + '-empty.png'), animations: 'disabled' })
     await page.setViewportSize({ width: 320, height: 600 }); await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' })

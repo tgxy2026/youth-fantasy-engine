@@ -7,26 +7,35 @@
 // 🔴 所有回显内容（用户名、错误提示）一律转义：登录页同样会被 XSS 打。
 import { GITEE_RELEASES_URL } from './config.mjs'
 import { authClient } from './authClient.mjs'
+import { AUTH_STYLE } from './authStyle.mjs'
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ))
 
 // 复用 app 图标（与 index.html 的 favicon 同款金色文档图形），登录页/重置页作为品牌 logo
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#d9a04a" width="40" height="40" aria-hidden="true"><path d="M4 4h12l4 4v12H4V4zm2 2v12h12V8.5L15.5 6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2z"/></svg>`
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#44764e" width="40" height="40" aria-hidden="true"><path d="M4 4h12l4 4v12H4V4zm2 2v12h12V8.5L15.5 6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2z"/></svg>`
 
-// 标语轮换：尊重「减弱动效」偏好；对读屏软件隐藏（aria-hidden），不扰无障碍
-const ROTATE_SCRIPT = `(function(){
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
-  var spans = document.querySelectorAll('.brand .swap span');
-  if (spans.length < 2) return;
-  var i = 0;
-  setInterval(function(){
-    spans[i].classList.remove('on');
-    i = (i + 1) % spans.length;
-    spans[i].classList.add('on');
-  }, 3800);
-})();`
+const icon = (paths) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`
+const EYE = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>')
+const ARROW = icon('<path d="M5 12h14m-5-5 5 5-5 5"/>')
+const CLOUD = icon('<path d="M7 18a5 5 0 0 1-1-9.9A6 6 0 0 1 17.7 8 5 5 0 0 1 18 18H7Z"/><path d="m9 13 2 2 4-4"/>')
+const DOWNLOAD = icon('<path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/>')
+
+// Decorative original SVG: no downloads, raster payload, font or animation loop.
+const NIGHT_ART = `<svg class="night-art" viewBox="0 0 460 290" fill="none" aria-hidden="true">
+  <defs><linearGradient id="night-orbit" x1="70" y1="40" x2="390" y2="260" gradientUnits="userSpaceOnUse"><stop stop-color="#638c5b" stop-opacity=".45"/><stop offset="1" stop-color="#638c5b" stop-opacity=".03"/></linearGradient><radialGradient id="night-glow"><stop stop-color="#8ca87b" stop-opacity=".15"/><stop offset="1" stop-color="#8ca87b" stop-opacity="0"/></radialGradient><linearGradient id="night-page" x1="230" y1="155" x2="230" y2="270" gradientUnits="userSpaceOnUse"><stop stop-color="#638c5b" stop-opacity=".1"/><stop offset="1" stop-color="#638c5b" stop-opacity="0"/></linearGradient></defs>
+  <ellipse cx="230" cy="155" rx="200" ry="125" fill="url(#night-glow)"/>
+  <circle cx="230" cy="144" r="107" stroke="url(#night-orbit)"/><circle cx="230" cy="144" r="84" stroke="#638c5b" stroke-opacity=".1" stroke-dasharray="2 7"/>
+  <ellipse cx="230" cy="150" rx="190" ry="59" transform="rotate(-23 230 150)" stroke="url(#night-orbit)"/>
+  <path d="M253 55a22 22 0 1 0 25 29 24 24 0 0 1-25-29Z" fill="#638c5b" fill-opacity=".85"/>
+  <path d="m111 108 2-6 2 6 6 2-6 2-2 6-2-6-6-2 6-2Zm226 79 2-6 2 6 6 2-6 2-2 6-2-6-6-2 6-2Z" fill="#638c5b" fill-opacity=".8"/>
+  <circle cx="335" cy="65" r="2" fill="#638c5b"/><circle cx="151" cy="212" r="2" fill="#638c5b"/><circle cx="88" cy="175" r="1.5" fill="#638c5b"/>
+  <path d="M81 249 141 198l38 24 52-67 63 72 25-18 60 40" stroke="#638c5b" stroke-opacity=".15"/>
+  <path d="M230 211c-31-23-61-31-94-25v57c37-5 63 1 94 21 31-20 57-26 94-21v-57c-33-6-63 2-94 25Z" fill="url(#night-page)" stroke="#567049" stroke-opacity=".55"/>
+  <path d="M230 211v53m-94-14c37-5 63 1 94 21 31-20 57-26 94-21M149 201c23-1 44 6 64 17m-64-6c23-1 44 6 64 17m34-11c20-11 41-18 64-17m-64 28c20-11 41-18 64-17" stroke="#567049" stroke-opacity=".25"/>
+  <path d="M44 277h372" stroke="#638c5b" stroke-opacity=".08"/>
+</svg>`
 
 const STYLE = `
 *{box-sizing:border-box;margin:0;padding:0}
@@ -144,77 +153,80 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>登录 · 青春幻想引擎</title>
-<style>${STYLE}</style>
+<meta name="theme-color" content="#e6f0e0">
+<style>${AUTH_STYLE}</style>
 </head>
-<body>
-<div class="split">
-  <section class="panel">
+<body class="auth-entry">
+<main class="split">
+  <section class="panel" aria-labelledby="brand-title">
     <div class="brand">
       <div class="logo">${LOGO_SVG}</div>
-      <h1>青春幻想引擎</h1>
-      <p class="swap" aria-hidden="true">
-        <span class="on">在线创作工作台 · 作品与设定各自独立</span>
-        <span>把脑海里的世界，写成可以居住的故事</span>
-        <span>人物会呼吸，地图会延展，设定有迹可循</span>
-        <span>一行灵感，一座可供漫游的幻想城邦</span>
-      </p>
+      <div><p class="brand-name">青春幻想引擎</p><p class="brand-en" lang="en">YOUTH FANTASY ENGINE</p></div>
     </div>
-    <ul class="features">
-      <li>作品与设定各自独立，互不串味</li>
-      <li>云端保存，按账号隔离，跨设备可续写</li>
-      <li>也能离线：桌面版 / 便携版随心导出</li>
-    </ul>
+    <div class="story">
+      <p class="eyebrow" lang="en">A SPACE FOR YOUR IMAGINATION</p>
+      <h1 id="brand-title">让想象，<br><span>自成宇宙。</span></h1>
+      <p class="story-lead">把脑海里的世界，写成可以居住的故事。</p>
+      <p class="story-note">角色、设定、章节与灵感，<br>在这里，汇聚成属于你的幻想世界。</p>
+      ${NIGHT_ART}
+    </div>
+    <div class="brand-foot"><span>作品与设定各自独立 · 灵感有迹可循</span><span aria-hidden="true">✦</span></div>
   </section>
-  <section class="stage">
+  <section class="stage" aria-labelledby="form-title">
     <div class="card">
+      <header><p class="card-kicker" lang="en">YOUR NEXT CHAPTER</p><h2 id="form-title">欢迎回来</h2><p class="card-subtitle" id="form-subtitle">继续你的幻想世界之旅。</p></header>
       ${canRegister ? `<div class="tabs" id="tabs" role="group" aria-label="账号操作">
         <button type="button" data-tab="login" class="on" aria-pressed="true">登录</button>
         <button type="button" data-tab="register" aria-pressed="false">注册</button>
       </div>` : ''}
 
-      <form id="form" autocomplete="on">
+      <form id="form" autocomplete="on" aria-labelledby="form-title">
         <label for="name">用户名</label>
-        <input id="name" name="name" required maxlength="24" autocomplete="username" placeholder="2–24 位，可用中文">
+        <input id="name" name="name" required maxlength="24" autocomplete="username" autocapitalize="none" spellcheck="false" aria-describedby="name-error" placeholder="输入你的用户名">
+        <p class="field-error" id="name-error" hidden></p>
 
         <label for="pwd">密码</label>
+        <div class="password-wrap">
         <input id="pwd" name="password" type="password" required minlength="6" maxlength="128"
-               autocomplete="current-password" placeholder="至少 6 位">
+               autocomplete="current-password" aria-describedby="pwd-error" placeholder="输入密码，至少 6 位">
+        <button class="password-toggle" id="password-toggle" type="button" aria-label="显示密码" aria-controls="pwd" aria-pressed="false">${EYE}</button>
+        </div>
+        <p class="field-error" id="pwd-error" hidden></p>
 
-        <div id="inviteBox" style="display:${needInvite ? 'block' : 'none'}">
+        <div id="inviteBox" style="display:none">
           <label for="invite">邀请码</label>
-          <input id="invite" name="invite" maxlength="32" placeholder="填写邀请码后注册">
+          <input id="invite" name="invite" maxlength="32" autocapitalize="none" spellcheck="false" aria-describedby="invite-note invite-error" placeholder="输入站主发放的邀请码">
+          <p class="field-note" id="invite-note">邀请码也是找回密码的凭证，请妥善保管。</p>
+          <p class="field-error" id="invite-error" hidden></p>
         </div>
 
-        <button class="submit" id="btn" type="submit">登录</button>
+        <div class="forgot"><a href="/reset">忘记密码？</a></div>
+        <button class="submit" id="btn" type="submit">进入创作空间</button>
         <button class="cancel" id="cancel" type="button" hidden>停止等待</button>
       </form>
 
       <div class="msg ${msgClass}" id="msg" tabindex="-1" role="${error ? 'alert' : 'status'}">${msgText}</div>
 
-      <div class="forgot"><a href="/reset">忘记密码？可用注册时的邀请码重置</a></div>
-
-      <div class="orDivider"><span>或者</span></div>
-      <a class="guestBtn" href="/guest">以游客身份试用</a>
+      <div class="orDivider"><span>也可以先看看</span></div>
+      <a class="guestBtn" href="/guest">先以游客身份探索 ${ARROW}</a>
       <p class="guestNote">
-        游客数据保存在<b>你自己的浏览器</b>里，不会上传到服务器<br>
-        清除浏览器数据、换设备后<b>无法找回</b>，请及时导出备份
+        游客数据仅保存在<b>当前浏览器</b>，不会上传<br>
+        清理浏览器或换设备后<b>无法找回</b>，请及时导出备份
       </p>
     </div>
     <div class="foot">
-      数据保存在服务器，按账号隔离<br>
-      每账号默认 <b>200 MB</b> 空间 · 可随时导出全部数据
-    </div>
-    <div class="dl">
-      想要离线使用、导出 PDF？<a href="${GITEE_RELEASES_URL}" target="_blank" rel="noreferrer noopener">下载桌面版 / 便携版</a>
+      <p class="cloud-note">${CLOUD} 账号数据云端保存，按账号隔离</p>
+      <p>每账号默认 200 MB 空间 · 可随时导出全部数据</p>
+      <div class="dl"><a href="${GITEE_RELEASES_URL}" target="_blank" rel="noreferrer noopener">${DOWNLOAD} 下载桌面版 / 便携版</a></div>
+      <p>离线创作 · 支持导出 PDF</p>
     </div>
   </section>
-</div>
+</main>
 
 <script>(${authClient.toString()})({canRegister:${canRegister},needInvite:${needInvite}});</script>
-<script>${ROTATE_SCRIPT}</script>
 </body>
 </html>`
 }
