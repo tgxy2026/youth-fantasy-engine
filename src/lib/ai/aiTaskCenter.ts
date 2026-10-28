@@ -113,14 +113,13 @@ const listeners = new Set<() => void>()
 /** 运行中的中止控制器（不进快照 —— AbortController 不可序列化也不必给界面） */
 const ctls = new Map<string, AbortController>()
 let noticeSeq = 0
+/** 等待界面消费的通知；并发收尾不能覆盖尚未显示的上一条。 */
+const pendingNotices: AiTaskNotice[] = []
 /**
  * 任务中心「代次」。`resetTaskCenter()`（退出项目 / 换书）时 +1。
  *
- * 🔴 为什么必须有：任务体是 fire-and-forget 的异步函数，`resetTaskCenter()` 只清快照、
- *    发 abort 信号；真正的收尾（`finally`）可能**晚一拍**才跑。没有代次时它照样
- *    `patchTask` + `notice()` —— 于是换书之后会弹出一条上一本书的「已完成」，
- *    或把刚清空的列表又补回一条（2026-10-28 UX09 只读发现，本轮修）。
- *    代次一变，所有在飞的任务收尾直接作废：既不改状态也不提示。
+ * reset 发出 abort 后，异步任务仍可能晚一拍才收尾。代次改变后直接丢弃该收尾，
+ * 不再调用自定义提示。patchTask 本身也会拒绝已移除的任务；代次是额外的生命周期边界。
  */
 let epoch = 0
 
@@ -169,11 +168,15 @@ export function useAiTask<TResult = unknown, TProgress = unknown>(ownerTab: stri
 }
 
 function notice(text: string, kind: AiTaskNotice['kind'] = 'info') {
-  set({ notice: { id: ++noticeSeq, text, kind } })
+  const item = { id: ++noticeSeq, text, kind }
+  if (snap.notice) pendingNotices.push(item)
+  else set({ notice: item })
 }
-/** 组件 toast 完把它清掉（避免同一条在切页签后被重复消费） */
-export function consumeTaskNotice() {
-  if (snap.notice) set({ notice: null })
+/** 先认领再显示；旧 effect / StrictMode 重放不能消费下一条或重复显示当前条。 */
+export function consumeTaskNotice(expectedId?: number): boolean {
+  if (!snap.notice || (expectedId !== undefined && snap.notice.id !== expectedId)) return false
+  set({ notice: pendingNotices.shift() ?? null })
+  return true
 }
 
 /** 局部更新一条任务（id 不存在则原样返回 —— 任务已被清掉时晚到的回调不该复活它） */
@@ -361,6 +364,7 @@ export function resetTaskCenter(): void {
   // 🔴 先推进代次，再清快照：此后任何"晚到的收尾"都会被 `epochAtStart !== epoch` 挡掉，
   //    不会给新项目弹上一本书的完成提示，也不会把已清空的列表补回来。
   epoch += 1
+  pendingNotices.length = 0
   set({ tasks: [], notice: null })
 }
 

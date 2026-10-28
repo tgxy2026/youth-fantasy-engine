@@ -42,11 +42,10 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
   const tasks = useAiTasks()
   const notice = useAiTaskNotice()
 
-  // 完成 / 失败的一次性提示（store 发；消费掉避免切页签后重复弹）
+  // 先按 ID 认领；StrictMode effect 重放和多个消费者只能有一个成功显示。
   useEffect(() => {
-    if (!notice) return
+    if (!notice || !consumeTaskNotice(notice.id)) return
     showToast(notice.text, notice.kind)
-    consumeTaskNotice()
   }, [notice])
 
   // 没有任务时整节不渲染（不给界面添乱）
@@ -84,6 +83,8 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
           return (
             <div
               key={t.id}
+              data-task-id={t.id}
+              data-task-status={t.status}
               className="flex items-center gap-1.5 rounded border border-ink-700/70 bg-ink-800/40 px-1.5 py-1"
               title={t.error || undefined}
             >
@@ -105,7 +106,7 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
                       查看
                     </Button>
                   )}
-                  <Button iconOnly size="xs" variant="ghost" onClick={() => dismissTask(t.id)} title="移除这条记录（结果已在该页签，不会删数据）">
+                  <Button iconOnly size="xs" variant="ghost" onClick={() => dismissTask(t.id)} title="移除这条任务及其内存结果（已写入的内容保留）">
                     <X size={10} />
                   </Button>
                 </>
@@ -117,7 +118,7 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
 
       {finished > 1 && (
         <div className="mt-1">
-          <Button size="xs" variant="secondary" onClick={clearFinishedTasks}>清空已结束的记录</Button>
+          <Button size="xs" variant="secondary" onClick={clearFinishedTasks} title="清除已结束的任务及其内存结果；已写入的内容保留">清空已结束的记录</Button>
         </div>
       )}
     </div>

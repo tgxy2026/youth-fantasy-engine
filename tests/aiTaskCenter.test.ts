@@ -367,6 +367,36 @@ async function main() {
     resetTaskCenter()
   }
 
+  // 并发任务同一轮收尾：逐条消费，旧消费者不能吃掉后续通知。
+  {
+    resetTaskCenter()
+    startTask({ ownerTab: 'queue-a', kind: 'fail', title: '并发甲', run: async () => { throw Error('甲失败') } })
+    startTask({ ownerTab: 'queue-b', kind: 'fail', title: '并发乙', run: async () => { throw Error('乙失败') } })
+    startTask({ ownerTab: 'queue-c', kind: 'ok', title: '并发丙', run: async () => 3 })
+    await tick()
+    const first = noticeSnapshot()!
+    ok('并发收尾保留第一条未消费的失败通知', first.text.includes('甲失败'))
+    ok('按 ID 认领当前通知成功', consumeTaskNotice(first.id))
+    const second = noticeSnapshot()!
+    ok('认领后转向第二条，不丢失败原因', second.text.includes('乙失败') && second.id !== first.id)
+    ok('旧 effect 重放不能认领第二条', !consumeTaskNotice(first.id) && noticeSnapshot() === second)
+    ok('第二条独立认领成功', consumeTaskNotice(second.id))
+    ok('完成通知排在两条失败后，且只消费一次', noticeSnapshot()?.text.includes('并发丙') === true && consumeTaskNotice() && !consumeTaskNotice())
+
+    startTask({ ownerTab: 'reset-a', kind: 'ok', title: '旧队列甲', run: async () => 1 })
+    startTask({ ownerTab: 'reset-b', kind: 'ok', title: '旧队列乙', run: async () => 2 })
+    await tick()
+    const old = noticeSnapshot()!
+    resetTaskCenter()
+    startTask({ ownerTab: 'new', kind: 'ok', title: '新项目通知', run: async () => 3 })
+    await tick()
+    ok('reset 清除全部排队旧通知，不回放到新项目', noticeSnapshot()?.text.includes('新项目通知') === true)
+    ok('旧项目消费者不能认领新项目通知', !consumeTaskNotice(old.id))
+    consumeTaskNotice()
+    ok('新项目通知消费后没有旧队列残留', noticeSnapshot() === null)
+    resetTaskCenter()
+  }
+
   console.log(`\naiTaskCenter: ${pass} passed, ${fail} failed`)
   if (fail > 0) process.exit(1)
 }
