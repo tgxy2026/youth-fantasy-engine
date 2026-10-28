@@ -12,6 +12,22 @@ const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ))
 
+// 复用 app 图标（与 index.html 的 favicon 同款金色文档图形），登录页/重置页作为品牌 logo
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#d9a04a" width="40" height="40" aria-hidden="true"><path d="M4 4h12l4 4v12H4V4zm2 2v12h12V8.5L15.5 6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2z"/></svg>`
+
+// 标语轮换：尊重「减弱动效」偏好；对读屏软件隐藏（aria-hidden），不扰无障碍
+const ROTATE_SCRIPT = `(function(){
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  var spans = document.querySelectorAll('.brand .swap span');
+  if (spans.length < 2) return;
+  var i = 0;
+  setInterval(function(){
+    spans[i].classList.remove('on');
+    i = (i + 1) % spans.length;
+    spans[i].classList.add('on');
+  }, 3800);
+})();`
+
 const STYLE = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px 16px;line-height:1.65;
@@ -64,8 +80,18 @@ input:disabled{opacity:.8}
 a{overflow-wrap:anywhere}
 @media(max-width:360px){.card{padding:20px 16px}.brand{margin-bottom:18px}}
 @media(max-height:700px){body{align-items:flex-start}}
-@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media(forced-colors:active){.card,input,.tabs,button.submit,.cancel,.guestBtn,.msg{border:1px solid CanvasText}button.submit{background:ButtonFace;color:ButtonText}:focus-visible{outline-color:Highlight}}
+.logo{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;margin:0 auto 14px;
+  background:#fdfbf5;border:1px solid #e6dcc6;border-radius:18px;box-shadow:0 6px 18px -10px rgba(60,48,30,.25)}
+.logo svg{display:block}
+.brand h1{margin-top:2px}
+.brand .swap{position:relative;min-height:20px;margin-top:7px}
+.brand .swap span{position:absolute;left:0;right:0;top:0;opacity:0;transition:opacity .6s ease;
+  font-size:13px;color:#625b51;letter-spacing:.04em}
+.brand .swap span.on{opacity:1}
+@keyframes yfeRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.wrap{animation:yfeRise .55s cubic-bezier(.2,.7,.3,1) both}
 `
 
 /**
@@ -89,8 +115,14 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
 <body>
 <div class="wrap">
   <div class="brand">
+    <div class="logo">${LOGO_SVG}</div>
     <h1>青春幻想引擎</h1>
-    <p>在线创作工作台 · 作品与设定各自独立</p>
+    <p class="swap" aria-hidden="true">
+      <span class="on">在线创作工作台 · 作品与设定各自独立</span>
+      <span>把脑海里的世界，写成可以居住的故事</span>
+      <span>人物会呼吸，地图会延展，设定有迹可循</span>
+      <span>一行灵感，一座可供漫游的幻想城邦</span>
+    </p>
   </div>
   <div class="card">
     ${canRegister ? `<div class="tabs" id="tabs" role="group" aria-label="账号操作">
@@ -136,6 +168,7 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
 </div>
 
 <script>(${authClient.toString()})({canRegister:${canRegister},needInvite:${needInvite}});</script>
+<script>${ROTATE_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -165,8 +198,9 @@ export function renderResetPage({ error = '', name = '' } = {}) {
 <body>
 <div class="wrap">
   <div class="brand">
+    <div class="logo">${LOGO_SVG}</div>
     <h1>重置密码</h1>
-    <p>凭注册时使用的那张邀请码</p>
+    <p class="swap" aria-hidden="true"><span class="on">凭注册时使用的那张邀请码</span></p>
   </div>
   <div class="card">
     ${done ? `
