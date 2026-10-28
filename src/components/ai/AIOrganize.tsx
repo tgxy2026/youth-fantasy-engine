@@ -9,7 +9,7 @@ import type { CalendarDef, Chapter, TabDef } from '@/lib/types'
 import { getAllChapters, getAllVolumes } from '@/lib/db'
 import { getChapterTexts } from '@/lib/ai/aiContext'
 import { flattenChapters } from '@/lib/outline/chapterSeq'
-import type { OrganizeResult } from '@/lib/ai/aiTasks'
+import { organizeEmptyKind, organizeEmptyMessage, type OrganizeResult } from '@/lib/ai/aiTasks'
 import type { VisCtx } from '@/lib/schema'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
@@ -135,6 +135,22 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
         calendars,
         onPhase: job.progress,
       })
+    }, info => {
+      // 🔴 通知也必须按**真实结果**说话：解析不出条目时若还弹「已完成 —— 结果保存在该页签」，
+      //    作者只会以为整理成功、表里没东西而已（与面板红框自相矛盾）。
+      if (info.status === 'aborted') return null
+      if (info.status === 'failed') return { text: `AI 整理失败：${info.error || '未知原因'}`, kind: 'error' as const }
+      const done = info.result
+      if (!done) return null
+      const emptyKind = organizeEmptyKind(done)
+      if (emptyKind === 'parse-failed' || emptyKind === 'repaired-empty') {
+        return { text: `AI 整理没读到可用条目（${emptyKind === 'parse-failed' ? '模型返回没能解析' : '返回内容的格式都不对'}），已在面板提示重试`, kind: 'info' as const }
+      }
+      if (done.rows.length === 0) {
+        return { text: emptyKind === 'all-duplicate' ? 'AI 整理完成：返回条目都与已登记内容重复' : 'AI 整理完成：没有可新增的条目', kind: 'info' as const }
+      }
+      const extra = [done.dupSkipped ? `重复丢弃 ${done.dupSkipped}` : '', done.invalidSkipped ? `缺列丢弃 ${done.invalidSkipped}` : ''].filter(Boolean)
+      return { text: `AI 整理完成：可新增 ${done.rows.length} 条${extra.length ? `（${extra.join('，')}）` : ''}`, kind: 'success' as const }
     })
   }
 
@@ -299,12 +315,20 @@ style={{ maxHeight: foldVh('26vh') }}>
                 · 可新增 <span className="text-amber/80">{result.rows.length}</span> 条
               </div>
 
-              {result.rows.length === 0 ? (
-                <div className="px-3 py-3 rounded-lg bg-ink-900/50 border border-ink-700 text-12 text-ink-400">
-                  没有可新增的条目 —— 要么正文里的内容已经全部登记过，要么这段文本里没有可抽取的信息。
-                  可以换几章正文，或改用「手动粘贴」给一段更明确的文本。
+              {result.rows.length === 0 ? (() => {
+                // 🔴 「一条也没新增」分五种成因：模型输出解析不了（parse-failed）绝不能
+                //    说成「这段文本里没有可抽取的信息」—— 那是替模型背书（与校对同源）。
+                const kind = organizeEmptyKind(result) ?? 'nothing-found'
+                return <div data-organize-empty={kind}
+                  className={`px-3 py-3 rounded-lg border text-12 ${kind === 'parse-failed' || kind === 'repaired-empty' ? 'bg-danger/10 border-danger/25 text-danger' : 'bg-ink-900/50 border-ink-700 text-ink-400'}`}>
+                  <div>{organizeEmptyMessage(kind)}</div>
+                  {(kind === 'parse-failed' || kind === 'repaired-empty') && result.parseNotes.length > 0 && (
+                    <ul className="mt-1 list-disc list-inside text-11 opacity-80">
+                      {result.parseNotes.map(note => <li key={note}>{note}</li>)}
+                    </ul>
+                  )}
                 </div>
-              ) : (
+              })() : (
                 <>
                   <div className="flex items-center gap-2">
                     <Button variant="bare"

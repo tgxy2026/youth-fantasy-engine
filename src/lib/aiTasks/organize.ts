@@ -2,7 +2,7 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #3 段）。
 // 提示词 ORGANIZE_SYS 就地声明在本文件（promptSettings 要求「提示词 ↔ 用法」同处）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
-import { parseObjectArray, asText } from '@/lib/ai/aiParse'
+import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -65,6 +65,48 @@ export interface OrganizeResult {
   dupSkipped: number
   /** 因缺关键列而被丢弃的条数 */
   invalidSkipped: number
+  /**
+   * 解析走到了哪条路（🔴 必须与「模型明确返回空数组」区分开）：
+   *   valid    —— 解析成功，可能是合法空数组（真·没有可整理内容）；
+   *   repaired —— 部分元素被丢 / 尾部截断修复（有内容没保住）；
+   *   invalid  —— 三条路径都解析不出来（模型没读懂 ≠ 没有问题）。
+   */
+  parseOutcome: 'valid' | 'repaired' | 'invalid'
+  /** 解析诊断说明（只留前 3 条，供界面与日志说清「丢在哪」） */
+  parseNotes: string[]
+}
+
+/** 「一条也没新增」的成因（界面据此说人话；顺序即优先级） */
+export type OrganizeEmptyKind = 'parse-failed' | 'repaired-empty' | 'nothing-found' | 'all-duplicate' | 'all-invalid'
+
+/**
+ * 判断空结果到底是哪一种。
+ * 🔴 旧文案只有一句「要么已经登记过，要么这段文本里没有可抽取的信息」——把**模型输出没读懂**
+ *    也归进了「文本里没东西」，等于替模型背书（与校对那条「解析不了 ≠ 没问题」同源）。
+ */
+export function organizeEmptyKind(result: OrganizeResult): OrganizeEmptyKind | null {
+  if (result.rows.length > 0) return null
+  if (result.parseOutcome === 'invalid') return 'parse-failed'
+  if (result.parseOutcome === 'repaired' && result.rawCount === 0) return 'repaired-empty'
+  if (result.rawCount === 0) return 'nothing-found'
+  if (result.dupSkipped > 0 && result.invalidSkipped === 0) return 'all-duplicate'
+  return 'all-invalid'
+}
+
+/** 与 organizeEmptyKind 成对的人话说明（界面直接渲染） */
+export function organizeEmptyMessage(kind: OrganizeEmptyKind): string {
+  switch (kind) {
+    case 'parse-failed':
+      return '这次没能从模型返回里解析出条目（不是「没有可整理的内容」）。多为返回被截断或格式不对，建议直接重试一次。'
+    case 'repaired-empty':
+      return '模型返回的内容里没有一条能用（元素格式都不对）。这不是「已经登记过」，建议重试或改用「手动粘贴」给更明确的文本。'
+    case 'all-duplicate':
+      return '返回的条目与已登记内容重复，已全部丢弃。可以换几章正文，或先核对本表已有条目。'
+    case 'all-invalid':
+      return '返回的条目都缺关键列，无法入表。可以让正文里的关键信息更明确（人名 / 事件写全），或改用「手动粘贴」。'
+    default:
+      return '模型没有找到可新增的条目 —— 这段文本里确实没有可抽取的新信息。可以换几章正文，或改用「手动粘贴」给一段更明确的文本。'
+  }
 }
 
 /** 判重指纹：去掉标点空格、统一大小写；无序对则排序后拼接 */
@@ -149,7 +191,11 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
     { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
   )
 
-  const arr = parseObjectArray(text)
+  // 🔴 用 detailed 版本：把「合法空数组」「元素被丢光」「根本解析不出来」三者区分开
+  const parsed = parseObjectArrayDetailed(text)
+  const arr = parsed.data
+  const parseOutcome = parsed.outcome
+  const parseNotes = parsed.diagnostics.slice(0, 3).map(d => d.detail)
   const colNames = req.columns.map(c => c.name)
   // 表列 + 额外校验字段（依据）：一起从返回对象里取值，后者不进表、只用于本地核对
   const fieldNames = req.evidenceField ? [...colNames, req.evidenceField] : colNames
@@ -175,7 +221,7 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
     if (rows.length >= max) break
   }
 
-  return { rows, rawCount: arr.length, dupSkipped, invalidSkipped }
+  return { rows, rawCount: arr.length, dupSkipped, invalidSkipped, parseOutcome, parseNotes }
 }
 
 /** 把「张三 ｜ 李四」形态的已登记摘要还原成关键列对象，供统一指纹计算 */
