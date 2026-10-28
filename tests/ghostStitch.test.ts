@@ -7,7 +7,7 @@
 // ③ 上一章无正文（第一卷第一章 / 上一章还没写）→ 原样返回，宁缺毋滥；
 // ④ 「上一章」按全书卷章顺序（orderedChapters）——跨卷时是上一卷的最后一章，不是同卷上一章。
 import type { Chapter, Volume } from '../src/lib/types'
-import { GHOST_CONTEXT_CHARS, orderedChapters, stitchGhostBefore } from '../src/components/editor/novelEditorHelpers'
+import { GHOST_CONTEXT_CHARS, orderedChapters, scanRefHighlight, stitchGhostBefore } from '../src/components/editor/novelEditorHelpers'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -57,6 +57,32 @@ const mkCh = (id: string, volumeId: string, order: number, content = ''): Chapte
   ok('上一章为空串 → 原样返回（第一卷第一章/上一章没写）', stitchGhostBefore('当前章', '') === '当前章')
   ok('章首为空 → 全部来自上一章末尾', stitchGhostBefore('', prevTail) === prevTail.slice(-GHOST_CONTEXT_CHARS))
   ok('自定义 limit 生效', stitchGhostBefore('x'.repeat(8), 'y'.repeat(100), 10) === 'yy' + 'x'.repeat(8))
+}
+
+// ---------- scanRefHighlight：模型输出含 HTML/脚本也不许变成真标签（AC27，2026-10-28）----------
+//
+// 高亮叠层是**全仓唯一** `dangerouslySetInnerHTML`：模型输出被粘进正文后，若这里不转义，
+// `<img onerror>` / `<script>` 就会在编辑器里真的执行。锁死这条：
+{
+  const payload = '<img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script>'
+  const scan = scanRefHighlight(payload, [])
+  ok('🔴 无引用名时整段转义：尖括号不进 DOM', scan.html.includes('&lt;img') && !scan.html.includes('<img'))
+  ok('🔴 脚本标签同样只当文本', !/<script/i.test(scan.html) && scan.html.includes('&lt;script&gt;'))
+  ok('🔴 转义只做一次（&lt; 不会二次转义成 &amp;lt;）', scanRefHighlight('&lt;', []).html === '&amp;lt;')
+
+  const withRef = scanRefHighlight('陈渊<img src=x>李四', ['陈渊'])
+  ok('🔴 命中引用名的 mark 是唯一真标签，其余仍转义',
+    withRef.html.startsWith('<mark class="ref-mark">陈渊</mark>') && withRef.html.includes('&lt;img src=x&gt;')
+    && (withRef.html.match(/<[a-z]/gi) ?? []).length === 1)
+  ok('命中集合只收引用名，不被 HTML 串污染', withRef.hits.size === 1 && withRef.hits.has('陈渊'))
+
+  // 超长正文走「只读纯文本」降级路径，同样必须转义（这是最容易被漏掉的分支）
+  const huge = '<b>x</b>'.repeat(12000)
+  ok('超长正文降级路径也转义', huge.length > 60000 && !scanRefHighlight(huge, ['陈渊']).html.includes('<b>'))
+
+  // 引用名本身含正则元字符时不能把扫描搞崩（名字是作者填的，可能带 . * ( ) ）
+  const meta = scanRefHighlight('a.b 与 a*b', ['a.b', 'a*b'])
+  ok('引用名带正则元字符仍精确匹配', meta.hits.has('a.b') && meta.hits.has('a*b'))
 }
 
 console.log(`\nghostStitch: ${pass} passed, ${fail} failed`)
