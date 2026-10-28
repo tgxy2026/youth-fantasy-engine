@@ -1,35 +1,175 @@
 {
   "schemaVersion": 1,
   "contracts": [
-    { "id": "tooling.preflight", "stage": "foundation", "minAssertions": 1 },
-    { "id": "source.typecheck", "stage": "foundation", "minAssertions": 1 },
-    { "id": "source.lint", "stage": "foundation", "minAssertions": 1 },
-    { "id": "source.tests", "stage": "foundation", "minAssertions": 1 },
-    { "id": "source.build", "stage": "foundation", "minAssertions": 1 },
-    { "id": "source.release-check", "stage": "foundation", "minAssertions": 1 },
-    { "id": "proofread.protocol", "stage": "business", "minAssertions": 40 },
-    { "id": "backup.migration", "stage": "business", "minAssertions": 30 },
-    { "id": "storage.portable-save", "stage": "business", "minAssertions": 20 },
-    { "id": "storage.roundtrip", "stage": "business", "minAssertions": 12 },
-    { "id": "storage.import-shape", "stage": "business", "minAssertions": 15 },
-    { "id": "copy.failure-hints", "stage": "business", "minAssertions": 12 },
-    { "id": "storage.e2e-roundtrip", "stage": "business", "minAssertions": 7 },
-    { "id": "storage.portable-roundtrip", "stage": "business", "minAssertions": 7 },
-    { "id": "storage.web-guest-roundtrip", "stage": "business", "minAssertions": 7 },
-    { "id": "storage.portable-save-runtime", "stage": "business", "minAssertions": 5 },
-    { "id": "storage.web-guest-save", "stage": "business", "minAssertions": 14 },
-    { "id": "storage.desktop-save", "stage": "business", "minAssertions": 20 },
-    { "id": "storage.web-cloud-save", "stage": "business", "minAssertions": 38 },
-    { "id": "identity.cloud-conditional", "stage": "business", "minAssertions": 30 },
-    { "id": "storage.four-profiles", "stage": "business", "minAssertions": 1, "platformCaseIds": ["boot-store", "write-failure", "roundtrip"], "pending": "四配置的保存故障、端到端导出→导入、roundtrip 四个子场景（schema-version/sidecars/secret-stripping/restore-failure）均已各自取证，矩阵 roundtrip/* 四格全亮；在途编辑/切项目/关窗写失败三端（portable / web-guest / desktop）由 storage.inflight-* 单独取证，web-cloud 的关页在途在 concurrency/web-cloud 里。仍缺：安装包（Setup.exe）与实体设备上的真实环境验收 —— 需封装口令后才能做，故仍报四配置未全部完成" },
-    { "id": "storage.inflight-portable", "stage": "business", "minAssertions": 16, "pending": "在途编辑/切项目/关窗写失败（便携）：真实便携服务 + 真浏览器 + 真磁盘读回；未跑" },
-    { "id": "storage.inflight-guest", "stage": "business", "minAssertions": 14, "pending": "在途编辑/切项目/关窗写失败（网页游客）：真实 IndexedDB + 延迟落库注入；未跑" },
-    { "id": "storage.inflight-desktop", "stage": "business", "minAssertions": 16, "pending": "在途编辑/切项目/关窗写失败（桌面）：真实 Electron/IPC/文件系统；未跑" },
-    { "id": "revision.recovery", "stage": "business", "minAssertions": 50 },
-    { "id": "platform.matrix", "stage": "business", "minAssertions": 15 },
-    { "id": "identity.concurrency", "stage": "business", "minAssertions": 1, "platformCaseIds": ["account-isolation", "concurrency"], "pending": "web-cloud 已补真实关页在途（page.close 后数据文件仍完整、内容只可能是旧或新、重开可读）与会话替换（401 SESSION_REPLACED 拒绝、草稿保留、服务端不变），concurrency/web-cloud 已点亮；portable 仍缺同等三条，且 portable 无「会话」概念（replace-session 是否适用于该配置需要 policy 层面判定，本轮不改 policy）。多服务进程共享同一数据目录、sidecar 并发仍未覆盖" },
-    { "id": "model.failure", "stage": "business", "minAssertions": 12 },
-    { "id": "layout.affected", "stage": "business", "minAssertions": 100 },
-    { "id": "audit.contracts", "stage": "business", "minAssertions": 6 }
+    {
+      "id": "tooling.preflight",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "source.typecheck",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "source.lint",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "source.tests",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "source.build",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "source.release-check",
+      "stage": "foundation",
+      "minAssertions": 1
+    },
+    {
+      "id": "proofread.protocol",
+      "stage": "business",
+      "minAssertions": 40
+    },
+    {
+      "id": "backup.migration",
+      "stage": "business",
+      "minAssertions": 30
+    },
+    {
+      "id": "storage.portable-save",
+      "stage": "business",
+      "minAssertions": 20
+    },
+    {
+      "id": "storage.roundtrip",
+      "stage": "business",
+      "minAssertions": 12
+    },
+    {
+      "id": "storage.import-shape",
+      "stage": "business",
+      "minAssertions": 15
+    },
+    {
+      "id": "copy.failure-hints",
+      "stage": "business",
+      "minAssertions": 12
+    },
+    {
+      "id": "storage.e2e-roundtrip",
+      "stage": "business",
+      "minAssertions": 7
+    },
+    {
+      "id": "storage.portable-roundtrip",
+      "stage": "business",
+      "minAssertions": 7
+    },
+    {
+      "id": "storage.web-guest-roundtrip",
+      "stage": "business",
+      "minAssertions": 7
+    },
+    {
+      "id": "storage.portable-save-runtime",
+      "stage": "business",
+      "minAssertions": 5
+    },
+    {
+      "id": "storage.web-guest-save",
+      "stage": "business",
+      "minAssertions": 14
+    },
+    {
+      "id": "storage.desktop-save",
+      "stage": "business",
+      "minAssertions": 20
+    },
+    {
+      "id": "storage.desktop-installed",
+      "stage": "business",
+      "minAssertions": 5
+    },
+    {
+      "id": "storage.web-cloud-save",
+      "stage": "business",
+      "minAssertions": 38
+    },
+    {
+      "id": "identity.cloud-conditional",
+      "stage": "business",
+      "minAssertions": 30
+    },
+    {
+      "id": "storage.four-profiles",
+      "stage": "business",
+      "minAssertions": 1,
+      "platformCaseIds": [
+        "boot-store",
+        "write-failure",
+        "roundtrip",
+        "installed-boot"
+      ],
+      "pending": "四配置的保存故障、端到端导出→导入、roundtrip 四个子场景均已各自取证，矩阵 roundtrip/* 四格全亮；在途编辑/切项目/关窗写失败三端（portable / web-guest / desktop）由 storage.inflight-* 单独取证，web-cloud 的关页在途在 concurrency/web-cloud 里。3.3.0 起**已安装产物**单独成格：installed-boot/desktop 由 Setup 装出来的 exe + app.asar 取证（initial-flags / backend-selection / restart-readback，exe 与 asar 哈希钉进校验）。仍缺：第二台**实体设备**上的同套验收（换机、不同 DPI/系统主题），需主人安排真机，故仍报四配置未全部完成"
+    },
+    {
+      "id": "storage.inflight-portable",
+      "stage": "business",
+      "minAssertions": 16,
+      "pending": "在途编辑/切项目/关窗写失败（便携）：真实便携服务 + 真浏览器 + 真磁盘读回；未跑"
+    },
+    {
+      "id": "storage.inflight-guest",
+      "stage": "business",
+      "minAssertions": 14,
+      "pending": "在途编辑/切项目/关窗写失败（网页游客）：真实 IndexedDB + 延迟落库注入；未跑"
+    },
+    {
+      "id": "storage.inflight-desktop",
+      "stage": "business",
+      "minAssertions": 16,
+      "pending": "在途编辑/切项目/关窗写失败（桌面）：真实 Electron/IPC/文件系统；未跑"
+    },
+    {
+      "id": "revision.recovery",
+      "stage": "business",
+      "minAssertions": 50
+    },
+    {
+      "id": "platform.matrix",
+      "stage": "business",
+      "minAssertions": 15
+    },
+    {
+      "id": "identity.concurrency",
+      "stage": "business",
+      "minAssertions": 1,
+      "platformCaseIds": [
+        "account-isolation",
+        "concurrency"
+      ],
+      "pending": "web-cloud 已补真实关页在途（page.close 后数据文件仍完整、内容只可能是旧或新、重开可读）与会话替换（401 SESSION_REPLACED 拒绝、草稿保留、服务端不变），concurrency/web-cloud 已点亮；portable 仍缺同等三条，且 portable 无「会话」概念（replace-session 是否适用于该配置需要 policy 层面判定，本轮不改 policy）。多服务进程共享同一数据目录、sidecar 并发仍未覆盖"
+    },
+    {
+      "id": "model.failure",
+      "stage": "business",
+      "minAssertions": 12
+    },
+    {
+      "id": "layout.affected",
+      "stage": "business",
+      "minAssertions": 100
+    },
+    {
+      "id": "audit.contracts",
+      "stage": "business",
+      "minAssertions": 6
+    }
   ]
 }

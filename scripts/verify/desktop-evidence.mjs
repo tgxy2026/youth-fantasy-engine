@@ -47,3 +47,32 @@ export async function validateDesktopEvidence(root, file, { expectedBuildHash, e
   if (!Array.isArray(filesystem) || !filesystem.some(item => item.name === 'rename' && item.ok === true) || !filesystem.some(item => item.name === 'rename' && typeof item.error === 'string')) throw new Error('Desktop real rename failure/recovery trace missing')
   return { assertions: result.checks.length, result }
 }
+
+/**
+ * **已安装产物**（Setup 装出来的 exe + app.asar）的桌面证据校验。
+ *
+ * 与上面的 `validateDesktopEvidence` 是**两条载体**，不是替代：
+ *   · dist 载体（开发壳 electron + `build/`）能注入主进程钩子 ⇒ 覆盖写失败、导出导入往返；
+ *   · packaged 载体（`resources/app.asar`）不能注入 ⇒ 只覆盖 boot-store 三件事：
+ *     initial-flags / backend-selection / restart-readback。
+ * 因此这里只要求它真能证明的那几项，并且把**载体自身哈希**（exe + asar）钉进校验：
+ * 安装目录被换包、半路覆盖，证据直接作废。
+ */
+export const INSTALLED_DESKTOP_CASE_IDS = ['initial-flags', 'backend-selection', 'restart-readback', 'no-pageerror', 'unchanged-inputs']
+
+export async function validateInstalledDesktopEvidence(root, file, { expectedExeSha256, expectedAsarSha256, expectedSourceFingerprint }) {
+  const result = JSON.parse(await fs.readFile(file, 'utf8'))
+  if (result.profile !== 'desktop' || result.carrier !== 'packaged') throw new Error('Installed desktop evidence has wrong carrier')
+  if (result.failed !== 0 || result.error !== null || !Array.isArray(result.pageErrors) || result.pageErrors.length) throw new Error('Installed desktop runtime did not pass')
+  if (result.sourceFingerprint !== expectedSourceFingerprint) throw new Error('Installed desktop evidence is stale (source changed)')
+  const build = result.packagedBuild ?? {}
+  if (!expectedExeSha256 || build.exeSha256 !== expectedExeSha256) throw new Error('Installed exe is not the one that was verified')
+  if (!expectedAsarSha256 || build.asarSha256 !== expectedAsarSha256) throw new Error('Installed app.asar is not the one that was verified')
+  const ids = (result.checks ?? []).map(item => item.id)
+  if (new Set(ids).size !== ids.length || result.checks.some(item => item.passed !== true)) throw new Error('Installed desktop cases missing, duplicated, or failed')
+  if (INSTALLED_DESKTOP_CASE_IDS.some(id => !ids.includes(id))) throw new Error('Installed desktop required cases missing')
+  const temporaryRoot = await fs.realpath(path.join(root, '.workbuddy/tmp'))
+  const runRoot = await fs.realpath(result.runRoot)
+  if (!within(temporaryRoot, runRoot) || !path.basename(runRoot).startsWith('installed-desktop-')) throw new Error('Installed desktop data is not isolated')
+  return { assertions: result.checks.length, exeSha256: build.exeSha256, asarSha256: build.asarSha256 }
+}
