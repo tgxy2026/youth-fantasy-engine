@@ -1,4 +1,5 @@
 import { UserRound } from 'lucide-react'
+import SafeImage from '@/components/common/SafeImage'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import { copyText } from '@/components/dialogs/dialogs'
@@ -9,7 +10,7 @@ export default function CharacterProfileHeader({ name, portrait, facts, onRename
 }) {
   return <div className="min-w-0 flex-1 flex items-start gap-3" data-character-profile>
     <div className="h-14 w-14 shrink-0 rounded-lg border border-line-subtle bg-surface-panel overflow-hidden flex items-center justify-center">
-      {portrait ? <img src={portrait} alt={`${name} 的档案缩略图`} className="h-full w-full object-contain" /> : <UserRound size={24} className="text-content-muted" aria-hidden="true" />}
+      {portrait ? <SafeImage src={portrait} alt={`${name} 的档案缩略图`} retry={false} className="h-full w-full object-contain" /> : <UserRound size={24} className="text-content-muted" aria-hidden="true" />}
     </div>
     <div className="min-w-0 flex-1">
       <h2 className="text-lg font-bold text-amber break-words [overflow-wrap:anywhere]">

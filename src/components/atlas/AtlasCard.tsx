@@ -8,6 +8,7 @@
  *    卡片只负责显示 —— 有图按 4:3 等比完整显示（不裁切），无图收成一条窄占位。
  */
 import { ImageOff } from 'lucide-react'
+import SafeImage from '@/components/common/SafeImage'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
 import type { AtlasImage, ResolvedAtlasField } from '@/lib/atlas/types'
@@ -59,9 +60,9 @@ export default function AtlasCard({ row, nameKey, badges, summaryFields, image, 
           图本身 object-contain（等比完整显示、不裁切），无图只放一个淡图标 */}
       <div className="relative bg-ink-900/70 border-b border-ink-700/60" style={{ aspectRatio: '4 / 3' }}>
         {image ? (
-          <img
+          <SafeImage
             src={image.dataUrl}
-            alt=""
+            alt="图鉴主图"
             loading="lazy"
             decoding="async"
             className="absolute inset-0 w-full h-full object-contain"

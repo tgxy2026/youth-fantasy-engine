@@ -29,6 +29,7 @@ import {
 import { ATLAS_TOTAL_LIMIT, atlasUsageRatio, atlasUsageText, checkAtlasBudget } from '@/lib/atlas/quota'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import SafeImage from '@/components/common/SafeImage'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
@@ -276,7 +277,7 @@ export default function AtlasDetail({
         <div className="relative" {...drop.dropProps}>
           {image ? (
             <div className="relative rounded-lg overflow-hidden border border-ink-700 bg-ink-900" style={{ aspectRatio: '16 / 9' }}>
-              <img src={image.dataUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
+              <SafeImage src={image.dataUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-ink-700 px-3 py-5 text-center text-11 text-ink-500">

@@ -7,6 +7,7 @@ import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import SafeImage from '@/components/common/SafeImage'
 import Tooltip from '@/components/common/Tooltip'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
@@ -354,7 +355,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 >
                   {form.cover ? (
                     <>
-                      <img src={form.cover} alt="封面预览" className="w-full h-full object-cover" />
+                      <SafeImage src={form.cover} alt="封面预览" retry={false} className="w-full h-full object-cover" />
                       <span
                         onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, cover: '' })) }}
                         className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -508,7 +509,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         >
                           {editForm.cover ? (
                             <>
-                              <img src={editForm.cover} alt="封面预览" className="w-full h-full object-cover" />
+                              <SafeImage src={editForm.cover} alt="封面预览" retry={false} className="w-full h-full object-cover" />
                               <span
                                 onClick={e => { e.stopPropagation(); setEditForm(f => ({ ...f, cover: '' })) }}
                                 className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover/cover:opacity-100 transition-opacity"
@@ -599,7 +600,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   <>
                     <div className="flex flex-wrap items-stretch gap-5 min-h-[184px]">
                       {p.cover ? (
-                        <img src={p.cover} alt={p.name} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
+                        <SafeImage src={p.cover} alt={p.name} retry={false} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
                       ) : (
                         <div className="w-128px rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
                           <Feather size={22} className="text-ink-600" />

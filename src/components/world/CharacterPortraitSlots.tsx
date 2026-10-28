@@ -12,6 +12,7 @@
 import { useRef } from 'react'
 import { ImagePlus, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import SafeImage from '@/components/common/SafeImage'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import { dataUrlBytes, PORTRAIT_ACCEPT } from '@/lib/media/imagePortrait'
 import { PORTRAIT_HINT_SPEC } from '@/lib/media/portraitSpec'
@@ -69,7 +70,7 @@ export default function CharacterPortraitSlots({ name, portrait, portrait2, busy
                 }}
               />
               {src ? (
-                <img src={src} alt={`${name} 的立绘 ${slot}`} className="w-full h-full object-contain" />
+                <SafeImage src={src} alt={`${name} 的立绘 ${slot}`} className="w-full h-full object-contain" />
               ) : (
                 <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-500">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
