@@ -32,6 +32,15 @@ const checks = [], pageErrors = []
  *    `_electron.launch` 45s 超时直接抛错退出，11 项被判 not-run）。断言本身仍走 15s 默认超时。
  */
 const BOOT_TIMEOUT = 120_000
+/**
+ * 比较「数据文件有没有被改动」时**排除自动保存带入的易变字段**（savedAt）：
+ * 被拒的导入本身不该写盘，但桌面端有空闲批处理落盘，跑得久一点就会把 savedAt 刷新 ——
+ * 直接比原文字节会把「自动保存」误判成「被拒的导入改了数据」（2026-10-29 实测）。
+ * 判据仍是**内容必须一致**：stores/kind 任何变化都算失败。
+ */
+const stableData = raw => {
+  try { const doc = JSON.parse(raw); delete doc.savedAt; return JSON.stringify(doc) } catch { return raw }
+}
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
 const arg = name => { const at = process.argv.indexOf(name); if (at < 0) return; const value = process.argv[at + 1]; if (!value || value.startsWith('--')) throw new Error(name + ' requires a value'); return value }
 const check = (id, ok, detail) => { checks.push({ id, passed: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + id); if (!ok) throw new Error(id) }
@@ -329,13 +338,13 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       await fs.writeFile(newerVersionFile, JSON.stringify({ ...exportedJson, fileVersion: 999 }))
       await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
       const afterVersionReject = await fs.readFile(activeFile, 'utf8')
-      check('schema-version.data-unchanged', beforeReject === afterVersionReject, '被拒的导入居然改动了数据文件')
+      check('schema-version.data-unchanged', stableData(beforeReject) === stableData(afterVersionReject), '被拒的导入居然改动了数据文件（已排除 savedAt）')
 
       const corruptFile = path.join(runRoot, 'corrupt.json')
       await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
       await importExpectRefusal(corruptFile, /已损坏/, 'restore-failure.corrupt-rejected')
       const afterCorruptReject = await fs.readFile(activeFile, 'utf8')
-      check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject, '损坏文件被拒后数据文件却变了')
+      check('restore-failure.data-unchanged', stableData(afterVersionReject) === stableData(afterCorruptReject), '损坏文件被拒后数据文件却变了（已排除 savedAt）')
       await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
 
       await app.close(); app = null
