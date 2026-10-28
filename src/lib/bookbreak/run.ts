@@ -24,6 +24,7 @@ import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/ai/aiTa
 import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { getCurrentProjectId } from '@/lib/db'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 import { isCancelled } from '@/lib/ai'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'
 import { formDraftRows } from '@/lib/flow/formMap'
@@ -74,7 +75,15 @@ export interface BookBreakResume {
   batches: EntityBatch[]
   /** 给界面显示的一行说明 */
   label: string
+  /** 原文与配置只留在当前进程的任务内存中，不落入偏好或书库。 */
+  sourceText?: string
+  resumeKey?: string
+  projectId?: string
+  storageKey?: string
+  failedUnits?: BookBreakFailedUnit[]
 }
+
+export interface BookBreakFailedUnit { unit: number; chapterTitle: string }
 
 export interface BookBreakOptions {
   /** 最多处理多少章 / 块（默认 60，见 split.ts） */
@@ -135,6 +144,8 @@ export interface BookBreakResult {
   /** 原文写入正文的结果（开关关闭或没有可写内容时为 null） */
   persist: PersistResult | null
   batches: EntityBatch[]
+  /** 未成功抽取的单元；空结果与请求失败必须分开。 */
+  failedUnits: BookBreakFailedUnit[]
   bundle: DraftBundle
   /**
    * 末尾汇总出的**全书级设定**草稿行（每张表单一行；关闭汇总或模型没产出时为空）。
@@ -158,6 +169,42 @@ export interface BookBreakResult {
 
 const DEFAULT_MAX_UNIT_CHARS = 4000
 const DEFAULT_MAX_UNITS = 120
+
+/** 不包含密钥，按原项目、存储及实际控制项绑定断点。 */
+export function bookBreakResumeKey(opts: BookBreakOptions): string {
+  const limits = opts.relationMaterial
+  return JSON.stringify([
+    getCurrentProjectId(), storageWriteContext(), opts.maxChunks ?? null, opts.maxUnitChars ?? null,
+    opts.maxUnits ?? null, opts.chunkTokens ?? null, opts.titleSamples ?? '', opts.volumeTitle ?? '',
+    opts.persistToChapters ?? true, opts.summarizeForms ?? true, opts.organizeRelations ?? true,
+    limits ? [limits.perType ?? null, limits.perEntityChars ?? null, limits.rawHeadChars ?? null, limits.maxChars ?? null, limits.maxRows ?? null] : null,
+  ])
+}
+
+/** 在装入旧阶段产物之前校验，失效时由作者决定是否从头重跑。 */
+export function bookBreakResumeIssue(raw: string, opts: BookBreakOptions, resume: BookBreakResume): string {
+  if (typeof resume.sourceText !== 'string' || typeof resume.resumeKey !== 'string') return '旧断点缺少原文或项目校验信息，请选择从头重跑。'
+  if (resume.sourceText !== raw) return '原文已变化，不能沿用旧断点。请核对后选择从头重跑。'
+  if (resume.resumeKey !== bookBreakResumeKey(opts)) return '项目、存储或拆书参数已变化，不能沿用旧断点。请核对后选择从头重跑。'
+  if (!bookBreakResumeOwnerCurrent(resume)) return '断点不属于当前项目或存储空间，请回到原项目核对。'
+  if (!Number.isInteger(resume.doneUnits) || resume.doneUnits < 0 || resume.doneUnits > resume.totalUnits) return '断点的处理进度不完整，请核对后选择从头重跑。'
+  if (resume.doneUnits > 0) {
+    const split = resume.bag?.split as SplitResult | undefined
+    if (!split || !Array.isArray(split.chapters)) return '断点缺少原始切分结果，请核对后选择从头重跑。'
+    const actual = expandUnits(split.chapters, opts.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS, opts.maxUnits ?? DEFAULT_MAX_UNITS).units.length
+    if (actual !== resume.totalUnits) return '断点与原始切分结果不一致，请核对后选择从头重跑。'
+  }
+  return ''
+}
+
+export function bookBreakResumeOwnerCurrent(resume: BookBreakResume): boolean {
+  return !!resume.projectId && resume.projectId === getCurrentProjectId() && resume.storageKey === storageWriteContext()
+}
+
+export function initialBookBreakResume(raw: string, opts: BookBreakOptions): BookBreakResume {
+  return { bag: {}, from: 'split', doneUnits: 0, totalUnits: 0, batches: [], label: '尚未开始抽取',
+    sourceText: raw, resumeKey: bookBreakResumeKey(opts), projectId: getCurrentProjectId(), storageKey: storageWriteContext(), failedUnits: [] }
+}
 
 function isAbort(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError'
@@ -219,6 +266,12 @@ export function planResume(
  * @returns 结果；**返回 null 表示被中止**（此时不产出草稿，调用方据此提示）
  */
 export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Promise<BookBreakResult | null> {
+  const resumeKey = bookBreakResumeKey(opts)
+  const projectId = getCurrentProjectId(), storageKey = storageWriteContext()
+  if (opts.resume) {
+    const issue = bookBreakResumeIssue(raw, opts, opts.resume)
+    if (issue) throw new Error(issue)
+  }
   const maxUnitChars = opts.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS
   const maxUnits = opts.maxUnits ?? DEFAULT_MAX_UNITS
   /** 本次拆书归属的项目：全程固定，避免中途切书后草稿按另一本书的模板落点 */
@@ -229,6 +282,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   let totalUnits = 0
   /** 已抽到的批次。跨阶段保留：中止时它就是续跑的起点（阶段没跑完时 bag 里是没有它的） */
   let partialBatches: EntityBatch[] = (opts.resume?.batches ?? []).map(b => ({ ...b, entities: [...b.entities] }))
+  let failedUnits: BookBreakFailedUnit[] = (opts.resume?.failedUnits ?? []).map(unit => ({ ...unit }))
 
   const flow = createFlow(BOOKBREAK_STAGES, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
@@ -315,7 +369,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     const plan = planResume(units.length, opts.resume)
     const start = plan.start
     // 断点失效（原文改过）→ 已抽批次一并丢掉，别让上次的旧批次混进这次的结果
-    if (plan.reason !== 'resume') { doneUnits = 0; partialBatches = [] }
+    if (plan.reason !== 'resume') { doneUnits = 0; partialBatches = []; failedUnits = [] }
     // 同章被细分成多块时，合并进同一个 EntityBatch（章标题/章号一致）
     const perChapter = new Map<number, EntityBatch>()
     for (const b of plan.seedBatches) perChapter.set(b.index, b)
@@ -349,7 +403,9 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
         })
       } catch (e) {
         if (isAbort(e) || ctx.signal.aborted) throw e
-        entities = [] // 单块失败不中断整本书——记不到就跳过，最后界面会显示"共抽到 N 条"
+        // 单块失败不中断整本书，但不能伪装成「没有实体」。不把原始异常/请求内容回显到界面。
+        failedUnits.push({ unit: i + 1, chapterTitle: u.chapterTitle })
+        entities = []
       }
       entityCount += entities.length
       if (entities.length) {
@@ -369,7 +425,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     const batches = [...perChapter.values()].sort((a, b) => a.index - b.index)
     partialBatches = batches
     const note = truncated ? `（已达到上限 ${maxUnits} 块，剩余未处理）` : ''
-    ctx.report(1, `${start > 0 ? '续跑后' : ''}共抽到 ${entityCount} 条实体${note}`)
+    ctx.report(1, `${start > 0 ? '续跑后' : ''}共抽到 ${entityCount} 条实体${failedUnits.length ? `，${failedUnits.length} 个单元未成功` : ''}${note}`)
     return batches
   })
 
@@ -434,7 +490,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   })
 
   const res = await flow.run(opts.resume?.from)
-  if (res.status === 'cancelled') {
+  if (res.status === 'cancelled' || res.status === 'error') {
     // 交回续跑信息：已完成到哪个阶段 + **阶段内断点**（已抽完多少块、已抽到哪些批次）
     opts.onResume?.({
       bag: res.bag,
@@ -443,10 +499,15 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
       totalUnits,
       batches: partialBatches,
       label: totalUnits ? `已完成 ${doneUnits}/${totalUnits} 个抽取单元` : '已完成部分阶段',
+      sourceText: raw,
+      resumeKey,
+      projectId,
+      storageKey,
+      failedUnits,
     })
-    return null
+    if (res.status === 'cancelled') return null
+    throw new Error(res.error ?? '拆书失败')
   }
-  if (res.status === 'error') throw new Error(res.error ?? '拆书失败')
 
   const base = res.bag.draft as DraftBundle
   const formRows = (res.bag.worldview as DraftRow[] | null) ?? []
@@ -457,6 +518,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     split: res.bag.split as SplitResult,
     persist: (res.bag.persist as PersistResult | null) ?? null,
     batches: (res.bag.extract as EntityBatch[]) ?? [],
+    failedUnits,
     // 汇总出的表单行与整理出的关系行**并进同一份 bundle**：作者在一个界面里勾选、确认、落库。
     // 顺序＝界面分组顺序：实体 → 全书设定表单 → 人物关系/势力关系（关系天然排在最后读）。
     bundle: merged.length === base.rows.length ? base : bundleOf(merged),

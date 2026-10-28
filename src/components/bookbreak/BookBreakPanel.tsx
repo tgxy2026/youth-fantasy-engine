@@ -14,7 +14,7 @@
  *    拆书的结果就写进了已卸载组件的 setState，白烧一次额度还拿不到东西。
  *    现在切页签不影响任务，回到本页结果与断点原样都在。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { FileDown, Loader2, Play, X } from 'lucide-react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import AutoTextarea from '@/components/common/AutoTextarea'
@@ -26,7 +26,9 @@ import NumberField from '@/components/common/NumberField'
 import { showToast } from '@/components/dialogs/dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '@/lib/ai'
 import { adviseImport, type ImportAdvice } from '@/lib/bookbreak/recommend'
-import { estimateCalls, previewSplit, runBookBreak, type BookBreakResume } from '@/lib/bookbreak/run'
+import { estimateCalls, previewSplit, runBookBreak, initialBookBreakResume, bookBreakResumeIssue, bookBreakResumeOwnerCurrent, type BookBreakResume, type BookBreakFailedUnit } from '@/lib/bookbreak/run'
+import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { readStringPref, writeStringPref, usePersistedBool } from '@/lib/settings/uiPrefs'
 import type { RelationTabOutcome } from '@/lib/bookbreak/relations'
 import {
@@ -62,6 +64,7 @@ interface BookBreakTaskResult {
   split: SplitResult
   /** 抽取批次（只用到条数统计，不深依赖其形状） */
   batches: { entities: unknown[] }[]
+  failedUnits: BookBreakFailedUnit[]
   bundle: DraftBundle
   formRows: DraftRow[]
   relationRows: DraftRow[]
@@ -85,12 +88,20 @@ const EMPTY_TABS: RelationTabOutcome[] = []
 const EMPTY_SUMMARIES: Record<string, string> = {}
 
 export default function BookBreakPanel() {
+  useSyncExternalStore(subscribeStorageContext, getStorageContextEpoch)
+  return <BookBreakWorkspace key={candidateApplyContext()} />
+}
+
+function BookBreakWorkspace() {
   // 🔴 未配置模型时**预先禁用**「开始抽取」（2026-09-20 六维审计 F1）。
   //    判据与真实调用一致：拆书链路（aiExtractSettingEntities / aiSummarizeFormSettings）
   //    都走 requireActiveProvider。选文件 / 预览分章是纯本地步骤，仍照常可用。
   const { ready: aiReady } = useAIReady()
   // 订阅任务中心（切页签重挂载后，任务与结果原样还在 —— 本组件不持有运行态）
-  const task = useAiTask<BookBreakTaskResult, FlowProgress>(OWNER_TAB, TASK_KIND)
+  const taskSnapshot = useAiTask<BookBreakTaskResult, FlowProgress>(OWNER_TAB, TASK_KIND)
+  const taskCheckpoint = (taskSnapshot?.resume ?? null) as BookBreakResume | null
+  const ownerChanged = !!taskCheckpoint && !bookBreakResumeOwnerCurrent(taskCheckpoint)
+  const task = ownerChanged ? null : taskSnapshot
   const running = task?.status === 'running'
   const progress = task?.progress ?? null
   const bundle = task?.result?.bundle ?? null
@@ -101,7 +112,7 @@ export default function BookBreakPanel() {
   const persistInfo = task?.result?.persist ?? null
   const summaries = task?.result?.summaries ?? EMPTY_SUMMARIES
   /** 中断后拿到的续跑断点（沿用原语义：显示「继续抽取」按钮） */
-  const resume = (task?.resume ?? null) as BookBreakResume | null
+  const resume = task?.status === 'done' ? null : (task?.resume ?? null) as BookBreakResume | null
   // 供下面那两个 effect 用的原始量：**只依赖原始值**，不依赖 task 对象本身
   // （task 的引用每次 store 变更都会换，直接当依赖会让 effect 无谓重跑）
   const taskId = task?.id ?? ''
@@ -113,7 +124,8 @@ export default function BookBreakPanel() {
     if (taskId && taskStatus === 'done' && taskUnread) markTaskSeen(taskId)
   }, [taskId, taskStatus, taskUnread])
 
-  const [raw, setRaw] = useState('')
+  const [raw, setRaw] = useState(() => task && taskCheckpoint && bookBreakResumeOwnerCurrent(taskCheckpoint) ? taskCheckpoint.sourceText ?? '' : '')
+  const [startError, setStartError] = useState('')
   const [preview, setPreview] = useState<SplitResult | null>(null)
   // 2.6.1 · R2：章节标题示例 —— 填了且本地规则认不出章节时，拆书先用 AI 按示例识别边界（run.ts 阶段 1）
   const [titleSamples, setTitleSamples] = useState(() => readStringPref('bookbreak-title-samples') ?? '')
@@ -210,6 +222,13 @@ export default function BookBreakPanel() {
     const material = limits
     // 「从头重跑」= 丢掉断点；否则有断点就接着抽
     const useResume = fromScratch ? null : resume
+    const settings = { persistToChapters, summarizeForms: formsOn, organizeRelations: relationsOn,
+      ...(samples.trim() ? { titleSamples: samples } : {}), relationMaterial: material }
+    if (useResume) {
+      const issue = bookBreakResumeIssue(rawText, settings, useResume)
+      if (issue) { setStartError(issue); return }
+    }
+    setStartError('')
 
     startTask<BookBreakTaskResult, FlowProgress>({
       ownerTab: OWNER_TAB,
@@ -219,16 +238,12 @@ export default function BookBreakPanel() {
       // 与别的写这两处的任务撞上时，任务中心会轻提示一次（真并行的必然代价，见 3-1）
       writes: ['chapters', 'settings'],
       run: async ctx => {
+        // 把原始输入留在任务内存，切页重挂后可继续；不会写入偏好或数据库。
+        ctx.setResume(useResume ?? initialBookBreakResume(rawText, settings))
         const res = await runBookBreak(rawText, {
           signal: ctx.signal,
           onProgress: p => ctx.progress(p),
-          persistToChapters,
-          summarizeForms: formsOn,
-          organizeRelations: relationsOn,
-          // 2.6.1 · R2：章节标题示例（非空才传；空 = 与旧行为完全一致）
-          ...(samples.trim() ? { titleSamples: samples } : {}),
-          // 材料上限（界面可调，持久保存）—— 只影响「整理关系」这一步
-          relationMaterial: material,
+          ...settings,
           // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
           ...(useResume ? { resume: useResume } : {}),
           onResume: r => ctx.setResume(r),
@@ -244,8 +259,8 @@ export default function BookBreakPanel() {
         const sum: Record<string, string> = {
           split: `识别到 ${res.split.chapters.length} ${res.split.mode === 'chapters' ? '章' : '块'} · ${fmtNum(res.split.stats.chars)} 字`,
           extract: res.batches.length
-            ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体`
-            : '没有抽到实体',
+            ? `从 ${res.batches.length} 个批次抽到 ${res.batches.reduce((n, b) => n + b.entities.length, 0)} 条实体${res.failedUnits.length ? `；${res.failedUnits.length} 个单元未成功` : ''}`
+            : res.failedUnits.length ? `${res.failedUnits.length} 个单元未成功，不能判断是否没有实体` : '没有抽到实体',
           // ⚠️ 扣掉全书设定那几行：它们是"汇总"出来的，不是逐章"整理"出来的，
           //    算进这里会让作者以为抽到了更多条目
           draft: `整理出 ${Math.max(0, res.bundle.stats.total - res.formRows.length)} 条草稿`,
@@ -280,9 +295,11 @@ export default function BookBreakPanel() {
             : `正文：${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章`)
         }
         parts.push(res.bundle.stats.total > 0 ? `设定草稿 ${res.bundle.stats.total} 条` : '未抽到可登记的实体')
+        if (res.failedUnits.length) parts.push(`${res.failedUnits.length} 个抽取单元未成功，请回看`)
         return {
           split: res.split,
           batches: res.batches,
+          failedUnits: res.failedUnits,
           bundle: res.bundle,
           formRows: res.formRows,
           relationRows: res.relationRows,
@@ -291,7 +308,7 @@ export default function BookBreakPanel() {
           persist: res.persist,
           summaries: sum,
           doneText: parts.join(' · ') + (res.bundle.stats.total > 0 ? '，请审阅后写入' : ''),
-          doneKind: res.bundle.stats.total > 0 ? 'success' : 'info',
+          doneKind: res.bundle.stats.total > 0 && !res.failedUnits.length ? 'success' : 'info',
           // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
           abortText:
             (persistToChapters
@@ -299,9 +316,9 @@ export default function BookBreakPanel() {
               : '已中止，未写入任何数据') + '；可点「继续抽取」接着跑，已抽过的块不会重跑',
         }
       },
-      notify: ({ status, result, error }) => {
+      notify: ({ status, result }) => {
         if (status === 'done' && result) return { text: `拆书完成 —— ${result.doneText}`, kind: result.doneKind }
-        if (status === 'failed') return { text: '拆书失败：' + (error || '未知原因'), kind: 'error' }
+        if (status === 'failed') return { text: '拆书未完成，请回到页面核对断点，并检查网络和模型配置。', kind: 'error' }
         if (status === 'aborted') return { text: '已中止：可点「继续抽取」接着跑', kind: 'info' }
         return null
       },
@@ -528,7 +545,7 @@ export default function BookBreakPanel() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
+        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
           {running ? '抽取中…' : resume ? '继续抽取' : '开始抽取'}
         </Button>
@@ -542,15 +559,25 @@ export default function BookBreakPanel() {
         )}
         {running && <span className="text-11 text-ink-400">{progress?.message ?? ''}</span>}
       </div>
+      {ownerChanged && <div role="alert" className="mt-2 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">已有拆书任务属于另一项目或存储空间，不能在当前空间查看或继续。请回到原项目核对。</div>}
+      {startError && <div role="alert" className="mt-2 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">{startError}</div>}
+      {task?.status === 'failed' && <div role="alert" className="mt-2 rounded border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">上次拆书未完成，请检查网络和模型配置，并核对断点；已写入正文以实际内容为准。</div>}
       {!running && resume && (
         <div className="mt-1 text-11 leading-relaxed text-ink-400">
-          上次中止在：{resume.label}。点「继续抽取」会从这里接着跑，<b className="text-ink-300">已抽过的块不会重跑</b>；
-          <span className="text-ink-500">若你改过原文，断点会失效（自动从头跑），避免抽出的内容与章节错位。</span>
+          {task?.status === 'failed' ? '上次失败在' : '上次中止在'}：{resume.label}。点「继续抽取」会从这里接着跑，<b className="text-ink-300">已处理的单元不会重跑</b>；
+          <span className="text-ink-500">原文、项目、存储或参数改变后，须由你选择从头重跑。先前失败的单元不会在续跑时自动重试。</span>
         </div>
       )}
 
       {/* 进度：节点时间线（跑完保留，事后能看到每一步做了什么、花了多久） */}
       <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
+      {!!task?.result?.failedUnits?.length && (
+        <details className="mt-3 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber" role="group">
+          <summary className="cursor-pointer">{task.result.failedUnits.length} 个抽取单元未成功，查看位置</summary>
+          <p className="mt-1">已生成的草稿可继续审阅。请检查网络或模型配置；可手动补充，或由你选择从头重跑，本页暂不支持只重试失败单元。</p>
+          <ul className="mt-1 list-disc pl-5">{task.result.failedUnits.map(unit => <li key={unit.unit}>第 {unit.unit} 个单元：{unit.chapterTitle}</li>)}</ul>
+        </details>
+      )}
 
       {/* 审阅 */}
       {persistInfo && (
