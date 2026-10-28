@@ -74,7 +74,13 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('🔴 ④ 捕获登记到 workspaceRuntime', /registerWorkspaceCapture\(/.test(hook))
   ok('🔴 ④ 捕获以 textarea.value 为准（state 会晚一拍）', /const text = ta\.value/.test(hook))
   ok('🔴 ④ 捕获带内容摘要与长度，不带正文', /revision: contentRevision\(text\)/.test(hook) && !/content: text/.test(hook))
-  ok('🔴 ④ 恢复前校验内容摘要，不一致就只回章首', /contentRevision\(text\) !== record\.revision/.test(hook) && /ta\.scrollTop = 0/.test(hook))
+  // 🔴 2026-10-28：判据必须以**数据侧正文**（`active.content`）为准 —— 同页切章时受控 textarea
+  //    里还是上一章的正文，拿它比会把「切回原章」误判成「内容变了」，每次都降级回章首。
+  ok('🔴 ④ 恢复前校验内容摘要（数据侧正文为准），不一致就只回章首',
+    /contentRevision\(expected\) !== record\.revision/.test(hook) && /ta\.scrollTop = 0/.test(hook)
+    // 数据侧还没拿到时才退回 textarea 自洽兜底，不能把兜底当主判据
+    && /contentRevision\(ta\.value\) !== record\.revision/.test(hook))
+  ok('🔴 ④ 编辑器把当前章正文交给恢复判据（不只是 id）', /content: active\?\.content \?\? null/.test(editor))
   ok('🔴 ④ 章节优先：记录的对象必须等于当前章才恢复（显式定位不会被会话记忆覆盖）',
     /record\.kind !== 'editor' \|\| record\.objectId !== activeId/.test(hook))
   ok('🔴 ④ 作者动手就作废在途恢复（键入/输入法/按键/指针/滚轮）',
@@ -82,7 +88,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('🔴 ④ 换身份/换后端清库时作废（订阅失效通知）', /subscribeInvalidation\(/.test(hook))
   // 判「代码里没用 setTimeout」，注释里那句「不靠固定 setTimeout 猜时机」不算
   const hookCode = hook.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-  ok('🔴 ④ 等布局稳定再恢复，不用固定 setTimeout 猜时机', /settleLayout/.test(hookCode) && !/setTimeout/.test(hookCode))
+  // 稳定判据必须同时等「值已是要恢复的那一章」：只等高度会在上一章的旧值上量出旧高度
+  ok('🔴 ④ 等正文真的装上目标章且布局稳定再恢复，不用固定 setTimeout 猜时机',
+    /settleEditor/.test(hookCode) && /el\.value === expected/.test(hookCode) && !/setTimeout/.test(hookCode))
   ok('🔴 ④ 不抢焦点：只在原本聚焦正文且无弹窗时可还给焦点', /\[role="dialog"\]/.test(hook) && /preventScroll: true/.test(hook))
   ok('🔴 ④ 恢复失败不影响编辑（整段落 catch）', /\.catch\(\(\) => \{/.test(hook))
   ok('🔴 ④ 捕获/恢复不写 localStorage / sessionStorage', !/localStorage|sessionStorage/.test(hook))

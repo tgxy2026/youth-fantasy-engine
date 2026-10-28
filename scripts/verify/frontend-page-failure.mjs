@@ -24,7 +24,12 @@ try{
   })
   page=await context.newPage();page.setDefaultTimeout(120000)
   page.on('pageerror',error=>{
-    if(report.blocked>0&&error.message.includes(origin+'/src/components/app/GuidePage.tsx'))report.expectedResourceErrors.push(error.message)
+    // 🔴 开发态专属假阳性：React 18 DEV 的 reportUncaughtErrorInDEV 会把**已经被错误边界接住**的
+    //    错误再抛回 window（只为让 devtools overlay 能显示，见 react-dom.development.js 该函数注释）。
+    //    生产构建不会这么做 —— 零未捕获异常由 scripts/verify/frontend-lazy-chunk.mjs 在生产包上取证。
+    //    这里只放过「注入期间 + 正是本项目的模块加载失败」，其它任何错误一律算真错误。
+    const devRethrow = block === true && error.message === '模块文件未能加载'
+    if(devRethrow)report.expectedResourceErrors.push(error.message)
     else report.errors.push(error.message)
   })
   await page.goto(origin,{waitUntil:'commit'})
@@ -40,7 +45,9 @@ try{
   const latest=(await editor.inputValue())+'\n资源失败前的离页保存核验'
   await editor.fill(latest)
   await nav.getByRole('button',{name:'使用指南',exact:true}).click()
-  const failure=page.getByRole('heading',{name:'当前页面暂时无法打开',exact:true});await failure.waitFor()
+  // 🔴 2026-10-28 UX13：分包失败不再冒成整页错误，而是**只在这一页**给可重试的失败面板
+  const failure=page.getByRole('heading',{name:'「使用指南」没能加载出来',exact:true});await failure.waitFor()
+  const notice=page.locator('[data-module-failure]')
   check('a real lazy resource rejection leaves the same project navigation mounted',report.blocked>0&&await nav.isVisible()
     &&await nav.getAttribute('data-frame-identity')==='preserved-project-frame')
   check('embedded failure does not introduce another full-screen main landmark',await page.getByRole('main').count()===1)
@@ -49,20 +56,25 @@ try{
     return {id:chapter?.id,chapters:JSON.stringify(chapters)}
   },latest)
   check('the normal leave barrier saved the actual edited chapter before resource loading failed',!!saved.id)
-  check('a cached lazy rejection is not advertised as a component-reset retry',!await page.getByRole('button',{name:'重试当前页面',exact:true}).count()
+  // 旧实现把失败永久缓存，只能整页刷新；现在给的是**真重试**（换新实例重新请求），
+  // 但绝不能出现「重试当前页面」这种重挂载同一实例的假按钮
+  check('a failed module offers a real refetch retry, never a component-reset retry',!await page.getByRole('button',{name:'重试当前页面',exact:true}).count()
+    &&await page.getByRole('button',{name:'重新加载这个页面',exact:true}).isVisible()
     &&await page.getByRole('button',{name:'重新加载工作台',exact:true}).isVisible())
   await page.getByText('查看技术摘要',{exact:true}).click()
   const summary=await page.locator('pre').innerText()
   check('the visible diagnostic summary excludes workspace URLs and manuscript contents',!summary.includes(origin)&&!summary.includes('/src/components')&&!summary.includes('资源失败前的离页保存核验'),summary)
   await page.screenshot({path:path.join(run,'page-failure.png'),animations:'disabled'})
-  await page.getByRole('button',{name:'返回写作面板',exact:true}).click()
+  // 失败面板只占页面区，主导航照常可点：这里走真实导航离开，而不是面板里的返回按钮
+  await nav.getByRole('button',{name:'写作面板',exact:true}).click()
   await page.getByRole('heading',{name:'写作面板',exact:true}).waitFor()
   check('returning to writing keeps the current project and authoritative chapter bytes',await page.evaluate(async expected=>{
     const db=await import('/src/lib/db.ts');return db.getCurrentProjectId()===expected.id&&JSON.stringify(await db.getAllChapters())===expected.chapters
   },{id:owner.id,chapters:saved.chapters}))
   const blocked=report.blocked
   await nav.getByRole('button',{name:'使用指南',exact:true}).click();await failure.waitFor();await page.waitForTimeout(300)
-  check('reentering the rejected page has a bounded fallback rather than an automatic fetch loop',report.blocked===blocked)
+  check('reentering the rejected page has a bounded fallback rather than an automatic fetch loop',
+    report.blocked===blocked+1&&await notice.count()===1)
   block=false
   await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'重新加载工作台',exact:true}).click()])
   await page.getByRole('button',{name:'打开项目',exact:true}).waitFor({timeout:120000})
@@ -75,7 +87,7 @@ try{
   await nav.waitFor();await page.getByRole('button',{name:'稍后再说',exact:true}).click({timeout:1000}).catch(()=>{})
   await nav.getByRole('button',{name:'使用指南',exact:true}).click()
   await page.getByRole('heading',{name:'使用指南',exact:true}).waitFor()
-  check('a new document really fetches the restored resource and opens the page',!await failure.count())
+  check('a new document really fetches the restored resource and opens the page',!await failure.count()&&await notice.count()===0)
   check('no unexpected runtime errors',report.errors.length===0,report.errors)
   check('no model requests',report.modelRequests.length===0,report.modelRequests)
   report.status='passed'

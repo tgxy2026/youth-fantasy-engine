@@ -3,7 +3,8 @@ import { createStorageFailureNotice } from '@/lib/app/storageFailureNotice'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 import WorkspacePageFailure from '@/components/app/WorkspacePageFailure'
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { lazyPage } from '@/components/common/LazyPage'
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
 import Dashboard from '@/components/app/Dashboard'
@@ -65,25 +66,27 @@ import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
-const GuidePage = lazy(() => import('@/components/app/GuidePage'))
-const InspireTools = lazy(() => import('@/components/creative/InspireTools'))
-const ModelSettingsPanel = lazy(() => import('@/components/settings/ModelSettingsPanel'))
-const CheckTools = lazy(() => import('@/components/audit/CheckTools'))
-const MaterialLibrary = lazy(() => import('@/components/library/MaterialLibrary'))
-const BookBreakPanel = lazy(() => import('@/components/bookbreak/BookBreakPanel'))
-const CreativeWritingPanel = lazy(() => import('@/components/creative/CreativeWritingPanel'))
+// 🔴 一律走 `lazyPage`（UX13）：裸 `lazy()` 会把加载失败永久缓存住，「重试」只能整页刷新；
+//    这里每个页面失败后都能换新实例真重发请求，且只在这一页内报错、不动导航。
+const GuidePage = lazyPage(() => import('@/components/app/GuidePage'), '使用指南')
+const InspireTools = lazyPage(() => import('@/components/creative/InspireTools'), '灵感启发')
+const ModelSettingsPanel = lazyPage(() => import('@/components/settings/ModelSettingsPanel'), '模型设置')
+const CheckTools = lazyPage(() => import('@/components/audit/CheckTools'), '检查工具')
+const MaterialLibrary = lazyPage(() => import('@/components/library/MaterialLibrary'), '素材资料')
+const BookBreakPanel = lazyPage(() => import('@/components/bookbreak/BookBreakPanel'), '一键拆书')
+const CreativeWritingPanel = lazyPage(() => import('@/components/creative/CreativeWritingPanel'), '创意写作')
 // 酒馆模式四页：剧情推演 / 推演报告 / 角色卡 / 自由对话（各自含 AI 交互，按需懒加载）
-const TavernPlot = lazy(() => import('@/components/tavern/TavernPlot'))
-const TavernReport = lazy(() => import('@/components/tavern/TavernReport'))
-const TavernCard = lazy(() => import('@/components/tavern/TavernCard'))
-const TavernFree = lazy(() => import('@/components/tavern/TavernFree'))
-const RunPanel = lazy(() => import('@/components/tavern/RunPanel'))
-const TavernControl = lazy(() => import('@/components/tavern/TavernControl'))
-const TavernScript = lazy(() => import('@/components/tavern/TavernScript'))
-const TavernWorld = lazy(() => import('@/components/tavern/TavernWorld'))
+const TavernPlot = lazyPage(() => import('@/components/tavern/TavernPlot'), '剧情推演')
+const TavernReport = lazyPage(() => import('@/components/tavern/TavernReport'), '推演报告')
+const TavernCard = lazyPage(() => import('@/components/tavern/TavernCard'), '角色卡片')
+const TavernFree = lazyPage(() => import('@/components/tavern/TavernFree'), '自由对话')
+const RunPanel = lazyPage(() => import('@/components/tavern/RunPanel'), '跑团互动')
+const TavernControl = lazyPage(() => import('@/components/tavern/TavernControl'), '控制面板')
+const TavernScript = lazyPage(() => import('@/components/tavern/TavernScript'), '故事剧本')
+const TavernWorld = lazyPage(() => import('@/components/tavern/TavernWorld'), '背景设定')
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
-const TrajectoryPanel = lazy(() => import('@/components/audit/TrajectoryPanel'))
-const WorldLibraryPanel = lazy(() => import('@/components/world/WorldLibraryPanel'))
+const TrajectoryPanel = lazyPage(() => import('@/components/audit/TrajectoryPanel'), '创作轨迹')
+const WorldLibraryPanel = lazyPage(() => import('@/components/world/WorldLibraryPanel'), '世界引擎')
 
 
 
