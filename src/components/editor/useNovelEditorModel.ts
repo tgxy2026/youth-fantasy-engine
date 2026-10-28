@@ -55,6 +55,7 @@ import {
 } from '@/components/editor/novelEditorHelpers'
 import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/outline/freeVolume'
 import { useEditorChapterTarget } from '@/components/editor/useEditorChapterTarget'
+import { runRegenSummaries, regenSummaryText, type RegenOutcome } from '@/components/editor/regenSummaries'
 import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardReorder'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
@@ -819,11 +820,13 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
    *    最后落库的是谁取决于谁后跑完）。`startTask` 对同 (ownerTab, kind) 的 running
    *    天然忽略重复发起，任务还跨页签存活、可中止。
    */
-  const regenT = useTaskRunner<{ done: number; total: number }>({
+  const regenT = useTaskRunner<RegenOutcome>({
     ownerTab: 'editor', kind: 'regen-summaries', title: '批量重生成章节摘要', writes: ['chapters'],
   })
   /** 视图侧仍叫 `regenAll`（按钮禁用 + 转圈）—— 语义没变，只是来源换成了任务中心的 running */
   const regenAll = regenT.running
+  /** 上一批逐章失败清单（页面据此显示「哪几章还是旧摘要」；新一批发起时自然被替换） */
+  const regenFailures = regenT.result?.failed ?? []
   const regenAllSummaries = async () => {
     if (!aiReady || regenT.running) return
     const ok = await confirmDialog({
@@ -834,30 +837,21 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     regenT.run(async ctx => {
       const all = await db.getAllChapters()
       const vols = await db.getAllVolumes()
-      const targets = all.filter(c => (c.content || '').trim().length > 0)
-      let done = 0
-      for (const c of targets) {
-        if (ctx.isAborted()) break
-        try {
-          const s = await aiChapterSummary(c.content, { signal: ctx.signal })
-          if (s) {
-            const next = { ...c, summary: s }
-            await saveChapterWithAi(next)
-            // 🔴 台账的「一句话事件」是章节总表/情节推演本在读的字段，摘要变了必须同步登记，
-            //    否则总表还显示旧摘要，用户会以为重生成没生效。
-            await syncChapterMaster(next, chapterSeqOf(vols, all, next.id))
-          }
-        } catch {
-          // 单章失败跳过、继续其余；被中止就跳出（顶层 `ctx.isAborted()` 已覆盖正常路径）
-          if (ctx.isAborted()) break
-        }
-        done++
-        ctx.progress({ done, total: targets.length })
-        if (done % 8 === 0) showToast(`已重生成摘要 ${done}/${targets.length}`, 'info')
-      }
-      return { done, total: targets.length }
+      // 🔴 逐章计账抽到 `regenSummaries.ts`：原先单章失败被 `catch {}` 静默跳过、结果只报 {done,total}，
+      //    完成提示却写「全书…完成（共 total 章）」⇒ 部分失败被说成全部成功（UX09 生成部分失败）。
+      const outcome = await runRegenSummaries(all, {
+        signal: ctx.signal,
+        isAborted: () => ctx.isAborted(),
+        summarize: (text, opts) => aiChapterSummary(text, opts),
+        // 两步分开传：写章节与同步总表**各自**记账（摘要落库了但总表没跟上，也得如实说）
+        save: async next => { await saveChapterWithAi(next) },
+        syncMaster: async next => { await syncChapterMaster(next, chapterSeqOf(vols, all, next.id)) },
+        onProgress: (attempted, total) => ctx.progress({ attempted, total }),
+        onBatch: (attempted, total) => showToast(`已重生成摘要 ${attempted}/${total}`, 'info'),
+      })
+      return outcome
     }, info => {
-      if (info.status === 'done') return { text: `全书摘要重生成完成（共 ${info.result?.total ?? 0} 章）`, kind: 'success' as const }
+      if (info.status === 'done' && info.result) return regenSummaryText(info.result)
       if (info.status === 'aborted') return { text: '批量重生成已中止 —— 已完成的部分保持已更新', kind: 'info' as const }
       return { text: '批量重生成失败：' + (info.error || '未知原因'), kind: 'error' as const }
     })
@@ -1173,7 +1167,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否

@@ -24,7 +24,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2, ChevronDown
+  Undo2, Redo2, FilePlus2, ChevronDown, AlertTriangle
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -99,7 +99,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
@@ -574,6 +574,20 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <AIDataSourceNote feature="chapter-summary" />
               </HelpPopover>
             </div>
+
+            {/* 上一批「批量重生成摘要」的逐章失败（UX09）：有失败就必须能看见是哪几章，
+                否则完成提示说「完成」、章节总表却还是旧摘要，作者永远查不到。 */}
+            {regenFailures.length > 0 && (
+              <div data-regen-failures="" className="px-5 py-1.5 border-b border-ink-700/50 bg-danger/10 text-11 text-danger shrink-0 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  上一批摘要有 {regenFailures.length} 章没走完：{regenFailures.slice(0, 3).map(item => item.title).join('、')}{regenFailures.length > 3 ? ` 等 ${regenFailures.length} 章` : ''}。
+                  {regenFailures.some(item => !item.summarySaved)
+                    ? '这些章节仍是旧摘要，可再次点「批量重生成」重试。'
+                    : '摘要已更新，但章节总表没同步成功。'}
+                </span>
+              </div>
+            )}
 
             {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
                 🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
