@@ -40,6 +40,12 @@ export interface EditorWorkspaceViewArgs {
   taRef: RefObject<HTMLTextAreaElement>
   /** 正文壳（短窗时它才是滚动容器），用于外层的滚动位置 */
   scrollRef: RefObject<HTMLDivElement>
+  /**
+   * 🔴 当前章的**数据侧**正文（`active.content`）。判「内容是不是还是那一份」必须以它为准，
+   *    不能读 textarea —— 同页切章时受控值要等下一次提交才写回，effect 里读到的还是上一章的正文。
+   *    只从 ref 读、**不进依赖**：自动保存会不断刷新它，进依赖会让恢复在作者打字时反复重跑。
+   */
+  content?: string | null
   /** Explicit position requests arbitrate before restoration begins; hook order is not priority. */
   skipRestore?: boolean
 }
@@ -57,29 +63,35 @@ const measure = (el: HTMLTextAreaElement): LayoutBox => {
   }
 }
 
-/** 等正文区高度稳定两帧（字体晚到 / 短窗保底 / 图片撑开都会改高度）——不靠固定 setTimeout 猜时机 */
-async function settleLayout(el: HTMLTextAreaElement, cancelled: () => boolean): Promise<void> {
+/**
+ * 等「正文真的装上要恢复的那一章，且高度稳定两帧」（字体晚到 / 短窗保底 / 图片撑开都会改高度）。
+ *
+ * 🔴 为什么必须连值一起等：同页切章时受控 textarea 里仍是**上一章**的正文，要等 React 下一次提交
+ *    才写回。只等高度稳定会在旧值上量出旧高度（两章行数接近时甚至第一帧就算稳定），
+ *    接着按旧值判「内容变了」⇒ 每次切回原章都被降级成章首，现场照样丢（2026-10-28 定位）。
+ *
+ * @param expected 目标章正文；`null` 表示数据侧还没拿到，只能退回「值自洽」的旧判据
+ */
+async function settleEditor(el: HTMLTextAreaElement, expected: string | null, cancelled: () => boolean): Promise<boolean> {
   let last = -1
   let stable = 0
   for (let frame = 0; frame < STABLE_FRAMES; frame += 1) {
-    if (cancelled()) return
+    if (cancelled()) return false
     const height = el.clientHeight
-    if (height > 0 && height === last) {
-      stable += 1
-      if (stable >= 2) return
-    } else {
-      stable = 0
-    }
+    const ready = height > 0 && (expected === null || el.value === expected)
+    stable = ready && height === last ? stable + 1 : 0
     last = height
+    if (stable >= 2) return true
     await new Promise<void>(resolve => { requestAnimationFrame(() => resolve()) })
   }
+  return false
 }
 
-export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, skipRestore = false }: EditorWorkspaceViewArgs): void {
+export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, content = null, skipRestore = false }: EditorWorkspaceViewArgs): void {
   const epoch = useRef(0)
   // 捕获可能在 React 之外被同步调用（离页点击那一刻），只能读 ref 里的最新值
-  const live = useRef({ enabled, activeId })
-  live.current = { enabled, activeId }
+  const live = useRef({ enabled, activeId, content })
+  live.current = { enabled, activeId, content }
 
   // ---------- 捕获：登记到 workspaceRuntime（App 离页前、模型切章前都会调） ----------
   useEffect(() => registerWorkspaceCapture(() => {
@@ -141,21 +153,29 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, sk
     const generation = workspaceViews.generation()
     const record = workspaceViews.get(scope, activeId)
     if (!record || record.kind !== 'editor' || record.objectId !== activeId) return
+    const expected = live.current.content
 
     const cancelled = () => token !== epoch.current || workspaceViews.generation() !== generation
     // 存储被清（换身份 / 换后端 / 整库替换）⇒ 立刻作废，别让旧会话的现场落到新上下文里
     const offInvalidate = workspaceViews.subscribeInvalidation(() => { epoch.current += 1 })
+    /** 内容确实变了：只回章首，旧选区一律不套（它指向的已不是同一句话） */
+    const degrade = () => {
+      ta.scrollTop = 0
+      const outer = scrollRef.current
+      if (outer) outer.scrollTop = 0
+    }
     void (async () => {
-      await settleLayout(ta, cancelled)
-      if (cancelled()) return
+      if (expected != null) {
+        // 🔴 判据落在**数据**上（见 settleEditor 头注）：拿切章瞬间的 textarea 值比，等于拿上一章比这一章。
+        if (contentRevision(expected) !== record.revision) { degrade(); return }
+        if (!(await settleEditor(ta, expected, cancelled)) || cancelled()) return
+      } else {
+        // 数据侧还没拿到（冷启动加载中）：只能等值自洽后再用旧判据兜底
+        if (!(await settleEditor(ta, null, cancelled)) || cancelled()) return
+        if (contentRevision(ta.value) !== record.revision) { degrade(); return }
+      }
       const text = ta.value
       const outer = scrollRef.current
-      if (contentRevision(text) !== record.revision) {
-        // 内容变了：只回章首，旧选区一律不套（它指向的已不是同一句话）
-        ta.scrollTop = 0
-        if (outer) outer.scrollTop = 0
-        return
-      }
       const selection = clampSelection(record.selection.start, record.selection.end, text.length, record.selection.direction)
       const max = ta.scrollHeight - ta.clientHeight
       const plan = scrollTopFor(record.scroll, record.layout, measure(ta), max)

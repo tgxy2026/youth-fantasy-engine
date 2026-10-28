@@ -121,7 +121,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const ownsPosition = useEditorOpenOffset({ enabled: loaded, activeId, openChapterId: openChapterId ?? null,
     offset: openOffset?.offset ?? null, matchLength: openOffset?.matchLength ?? null, taRef, requestId: openRequestId,
     expectedRevision: openOffset?.revision, content: active?.content ?? null })
-  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, skipRestore: ownsPosition })
+  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, content: active?.content ?? null, skipRestore: ownsPosition })
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
