@@ -495,7 +495,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                     {items.map(p => (
-              <div key={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
+              <div key={p.id} data-project-card={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
                 {editingId === p.id ? (
                   /* 编辑模式：修改书名与封面 */
                   <div>
@@ -597,7 +597,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-stretch gap-5 min-h-[184px]">
+                    <div className="flex flex-wrap items-stretch gap-5 min-h-[184px]">
                       {p.cover ? (
                         <img src={p.cover} alt={p.name} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
                       ) : (
@@ -605,7 +605,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           <Feather size={22} className="text-ink-600" />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex-1 min-w-[min(100%,12rem)] flex flex-col">
                         <div>
                           <h3 className="text-15 font-bold text-ink-50 truncate">{p.name}</h3>
                           {/* 这一行**只留卷 / 章 / 字数**（2026-09-19 老大要求）：
@@ -621,9 +621,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>
-                        <div className="mt-auto pt-3 flex items-center gap-1.5">
+                        <div data-project-actions className="mt-auto pt-3 grid w-full max-w-[188px] grid-cols-6 items-center gap-1 [&>span]:min-w-0 [&>span>button]:!w-full [&>span>button]:!min-w-0">
                           <Tooltip label="打开项目">
-                            <Button variant="primary" iconOnly
+                            <Button variant="primary" iconOnly size="xs"
                               onClick={() => onOpen(p.id)}
                               title="打开项目"
                               aria-label="打开项目"
@@ -632,7 +632,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="xs"
                               onClick={() => exportProject(p)}
                               title="导出 JSON 备份"
                               aria-label="导出 JSON 备份"
@@ -641,7 +641,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出设定集">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="xs"
                               onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('@/lib/storage/exporter'); void exportSettingCompendium(p.name) }}
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
@@ -650,7 +650,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="备份与恢复">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="xs"
                               onClick={() => { setBackupName(p.name); setBackupPid(p.id) }}
                               title="备份与恢复：查看 / 一键恢复历史版本"
                               aria-label="备份与恢复"
@@ -659,7 +659,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="编辑项目">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="xs"
                               onClick={() => startEdit(p)}
                               title="编辑项目"
                               aria-label="编辑项目"
@@ -668,7 +668,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             </Button>
                           </Tooltip>
                           <Tooltip label="删除项目" side="bottom">
-                            <Button variant="icon-danger" iconOnly size="md"
+                            <Button variant="icon-danger" iconOnly size="xs"
                               onClick={() => removeProject(p)}
                               className="hover:bg-danger/10"
                               title="删除项目"
