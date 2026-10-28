@@ -1,7 +1,7 @@
 /** A small DOM surface outside React. The server guest notice uses the same host protocol. */
 interface NoticeWindow extends Window { __YFE_NOTICE_LAYOUT__?: () => void }
 const STYLE = `
-#yfe-external-notices{position:sticky;top:0;z-index:80;max-height:35vh;overflow:auto;background:rgb(var(--ink-950,28 26 23));color:rgb(var(--ink-100,232 226 216));font:13px/1.65 system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif}
+#yfe-external-notices{position:sticky;top:0;z-index:80;max-height:calc(35vh / var(--ui-zoom, 1));overflow:auto;background:rgb(var(--ink-950,28 26 23));color:rgb(var(--ink-100,232 226 216));font:13px/1.65 system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif}
 #yfe-external-notices[hidden]{display:none}
 .yfe-native-notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid rgb(var(--amber,201 162 39) / .45)}
 .yfe-native-notice .notice-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}

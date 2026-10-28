@@ -221,14 +221,14 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 🔴 R08：名字撞车但定义不同的字段会另建并改名 —— **导入前**就要说清楚，
     //    否则导完凭空多一个「食性（2）」，作者只会以为是 bug。
     const conflictNote = p.conflicts.length > 0
-      ? `\n\n有 ${p.conflicts.length} 个字段与现有字段同名但定义不同，不会硬合并，将**另建并改名**：${p.conflicts.slice(0, 3).map(c => `「${c.label}」→「${c.label}（新）」(${c.reason})`).join('；')}`
+      ? `\n\n有 ${p.conflicts.length} 个字段与现有字段同名但定义不同，不会硬合并，将「另建并改名」：${p.conflicts.slice(0, 3).map(c => `「${c.label}」→「${c.label}（新）」(${c.reason})`).join('；')}`
       : ''
     const catNote = p.unknownCategories.length > 0
       ? `\n\n类别值里有 ${p.unknownCategories.length} 个目标表还没有（${p.unknownCategories.slice(0, 3).join('、')}${p.unknownCategories.length > 3 ? '…' : ''}）—— 导入后会自动登记成「类别」列的自定义选项，不会丢值。`
       : ''
     const ok = await confirmDialog({
       title: '导入图鉴资料包',
-      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只「新增」、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
     })
     if (!ok) return
     if (!owner.current()) return
