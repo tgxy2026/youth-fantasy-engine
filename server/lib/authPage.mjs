@@ -89,7 +89,7 @@ button.submit:disabled{background:#b9ab8b;cursor:not-allowed}
 .msg.ok{display:block;background:#f0f7ef;border:1px solid #cfe5cb;color:#3d6b36}
 .foot{margin-top:18px;text-align:center;font-size:13px;line-height:1.9;color:#625b51}
 .foot b{color:#7c7468;font-weight:500}
-.dl{margin-top:14px;padding-top:12px;border-top:1px solid #eee8dc;font-size:13px;line-height:1.9;color:#625b51}
+.dl{margin-top:14px;padding-top:12px;border-top:1px solid #eee8dc;font-size:13px;line-height:1.9;color:#625b51;text-align:center}
 .dl a{color:#8a6d1f;text-decoration:none;border-bottom:1px solid rgba(138,109,31,.35);transition:color .15s,border-color .15s}
 .dl a:hover{color:#6b5316;border-bottom-color:#6b5316}
 .forgot{margin-top:12px;text-align:center;font-size:13px}
