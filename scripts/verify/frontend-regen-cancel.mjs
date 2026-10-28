@@ -138,6 +138,25 @@ try {
   check('🔴 ③ 中止 ≠ 回滚：已更新的仍是新摘要', changedAfter >= changedBeforeStop, { changedBeforeStop, changedAfter })
   check('🔴 ③ 中止后没有把剩下的都跑完（确实停住了）', changedAfter < before.length, { changedAfter, total: before.length })
 
+  // ---------- ④ 键盘也能叫停（A4：中止键必须在 Tab 序里、Enter 可触发） ----------
+  await page.getByTitle('批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）', { exact: true }).click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  const stop2 = page.getByRole('button', { name: '中止批量重生成' })
+  await stop2.waitFor({ timeout: 60000 })
+  await page.locator('textarea.novel-textarea').first().click()
+  // 🔴 不能从正文 textarea 起按 Tab 测「能不能走到」：编辑器把 Tab 让给了缩进（Tab/Shift+Tab 归正文），
+  //    焦点根本不出 textarea（上一版就在这里误判过一次，还往正文里塞了 240 个制表符 —— 只影响临时副本）。
+  //    改为直接验「可聚焦 + 原生 button 的 tabIndex≥0 + Enter 触发」这三件真正决定键盘可用性的事。
+  const focusable = await stop2.evaluate(el => {
+    el.focus()
+    return { isActive: document.activeElement === el, tabIndex: el.tabIndex, tag: el.tagName }
+  })
+  check('🔴 ④ 中止键可聚焦、tabIndex≥0（原生 button，Tab 序由浏览器保证）',
+    focusable.isActive && focusable.tabIndex >= 0 && focusable.tag === 'BUTTON', focusable)
+  await page.keyboard.press('Enter')
+  await regenBtn.waitFor({ timeout: 30000 })
+  check('🔴 ④ 键盘 Enter 也能中止（任务结束、按钮复位）', await page.getByRole('button', { name: '中止批量重生成' }).count() === 0)
+
   await page.screenshot({ path: path.join(run, 'regen-cancelled.png'), animations: 'disabled' })
   check('④ 全程没有浏览器运行错误', report.errors.length === 0, report.errors)
   report.status = 'passed'
