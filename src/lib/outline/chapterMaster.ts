@@ -2,6 +2,7 @@ import * as db from '@/lib/db'
 import type { Chapter } from '@/lib/types'
 import { todayKey } from '@/lib/app/date'
 import { OUTLINE_TAB_ID, chapterNoOf, outlineEventKey } from '@/lib/outline/outlineCard'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 /**
  * 用正文概要回填《章节细纲》卡的「本章一句话事件」。
@@ -22,20 +23,20 @@ import { OUTLINE_TAB_ID, chapterNoOf, outlineEventKey } from '@/lib/outline/outl
  *          或章号为 0（序章/不计入序号）时返回 null
  */
 export async function backfillOutlineEvent(
-  summary: string, chapterNo: number, title = '',
+  summary: string, chapterNo: number, title = '', owner?: OwnedOperation,
 ): Promise<{ filled: number; skipped: number } | null> {
   const text = (summary ?? '').trim()
   const key = outlineEventKey()
   if (!text || !key || chapterNo <= 0) return null
   try {
-    const cards = await db.getCardRecords(OUTLINE_TAB_ID)
+    const cards = owner ? await db.getCardRecordsFor(owner.projectId, OUTLINE_TAB_ID, owner) : await db.getCardRecords(OUTLINE_TAB_ID)
     // 先按章号匹配（卡名由 outlineCardName 生成，格式唯一）；实在没有才退到标题包含匹配
     const t = (title ?? '').trim()
     const hit = cards.find(c => chapterNoOf(c.name) === chapterNo)
       ?? (t ? cards.find(c => c.name.includes(t)) : undefined)
     if (!hit) return { filled: 0, skipped: 0 }
     if ((hit.data[key] ?? '').trim()) return { filled: 0, skipped: 1 }
-    await db.saveCardRecord({ ...hit, data: { ...hit.data, [key]: text } })
+    await db.saveCardRecord({ ...hit, data: { ...hit.data, [key]: text } }, owner)
     return { filled: 1, skipped: 0 }
   } catch {
     return null
@@ -49,7 +50,7 @@ export async function backfillOutlineEvent(
  * 从 NovelEditor 抽出为共享函数，供「AI 一键续写」等新模块复用，避免重复实现。
  */
 export async function syncChapterMaster(
-  ch: Chapter, chapterNo: number, narrativeIndex?: number,
+  ch: Chapter, chapterNo: number, narrativeIndex?: number, owner?: OwnedOperation,
 ) {
   // 台账行的 order 用真实叙事位次（含不计入序号的章），这样整表行序始终等于故事顺序，
   // 情节推演本等直接按 row.order 展示的地方才不会错乱（1.9.2）。
@@ -57,8 +58,8 @@ export async function syncChapterMaster(
   const tabId = `chapter-vol-${ch.volumeId}`
   const rid = `ch-${ch.id}`
   // 章节若曾属其它卷，清理旧卷台账里的孤儿行（一次全表扫描）
-  await db.purgeLedgerRowEverywhere(ch.id, ch.volumeId)
-  const rows = await db.getTableRows(tabId)
+  await db.purgeLedgerRowEverywhere(ch.id, ch.volumeId, owner)
+  const rows = owner ? await db.getTableRowsFor(owner.projectId, tabId, owner) : await db.getTableRows(tabId)
   const existing = rows.find(r => r.id === rid)
   const today = todayKey()
   // 1.9.2：序号 0 表示「不计入序号」（序章/番外/后记），台账章节号留空，作者可手填「番外」之类
@@ -72,7 +73,7 @@ export async function syncChapterMaster(
     auto['发布日期'] = today
   }
   if (existing) {
-    await db.saveTableRow({ ...existing, data: { ...existing.data, ...auto }, order: rowOrder })
+    await db.saveTableRow({ ...existing, data: { ...existing.data, ...auto }, order: rowOrder }, owner)
   } else {
     await db.saveTableRow({
       id: rid,
@@ -85,7 +86,7 @@ export async function syncChapterMaster(
         ...auto,
       },
       order: rowOrder,
-    })
+    }, owner)
   }
 
   // 「正文 → 章节细纲」那一段勾稽：摘要**变了**才回填。
@@ -94,6 +95,7 @@ export async function syncChapterMaster(
   // 回填失败不影响台账（backfillOutlineEvent 内部已吞异常）。
   const prevSummary = (existing?.data['一句话事件'] ?? '').trim()
   if ((ch.summary ?? '').trim() && (ch.summary ?? '').trim() !== prevSummary) {
-    await backfillOutlineEvent(ch.summary ?? '', chapterNo, ch.title)
+    await backfillOutlineEvent(ch.summary ?? '', chapterNo, ch.title, owner)
   }
+  owner?.assertCurrent()
 }

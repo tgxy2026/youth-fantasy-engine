@@ -92,7 +92,12 @@ export async function applyCandidate(
     return { ok: false, code: 'state', detail: `候选状态不可应用：${candidate.status}`, candidate }
   }
 
-  const currentBody = await deps.readBody().catch(() => '')
+  let currentBody: string
+  try { currentBody = await deps.readBody() }
+  catch (e) {
+    return { ok: false, code: candidate.status === 'applying' ? 'needs-reconcile' : 'write-failed',
+      detail: `读取当前正文失败，尚不能确认应用状态：${errText(e)}`, candidate }
+  }
   const currentOutline = deps.readOutlineDigest ? await deps.readOutlineDigest().catch(() => undefined) : undefined
   const currentDigest = digest(currentBody)
 
@@ -151,7 +156,9 @@ async function doWrite(
   digest: (t: string) => string,
   currentOutline: string | undefined,
 ): Promise<ApplyOutcome> {
-  const currentBody = await deps.readBody().catch(() => '')
+  let currentBody: string
+  try { currentBody = await deps.readBody() }
+  catch (e) { return { ok: false, code: 'write-failed', detail: `读取当前正文失败，尚未替换：${errText(e)}`, candidate } }
   const currentDigest = digest(currentBody)
 
   // ① 条件提交（prepareApplyCandidate 内部也会校验，这里先判一次是为了给出**精确原因码**）

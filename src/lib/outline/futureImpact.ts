@@ -18,6 +18,7 @@
 // 📌 触发点：`chapterRewrite.applyChapterRewrite` 成功后（唯一会覆盖作者正文的路径，
 //    与 W1-1 版本保护同处）+ 章后整理确认后（W2-1b）。
 import * as db from '@/lib/db'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { OUTLINE_TAB_ID, chapterNoOf } from '@/lib/outline/outlineCard'
 
 /** settingsKV 键 —— `db.getSetting/setSetting` 自带 `<pid>::` 前缀，这里不必再拼 */
@@ -67,9 +68,9 @@ export function mergeMarks(old: ImpactMark[], news: ImpactMark[]): ImpactMark[] 
 }
 
 /** 读当前全部标记（读不到 / 数据损坏一律返回空数组，绝不抛） */
-export async function readImpact(): Promise<ImpactMark[]> {
+export async function readImpact(owner?: OwnedOperation): Promise<ImpactMark[]> {
   try {
-    const raw = await db.getSetting<ImpactMark[]>(SETTING_KEY, [])
+    const raw = owner ? await db.getSettingFor<ImpactMark[]>(owner.projectId, SETTING_KEY, [], owner) : await db.getSetting<ImpactMark[]>(SETTING_KEY, [])
     if (!Array.isArray(raw)) return []
     return raw.filter(m => m && usableNo(m.chapterNo))
   } catch {
@@ -81,10 +82,10 @@ export async function readImpact(): Promise<ImpactMark[]> {
  * 取「未来计划」章号列表：章纲卡中章号 > fromNo 的那些。
  * 章纲卡由作者手建（`outlineCardName(no, title)` 生成、章号可从卡名解析）。
  */
-async function futureOutlineNos(fromNo: number): Promise<number[]> {
+async function futureOutlineNos(fromNo: number, owner?: OwnedOperation): Promise<number[]> {
   if (!usableNo(fromNo)) return []
   try {
-    const cards = await db.getCardRecords(OUTLINE_TAB_ID)
+    const cards = owner ? await db.getCardRecordsFor(owner.projectId, OUTLINE_TAB_ID, owner) : await db.getCardRecords(OUTLINE_TAB_ID)
     const nos: number[] = []
     for (const c of cards) {
       const n = chapterNoOf(c.name)
@@ -102,15 +103,18 @@ async function futureOutlineNos(fromNo: number): Promise<number[]> {
  * @returns 本次新打上的标记（可能为空 —— 该项目还没写章纲、或变化的是最后一章）
  */
 export async function analyzeFutureImpact(
-  fromChapterNo: number, reason: string, at = Date.now(),
+  fromChapterNo: number, reason: string, at = Date.now(), owner?: OwnedOperation,
 ): Promise<ImpactMark[]> {
   if (!usableNo(fromChapterNo)) return []
-  const futureNos = await futureOutlineNos(fromChapterNo)
+  const futureNos = await futureOutlineNos(fromChapterNo, owner)
+  owner?.assertCurrent()
   const news = planImpact(fromChapterNo, futureNos, reason, at)
   if (!news.length) return []
   try {
-    const merged = mergeMarks(await readImpact(), news)
-    await db.setSetting(SETTING_KEY, merged)
+    const merged = mergeMarks(await readImpact(owner), news)
+    owner?.assertCurrent()
+    if (owner) await db.setSettingFor(owner.projectId, SETTING_KEY, merged, owner)
+    else await db.setSetting(SETTING_KEY, merged)
   } catch {
     // 打标失败静默 —— 它只是提醒，绝不能因此让改写 / 章后整理失败
     return []

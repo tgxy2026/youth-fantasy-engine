@@ -2,6 +2,7 @@
 // 2026-09-19 结构优化 D2：自 db.ts 拆出。
 import { todayKey } from '@/lib/app/date'
 import { ops, currentProjectId } from '@/lib/db/core'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 // ============ Meta ============
 export async function getMeta<T>(key: string, def: T): Promise<T> {
@@ -73,13 +74,15 @@ export async function setSetting(key: string, value: unknown) {
  *    表现是"改了 A 的开关，B 的行为变了"，且极难定位。凡是"要改的不是当前项目"的场合
  *    （项目管理页的编辑卡片 / 批量操作 / 导入后的补写）一律走这两个。
  */
-export async function getSettingFor<T>(pid: string, key: string, def: T): Promise<T> {
-  const rec = await ops.get<{ key: string; value: T }>('settingsKV', `${pid}::${key}`)
+export async function getSettingFor<T>(pid: string, key: string, def: T, owner?: OwnedOperation): Promise<T> {
+  if (owner && owner.projectId !== pid) throw new Error('设置不属于当前操作项目。')
+  const rec = await (owner?.store ?? ops).get<{ key: string; value: T }>('settingsKV', `${pid}::${key}`)
   return rec?.value ?? def
 }
 
-export async function setSettingFor(pid: string, key: string, value: unknown) {
-  await ops.put('settingsKV', { key: `${pid}::${key}`, value })
+export async function setSettingFor(pid: string, key: string, value: unknown, owner?: OwnedOperation) {
+  if (owner && owner.projectId !== pid) throw new Error('设置不属于当前操作项目。')
+  await (owner?.store ?? ops).put('settingsKV', { key: `${pid}::${key}`, value })
 }
 
 /**

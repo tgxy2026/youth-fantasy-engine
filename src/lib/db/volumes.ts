@@ -4,11 +4,13 @@
 import type { Volume, Chapter, TableRow } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import type { Snapshot } from '@/lib/db/chapters'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 // ============ 卷 ============
-export async function getAllVolumes(): Promise<Volume[]> {
-  const all = await ops.getAll<Volume>('volumes')
-  return all.filter(v => v.projectId === currentProjectId).sort((a, b) => a.order - b.order)
+export async function getAllVolumes(owner?: OwnedOperation): Promise<Volume[]> {
+  const pid = owner?.projectId ?? currentProjectId
+  const all = await (owner?.store ?? ops).getAll<Volume>('volumes')
+  return all.filter(v => v.projectId === pid).sort((a, b) => a.order - b.order)
 }
 export async function saveVolume(v: Volume) {
   await ops.put('volumes', { ...v, projectId: v.projectId || currentProjectId })
@@ -64,11 +66,12 @@ export async function getAllChapterLedgerRowsFor(pid: string): Promise<TableRow[
 }
 
 /** 章节移动卷后，清理其在"其它卷台账表"里的孤儿行（行 id 形如 ch-<chapterId>，跨表唯一） */
-export async function purgeLedgerRowEverywhere(chId: string, exceptVolumeId: string) {
+export async function purgeLedgerRowEverywhere(chId: string, exceptVolumeId: string, owner?: OwnedOperation) {
   const rid = `ch-${chId}`
-  const all = await ops.getAll<TableRow>('tableRows')
+  const store = owner?.store ?? ops, pid = owner?.projectId ?? currentProjectId
+  const all = await store.getAll<TableRow>('tableRows')
   const targets = all.filter(
-    r => r.projectId === currentProjectId && r.id === rid && r.tabId !== `${VOL_LEDGER_PREFIX}${exceptVolumeId}`,
+    r => r.projectId === pid && r.id === rid && r.tabId !== `${VOL_LEDGER_PREFIX}${exceptVolumeId}`,
   )
-  if (targets.length) await ops.bulkDel('tableRows', targets.map(t => t.id))
+  if (targets.length) await store.bulkDel('tableRows', targets.map(t => t.id))
 }

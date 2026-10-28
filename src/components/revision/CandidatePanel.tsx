@@ -19,8 +19,10 @@ import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { useRevisionRead } from './useRevisionRead'
 import RevisionTextPreview from './RevisionTextPreview'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { serializeRevision } from '@/lib/revision/revisionOperation'
 import { listProjectCandidates } from '@/lib/revision/candidateStore'
-import { saveCandidate } from '@/lib/revision/candidateStore'
+import { saveCandidate, loadCandidate, sameCandidateRevision } from '@/lib/revision/candidateStore'
 import { runApplyCandidate } from '@/lib/revision/candidateRunner'
 import { discardCandidate } from '@/lib/revision/revisionCommit'
 import { diffStats, type RevisionDiffStats } from '@/lib/revision/revisionDiff'
@@ -29,7 +31,7 @@ import { countWords } from '@/lib/editor/textStats'
 
 const STATUS_LABEL: Record<RevisionCandidateStatus, { text: string; cls: string }> = {
   pending: { text: '待审阅', cls: 'text-info' },
-  applying: { text: '上次中断', cls: 'text-warn' },
+  applying: { text: '上次中断', cls: 'text-amber' },
   applied: { text: '已应用', cls: 'text-success' },
   stale: { text: '已过期', cls: 'text-ink-400' },
   discarded: { text: '已放弃', cls: 'text-ink-500' },
@@ -39,7 +41,7 @@ const STATUS_LABEL: Record<RevisionCandidateStatus, { text: string; cls: string 
 /** 失败原因码 → 作者看得懂的一句（含「下一步」） */
 function failureText(code: string): string {
   const hint: Record<string, string> = {
-    state: '这份候选当前状态不允许应用，请重新生成。',
+    state: '这份候选已变化或当前不能应用，请刷新并核对后再决定是否重新生成。',
     stale: '这一章在你产出后又被改动过 —— 直接替换会覆盖你的编辑，已停止。请重新生成改写结果。',
     'write-failed': '未能确认写入成功，已停止。请检查磁盘与项目状态，并核对当前正文后重试。',
     'readback-mismatch': '写下去和读回来的内容不一致，已停止（绝不当作成功）。请重试，或重启后回来核对。',
@@ -67,7 +69,7 @@ function CandidateWorkspace({ onClose }: { onClose: () => void }) {
   const [busyId, setBusyId] = useState('')
   const busyRef = useRef(false)
   const [confirmId, setConfirmId] = useState('')
-  const [note, setNote] = useState<{ id: string; ok: boolean; text: string; facts?: string } | null>(null)
+  const [note, setNote] = useState<{ id: string; ok: boolean; partial?: boolean; text: string; facts?: string } | null>(null)
 
   useEffect(() => { void load() }, [load])
 
@@ -81,11 +83,13 @@ function CandidateWorkspace({ onClose }: { onClose: () => void }) {
       if (!current()) return
       if (r.ok) {
         const d: RevisionDiffStats = r.diff
+        const unconfirmed = r.invalidated.length - r.invalidatedSaved
         setNote({
-          id: c.id, ok: true,
-          text: r.resumed
+          id: c.id, ok: true, partial: unconfirmed > 0,
+          text: (r.resumed
             ? `上次已经写过，这次只补回了回执（新增 ${d.added} / 删去 ${d.removed} / 改动 ${d.changed}）`
-            : `已应用（新增 ${d.added} / 删去 ${d.removed} / 改动 ${d.changed}）`,
+            : `已应用（新增 ${d.added} / 删去 ${d.removed} / 改动 ${d.changed}）`)
+            + (unconfirmed > 0 ? `。另有 ${unconfirmed} 份同批候选未能确认标记过期，请刷新后逐条核对；正文已应用，不要重复替换。` : ''),
           // 实体保留自检（WQ8 方案 A）：只报告不判定，跑不成就没有这句
           facts: r.facts?.summary,
         })
@@ -105,10 +109,16 @@ function CandidateWorkspace({ onClose }: { onClose: () => void }) {
     busyRef.current = true
     setBusyId(c.id)
     try {
-      const r = discardCandidate(c, '作者在候选审阅里放弃')
-      if (!r.ok || !r.candidate) throw new Error('当前状态不能放弃，请刷新后核对。')
-      const saved = await saveCandidate(r.candidate)
-      if (!saved.ok) throw new Error(saved.detail)
+      const owner = captureOwnedOperation(c.projectId)
+      await serializeRevision(candidateApplyContext(), c.chapterId ?? c.id, async () => {
+        owner.assertCurrent()
+        const latest = await loadCandidate(c.id, owner)
+        if (!latest || !sameCandidateRevision(c, latest)) throw new Error('候选已变化或不存在。')
+        const r = discardCandidate(latest, '作者在候选审阅里放弃')
+        if (!r.ok || !r.candidate) throw new Error('当前状态不能放弃，请刷新后核对。')
+        const saved = await saveCandidate(r.candidate, owner, latest)
+        if (!saved.ok) throw new Error(saved.detail)
+      })
       if (!current()) return
       setNote({ id: c.id, ok: true, text: '已放弃，正文没有任何改动。' })
       setConfirmId('')
@@ -137,8 +147,8 @@ function CandidateWorkspace({ onClose }: { onClose: () => void }) {
                放弃同理（那条也离开了列表）。提示属于"刚才发生了什么"，不该挂在条目上。
           */}
           {note && (
-            <div role={note.ok ? 'status' : 'alert'} data-candidate-feedback={note.ok ? 'success' : 'error'} className={`mb-3 rounded-lg px-3 py-2 text-11 border ${note.ok
-              ? 'text-success bg-success/5 border-success/30'
+            <div role={note.ok && !note.partial ? 'status' : 'alert'} data-candidate-feedback={note.partial ? 'partial' : note.ok ? 'success' : 'error'} className={`mb-3 rounded-lg px-3 py-2 text-11 border ${note.partial
+              ? 'text-amber bg-amber/5 border-amber/30' : note.ok ? 'text-success bg-success/5 border-success/30'
               : 'text-danger bg-danger/5 border-danger/30'}`}>
               {note.text}
               {note.ok && note.facts && (

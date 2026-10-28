@@ -3,6 +3,7 @@
 import type { FormData, TableRow, CardRecord } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 // ============ 表单数据 ============
 export async function getFormData(tabId: string): Promise<Record<string, string>> {
@@ -53,15 +54,17 @@ export async function getTableRows(tabId: string): Promise<TableRow[]> {
  * 🔴 行的 `tabId` 是**裸页签 id**（`races` 这类），项目归属靠 `projectId` 字段 ——
  *    所以这里仍按 `tabId` 索引取数，再按 pid 过滤；不要改成一个不存在的复合索引键。
  */
-export async function getTableRowsFor(pid: string, tabId: string): Promise<TableRow[]> {
+export async function getTableRowsFor(pid: string, tabId: string, owner?: OwnedOperation): Promise<TableRow[]> {
   if (!pid || !tabId) return []
-  const rows = await ops.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)
+  const rows = await (owner?.store ?? ops).getAllByIndex<TableRow>('tableRows', 'tabId', tabId)
   return rows
     .filter(r => r.projectId === pid)
     .sort((a, b) => a.order - b.order)
 }
-export async function saveTableRow(row: TableRow) {
-  const store = ops, pid = row.projectId || currentProjectId
+export async function saveTableRow(row: TableRow, owner?: OwnedOperation) {
+  const store = owner?.store ?? ops, pid = row.projectId || currentProjectId
+  owner?.assertCurrent()
+  if (owner && owner.projectId !== pid) throw new Error('表格行不属于当前操作项目。')
   await store.put('tableRows', { ...row, projectId: pid, updatedAt: Date.now() })
   touchProject(pid, store)
 }
@@ -81,9 +84,9 @@ export async function getCardRecords(tabId: string): Promise<CardRecord[]> {
  * 🔴 与 `getTableRowsFor` 同一理由：异步任务执行期间作者可能已经切书，
  *    用 `getCardRecords` 会拿"当前项目"去复核**另一本**书的来源状态。
  */
-export async function getCardRecordsFor(pid: string, tabId: string): Promise<CardRecord[]> {
+export async function getCardRecordsFor(pid: string, tabId: string, owner?: OwnedOperation): Promise<CardRecord[]> {
   if (!pid || !tabId) return []
-  const all = await ops.getAll<CardRecord>('cardRecords')
+  const all = await (owner?.store ?? ops).getAll<CardRecord>('cardRecords')
   return all.filter(r => r.projectId === pid && r.tabId === tabId).sort((a, b) => a.order - b.order)
 }
 /** Existence checks need routing metadata only, not an entire list or any draft fields.
@@ -96,9 +99,11 @@ export async function tabRecordExistsFor({ kind, projectId, tabId, recordId }: {
   const record = await ops.get<CardRecord | TableRow>(kind === 'card' ? 'cardRecords' : 'tableRows', recordId)
   return record?.projectId === projectId && record.tabId === tabId
 }
-export async function saveCardRecord(rec: CardRecord) {
-  const store = ops
+export async function saveCardRecord(rec: CardRecord, owner?: OwnedOperation) {
+  const store = owner?.store ?? ops
   const pid = rec.projectId || currentProjectId
+  owner?.assertCurrent()
+  if (owner && owner.projectId !== pid) throw new Error('卡片不属于当前操作项目。')
   // 创建时间（2.4.0 · A4 遗留补全）：**首次落库写一次，之后编辑不改动它**。
   // 🔴 必须回读原值再决定：若直接 `rec.createdAt ?? Date.now()`，每次用新对象保存同一张卡
   //    都会刷新成"现在"，那这个字段就失去意义（它要回答的是"这张卡什么时候建的"）。

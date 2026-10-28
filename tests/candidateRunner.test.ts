@@ -10,9 +10,11 @@ import { readFileSync } from 'node:fs'
 import { __resetMockStores } from './mock-memory'
 import * as db from '@/lib/db'
 import { runApplyCandidate, jobForCandidate, chapterBodyOf } from '@/lib/revision/candidateRunner'
-import { saveCandidate, loadCandidate, listProjectCandidates } from '@/lib/revision/candidateStore'
+import { saveCandidate, loadCandidate, listProjectCandidates, deleteCandidate, candidateToPayload } from '@/lib/revision/candidateStore'
 import { setCurrentProject } from '@/lib/db/core'
 import { __setFlushDesktopResult } from './mock-desktop'
+import { ops as currentOps } from '../src/lib/db/core'
+import { serializeRevision } from '../src/lib/revision/revisionOperation'
 import type { RevisionCandidate } from '@/lib/revision/revisionCandidate'
 import { hashOf } from '@/lib/semantic/chunk'
 
@@ -195,6 +197,122 @@ async function main() {
       ok('⑩ 写盘失败时正文完全保留', await chapterBodyOf(CH_ID) === BEFORE)
       ok('⑩ 没有标记为已应用', (await loadCandidate(c.id))?.status !== 'applied')
     } finally { __setFlushDesktopResult(true) }
+  }
+
+  // 同一 ID 的不同项目、以及在途切换后端或 A-B-A：不能把旧候选写到新上下文。
+  __resetMockStores()
+  await seedChapter(CH_ID, BEFORE)
+  {
+    const c = mk({ id: 'owner-foreign' })
+    await saveCandidate(c)
+    setCurrentProject('other-project')
+    await db.saveChapter({ id: CH_ID, projectId: 'other-project', title: '另一项目同 ID', content: BEFORE,
+      summary: '', wordCount: BEFORE.length, createdAt: 1000, updatedAt: 1000, tags: [], status: 'draft' } as never)
+    const result = await runApplyCandidate(c)
+    ok('⑪ 外项目候选不能应用到当前项目的同 ID 章节', !result.ok)
+    ok('⑪ 另一项目正文不变', (await db.getAllChapters()).find(ch => ch.id === CH_ID)?.content === BEFORE)
+  }
+  for (const scenario of ['backend', 'aba'] as const) {
+    __resetMockStores(); await seedChapter(CH_ID, BEFORE)
+    const c = mk({ id: 'owner-' + scenario }); await saveCandidate(c)
+    const original = currentOps
+    let begin!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { begin = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    let newWrites = 0
+    db.setStoreOps({ ...original, getAll: async <T>(store: string) => {
+      const rows = await original.getAll<T>(store)
+      if (store === 'revisionPayloads') { begin(); await held }
+      return rows
+    }, put: async (store, value) => { newWrites++; await original.put(store, value) } })
+    const pending = runApplyCandidate(c)
+    await started
+    if (scenario === 'backend') db.setStoreOps({ ...original, put: async (store, value) => { newWrites++; await original.put(store, value) } })
+    else { setCurrentProject('other-project'); setCurrentProject(PID) }
+    release()
+    const result = await pending
+    ok(`⑫ ${scenario} 在途切换后不能报告应用成功`, !result.ok)
+    ok(`⑫ ${scenario} 切换后不再发起正文或候选写入`, newWrites === 0, String(newWrites))
+    db.setStoreOps(original)
+  }
+  for (const scenario of ['deleted', 'updated'] as const) {
+    __resetMockStores(); await seedChapter(CH_ID, BEFORE)
+    const c = mk({ id: 'stale-view-' + scenario }); await saveCandidate(c)
+    if (scenario === 'deleted') await deleteCandidate(c.id)
+    else await saveCandidate({ ...c, status: 'discarded', updatedAt: c.updatedAt + 1 })
+    const result = await runApplyCandidate(c)
+    ok(`⑬ ${scenario} 的旧界面不能继续应用`, !result.ok && result.code === 'state')
+    ok(`⑬ ${scenario} 原章节不变且旧候选不会复活`, await chapterBodyOf(CH_ID) === BEFORE
+      && (scenario === 'deleted' ? await loadCandidate(c.id) === null : (await loadCandidate(c.id))?.status === 'discarded'))
+  }
+  for (const scenario of ['deleted-after-read', 'changed-after-read'] as const) {
+    __resetMockStores(); await seedChapter(CH_ID, BEFORE)
+    const c = mk({ id: scenario }); await saveCandidate(c)
+    const original = currentOps
+    let begin!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { begin = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    db.setStoreOps({ ...original, getAll: async <T>(store: string) => {
+      const rows = await original.getAll<T>(store)
+      if (store === 'revisionPayloads') { begin(); await held }
+      return rows
+    } })
+    const pending = runApplyCandidate(c); await started
+    if (scenario === 'deleted-after-read') await original.del('revisionPayloads', c.id)
+    else await original.put('revisionPayloads', candidateToPayload({ ...c, status: 'discarded', updatedAt: c.updatedAt + 1 }))
+    release(); const result = await pending
+    const saved = await loadCandidate(c.id)
+    ok(`⑰ ${scenario} 不允许旧快照提交意图或替换正文`, !result.ok && await chapterBodyOf(CH_ID) === BEFORE)
+    ok(`⑰ ${scenario} 不复活或覆盖并发修改`, scenario === 'deleted-after-read' ? saved === null : saved?.status === 'discarded')
+    db.setStoreOps(original)
+  }
+  for (const phase of ['intent-put', 'chapter-get'] as const) {
+    __resetMockStores(); await seedChapter(CH_ID, BEFORE)
+    const c = mk({ id: 'owner-phase-' + phase }); await saveCandidate(c)
+    const original = currentOps
+    let begin!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { begin = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    let replacementWrites = 0
+    db.setStoreOps({ ...original,
+      get: async <T>(store: string, key: string) => {
+        const result = await original.get<T>(store, key)
+        if (phase === 'chapter-get' && store === 'chapters') { begin(); await held }
+        return result
+      },
+      put: async (store, value) => {
+        if (phase === 'intent-put' && store === 'revisionPayloads') { begin(); await held }
+        await original.put(store, value)
+      },
+    })
+    const pending = runApplyCandidate(c)
+    await started
+    db.setStoreOps({ ...original, put: async (store, value) => { replacementWrites++; await original.put(store, value) },
+      bulkPut: async (store, values) => { replacementWrites++; await original.bulkPut(store, values) },
+      bulkDel: async (store, keys) => { replacementWrites++; await original.bulkDel(store, keys) } })
+    release()
+    const result = await pending
+    ok(`⑮ ${phase} 在途切仓后不确认成功`, !result.ok)
+    ok(`⑮ ${phase} 不向新后端发起写入且正文未替换`, replacementWrites === 0 && await chapterBodyOf(CH_ID) === BEFORE, String(replacementWrites))
+    db.setStoreOps(original)
+  }
+  {
+    __resetMockStores(); await seedChapter(CH_ID, BEFORE)
+    const first = mk({ id: 'race-first', jobId: 'race-job' })
+    const second = mk({ id: 'race-second', jobId: 'race-job', text: '第二份候选' })
+    await saveCandidate(first); await saveCandidate(second)
+    const [a, b] = await Promise.all([runApplyCandidate(first), runApplyCandidate(second)])
+    ok('⑭ 同章两候选并发应用串行校验，仅第一份成功', a.ok && !b.ok)
+    ok('⑭ 后一份不覆盖正文且已标过期', await chapterBodyOf(CH_ID) === first.text && (await loadCandidate(second.id))?.status === 'stale')
+  }
+  for (const [context, chapter] of [['same-space', 'other-chapter'], ['new-space', 'same-chapter']] as const) {
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const first = serializeRevision('same-space', 'same-chapter', async () => { await held })
+    const second = serializeRevision(context, chapter, async () => 42)
+    const result = await Promise.race([second, new Promise<number>(resolve => setTimeout(() => resolve(0), 500))])
+    release(); await first; await second
+    ok('⑯ 不同章节或不同存储上下文的操作不被全局排队', result === 42, `${context}/${chapter}`)
   }
 
   console.log(`\n———— candidateRunner：${pass} 通过 / ${fail} 失败 ————`)

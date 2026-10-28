@@ -134,11 +134,11 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
 // ---------- ⑦ 源码级：触发点接线没被改坏 ----------
 {
   const rewrite = read('src/lib/editor/chapterRewrite.ts')
-  ok('🔴 整章改写：写前快照标成 ai-rewrite',
-    /db\.createSnapshot\(ch, 'ai-rewrite'\)/.test(rewrite))
+  ok('🔴 整章改写：写前快照标成 ai-rewrite 并携带原存储归属',
+    /db\.createSnapshot\(ch, 'ai-rewrite', owner\)/.test(rewrite))
   ok('🔴 整章改写仍是「先快照、后覆盖」的顺序（反了就丢原文）',
-    rewrite.indexOf('createSnapshot') < rewrite.indexOf('saveChapter(next)'),
-    `snap@${rewrite.indexOf('createSnapshot')} save@${rewrite.indexOf('saveChapter(next)')}`)
+    rewrite.includes('saveChapter(next, owner)') && rewrite.indexOf('createSnapshot') < rewrite.indexOf('saveChapter(next, owner)'),
+    `snap@${rewrite.indexOf('createSnapshot')} save@${rewrite.indexOf('saveChapter(next, owner)')}`)
 
   const backups = read('src/lib/db/backups.ts')
   ok('🔴 自动备份显式关掉快照（includeSnapshots: false）',

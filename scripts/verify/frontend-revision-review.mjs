@@ -138,6 +138,97 @@ try {
   await row.waitFor({ state: 'hidden' })
   await page.locator('[data-candidate-id="review-reconcile"]').waitFor()
   check('restored owner reads its own archive after rejecting stale receipts', await candidates.locator('[data-candidate-id="review-reconcile"]').count() === 1)
+  // Exercise actual candidate application on two isolated IndexedDB backends with identical IDs.
+  await page.evaluate(async seed => {
+    const store = await import('/src/lib/revision/candidateStore.ts')
+    for (const id of ['review-switch', 'review-success', 'review-sibling']) {
+      const result = await store.saveCandidate({ id, jobId: id === 'review-sibling' ? 'review-success-job' : id + '-job', projectId: seed.pid, chapterId: seed.chapterId,
+        status: 'pending', text: seed.after, beforeText: seed.before, summary: id, bytes: 0,
+        createdAt: Date.now(), updatedAt: Date.now(), generation: 1 })
+      if (!result.ok) throw Error(JSON.stringify(result))
+    }
+  }, seed)
+  await candidates.getByRole('button', { name: '重试读取', exact: true }).click()
+  await page.locator('[data-candidate-id="review-switch"]').waitFor()
+  await page.evaluate(async seed => {
+    const db = await import('/src/lib/db.ts'), core = await import('/src/lib/db/core.ts'), original = core.ops
+    const oldCandidate = await original.get('revisionPayloads', 'review-switch'), oldChapter = await original.get('chapters', seed.chapterId)
+    const replacement = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('revision-owner-isolated', 1)
+      request.onupgradeneeded = () => { request.result.createObjectStore('chapters', { keyPath: 'id' }); request.result.createObjectStore('revisionPayloads', { keyPath: 'id' }) }
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+    })
+    const request = (store, mode, action) => new Promise((resolve, reject) => {
+      const tx = replacement.transaction(store, mode), req = action(tx.objectStore(store)); let result
+      req.onsuccess = () => { result = req.result }; tx.oncomplete = () => resolve(result); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error)
+    })
+    await request('chapters', 'readwrite', s => s.put(oldChapter)); await request('revisionPayloads', 'readwrite', s => s.put(oldCandidate))
+    let release; const held = new Promise(resolve => { release = resolve })
+    const test = window.revisionSwitch = { original, oldCandidate, oldChapter, replacement, release, enabled: false, waiting: false, resumed: false, writes: 0, reads: 0 }
+    const local = store => store === 'chapters' || store === 'revisionPayloads'
+    test.alternate = { ...original, putStrict: undefined,
+      getAll: store => local(store) ? request(store, 'readonly', s => s.getAll()) : original.getAll(store),
+      get: (store, key) => local(store) ? request(store, 'readonly', s => s.get(key)) : original.get(store, key),
+      getAllByIndex: async (store, index, key) => local(store) ? (await request(store, 'readonly', s => s.getAll())).filter(row => row[index] === key) : original.getAllByIndex(store, index, key),
+      put: (store, value) => { test.writes++; return local(store) ? request(store, 'readwrite', s => s.put(value)) : original.put(store, value) },
+      del: (store, key) => { test.writes++; return local(store) ? request(store, 'readwrite', s => s.delete(key)) : original.del(store, key) },
+      bulkPut: (...args) => { test.writes++; return original.bulkPut(...args) },
+      bulkDel: (...args) => { test.writes++; return original.bulkDel(...args) },
+    }
+    db.setStoreOps({ ...original, getAll: async store => {
+      const rows = await original.getAll(store)
+      if (store === 'revisionPayloads') {
+        test.reads++
+        if (test.enabled) { test.waiting = true; await held; test.resumed = true }
+      }
+      return rows
+    } })
+  }, seed)
+  await page.waitForFunction(() => window.revisionSwitch.reads > 0)
+  await page.locator('[data-candidate-id="review-switch"]').getByRole('button', { name: '应用到正文', exact: true }).waitFor()
+  await page.waitForTimeout(100)
+  await page.evaluate(() => { window.revisionSwitch.enabled = true })
+  await page.locator('[data-candidate-id="review-switch"]').getByRole('button', { name: '应用到正文', exact: true }).click()
+  await page.waitForFunction(() => window.revisionSwitch.waiting)
+  await page.evaluate(async () => (await import('/src/lib/db.ts')).setStoreOps(window.revisionSwitch.alternate))
+  await page.locator('[data-candidate-id="review-switch"]').waitFor()
+  await page.evaluate(() => window.revisionSwitch.release())
+  await page.waitForFunction(() => window.revisionSwitch.resumed)
+  await page.waitForTimeout(300)
+  const result = await page.evaluate(async seed => {
+    const t = window.revisionSwitch
+    return { writes: t.writes, oldChapter: JSON.stringify(await t.original.get('chapters', seed.chapterId)) === JSON.stringify(t.oldChapter),
+      oldCandidate: JSON.stringify(await t.original.get('revisionPayloads', 'review-switch')) === JSON.stringify(t.oldCandidate),
+      newChapter: JSON.stringify(await t.alternate.get('chapters', seed.chapterId)) === JSON.stringify(t.oldChapter),
+      newCandidate: JSON.stringify(await t.alternate.get('revisionPayloads', 'review-switch')) === JSON.stringify(t.oldCandidate) }
+  }, seed)
+  check('an actual delayed candidate application cannot write the original or same-ID replacement database after a backend switch', result.writes === 0 && result.oldChapter && result.oldCandidate && result.newChapter && result.newCandidate, result)
+  await page.evaluate(async () => (await import('/src/lib/db.ts')).setStoreOps(window.revisionSwitch.original))
+  const success = page.locator('[data-candidate-id="review-success"]'); await success.waitFor()
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name === 'revisionPayloads' && args[0]?.id === 'review-sibling' && args[0]?.report?.status === 'stale') throw new DOMException('fixture quota', 'QuotaExceededError')
+      return put.apply(this, args)
+    }
+    window.restorePartialFailure = () => { IDBObjectStore.prototype.put = put }
+  })
+  await success.getByRole('button', { name: '应用到正文', exact: true }).click()
+  await candidates.locator('[data-candidate-feedback="partial"]').waitFor()
+  const applied = await page.evaluate(async seed => {
+    const db = await import('/src/lib/db.ts'), c = await (await import('/src/lib/revision/candidateStore.ts')).loadCandidate('review-success')
+    return { status: c?.status, text: (await db.getAllChapters()).find(ch => ch.id === seed.chapterId)?.content,
+      snapshots: (await db.getSnapshots(seed.chapterId)).length }
+  }, seed)
+  check('normal candidate application still writes the original chapter, records a snapshot and confirms the receipt', applied.status === 'applied' && applied.text === seed.after && applied.snapshots > 0, { status: applied.status, snapshots: applied.snapshots, textMatches: applied.text === seed.after })
+  const partial = await candidates.locator('[data-candidate-feedback="partial"]').innerText()
+  check('a failed sibling update is reported as partial instead of hiding behind applied success', partial.includes('1 份同批候选未能确认标记过期') && partial.includes('正文已应用') && await page.evaluate(async () => (await (await import('/src/lib/revision/candidateStore.ts')).loadCandidate('review-sibling')).status) === 'pending', partial)
+  await page.screenshot({ path: path.join(run, 'partial-warning.png'), animations: 'disabled' })
+  await page.evaluate(() => window.restorePartialFailure())
+  const sibling = page.locator('[data-candidate-id="review-sibling"]')
+  await sibling.getByRole('button', { name: '应用到正文', exact: true }).click()
+  await candidates.locator('[data-candidate-feedback="error"]').waitFor()
+  check('a sibling whose stale marker failed still cannot overwrite the updated chapter', await bodyRead() === seed.after && await page.evaluate(async () => (await (await import('/src/lib/revision/candidateStore.ts')).loadCandidate('review-sibling')).status) === 'pending')
   check('no model requests or unexpected page errors', !report.modelRequests.length && !report.errors.length, { models: report.modelRequests, errors: report.errors })
   report.status = 'passed'
 } catch (error) { report.status = 'failed'; report.failure = error.stack || String(error); await page?.screenshot({ path: path.join(run, 'failure.png'), animations: 'disabled' }).catch(() => {}) }

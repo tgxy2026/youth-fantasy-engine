@@ -5,12 +5,14 @@ import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { addDailyWords } from '@/lib/db/meta'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 // ============ 章 ============
-export async function getAllChapters(): Promise<Chapter[]> {
-  const all = await ops.getAll<Chapter>('chapters')
+export async function getAllChapters(owner?: OwnedOperation): Promise<Chapter[]> {
+  const pid = owner?.projectId ?? currentProjectId
+  const all = await (owner?.store ?? ops).getAll<Chapter>('chapters')
   return all
-    .filter(c => c.projectId === currentProjectId)
+    .filter(c => c.projectId === pid)
     .sort((a, b) => {
       const av = a.volumeId ?? ''
       const bv = b.volumeId ?? ''
@@ -24,10 +26,14 @@ export async function chapterExistsFor(projectId: string, chapterId: string): Pr
   const chapter = await ops.get<Chapter>('chapters', chapterId)
   return chapter?.projectId === projectId
 }
-export async function saveChapter(c: Chapter) {
-  const old = await ops.get<Chapter>('chapters', c.id)
-  await ops.put('chapters', { ...c, projectId: c.projectId || currentProjectId })
-  await afterChapterWrite(old, c)
+export async function saveChapter(c: Chapter, owner?: OwnedOperation) {
+  const store = owner?.store ?? ops, pid = c.projectId || currentProjectId
+  owner?.assertCurrent()
+  if (owner && pid !== owner.projectId) throw new Error('章节不属于当前操作项目。')
+  const old = await store.get<Chapter>('chapters', c.id)
+  if (owner && (!old || old.projectId !== pid)) throw new Error('原章节已不存在或不属于当前项目。')
+  await store.put('chapters', { ...c, projectId: pid })
+  await afterChapterWrite(old, { ...c, projectId: pid }, owner, store)
 }
 
 /**
@@ -56,21 +62,21 @@ export async function patchChapter(
 }
 
 /** 落库后的派生动作：当日码字增量 + 时光机快照 + 项目时间戳（saveChapter / patchChapter 共用） */
-async function afterChapterWrite(old: Chapter | undefined, next: Chapter) {
+async function afterChapterWrite(old: Chapter | undefined, next: Chapter, owner?: OwnedOperation, store = ops) {
   // 记录当日码字增量（正负都记，累加）；addDailyWords 内部已全局串行，跨章并发不会互相覆盖
   if (old && old.wordCount !== next.wordCount) {
-    await addDailyWords(next.wordCount - old.wordCount)
+    await addDailyWords(next.wordCount - old.wordCount, next.projectId || currentProjectId, store)
   }
   // 时光机：内容有变化时按策略快照（距上次快照 >5 分钟 或 字数差 >200）
   if (old && old.content !== next.content) {
-    const snaps = await ops.getAllByIndex<Snapshot>('snapshots', 'chapterId', next.id)
+    const snaps = await store.getAllByIndex<Snapshot>('snapshots', 'chapterId', next.id)
     const last = snaps.sort((a, b) => b.createdAt - a.createdAt)[0]
     const diff = Math.abs(countWords(next.content) - countWords(old.content))
     if (!last || Date.now() - last.createdAt > 5 * 60 * 1000 || diff > 200) {
-      await createSnapshot(next)
+      await createSnapshot(next, 'auto', owner)
     }
   }
-  touchProject(currentProjectId)
+  void touchProject(next.projectId || currentProjectId, store)
 }
 
 /** 删除章节 → 移入回收站（可恢复），并级联删除总表联动行 */
@@ -132,8 +138,9 @@ export const MAX_SNAPSHOTS_PER_CHAPTER = 12
  *    AI 快照攒不满名额时才轮到它们，且仍从最旧的开始丢 ——
  *    既守住"总数不超过 12 份"的体积账，又尽量保住作者最可能需要的那些版本。
  */
-async function pruneSnapshots(chapterId: string): Promise<number> {
-  const all = await ops.getAllByIndex<Snapshot>('snapshots', 'chapterId', chapterId)
+async function pruneSnapshots(chapterId: string, owner?: OwnedOperation): Promise<number> {
+  const store = owner?.store ?? ops
+  const all = await store.getAllByIndex<Snapshot>('snapshots', 'chapterId', chapterId)
   const excess = all.length - MAX_SNAPSHOTS_PER_CHAPTER
   if (excess <= 0) return 0
   const byOldest = [...all].sort((a, b) => a.createdAt - b.createdAt)
@@ -145,7 +152,7 @@ async function pruneSnapshots(chapterId: string): Promise<number> {
       if (!dropped.has(s.id)) { drop.push(s); dropped.add(s.id) }
     }
   }
-  await ops.bulkDel('snapshots', drop.map(d => d.id))
+  await store.bulkDel('snapshots', drop.map(d => d.id))
   return drop.length
 }
 
@@ -154,14 +161,16 @@ async function pruneSnapshots(chapterId: string): Promise<number> {
  * @param source 来源，默认 `'auto'`（写作过程中的定时留档）；
  *               AI 动笔前请显式传 `'ai-rewrite'` / `'ai-continue'` / `'ai-generate'`。
  */
-export async function createSnapshot(ch: Chapter, source: SnapshotSource = 'auto'): Promise<Snapshot> {
+export async function createSnapshot(ch: Chapter, source: SnapshotSource = 'auto', owner?: OwnedOperation): Promise<Snapshot> {
+  owner?.assertCurrent()
+  if (owner && ch.projectId !== owner.projectId) throw new Error('章节快照不属于当前操作项目。')
   const snap: Snapshot = {
     id: uid(), projectId: ch.projectId || currentProjectId, chapterId: ch.id,
     chapterTitle: ch.title, content: ch.content, wordCount: ch.wordCount, createdAt: Date.now(),
     source,
   }
-  await ops.put('snapshots', snap)
-  await pruneSnapshots(ch.id)
+  await (owner?.store ?? ops).put('snapshots', snap)
+  await pruneSnapshots(ch.id, owner)
   return snap
 }
 export async function getSnapshots(chapterId: string): Promise<Snapshot[]> {
