@@ -27,16 +27,21 @@ const chapterOf = text => {
   return list.find(row => row && row.id === CH)
 }
 const checks = [], pageErrors = []
+/**
+ * 🔴 首屏/冷启动单独放宽：Electron 冷启动 + 大包在本机实测可超 45s（2026-10-29 实测：整轮因
+ *    `_electron.launch` 45s 超时直接抛错退出，11 项被判 not-run）。断言本身仍走 15s 默认超时。
+ */
+const BOOT_TIMEOUT = 120_000
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
 const arg = name => { const at = process.argv.indexOf(name); if (at < 0) return; const value = process.argv[at + 1]; if (!value || value.startsWith('--')) throw new Error(name + ' requires a value'); return value }
 const check = (id, ok, detail) => { checks.push({ id, passed: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + id); if (!ok) throw new Error(id) }
-async function until(fn, timeout = 45000) {
+async function until(fn, timeout = BOOT_TIMEOUT) {
   const end = Date.now() + timeout
   while (Date.now() < end) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 100)) }
   throw new Error('Timed out waiting for actual state')
 }
 async function openEditor(page) {
-  await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: 45000 })
+  await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: BOOT_TIMEOUT })
   for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
     const button = page.getByRole('button', { name, exact: true })
     if (await button.isVisible().catch(() => false)) await button.click()
@@ -46,9 +51,9 @@ async function openEditor(page) {
   //    `getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测同款问题）。
   //    先按 CSS 等进 DOM，再循环关提醒，最后仍要求 role=导航可见。
   const navEl = page.locator('nav')
-  await navEl.waitFor({ state: 'attached', timeout: 45000 })
+  await navEl.waitFor({ state: 'attached', timeout: BOOT_TIMEOUT })
   const nav = page.getByRole('navigation')
-  const navDeadline = Date.now() + 45000
+  const navDeadline = Date.now() + BOOT_TIMEOUT
   while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
     for (const name of ['稍后再说', '知道了']) {
       await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
@@ -59,7 +64,7 @@ async function openEditor(page) {
   // 🔴 仅仅「导航可见」还不够：提醒层的挂载/关闭是异步的，可能在导航可见之后又盖上来
   //    （2026-10-26 实测 storage.desktop-save：点「正文编辑」被遮挡，等满 15s 超时）。
   //    这里改成「点一下 → 关提醒 → 再点」，直到真的进了正文编辑；进不去仍然报错。
-  const enterDeadline = Date.now() + 45000
+  const enterDeadline = Date.now() + BOOT_TIMEOUT
   let entered = false
   while (!entered && Date.now() < enterDeadline) {
     try {
@@ -145,7 +150,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
   for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']) delete env[key]
   let app, page, blocked = false, error = null, runtimeLog = ''
   const launch = async () => {
-    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env, timeout: 45000 })
+    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env, timeout: BOOT_TIMEOUT })
     app.process().stdout?.on('data', value => { runtimeLog += value }); app.process().stderr?.on('data', value => { runtimeLog += value })
     // Refuse all network traffic in both renderer and main session. Local file assets remain usable.
     await app.evaluate(({ session }) => { session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_details, callback) => callback({ cancel: true })) })
@@ -287,7 +292,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       // 🔴 必须真的等这次 reload：点了「继续导入」后页面还停在编辑器里，此时若按"textarea 在不在"判断，
       //    会立刻判成"已经回到编辑器"，然后 reload 一来又被打回项目中心（第一轮就这么超时的）。
       await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
-      const reloaded = page.waitForEvent('load', { timeout: 45000 })
+      const reloaded = page.waitForEvent('load', { timeout: BOOT_TIMEOUT })
       await page.getByRole('button', { name: '继续导入', exact: true }).click()
       await reloaded
       await openEditor(page)
