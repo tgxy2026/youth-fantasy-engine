@@ -89,7 +89,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 结构数据（卷 / 章 / 当前章 / 序号）
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）
-    expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
+    expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态）
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
@@ -281,6 +281,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setDragId={setDragId}
           resetDrag={resetDrag}
           handleDrop={handleDrop}
+          moveByKeyboard={moveByKeyboard}
           setNamePrompt={setNamePrompt}
           nextChapterNo={nextChapterNo}
           activeId={activeId}

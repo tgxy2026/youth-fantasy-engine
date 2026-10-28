@@ -67,8 +67,15 @@ try {
   }
   const leaveToDashboard = async () => { await nav('写作面板').click(); await page.getByRole('navigation').waitFor() }
 
-  // 准备：把第一章写成足够长的稿子并真落库
+  // 准备：把当前章写成足够长的稿子并真落库
   await openEditor()
+  // 🔴 示例项目默认打开哪一章**不固定**（取决于"上次编辑"）：若正好是最后一章，
+  //    后面「切到下一章」的按钮本来就是禁用态（产品行为正确）。这里先退一章，
+  //    保证后续用的是一个**有下一章**的章，否则会假红成"切章失败"（2026-10-28 实测）。
+  if (await page.getByTitle('下一章', { exact: true }).isDisabled()) {
+    await page.getByTitle('上一章', { exact: true }).click()
+    await page.waitForTimeout(400)
+  }
   await editor.fill(LONG)
   await page.keyboard.press('Control+s')
   await page.waitForFunction(async marker => {

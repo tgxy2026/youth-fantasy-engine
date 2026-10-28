@@ -47,6 +47,8 @@ interface Props {
   setDragId: Dispatch<SetStateAction<string | null>>
   resetDrag: () => void
   handleDrop: () => void
+  /** UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节 / 在真卷之间移动分卷 */
+  moveByKeyboard: (kind: 'vol' | 'ch', id: string, dir: -1 | 1) => void
   setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
   nextChapterNo: number
   activeId: string | null
@@ -67,7 +69,7 @@ interface Props {
 
 export default function NovelEditorChapterTree({
   pane, projectName, volumes, chapters, expanded, setExpanded,
-  overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop,
+  overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop, moveByKeyboard,
   setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
   exportOpen, setExportOpen, setExportFormatTab, setImportOpen,
@@ -274,8 +276,18 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     draggable={!free}
                     onDragStart={e => { if (free) { e.preventDefault(); return } e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', vol.id); setDragKind('vol'); setDragId(vol.id) }}
                     onDragEnd={() => resetDrag()}
-                    className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0'}
-                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷'}
+                    // 🔴 键盘替代入口（UX12）：把手可聚焦，Alt+↑/↓ 等价于拖到上一/下一个真卷
+                    tabIndex={free ? undefined : 0}
+                    role={free ? undefined : 'button'}
+                    aria-label={free ? undefined : `移动卷「${vol.title}」：Alt 加向上/向下方向键`}
+                    onKeyDown={free ? undefined : e => {
+                      if (!e.altKey) return
+                      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                      e.preventDefault(); e.stopPropagation()
+                      moveByKeyboard('vol', vol.id, e.key === 'ArrowUp' ? -1 : 1)
+                    }}
+                    className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100'}
+                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷；键盘：Alt+↑/↓'}
                   >
                     <GripVertical size={12} />
                   </span>
@@ -340,8 +352,18 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                             draggable
                             onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ch.id); setDragKind('ch'); setDragId(ch.id) }}
                             onDragEnd={() => resetDrag()}
-                            className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0"
-                            title="拖动重排 / 移到其他卷"
+                            // 🔴 键盘替代入口（UX12）：章只能在自己卷内换位，跨卷仍走拖拽或「移到其他卷」
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`移动章节「${ch.title}」：Alt 加向上/向下方向键（仅在本卷内）`}
+                            onKeyDown={e => {
+                              if (!e.altKey) return
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                              e.preventDefault(); e.stopPropagation()
+                              moveByKeyboard('ch', ch.id, e.key === 'ArrowUp' ? -1 : 1)
+                            }}
+                            className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100"
+                            title="拖动重排 / 移到其他卷；键盘：Alt+↑/↓"
                           >
                             <GripVertical size={12} />
                           </span>

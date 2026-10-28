@@ -55,6 +55,7 @@ import {
 } from '@/components/editor/novelEditorHelpers'
 import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/outline/freeVolume'
 import { useEditorChapterTarget } from '@/components/editor/useEditorChapterTarget'
+import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardReorder'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
 
@@ -1151,6 +1152,9 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     resetDrag()
   }
 
+  // UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节、在真卷之间移动分卷（拖拽仍保留）
+  const { moveByKeyboard } = createEditorKeyboardReorder({ volumes, chapters, setVolumes, setChapters, saveChapter: saveChapterWithAi })
+
   // 相邻章导航（全书叙事序：卷序 → 章序 → 孤儿章垫底，唯一真源）
   const flat = flattenAll(volumes, chapters)
   const activeIdx = flat.findIndex(c => c.id === activeId)
@@ -1159,7 +1163,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // 结构数据（卷 / 章 / 当前章 / 序号）
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）；setExpanded 已是持久化包装（签名兼容 Dispatch）
-    expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
+    expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态，见 savedFlash 附近的说明）
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
