@@ -414,7 +414,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
               </div>
 
               {st.error && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger mb-2">
+                <div data-proofread-failure="error" className="flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger mb-2">
                   <AlertCircle size={12} className="mt-0.5 shrink-0" /> <span className="whitespace-pre-wrap">{st.error}</span>
                 </div>
               )}
@@ -426,7 +426,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                 *   只有「确实校过、没有失败、没有取消」才允许出现"未发现"。
                 */}
               {st.done && !st.error && st.failedChunks > 0 && (
-                <div className="px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger">
+                <div data-proofread-failure="unchecked" className="px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-11 text-danger">
                   {st.failedChunks >= st.totalChunks
                     ? '本次未完成校对：所有分段都没能拿到结果（可能是模型未配置、密钥失效或网络中断）。下面的"0 处"不代表没有问题。'
                     : `部分已校对：${st.totalChunks - st.failedChunks}/${st.totalChunks} 段完成，其余 ${st.failedChunks} 段失败未检查。未覆盖的部分不能当作"没有问题"。`}
@@ -439,7 +439,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
               )}
               {/* 3.2.3 · R1：模型返回读不懂 ≠ 没有问题；定位不到的条目也要说清数量 */}
               {st.done && !st.error && !st.cancelled && (st.unparsedChunks > 0 || st.protocolIssues.length > 0 || st.unlocated > 0) && (
-                <div className="px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-11 text-amber mb-2">
+                <div data-proofread-unparsed="" className="px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-11 text-amber mb-2">
                   {st.unparsedChunks > 0 && <div>有 {st.unparsedChunks} 段返回无法解析（不是"没有问题"，是这段的内容没读懂），建议重跑。</div>}
                   {st.protocolIssues.length > 0 && <div>有 {st.protocolIssues.length} 条结果格式不合法已忽略：{st.protocolIssues.join('；')}</div>}
                   {st.unlocated > 0 && <div>有 {st.unlocated} 条引文在正文里定位不到，已忽略（原文可能已改动）。</div>}
