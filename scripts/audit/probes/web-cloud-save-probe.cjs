@@ -15,6 +15,8 @@
  *    断言本身仍走各页 15s 默认超时 —— 放宽的只是「等页面起来」，不是「等结果对」。
  */
 const BOOT_TIMEOUT = 60_000
+/** 🔴 API 请求单独放宽：多上下文浏览器 + 本地服务同机时，30s 默认超时会把排队中的登录误判成失败（2026-10-29 实测）。 */
+const API_TIMEOUT = 60_000
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const net = require('node:net')
@@ -249,26 +251,26 @@ async function main() {
     return { ctx, page, dir, requests }
   }
   const register = async (ctx, name) => {
-    const res = await ctx.request.post(origin + '/api/auth/register', { data: { name, password: PASSWORD } })
+    const res = await ctx.request.post(origin + '/api/auth/register', { data: { name, password: PASSWORD }, timeout: API_TIMEOUT })
     if (!res.ok()) throw new Error('register failed ' + name + ': ' + res.status() + ' ' + (await res.text()))
   }
   const login = async (ctx, name) => {
-    const res = await ctx.request.post(origin + '/api/auth/login', { data: { name, password: PASSWORD } })
+    const res = await ctx.request.post(origin + '/api/auth/login', { data: { name, password: PASSWORD }, timeout: API_TIMEOUT })
     if (!res.ok()) throw new Error('login failed ' + name + ': ' + res.status() + ' ' + (await res.text()))
   }
   const dataStatus = async ctx => {
-    const res = await ctx.request.get(origin + '/api/data')
+    const res = await ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
     return { status: res.status(), body: await res.text() }
   }
   const putData = async (ctx, marker) => {
-    const current = await ctx.request.get(origin + '/api/data')
+    const current = await ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
     const res = await ctx.request.put(origin + '/api/data', {
-      headers: { 'Content-Type': 'application/json', 'If-Match': current.headers().etag ?? '' }, data: mkData(marker),
+      headers: { 'Content-Type': 'application/json', 'If-Match': current.headers().etag ?? '' }, data: mkData(marker), timeout: API_TIMEOUT,
     })
     return { status: res.status(), body: await res.text() }
   }
   /** 页面启动后等前端拿到账号标记（项目中心没有 <nav>，不能用它当就绪信号） */
-  const waitUser = async (page, timeout = 30000) => {
+  const waitUser = async (page, timeout = API_TIMEOUT) => {
     await page.waitForFunction(() => {
       const u = window.__YFE_USER__
       return !!u && typeof u.name === 'string' && u.name.length > 0
@@ -448,9 +450,9 @@ process.on('message',async message=>{
       // 🔴 上一段（restart-readback）用另一个上下文登录了同一个账号，单会话机制已把 A 的会话顶掉。
       //    这里必须重新登录，否则下面的 PUT 全是 401 —— 那不是"写失败取证"，是会话过期。
       await login(A.ctx, USER_A)
-      const baseline = await A.ctx.request.get(origin + '/api/data')
+      const baseline = await A.ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
       const seed = await A.ctx.request.put(origin + '/api/data', {
-        headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(),
+        headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(), timeout: API_TIMEOUT,
       })
       check('write-failure-seed', seed.ok(), String(seed.status()))
       await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
