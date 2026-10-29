@@ -573,25 +573,29 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   validateBeforeSave.current = validateCodes
   const saveAll = useCallback(async () => {
-    if (dirtyKeys.length === 0) return
+    if (!isRecordCurrent()) return false
+    if (Object.keys(draftsRef.current).length === 0) return true
     const owner = captureCandidateOwner()
     const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'draft')
-    if (conflict) { if (owner.current()) showToast(conflict.message + conflict.hint, 'error'); return }
-    if (!owner.current()) return
+    if (conflict) { if (owner.current()) showToast(conflict.message + conflict.hint, 'error'); return false }
+    if (!owner.current() || !isRecordCurrent()) return false
     const err = validateCodes()
-    if (err) { setCodeError(err); return }
+    if (err) { setCodeError(err); return false }
     setCodeError(null)
     try {
       const result = await flushRecords()
       if (!result.ok) throw result.error
-      if (!owner.current()) return
-      setSaved(Object.keys(draftsRef.current).length === 0)
+      if (!owner.current() || !isRecordCurrent()) return false
+      const complete = Object.keys(draftsRef.current).length === 0
+      setSaved(complete)
       clearTimeout(savedTimer.current)
       savedTimer.current = setTimeout(() => setSaved(false), 1500)
+      return complete
     } catch (error) {
       if (owner.current()) showToast('保存失败：' + (error instanceof Error ? error.message : String(error)), 'error')
+      return false
     }
-  }, [dirtyKeys, validateCodes, tab.id, flushRecords, draftsRef])
+  }, [validateCodes, tab.id, flushRecords, draftsRef, isRecordCurrent])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void saveAll(), dirtyKeys.length > 0)

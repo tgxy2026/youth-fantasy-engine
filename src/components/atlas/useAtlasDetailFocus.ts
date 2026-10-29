@@ -11,7 +11,8 @@ export function useAtlasDetailFocus(overlay: boolean, selectedId: string | null,
     const ownedFocus = list.contains(document.activeElement)
     list.inert = overlay && !!selectedId
     if (list.inert && ownedFocus) {
-      detailRef.current?.closest('aside')?.querySelector<HTMLButtonElement>('[data-atlas-close]')?.focus({ preventScroll: true })
+      const aside = detailRef.current?.closest('aside')
+      ;(aside?.querySelector<HTMLElement>('[data-atlas-nav]') ?? aside?.querySelector<HTMLElement>('[data-atlas-close]'))?.focus({ preventScroll: true })
     }
     return () => { list.inert = false }
   }, [overlay, selectedId, listRef, detailRef])

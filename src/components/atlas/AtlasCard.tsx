@@ -27,6 +27,8 @@ interface Props {
   density?: 'compact' | 'standard' | 'loose'
   selected: boolean
   onOpen: () => void
+  tabIndex?: number
+  onFocus?: () => void
 }
 
 /** 密度 → 图片占位高度 / 内边距 / 字号（三档差异只在这几处，别在别处再判断一次） */
@@ -36,7 +38,7 @@ const DENSITY = {
   loose: { img: 'h-28', pad: 'p-4', name: 'text-14', gap: 'mt-2' },
 } as const
 
-export default function AtlasCard({ row, nameKey, badges, summaryFields, image, density = 'standard', selected, onOpen }: Props) {
+export default function AtlasCard({ row, nameKey, badges, summaryFields, image, density = 'standard', selected, onOpen, tabIndex, onFocus }: Props) {
   const d = DENSITY[density]
   const name = (row.data[nameKey] ?? '').trim() || '未命名条目'
   // 🔴 逐行过滤：这一行填了哪几个摘要字段就显示哪几个（不同条目条数本就不同）
@@ -49,6 +51,8 @@ export default function AtlasCard({ row, nameKey, badges, summaryFields, image, 
       type="button"
       data-workspace-record={row.id}
       onClick={onOpen}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
       aria-current={selected ? 'true' : undefined}
       className={`h-full flex flex-col text-left rounded-xl border overflow-hidden transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 ${
         selected

@@ -14,7 +14,7 @@
  *    之前这里直接读 `row.data`，导致「表格里刚改、点开详情还是旧值」—— 与图鉴视图
  *    "不自己去读库"的口径自相矛盾。现在由父级把 `model.cellVal` 传下来。
  */
-import { useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
@@ -28,6 +28,7 @@ import {
 } from '@/lib/atlas/image'
 import { ATLAS_TOTAL_LIMIT, atlasUsageRatio, atlasUsageText, checkAtlasBudget } from '@/lib/atlas/quota'
 import { showToast } from '@/components/dialogs/dialogs'
+import { getActiveOverlayScope } from '@/lib/app/overlayScope'
 import { Button } from '@/components/common/Button'
 import SafeImage from '@/components/common/SafeImage'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
@@ -64,6 +65,9 @@ interface Props {
   overlay: boolean
   onClose: () => void
   onEditInTable: () => void
+  navigation?: { index: number; count: number; move: (direction: -1 | 1) => void; focus: boolean }
+  navigationGuard?: MutableRefObject<(() => boolean) | null>
+  onNavigationStateChange?: () => void
 
   /**
    * 逐字段取值（已并入未保存草稿）。不传则退回读 `row.data` —— 只在没有表格模型的
@@ -77,7 +81,7 @@ interface Props {
   /** 全局保存进行中 */
   saving?: boolean
   /** 保存（= 表格底部同一个 `saveAll`） */
-  onSave?: () => void | Promise<void>
+  onSave?: () => Promise<boolean>
   /** 撤销本次改动：把进入编辑态时的字段值快照交回去 */
   onRevert?: (values: Record<string, string>) => void
 }
@@ -118,7 +122,7 @@ export default function AtlasDetail({
   tabId, row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
-  scrollRef,
+  scrollRef, navigation, navigationGuard, onNavigationStateChange,
 }: Props) {
   const name = ((cellValue ? cellValue(row, nameKey) : row.data[nameKey]) ?? '').trim() || '未命名条目'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -126,6 +130,27 @@ export default function AtlasDetail({
   const [editing, setEditing] = useState(false)
   /** 进入编辑态那一刻的值快照（含草稿）—— 「撤销」就回到这里 */
   const [snapshot, setSnapshot] = useState<Record<string, string>>({})
+  const finishing = useRef(false)
+  const [finishingEdit, setFinishingEdit] = useState(false)
+  const [choosingImage, setChoosingImage] = useState(false)
+  const activity = useRef({ editing: false, busy: 0, choosing: false })
+  const navRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!navigationGuard) return
+    const blocked = () => activity.current.editing || activity.current.busy > 0 || activity.current.choosing || dirty || saving || finishing.current
+    navigationGuard.current = blocked
+    return () => { if (navigationGuard.current === blocked) navigationGuard.current = null }
+  }, [navigationGuard, dirty, saving])
+  useEffect(() => { onNavigationStateChange?.() }, [editing, busy, choosingImage, finishingEdit, onNavigationStateChange])
+  useEffect(() => {
+    const input = fileRef.current
+    const cancel = () => { activity.current.choosing = false; setChoosingImage(false) }
+    input?.addEventListener('cancel', cancel)
+    return () => input?.removeEventListener('cancel', cancel)
+  }, [])
+  useLayoutEffect(() => {
+    if (navigation?.focus) navRef.current?.focus({ preventScroll: true })
+  }, [navigation?.focus, row.id])
 
   /** 取值统一入口：草稿优先（父级 `cellVal`），没有模型时退回库值 */
   const valueOf = (key: string) => {
@@ -145,15 +170,28 @@ export default function AtlasDetail({
     const snap: Record<string, string> = {}
     for (const k of editKeys) snap[k] = valueOf(k)
     setSnapshot(snap)
-    setEditing(true)
+    activity.current.editing = true; setEditing(true)
   }
   const cancelEdit = () => {
     onRevert?.(snapshot)
-    setEditing(false)
+    activity.current.editing = false; setEditing(false)
   }
   const finishEdit = async () => {
-    if (dirty && onSave) await onSave()
-    setEditing(false)
+    if (finishing.current) return
+    finishing.current = true
+    setFinishingEdit(true)
+    try {
+      if (dirty && (!onSave || !await onSave())) {
+        showToast('尚有修改未提交，请核对当前草稿后重试保存。', 'error')
+        return
+      }
+      activity.current.editing = false; setEditing(false)
+    } catch {
+      showToast('保存失败，请保留当前草稿并重试。', 'error')
+    } finally {
+      finishing.current = false
+      setFinishingEdit(false)
+    }
   }
 
   /**
@@ -165,6 +203,7 @@ export default function AtlasDetail({
 
   /** 落库并**等它真的写完**再提示；失败保留原图并如实报错（不谎报成功、不静默吞错） */
   const commitImage = async (next: AtlasImage | null) => {
+    activity.current.busy++
     setBusy(true)
     const run = chainRef.current.catch(() => undefined).then(() => onImageChange(next))
     // 链上存的是"已消化失败"的版本：一次失败不能堵死后续所有操作
@@ -176,13 +215,14 @@ export default function AtlasDetail({
       showToast(`主图保存失败（原图未改动）：${e instanceof Error ? e.message : String(e)}`, 'error')
       return false
     } finally {
-      setBusy(false)
+      activity.current.busy--; setBusy(activity.current.busy > 0)
     }
   }
 
   /** 选图 → 压缩 → 容量检查 → 交给父组件落库。失败原因直接展示给作者（不吞错、不写半成品） */
   const pickImage = async (file: File | undefined) => {
     if (!file) return
+    activity.current.busy++
     setBusy(true)
     try {
       const r = await readAtlasImage(file)
@@ -203,7 +243,7 @@ export default function AtlasDetail({
         check.level === 'warn' ? 'info' : 'success',
       )
     } finally {
-      setBusy(false)
+      activity.current.busy--; setBusy(activity.current.busy > 0)
     }
   }
 
@@ -270,6 +310,31 @@ export default function AtlasDetail({
             {overlay ? '返回' : '关闭'}
           </button>
         </div>
+        {navigation && <div ref={navRef} data-atlas-nav tabIndex={0} role="group"
+          aria-label={navigation.index < 0 ? `图鉴详情导航：${name}，当前条目不在筛选结果中` : `图鉴详情导航：${name}，第 ${navigation.index + 1} / ${navigation.count} 条`}
+          onKeyDown={event => {
+            if (event.target !== event.currentTarget || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing) return
+            if (event.key === 'Escape') {
+              const popup = [...document.querySelectorAll<HTMLElement>('[role="menu"], [role="listbox"]')].some(element => element.getClientRects().length > 0)
+              if (getActiveOverlayScope() || popup) return
+              event.preventDefault(); onClose(); return
+            }
+            const direction = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : 0
+            if (!direction) return
+            event.preventDefault()
+            if (editing || dirty || saving || busy || choosingImage || finishing.current) {
+              showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目。', 'info')
+              return
+            }
+            navigation.move(direction)
+          }}
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-md text-10 text-ink-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
+          <span aria-live="polite">{navigation.index < 0 ? '当前条目不在筛选结果中' : `第 ${navigation.index + 1} / ${navigation.count} 条`} · ↑/← 上一条，↓/→ 下一条</span>
+          <Button variant="secondary" size="xs" disabled={navigation.index <= 0 || editing || dirty || saving || busy || choosingImage || finishingEdit}
+            onClick={() => navigation.move(-1)}>上一条</Button>
+          <Button variant="secondary" size="xs" disabled={navigation.index < 0 || navigation.index >= navigation.count - 1 || editing || dirty || saving || busy || choosingImage || finishingEdit}
+            onClick={() => navigation.move(1)}>下一条</Button>
+        </div>}
       </header>
 
       {/* 主图（方案 §3.2：详情查看大图）；3.2.0 起这块也是拖拽落点 */}
@@ -289,7 +354,7 @@ export default function AtlasDetail({
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => { activity.current.choosing = true; setChoosingImage(true); fileRef.current?.click() }}
             disabled={busy}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-11 text-ink-200 border border-ink-700 bg-ink-800 hover:border-amber/40 hover:text-amber transition-colors disabled:opacity-50"
           >
@@ -325,6 +390,7 @@ export default function AtlasDetail({
           accept={ATLAS_IMAGE_ACCEPT}
           className="hidden"
           onChange={e => {
+            activity.current.choosing = false; setChoosingImage(false)
             void pickImage(e.target.files?.[0])
             e.target.value = ''   // 允许重复选同一张（改完图再传一次是常见操作）
           }}
@@ -414,7 +480,7 @@ export default function AtlasDetail({
         <div className="shrink-0 flex items-center gap-1.5">
           {editing ? (
             <>
-              <Button variant="secondary" size="xs" onClick={cancelEdit} title="撤销本次在详情里做的改动">
+              <Button variant="secondary" size="xs" onClick={cancelEdit} disabled={saving || finishingEdit} title="撤销本次在详情里做的改动">
                 <Undo2 size={11} /> 撤销
               </Button>
               <Button
@@ -422,10 +488,10 @@ export default function AtlasDetail({
                 solid
                 size="xs"
                 onClick={() => void finishEdit()}
-                disabled={saving}
+                disabled={saving || finishingEdit}
                 title="保存并退出编辑（与表格底部「保存」是同一个动作）"
               >
-                {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                {saving || finishingEdit ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
                 保存
               </Button>
             </>

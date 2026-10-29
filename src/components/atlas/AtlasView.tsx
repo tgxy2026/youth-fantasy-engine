@@ -9,7 +9,7 @@
  * 🔴 数据口径：`rows` 由调用方传入 `filteredRows` —— 即**已并入未保存草稿、且已应用表头筛选**
  *    的那一份（与表格视图逐字一致）。图鉴不自己去读库，否则「表格里刚改、图鉴看不见」。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import type { TableRow, TabDef } from '@/lib/types'
 import {
@@ -23,7 +23,9 @@ import { foldVh } from '@/lib/settings/theme'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 // 卡片排序（纯函数 + 单测钉住；编号比较与表格同口径，见该文件头）
 import { ATLAS_ORDERS, sortAtlasRows, type AtlasOrder } from '@/lib/atlas/order'
+import { atlasDetailNeighbour, atlasGridNeighbour } from '@/lib/atlas/navigation'
 import { Button } from '@/components/common/Button'
+import { showToast } from '@/components/dialogs/dialogs'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { usePaneWorkspaceScroll } from '@/components/common/usePaneWorkspaceScroll'
 import AtlasCard from './AtlasCard'
@@ -75,7 +77,7 @@ interface Props {
   /** 全局保存进行中 */
   saving?: boolean
   /** 保存（= 表格底部同一个 `saveAll`） */
-  onSave?: () => void | Promise<void>
+  onSave?: () => Promise<boolean>
   /** 撤销详情里本次改动：交回进入编辑态时的字段值快照 */
   onRevert?: (rowId: string, values: Record<string, string>) => void
 }
@@ -102,21 +104,39 @@ export default function AtlasView({
   const pageId = 'atlas:' + tab.id
   const view = useListWorkspaceView(projectId, pageId, 'none')
   const [selectedId, setSelectedId] = useState<string | null>(() => view.choose(rows, focusRowId))
+  const [focusNavId, setFocusNavId] = useState<string | null>(null)
+  const [focusCardId, setFocusCardId] = useState<string | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const navigationGuard = useRef<(() => boolean) | null>(null)
+  const [guardRevision, setGuardRevision] = useState(0)
+  const onNavigationStateChange = useCallback(() => setGuardRevision(value => value + 1), [])
+  const selectedCache = useRef<TableRow | null>(null)
+  const matchedSelected = selectedId ? rows.find(row => row.id === selectedId) ?? null : null
+  if (matchedSelected) selectedCache.current = matchedSelected
+  const selected = matchedSelected ?? (selectedId && selectedCache.current?.id === selectedId &&
+    (navigationGuard.current?.() || saving || dirtyOf?.(selectedId)) ? selectedCache.current : null)
   const listRef = useRef<HTMLDivElement>(null), detailRef = useRef<HTMLDivElement>(null)
   const capture = usePaneWorkspaceScroll({ pageId, detailPageId: pageId,
     ownerKey: view.ownerKey, generation: view.generation, ready: true, query: '',
     selectedId, objectId: selectedId, targetId: focusRowId ?? null, listRef, detailRef, isCurrent: view.isCurrent })
   const restoreFocus = useAtlasDetailFocus(narrow, selectedId, listRef, detailRef)
-  const select = (id: string | null) => {
+  const select = (id: string | null, focusDetail = false) => {
+    if (selectedId && id !== selectedId && (navigationGuard.current?.() || saving || dirtyOf?.(selectedId))) {
+      showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目。', 'info')
+      return false
+    }
+    setFocusNavId(focusDetail ? id : null)
     capture(); setSelectedId(id)
-    if (id === null && narrow && selectedId) restoreFocus(selectedId)
+    if (id === null && selectedId) restoreFocus(selectedId)
+    return true
   }
   const remember = view.remember
   useEffect(() => { remember(selectedId) }, [selectedId, remember])
   useEffect(() => {
     if (!focusRowId || !rows.some(row => row.id === focusRowId)) return
+    if (selectedId && selectedId !== focusRowId && (navigationGuard.current?.() || saving || dirtyOf?.(selectedId))) return
     capture(); setSelectedId(focusRowId); onFocusConsumed?.()
-  }, [focusRowId, rows, capture, onFocusConsumed])
+  }, [focusRowId, rows, capture, onFocusConsumed, selectedId, saving, dirtyOf, guardRevision])
   // 卡片密度（本机偏好：只影响显示，不进项目配置）
   const [density, setDensity] = usePersistedEnum<Density>('atlas-density', ['compact', 'standard', 'loose'], 'standard')
   /**
@@ -170,9 +190,9 @@ export default function AtlasView({
   const detailFields = useMemo(
     () => atlasFieldsForCategory(
       templateFields ?? resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
-      selectedId ? rows.find(r => r.id === selectedId)?.data?.['类别'] : undefined,
+      selected?.data?.['类别'],
     ),
-    [tab, aliases, config, templateFields, selectedId, rows],
+    [tab, aliases, config, templateFields, selected],
   )
   /** 摘要候选取全量（作者在字段设置里显式挑的展示项，不受类别砍） */
   const allSummaryFields = useMemo(
@@ -208,13 +228,17 @@ export default function AtlasView({
 
   // 筛选变化把选中条目筛掉时关闭详情，**不**自动跳到别的条目（方案 §3.4）
   useEffect(() => {
-    if (selectedId && !rows.some(r => r.id === selectedId)) setSelectedId(null)
-  }, [rows, selectedId])
+    if (selectedId && !rows.some(r => r.id === selectedId) && !navigationGuard.current?.() && !saving && !dirtyOf?.(selectedId)) {
+      const focusedInDetail = detailRef.current?.closest('aside')?.contains(document.activeElement)
+      setSelectedId(null)
+      if (focusedInDetail) restoreFocus(selectedId)
+    }
+  }, [rows, selectedId, saving, dirtyOf, guardRevision, restoreFocus])
 
   /** 卡片展示顺序（纯函数在 lib/atlas/order.ts，这里只负责接状态） */
   const orderedRows = useMemo(() => sortAtlasRows(tab, rows, orderKey), [tab, rows, orderKey])
-
-  const selected = selectedId ? rows.find(r => r.id === selectedId) ?? null : null
+  const activeCard = orderedRows.some(row => row.id === focusCardId) ? focusCardId
+    : orderedRows.some(row => row.id === selectedId) ? selectedId : orderedRows[0]?.id ?? null
 
   return (
     <div ref={hostRef} className="relative flex gap-4 min-h-0" style={{ height: foldVh('62vh') }}>
@@ -302,9 +326,36 @@ export default function AtlasView({
                 ))}
               </div>
             </div>
-            <div
+            <div ref={gridRef} role="group" aria-label="图鉴卡片，可用方向键移动"
               className="grid gap-3 pb-1"
               style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_CARD_W[density]}px, 1fr))` }}
+              onKeyDown={event => {
+                if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing) return
+                if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return
+                const current = event.target instanceof HTMLButtonElement ? event.target.dataset.workspaceRecord : undefined
+                if (!current || !gridRef.current) return
+                const cards = [...gridRef.current.querySelectorAll<HTMLButtonElement>('[data-workspace-record]')]
+                const ids = orderedRows.map(row => row.id)
+                if (cards.length !== ids.length || cards.some((card, i) => card.dataset.workspaceRecord !== ids[i])) return
+                const rects = cards.map(card => card.getBoundingClientRect())
+                if (!rects.length || rects.some(rect => rect.width <= 0 || rect.height <= 0)) return
+                const columns = rects.findIndex(rect => Math.abs(rect.top - rects[0].top) > 1)
+                const count = columns < 0 ? rects.length : columns
+                const target = atlasGridNeighbour(ids, current, count, event.key)
+                event.preventDefault()
+                if (!target) return
+                if (selectedId && !select(target)) return
+                setFocusCardId(target)
+                const card = cards.find(item => item.dataset.workspaceRecord === target)
+                card?.focus({ preventScroll: true })
+                const list = listRef.current
+                if (card && list) {
+                  const targetRect = card.getBoundingClientRect(), listRect = list.getBoundingClientRect()
+                  const scale = list.offsetHeight > 0 ? listRect.height / list.offsetHeight : 1
+                  if (targetRect.top < listRect.top) list.scrollTop -= (listRect.top - targetRect.top) / (scale || 1)
+                  else if (targetRect.bottom > listRect.bottom) list.scrollTop += (targetRect.bottom - listRect.bottom) / (scale || 1)
+                }
+              }}
             >
               {orderedRows.map(row => (
                 <AtlasCard
@@ -316,7 +367,14 @@ export default function AtlasView({
                   badges={atlasCardBadges(tab.id, row.data)}
                   summaryFields={atlasFieldsForCategory(allSummaryFields, row.data['类别'])}
                   selected={row.id === selectedId}
-                  onOpen={() => select(row.id)}
+                  tabIndex={row.id === activeCard ? 0 : -1}
+                  onFocus={() => setFocusCardId(row.id)}
+                  onOpen={() => {
+                    setFocusCardId(row.id)
+                    if (row.id === selectedId) {
+                      detailRef.current?.closest('aside')?.querySelector<HTMLElement>('[data-atlas-nav]')?.focus({ preventScroll: true })
+                    } else select(row.id, true)
+                  }}
                 />
               ))}
             </div>
@@ -346,6 +404,16 @@ export default function AtlasView({
             overlay={narrow}
             onClose={() => select(null)}
             onEditInTable={onEditInTable}
+            navigationGuard={navigationGuard}
+            onNavigationStateChange={onNavigationStateChange}
+            navigation={{
+              index: orderedRows.findIndex(row => row.id === selected.id), count: orderedRows.length,
+              focus: focusNavId === selected.id,
+              move: direction => {
+                const target = atlasDetailNeighbour(orderedRows.map(row => row.id), selected.id, direction < 0 ? 'ArrowLeft' : 'ArrowRight')
+                if (target && !saving && !dirtyOf?.(selected.id)) select(target, true)
+              },
+            }}
             cellValue={cellValue}
             onCellChange={onCellChange ? (k, v) => onCellChange(selected.id, k, v) : undefined}
             dirty={dirtyOf?.(selected.id) ?? false}
