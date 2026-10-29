@@ -74,6 +74,17 @@ try {
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   const preserved = await editor.evaluate(el => ({ same: el === window.__helpEditorNode, value: el.value, start: el.selectionStart, end: el.selectionEnd }))
   check('打开关闭答疑不卸载正文且保留输入与选区', preserved.same && preserved.value === before + '\n精灵答疑隔离测试' && preserved.start === 4 && preserved.end === 9, JSON.stringify({ same: preserved.same, start: preserved.start, end: preserved.end }))
+  await sprite.focus()
+  await page.keyboard.press('Enter')
+  await choices.getByRole('button', { name: '使用答疑助手' }).click()
+  await dialog.getByLabel('搜索使用手册').fill('正文编辑')
+  await dialog.getByRole('button').filter({ hasText: '正文编辑：工具栏每个按钮做什么' }).first().click()
+  await dialog.getByRole('button', { name: '重看这页的引导' }).click()
+  await dialog.waitFor({ state: 'hidden', timeout: 10000 })
+  await page.locator('[data-guide-card]').waitFor({ timeout: 15000 })
+  check('从弹窗重看当前正文页引导，弹窗收起且引导可见', true)
+  check('重看引导后键盘焦点进入引导卡片', await page.locator('[data-guide-card]').evaluate(el => el.contains(document.activeElement)))
+  await page.getByRole('button', { name: '跳过本页' }).click()
   await page.evaluate(() => {
     const put = IDBObjectStore.prototype.put
     window.__restoreHelpPut = () => { IDBObjectStore.prototype.put = put }

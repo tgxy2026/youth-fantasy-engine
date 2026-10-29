@@ -647,8 +647,8 @@ export default function App() {
     const article = peekHelpRequest('article')
     if (article) { navigate('guide'); return }
     const guide = peekHelpRequest('guide')
-    if (guide && guide.kind === 'guide') navigate(guide.tabId)
-  }), [navigate])
+    if (guide && guide.kind === 'guide' && guide.tabId !== activeTab) navigate(guide.tabId)
+  }), [navigate, activeTab])
 
 
   // 启动失败：给一页能读懂的错误 + 一个重试入口，而不是永远停在黑屏上
@@ -860,7 +860,7 @@ export default function App() {
       {/* 颉文姬桌面精灵：全局右缘驻留（可在 AI 编辑面板底部开关关闭） */}
       {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => { assistantOpenTab.current = activeTab; assistantOpenProject.current = projectId; setAssistantHelpOpen(true) }} />}
       {assistantHelpOpen && <Modal open onClose={() => setAssistantHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
-        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} />
+        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} onSamePageGuideStarted={() => setAssistantHelpOpen(false)} />
       </Modal>}
       {searchOpen && (
         <FullTextSearch

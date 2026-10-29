@@ -19,7 +19,7 @@ import {
   searchHelp, suggestHelpGroups, tabsWithoutHelp, type HelpArticle, type HelpGroup,
 } from '@/lib/help'
 import { getPageGuide } from '@/lib/help/guides'
-import { requestPageGuide, subscribeHelpRequests, takeHelpRequest } from '@/lib/help/helpNav'
+import { peekHelpRequest, requestPageGuide, subscribeHelpRequests, takeHelpRequest } from '@/lib/help/helpNav'
 import { Button } from '@/components/common/Button'
 import '@/components/help/helpMobile.css'
 
@@ -37,6 +37,7 @@ interface Props {
   projectOpen?: boolean
   /** 只有使用指南页面接收跨页文章请求；独立弹窗不抢占导航意图。 */
   receiveArticleRequests?: boolean
+  onSamePageGuideStarted?: () => void
 }
 
 const tabName = (tabId: string): string =>
@@ -47,7 +48,7 @@ type CatalogView = 'start' | 'by-tab' | 'faq'
 /** 3.3.1 · P4：同一个入口里区分「查手册」与「问 AI」（规划 §5.1 用词） */
 type AssistMode = 'manual' | 'ask'
 
-export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true, receiveArticleRequests = true }: Props) {
+export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true, receiveArticleRequests = true, onSamePageGuideStarted }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<AssistMode>('manual')
   const [view, setView] = useState<CatalogView>('start')
@@ -155,7 +156,10 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
             <div className="pt-1">
               <Button variant="secondary" size="sm"
                 title={`跳到「${tabName(guideTabId)}」并重新分步介绍（不影响任何数据）`}
-                onClick={() => { requestPageGuide(guideTabId); onNavigate(guideTabId) }}
+                onClick={() => {
+                  requestPageGuide(guideTabId)
+                  if (currentTabId === guideTabId && !peekHelpRequest('guide')) onSamePageGuideStarted?.()
+                }}
                 className="flex items-center gap-1.5 text-11">
                 <Compass size={11} /> 重看这页的引导
               </Button>

@@ -10,7 +10,7 @@
 // 🔴 绑定运行标识：`tabId` 变了就当作新页面，中断记忆清空、状态归位。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getPageGuide, guideRecordKey, type PageGuide } from '@/lib/help/guides'
-import { peekHelpRequest, takeAutoGuideSuppression, takeHelpRequest } from '@/lib/help/helpNav'
+import { peekHelpRequest, subscribeHelpRequests, takeAutoGuideSuppression, takeHelpRequest } from '@/lib/help/helpNav'
 import {
   hasGuideRecord, isGuideAutoEnabled, markGuideDone, markGuideSkipped, setGuideAutoEnabled,
 } from '@/lib/settings/guidePrefs'
@@ -55,11 +55,15 @@ export function usePageGuide({ tabId, ready, busy = false, enabled = true }: Opt
     interrupted.current.clear()
     setRunning(false)
     if (!enabled) return
-    const request = peekHelpRequest('guide')
-    if (request && request.kind === 'guide' && request.tabId === tabId) {
-      takeHelpRequest('guide')
-      setRunning(true)
+    const consume = () => {
+      const request = peekHelpRequest('guide')
+      if (request && request.kind === 'guide' && request.tabId === tabId) {
+        takeHelpRequest('guide')
+        setRunning(true)
+      }
     }
+    consume()
+    return subscribeHelpRequests(consume)
   }, [tabId, enabled])
 
   const key = guide ? guideRecordKey(guide) : ''
