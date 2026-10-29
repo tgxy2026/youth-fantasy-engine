@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ASK_RECALL_LIMIT, askHelpOnce, recallForAsk } from '../src/lib/aiTasks/helpAsk'
 import type { chat, resolveProviderFor } from '../src/lib/ai'
+import { getHelpArticle } from '../src/lib/help'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -68,7 +69,7 @@ const hub = read('src/components/app/ProjectHub.tsx')
 {
   ok('🔴 没召回就提前返回，不请求模型', /if \(hits\.length === 0\) return \{ kind: 'no-recall'/.test(src))
   ok('没模型时不假装答过（kind=no-model 只带回片段）', /kind:\s*'no-model'/.test(src))
-  ok('校验不过退回检索结果', /kind:\s*'fallback'/.test(src) && /readHelpAnswer\(raw, hits\)/.test(src))
+  ok('校验不过退回检索结果', /kind:\s*'fallback'/.test(src) && /readHelpAnswer\(raw, hits, fragments\)/.test(src))
 }
 
 // ---------- 配置读取与停止的真实异步时序（不访问模型或真实配置） ----------
@@ -113,6 +114,30 @@ const hub = read('src/components/app/ProjectHub.tsx')
   lateController.abort()
   finishChat('{}')
   ok('模型忽略停止信号而迟到时仍返回 cancelled', (await lateResult).kind === 'cancelled')
+
+  const hit = recallForAsk('字太小怎么放大')[0]
+  const section = getHelpArticle(hit.articleId)!.sections.find(item => item.id === hit.sectionId)!
+  const savedBody = section.body
+  try {
+    let modelCalls = 0
+    const changedBeforeCall = await askHelpOnce('字太小怎么放大', null, undefined, {
+      resolveProviderFor: async () => {
+        section.body = ['读取模型配置时手册内容发生变化']
+        return {} as NonNullable<Awaited<ReturnType<typeof resolveProviderFor>>>
+      },
+      chat: (async () => { modelCalls++; return '{}' }) as typeof chat,
+    })
+    ok('请求前手册变化时不发模型请求', changedBeforeCall.kind === 'fallback' && modelCalls === 0)
+    section.body = savedBody
+    const stale = await askHelpOnce('字太小怎么放大', null, undefined, {
+      resolveProviderFor: async () => ({} as NonNullable<Awaited<ReturnType<typeof resolveProviderFor>>>),
+      chat: (async () => {
+        section.body = ['请求期间手册内容发生了变化']
+        return JSON.stringify({ answer: '答', quotes: [savedBody.join('\n').slice(0, 20)] })
+      }) as typeof chat,
+    })
+    ok('模型请求期间手册改变时不展示旧回答', stale.kind === 'fallback' && /发生变化/.test(stale.message))
+  } finally { section.body = savedBody }
 }
 
 // ---------- 界面：入口用词、会话只在内存 ----------

@@ -14,8 +14,8 @@
 import { chat, isCancelled, resolveProviderFor, type ChatMessage } from '@/lib/ai'
 import { searchHelp, type HelpHit } from '@/lib/help'
 import {
-  buildHelpAnswerPrompt, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
-  type HelpAnswerFailure, type HelpSourceRef,
+  buildHelpAnswerPrompt, prepareHelpPromptFragments, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
+  type HelpAnswerFailure, type HelpPromptFragment, type HelpSourceRef,
 } from '@/lib/aiTasks/helpAnswer'
 
 /** 一次提问的结果。`hits` 恒为**本次**召回，界面靠它渲染「也可以直接看这几段」。 */
@@ -44,6 +44,19 @@ interface AskDependencies {
 }
 const defaultDependencies: AskDependencies = { resolveProviderFor, chat }
 
+function fragmentsStillCurrent(hits: HelpHit[], fragments: HelpPromptFragment[]): boolean {
+  const current = prepareHelpPromptFragments(hits)
+  return current.length === fragments.length && fragments.every((fragment, index) => (
+    current[index].hit.articleId === fragment.hit.articleId
+    && current[index].hit.sectionId === fragment.hit.sectionId
+    && current[index].text === fragment.text
+  ))
+}
+
+const changedHelp = (hits: HelpHit[]): AskResult => ({
+  kind: 'fallback', message: '手册内容在回答期间发生变化，请重新提问；已退回手册检索结果。', hits,
+})
+
 /** 召回：答疑与手册页复用同一套本地检索，口径一致才不会「搜得到、问不出」 */
 export function recallForAsk(question: string, currentTabId?: string | null): HelpHit[] {
   if (!question.trim()) return []
@@ -67,6 +80,8 @@ export async function askHelpOnce(
   if (signal?.aborted) return { kind: 'cancelled', hits }
   // ① 没召回就不问模型：没有片段时模型只能凭常识编，而「凭常识编出来的软件用法」正是本功能要避免的
   if (hits.length === 0) return { kind: 'no-recall', hits }
+  const fragments = prepareHelpPromptFragments(hits)
+  if (fragments.length === 0) return { kind: 'fallback', message: '手册内容暂时无法核对，已退回手册检索结果。', hits }
 
   // ② 模型归属走「整理」用途：答疑是低频、短输出、要快的活，不该占创作模型
   let raw = ''
@@ -75,7 +90,8 @@ export async function askHelpOnce(
     // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
     if (signal?.aborted) return { kind: 'cancelled', hits }
     if (!provider) return { kind: 'no-model', hits }
-    const prompt = buildHelpAnswerPrompt(question, hits)
+    if (!fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
+    const prompt = buildHelpAnswerPrompt(question, hits, fragments)
     const messages: ChatMessage[] = [
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
@@ -102,8 +118,11 @@ export async function askHelpOnce(
 
   if (signal?.aborted) return { kind: 'cancelled', hits }
 
+  // 请求期间手册若发生变化，旧答案不能静默指向新的正文。
+  if (!fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
+
   // ③ 校验：来源必须在本次召回内、摘录必须逐字出现在原文
-  const checked = readHelpAnswer(raw, hits)
+  const checked = readHelpAnswer(raw, hits, fragments)
   if (!checked.ok) {
     return { kind: 'fallback', message: HELP_ANSWER_FAILURE_TEXT[checked.reason], hits }
   }

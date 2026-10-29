@@ -71,6 +71,19 @@ function sectionText(articleId: string, sectionId: string): string | null {
   return section.body.join('\n')
 }
 
+/** 单次请求真正交给模型的文本快照，校验只接受这份快照里的来源。 */
+export interface HelpPromptFragment {
+  hit: HelpHit
+  text: string
+}
+
+export function prepareHelpPromptFragments(hits: HelpHit[]): HelpPromptFragment[] {
+  return hits.slice(0, MAX_PROMPT_HITS).flatMap(hit => {
+    const text = sectionText(hit.articleId, hit.sectionId)
+    return text ? [{ hit, text: text.slice(0, MAX_SECTION_CHARS) }] : []
+  })
+}
+
 /**
  * 构造答疑提示词。
  *
@@ -78,10 +91,8 @@ function sectionText(articleId: string, sectionId: string): string | null {
  * 按原文反查，这样模型没有机会编造来源，也不会因为抄错一个字符就整条作废（见 `HelpAnswer.quotes`）。
  * 提示词里给的约束只是第一道；第二道是逐字校验，不靠模型自觉。
  */
-export function buildHelpAnswerPrompt(question: string, hits: HelpHit[]): { system: string; user: string } {
-  const picked = hits.slice(0, MAX_PROMPT_HITS)
-  const blocks = picked.map((hit, index) => {
-    const text = (sectionText(hit.articleId, hit.sectionId) ?? hit.excerpt).slice(0, MAX_SECTION_CHARS)
+export function buildHelpAnswerPrompt(question: string, hits: HelpHit[], fragments = prepareHelpPromptFragments(hits)): { system: string; user: string } {
+  const blocks = fragments.map(({ hit, text }, index) => {
     return `【片段 ${index + 1}】《${hit.articleTitle}》· ${hit.heading}\n${text}`
   })
   const system = [
@@ -153,13 +164,13 @@ function trimQuoteDecor(quote: string): string {
  * @param value 解析后的模型输出
  * @param hits  本次实际召回的片段（**不是**整本手册）—— 模型引用召回之外的条目一律不算
  */
-export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[]): HelpAnswerCheck {
+export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[], fragments = prepareHelpPromptFragments(hits)): HelpAnswerCheck {
   if (!value.answer.trim()) return { ok: false, reason: 'empty-answer' }
   const quotes = value.quotes ?? []
   const declared = value.sources ?? []
   if (quotes.length === 0 && declared.length === 0) return { ok: false, reason: 'no-sources' }
 
-  const recalled = new Map(hits.map(hit => [`${hit.articleId}/${hit.sectionId}`, hit]))
+  const recalled = new Map(fragments.map(({ hit, text }) => [`${hit.articleId}/${hit.sectionId}`, text]))
   const accepted: HelpSourceRef[] = []
   const seen = new Set<string>()
   const push = (source: HelpSourceRef) => {
@@ -176,8 +187,7 @@ export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[]): HelpAnswer
       return { ok: false, reason: 'unverifiable-source', detail: `摘录过短：${quote}` }
     }
     let matched: HelpSourceRef | null = null
-    for (const hit of hits) {
-      const text = sectionText(hit.articleId, hit.sectionId)
+    for (const { hit, text } of fragments) {
       if (text && text.includes(quote)) {
         matched = { articleId: hit.articleId, sectionId: hit.sectionId, quote }
         break
@@ -194,7 +204,7 @@ export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[]): HelpAnswer
     if (!recalled.has(key)) {
       return { ok: false, reason: 'out-of-scope-source', detail: key }
     }
-    const text = sectionText(source.articleId, source.sectionId)
+    const text = recalled.get(key)
     if (!text) {
       return { ok: false, reason: 'unverifiable-source', detail: `${key}（正文缺失）` }
     }
@@ -209,10 +219,10 @@ export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[]): HelpAnswer
 }
 
 /** 一步到位：解析 + 校验（调用方拿到 ok 才显示为「AI 回答」） */
-export function readHelpAnswer(raw: string, hits: HelpHit[]): HelpAnswerCheck {
+export function readHelpAnswer(raw: string, hits: HelpHit[], fragments = prepareHelpPromptFragments(hits)): HelpAnswerCheck {
   const parsed = parseHelpAnswer(raw)
   if (!parsed.ok) return { ok: false, reason: 'unparsable', detail: parsed.detail }
-  return verifyHelpAnswer(parsed.value, hits)
+  return verifyHelpAnswer(parsed.value, hits, fragments)
 }
 
 /** 失败原因 → 给作者看的话（与「手册没写」区分开，规划 §5.4 不允许把技术失败说成没答案） */

@@ -7,8 +7,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  HELP_ANSWER_FAILURE_TEXT, MAX_PROMPT_HITS, MIN_QUOTE_LENGTH,
-  buildHelpAnswerPrompt, parseHelpAnswer, readHelpAnswer, verifyHelpAnswer,
+  HELP_ANSWER_FAILURE_TEXT, MAX_PROMPT_HITS, MAX_SECTION_CHARS, MIN_QUOTE_LENGTH,
+  buildHelpAnswerPrompt, parseHelpAnswer, prepareHelpPromptFragments, readHelpAnswer, verifyHelpAnswer,
 } from '../src/lib/aiTasks/helpAnswer'
 import { HELP_ARTICLES, getHelpArticle, searchHelp } from '../src/lib/help'
 
@@ -39,6 +39,29 @@ const firstText = first ? (getHelpArticle(first.articleId)?.sections.find(s => s
   ok('片段数量不超过上限', buildHelpAnswerPrompt('保存', hits).user.split('【片段').length - 1 <= MAX_PROMPT_HITS)
   const empty = buildHelpAnswerPrompt('保存', [])
   ok('没有召回时明确告诉模型「没有任何片段」', empty.user.includes('没有召回到任何手册片段'))
+}
+
+// ---------- 实际输入边界：第六条及截断外内容不能冒充模型依据 ----------
+{
+  const other = HELP_ARTICLES.find(article => article.id !== first.articleId && article.sections.length > 0)!
+  const sixth = { ...first, articleId: other.id, articleTitle: other.title, sectionId: other.sections[0].id }
+  const sixHits = [...Array.from({ length: MAX_PROMPT_HITS }, () => first), sixth]
+  const sixResult = verifyHelpAnswer({ answer: '答', sources: [{ articleId: sixth.articleId, sectionId: sixth.sectionId, quote: other.sections[0].body.join('\n').slice(0, 20) }] }, sixHits)
+  ok('第六个召回段没有发给模型，不能作为来源', !sixResult.ok && sixResult.reason === 'out-of-scope-source')
+
+  const section = getHelpArticle(first.articleId)!.sections.find(item => item.id === first.sectionId)!
+  const original = section.body
+  const lateQuote = '这里是超过截断范围后的独特测试摘录'
+  try {
+    section.body = ['甲'.repeat(MAX_SECTION_CHARS) + lateQuote]
+    const fragments = prepareHelpPromptFragments([first])
+    const prompt = buildHelpAnswerPrompt('问题', [first], fragments)
+    const outside = verifyHelpAnswer({ answer: '答', quotes: [lateQuote] }, [first], fragments)
+    ok('截断外的真实原文没有发给模型，也不能作为依据', !prompt.user.includes(lateQuote) && !outside.ok)
+    section.body = ['内容在模型请求过程中发生变化']
+    const snapshot = verifyHelpAnswer({ answer: '答', quotes: ['甲'.repeat(12)] }, [first], fragments)
+    ok('异步请求完成时校验使用发送时的文本快照', snapshot.ok)
+  } finally { section.body = original }
 }
 
 // ---------- ② 解析 ----------
