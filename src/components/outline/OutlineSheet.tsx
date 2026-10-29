@@ -14,6 +14,7 @@ import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import TemplateLibrary from '@/components/library/TemplateLibrary'
 import { MasterDetail, MasterList, useMasterFilter } from '@/components/common/MasterDetail'
+import { useMasterRecordNavigation } from '@/components/common/useMasterRecordNavigation'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { useOutlineWorkspaceScroll } from '@/components/outline/useOutlineWorkspaceScroll'
 import { Button } from '@/components/common/Button'
@@ -408,7 +409,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
    *     （2026-10-18 独立复核：draft.failure 契约）。
    */
   const switchPending = useRef({ ownerKey, busy: false })
-  const switchTo = useCallback(async (id: string | null, failHint?: string) => {
+  const switchTo = useCallback(async (id: string | null, failHint?: string, valid?: () => boolean) => {
     if (!isCurrent()) return false
     if (switchPending.current.ownerKey !== ownerKey) switchPending.current = { ownerKey, busy: false }
     const pending = switchPending.current
@@ -429,7 +430,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
           return false
         }
       }
-      if (!isCurrent()) return false
+      if (!isCurrent() || (valid && !valid())) return false
       captureScroll()
       setActiveId(id)
       return true
@@ -463,6 +464,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)
 
+  const onDirectoryKey = useMasterRecordNavigation(shownRecords.map(record => record.id), (id, valid) => switchTo(id, undefined, valid), isCurrent)
   if (loadError === ownerKey) return <section role="alert" className="rounded-lg border border-danger/30 bg-ink-850 p-5">
     <h2 className="text-15 font-semibold text-ink-100">大纲目录暂时无法读取</h2>
     <p className="mt-2 text-13 text-ink-400">原有资料没有被覆盖，可以重试读取。</p>
@@ -486,6 +488,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
 这是「${tab.name}」大纲，按${noun}拆分规划：
 
 · 左侧目录用「新建${noun}」新增；悬停或键盘聚焦可上移 / 下移排序、删除，详情中可以复制。
+· 键盘聚焦目录条目后按 ↑ / ↓ 可切换；输入框方向键保持编辑用途。切换前会保存当前草稿，失败时留在原处。
 · 编辑「卷名 / 章节号·标题」时会自动同步左侧目录名。
 · 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
 · 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。${tab.tips?.length ? '\n\n填写提示：\n' + tab.tips.map(tip => '· ' + tip).join('\n') : ''}`}</HelpPopover>
@@ -616,7 +619,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                     ? 'bg-amber/15 border-amber/30 text-amber'
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
-                <button type="button" aria-label={`选择${noun}大纲：${rec.name}`} aria-pressed={isActive}
+                <button type="button" data-master-choice={rec.id} onKeyDown={event => onDirectoryKey(event, rec.id)} aria-label={`选择${noun}大纲：${rec.name}`} aria-pressed={isActive}
                   onClick={event => { event.stopPropagation(); void switchTo(rec.id) }}
                   className="flex w-full items-center gap-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
                   {isVolume ? <BookOpen size={13} className="shrink-0" /> : <FileText size={13} className="shrink-0" />}

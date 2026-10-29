@@ -31,6 +31,7 @@ import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldA
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { useFieldGating } from '@/lib/templates/useFieldLabels'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
+import { useMasterRecordNavigation } from '@/components/common/useMasterRecordNavigation'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
@@ -527,12 +528,17 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
    *    作者再改一处保存就把刚才的编辑写回旧值。这是 2026-10-16 自审抓出的 R8 残留。
    */
   const flushCurrentDraft = manualSave.save
-  const selectCard = async (id: string) => {
+  const selectCard = async (id: string, valid?: () => boolean) => {
     const request = ++selectionRequest.current, owner = captureCandidateOwner()
-    if (id === draftRef.current?.id) return
-    if (!await flushCurrentDraft()) return
-    if (!owner.current() || request !== selectionRequest.current) return
+    if (id === draftRef.current?.id) return true
+    if (portraitBusy) { showToast('正在处理立绘，请完成后再切换。', 'info'); return false }
+    const imageVersion = portraitRequest.current.version
+    if (!await flushCurrentDraft()) return false
+    if (!owner.current() || request !== selectionRequest.current) return false
+    if (valid && !valid()) return false
+    if (imageVersion !== portraitRequest.current.version) { showToast('切换期间立绘发生变化，请核对后再切换。', 'info'); return false }
     setActiveId(id)
+    return true
   }
 
   // AI 新增：草图 → 模型补全全部字段 → 直接建卡（key 即 `模块::字段`，与渲染一致）
@@ -770,6 +776,8 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void save(), dirty)
 
+  const directoryOwner = captureCandidateOwner()
+  const onDirectoryKey = useMasterRecordNavigation(shownRecords.map(record => record.id), selectCard, directoryOwner.current)
   if (!loaded) return <LoadingState />
 
   return (
@@ -781,6 +789,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
             <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
 
 · 左侧列表切换 / 新建 / 删除角色；点击上方姓名可直接改名（保存后生效）。
+· 键盘聚焦左侧角色后按 ↑ / ↓ 可切换；输入框方向键保持编辑用途。切换前会保存当前草稿，失败时留在原处。
 · 右侧按模块（基础信息、外貌、性格……）分栏填写，长文会自动撑高输入框。
 · 「人物状态」用下拉选择：未登场 / 已登场 / 已退场，便于统计登场进度。
 · 字段带「示例」时可参考填法；修改后点右上「保存」或按 Ctrl+S。
@@ -788,6 +797,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
 : `这是「${tab.name}」，一条一张卡：
 
 · 左侧列表切换 / 新建 / 删除设定；点击上方标题可直接改名（保存后生效）。
+· 键盘聚焦左侧设定后按 ↑ / ↓ 可切换；输入框方向键保持编辑用途。切换前会保存当前草稿，失败时留在原处。
 · 卡名就是这条设定的名字 —— 正文编辑器会把它做引用高亮，所以名字起得越具体越好。
 · 右侧按字段填写，长文会自动撑高输入框；字段带「示例」时可参考填法。
 · 修改后点右上「保存」或按 Ctrl+S；存不下的内容可分段，不必挤在一行里。
@@ -865,7 +875,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                     : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'}`}
               >
                 <div className="flex items-center gap-2">
-                  <Button variant="bare" className="min-w-0 flex-1 !justify-start" onClick={event => { event.stopPropagation(); void selectCard(rec.id) }} aria-pressed={isActive} aria-label={'选择'+noun+'：'+current.name}>
+                  <Button variant="bare" className="min-w-0 flex-1 !justify-start" data-master-choice={rec.id} onKeyDown={event => onDirectoryKey(event, rec.id)} onClick={event => { event.stopPropagation(); void selectCard(rec.id) }} aria-pressed={isActive} aria-label={'选择'+noun+'：'+current.name}>
                     <UserRound size={13} className="shrink-0" />
                     <span className="text-13 font-medium truncate">{current.name}</span>
                   </Button>

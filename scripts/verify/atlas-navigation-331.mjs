@@ -23,6 +23,8 @@ try {
     await page.locator('[data-workspace-record="row1"]').click()
     let nav=page.locator('[data-atlas-nav]'); await nav.waitFor()
     if(!(await nav.evaluate(e=>e===document.activeElement))) throw Error(`${width}: navigation did not receive focus`)
+    const clipped=await nav.evaluate(el=>[...el.querySelectorAll('button')].some(button=>button.getBoundingClientRect().right>window.innerWidth+1))
+    if(clipped)throw Error(`${width}: navigation button clipped by viewport`)
     await page.getByTitle('移除主图（文字内容不受影响）').click();await nav.focus();await page.keyboard.press('ArrowRight')
     if(!/甲/.test(await nav.getAttribute('aria-label'))||!await page.getByRole('button',{name:'下一条'}).isDisabled())throw Error(`${width}: switched while image write pending`)
     await page.evaluate(()=>window.finishImage());await page.waitForTimeout(50)
@@ -43,6 +45,8 @@ try {
     await page.locator('[data-workspace-record="row2"]').click()
     await page.getByRole('button',{name:'编辑',exact:true}).click();nav=page.locator('[data-atlas-nav]');await nav.focus();await page.keyboard.press('ArrowRight')
     if(!/乙/.test(await nav.getAttribute('aria-label'))||!await page.getByRole('button',{name:'下一条'}).isDisabled())throw Error(`${width}: switched during edit`)
+    const input=page.locator('[data-atlas-detail] textarea').first();await input.focus();await page.keyboard.press('ArrowDown')
+    if(!/乙/.test(await nav.getAttribute('aria-label'))||!(await input.evaluate(e=>e===document.activeElement)))throw Error(`${width}: editing input lost focus or changed entry`)
     if(width===1400){await page.locator('[data-workspace-record="row3"]').click();if(!/乙/.test(await nav.getAttribute('aria-label')))throw Error('mouse switch discarded edit')}
     await page.getByRole('button',{name:'筛掉乙'}).click()
     if(!/乙.*不在筛选/.test(await nav.getAttribute('aria-label'))||!await page.getByRole('button',{name:'撤销',exact:true}).isVisible())throw Error(`${width}: filter removed active editor`)
