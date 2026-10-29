@@ -5,7 +5,7 @@
  * 依赖 `aiCore/transport.ts` 的 HTTP 与 SSE 能力，不自己碰底层 fetch。
  */
 
-import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, AIStreamStalledError, type SseChunk, type StreamReport } from '@/lib/aiCore/transport'
+import { fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, openaiBaseOf, describeApiError, AIRefusalError, isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage, AIStreamStalledError, withWebLocalConnectionHint, type SseChunk, type StreamReport } from '@/lib/aiCore/transport'
 import { reportUsage, type ChatUsage } from '@/lib/aiCore/usage'
 import {
   OLLAMA_DEFAULT_URL, CHAT_TIMEOUT_MS, TEST_TIMEOUT_MS, DEFAULT_TEMPERATURE, precheck,
@@ -368,7 +368,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
         '若长期超时，建议换用更小的模型或确认显存是否足够。',
       )
     }
-    throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。')
+    throw new Error(withWebLocalConnectionHint('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。'))
   }
   // 🔴 格式是可选参数：端点临时不认（旧版 / 中转返回 400）时**只撤掉它**重发一次，
   //    其余参数（温度、采样、think）原样不动 —— 不因一个可选字段把整个功能弄坏。
@@ -381,7 +381,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
       } catch (e) {
         if (isCancelled(e)) throw e
         if (isAbortError(e)) throw new Error(`Ollama 响应超时（超过 ${secs(timeoutMs)} 秒）。大参数模型首次调用需加载进显存，可稍后重试。`)
-        throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。')
+        throw new Error(withWebLocalConnectionHint('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址正确（默认 http://localhost:11434）。'))
       }
     }
   }

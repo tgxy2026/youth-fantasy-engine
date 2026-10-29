@@ -6,12 +6,16 @@ import {
 import {
   ONLINE_PRESETS, OPENCODE_GO_BASE, providerFromPreset, headersForPresetSwitch, PRESET_AUTO_HEADER_KEYS,
 } from '../src/lib/aiCore/core'
+import { withWebLocalConnectionHint } from '../src/lib/aiCore/transport'
 
 let failures = 0
 function check(name: string, condition: boolean) {
   if (condition) console.log(`PASS ${name}`)
   else { failures++; console.error(`FAIL ${name}`) }
 }
+
+check('网页本地连接失败提示跨域可能性，不声称确定原因', /可能/.test(withWebLocalConnectionHint('连接失败', true)) && /跨域/.test(withWebLocalConnectionHint('连接失败', true)))
+check('桌面便携的原错误文案不变', withWebLocalConnectionHint('连接失败', false) === '连接失败')
 
 // ---- 合法性判据 ----
 check('正常自定义头放行', rejectReasonOf('x-opencode-session') === null && rejectReasonOf('X-Api-Key') === null)

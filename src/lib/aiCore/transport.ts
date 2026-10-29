@@ -13,6 +13,12 @@ import { OLLAMA_DEFAULT_URL } from '@/lib/aiCore/core'
 import { DEFAULT_TIMEOUTS } from '@/lib/ai/streaming'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import type { AIProvider } from '@/lib/aiCore/core'
+import { WEB } from '@/lib/app/platform'
+
+/** A fetch failure does not reveal whether the service or the browser blocked it. */
+export function withWebLocalConnectionHint(message: string, web = WEB): string {
+  return web ? `${message} 网页版还可能受到浏览器跨域或本地网络权限限制；请检查本地服务是否允许当前网站来源，以及浏览器的相关权限。` : message
+}
 
 export function stripSlash(u: string) {
   return u.replace(/\/+$/, '')
@@ -197,7 +203,7 @@ export async function listOllamaModels(baseUrl: string): Promise<string[]> {
     res = await fetchWithTimeout(`${base}/api/tags`, {}, 10_000)
   } catch (e) {
     if (isAbortError(e)) throw new Error('连接 Ollama 超时（10 秒）：请确认服务已启动且地址可达。')
-    throw new Error('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址可达（默认 http://localhost:11434）。')
+    throw new Error(withWebLocalConnectionHint('无法连接 Ollama：请确认本机已启动 Ollama（ollama serve）且地址可达（默认 http://localhost:11434）。'))
   }
   if (!res.ok) throw new Error(`Ollama 返回错误（HTTP ${res.status}），请确认服务正常。`)
   const data = await res.json().catch(() => ({}))
