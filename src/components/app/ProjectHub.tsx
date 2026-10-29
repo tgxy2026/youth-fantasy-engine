@@ -755,6 +755,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             onNavigate={() => showToast('先打开一个项目，才能跳到这个功能页', 'info')}
             ctx={{ type: 'full', features: [] }}
             projectOpen={false}
+              receiveArticleRequests={false}
           />
         </Modal>
       )}

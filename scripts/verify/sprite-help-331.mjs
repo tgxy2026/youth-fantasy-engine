@@ -74,6 +74,29 @@ try {
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   const preserved = await editor.evaluate(el => ({ same: el === window.__helpEditorNode, value: el.value, start: el.selectionStart, end: el.selectionEnd }))
   check('打开关闭答疑不卸载正文且保留输入与选区', preserved.same && preserved.value === before + '\n精灵答疑隔离测试' && preserved.start === 4 && preserved.end === 9, JSON.stringify({ same: preserved.same, start: preserved.start, end: preserved.end }))
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put
+    window.__restoreHelpPut = () => { IDBObjectStore.prototype.put = put }
+    IDBObjectStore.prototype.put = function (...args) { if (this.name === 'chapters') throw new Error('synthetic chapter write failure'); return put.apply(this, args) }
+  })
+  await editor.fill(before + '\n导航失败时保留的隔离草稿')
+  await sprite.focus()
+  await page.keyboard.press('Enter')
+  await choices.getByRole('button', { name: '使用答疑助手' }).click()
+  await dialog.waitFor()
+  await page.evaluate(async () => { (await import('/src/lib/help/helpNav.ts')).requestHelpArticle('start-first-project') })
+  await page.waitForTimeout(1200)
+  check('保存失败阻止跳转时保留答疑弹窗与正文草稿', await dialog.isVisible() && (await editor.inputValue()).endsWith('导航失败时保留的隔离草稿'))
+  await page.evaluate(() => window.__restoreHelpPut())
+  const pending = await page.evaluate(async () => {
+    const nav = await import('/src/lib/help/helpNav.ts')
+    nav.requestHelpArticle('start-first-project')
+    return nav.peekHelpRequest('article')?.articleId ?? null
+  })
+  check('独立答疑弹窗不会提前抢走跨页文章请求', pending === 'start-first-project', String(pending))
+  await dialog.waitFor({ state: 'hidden', timeout: 30000 })
+  await page.locator('[data-help-article="start-first-project"]').waitFor({ timeout: 30000 })
+  check('实际导航成功后弹窗收起并打开所请求文章', true)
   check('无页面脚本错误', errors.length === 0, errors.join(' | '))
 } finally {
   const failed = records.filter(record => !record.pass).length

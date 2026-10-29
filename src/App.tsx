@@ -145,6 +145,14 @@ export default function App() {
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
   const [assistantHelpOpen, setAssistantHelpOpen] = useState(false)
+  const assistantOpenTab = useRef(activeTab)
+  const assistantOpenProject = useRef(projectId)
+  // 跳转真正完成后让出目标页面；保存屏障拒绝时保留当前帮助现场。
+  useEffect(() => {
+    if (assistantHelpOpen && (assistantOpenTab.current !== activeTab || assistantOpenProject.current !== projectId)) {
+      setAssistantHelpOpen(false)
+    }
+  }, [assistantHelpOpen, activeTab, projectId])
   // 颉文姬 Q 版精灵开关（面板内可切换，localStorage 持久化）
   const [spriteEnabled, setSpriteEnabled] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   useEffect(() => {
@@ -850,9 +858,9 @@ export default function App() {
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，
           不再使用全局 fixed 浮层——避免压住侧栏底部的「界面缩放 / 主题」等控件。 */}
       {/* 颉文姬桌面精灵：全局右缘驻留（可在 AI 编辑面板底部开关关闭） */}
-      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => setAssistantHelpOpen(true)} />}
+      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => { assistantOpenTab.current = activeTab; assistantOpenProject.current = projectId; setAssistantHelpOpen(true) }} />}
       {assistantHelpOpen && <Modal open onClose={() => setAssistantHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
-        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} />
+        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} />
       </Modal>}
       {searchOpen && (
         <FullTextSearch

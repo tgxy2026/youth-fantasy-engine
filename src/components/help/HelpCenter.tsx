@@ -35,6 +35,8 @@ interface Props {
    * 给个能点亮却跳不动的按钮等于骗人，所以此时按钮禁用并写明原因。
    */
   projectOpen?: boolean
+  /** 只有使用指南页面接收跨页文章请求；独立弹窗不抢占导航意图。 */
+  receiveArticleRequests?: boolean
 }
 
 const tabName = (tabId: string): string =>
@@ -45,7 +47,7 @@ type CatalogView = 'start' | 'by-tab' | 'faq'
 /** 3.3.1 · P4：同一个入口里区分「查手册」与「问 AI」（规划 §5.1 用词） */
 type AssistMode = 'manual' | 'ask'
 
-export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true }: Props) {
+export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true, receiveArticleRequests = true }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<AssistMode>('manual')
   const [view, setView] = useState<CatalogView>('start')
@@ -89,13 +91,14 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
   const openArticleRef = useRef(openArticle)
   openArticleRef.current = openArticle
   useEffect(() => {
+    if (!receiveArticleRequests) return
     const consume = () => {
       const request = takeHelpRequest('article')
       if (request && request.kind === 'article') openArticleRef.current(request.articleId)
     }
     consume()
     return subscribeHelpRequests(consume)
-  }, [])
+  }, [receiveArticleRequests])
   const backToSearch = () => {
     setOpenId(null)
     setAnchor(null)
