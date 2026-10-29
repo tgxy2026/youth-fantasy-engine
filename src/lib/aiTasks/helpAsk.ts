@@ -12,7 +12,7 @@
 //   ④ **不落盘**：问题、回答、召回片段只在本函数内存里存在。运行统计沿用公共账本，
 //      这里不额外写任何项目数据（规划 §7「不新建设定 / 快照 / 报告来存放答疑」）。
 import { chat, isCancelled, resolveProviderFor, type ChatMessage } from '@/lib/ai'
-import { searchHelp, type HelpHit } from '@/lib/help'
+import { isHelpContentConsistent, searchHelp, type HelpHit } from '@/lib/help'
 import {
   buildHelpAnswerPrompt, prepareHelpPromptFragments, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
   type HelpAnswerFailure, type HelpPromptFragment, type HelpSourceRef,
@@ -77,6 +77,7 @@ export async function askHelpOnce(
   signal?: AbortSignal,
   dependencies: AskDependencies = defaultDependencies,
 ): Promise<AskResult> {
+  if (!isHelpContentConsistent()) return { kind: 'fallback', message: '手册内容与索引不一致，暂不能生成回答；请先保存工作，再重新加载应用。', hits: [] }
   const hits = recallForAsk(question, currentTabId)
   if (signal?.aborted) return { kind: 'cancelled', hits }
   // ① 没召回就不问模型：没有片段时模型只能凭常识编，而「凭常识编出来的软件用法」正是本功能要避免的
@@ -91,7 +92,7 @@ export async function askHelpOnce(
     // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
     if (signal?.aborted) return { kind: 'cancelled', hits }
     if (!provider) return { kind: 'no-model', hits }
-    if (!fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
+    if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
     const prompt = buildHelpAnswerPrompt(question, hits, fragments)
     const messages: ChatMessage[] = [
       { role: 'system', content: prompt.system },
@@ -120,7 +121,7 @@ export async function askHelpOnce(
   if (signal?.aborted) return { kind: 'cancelled', hits }
 
   // 请求期间手册若发生变化，旧答案不能静默指向新的正文。
-  if (!fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
+  if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
 
   // ③ 校验：来源必须在本次召回内、摘录必须逐字出现在原文
   const checked = readHelpAnswer(raw, hits, fragments)

@@ -27,6 +27,7 @@ export {
   getHelpArticle,
   helpArticlesForTab,
   helpArticlesInGroup,
+  isHelpContentConsistent,
   tabsWithoutHelp,
 } from '@/lib/help/registry'
 export type { HelpContentIssue } from '@/lib/help/registry'

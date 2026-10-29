@@ -72,6 +72,10 @@ try {
   check('在隔离页面内模拟来源内容更新', changed)
   await source.click()
   check('旧来源不跳到新原文并提示重新提问', await dialog.getByText(/依据的手册内容已变化/).isVisible() && !(await dialog.locator('[data-help-article]').isVisible()))
+  await dialog.getByLabel('向答疑助手提问').fill('字太小怎么放大')
+  await dialog.getByRole('button', { name: '提问', exact: true }).click()
+  await dialog.getByText(/手册内容与索引不一致/).waitFor({ timeout: 10000 })
+  check('目录正文与索引变化后不再次请求模拟模型', modelCalls === 1)
   check('页面无脚本错误', errors.length === 0, errors.join(' | '))
 } finally {
   const failed = records.filter(record => !record.pass).length

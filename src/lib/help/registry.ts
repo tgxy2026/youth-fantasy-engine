@@ -110,7 +110,7 @@ export function buildHelpIndex(articles: HelpArticle[]): HelpIndexEntry[] {
         titleText,
         keywordText,
         group: article.group,
-        tabIds: article.tabIds,
+        tabIds: [...article.tabIds],
       })
     }
   }
@@ -119,6 +119,19 @@ export function buildHelpIndex(articles: HelpArticle[]): HelpIndexEntry[] {
 
 /** 索引：随注册表构建一次，检索直接用它（不重复计算） */
 export const HELP_INDEX: HelpIndexEntry[] = buildHelpIndex(HELP_ARTICLES)
+
+// 一次加载里的目录、正文与索引必须保持一致。资源首次加载就混入旧构建的情况仍需独立构建版本标记。
+const initialArticles = JSON.stringify(HELP_ARTICLES)
+const initialGroups = JSON.stringify(HELP_GROUPS)
+const initialIndex = JSON.stringify(HELP_INDEX)
+
+export function isHelpContentConsistent(): boolean {
+  return JSON.stringify(HELP_ARTICLES) === initialArticles
+    && JSON.stringify(HELP_GROUPS) === initialGroups
+    && JSON.stringify(HELP_INDEX) === initialIndex
+    && JSON.stringify(buildHelpIndex(HELP_ARTICLES)) === initialIndex
+    && HELP_ARTICLES.every(article => HELP_GROUPS.includes(article.group))
+}
 
 export interface HelpContentIssue {
   /** 相关文章（全局问题为空） */

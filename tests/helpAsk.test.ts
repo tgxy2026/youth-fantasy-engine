@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ASK_RECALL_LIMIT, askHelpOnce, recallForAsk } from '../src/lib/aiTasks/helpAsk'
 import type { chat, resolveProviderFor } from '../src/lib/ai'
-import { getHelpArticle } from '../src/lib/help'
+import { getHelpArticle, HELP_INDEX, isHelpContentConsistent } from '../src/lib/help'
 import { helpSourceSnapshot } from '../src/lib/aiTasks/helpAnswer'
 
 let pass = 0, fail = 0
@@ -71,6 +71,23 @@ const hub = read('src/components/app/ProjectHub.tsx')
   ok('🔴 没召回就提前返回，不请求模型', /if \(hits\.length === 0\) return \{ kind: 'no-recall'/.test(src))
   ok('没模型时不假装答过（kind=no-model 只带回片段）', /kind:\s*'no-model'/.test(src))
   ok('校验不过退回检索结果', /kind:\s*'fallback'/.test(src) && /readHelpAnswer\(raw, hits, fragments\)/.test(src))
+}
+
+// ---------- 目录、正文与索引在当前会话内不一致时不得发请求 ----------
+{
+  const entry = HELP_INDEX[0]
+  const original = entry.text
+  let providerReads = 0
+  try {
+    entry.text = `${original} 索引异常`
+    ok('索引变化会触发一致性检查', !isHelpContentConsistent())
+    const result = await askHelpOnce('字太小怎么放大', null, undefined, {
+      resolveProviderFor: async () => { providerReads++; return null },
+      chat: (async () => '{}') as typeof chat,
+    })
+    ok('索引不一致时不读取配置或发模型请求', result.kind === 'fallback' && providerReads === 0)
+  } finally { entry.text = original }
+  ok('恢复索引后当前会话可继续检查', isHelpContentConsistent())
 }
 
 // ---------- 配置读取与停止的真实异步时序（不访问模型或真实配置） ----------
