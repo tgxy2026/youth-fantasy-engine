@@ -8,7 +8,8 @@
 //   · 问题与回答**不落盘**（不碰 db / localStorage）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { ASK_RECALL_LIMIT, recallForAsk } from '../src/lib/aiTasks/helpAsk'
+import { ASK_RECALL_LIMIT, askHelpOnce, recallForAsk } from '../src/lib/aiTasks/helpAsk'
+import type { chat, resolveProviderFor } from '../src/lib/ai'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -68,6 +69,50 @@ const hub = read('src/components/app/ProjectHub.tsx')
   ok('🔴 没召回就提前返回，不请求模型', /if \(hits\.length === 0\) return \{ kind: 'no-recall'/.test(src))
   ok('没模型时不假装答过（kind=no-model 只带回片段）', /kind:\s*'no-model'/.test(src))
   ok('校验不过退回检索结果', /kind:\s*'fallback'/.test(src) && /readHelpAnswer\(raw, hits\)/.test(src))
+}
+
+// ---------- 配置读取与停止的真实异步时序（不访问模型或真实配置） ----------
+{
+  let calls = 0
+  const fakeChat = (async () => { calls++; return '{}' }) as typeof chat
+  const failed = await askHelpOnce('字太小怎么放大', null, undefined, {
+    resolveProviderFor: async () => { throw new Error('配置读取失败') }, chat: fakeChat,
+  })
+  ok('配置读取失败时保留手册结果并说明失败',
+    failed.kind === 'fallback' && failed.hits.length > 0 && /配置读取失败/.test(failed.message))
+  ok('配置读取失败不会请求模型', calls === 0)
+
+  let release!: (provider: Awaited<ReturnType<typeof resolveProviderFor>>) => void
+  const providerPending = new Promise<Awaited<ReturnType<typeof resolveProviderFor>>>(resolve => { release = resolve })
+  const controller = new AbortController()
+  const pending = askHelpOnce('字太小怎么放大', null, controller.signal, {
+    resolveProviderFor: () => providerPending, chat: fakeChat,
+  })
+  controller.abort()
+  release({} as NonNullable<Awaited<ReturnType<typeof resolveProviderFor>>>)
+  const stopped = await pending
+  ok('读取配置期间停止会返回 cancelled', stopped.kind === 'cancelled')
+  ok('停止之后不会发出迟到的模型请求', calls === 0)
+
+  const alreadyStopped = new AbortController()
+  alreadyStopped.abort()
+  let reads = 0
+  const cancelled = await askHelpOnce('字太小怎么放大', null, alreadyStopped.signal, {
+    resolveProviderFor: async () => { reads++; return null }, chat: fakeChat,
+  })
+  ok('提问前已停止时不读取模型配置', cancelled.kind === 'cancelled' && reads === 0)
+
+  let finishChat!: (value: string) => void
+  const chatPending = new Promise<string>(resolve => { finishChat = resolve })
+  const lateController = new AbortController()
+  const lateResult = askHelpOnce('字太小怎么放大', null, lateController.signal, {
+    resolveProviderFor: async () => ({} as NonNullable<Awaited<ReturnType<typeof resolveProviderFor>>>),
+    chat: (() => chatPending) as typeof chat,
+  })
+  await Promise.resolve()
+  lateController.abort()
+  finishChat('{}')
+  ok('模型忽略停止信号而迟到时仍返回 cancelled', (await lateResult).kind === 'cancelled')
 }
 
 // ---------- 界面：入口用词、会话只在内存 ----------

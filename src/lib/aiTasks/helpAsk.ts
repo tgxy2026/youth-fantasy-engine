@@ -37,6 +37,13 @@ export const ASK_RECALL_LIMIT = 6
 /** 回答的输出预算：一段操作说明通常远小于此，留余量给「步骤 + 注意事项」 */
 export const ASK_OUTPUT_TOKENS = 700
 
+/** 可替换的调用边界，用于验证配置读取失败和取消时序；正式使用始终走公共模型层。 */
+interface AskDependencies {
+  resolveProviderFor: typeof resolveProviderFor
+  chat: typeof chat
+}
+const defaultDependencies: AskDependencies = { resolveProviderFor, chat }
+
 /** 召回：答疑与手册页复用同一套本地检索，口径一致才不会「搜得到、问不出」 */
 export function recallForAsk(question: string, currentTabId?: string | null): HelpHit[] {
   if (!question.trim()) return []
@@ -54,24 +61,26 @@ export async function askHelpOnce(
   question: string,
   currentTabId?: string | null,
   signal?: AbortSignal,
+  dependencies: AskDependencies = defaultDependencies,
 ): Promise<AskResult> {
   const hits = recallForAsk(question, currentTabId)
+  if (signal?.aborted) return { kind: 'cancelled', hits }
   // ① 没召回就不问模型：没有片段时模型只能凭常识编，而「凭常识编出来的软件用法」正是本功能要避免的
   if (hits.length === 0) return { kind: 'no-recall', hits }
 
   // ② 模型归属走「整理」用途：答疑是低频、短输出、要快的活，不该占创作模型
-  const provider = await resolveProviderFor('utility')
-  if (!provider) return { kind: 'no-model', hits }
-
-  const prompt = buildHelpAnswerPrompt(question, hits)
-  const messages: ChatMessage[] = [
-    { role: 'system', content: prompt.system },
-    { role: 'user', content: prompt.user },
-  ]
-
   let raw = ''
   try {
-    raw = await chat(provider, messages, {
+    const provider = await dependencies.resolveProviderFor('utility')
+    // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
+    if (signal?.aborted) return { kind: 'cancelled', hits }
+    if (!provider) return { kind: 'no-model', hits }
+    const prompt = buildHelpAnswerPrompt(question, hits)
+    const messages: ChatMessage[] = [
+      { role: 'system', content: prompt.system },
+      { role: 'user', content: prompt.user },
+    ]
+    raw = await dependencies.chat(provider, messages, {
       // 结构化小任务：显式声明「要 JSON 对象」+「关推理」（3.2.0 · WQ5 的唯一口径）。
       // 🔴 不要退回旧的兼容写法 —— 新链路必须走协议声明（闸 outputProtocol ⑨ / thinkPolicy 棘轮）。
       output: 'json-object',
@@ -90,6 +99,8 @@ export async function askHelpOnce(
     const detail = error instanceof Error ? error.message : String(error)
     return { kind: 'fallback', message: `答疑模型这次没能回答（${detail.slice(0, 80)}），已退回手册检索结果。`, hits }
   }
+
+  if (signal?.aborted) return { kind: 'cancelled', hits }
 
   // ③ 校验：来源必须在本次召回内、摘录必须逐字出现在原文
   const checked = readHelpAnswer(raw, hits)
