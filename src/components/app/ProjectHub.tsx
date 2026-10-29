@@ -622,60 +622,60 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>
-                        <div data-project-actions className="mt-auto pt-3 grid w-full max-w-[188px] grid-cols-6 items-center gap-1 [&>span]:min-w-0 [&>span>button]:!w-full [&>span>button]:!min-w-0">
+                        <div data-project-actions className="mt-auto pt-3 grid w-full max-w-[236px] grid-cols-6 items-center gap-1.5 [&>span]:min-w-0 [&>span>button]:!w-full [&>span>button]:!min-w-0">
                           <Tooltip label="打开项目">
-                            <Button variant="primary" iconOnly size="xs"
+                            <Button variant="primary" iconOnly size="sm"
                               onClick={() => onOpen(p.id)}
                               title="打开项目"
                               aria-label="打开项目"
                             >
-                              <FolderOpen size={15} />
+                              <FolderOpen size={17} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">
-                            <Button variant="icon-ghost" iconOnly size="xs"
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => exportProject(p)}
                               title="导出 JSON 备份"
                               aria-label="导出 JSON 备份"
                             >
-                              <Upload size={14} />
+                              <Upload size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出设定集">
-                            <Button variant="icon-ghost" iconOnly size="xs"
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('@/lib/storage/exporter'); void exportSettingCompendium(p.name) }}
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
                             >
-                              <BookText size={14} />
+                              <BookText size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="备份与恢复">
-                            <Button variant="icon-ghost" iconOnly size="xs"
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => { setBackupName(p.name); setBackupPid(p.id) }}
                               title="备份与恢复：查看 / 一键恢复历史版本"
                               aria-label="备份与恢复"
                             >
-                              <History size={14} />
+                              <History size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="编辑项目">
-                            <Button variant="icon-ghost" iconOnly size="xs"
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => startEdit(p)}
                               title="编辑项目"
                               aria-label="编辑项目"
                             >
-                              <Pencil size={14} />
+                              <Pencil size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="删除项目" side="bottom">
-                            <Button variant="icon-danger" iconOnly size="xs"
+                            <Button variant="icon-danger" iconOnly size="sm"
                               onClick={() => removeProject(p)}
                               className="hover:bg-danger/10"
                               title="删除项目"
                               aria-label="删除项目"
                             >
-                              <Trash2 size={15} />
+                              <Trash2 size={17} />
                             </Button>
                           </Tooltip>
                         </div>

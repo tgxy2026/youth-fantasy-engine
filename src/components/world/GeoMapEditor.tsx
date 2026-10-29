@@ -261,7 +261,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                   //    精（cellKm=1，1km/格、画小范围细看）基础 20；粗（10km/格、看大范围铺量）
                   //    基础 13；层级递减两档一致（-2/级），下限随基数（13 / 10）。
                   const fsBase = cellKm >= 10 ? 13 : 20
-                  const fs = Math.max(cellKm >= 10 ? 10 : 13, fsBase - depth * 2)
+                  const fs = Math.max(cellKm >= 10 ? 12 : 15, fsBase - depth * 1.5)
                   // 根范围标签放包围盒右上角外（右对齐），子/孙放各自包围盒左上角外（左对齐）——避免父子名字重叠
                   const isTop = depth === 0
                   const tx = isTop ? vs.bbox.x + vs.bbox.w + 4 : vs.bbox.x + 2

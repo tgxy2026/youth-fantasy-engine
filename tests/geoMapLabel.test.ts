@@ -43,8 +43,8 @@ const editor = read('src/components/world/GeoMapEditor.tsx')
   // 精（cellKm=1）基础 20、粗（10km/格）基础 13；层级递减 -2/级；下限 13 / 10
   ok('② 字号基数按 cellKm 分档（精 20 / 粗 13）',
     editor.includes('const fsBase = cellKm >= 10 ? 13 : 20'))
-  ok('② 下限随档位（精 13 / 粗 10），深度递减保持 -2/级',
-    editor.includes('const fs = Math.max(cellKm >= 10 ? 10 : 13, fsBase - depth * 2)'))
+  ok('② 下限随档位（精 15 / 粗 12），深度递减 -1.5/级',
+    editor.includes('const fs = Math.max(cellKm >= 10 ? 12 : 15, fsBase - depth * 1.5)'))
   // 负向：原来与档位无关的固定算式不许回来
   ok('② 负向：不再有与精度无关的固定字号 Math.max(11, 16 - depth * 2)',
     !editor.includes('Math.max(11, 16 - depth * 2)'))

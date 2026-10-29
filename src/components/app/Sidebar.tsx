@@ -112,7 +112,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
     return () => window.removeEventListener('yfe:zoom-changed', onZoom)
   }, [])
   // 侧栏宽度可拖拽调整
-  const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
+  const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 224, max: 560, side: 'right' })
 
   // 卷台账子项：从运行期缓存读取（编辑器增删改卷后会刷新缓存并广播事件）
   const [volumeTabs, setVolumeTabs] = useState(getVolumeTabs())
@@ -167,7 +167,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   return (
     <aside
       className={`relative h-full min-h-0 flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0 ${overlay ? 'overflow-y-auto' : ''}`}
-      style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 200 }}
+      style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 224 }}
     >
       {/* 拖拽调整侧栏宽度 */}
       {!overlay && <ResizeHandle pane={sidebar} label="侧栏宽度" layer={Z.pageBase} />}
@@ -393,12 +393,12 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
               {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>
           </span>
+          </div>
+          <div className="flex w-fit items-center gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
           <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
-          </div>
-          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
             <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面">
               <ZoomOut size={12} />
             </Button>
@@ -417,7 +417,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                 max={160}
                 ariaLabel="界面缩放百分比"
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
-                className="h-6 w-12 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
+                className="h-6 w-11 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
               />
               <span className="text-ink-400 text-xs">%</span>
             </span>

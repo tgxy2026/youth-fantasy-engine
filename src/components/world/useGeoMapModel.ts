@@ -53,6 +53,8 @@ export function useGeoMapModel() {
   )
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+  const autoFitDone = useRef(false)
+  const viewTouched = useRef(false)
   const [hover, setHover] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   /** 拖拽中的整组格偏移（格数）：Map<空间id, {dx,dy}> */
@@ -66,6 +68,7 @@ export function useGeoMapModel() {
     setCellKm(CELL_KM_STEPS.includes(km) ? km : 1)
   }, [curMap])
   const stepCellKm = (dir: 1 | -1) => {
+    viewTouched.current = true
     const i = CELL_KM_STEPS.indexOf(cellKm)
     const ni = Math.min(CELL_KM_STEPS.length - 1, Math.max(0, i + dir))
     if (ni === i) return
@@ -339,9 +342,20 @@ export function useGeoMapModel() {
   }, [viewShapes, vp, mapImage, mapImageSize])
 
   useEffect(() => {
+    if (autoFitDone.current || viewTouched.current || loading || !curMap || !wrapRef.current) return
+    if (wrapRef.current.clientWidth !== vp.w || wrapRef.current.clientHeight !== vp.h || !vp.w || !vp.h) return
+    const storedKm = Number(curMap.data['每格公里'])
+    if (cellKm !== (CELL_KM_STEPS.includes(storedKm) ? storedKm : 1)) return
+    if (mapImage && !mapImageSize) return
+    autoFitDone.current = true
+    fitView()
+  }, [loading, curMap, vp, cellKm, mapImage, mapImageSize, fitView])
+
+  useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
     const onWheel = (ev: WheelEvent) => {
+      viewTouched.current = true
       ev.preventDefault()
       const p = toViewBox(ev.clientX, ev.clientY)
       setView(v => {
@@ -444,6 +458,7 @@ export function useGeoMapModel() {
     if (skipped > 0) showToast(`已修改 ${added + removed} 格；${skipped} 格越界、重叠或被子孙占用，已跳过`, 'info')
   }
   const onPointerDown = (e: RPointerEvent<SVGElement>, kind: 'node' | 'pan', _mk?: Marker) => {
+    viewTouched.current = true
     const rightBtn = e.button === 2
     if (e.button !== 0 && !rightBtn && e.pointerType === 'mouse') return
     e.preventDefault()

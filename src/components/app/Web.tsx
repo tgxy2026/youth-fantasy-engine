@@ -150,8 +150,8 @@ export function WebDataBar() {
         title={`当前登录：${name || '云端账号'}\n已用 ${usage ? fmtBytes(usage.used) : '—'}，配额 ${usage?.quota ? fmtBytes(usage.quota) : '—'}`}
       >
         <Cloud size={11} className="shrink-0 text-amber/70" />
-        <span className="truncate text-ink-400">{name || '云端账号'}</span>
-        <span className={`ml-auto shrink-0 tabular-nums ${quotaWarn ? 'text-amber' : 'text-ink-500'}`}>
+        <span className="min-w-0 truncate text-ink-400">{name || '云端账号'}</span>
+        <span className={`ml-auto min-w-0 truncate tabular-nums ${quotaWarn ? 'text-amber' : 'text-ink-500'}`}>
           {quotaText}
         </span>
         {/* 退出登录：并入这一行（原先在屏幕底部正中常驻，2026-10-19 按主人要求挪过来） */}

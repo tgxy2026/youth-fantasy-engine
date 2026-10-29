@@ -298,12 +298,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         />
   )
   const companionTools = (
-    <details data-editor-companion className="space-y-1">
-      <summary className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-12 text-ink-200 hover:bg-ink-700">
+    <details data-editor-companion className="group space-y-1">
+      <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded px-3 text-12 text-ink-200 hover:bg-ink-700 [&::-webkit-details-marker]:hidden">
         {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
         AI 伴写 <span className="ml-auto text-10 text-ink-500">{!aiReady ? '未配置模型' : companion ? '已开启' : '已关闭'}</span>
+        <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
       </summary>
-      <div className="whitespace-pre-wrap px-2 pb-2 text-11 leading-relaxed text-ink-200">
+      <div className="whitespace-pre-wrap px-3 pb-2 text-11 leading-relaxed text-ink-200">
         <div className="mt-1.5 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-ink-400 shrink-0">建议长度</span>
