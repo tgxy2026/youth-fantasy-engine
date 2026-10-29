@@ -124,5 +124,26 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('使用指南页接入手册（搜索与分类入口）', /HelpCenter/.test(guide))
 }
 
+// ---------- ⑦ 答疑助手的形态：宽窗侧板 / 窄窗对话框 ----------
+{
+  const dockRaw = read('src/components/help/AssistantDock.tsx')
+  // 断言只看代码，不看注释（注释里写着「不设 aria-hidden」会自己把自己判失败）
+  const dock = dockRaw.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
+  const app = read('src/App.tsx')
+  ok('侧板有稳定锚点（探针按它取面板）', /data-assistant-dock/.test(dock))
+  ok('🔴 侧板是非模态：不设 aria-hidden、不加遮罩', !/aria-hidden/.test(dock) && !/data-guide-mask|backdrop/.test(dock))
+  ok('🔴 Esc 只在焦点落在面板内时才收起（不抢别处的 Esc）',
+    /panel\.contains\(document\.activeElement\)/.test(dock) || /contains\(document\.activeElement\)/.test(dock))
+  ok('面板宽度跟着界面缩放折算（与 fixed 定位同一坐标系）', /var\(--ui-zoom/.test(dock))
+  ok('🔴 形态按**布局宽度**决定（窗口宽 ÷ 界面缩放）',
+    /window\.innerWidth \/ currentUiZoom\(\) >= 1180/.test(app))
+  // 形态在打开那一刻决定：不能再有「跟随宽度切换形态」的 effect（换壳会卸载问了一半的对话）
+  ok('🔴 形态不在打开后跟随宽度变化（避免换壳丢对话）',
+    !/setAssistantDock\([^)]*\).*\n[\s\S]{0,200}addEventListener\('resize'/.test(app))
+  ok('两种形态共用同一份 HelpCenter 属性（内容一致）',
+    (app.match(/receiveArticleRequests=\{false\}/g) ?? []).length >= 2)
+  ok('侧板与对话框都用「使用答疑助手」这个叫法', /使用答疑助手/.test(app) && /使用答疑助手/.test(dock))
+}
+
 console.log(`\n—— helpCenter 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

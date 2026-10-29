@@ -55,13 +55,14 @@ import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
 import FullTextSearch from '@/components/editor/FullTextSearch'
 import JieWenJiSprite from '@/components/jiewenji/JieWenJiSprite'
 import HelpCenter from '@/components/help/HelpCenter'
+import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
 import GeoMapEditor from '@/components/world/GeoMapEditor'
 import PlotCanvas from '@/components/outline/PlotCanvas'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
-import { applyZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
+import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
 import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { applyStoredNetProxy } from '@/lib/settings/netPrefs'
 import { loadPromptOverrides } from '@/lib/ai/promptSettings'
@@ -145,6 +146,13 @@ export default function App() {
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
   const [assistantHelpOpen, setAssistantHelpOpen] = useState(false)
+  /**
+   * 3.3.1 · P4：答疑助手的形态 —— 宽窗口侧边面板，小窗口对话框。
+   *
+   * 🔴 在**打开那一刻**决定，之后不随窗口宽度换壳：换壳等于换父组件，
+   *    「问了一半」的对话会被卸载清空（overnight 修过一次同类问题）。
+   */
+  const [assistantDock, setAssistantDock] = useState(false)
   const assistantOpenTab = useRef(activeTab)
   const assistantOpenProject = useRef(projectId)
   // 跳转真正完成后让出目标页面；保存屏障拒绝时保留当前帮助现场。
@@ -858,10 +866,22 @@ export default function App() {
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，
           不再使用全局 fixed 浮层——避免压住侧栏底部的「界面缩放 / 主题」等控件。 */}
       {/* 颉文姬桌面精灵：全局右缘驻留（可在 AI 编辑面板底部开关关闭） */}
-      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => { assistantOpenTab.current = activeTab; assistantOpenProject.current = projectId; setAssistantHelpOpen(true) }} />}
-      {assistantHelpOpen && <Modal open onClose={() => setAssistantHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
-        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} onSamePageGuideStarted={() => setAssistantHelpOpen(false)} />
-      </Modal>}
+      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => {
+        assistantOpenTab.current = activeTab
+        assistantOpenProject.current = projectId
+        // 布局宽度 = 窗口宽 / 界面缩放；1180 以下放侧板会把正文挤没，退回对话框
+        setAssistantDock(window.innerWidth / currentUiZoom() >= 1180)
+        setAssistantHelpOpen(true)
+      }} />}
+      {assistantHelpOpen && (assistantDock ? (
+        <AssistantDock onClose={() => setAssistantHelpOpen(false)}>
+          <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} onSamePageGuideStarted={() => setAssistantHelpOpen(false)} />
+        </AssistantDock>
+      ) : (
+        <Modal open onClose={() => setAssistantHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
+          <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} receiveArticleRequests={false} onSamePageGuideStarted={() => setAssistantHelpOpen(false)} />
+        </Modal>
+      ))}
       {searchOpen && (
         <FullTextSearch
           onClose={() => setSearchOpen(false)}
