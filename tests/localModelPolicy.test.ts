@@ -17,7 +17,8 @@ for (const address of ['https://api.example.com/v1', 'https://172.32.1.1', 'http
 }
 check('本地标记不会被公网地址绕过', isLocalModelProvider({ type: 'openai', local: true, baseUrl: 'https://example.com/v1' }))
 check('本地地址不会被联网标记绕过', isLocalModelProvider({ type: 'openai', local: false, baseUrl: 'http://127.0.0.1/v1' }))
-check('Ollama 类型仍视为本地配置', isLocalModelProvider({ type: 'ollama', baseUrl: 'https://example.com' }))
+check('Ollama 空地址使用本机默认地址', isLocalModelProvider({ type: 'ollama', baseUrl: '' }))
+check('公网 Ollama 不因协议类型误判为本机', !isLocalModelProvider({ type: 'ollama', baseUrl: 'https://api.example.com' }))
 check('普通公网兼容服务不误判本地', !isLocalModelProvider({ type: 'openai', local: false, baseUrl: 'https://api.example.com/v1' }))
 console.log(`localModelPolicy：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

@@ -35,7 +35,9 @@ export function isLocalModelAddress(raw: string): boolean {
     || host.endsWith('.internal') || !host.includes('.')
 }
 
-/** 标记为本地的配置即使改成公网主机也保留本地属性；已有配置不在此处修改。 */
+/** 显式本地标记和实际地址独立判断；协议类型本身不等于网络位置。 */
 export function isLocalModelProvider(provider: Pick<AIProvider, 'type' | 'local' | 'baseUrl'>): boolean {
-  return provider.type === 'ollama' || !!provider.local || isLocalModelAddress(provider.baseUrl)
+  // Ollama 留空会使用默认 localhost；显式公网地址不因协议品牌而误判为本机。
+  if (provider.type === 'ollama' && !provider.baseUrl.trim()) return true
+  return !!provider.local || isLocalModelAddress(provider.baseUrl)
 }
