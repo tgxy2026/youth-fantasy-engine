@@ -8,7 +8,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseProofreadReply, isReplaceable, PROOFREAD_PROMPTS } from '../src/lib/aiTasks/proofread'
-import { applyProofReplacement, reanchorIssues, countOccurrences, APPLY_FAILURE_TEXT } from '../src/lib/editor/proofApply'
+import { applyProofReplacement, reanchorIssues, countOccurrences, resolveProofLocation, APPLY_FAILURE_TEXT } from '../src/lib/editor/proofApply'
 import type { ProofreadIssue } from '../src/lib/aiTasks/proofread'
 
 let pass = 0, fail = 0
@@ -114,6 +114,14 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
   ok('每种失败原因都有面向作者的说法', Object.values(APPLY_FAILURE_TEXT).every(t => t.length > 8))
   ok('countOccurrences 数得准', countOccurrences('aaaa', 'aa') === 2 && countOccurrences('abc', 'z') === 0)
+  const locateSuggestion = resolveProofLocation('😀她笑了。', suggestion)
+  ok('建议可只读定位，UTF-16 下标与文本范围一致', locateSuggestion.ok && locateSuggestion.start === 2 && locateSuggestion.end === 5)
+  const overlapLocation = resolveProofLocation('aaa', { kind: 'suggestion', type: 'x', quote: 'aa', suggestion: 'y', why: '' })
+  ok('重叠的重复引文也属于多义位置', !overlapLocation.ok && overlapLocation.reason === 'ambiguous')
+  const overlapReplacement = applyProofReplacement('aaa', { kind: 'replacement', type: 'x', quote: 'aa', fix: 'b', why: '' })
+  ok('重叠重复引文不能误替换第一处', !overlapReplacement.ok && overlapReplacement.reason === 'ambiguous')
+  const staleLocation = resolveProofLocation(wholeBody, { ...suggestion, stale: true })
+  ok('失效结果不能定位', !staleLocation.ok && staleLocation.reason === 'stale')
 }
 
 // ---------- ⑤ 重锚定：平移、保位、相交失效 ----------

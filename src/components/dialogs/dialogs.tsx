@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
 import { Modal, Z } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
+import { getActiveOverlayScope } from '@/lib/app/overlayScope'
 
 // ============ 确认弹窗（Promise 化，await 即可） ============
 
@@ -122,25 +123,33 @@ export function showToast(message: string, type: ToastType = 'success', duration
  */
 export async function copyText(text: string, okMsg: string, options: { silent?: boolean } = {}): Promise<boolean> {
   const notify = (message: string, type: ToastType = 'success') => { if (!options.silent) showToast(message, type) }
-  try {
-    if (navigator.clipboard?.writeText) {
+  if (navigator.clipboard?.writeText) {
+    try {
       await navigator.clipboard.writeText(text)
       notify(okMsg)
       return true
+    } catch {
+      // 浏览器暴露了 API 仍可能拒绝写入；尝试一次旧接口，失败仍由调用方处理。
     }
-    const ta = document.createElement('textarea')
+  }
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const ta = document.createElement('textarea')
+  try {
     ta.value = text
     ta.style.position = 'fixed'
     ta.style.opacity = '0'
-    document.body.appendChild(ta)
+    // 处于模态层时，body 的其他子节点可能被 inert 隔离；临时输入框必须属于当前弹窗。
+    ;(getActiveOverlayScope()?.panel.current ?? document.body).appendChild(ta)
     ta.select()
     const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
     notify(ok ? okMsg : '复制失败，请手动选中复制', ok ? 'success' : 'error')
     return ok
   } catch {
     notify('复制失败，请手动选中复制', 'error')
     return false
+  } finally {
+    ta.remove()
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
   }
 }
 

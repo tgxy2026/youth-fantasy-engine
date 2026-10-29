@@ -46,6 +46,23 @@ export function countOccurrences(text: string, quote: string): number {
   }
 }
 
+/** 只读定位供建议和替换共用；未确认的位置绝不猜第一处。下标按 JS 字符串的 UTF-16 单位。 */
+export function resolveProofLocation(text: string, issue: ProofreadIssue):
+  | { ok: true; start: number; end: number }
+  | { ok: false; reason: 'stale' | 'not-found' | 'ambiguous' } {
+  if (issue.stale) return { ok: false, reason: 'stale' }
+  const quote = issue.quote
+  if (!quote) return { ok: false, reason: 'not-found' }
+  if (issue.at != null && Number.isInteger(issue.at) && issue.at >= 0 && text.slice(issue.at, issue.at + quote.length) === quote) {
+    return { ok: true, start: issue.at, end: issue.at + quote.length }
+  }
+  const first = text.indexOf(quote)
+  if (first < 0) return { ok: false, reason: 'not-found' }
+  // 从下一个字符开始查重，重叠的引文也属于多义位置。
+  if (text.indexOf(quote, first + 1) >= 0) return { ok: false, reason: 'ambiguous' }
+  return { ok: true, start: first, end: first + quote.length }
+}
+
 /**
  * 应用一条「替换类」校对结果。
  *
@@ -61,16 +78,9 @@ export function applyProofReplacement(text: string, issue: ProofreadIssue): Proo
   if (!fix.trim()) return { ok: false, reason: 'empty-replacement' }
   if (fix === issue.quote) return { ok: false, reason: 'same-as-quote' }
 
-  let index = -1
-  if (issue.at != null && issue.at >= 0 && text.slice(issue.at, issue.at + issue.quote.length) === issue.quote) {
-    index = issue.at
-  } else {
-    const hits = countOccurrences(text, issue.quote)
-    if (hits === 0) return { ok: false, reason: 'not-found' }
-    if (hits > 1) return { ok: false, reason: 'ambiguous' }
-    index = text.indexOf(issue.quote)
-  }
-  if (index < 0) return { ok: false, reason: 'not-found' }
+  const location = resolveProofLocation(text, issue)
+  if (!location.ok) return location
+  const index = location.start
   const next = text.slice(0, index) + fix + text.slice(index + issue.quote.length)
   return { ok: true, next, index, delta: fix.length - issue.quote.length }
 }

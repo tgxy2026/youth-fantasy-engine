@@ -6,6 +6,7 @@
 import { Loader2, CheckCircle2, Sparkles, SpellCheck } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
+import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
 import { isReplaceable } from '@/lib/ai/aiTasks'
 import { PROOF_ORDER, PROOF_META, renderReport } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
@@ -77,11 +78,11 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                   )}
                   {st.issues.length > 0 && (
                     <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                      {st.issues.map((iss, i) => {
+                      {st.issues.map(iss => {
                         // 3.2.3 · R1：建议类只展示、不提供替换（`fix` 可能是一句建议，不是改写文本）
                         const repl = isReplaceable(iss)
                         return (
-                          <div key={i} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
+                          <div key={proofIssueKey(iss)} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
                               <span className="text-11 text-danger line-through">{iss.quote}</span>
@@ -98,6 +99,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                                 替换此条
                               </Button>
                             )}
+                            <CopyProofText text={repl ? iss.fix : iss.suggestion} replacement={repl} />
                           </div>
                         )
                       })}

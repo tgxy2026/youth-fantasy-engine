@@ -14,7 +14,8 @@ import { aiProofreadText, aiProofreadLogic, isReplaceable, type ProofreadIssue, 
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
-import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
+import { confirmDialog } from '@/components/dialogs/dialogs'
+import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
 import { Modal as BaseModal } from '@/components/dialogs/Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
@@ -263,7 +264,6 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
    *   ③ 正文或其它替换已经动过这段 ⇒ 标记失效、禁止再改（`stale`），不拿旧下标改新正文。
    * 替换后**两块**一起重锚定：之后整体平移，相交的标记失效。 */
   const [applyError, setApplyError] = useState('')
-  const [copiedKey, setCopiedKey] = useState('')
   const replaceIssue = (scope: ProofScope, iss: ProofreadIssue) => {
     const out = applyProofReplacement(text, iss)
     if (!out.ok) { setApplyError(APPLY_FAILURE_TEXT[out.reason]); return }
@@ -285,19 +285,6 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
       }
       return updated
     })
-  }
-
-  /**
-   * 建议类：只能复制，不能替换（复制用系统剪贴板，不写入正文）。
-   * 🔴 必须走 `copyText()`：非安全上下文（http 局域网 / 部分 file://）没有 navigator.clipboard，
-   *    统一入口里有 execCommand 兜底；直接调裸 API 会让作者点了没反应还以为功能坏了。
-   *    这里传 silent，因为按钮自己有「已复制」行内反馈，不需要再弹 toast。
-   */
-  const copySuggestion = async (key: string, text: string) => {
-    const ok = await copyText(text, '已复制这条建议', { silent: true })
-    if (!ok) { setApplyError('复制失败：浏览器拒绝了剪贴板写入，请手动选中复制。'); return }
-    setCopiedKey(key)
-    setTimeout(() => setCopiedKey(k => (k === key ? '' : k)), 1500)
   }
 
   const replaceTypoAll = () => {
@@ -460,13 +447,12 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
               )}
               {st.issues.length > 0 && (
                 <div className="space-y-2">
-                  {st.issues.map((iss, i) => {
+                  {st.issues.map(iss => {
                     // 🔴 3.2.3 · R1：建议类与替换类分开渲染 —— 建议类不出现「替换此条」，
                     //    避免作者一点就把一句修改建议写进正文。
                     const repl = isReplaceable(iss)
-                    const key = `${scope}-${i}`
                     return (
-                      <div key={key} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
+                      <div key={proofIssueKey(iss)} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
                         <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-ink-200">
@@ -480,7 +466,8 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                             <div className="text-amber/80 mt-0.5">正文已改动，这条的位置失效了 —— 请重新校对后再处理。</div>
                           )}
                         </div>
-                        {repl && !iss.stale ? (
+                        <div className="flex shrink-0 flex-wrap gap-1">
+                        {repl && !iss.stale && (
                           <Button variant="bare"
                             onClick={() => replaceIssue(scope, iss)}
                             className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
@@ -488,15 +475,9 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                           >
                             替换此条
                           </Button>
-                        ) : (
-                          <Button variant="bare"
-                            onClick={() => copySuggestion(key, repl ? iss.fix : iss.suggestion)}
-                            className="shrink-0 px-2 py-1 bg-ink-700 text-ink-300 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors"
-                            title="只复制，不改正文"
-                          >
-                            {copiedKey === key ? '已复制' : '复制建议'}
-                          </Button>
                         )}
+                          <CopyProofText text={repl ? iss.fix : iss.suggestion} replacement={repl} />
+                        </div>
                       </div>
                     )
                   })}
