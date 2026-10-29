@@ -84,6 +84,12 @@ try {
   const firstAnswer = await panel.innerText()
   check('未配置模型时如实说明「不是 AI 回答」，不假装答过', /这一条不是 AI 回答/.test(firstAnswer))
   check('给了本地手册片段作为落脚点', /字太小怎么放大|界面缩放|缩放/.test(firstAnswer))
+  await box.fill('保留这段尚未发送的提问')
+  await page.getByRole('button', { name: /查手册/ }).click()
+  await page.getByRole('button', { name: /问 AI/ }).click()
+  check('切换手册后保留问答历史和未发送的问题',
+    (await panel.innerText()).includes('字太小怎么放大') && (await box.inputValue()) === '保留这段尚未发送的提问')
+  await box.fill('')
   await page.screenshot({ path: path.join(run, 'no-model.png') })
 
   // ② 点片段 → 打开文章那一段；返回后对话还在（不会因为打开依据就丢历史）

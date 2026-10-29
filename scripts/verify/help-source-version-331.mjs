@@ -17,6 +17,8 @@ try {
   browser = await chromium.launch({ channel: 'msedge', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })
   let modelCalls = 0
+  let releaseResponse
+  const responseGate = new Promise(resolve => { releaseResponse = resolve })
   await context.route('**/*', async route => {
     const req = route.request(), url = req.url()
     if (url.startsWith(origin + '/')) return route.continue()
@@ -24,6 +26,7 @@ try {
       const headers = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' }
       if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
       modelCalls++
+      await responseGate
       const body = req.postDataJSON()
       const prompt = body.messages.find(message => message.role === 'user')?.content ?? ''
       const quote = /【片段 1】[^\n]*\n([^\n]+)/.exec(prompt)?.[1]?.slice(0, 24) ?? ''
@@ -55,9 +58,14 @@ try {
   await dialog.getByRole('button', { name: '问 AI' }).click()
   await dialog.getByLabel('向答疑助手提问').fill('字太小怎么放大')
   await dialog.getByRole('button', { name: '提问', exact: true }).click()
+  await dialog.getByText('正在按手册回答……').waitFor({ timeout: 30000 })
+  await dialog.getByRole('button', { name: '查手册' }).click()
+  await page.waitForTimeout(300)
+  releaseResponse()
+  await dialog.getByRole('button', { name: '问 AI' }).click()
   const source = dialog.locator('[data-ask-panel] button').filter({ hasText: '《' }).first()
   await source.waitFor({ timeout: 30000 })
-  check('模拟模型产生有依据的回答', modelCalls === 1)
+  check('切换手册未中断模拟模型请求，返回后保留有依据的回答', modelCalls === 1)
   const label = (await source.innerText()).split('\n')[0]
   const match = /^《([^》]+)》·\s*(.+)$/.exec(label)
   if (!match) throw new Error('未识别来源标题')

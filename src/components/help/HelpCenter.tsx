@@ -51,6 +51,7 @@ type AssistMode = 'manual' | 'ask'
 export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true, receiveArticleRequests = true, onSamePageGuideStarted }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<AssistMode>('manual')
+  const [askOpened, setAskOpened] = useState(false)
   const [view, setView] = useState<CatalogView>('start')
   const [openId, setOpenId] = useState<string | null>(null)
   const [anchor, setAnchor] = useState<string | null>(null)
@@ -234,7 +235,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
           ] as [AssistMode, string, typeof BookOpen][]).map(([key, label, Icon]) => (
             <Button key={key} variant="toggle" size="sm" selected={mode === key}
               title={key === 'ask' ? '按内置手册回答你的问题；未配置模型时只给手册片段' : '直接翻内置手册，不联网、不用模型'}
-              onClick={() => { setMode(key); if (key === 'ask') { setOpenId(null); setAnchor(null) } }}
+              onClick={() => { setMode(key); if (key === 'ask') { setAskOpened(true); setOpenId(null); setAnchor(null) } }}
               className="text-11">
               <Icon size={12} /> {label}
             </Button>
@@ -255,9 +256,9 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
       </header>
 
       <div className="p-5 space-y-4">
-        {/* 问 AI 面板常驻挂载（文章打开时只隐藏），否则点开依据就把对话历史卸载了 */}
-        {mode === 'ask' && (
-          <div className={article ? 'hidden' : ''}>
+        {/* 首次打开后保持挂载：切回手册或打开依据都不能清空对话、草稿或中断正在进行的提问。 */}
+        {askOpened && (
+          <div className={mode !== 'ask' || article ? 'hidden' : ''}>
             <AskPanel currentTabId={currentTabId} onOpenArticle={openArticle} />
           </div>
         )}

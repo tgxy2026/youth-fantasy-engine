@@ -172,7 +172,8 @@ const hub = read('src/components/app/ProjectHub.tsx')
 {
   ok('入口统一叫「使用答疑助手」', /使用答疑助手/.test(center))
   ok('内部区分「查手册」与「问 AI」', /查手册/.test(center) && /问 AI/.test(center))
-  ok('问 AI 面板常驻挂载（打开依据不丢对话）', /className=\{article \? 'hidden' : ''\}/.test(center))
+  ok('问 AI 打开后保持挂载，手册与文章只隐藏面板',
+    /askOpened &&/.test(center) && /mode !== 'ask' \|\| article \? 'hidden' : ''/.test(center))
   ok('🔴 会话只在组件内存（无持久化、无写库）',
     !/localStorage|sessionStorage|from '@\/lib\/db'/.test(panel))
   ok('对话可清空，且写明不影响统计', /清空/.test(panel) && /不会删除运行统计/.test(panel))
