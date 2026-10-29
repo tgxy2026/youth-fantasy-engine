@@ -11,6 +11,7 @@ import {
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
 } from '@/lib/aiCore/core'
 import type { AIProvider } from '@/lib/aiCore/core'
+import { isLocalModelBlocked, WEB_LOCAL_MODEL_NOTICE } from '@/lib/aiCore/localModelAccess'
 
 // ---- 设置持久化（走 db.meta，全局共享）----
 //
@@ -163,12 +164,19 @@ export function isProviderUsable(p: AIProvider): boolean {
 }
 
 function resolveActive(list: AIProvider[], activeId: string | null): AIProvider | null {
-  const byId = activeId ? list.find(p => p.id === activeId) : undefined
-  const cand = byId ?? list[0]
+  /**
+   * 🔴 3.3.1 · P9（主人定案：网页版统一禁用本机模型）：
+   *    这里**是所有「取当前模型」的唯一出口**（`getActiveProvider` ← 就绪状态 / requireActiveProvider /
+   *    aiRouting 的回落），所以形态禁用必须落在这层 —— 只拦界面是拦不住的：
+   *    旧配置、用途路由、生成、嵌入会各自绕过去。
+   */
+  const usable = list.filter(p => !isLocalModelBlocked(p))
+  const byId = activeId ? usable.find(p => p.id === activeId) : undefined
+  const cand = byId ?? usable[0]
   if (cand && isProviderUsable(cand)) return cand
   // 当前选中的那个没填全时，退而取第一个填全的，
   // 免得作者明明配好了另一个模型，按钮却告诉他「未配置」。
-  return list.find(isProviderUsable) ?? null
+  return usable.find(isProviderUsable) ?? null
 }
 
 /** 取当前生效的模型配置；未配置或配置不全时返回 null（调用方自行决定是否降级） */
@@ -180,8 +188,11 @@ export async function getActiveProvider(): Promise<AIProvider | null> {
 /** 取当前模型；没有就抛出统一的中文提示（供必须依赖 AI 的功能使用） */
 export async function requireActiveProvider(): Promise<AIProvider> {
   const cfg = await getActiveProvider()
-  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
-  return cfg
+  if (cfg) return cfg
+  // 配了、但全是被本形态禁掉的（网页版里的本机模型）⇒ 别报「还没配」，那是误导
+  const list = await loadProviders().catch(() => [] as AIProvider[])
+  if (list.length > 0 && list.every(isLocalModelBlocked)) throw new Error(WEB_LOCAL_MODEL_NOTICE)
+  throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
 }
 
 /** 同步读取当前快照（useSyncExternalStore 用，返回引用稳定的对象） */

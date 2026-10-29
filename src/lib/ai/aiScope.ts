@@ -8,6 +8,7 @@
 
 import type { TabDef } from '@/lib/types'
 import { isVolumeLedgerTab } from '@/lib/schema'
+import { WEB } from '@/lib/app/platform'
 
 export type AICapability =
   /** AI 补全 / AI 新增：把作者的粗略草图整理并补全成完整设定（已有条目补其空白，或凭空建档） */
@@ -73,9 +74,16 @@ export function aiCapabilityOf(tab: TabDef): AICapability {
 }
 
 /** 未配置模型时，所有 AI 入口按钮的统一禁用提示 */
-export const AI_DISABLED_HINT =
-  '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
-  '（未接入不影响本页任何手动填写功能）'
+export const AI_DISABLED_HINT = WEB
+  /**
+   * 🔴 3.3.1 · P9（主人定案：网页版统一禁用本机模型）：
+   *    网页版叫作者「添加本地 Ollama」是把他往死路上引 —— 加了也用不了。
+   *    桌面 / 便携**逐字保持原文案**（红线：改网页文案不能顺手改另外两端的口径）。
+   */
+  ? '需先接入 AI 模型：网页版请到「模型设置 → 模型配置」添加联网模型（网页版不支持连接本机模型）。' +
+    '（未接入不影响本页任何手动填写功能）'
+  : '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
+    '（未接入不影响本页任何手动填写功能）'
 
 /**
  * 「未接入模型时，哪些入口会禁用」的集中清单（2.4.0 · A1 首启闭环）。

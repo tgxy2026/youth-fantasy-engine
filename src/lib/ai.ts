@@ -70,3 +70,10 @@ export {
   loadRouting, saveRouting, resolveProviderFor, requireProviderFor, rolesOf,
 } from '@/lib/ai/aiRouting'
 export type { TaskRole, RoutingMap } from '@/lib/ai/aiRouting'
+
+// ---- P9 · 形态对本机模型的禁用（3.3.1：网页版统一禁用）----
+// 🔴 判据在 `aiCore/localModelAccess`（叶子层），这里只做门面再导出，界面统一从 `@/lib/ai` 取。
+export {
+  WEB_BLOCKS_LOCAL_MODEL, LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
+  blocksLocalModel, isLocalModelBlocked, usableProviders, blockedProviders,
+} from '@/lib/aiCore/localModelAccess'

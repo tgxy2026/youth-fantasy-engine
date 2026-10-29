@@ -9,6 +9,7 @@ import { TABS, EDITOR_TAB } from '@/lib/schema'
 import type { HelpArticle, HelpGroup, HelpIndexEntry } from '@/lib/help/types'
 import { START_ARTICLES } from '@/lib/help/articles/start'
 import { FAQ_ARTICLES } from '@/lib/help/articles/faq'
+import { FAQ_MODEL_ARTICLES } from '@/lib/help/articles/faq-model'
 import { EDITOR_ARTICLES } from '@/lib/help/articles/editor'
 import { WORLD_ARTICLES } from '@/lib/help/articles/world'
 import { PLAN_ARTICLES } from '@/lib/help/articles/plan'
@@ -21,7 +22,7 @@ import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
 import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-export const CONTENT_VERSION = 1
+export const CONTENT_VERSION = 2
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.3.1'
@@ -40,6 +41,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   ...MISC_PAGE_ARTICLES,
   ...PLOT_ARTICLES,
   ...FAQ_ARTICLES,
+  ...FAQ_MODEL_ARTICLES,
 ]
 
 /** 栏目展示顺序（与规划 §4.2 的目录一致，不按字母排 —— 这是给作者看的动线） */

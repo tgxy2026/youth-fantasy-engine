@@ -39,6 +39,8 @@ import {
   type TaskRole, type RoutingMap,
   loadAiTimeoutSec, saveAiTimeoutSec,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
+  LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
+  isLocalModelBlocked, usableProviders,
 } from '@/lib/ai'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
@@ -62,6 +64,8 @@ const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-x-6 g
 
 export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [providers, setProviders] = useState<AIProvider[]>([])
+  /** 3.3.1 · P9：网页版里本机模型不可用 —— 用途下拉与嵌入选择只看这份 */
+  const usable = usableProviders(providers)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [editing, setEditing] = useState<AIProvider | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
@@ -329,6 +333,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             /* 列表态两栏：xs–lg 单栏堆叠，xl+ 左「列表/添加/语义检索」右「路由/超时」。
                高度不写死 ⇒ 配置 N 个模型时左栏自然变长（自适应要求）。 */
             <div className={LIST_GRID}>
+              {/* 🔴 3.3.1 · P9：网页版统一禁用本机模型。说明放在列表最上方：
+                  作者可能带着从桌面版同步来的本机配置进来，先告诉他「为什么这些不能用」。 */}
+              {providers.some(p => isLocalModelBlocked(p)) && (
+                <div data-local-model-notice className="xl:col-span-2 mb-3 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-11 text-amber/90 leading-relaxed">
+                  {WEB_LOCAL_MODEL_NOTICE}
+                </div>
+              )}
               {/* ---- 左栏：模型列表 + 添加 + 语义检索（需宽度的内容）---- */}
               <div>
                 {providers.length === 0 ? (
@@ -346,6 +357,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
                           {typeLabel(p)}
                         </span>
+                        {/* 🔴 3.3.1 · P9：网页版里这条配置不会被任何功能使用（判据在 aiCore/localModelAccess） */}
+                        {isLocalModelBlocked(p) && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
+                            title={WEB_LOCAL_MODEL_NOTICE}>
+                            {WEB_LOCAL_MODEL_BADGE}
+                          </span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="text-12 text-ink-100 truncate">{p.name}</div>
                           <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
@@ -371,12 +389,16 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                         {activeId === p.id ? (
                           <span className="shrink-0 flex items-center gap-1 text-11 text-success"><CheckCircle2 size={12} /> 当前</span>
                         ) : (
-                          <Button variant="bare" onClick={() => setActive(p.id)} className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600">设为当前</Button>
+                          <Button variant="bare" onClick={() => setActive(p.id)}
+                            disabled={isLocalModelBlocked(p)}
+                            title={isLocalModelBlocked(p) ? WEB_LOCAL_MODEL_NOTICE : '把它设为全应用当前使用的模型'}
+                            className="shrink-0 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed">设为当前</Button>
                         )}
                         <Button variant="bare"
                           onClick={() => runRowTest(p)}
-                          disabled={testingId !== null}
-                          title={testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
+                          disabled={testingId !== null || isLocalModelBlocked(p)}
+                          title={isLocalModelBlocked(p) ? WEB_LOCAL_MODEL_NOTICE
+                            : testingId !== null ? '有测试正在进行中，请稍候' : '发起一次最小对话，验证该模型能否正常调用'}
                           className="shrink-0 flex items-center gap-1 text-11 px-2 py-1 rounded bg-ink-700 text-ink-200 hover:bg-ink-600 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {testingId === p.id ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
@@ -403,13 +425,22 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="bare" onClick={() => setPickMode('local')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors" title="Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），跑在本机，一般免密钥、免联网">
+                  <Button variant="bare" onClick={() => setPickMode('local')}
+                    disabled={LOCAL_MODEL_DISABLED}
+                    aria-describedby={LOCAL_MODEL_DISABLED ? 'local-model-blocked' : undefined}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-success/10 text-success border border-success/25 rounded-lg text-12 hover:bg-success/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={LOCAL_MODEL_DISABLED ? WEB_LOCAL_MODEL_NOTICE : 'Ollama 与本地 OpenAI 兼容服务（LM Studio / LocalAI 等），跑在本机，一般免密钥、免联网'}>
                     <Cpu size={13} /> 添加本地模型
                   </Button>
                   <Button variant="bare" onClick={() => setPickMode('online')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-info/10 text-info border border-info/25 rounded-lg text-12 hover:bg-info/20 transition-colors" title="联网平台（硅基流动 / DeepSeek / 通义 / 智谱 等），需填 API 密钥">
                     <Globe size={13} /> 添加联网模型
                   </Button>
                 </div>
+                {LOCAL_MODEL_DISABLED && (
+                  <p id="local-model-blocked" className="mt-2 text-11 text-amber/90 leading-relaxed" data-local-model-blocked>
+                    {WEB_LOCAL_MODEL_NOTICE}
+                  </p>
+                )}
                 {pickMode !== 'none' && (
                   <div className="mt-3 rounded-lg border border-ink-700 bg-ink-800/40 p-3">
                     <div className="flex items-center gap-2 mb-2.5">
@@ -440,7 +471,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     与「AI 用途路由」同属**模型能力的分配** —— 走同一份 providers，
                     只是换个用途（向量化而非对话）；故并列放在「模型配置」块内，不另开页签。
                     左栏收尾（宽度需求大，跟列表同栏）。 */}
-                <EmbeddingIndexPanel providers={providers} />
+                <EmbeddingIndexPanel providers={usable} />
             </div>
 
             {/* ---- 右栏：定宽分配表单（用途路由 / 请求超时）---- */}
@@ -466,8 +497,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </p>
                 <div className="space-y-2">
                   {TASK_ROLES.map(role => {
-                    // 指向已删除的模型时，界面按「跟随当前模型」显示 —— 与真实解析行为一致（回落）
-                    const val = providers.some(p => p.id === routing[role]) ? routing[role] : ''
+                    // 指向已删除 / 被本形态禁用的模型时，按「跟随当前模型」显示 —— 与真实解析一致（回落）
+                    const val = usable.some(p => p.id === routing[role]) ? routing[role] : ''
                     return (
                       <div key={role} className="flex items-center gap-2">
                         <span className="w-14 shrink-0 text-12 text-ink-300">{ROLE_LABEL[role]}</span>
@@ -478,7 +509,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                           title={ROLE_HINT[role]}
                         >
                           <option value="">（跟随当前模型）</option>
-                          {providers.map(p => (
+                          {usable.map(p => (
                             <option key={p.id} value={p.id}>{p.name} · {p.model || '未设模型'}</option>
                           ))}
                         </select>

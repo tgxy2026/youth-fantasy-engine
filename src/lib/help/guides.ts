@@ -15,6 +15,7 @@ import { getTab } from '@/lib/schema'
 import { isParallelSetTab, isWorldSetTab } from '@/lib/world/worldSets'
 import { getHelpArticle } from '@/lib/help/registry'
 import type { TabDef } from '@/lib/types'
+import { LOCAL_MODEL_DISABLED } from '@/lib/aiCore/localModelAccess'
 
 /** 一个引导步骤 */
 export interface GuideStep {
@@ -148,7 +149,10 @@ export const PAGE_GUIDES: PageGuide[] = [
         id: 'models',
         anchor: 'settings-models',
         title: '先配一个模型',
-        body: 'AI 增强功能都要先有可用模型：本地 Ollama 或任一 OpenAI 兼容服务。没配也能写作，只是 AI 按钮会禁用。',
+        // 🔴 3.3.1 · P9：网页版不能用本机模型 —— 引导不能说「本地 Ollama」把作者往死路上引
+        body: LOCAL_MODEL_DISABLED
+          ? 'AI 增强功能都要先有可用模型：网页版请添加「联网模型」（硅基流动 / DeepSeek / 通义 等）。本机 Ollama 只能在桌面版或便携版里用。没配也能写作，只是 AI 按钮会禁用。'
+          : 'AI 增强功能都要先有可用模型：本地 Ollama 或任一 OpenAI 兼容服务。没配也能写作，只是 AI 按钮会禁用。',
       },
       {
         id: 'rest',

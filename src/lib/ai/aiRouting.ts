@@ -15,6 +15,7 @@
  */
 import * as db from '@/lib/db'
 import { getActiveProvider, loadProviders } from '@/lib/aiCore/session'
+import { isLocalModelBlocked, WEB_LOCAL_MODEL_NOTICE } from '@/lib/aiCore/localModelAccess'
 import type { AIProvider } from '@/lib/aiCore/core'
 
 export type TaskRole = 'create' | 'review' | 'utility'
@@ -78,16 +79,21 @@ export async function resolveProviderFor(role: TaskRole): Promise<AIProvider | n
   if (want) {
     const list = await loadProviders()
     const hit = list.find(p => p.id === want)
-    if (hit) return hit
+    // 🔴 3.3.1 · P9：被当前形态禁掉的配置不当选（网页版里的本机模型），否则用途路由会绕过禁用
+    if (hit && !isLocalModelBlocked(hit)) return hit
   }
+  // 回落「当前模型」；那条路径同样已经过滤过被禁的配置
   return getActiveProvider()
 }
 
 /** 取某用途的模型；一个都拿不到时抛出统一的中文提示（供必须依赖 AI 的功能使用） */
 export async function requireProviderFor(role: TaskRole): Promise<AIProvider> {
   const cfg = await resolveProviderFor(role)
-  if (!cfg) throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
-  return cfg
+  if (cfg) return cfg
+  // 配了但全被本形态禁掉（网页版里的本机模型）时，给的是「为什么不能用」，不是「你没配」
+  const list = await loadProviders().catch(() => [] as AIProvider[])
+  if (list.length > 0 && list.every(isLocalModelBlocked)) throw new Error(WEB_LOCAL_MODEL_NOTICE)
+  throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
 }
 
 /** 某模型被哪些用途引用（列表行徽标、删除前提示用）；未被任何用途引用则返回空数组 */
