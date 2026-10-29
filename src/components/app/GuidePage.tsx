@@ -2,6 +2,7 @@ import { BookOpen, Lightbulb, ListOrdered, Sparkles } from 'lucide-react'
 import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '@/lib/schema'
 import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
+import HelpCenter from '@/components/help/HelpCenter'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -96,6 +97,12 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
           </HelpPopover>
         </div>
       </header>
+
+      {/* 3.3.1 · P1：内置使用手册（本地检索，不需要模型）。放在最上面：卡壳时先搜一句，
+          比在页签清单里逐个点进去试更快。 */}
+      <div className="mb-6">
+        <HelpCenter onNavigate={onNavigate} ctx={ctx} currentTabId="guide" />
+      </div>
 
       {/* 推荐填写顺序 */}
       <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
