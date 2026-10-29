@@ -11,11 +11,17 @@ import { SearchEngine, SEARCH_TYPE_LABEL, type SearchDocType, type SearchResult 
 import HelpPopover from '@/components/common/HelpPopover'
 import { type VisCtx } from '@/lib/schema'
 import { Button } from '@/components/common/Button'
+import { showToast } from '@/components/dialogs/dialogs'
 
 interface Props {
   onClose: () => void
-  /** 打开某章节正文 */
-  onOpenChapter: (chapterId: string) => void
+  /**
+   * 打开某章节正文。
+   *
+   * 🔴 3.3.1 · T1：带上命中位置。以前只传章节 id ⇒ 一律落在章首，作者还得自己在整章里翻一遍。
+   *    位置只来自**正文**里的整段短语命中；命中在标题/摘要里时传 undefined，宁可只开章节也不瞎跳。
+   */
+  onOpenChapter: (chapterId: string, position?: { offset: number; matchLength?: number; revision?: string }) => void
   /** 跳转到某设定/角色页签 */
   onNavigateTab: (tabId: string) => void
   /** 可见性上下文；精简 / 极简项目下被隐藏的页签数据不纳入检索，自定义项目按启用功能集过滤 */
@@ -57,8 +63,15 @@ export default function FullTextSearch({ onClose, onOpenChapter, onNavigateTab, 
   const flat = useMemo(() => TYPE_ORDER.flatMap(t => groups[t]), [groups])
 
   const open = (r: SearchResult) => {
-    if (r.type === 'chapter' && r.chapterId) onOpenChapter(r.chapterId)
-    else if (r.tabId) onNavigateTab(r.tabId)
+    // 多处命中时，跳过去之后列表就没了 —— 说明一句「这是第几处」，作者才知道自己看到的是哪一句
+    if (r.type === 'chapter' && r.hitCount != null && r.hitCount > 1) {
+      showToast(`已定位到第 ${r.hitIndex} 处（本章共 ${r.hitCount} 处）`, 'info')
+    }
+    if (r.type === 'chapter' && r.chapterId) {
+      onOpenChapter(r.chapterId, r.matchAt == null ? undefined : {
+        offset: r.matchAt, matchLength: r.matchLength, revision: r.contentRevision,
+      })
+    } else if (r.tabId) onNavigateTab(r.tabId)
     onClose()
   }
 
@@ -135,6 +148,9 @@ style={{ maxHeight: foldVh('60vh') }}>
                       <span className={`mt-0.5 text-10 px-1.5 py-px rounded shrink-0 border
                         ${type === 'chapter' ? 'border-info/30 text-info' : type === 'character' ? 'border-violet-400/30 text-violet-300' : 'border-success/30 text-success'}`}>
                         {r.source}
+                        {r.hitCount != null && r.hitCount > 1 && (
+                          <span className="ml-1 text-ink-400">第 {r.hitIndex}/{r.hitCount} 处</span>
+                        )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="text-13 text-ink-100 font-medium truncate block">{r.title}</span>

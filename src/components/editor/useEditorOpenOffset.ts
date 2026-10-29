@@ -97,7 +97,20 @@ export function useEditorOpenOffset({ enabled, activeId, openChapterId, offset, 
         if (stable >= 2) break
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
       }
-      if (cancelled() || stable < 2 || ta.value !== content || document.querySelector('[role="dialog"]')) return
+      if (cancelled() || stable < 2 || ta.value !== content) return
+      /**
+       * 🔴 3.3.1 · T1：弹窗还开着时不要动正文（作者看不见，焦点也会被抢），但**别一看到弹窗就放弃**。
+       *
+       * 全文检索就是「点结果 → 关弹窗 + 换章节」两件事同时发生：定位 effect 往往在弹窗还没卸载的
+       * 那一两帧就跑到了这里，一次性判死会让「跨章定位」永远不生效（实测：同章重复命中能对、
+       * 跨章跳到目标句却停在文末，且不会重试 —— 因为 requestKey 已被记为 attempted）。
+       * 这里等它关掉，最多约 0.6 秒；到点还开着才算真的被挡住，如实放弃。
+       */
+      for (let i = 0; i < 36 && document.querySelector('[role="dialog"]'); i++) {
+        if (cancelled()) return
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      }
+      if (cancelled() || document.querySelector('[role="dialog"]')) return
       if (expectedRevision && contentRevision(ta.value) !== expectedRevision) {
         showToast('章节内容已更新，已打开章节；请重新检索定位', 'info'); return
       }

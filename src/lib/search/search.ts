@@ -10,6 +10,7 @@
 import * as db from '@/lib/db'
 import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
 import { tokenize } from '@/lib/editor/tokenize'
+import { contentRevision } from '@/lib/editor/editorViewMath'
 import { atlasFieldsForCategory, isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
@@ -31,37 +32,85 @@ export interface SearchDoc {
   chapterId?: string
   /** 来源页签名（用于结果徽标，如「主要角色」「名词术语」） */
   source?: string
+  /**
+   * 章节文档的 `body` = 标题 + 摘要 + 正文，而正文编辑器只认**正文**坐标。
+   * 这里记下正文在 `body` 里的起始下标，命中位置落在这之前（标题/摘要里）就无法定位到正文。
+   */
+  contentStart?: number
+  /** 索引那一刻**正文**的指纹；打开时与当前正文比对，对不上就只开章节、不瞎定位 */
+  contentRevision?: string
 }
 
 export interface SearchResult extends SearchDoc {
   score: number
   /** 命中摘要（带省略号上下文） */
   snippet: string
+  /**
+   * 命中处在**正文**里的字符偏移（UTF-16）。
+   *
+   * 🔴 只有章节正文且命中确实落在正文段里才有值：命中在标题/摘要里时打开章节就好，
+   *    给一个假偏移会把作者丢到无关的句子（3.3.1 · T1 的验收口径要求「不落到错误位置」）。
+   */
+  matchAt?: number
+  /** 命中长度，用来在正文里选中这一句 */
+  matchLength?: number
+  /** 同一章里第几处命中（1 起）与总计；只有一章命中多次才会拆成多行 */
+  hitIndex?: number
+  hitCount?: number
 }
 
 
-/** 从命中位置截取带上下文的摘要 */
-function makeSnippet(body: string, query: string): string {
-  if (!body) return ''
-  const q = query.trim()
+/**
+ * 找第一个命中位置（整段短语优先，找不到再退到「任一二元组」）。
+ * 摘要与定位共用它 —— 两处各写一套时，摘要指向的句子和真正跳过去的句子就会不一致。
+ */
+function firstMatchPos(body: string, query: string): number {
+  const ql = query.trim().toLowerCase()
+  if (!ql) return -1
   const lower = body.toLowerCase()
-  const ql = q.toLowerCase()
-  let pos = lower.indexOf(ql)
-  if (pos < 0) {
-    const runs = ql.match(/[㐀-䶿ㆠ-㏿一-鿿豈-﫿]+/g)
-    if (runs) {
-      for (const run of runs) {
-        for (let i = 0; i + 1 < run.length; i++) {
-          const p = lower.indexOf(run[i] + run[i + 1])
-          if (p >= 0 && (pos < 0 || p < pos)) pos = p
-        }
+  const exact = lower.indexOf(ql)
+  if (exact >= 0) return exact
+  let pos = -1
+  const runs = ql.match(/[㐀-䶿ㆠ-㏿一-鿿豈-﫿]+/g)
+  if (runs) {
+    for (const run of runs) {
+      for (let i = 0; i + 1 < run.length; i++) {
+        const p = lower.indexOf(run[i] + run[i + 1])
+        if (p >= 0 && (pos < 0 || p < pos)) pos = p
       }
     }
   }
+  return pos
+}
+
+/** 从命中位置截取带上下文的摘要（`pos` 缺省用首个命中） */
+function makeSnippet(body: string, query: string, pos = firstMatchPos(body, query)): string {
+  if (!body) return ''
   if (pos < 0) return body.slice(0, 60) + (body.length > 60 ? '…' : '')
   const start = Math.max(0, pos - 30)
   const end = Math.min(body.length, pos + 60)
   return (start > 0 ? '…' : '') + body.slice(start, end).replace(/\n/g, ' ') + (end < body.length ? '…' : '')
+}
+
+/** 一章内最多拆几行结果（再多只是把列表刷屏，作者要的是「跳过去看」） */
+const MAX_HITS_PER_CHAPTER = 3
+
+/**
+ * 章节文档里「整段短语」出现的全部位置，并换算成**正文坐标**。
+ *
+ * 🔴 只认整段短语：二元组那套近似匹配拿来定位，会把作者丢到只含其中一个字的句子。
+ *    命中落在标题/摘要段（`contentStart` 之前）时直接丢弃 —— 那一处没法在正文里定位。
+ */
+export function chapterHitOffsets(doc: SearchDoc, query: string): number[] {
+  const ql = query.trim().toLowerCase()
+  if (!ql || doc.type !== 'chapter' || doc.contentStart == null) return []
+  const lower = doc.body.toLowerCase()
+  const out: number[] = []
+  for (let at = lower.indexOf(ql); at >= 0 && out.length < MAX_HITS_PER_CHAPTER; at = lower.indexOf(ql, at + ql.length)) {
+    const inContent = at - doc.contentStart
+    if (inContent >= 0) out.push(inContent)
+  }
+  return out
 }
 
 /** 采集当前项目的全部可搜索文档
@@ -78,6 +127,9 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
       body: `${c.title}\n${c.summary}\n${c.content}`,
       chapterId: c.id,
       source: '章节正文',
+      // 正文在 body 里的起点 = 标题 + 换行 + 摘要 + 换行；打开章节时用它把 body 坐标换算成正文坐标
+      contentStart: c.title.length + 1 + c.summary.length + 1,
+      contentRevision: contentRevision(c.content),
     })
   }
   // 角色卡（主要 / 次要 / NPC）—— 隐藏形态下跳过
@@ -203,7 +255,20 @@ export class SearchEngine {
     const out: SearchResult[] = []
     for (const [i, score] of scoreMap) {
       const d = this.docs[i]
-      out.push({ ...d, score, snippet: makeSnippet(d.body, q) })
+      const hits = chapterHitOffsets(d, q)
+      // 一章命中多次 ⇒ 拆成多行：作者要能选「第 2 处」，否则还得自己在整章里翻
+      if (hits.length > 1) {
+        hits.forEach((at, n) => out.push({
+          ...d, id: `${d.id}#${n + 1}`, score,
+          snippet: makeSnippet(d.body, q, d.contentStart! + at),
+          matchAt: at, matchLength: q.trim().length, hitIndex: n + 1, hitCount: hits.length,
+        }))
+        continue
+      }
+      out.push({
+        ...d, score, snippet: makeSnippet(d.body, q),
+        ...(hits.length === 1 ? { matchAt: hits[0], matchLength: q.trim().length } : {}),
+      })
     }
     out.sort((a, b) => b.score - a.score)
     return out.slice(0, limit)

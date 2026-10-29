@@ -557,8 +557,18 @@ export default function App() {
     window.addEventListener('storage', checkOwner)
     return () => window.removeEventListener('storage', checkOwner)
   }, [navGate, navContext, clearHistory, resetNavigationTargets])
-  const navigate = useCallback((id: string, chapterId?: string, rowId?: string) => {
-    const intent = pageNavigationIntent({ tabId: id, chapterId, rowId })
+  /**
+   * 换页签（可带章节与正文位置）。
+   *
+   * 🔴 3.3.1 · T1：第 4 个参数是**正文命中位置**。`applyNav` 一直有 position 形参，
+   *    这里以前没暴露 ⇒ 全文检索点命中只能落在章首。位置信息一律走 `pageNavigationIntent`
+   *    的既有校验（整数、只在 editor+chapterId 时成立），不在调用点自己拼。
+   */
+  const navigate = useCallback((id: string, chapterId?: string, rowId?: string, position?: EditorPosition) => {
+    const intent = pageNavigationIntent({
+      tabId: id, chapterId, rowId,
+      ...(position ? { offset: position.offset, matchLength: position.matchLength, revision: position.revision } : {}),
+    })
     if (intent) navGate.request(intent)
   }, [navGate])
 
@@ -841,7 +851,7 @@ export default function App() {
       {searchOpen && (
         <FullTextSearch
           onClose={() => setSearchOpen(false)}
-          onOpenChapter={(id) => { setSearchOpen(false); navigate('editor', id) }}
+          onOpenChapter={(id, position) => { setSearchOpen(false); navigate('editor', id, undefined, position) }}
           onNavigateTab={(tabId) => { setSearchOpen(false); navigate(tabId) }}
           ctx={visCtx}
         />

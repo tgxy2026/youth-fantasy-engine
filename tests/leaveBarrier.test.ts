@@ -107,7 +107,12 @@ async function main() {
   {
     const app = read('src/App.tsx')
     ok('🔴 ⑧ App 引入离页屏障', /from '@\/lib\/editor\/leaveBarrier'/.test(app))
-    ok('🔴 ⑧ navigate 经共享事务屏障提交', app.includes('dirty: leaveGuardDirty, flush: runLeaveGuard') && app.includes('pageNavigationIntent({ tabId: id, chapterId, rowId })') && app.includes('navGate.request(intent)'))
+    // 🔴 守的是「navigate 一定经 pageNavigationIntent → navGate.request」，不是那个对象的字面写法：
+    //    3.3.1 · T1 给它加了可选的 position（全文检索命中定位），写法由单行变成展开对象。
+    ok('🔴 ⑧ navigate 经共享事务屏障提交',
+      app.includes('dirty: leaveGuardDirty, flush: runLeaveGuard')
+      && /const navigate = useCallback\([\s\S]{0,260}pageNavigationIntent\(\{[\s\S]{0,200}tabId: id, chapterId, rowId/.test(app)
+      && /const navigate = useCallback\([\s\S]{0,600}navGate\.request\(intent\)/.test(app))
     ok('🔴 ⑧ exitProject 经过同一事务屏障', app.includes("navGate.request({ kind: 'exit' })") && /intent.kind === 'exit'[\s\S]{0,60}doExitProject\(\)/.test(app))
     ok('🔴 ⑧ 真正跳页只在 applyNav 里（屏障失败不会走到它）', /const applyNav = useCallback[\s\S]{0,1200}setActiveTab\(id\)/.test(app))
     ok('🔴 ⑧ 退出项目里清 projectId 的动作与退出入口分离', /const doExitProject = useCallback[\s\S]{0,1500}setProjectId\(null\)/.test(app))
