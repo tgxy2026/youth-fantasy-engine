@@ -7,12 +7,18 @@ import { Loader2, CheckCircle2, Sparkles, SpellCheck } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
 import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
+import { requestProofLocate } from '@/components/editor/proofLocateChannel'
+import { showToast } from '@/components/dialogs/dialogs'
+import { locateFailureText, locateProofIssue } from '@/lib/editor/proofLocate'
 import { isReplaceable } from '@/lib/ai/aiTasks'
 import { PROOF_ORDER, PROOF_META, renderReport } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
   const { aiReady, diagMode, setDiagMode, diag, runDiag, proofs, propsRunning, runProofread, stopProofread, replaceOne, aiBtnCls } = m
+  /** 3.3.1 · P7：诊室里的结果也要能跳回正文（面板不收起 —— 结果就地还在，见下方注释） */
+  const chapterId = m.focusChapterId ?? ''
+  const bodyText = m.content
   return (
           <>
             {/* 校对只走完整正文：摘要定位不到原文 quote，简略模式会误替换（已移除） */}
@@ -78,11 +84,18 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                   )}
                   {st.issues.length > 0 && (
                     <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                      {st.issues.map(iss => {
+                      {st.issues.map((iss, issueIndex) => {
                         // 3.2.3 · R1：建议类只展示、不提供替换（`fix` 可能是一句建议，不是改写文本）
                         const repl = isReplaceable(iss)
+                        const issueKey = proofIssueKey(iss)
+                        // 3.3.1 · P7：定位对建议类同样开放；失效/多义按原因禁用并说明，不猜位置
+                        const located = locateProofIssue(bodyText, iss)
+                        const canLocate = located.ok && !!chapterId
+                        const locateHint = located.ok
+                          ? (chapterId ? '把正文滚到这处并选中，不修改正文' : '当前没有可定位的章节')
+                          : locateFailureText(located.reason)
                         return (
-                          <div key={proofIssueKey(iss)} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5">
+                          <div key={issueKey} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5" data-proof-issue={issueKey}>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
                               <span className="text-11 text-danger line-through">{iss.quote}</span>
@@ -91,14 +104,41 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                             </div>
                             {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
                             {iss.stale && <div className="text-10 text-amber/80 mt-0.5">正文已改动，这条的位置失效了</div>}
-                            {repl && !iss.stale && (
-                              <Button variant="bare"
-                                onClick={() => replaceOne(scope, iss)}
-                                className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
-                              >
-                                替换此条
-                              </Button>
+                            {!located.ok && !iss.stale && (
+                              <div className="text-10 text-amber/80 mt-0.5">{locateHint}</div>
                             )}
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Button variant="bare"
+                                disabled={!canLocate}
+                                title={locateHint}
+                                onClick={() => {
+                                  if (!located.ok || !chapterId) return
+                                  /**
+                                   * 🔴 面板**不收起**：诊室是右侧浮层，正文仍在左侧可见；收起会卸载本组件、
+                                   *    使「已替换的条目复活」（`proofs` 是本地 state，重挂载时按任务结果重建）。
+                                   *    若目标行恰好被面板压住，由下方 toast 提示可先收起面板。
+                                   */
+                                  const handled = requestProofLocate({
+                                    chapterId, source: 'clinic', scope,
+                                    index: issueIndex + 1, total: st.issues.length,
+                                    start: located.start, end: located.end,
+                                    quote: iss.quote, issueKey,
+                                  })
+                                  if (!handled) showToast('当前不在正文页，无法定位原文', 'info')
+                                }}
+                                className="mt-1 px-2 py-0.5 rounded-md text-10 bg-ink-700 text-ink-200 border border-ink-600 hover:bg-ink-600 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                              >
+                                定位原文
+                              </Button>
+                              {repl && !iss.stale && (
+                                <Button variant="bare"
+                                  onClick={() => replaceOne(scope, iss)}
+                                  className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
+                                >
+                                  替换此条
+                                </Button>
+                              )}
+                            </div>
                             <CopyProofText text={repl ? iss.fix : iss.suggestion} replacement={repl} />
                           </div>
                         )

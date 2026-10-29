@@ -47,14 +47,26 @@ export function countOccurrences(text: string, quote: string): number {
 }
 
 /** 只读定位供建议和替换共用；未确认的位置绝不猜第一处。下标按 JS 字符串的 UTF-16 单位。 */
-export function resolveProofLocation(text: string, issue: ProofreadIssue):
+export function resolveProofLocation(text: string, issue: ProofreadIssue): ProofLocation {
+  return resolveLocation(text, issue.quote, issue.at, issue.stale)
+}
+
+export type ProofLocation =
   | { ok: true; start: number; end: number }
-  | { ok: false; reason: 'stale' | 'not-found' | 'ambiguous' } {
-  if (issue.stale) return { ok: false, reason: 'stale' }
-  const quote = issue.quote
+  | { ok: false; reason: 'stale' | 'not-found' | 'ambiguous' }
+
+/**
+ * 定位核：判定只看「引文 + 上次位置 + 是否失效」这三项。
+ *
+ * 单独导出的原因：3.3.1「定位原文」的执行方手里只有引文和上次位置 —— 正文可能已被作者
+ * 手工改过，完整的结果对象要么不在（跨组件）、要么已经过期；为它造一个假 issue 再传进来，
+ * 容易被误当成真结果。判据必须与替换**完全同源**，不能各写一套。
+ */
+export function resolveLocation(text: string, quote: string, at?: number | null, stale?: boolean): ProofLocation {
+  if (stale) return { ok: false, reason: 'stale' }
   if (!quote) return { ok: false, reason: 'not-found' }
-  if (issue.at != null && Number.isInteger(issue.at) && issue.at >= 0 && text.slice(issue.at, issue.at + quote.length) === quote) {
-    return { ok: true, start: issue.at, end: issue.at + quote.length }
+  if (at != null && Number.isInteger(at) && at >= 0 && text.slice(at, at + quote.length) === quote) {
+    return { ok: true, start: at, end: at + quote.length }
   }
   const first = text.indexOf(quote)
   if (first < 0) return { ok: false, reason: 'not-found' }

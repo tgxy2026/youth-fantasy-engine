@@ -9,6 +9,10 @@ import { useWordCountWithPunct, wordCountModeOf } from '@/lib/editor/wordCountMo
 import SettingSearch from '@/components/settings/SettingSearch'
 import { auxiliaryLeaveGuardDirty, runAuxiliaryLeaveGuards } from '@/lib/editor/leaveBarrier'
 import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from '@/components/editor/EditorModals'
+// 3.3.1 · P7：校对结果的「定位原文」—— 请求通道 + 正文消费 + 返回入口
+import { ProofLocateReturnBar } from '@/components/editor/ProofLocateReturnBar'
+import { useProofLocateJump } from '@/components/editor/useProofLocateJump'
+import { requestProofLocate, type ProofLocateTarget } from '@/components/editor/proofLocateChannel'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
@@ -122,6 +126,24 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     offset: openOffset?.offset ?? null, matchLength: openOffset?.matchLength ?? null, taRef, requestId: openRequestId,
     expectedRevision: openOffset?.revision, content: active?.content ?? null })
   useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, content: active?.content ?? null, skipRestore: ownsPosition })
+
+  /**
+   * 3.3.1 · P7：校对结果的「定位原文」。
+   *
+   * 🔴 为什么弹窗必须先收起：`setSelectionRange` 与 `scrollTop` 作用在正文 textarea 上，
+   *    弹窗盖着它时作者看不见、也拿不到焦点；`useEditorOpenOffset` 里对 `[role="dialog"]`
+   *    的守卫就是同一个道理。收起后由 `ProofLocateReturnBar` 提供返回入口，结果仍在任务里。
+   */
+  const [locateReturn, setLocateReturn] = useState<{ issueKey: number; nonce: number } | null>(null)
+  const locateNonce = useRef(0)
+  const { prompt: locatePrompt, dismiss: dismissLocatePrompt } = useProofLocateJump({
+    chapterId: active?.id ?? null, taRef, onLocated: () => syncSel(),
+  })
+  const locateToEditor = (target: ProofLocateTarget) => {
+    setModal(null)
+    // 没有任何正文视图接手时（理论上不会发生：按钮就在编辑器里）如实说明，不假装成功
+    if (!requestProofLocate(target)) showToast('当前不在正文页，无法定位原文', 'info')
+  }
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
@@ -603,6 +625,23 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </div>
             )}
 
+            {/* 3.3.1 · P7：刚把正文定位到某条校对结果时留下的返回入口（弹窗已为定位收起） */}
+            {locatePrompt && (
+              <ProofLocateReturnBar
+                index={locatePrompt.index}
+                total={locatePrompt.total}
+                quote={locatePrompt.quote}
+                onReturn={() => {
+                  const issueKey = locatePrompt.issueKey
+                  dismissLocatePrompt()
+                  // nonce 让「同一条再次返回」也能重新滚到列表里那一条（依赖不重复就不触发）
+                  setLocateReturn({ issueKey, nonce: ++locateNonce.current })
+                  setModal('typo')
+                }}
+                onDismiss={dismissLocatePrompt}
+              />
+            )}
+
             {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
                 🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
                 几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
@@ -869,7 +908,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         />
       )}
       {modal === 'typo' && active && (
-        <ProofreadCheck content={draftContent} chapterId={active.id} onApply={updateContent} onClose={() => setModal(null)} />
+        <ProofreadCheck content={draftContent} chapterId={active.id} onApply={updateContent} onClose={() => setModal(null)}
+          onLocate={locateToEditor} locateReturn={locateReturn} />
       )}
       {modal === 'style' && active && !isLite && (
         <StyleAudit content={draftContent} chapterId={active.id} onClose={() => setModal(null)} />

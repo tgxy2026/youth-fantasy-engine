@@ -40,7 +40,7 @@ export function scrollTopForOffset(value: string, start: number, lineHeight: num
 }
 
 /** A short-lived, invisible mirror measures the caret using the actual font, padding and wrapping. */
-function caretTop(ta: HTMLTextAreaElement, offset: number): number {
+export function measureCaretTop(ta: HTMLTextAreaElement, offset: number): number {
   const mirror = ta.ownerDocument.createElement('div'), marker = ta.ownerDocument.createElement('span')
   const style = getComputedStyle(ta)
   for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'wordSpacing',
@@ -103,7 +103,7 @@ export function useEditorOpenOffset({ enabled, activeId, openChapterId, offset, 
       }
       const length = Number.isSafeInteger(matchLength) && (matchLength ?? 0) > 0 ? matchLength! : 0
       const end = Math.min(content.length, offset + length)
-      const top = caretTop(ta, offset)
+      const top = measureCaretTop(ta, offset)
       ta.setSelectionRange(offset, end, 'forward')
       ta.scrollTop = scrollTopForOffset(content, offset, Number.parseFloat(getComputedStyle(ta).lineHeight), ta.clientHeight, ta.scrollHeight, top)
       const focused = document.activeElement

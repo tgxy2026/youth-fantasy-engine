@@ -16,6 +16,8 @@ import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
+import { locateFailureText, locateProofIssue } from '@/lib/editor/proofLocate'
+import type { ProofLocateTarget } from '@/components/editor/proofLocateChannel'
 import { Modal as BaseModal } from '@/components/dialogs/Modal'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
@@ -146,8 +148,16 @@ const blankScope = (): ScopeState => ({
   failedChunks: 0, totalChunks: 0, unparsedChunks: 0, protocolIssues: [], unlocated: 0,
 })
 
-export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
+export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate, locateReturn }: {
   content: string; chapterId?: string; onApply: (next: string) => void; onClose: () => void
+  /**
+   * 3.3.1 · P7「定位原文」：把命中区间交给正文。
+   * 本组件**不自己**滚正文 —— 弹窗盖着正文，必须先由父级收起弹窗再定位，
+   * 否则焦点和滚动都作用在被遮住的元素上（见 `useEditorOpenOffset` 的 dialog 守卫）。
+   */
+  onLocate?: (target: ProofLocateTarget) => void
+  /** 从正文「返回校对结果」时滚到这一条并短暂高亮；`nonce` 让同一条能被再次触发 */
+  locateReturn?: { issueKey: number; nonce: number } | null
 }) {
   const { ready: aiReady } = useAIReady()
   /** 章节归属键 —— 任务中心按 (ownerTab,kind) 取最近一条，结果必须盖章节戳（见 aiTaskCenter「章节归属」） */
@@ -164,6 +174,20 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
   const [scopes, setScopes] = useState<Record<ProofScope, ScopeState>>({
     text: blankScope(), logic: blankScope(),
   })
+  /** 3.3.1 · P7：从正文返回时，把列表滚回刚才那条并短暂描边 —— 结果多时不用自己找 */
+  const [locateHighlight, setLocateHighlight] = useState<number | null>(null)
+  const locateRows = useRef(new Map<number, HTMLDivElement>())
+  const returnKey = locateReturn?.issueKey ?? null
+  const returnNonce = locateReturn?.nonce ?? 0
+  useEffect(() => {
+    if (returnKey == null) return
+    const node = locateRows.current.get(returnKey)
+    if (!node) { setLocateHighlight(null); return }
+    node.scrollIntoView({ block: 'center' })
+    setLocateHighlight(returnKey)
+    const timer = setTimeout(() => setLocateHighlight(current => (current === returnKey ? null : current)), 2400)
+    return () => clearTimeout(timer)
+  }, [returnKey, returnNonce])
 
   /**
    * 🔴🔴 2026-10-01 六维审计（清单 #009 的**漏网 B 类**）：两块校对原先把结果存在本组件
@@ -447,12 +471,24 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
               )}
               {st.issues.length > 0 && (
                 <div className="space-y-2">
-                  {st.issues.map(iss => {
+                  {st.issues.map((iss, issueIndex) => {
                     // 🔴 3.2.3 · R1：建议类与替换类分开渲染 —— 建议类不出现「替换此条」，
                     //    避免作者一点就把一句修改建议写进正文。
                     const repl = isReplaceable(iss)
+                    const key = proofIssueKey(iss)
+                    /** 3.3.1 · P7：定位对建议类同样开放（建议不能替换，但作者可以自己走过去改） */
+                    const located = locateProofIssue(text, iss)
+                    const canLocate = located.ok && !!ch && !!onLocate
+                    const locateHint = located.ok
+                      ? (ch ? '把正文滚到这处并选中，不修改正文' : '当前没有可定位的章节')
+                      : locateFailureText(located.reason)
                     return (
-                      <div key={proofIssueKey(iss)} className="flex items-start gap-2 text-12 bg-ink-800 border border-ink-700 rounded-lg px-3 py-2">
+                      <div key={key}
+                        ref={node => { if (node) locateRows.current.set(key, node); else locateRows.current.delete(key) }}
+                        data-proof-issue={key}
+                        className={`flex items-start gap-2 text-12 bg-ink-800 border rounded-lg px-3 py-2 transition-colors ${
+                          locateHighlight === key ? 'border-amber/70 ring-1 ring-amber/40' : 'border-ink-700'}`}
+                      >
                         <span className={`px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap text-10 ${badgeOf(iss.type)}`}>{iss.type}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-ink-200">
@@ -465,8 +501,28 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose }: {
                           {iss.stale && (
                             <div className="text-amber/80 mt-0.5">正文已改动，这条的位置失效了 —— 请重新校对后再处理。</div>
                           )}
+                          {!located.ok && !iss.stale && (
+                            <div className="text-amber/80 mt-0.5">{locateHint}</div>
+                          )}
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-1">
+                          <Button variant="bare"
+                            disabled={!canLocate}
+                            title={locateHint}
+                            onClick={() => {
+                              // 只读定位：不改正文、不触发保存，只把位置交给父级（父级先收起本弹窗）
+                              if (!located.ok || !ch || !onLocate) return
+                              onLocate({
+                                chapterId: ch, source: 'tool', scope,
+                                index: issueIndex + 1, total: st.issues.length,
+                                start: located.start, end: located.end,
+                                quote: iss.quote, issueKey: key,
+                              })
+                            }}
+                            className="shrink-0 px-2 py-1 bg-ink-700 text-ink-200 border border-ink-600 rounded text-11 hover:bg-ink-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            定位原文
+                          </Button>
                         {repl && !iss.stale && (
                           <Button variant="bare"
                             onClick={() => replaceIssue(scope, iss)}
