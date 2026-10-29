@@ -15,6 +15,7 @@
  *    "不自己去读库"的口径自相矛盾。现在由父级把 `model.cellVal` 传下来。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
+import '@/components/atlas/atlasMobile.css'
 import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'

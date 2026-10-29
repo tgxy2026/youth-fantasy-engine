@@ -1,0 +1,8 @@
+/* 手机连续浏览和返回无需依赖方向键，触摸目标与桌面布局分开。 */
+@media (max-width: 600px), (pointer: coarse) {
+  [data-atlas-nav] button,
+  [data-atlas-close] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
