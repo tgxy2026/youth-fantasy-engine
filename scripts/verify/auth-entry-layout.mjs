@@ -40,10 +40,14 @@ try {
   page.on('pageerror', error => report.errors.push(error.message))
   const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
   for (const mode of ['invite', 'open', 'closed']) {
-    for (const [width, height] of [[1920,1080],[1366,768],[768,1024],[390,844],[320,568]]) {
+    for (const [width, height] of [[3840,2160],[2560,1440],[1920,1080],[1366,768],[768,1024],[390,844],[320,568]]) {
       await page.setViewportSize({ width, height }); await page.goto(origin + '/?mode=' + mode)
       const prefix = `${mode}-${width}`
       check(prefix + ' login fits the viewport width', await fits())
+      if (width >= 1024) {
+        const layout = await page.evaluate(() => { const split = document.querySelector('.split').getBoundingClientRect(); const panel = document.querySelector('.panel'); return { left: split.left, right: split.right, viewport: innerWidth, border: getComputedStyle(panel).borderRightWidth } })
+        check(prefix + ' split fills the screen without a center border', Math.abs(layout.left) < 1 && Math.abs(layout.right - layout.viewport) < 1 && layout.border === '0px', layout)
+      }
       check(prefix + ' invite is absent on login', !await page.locator('#inviteBox').isVisible())
       check(prefix + ' inputs remain 16px and at least 48px high', await page.locator('#name,#pwd').evaluateAll(inputs => inputs.every(input => getComputedStyle(input).fontSize === '16px' && input.getBoundingClientRect().height >= 48)))
       for (const selector of ['#btn', '.guestBtn', '.forgot a', '.dl a']) {

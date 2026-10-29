@@ -4,8 +4,8 @@ export const AUTH_STYLE = `
 *{box-sizing:border-box}
 body.auth-entry{--page-bg:#e6f0e0;--surface:#e9f1e2;--text:#2b3a22;--secondary:#3c5230;--muted:#506646;--accent:#44764e;--line:#c4cdbd;margin:0;background:var(--page-bg);color:var(--text);font:14px/1.65 Inter,system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color-scheme:light}
 .auth-entry :is(h1,h2,p){margin:0}
-.auth-entry .split{position:relative;isolation:isolate;display:grid;grid-template-columns:1.15fr 1fr;min-height:100vh;min-height:100dvh;max-width:1800px;margin:auto;background:radial-gradient(ellipse at 22% 32%,#c4d9b180,transparent 52%),radial-gradient(ellipse at 75% 80%,#d1e1c650,transparent 48%)}
-.auth-entry .panel{position:relative;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:48px clamp(36px,5vw,88px);overflow:hidden;border-right:1px solid rgba(60,82,48,.08)}
+.auth-entry .split{position:relative;isolation:isolate;display:grid;grid-template-columns:1.15fr 1fr;min-height:100vh;min-height:100dvh;background:radial-gradient(ellipse at 22% 32%,#c4d9b180,transparent 52%),radial-gradient(ellipse at 75% 80%,#d1e1c650,transparent 48%)}
+.auth-entry .panel{position:relative;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:48px clamp(36px,5vw,88px);overflow:hidden}
 .auth-entry .panel::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(1px 1px at 16% 19%,#638c5b 95%,transparent),radial-gradient(1px 1px at 83% 14%,#638c5b 95%,transparent),radial-gradient(1px 1px at 72% 53%,#638c5b 95%,transparent),radial-gradient(1px 1px at 12% 68%,#638c5b 95%,transparent),radial-gradient(1px 1px at 91% 76%,#638c5b 95%,transparent)}
 .auth-entry .brand{position:relative;display:flex;align-items:center;gap:12px;z-index:1}
 .auth-entry .logo{display:flex;align-items:center;justify-content:center;width:44px;height:44px;flex:none;border:1px solid #44764e33;border-radius:13px;background:#44764e08}
