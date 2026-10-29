@@ -157,7 +157,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
         {turns.length === 0 && (
           <div className="py-6 text-center space-y-2">
             <div className="text-12 text-ink-300">问一句，比如「字太小怎么放大」「校对怎么跳到原文」</div>
-            <div className="text-11 text-ink-600">不会写进项目，也不会上传到任何地方 —— 只查内置手册。</div>
+            <div className="text-11 text-ink-600">不会写进项目；使用 AI 回答时，问题和相关手册片段会发送给所选模型服务。</div>
             <div className="flex flex-wrap justify-center gap-1.5 pt-1">
               {['字太小怎么放大', '怎么跳到校对问题原文', '换电脑怎么带走数据'].map(sample => (
                 <Button key={sample} variant="bare" onClick={() => void submit(sample)}
@@ -188,7 +188,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
         )}
       </div>
 
-      <div className="flex items-end gap-2">
+      <div data-help-composer className="flex items-end gap-2">
         <textarea
           aria-label="向答疑助手提问"
           value={question}

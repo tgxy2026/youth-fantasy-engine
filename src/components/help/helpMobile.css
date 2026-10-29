@@ -1,0 +1,26 @@
+/* 手册在窄屏及触摸设备上保留可读输入区和可触碰操作，不改变桌面按钮。 */
+@media (max-width: 600px), (pointer: coarse) {
+  [data-help-center] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .help-modal > div:first-child button[aria-label='关闭'] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  [data-help-center] {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 430px) {
+  [data-help-composer] {
+    flex-wrap: wrap;
+  }
+
+  [data-help-composer] textarea {
+    flex-basis: 100%;
+  }
+}

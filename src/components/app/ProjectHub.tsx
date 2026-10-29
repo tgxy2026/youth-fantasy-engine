@@ -749,7 +749,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       )}
       {appIconOpen && <AppIconDialog onClose={() => setAppIconOpen(false)} />}
       {helpOpen && (
-        <Modal open onClose={() => setHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh">
+        <Modal open onClose={() => setHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
           {/* projectOpen={false}：这里没有打开项目，所有「前往功能」禁用并说明要先开项目 */}
           <HelpCenter
             onNavigate={() => showToast('先打开一个项目，才能跳到这个功能页', 'info')}

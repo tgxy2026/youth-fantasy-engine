@@ -21,6 +21,7 @@ import {
 import { getPageGuide } from '@/lib/help/guides'
 import { requestPageGuide, subscribeHelpRequests, takeHelpRequest } from '@/lib/help/helpNav'
 import { Button } from '@/components/common/Button'
+import '@/components/help/helpMobile.css'
 
 interface Props {
   /** 页签跳转（走既有 navigate，含离页保存屏障） */
@@ -111,7 +112,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
   const guideTabId = article ? (article.tabIds.find(id => !!getPageGuide(id)) ?? null) : null
   const articleView = article ? (
       <section data-help-article={article.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
-        <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+        <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex flex-wrap items-center gap-2">
           <Button variant="bare" onClick={backToSearch} className="shrink-0 px-2 py-1 rounded-md text-11 text-ink-300 border border-ink-700 hover:text-amber hover:border-amber/40 transition-colors">
             <ChevronLeft size={12} className="inline" /> 返回
           </Button>
@@ -212,7 +213,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
   )
 
   return (
-    <section className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+    <section data-help-center className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
       <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex flex-wrap items-center gap-2">
         <BookOpen size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">使用答疑助手</h2>
