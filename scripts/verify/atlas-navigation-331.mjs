@@ -45,6 +45,12 @@ try {
     await page.keyboard.press('Escape');await page.waitForTimeout(100)
     if(await nav.count()||await page.evaluate(()=>document.activeElement?.getAttribute('data-workspace-record'))!=='row2')throw Error(`${width}: escape did not restore last card focus`)
     await page.locator('[data-workspace-record="row2"]').click()
+    if(width===1400){
+      await page.locator('[data-workspace-record="row2"]').focus();await page.keyboard.press('ArrowRight')
+      if(!/丙/.test(await nav.getAttribute('aria-label'))||await page.evaluate(()=>document.activeElement?.getAttribute('data-workspace-record'))!=='row3')throw Error('grid focus and detail selection diverged')
+      await page.keyboard.press('ArrowLeft')
+      if(!/乙/.test(await nav.getAttribute('aria-label'))||await page.evaluate(()=>document.activeElement?.getAttribute('data-workspace-record'))!=='row2')throw Error('grid reverse did not keep focus and detail aligned')
+    }
     await page.getByRole('button',{name:'编辑',exact:true}).click();nav=page.locator('[data-atlas-nav]');await nav.focus();await page.keyboard.press('ArrowRight')
     if(!/乙/.test(await nav.getAttribute('aria-label'))||!await page.getByRole('button',{name:'下一条'}).isDisabled())throw Error(`${width}: switched during edit`)
     const input=page.locator('[data-atlas-detail] textarea').first();await input.focus();await page.keyboard.press('ArrowDown')
