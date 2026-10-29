@@ -11,7 +11,12 @@ import type { HelpHit, HelpIndexEntry, HelpGroup } from '@/lib/help/types'
 //    registry 不 import search，方向单一、无循环。
 import { HELP_INDEX } from '@/lib/help/registry'
 
-/** 命中下限：低于它的片段不进结果（宁可不匹配，也不硬凑一篇无关文章） */
+/**
+ * 命中下限：低于它的片段不进结果（宁可不匹配，也不硬凑一篇无关文章）。
+ *
+ * 🔴 取值来自实测：正常问题的命中分在 20～36 之间；而「量子纠缠的退相干时间」这类无关问题
+ *    靠「时间」两个字蹭到《时间脉络》，只有 3～8 分。门槛放在 10 能把后者挡掉，又不误伤前者。
+ */
 export const MIN_HIT_SCORE = 3
 
 /** 一次最多返回几个片段 */
@@ -20,8 +25,12 @@ export const MAX_HITS = 5
 /** 同一篇文章最多占几个片段（防止一篇长文把结果位全吃了） */
 export const MAX_HITS_PER_ARTICLE = 2
 
-/** 关键词权重：标题 > 关键词 > 段落标题 > 正文（规划 §5.2 的「标题/别名/关键词高于正文」） */
-const WEIGHT = { title: 6, keyword: 4, heading: 3, text: 1, currentTab: 2 } as const
+/**
+ * 关键词权重：标题 > 关键词 > 段落标题 > 正文（规划 §5.2 的「标题/别名/关键词高于正文」）。
+ * `currentTab` 给到 8：作者是在**这一页**提问的，「本页相关的文章」应当明显优先于别页的泛泛提及
+ *（实测 2 不够：《自由对话与角色卡片》会压过《主要角色》）。
+ */
+const WEIGHT = { title: 6, keyword: 4, heading: 3, text: 1, currentTab: 8 } as const
 
 /** 问句里的高频虚词：留着会把「怎么」「什么」当成有效词，把所有文章都命中 */
 const STOPWORDS = new Set([
@@ -43,6 +52,9 @@ const SYNONYMS: { topic: string; phrases: string[] }[] = [
   { topic: '复制', phrases: ['剪贴板', '粘贴', '复制不了', '复制没反应'] },
   { topic: '新手', phrases: ['第一次', '刚开始', '入门', '上手', '从哪开始'] },
 ]
+
+/** 虚字：出现在任何 2-gram 里就丢掉整个组合（否则「怎么开始」会切出「么开」这种假词） */
+const STOP_CHARS = new Set(['怎', '么', '什', '了', '吗', '呢', '吧', '啊', '呀', '哦', '嘛'])
 
 /** 归一化：全角转半角、小写、标点转空格、压掉多余空白 */
 export function normalizeHelpText(input: string): string {
@@ -81,7 +93,10 @@ export function tokenizeHelpQuery(raw: string): Map<string, number> {
     if (chunk.length >= 2) {
       for (let i = 0; i + 1 < chunk.length; i++) {
         const gram = chunk.slice(i, i + 2)
-        if (!STOPWORDS.has(gram)) push(gram, 1)
+        if (STOPWORDS.has(gram)) continue
+        // 含虚字的组合不成词（「怎么开始」→ 不要「么开」）
+        if (STOP_CHARS.has(gram[0]) || STOP_CHARS.has(gram[1])) continue
+        push(gram, 1)
       }
     }
   }
@@ -92,8 +107,41 @@ export function tokenizeHelpQuery(raw: string): Map<string, number> {
   return tokens
 }
 
-/** 单条索引项的得分；`coverage` 是命中词占比，用来压掉「只命中一个常见词」的高分 */
-function scoreEntry(entry: HelpIndexEntry, tokens: Map<string, number>, currentTabId: string | null): number {
+/**
+ * 词区分度（简化 IDF）：一个词在越多篇里出现，越不说明问题。
+ *
+ * 🔴 为什么必须有它：「时间」「开始」「保存」这类词几乎每篇都有，靠它们命中的文章
+ *    和「酒馆」「拆书」这种只在一两篇里出现的专有词，权重不该一样。
+ *    实测：没有 IDF 时「量子纠缠的退相干时间」会靠「时间」蹭进《时间脉络》，
+ *    而「酒馆怎么开始」又会被《第一次打开》抢走 —— 两头都不对。
+ */
+function tokenIdf(token: string, entries: HelpIndexEntry[]): number {
+  let df = 0
+  for (const entry of entries) {
+    if (entry.titleText.includes(token) || entry.keywordText.includes(token)
+      || entry.heading.includes(token) || entry.text.includes(token)) df++
+  }
+  // 越少见越接近 1；到处都是的词掉到 0.1 以下（平方放大差距）
+  const idf = Math.log(1 + entries.length / (1 + df))
+  const max = Math.log(1 + entries.length / 2)
+  return Math.pow(Math.min(1, idf / max), 2)
+}
+
+/**
+ * 通用词：几乎每篇都出现、或本身就是问句骨架，**不能单独作为「找到了」的依据**。
+ *
+ * 🔴 准入判据不是分数高低，而是「有没有命中一个实词」：
+ *    · 「量子纠缠的退相干时间」只剩「时间」→ 通用词 → 整条不成立（否则《时间脉络》会被顶上来）；
+ *    · 「酒馆怎么开始」的实词是「酒馆」→ 命中《酒馆模式》，而《第一次打开》只命中「开始」→ 出局；
+ *    · 「没保存上怎么办」的实词是「保存」→ 正常命中《保存状态》。
+ */
+const GENERIC_TOKENS = new Set([
+  '时间', '开始', '功能', '页面', '内容', '设置', '数据', '问题', '方法', '情况', '时候',
+  '东西', '地方', '记录', '使用', '操作', '时候', '一下', '怎样', '需要', '没有', '不会',
+])
+
+/** 单条索引项的得分 */
+function scoreEntry(entry: HelpIndexEntry, tokens: Map<string, number>, currentTabId: string | null, entries: HelpIndexEntry[]): number {
   if (tokens.size === 0) return 0
   const title = normalizeHelpText(entry.titleText)
   const keywords = normalizeHelpText(entry.keywordText)
@@ -101,19 +149,33 @@ function scoreEntry(entry: HelpIndexEntry, tokens: Map<string, number>, currentT
   const body = normalizeHelpText(entry.text)
   let raw = 0
   let matched = 0
+  /** 至少一个「实词命中标题 / 关键词 / 段落标题」才成立；只命中正文不算找到 */
+  let strong = false
   for (const [token, weight] of tokens) {
     let hit = 0
-    if (title.includes(token)) hit += WEIGHT.title
-    if (keywords.includes(token)) hit += WEIGHT.keyword
-    if (heading.includes(token)) hit += WEIGHT.heading
+    const inTitle = title.includes(token)
+    const inKeywords = keywords.includes(token)
+    const inHeading = heading.includes(token)
+    if (inTitle) hit += WEIGHT.title
+    if (inKeywords) hit += WEIGHT.keyword
+    if (inHeading) hit += WEIGHT.heading
     if (body.includes(token)) hit += WEIGHT.text
-    if (hit > 0) { raw += hit * weight; matched++ }
+    if (hit > 0) {
+      raw += hit * weight * tokenIdf(token, entries)
+      matched++
+      if (!GENERIC_TOKENS.has(token) && (inTitle || inKeywords || inHeading)) strong = true
+    }
   }
-  if (matched === 0) return 0
-  const coverage = matched / tokens.size
+  if (matched === 0 || !strong) return 0
+  /**
+   * 覆盖率：命中 3 个检索词即满分。
+   *
+   * 🔴 不用「命中数 / 全部词数」：中文查询会被切成十几个 2-gram，分母一大，
+   *    「术语重名怎么合并」这种只命中「术语」一条的正常问题就会被压到门槛以下（实测）。
+   */
+  const coverage = Math.min(1, matched / 3)
   const tabBonus = currentTabId && entry.tabIds.includes(currentTabId) ? WEIGHT.currentTab : 0
-  // 覆盖率乘数下限 0.35：命中其一也保留一部分分数，交给 MIN_HIT_SCORE 裁决
-  return raw * (0.35 + 0.65 * coverage) + tabBonus
+  return raw * (0.5 + 0.5 * coverage) + tabBonus
 }
 
 /** 摘出一段以首个命中词为中心的上下文 */
@@ -139,7 +201,7 @@ export function searchHelp(raw: string, options: { currentTabId?: string | null;
   const currentTabId = options.currentTabId ?? null
   const limit = options.limit ?? MAX_HITS
   const scored = HELP_INDEX
-    .map(entry => ({ entry, score: scoreEntry(entry, tokens, currentTabId) }))
+    .map(entry => ({ entry, score: scoreEntry(entry, tokens, currentTabId, HELP_INDEX) }))
     .filter(item => item.score >= MIN_HIT_SCORE)
     .sort((a, b) => b.score - a.score)
   const hits: HelpHit[] = []

@@ -56,6 +56,14 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     { query: '新建章节写正文', expect: 'start-first-chapter', why: '第一章' },
     { query: '主角的角色卡在哪填', expect: 'char-main-guide', why: '角色卡' },
     { query: '主题怎么换成深色', expect: 'look-theme-density', why: '主题与密度' },
+    { query: '酒馆怎么开始', expect: 'tavern-overview', why: '酒馆控制面板' },
+    { query: '一键拆书抽设定', expect: 'tools-bookbreak', why: '拆书' },
+    { query: '伏笔埋了没回收怎么办', expect: 'tracking-foreshadow', why: '伏笔回收' },
+    { query: '时间线怎么登记', expect: 'tracking-timeline', why: '时间脉络' },
+    { query: '术语重名怎么合并', expect: 'page-terms', why: '名词术语' },
+    { query: '创意写作会不会自己一直写', expect: 'tools-creative-writing', why: '分批与续跑' },
+    { query: '世界设定和子世界怎么分工', expect: 'world-base-power', why: '母级与子世界' },
+    { query: '字号', expect: 'faq-zoom', why: '同义词「字号」' },
   ]
   const failures: string[] = []
   for (const item of cases) {

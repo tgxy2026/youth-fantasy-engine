@@ -73,7 +73,7 @@ export const FAQ_ARTICLES: HelpArticle[] = [
     revision: 1,
     title: '字太小 / 太大怎么调',
     summary: '左下角「界面缩放」：自动跟随窗口，也可以手动指定 80%～160%。',
-    aliases: ['放大界面', '界面变大', '字太小', '缩小'],
+    aliases: ['放大界面', '界面变大', '字太小', '字太大', '字号', '缩小'],
     keywords: ['缩放', '放大', '缩小', '字号', '界面', '字体', '自动'],
     group: '数据与界面',
     tabIds: ['dashboard'],

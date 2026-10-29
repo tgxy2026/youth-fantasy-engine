@@ -13,6 +13,11 @@ import { EDITOR_ARTICLES } from '@/lib/help/articles/editor'
 import { WORLD_ARTICLES } from '@/lib/help/articles/world'
 import { PLAN_ARTICLES } from '@/lib/help/articles/plan'
 import { LOOK_ARTICLES } from '@/lib/help/articles/look'
+import { WORLD_EXTRA_ARTICLES } from '@/lib/help/articles/world-extra'
+import { TRACKING_ARTICLES } from '@/lib/help/articles/tracking'
+import { TOOLS_ARTICLES } from '@/lib/help/articles/tools'
+import { TAVERN_ARTICLES } from '@/lib/help/articles/tavern'
+import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
 export const CONTENT_VERSION = 1
@@ -26,7 +31,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
   ...EDITOR_ARTICLES,
   ...PLAN_ARTICLES,
   ...WORLD_ARTICLES,
+  ...WORLD_EXTRA_ARTICLES,
   ...LOOK_ARTICLES,
+  ...TRACKING_ARTICLES,
+  ...TOOLS_ARTICLES,
+  ...TAVERN_ARTICLES,
+  ...MISC_PAGE_ARTICLES,
   ...FAQ_ARTICLES,
 ]
 
