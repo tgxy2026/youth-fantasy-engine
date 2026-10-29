@@ -394,16 +394,20 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           </span>
           </div>
           {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧界面密度（单键切换）。
-              🔴 侧栏最窄 224px（内容区 200px）——这一行必须在**最窄宽度也保持一行**（主人明确要求）。
-                  所以这里所有间距收到最小：容器 px-1、内部 gap-0.5、数字框 w-8、密度只占一枚键。
-                  实测 200px 内：胶囊 ~140 + 密度 ~44 + 间距 4 ≈ 188，留 12px 余量。
-                  flex-wrap 只作兜底（极端字体放大时宁可折行，也不横向溢出）。 */}
-          <div className="flex w-full flex-wrap items-center justify-between gap-x-1 gap-y-1">
-          <div className="flex w-fit items-center gap-0.5 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
+              🔴 胶囊要**自己撑满剩余宽度**（主人 2026-10-29 第二次要求）：上下几条（外观设置 / 保存 /
+                  数据文件）都是撑满的，只有它原来是 w-fit 的小胶囊，侧栏拖宽后右边空一截。
+                  现在 `min-w-0 flex-1`：拖动侧栏时它跟着变长；内部两组用 justify-between ——
+                  左边「自动」（模式），右边「− 数字 % +」（数值），中间留弹性空隙。
+              🔴 最窄 224px（内容区 207px）仍必须是一行：内部实测需 ~130px + 密度键 44 + 间距 4 = 178，
+                  余量约 29px，所以 flex-wrap 只作极端字体放大的兜底。 */}
+          <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
           <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
+            {/* 数值组：− / 比例 / % / + 整体靠右，与左边的「自动」分列两端 */}
+            <span className="flex min-w-0 items-center gap-0.5">
             <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面" className="!min-w-6">
               <ZoomOut size={12} />
             </Button>
@@ -429,6 +433,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面" className="!min-w-6">
               <ZoomIn size={12} />
             </Button>
+            </span>
           </div>
           <DensityControl inline />
           </div>
