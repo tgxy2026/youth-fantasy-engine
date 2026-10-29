@@ -15,6 +15,11 @@ try {
     const cards=page.locator('[data-workspace-record]')
     if(await cards.filter({has:page.locator('[tabindex="0"]')}).count())throw Error('unexpected nested tab stop')
     if(await page.locator('[data-workspace-record][tabindex="0"]').count()!==1)throw Error(`${width}: expected one card tab stop`)
+    await page.locator('[data-workspace-record="row1"]').focus()
+    const gridColumnCount=await cards.evaluateAll(nodes=>{const boxes=nodes.map(e=>e.getBoundingClientRect());const next=boxes.findIndex(rect=>Math.abs(rect.top-boxes[0].top)>1);return next<0?boxes.length:next})
+    await page.keyboard.press('ArrowDown')
+    const downExpected=gridColumnCount<3?`row${gridColumnCount+1}`:'row1'
+    if(await page.evaluate(()=>document.activeElement?.getAttribute('data-workspace-record'))!==downExpected)throw Error(`${width}: grid down moved incorrectly`)
     await page.locator('[data-workspace-record="row1"]').focus();await page.keyboard.press('ArrowRight')
     const cols=await page.evaluate(()=>{const a=[...document.querySelectorAll('[data-workspace-record]')].map(e=>e.getBoundingClientRect());return a.length>1 && Math.abs(a[0].top-a[1].top)<1})
     const expected=cols?'row2':'row1'
