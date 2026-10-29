@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { sortAtlasRows, codeKeyOf, idColumnOf } from '@/lib/atlas/order'
+import { atlasGridNeighbour, atlasDetailNeighbour } from '@/lib/atlas/navigation'
 import { codeSortKey } from '@/components/sheets/tableSheetOrder'
 import type { TabDef, TableRow } from '@/lib/types'
 
@@ -89,6 +90,16 @@ function main() {
       !/sortAtlasRows[\s\S]{0,80}(saveTableRow|setRows\()/.test(view))
   }
 
+  {
+    const ids = ['a', 'b', 'c', 'd', 'e']
+    ok('网格按列移动', atlasGridNeighbour(ids, 'b', 3, 'ArrowDown') === 'e')
+    ok('残缺末行不跳到其他列', atlasGridNeighbour(ids, 'c', 3, 'ArrowDown') === null)
+    ok('左右不跨行', atlasGridNeighbour(ids, 'c', 3, 'ArrowRight') === null && atlasGridNeighbour(ids, 'd', 3, 'ArrowLeft') === null)
+    ok('单列不响应左右但上下可用', atlasGridNeighbour(ids, 'b', 1, 'ArrowRight') === null && atlasGridNeighbour(ids, 'b', 1, 'ArrowUp') === 'a')
+    ok('无当前项或列数无效时不猜目标', atlasGridNeighbour(ids, 'x', 3, 'ArrowDown') === null && atlasGridNeighbour(ids, 'a', 0, 'ArrowDown') === null)
+    ok('详情上下左右均按顺序而非列数', atlasDetailNeighbour(ids, 'c', 'ArrowUp') === 'b' && atlasDetailNeighbour(ids, 'c', 'ArrowLeft') === 'b' && atlasDetailNeighbour(ids, 'c', 'ArrowDown') === 'd' && atlasDetailNeighbour(ids, 'c', 'ArrowRight') === 'd')
+    ok('详情首尾及空列表不循环', atlasDetailNeighbour(ids, 'a', 'ArrowLeft') === null && atlasDetailNeighbour(ids, 'e', 'ArrowDown') === null && atlasDetailNeighbour([], 'a', 'ArrowRight') === null)
+  }
   console.log(`\n▶ atlasOrder: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }
