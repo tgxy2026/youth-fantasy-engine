@@ -191,7 +191,7 @@ npm run build:desktop  # 产物输出到 release/ 目录
 <td width="50%"><img src="docs/screenshots/editor.png" alt="正文编辑" /><br/><sub>正文编辑：章节树 + 设定检索 + 正文三栏</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/characters.png" alt="角色管理" /><br/><sub>角色卡：档案字段 + 人物立绘</sub></td>
+<td><img src="docs/screenshots/characters.png" alt="角色管理" /><br/><sub>角色档案：资料目录与表单</sub></td>
 <td><img src="docs/screenshots/relations.png" alt="人物关系" /><br/><sub>人物关系：关系状态与图谱</sub></td>
 </tr>
 <tr>
