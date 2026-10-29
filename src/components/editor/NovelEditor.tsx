@@ -299,7 +299,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   )
   const companionTools = (
     <details data-editor-companion className="group space-y-1">
-      <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded px-3 text-12 text-ink-200 hover:bg-ink-700 [&::-webkit-details-marker]:hidden">
+      {/* 🔴 配色必须与 Button variant=ghost + size=sm 逐字一致（主人 2026-10-29：'为什么它是白的'）：
+            原来 text-ink-200 + hover:bg-ink-700 ⇒ 比别的二级功能更亮、像标题。
+            ghost 真值：text-ink-400 / hover:text-ink-100 / hover:bg-ink-800/60 / border-transparent。 */}
+      <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded border border-transparent px-3 text-12 text-ink-400 hover:bg-ink-800/60 hover:text-ink-100 [&::-webkit-details-marker]:hidden">
         {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
         AI 伴写 <span className="ml-auto text-10 text-ink-500">{!aiReady ? '未配置模型' : companion ? '已开启' : '已关闭'}</span>
         <ChevronDown size={12} className="transition-transform group-open:rotate-180" />

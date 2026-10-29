@@ -381,7 +381,6 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             ))}
           </div>
           <AppearanceToggles />
-          <DensityControl />
           </div>
         </section>
 
@@ -394,6 +393,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             </HelpPopover>
           </span>
           </div>
+          {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧空白处放界面密度。
+              窄侧栏时允许换行 —— 宁可掉到下一行，也不把任一块挤变形。 */}
+          <div className="flex w-full flex-wrap items-center justify-between gap-x-1.5 gap-y-1">
           <div className="flex w-fit items-center gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
           <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
@@ -424,6 +426,8 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面">
               <ZoomIn size={12} />
             </Button>
+          </div>
+          <DensityControl inline />
           </div>
         </div>
         {/* 本机存储：数据文件保存 / 导出 / 导入。
