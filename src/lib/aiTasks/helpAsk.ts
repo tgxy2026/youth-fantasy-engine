@@ -25,7 +25,7 @@ export type AskResult =
   /** 本地没有召回到任何片段：不请求模型（模型只能靠常识编） */
   | { kind: 'no-recall'; hits: HelpHit[] }
   /** 有依据的 AI 回答 */
-  | { kind: 'answer'; answer: string; sources: HelpSourceRef[]; hits: HelpHit[] }
+  | { kind: 'answer'; answer: string; sources: HelpSourceRef[]; sourceSnapshots: Record<string, string>; hits: HelpHit[] }
   /** 模型答了但校验不过（或调用失败）：退回检索结果 */
   | { kind: 'fallback'; message: string; hits: HelpHit[] }
   /** 作者主动停止：什么都不算，界面保留提问方便重试 */
@@ -50,6 +50,7 @@ function fragmentsStillCurrent(hits: HelpHit[], fragments: HelpPromptFragment[])
     current[index].hit.articleId === fragment.hit.articleId
     && current[index].hit.sectionId === fragment.hit.sectionId
     && current[index].text === fragment.text
+    && current[index].sourceSnapshot === fragment.sourceSnapshot
   ))
 }
 
@@ -126,7 +127,10 @@ export async function askHelpOnce(
   if (!checked.ok) {
     return { kind: 'fallback', message: HELP_ANSWER_FAILURE_TEXT[checked.reason], hits }
   }
-  return { kind: 'answer', answer: checked.answer, sources: checked.sources, hits }
+  const sourceSnapshots = Object.fromEntries(fragments.map(fragment => [
+    `${fragment.hit.articleId}/${fragment.hit.sectionId}`, fragment.sourceSnapshot,
+  ]))
+  return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, hits }
 }
 
 /** 失败原因 → 一句话（供单测与界面复用，避免两处各写一份措辞） */

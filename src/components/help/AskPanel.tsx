@@ -11,6 +11,7 @@ import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { getHelpArticle, type HelpHit } from '@/lib/help'
 import { askHelpOnce, type AskResult } from '@/lib/aiTasks/helpAsk'
+import { helpSourceSnapshot } from '@/lib/aiTasks/helpAnswer'
 
 /** 一条消息：只有「提问」与「结果」两种，结果保留原始 kind 以便如实渲染 */
 type Turn =
@@ -34,6 +35,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, setPending] = useState(false)
+  const [staleSourceTurn, setStaleSourceTurn] = useState<number | null>(null)
   const nextId = useRef(1)
   /** 取消信号 + 代次：晚到的结果不许覆盖新一轮（连点、停止后重问都会发生） */
   const abort = useRef<AbortController | null>(null)
@@ -99,7 +101,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     </div>
   )
 
-  const resultBody = (result: AskResult) => {
+  const resultBody = (result: AskResult, turnId: number) => {
     if (result.kind === 'answer') {
       return (
         <div className="space-y-2">
@@ -109,7 +111,15 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
               <div className="text-10 text-ink-500">依据（点开看原文那一段）</div>
               {result.sources.map(source => (
                 <Button key={`${source.articleId}-${source.sectionId}`} variant="bare"
-                  onClick={() => onOpenArticle(source.articleId, source.sectionId)}
+                  onClick={() => {
+                    const key = `${source.articleId}/${source.sectionId}`
+                    if (helpSourceSnapshot(source.articleId, source.sectionId) !== result.sourceSnapshots[key]) {
+                      setStaleSourceTurn(turnId)
+                      return
+                    }
+                    setStaleSourceTurn(null)
+                    onOpenArticle(source.articleId, source.sectionId)
+                  }}
                   className="flex-col items-stretch w-full text-left rounded-md border border-ink-700 bg-ink-800/60 px-2 py-1.5 hover:border-amber/40 transition-colors">
                   <div className="text-10 text-amber/80">
                     《{getHelpArticle(source.articleId)?.title ?? source.articleId}》· {sectionOf(source.articleId, source.sectionId)}
@@ -119,6 +129,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
               ))}
             </div>
           )}
+          {staleSourceTurn === turnId && <div role="status" className="text-11 text-amber">这条回答所依据的手册内容已变化，请重新提问后查看新原文。</div>}
           <div className="text-9 text-ink-600">回答只依据内置手册，不读取你的稿件内容。</div>
         </div>
       )
@@ -177,7 +188,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
             </div>
           ) : (
             <div key={turn.id} className="rounded-lg bg-ink-850 border border-ink-700 px-3 py-2">
-              {resultBody(turn.result)}
+              {resultBody(turn.result, turn.id)}
             </div>
           )
         ))}

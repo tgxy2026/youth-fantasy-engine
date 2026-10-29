@@ -75,12 +75,21 @@ function sectionText(articleId: string, sectionId: string): string | null {
 export interface HelpPromptFragment {
   hit: HelpHit
   text: string
+  /** 记录整段与标题，后续不能让旧回答默默指向更新后的正文。 */
+  sourceSnapshot: string
+}
+
+export function helpSourceSnapshot(articleId: string, sectionId: string): string | null {
+  const article = getHelpArticle(articleId)
+  const section = article?.sections.find(item => item.id === sectionId)
+  return article && section ? JSON.stringify([article.title, section.heading, section.body]) : null
 }
 
 export function prepareHelpPromptFragments(hits: HelpHit[]): HelpPromptFragment[] {
   return hits.slice(0, MAX_PROMPT_HITS).flatMap(hit => {
     const text = sectionText(hit.articleId, hit.sectionId)
-    return text ? [{ hit, text: text.slice(0, MAX_SECTION_CHARS) }] : []
+    const sourceSnapshot = helpSourceSnapshot(hit.articleId, hit.sectionId)
+    return text && sourceSnapshot ? [{ hit, text: text.slice(0, MAX_SECTION_CHARS), sourceSnapshot }] : []
   })
 }
 

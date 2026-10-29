@@ -11,6 +11,7 @@ import path from 'node:path'
 import { ASK_RECALL_LIMIT, askHelpOnce, recallForAsk } from '../src/lib/aiTasks/helpAsk'
 import type { chat, resolveProviderFor } from '../src/lib/ai'
 import { getHelpArticle } from '../src/lib/help'
+import { helpSourceSnapshot } from '../src/lib/aiTasks/helpAnswer'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -137,6 +138,16 @@ const hub = read('src/components/app/ProjectHub.tsx')
       }) as typeof chat,
     })
     ok('模型请求期间手册改变时不展示旧回答', stale.kind === 'fallback' && /发生变化/.test(stale.message))
+    section.body = savedBody
+    const answer = await askHelpOnce('字太小怎么放大', null, undefined, {
+      resolveProviderFor: async () => ({} as NonNullable<Awaited<ReturnType<typeof resolveProviderFor>>>),
+      chat: (async () => JSON.stringify({ answer: '答', quotes: [savedBody.join('\n').slice(0, 20)] })) as typeof chat,
+    })
+    const key = `${hit.articleId}/${hit.sectionId}`
+    const originalSnapshot = answer.kind === 'answer' ? answer.sourceSnapshots[key] : undefined
+    ok('成功回答保留对应来源快照', !!originalSnapshot && originalSnapshot === helpSourceSnapshot(hit.articleId, hit.sectionId))
+    section.body = ['内容在展示回答之后发生变化']
+    ok('旧答案可以检测展示之后的来源变化', !!originalSnapshot && originalSnapshot !== helpSourceSnapshot(hit.articleId, hit.sectionId))
   } finally { section.body = savedBody }
 }
 
