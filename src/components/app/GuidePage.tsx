@@ -101,12 +101,12 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
 
       {/* 3.3.1 · P1：内置使用手册（本地检索，不需要模型）。放在最上面：卡壳时先搜一句，
           比在页签清单里逐个点进去试更快。 */}
-      <div className="mb-6">
+      <div className="mb-6" data-guide="guide-manual">
         <HelpCenter onNavigate={onNavigate} ctx={ctx} currentTabId="guide" />
       </div>
 
       {/* 3.3.1 · P2：引导的开关与重置（关掉自动引导后，从这里恢复） */}
-      <div className="mb-6">
+      <div className="mb-6" data-guide="guide-settings">
         <GuideSettings />
       </div>
 

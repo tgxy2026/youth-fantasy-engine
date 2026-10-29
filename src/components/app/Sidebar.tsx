@@ -1,6 +1,6 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type, Compass } from 'lucide-react'
 import BrandMark from '@/components/common/BrandMark'
 import BackToSource, { type ReturnSource } from '@/components/app/BackToSource'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -58,9 +58,14 @@ interface Props {
   onExport: () => void
   /** 可见性上下文：项目形态 + 自定义项目启用的功能全集，驱动页签显隐与基础设施开关 */
   ctx: VisCtx
+  /**
+   * 3.3.1 · P2/P3：「本页指引」入口。由 App 传入 —— 只有**当前页签有引导**且不由页面组件自己
+   * 托管时才传，避免同一个按钮在页头和侧栏各出现一次。
+   */
+  onPageGuide?: () => void
 }
 
-export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, returnSource }: Props) {
+export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, returnSource, onPageGuide }: Props) {
   // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
   //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
   //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
@@ -383,6 +388,15 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <AppearanceToggles />
           </div>
         </section>
+
+        {/* 3.3.1 · P2/P3：本页指引（只有当前页签有引导时才传入；关掉自动引导后仍可从这里重看） */}
+        {onPageGuide && (
+          <Button variant="secondary" size="xs" onClick={onPageGuide}
+            className="w-full !justify-start gap-1.5"
+            title="分步认识当前页签（随时可重看，不新建记录、不改数据）">
+            <Compass size={12} /> 本页指引
+          </Button>
+        )}
 
         {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
         <div className="space-y-1.5">

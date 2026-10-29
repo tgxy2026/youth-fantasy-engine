@@ -17,6 +17,9 @@ import ChangelogHealthNote from '@/components/app/ChangelogHealthNote'
 import CharacterSheet from '@/components/world/CharacterSheet'
 import OutlineSheet from '@/components/outline/OutlineSheet'
 import ProjectHub from '@/components/app/ProjectHub'
+// 3.3.1 · P3：App 层统一托管的页签引导（非自管页），页面只标 data-guide 锚点
+import { useAppLevelGuide } from '@/components/help/usePageGuideHost'
+import GuideOverlay from '@/components/help/GuideOverlay'
 import AboutPage from '@/components/app/AboutPage'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
@@ -606,6 +609,13 @@ export default function App() {
     setRefreshKey(k => k + 1)
   }, [])
 
+  /**
+   * 3.3.1 · P3：页签引导（App 层托管）。
+   * 只有「在项目内 + 该页不由页面自己托管」才启用；就绪条件是「挂载完成两帧」，不是数据加载完 ——
+   * 需要数据级就绪的页签仍走页面内托管（见 `SELF_MANAGED_GUIDE_TABS`）。
+   */
+  const appGuide = useAppLevelGuide(activeTab, !!projectId)
+
 
   // 启动失败：给一页能读懂的错误 + 一个重试入口，而不是永远停在黑屏上
   if (bootError) {
@@ -786,6 +796,7 @@ export default function App() {
         onExitProject={exitProject}
         onExport={exportCurrent}
         ctx={visCtx}
+        onPageGuide={appGuide.guide ? appGuide.start : undefined}
       />
       {/* 🔴 2026-09-22：padding 必须放在**内层**，不能放在滚动容器 main 上 ——
           滚动容器一旦自带 padding-top，sticky 表头只会贴到 padding 的**内边缘**（实测停在 32px 处），
@@ -824,6 +835,15 @@ export default function App() {
       )}
       {/* #031 定期提醒把数据导出到外部文件。 */}
       <BackupReminder hasProject={!!projectId} onExport={exportCurrent} />
+      {/* 3.3.1 · P3：非自管页签的引导（自管页在页面组件内部渲染，两者互斥） */}
+      {appGuide.running && appGuide.guide && (
+        <GuideOverlay
+          guide={appGuide.guide}
+          startStep={appGuide.startStep}
+          onClose={appGuide.close}
+          onDisableAuto={appGuide.disableAuto}
+        />
+      )}
     </div>
   )
 }

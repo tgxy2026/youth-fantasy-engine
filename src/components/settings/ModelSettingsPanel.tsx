@@ -25,7 +25,7 @@ export default function ModelSettingsPanel() {
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6">
+      <header className="mb-6" data-guide="settings-header">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">模型设置</h1>
           <HelpPopover title="模型设置怎么用" width="24rem" size={14}>
@@ -41,7 +41,9 @@ export default function ModelSettingsPanel() {
         <AIDisabledNotice />
 
         {/* 模型配置（全局）：决定下面几块跟着谁走，所以放最上面 */}
-        <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
+        <div data-guide="settings-models">
+          <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
+        </div>
 
         {/* 3.0 · W1-4：AI 消耗统计（本机账本汇总；切页签会重新挂载并重取数）——
             紧跟模型配置：它回答的正是「这个模型这段时间用了多少、被拒了几次」。 */}

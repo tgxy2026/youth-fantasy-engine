@@ -13,6 +13,10 @@ try{
   await page.goto(origin,{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click();await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
   await page.getByTitle('返回项目列表').waitFor({timeout:60000});const later=page.getByRole('button',{name:'稍后再说',exact:true});if(await later.isVisible())await later.click()
+  // 3.3.1 P2/P3：首次进入页签会弹分步引导（遮罩会吃掉点击）。本探针只验图鉴 ——
+  // 先关掉已弹出的那张，再关掉「自动引导」，后续换页就不会再被遮罩拦住。
+  {const g=page.locator('[data-guide-card]');if(await g.waitFor({timeout:3000}).then(()=>true).catch(()=>false)){await page.getByRole('button',{name:'跳过本页'}).click();await g.waitFor({state:'detached',timeout:5000}).catch(()=>{})}
+   await page.evaluate(async()=>{const m=await import('/src/lib/settings/guidePrefs.ts');m.setGuideAutoEnabled(false)})}
   const nav=page.getByRole('navigation'),results=[]
   for(const label of ['种族生物','物品资源','国家势力','地理风物']){
     await nav.getByText(label,{exact:true}).first().click();await page.getByRole('button',{name:'图鉴',exact:true}).click();await page.locator('[data-workspace-record]').first().waitFor()

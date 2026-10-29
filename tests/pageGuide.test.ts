@@ -114,6 +114,10 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     'src/components/editor/NovelEditor.tsx': 'src/components/editor/NovelEditor.tsx',
     'src/components/editor/NovelEditorChapterTree.tsx': 'src/components/editor/NovelEditorChapterTree.tsx',
     'src/components/sheets/TableSheet.tsx': 'src/components/sheets/TableSheet.tsx',
+    // P3：App 层托管页里手写引导用到的锚点
+    'src/components/app/Dashboard.tsx': 'src/components/app/Dashboard.tsx',
+    'src/components/app/GuidePage.tsx': 'src/components/app/GuidePage.tsx',
+    'src/components/settings/ModelSettingsPanel.tsx': 'src/components/settings/ModelSettingsPanel.tsx',
   }
   const sources = Object.fromEntries(Object.keys(anchorsByFile).map(file => [file, read(file)]))
   const allSource = Object.values(sources).join('\n')
@@ -171,6 +175,65 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('正文页接入', /usePageGuide/.test(editor) && /GuideOverlay/.test(editor) && /PageGuideButton/.test(editor))
   ok('空态表格页接入', /usePageGuide/.test(table) && /GuideOverlay/.test(table) && /PageGuideButton/.test(table))
   ok('使用指南页提供开关与重置', /GuideSettings/.test(guidePage))
+}
+
+// ---------- ⑤ P3：模板覆盖与 App 层托管 ----------
+{
+  const { TABS } = await import('../src/lib/schema')
+  const { getPageGuide: resolveGuide, guideHostedAtAppLevel, SELF_MANAGED_GUIDE_TABS } = await import('../src/lib/help/guides')
+
+  const missing = TABS.map(tab => tab.id).filter(id => !resolveGuide(id))
+  ok('🔴 每个页签都能拿到引导（手写 / 模板 / 兜底）', missing.length === 0, missing.join('、'))
+
+  const manualIds = new Set(PAGE_GUIDES.map(guide => guide.tabId))
+  ok('手写引导优先于模板', [...manualIds].every(id => {
+    const guide = resolveGuide(id)
+    return !!guide && guide.id === PAGE_GUIDES.find(item => item.tabId === id)!.id
+  }))
+
+  /** 模板只允许用这些「共享组件里真实存在」的锚点 */
+  const KNOWN_TEMPLATE_ANCHORS = new Set(['form-header', 'form-fields', 'form-save', 'table-body', 'table-new', 'master-list', 'master-detail'])
+  const templateAnchors = new Set<string>()
+  for (const tab of TABS) {
+    if (manualIds.has(tab.id)) continue
+    const guide = resolveGuide(tab.id)!
+    for (const step of guide.steps) if (step.anchor) templateAnchors.add(step.anchor)
+  }
+  const stray = [...templateAnchors].filter(anchor => !KNOWN_TEMPLATE_ANCHORS.has(anchor))
+  ok('模板只用共享组件里真实存在的锚点', stray.length === 0, stray.join('、'))
+
+  const shellSources = ['src/components/sheets/FormSheet.tsx', 'src/components/sheets/TableSheet.tsx', 'src/components/common/MasterDetail.tsx'].map(read).join('\n')
+  const missingShell = [...templateAnchors].filter(anchor => !shellSources.includes(`data-guide="${anchor}"`))
+  ok('🔴 模板锚点在共享组件源码里真实存在', missingShell.length === 0, missingShell.join('、'))
+
+  // 专用页（非共享组件）只能给「一条居中说明」，不能编造锚点
+  const dedicated = TABS.filter(tab => !['form', 'table', 'card'].includes(tab.type) && !manualIds.has(tab.id))
+  const badFallback = dedicated.filter(tab => {
+    const guide = resolveGuide(tab.id)!
+    return guide.steps.length !== 1 || guide.steps.some(step => !!step.anchor)
+  })
+  ok('专用页兜底只有一条说明且不伪造锚点', badFallback.length === 0, badFallback.map(tab => tab.id).join('、'))
+  ok('专用页兜底文案写进了页签自己的用途', dedicated.every(tab => {
+    const guide = resolveGuide(tab.id)!
+    return guide.steps[0].title.includes(tab.name)
+  }))
+
+  const host = read('src/components/help/usePageGuideHost.ts')
+  const app = read('src/App.tsx')
+  const sidebar = read('src/components/app/Sidebar.tsx')
+  ok('App 层只托管非自管页（两处托管互斥）', /enabled: inProject && guideHostedAtAppLevel\(activeTab\)/.test(host)
+    && /guideHostedAtAppLevel/.test(read('src/lib/help/guides.ts')))
+  ok('自管页名单与页面内接入一致', ['positioning', 'editor', 'foreshadow'].every(id => SELF_MANAGED_GUIDE_TABS.has(id)))
+  ok('🔴 自管页不从 App 层托管（否则两层卡片同时弹）',
+    ['positioning', 'editor', 'foreshadow'].every(id => !guideHostedAtAppLevel(id))
+    && guideHostedAtAppLevel('items') && guideHostedAtAppLevel('dashboard'))
+  ok('App 渲染 App 层引导卡片', /appGuide\.running/.test(app) && /<GuideOverlay/.test(app))
+  ok('侧栏提供「本页指引」入口', /onPageGuide/.test(sidebar) && /本页指引/.test(sidebar))
+  ok('提示文档说明 App 层是「挂载级就绪」不是数据级', /挂载级就绪/.test(host))
+
+  // 覆盖率：把「有锚点」与「只有居中说明」分开统计，供文档与维护用
+  const withAnchor = TABS.filter(tab => (resolveGuide(tab.id)?.steps ?? []).some(step => !!step.anchor))
+  ok('有高亮锚点的页签已过半', withAnchor.length > TABS.length / 2, `${withAnchor.length}/${TABS.length}`)
 }
 
 console.log(`\n—— pageGuide 用例结束：${pass} 通过 / ${fail} 失败`)

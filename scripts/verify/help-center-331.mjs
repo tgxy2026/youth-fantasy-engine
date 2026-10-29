@@ -34,6 +34,20 @@ try {
   const later = page.getByRole('button', { name: '稍后再说', exact: true })
   if (await later.isVisible()) await later.click()
 
+  // 3.3.1 P2/P3：首次进入写作面板会弹分步引导（遮罩会吃掉点击）。
+  // 先关掉已弹出的那张，再关掉「自动引导」——本探针只验手册，换页时不该被遮罩拦住。
+  {
+    const guideCard = page.locator('[data-guide-card]')
+    if (await guideCard.waitFor({ timeout: 3000 }).then(() => true).catch(() => false)) {
+      await page.getByRole('button', { name: '跳过本页' }).click()
+      await guideCard.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    }
+    await page.evaluate(async () => {
+      const prefs = await import('/src/lib/settings/guidePrefs.ts')
+      prefs.setGuideAutoEnabled(false)
+    })
+  }
+
   // ① 进使用指南
   await page.getByRole('navigation').getByText('使用指南', { exact: true }).first().click()
   await page.getByText('内置使用手册', { exact: true }).waitFor({ timeout: 20000 })

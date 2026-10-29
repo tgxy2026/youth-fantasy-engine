@@ -25,6 +25,11 @@ interface Options {
   ready: boolean
   /** 作者正在输入 / 有未保存改动 ⇒ 不自动弹（显示「本页指引」仍可点） */
   busy?: boolean
+  /**
+   * 是否由本处托管。`App` 层给「非自管页」托管时用，避免与页面组件里的托管同时弹两层卡片。
+   * 关掉时 `guide` 返回 null（按钮也就不渲染）。
+   */
+  enabled?: boolean
 }
 
 interface PageGuideState {
@@ -37,8 +42,8 @@ interface PageGuideState {
   disableAuto: () => void
 }
 
-export function usePageGuide({ tabId, ready, busy = false }: Options): PageGuideState {
-  const guide = getPageGuide(tabId)
+export function usePageGuide({ tabId, ready, busy = false, enabled = true }: Options): PageGuideState {
+  const guide = enabled ? getPageGuide(tabId) : null
   const [running, setRunning] = useState(false)
   /** 本次停留里被中断过的引导：不再自动重启，但作者点「本页指引」仍能看 */
   const interrupted = useRef<Set<string>>(new Set())

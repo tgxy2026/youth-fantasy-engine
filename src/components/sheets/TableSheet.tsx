@@ -27,6 +27,7 @@ import { downloadBlob } from '@/lib/storage/zip'
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { PageGuideButton } from '@/components/help/PageGuideButton'
+import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
 import FeedbackAIPanel from '@/components/ai/FeedbackAIPanel'
 import TermDedupPanel from '@/components/tools/TermDedupPanel'
 import CalendarRuleModal from '@/components/common/CalendarRuleModal'
@@ -133,8 +134,10 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   } = model
   const setViewMode: typeof storeViewMode = next => { captureWorkspaceView(); storeViewMode(next) }
 
-  /** 3.3.1 · P2：本页分步引导（目前只登记了「伏笔追踪」的空态样板；其余表格页没有引导就不渲染按钮） */
-  const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirtyKeys.length > 0 })
+  /** 3.3.1 · P2/P3：只有「自管页」（目前是伏笔追踪的空态样板）在组件内托管，其余表格页由 App 层托管 */
+  const pageGuide = usePageGuide({
+    tabId: tab.id, ready: loaded, busy: dirtyKeys.length > 0, enabled: SELF_MANAGED_GUIDE_TABS.has(tab.id),
+  })
 
   /**
    * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。
@@ -664,6 +667,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         <div
           ref={pan.ref}
           data-table-scroll
+          data-guide="table-body"
           onScroll={syncScrollHint}
           onMouseDown={pan.handlers.onMouseDown}
           onMouseMove={pan.handlers.onMouseMove}

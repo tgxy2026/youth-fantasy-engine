@@ -37,6 +37,14 @@ try {
 
   const nav = page.getByRole('navigation')
   const card = page.locator('[data-guide-card]')
+  // 3.3.1 P3：写作面板自己的引导（App 层托管）会先弹，遮罩会挡住侧栏点击 —— 先关掉
+  {
+    const dashboardGuide = page.locator('[data-guide-card]')
+    if (await dashboardGuide.waitFor({ timeout: 3000 }).then(() => true).catch(() => false)) {
+      await page.getByRole('button', { name: '跳过本页' }).click()
+      await dashboardGuide.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    }
+  }
   const badge = async () => (await card.innerText()).match(/第 (\d+) \/ (\d+) 步/)
 
   // ① 首次进入「作品信息」自动出现

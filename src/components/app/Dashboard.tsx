@@ -306,7 +306,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
   ]
 
   const creationSummary = (
-    <section aria-label="创作摘要">
+    <section aria-label="创作摘要" data-guide="dashboard-summary">
       <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <h2 className="text-14 font-semibold text-content-primary">创作摘要</h2>
         <p className="text-13 text-content-secondary">今日字数变化 <strong className="font-semibold text-content-primary">{todayWords.toLocaleString()}</strong> 字</p>
@@ -537,7 +537,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
         <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />
       </Panel>
 
-      <section className="mt-6" aria-labelledby={statisticsId}>
+      <section className="mt-6" aria-labelledby={statisticsId} data-guide="dashboard-stats">
         <h2>
           <button type="button" id={statisticsId} aria-expanded={statisticsOpen} aria-controls={statisticsId + '-content'}
             onClick={() => setStatisticsOpen(value => !value)}

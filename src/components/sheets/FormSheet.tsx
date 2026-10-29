@@ -24,6 +24,7 @@ import MarketRadarDialog from '@/components/dialogs/MarketRadarDialog'
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { PageGuideButton } from '@/components/help/PageGuideButton'
+import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
 
 // 力量体系是升级流的"宪法"：境界/数值类字段绝不能让 AI 凭空编造 ——
 // 常量已提到 lib/schema（C10 起母子面板共用同一套锁定判据，见 POWER_NUMERIC_HINTS 注释）。
@@ -218,8 +219,8 @@ export default function FormSheet({ tab }: Props) {
   // 渲染期派生（2026-10-04 六维审计 A5）：提到 `if (!loaded) return` **之前**（hook 不能条件调用）。
   const filledCount = useMemo(() => Object.values(data).filter(v => v && v.trim()).length, [data])
   const totalFields = useMemo(() => tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0, [tab])
-  /** 3.3.1 · P2：本页分步引导。数据就绪才起；有未保存改动时不自动弹（不抢焦点、不打断填写） */
-  const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirty })
+  /** 3.3.1 · P2：本页分步引导。只有「自管页」在组件内托管（其余表单页由 App 层统一托管，见 guides.ts） */
+  const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirty, enabled: SELF_MANAGED_GUIDE_TABS.has(tab.id) })
 
   if (!loaded) return <LoadingState />
 

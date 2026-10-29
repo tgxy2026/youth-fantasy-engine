@@ -33,7 +33,7 @@ export function MasterDetail({
   height?: string
 }) {
   return (
-    <div data-master-detail data-master-fill={!height || undefined} className={`flex gap-5 min-h-0 overflow-hidden ${height ? '' : 'flex-1'}`} style={{ height }}>
+    <div data-master-detail data-guide="master-detail" data-master-fill={!height || undefined} className={`flex gap-5 min-h-0 overflow-hidden ${height ? '' : 'flex-1'}`} style={{ height }}>
       {children}
     </div>
   )
@@ -81,7 +81,7 @@ export function MasterList({
 }) {
   const showSearch = typeof onQueryChange === 'function'
   return (
-    <aside data-master-list className={`${widthClass} shrink-0 flex flex-col min-h-0`}>
+    <aside data-master-list data-guide="master-list" className={`${widthClass} shrink-0 flex flex-col min-h-0`}>
       {showSearch && (
         <div className="relative shrink-0 mb-2.5">
           <input
