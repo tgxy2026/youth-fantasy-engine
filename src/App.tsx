@@ -54,6 +54,8 @@ import MigrationWizard from '@/components/app/MigrationWizard'
 import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
 import FullTextSearch from '@/components/editor/FullTextSearch'
 import JieWenJiSprite from '@/components/jiewenji/JieWenJiSprite'
+import HelpCenter from '@/components/help/HelpCenter'
+import { Modal } from '@/components/dialogs/Modal'
 import GeoMapEditor from '@/components/world/GeoMapEditor'
 import PlotCanvas from '@/components/outline/PlotCanvas'
 import { showToast } from '@/components/dialogs/dialogs'
@@ -142,6 +144,7 @@ export default function App() {
   }, [])
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
+  const [assistantHelpOpen, setAssistantHelpOpen] = useState(false)
   // 颉文姬 Q 版精灵开关（面板内可切换，localStorage 持久化）
   const [spriteEnabled, setSpriteEnabled] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   useEffect(() => {
@@ -847,7 +850,10 @@ export default function App() {
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，
           不再使用全局 fixed 浮层——避免压住侧栏底部的「界面缩放 / 主题」等控件。 */}
       {/* 颉文姬桌面精灵：全局右缘驻留（可在 AI 编辑面板底部开关关闭） */}
-      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} />}
+      {spriteEnabled && <JieWenJiSprite isEditor={activeTab === 'editor'} onNavigate={navigate} onOpenHelp={() => setAssistantHelpOpen(true)} />}
+      {assistantHelpOpen && <Modal open onClose={() => setAssistantHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh" className="help-modal">
+        <HelpCenter onNavigate={navigate} ctx={visCtx} currentTabId={activeTab} />
+      </Modal>}
       {searchOpen && (
         <FullTextSearch
           onClose={() => setSearchOpen(false)}

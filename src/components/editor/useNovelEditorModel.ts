@@ -880,7 +880,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   const [jieWenJiOpen, setJieWenJiOpen] = useState(false)
   // 全局精灵点击唤起（JieWenJiSprite 派发事件，编辑器页打开完整面板）
   useEffect(() => {
-    const onOpen = () => setJieWenJiOpen(o => !o)
+    const onOpen = () => setJieWenJiOpen(true)
     window.addEventListener('jiewenji:open', onOpen)
     return () => window.removeEventListener('jiewenji:open', onOpen)
   }, [])
