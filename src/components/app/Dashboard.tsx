@@ -430,7 +430,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           </Panel>
         )}
 
-        {/* 待办提醒 */}
+        {/* 创作建议：AI 健康诊断（健康分 + 风险 + 下一步） */}
         <Panel>
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Clock size={14} className="text-amber" /> 创作建议

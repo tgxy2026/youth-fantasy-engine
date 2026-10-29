@@ -552,7 +552,7 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://xxx.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
+      <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://你的账号.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
       <Field label="桶名" value={bucket} onChange={(v) => { setBucket(v); setTested(false) }} placeholder="my-bucket" />
       <Field label="对象键（含前缀）" value={objectKey} onChange={(v) => { setObjectKey(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
       <Field label="区域 Region" value={region} onChange={(v) => { setRegion(v); setTested(false) }} placeholder="us-east-1" />
