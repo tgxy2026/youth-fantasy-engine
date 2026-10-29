@@ -399,7 +399,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         )}
 
         {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-zoom-panel>
           <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
           <span className="flex shrink-0 items-center gap-1">界面缩放
             <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
@@ -422,7 +422,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           </Button>
             {/* 数值组：− / 比例 / % / + 整体靠右，与左边的「自动」分列两端 */}
             <span className="flex min-w-0 items-center gap-0.5">
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面" className="!min-w-6">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} aria-label="缩小界面" title="缩小界面（按 10% 递减）" className="!min-w-6">
               <ZoomOut size={12} />
             </Button>
             <span className="flex min-w-0 items-center justify-center gap-1">
@@ -444,7 +444,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
               />
               <span className="text-ink-400 text-11">%</span>
             </span>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面" className="!min-w-6">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} aria-label="放大界面" title="放大界面（按 10% 递增）" className="!min-w-6">
               <ZoomIn size={12} />
             </Button>
             </span>

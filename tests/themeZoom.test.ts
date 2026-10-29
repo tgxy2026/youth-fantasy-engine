@@ -66,5 +66,37 @@ const codeOnly = (src: string) => src.split('\n').filter(l => !l.trim().startsWi
   ok('🔴 显式高度（与同排 toggle 的 h-6 对齐，防「比周围按钮高一截」）', /(^|\s)h-\d/.test(cls), cls)
 }
 
+// ---------- ④ 3.3.1 · P5：缩放面板的排布与无障碍名称 ----------
+{
+  const sb = read('src/components/app/Sidebar.tsx')
+  const ws = read('src/components/app/WorkspaceSidebar.tsx')
+
+  ok('缩放面板有稳定锚点（探针按它测量，不靠猜 class）', /data-zoom-panel/.test(sb))
+
+  // 标题独立成行：`界面缩放` 那段先闭合，`自动` 按钮出现在其后
+  // 面板到 `DensityControl inline` 结束（同一行右侧就是密度键）
+  const panelStart = sb.indexOf('data-zoom-panel')
+  const panelEnd = sb.indexOf('DensityControl inline', panelStart)
+  const panel = sb.slice(panelStart, panelEnd > panelStart ? panelEnd : panelStart + 4000)
+  const titleAt = panel.indexOf('界面缩放')
+  const autoAt = panel.indexOf('跟随窗口自动调整')
+  ok('🔴 第一行只有标题与帮助，自动按钮在下一行（不与标题同排）', titleAt >= 0 && autoAt > titleAt)
+  ok('🔴 标题行在自动按钮之前就闭合了（不是同一个 flex 行）',
+    panel.slice(titleAt, autoAt).includes('</div>'), panel.slice(titleAt, autoAt).slice(-60))
+
+  ok('🔴 自动按钮带可读名称「跟随窗口自动调整」', /aria-label="跟随窗口自动调整"/.test(panel))
+  ok('🔴 自动按钮暴露选中态（aria-pressed 绑到真实状态）', /aria-pressed=\{zoomAuto\}/.test(panel))
+  ok('百分比输入框有名称「界面缩放百分比」', /ariaLabel="界面缩放百分比"/.test(panel))
+  ok('增减按钮都有可读名称（图标键不靠 title 猜）',
+    /aria-label="缩小界面"/.test(panel) && /aria-label="放大界面"/.test(panel))
+  ok('🔴 百分比框宽度容得下三位数（w-9 及以上，160% 不被裁）',
+    /className="h-6 w-(9|1\d|2\d)\b/.test(panel), (panel.match(/className="h-6 w-[\w[\]]+/) ?? [''])[0])
+
+  // 窄屏抽屉复用同一份侧栏实例 —— 两处形态不能各写一套缩放控件
+  ok('窄屏抽屉复用同一个 Sidebar（不另写一套缩放控件）',
+    /width < 900/.test(ws) && /<Sidebar/.test(ws) && /sidebar/.test(ws))
+  ok('未展开时把侧栏放进隐藏容器（不留可聚焦的重复控件）', /className="hidden"/.test(ws))
+}
+
 console.log(`\nthemeZoom: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1
