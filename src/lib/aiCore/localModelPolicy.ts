@@ -41,3 +41,17 @@ export function isLocalModelProvider(provider: Pick<AIProvider, 'type' | 'local'
   if (provider.type === 'ollama' && !provider.baseUrl.trim()) return true
   return !!provider.local || isLocalModelAddress(provider.baseUrl)
 }
+
+/** 本地 DNS 解析不可由浏览器同步取得；不得把未解析域名或无效地址当作已证明的公网地址。 */
+export type ModelTargetLocation = 'local' | 'unclassified-address' | 'unresolved' | 'invalid'
+
+export function modelTargetLocation(provider: Pick<AIProvider, 'type' | 'local' | 'baseUrl'>): ModelTargetLocation {
+  if (isLocalModelProvider(provider)) return 'local'
+  let url: URL
+  try { url = new URL(provider.baseUrl.trim()) } catch { return 'invalid' }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'invalid'
+  const host = url.hostname.toLowerCase().replace(/\.$/, '')
+  // URL 会先规范化合法的 IPv4 字面量，IPv6 字面量由中括号包围。
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || (host.startsWith('[') && host.endsWith(']'))) return 'unclassified-address'
+  return 'unresolved'
+}
