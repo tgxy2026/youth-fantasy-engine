@@ -8,6 +8,9 @@
 import { GITEE_RELEASES_URL } from './config.mjs'
 import { authClient } from './authClient.mjs'
 import { AUTH_STYLE } from './authStyle.mjs'
+import { readFileSync } from 'node:fs'
+
+const PARTY_ART = readFileSync(new URL('./auth-party.jpg', import.meta.url)).toString('base64')
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -171,13 +174,16 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
       <h1 id="brand-title">让想象，<br><span>自成宇宙。</span></h1>
       <p class="story-lead">把脑海里的世界，写成可以居住的故事。</p>
       <p class="story-note">角色、设定、章节与灵感，<br>在这里，汇聚成属于你的幻想世界。</p>
-      ${NIGHT_ART}
+      <img class="party-art" src="data:image/jpeg;base64,${PARTY_ART}" alt="六位 AI 灵感伙伴围坐茶桌，分享创作灵感的非官方插画" width="1536" height="1024">
     </div>
     <div class="brand-foot"><span>作品与设定各自独立 · 灵感有迹可循</span><span aria-hidden="true">✦</span></div>
   </section>
   <section class="stage" aria-labelledby="form-title">
     <div class="card">
       <header><p class="card-kicker" lang="en">YOUR NEXT CHAPTER</p><h2 id="form-title">欢迎回来</h2><p class="card-subtitle" id="form-subtitle">继续你的幻想世界之旅。</p></header>
+      <a class="guestBtn" href="/guest">免费以游客身份开始创作 ${ARROW}</a>
+      <p class="guestNote">无需注册，功能完整。数据保存在<b>当前浏览器</b>，清理浏览器数据或换设备后无法找回，请及时导出备份。</p>
+      <div class="orDivider"><span>已有云端账号 / 注册账号</span></div>
       ${canRegister ? `<div class="tabs" id="tabs" role="group" aria-label="账号操作">
         <button type="button" data-tab="login" class="on" aria-pressed="true">登录</button>
         <button type="button" data-tab="register" aria-pressed="false">注册</button>
@@ -210,12 +216,7 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
 
       <div class="msg ${msgClass}" id="msg" tabindex="-1" role="${error ? 'alert' : 'status'}">${msgText}</div>
 
-      <div class="orDivider"><span>也可以先看看</span></div>
-      <a class="guestBtn" href="/guest">先以游客身份探索 ${ARROW}</a>
-      <p class="guestNote">
-        游客数据仅保存在<b>当前浏览器</b>，不会上传<br>
-        清理浏览器或换设备后<b>无法找回</b>，请及时导出备份
-      </p>
+      ${canRegister && needInvite ? '<p class="invite-info">打赏支持后，可通过 QQ 群 1106815480 或联系开发者 QQ 1822304733 领取邀请码，注册账号即可使用默认 200 MB 云端空间并跨设备访问。邀请码也是找回密码的凭证，请妥善保管。</p>' : ''}
     </div>
     <div class="foot">
       <p class="cloud-note">${CLOUD} 账号数据云端保存，按账号隔离</p>

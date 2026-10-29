@@ -9,7 +9,7 @@ import { chromium } from 'playwright'
 import { renderAuthPage, renderResetPage } from '../../server/lib/authPage.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const files = ['server/lib/authPage.mjs', 'server/lib/authStyle.mjs', 'server/lib/authClient.mjs', 'src/index.css', 'scripts/verify/auth-entry-layout.mjs']
+const files = ['server/lib/authPage.mjs', 'server/lib/authStyle.mjs', 'server/lib/authClient.mjs', 'server/lib/auth-party.jpg', 'src/index.css', 'scripts/verify/auth-entry-layout.mjs']
 const fingerprint = async () => {
   const hash = createHash('sha256')
   for (const file of files) hash.update(file).update(await fs.readFile(path.join(root, file)))
