@@ -109,7 +109,7 @@ export default function JieWenJiSprite({ isEditor, onNavigate, onOpenHelp }: Pro
       {/* 编辑与使用答疑是两个独立入口，查手册不要求配置模型。 */}
       {mini && (
         <div
-          className="absolute right-[calc(100%+10px)] bottom-1/2 mb-2 w-56 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl p-3 pointer-events-auto"
+          className="absolute right-[60px] bottom-1/2 mb-2 w-56 bg-ink-850 border border-ink-600 rounded-xl shadow-2xl p-3 pointer-events-auto"
 style={{ zIndex: Z.pageTip }}
           onPointerDown={e => e.stopPropagation()}
           onKeyDown={e => { if (!e.nativeEvent.isComposing && e.key === 'Escape') { e.stopPropagation(); closeChoices() } }}
