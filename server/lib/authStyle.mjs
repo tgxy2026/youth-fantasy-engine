@@ -21,6 +21,7 @@ body.auth-entry{--page-bg:#e6f0e0;--surface:#e9f1e2;--text:#2b3a22;--secondary:#
 .auth-entry .story-note{max-width:330px;margin-top:12px;color:var(--muted);font-size:13px;line-height:1.9}
 .auth-entry .night-art{display:block;position:relative;width:min(100%,460px);height:auto;max-height:290px;margin:8px auto 0;overflow:visible}
 .auth-entry .party-art{display:block;width:min(100%,760px);height:auto;margin:20px auto 0;mix-blend-mode:multiply;mask-image:radial-gradient(ellipse 70% 68% at center,#000 48%,transparent 100%)}
+.auth-entry .art-credit{text-align:center;color:var(--muted);font-size:11px;margin-top:4px}
 .auth-entry .brand-foot{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:1px solid var(--line);padding-top:20px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
 .auth-entry .brand-foot span:last-child{color:#44764e}
 .auth-entry .stage{min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:48px 28px;gap:24px}

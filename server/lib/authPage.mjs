@@ -174,7 +174,8 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
       <h1 id="brand-title">让想象，<br><span>自成宇宙。</span></h1>
       <p class="story-lead">把脑海里的世界，写成可以居住的故事。</p>
       <p class="story-note">角色、设定、章节与灵感，<br>在这里，汇聚成属于你的幻想世界。</p>
-      <img class="party-art" src="data:image/jpeg;base64,${PARTY_ART}" alt="六位 AI 灵感伙伴围坐茶桌，分享创作灵感的非官方插画" width="1536" height="1024">
+      <img class="party-art" src="data:image/jpeg;base64,${PARTY_ART}" alt="八位 AI 灵感伙伴围坐茶桌，分享创作灵感的非官方插画" width="1774" height="887">
+      <p class="art-credit">非官方同人插画 · 角色参考：<a href="https://selinlee.github.io/ai-moe-atlas/zh/" target="_blank" rel="noopener noreferrer">AI 萌化百科与原作者</a></p>
     </div>
     <div class="brand-foot"><span>作品与设定各自独立 · 灵感有迹可循</span><span aria-hidden="true">✦</span></div>
   </section>
