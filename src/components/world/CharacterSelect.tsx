@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { getCardRecords } from '@/lib/db'
 import type { CardRecord } from '@/lib/types'
 import { tabVisible, type VisCtx, TABS } from '@/lib/schema'
 import { ChevronDown, Check } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
+import SelectedValues from '@/components/common/SelectedValues'
 import { Z } from '@/lib/app/zLayer'
 import { computeDropdownPos, type DropdownPos } from '@/lib/app/dropdownPos'
 
@@ -30,6 +32,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   const [q, setQ] = useState('')
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const portalHost = usePopupLayer(open, () => setOpen(false), btnRef)
   const dropRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<DropdownPos | null>(null)
 
@@ -76,6 +79,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       setOpen(false); setQ('')
@@ -93,10 +97,15 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
     : (value ? [value] : [])
   const isSel = (n: string) => selected.includes(n)
   const toggle = (n: string) => {
-    if (!multi) { onChange(n); setOpen(false); setQ(''); return }
+    if (!multi) { onChange(value === n ? '' : n); setOpen(false); setQ(''); return }
     const set = new Set(selected)
     if (set.has(n)) set.delete(n); else set.add(n)
     onChange([...set].join('，'))
+  }
+  const removeSelected = (name: string) => {
+    onChange(multi ? selected.filter(value => value !== name).join('，') : '')
+    if (!multi) { setOpen(false); setQ('') }
+    else requestAnimationFrame(() => dropRef.current?.querySelector('input')?.focus({ preventScroll: true }))
   }
   const display = multi ? selected.join('，') : value
 
@@ -104,6 +113,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
@@ -119,6 +129,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
             zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
+            width: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
@@ -133,6 +144,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
               className="w-full !py-0.5 text-12"
             />
           </div>
+          <SelectedValues values={selected} onRemove={removeSelected} onClear={() => { onChange(''); setOpen(false); setQ('') }} />
           {filtered.length === 0 && (
             <EmptyState text="无匹配角色" />
           )}
@@ -148,7 +160,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
             </Button>
           ))}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

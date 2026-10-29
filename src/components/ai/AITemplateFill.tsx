@@ -26,6 +26,8 @@ import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Check, Loader2, AlertCircle, RefreshCw, MessagesSquare, NotebookPen } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
+import { candidateApplyContext, useCandidateApply } from '@/components/common/useCandidateApply'
+import type { CandidateSubmit } from '@/lib/ai/candidateApply'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import { aiChatJson, aiCompleteTemplate, buildWorldContext, WORLD_CONTEXT_GROUPS, type TemplateField, type FillContext } from '@/lib/ai'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/editor/draftMaterial'
@@ -94,7 +96,7 @@ interface Props {
   /** 弹窗标题 */
   title?: string
   /** 采用时回调：仅回传 AI 补全（非锁定、非已填）字段的 key->value */
-  onSubmit: (values: Record<string, string>) => void
+  onSubmit: CandidateSubmit
   onClose: () => void
 }
 
@@ -133,6 +135,7 @@ export default function AITemplateFill({
   const [result, setResult] = useState<Record<string, string> | null>(null)
   const [aiFilled, setAiFilled] = useState<string[]>([])
   const [source, setSource] = useState<DraftSource | null>(null)
+  const adoption = useCandidateApply(onSubmit, onClose)
   const search = useSearchSettings()
 
   // ---------- 草稿本（全局能力，见 props.draftScope） ----------
@@ -275,6 +278,9 @@ export default function AITemplateFill({
   )
 
   const run = async () => {
+    if (adoption.isPending() || !adoption.reset()) return
+    const owner = candidateApplyContext()
+    const current = () => owner === candidateApplyContext()
     if (sendFields.length === 0) {
       setError('没有需要补全的空字段（已全部填写或被锁定）。')
       return
@@ -287,6 +293,7 @@ export default function AITemplateFill({
       if (withWorldContext && useCtx) {
         try { ctx = await buildWorldContext() } catch { ctx = '' }
       }
+      if (!current()) return
       // 素材：联网检索（按设置那一档）+ 粘贴的参考 + 现有内容。
       // 查失败**不中断** —— 照样用模型知识生成，但把原因带回来如实显示。
       const material = await prepareDraftMaterial({
@@ -295,15 +302,18 @@ export default function AITemplateFill({
         existing: existingText,
         settings: search ?? { ...DEFAULT_SEARCH_SETTINGS },
       })
+      if (!current()) return
       setSource(material.source)
       const r = await aiCompleteTemplate(sendFields, sketch, {
         worldContext: ctx,
         material: material.blocks,
         context,
       })
+      if (!current()) return
       setResult(r.values)
       setAiFilled(r.aiFilled)
     } catch (e) {
+      if (!current()) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -312,13 +322,17 @@ export default function AITemplateFill({
 
   const apply = () => {
     if (!result) return
-    onSubmit(result)
-    onClose()
+    void adoption.apply(result)
   }
 
   const setVal = (key: string, v: string) => setResult(prev => ({ ...(prev ?? {}), [key]: v }))
 
   // 对话引导：整个弹窗换成访谈界面（不套娃 —— 各用各的 Modal）
+  if (adoption.blocked) return <Modal key="context-changed" open title="工作上下文已变化" width="sm"
+    onClose={adoption.requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending}>
+    <p role="alert" className="text-13 text-ink-100">当前工作上下文已变化，此窗口不再展示或提交原目标内容。已发出的操作请到原目标核对，关闭后可在目标页重新打开。</p>
+    <Button className="mt-3" disabled={adoption.pending} onClick={adoption.requestClose}>关闭</Button>
+  </Modal>
   if (mode === 'interview' && sendFields.length > 0) {
     return (
       <InterviewChat
@@ -341,7 +355,7 @@ export default function AITemplateFill({
         callChat={callChat}
         onClose={onClose}
         onApply={onSubmit}
-        applyLabel="生成草稿并填入"
+        applyLabel="采用候选并填入"
         /**
          * 存档作用域（3.1.3）：优先复用草稿本的 `draftScope` —— 它已经是「页签 / 记录 / 行」
          * 维度的稳定值，8 个调用方都传了；没传时退回「按弹窗标题」，至少同类型弹窗能接上。
@@ -354,7 +368,7 @@ export default function AITemplateFill({
   }
 
   return (
-    <Modal open onClose={onClose} icon={<Sparkles size={14} />} title={title} width="xl" maxHeight="88vh">
+    <Modal open onClose={adoption.requestClose} dismissible={!adoption.pending} showCloseButton={!adoption.pending} icon={<Sparkles size={14} />} title={title} width="xl" maxHeight="88vh">
 
       <div className="space-y-4">
         {/* ---------- 两种模式 ---------- */}
@@ -362,13 +376,14 @@ export default function AITemplateFill({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="toggle" size="sm" selected={mode === 'fill'}
+              disabled={adoption.pending || adoption.blocked}
               onClick={() => setMode('fill')}
             >
               <Sparkles size={12} /> 一句话补全
             </Button>
             <Button
               variant="toggle" size="sm" selected={mode === 'interview'}
-              disabled={sendFields.length === 0}
+              disabled={sendFields.length === 0 || adoption.pending || adoption.blocked}
               onClick={() => setMode('interview')}
             >
               <MessagesSquare size={12} /> 对话引导
@@ -463,7 +478,7 @@ export default function AITemplateFill({
 
             {!result && (
               <Button onClick={run}
-                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
+                disabled={loading || adoption.pending || adoption.blocked || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? '正在生成补全…' : '生成补全'}
               </Button>
@@ -481,7 +496,9 @@ export default function AITemplateFill({
                 <DraftSourceLine source={source} />
                 <div className="text-12 text-ink-400">
                   预览：AI 补全的字段已高亮，你可逐条修改后再采用。带「AI补全」的即为模型生成、建议你核对。
+                  候选尚未应用；采用后请在目标页核对结果和保存状态。
                 </div>
+                {adoption.error && <p role="alert" className="rounded-lg border border-danger/40 bg-surface-panel p-2 text-12 text-danger">{adoption.error}</p>}
                 <div className="space-y-3 overflow-y-auto pr-1"
 style={{ maxHeight: foldVh('42vh') }}>
                   {labeledFields.map(f => {
@@ -504,6 +521,8 @@ style={{ maxHeight: foldVh('42vh') }}>
                         </div>
                         {isProduced ? (
                           <textarea
+                            disabled={adoption.pending || adoption.blocked}
+                            data-candidate-field={f.key}
                             value={val}
                             onChange={e => setVal(f.key, e.target.value)}
                             className="w-full text-12 bg-ink-900 border border-ink-700 rounded-lg px-2 py-1.5 resize-y focus:border-amber/40 outline-none"
@@ -519,16 +538,17 @@ style={{ maxHeight: foldVh('42vh') }}>
                   })}
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <Button onClick={apply} variant="primary" size="md" className="flex items-center">
-                    <Check size={13} /> 采用并创建
+                  <Button onClick={apply} disabled={adoption.pending || adoption.blocked} variant="primary" size="md" className="flex items-center">
+                    <Check size={13} /> {adoption.pending ? '正在采用…' : '采用候选'}
                   </Button>
                   <Button
-                    onClick={() => { setResult(null); setAiFilled([]); setSource(null) }}
+                    onClick={() => { if (!adoption.reset()) return; setResult(null); setAiFilled([]); setSource(null) }}
+                    disabled={adoption.pending || adoption.blocked}
                     variant="secondary" size="md" className="flex items-center gap-1.5"
                   >
                     <RefreshCw size={12} /> 重新生成
                   </Button>
-                  <Button variant="secondary" size="md" onClick={onClose} className="ml-auto">
+                  <Button variant="secondary" size="md" disabled={adoption.pending} onClick={adoption.requestClose} className="ml-auto">
                     取消
                   </Button>
                 </div>

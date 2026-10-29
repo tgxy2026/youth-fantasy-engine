@@ -26,6 +26,7 @@ import {
   listJobRevisionPayloads, listProjectRevisionPayloads,
 } from '@/lib/db/revisionJobs'
 import { hashOf } from '@/lib/semantic/chunk'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 /** 载荷 `report` 里承载的候选元数据（与正文分开放，便于以后单独迁移） */
 interface CandidateMeta {
@@ -125,8 +126,8 @@ export type SaveCandidateResult =
  * @param now 注入时钟，便于单测（默认当前时间）
  * @returns 实际回收的份数
  */
-export async function reclaimStaleCandidates(projectId: string, now: number = Date.now()): Promise<number> {
-  const list = await listProjectRevisionPayloads(projectId)
+export async function reclaimStaleCandidates(projectId: string, now: number = Date.now(), owner?: OwnedOperation): Promise<number> {
+  const list = await listProjectRevisionPayloads(projectId, owner)
   if (list.length === 0) return 0
   const cutoff = now - ORPHAN_PAYLOAD_RETENTION_DAYS * 24 * 60 * 60 * 1000
   let reclaimed = 0
@@ -137,7 +138,7 @@ export async function reclaimStaleCandidates(projectId: string, now: number = Da
     if (!c) continue
     // 🔴 在途的不动：待审 / 应用中等核对 —— 删了就是删作者的稿子
     if (c.status === 'pending' || c.status === 'applying' || c.status === 'needs-reconcile') continue
-    await deleteRevisionPayload(p.id)
+    await deleteRevisionPayload(p.id, owner)
     reclaimed++
   }
   return reclaimed
@@ -149,7 +150,10 @@ export async function reclaimStaleCandidates(projectId: string, now: number = Da
  * 🔴 顺序：**先查配额 → 再写 → 再回读**。反过来先写再查配额，超限时就只能删掉刚写的那份，
  *    多一次失败路径；而"先查后写"最多是并发下略微超一点点，代价小得多。
  */
-export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidateResult> {
+export async function saveCandidate(c: RevisionCandidate, owner?: OwnedOperation, expected?: RevisionCandidate): Promise<SaveCandidateResult> {
+  owner?.assertCurrent()
+  if (owner && owner.projectId !== c.projectId) throw new Error('候选不属于当前操作项目。')
+  if (owner && (!expected || expected.id !== c.id)) throw new Error('缺少待更新候选的原始版本。')
   const payload = candidateToPayload(c)
 
   if (payload.bytes > MAX_PAYLOAD_BYTES) {
@@ -158,15 +162,14 @@ export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidate
       detail: `候选 ${payload.bytes} 字节，超过单份上限 ${MAX_PAYLOAD_BYTES}（256 KiB）—— 请缩小范围后重试`,
     }
   }
-
-  let existing = await listProjectRevisionPayloads(c.projectId)
+  let existing = await listProjectRevisionPayloads(c.projectId, owner)
   let others = existing.filter(p => p.id !== c.id)
   // 配额不够时先回收「终态 + 超龄」的旧稿（3.2.1：原回收器从没被调用过 ⇒ 只增不减）
   if (others.length >= MAX_PAYLOADS_PER_PROJECT
     || others.reduce((n, p) => n + (p.bytes || 0), 0) + payload.bytes > MAX_PAYLOAD_TOTAL_BYTES) {
-    const reclaimed = await reclaimStaleCandidates(c.projectId)
+    const reclaimed = await reclaimStaleCandidates(c.projectId, Date.now(), owner)
     if (reclaimed > 0) {
-      existing = await listProjectRevisionPayloads(c.projectId)
+      existing = await listProjectRevisionPayloads(c.projectId, owner)
       others = existing.filter(p => p.id !== c.id)
     }
   }
@@ -184,10 +187,15 @@ export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidate
     }
   }
 
-  await saveRevisionPayload(payload)
+  if (owner && expected) {
+    const prior = await getRevisionPayload(c.id, owner)
+    const previous = prior ? payloadToCandidate(prior) : null
+    if (!previous || !sameCandidateRevision(expected, previous)) throw new Error('候选已变化或不存在，请刷新后重新核对。')
+  }
+  await saveRevisionPayload(payload, owner)
 
   // 同一候选更新 intent / receipt 时正文不变；仅比较正文会把旧状态回读误判为保存成功。
-  const back = await getRevisionPayload(c.id)
+  const back = await getRevisionPayload(c.id, owner)
   if (!back || typeof back.candidateText !== 'string' || hashOf(back.candidateText) !== hashOf(c.text)
     || back.beforeText !== payload.beforeText || JSON.stringify(back.report) !== JSON.stringify(payload.report)) {
     return { ok: false, code: 'readback-mismatch', detail: '候选写入后回读与正文或应用状态不一致（可能磁盘写满）' }
@@ -195,14 +203,25 @@ export async function saveCandidate(c: RevisionCandidate): Promise<SaveCandidate
   return { ok: true, bytes: payload.bytes }
 }
 
-export async function loadCandidate(id: string): Promise<RevisionCandidate | null> {
-  const p = await getRevisionPayload(id)
+export async function loadCandidate(id: string, owner?: OwnedOperation): Promise<RevisionCandidate | null> {
+  const p = await getRevisionPayload(id, owner)
   return p ? payloadToCandidate(p) : null
 }
 
+/** A stale panel must not replace a candidate edited, processed or deleted since it was read. */
+export function sameCandidateRevision(a: RevisionCandidate, b: RevisionCandidate): boolean {
+  return a.id === b.id && a.jobId === b.jobId && a.projectId === b.projectId && a.chapterId === b.chapterId
+    && a.status === b.status && a.updatedAt === b.updatedAt && a.beforeText === b.beforeText && a.text === b.text
+    && a.createdAt === b.createdAt && a.generation === b.generation && a.summary === b.summary
+    && JSON.stringify(a.intent ?? null) === JSON.stringify(b.intent ?? null)
+    && JSON.stringify(a.receipt ?? null) === JSON.stringify(b.receipt ?? null)
+    && JSON.stringify(a.staleReasons ?? []) === JSON.stringify(b.staleReasons ?? [])
+    && JSON.stringify(a.checkPayloadIds ?? []) === JSON.stringify(b.checkPayloadIds ?? [])
+}
+
 /** 某任务的全部候选（按创建时间升序，界面按"第几稿"排列即天然有序） */
-export async function listJobCandidates(jobId: string): Promise<RevisionCandidate[]> {
-  const list = await listJobRevisionPayloads(jobId)
+export async function listJobCandidates(jobId: string, owner?: OwnedOperation): Promise<RevisionCandidate[]> {
+  const list = await listJobRevisionPayloads(jobId, owner)
   return list.map(payloadToCandidate).filter((c): c is RevisionCandidate => c !== null)
 }
 

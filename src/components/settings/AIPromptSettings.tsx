@@ -114,10 +114,10 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
   const editingDirty = !!editingEntry
     && drafts[editingEntry.id] !== undefined
     && drafts[editingEntry.id] !== editingEntry.text
-  useSaveHotkey(() => { if (editingEntry) void save(editingEntry) }, editingDirty && !busy)
+  const saveScope = useSaveHotkey(() => { if (editingEntry) void save(editingEntry) }, editingDirty && !busy)
 
   return (
-    <Panel>
+    <Panel data-save-scope={saveScope}>
       <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <MessageSquareCode size={14} className="text-amber" /> AI 提示词
         {changedCount > 0 && (

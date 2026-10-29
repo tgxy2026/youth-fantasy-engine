@@ -1,12 +1,14 @@
 // Stage A foundation. Unimplemented business contracts deliberately prevent full-local green.
 import fs from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcess } from './process.mjs'
 import { readTestPlan } from './test-plan.mjs'
 import { captureInputs, hashPaths, scopeVerdict, writeReports } from './evidence.mjs'
 import { validateGuestEvidence } from './web-guest-evidence.mjs'
-import { validateDesktopEvidence } from './desktop-evidence.mjs'
+import { validateDesktopEvidence, validateInstalledDesktopEvidence } from './desktop-evidence.mjs'
 import { validateWebCloudEvidence } from './web-cloud-evidence.mjs'
 import { validateAuditBundle } from './audit-contracts.mjs'
 import { validateInflightEvidence } from './inflight-evidence.mjs'
@@ -36,7 +38,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
   const dirty = await runProcess('git', ['diff', '--no-ext-diff', '--binary', 'HEAD'], { cwd: realRoot, timeoutMs: 15000, signal })
   // Fingerprints include untracked source/tooling too; Git diff alone cannot identify this workspace.
   const report = { schemaVersion: 1, runRoot, stage, profile: 'local', startedAt, version: pkg.version,
-    plannedVersion: '3.2.3', head: git.ok ? git.stdout.trim() : null, gitAvailable: git.ok,
+    plannedVersion: pkg.version, head: git.ok ? git.stdout.trim() : null, gitAvailable: git.ok,
     environment: { node: process.version, platform: process.platform, arch: process.arch }, inputs, results }
   await fs.writeFile(path.join(runRoot, 'working-tree.diff'), dirty.out)
   const record = (id, status, assertions, reason, evidencePaths = []) => {
@@ -53,7 +55,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     try {
       const assertions = await inspect(result)
       if (!Number.isInteger(assertions) || assertions < 1) throw new Error('No verified samples')
-      const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop', 'storage.web-cloud-save': 'web-cloud' }[id]
+      const runtimePrefix = { 'storage.web-guest-save': 'guest', 'storage.desktop-save': 'desktop', 'storage.desktop-installed': 'installed', 'storage.web-cloud-save': 'web-cloud' }[id]
       const extra = id === 'source.tests' ? ['tests.json'] : id === 'source.build' ? ['build-manifest.json'] : id === 'audit.contracts' ? ['audit-contracts'] : runtimePrefix ? [runtimePrefix + '-runtime.json', runtimePrefix + '-ledger.json', runtimePrefix + '-platform-report.json', runtimePrefix + '-platform.log'] : []
       record(id, 'passed', assertions, '', [log, id + '.process.json', ...extra]); return true
     } catch (error) { record(id, 'failed', 0, String(error), [log, id + '.process.json']); return false }
@@ -92,6 +94,9 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       roundtrip: ['schema-version', 'sidecars', 'secret-stripping', 'restore-failure'],
       // concurrency：两条标签（条件写互斥）+ 关页在途 + 会话被替换
       concurrency: ['two-tabs', 'replace-session', 'close-during-save'],
+      // 已安装产物（Setup 装出来的 exe）—— 只覆盖 boot-store 那三件事；
+      // 写失败与往返不在这里（那条链要注入主进程钩子，装好的包里没有）
+      'installed-boot': ['initial-flags', 'backend-selection', 'restart-readback'],
     }
     const additions = caseIds.map(id => {
       const scenarios = coveredScenarios[id]
@@ -126,9 +131,17 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
     await fs.writeFile(path.join(runRoot, 'preflight.json'), JSON.stringify({ actualTestEntries: plan.actualEntries, jobs: plan.jobs.length, node: process.version }, null, 2))
     record('tooling.preflight', 'passed', 1, '', ['preflight.json'])
   } catch (error) { ready = false; record('tooling.preflight', 'failed', 0, String(error)) }
+  // 🔴 下面三个时限是**墙钟余量**，不是判据：本机实测 tsc 35–60s、lint 30–55s、vite build 46s，
+  //    但杀软实时扫描新产物时 source.build 曾跑满 180s 被判超时（整轮 23 项 not-run，白跑 12 分钟）。
+  //    放宽后仍由各自的真实结果（退出码 / 断言）判过与不过 —— 不因为超时变宽就放过失败。
+  // 🔴 已安装产物（Setup 装出来的 exe）—— 本机**装了**才取证；没装就如实 blocked，不拿 dist 冒充。
+  const installedExe = process.env.YFE_INSTALLED_EXE
+    || path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'YouthFantasyEngine', 'YouthFantasyEngine.exe')
+  const installedReady = !!installedExe && existsSync(installedExe)
+  if (!installedReady) record('storage.desktop-installed', 'blocked', 0, '本机未安装 3.3.0（' + installedExe + '）⇒ 已安装载体无法取证')
   const steps = [
-    ['source.typecheck', ['node_modules/typescript/bin/tsc', '--noEmit'], 120000],
-    ['source.lint', ['node_modules/eslint/bin/eslint.js', 'src', 'tests', '--max-warnings', '0'], 120000],
+    ['source.typecheck', ['node_modules/typescript/bin/tsc', '--noEmit'], 240000],
+    ['source.lint', ['node_modules/eslint/bin/eslint.js', 'src', 'tests', '--max-warnings', '0'], 240000],
     ['source.tests', ['tests/run-all.mjs', '--report', path.join(runRoot, 'tests.json')], 900000, async () => {
       const testReport = JSON.parse(await fs.readFile(path.join(runRoot, 'tests.json'), 'utf8'))
       const expected = readTestPlan(realRoot).jobs.map(job => job.id).sort()
@@ -136,7 +149,7 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       if (!testReport.ok || testReport.planned !== expected.length || testReport.passed !== expected.length || testReport.failed !== 0 || testReport.notRun !== 0 || JSON.stringify(expected) !== JSON.stringify(actual) || testReport.results.some(item => item.status !== 'passed' || !item.ok)) throw new Error('Incomplete test execution')
       return expected.length
     }],
-    ['source.build', ['node_modules/vite/bin/vite.js', 'build', '--outDir', path.join(runRoot, 'build')], 180000, async () => {
+    ['source.build', ['node_modules/vite/bin/vite.js', 'build', '--outDir', path.join(runRoot, 'build')], 420000, async () => {
       await fs.access(path.join(runRoot, 'build/index.html'))
       report.build = await hashPaths(path.join(runRoot, 'build'), ['.'])
       await fs.writeFile(path.join(runRoot, 'build-manifest.json'), JSON.stringify(report.build, null, 2))
@@ -227,6 +240,24 @@ export async function verify({ root = ROOT, stage = 'local', signal } = {}) {
       await promoteRoundtrip('desktop-rt', 'desktop', path.join(runRoot, 'desktop-runtime.json'))
       return verified.assertions
     }],
+    // 3.3.0 · 已安装产物载体：跑 Setup 装出来的 exe（app.asar），只覆盖 boot-store 三件事。
+    //   与上面 dist 载体**并列**，不是替代：写失败/往返仍靠 dist 那一轮（那边能注入主进程钩子）。
+    ...(installedReady ? [[
+      'storage.desktop-installed',
+      ['scripts/audit/probes/installed-desktop-boot.cjs', '--exe', installedExe, '--result-file', path.join(runRoot, 'installed-runtime.json')],
+      420000,
+      async () => {
+        const asarPath = path.join(path.dirname(installedExe), 'resources', 'app.asar')
+        const sha = file => crypto.createHash('sha256').update(readFileSync(file)).digest('hex')
+        const verified = await validateInstalledDesktopEvidence(realRoot, path.join(runRoot, 'installed-runtime.json'), {
+          expectedExeSha256: sha(installedExe),
+          expectedAsarSha256: sha(asarPath),
+          expectedSourceFingerprint: snapshot(realRoot).fingerprint,
+        })
+        await auditRuntime('installed', 'desktop', ['installed-boot'], `${process.platform}; installed product (Setup) under %LOCALAPPDATA%; real exe + app.asar, no main-process hooks; isolated --user-data-dir; real IPC→file write and process restart; exe/asar hashes pinned to this round`)
+        return verified.assertions
+      },
+    ]] : []),
     // 3.2.3 · R4：web-cloud —— 真实本地 server + 临时账号 + 两个独立浏览器上下文。
     // boot-store / account-isolation / write-failure 三个单元各自子场景齐（write-failure = 真实配额 413 + 真实写盘 500）。
     ['storage.web-cloud-save', ['scripts/audit/probes/web-cloud-save-probe.cjs', '--build-dir', path.join(runRoot, 'build'), '--result-file', path.join(runRoot, 'web-cloud-runtime.json')], 420000, async () => {

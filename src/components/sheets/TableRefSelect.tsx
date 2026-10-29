@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { getTableRows } from '@/lib/db'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
+import SelectedValues from '@/components/common/SelectedValues'
 import { Z } from '@/lib/app/zLayer'
 import { computeDropdownPos, type DropdownPos } from '@/lib/app/dropdownPos'
 
@@ -82,6 +84,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       setOpen(false); setQ('')
@@ -91,15 +94,21 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
   }, [open])
 
   const close = () => { setOpen(false); setQ('') }
+  const portalHost = usePopupLayer(open, close, btnRef)
   const selectedNames = multi
     ? (value || '').split(/[，,]/).map(x => x.trim()).filter(Boolean)
     : (value ? [value] : [])
   const isSel = (n: string) => selectedNames.includes(n)
   const toggle = (n: string) => {
-    if (!multi) { onChange(n); close(); return }
+    if (!multi) { onChange(value === n ? '' : n); close(); return }
     const set = new Set(selectedNames)
     if (set.has(n)) set.delete(n); else set.add(n)
     onChange([...set].join('，'))
+  }
+  const removeSelected = (name: string) => {
+    onChange(multi ? selectedNames.filter(value => value !== name).join('，') : '')
+    if (!multi) close()
+    else requestAnimationFrame(() => dropRef.current?.querySelector('input')?.focus({ preventScroll: true }))
   }
   // 内置搜索：按输入过滤下拉项；来源表为空 / 被项目形态隐藏（如极简项目）时允许手动输入
   const ql = q.trim().toLowerCase()
@@ -123,6 +132,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
@@ -138,6 +148,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
+            width: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
@@ -151,7 +162,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               onKeyDown={e => {
                 // 🔴 2.4.4 六维审计：下拉键盘可达 —— Esc 关闭；Enter 确认（精确匹配选中之，
                 //    否则按「使用手动输入」走，与下方按钮同语义）
-                if (e.key === 'Escape') { e.stopPropagation(); close() }
+                // Escape uses the shared popup scope, including focus return.
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   if (exact) toggle(names.find(n => n.toLowerCase() === ql)!)
@@ -162,6 +173,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
               className="w-full !py-0.5 text-12"
             />
           </div>
+          <SelectedValues values={selectedNames} onRemove={removeSelected} onClear={() => { onChange(''); close() }} />
           {q.trim() && !exact && (
             <Button type="button"
               onClick={applyManualInput} variant="secondary" size="md" className="w-full text-left border-b flex items-center">
@@ -188,7 +200,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
             </div>
           )}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

@@ -261,7 +261,20 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                   //    精（cellKm=1，1km/格、画小范围细看）基础 20；粗（10km/格、看大范围铺量）
                   //    基础 13；层级递减两档一致（-2/级），下限随基数（13 / 10）。
                   const fsBase = cellKm >= 10 ? 13 : 20
-                  const fs = Math.max(cellKm >= 10 ? 10 : 13, fsBase - depth * 2)
+                  const fs = Math.max(cellKm >= 10 ? 12 : 15, fsBase - depth * 1.5)
+                  // 🔴 字号换算到「屏幕恒定」（主人 2026-10-29 验收：「远看大小合适、近看偏小」）：
+                  //    标签在 <g scale(view.k)> 里 ⇒ 原来的 fs 是**视图单位**，屏幕字号 = fs × k。
+                  //    缩小后文字跟着变小（近看还嫌小），放大后又会盖住整块区域（挤成一团）。
+                  //    这里先定屏幕目标字号（10~24px），再除回视图单位 —— 远看近看屏幕上都一样大。
+                  const kSafe = Math.max(view.k, 0.05)
+                  // 屏幕目标字号收敛在 11~16px：地图上的注释不该跟正文抢，太大反而互相压住。
+                  const fsScreen = Math.min(16, Math.max(11, fs * 0.75))
+                  const fsView = fsScreen / kSafe
+                  // 名字放得下才显示：按「字数 × 屏幕字号」估宽，区域屏幕宽度不够就等放大后再出现
+                  //（根范围与悬停/选中的永远显示，免得点不到名字）。
+                  const wPx = vs.bbox.w * view.k
+                  const needPx = (mk.name.length + mk.category.length + 3) * fsScreen * 0.6
+                  const showLabel = depth === 0 || active || wPx >= needPx
                   // 根范围标签放包围盒右上角外（右对齐），子/孙放各自包围盒左上角外（左对齐）——避免父子名字重叠
                   const isTop = depth === 0
                   const tx = isTop ? vs.bbox.x + vs.bbox.w + 4 : vs.bbox.x + 2
@@ -285,11 +298,13 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                       {/* 🔴 标签格式两档统一（主人 2026-10-17 澄清）：单行「名称（类别）」，
                           不显示格数 —— 「格是很好数的一个东西」，画布上数格子不如看面板。
                           格数仍在右侧详情面板（「当前形状：N 格」）与左栏树列表里可查。 */}
-                      <text x={tx} y={vs.bbox.y - 5} textAnchor={anchor} fontSize={fs} fontWeight={600} pointerEvents="none"
-                        style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 }}>{mk.name}（{mk.category}）</text>
-                      {active && !painting && (
-                        <text x={tx} y={vs.bbox.y - 5 + fs + 3} textAnchor={anchor} fontSize={fs - 3.5} pointerEvents="none"
-                          style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 }}>详情面板可绘制 · 拖动整体平移</text>
+                      {showLabel && (
+                        <text x={tx} y={vs.bbox.y - 5 / kSafe} textAnchor={anchor} fontSize={fsView} fontWeight={600} pointerEvents="none"
+                          style={{ fill: col, paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3.5 / kSafe }}>{mk.name}（{mk.category}）</text>
+                      )}
+                      {active && !painting && showLabel && (
+                        <text x={tx} y={vs.bbox.y - 5 / kSafe + fsView + 3 / kSafe} textAnchor={anchor} fontSize={Math.max(9, fsScreen - 3.5) / kSafe} pointerEvents="none"
+                          style={{ fill: 'rgb(var(--graph-accent-text))', paintOrder: 'stroke', stroke: 'rgb(var(--graph-halo))', strokeWidth: 3 / kSafe }}>详情面板可绘制 · 拖动整体平移</text>
                       )}
                     </g>
                   )

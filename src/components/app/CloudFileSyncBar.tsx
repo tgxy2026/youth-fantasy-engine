@@ -224,19 +224,19 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   }
 
   const headCls = inSidebar
-    ? 'flex min-w-0 flex-wrap items-center gap-1.5 pt-1 text-11 text-ink-300'
+    ? 'flex min-w-0 flex-nowrap items-center gap-1 pt-1 text-11 text-ink-300'
     : 'flex items-center gap-1.5 text-xs text-ink-300'
 
   return (
     <div className={inSidebar ? 'flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
       {/* 标题行 */}
       <div className={headCls}>
-        <Cloud size={13} className="text-info/90" />
+        <Cloud size={13} className="shrink-0 text-info/90" />
         {inSidebar ? (
           <Button variant="bare" onClick={() => setDetailsOpen(!detailsOpen)}
             aria-label={detailsOpen ? '收起云盘文件同步设置' : '展开云盘文件同步设置'} aria-expanded={detailsOpen}
             className="flex min-w-0 items-center gap-1 py-1 font-medium hover:text-amber">
-            <span>云盘文件同步</span>
+            <span className="truncate">云盘文件同步</span>
             <ChevronDown size={11} className={`shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
           </Button>
         ) : <span className="font-medium">云盘文件同步</span>}
@@ -246,9 +246,9 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
             {meta.text || '待命'}
           </span>
         )}
-        {inSidebar && !connected && <span className="ml-auto text-10 text-ink-500">未开启</span>}
-        <SyncConflictCenter compact />
-        <HelpPopover title="云盘文件同步说明" side="right" width="24rem">
+        {inSidebar && !connected && <span className="ml-auto shrink-0 whitespace-nowrap text-10 text-ink-500">未开启</span>}
+        <span className="flex shrink-0 items-center"><SyncConflictCenter compact /></span>
+        <span className="flex shrink-0 items-center"><HelpPopover title="云盘文件同步说明" side="right" width="24rem">
           {`支持三档同步方式，本软件全程不经过自建服务器：
 
 ① 目录中转：把数据实时保存为加密文件（青春幻想引擎-同步数据.yfe）落到你选定的同步文件夹，
@@ -266,7 +266,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
 
 安全提示：文件使用内置密钥加密，可防止被明文浏览或误看，但密钥是公开的（源码常量），
 不足以对抗蓄意破解。密码 / SecretKey 只存本机（不会随同步文件上传）。请勿把同步目录设为公开共享文件夹。`}
-        </HelpPopover>
+        </HelpPopover></span>
       </div>
 
       {/* 同步故障始终可见，不随配置区域收起。 */}
@@ -552,7 +552,7 @@ function S3Form({ busy, onEnable }: { busy: boolean; onEnable: (ready: boolean) 
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://xxx.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
+      <Field label="端点" value={endpoint} onChange={(v) => { setEndpoint(v); setTested(false) }} placeholder="https://你的账号.r2.cloudflarestorage.com 或 http://192.168.1.10:9000" />
       <Field label="桶名" value={bucket} onChange={(v) => { setBucket(v); setTested(false) }} placeholder="my-bucket" />
       <Field label="对象键（含前缀）" value={objectKey} onChange={(v) => { setObjectKey(v); setTested(false) }} placeholder="yfe/青春幻想引擎-同步数据.yfe" />
       <Field label="区域 Region" value={region} onChange={(v) => { setRegion(v); setTested(false) }} placeholder="us-east-1" />

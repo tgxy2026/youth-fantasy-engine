@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import {
   getCustomOptions,
   addCustomItem,
@@ -13,6 +14,7 @@ import { Plus, Check, ChevronDown, ChevronRight, Pencil, Trash2, EyeOff, RotateC
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
+import SelectedValues from '@/components/common/SelectedValues'
 import { Z } from '@/lib/app/zLayer'
 import { computeDropdownPos, type DropdownPos } from '@/lib/app/dropdownPos'
 
@@ -153,6 +155,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
+      if (isOverlayObscured(btnRef.current)) return
       const t = e.target as Node
       if (wrapRef.current?.contains(t) || dropRef.current?.contains(t)) return
       closeAll()
@@ -168,6 +171,8 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     setQ('')
     setShowRemoved(false)
   }
+
+  const portalHost = usePopupLayer(open, closeAll, btnRef)
 
   // 内置项 → 应用 renamed 替换；过滤 hidden
   const renamedMap = payload.renamed ?? {}
@@ -201,7 +206,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   const filtered = ql ? list.filter(i => i.display.toLowerCase().includes(ql)) : list
 
   const choose = (v: string) => {
-    onChange(v)
+    onChange(!fixedOptions && (value === v || displayOf(value) === displayOf(v)) ? '' : v)
     closeAll()
   }
 
@@ -315,6 +320,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        aria-expanded={open}
         type="button"
         onClick={() => {
           // 🔴 关闭走 closeAll（清掉添加/重命名/编辑/已移除展开/搜索词的残留态）——
@@ -324,7 +330,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
         }}
         className="w-full !py-1 text-12 min-w-[90px] bg-transparent text-left flex items-center !justify-between gap-1 border-b border-transparent hover:border-ink-700 px-1.5 rounded"
       >
-        <span className={value ? 'text-ink-100' : 'text-ink-500'}>{value ? displayOf(value) : '—'}</span>
+        <span className={`min-w-0 truncate ${value ? 'text-ink-100' : 'text-ink-500'}`} title={value ? displayOf(value) : undefined}>{value ? displayOf(value) : '—'}</span>
         <ChevronDown size={11} className="text-ink-500 shrink-0" />
       </Button>
       {open && pos && createPortal(
@@ -335,6 +341,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             zIndex: Z.dropdown,
             top: pos.top,
             minWidth: pos.minWidth,
+            width: pos.minWidth,
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
@@ -349,6 +356,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
               className="w-full !py-0.5 text-12"
             />
           </div>
+          {!fixedOptions && value && <SelectedValues values={[displayOf(value)]} onRemove={() => choose('')} onClear={() => choose('')} />}
           {(filtered.length === 0 && !adding && !renaming && !editing) && (
             <EmptyState text="无匹配项，可点击下方新增" />
           )}
@@ -368,7 +376,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                     onChange={e => setRenameDraft(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitRenameBuiltin() }
-                      if (e.key === 'Escape') { setRenaming(null); setRenameDraft('') }
+                      if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setRenaming(null); setRenameDraft('') }
                     }}
                     className="flex-1 !py-0.5 text-12 min-w-0"
                   />
@@ -390,7 +398,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                   onChange={e => setEditDraft(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitEditUser() }
-                    if (e.key === 'Escape') { setEditing(null); setEditDraft('') }
+                    if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setEditing(null); setEditDraft('') }
                   }}
                   className="flex-1 !py-0.5 text-12 min-w-0"
                 />
@@ -499,7 +507,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
                 onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submitDraft() }
-                  if (e.key === 'Escape') { setAdding(false); setDraft('') }
+                  if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.stopPropagation(); setAdding(false); setDraft('') }
                 }}
                 placeholder="输入新选项"
                 className="flex-1 !py-0.5 text-12 min-w-0"
@@ -517,7 +525,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
             </Button>
           )}
         </div>,
-        document.body
+        portalHost()
       )}
     </div>
   )

@@ -7,8 +7,12 @@
 //   ① **改了原文还续跑** → 抽出的内容与章节整体错位（看起来一切正常，设定却全串位）；
 //   ② **交出的种子批次是引用而非副本** → 抽取过程污染界面存的断点，越续越乱；
 //   ③ **已完成数超过单元数**（切分参数变小）→ 下标越界。
-import { planResume, type BookBreakResume } from '../src/lib/bookbreak/run'
+import {
+  planResume, initialBookBreakResume, bookBreakResumeKey, bookBreakResumeIssue, bookBreakResumeOwnerCurrent,
+  type BookBreakResume,
+} from '../src/lib/bookbreak/run'
 import { firstUnfinishedStage } from '../src/lib/flow/pipeline'
+import { setCurrentProject } from '../src/lib/db'
 import type { EntityBatch } from '../src/lib/flow/draft'
 import type { FlowProgress, StageState } from '../src/lib/flow/types'
 
@@ -93,6 +97,63 @@ function resumeOf(over: Partial<BookBreakResume> = {}): BookBreakResume {
     firstUnfinishedStage(progressOf(st('a', 'done'), st('b', 'cancelled'), st('c', 'cancelled'))) === 'b')
   ok('失败阶段也是断点（重试从那里开始）',
     firstUnfinishedStage(progressOf(st('a', 'done'), st('b', 'failed'), st('c', 'pending'))) === 'b')
+}
+
+// ---------- ④ 断点身份：原文 / 参数 / 项目 / 存储 四类误续必须拦住 ----------
+{
+  // 断点身份要拿"当前项目"比对，而 node 里没有打开过的书库 ⇒ 显式给一个项目 id
+  setCurrentProject('bookbreak-resume-test')
+  const raw = '第一章 风起\n' + '甲'.repeat(20)
+  const fresh = initialBookBreakResume(raw, {})
+  ok('🔴 ④ 新断点自带原文与校验信息（切页后可继续，不必让作者重贴全文）',
+    fresh.sourceText === raw && typeof fresh.resumeKey === 'string' && !!fresh.projectId && !!fresh.storageKey)
+  ok('🔴 ④ 新断点没有伪造进度与失败单元', fresh.doneUnits === 0 && fresh.failedUnits!.length === 0)
+  ok('🔴 ④ 身份一致的断点可以直接续', bookBreakResumeIssue(raw, {}, fresh) === '',
+    bookBreakResumeIssue(raw, {}, fresh))
+
+  // 同块数改文：切分结果一样（都是 1 章），但原文变了 —— 这正是最容易漏的一类误续
+  const edited = '第一章 风起\n' + '乙'.repeat(20)
+  ok('🔴 ④ 同块数但原文改过 ⇒ 拒绝续跑（不套旧批次）',
+    bookBreakResumeIssue(edited, {}, fresh).includes('原文已变化'), bookBreakResumeIssue(edited, {}, fresh))
+
+  // 参数变化（只改上限也算）
+  ok('🔴 ④ 拆书参数变化 ⇒ 拒绝续跑（块会重新切，旧批次会错位）',
+    bookBreakResumeIssue(raw, { maxUnits: 9 }, fresh).includes('参数已变化'), bookBreakResumeIssue(raw, { maxUnits: 9 }, fresh))
+  ok('🔴 ④ 打开/关闭「写入正文」这类开关也计入参数',
+    bookBreakResumeKey({}) !== bookBreakResumeKey({ persistToChapters: false }))
+
+  // 项目 / 存储空间变化
+  const otherProject = { ...fresh, projectId: '另一本书' }
+  ok('🔴 ④ 断点属于别的项目 ⇒ 拒绝并提示回原项目',
+    bookBreakResumeIssue(raw, {}, otherProject).includes('断点不属于当前项目'), bookBreakResumeIssue(raw, {}, otherProject))
+  ok('🔴 ④ owner 判定同时看项目与存储空间',
+    bookBreakResumeOwnerCurrent(fresh) === true && bookBreakResumeOwnerCurrent({ ...fresh, storageKey: 'other' }) === false)
+  ok('🔴 ④ 存储空间变化 ⇒ 拒绝续跑',
+    bookBreakResumeIssue(raw, {}, { ...fresh, storageKey: 'other' }).includes('断点不属于当前项目'))
+
+  // 老版本断点（没有新增字段）
+  const legacy = { ...fresh, sourceText: undefined, resumeKey: undefined }
+  ok('🔴 ④ 旧断点缺原文/校验信息 ⇒ 明确要求从头重跑',
+    bookBreakResumeIssue(raw, {}, legacy).includes('旧断点缺少原文'), bookBreakResumeIssue(raw, {}, legacy))
+
+  // 进度不合法
+  ok('🔴 ④ 进度越界 ⇒ 提示核对（不静默从头跑）',
+    bookBreakResumeIssue(raw, {}, { ...fresh, doneUnits: 99, totalUnits: 3 }).includes('进度不完整'))
+  ok('🔴 ④ 有进度却没有切分结果 ⇒ 拒绝续跑',
+    bookBreakResumeIssue(raw, {}, { ...fresh, doneUnits: 1, totalUnits: 2 }).includes('缺少原始切分结果'))
+
+  // 断点里的单元数与原始切分结果不一致（参数变小后 totalUnits 会缩水）
+  const chapters = [
+    { index: 1, title: '第1章', text: '甲'.repeat(10), charStart: 0, charEnd: 12 },
+    { index: 2, title: '第2章', text: '乙'.repeat(10), charStart: 12, charEnd: 24 },
+  ]
+  const split = { chapters, mode: 'chapters' as const, stats: { count: 2, chars: 24, estTokens: 12, truncated: false } }
+  const withSplit = { ...fresh, doneUnits: 1, totalUnits: 2, bag: { split } }
+  ok('🔴 ④ 断点与原始切分结果一致 ⇒ 允许续跑', bookBreakResumeIssue(raw, {}, withSplit) === '',
+    bookBreakResumeIssue(raw, {}, withSplit))
+  ok('🔴 ④ 单元数与切分结果不符 ⇒ 拒绝续跑（下标会越界）',
+    bookBreakResumeIssue(raw, {}, { ...withSplit, totalUnits: 5 }).includes('不一致'),
+    bookBreakResumeIssue(raw, {}, { ...withSplit, totalUnits: 5 }))
 }
 
 console.log(`\n—— bookbreakResume 用例结束：${pass} 通过 / ${fail} 失败`)

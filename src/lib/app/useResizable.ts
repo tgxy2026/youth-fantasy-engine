@@ -1,68 +1,83 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { currentUiZoom } from '@/lib/settings/theme'
 
 interface Opts {
-  /** localStorage 存储键，记住用户调整后的宽度 */
   key: string
   initial: number
-  /** 大屏（宽 >= WIDE_THRESHOLD）下的默认初始宽度；用于 4K/2K 等高分屏下给出更合理的默认窗格大小 */
   initialWide?: number
   min: number
   max: number
-  /** 拖拽边：'right' = 向右拖增大，'left' = 向左拖增大 */
   side?: 'left' | 'right'
 }
+interface DragSession { id: number; x: number; size: number; target: HTMLElement }
 
-/** 屏宽达到该值视为「大屏」，使用 initialWide 作为默认初始宽度 */
-const WIDE_THRESHOLD = 2000
-
-/**
- * 可拖拽调整宽度的面板（侧边栏 / 章节树 / 设定检索）。
- * 宽度持久化到 localStorage，且在 <html> 设置了 zoom 时自动把视觉位移换算回布局像素，避免缩放后拖拽错位。
- * 首次使用（无存储值）时，若处于大屏则采用 initialWide，让高分屏下的窗格默认更宽、不至于字小挤成一团。
- */
+/** Pointer coordinates are visual pixels; persisted panel widths are layout pixels. */
 export function useResizable({ key, initial, initialWide, min, max, side = 'right' }: Opts) {
-  const [size, setSize] = useState<number>(() => {
-    const v = Number(localStorage.getItem(key))
-    if (Number.isFinite(v) && v >= min && v <= max) return v
-    const base =
-      initialWide && typeof window !== 'undefined' && window.innerWidth >= WIDE_THRESHOLD
-        ? initialWide
-        : initial
-    return Math.min(max, Math.max(min, base))
+  const clamp = useCallback((value: number) => Math.min(max, Math.max(min, value)), [min, max])
+  const defaultSize = useCallback(() => clamp(initialWide && window.innerWidth >= 2000 ? initialWide : initial), [clamp, initial, initialWide])
+  const [size, setSize] = useState(() => {
+    try {
+      const value = Number(localStorage.getItem(key))
+      if (Number.isFinite(value) && value >= min && value <= max) return value
+    } catch { /* Session-only sizing remains available when preferences cannot be read. */ }
+    return defaultSize()
   })
+  const sizeRef = useRef(size)
+  sizeRef.current = size
+  const session = useRef<DragSession | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const finishRef = useRef<() => void>(() => {})
 
   useEffect(() => {
-    try { localStorage.setItem(key, String(size)) } catch { /* 忽略 */ }
+    try { localStorage.setItem(key, String(size)) } catch { /* Keep the current session width. */ }
   }, [key, size])
 
-  const [dragging, setDragging] = useState(false)
-  const startX = useRef(0)
-  const startSize = useRef(size)
-
-  const onDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    startX.current = e.clientX
-    startSize.current = size
-    setDragging(true)
-  }, [size])
-
-  // 拖拽期间挂载全局监听；松开或组件卸载时统一清理，避免泄漏悬挂的 mousemove/mouseup
   useEffect(() => {
-    if (!dragging) return
-    const onMove = (ev: MouseEvent) => {
-      const z = Number(document.documentElement.style.zoom) || 1
-      const dx = (ev.clientX - startX.current) / z
-      const delta = side === 'right' ? dx : -dx
-      setSize(Math.min(max, Math.max(min, startSize.current + delta)))
+    const release = () => {
+      const drag = session.current
+      session.current = null
+      if (!drag) return
+      drag.target.removeEventListener('lostpointercapture', finish)
+      try { if (drag.target.hasPointerCapture(drag.id)) drag.target.releasePointerCapture(drag.id) } catch { /* Target may already be detached. */ }
     }
-    const onUp = () => setDragging(false)
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    const finish = () => { release(); setDragging(false) }
+    finishRef.current = finish
+    const move = (event: globalThis.PointerEvent) => {
+      const drag = session.current
+      if (!drag || event.pointerId !== drag.id) return
+      const delta = (event.clientX - drag.x) / currentUiZoom() * (side === 'right' ? 1 : -1)
+      sizeRef.current = clamp(drag.size + delta)
+      setSize(sizeRef.current)
+    }
+    const end = (event: globalThis.PointerEvent) => { if (event.pointerId === session.current?.id) finish() }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    window.addEventListener('blur', finish)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      release()
+      finishRef.current = () => {}
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('blur', finish)
     }
-  }, [dragging, min, max, side])
+  }, [clamp, side])
 
-  return { size, onDragStart }
+  const onDragStart = useCallback((event: PointerEvent<HTMLElement>) => {
+    if (!event.isPrimary || event.button !== 0) return
+    event.preventDefault()
+    finishRef.current()
+    session.current = { id: event.pointerId, x: event.clientX, size: sizeRef.current, target: event.currentTarget }
+    event.currentTarget.addEventListener('lostpointercapture', finishRef.current)
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Global matching-pointer listeners still finish the gesture. */ }
+    setDragging(true)
+  }, [])
+  const adjust = useCallback((delta: number) => {
+    finishRef.current()
+    setSize(value => clamp(value + delta))
+  }, [clamp])
+  const reset = useCallback(() => { finishRef.current(); setSize(defaultSize()) }, [defaultSize])
+  const setWidth = useCallback((value: number) => { finishRef.current(); setSize(clamp(value)) }, [clamp])
+  return { size, min, max, dragging, onDragStart, adjust, reset, setWidth }
 }

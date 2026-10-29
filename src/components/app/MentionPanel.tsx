@@ -13,6 +13,7 @@
  * 🔴 纯读组件：不写任何数据、不做实体合并（规划书红线「不可在未确认时自动合并同名实体」）。
  */
 import { useEffect, useMemo, useState } from 'react'
+import type { NavigateToReference } from '@/lib/app/navigation'
 import { Search, Hash, CornerDownLeft, X } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -27,12 +28,14 @@ interface Props {
   onClose: () => void
   /** 跳转正文：id 固定 'editor'，chapterId 为目标章节 */
   onNavigate: (id: string, chapterId?: string) => void
+  /** 带了就记为「关联跳转」（记住来源，正文里出现「返回」入口）；没有就退回普通跳转 */
+  onNavigateReference?: NavigateToReference
 }
 
 /** 每批渲染的章节数（300+ 章全命中时避免一次铺满卡顿） */
 const PAGE = 50
 
-export default function MentionPanel({ name, aliases, onClose, onNavigate }: Props) {
+export default function MentionPanel({ name, aliases, onClose, onNavigate, onNavigateReference }: Props) {
   const [hits, setHits] = useState<MentionHit[] | null>(null)
   const [error, setError] = useState('')
   const [shown, setShown] = useState(PAGE)
@@ -57,7 +60,7 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate }: Pro
   const totalHits = useMemo(() => (hits ?? []).reduce((s, h) => s + h.hits, 0), [hits])
 
   return (
-    <Modal open onClose={onClose} hideHeader align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
+    <Modal open onClose={onClose} hideHeader ariaLabel="提及检索" align="top" topOffset="12vh" width="xl" bodyClassName="!p-0">
       {/* 头部：资料名 + 别称徽标 + 关闭 */}
       <div className="flex items-center gap-2 px-4 h-12 border-b border-ink-700">
         <Search size={15} className="text-amber shrink-0" />
@@ -88,7 +91,16 @@ export default function MentionPanel({ name, aliases, onClose, onNavigate }: Pro
         {visible.map(h => (
           <Button variant="bare"
             key={h.chapterId}
-            onClick={() => { onNavigate('editor', h.chapterId); onClose() }}
+            onClick={() => {
+              // 带来源 + 段落偏移：跳过去直接落在命中那一句（检索侧已按正文内偏移算好）
+              if (onNavigateReference) {
+                onNavigateReference({ tabId: 'editor', label: name, chapterId: h.chapterId,
+                  ...(h.contentOffset != null ? { offset: h.contentOffset } : {}),
+                  ...(h.matchLength != null ? { matchLength: h.matchLength } : {}),
+                  ...(h.revision ? { revision: h.revision } : {}) })
+              } else onNavigate('editor', h.chapterId)
+              onClose()
+            }}
             className="w-full text-left !justify-start px-4 py-2 flex items-start gap-2.5 transition-colors hover:bg-ink-800/60"
           >
             <span className="mt-0.5 text-10 px-1.5 py-px rounded shrink-0 border border-info/30 text-info max-w-28 truncate"

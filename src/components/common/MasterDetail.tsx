@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode, type Ref } from 'react'
 import { Search } from 'lucide-react'
 
 /**
@@ -29,11 +29,11 @@ export function MasterDetail({
   height,
 }: {
   children: ReactNode
-  /** 由 `contentHeight(…CHROME_PX)` 提供，切勿手抄 calc */
-  height: string
+  /** Fixed legacy layouts use contentHeight; omit inside a definite-height flex column. */
+  height?: string
 }) {
   return (
-    <div data-master-detail className="flex gap-5 min-h-0 overflow-hidden" style={{ height }}>
+    <div data-master-detail data-master-fill={!height || undefined} className={`flex gap-5 min-h-0 overflow-hidden ${height ? '' : 'flex-1'}`} style={{ height }}>
       {children}
     </div>
   )
@@ -50,6 +50,8 @@ export function MasterList({
   widthClass = 'w-44',
   query,
   onQueryChange,
+  queryMaxLength,
+  scrollRef,
   placeholder = '搜索…',
   searchHint,
   header,
@@ -63,6 +65,8 @@ export function MasterList({
   /** 受控搜索词；与 `onQueryChange` 同传才渲染搜索框 */
   query?: string
   onQueryChange?: (v: string) => void
+  queryMaxLength?: number
+  scrollRef?: Ref<HTMLDivElement>
   placeholder?: string
   /** 搜索框下方的小字提示（如「已筛出 3 / 共 40」）；也可放「新建」按钮 */
   searchHint?: ReactNode
@@ -82,8 +86,10 @@ export function MasterList({
         <div className="relative shrink-0 mb-2.5">
           <input
             value={query ?? ''}
+            maxLength={queryMaxLength}
             onChange={e => onQueryChange!(e.target.value)}
             placeholder={placeholder}
+            aria-label={placeholder}
             className="w-full !pl-7 text-12"
           />
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
@@ -93,7 +99,7 @@ export function MasterList({
       {header && <div className="shrink-0 mb-2">{header}</div>}
 
       {/* 🔴 唯一滚动区：`min-h-0` 必须留，否则 flex 子项 min-height:auto 会撑破锁高 */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 space-y-1.5">
+      <div ref={scrollRef} data-master-scroll className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 space-y-1.5">
         {isEmpty && emptyHint
           ? (
             <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">

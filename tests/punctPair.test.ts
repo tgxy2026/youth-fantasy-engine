@@ -18,7 +18,7 @@
 //    判据也随之更换：不再用「prev/next 长度差」（组合态下从来对不上），改用事件自带 `data`。
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
-import { planPunctPair, planPunctPairAtCaret, CN_PUNCT_PAIRS } from '@/lib/editor/punctPair'
+import { planPunctPair, planPunctPairAtCaret, planPunctPairFromClose, planPunctPairFromCloseAtCaret, CN_PUNCT_PAIRS } from '@/lib/editor/punctPair'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -135,7 +135,58 @@ function main() {
       /onCompositionEnd=\{e => \{/.test(ed) && ed.includes('planPunctPairAtCaret(ta.value, ta.selectionStart)'))
   }
 
-  console.log(`\n▶ punctPair: ${pass} passed, ${fail} failed`)
+  // ============ 🔴 2026-10-27 用户反馈：搜狗打完逗号后引号只出右半边 ============
+// 症状：`，` 之后按 `"`，期望 `“”` 且光标居中；实际只有 `”`。
+// 原因：搜狗按"前一个字符是标点 ⇒ 该收尾"的智能规则直接上屏 `”`，而应用只认左标点。
+{
+  // ① 复现用户路径：逗号之后来一个**右**引号 ⇒ 补成一对，光标居中
+  const afterComma = planPunctPairFromClose('他说，”', 4, '”')
+  ok('🔴 逗号后的右引号 ⇒ 自动补成一对', !!afterComma && afterComma.value === '他说，“”', afterComma ? afterComma.value : 'null')
+  ok('🔴 补完之后光标落在两个引号之间', !!afterComma && afterComma.caret === 4, afterComma ? String(afterComma.caret) : 'null')
+
+  // ② 行首/空文档同样兜底
+  const atStart = planPunctPairFromClose('”', 1, '”')
+  ok('🔴 行首的孤立右引号也补成一对', !!atStart && atStart.value === '“”' && atStart.caret === 1,
+    atStart ? `${atStart.value}@${atStart.caret}` : 'null')
+
+  // ③ 正常收尾**绝不能改**：前面已有未闭合的开引号
+  ok('🔴 已有未闭合 “ 时，右引号保持原样（真收尾）', planPunctPairFromClose('他说“你好”', 6, '”') === null)
+  ok('🔴 已配好一对之后再收尾也不改', planPunctPairFromClose('“甲”“乙”', 6, '”') === null)
+
+  // ④ 同类右标点（书名号/单引号/括号）同一口径
+  ok('🔴 》 在无未闭合《 时补成《》', planPunctPairFromClose('见，》', 3, '》')?.value === '见，《》')
+  ok('🔴 》 在已有未闭合《 时不动', planPunctPairFromClose('见《三体》', 5, '》') === null)
+  ok('🔴 单引号 ’ 同样兜底', planPunctPairFromClose('，’', 2, '’')?.value === '，‘’')
+
+  // ⑤ 不该插手的输入一律 null（粘贴/多字/英文半角/位置不符）
+  ok('⑤ 多字符输入不插手', planPunctPairFromClose('，””', 3, '””') === null)
+  ok('⑤ data 为 null（粘贴/撤销）不插手', planPunctPairFromClose('，”', 2, null) === null)
+  ok('⑤ 英文半角引号不插手', planPunctPairFromClose('a"', 2, '"') === null)
+  ok('⑤ 光标前不是这个右标点就不插手', planPunctPairFromClose('，', 1, '”') === null)
+  ok('⑤ 左标点不受这条兜底影响', planPunctPairFromClose('，“', 2, '“') === null)
+
+  // ⑦ 全标点族普查：每一个右标点在任意中文标点/汉字/行首/换行/空格之后都该补成一对
+  const contexts = ['，', '。', '！', '？', '；', '：', '、', '他', '', '\n', ' ']
+  for (const [left, right] of Object.entries(CN_PUNCT_PAIRS)) {
+    for (const prev of contexts) {
+      const value = prev + right
+      const plan = planPunctPairFromClose(value, value.length, right)
+      const label = `${left}${right} 在「${prev === '' ? '行首' : prev === '\n' ? '换行' : prev}」之后`
+      ok(`🔴 ⑦ ${label} 补成一对`, plan?.value === prev + left + right, plan ? plan.value : 'null')
+      ok(`🔴 ⑦ ${label} 光标居中`, plan?.caret === value.length, plan ? String(plan.caret) : 'null')
+    }
+    // 反例：前面已经有未闭合的左标点 ⇒ 这是正常收尾，一个字符都不许改
+    const closing = `${left}内容${right}`
+    ok(`🔴 ⑦ ${left}…${right} 正常收尾不被改`, planPunctPairFromClose(closing, closing.length, right) === null)
+  }
+
+  // ⑧ 组合态结束那条（没有 data，按光标判）
+  ok('🔴 组合结束后：逗号+右引号同样补成一对',
+    planPunctPairFromCloseAtCaret('他说，”', 4)?.value === '他说，“”')
+  ok('🔴 组合结束后：真收尾仍保持', planPunctPairFromCloseAtCaret('他说“你好”', 6) === null)
+}
+
+console.log(`\n▶ punctPair: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }
 

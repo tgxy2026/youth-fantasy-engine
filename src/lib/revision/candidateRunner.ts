@@ -19,11 +19,14 @@ import * as db from '@/lib/db'
 import { applyChapterRewrite } from '@/lib/editor/chapterRewrite'
 import { checkFactRetention, type FactGuardReport } from '@/lib/ai/factGuard'
 import { loadRegistry } from '@/lib/settings/settingLedger'
-import { saveCandidate, listJobCandidates } from './candidateStore'
+import { saveCandidate, listJobCandidates, loadCandidate, sameCandidateRevision } from './candidateStore'
 import { applyCandidate, type ApplyOutcome } from './candidateApply'
 import type { RevisionCandidate } from './revisionCandidate'
 import type { RevisionJob } from './jobTypes'
 import { hashOf } from '@/lib/semantic/chunk'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { serializeRevision } from './revisionOperation'
 
 /**
  * 为一份候选构造「校验用任务」。
@@ -52,8 +55,8 @@ export function jobForCandidate(candidate: RevisionCandidate, chapterId: string)
 }
 
 /** 读某一章的正文（章没了就返回空串，由上层给出明确提示） */
-export async function chapterBodyOf(chapterId: string): Promise<string> {
-  const all = await db.getAllChapters()
+export async function chapterBodyOf(chapterId: string, owner?: OwnedOperation): Promise<string> {
+  const all = await db.getAllChapters(owner)
   return all.find(c => c.id === chapterId)?.content ?? ''
 }
 
@@ -80,6 +83,7 @@ export async function runApplyCandidate(
   /** 章节可显式指定；不传就用候选自带的 `chapterId`（两者都没有 ⇒ 明确报错） */
   opts: { chapterId?: string } = {},
 ): Promise<RunApplyResult> {
+  candidate = structuredClone(candidate)
   const chapterId = opts.chapterId ?? candidate.chapterId ?? ''
   if (!chapterId) {
     return {
@@ -90,43 +94,58 @@ export async function runApplyCandidate(
       invalidatedSaved: 0,
     }
   }
-  const siblings = (await listJobCandidates(candidate.jobId).catch(() => []))
-    .filter(c => c.id !== candidate.id)
-  const deps = {
-    readBody: () => chapterBodyOf(chapterId),
-    writeBody: async (text: string) => {
-      await applyChapterRewrite(chapterId, text, 'rewritten')
-      return text
-    },
-    // 🔴 真的**再读一次**（不是复用内存变量）：回读不一致正是要抓的故障
-    readBack: () => chapterBodyOf(chapterId),
-    persist: async (c: RevisionCandidate) => {
-      const saved = await saveCandidate(c)
-      if (!saved.ok) throw new Error(saved.detail)
-    },
-    // 同章其它候选：应用成功后要标 stale（不是 discarded —— 作者没看过它们）
-    siblings,
-  }
-  const job = jobForCandidate(candidate, chapterId)
-  const out = await applyCandidate(job, candidate, deps)
-
-  let invalidatedSaved = 0
-  let facts: FactGuardReport | undefined
-  if (out.ok) {
-    for (const c of out.invalidated) {
-      const r = await saveCandidate(c).catch(() => null)
-      if (r?.ok) invalidatedSaved++
-    }
-    // 实体保留自检（旁路）：正文已落库、回执已写，这里只是给作者多一句参考
+  const owner = captureOwnedOperation(candidate.projectId)
+  return serializeRevision(candidateApplyContext(), chapterId, async () => {
     try {
-      facts = await checkFactRetention(await loadRegistry(), candidate.beforeText ?? '', candidate.text ?? '')
-      if (!facts.summary) facts = undefined
-    } catch (e) {
-      console.warn('[candidateRunner] 实体保留自检没跑成（正文已落库）：', e)
+      owner.assertCurrent()
+      const stored = await loadCandidate(candidate.id, owner)
+      if (!stored || !sameCandidateRevision(candidate, stored)) {
+        return { ok: false, code: 'state', detail: '候选已变化或不存在，请刷新并重新核对。', candidate, invalidatedSaved: 0 }
+      }
+      const siblings = (await listJobCandidates(candidate.jobId, owner))
+        .filter(c => c.id !== candidate.id && c.projectId === candidate.projectId)
+      owner.assertCurrent()
+      let lastPersisted = stored
+      const deps = {
+        readBody: () => chapterBodyOf(chapterId, owner),
+        writeBody: async (text: string) => {
+          await applyChapterRewrite(chapterId, text, 'rewritten', { owner })
+          return text
+        },
+        // 真的重新读一次；不一致时不得当作成功。
+        readBack: () => chapterBodyOf(chapterId, owner),
+        persist: async (c: RevisionCandidate) => {
+          const saved = await saveCandidate(c, owner, lastPersisted)
+          if (!saved.ok) throw new Error(saved.detail)
+          lastPersisted = structuredClone(c)
+        },
+        siblings,
+      }
+      const job = jobForCandidate(candidate, chapterId)
+      const out = await applyCandidate(job, candidate, deps)
+      owner.assertCurrent()
+
+      let invalidatedSaved = 0
+      let facts: FactGuardReport | undefined
+      if (out.ok) {
+        for (const c of out.invalidated) {
+          const previous = siblings.find(sibling => sibling.id === c.id)
+          const r = previous ? await saveCandidate(c, owner, previous).catch(() => null) : null
+          if (r?.ok) invalidatedSaved++
+        }
+        // 旁路自检不影响已经写入的正文及回执。
+        try {
+          facts = await checkFactRetention(await loadRegistry(), candidate.beforeText ?? '', candidate.text ?? '')
+          if (!facts.summary) facts = undefined
+        } catch (e) {
+          console.warn('[candidateRunner] 实体保留自检没跑成（正文已落库）：', e)
+        }
+      }
+      // 提交意图若已保存，本来就在存储中；失败时不能回写旧候选快照。
+      owner.assertCurrent()
+      return { ...out, invalidatedSaved, ...(facts ? { facts } : {}) }
+    } catch {
+      return { ok: false, code: 'needs-reconcile', detail: '未能确认候选应用状态，请回到原项目核对正文与候选后再处理。', candidate, invalidatedSaved: 0 }
     }
-  } else {
-    // 失败也要持久化：候选可能停在 `applying` 并带着 intent —— 崩溃核对全靠它
-    await saveCandidate(out.candidate).catch(() => null)
-  }
-  return { ...out, invalidatedSaved, ...(facts ? { facts } : {}) }
+  })
 }

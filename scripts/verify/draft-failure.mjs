@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const require = createRequire(import.meta.url)
 const { sourceFingerprint } = require('../audit/context.cjs')
+const { openEditorNavigation } = require('../audit/probes/workspace-entry.cjs')
 const PORT = Number(process.env.YFE_PROBE_PORT || 5227)
 const TAB_ID = 'chapter-outline'
 const TYPED = '注入失败后这段编辑必须还在'
@@ -80,9 +81,7 @@ async function main() {
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
-    const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    if (await later.isVisible().catch(() => false)) await later.click()
+    await openEditorNavigation(page)
 
     // 切到章节细纲（走真实应用事件，与布局巡检同口径）
     await page.evaluate((id) => window.dispatchEvent(new CustomEvent('yfe:navigate', { detail: id })), TAB_ID)

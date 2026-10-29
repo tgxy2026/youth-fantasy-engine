@@ -20,7 +20,7 @@
 //    所以别指望那份清单替你盯着它，判断写在这里。
 //    它的导出理由（=`ops` 活绑定的唯一写入口）见 `db/core.ts` 里它自己的函数注释。
 export {
-  setCurrentProject, getCurrentProjectId, touchProject,
+  setCurrentProject, getCurrentProjectId, getProjectContextEpoch, touchProject,
   makeCloudStoreWrapper, setStoreOps,
   isDesktopCloudSyncActive, enableDesktopCloudSync, disableDesktopCloudSync,
 } from '@/lib/db/core'
@@ -35,7 +35,7 @@ export * from '@/lib/db/tabs'
 export * from '@/lib/db/worldSets'
 export type { DailyStat } from '@/lib/db/meta'
 export {
-  getMeta, setMeta, getDailyStats, putDailyStat,
+  getMeta, setMeta, hasMeta, getDailyStats, putDailyStat,
   getSetting, setSetting, delSetting,
   getSettingFor, setSettingFor, delSettingFor,
 } from '@/lib/db/meta'

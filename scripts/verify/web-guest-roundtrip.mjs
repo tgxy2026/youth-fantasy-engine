@@ -106,12 +106,19 @@ async function main() {
   const openEditor = async (page) => {
     const opener = page.getByRole('button', { name: '打开项目', exact: true }).first()
     const nav = page.getByRole('navigation').first()
+    // 备份提醒可能把导航移出可访问性树，DOM 入口用于等待首屏，实际操作仍走可见角色。
     await Promise.race([
       opener.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
-      nav.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
+      page.locator('nav').first().waitFor({ state: 'attached', timeout: 45000 }).catch(() => {}),
     ])
     if (await opener.isVisible().catch(() => false)) await opener.click()
-    await nav.waitFor({ timeout: 45000 })
+    // 提醒在打开项目后异步挂载，循环关闭直到导航真的可见；不降低往返与存储断言。
+    const navDeadline = Date.now() + 45000
+    while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+    await nav.waitFor({ timeout: 10000 })
     await dismiss(page)
     await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
     await page.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })

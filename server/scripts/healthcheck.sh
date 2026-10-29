@@ -8,7 +8,7 @@ set -u
 
 LOG=/opt/yfe/logs/healthcheck.log
 FLAG=/tmp/yfe-ping-fail
-URL=http://127.0.0.1/api/ping
+URL=http://127.0.0.1:8082/api/ping
 TS() { date '+%Y-%m-%d %H:%M:%S'; }
 
 mkdir -p /opt/yfe/logs

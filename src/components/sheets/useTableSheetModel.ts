@@ -23,8 +23,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { CalendarDef, TableRow, TabDef } from '@/lib/types'
 import {
-  deleteTableRow, getAllChapterLedgerRows, getCurrentProjectId, getCustomOptions,
-  getSetting, getTableRows, saveTableRow, setSetting, type CustomOptionPayload,
+  deleteTableRow, getCurrentProjectId, getCustomOptions,
+  getSetting, getTableRows, getTableRowsFor, saveTableRow, setSetting, setSettingFor, type CustomOptionPayload,
 } from '@/lib/db'
 import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
 import { countCodeRefs, codeRefWarning } from '@/lib/app/codeRefs'
@@ -47,9 +47,13 @@ import { packageRowId, planAtlasImport, type AtlasPackage } from '@/lib/atlas/pa
 import {
   colWidthsKey, migrateColWidths, sortRows, TABLE_VIEW_MODES, type TableViewMode,
 } from '@/components/sheets/tableSheetOrder'
-import { revertDraftCells, flushDrafts } from '@/components/sheets/tableSheetDraftOps'
-import type { AtlasFieldDefinition, AtlasImage, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
+import { revertDraftCells } from '@/components/sheets/tableSheetDraftOps'
+import { useTableRecordWorkspace } from './useTableRecordWorkspace'
+import { createTableImageWriter } from '@/lib/atlas/writeImage'
+import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { uid } from '@/lib/app/id'
+import { captureCandidateOwner } from '@/lib/ai/candidateContext'
+import { useTableWorkspaceFilters } from './useTableWorkspaceFilters'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { buildImportRows, type ImportRowResult } from '@/lib/storage/tableIO'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -81,10 +85,12 @@ type Args = {
 }
 
 export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
-  const [rows, setRows] = useState<TableRow[]>([])
+  const validateBeforeSave = useRef<() => string | null>(() => null)
+  const { rows, setRows, rowsRef, drafts, setDrafts, draftsRef, loaded, loadError, retry,
+    saving, flushRecords, saveState, ownerKey: recordOwnerKey, projectId: recordProjectId, isCurrent: isRecordCurrent,
+    beginOperation } = useTableRecordWorkspace(tab.id, () => validateBeforeSave.current())
   // 数据体检 / 跨组件跳转：聚焦并高亮目标行
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
-  const [loaded, setLoaded] = useState(false)
   // history / timeline 两个页签提供"表格 ⇄ 时间轴"视图切换
   const isTimelineCapable = tab.id === 'history' || tab.id === 'timeline'
   // 人物关系 / 势力关系 提供"关系图"视图
@@ -133,16 +139,16 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       return
     }
     let cancelled = false
-    const pid = getCurrentProjectId()
+    const pid = recordProjectId
     void loadAtlasSchema(pid, tab.id as AtlasTabId).then(r => {
-      if (cancelled) return
+      if (cancelled || !isRecordCurrent()) return
       setAtlasConfig(r.config)
       setAtlasNewerFormat(r.newerFormat)
       setAtlasConfigError(r.error ?? null)
       if (r.error) showToast(`字段配置读取失败：${r.error}`, 'error')
     })
     return () => { cancelled = true }
-  }, [isAtlasCapable, tab.id])
+  }, [isAtlasCapable, tab.id, recordProjectId, recordOwnerKey, isRecordCurrent])
 
   /**
    * 本页签实际渲染的列（内置列原样 + 自定义字段）。
@@ -160,18 +166,21 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *    等于"开关关了、AI 还是知道"。宁可让他重建一次，也不能留这个口子。
    */
   const saveAtlasConfig = useCallback(async (next: AtlasSchemaConfig) => {
-    const pid = getCurrentProjectId()
+    const owner = beginOperation(), pid = owner.projectId
     const saved = await saveAtlasSchema(pid, tab.id as AtlasTabId, next)
+    owner.assertCurrent()
     setAtlasConfig(saved)
     if (atlasAiVisibilityChanged(atlasConfig?.fields ?? [], saved.fields)) {
       try {
         await invalidateIndex(pid)
+        owner.assertCurrent()
         showToast('字段的 AI 可见性已变更，旧语义索引作废 —— 请在「语义检索」里重建后再使用', 'error')
       } catch {
+        if (!owner.current()) return
         showToast('旧语义索引作废失败，请到「语义检索」手动重建', 'error')
       }
     }
-  }, [tab.id, atlasConfig])
+  }, [tab.id, atlasConfig, beginOperation])
 
   /**
    * 项目图鉴图片占用（方案 §6.2）：**所有图鉴页签合计**，不是只算当前表。
@@ -238,8 +247,6 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   // 历法配置（项目级多历法数值体系），时间轴按数值判定跨历法先后顺序
   const [calendars, setCalendars] = useState<CalendarDef[]>([{ name: '灵历', value: 0 }])
   // draft = 未保存的编辑态（key=行id, value=该行字段副本）
-  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
-  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   // 人物关系分组视图：分组（人物名）与关系行的展开状态
   const [relGroupOpen, setRelGroupOpen] = useState<Set<string>>(new Set())
@@ -321,39 +328,12 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *    所以图片是**即选即存**：上传成功就落库并同步内存行，不参与"未保存改动"计数 ——
    *    否则用户以为按 Ctrl+S 才保存，实际上图没保存（或反过来，保存了一堆图却没按保存）。
    */
-  const saveRowImage = useCallback(async (rowId: string, image: AtlasImage | null) => {
-    const row = rowsRef.current.find(r => r.id === rowId)
-    if (!row) return
-    const next: TableRow = { ...row }
-    if (image) next.atlasImage = image
-    else delete next.atlasImage
-    await saveTableRow(next)
-    setRows(prev => prev.map(r => (r.id === rowId ? next : r)))
-  }, [])
+  const saveRowImage = useMemo(() => createTableImageWriter({ projectId: recordProjectId, tabId: tab.id,
+    current: isRecordCurrent, read: () => rowsRef.current,
+    committed: next => setRows(prev => prev.map(row => row.id === next.id ? next : row)),
+  }), [recordProjectId, tab.id, isRecordCurrent, rowsRef, setRows])
   // 保存闪烁定时器（卸载时清理，防止组件卸载后仍触发 setState）
   const savedTimer = useRef<ReturnType<typeof setTimeout>>()
-  // 用 ref 持有最新草稿与行数据，避免切换页签时因 effect 闭包过期而丢失未保存草稿
-  const draftsRef = useRef(drafts)
-  const rowsRef = useRef(rows)
-  const tabIdRef = useRef(tab.id)
-  useEffect(() => { draftsRef.current = drafts }, [drafts])
-  useEffect(() => { rowsRef.current = rows }, [rows])
-
-  /**
-   * 🔴 卸载时冲刷未保存的表格草稿。
-   *
-   * 为什么必须放在卸载清理里：`App.tsx` 给本组件加了「key={tab.id}」，切页签时组件整体重挂 ——
-   * 于是下面那个 [tab.id] 守卫里的 tabIdRef.current 初值就是新 id，
-   * 「prevId !== tab.id」恒假、分支永不执行（未保存草稿被静默丢弃）。
-   * 卸载清理是唯一与 key 无关的稳妥落点。
-   */
-  useEffect(() => () => {
-    const pending = draftsRef.current
-    if (!pending || Object.keys(pending).length === 0) return
-    // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）
-    void flushDrafts(getCurrentProjectId(), tabIdRef.current, rowsRef.current, pending)
-  }, [])
-
   // 跨组件跳转聚焦：数据体检「跳转修复」/ 地图「跳到地理风物」带 rowId 时，滚动到该行并高亮。
   // 只挂视口附近的行之后，目标行可能还没挂载 ⇒ 实现里带**有界轮询**（见 useRowFocusHighlight）。
   const hlRowId = useRowFocusHighlight({ focusRowId, rowRefs, rows, onFocusConsumed })
@@ -371,7 +351,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *   这对监听就永久留在 window 上，越拖越积）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null)
   // 表头筛选：每列一个关键字，行内该列命中即保留
-  const [colFilters, setColFilters] = useState<Record<string, string>>({})
+  const [colFilters, setColFilters] = useTableWorkspaceFilters(tab.id, focusRowId)
   /**
    * 各下拉列的「自定义选项」载荷（用户新增项 / 隐藏项 / 内置改名）。
    * 表头筛选下拉必须与行内 CustomSelect 用同一口径（resolveOptions）渲染，
@@ -439,32 +419,21 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   }, [])
 
   useEffect(() => {
-    // 切到别的页签前，把当前页签未保存的表格草稿逐行落库（之前会静默丢弃）
-    const prevId = tabIdRef.current
-    const prevDrafts = draftsRef.current
-    if (prevId !== tab.id && prevDrafts && Object.keys(prevDrafts).length > 0) {
-      // 3.2.0：迁移窗口内不冲刷旧草稿（方案 §3.6）
-      void flushDrafts(getCurrentProjectId(), prevId, rowsRef.current, prevDrafts)
-    }
-    tabIdRef.current = tab.id
-    const loadRows = tab.id === 'chapter-master'
-      ? getAllChapterLedgerRows()
-      : getTableRows(tab.id)
-    loadRows.then(r => {
-      setRows(r)
-      setLoaded(true)
-    })
+    const owner = captureCandidateOwner()
     setRelGroupOpen(new Set())
     setRelRowOpen(new Set())
     setCodeError(null)
-    setDrafts({}) // 新页签从干净草稿开始（旧草稿已落库）
+    setShowFill(false); setShowOrganize(false); setShowImport(false); setFillRow(null)
+    setShowFeedbackAI(false); setShowDedupAI(false)
     // 🔴 2026-09-29：不再加载「退役编号池」（retiredCodes）—— 编号改为补最小空号，删除后的编号允许复用。
     //    旧库里残留的 retiredCodes::<tabId> 数据无害（不再读写），无需迁移清理。
     if (tab.id === 'history' || tab.id === 'timeline') {
       // 加载历法配置；兼容旧版单值 calendarName：若存在则迁移为多历法
       getSetting<CalendarDef[]>('calendars', []).then(list => {
+        if (!owner.current()) return
         if (list && list.length > 0) { setCalendars(list); return }
         getSetting<string>('calendarName', '').then(old => {
+          if (!owner.current()) return
           if (old && old.trim()) {
             const migrated = [{ name: old.trim(), value: 0 }]
             setCalendars(migrated)
@@ -474,8 +443,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         })
       })
     }
-    // 🔴 依赖只写 tab.id：本 effect 是「切页签时重置」，故意不跟 rows/drafts 等联动
-  }, [tab.id])
+    // Only a real record owner/tab change resets these entry points; optional view invalidation does not.
+  }, [tab.id, recordOwnerKey])
 
   /**
    * 保存历法清单（2.7.2：改由页头「历法规则」弹窗统一提交，见 `CalendarRuleModal`）。
@@ -491,24 +460,28 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     next: CalendarDef[],
     renames: Array<{ from: string; to: string }> = [],
   ) => {
-    setCalendars(next)
-    void setSetting('calendars', next)
-    if (renames.length === 0) return
-
     const map = new Map(renames.map(r => [r.from, r.to]))
     const hit: string[] = []
     // 🔴 2026-10-02 六维审计 P2：这条级联是异步 fire-and-forget（调用方 void）——
     //    不兜底的话，中途写失败会留下「配置已改、行还是旧名」的孤儿值（正是本功能要根治的问题），
     //    还会产生 unhandled rejection、界面上一个字都不说。
     try {
+      const owner = beginOperation()
+      await setSettingFor(owner.projectId, 'calendars', next)
+      owner.assertCurrent(); setCalendars(next)
+      if (renames.length === 0) return
       for (const tid of ['history', 'timeline']) {
-        const list = await getTableRows(tid)
+        owner.assertCurrent()
+        const list = await getTableRowsFor(owner.projectId, tid)
+        owner.assertCurrent()
         let changed = 0
         for (const row of list) {
           const cur = (row.data['历法'] ?? '').trim()
           const to = map.get(cur)
           if (!to) continue
+          owner.assertCurrent()
           await saveTableRow({ ...row, data: { ...row.data, '历法': to } })
+          owner.assertCurrent()
           changed++
         }
         if (changed === 0) continue
@@ -530,6 +503,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         }
       }
     } catch (e) {
+      if (!isRecordCurrent()) return
       showToast(
         `历法改名未能全部同步（${hit.length ? `已改：${hit.join('、')}；` : ''}请打开这两张表核对后重存一次）：`
         + (e instanceof Error ? e.message : String(e)),
@@ -538,7 +512,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       return
     }
     if (hit.length > 0) showToast(`历法改名已同步：${hit.join('、')}`)
-  }, [tab.id])
+  }, [tab.id, setDrafts, setRows, beginOperation, isRecordCurrent])
 
   // 历法规则（一年几个月 / 每月几天）—— 项目级，月/日下拉与"持续时长"都按它算
   const { rule: calendarRule, setRule: setCalendarRule } = useCalendarRule()
@@ -597,42 +571,27 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     return errs.length > 0 ? errs.join('；') : null
   }, [codeCol, rows, drafts])
 
+  validateBeforeSave.current = validateCodes
   const saveAll = useCallback(async () => {
     if (dirtyKeys.length === 0) return
-    // 3.2.0：迁移窗口内不把旧结构的草稿写进库（方案 §3.6）
+    const owner = captureCandidateOwner()
     const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'draft')
-    if (conflict) { showToast(`${conflict.message}${conflict.hint}`, 'error'); return }
-    // 编号防重复校验：不通过则拒绝保存并提示
+    if (conflict) { if (owner.current()) showToast(conflict.message + conflict.hint, 'error'); return }
+    if (!owner.current()) return
     const err = validateCodes()
-    if (err) {
-      setCodeError(err)
-      setSaving(false)
-      return
-    }
+    if (err) { setCodeError(err); return }
     setCodeError(null)
-    setSaving(true)
     try {
-      for (const rowId of dirtyKeys) {
-        const orig = rows.find(r => r.id === rowId)
-        if (!orig) continue
-        const merged = { ...orig.data, ...drafts[rowId] }
-        await saveTableRow({ ...orig, data: merged })
-      }
-      // 提交后合并回 rows，清空 drafts
-      setRows(prev => prev.map(r => drafts[r.id] ? { ...r, data: { ...r.data, ...drafts[r.id] } } : r))
-      setDrafts({})
-      setSaved(true)
+      const result = await flushRecords()
+      if (!result.ok) throw result.error
+      if (!owner.current()) return
+      setSaved(Object.keys(draftsRef.current).length === 0)
       clearTimeout(savedTimer.current)
       savedTimer.current = setTimeout(() => setSaved(false), 1500)
-    } catch (e) {
-      // 🔴 失败时**不清 drafts**：作者的改动还在输入框里，可以直接重试（审计 P1-5）
-      showToast('保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setSaving(false)
+    } catch (error) {
+      if (owner.current()) showToast('保存失败：' + (error instanceof Error ? error.message : String(error)), 'error')
     }
-    // codeCol / retiredCodes / tab.id 已被 validateCodes 一并封装进它的依赖，
-    // 此处不再重复列出（重复不影响正确性，但会让依赖表失真）。
-  }, [dirtyKeys, drafts, rows, validateCodes, tab.id])
+  }, [dirtyKeys, validateCodes, tab.id, flushRecords, draftsRef])
 
   // Ctrl/Cmd+S（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(() => void saveAll(), dirtyKeys.length > 0)
@@ -691,17 +650,20 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   // AI 补全：建行（自动编号）+ 用模型补全的单元格值填充各列（编号列 locked，不覆盖）
   const handleFill = async (values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
     // 🔴 R12：先核基准 —— 生成期间字段定义若变过，旧结果一律作废（不拿旧清单写新库）
     const base = await verifyAiWriteBase()
-    if (!base) return
+    if (!base) return false
+    if (!owner.current()) return false
     const data: Record<string, string> = {}
     tab.columns!.forEach(col => { data[col.name] = '' })
     if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
       data[codeCol] = nextAutoCode(tab.id, rows, drafts, codeCol)
     }
-    const row: TableRow = { id: uid(), projectId: getCurrentProjectId(), tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
+    const row: TableRow = { id: uid(), projectId: owner.projectId, tabId: tab.id, data, order: rows.length, createdAt: Date.now() }
     await saveTableRow(row)
-    setRows([...rows, row])
+    if (!owner.current()) return false
+    setRows(list => [...list, row])
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
       if (k === codeCol) continue
@@ -736,18 +698,20 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    *     作者中途手填过的话，补出来的东西就是基于过期事实的）。
    */
   const handleFillRow = async (row: TableRow, values: Record<string, string>) => {
+    const owner = captureCandidateOwner()
     const base = await verifyAiWriteBase()
-    if (!base) { setFillRow(null); return }
+    if (!owner.current()) return false
+    if (!base) { setFillRow(null); return false }
     const now = rowsRef.current.find(r => r.id === row.id)
     if (!now) {
       showToast('这一行已经不在了（本次补全结果已作废）', 'error')
       setFillRow(null)
-      return
+      return false
     }
     if (JSON.stringify(now.data) !== JSON.stringify(row.data)) {
       showToast('这一行的内容在生成期间变过（为避免覆盖，本次结果已作废），请重新生成', 'error')
       setFillRow(null)
-      return
+      return false
     }
     const rejected: string[] = []
     for (const [k, v] of Object.entries(values)) {
@@ -777,13 +741,16 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 编号在循环内累加计算，避免多行拿到同一个编号。
    */
   const handleOrganize = async (newRows: Record<string, string>[]) => {
+    const owner = beginOperation()
     // 🔴 R12：整理也是 AI 写入 —— 同样要核基准（字段定义在生成期间改过就作废）
     const base = await verifyAiWriteBase()
+    owner.assertCurrent()
     if (!base) return
     const created: TableRow[] = []
     let rejectedCustom = 0
     try {
       for (const vals of newRows) {
+        owner.assertCurrent()
         const data: Record<string, string> = {}
         tab.columns!.forEach(col => { data[col.name] = vals[col.name] ?? '' })
         // 3.1.3：自定义字段（只收作者允许 AI 填写、且通过类型校验的值；未知键一律丢弃）
@@ -799,13 +766,14 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         }
         const row: TableRow = {
           id: uid(),
-          projectId: getCurrentProjectId(),
+          projectId: owner.projectId,
           tabId: tab.id,
           data,
           order: rows.length + created.length,
           createdAt: Date.now(),
         }
         await saveTableRow(row)
+        owner.assertCurrent()
         created.push(row)
       }
     } catch (e) {
@@ -853,6 +821,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     /** 最后一次失败的原因 */
     failure: string
   }> => {
+    const owner = beginOperation()
     const cfg = atlasConfig ?? emptyAtlasSchema()
     const plan = planAtlasImport(pkg, cfg, newFieldId)
     const incomingImages = plan.rows.reduce((n, r) => n + (r.atlasImage?.bytes ?? 0), 0)
@@ -867,6 +836,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         fields: plan.fields,
         groups: [...cfg.groups, ...extraGroups],
       })
+      owner.assertCurrent()
     }
 
     // 2) 条目
@@ -875,6 +845,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     let failure = ''
     try {
       for (let i = 0; i < plan.rows.length; i++) {
+        owner.assertCurrent()
         const r = plan.rows[i]
         const data: Record<string, string> = { ...r.data }
         if (codeCol && AUTONUM_GROUPS.has(tab.group)) {
@@ -884,7 +855,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
           // 🔴 稳定 id（3.1.3 · R11）：同一份包重导得到同一批 id ⇒ **重试是幂等的**，
           //    不会把上次已成功的行再写一遍变成重复条目（修复前用的是 uid()，重试即翻倍）。
           id: packageRowId(pkg, i),
-          projectId: getCurrentProjectId(),
+          projectId: owner.projectId,
           tabId: tab.id,
           data,
           order: rowsRef.current.length + created.length,
@@ -893,9 +864,11 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
         }
         try {
           await saveTableRow(row)
+          owner.assertCurrent()
           created.push(row)
         } catch (e) {
           // 🔴 单行失败**不吞也不中断**：记下来继续，最后如实报数（同 handleImport 的口径）
+          owner.assertCurrent() // Changing owner stops the batch; it is not a recoverable row failure.
           failed++
           failure = e instanceof Error ? e.message : String(e)
         }
@@ -915,17 +888,19 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       failed,
       failure,
     }
-  }, [atlasConfig, atlasImageLimit, atlasImageUsage, codeCol, tab.id, tab.group, saveAtlasConfig])
+  }, [atlasConfig, atlasImageLimit, atlasImageUsage, codeCol, tab.id, tab.group, saveAtlasConfig, rowsRef, setRows, beginOperation])
 
   /**
    * 批量导入落盘（2.6.4）：与 handleOrganize 同口径 —— 直接写库、不进 drafts；
    * 行的构造（含编号补号）交给 lib/tableIO.buildImportRows（纯函数，可单测）。
    */
   const handleImport = async (picked: ImportRowResult[]) => {
+    const owner = beginOperation()
     // 3.2.0：迁移期间整行导入会让新旧结构混在一行里（方案 §3.6）
-    const conflict = await guardTabWrite(getCurrentProjectId(), tab.id, 'import')
+    const conflict = await guardTabWrite(owner.projectId, tab.id, 'import')
+    owner.assertCurrent()
     if (conflict) throw new Error(`${conflict.message}${conflict.hint}`)
-    const created = buildImportRows(picked, tab, rows, getCurrentProjectId(), uid, drafts)
+    const created = buildImportRows(picked, tab, rows, owner.projectId, uid, drafts)
     // 🔴 2026-10-02 六维审计 P1：逐行落库时若中途失败（IPC / IDB 写失败），旧实现会让**已写进库的行**
     //    停在内存之外 —— setRows 不执行 ⇒ 界面看不到它们；作者点重试，这些行会被**再写一遍**（重复条目）。
     //    改为：把已成功的行也并入内存后再抛（弹窗的 catch 会显示原因、且不关窗；已导入的行随即变成
@@ -933,7 +908,9 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     const saved: TableRow[] = []
     try {
       for (const row of created) {
+        owner.assertCurrent()
         await saveTableRow(row)
+        owner.assertCurrent()
         saved.push(row)
       }
     } catch (e) {
@@ -1153,7 +1130,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
 
   return {
     // 落库与装载
-    rows, setRows, drafts, setDrafts, saving, saved, dirtyKeys, saveAll, loaded,
+    rows, setRows, drafts, setDrafts, saving, saved, dirtyKeys, saveAll, loaded, loadError, retry, saveState, recordOwnerKey, beginOperation,
     // 行编辑
     setCellDraft, cellVal, isRowDirty, isInvalidCode, addRow, removeRow, revertCellDrafts,
     // 排序与筛选

@@ -79,10 +79,15 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     !/便携版/.test(read('src/components/settings/SearchSettingsPanel.tsx')))
 
   // ⚠️ 3.0 目录整理（G3）：这几张表已按领域进子目录，路径要带上新目录名。
-  const saveTitles = ['world/CharacterSheet', 'sheets/FormSheet', 'outline/OutlineSheet', 'sheets/TableSheet']
+  const saveTitles = ['world/CharacterSheet', 'sheets/FormSheet', 'sheets/TableSheet']
     .map(f => read(`src/components/${f}.tsx`))
-  ok('🔴 保存按钮空态提示统一为「无未保存的改动」（原先两种口径混用）',
-    saveTitles.every(s => !/无未保存修改/.test(s)) && saveTitles.every(s => /无未保存的改动/.test(s)))
+  const outlineSave = read('src/components/outline/OutlineSheet.tsx')
+  // 3.3.0: a manual page submission may precede the real file write. Keep the legacy wording
+  // for unmigrated pages and require the migrated page to distinguish the two receipts.
+  ok('🔴 保存空态保留明确说明；大纲区分本页提交与实际存储确认',
+    saveTitles.every(s => !/无未保存修改/.test(s) && /无未保存的改动/.test(s))
+    && /本页无待提交修改；实际存储状态见存储区/.test(outlineSave)
+    && !/\(dirty \? '保存' : '已保存'\)/.test(outlineSave))
 
   ok('🔴 「本章写作简报」口径统一（PlotCanvas 不再叫「灵感简报」）',
     !/灵感简报/.test(read('src/components/outline/PlotCanvas.tsx')))

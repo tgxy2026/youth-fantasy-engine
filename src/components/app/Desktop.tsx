@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Save, HardDriveUpload, FileInput, FolderSync, FolderOpen, Undo2 } from 'lucide-react'
+import { HardDriveUpload, FileInput, FolderSync, FolderOpen, Undo2 } from 'lucide-react'
 import {
   getDesktopState, subscribeDesktop, flushDesktop,
   exportDesktopData, importDesktopData, revealDesktopDataFile,
@@ -8,6 +8,7 @@ import {
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { isDesktopCloudSyncActive } from '@/lib/db'
 import { Button } from '@/components/common/Button'
+import StorageWriteStatus from '@/components/common/StorageWriteStatus'
 
 /**
  * 桌面（安装）版数据管理栏（两行）：
@@ -32,20 +33,6 @@ export function DesktopDataBar() {
   const time = state.lastSavedAt
     ? new Date(state.lastSavedAt).toLocaleTimeString('zh-CN', { hour12: false })
     : '--:--:--'
-
-  const text = state.lastError
-    ? '保存出错'
-    : state.saving
-      ? '正在写入'
-      : state.dirty
-        ? '待保存'
-        : '已保存'
-
-  const dotColor = state.lastError
-    ? 'bg-red-500'
-    : (state.saving || state.dirty)
-      ? 'bg-yellow-400'
-      : 'bg-emerald-500'
 
   const doExport = async () => {
     setBusy('export')
@@ -200,8 +187,8 @@ export function DesktopDataBar() {
     <div className="flex flex-col gap-1.5 pt-1">
       {/* 第一行：保存状态 + 导出 / 导入 */}
       <div className="flex items-center gap-1.5">
-        <Button variant="bare"
-          onClick={() => void flushDesktop()}
+        <StorageWriteStatus facts={state}
+          onSave={() => void flushDesktop()}
           title={
             state.lastError
               ? '保存出错，点击重试'
@@ -209,12 +196,7 @@ export function DesktopDataBar() {
                 ? `数据文件：${state.dataPath}\n最后保存：${time}${state.dirty ? '（有未保存的改动）' : ''}（点击立即保存）`
                 : `最后保存：${time}（点击立即保存到本地数据文件）`
           }
-          className="flex h-8 items-center gap-2 rounded-full border border-ink-700 bg-ink-800/60 px-3 text-12 text-ink-300 transition-colors hover:border-amber/50 hover:text-ink-100"
-        >
-          <Save size={12} className="text-amber/80" />
-          <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-          <span className="whitespace-nowrap">{text}</span>
-        </Button>
+        />
         <Button variant="bare" onClick={doExport} disabled={!!busy} title="导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑" className={iconBtn}>
           <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>

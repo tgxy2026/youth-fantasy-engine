@@ -7,6 +7,7 @@
  * ⚠️ 尺寸走 inline style 而不是 Tailwind 类：边长是变量（24 / 28 / 36 / 64），
  *    类名穷举不了；而且这里写的是**数值 px**，不涉及从 DOM 读尺寸回设（那条 zoom 红线管不到）。
  */
+import { useEffect, useState } from 'react'
 import { avatarLabel } from '@/lib/media/imageAvatar'
 
 export default function Avatar({ src, name, size = 24, className = '', title }: {
@@ -19,14 +20,22 @@ export default function Avatar({ src, name, size = 24, className = '', title }: 
   title?: string
 }) {
   const box = { width: `${size}px`, height: `${size}px` }
+  /**
+   * 🔴 图坏了就**退回首字**（UX13）：头像出现在列表、气泡、在场者一览里，密度极高，
+   *    浏览器默认的破图标既难看又像是"软件出错"。这里不给重试按钮（24px 塞不下），
+   *    但换图/重传时失败态会清掉，新图照常显示。
+   */
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [src])
 
-  if (src) {
+  if (src && !failed) {
     return (
       <img
         src={src}
         alt=""
         title={title ?? name}
         style={box}
+        onError={() => setFailed(true)}
         className={`shrink-0 rounded-full object-cover bg-ink-800 ${className}`}
       />
     )

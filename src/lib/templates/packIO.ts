@@ -20,6 +20,7 @@ import {
 import { checkTemplateDef, checkTemplatePack, bytesOf } from './limits'
 import { semanticDigestOf } from './legacyAdapter'
 import { structureOf, publishTemplateDef, type PublishResult } from './library'
+import { captureSubmissionBoundary } from '@/lib/storage/submissionState'
 
 export const PACK_FORMAT = 'yfe-template-pack'
 export const PACK_FORMAT_VERSION = 1
@@ -38,6 +39,7 @@ export type PackIssueCode =
   | 'dangling-group'
   | 'bad-name-field'
   | 'limit'
+  | 'write-incomplete'
 
 export interface PackIssue {
   code: PackIssueCode
@@ -362,6 +364,7 @@ export type PackPublishResult =
  *    "同名同版却是另一份定义"就永远不会被发现，只会悄悄长出 v2、v3。
  */
 export async function importPackToLibrary(text: string): Promise<PackPublishResult> {
+  const assertCurrent = captureSubmissionBoundary()
   const parsed = parseTemplatePack(text)
   if (!parsed.ok) return { ok: false, code: parsed.code, detail: parsed.detail, issues: parsed.issues }
 
@@ -371,10 +374,14 @@ export async function importPackToLibrary(text: string): Promise<PackPublishResu
     const publishedVersion = origin?.kind === 'library' && origin.templateId === def.templateId
       ? origin.version
       : undefined
-    const r: PublishResult = await publishTemplateDef(
-      def,
-      publishedVersion != null ? { version: publishedVersion } : {},
-    )
+    let r: PublishResult
+    try {
+      assertCurrent()
+      r = await publishTemplateDef(def, publishedVersion != null ? { version: publishedVersion } : {})
+      assertCurrent()
+    } catch {
+      return { ok: false, code: 'write-incomplete', detail: `导入未完成；已确认处理 ${outcomes.length} 份，其余未确认。请先重新读取原个人库，再重试导入。`, issues: [] }
+    }
     if (r.ok) outcomes.push({ kind: 'published', templateId: r.templateId, version: r.version, created: r.created })
     else {
       outcomes.push({

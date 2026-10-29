@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useContext, useEffect, useId, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
+import { OverlayContext, registerDialog } from '@/lib/app/overlayScope'
 
 // z 轴分层真源已独立到 src/lib/app/zLayer.ts（纯常量不该挂在组件文件上，
 // 否则每个要用它的下拉都得 import 整个 Modal）。此处再导出，既有 `import { Z } from './Modal'` 不受影响。
@@ -22,55 +23,19 @@ const WIDTH_PX: Record<string, number> = {
   '2xl': 768,
 }
 
-// ---- 全局 Esc 栈：只有栈顶 Modal 响应，嵌套弹窗一次只关一层 ----
-const escStack: Array<() => void> = []
-const focusStack: Array<{ panel: HTMLDivElement; previous: Element | null }> = []
-function onEscKey(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  const top = escStack[escStack.length - 1]
-  if (top) {
-    e.preventDefault()
-    top()
-  }
-}
-
-function onFocusKey(e: KeyboardEvent) {
-  if (e.key !== 'Tab') return
-  const top = focusStack[focusStack.length - 1]
-  if (!top) return
-  const items = [...top.panel.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )].filter(el => el.getAttribute('aria-hidden') !== 'true' && el.getClientRects().length > 0)
-  if (!items.length) {
-    e.preventDefault()
-    top.panel.focus()
-    return
-  }
-  const first = items[0]
-  const last = items[items.length - 1]
-  const active = document.activeElement
-  if (!top.panel.contains(active)) {
-    e.preventDefault()
-    const target = e.shiftKey ? last : first
-    target.focus()
-  } else if (e.shiftKey && (active === first || active === top.panel)) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
 // ---- body 滚动锁定：引用计数，所有嵌套弹窗都关闭后才释放 ----
 let scrollLockCount = 0
+let previousOverflow = ''
 function lockScroll() {
-  if (scrollLockCount === 0) document.body.style.overflow = 'hidden'
+  if (scrollLockCount === 0) {
+    previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
   scrollLockCount++
 }
 function unlockScroll() {
   scrollLockCount = Math.max(0, scrollLockCount - 1)
-  if (scrollLockCount === 0) document.body.style.overflow = ''
+  if (scrollLockCount === 0) document.body.style.overflow = previousOverflow
 }
 
 export interface ModalProps {
@@ -90,6 +55,8 @@ export interface ModalProps {
   headerExtra?: ReactNode
   /** 隐藏整个标题栏，标题由 children 自绘 */
   hideHeader?: boolean
+  /** 自绘标题栏的可访问名称 */
+  ariaLabel?: string
   /** 是否显示 X 关闭按钮，默认 true（PrivacyNotice / WebGate / 小黑屋目标态设为 false） */
   showCloseButton?: boolean
 
@@ -138,6 +105,7 @@ export function Modal({
   icon,
   headerExtra,
   hideHeader = false,
+  ariaLabel,
   showCloseButton = true,
   subheader,
   footer,
@@ -157,12 +125,17 @@ export function Modal({
   bodyClassName = '',
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const parentScope = useContext(OverlayContext)
+  const resolvedLayer = layer ?? (parentScope ? parentScope.layer + 1 : Z.modal)
+  const scope = useMemo(() => ({ panel: panelRef, ancestors: parentScope ? [...parentScope.ancestors, parentScope.panel] : [], layer: resolvedLayer }), [parentScope, resolvedLayer])
   const titleId = useId()
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
   const overlayClose = closeOnOverlayClick ?? dismissible
   const escClose = closeOnEsc ?? dismissible
+  const escCloseRef = useRef(escClose)
+  escCloseRef.current = escClose
 
   // body 滚动锁定（引用计数）
   useEffect(() => {
@@ -171,39 +144,10 @@ export function Modal({
     return () => unlockScroll()
   }, [open])
 
-  // Esc 栈式关闭（只有栈顶响应，嵌套一次只关一层）
-  useEffect(() => {
-    if (!open || !escClose) return
-    const wrapped = () => {
-      if (escStack[escStack.length - 1] === wrapped) onCloseRef.current()
-    }
-    escStack.push(wrapped)
-    if (escStack.length === 1) document.addEventListener('keydown', onEscKey)
-    return () => {
-      const i = escStack.indexOf(wrapped)
-      if (i >= 0) escStack.splice(i, 1)
-      if (escStack.length === 0) document.removeEventListener('keydown', onEscKey)
-    }
-  }, [open, escClose])
-
-  // 打开时聚焦面板、限制 Tab 在最上层对话框内，并在关闭后归还焦点。
   useEffect(() => {
     if (!open) return
-    const panel = panelRef.current
-    if (!panel) return
-    const entry = { panel, previous: document.activeElement }
-    focusStack.push(entry)
-    if (focusStack.length === 1) document.addEventListener('keydown', onFocusKey, true)
-    const t = requestAnimationFrame(() => panelRef.current?.focus())
-    return () => {
-      cancelAnimationFrame(t)
-      const i = focusStack.indexOf(entry)
-      if (i >= 0) focusStack.splice(i, 1)
-      if (focusStack.length === 0) document.removeEventListener('keydown', onFocusKey, true)
-      const previous = entry.previous as HTMLElement | null
-      if (previous?.isConnected) previous.focus()
-    }
-  }, [open])
+    return registerDialog(scope, () => onCloseRef.current(), () => escCloseRef.current)
+  }, [open, scope])
 
   if (!open) return null
 
@@ -226,11 +170,12 @@ export function Modal({
     footerAlign === 'between' ? 'justify-between' : footerAlign === 'stretch' ? '' : 'justify-end'
 
   return createPortal(
+    <OverlayContext.Provider value={scope}>
     <div
       // 层级只走 style.zIndex（取自 zLayer 真源）。此前这里同时写了 class `z-[2000]`
       // 与 style.zIndex 两份，后者胜出、前者纯属误导，已删。
       className={`fixed inset-0 flex ${overlayVariant} ${overlayAlign}`}
-      style={{ zIndex: layer ?? Z.modal, ...overlayStyle }}
+      style={{ zIndex: resolvedLayer, ...overlayStyle }}
       onMouseDown={e => {
         if (overlayClose && e.target === e.currentTarget) onCloseRef.current()
       }}
@@ -240,10 +185,10 @@ export function Modal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        aria-labelledby={!ariaLabel && !hideHeader && (title || titleSlot) ? titleId : undefined}
+        aria-label={ariaLabel ?? (hideHeader || !(title || titleSlot) ? title || '对话框' : undefined)}
         className={`${panelSurface} ${panelAccent} rounded-2xl shadow-2xl flex flex-col outline-none ${className}`}
         style={{ width: `${widthPx}px`, maxWidth: foldVh('92vw'), maxHeight: foldVh(maxHeight), height: align === 'left' ? foldVh('100vh') : undefined }}
-        onMouseDown={e => e.stopPropagation()}
       >
         {!hideHeader && (
           <div className="flex items-center gap-2 px-5 h-12 border-b border-ink-700 shrink-0">
@@ -273,7 +218,8 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>,
+    </div>
+    </OverlayContext.Provider>,
     document.body,
   )
 }

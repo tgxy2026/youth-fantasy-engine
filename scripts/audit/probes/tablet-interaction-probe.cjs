@@ -3,9 +3,10 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { chromium } = require('playwright')
-const { sourceFingerprint } = require('../context.cjs')
 const ROOT = path.resolve(__dirname, '../../..')
 async function main() {
+  const { snapshot } = await import('../platform/source.mjs')
+  const sourceFingerprint = root => snapshot(root).fingerprint
   for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']) delete process.env[k]
   const out = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/tablet-interaction-'))
   const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprint(ROOT), out, checks: [], errors: [] }
@@ -13,20 +14,28 @@ async function main() {
   let server, browser, page
   try {
     const { createServer } = await import('vite')
-    server = await createServer({ root: ROOT, cacheDir: path.join(out, 'vite-cache'), logLevel: 'silent', server: { host: '127.0.0.1', port: 5214, strictPort: true } }); await server.listen()
+    server = await createServer({ root: ROOT, cacheDir: path.join(out, 'vite-cache'), logLevel: 'silent', server: { host: 'localhost', port: 5214, strictPort: true } }); await server.listen()
+    // Preparation is not a product response-time measurement: compile the entry, then wait for actual UI readiness.
+    let ready = false
+    for (let i = 0; i < 240; i++) {
+      try { if ((await fetch('http://localhost:5214/')).ok) { ready = true; break } } catch { /* server preparing */ }
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    if (!ready) throw new Error('tablet probe: dev server did not become ready')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     for (const size of [{ width: 768, height: 1024, zoom: 100 }, { width: 1024, height: 768, zoom: 100 }, { width: 1000, height: 640, zoom: 160 }]) {
       page = await browser.newPage({ viewport: { width: size.width, height: size.height }, hasTouch: true })
-      page.setDefaultTimeout(15000)
+      page.setDefaultTimeout(120000)
       page.on('pageerror', e => result.errors.push(e.message))
       const label = `${size.width}x${size.height}-${size.zoom}`
-      await page.goto('http://127.0.0.1:5214')
+      await page.goto('http://localhost:5214', { waitUntil: 'commit', timeout: 120000 })
       await page.getByRole('button', { name: /先看看示例/ }).click()
       await page.getByRole('button', { name: '下一步', exact: true }).click()
       await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-      await page.locator('main').getByRole('heading', { name: '写作面板', exact: true }).waitFor({ timeout: 45000 })
+      await page.locator('main h1').filter({ hasText: '写作面板' }).waitFor({ timeout: 45000 })
+      page.setDefaultTimeout(15000)
       const later = page.getByRole('button', { name: '稍后再说', exact: true })
-      if (await later.isVisible()) await later.click()
+      await later.click()
       await page.evaluate(async z => { const { applyZoom } = await import('/src/lib/settings/theme.ts'); applyZoom(z, { manual: true }) }, size.zoom)
       const menu = page.getByRole('button', { name: '打开项目菜单', exact: true })
       if (await menu.isVisible()) await menu.click()

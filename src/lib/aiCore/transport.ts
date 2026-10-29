@@ -474,7 +474,7 @@ export function describeApiError(status: number, raw: string): string {
     case 400:
       // 3.0 · W1-3：内容政策拒绝也走 400 —— 先分流，别把作者引向「模型名 / 参数」的错误方向
       if (looksLikeSafetyMessage(raw)) {
-        return `请求被平台拒绝（HTTP 400）：**这是内容被平台拒绝**，不是模型名 / 参数配置出错。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型（不受平台内容政策限制）/ 换一个平台。`
+        return `请求被平台拒绝（HTTP 400）：「这是内容被平台拒绝」，不是模型名 / 参数配置出错。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型（不受平台内容政策限制）/ 换一个平台。`
       }
       return `请求被平台拒绝（HTTP 400）：最常见的原因是模型名不在该账户已开通的清单里，也可能是参数不被接受。${tail}`
     case 401:
@@ -484,7 +484,7 @@ export function describeApiError(status: number, raw: string): string {
     case 403:
       // 3.0 · W1-3：部分平台用 403 表达「内容被拒」—— 先分流，别一律归因密钥
       if (looksLikeSafetyMessage(raw)) {
-        return `请求被平台拒绝（HTTP 403）：**这是内容被平台拒绝**（部分平台用 403 表达），不是密钥权限问题。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型 / 换一个平台。`
+        return `请求被平台拒绝（HTTP 403）：「这是内容被平台拒绝」（部分平台用 403 表达），不是密钥权限问题。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型 / 换一个平台。`
       }
       return `密钥无权访问（HTTP 403）：确认这个 Key 已开通对应模型，或平台是否要求先实名 / 绑定。${tail}`
     case 404:

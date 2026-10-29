@@ -53,6 +53,8 @@ export function useGeoMapModel() {
   )
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+  const autoFitDone = useRef(false)
+  const viewTouched = useRef(false)
   const [hover, setHover] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   /** 拖拽中的整组格偏移（格数）：Map<空间id, {dx,dy}> */
@@ -66,6 +68,7 @@ export function useGeoMapModel() {
     setCellKm(CELL_KM_STEPS.includes(km) ? km : 1)
   }, [curMap])
   const stepCellKm = (dir: 1 | -1) => {
+    viewTouched.current = true
     const i = CELL_KM_STEPS.indexOf(cellKm)
     const ni = Math.min(CELL_KM_STEPS.length - 1, Math.max(0, i + dir))
     if (ni === i) return
@@ -333,15 +336,44 @@ export function useGeoMapModel() {
       maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h)
     }
     const bw = (maxX - minX) || 1, bh = (maxY - minY) || 1
-    const k = Math.min(2.5, Math.max(0.04, Math.min(vp.w / (bw + 120), vp.h / (bh + 120))))
+    // 🔴 留白按视口比例（原来写死 +120px）：示范图内容只有 4×3 格，被 120px 的固定留白一挤，
+    //    适配后也只占画布中间一小块（2026-10-29 验收实拍）。改成 6% 视口留白 + 上限 3.5，
+    //    小图能填到 ~75-85%，大图仍然按视口收。
+    const pad = Math.max(28, Math.min(vp.w, vp.h) * 0.045)
+    const k = Math.min(4, Math.max(0.04, Math.min((vp.w - pad * 2) / bw, (vp.h - pad * 2) / bh)))
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
     setView({ k, x: vp.w / 2 - cx * k, y: vp.h / 2 - cy * k })
   }, [viewShapes, vp, mapImage, mapImageSize])
+
+  // 🔴 换地图要重新适配一次（否则只有第一张图会 fit，切到第二张还停在上次的视图）
+  useEffect(() => {
+    autoFitDone.current = false
+    viewTouched.current = false
+  }, [mapId])
+
+  useEffect(() => {
+    // 只在「首次打开这张图、且用户还没动过视图」时自动适配一次：
+    // 🔴 三个必须的等待条件（2026-10-29 实测，少一个就会适配成 k=1 再也不重试）
+    //    · 形状算出来（viewShapes 非空）—— 否则包围盒为空；
+    //    · 视口量到真实尺寸（clientWidth/Height 与 vp 一致）—— 挂载首帧是占位尺寸；
+    //    · 精度档已按地图数据归位（cellKm === 每格公里）—— 否则按错的档算完再变档，视图就歪了。
+    if (autoFitDone.current || viewTouched.current || loading || !curMap || !wrapRef.current) return
+    if (!viewShapes.size) return
+    if (wrapRef.current.clientWidth !== vp.w || wrapRef.current.clientHeight !== vp.h || !vp.w || !vp.h) return
+    const storedKm = Number(curMap.data['每格公里'])
+    if (cellKm !== (CELL_KM_STEPS.includes(storedKm) ? storedKm : 1)) return
+    if (mapImage && !mapImageSize) return
+    autoFitDone.current = true
+    fitView()
+    // 🔴 viewShapes 必须在依赖里：形状是异步算出来的，第一次跑时它还是空 Map，
+    //    不在依赖里的话后面形状齐了也不会再触发（会永远停在 k=1）。
+  }, [loading, curMap, vp, cellKm, mapImage, mapImageSize, fitView, viewShapes])
 
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
     const onWheel = (ev: WheelEvent) => {
+      viewTouched.current = true
       ev.preventDefault()
       const p = toViewBox(ev.clientX, ev.clientY)
       setView(v => {
@@ -444,6 +476,7 @@ export function useGeoMapModel() {
     if (skipped > 0) showToast(`已修改 ${added + removed} 格；${skipped} 格越界、重叠或被子孙占用，已跳过`, 'info')
   }
   const onPointerDown = (e: RPointerEvent<SVGElement>, kind: 'node' | 'pan', _mk?: Marker) => {
+    viewTouched.current = true
     const rightBtn = e.button === 2
     if (e.button !== 0 && !rightBtn && e.pointerType === 'mouse') return
     e.preventDefault()

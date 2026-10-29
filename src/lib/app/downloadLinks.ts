@@ -27,4 +27,4 @@ export const GITEE_RELEASES_URL = `${GITEE_REPO_URL}/releases`
  *    改完需重新构建并发布桌面版 / 便携版才会生效（两端都是离线应用，拿不到远程配置）。
  * ⚠️ 服务端登录页里也有一份同样的地址（`server/lib/config.mjs`），改的时候一起改。
  */
-export const WEB_APP_URL = 'http://115.120.232.153'
+export const WEB_APP_URL = 'https://youth-fantasy-engine.online'

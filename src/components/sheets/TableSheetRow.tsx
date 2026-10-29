@@ -114,6 +114,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
     return (
       <tr
         key={row.id}
+        data-workspace-record={row.id}
         ref={el => { rowRefs.current[row.id] = el }}
         className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-success/80 bg-success/10' : ''}`}
       >

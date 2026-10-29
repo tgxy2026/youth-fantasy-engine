@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
-import { addCustomItem, deleteTableRow } from '@/lib/db'
+import { addCustomItem, deleteTableRow, getCurrentProjectId } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
 import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
@@ -50,6 +50,9 @@ import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { useRowWindow } from '@/components/sheets/useRowWindow'
 import { foldVh } from '@/lib/settings/theme'
+import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
+import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import { useTableWorkspaceScroll } from './useTableWorkspaceScroll'
 
 interface Props {
   tab: TabDef
@@ -76,6 +79,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const [showFieldMgr, setShowFieldMgr] = useState(false)
   /** 3.2.0：模板管理弹窗（七个页签；采用后结构由模板快照决定） */
   const [showTemplate, setShowTemplate] = useState(false)
+  useEffect(() => {
+    setShowCalRule(false); setMention(null); setShowFieldMgr(false); setShowTemplate(false)
+  }, [model.recordOwnerKey])
   /** 字段显示名（2.7.3）：只改界面上的字，存储键一个字节都不碰 */
   const aliasTargets = useMemo(
     () => tableAliasTargets((tab.columns ?? []).filter(c => !c.hidden)),
@@ -109,7 +115,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 编号
     codeError,
     // 视图与高亮
-    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, 
+    viewMode, setViewMode: storeViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady,
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）
@@ -121,6 +127,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // AI 入口
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
+  const setViewMode: typeof storeViewMode = next => { captureWorkspaceView(); storeViewMode(next) }
 
   /**
    * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。
@@ -182,13 +189,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
    * 不完整/超限的包在动目标项目之前就被拒绝；页签不一致会额外问一次。
    */
   const importAtlasPackageFile = async (file: File) => {
+    let owner: ReturnType<typeof model.beginOperation>
+    try { owner = model.beginOperation() } catch { return }
     let text: string
     try {
       text = await file.text()
     } catch {
-      showToast('文件读取失败', 'error')
+      if (owner.current()) showToast('文件读取失败', 'error')
       return
     }
+    if (!owner.current()) return
     const r = parseAtlasPackage(text)
     if (!r.ok) { showToast(r.reason, 'error'); return }
 
@@ -199,6 +209,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         danger: true,
       })
       if (!go) return
+      if (!owner.current()) return
     }
 
     const p = previewAtlasImport(r.pkg, atlasConfig, atlasCategoryOptions(tab))
@@ -210,22 +221,26 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 🔴 R08：名字撞车但定义不同的字段会另建并改名 —— **导入前**就要说清楚，
     //    否则导完凭空多一个「食性（2）」，作者只会以为是 bug。
     const conflictNote = p.conflicts.length > 0
-      ? `\n\n有 ${p.conflicts.length} 个字段与现有字段同名但定义不同，不会硬合并，将**另建并改名**：${p.conflicts.slice(0, 3).map(c => `「${c.label}」→「${c.label}（新）」(${c.reason})`).join('；')}`
+      ? `\n\n有 ${p.conflicts.length} 个字段与现有字段同名但定义不同，不会硬合并，将「另建并改名」：${p.conflicts.slice(0, 3).map(c => `「${c.label}」→「${c.label}（新）」(${c.reason})`).join('；')}`
       : ''
     const catNote = p.unknownCategories.length > 0
       ? `\n\n类别值里有 ${p.unknownCategories.length} 个目标表还没有（${p.unknownCategories.slice(0, 3).join('、')}${p.unknownCategories.length > 3 ? '…' : ''}）—— 导入后会自动登记成「类别」列的自定义选项，不会丢值。`
       : ''
     const ok = await confirmDialog({
       title: '导入图鉴资料包',
-      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只**新增**、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只「新增」、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
     })
     if (!ok) return
+    if (!owner.current()) return
 
     try {
       const res = await importAtlasPackage(r.pkg)
+      owner.assertCurrent()
       // 未知类别值登记为「类别」列的自定义选项 —— 否则行内下拉显示空白，作者会以为值丢了
       for (const v of p.unknownCategories) {
+        owner.assertCurrent()
         try { await addCustomItem(tab.id, '类别', v) } catch { /* 登记失败不影响条目本身 */ }
+        owner.assertCurrent()
       }
       const strip = res.strippedImages > 0 ? `；容量不足，有 ${res.strippedImages} 条图片未导入` : ''
       // 🔴 R11：如实报"部分成功"—— 已入库的已并入列表，失败的那几条没进来；
@@ -234,6 +249,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       const level = res.failed > 0 ? 'error' : (strip ? 'error' : 'success')
       showToast(`已导入 ${res.added} 条，新建字段 ${res.createdFields} 个${strip}${partial}`, level)
     } catch (e) {
+      if (!owner.current()) return
       showToast('导入失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     }
   }
@@ -301,14 +317,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const rowIds = useMemo(() => model.bodyRows.map(entry => entry.row.id), [model.bodyRows])
   /** 跳转聚焦：只在目标行**变化**时滚一次（否则高亮期间每次输入都会把容器拉回去） */
   const lastFocusId = useRef<string | null>(null)
+  const [restoreRowId, pinRestore] = useState<string | null>(null)
   const rowWindow = useRowWindow({
     ids: rowIds,
     rowRefs: model.rowRefs,
     scrollRef: pan.ref,
-    enabled: rowIds.length > ROW_WINDOW_THRESHOLD,
-    pinnedId: focusRowId ?? null,
+    enabled: loaded && viewMode === 'table' && rowIds.length > ROW_WINDOW_THRESHOLD,
+    pinnedId: focusRowId ?? restoreRowId,
   })
   const revealRow = rowWindow.revealId
+  useTableWorkspaceScroll({ tabId: tab.id, ready: loaded && viewMode === 'table' && tab.id !== 'relations',
+    ids: rowIds, filters: colFilters, scrollRef: pan.ref, revealId: revealRow, focusRowId, pinRestore })
 
   /**
    * 跳转聚焦先「滚到附近」：虚拟化后目标行可能压根没挂载，靠 scrollIntoView 会扑空。
@@ -342,6 +361,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rows/totalWidth 变化会改变 scrollWidth，需重算
   }, [syncScrollHint, rows.length, totalWidth, tab.id])
 
+  if (model.loadError) return <div role="alert" className="rounded-xl border border-danger/40 p-5 text-13 text-ink-200">
+    <h1 className="mb-2 font-semibold">暂时无法读取{tab.name}</h1>
+    <p className="mb-3 text-ink-400">请确认存储连接后重新读取。</p>
+    <Button onClick={model.retry} variant="secondary">重试读取表格</Button>
+  </div>
   if (!loaded) return <LoadingState />
 
   return (
@@ -388,7 +412,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>
-            <Check size={11} className="inline -mt-0.5 mr-0.5" />已保存
+            <Check size={11} className="inline -mt-0.5 mr-0.5" />已提交
           </span>
           <span className="text-10 text-ink-500">
             {tab.id === 'relations'
@@ -582,9 +606,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
 
       {/* history / timeline 页签可切到时间轴视图；人物关系可切到关系图 */}
+      <DraftSaveFeedback state={model.saveState} dirty={dirtyKeys.length > 0} onRetry={() => void saveAll()} />
       {viewMode === 'atlas' && isAtlasCapable ? (
         /* ============ 3.1.3 图鉴视图（卡片墙 + 详情，实现已拆到 components/atlas） ============ */
         <AtlasView
+          projectId={getCurrentProjectId()}
+          focusRowId={focusRowId}
+          onFocusConsumed={onFocusConsumed}
           tab={tab}
           rows={filteredRows}
           aliases={aliasLabels}
@@ -647,7 +675,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                 <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
                 <th className="bg-ink-800 px-1 py-2.5 align-middle" style={{ width: ROW_ACTION_COL_W }} />
                 {effectiveColumns.map(col => (
-                  <th key={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
+                  <th key={col.name} data-workspace-column={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div className="truncate" title={colTitleOf(col)}>{colLabelOf(col)}</div>
                     {col.type === 'select' && col.options ? (
                       <select
@@ -740,7 +768,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
       )}
 
-      {dirtyKeys.length > 0 && !isMaster && (
+      {dirtyKeys.length > 0 && !isMaster && viewMode !== 'atlas' && (
         <SaveFab onClick={saveAll} label={`保存 ${dirtyKeys.length} 行修改`} />
       )}
 

@@ -1,4 +1,10 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import FailureNotice from '@/components/common/FailureNotice'
+import { createStorageFailureNotice } from '@/lib/app/storageFailureNotice'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
+import ErrorBoundary from '@/components/common/ErrorBoundary'
+import WorkspacePageFailure from '@/components/app/WorkspacePageFailure'
+import { lazyPage } from '@/components/common/LazyPage'
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
 import Dashboard from '@/components/app/Dashboard'
@@ -23,6 +29,14 @@ import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
+import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
+import { useNavigationGate } from '@/lib/app/useNavigationGate'
+import { resolveNavigationDestination, navigationDestinationNotice } from '@/lib/app/navigationDestination'
+import { type ReferenceJump, type WorkspaceTarget } from '@/lib/app/navigation'
+import { useNavigationHistory } from '@/lib/app/useNavigationHistory'
+import { pageNavigationIntent, referenceNavigationIntent, commitNavigationHistory, type EditorPosition, type NavigationIntent } from '@/lib/app/referenceIntent'
+import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
+import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
@@ -41,8 +55,8 @@ import PlotCanvas from '@/components/outline/PlotCanvas'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
-import { applyTheme, applyZoom, foldVh, getStoredTheme, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
-import { applyStoredFontPrefs } from '@/lib/settings/fontPrefs'
+import { applyZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
+import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { applyStoredNetProxy } from '@/lib/settings/netPrefs'
 import { loadPromptOverrides } from '@/lib/ai/promptSettings'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
@@ -52,27 +66,32 @@ import { usePersistedBool } from '@/lib/settings/uiPrefs'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
-const GuidePage = lazy(() => import('@/components/app/GuidePage'))
-const InspireTools = lazy(() => import('@/components/creative/InspireTools'))
-const ModelSettingsPanel = lazy(() => import('@/components/settings/ModelSettingsPanel'))
-const CheckTools = lazy(() => import('@/components/audit/CheckTools'))
-const MaterialLibrary = lazy(() => import('@/components/library/MaterialLibrary'))
-const BookBreakPanel = lazy(() => import('@/components/bookbreak/BookBreakPanel'))
-const CreativeWritingPanel = lazy(() => import('@/components/creative/CreativeWritingPanel'))
+// 🔴 一律走 `lazyPage`（UX13）：裸 `lazy()` 会把加载失败永久缓存住，「重试」只能整页刷新；
+//    这里每个页面失败后都能换新实例真重发请求，且只在这一页内报错、不动导航。
+const GuidePage = lazyPage(() => import('@/components/app/GuidePage'), '使用指南')
+const InspireTools = lazyPage(() => import('@/components/creative/InspireTools'), '灵感启发')
+const ModelSettingsPanel = lazyPage(() => import('@/components/settings/ModelSettingsPanel'), '模型设置')
+const CheckTools = lazyPage(() => import('@/components/audit/CheckTools'), '检查工具')
+const MaterialLibrary = lazyPage(() => import('@/components/library/MaterialLibrary'), '素材资料')
+const BookBreakPanel = lazyPage(() => import('@/components/bookbreak/BookBreakPanel'), '一键拆书')
+const CreativeWritingPanel = lazyPage(() => import('@/components/creative/CreativeWritingPanel'), '创意写作')
 // 酒馆模式四页：剧情推演 / 推演报告 / 角色卡 / 自由对话（各自含 AI 交互，按需懒加载）
-const TavernPlot = lazy(() => import('@/components/tavern/TavernPlot'))
-const TavernReport = lazy(() => import('@/components/tavern/TavernReport'))
-const TavernCard = lazy(() => import('@/components/tavern/TavernCard'))
-const TavernFree = lazy(() => import('@/components/tavern/TavernFree'))
-const RunPanel = lazy(() => import('@/components/tavern/RunPanel'))
-const TavernControl = lazy(() => import('@/components/tavern/TavernControl'))
-const TavernScript = lazy(() => import('@/components/tavern/TavernScript'))
-const TavernWorld = lazy(() => import('@/components/tavern/TavernWorld'))
+const TavernPlot = lazyPage(() => import('@/components/tavern/TavernPlot'), '剧情推演')
+const TavernReport = lazyPage(() => import('@/components/tavern/TavernReport'), '推演报告')
+const TavernCard = lazyPage(() => import('@/components/tavern/TavernCard'), '角色卡片')
+const TavernFree = lazyPage(() => import('@/components/tavern/TavernFree'), '自由对话')
+const RunPanel = lazyPage(() => import('@/components/tavern/RunPanel'), '跑团互动')
+const TavernControl = lazyPage(() => import('@/components/tavern/TavernControl'), '控制面板')
+const TavernScript = lazyPage(() => import('@/components/tavern/TavernScript'), '故事剧本')
+const TavernWorld = lazyPage(() => import('@/components/tavern/TavernWorld'), '背景设定')
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
-const TrajectoryPanel = lazy(() => import('@/components/audit/TrajectoryPanel'))
-const WorldLibraryPanel = lazy(() => import('@/components/world/WorldLibraryPanel'))
+const TrajectoryPanel = lazyPage(() => import('@/components/audit/TrajectoryPanel'), '创作轨迹')
+const WorldLibraryPanel = lazyPage(() => import('@/components/world/WorldLibraryPanel'), '世界引擎')
+
+
 
 export default function App() {
+  useEffect(observeWorkspaceLifecycle, [])
   const [projectId, setProjectId] = useState<string | null>(null)
   // 内置背景开关（2.6.1）：必须在所有早退 return 之前调（rules-of-hooks）
   const [bgHidden] = usePersistedBool('workbench-bg-hidden', false)
@@ -85,7 +104,7 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false)
   const [updateLatest, setUpdateLatest] = useState<LatestRelease | null>(null)
   /** 启动流程抛出的错误（非空则渲染错误页，而不是永远卡在黑屏上） */
-  const [bootError, setBootError] = useState('')
+  const [bootError, setBootError] = useState<{ cause: unknown } | null>(null)
   /**
    * 首启向导开关（2.4.0 · A1）：仅在「从没走过向导」且「库里一个项目都没有」时为 true。
    * 走过一次即写全局 meta `welcomeDone`，此后不再出现。
@@ -100,13 +119,23 @@ export default function App() {
   const [editorTarget, setEditorTarget] = useState<string | null>(null)
   // 数据体检 / 地图等跨组件跳转时，要直达高亮的具体行 id（detail 携带 rowId 时下发）
   const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  /** 段落级定位：跳到正文时要落的字符偏移（只在显式跳转那一次有效） */
+  const [editorOffset, setEditorOffset] = useState<EditorPosition | null>(null)
+  const requestSequence = useRef(0)
+  const [editorRequestId, setEditorRequestId] = useState(0)
   /**
    * 跨页签跳转聚焦的「已消费」回调。
    * 🔴 必须用 useCallback 钉住引用：它是 TableSheet 滚动高亮 effect 的依赖之一，
    *    若写成内联箭头（每次渲染新建），该 effect 会在每次渲染重跑，
    *    2.6 秒后清除高亮的定时器被反复重置 —— 高亮将永不消失。
    */
-  const clearFocusRow = useCallback(() => setFocusRowId(null), [])
+  const clearFocusRow = useCallback(() => {
+    if (requestSequence.current === editorRequestId) setFocusRowId(null)
+  }, [editorRequestId])
+  const resetNavigationTargets = useCallback(() => {
+    setEditorRequestId(++requestSequence.current)
+    setEditorTarget(null); setEditorOffset(null); setFocusRowId(null)
+  }, [])
   // 全文检索命令面板（v1.3）：Ctrl/Cmd+K 唤起
   const [searchOpen, setSearchOpen] = useState(false)
   // 颉文姬 Q 版精灵开关（面板内可切换，localStorage 持久化）
@@ -138,6 +167,17 @@ export default function App() {
    * 只有打开了**另一个项目**才清（那些任务属于上一个项目，留着会串味）。
    */
   const lastProjectRef = useRef<string | null>(null)
+  /**
+   * 离页屏障在途标记（3.3.0 · UX06）：换页签 / 退出项目要先等编辑器把脏稿写完，
+   * 这段时间里再点别的入口一律忽略 —— 否则「点 A 等写盘 → 又点 B」会走出两条导航，
+   * 后到的那条会在前一条保存成功后把作者带到意料之外的页面。
+   */
+  const navPending = useRef(false)
+  const navEpoch = useRef(0)
+  const navContext = useCallback(() => JSON.stringify([db.getCurrentProjectId(), navEpoch.current, getStorageContextEpoch(),
+    (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id ?? 'local']), [])
+  const navHistory = useNavigationHistory(navContext())
+  const clearHistory = navHistory.clear
 
   // 从本地用户数据目录加载数据（桌面版）/ 从本地服务加载（便携版）
   useEffect(() => {
@@ -208,11 +248,11 @@ export default function App() {
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
   useEffect(() => {
     if (!DESKTOP && !PORTABLE) return
-    let lastErr = ''
+    const failureNotice = createStorageFailureNotice()
     const onStore = () => {
-      const e = DESKTOP ? getDesktopState().lastError : getPortableState().lastError
-      if (e && e !== lastErr) { lastErr = e; showToast('数据保存失败：' + e, 'error', 4500) }
-      else if (!e) lastErr = ''
+      const state = DESKTOP ? getDesktopState() : getPortableState()
+      const message = failureNotice(state, storageWriteContext())
+      if (message) showToast(message, 'error', 4500)
     }
     onStore()
     return DESKTOP ? subscribeDesktop(onStore) : subscribePortable(onStore)
@@ -292,18 +332,15 @@ export default function App() {
       //    那件事已交给首启向导与 `welcomeDone`。
       } catch (e) {
         console.error('[boot] 启动流程失败：', e)
-        setBootError(e instanceof Error ? e.message : String(e))
+        setBootError({ cause: e })
       } finally {
         setBooted(true)
       }
     })()
   }, [fileReady])
 
-  // 应用上次选择的主题、界面缩放与字体（在首次渲染前设置，避免闪烁）
+  // 外观已在 main.tsx 挂载 React 前应用；主进程代理仍在应用生命周期内同步。
   useEffect(() => {
-    applyTheme(getStoredTheme())
-    applyZoom(getStoredZoom())
-    applyStoredFontPrefs()   // 2026-09-28 · 字体配置：--font-editor / --font-ui（fontPrefs.ts）
     void applyStoredNetProxy()   // 2026-09-28 · 网络代理：主进程 session 代理每次启动由渲染层重推（仅桌面）
   }, [])
 
@@ -369,6 +406,7 @@ export default function App() {
     //    同项目重开（lastProjectRef 相同）不会触发，与上面 resetTaskCenter 的语义一致。
     abortRunIfProjectChanged(id)
     lastProjectRef.current = id
+    navEpoch.current++
     db.setCurrentProject(id)
     // 结构迁移统一入口（幂等），与「启动恢复上次项目」共用同一个入口，
     // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
@@ -396,7 +434,13 @@ export default function App() {
     backupStop.current = startAutoBackup(id)
   }, [])
 
-  const exitProject = useCallback(() => {
+  /**
+   * 真正退出项目（调用前必须已经确认编辑器没有未落库的稿）。
+   * 3.3.0 · UX06：原实现直接在这里清 `projectId`，编辑器随即卸载 —— 而脏稿只能靠卸载时的
+   * 异步冲刷兜底，那条链**故意吞失败**且界面已经消失，作者既看不到提示也没法重试。
+   * 所以拆成「先过屏障 → 再调它」，屏障失败就根本不走这里。
+   */
+  const doExitProject = useCallback(() => {
     // 2.6.3 · 跨页签任务存活：退出项目 → **中止**所有在跑的后台任务
     //（🔴 不中止就会在项目已关闭后继续烧额度；任务记录保留，重开同项目能接着「继续」）
     abortAllTasks()
@@ -406,6 +450,7 @@ export default function App() {
     backupStop.current?.()
     backupStop.current = null
     db.setMeta('lastProject', '')
+    navEpoch.current++
     db.setCurrentProject('')
     // 题材包归位（2.7.1）：退回项目管理首页后，TABS 的 getter 应回到默认包，
     // 免得「上个项目的题材」还挂在模块级状态上（首页若渲染任何页签名会露馅）。
@@ -431,7 +476,8 @@ export default function App() {
     markExported() // 记录「已导出到外部文件」，#031 提醒据此重新计时
   }, [projectId, projectName])
 
-  const navigate = useCallback((id: string, chapterId?: string) => {
+  /** 真正执行换页签（可见性校验 + 后台任务轻提示 + 落到目标页） */
+  const applyNav = useCallback((id: string, chapterId?: string, rowId?: string, position?: EditorPosition) => {
     const t = getTab(id)
     if (t && !tabVisible(t.id, visCtx)) return
     /**
@@ -448,30 +494,105 @@ export default function App() {
       }
     }
     setActiveTab(id)
+    activeTabRef.current = id
+    setFocusRowId(rowId ?? null)
     // 🔴 必须**连清空一起**处理（2026-10-16 全量审计）：旧实现只在 chapterId 非空时写、
     //    全仓没有任何清空点 ⇒ 从章节规划板跳到第 3 章之后，作者在编辑器里切到第 8 章、
     //    再点侧栏「正文编辑」，打开的仍是**第 3 章**（陈旧目标压过了「上次编辑章」）。
-    if (id === 'editor') setEditorTarget(chapterId ?? null)
+    setEditorRequestId(++requestSequence.current)
+    setEditorTarget(id === 'editor' ? chapterId ?? null : null)
+    setEditorOffset(id === 'editor' && chapterId && position ? { ...position } : null)
   }, [visCtx])
+
+  /**
+   * 3.3.0 · UX06：换页签前的**离页屏障**。
+   * 干净时（没有编辑器 guard / 没有脏稿）走原来的同步路径，一次 await 都不加；
+   * 只有真的有待落库的正文或标题摘要，才先等编辑器写盘：写成功才换页，失败就留在原页
+   * —— 原 DOM、原草稿、原滚动位置全部不动，作者可以直接重试。
+   */
+  const navGate = useNavigationGate<NavigationIntent>({
+    context: navContext, busy: navPending, capture: captureWorkspaceView,
+    dirty: leaveGuardDirty, flush: runLeaveGuard,
+    validate: intent => resolveNavigationDestination(intent, {
+      // Editor is intentionally outside TABS/getTab; it is a first-class route nonetheless.
+      available: id => (id === 'editor' || !!getTab(id)) && tabVisible(id, visCtx),
+      recordKind: id => { const type = getTab(id)?.type; return type === 'card' || type === 'table' ? type : null },
+      chapterExists: id => db.chapterExistsFor(projectId ?? '', id),
+      recordExists: (kind, tabId, recordId) => db.tabRecordExistsFor({ kind, projectId: projectId ?? '', tabId, recordId }),
+    }),
+    commit: intent => {
+      if (intent.kind === 'exit') { clearHistory(); doExitProject() }
+      else {
+        applyNav(intent.target.tabId, intent.target.chapterId, intent.target.rowId, intent.position)
+        commitNavigationHistory(navHistory.history, intent)
+        const notice = navigationDestinationNotice(intent.notice)
+        if (notice) showToast(notice, 'info')
+      }
+    },
+    invalid: () => {
+      showToast('目标页面当前不可见，已留在当前页面', 'info')
+    },
+    failed: (intent, scope, error) => {
+      if (scope === 'editing') { showToast('检查目标期间仍有新修改，已留在当前页面，请稍后重试', 'info'); return }
+      showToast(saveFailureMessage(
+      scope === 'target' ? '暂时无法读取目标，已留在当前页面，请稍后重试 —— '
+        : (intent.kind === 'exit' ? '还没退出项目：' : '已留在当前页面：')
+          + (scope === 'record' ? '当前大纲改动没存上 —— ' : scope === 'meta' ? '本章标题或摘要没存上 —— ' : '本章正文没存上 —— '), error), 'error') },
+  })
+  useEffect(() => {
+    navGate.invalidate(); resetNavigationTargets(); clearHistory()
+  }, [navGate, projectId, resetNavigationTargets, clearHistory])
+  useEffect(() => subscribeStorageContext(() => {
+    navGate.invalidate(); resetNavigationTargets(); clearHistory()
+  }), [navGate, resetNavigationTargets, clearHistory])
+  useEffect(() => {
+    const owner = navContext()
+    const checkOwner = () => {
+      if (owner !== navContext()) { navGate.invalidate(); resetNavigationTargets(); clearHistory() }
+    }
+    window.addEventListener('storage', checkOwner)
+    return () => window.removeEventListener('storage', checkOwner)
+  }, [navGate, navContext, clearHistory, resetNavigationTargets])
+  const navigate = useCallback((id: string, chapterId?: string, rowId?: string) => {
+    const intent = pageNavigationIntent({ tabId: id, chapterId, rowId })
+    if (intent) navGate.request(intent)
+  }, [navGate])
+
+  /**
+   * 3.3.0 · UX05：**关联跳转**才记来源（正文→提及章节、角色/设定→正文…）。
+   * 普通侧栏切换不记 —— 否则返回栈会变成浏览器历史，作者点两下侧栏就回不到"该回的地方"。
+   * 只存路由 ID 与一行短标签；`scopeKey` 一变（切项目/换存储上下文）整个栈作废。
+   */
+  const navigateToReference = useCallback((jump: ReferenceJump) => {
+    // 源位置：正文用「当前章」，表格/卡片页用「当前记录」（优先显式传入的那条，其次是高亮目标）
+    const fromRow = jump.sourceId ?? focusRowId ?? undefined
+    const from: WorkspaceTarget = {
+      tabId: activeTab,
+      ...(activeTab === 'editor' && editorTarget ? { chapterId: editorTarget } : {}),
+      ...(activeTab !== 'editor' && fromRow ? { rowId: fromRow } : {}),
+    }
+    const intent = referenceNavigationIntent(jump, from)
+    if (intent) navGate.request(intent)
+    else showToast('关联定位信息无效，已留在当前页面', 'info')
+  }, [activeTab, editorTarget, focusRowId, navGate])
+  /** Return history is consumed only by a successful commit; save failure preserves the retry entry. */
+  const goBackToSource = useCallback(() => {
+    const entry = navHistory.top
+    if (entry) navGate.request({ kind: 'page', target: { ...entry.target }, back: entry })
+  }, [navHistory, navGate])
+
+  const exitProject = useCallback(() => navGate.request({ kind: 'exit' }), [navGate])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）
   // detail 兼容两种形式：字符串 tabId，或 { tabId, rowId } 对象（直达并高亮具体行）
   useEffect(() => {
     const onNav = (e: Event) => {
-      const detail = (e as CustomEvent).detail
-      if (typeof detail === 'string') {
-        navigate(detail)
-        setFocusRowId(null)
-        return
-      }
-      if (detail && typeof detail === 'object') {
-        if (detail.tabId) navigate(detail.tabId)
-        setFocusRowId(detail.rowId ?? null)
-      }
+      const intent = pageNavigationIntent((e as CustomEvent).detail)
+      if (intent) navGate.request(intent)
     }
     window.addEventListener('yfe:navigate', onNav as EventListener)
     return () => window.removeEventListener('yfe:navigate', onNav as EventListener)
-  }, [navigate])
+  }, [navGate])
 
   // 🔴 2.7.2 移除了两个事件监听（原先都还有派发方，现在都没有了）：
   //   ① `yfe:pack-changed` —— 由《世界设定》页头的「切换题材」控件派发；
@@ -492,14 +613,13 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         <PortableWriteLockBanner />
-        <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
-          <div className="text-base font-semibold">启动失败</div>
-          <div className="max-w-xl text-13 leading-relaxed text-ink-400">{bootError}</div>
-          <Button variant="secondary" onClick={() => location.reload()}>重新加载</Button>
-          <div className="max-w-xl text-12 text-ink-500">
-            若反复失败，请先备份数据文件（左下角「数据坞」），再重新加载。
-          </div>
-        </div>
+        <FailureNotice title="启动失败" error={bootError.cause}
+          description="工作台尚未完成初始化。请保留技术摘要，再尝试重新加载。"
+          actions={<Button variant="primary" size="md" onClick={() => location.reload()}>重新加载工作台</Button>}>
+          {DESKTOP || PORTABLE
+            ? '当前页面尚未载入数据管理工具。需要排障时，请先通过系统文件管理器复制已有数据文件和备份，避免覆盖原文件。'
+            : '请保留当前站点数据，避免直接清理浏览器存储。此时数据管理工具尚未载入，请勿依赖库内导出入口。'}
+        </FailureNotice>
       </>
     )
   }
@@ -509,7 +629,10 @@ export default function App() {
       <>
         <DesktopWriteLockBanner />
         <PortableWriteLockBanner />
-        <div className="h-screen bg-ink-950" />
+        <main role="status" aria-label="正在打开创作工作台" className="flex flex-col items-center justify-center gap-2 bg-surface-app p-6 text-center" style={{ minHeight: foldVh('100vh') }}>
+          <p className="text-14 font-semibold text-content-primary">正在打开创作工作台…</p>
+          <p className="text-12 text-content-muted">正在读取工作台数据与设置，请稍候。</p>
+        </main>
       </>
     )
   }
@@ -534,14 +657,14 @@ export default function App() {
 
   const renderContent = () => {
     if (activeTab === 'dashboard') {
-      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
+      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} projectName={projectName} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
     }
     const guardTab = getTab(activeTab)
     if (guardTab && !tabVisible(guardTab.id, visCtx)) {
-      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
+      return <Dashboard key={projectId} onNavigate={navigate} projectId={projectId} projectName={projectName} onExport={exportCurrent} refreshKey={refreshKey} ctx={visCtx} />
     }
     if (activeTab === 'editor') {
-      return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} ctx={visCtx} />
+      return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} openRequestId={editorRequestId} openOffset={editorOffset} ctx={visCtx} />
     }
     if (activeTab === 'model-settings') {
       return <ModelSettingsPanel />
@@ -620,9 +743,9 @@ export default function App() {
       case 'card':
         // 大纲规划下的卡片页签（分卷大纲/章节细纲）使用多记录目录管理组件
         return tab.group === '大纲规划'
-          ? <OutlineSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} />
+          ? <OutlineSheet key={tab.id} tab={tab} focusRowId={focusRowId} focusRequestId={editorRequestId} onFocusConsumed={clearFocusRow} />
           // focusRowId 也要下发：card 类页签（主要/次要/NPC 角色）同样会被报告指向（审计 P1-5）
-          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} ctx={visCtx} />
+          : <CharacterSheet key={tab.id} tab={tab} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} onNavigateReference={navigateToReference} ctx={visCtx} />
       case 'about':
         return <AboutPage />
       case 'map':
@@ -655,6 +778,7 @@ export default function App() {
       />
       )}
       <WorkspaceSidebar
+        returnSource={navHistory.top ? { label: navHistory.top.label, onBack: goBackToSource } : undefined}
         activeTab={activeTab}
         onNavigate={navigate}
         collapsed={false}
@@ -678,9 +802,12 @@ export default function App() {
               用 min-h 可避免在某些中间态下被压成 0 */}
           {/* 🔴 2026-09-22 六维审计 P2：`50vh` 走 foldVh（界面缩放后 vh 不随 zoom 缩，
               132% 时会溢出视口）；这也是全项目唯一残留的内联 vh 任意值类。 */}
+          <ErrorBoundary key={projectId + ':' + activeTab} fallback={error => <WorkspacePageFailure error={error}
+            returnToEditor={activeTab === 'dashboard'} onReturn={() => navigate(activeTab === 'dashboard' ? 'editor' : 'dashboard')} />}>
           <Suspense fallback={<div className="w-full flex items-center justify-center text-ink-500 text-sm" style={{ minHeight: foldVh('50vh') }}>加载中…</div>}>
             {renderContent()}
           </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
       {/* 本机存储 / 云盘同步状态在「项目内」由 Sidebar Footer 内嵌承载，

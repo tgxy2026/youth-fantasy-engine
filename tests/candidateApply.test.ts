@@ -61,6 +61,14 @@ function mkDeps(init: { body: string; failWrite?: boolean; corruptReadBack?: str
 }
 
 async function main() {
+  for (const failAt of [1, 2]) {
+    const t = mkDeps({ body: '' })
+    let reads = 0
+    t.deps.readBody = async () => { if (++reads === failAt) throw new Error('读取失败'); return '' }
+    const r = await applyCandidate(mkJob(digest('')), mkCandidate({ beforeText: '' }), t.deps)
+    ok(`读取第 ${failAt} 次失败时空基准也不能当作正常正文`, !r.ok && r.code === 'write-failed')
+    ok(`读取第 ${failAt} 次失败不写正文、不保存提交意图`, t.writes() === 0 && t.persisted.length === 0)
+  }
   // ---------- ① 正常应用 ----------
   {
     const t = mkDeps({ body: BEFORE })

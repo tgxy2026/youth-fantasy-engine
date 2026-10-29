@@ -21,6 +21,7 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 const { _electron } = require('playwright')
+const { openEditorNavigation } = require('./workspace-entry.cjs')
 
 const ROOT = path.resolve(__dirname, '../../..')
 const PA = 'inflight-dpa', VA = 'inflight-dva', CA = 'inflight-dca', TA = '桌面在途验收甲书'
@@ -148,13 +149,12 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
    * 🔴 不认第二种就会在重启后干等项目中心标题 45 秒（本轮实测）。
    */
   const openProject = async title => {
-    const nav = page.getByRole('navigation').first()
     const card = page.getByRole('heading', { name: title, exact: true }).first()
     await Promise.race([
       card.waitFor({ timeout: 45000 }).catch(() => {}),
-      nav.waitFor({ timeout: 45000 }).catch(() => {}),
+      page.locator('nav').first().waitFor({ state: 'attached', timeout: 45000 }).catch(() => {}),
     ])
-    if (!(await nav.isVisible().catch(() => false))) {
+    if (await card.isVisible()) {
       for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
         const button = page.getByRole('button', { name, exact: true })
         if (await button.isVisible().catch(() => false)) await button.click()
@@ -162,9 +162,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
         .getByRole('button', { name: '打开项目', exact: true }).click()
     }
-    await nav.waitFor({ timeout: 45000 })
-    await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-    await nav.getByRole('button', { name: '正文编辑', exact: true }).click()
+    await openEditorNavigation(page)
     await page.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
   }
   const calls = () => app.evaluate(() => global.__desktopProbe.calls)
@@ -223,14 +221,15 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       await ta().fill(TEXT_C)
       await sleep(300)
       await page.keyboard.press('Control+s')
-      await until(async () => (await calls()).some(call => call.channel === 'store:save' && !call.doneAt), 30000, 'save in flight')
+      await until(async () => (await calls()).some(call => call.channel === 'store:save' && call.body === TEXT_C && !call.doneAt), 30000, 'switch text save in flight')
       const switchedAt = Date.now()
       await page.getByTitle(BACK).first().click()
       await page.getByRole('heading', { name: TA, exact: true }).first().waitFor({ timeout: 45000 })
       await openProject(TB)
-      const inFlight = (await calls()).filter(call => call.channel === 'store:save' && call.doneAt && call.doneAt > switchedAt)
-      check('project-switch.in-flight-during-switch', inFlight.length > 0, `切走时仍在途 ${inFlight.length} 笔`)
       await until(async () => (await diskChapter(CA))?.content === TEXT_C, 45000, 'first project write landed')
+      // 切换后允许请求尚未结束；磁盘读回后再核对这一笔的起止时间。
+      const inFlight = (await calls()).filter(call => call.channel === 'store:save' && call.body === TEXT_C && call.at <= switchedAt && call.doneAt > switchedAt)
+      check('project-switch.in-flight-during-switch', inFlight.length > 0, `切走时仍在途 ${inFlight.length} 笔`)
       const other = await diskChapter(CB)
       check('project-switch.write-landed', (await diskChapter(CA))?.content === TEXT_C)
       check('project-switch.other-untouched', other?.content === ORIG_B && other?.projectId === PB, JSON.stringify(other?.content ?? '').slice(0, 24))
@@ -250,7 +249,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       })
       await ta().fill(TEXT_D)
       await page.keyboard.press('Control+s')
-      await page.getByRole('button', { name: '保存出错', exact: true }).first().waitFor({ timeout: 30000 })
+      await page.locator('[data-storage-write-status="error"]').first().waitFor({ timeout: 30000 })
       check('close-write-failure.failure-visible', true)
       await page.screenshot({ path: path.join(runRoot, 'close-write-failure.png') })
       await app.close(); app = null            // 🔴 真关应用，不派发 beforeunload
@@ -271,7 +270,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
 
       await launch()
       check('close-write-failure.reopen-readback', (await ta().inputValue()) === keptContent, String(await ta().inputValue()).slice(0, 20))
-      check('close-write-failure.no-false-error', (await page.getByRole('button', { name: '保存出错', exact: true }).count()) === 0)
+      check('close-write-failure.no-false-error', (await page.locator('[data-storage-write-status="error"]').count()) === 0)
       await page.screenshot({ path: path.join(runRoot, 'close-write-failure-reopen.png') })
     }
 

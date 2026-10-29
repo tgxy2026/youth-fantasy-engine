@@ -12,12 +12,13 @@
  *   ③ **淘汰如实**：配额到了会删最旧的（每章 5 份 / 每项目 200 份），删了就是删了，
  *      不写"已清理"以外的说法，也不假装还在。
  */
-import { useCallback, useEffect, useState } from 'react'
-import { FileWarning, Loader2, RefreshCw, X } from 'lucide-react'
-import * as db from '@/lib/db'
+import { useEffect, useSyncExternalStore } from 'react'
+import { FileWarning, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { Z } from '@/lib/app/zLayer'
-import { foldVh } from '@/lib/settings/theme'
+import { Modal } from '@/components/dialogs/Modal'
+import { candidateApplyContext } from '@/lib/ai/candidateContext'
+import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
+import { useRevisionRead } from './useRevisionRead'
 import {
   listCheckReportViews, reportSourceLabel, summarizeReportViews, type CheckReportView,
 } from '@/lib/revision/checkReports'
@@ -35,27 +36,12 @@ const levelCls = (level?: string): string =>
       : 'text-ink-400'
 
 export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
-  const [rows, setRows] = useState<CheckReportView[] | null>(null)
-  const [err, setErr] = useState('')
-  const [titles, setTitles] = useState<Record<string, string>>({})
+  useSyncExternalStore(subscribeStorageContext, getStorageContextEpoch)
+  return <ReportWorkspace key={candidateApplyContext()} onClose={onClose} />
+}
 
-  const load = useCallback(async () => {
-    try {
-      const pid = db.getCurrentProjectId() ?? ''
-      const [list, chs] = await Promise.all([
-        listCheckReportViews(pid),
-        db.getAllChapters().catch(() => []),
-      ])
-      const map: Record<string, string> = {}
-      for (const c of chs) map[c.id] = c.title
-      setTitles(map)
-      setRows(list)
-      setErr('')
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-      setRows([])
-    }
-  }, [])
+function ReportWorkspace({ onClose }: { onClose: () => void }) {
+  const { rows, titles, err, reading, load } = useRevisionRead(listCheckReportViews)
 
   useEffect(() => { void load() }, [load])
 
@@ -69,28 +55,18 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-6 bg-ink-950/70 backdrop-blur-sm" style={{ zIndex: Z.modal }}>
-      <div
-        className="w-full max-w-[760px] flex flex-col rounded-2xl bg-ink-850 border border-ink-700 shadow-2xl overflow-hidden"
-        style={{ maxHeight: foldVh('80vh') }}
-      >
-        <div className="px-6 py-4 border-b border-ink-700/70 flex items-center gap-2">
-          <FileWarning size={16} className="text-amber" />
-          <div className="text-14 font-semibold text-ink-50">检查报告</div>
-          <div className="text-11 text-ink-500">留档的结论，可回看</div>
-          <button onClick={onClose} className="ml-auto text-ink-400 hover:text-ink-100" title="关闭">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+    <Modal open onClose={onClose} title="检查报告" icon={<FileWarning size={16} />} width={760} maxHeight="80vh"
+      footer={<><span className="text-10 text-ink-500">留档有配额（每章 5 份 / 全书 200 份），更早的报告可能已不在。</span>
+        <Button variant="secondary" size="sm" disabled={reading} onClick={() => void load()}><RefreshCw size={13} /> 重试读取</Button></>}>
+        <div data-revision-reports>
           {rows === null && (
             <div className="flex items-center justify-center py-10 gap-2 text-ink-400">
               <Loader2 size={18} className="animate-spin text-amber" />
               <span className="text-13">读取中…</span>
             </div>
           )}
-          {rows !== null && err !== '' && <div className="text-12 text-danger py-4">读取失败：{err}</div>}
+          {err !== '' && <div role="alert" className="text-12 text-danger py-4">{err}</div>}
+          {reading && rows !== null && <div role="status" className="text-11 text-ink-400 py-2">正在更新留档…</div>}
           {rows !== null && err === '' && rows.length === 0 && (
             <div className="h-full flex items-center justify-center py-8">
               <div className="text-13 text-ink-500 text-center">
@@ -114,7 +90,7 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
 
               <ul className="space-y-2.5">
                 {rows.map(r => (
-                  <li key={r.id} className="rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
+                  <li key={r.id} data-report-id={r.id} className="min-w-0 rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3 [overflow-wrap:anywhere]">
                     <div className="flex items-center gap-2">
                       <span className="text-11 px-1.5 py-0.5 rounded bg-ink-800 text-ink-300">
                         {reportSourceLabel(r.source)}
@@ -135,14 +111,16 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
                       )}
                     </div>
 
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-11 text-ink-200">查看完整发现（{r.findings.length} 条）</summary>
                     <ul className="mt-2 space-y-1.5">
                       {r.findings.map((f, i) => (
                         <li key={i} className="text-11 leading-relaxed">
                           <span className={`mr-1.5 ${levelCls(f.level)}`}>· {f.level ?? '提示'}</span>
                           <span className="text-ink-100">{f.title ?? '（无标题）'}</span>
-                          {f.detail ? <span className="text-ink-400"> —— {f.detail}</span> : null}
+                          {f.detail ? <span className="text-ink-400 whitespace-pre-wrap"> —— {f.detail}</span> : null}
                           {f.where
-                            ? <span className="ml-1 text-ink-500" title="可定位的原文片段（工单拿它算段号）">〔{f.where}〕</span>
+                            ? <span className="ml-1 text-ink-500 whitespace-pre-wrap" title="可定位的原文片段（工单拿它算段号）">〔{f.where}〕</span>
                             : <span className="ml-1 text-ink-600" title="这条发现没有带可引用的原句">〔无引文〕</span>}
                         </li>
                       ))}
@@ -150,6 +128,7 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
                         <li className="text-11 text-ink-500">（这份报告没有留下条目）</li>
                       )}
                     </ul>
+                    </details>
                   </li>
                 ))}
               </ul>
@@ -157,15 +136,6 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className="px-6 py-3 border-t border-ink-700/70 flex items-center gap-2">
-          <span className="text-10 text-ink-500">
-            留档有配额（每章 5 份 / 全书 200 份），超了会删最旧的 —— 更早的报告可能已不在。
-          </span>
-          <Button variant="secondary" size="sm" className="!ml-auto" onClick={() => void load()}>
-            <RefreshCw size={13} /> 刷新
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

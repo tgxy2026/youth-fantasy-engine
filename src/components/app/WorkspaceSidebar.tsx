@@ -3,6 +3,7 @@ import { Menu, Settings2 } from 'lucide-react'
 import Sidebar from '@/components/app/Sidebar'
 import { Button } from '@/components/common/Button'
 import BrandMark from '@/components/common/BrandMark'
+import BackToSource from '@/components/app/BackToSource'
 import { Modal } from '@/components/dialogs/Modal'
 import { currentUiZoom } from '@/lib/settings/theme'
 
@@ -35,6 +36,7 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
           aria-label="打开项目菜单" aria-expanded={open} title="打开项目菜单">
           <Menu size={18} />
         </Button>
+        {props.returnSource && <BackToSource {...props.returnSource} compact />}
         <Button variant="ghost" iconOnly size="sm" onClick={() => { setSettings(true); setOpen(true) }} className="mt-auto"
           aria-label="界面与数据设置" title="界面缩放、主题、保存与同步设置">
           <Settings2 size={18} />

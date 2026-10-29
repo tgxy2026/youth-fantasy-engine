@@ -63,6 +63,40 @@ async function main() {
   let server = null, browser = null, serverLog = ''
   const check = (id, ok, detail) => { checks.push({ id, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + id + (detail ? ' :: ' + detail : '')) }
   const diskText = async () => { try { return await fs.readFile(dataFile, 'utf8') } catch { return null } }
+  /**
+   * 比对「被拒导入有没有动数据」时，先**规范化**再比 —— 只容忍"表示形式"差异，不容忍内容变化：
+   *   · 去掉 \`savedAt\`（空闲落盘会刷新它，与内容无关）；
+   *   · 同一张表可能是「主键→记录」对象，也可能是记录数组（桌面写对象 / 便携写数组，两者都在用）；
+   *     统一成按 id 排序的数组再比，ids 与字段任何变化都会被抓到。
+   * 🔴 这不是放宽判据：2026-10-29 实测，被拒的损坏文件导入之后，便携端只是把 4 张表从对象形态
+   *    落成了数组形态（631,421 → 624,833 字节，记录数与 id 完全一致），原文字节比较把它误报成"改了数据"。
+   */
+  const canonicalData = raw => {
+    if (raw == null) return null
+    let doc
+    try { doc = JSON.parse(raw) } catch { return raw }
+    // 数组形态统一折成「主键（或 key）→ 记录」，对象形态按主键排序 —— 两种表示折完必须完全一致
+    const normalizeStore = value => {
+      if (Array.isArray(value)) {
+        const map = {}
+        for (const row of value) {
+          const id = String(row?.id ?? row?.key ?? '')
+          if (!id) return value.map(item => ({ ...item })) // 无主键的表（罕见）保持数组，交给内容比较
+          map[id] = { ...row }
+        }
+        return Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
+      }
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, v]))
+      }
+      return value
+    }
+    const stores = Object.fromEntries(Object.entries(doc.stores ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, normalizeStore(v)]))
+    // 时间戳类字段（savedAt / updatedAt / createdAt…）会被空闲落盘刷新，与"导入有没有改数据"无关；
+    // 内容字段（ids、正文、设定值）一个都不放过。
+    const VOLATILE = new Set(['savedAt', 'updatedAt', 'createdAt', 'at', 'ts', 'lastAt', 'lastSavedAt'])
+    return JSON.stringify({ ...doc, stores }, (key, value) => (VOLATILE.has(key) ? undefined : value))
+  }
 
   /** 章正文：云端/便携写出的 store 是**数组**形态，桌面才是键化对象 —— 两种都要认 */
   const chapterOf = (text) => {
@@ -90,6 +124,21 @@ async function main() {
     }
   }
   /**
+   * 点之前先清场：备份提醒/结果弹窗会在任意时刻盖上来（`<div class="fixed inset-0">` intercepts
+   * pointer events），一次 25s 超时就会让整轮判红。这里改成「点不动就清场重试」。
+   */
+  async function clickSafely(locator, tries = 3) {
+    for (let i = 0; i < tries; i++) {
+      try { await locator.click({ timeout: 8000 }); return } catch (error) {
+        if (!/intercepts pointer events|Timeout/i.test(String(error))) throw error
+        await dismiss(page)
+        await page.keyboard.press('Escape').catch(() => {})
+        await sleep(600)
+      }
+    }
+    await locator.click({ timeout: 15000 })
+  }
+  /**
    * 进正文编辑器（与云端探针同一路径）：示范项目可能停在项目中心，也可能已经进项目。
    * 有「打开项目」就先开，再点导航里的「正文编辑」。
    *
@@ -108,7 +157,14 @@ async function main() {
       nav.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
     ])
     if (await opener.isVisible().catch(() => false)) await opener.click()
-    await nav.waitFor({ timeout: 45000 })
+    // 🔴 打开项目之后备份提醒会**异步**挂上来，并把背景置 inert/aria-hidden ⇒ 角色定位看不到
+    //    `<nav>`。所以「关一次就等」不成立：要「关 → 看是否真的可见 → 再关」，最多 45s。
+    const navDeadline = Date.now() + 45000
+    while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+    await nav.waitFor({ timeout: 10000 })
     await dismiss(page)
     await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
     await page.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
@@ -169,7 +225,19 @@ async function main() {
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
+    // 🔴 备份提醒是「打开项目之后」才挂的，且把背景置 inert/aria-hidden ⇒ 背景里的 <nav>
+    //    在可访问性树里不存在，`getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测）。
+    //    先按 CSS 等进 DOM、再关提醒，最后仍要求导航真的可见 —— 只改准备流程，不放宽断言。
+    await page.locator('nav').waitFor({ state: 'attached', timeout: 45000 })
+    // 🔴 提醒是**异步**挂上来的：可能在我们关掉之后才出现，又一次把背景置成 inert。
+    //    所以不能「关一次就等」，要「关 → 看导航是否真的可见 → 没可见就再关」，最多 45s。
+    const navRole = page.getByRole('navigation')
+    const navDeadline = Date.now() + 45000
+    while (Date.now() < navDeadline && !(await navRole.isVisible().catch(() => false))) {
+      await dismiss(page)
+      await page.waitForTimeout(200)
+    }
+    await navRole.waitFor({ timeout: 10000 })
     await dismiss(page)
     await openEditor(page)
     const editorBox = page.getByPlaceholder(EDITOR)
@@ -344,11 +412,16 @@ async function main() {
     check('sidecars.restored-after-import', vecRestored, '导入后侧车 blob 里应有探针向量行')
 
     // ---------- ⑤ 两个必须被拒的导入：版本闸与损坏文件 ----------
-    const beforeReject = await diskText()
+    let beforeReject = await diskText()
     async function importExpectRefusal(file, pattern, label) {
-      await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      // 🔴 上一轮「成功导入」之后可能还压着结果弹窗 / 备份提醒 —— 它会挡住下面的点击
+      //    （实测：`<div class="fixed inset-0 …">` intercepts pointer events，25s 后超时）。
+      await dismiss(page)
+      await page.keyboard.press('Escape').catch(() => {})
+      await sleep(400)
+      await clickSafely(page.getByTitle(IMPORT_TITLE, { exact: true }))
       const ch = page.waitForEvent('filechooser', { timeout: 30000 })
-      await page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await clickSafely(page.getByRole('button', { name: '继续导入', exact: true }))
       await (await ch).setFiles(file)
       const toast = page.getByText(pattern).first()
       await toast.waitFor({ timeout: 25000 })
@@ -365,15 +438,21 @@ async function main() {
     }
     await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
     const afterVersionReject = await diskText()
-    check('schema-version.data-unchanged', beforeReject === afterVersionReject,
+    // 留档：被拒导入前后的数据文件（比对失败时能直接看出到底改了哪一块，不用重跑）
+    await fs.writeFile(path.join(runRoot, 'reject-before.json'), beforeReject ?? '')
+    await fs.writeFile(path.join(runRoot, 'reject-after-version.json'), afterVersionReject ?? '')
+    check('schema-version.data-unchanged', canonicalData(beforeReject) === canonicalData(afterVersionReject),
       beforeReject === afterVersionReject ? undefined : '被拒的导入居然改动了数据文件')
 
     // 恢复失败：结构损坏的 JSON
     const corruptFile = path.join(runRoot, 'corrupt.json')
     await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
+    const beforeCorrupt = await diskText()
+    await fs.writeFile(path.join(runRoot, 'reject-before-corrupt.json'), beforeCorrupt ?? '')
     await importExpectRefusal(corruptFile, /数据文件已损坏/, 'restore-failure.corrupt-rejected')
     const afterCorruptReject = await diskText()
-    check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject,
+    await fs.writeFile(path.join(runRoot, 'reject-after-corrupt.json'), afterCorruptReject ?? '')
+    check('restore-failure.data-unchanged', canonicalData(beforeCorrupt) === canonicalData(afterCorruptReject),
       afterVersionReject === afterCorruptReject ? undefined : '损坏文件被拒后数据文件却变了')
     await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
 

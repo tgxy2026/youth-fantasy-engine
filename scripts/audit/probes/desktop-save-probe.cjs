@@ -27,25 +27,67 @@ const chapterOf = text => {
   return list.find(row => row && row.id === CH)
 }
 const checks = [], pageErrors = []
+/**
+ * 🔴 首屏/冷启动单独放宽：Electron 冷启动 + 大包在本机实测可超 45s（2026-10-29 实测：整轮因
+ *    `_electron.launch` 45s 超时直接抛错退出，11 项被判 not-run）。断言本身仍走 15s 默认超时。
+ */
+const BOOT_TIMEOUT = 120_000
+/**
+ * 比较「数据文件有没有被改动」时**排除自动保存带入的易变字段**（savedAt）：
+ * 被拒的导入本身不该写盘，但桌面端有空闲批处理落盘，跑得久一点就会把 savedAt 刷新 ——
+ * 直接比原文字节会把「自动保存」误判成「被拒的导入改了数据」（2026-10-29 实测）。
+ * 判据仍是**内容必须一致**：stores/kind 任何变化都算失败。
+ */
+const stableData = raw => {
+  try { const doc = JSON.parse(raw); delete doc.savedAt; return JSON.stringify(doc) } catch { return raw }
+}
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
 const arg = name => { const at = process.argv.indexOf(name); if (at < 0) return; const value = process.argv[at + 1]; if (!value || value.startsWith('--')) throw new Error(name + ' requires a value'); return value }
 const check = (id, ok, detail) => { checks.push({ id, passed: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + id); if (!ok) throw new Error(id) }
-async function until(fn, timeout = 45000) {
+async function until(fn, timeout = BOOT_TIMEOUT) {
   const end = Date.now() + timeout
   while (Date.now() < end) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 100)) }
   throw new Error('Timed out waiting for actual state')
 }
 async function openEditor(page) {
-  await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: 45000 })
+  await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: BOOT_TIMEOUT })
   for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
     const button = page.getByRole('button', { name, exact: true })
     if (await button.isVisible().catch(() => false)) await button.click()
   }
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: TITLE, exact: true }) }).getByRole('button', { name: '打开项目', exact: true }).click()
-  await page.getByRole('navigation').waitFor()
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-  await page.getByPlaceholder(EDITOR).waitFor()
+  // 🔴 备份提醒会把背景置为 inert/aria-hidden ⇒ 背景里的 `<nav>` 从可访问性树消失，
+  //    `getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测同款问题）。
+  //    先按 CSS 等进 DOM，再循环关提醒，最后仍要求 role=导航可见。
+  const navEl = page.locator('nav')
+  await navEl.waitFor({ state: 'attached', timeout: BOOT_TIMEOUT })
+  const nav = page.getByRole('navigation')
+  const navDeadline = Date.now() + BOOT_TIMEOUT
+  while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+    for (const name of ['稍后再说', '知道了']) {
+      await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
+    }
+    await page.waitForTimeout(200)
+  }
+  await nav.waitFor({ timeout: 5000 })
+  // 🔴 仅仅「导航可见」还不够：提醒层的挂载/关闭是异步的，可能在导航可见之后又盖上来
+  //    （2026-10-26 实测 storage.desktop-save：点「正文编辑」被遮挡，等满 15s 超时）。
+  //    这里改成「点一下 → 关提醒 → 再点」，直到真的进了正文编辑；进不去仍然报错。
+  const enterDeadline = Date.now() + BOOT_TIMEOUT
+  let entered = false
+  while (!entered && Date.now() < enterDeadline) {
+    try {
+      await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: 4000 })
+      await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
+      entered = true
+    } catch {
+      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+        await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
+      }
+      await page.waitForTimeout(200)
+    }
+  }
+  if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
 }
 async function main() {
   const buildArg = arg('--build-dir')
@@ -117,7 +159,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
   for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']) delete env[key]
   let app, page, blocked = false, error = null, runtimeLog = ''
   const launch = async () => {
-    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env, timeout: 45000 })
+    app = await _electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'), args: [runRoot, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile], env, timeout: BOOT_TIMEOUT })
     app.process().stdout?.on('data', value => { runtimeLog += value }); app.process().stderr?.on('data', value => { runtimeLog += value })
     // Refuse all network traffic in both renderer and main session. Local file assets remain usable.
     await app.evaluate(({ session }) => { session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_details, callback) => callback({ cancel: true })) })
@@ -163,7 +205,9 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     const originalBytes = await fs.readFile(keptFile)
     await page.getByPlaceholder(EDITOR).fill(DRAFT); await page.keyboard.press('Control+s')
     await until(async () => (await calls()).some(call => call.channel === 'store:save' && call.body === DRAFT && call.result?.ok === false))
-    await page.getByRole('button', { name: '保存出错', exact: true }).waitFor()
+    const errorStatus = page.locator('[data-storage-write-status="error"]')
+    await errorStatus.waitFor()
+    await page.getByText(/^数据保存未确认：/).waitFor()
     const failures = (await calls()).filter(call => call.channel === 'store:save' && call.body === DRAFT && call.result?.ok === false)
     check('failure-visible', failures.length > 0 && failures.every(call => /rename|EISDIR|EPERM|EACCES/i.test(call.result.error)), failures)
     check('failure-preserves-draft', (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT)
@@ -171,6 +215,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     // A second real failed IPC write, with no new typing, proves dirty was retained for automatic retry.
     await until(async () => (await calls()).filter(call => call.channel === 'store:save' && call.body === DRAFT && call.result?.ok === false).length > failures.length)
     check('dirty-retry', true)
+    check('failure-notice-bounded', await page.getByText(/^数据保存未确认：/).count() <= 1 && !(await page.locator('body').innerText()).includes('operation not permitted'))
     await page.screenshot({ path: path.join(runRoot, 'write-failure.png') })
     await page.getByTitle('导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑', { exact: true }).click()
     await until(async () => { try { return JSON.parse(await fs.readFile(exportFile, 'utf8')).stores.chapters[CH].content === DRAFT } catch { return false } })
@@ -184,8 +229,8 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     await page.keyboard.press('Control+s')
     await until(async () => { try { return chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT } catch { return false } }, 45000)
     check('retry-readback', true)
-    await page.getByRole('button', { name: '已保存', exact: true }).waitFor()
-    check('recovery-visible', !(await page.getByRole('button', { name: '保存出错', exact: true }).count()))
+    await page.locator('[data-storage-write-status="saved"]').waitFor()
+    check('recovery-visible', !(await errorStatus.count()))
     const actualCalls = await calls(), successfulSaves = actualCalls.filter(call => call.channel === 'store:save' && call.result?.ok === true)
     check('backend-selection', actualCalls.some(call => call.channel === 'store:load' && call.result?.path === activeFile)
       && successfulSaves.some(call => call.body === DRAFT)
@@ -256,7 +301,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       // 🔴 必须真的等这次 reload：点了「继续导入」后页面还停在编辑器里，此时若按"textarea 在不在"判断，
       //    会立刻判成"已经回到编辑器"，然后 reload 一来又被打回项目中心（第一轮就这么超时的）。
       await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
-      const reloaded = page.waitForEvent('load', { timeout: 45000 })
+      const reloaded = page.waitForEvent('load', { timeout: BOOT_TIMEOUT })
       await page.getByRole('button', { name: '继续导入', exact: true }).click()
       await reloaded
       await openEditor(page)
@@ -293,13 +338,13 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       await fs.writeFile(newerVersionFile, JSON.stringify({ ...exportedJson, fileVersion: 999 }))
       await importExpectRefusal(newerVersionFile, /更新版本的软件导出/, 'schema-version.reject-newer')
       const afterVersionReject = await fs.readFile(activeFile, 'utf8')
-      check('schema-version.data-unchanged', beforeReject === afterVersionReject, '被拒的导入居然改动了数据文件')
+      check('schema-version.data-unchanged', stableData(beforeReject) === stableData(afterVersionReject), '被拒的导入居然改动了数据文件（已排除 savedAt）')
 
       const corruptFile = path.join(runRoot, 'corrupt.json')
       await fs.writeFile(corruptFile, '{"kind":"portable-data","stores":{')
       await importExpectRefusal(corruptFile, /已损坏/, 'restore-failure.corrupt-rejected')
       const afterCorruptReject = await fs.readFile(activeFile, 'utf8')
-      check('restore-failure.data-unchanged', afterVersionReject === afterCorruptReject, '损坏文件被拒后数据文件却变了')
+      check('restore-failure.data-unchanged', stableData(afterVersionReject) === stableData(afterCorruptReject), '损坏文件被拒后数据文件却变了（已排除 savedAt）')
       await page.screenshot({ path: path.join(runRoot, 'rejected-imports.png') })
 
       await app.close(); app = null

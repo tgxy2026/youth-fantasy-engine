@@ -20,6 +20,7 @@
  */
 import * as db from '@/lib/db'
 import type { Chapter, Volume } from '@/lib/types'
+import { contentRevision } from '@/lib/editor/editorViewMath'
 
 export interface MentionHit {
   chapterId: string
@@ -32,6 +33,15 @@ export interface MentionHit {
   matchedTerms: string[]
   /** 首次命中处的上下文摘要 */
   firstSnippet: string
+  /**
+   * 首次命中落在**正文**里时的字符偏移（0 起）；命中只在标题/摘要里则为 undefined。
+   * 🔴 偏移是相对 `chapter.content` 的，不是相对「标题+摘要+正文」的拼接串 ——
+   *    编辑器只认正文偏移，差一个标题长度就会指到别的段落。
+   */
+  contentOffset?: number
+  /** 命中词长度（用于把命中的那一截选中，作者一眼能看到落在哪） */
+  matchLength?: number
+  revision?: string
 }
 
 /** snippet 截取：命中处前后各取 30 字，换行压平 */
@@ -127,6 +137,9 @@ export async function findMentions(name: string, aliases: string[]): Promise<Men
       }
     }
     if (count === 0) continue
+    // 拼接串 = `标题\n摘要\n正文`；只有落在正文段的命中才能换算成正文偏移
+    const contentStart = c.title.length + 1 + (c.summary ?? '').length + 1
+    const contentOffset = firstPos >= contentStart ? firstPos - contentStart : undefined
     hits.push({
       chapterId: c.id,
       chapterTitle: c.title || '（未命名章节）',
@@ -135,6 +148,7 @@ export async function findMentions(name: string, aliases: string[]): Promise<Men
       hits: count,
       matchedTerms: matched,
       firstSnippet: firstPos >= 0 ? makeSnippet(text, firstPos, firstTermLen) : '',
+      ...(contentOffset !== undefined ? { contentOffset, matchLength: firstTermLen, revision: contentRevision(c.content) } : {}),
     })
   }
 

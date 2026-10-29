@@ -71,8 +71,8 @@ fi
 mv "$DIR/BUILD_ID" "/opt/yfe/BUILD_ID.$TARGET" 2>/dev/null
 
 #    4b. 接口 + 首页都要通（只探接口会漏掉产物本身坏掉的情况）
-if ! curl -sf --max-time 8 http://127.0.0.1/api/ping >/dev/null 2>&1 \
-   || ! curl -sf --max-time 8 http://127.0.0.1/ >/dev/null 2>&1; then
+if ! curl -sf --max-time 8 http://127.0.0.1:8082/api/ping >/dev/null 2>&1 \
+   || ! curl -sf --max-time 8 http://127.0.0.1:8082/ >/dev/null 2>&1; then
   echo "DEPLOY_FAIL 健康检查未过（接口或首页不通），回滚到 $BAK"
   rm -rf "$DIR"
   mv "$BAK" "$DIR"
@@ -86,7 +86,7 @@ fi
 #           未登录访问 `/` 拿到的是服务端渲染的登录页，里面没有任何 assets 引用。
 if [ "$TARGET" = "www" ]; then
   MAINJS=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' "$DIR/index.html" 2>/dev/null | head -1)
-  if [ -z "$MAINJS" ] || ! curl -sf --max-time 15 "http://127.0.0.1/$MAINJS" >/dev/null 2>&1; then
+  if [ -z "$MAINJS" ] || ! curl -sf --max-time 15 "http://127.0.0.1:8082/$MAINJS" >/dev/null 2>&1; then
     echo "DEPLOY_FAIL 首页主包不可达（${MAINJS:-index.html 中未找到引用}），回滚到 $BAK"
     rm -rf "$DIR"
     mv "$BAK" "$DIR"

@@ -14,6 +14,7 @@
 // ⚠️ 语义向量与知识库在**两个独立 IDB**（`novel-studio-vec` / `-kb`）里，按设计不进整库 JSON。
 //    所以游客导出**不含**这两块 —— 导入后语义检索需要重新建档（界面要如实告知，别让用户以为丢了）。
 import { ops } from '@/lib/db/core'
+import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
 import { PORTABLE_FILE_VERSION, describeFileVersionProblem } from '@/lib/storage/storeOps'
 
@@ -152,6 +153,7 @@ export async function importGuestData(text: string): Promise<{ ok: boolean; erro
   }
 
   try {
+    invalidateStorageContext()
     for (const name of GUEST_STORES) {
       const rows = plan.get(name) ?? []
 

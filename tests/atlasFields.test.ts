@@ -366,7 +366,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
 
   ok('⑰ TableRow 有顶层 atlasImage 字段', /atlasImage\?: AtlasImage/.test(read('src/lib/types.ts')))
   ok('⑰ 保存主图用展开写（不会顺手抹掉其他顶层字段）',
-    /const next: TableRow = \{ \.\.\.row \}/.test(read('src/components/sheets/useTableSheetModel.ts')))
+    read('src/components/sheets/useTableSheetModel.ts').includes('createTableImageWriter')
+    && /const next: TableRow = \{ \.\.\.row \}/.test(read('src/lib/atlas/writeImage.ts'))
+    && read('src/lib/atlas/writeImage.ts').includes('await saveTableRow(next)'))
   ok('⑰ 卡片有图时等比完整显示（不裁切）', read('src/components/atlas/AtlasCard.tsx').includes('object-contain'))
   ok('⑰ 备份分片认得图鉴图（row:*:atlas）', read('src/lib/backup/shards.ts').includes('row:${row.id}:atlas'))
 

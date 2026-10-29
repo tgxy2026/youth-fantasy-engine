@@ -8,6 +8,15 @@
 // 覆盖 account-isolation 的四个必需子场景：two-accounts / guest-to-account /
 // same-browser-account-switch / expired-session；外加账号库的 boot 与写读。
 'use strict'
+
+/**
+ * 🔴 首屏导航单独放宽（BOOT_TIMEOUT）：这台机器上「持久化 profile + 全量路由拦截 + 冷启动大包」
+ *    实测同一导航要 41s（2026-10-28 实测；手工直连只要 112ms），15s 会稳定误判成产品故障。
+ *    断言本身仍走各页 15s 默认超时 —— 放宽的只是「等页面起来」，不是「等结果对」。
+ */
+const BOOT_TIMEOUT = 60_000
+/** 🔴 API 请求单独放宽：多上下文浏览器 + 本地服务同机时，30s 默认超时会把排队中的登录误判成失败（2026-10-29 实测）。 */
+const API_TIMEOUT = 60_000
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const net = require('node:net')
@@ -102,10 +111,38 @@ async function openProjectEditor(page) {
   }
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: PROJECT_TITLE, exact: true }) })
     .getByRole('button', { name: '打开项目', exact: true }).click()
-  await page.getByRole('navigation').waitFor()
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click({ timeout: 5000 }).catch(() => {})
-  await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
-  await page.getByPlaceholder(EDITOR).waitFor()
+  // 🔴 备份提醒是「打开项目之后」才挂的，而它把背景置为 inert/aria-hidden ⇒ 背景里的 `<nav>`
+  //    **从可访问性树消失**，`getByRole('navigation')` 连 `state:'attached'` 都等不到
+  //    （2026-10-26 实测 storage.web-guest-save / web-cloud-save：等满超时，而截图里导航画着）。
+  //    先按 CSS 等它进 DOM，再循环「关提醒 → 看角色定位是否可见」，最后仍要求 role=导航真的可见。
+  const navEl = page.locator('nav')
+  await navEl.waitFor({ state: 'attached', timeout: 45000 })
+  const nav = page.getByRole('navigation')
+  const navDeadline = Date.now() + 45000
+  while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
+    for (const name of ['稍后再说', '知道了']) {
+      await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
+    }
+    await page.waitForTimeout(200)
+  }
+  await nav.waitFor({ timeout: 5000 })
+  // 🔴 提醒层可能在导航可见之后又盖上来（异步挂载）：改成「点一下 → 关提醒 → 再点」，
+  //    直到真的进了正文编辑；进不去仍然报错，不放宽进入编辑器这一前置条件。
+  const enterDeadline = Date.now() + 45000
+  let entered = false
+  while (!entered && Date.now() < enterDeadline) {
+    try {
+      await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: 4000 })
+      await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
+      entered = true
+    } catch {
+      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+        await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
+      }
+      await page.waitForTimeout(200)
+    }
+  }
+  if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
 }
 
 async function main() {
@@ -138,6 +175,14 @@ async function main() {
 
   let server, serverLog = '', error = null
   const pageErrors = []
+  const transport = []
+  const pageIds = new Map()
+  const pageId = request => {
+    let page
+    try { page = request.frame().page() } catch { return 'worker' }
+    if (!pageIds.has(page)) pageIds.set(page, 'page-' + (pageIds.size + 1))
+    return pageIds.get(page)
+  }
   const contexts = []
   /** 写失败段落注入的「空目录挡在数据文件位置」是否仍在生效（清理要幂等，见 restoreBlocker） */
   let blocked = false
@@ -182,6 +227,13 @@ async function main() {
       viewport: { width: 1440, height: 1000 }, args: ['--no-proxy-server'], env })
     /** 页面发出的实际请求（用于证明"数据来自服务端"而不是浏览器本地库） */
     const requests = []
+    ctx.on('response', response => {
+      const request = response.request()
+      if (new URL(response.url()).pathname !== '/api/data') return
+      transport.push({ at: Date.now(), page: pageId(request), method: request.method(), status: response.status(),
+        ifMatch: request.headers()['if-match'], revision: response.headers().etag,
+        payloadHash: request.postData() ? hash(request.postData()) : undefined })
+    })
     await ctx.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url())
       if (url.origin === origin) {
@@ -192,32 +244,33 @@ async function main() {
       return route.abort()
     })
     const page = ctx.pages()[0] ?? await ctx.newPage()
+
     page.setDefaultTimeout(15000)
     page.on('pageerror', value => pageErrors.push(String(value)))
     contexts.push({ ctx, dir })
     return { ctx, page, dir, requests }
   }
   const register = async (ctx, name) => {
-    const res = await ctx.request.post(origin + '/api/auth/register', { data: { name, password: PASSWORD } })
+    const res = await ctx.request.post(origin + '/api/auth/register', { data: { name, password: PASSWORD }, timeout: API_TIMEOUT })
     if (!res.ok()) throw new Error('register failed ' + name + ': ' + res.status() + ' ' + (await res.text()))
   }
   const login = async (ctx, name) => {
-    const res = await ctx.request.post(origin + '/api/auth/login', { data: { name, password: PASSWORD } })
+    const res = await ctx.request.post(origin + '/api/auth/login', { data: { name, password: PASSWORD }, timeout: API_TIMEOUT })
     if (!res.ok()) throw new Error('login failed ' + name + ': ' + res.status() + ' ' + (await res.text()))
   }
   const dataStatus = async ctx => {
-    const res = await ctx.request.get(origin + '/api/data')
+    const res = await ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
     return { status: res.status(), body: await res.text() }
   }
   const putData = async (ctx, marker) => {
-    const current = await ctx.request.get(origin + '/api/data')
+    const current = await ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
     const res = await ctx.request.put(origin + '/api/data', {
-      headers: { 'Content-Type': 'application/json', 'If-Match': current.headers().etag ?? '' }, data: mkData(marker),
+      headers: { 'Content-Type': 'application/json', 'If-Match': current.headers().etag ?? '' }, data: mkData(marker), timeout: API_TIMEOUT,
     })
     return { status: res.status(), body: await res.text() }
   }
   /** 页面启动后等前端拿到账号标记（项目中心没有 <nav>，不能用它当就绪信号） */
-  const waitUser = async (page, timeout = 30000) => {
+  const waitUser = async (page, timeout = API_TIMEOUT) => {
     await page.waitForFunction(() => {
       const u = window.__YFE_USER__
       return !!u && typeof u.name === 'string' && u.name.length > 0
@@ -249,7 +302,7 @@ process.on('message',async message=>{
     // ---------- ① 账号 A：注册 → 真实页面启动标记 ----------
     const A = await openContext('a')
     await register(A.ctx, USER_A)
-    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     const nameOnBoot = await waitUser(A.page)
     check('page-renders-account', nameOnBoot === USER_A, String(nameOnBoot) + ' @ ' + A.page.url())
     const flags = await A.page.evaluate(() => ({
@@ -284,7 +337,7 @@ process.on('message',async message=>{
 
     // ---------- ④ same-browser-account-switch：同浏览器换账号不串库 ----------
     await login(A.ctx, USER_B)
-    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+    await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     const asB = await waitUser(A.page)
     const bViewFromA = await dataStatus(A.ctx)
     check('same-browser-account-switch',
@@ -306,7 +359,7 @@ process.on('message',async message=>{
 
     // ---------- ⑥ guest-to-account：游客数据留在浏览器，不会被带进新账号 ----------
     const C = await openContext('c')
-    await C.page.goto(origin + '/guest', { waitUntil: 'domcontentloaded' })
+    await C.page.goto(origin + '/guest', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     await C.page.waitForFunction(async () => (await indexedDB.databases()).length > 0)
     await C.page.evaluate(() => new Promise((resolve, reject) => {
       const open = indexedDB.open('youth-fantasy-engine')
@@ -348,7 +401,7 @@ process.on('message',async message=>{
       check('restart-readback-write', restartWrite.status === 200, String(restartWrite.status))
       await D.ctx.close()
       const reopened = await openContext('d', D.dir)
-      await reopened.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await reopened.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       const nameAfterRestart = await waitUser(reopened.page)
       const afterRestart = await dataStatus(reopened.ctx)
       const fetchedAgain = reopened.requests.some(r => r.method === 'GET' && r.pathname === '/api/data')
@@ -397,12 +450,12 @@ process.on('message',async message=>{
       // 🔴 上一段（restart-readback）用另一个上下文登录了同一个账号，单会话机制已把 A 的会话顶掉。
       //    这里必须重新登录，否则下面的 PUT 全是 401 —— 那不是"写失败取证"，是会话过期。
       await login(A.ctx, USER_A)
-      const baseline = await A.ctx.request.get(origin + '/api/data')
+      const baseline = await A.ctx.request.get(origin + '/api/data', { timeout: API_TIMEOUT })
       const seed = await A.ctx.request.put(origin + '/api/data', {
-        headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(),
+        headers: { 'Content-Type': 'application/json', 'If-Match': baseline.headers().etag }, data: mkRichData(), timeout: API_TIMEOUT,
       })
       check('write-failure-seed', seed.ok(), String(seed.status()))
-      await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       await waitUser(A.page)
       await openProjectEditor(A.page)
       const editor = A.page.getByPlaceholder(EDITOR)
@@ -493,7 +546,7 @@ process.on('message',async message=>{
       check('sidecars.seeded', seeded.put === 200 && seeded.blob === 200, JSON.stringify(seeded))
 
       // 重新载入，让应用读到的就是这份带密钥的库
-      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      await A.page.reload({ waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(A.page)
       check('secret-stripping.secret-present-before', (await fs.readFile(activeDataFile, 'utf8')).includes(SECRET), '服务端数据文件里应能看到播种的密钥')
 
       const downloadPromise = A.page.waitForEvent('download', { timeout: 30000 })
@@ -577,8 +630,18 @@ process.on('message',async message=>{
     {
       const stale = await A.ctx.newPage()
       stale.on('pageerror', value => pageErrors.push(String(value)))
-      await stale.goto(origin + '/', { waitUntil: 'domcontentloaded' }); await openProjectEditor(stale)
-      await A.page.reload({ waitUntil: 'domcontentloaded' }); await openProjectEditor(A.page)
+      // Opening a project itself schedules metadata/backup writes. Park this tab's PUTs
+      // until the first writer has really committed and the stale editor has a draft.
+      // Responses and If-Match are untouched; the real server must still reject the old revision.
+      let releaseWrites
+      const writesAllowed = new Promise(resolve => { releaseWrites = resolve })
+      await stale.route('**/api/data', async route => {
+        if (route.request().method() === 'PUT') await writesAllowed
+        await route.fallback().catch(() => {})
+      })
+      try {
+      await stale.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(stale)
+      await A.page.reload({ waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT }); await openProjectEditor(A.page)
       const winner = DRAFT2 + '第一窗口成功提交。', loser = DRAFT2 + '第二窗口的冲突草稿。'
       await A.page.getByPlaceholder(EDITOR).fill(winner); await A.page.keyboard.press('Control+s')
       await until(async () => chapterContent(await fs.readFile(activeDataFile, 'utf8')) === winner)
@@ -587,6 +650,7 @@ process.on('message',async message=>{
       stale.on('request', request => { if (new URL(request.url()).pathname === '/api/data' && request.method() === 'PUT') puts++ })
       const rejected = stale.waitForResponse(reply => new URL(reply.url()).pathname === '/api/data' && reply.request().method() === 'PUT' && reply.status() === 409)
       await stale.getByPlaceholder(EDITOR).fill(loser); await stale.keyboard.press('Control+s')
+      releaseWrites()
       await rejected
       await stale.getByRole('alert').filter({ hasText: '已停止本窗口保存' }).waitFor()
       check('stale-save-rejected', true)
@@ -604,6 +668,7 @@ process.on('message',async message=>{
         const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented
       }))
       await stale.screenshot({ path: path.join(runRoot, 'conflict.png') })
+      } finally { releaseWrites() }
     }
     // ---------- ⑪ concurrency：关页在途 + 会话被替换 ----------
     // 这两条只能真跑：合成 beforeunload 不算"真实关页"，401 也必须在真会话替换后才出现。
@@ -632,7 +697,7 @@ process.on('message',async message=>{
       // 重开一页：应用必须还能正常读到数据（不是"文件还在但打不开"）
       const reopened = await A.ctx.newPage()
       reopened.on('pageerror', value => pageErrors.push(String(value)))
-      await reopened.goto(origin + '/', { waitUntil: 'domcontentloaded' })
+      await reopened.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
       await waitUser(reopened)
       await openProjectEditor(reopened)
       const reopenedText = await reopened.getByPlaceholder(EDITOR).inputValue()
@@ -660,9 +725,12 @@ process.on('message',async message=>{
     check('unchanged-inputs', snapshot(ROOT).fingerprint === sourceFingerprint)
   } catch (value) {
     error = String(value.stack ?? value)
-    for (const c of contexts) {
-      const page = c.ctx.pages()[0]
-      if (page) await page.screenshot({ path: path.join(runRoot, 'failure.png') }).catch(() => {})
+    for (const [ci, c] of contexts.entries()) {
+      for (const [pi, page] of c.ctx.pages().entries()) {
+        const name = `failure-c${ci}-p${pi}`
+        await page.screenshot({ path: path.join(runRoot, name + '.png') }).catch(() => {})
+        await fs.writeFile(path.join(runRoot, name + '.txt'), await page.locator('body').innerText().catch(() => 'unavailable'))
+      }
     }
   } finally {
     // 挡板必须先撤（幂等），否则服务端数据目录会留着空目录，下一次运行读到 500
@@ -683,7 +751,8 @@ process.on('message',async message=>{
     // 场景清单**算出来**：某场景只要有一条检查没过/没走完，就不出现在清单里（矩阵据此比对 policy）
     const scenarioGroups = {
       // concurrency（web-cloud）：两条标签 + 关页在途 + 会话替换
-      'two-tabs': ['two-tabs-conditional-write'],
+      'two-tabs': ['two-tabs-conditional-write', 'stale-save-rejected', 'conflict-keeps-draft',
+        'conflict-preserves-server', 'conflict-export', 'conflict-stops-retry', 'conflict-leave-blocked'],
       'close-during-save': ['close-during-save.valid-file', 'close-during-save.old-or-new', 'close-during-save.reopen-readback'],
       'replace-session': ['replace-session.rejected', 'replace-session.draft-kept', 'replace-session.server-unchanged'],
       'schema-version': ['schema-version.reject-newer', 'schema-version.data-unchanged'],
@@ -699,7 +768,7 @@ process.on('message',async message=>{
       runRoot, sourceFingerprint, build, buildManifest, at: new Date().toISOString(),
       passed: checks.filter(item => item.passed).length,
       failed: checks.filter(item => !item.passed).length + (error ? 1 : 0),
-      checks, artifacts, pageErrors, error,
+      checks, artifacts, pageErrors, transport, error,
     }
     const target = path.join(runRoot, 'result.json')
     await fs.writeFile(target, JSON.stringify(result, null, 2))

@@ -19,7 +19,7 @@ export const PANEL_CLS = 'bg-ink-850 border border-ink-700 rounded-xl p-5'
 
 export default function Panel({ className = '', children, ...rest }: HTMLAttributes<HTMLElement> & { children?: ReactNode }) {
   return (
-    <section className={`${PANEL_CLS}${className ? ' ' + className : ''}`} {...rest}>
+    <section data-ui-panel className={`${PANEL_CLS}${className ? ' ' + className : ''}`} {...rest}>
       {children}
     </section>
   )

@@ -6,6 +6,7 @@
 // ⚠️ `ops` 与 `currentProjectId` 是**可重新赋值**的模块级单例（桌面版启动后由 setStoreOps 换掉；切项目时由 setCurrentProject 写入）：
 //    **故它们必须 export** —— 兄弟业务域只读、不写（对 import 进来的绑定赋值是编译错误）；ESM 活绑定保证换值后各处都读到新值。
 import { openDB, type IDBPDatabase } from 'idb'
+import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import type { Project } from '@/lib/types'
 import type { StoreOps } from '@/lib/storage/storeOps'
 import { DESKTOP, desktopStore, flushDesktop, KEY_PATHS, getDesktopState, desktopStoreReady } from '@/lib/app/desktop'
@@ -32,10 +33,13 @@ const DB_VERSION = 14
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
 export let currentProjectId = ''
+let projectContextEpoch = 0
 
 export function setCurrentProject(id: string) {
+  if (id !== currentProjectId) projectContextEpoch++
   currentProjectId = id
 }
+export function getProjectContextEpoch() { return projectContextEpoch }
 export function getCurrentProjectId() {
   return currentProjectId
 }
@@ -556,6 +560,7 @@ if (CLOUD_FILE_SYNC) {
  */
 export function setStoreOps(o: StoreOps) {
   ops = o
+  invalidateStorageContext()
 }
 
 /**
@@ -699,14 +704,14 @@ export async function disableDesktopCloudSync() {
 // ============ 项目时间戳（下沉到本层）============
 // 🔴 touchProject 放在底座、而不是 ./projects：卷 / 章 / 页签 / 备份都要「顺手刷新项目更新时间」，
 //    留在 projects 里会让它们全部反向依赖 projects 并绕成环。
-export async function touchProject(id: string) {
+export async function touchProject(id: string, store: StoreOps = ops) {
   // 🔴 2026-09-22 六维审计 P2：这是「顺手刷新项目更新时间」的**附带动作**
   //    （卷 / 章 / 页签 / 备份写完都会调它），失败不该影响本次主写入 ——
   //    但它内部不兜错时，那几处**浮动调用**（`touchProject(id)` 不 await）会变成**未处理拒绝**，
   //    严重点会在控制台炸一片、且没有任何上下文。在源头兜住，调用方就能安心 fire-and-forget。
   try {
-    const old = await ops.get<Project>('projects', id)
-    if (old) await ops.put('projects', { ...old, updatedAt: Date.now() })
+    const old = await store.get<Project>('projects', id)
+    if (old) await store.put('projects', { ...old, updatedAt: Date.now() })
   } catch (e) {
     console.warn('[db] 刷新项目更新时间失败（不影响本次写入）：', e)
   }

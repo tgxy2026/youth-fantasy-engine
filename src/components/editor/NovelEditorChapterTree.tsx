@@ -1,9 +1,10 @@
+import ResizeHandle, { type ResizablePane } from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
 import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
-import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
 import { useEffect, useMemo, useRef } from 'react'
 import { foldVh } from '@/lib/settings/theme'
@@ -33,7 +34,7 @@ const STATUS_DOT: Record<ChapterStatus, string> = {
 
 interface Props {
   /** 栏目宽度与拖拽手柄（useResizable 的返回值，整体传进来） */
-  pane: { size: number; onDragStart: (e: ReactMouseEvent) => void }
+  pane: ResizablePane
   projectName: string
   volumes: Volume[]
   chapters: Chapter[]
@@ -46,6 +47,8 @@ interface Props {
   setDragId: Dispatch<SetStateAction<string | null>>
   resetDrag: () => void
   handleDrop: () => void
+  /** UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节 / 在真卷之间移动分卷 */
+  moveByKeyboard: (kind: 'vol' | 'ch', id: string, dir: -1 | 1) => void
   setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
   nextChapterNo: number
   activeId: string | null
@@ -66,7 +69,7 @@ interface Props {
 
 export default function NovelEditorChapterTree({
   pane, projectName, volumes, chapters, expanded, setExpanded,
-  overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop,
+  overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop, moveByKeyboard,
   setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
   exportOpen, setExportOpen, setExportFormatTab, setImportOpen,
@@ -101,14 +104,9 @@ export default function NovelEditorChapterTree({
         style={{ width: pane.size, minWidth: pane.size }}
       >
         {/* 拖拽调整章节树宽度 */}
-        <div
-          onMouseDown={pane.onDragStart}
-          className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-  style={{ zIndex: Z.pageHandle }}
-          title="拖拽调整章节栏宽度"
-        />
-        <div className="flex items-center justify-between px-3.5 h-11 border-b border-ink-700 shrink-0">
-          <span className="text-12 font-semibold text-ink-200 flex items-center gap-1.5">
+        <ResizeHandle pane={pane} label="章节栏宽度" layer={Z.pageHandle} />
+        <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 border-b border-ink-700 shrink-0" data-chapter-toolbar>
+          <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
               {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n· 右上「导入」图标（导出左侧）可批量导入正文：选文件（.txt / .md / .docx / .json，可多选）或粘贴原文，自动切成卷章，预览里可改卷名/章名、逐章勾选，确认后追加到当前项目（纯本地、不接 AI）。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
@@ -278,8 +276,18 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     draggable={!free}
                     onDragStart={e => { if (free) { e.preventDefault(); return } e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', vol.id); setDragKind('vol'); setDragId(vol.id) }}
                     onDragEnd={() => resetDrag()}
-                    className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0'}
-                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷'}
+                    // 🔴 键盘替代入口（UX12）：把手可聚焦，Alt+↑/↓ 等价于拖到上一/下一个真卷
+                    tabIndex={free ? undefined : 0}
+                    role={free ? undefined : 'button'}
+                    aria-label={free ? undefined : `移动卷「${vol.title}」：Alt 加向上/向下方向键`}
+                    onKeyDown={free ? undefined : e => {
+                      if (!e.altKey) return
+                      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                      e.preventDefault(); e.stopPropagation()
+                      moveByKeyboard('vol', vol.id, e.key === 'ArrowUp' ? -1 : 1)
+                    }}
+                    className={free ? 'opacity-25 shrink-0 text-ink-600' : 'opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100'}
+                    title={free ? '「自由章节」卷固定在全书最前，不参与重排' : '拖动重排分卷；键盘：Alt+↑/↓'}
                   >
                     <GripVertical size={12} />
                   </span>
@@ -344,8 +352,18 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                             draggable
                             onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ch.id); setDragKind('ch'); setDragId(ch.id) }}
                             onDragEnd={() => resetDrag()}
-                            className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0"
-                            title="拖动重排 / 移到其他卷"
+                            // 🔴 键盘替代入口（UX12）：章只能在自己卷内换位，跨卷仍走拖拽或「移到其他卷」
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`移动章节「${ch.title}」：Alt 加向上/向下方向键（仅在本卷内）`}
+                            onKeyDown={e => {
+                              if (!e.altKey) return
+                              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                              e.preventDefault(); e.stopPropagation()
+                              moveByKeyboard('ch', ch.id, e.key === 'ArrowUp' ? -1 : 1)
+                            }}
+                            className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100"
+                            title="拖动重排 / 移到其他卷；键盘：Alt+↑/↓"
                           >
                             <GripVertical size={12} />
                           </span>

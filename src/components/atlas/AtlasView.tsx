@@ -24,10 +24,16 @@ import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 // 卡片排序（纯函数 + 单测钉住；编号比较与表格同口径，见该文件头）
 import { ATLAS_ORDERS, sortAtlasRows, type AtlasOrder } from '@/lib/atlas/order'
 import { Button } from '@/components/common/Button'
+import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
+import { usePaneWorkspaceScroll } from '@/components/common/usePaneWorkspaceScroll'
 import AtlasCard from './AtlasCard'
 import AtlasDetail from './AtlasDetail'
+import { useAtlasDetailFocus } from './useAtlasDetailFocus'
 
 interface Props {
+  projectId: string
+  focusRowId?: string | null
+  onFocusConsumed?: () => void
   tab: TabDef
   /** 已并入草稿 + 已筛选的行（`model.filteredRows`） */
   rows: TableRow[]
@@ -87,11 +93,30 @@ const DENSITY_LABEL: Record<Density, string> = { compact: '紧凑', standard: '�
 export default function AtlasView({
   tab, rows, aliases, config, templateDef, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
   cellValue, onCellChange, dirtyOf, saving, onSave, onRevert,
+  focusRowId, onFocusConsumed,
+  projectId,
 }: Props) {
   const pkgInputRef = useRef<HTMLInputElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [narrow, setNarrow] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const pageId = 'atlas:' + tab.id
+  const view = useListWorkspaceView(projectId, pageId, 'none')
+  const [selectedId, setSelectedId] = useState<string | null>(() => view.choose(rows, focusRowId))
+  const listRef = useRef<HTMLDivElement>(null), detailRef = useRef<HTMLDivElement>(null)
+  const capture = usePaneWorkspaceScroll({ pageId, detailPageId: pageId,
+    ownerKey: view.ownerKey, generation: view.generation, ready: true, query: '',
+    selectedId, objectId: selectedId, targetId: focusRowId ?? null, listRef, detailRef, isCurrent: view.isCurrent })
+  const restoreFocus = useAtlasDetailFocus(narrow, selectedId, listRef, detailRef)
+  const select = (id: string | null) => {
+    capture(); setSelectedId(id)
+    if (id === null && narrow && selectedId) restoreFocus(selectedId)
+  }
+  const remember = view.remember
+  useEffect(() => { remember(selectedId) }, [selectedId, remember])
+  useEffect(() => {
+    if (!focusRowId || !rows.some(row => row.id === focusRowId)) return
+    capture(); setSelectedId(focusRowId); onFocusConsumed?.()
+  }, [focusRowId, rows, capture, onFocusConsumed])
   // 卡片密度（本机偏好：只影响显示，不进项目配置）
   const [density, setDensity] = usePersistedEnum<Density>('atlas-density', ['compact', 'standard', 'loose'], 'standard')
   /**
@@ -194,7 +219,8 @@ export default function AtlasView({
   return (
     <div ref={hostRef} className="relative flex gap-4 min-h-0" style={{ height: foldVh('62vh') }}>
       {/* 列表：自己滚（与右侧详情各滚各的，方案 §3.1） */}
-      <div className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1">
+      <div ref={listRef} data-atlas-list tabIndex={-1} role="region" aria-label="图鉴条目"
+        aria-hidden={narrow && !!selectedId ? true : undefined} className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1">
         {rows.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-2 text-ink-500">
@@ -290,7 +316,7 @@ export default function AtlasView({
                   badges={atlasCardBadges(tab.id, row.data)}
                   summaryFields={atlasFieldsForCategory(allSummaryFields, row.data['类别'])}
                   selected={row.id === selectedId}
-                  onOpen={() => setSelectedId(row.id)}
+                  onOpen={() => select(row.id)}
                 />
               ))}
             </div>
@@ -306,6 +332,7 @@ export default function AtlasView({
         >
           <AtlasDetail
             key={selected.id}
+            scrollRef={detailRef}
             tabId={tab.id}
             row={selected}
             nameKey={nameKey}
@@ -317,7 +344,7 @@ export default function AtlasView({
             projectImageBytes={imageUsage}
             imageLimit={imageLimit}
             overlay={narrow}
-            onClose={() => setSelectedId(null)}
+            onClose={() => select(null)}
             onEditInTable={onEditInTable}
             cellValue={cellValue}
             onCellChange={onCellChange ? (k, v) => onCellChange(selected.id, k, v) : undefined}

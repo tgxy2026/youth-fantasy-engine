@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
+import ResizeHandle from '@/components/common/ResizeHandle'
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
@@ -6,6 +7,7 @@ import type { ChapterStatus } from '@/lib/types'
 import { countWords } from '@/lib/editor/textStats'
 import { useWordCountWithPunct, wordCountModeOf } from '@/lib/editor/wordCountMode'
 import SettingSearch from '@/components/settings/SettingSearch'
+import { auxiliaryLeaveGuardDirty, runAuxiliaryLeaveGuards } from '@/lib/editor/leaveBarrier'
 import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, ProofreadCheck } from '@/components/editor/EditorModals'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
@@ -14,7 +16,7 @@ import FormatModal from '@/components/dialogs/FormatModal'
 import { Modal } from '@/components/dialogs/Modal'
 import { INDENT_UNITS, indentBlock, outdentBlock, indentForNewLine, normalizePastedText } from '@/lib/editor/indent'
 // 3.2.0：中文标点自动配对（原先完全依赖输入法 ⇒ 微信有、搜狗没有，见 punctPair 文件头）
-import { planPunctPair, planPunctPairAtCaret } from '@/lib/editor/punctPair'
+import { planPunctPair, planPunctPairAtCaret, planPunctPairFromClose, planPunctPairFromCloseAtCaret } from '@/lib/editor/punctPair'
 import { nextVolumeNo } from '@/lib/outline/freeVolume'
 import {
   FolderPlus, Trash2, PenLine,
@@ -22,7 +24,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2
+  Undo2, Redo2, FilePlus2, ChevronDown, AlertTriangle, Square
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -49,6 +51,12 @@ interface Props {
   ctx: VisCtx
   /** 从其他页签（如章节总表）跳转进来时，要直接打开的章节 id */
   openChapterId?: string | null
+  openRequestId?: number
+  /**
+   * 段落级定位（UX05）：跳进来时要落到的正文内字符偏移。
+   * 🔴 只对 `openChapterId` 指定的那一章有效；偏移由检索侧按「正文内」算好，不是整章拼接串的偏移。
+   */
+  openOffset?: { offset: number; matchLength?: number; revision?: string } | null
 }
 
 const STATUS_META: Record<ChapterStatus, { label: string; cls: string }> = {
@@ -65,13 +73,15 @@ const STATUS_LIST = Object.keys(STATUS_META) as ChapterStatus[]
 /** HTML 转义（防止引用名高亮注入）。先探测再替换：绝大多数正文片段不含 <>&，可省掉多次全量 replace */
 
 import { useNovelEditorModel } from '@/components/editor/useNovelEditorModel'
+import { useEditorWorkspaceView } from '@/components/editor/useEditorWorkspaceView'
+import { useEditorOpenOffset } from '@/components/editor/useEditorOpenOffset'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 import ChapterContextPanel from '@/components/editor/ChapterContextPanel'
 import * as db from '@/lib/db'
 
-export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, ctx = { type: 'full', features: [] } }: Props) {
+export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, projectName = '我的小说', openChapterId, openRequestId, openOffset, ctx = { type: 'full', features: [] } }: Props) {
   // 状态与生命周期全在 model 里；下面同名解构是刻意的 —— JSX 保持原样、零改动。
-  const model = useNovelEditorModel({ projectName, ctx, openChapterId, onStatsChange })
+  const model = useNovelEditorModel({ projectName, ctx, openChapterId, openRequestId, onStatsChange })
   /** 纯黑白主题：正文缩进导向线要去掉 alpha（半透明黑=灰，违背严格二值） */
   const mono = useMonoTheme()
 
@@ -79,7 +89,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 结构数据（卷 / 章 / 当前章 / 序号）
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）
-    expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
+    expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态）
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
@@ -89,10 +99,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
@@ -107,10 +117,28 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     aiReady, runExport,
   } = model
 
+  // UX06 · 正文工作现场：离页/切章时同步捕获，进章后按「内容摘要是否一致」决定要不要恢复光标与位置
+  const ownsPosition = useEditorOpenOffset({ enabled: loaded, activeId, openChapterId: openChapterId ?? null,
+    offset: openOffset?.offset ?? null, matchLength: openOffset?.matchLength ?? null, taRef, requestId: openRequestId,
+    expectedRevision: openOffset?.revision, content: active?.content ?? null })
+  useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, content: active?.content ?? null, skipRestore: ownsPosition })
+
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
   const [searchDrawer, setSearchDrawer] = useState(false)
-  const searchVisible = !focusMode && showSearch && !showRefs && searchFits
+  const [dirtySearch, setDirtySearch] = useState<'inline' | 'drawer' | null>(null)
+  const searchDraftPending = (origin: 'inline' | 'drawer', pending: boolean) => {
+    setDirtySearch(previous => pending ? origin : previous === origin ? null : previous)
+  }
+  const searchVisible = !focusMode && showSearch && !showRefs && dirtySearch !== 'drawer' && (searchFits || dirtySearch === 'inline')
+  const searchAction = useRef(0)
+  const afterSearchSubmit = (action: () => void) => {
+    const request = ++searchAction.current
+    if (!auxiliaryLeaveGuardDirty()) { action(); return }
+    void runAuxiliaryLeaveGuards().then(result => {
+      if (result.ok && request === searchAction.current) action()
+    })
+  }
 
   // 字数口径（#004）：面板与编辑器**共用同一份偏好**（`lib/wordCountMode` 是单一来源）——
   // 在写作面板切了口径，这里立刻跟着变。只影响显示，落库 `wordCount` 不受影响。
@@ -253,6 +281,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setDragId={setDragId}
           resetDrag={resetDrag}
           handleDrop={handleDrop}
+          moveByKeyboard={moveByKeyboard}
           setNamePrompt={setNamePrompt}
           nextChapterNo={nextChapterNo}
           activeId={activeId}
@@ -268,6 +297,120 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setImportOpen={setImportOpen}
         />
   )
+  const companionTools = (
+    <details data-editor-companion className="group space-y-1">
+      {/* 🔴 配色必须与 Button variant=ghost + size=sm 逐字一致（主人 2026-10-29：'为什么它是白的'）：
+            原来 text-ink-200 + hover:bg-ink-700 ⇒ 比别的二级功能更亮、像标题。
+            ghost 真值：text-ink-400 / hover:text-ink-100 / hover:bg-ink-800/60 / border-transparent。 */}
+      <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded border border-transparent px-3 text-12 text-ink-400 hover:bg-ink-800/60 hover:text-ink-100 [&::-webkit-details-marker]:hidden">
+        {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
+        AI 伴写 <span className="ml-auto text-10 text-ink-500">{!aiReady ? '未配置模型' : companion ? '已开启' : '已关闭'}</span>
+        <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="whitespace-pre-wrap px-3 pb-2 text-11 leading-relaxed text-ink-200">
+        <div className="mt-1.5 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-ink-400 shrink-0">建议长度</span>
+            {(['short', 'sentence', 'two'] as InlineSuggestLength[]).map(k => (
+              <Button variant="toggle" size="xs" key={k} selected={companionLen === k} aria-pressed={companionLen === k}
+                onClick={() => { setCompanionLen(k); localStorage.setItem('novel-companion-len', k) }}
+                title={`不超过 ${INLINE_SUGGEST_LIMITS[k].chars} 字`}>
+                {INLINE_SUGGEST_LIMITS[k].label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-ink-400 shrink-0">去 AI 味</span>
+            <Button variant="toggle" size="xs" selected={companionDeAi} aria-pressed={companionDeAi}
+              onClick={() => { const v = !companionDeAi; setCompanionDeAi(v); localStorage.setItem('novel-companion-deai', v ? '1' : '0') }}
+              title="约束模型不用「仿佛 / 不禁 / 然而」这类套话开头、不堆四字成语与排比、不写空泛升华（默认开）">
+              {companionDeAi ? '已开启' : '已关闭'}
+            </Button>
+            <span className="text-ink-500 text-10">压制套话与排比，默认开</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-ink-400 shrink-0">参考写作规范</span>
+            <Button variant="toggle" size="xs" selected={companionStyleSpec} aria-pressed={companionStyleSpec}
+              onClick={() => { const v = !companionStyleSpec; setCompanionStyleSpec(v); localStorage.setItem('novel-companion-stylespec', v ? '1' : '0') }}
+              title="把《写作规范》里登记的坏习惯词 / 标点偏好 / 视角规则锚进伴写；关掉后只靠前文样本与下面的文风补充">
+              {companionStyleSpec ? '已开启' : '已关闭'}
+            </Button>
+            <span className="text-ink-500 text-10">负面清单，默认开</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-ink-400 shrink-0">文风补充</span>
+            <Button variant="toggle" size="xs" selected={!!companionStyleNote || companionStyleDims.length > 0}
+              onClick={() => setStyleNotePrompt(true)}
+              className="max-w-[13rem]"
+              title={companionStyleDims.length
+                ? `已选 ${companionStyleDims.length} 项：${dimLabels(companionStyleDims)}${companionStyleNote ? '\n原话：' + companionStyleNote : ''}`
+                : (companionStyleNote || '点开勾选本次想补的方面（可多选），也可一句话描述，例如「冷硬白描，少心理活动，多用短对白」')}>
+              <span className="truncate">{companionStyleDims.length
+                ? `已选 ${companionStyleDims.length} 项${companionStyleNote ? ' + 原话' : ''}`
+                : (companionStyleNote || '未设置（点击选择）')}</span>
+            </Button>
+          </div>
+          {/* 总开关：按老大要求放在设置下面，并掉与它重复的那个独立开关图标 */}
+          <div className="flex items-center gap-2 mt-1 pt-2 border-t border-ink-700">
+            <span className="text-ink-200 shrink-0">总开关</span>
+            <Button variant="toggle" size="xs" selected={companion} aria-pressed={companion} disabled={!aiReady}
+              onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
+              title={!aiReady ? '未配置 AI 模型' : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
+              {companion ? '已开启' : '已关闭'}
+            </Button>
+            <span className="text-ink-500 text-10">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
+          </div>
+          <div className="text-ink-500 text-10 leading-relaxed">
+            全部为本机记忆，换章不重置。伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。
+          </div>
+        </div>
+        <AIDataSourceNote feature="inline-suggest" />
+        <details className="mt-2 border-t border-ink-700 pt-2">
+          <summary className="cursor-pointer text-ink-400">伴写使用说明</summary>
+          <div className="mt-1 whitespace-pre-wrap">
+            {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Ctrl+Enter 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Alt+/ 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次；\n· Tab / Shift+Tab 归编辑器缩进，与伴写无关。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面的文风补充（可勾选本次想补的方面，也可一句话描述）。\n\n'}
+          </div>
+        </details>
+
+      </div>
+    </details>
+  )
+  const secondaryTools = (
+    <HelpPopover title="编辑工具" triggerTitle="编辑工具" triggerVariant="secondary" triggerClassName="shrink-0 aria-expanded:border-amber/50"
+      trigger={<>工具 <ChevronDown size={12} /></>} pin focusOnOpen width="22rem">
+      {(close: () => void) => <div role="group" aria-label="编辑工具选项" className="space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-12 font-semibold text-ink-100">整理与检查</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('format') }}><AlignLeft size={14} /> 排版与缩进</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('sensitive') }}><ShieldAlert size={14} /> 敏感词检测（本章）</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('typo') }}><SpellCheck size={14} /> 校对（本章）</Button>
+          {!isLite && <>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('foreshadow') }}><GitBranch size={14} /> 伏笔闭环看板</Button>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('continuity') }}><Link2 size={14} /> 连续性校验</Button>
+            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('style') }}><Feather size={14} /> 文风体检（本章）</Button>
+          </>}
+        </div>
+        <div className="space-y-1 border-t border-ink-700 pt-2">
+          <h3 className="text-12 font-semibold text-ink-100">辅助创作</h3>
+          {companionTools}
+        </div>
+        <div className="space-y-1 border-t border-ink-700 pt-2">
+          <h3 className="text-12 font-semibold text-ink-100">版本与检索</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('history') }}><History size={14} /> 时光机 · 版本历史</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('trash') }}><Trash2 size={14} /> 回收站</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onOpenSearch?.() }}><Command size={14} /> 全文检索</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('search') }}><Search size={14} /> 全书搜索替换</Button>
+        </div>
+        <div className="space-y-1 border-t border-ink-700 pt-2">
+          <h3 className="text-12 font-semibold text-ink-100">写作视图</h3>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onNavigate?.('chapter-outline') }}><BookOpen size={14} /> 前往本章细纲</Button>
+          <Button variant="ghost" size="sm" aria-pressed={highlightOn} className="w-full !justify-start" onClick={() => { close(); setHighlightOn(value => !value) }}><Highlighter size={14} /> 引用名内联高亮：{highlightOn ? '已开启' : '已关闭'}</Button>
+          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('lock') }}><Lock size={14} /> 小黑屋 · 强制码字</Button>
+        </div>
+      </div>}
+    </HelpPopover>
+  )
+
   return (
     // 🔴 ref 供「正文列保底」测量容器宽度（检索栏压多少、铺满开关显示与否都按它算）
     <div ref={wrapRef} className="flex h-full page-enter overflow-hidden">
@@ -277,10 +420,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex [&>div]:flex-1">
         {chapterTree}
       </Modal>
-      <Modal open={!searchFits && searchDrawer} onClose={() => setSearchDrawer(false)}
+      <Modal open={(!searchFits && searchDrawer) || dirtySearch === 'drawer'} onClose={() => afterSearchSubmit(() => setSearchDrawer(false))}
         title="设定检索" align="left" width={360} maxHeight="100vh"
         className="!rounded-none" bodyClassName="!p-0 min-h-0 !overflow-hidden flex flex-col">
-        <SettingSearch onNavigate={id => { setSearchDrawer(false); onNavigate?.(id) }} ctx={ctx} />
+        <SettingSearch onNavigate={onNavigate} ctx={ctx} onDraftPendingChange={pending => searchDraftPending('drawer', pending)} />
       </Modal>
 
       {/* 左侧 1/3：设定检索栏 */}
@@ -288,16 +431,14 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         <div
           className="relative shrink-0 flex flex-col"
           // 🔴 用**保底后的** searchPaneW（窄窗口下自动让位给码字区）；用户拖出来的偏好仍留在 localStorage 里
-          style={{ width: searchPaneW, minWidth: searchPaneW }}
+          style={dirtySearch === 'inline' && !searchFits
+            ? { width: searchPaneW, minWidth: 0, maxWidth: '100%' }
+            : { width: searchPaneW, minWidth: searchPaneW }}
         >
           {/* 拖拽调整设定检索栏宽度 */}
-          <div
-            onMouseDown={searchPane.onDragStart}
-            className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-style={{ zIndex: Z.pageHandle }}
-            title="拖拽调整检索栏宽度"
-          />
-          <SettingSearch onNavigate={onNavigate} ctx={ctx} />
+          {searchFits && <ResizeHandle pane={searchPane} label="检索栏宽度" layer={Z.pageHandle} />}
+          {!searchFits && <div role="status" className="px-3 py-2 text-11 text-amber">设定尚未提交，暂时保留编辑面板；保存或取消后恢复布局。</div>}
+          <SettingSearch onNavigate={onNavigate} ctx={ctx} onDraftPendingChange={pending => searchDraftPending('inline', pending)} />
         </div>
       )}
 
@@ -308,12 +449,9 @@ style={{ zIndex: Z.pageHandle }}
         </div>}
         {active ? (
           <>
-            {/* 工具栏：按钮较多（21 个），窄窗口下原本会溢出到屏幕外点不到（实测溢出 618px）。
-                改为横向可滚动 + 收紧间距，保证任何窗口宽度下按钮都可达。
-                ⚠️ 工具栏内**不再有**绝对定位下拉 —— 导出菜单 2.8.0 已迁到左侧章节树头部，
-                所以这里可以放心用 `overflow-y-hidden`。以后若再往工具栏塞菜单，必须先放开纵向裁剪
-                （`overflow-x-auto` 会连 `overflow-y` 一起变成裁剪容器 ⇒ 菜单只剩 44px 高、「点了不出现」）。 */}
-            <div className="flex items-center gap-1.5 px-5 h-11 border-b border-ink-700 shrink-0 bg-ink-900/50 overflow-x-auto overflow-y-hidden">
+            {/* 标题/状态/保存常驻；次工具按用途收纳，行高随实际内容分配。 */}
+            <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2" data-editor-primary>
               {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
                 title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
               <div className="flex items-center gap-1">
@@ -336,17 +474,33 @@ style={{ zIndex: Z.pageHandle }}
                 // 🔴 3.2.2（审计 U2）：这里的标题**视觉上就是输入框本身**，没有 label 可关联 ——
                 //    给读屏软件一个准确名称，否则只念"编辑框"。
                 aria-label="章节标题"
-                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 min-w-0 hover:!border-ink-600 focus:!border-amber/50 font-serif"
+                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 basis-40 min-w-32 hover:!border-ink-600 focus:!border-amber/50 font-serif"
               />
               <select
                 value={active.status}
                 onChange={e => updateMeta({ status: e.target.value as ChapterStatus })}
-                className="!py-0.5 !px-1.5 text-11 shrink-0"
-                title={`章节状态：${active.status}`}
+                className="!h-8 min-h-[var(--ui-control-sm,2rem)] !py-0.5 !px-1.5 text-11 shrink-0"
+                aria-label="章节状态" title={`章节状态：${active.status}`}
               >
                 {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <div className="w-px h-4 bg-ink-700" />
+              {/* 保存始终在标题行可见，按钮条件与提交机制沿用原逻辑。 */}
+              <Button variant="primary" size="sm" aria-label="保存正文"
+                onClick={() => commitContent()}
+                disabled={saving || draftContent === active.content}
+                className={`relative p-1 rounded transition-colors shrink-0
+                  ${draftContent !== active.content
+                    ? 'text-amber hover:bg-amber/15'
+                    : 'text-ink-500 cursor-not-allowed'}`}
+                title={diskError ? `尚未写入磁盘：${diskError}` : saving ? '保存中…' : diskPending ? '正在写入…' : draftContent !== active.content ? '保存（Ctrl+S）' : '当前正文无待保存改动'}
+              >
+                <Save size={14} /> {saving ? '保存中…' : '保存'}
+                {draftContent !== active.content && !saving && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
+                )}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-700/50 px-4 py-1.5" data-editor-utilities>
               {/* E1（2.6.2）撤销 / 恢复：直接调 execCommand 驱动**原生撤销栈** —— 与 Ctrl+Z / Ctrl+Y
                   完全同一栈，不另建自绘撤销栈（AI 插入 / 一键排版 / 缩进都走 execCommand('insertText')，
                   天然在栈里）。点击先把焦点还给正文 textarea：execCommand 的作用对象是聚焦的可编辑元素。 */}
@@ -364,186 +518,39 @@ style={{ zIndex: Z.pageHandle }}
               >
                 <Redo2 size={14} />
               </Button>
-              {/* 工具组：敏感词 / 排版 / 导出 / 时光机 / 回收站 / 全文搜索 / 小黑屋 */}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('sensitive')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="敏感词检测（本章）">
-                <ShieldAlert size={14} />
-              </Button>
-              <Button variant="icon-amber"
-                onClick={() => setModal('format')}
-                className="p-1 shrink-0"
-                title="排版：设置缩进单位 + 一键排版（默认保留你已有的缩进，不再抹平）">
-                <AlignLeft size={14} />
-              </Button>
-              <div className="w-px h-4 bg-ink-700" />
-              {/* 审计工具组：伏笔闭环 / 连续性校验 / 错别字 / 文风体检 */}
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('foreshadow')} className="p-1 shrink-0" title="伏笔闭环看板（全局）">
-                <GitBranch size={14} />
-              </Button>
-              )}
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('continuity')} className="p-1 shrink-0" title="连续性校验器（全局）">
-                <Link2 size={14} />
-              </Button>
-              )}
-              <Button variant="bare" iconOnly size="sm" onClick={() => setModal('typo')} className="text-ink-400 hover:text-danger transition-colors shrink-0" title="校对（本章）：本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型">
-                <SpellCheck size={14} />
-              </Button>
-              {!isLite && (
-              <Button variant="icon-amber" onClick={() => setModal('style')} className="p-1 shrink-0" title="文风体检（本章）">
-                <Feather size={14} />
-              </Button>
-              )}
-              <div className="w-px h-4 bg-ink-700" />
-              <Button variant="bare" iconOnly size="sm"
+              <Button variant="secondary" size="sm" aria-pressed={jieWenJiOpen}
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
                 title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
-                <Wand2 size={14} />
+                <Wand2 size={14} /> 颉文姬
               </Button>
               <div className="w-px h-4 bg-ink-700" />
-              {/* 保存：图标化，有未保存的改动时琥珀高亮+圆点 */}
-              <Button variant="bare" iconOnly size="sm"
-                onClick={() => commitContent()}
-                disabled={saving || draftContent === active.content}
-                className={`relative p-1 rounded transition-colors shrink-0
-                  ${draftContent !== active.content
-                    ? 'text-amber hover:bg-amber/15'
-                    : 'text-ink-500 cursor-not-allowed'}`}
-                title={saving ? '保存中…' : draftContent !== active.content ? '保存（Ctrl+S）' : '已全部保存'}
-              >
-                <Save size={14} />
-                {draftContent !== active.content && !saving && (
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-                )}
+              <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+                <Users size={14} /> 本章资料
               </Button>
-              <Button variant="icon-amber" onClick={() => setModal('history')} className="p-1 shrink-0" title="时光机 · 版本历史">
-                <History size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('trash')} className="p-1 shrink-0" title="回收站（恢复误删章节）">
-                <Trash2 size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => onOpenSearch?.()} className="p-1 shrink-0" title="全文检索（Ctrl/Cmd+K）：搜章节正文 / 角色 / 设定">
-                <Command size={14} />
-              </Button>
-              <Button variant="bare" iconOnly size="sm" onClick={() => setShowRefs(o => !o)} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
-                <Users size={14} />
-              </Button>
-              <Button variant="bare" iconOnly size="sm" onClick={() => setHighlightOn(o => !o)} className={`p-1 transition-colors shrink-0 ${highlightOn ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="引用名内联高亮：正文中标记已登记的角色 / 设定条目名称（开 / 关）">
-                <Highlighter size={14} />
-              </Button>
-              {/* 2.2.0 AI 伴写：**点钢笔直接弹出「说明 + 设置 + 开关」**，总开关放在设置下方。
-                  为什么不再单设一个开关图标 + 一个并列的问号：同一件事有两个入口既重复、又难扫；
-                  作者点这个键时想做的事无非「看看它怎么用」和「改一下 / 关掉它」——都收进这一个窗里。
-                  pin：设置类弹窗不许"鼠标移出即关"，否则手往窗里的控件上一挪就误关。 */}
-              <HelpPopover
-                title="AI 伴写"
-                width="24rem"
-                size={13}
-                className="shrink-0"
-                pin
-                triggerIconBox
-                trigger={ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
-                // ⚠️ 刻意**不**把触发键设成 disabled：弹窗里既有开关也有说明，
-                //    禁用掉就变成"没配模型时连它怎么用都看不到"。真正的 AI 入口（弹窗里的总开关）
-                //    仍然是 disabled —— 符合「无模型不调用 AI」这条红线，但把说明留给人读。
-                triggerClassName={`p-1 transition-colors shrink-0 ${!aiReady ? 'text-ink-600' : companion ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
-                triggerTitle={!aiReady
-                  ? 'AI 伴写：未配置 AI 模型（点击可看说明与设置）'
-                  : companion
-                    ? 'AI 伴写：已开启（点击查看说明、档位与开关）'
-                    : 'AI 伴写：已关闭（点击查看说明、档位与开关）'}
-              >
-                {'停笔约 0.8 秒后自动感知前文，在光标处透出一句「浅灰色」续写建议。\n· Ctrl+Enter 采纳 → 文字正式落进正文（→ 在末尾时也可采纳）；\n· 继续打字 / Esc / 移动光标 → 建议悄悄消失，正文一个字都没被改过；\n· 对建议不满意 → 按 Alt+/ 换一句（会避开刚才那句，不会给你同一句）；\n· Alt+\\ 可随时手动触发一次；\n· Tab / Shift+Tab 归编辑器缩进，与伴写无关。\n\n文风不靠「选风格」，而是三层自动锚定：①光标前约 2000 字正文（最准的风格样本）②《写作规范》里你登记的坏习惯词 / 标点偏好（可关）③下面的文风补充（可勾选本次想补的方面，也可一句话描述）。\n\n'}
-                <AIDataSourceNote feature="inline-suggest" />
-                <div className="mt-1.5 space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-ink-400 shrink-0">建议长度</span>
-                    {(['short', 'sentence', 'two'] as InlineSuggestLength[]).map(k => (
-                      <Button variant="toggle" size="xs" key={k} selected={companionLen === k}
-                        onClick={() => { setCompanionLen(k); localStorage.setItem('novel-companion-len', k) }}
-                        title={`不超过 ${INLINE_SUGGEST_LIMITS[k].chars} 字`}>
-                        {INLINE_SUGGEST_LIMITS[k].label}
-                      </Button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-ink-400 shrink-0">去 AI 味</span>
-                    <Button variant="toggle" size="xs" selected={companionDeAi}
-                      onClick={() => { const v = !companionDeAi; setCompanionDeAi(v); localStorage.setItem('novel-companion-deai', v ? '1' : '0') }}
-                      title="约束模型不用「仿佛 / 不禁 / 然而」这类套话开头、不堆四字成语与排比、不写空泛升华（默认开）">
-                      {companionDeAi ? '已开启' : '已关闭'}
-                    </Button>
-                    <span className="text-ink-500 text-10">压制套话与排比，默认开</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-ink-400 shrink-0">参考写作规范</span>
-                    <Button variant="toggle" size="xs" selected={companionStyleSpec}
-                      onClick={() => { const v = !companionStyleSpec; setCompanionStyleSpec(v); localStorage.setItem('novel-companion-stylespec', v ? '1' : '0') }}
-                      title="把《写作规范》里登记的坏习惯词 / 标点偏好 / 视角规则锚进伴写；关掉后只靠前文样本与下面的文风补充">
-                      {companionStyleSpec ? '已开启' : '已关闭'}
-                    </Button>
-                    <span className="text-ink-500 text-10">负面清单，默认开</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-ink-400 shrink-0">文风补充</span>
-                    <Button variant="toggle" size="xs" selected={!!companionStyleNote || companionStyleDims.length > 0}
-                      onClick={() => setStyleNotePrompt(true)}
-                      className="max-w-[13rem]"
-                      title={companionStyleDims.length
-                        ? `已选 ${companionStyleDims.length} 项：${dimLabels(companionStyleDims)}${companionStyleNote ? '\n原话：' + companionStyleNote : ''}`
-                        : (companionStyleNote || '点开勾选本次想补的方面（可多选），也可一句话描述，例如「冷硬白描，少心理活动，多用短对白」')}>
-                      <span className="truncate">{companionStyleDims.length
-                        ? `已选 ${companionStyleDims.length} 项${companionStyleNote ? ' + 原话' : ''}`
-                        : (companionStyleNote || '未设置（点击选择）')}</span>
-                    </Button>
-                  </div>
-                  {/* 总开关：按老大要求放在设置下面，并掉与它重复的那个独立开关图标 */}
-                  <div className="flex items-center gap-2 mt-1 pt-2 border-t border-ink-700">
-                    <span className="text-ink-200 shrink-0">总开关</span>
-                    <Button variant="toggle" size="xs" selected={companion} disabled={!aiReady}
-                      onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
-                      title={!aiReady ? '未配置 AI 模型' : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
-                      {companion ? '已开启' : '已关闭'}
-                    </Button>
-                    <span className="text-ink-500 text-10">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
-                  </div>
-                  <div className="text-ink-500 text-10 leading-relaxed">
-                    全部为本机记忆，换章不重置。伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。
-                  </div>
-                </div>
-              </HelpPopover>
-              <Button variant="icon-amber" onClick={() => onNavigate?.('chapter-outline')} className="p-1 shrink-0" title="前往本章细纲">
-                <BookOpen size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('search')} className="p-1 shrink-0" title="全文搜索替换（本书）">
-                <Search size={14} />
-              </Button>
-              <Button variant="icon-amber" onClick={() => setModal('lock')} className="p-1 shrink-0" title="小黑屋 · 强制码字">
-                <Lock size={14} />
-              </Button>
-              <div className="w-px h-4 bg-ink-700" />
-              <Button variant="icon-amber"
-                onClick={() => {
+              {secondaryTools}
+              <Button variant="secondary" size="sm" aria-pressed={searchVisible || searchDrawer}
+                onClick={() => afterSearchSubmit(() => {
                   if (showRefs) setShowRefs(false)
                   else if (!searchFits) setSearchDrawer(true)
                   else setShowSearch(!showSearch)
-                }}
+                })}
                 className="p-1 shrink-0"
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
-                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} 设定检索
               </Button>
-              <Button variant="icon-amber"
-                onClick={() => setFocusMode(!focusMode)}
+              <Button variant="secondary" size="sm" aria-pressed={focusMode}
+                onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
                 className="p-1 shrink-0"
                 title={focusMode ? '退出专注模式' : '专注模式'}>
-                {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {focusMode ? '退出专注' : '专注'}
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'从左到右：\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· 钢笔：AI 伴写（默认关闭）。点它会弹出「说明 + 设置 + 总开关」这一整个窗 —— 窗里有建议长度 / 去 AI 味 / 文风补充，最下面是总开关，不再另设开关图标。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、本章资料、设定检索与专注；AI 伴写收在「工具」内。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· AI 伴写（位于「工具」中，默认关闭）：展开后可调整建议长度 / 去 AI 味 / 文风补充及总开关。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
+            </div>
             </div>
 
             {/* 摘要行：自适应高度，内容多时自动展开完整显示 AI 压缩摘要 */}
@@ -561,21 +568,50 @@ style={{ zIndex: Z.pageHandle }}
                 title={!aiReady ? '未配置 AI 模型' : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
                 {summarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               </Button>
-              <Button onClick={regenAllSummaries}
-                disabled={!aiReady || regenAll || !active}
-                title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
-                {regenAll ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
-              </Button>
+              {/* 🔴 UX13：长等待必须能叫停。跑起来后这个键变「中止」（同一位置、同一尺寸），
+                  已更新的章节保持已更新（中止不是回滚），未处理的章节仍是旧摘要。 */}
+              {regenAll ? (
+                <Button onClick={stopRegenAll}
+                  title="中止批量重生成（已更新的章节保持已更新）" aria-label="中止批量重生成"
+                  variant="secondary" size="md" className="shrink-0">
+                  <Square size={12} />
+                </Button>
+              ) : (
+                <Button onClick={regenAllSummaries}
+                  disabled={!aiReady || !active}
+                  title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  <Layers size={12} />
+                </Button>
+              )}
               <HelpPopover title="章节压缩摘要" width="22rem" size={12} className="shrink-0 mt-0.5">
                 {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如「陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬」。\n\n· 输入即自动同步到「章节总表」的一句话事件列；\n· 摘要出现后还会回填《章节细纲》卡的本章事件（原本为空才填 —— 你手写过的计划不会被覆盖）；\n· 它是「综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。'}
                 <AIDataSourceNote feature="chapter-summary" />
               </HelpPopover>
             </div>
 
-            {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应 */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden" ref={scrollRef}>
+            {/* 上一批「批量重生成摘要」的逐章失败（UX09）：有失败就必须能看见是哪几章，
+                否则完成提示说「完成」、章节总表却还是旧摘要，作者永远查不到。 */}
+            {regenFailures.length > 0 && (
+              <div data-regen-failures="" className="px-5 py-1.5 border-b border-ink-700/50 bg-danger/10 text-11 text-danger shrink-0 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  上一批摘要有 {regenFailures.length} 章没走完：{regenFailures.slice(0, 3).map(item => item.title).join('、')}{regenFailures.length > 3 ? ` 等 ${regenFailures.length} 章` : ''}。
+                  {regenFailures.some(item => !item.summarySaved)
+                    ? '这些章节仍是旧摘要，可再次点「批量重生成」重试。'
+                    : '摘要已更新，但章节总表没同步成功。'}
+                </span>
+              </div>
+            )}
+
+            {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
+                🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
+                几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
+            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
-              <div className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative flex-1 min-h-0 flex flex-col overflow-hidden transition-[max-width] duration-300`}>
+              <div
+                className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative ${shortBody ? 'shrink-0' : 'flex-1 min-h-0'} flex flex-col overflow-hidden transition-[max-width] duration-300`}
+                style={shortBody ? { minHeight: BODY_MIN_H } : undefined}
+              >
                 {/* 段首缩进参考线（2.4.0 · A5 遗留补全）：极淡竖线标出每级缩进的位置，方便对齐多级缩进。
                     纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
                     垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。
@@ -652,7 +688,10 @@ style={{ zIndex: Z.pageHandle }}
                     if (ev.isComposing) { onContentChange(next); return }
                     // 判据看**这次输入事件自带的 data**，不再用「prev/next 长度差」——
                     // 长度差在组合态下从来对不上，是上一个 bug 的根源。
+                    // 先按「左标点 ⇒ 补右」判；不成立再走**右标点兜底**——
+                    // 搜狗在 `，` 之后会把引号上屏成 `”`（智能收尾规则），只认左标点就永远不配对。
                     const plan = planPunctPair(next, ta.selectionStart, ev.data)
+                      ?? planPunctPairFromClose(next, ta.selectionStart, ev.data)
                     if (!plan) { onContentChange(next); return }
                     onContentChange(plan.value)
                     // 光标要落在两个标点中间。必须等 React 把新 value 写进 DOM 之后再设，
@@ -668,6 +707,7 @@ style={{ zIndex: Z.pageHandle }}
                     //    与 onChange 那条判据结果相同、且幂等（右侧已有右标点就返回 null）。
                     const ta = e.currentTarget
                     const plan = planPunctPairAtCaret(ta.value, ta.selectionStart)
+                      ?? planPunctPairFromCloseAtCaret(ta.value, ta.selectionStart)
                     if (!plan) return
                     onContentChange(plan.value)
                     requestAnimationFrame(() => {

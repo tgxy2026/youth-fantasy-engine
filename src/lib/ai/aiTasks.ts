@@ -38,8 +38,8 @@ import { MARKET_RADAR_PROMPTS } from '@/lib/ai/marketRadar'
 import { STYLE_FINGERPRINT_PROMPTS } from '@/lib/ai/styleFingerprint'
 import { POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 
-export { rowFingerprint, aiOrganizeRows, keyRowToLine } from '@/lib/aiTasks/organize'
-export type { OrganizeColumn, OrganizeRequest, OrganizeResult } from '@/lib/aiTasks/organize'
+export { rowFingerprint, aiOrganizeRows, keyRowToLine, organizeEmptyKind, organizeEmptyMessage } from '@/lib/aiTasks/organize'
+export type { OrganizeColumn, OrganizeRequest, OrganizeResult, OrganizeEmptyKind } from '@/lib/aiTasks/organize'
 // 2026-09-20 拆分：`aiProofread`（混查五类）→ `aiProofreadText`（错别字/语病/标点，不读设定）
 // 与 `aiProofreadLogic`（逻辑/设定矛盾，读设定）。两条独立提示词、两个独立入口。
 // 3.2.3 · R1：结果分「建议 / 替换」两类，只有 replacement 能改进正文（`isReplaceable` 即判据）。

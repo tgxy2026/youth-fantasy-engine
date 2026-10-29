@@ -24,7 +24,8 @@
     {"id":"network","profiles":["desktop","portable","web-cloud","web-guest"],"description":"直发/IPC、CORS、HTTPS、本机模型、鉴权失败与取消","scenarios":["remote-model","local-model","search","cancel-timeout"]},
     {"id":"roundtrip","profiles":["desktop","portable","web-cloud","web-guest"],"description":"跨形态导入导出、sidecar、敏感配置及失败恢复","scenarios":["schema-version","sidecars","secret-stripping","restore-failure"]},
     {"id":"capability-ui","profiles":["desktop","portable","web-cloud","web-guest"],"description":"更新、PDF、字体、文件路径、代理与数据位置文案","scenarios":["unsupported-action","storage-label","pdf-font","update-proxy"]},
-    {"id":"artifacts","profiles":["desktop","portable","web-cloud"],"description":"实际交付物、版本、静态资源、注入及失败回滚","scenarios":["built-version","static-assets","flag-injection","rollback"]}
+    {"id":"artifacts","profiles":["desktop","portable","web-cloud"],"description":"实际交付物、版本、静态资源、注入及失败回滚","scenarios":["built-version","static-assets","flag-injection","rollback"]},
+    {"id":"installed-boot","profiles":["desktop"],"description":"Setup 安装后的产物（exe + app.asar）实际启动、选中桌面后端、重启后从数据文件读回","scenarios":["initial-flags","backend-selection","restart-readback"]}
   ],
   "owners": {"platform":"运行平台适配负责人","persistence":"存储与同步负责人","identity":"网页版鉴权负责人","network":"模型与网络负责人","delivery":"构建与发布负责人"}
 }

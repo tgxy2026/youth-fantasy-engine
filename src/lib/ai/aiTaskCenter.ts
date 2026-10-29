@@ -113,6 +113,15 @@ const listeners = new Set<() => void>()
 /** 运行中的中止控制器（不进快照 —— AbortController 不可序列化也不必给界面） */
 const ctls = new Map<string, AbortController>()
 let noticeSeq = 0
+/** 等待界面消费的通知；并发收尾不能覆盖尚未显示的上一条。 */
+const pendingNotices: AiTaskNotice[] = []
+/**
+ * 任务中心「代次」。`resetTaskCenter()`（退出项目 / 换书）时 +1。
+ *
+ * reset 发出 abort 后，异步任务仍可能晚一拍才收尾。代次改变后直接丢弃该收尾，
+ * 不再调用自定义提示。patchTask 本身也会拒绝已移除的任务；代次是额外的生命周期边界。
+ */
+let epoch = 0
 
 function emit() {
   for (const l of listeners) l()
@@ -159,11 +168,15 @@ export function useAiTask<TResult = unknown, TProgress = unknown>(ownerTab: stri
 }
 
 function notice(text: string, kind: AiTaskNotice['kind'] = 'info') {
-  set({ notice: { id: ++noticeSeq, text, kind } })
+  const item = { id: ++noticeSeq, text, kind }
+  if (snap.notice) pendingNotices.push(item)
+  else set({ notice: item })
 }
-/** 组件 toast 完把它清掉（避免同一条在切页签后被重复消费） */
-export function consumeTaskNotice() {
-  if (snap.notice) set({ notice: null })
+/** 先认领再显示；旧 effect / StrictMode 重放不能消费下一条或重复显示当前条。 */
+export function consumeTaskNotice(expectedId?: number): boolean {
+  if (!snap.notice || (expectedId !== undefined && snap.notice.id !== expectedId)) return false
+  set({ notice: pendingNotices.shift() ?? null })
+  return true
 }
 
 /** 局部更新一条任务（id 不存在则原样返回 —— 任务已被清掉时晚到的回调不该复活它） */
@@ -206,6 +219,7 @@ export function startTask<TResult = unknown, TProgress = unknown>(def: StartTask
     if (clash) notice(`注意：「${def.title}」与正在进行中的「${clash.title}」会写到同一处内容，建议错开写入以免互相覆盖`, 'info')
   }
   const id = uid()
+  const epochAtStart = epoch
   const ctl = new AbortController()
   ctls.set(id, ctl)
   const task: AiTask = {
@@ -257,6 +271,8 @@ export function startTask<TResult = unknown, TProgress = unknown>(def: StartTask
       }
     } finally {
       ctls.delete(id)
+      // 🔴 换书/退出项目之后才跑到的收尾：只回收控制器，**不改状态、不提示**。
+      if (epochAtStart !== epoch) return
       patchTask(id, {
         status,
         result,
@@ -270,11 +286,28 @@ export function startTask<TResult = unknown, TProgress = unknown>(def: StartTask
       // 🔴 完成/失败的提示必须由**store**发，而不是面板：作者很可能已经切到别的页签，
       //    面板此刻根本没挂载 —— 它自己 toast 等于没人 toast。由 `Sidebar` 的指示器订阅后弹出。
       //    文案优先用任务自定义的（能说清"写了多少章、抽了多少条"），缺省才用通用文案。
-      const custom = def.notify?.({ status, result, error })
-      if (custom) notice(custom.text, custom.kind)
-      else if (status === 'done') notice(`「${def.title}」已完成 —— 结果保存在该页签，切回去即可查看`, 'success')
-      else if (status === 'failed') notice(`「${def.title}」失败：${error || '未知原因'}`, 'error')
-      /* 已中止不提示：是作者自己按的「中止」，他清楚 */
+      // 🔴 提示本身必须容错：`notify` 是调用方传入的回调，它抛错时若直接冒泡，
+      //    这里会变成一条**未处理的 Promise 拒绝**（整个任务体是 fire-and-forget 的），
+      //    而作者那边既没看到"完成了"也没有任何线索。所以：抛错就退回通用文案，
+      //    并把真实原因记到 console（不吞掉，便于排查）。
+      try {
+        const custom = def.notify?.({ status, result, error })
+        // 🔴 **传了 notify 就以它的返回值为准**：返回 `null` 是文档承诺的「这次不提示」
+        //    （例如作者主动中止后又"完成"、或结果由页面内提示承担）。
+        //    旧实现把它落进 `else` 分支、兜了一句通用「已完成」—— 说好的不提示却照样弹，
+        //    还可能在页内已有提示时叠成两条（2026-10-28 UX09 实测发现）。
+        if (def.notify) {
+          if (custom) notice(custom.text, custom.kind)
+        } else if (status === 'done') notice(`「${def.title}」已完成 —— 结果保存在该页签，切回去即可查看`, 'success')
+        else if (status === 'failed') notice(`「${def.title}」失败：${error || '未知原因'}`, 'error')
+        /* 已中止不提示：是作者自己按的「中止」，他清楚 */
+      } catch (noticeError) {
+        console.warn('[aiTaskCenter] 完成提示抛错，退回通用文案', noticeError)
+        try {
+          if (status === 'done') notice(`「${def.title}」已完成 —— 结果保存在该页签，切回去即可查看`, 'success')
+          else if (status === 'failed') notice(`「${def.title}」失败：${error || '未知原因'}`, 'error')
+        } catch { /* 连通用提示都发不出去（订阅方抛错）也不许变成未处理拒绝 */ }
+      }
     }
   })()
 
@@ -328,6 +361,10 @@ export function takeUnnotifiedRunning(): AiTask[] {
 /** 退出项目：中止全部运行中任务并清空内存态（断点由各面板自行决定是否展示） */
 export function resetTaskCenter(): void {
   abortAllTasks()
+  // 🔴 先推进代次，再清快照：此后任何"晚到的收尾"都会被 `epochAtStart !== epoch` 挡掉，
+  //    不会给新项目弹上一本书的完成提示，也不会把已清空的列表补回来。
+  epoch += 1
+  pendingNotices.length = 0
   set({ tasks: [], notice: null })
 }
 

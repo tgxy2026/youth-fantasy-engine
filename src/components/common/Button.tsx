@@ -149,6 +149,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   // （尺寸表里已不含 rounded-*，避免两处打架、结果取决于 Tailwind 生成顺序）
   const shapeCls = shape === 'rect' ? 'rounded-lg' : 'rounded-full'
   const vCls = variantClass(variant, solid, selected)
+  const sizing = iconOnly || shape === 'round' || isIconVariant ? 'icon' : variant === 'bare' || variant === 'toggle-text' ? 'content' : 'standard'
 
   const cls = [
     'inline-flex items-center justify-center gap-1.5 select-none whitespace-normal',
@@ -160,7 +161,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ].join(' ')
 
   return (
-    <button type={type} ref={ref} className={cls} data-button-variant={variant} {...rest}>
+    <button type={type} ref={ref} className={cls} data-button-variant={variant} data-button-size={sizeKey} data-button-sizing={sizing} {...rest}>
       {children}
     </button>
   )

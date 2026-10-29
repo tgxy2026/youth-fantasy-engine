@@ -7,6 +7,7 @@ import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import SafeImage from '@/components/common/SafeImage'
 import Tooltip from '@/components/common/Tooltip'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
@@ -354,7 +355,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 >
                   {form.cover ? (
                     <>
-                      <img src={form.cover} alt="封面预览" className="w-full h-full object-cover" />
+                      <SafeImage src={form.cover} alt="封面预览" retry={false} className="w-full h-full object-cover" />
                       <span
                         onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, cover: '' })) }}
                         className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -495,7 +496,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                     {items.map(p => (
-              <div key={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
+              <div key={p.id} data-project-card={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
                 {editingId === p.id ? (
                   /* 编辑模式：修改书名与封面 */
                   <div>
@@ -508,7 +509,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         >
                           {editForm.cover ? (
                             <>
-                              <img src={editForm.cover} alt="封面预览" className="w-full h-full object-cover" />
+                              <SafeImage src={editForm.cover} alt="封面预览" retry={false} className="w-full h-full object-cover" />
                               <span
                                 onClick={e => { e.stopPropagation(); setEditForm(f => ({ ...f, cover: '' })) }}
                                 className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white/90 opacity-0 group-hover/cover:opacity-100 transition-opacity"
@@ -597,15 +598,15 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-stretch gap-5 min-h-[184px]">
+                    <div className="flex flex-wrap items-stretch gap-5 min-h-[184px]">
                       {p.cover ? (
-                        <img src={p.cover} alt={p.name} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
+                        <SafeImage src={p.cover} alt={p.name} retry={false} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
                       ) : (
                         <div className="w-128px rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
                           <Feather size={22} className="text-ink-600" />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex-1 min-w-[min(100%,12rem)] flex flex-col">
                         <div>
                           <h3 className="text-15 font-bold text-ink-50 truncate">{p.name}</h3>
                           {/* 这一行**只留卷 / 章 / 字数**（2026-09-19 老大要求）：
@@ -621,60 +622,60 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>
-                        <div className="mt-auto pt-3 flex items-center gap-1.5">
+                        <div data-project-actions className="mt-auto pt-3 grid w-full max-w-[236px] grid-cols-6 items-center gap-1.5 [&>span]:min-w-0 [&>span>button]:!w-full [&>span>button]:!min-w-0">
                           <Tooltip label="打开项目">
-                            <Button variant="primary" iconOnly
+                            <Button variant="primary" iconOnly size="sm"
                               onClick={() => onOpen(p.id)}
                               title="打开项目"
                               aria-label="打开项目"
                             >
-                              <FolderOpen size={15} />
+                              <FolderOpen size={17} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => exportProject(p)}
                               title="导出 JSON 备份"
                               aria-label="导出 JSON 备份"
                             >
-                              <Upload size={14} />
+                              <Upload size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出设定集">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={async () => { db.setCurrentProject(p.id); const { exportSettingCompendium } = await import('@/lib/storage/exporter'); void exportSettingCompendium(p.name) }}
                               title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
                               aria-label="导出设定集"
                             >
-                              <BookText size={14} />
+                              <BookText size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="备份与恢复">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => { setBackupName(p.name); setBackupPid(p.id) }}
                               title="备份与恢复：查看 / 一键恢复历史版本"
                               aria-label="备份与恢复"
                             >
-                              <History size={14} />
+                              <History size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="编辑项目">
-                            <Button variant="icon-ghost" iconOnly
+                            <Button variant="icon-ghost" iconOnly size="sm"
                               onClick={() => startEdit(p)}
                               title="编辑项目"
                               aria-label="编辑项目"
                             >
-                              <Pencil size={14} />
+                              <Pencil size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="删除项目" side="bottom">
-                            <Button variant="icon-danger" iconOnly size="md"
+                            <Button variant="icon-danger" iconOnly size="sm"
                               onClick={() => removeProject(p)}
                               className="hover:bg-danger/10"
                               title="删除项目"
                               aria-label="删除项目"
                             >
-                              <Trash2 size={15} />
+                              <Trash2 size={17} />
                             </Button>
                           </Tooltip>
                         </div>

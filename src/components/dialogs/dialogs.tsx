@@ -88,6 +88,8 @@ function ensureToastRoot() {
     // 只设 class，层级由 style.zIndex 从 zLayer 真源取（Tailwind 的任意值 class 无法引用常量）
     toastRoot.className = 'fixed top-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none'
     toastRoot.style.zIndex = String(Z.toast)
+    // 结构锚点：通知也是界面，探针/读屏都要能定位它（文案会变，锚点不变）
+    toastRoot.dataset.toast = ''
     document.body.appendChild(toastRoot)
   }
   return toastRoot

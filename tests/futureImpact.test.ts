@@ -61,7 +61,7 @@ console.log('\n—— futureImpact 用例开始 ——')
   ok('🔴 只在 rewritten 时打标（generated 是推进、不误伤）',
     /kind === 'rewritten'.*analyzeFutureImpact/.test(src.replace(/\n/g, ' ')))
   ok('打标失败静默（.catch(() => {})）',
-    src.includes("analyzeFutureImpact(seq, '正文改写').catch(() => {})"))
+    src.includes("analyzeFutureImpact(seq, '正文改写', undefined, owner).catch(() => {})"))
   ok('只在序号可用时打标（seq > 0）', src.includes('seq > 0'))
 
   // 未来影响模块自身的红线：只标记不改章纲（不 import schema 写入 API 的写函数）

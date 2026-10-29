@@ -1,6 +1,8 @@
+import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type } from 'lucide-react'
 import BrandMark from '@/components/common/BrandMark'
+import BackToSource, { type ReturnSource } from '@/components/app/BackToSource'
 import HelpPopover from '@/components/common/HelpPopover'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import NumberField from '@/components/common/NumberField'
@@ -27,6 +29,7 @@ import { APP_VERSION_LABEL } from '@/lib/app/env'
 import { Button } from '@/components/common/Button'
 import CustomThemeDialog from '@/components/settings/CustomThemeDialog'
 import FontSettingsDialog from '@/components/settings/FontSettingsDialog'
+import DensityControl from '@/components/settings/DensityControl'
 import TaskIndicator from '@/components/common/TaskIndicator'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
@@ -46,6 +49,7 @@ interface Props {
   /** 窄窗口的导航抽屉使用父容器宽度，不沿用桌面拖拽宽度。 */
   overlay?: boolean
   focusTools?: boolean
+  returnSource?: ReturnSource
   activeTab: string
   onNavigate: (id: string) => void
   collapsed: boolean
@@ -56,7 +60,7 @@ interface Props {
   ctx: VisCtx
 }
 
-export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false }: Props) {
+export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, returnSource }: Props) {
   // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
   //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
   //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
@@ -108,7 +112,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
     return () => window.removeEventListener('yfe:zoom-changed', onZoom)
   }, [])
   // 侧栏宽度可拖拽调整
-  const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 200, max: 560, side: 'right' })
+  const sidebar = useResizable({ key: 'yfe-sidebar-w', initial: 224, initialWide: 300, min: 224, max: 560, side: 'right' })
 
   // 卷台账子项：从运行期缓存读取（编辑器增删改卷后会刷新缓存并广播事件）
   const [volumeTabs, setVolumeTabs] = useState(getVolumeTabs())
@@ -163,15 +167,10 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   return (
     <aside
       className={`relative h-full min-h-0 flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0 ${overlay ? 'overflow-y-auto' : ''}`}
-      style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 200 }}
+      style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 224 }}
     >
       {/* 拖拽调整侧栏宽度 */}
-      {!overlay && <div
-        onMouseDown={sidebar.onDragStart}
-        className="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-amber/40 transition-colors"
-style={{ zIndex: Z.pageBase }}
-        title="拖拽调整侧栏宽度"
-      />}
+      {!overlay && <ResizeHandle pane={sidebar} label="侧栏宽度" layer={Z.pageBase} />}
       {/* Logo */}
       <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
@@ -188,6 +187,7 @@ style={{ zIndex: Z.pageBase }}
         <div className="rounded-lg bg-ink-800/70 border border-ink-700 px-2.5 py-2">
           <div className="text-9 text-ink-500 mb-0.5">当前项目</div>
           <div className="text-13 font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
+          {returnSource && <BackToSource {...returnSource} />}
           <div className="flex gap-1 mt-2">
             <Button onClick={onExitProject}
               
@@ -234,6 +234,7 @@ style={{ zIndex: Z.pageBase }}
                         <div key={tab.id}>
                           <Button variant="bare"
                             onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
+                            aria-current={active ? 'page' : undefined}
                             className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
                               ${active
                                 ? 'bg-amber/15 text-amber font-medium border border-amber/25'
@@ -253,6 +254,7 @@ style={{ zIndex: Z.pageBase }}
                                 <div key={v.id} className="group flex items-center gap-0.5">
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
+                                    aria-current={v.id === activeTab ? 'page' : undefined}
                                     className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-13 transition-all duration-150
                                       ${v.id === activeTab
                                         ? 'bg-amber/15 text-amber font-medium border border-amber/25'
@@ -283,6 +285,7 @@ style={{ zIndex: Z.pageBase }}
                       <Button variant="bare"
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
+                        aria-current={active ? 'page' : undefined}
                         className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
                           ${active
                             ? 'bg-amber/15 text-amber font-medium border border-amber/25'
@@ -389,13 +392,23 @@ style={{ zIndex: Z.pageBase }}
               {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>
           </span>
-          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0"
+          </div>
+          {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧界面密度（单键切换）。
+              🔴 胶囊要**自己撑满剩余宽度**（主人 2026-10-29 第二次要求）：上下几条（外观设置 / 保存 /
+                  数据文件）都是撑满的，只有它原来是 w-fit 的小胶囊，侧栏拖宽后右边空一截。
+                  现在 `min-w-0 flex-1`：拖动侧栏时它跟着变长；内部两组用 justify-between ——
+                  左边「自动」（模式），右边「− 数字 % +」（数值），中间留弹性空隙。
+              🔴 最窄 224px（内容区 207px）仍必须是一行：内部实测需 ~130px + 密度键 44 + 间距 4 = 178，
+                  余量约 29px，所以 flex-wrap 只作极端字体放大的兜底。 */}
+          <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
+          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
-          </div>
-          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面">
+            {/* 数值组：− / 比例 / % / + 整体靠右，与左边的「自动」分列两端 */}
+            <span className="flex min-w-0 items-center gap-0.5">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面" className="!min-w-6">
               <ZoomOut size={12} />
             </Button>
             <span className="flex min-w-0 items-center justify-center gap-1">
@@ -413,13 +426,16 @@ style={{ zIndex: Z.pageBase }}
                 max={160}
                 ariaLabel="界面缩放百分比"
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
-                className="h-6 w-12 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
+                className="h-6 w-9 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
-              <span className="text-ink-400 text-xs">%</span>
+              <span className="text-ink-400 text-11">%</span>
             </span>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面" className="!min-w-6">
               <ZoomIn size={12} />
             </Button>
+            </span>
+          </div>
+          <DensityControl inline />
           </div>
         </div>
         {/* 本机存储：数据文件保存 / 导出 / 导入。

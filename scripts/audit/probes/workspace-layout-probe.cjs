@@ -13,13 +13,16 @@ const { chromium } = require('playwright')
 let sourceFingerprintOf = null // 在 main() 里动态加载（.cjs 不能顶层 await）
 const ROOT = path.resolve(__dirname, '../../..')
 async function main() {
+  const densityAt = process.argv.indexOf('--density')
+  const density = densityAt >= 0 ? process.argv[densityAt + 1] : 'compact'
+  if (!['compact', 'comfortable'].includes(density)) throw new Error('Expected --density compact|comfortable')
   sourceFingerprintOf = (await import('../platform/source.mjs')).snapshot
   /** `--result-file <path>`：把结果另存一份到固定路径，供验收执行器直接校验（3.2.6 接线用） */
   const ri = process.argv.indexOf('--result-file')
   const resultFile = ri >= 0 && process.argv[ri + 1] && !process.argv[ri + 1].startsWith('--') ? path.resolve(process.argv[ri + 1]) : null
   for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']) delete process.env[k]
   const out = await fs.mkdtemp(path.join(ROOT, '.workbuddy/tmp/workspace-layout-'))
-  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, out, cases: [], errors: [] }
+  const result = { at: new Date().toISOString(), sourceFingerprint: sourceFingerprintOf(ROOT).fingerprint, density, out, cases: [], errors: [], modelRequests: [] }
   let server, browser
   try {
     const { createServer } = await import('vite')
@@ -37,15 +40,29 @@ async function main() {
     if (!ready) throw new Error('vite dev server 120 秒内没有返回首页')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1000, height: 640 } })
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url())
+      if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url.pathname)) {
+        result.modelRequests.push(route.request().method())
+        return route.abort()
+      }
+      return ['localhost', '127.0.0.1'].includes(url.hostname) && url.port === '5213' ? route.continue() : route.abort()
+    })
     page.setDefaultTimeout(12000)
     page.on('pageerror', e => result.errors.push(e.message))
     await page.goto('http://127.0.0.1:5213', { waitUntil: 'domcontentloaded', timeout: 120000 })
     await page.getByRole('button', { name: /先看看示例/ }).click()
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-    await page.getByRole('navigation').waitFor()
+    await page.locator('nav').waitFor()
     const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    if (await later.isVisible()) await later.click()
+    await later.click()
+  await page.getByRole('navigation').waitFor()
+    await page.evaluate(async value => {
+      const { DENSITIES, DENSITY_PREF, applyDensity } = await import('/src/lib/settings/density.ts')
+      const { writeEnumPref } = await import('/src/lib/settings/uiPrefs.ts')
+      applyDensity(writeEnumPref(DENSITY_PREF, value, DENSITIES, 'compact'))
+    }, density)
     // 不能只验酒馆空态：通过真实存储入口建立故事、角色和一场已有对话。
     await page.evaluate(async () => {
       const story = await import('/src/lib/tavern/story.ts')
@@ -92,9 +109,12 @@ async function main() {
           }
           const header = main.querySelector('header')?.getBoundingClientRect()
           if (header && header.height > m.height * .6) issues.push({ kind: 'header-crowding', height: header.height })
-          return { mainWidth: m.width, mainHeight: m.height, scrollWidth: main.scrollWidth, headerHeight: header?.height, issues }
+          // A scrollable ancestor does not make a zero-height editor reachable.
+          const detail = main.querySelector('[data-character-detail]')
+          if (detail && detail.clientHeight < 80) issues.push({ kind: 'unusable-character-detail', height: detail.clientHeight })
+          return { mainWidth: m.width, mainHeight: m.height, scrollWidth: main.scrollWidth, headerHeight: header?.height, detailHeight: detail?.clientHeight ?? null, issues }
         })
-        const row = { ...scenario, ...tab, ...measurement }
+        const row = { ...scenario, density, ...tab, ...measurement }
         result.cases.push(row)
         if (measurement.issues.length || ['editor','dashboard','char-main','worldbase','positioning','volume-outline','tavern-free','creative-writing','trajectory','geography-map'].includes(tab.id)) {
           row.screenshot = `${scenario.width}-${scenario.zoom}-${tab.id}.png`

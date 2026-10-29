@@ -24,6 +24,7 @@ import {
   PROJECT_TEMPLATE_INDEX, TEMPLATE_DEF_VERSION, TEMPLATE_LIMITS,
   projectTemplateKeyOf, type TemplateDef, type TemplateIndex, type TemplateIndexEntry,
 } from './definition'
+import { captureSubmissionBoundary } from '@/lib/storage/submissionState'
 
 // ────────────────────────── 读 ──────────────────────────
 
@@ -90,23 +91,31 @@ async function writeIndex(pid: string, entries: TemplateIndexEntry[]): Promise<v
  *    半写状态比拒绝更糟 —— 索引说有、定义读不到，界面会显示一个打不开的模板。
  */
 export async function saveTemplateDef(pid: string, def: TemplateDef): Promise<SaveTemplateResult> {
+  const assertCurrent = captureSubmissionBoundary()
   if (!pid) return { ok: false, violations: [{ code: 'bad-field-name', detail: '缺少项目 id，无法保存模板定义' }] }
 
   const violations = [...checkTemplateDef(def)]
   if (violations.length > 0) return { ok: false, violations }
 
-  const quota = await projectQuotaViolations(pid, def)
-  if (quota.length > 0) return { ok: false, violations: quota }
-
-  await enqueue(async () => {
-    await db.setSettingFor(pid, projectTemplateKeyOf(def.tabId), def)
+  const snapshot = structuredClone(def)
+  const result = await enqueue<SaveTemplateResult>(async () => {
+    assertCurrent()
+    // Serialize quota checks with writes so two queued definitions cannot both spend the same quota.
+    const quota = await projectQuotaViolations(pid, snapshot, assertCurrent)
+    if (quota.length > 0) return { ok: false, violations: quota }
+    assertCurrent()
+    await db.setSettingFor(pid, projectTemplateKeyOf(snapshot.tabId), snapshot)
+    assertCurrent()
     const idx = await loadTemplateIndex(pid)
-    const rest = idx.entries.filter(e => e.tabId !== def.tabId)
-    rest.push(entryOf(def))
+    assertCurrent()
+    const rest = idx.entries.filter(e => e.tabId !== snapshot.tabId)
+    rest.push(entryOf(snapshot))
     await writeIndex(pid, rest)
+    assertCurrent()
+    return { ok: true }
   })
-  emit()
-  return { ok: true }
+  if (result.ok) emit()
+  return result
 }
 
 /**
@@ -114,11 +123,16 @@ export async function saveTemplateDef(pid: string, def: TemplateDef): Promise<Sa
  * 🔴 只删**定义与索引条目**，绝不动条目值 —— 值是作者写的，模板结构不是。
  */
 export async function deleteTemplateDef(pid: string, tabId: string): Promise<void> {
+  const assertCurrent = captureSubmissionBoundary()
   if (!pid || !tabId) return
   await enqueue(async () => {
+    assertCurrent()
     await db.delSettingFor(pid, projectTemplateKeyOf(tabId))
+    assertCurrent()
     const idx = await loadTemplateIndex(pid)
+    assertCurrent()
     await writeIndex(pid, idx.entries.filter(e => e.tabId !== tabId))
+    assertCurrent()
   })
   emit()
 }
@@ -134,13 +148,17 @@ export async function deleteTemplateDef(pid: string, tabId: string): Promise<voi
 export async function projectQuotaViolations(
   pid: string,
   incoming: TemplateDef,
+  assertCurrent: () => void = () => {},
 ): Promise<LimitViolation[]> {
   const L = TEMPLATE_LIMITS
+  assertCurrent()
   const idx = await loadTemplateIndex(pid)
+  assertCurrent()
   const others = idx.entries.filter(e => e.tabId !== incoming.tabId)
   let total = bytesOfDef(incoming)
   for (const e of others) {
     const d = await loadTemplateDef(pid, e.tabId)
+    assertCurrent()
     if (d) total += bytesOfDef(d)
   }
   if (total > L.PROJECT_MAX_BYTES) {

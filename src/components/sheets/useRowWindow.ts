@@ -18,6 +18,7 @@
  *   ④ 行数少时不启用（阈值在调用方）—— 小表保持原行为，减少回归面。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { DENSITY_CHANGED } from '@/lib/settings/density'
 
 export interface RowWindowOptions {
   /** 参与排列的行 id（已按显示顺序） */
@@ -133,12 +134,42 @@ export function useRowWindow({ ids, rowRefs, scrollRef, enabled, estimate = 56, 
 
   useLayoutEffect(() => { if (enabled) measure() })
 
+  // The window already manages its spacer offsets and density anchor. Native scroll anchoring
+  // would compensate for the same spacer-height change again, moving the visible logical row.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!enabled || !el) return
+    const previous = el.style.overflowAnchor
+    el.style.overflowAnchor = 'none'
+    return () => { el.style.overflowAnchor = previous }
+  }, [enabled, scrollRef])
+
   // 行集合「内容」变了（筛选/换页签/增删行）⇒ 之前缓存的偏移作废，等重新实测。
   // 🔴 用 join 出来的键而不是数组引用：`bodyRows` 在改草稿时也会换新数组，
   //    拿引用当依赖会把高度缓存每次按键清一遍（视口跳动 + 反复重算）。
   const idsKey = useMemo(() => ids.join('\u0001'), [ids])
   useEffect(() => { heights.current.clear(); setTick(t => t + 1) }, [idsKey])
   useEffect(() => { heights.current.clear(); setTick(t => t + 1) }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) return
+    const onDensity = () => {
+      const el = scrollRef.current
+      if (!el) return
+      const top = el.scrollTop
+      const previous = heights.current
+      const next = new Map<string, number>()
+      for (const [id, node] of Object.entries(rowRefs.current)) {
+        if (node && node.offsetHeight > 0) next.set(id, node.offsetHeight)
+      }
+      heights.current = next
+      el.scrollTop = reflowRowAnchor(ids, previous, next, top, estimate)
+      setViewport({ top: el.scrollTop, height: el.clientHeight })
+      setTick(t => t + 1)
+    }
+    globalThis.window.addEventListener(DENSITY_CHANGED, onDensity)
+    return () => globalThis.window.removeEventListener(DENSITY_CHANGED, onDensity)
+  }, [enabled, ids, rowRefs, scrollRef, estimate])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -204,4 +235,27 @@ export function useRowWindow({ ids, rowRefs, scrollRef, enabled, estimate = 56, 
   }, [ids, estimate, scrollRef])
 
   return { ...window, revealId }
+}
+
+/** Keep the same logical row/fraction when density invalidates the cached row measurements. */
+export function reflowRowAnchor(ids: readonly string[], before: ReadonlyMap<string, number>, after: ReadonlyMap<string, number>, top: number, estimate: number): number {
+  if (!ids.length) return 0
+  const median = (values: ReadonlyMap<string, number>) => {
+    const sorted = [...values.values()].filter(h => Number.isFinite(h) && h > 0).sort((a, b) => a - b)
+    return sorted.length ? sorted[Math.floor(sorted.length / 2)] : Math.max(1, estimate)
+  }
+  const oldUnit = median(before), newUnit = median(after)
+  const height = (values: ReadonlyMap<string, number>, id: string, unit: number) => {
+    const h = values.get(id)
+    return h !== undefined && Number.isFinite(h) && h > 0 ? h : unit
+  }
+  const position = Number.isFinite(top) ? Math.max(0, top) : 0
+  let index = 0, oldOffset = 0, nextOffset = 0
+  while (index < ids.length - 1 && oldOffset + height(before, ids[index], oldUnit) <= position) {
+    oldOffset += height(before, ids[index], oldUnit)
+    nextOffset += height(after, ids[index], newUnit)
+    index++
+  }
+  const fraction = Math.min(1, (position - oldOffset) / height(before, ids[index], oldUnit))
+  return nextOffset + fraction * height(after, ids[index], newUnit)
 }

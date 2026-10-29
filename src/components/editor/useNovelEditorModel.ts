@@ -25,6 +25,9 @@ import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
+import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
+import { useShortWritingArea } from '@/components/editor/useShortWritingArea'
+import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 import { todayKey } from '@/lib/app/date'
 import { useResizable } from '@/lib/app/useResizable'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -51,6 +54,9 @@ import {
   GHOST_CONTEXT_CHARS, orderedChapters,
 } from '@/components/editor/novelEditorHelpers'
 import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/outline/freeVolume'
+import { useEditorChapterTarget } from '@/components/editor/useEditorChapterTarget'
+import { runRegenSummaries, regenSummaryText, type RegenOutcome } from '@/components/editor/regenSummaries'
+import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardReorder'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
 
@@ -61,11 +67,12 @@ type Args = {
   ctx: VisCtx
   /** 顶层要求打开的章（跨页签跳转带下来） */
   openChapterId?: string | null
+  openRequestId?: number
   /** 字数变化上报 */
   onStatsChange?: () => void
 }
 
-export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args) {
+export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStatsChange }: Args) {
   const isLite = ctx.type !== 'full'
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
@@ -206,12 +213,32 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
   //    重载即失（切章改标题是很常见的动作，不是极端场景）。
   //    按 id 记账后：同一章的补丁互相覆盖（保住防抖），跨章的各存一份，到点一起冲。
   const metaPending = useRef(new Map<string, () => Promise<void>>())
-  /** 把所有待落库的元信息补丁一起冲刷（防抖到点、组件卸载都走它；引用稳定，卸载 effect 依赖为空也不怕） */
-  const metaFlush = useRef<() => Promise<void>>(async () => {
-    const jobs = [...metaPending.current.values()]
+  /**
+   * 把所有待落库的元信息补丁一起冲刷（防抖到点、组件卸载、离页屏障都走它；引用稳定，
+   * 卸载 effect 依赖为空也不怕）。
+   *
+   * 🔴 3.3.0 · UX06：原来的实现是 `j().catch(() => {})` —— **单笔失败被吞、队列照样清空**。
+   *    配上「清完就没人知道这笔记账」⇒ 标题/摘要的落库失败是**完全静默**的：界面显示新标题，
+   *    库里还是旧的，重启即回退。现在改成：
+   *      · 逐笔收集失败并**返回成败**，由调用方决定是否放行离页 / 是否提示；
+   *      · 失败的那笔记账**放回队列**（同章覆盖语义不变），下一轮编辑或下一次离页会重试，
+   *        而不是「报一次就算了、这一笔从此消失」。
+   *    仍然保持「单笔失败不阻断其余」——省得一个坏章节把别的章一起卡住。
+   */
+  const metaFlush = useRef<() => Promise<{ ok: boolean; errors: unknown[] }>>(async () => {
+    const jobs = [...metaPending.current.entries()]
     metaPending.current.clear()
-    // 单笔失败不阻断其余（下一轮编辑会再次入账并重试）
-    await Promise.all(jobs.map(j => j().catch(() => { /* 忽略单笔失败 */ })))
+    const errors: unknown[] = []
+    await Promise.all(jobs.map(async ([id, job]) => {
+      try {
+        await job()
+      } catch (e) {
+        errors.push(e)
+        // 期间又有新编辑入账时，以新那笔为准（新的补丁含旧补丁的全部键，重试不会回退）
+        if (!metaPending.current.has(id)) metaPending.current.set(id, job)
+      }
+    }))
+    return { ok: errors.length === 0, errors }
   })
   // 章节树 / 设定检索栏宽度可拖拽调整（持久化）
   // 🔴 3.1.2 视觉巡检 A 条：1440 视口下「章节树 320 + 检索栏 480」把正文列挤到只剩 317px（一行约 25 字）。
@@ -245,6 +272,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     ro.observe(el)
     return () => ro.disconnect()
   }, [loaded])
+  const { shortBody, minHeight: BODY_MIN_H } = useShortWritingArea(scrollRef, loaded) // 🔴 量正文壳，不是三栏区
   const sideW = focusMode ? 0 : chapterPane.size
   const chapterCompact = wrapW > 0 && wrapW < 760
   const searchFits = wrapW === 0 || wrapW - (chapterCompact ? 0 : sideW) >= MAIN_MIN_W + SEARCH_MIN_W
@@ -372,25 +400,13 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
 
 
   // 从其他页签跳转进来时，直接打开目标章节
-  // 🔴 只消费一次（2026-10-17 全量审计 P2）：原先依赖数组带 `chapters`，而**每次正文保存**
-  //    都会换新数组 ⇒ effect 重跑并无条件 setActiveId(openChapterId)，把作者手动切到的章
-  //    **弹回目标章**（从「继续书写 / 章节规划板 / 全文检索」跳进来后，除目标章以外任何一章都
-  //    写不住：一保存就弹回）。改法：按 id 记账只消费一次；章还没加载出来时保留
-  //    `chapters` 依赖做一次重试（不消费就不会被弹回）。
-  const consumedOpenIdRef = useRef<string | null>(null)
-  /** 刚被删除的章 id（一次性）：置空 activeId 触发的切章冲刷要跳过它，见 removeChapter */
+  // 🔴 只消费一次（2026-10-17 审计 P2）：依赖数组带 `chapters` 会让每次保存都重跑并无条件
+  //    setActiveId(openChapterId)，把作者手动切到的章弹回目标章。按 id 记账只消费一次；
+  //    章还没加载出来时保留 `chapters` 依赖做一次重试（不消费就不会被弹回）。
+  /** A deleted chapter must not be flushed back into storage. */
   const skipFlushRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!openChapterId || consumedOpenIdRef.current === openChapterId) return
-    const ch = chaptersRef.current.find(c => c.id === openChapterId)
-    if (!ch) return // 章尚未加载（或已被删）：等 chapters 变化再试；消费过就不会再进来
-    consumedOpenIdRef.current = openChapterId
-    setActiveId(openChapterId)
-    // 目标卷被折叠时展开它，否则树上找不到高亮落点（全文检索 / 跨页签跳转常见）
-    if (!expandedRef.current.has(ch.volumeId)) {
-      setExpandedPersist(prev => new Set(prev).add(ch.volumeId))
-    }
-  }, [openChapterId, chapters, setExpandedPersist])
+  useEditorChapterTarget({ loaded, chapters, chapterId: openChapterId, requestId: openRequestId,
+    setActiveId, expandedRef, setExpanded: setExpandedPersist })
 
   // 记住上次编辑位置：下次打开项目直接回到这里（2.6.1 社区反馈）。null 不写——
   // 删章置空后保留旧记录，读回时本来就有存在性校验。
@@ -602,13 +618,19 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     !!active && draftContent !== active.content,
   )
 
-  // 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）
-  const commitContent = async (content?: string) => {
+  /**
+   * 手动保存（可传入内容，自动保存时用，避免闭包中的过期 state）。
+   * 🔴 3.3.0 · UX06：**必须返回成败**。原先 catch 里只 toast、函数返回 void，于是
+   *    `openChapter` 的 `await commitContent(...)` 无论写盘成败都会继续切章 —— 失败时
+   *    作者已在下一章，原稿只剩内存快照，一刷新就没。`{ ok: true }` 也包含「本来没东西可存」，
+   *    调用方只需判 `ok === false`。
+   */
+  const commitContent = async (content?: string): Promise<{ ok: boolean; error?: unknown }> => {
     // 🔴 基准必须**现读 chaptersRef**：渲染闭包里的 active 可能是旧快照（见 enqueueSave 头注）
     const base = activeId ? chaptersRef.current.find(c => c.id === activeId) : null
-    if (!base) return
+    if (!base) return { ok: true }
     const text = content ?? draftRef.current
-    if (text === base.content) return
+    if (text === base.content) return { ok: true }
     setSaving(true)
     try {
       const written = await enqueueSave(base.id, async () => {
@@ -628,10 +650,12 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
       flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
       onStatsChange?.()
       loadTodayWords()
+      return { ok: true }
     } catch (e) {
       // 🔴 落库失败必须复位 saving 并如实报错 —— 原先没有 try/finally，一旦抛错按钮会永久停在
       //    「保存中…」，还会产生未捕获 rejection（2026-09-19 六维审计 P1-5）。
       showToast(saveFailureMessage('保存失败：', e), 'error')
+      return { ok: false, error: e }
     } finally {
       setSaving(false)
     }
@@ -669,12 +693,38 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     syncHighlightScroll()
   }
 
-  /** 切换章节：先冲刷未保存的自动保存草稿，再切换 */
-  const openChapter = async (id: string) => {
-    if (active && draftContent !== active.content) await commitContent(draftRef.current)
+  /**
+   * 切换章节：先冲刷未保存的正文与标题/摘要，**两样都成功才真的切**；失败返回 false，
+   * 原章、原 DOM、原草稿一律留在原地（UX06）。另有 `captureWorkspaceView()` 在切换前记现场。
+   */
+  const openChapter = async (id: string): Promise<boolean> => {
+    // 先记下「离开这一章时的光标/滚动」，再进保存屏障（屏障失败留在原地，现场仍有效）
+    captureWorkspaceView()
+    const cur = activeRef.current
+    if (cur && draftRef.current !== cur.content) {
+      const r = await commitContent(draftRef.current)
+      if (!r.ok) {
+        showToast('切换章节已取消：本章正文还没存上，请重试后再切', 'error')
+        return false
+      }
+    }
+    if (metaPending.current.size > 0) {
+      const m = await metaFlush.current()
+      if (!m.ok) {
+        showToast(saveFailureMessage('切换章节已取消：本章标题或摘要还没存上：', m.errors[0]), 'error')
+        return false
+      }
+    }
     clearTimeout(autosaveTimer.current)
     setActiveId(id)
+    return true
   }
+
+  // 🔴 3.3.0 · UX06 离页屏障：换页签 / 退出项目前先「存成功再走」（判定在 useEditorLeaveBarrier）。
+  //    绝不复用 flushEditorDraftNow —— 那个是关窗兜底、故意吞失败。
+  const commitContentRef = useRef(commitContent)
+  commitContentRef.current = commitContent
+  useEditorLeaveBarrier({ activeRef, draftRef, commitContentRef, metaPending, metaFlush, autosaveTimer })
 
   /** 正文字号调节（14~28px，本地记忆） */
   const changeFontSize = (delta: number) => {
@@ -737,7 +787,13 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 🔴 P2-8：按章节 id 入账（同章覆盖、跨章共存），不再共用一个"最新那笔"
     metaPending.current.set(next.id, run)
     clearTimeout(metaTimer.current)
-    metaTimer.current = setTimeout(() => { void metaFlush.current?.() }, 600)
+    metaTimer.current = setTimeout(() => {
+      // 🔴 UX06：防抖到点的这笔也要**报失败**（原先是静默吞掉）。这一笔记账已被放回队列，
+      //    作者下一次编辑、切章或离页都会再试，所以这里只提示、不额外造重试循环。
+      void metaFlush.current().then(r => {
+        if (!r.ok) showToast(saveFailureMessage('标题/摘要保存失败：', r.errors[0]), 'error')
+      })
+    }, 600)
   }
 
   /** AI 一键生成「章节压缩摘要」：基于正文按 ~1/10 压缩回填到 active.summary（自动同步章节总表） */
@@ -764,11 +820,15 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
    *    最后落库的是谁取决于谁后跑完）。`startTask` 对同 (ownerTab, kind) 的 running
    *    天然忽略重复发起，任务还跨页签存活、可中止。
    */
-  const regenT = useTaskRunner<{ done: number; total: number }>({
+  const regenT = useTaskRunner<RegenOutcome>({
     ownerTab: 'editor', kind: 'regen-summaries', title: '批量重生成章节摘要', writes: ['chapters'],
   })
   /** 视图侧仍叫 `regenAll`（按钮禁用 + 转圈）—— 语义没变，只是来源换成了任务中心的 running */
   const regenAll = regenT.running
+  /** 上一批逐章失败清单（页面据此显示「哪几章还是旧摘要」；新一批发起时自然被替换） */
+  const regenFailures = regenT.result?.failed ?? []
+  /** 中止批量重生成（UX13：长等待必须能由作者叫停，已更新的章节保持已更新） */
+  const stopRegenAll = () => regenT.stop()
   const regenAllSummaries = async () => {
     if (!aiReady || regenT.running) return
     const ok = await confirmDialog({
@@ -779,30 +839,21 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     regenT.run(async ctx => {
       const all = await db.getAllChapters()
       const vols = await db.getAllVolumes()
-      const targets = all.filter(c => (c.content || '').trim().length > 0)
-      let done = 0
-      for (const c of targets) {
-        if (ctx.isAborted()) break
-        try {
-          const s = await aiChapterSummary(c.content, { signal: ctx.signal })
-          if (s) {
-            const next = { ...c, summary: s }
-            await saveChapterWithAi(next)
-            // 🔴 台账的「一句话事件」是章节总表/情节推演本在读的字段，摘要变了必须同步登记，
-            //    否则总表还显示旧摘要，用户会以为重生成没生效。
-            await syncChapterMaster(next, chapterSeqOf(vols, all, next.id))
-          }
-        } catch {
-          // 单章失败跳过、继续其余；被中止就跳出（顶层 `ctx.isAborted()` 已覆盖正常路径）
-          if (ctx.isAborted()) break
-        }
-        done++
-        ctx.progress({ done, total: targets.length })
-        if (done % 8 === 0) showToast(`已重生成摘要 ${done}/${targets.length}`, 'info')
-      }
-      return { done, total: targets.length }
+      // 🔴 逐章计账抽到 `regenSummaries.ts`：原先单章失败被 `catch {}` 静默跳过、结果只报 {done,total}，
+      //    完成提示却写「全书…完成（共 total 章）」⇒ 部分失败被说成全部成功（UX09 生成部分失败）。
+      const outcome = await runRegenSummaries(all, {
+        signal: ctx.signal,
+        isAborted: () => ctx.isAborted(),
+        summarize: (text, opts) => aiChapterSummary(text, opts),
+        // 两步分开传：写章节与同步总表**各自**记账（摘要落库了但总表没跟上，也得如实说）
+        save: async next => { await saveChapterWithAi(next) },
+        syncMaster: async next => { await syncChapterMaster(next, chapterSeqOf(vols, all, next.id)) },
+        onProgress: (attempted, total) => ctx.progress({ attempted, total }),
+        onBatch: (attempted, total) => showToast(`已重生成摘要 ${attempted}/${total}`, 'info'),
+      })
+      return outcome
     }, info => {
-      if (info.status === 'done') return { text: `全书摘要重生成完成（共 ${info.result?.total ?? 0} 章）`, kind: 'success' as const }
+      if (info.status === 'done' && info.result) return regenSummaryText(info.result)
       if (info.status === 'aborted') return { text: '批量重生成已中止 —— 已完成的部分保持已更新', kind: 'info' as const }
       return { text: '批量重生成失败：' + (info.error || '未知原因'), kind: 'error' as const }
     })
@@ -1097,6 +1148,9 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     resetDrag()
   }
 
+  // UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节、在真卷之间移动分卷（拖拽仍保留）
+  const { moveByKeyboard } = createEditorKeyboardReorder({ volumes, chapters, setVolumes, setChapters, saveChapter: saveChapterWithAi })
+
   // 相邻章导航（全书叙事序：卷序 → 章序 → 孤儿章垫底，唯一真源）
   const flat = flattenAll(volumes, chapters)
   const activeIdx = flat.findIndex(c => c.id === activeId)
@@ -1105,7 +1159,7 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // 结构数据（卷 / 章 / 当前章 / 序号）
     isLite, loaded, volumes, chapters, activeId, active, flat, activeIdx, nextChapterNo, chapterSeqs,
     // 章节树交互（改名 / 增删 / 拖拽重排）；setExpanded 已是持久化包装（签名兼容 Dispatch）
-    expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering,
+    expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态，见 savedFlash 附近的说明）
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
@@ -1115,11 +1169,11 @@ export function useNovelEditorModel({ ctx, openChapterId, onStatsChange }: Args)
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, summaryRef,
+    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits,
+    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉

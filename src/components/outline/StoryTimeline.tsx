@@ -602,7 +602,7 @@ export default function StoryTimeline({ rows, calendars, calendarRule = DEFAULT_
 
       {/* 章节详情弹窗 */}
       {selected && (
-        <Modal open onClose={() => setSelected(null)} hideHeader width={480} maxHeight="85vh" bodyClassName="!p-0">
+        <Modal open onClose={() => setSelected(null)} hideHeader ariaLabel="故事事件详情" width={480} maxHeight="85vh" bodyClassName="!p-0">
           {/* 🔴 2.4.4 六维审计：Modal 的 body 不是 flex 容器 —— 自绘头部必须自带 flex 行（同 HistoryTimeline） */}
           <div className="flex items-start gap-2 p-3">
               <div className="flex-1 min-w-0">

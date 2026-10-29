@@ -1,5 +1,6 @@
 import Panel from '@/components/common/Panel'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useId } from 'react'
+import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { realVolumes } from '@/lib/outline/freeVolume'
 import * as db from '@/lib/db'
@@ -19,6 +20,7 @@ import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '@/lib/ai/aiTasks'
 import { Button } from '@/components/common/Button'
+import PageHeader from '@/components/common/PageHeader'
 import { LoadingState } from '@/components/common/LoadingState'
 import { useWordCountWithPunct } from '@/lib/editor/wordCountMode'
 import { countWords } from '@/lib/editor/textStats'
@@ -32,6 +34,7 @@ import WritingWorkflow from '@/components/app/WritingWorkflow'
 interface Props {
   onNavigate: (id: string, chapterId?: string) => void
   projectId: string
+  projectName: string
   onExport: () => void | Promise<void>
   refreshKey: number
   /** 项目形态：自定义项目（未启用「伏笔追踪」时）隐藏「未回收伏笔」卡与「伏笔告警」；「角色出场分布」对自定义项目同样隐藏 */
@@ -43,7 +46,7 @@ const fmtWords = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(2)} 万` : 
 /** 闰年判定（打卡率的分母：365 / 366） */
 const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
 
-export default function Dashboard({ onNavigate, projectId, onExport, refreshKey, ctx }: Props) {
+export default function Dashboard({ onNavigate, projectId, projectName, onExport, refreshKey, ctx }: Props) {
   /** 结构配比预警用的模板来源 —— `creativeSession.inputs.structureId` 是它的单一真源 */
   const cs = useCreativeSession()
   const [volumes, setVolumes] = useState<Volume[]>([])
@@ -54,6 +57,8 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
   const [progress, setProgress] = useState<TableRow[]>([])
   const [dailyStats, setDailyStats] = useState<db.DailyStat[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [statisticsOpen, setStatisticsOpen] = usePersistedBool('dashboard-statistics-open', false)
+  const statisticsId = useId()
   const isLite = ctx.type !== 'full'
   // 完整项目始终展示「未回收伏笔」卡；自定义项目仅在启用了「伏笔追踪」功能时展示
   const showForeshadowCard = ctx.type === 'full' || ctx.features.includes('foreshadow')
@@ -278,9 +283,9 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
     {
       label: '未回收伏笔',
       value: `${unf.length}`,
-      sub: unf.length > 5 ? '注意点检防烂尾' : '健康范围',
-      icon: <GitBranch size={16} />, color: unf.length > 5 ? 'text-danger' : 'text-info',
-      help: '来自「伏笔追踪」中状态为「未回收」的条目。超过 5 条会转红提醒——挖坑速度快于填坑速度是烂尾的头号信号，可到编辑器的伏笔闭环看板逐条点检。',
+      sub: '创作线索，按剧情计划跟进',
+      icon: <GitBranch size={16} />, color: 'text-info',
+      help: '来自「伏笔追踪」中状态为「未回收」的条目。数量本身不代表错误或作品健康结论，可到伏笔追踪或编辑器的闭环看板逐条点检。',
     },
     {
       label: '近 7 日产量',
@@ -300,21 +305,17 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
     { id: 'ideas', name: '灵感素材', icon: <Lightbulb size={15} /> },
   ]
 
-  return (
-    <div className="w-full page-enter">
-      <header className="mb-6">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">写作面板</h1>
-          <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'全书健康度总览，所有数字都是从各页签实时汇总的，不需要手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作健康提醒：完稿率与风险点（伏笔堆积、断更、素材闲置）。\n\n每个区块标题旁的 ? 都有更细的说明。'}
-          </HelpPopover>
-        </div>
-        <p className="mt-1 text-13 text-ink-300">创作全景一览 · 数据实时同步自各页签</p>
-      </header>
-
-      <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
-        foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} />
-
+  const creationSummary = (
+    <section aria-label="创作摘要">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+        <h2 className="text-14 font-semibold text-content-primary">创作摘要</h2>
+        <p className="text-13 text-content-secondary">今日字数变化 <strong className="font-semibold text-content-primary">{todayWords.toLocaleString()}</strong> 字</p>
+        <p className="text-12 text-content-muted">
+          {review.weekTrend === 'new' ? '前 7 日净产量为 0'
+            : review.weekTrend === 'none' || review.weekDeltaPct === null ? '暂无前 7 日对比'
+            : `近 7 日较前 7 日 ${review.weekDeltaPct > 0 ? '+' : ''}${review.weekDeltaPct}%`}
+        </p>
+      </div>
       {/* #004 字数口径切换：只影响显示，不改动已保存的数据 */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="text-11 text-ink-500">字数口径</span>
@@ -322,6 +323,7 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
           variant="toggle"
           size="xs"
           selected={!withPunct}
+          aria-pressed={!withPunct}
           onClick={() => setWithPunct(false)}
           className="px-2.5 py-1 rounded-md text-11"
         >只算汉字</Button>
@@ -329,29 +331,226 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
           variant="toggle"
           size="xs"
           selected={withPunct}
+          aria-pressed={withPunct}
           onClick={() => setWithPunct(true)}
           className="px-2.5 py-1 rounded-md text-11"
         >汉字 ＋ 标点</Button>
-        <span className="text-10 text-ink-600">平台「作者后台」按「汉字＋标点」统计（含全角空格缩进，与你后台看到的数字对齐）；平台「实际计费字数」通常更小 —— 多会把标点与空格剔掉。切换只影响显示，不会改动已保存的数据</span>
+        <span className="text-11 text-content-muted">仅影响显示，不修改已保存字数。</span>
+        <HelpPopover title="字数口径说明" width="22rem" pin>
+          平台「作者后台」按「汉字＋标点」统计（含全角空格缩进）；平台「实际计费字数」通常更小，多会把标点与空格剔掉。切换只影响显示，不会改动已保存的数据。
+        </HelpPopover>
       </div>
 
       {/* 统计卡 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.filter(c => !(c.label === '未回收伏笔' && !showForeshadowCard)).map(card => (
-          <div key={card.label} className="bg-ink-850 border border-ink-700 rounded-xl p-4 card-hover">
+          <div key={card.label} className="bg-surface-panel border border-line-subtle rounded-xl p-4 card-hover">
             <div className={`flex items-center gap-2 ${card.color}`}>
               {card.icon}
-              <span className="text-11 text-ink-400">{card.label}</span>
+              <span className="text-13 text-content-secondary">{card.label}</span>
               <HelpPopover title={card.label} width="18rem" size={11}>
                 {card.help}
               </HelpPopover>
             </div>
-            <div className="mt-2 text-2xl font-bold text-ink-50 tracking-tight">{card.value}</div>
-            <div className="mt-1 text-10 text-ink-500">{card.sub}</div>
+            <div className="mt-2 text-2xl font-semibold text-content-primary tracking-tight">{card.value}</div>
+            <div className="mt-1 text-12 text-content-muted">{card.sub}</div>
           </div>
         ))}
       </div>
 
+    </section>
+  )
+
+  return (
+    <div className="w-full page-enter">
+      <PageHeader title="写作面板" description={<><span className="font-medium [overflow-wrap:anywhere]">{projectName || '当前项目'}</span><span className="mx-2" aria-hidden="true">·</span>继续创作，掌握作品进度。</>} help={
+          <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
+            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+          </HelpPopover>
+      } />
+
+      <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
+        foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} summary={creationSummary} />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 快捷入口 */}
+        <Panel className="md:col-span-2">
+          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+            <Flame size={14} className="text-amber" /> 快捷入口
+            <HelpPopover title="快捷入口" width="19rem">
+              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防「太平淡」；\n· 灵感素材：素材随手入库，卡文时来翻。'}
+            </HelpPopover>
+          </h2>
+          <div className="grid grid-cols-3 gap-2">
+            {quickLinks.filter(q => !hiddenTabIds.has(q.id)).map(q => (
+              <Button variant="bare"
+                key={q.id}
+                onClick={() => onNavigate(q.id)}
+                className="flex flex-col items-center gap-2 py-4 rounded-lg bg-ink-800 border border-ink-700 text-ink-300 hover:border-amber/40 hover:text-amber transition-all card-hover"
+              >
+                {q.icon}
+                <span className="text-11">{q.name}</span>
+              </Button>
+            ))}
+          </div>
+        </Panel>
+
+        {/* 卷进度 */}
+        {volumes.length > 0 && (
+          <Panel>
+            <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+              <BookOpen size={14} className="text-amber" /> 分卷进度
+              <HelpPopover title="分卷进度" width="19rem">
+                {'每卷的完稿率 = （完稿 + 已发布）章节数 ÷ 该卷总章节数。\n\n卷与章在正文编辑器左侧目录里新建/改名；章节状态（构思/细纲/草稿/修改/完稿/已发布）在编辑器工具栏切换，这里会立刻反映。'}
+              </HelpPopover>
+            </h2>
+            <div className="space-y-3">
+              {volumes.map(vol => {
+                const chs = chapters.filter(c => c.volumeId === vol.id)
+                const done = chs.filter(c => c.status === '完稿' || c.status === '已发布').length
+                const pct = chs.length ? Math.round((done / chs.length) * 100) : 0
+                return (
+                  <div key={vol.id}>
+                    <div className="flex items-center justify-between text-11 mb-1">
+                      <span className="text-ink-200">{vol.title}</span>
+                      <span className="text-ink-500">{done}/{chs.length} 章 · {pct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-ink-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-amber/60 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {/* 同「去登记今日字数」：文字型导航键不能用定宽 icon-amber（会挤成竖排）。 */}
+            <Button variant="bare" onClick={() => onNavigate('editor')}
+              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
+              去写作 <ChevronRight size={11} />
+            </Button>
+          </Panel>
+        )}
+
+        {/* 创作建议：AI 健康诊断（健康分 + 风险 + 下一步） */}
+        <Panel>
+          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+            <Clock size={14} className="text-amber" /> 创作建议
+            <Button onClick={runDiag}
+              disabled={!aiReady || diagLoading}
+              
+              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
+              {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+              AI 诊断
+            </Button>
+            <HelpPopover title="创作建议" width="20rem">
+              {'根据当前资料整理创作建议，不替代保存、写锁或同步状态：\n\n· 未回收伏笔 → 按剧情计划点检，数量本身不代表错误；\n· 灵感素材有未使用素材 → 卡文时可先翻它；\n· 近 7 日无产量记录 → 打开编辑器开始写作，系统会自动记录；\n· 还没有章节 → 可先准备作品信息与大纲，再建立章节。\n\n没有新建议时，继续按自己的节奏创作。'}
+              <AIDataSourceNote feature="project-diagnose" />
+            </HelpPopover>
+          </h2>
+          <div className="space-y-2.5 text-12">
+            {showForeshadowCard && unf.length > 0 && (
+              <div className="flex items-start gap-2 text-info">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+                <span>未回收伏笔 {unf.length} 条，可按剧情计划逐条点检</span>
+              </div>
+            )}
+            {!hiddenTabIds.has('ideas') && unusedIdeas.length > 0 && (
+              <div className="flex items-start gap-2 text-ink-300">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
+                <span>灵感素材有 {unusedIdeas.length} 条未使用素材</span>
+              </div>
+            )}
+            {structureWarn && (
+              <div className="flex items-start gap-2 text-amber">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
+                <span>结构配比有 {structureWarn.length} 个拍节明显偏移（{structureWarn.map(a => a.name).join('、')}）——到「检查工具 → 结构配比对照」看逐拍明细</span>
+              </div>
+            )}
+            {autoWeekTotal === 0 && (
+              <div className="flex items-start gap-2 text-ink-300">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
+                <span>近 7 日无产量记录——打开编辑器写一章，系统会自动记账</span>
+              </div>
+            )}
+            {chapters.length === 0 && (
+              <div className="flex items-start gap-2 text-ink-300">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
+                <span>{isLite ? '还没有章节——先想清楚主要人物与核心设定，再开始动笔' : '还没有章节——建议先填「作品信息」与「全书总纲」再动笔'}</span>
+              </div>
+            )}
+            {(!showForeshadowCard || unf.length === 0) && (hiddenTabIds.has('ideas') || unusedIdeas.length === 0) && !structureWarn && autoWeekTotal > 0 && chapters.length > 0 && (
+              <div className="flex items-start gap-2 text-success">
+                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span>目前没有新的创作建议，继续保持节奏</span>
+              </div>
+            )}
+          </div>
+
+          {diagError && (
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <span>{diagError}</span>
+            </div>
+          )}
+          {diag && (
+            <div className="mt-3 pt-3 border-t border-ink-700 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-12 font-semibold text-amber">AI 健康诊断</span>
+                <span className="text-11 text-ink-400">健康分 <span className="text-ink-100 font-medium">{diag.score}</span>/100</span>
+              </div>
+              <p className="text-12 text-ink-300 leading-relaxed">{diag.summary}</p>
+              {diag.risks.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-11 text-ink-500">风险提示</div>
+                  {diag.risks.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2 text-12">
+                      <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${r.level === '严重' ? 'bg-red-400' : r.level === '中等' ? 'bg-amber' : 'bg-sky-400'}`} />
+                      <span><span className="text-ink-200">{r.title}</span>{r.detail ? <span className="text-ink-400"> —— {r.detail}</span> : null}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {diag.nextSteps.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-11 text-ink-500">下一步建议</div>
+                  {diag.nextSteps.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2 text-12 text-ink-300">
+                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button variant="bare" onClick={() => setDiag(null)} className="text-11 text-ink-500 hover:text-ink-300">收起诊断</Button>
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* 写作目标与完稿预估 */}
+      <Panel className="mt-6">
+        <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+          <TrendingUp size={14} className="text-amber" /> 写作目标与完稿预估
+          <HelpPopover title="写作目标与完稿预估" width="21rem">
+            {'设定每日目标字数 / 全书目标字数 / 完稿截止日（自动保存），系统会：\n\n· 实时显示当前总字数、近 7 日日均、距目标差额；\n· 按「剩余字数 ÷ 近 7 日日均」预估所需天数；\n· 若按当前节奏赶不上截止日，给出红色提醒。\n\n日均取自「写作进度 / 自动码字记录」近 7 天，没有产量记录时无法预估。'}
+          </HelpPopover>
+        </h2>
+        <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />
+      </Panel>
+
+      <section className="mt-6" aria-labelledby={statisticsId}>
+        <h2>
+          <button type="button" id={statisticsId} aria-expanded={statisticsOpen} aria-controls={statisticsId + '-content'}
+            onClick={() => setStatisticsOpen(value => !value)}
+            className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-ink-700 bg-ink-800 px-3 py-2 text-left text-13 font-semibold text-ink-100 hover:border-amber/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
+            <TrendingUp size={15} className="shrink-0 text-amber" />
+            <span className="min-w-0 flex-1">详细统计与趋势</span>
+            <span className="text-11 font-normal text-ink-400">{statisticsOpen ? '收起' : '展开'}</span>
+            <ChevronRight size={14} className={statisticsOpen ? 'rotate-90' : ''} aria-hidden />
+          </button>
+        </h2>
+        <p className="mt-2 text-11 text-ink-400">码字日历、手工登记趋势{!isLite && '、角色出场'}与创作复盘；展开偏好仅保存在本机。</p>
+        <div id={statisticsId + '-content'} hidden={!statisticsOpen}>
+          {statisticsOpen && <div className="mt-4">
       {/* 码字日历 · 年度热力图 + 年度数字卡（v3.1.2 · 主人拍板 C 混合方案） */}
       <Panel className="mb-6">
         <div className="flex flex-wrap items-center gap-6 mb-4">
@@ -448,9 +647,8 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
         </div>
       </Panel>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 近7日字数 */}
-        <Panel>
+        <Panel className="mt-6">
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <TrendingUp size={14} className="text-amber" /> 近 7 日写作字数（手工登记）
             <HelpPopover title="近 7 日写作字数（手工登记）" width="20rem">
@@ -496,176 +694,6 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
             </Button>
           )}
         </Panel>
-
-        {/* 快捷入口 */}
-        <Panel>
-          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-            <Flame size={14} className="text-amber" /> 快捷入口
-            <HelpPopover title="快捷入口" width="19rem">
-              {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防「太平淡」；\n· 灵感素材：素材随手入库，卡文时来翻。'}
-            </HelpPopover>
-          </h2>
-          <div className="grid grid-cols-3 gap-2">
-            {quickLinks.filter(q => !hiddenTabIds.has(q.id)).map(q => (
-              <Button variant="bare"
-                key={q.id}
-                onClick={() => onNavigate(q.id)}
-                className="flex flex-col items-center gap-2 py-4 rounded-lg bg-ink-800 border border-ink-700 text-ink-300 hover:border-amber/40 hover:text-amber transition-all card-hover"
-              >
-                {q.icon}
-                <span className="text-11">{q.name}</span>
-              </Button>
-            ))}
-          </div>
-        </Panel>
-
-        {/* 卷进度 */}
-        {volumes.length > 0 && (
-          <Panel>
-            <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-              <BookOpen size={14} className="text-amber" /> 分卷进度
-              <HelpPopover title="分卷进度" width="19rem">
-                {'每卷的完稿率 = （完稿 + 已发布）章节数 ÷ 该卷总章节数。\n\n卷与章在正文编辑器左侧目录里新建/改名；章节状态（构思/细纲/草稿/修改/完稿/已发布）在编辑器工具栏切换，这里会立刻反映。'}
-              </HelpPopover>
-            </h2>
-            <div className="space-y-3">
-              {volumes.map(vol => {
-                const chs = chapters.filter(c => c.volumeId === vol.id)
-                const done = chs.filter(c => c.status === '完稿' || c.status === '已发布').length
-                const pct = chs.length ? Math.round((done / chs.length) * 100) : 0
-                return (
-                  <div key={vol.id}>
-                    <div className="flex items-center justify-between text-11 mb-1">
-                      <span className="text-ink-200">{vol.title}</span>
-                      <span className="text-ink-500">{done}/{chs.length} 章 · {pct}%</span>
-                    </div>
-                    <div className="h-1.5 bg-ink-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-amber/60 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {/* 同「去登记今日字数」：文字型导航键不能用定宽 icon-amber（会挤成竖排）。 */}
-            <Button variant="bare" onClick={() => onNavigate('editor')}
-              className="mt-4 flex items-center gap-1 h-8 px-2.5 rounded-lg text-11 text-ink-400 hover:text-amber transition-colors">
-              去写作 <ChevronRight size={11} />
-            </Button>
-          </Panel>
-        )}
-
-        {/* 待办提醒 */}
-        <Panel>
-          <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-            <Clock size={14} className="text-amber" /> 创作健康提醒
-            <Button onClick={runDiag}
-              disabled={!aiReady || diagLoading}
-              
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
-              {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-              AI 诊断
-            </Button>
-            <HelpPopover title="创作健康提醒" width="20rem">
-              {'根据当前数据自动生成的风险清单：\n\n· 未回收伏笔 > 5 条 → 红色告警，建议点检；\n· 灵感素材有未使用素材 → 卡文时先翻它；\n· 近 7 日无产量记录 → 提醒登记进度；\n· 还没有章节 → 建议先填作品信息与全书总纲再动笔。\n\n全部指标健康时会显示「一切健康，保持节奏继续写」。'}
-              <AIDataSourceNote feature="project-diagnose" />
-            </HelpPopover>
-          </h2>
-          <div className="space-y-2.5 text-12">
-            {showForeshadowCard && unf.length > 5 && (
-              <div className="flex items-start gap-2 text-danger">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
-                <span>未回收伏笔 {unf.length} 条，超过 5 条建议点检一次防烂尾</span>
-              </div>
-            )}
-            {showForeshadowCard && unf.length > 0 && unf.length <= 5 && (
-              <div className="flex items-start gap-2 text-info">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
-                <span>未回收伏笔 {unf.length} 条，处于健康范围</span>
-              </div>
-            )}
-            {unusedIdeas.length > 0 && (
-              <div className="flex items-start gap-2 text-ink-300">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
-                <span>灵感素材有 {unusedIdeas.length} 条未使用素材</span>
-              </div>
-            )}
-            {structureWarn && (
-              <div className="flex items-start gap-2 text-amber">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
-                <span>结构配比有 {structureWarn.length} 个拍节明显偏移（{structureWarn.map(a => a.name).join('、')}）——到「检查工具 → 结构配比对照」看逐拍明细</span>
-              </div>
-            )}
-            {autoWeekTotal === 0 && (
-              <div className="flex items-start gap-2 text-ink-300">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>近 7 日无产量记录——打开编辑器写一章，系统会自动记账</span>
-              </div>
-            )}
-            {chapters.length === 0 && (
-              <div className="flex items-start gap-2 text-ink-300">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-ink-500 shrink-0" />
-                <span>{isLite ? '还没有章节——先想清楚主要人物与核心设定，再开始动笔' : '还没有章节——建议先填「作品信息」与「全书总纲」再动笔'}</span>
-              </div>
-            )}
-            {unf.length === 0 && unusedIdeas.length === 0 && !structureWarn && autoWeekTotal > 0 && chapters.length > 0 && (
-              <div className="flex items-start gap-2 text-success">
-                <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                <span>一切健康，保持节奏继续写</span>
-              </div>
-            )}
-          </div>
-
-          {diagError && (
-            <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/25 text-12 text-danger">
-              <AlertCircle size={13} className="mt-0.5 shrink-0" />
-              <span>{diagError}</span>
-            </div>
-          )}
-          {diag && (
-            <div className="mt-3 pt-3 border-t border-ink-700 space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-12 font-semibold text-amber">AI 健康诊断</span>
-                <span className="text-11 text-ink-400">健康分 <span className="text-ink-100 font-medium">{diag.score}</span>/100</span>
-              </div>
-              <p className="text-12 text-ink-300 leading-relaxed">{diag.summary}</p>
-              {diag.risks.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-11 text-ink-500">风险提示</div>
-                  {diag.risks.map((r, i) => (
-                    <div key={i} className="flex items-start gap-2 text-12">
-                      <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${r.level === '严重' ? 'bg-red-400' : r.level === '中等' ? 'bg-amber' : 'bg-sky-400'}`} />
-                      <span><span className="text-ink-200">{r.title}</span>{r.detail ? <span className="text-ink-400"> —— {r.detail}</span> : null}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {diag.nextSteps.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-11 text-ink-500">下一步建议</div>
-                  {diag.nextSteps.map((s, i) => (
-                    <div key={i} className="flex items-start gap-2 text-12 text-ink-300">
-                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                      <span>{s}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <Button variant="bare" onClick={() => setDiag(null)} className="text-11 text-ink-500 hover:text-ink-300">收起诊断</Button>
-            </div>
-          )}
-        </Panel>
-      </div>
-
-      {/* 写作目标与完稿预估 */}
-      <Panel className="mt-6">
-        <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
-          <TrendingUp size={14} className="text-amber" /> 写作目标与完稿预估
-          <HelpPopover title="写作目标与完稿预估" width="21rem">
-            {'设定每日目标字数 / 全书目标字数 / 完稿截止日（自动保存），系统会：\n\n· 实时显示当前总字数、近 7 日日均、距目标差额；\n· 按「剩余字数 ÷ 近 7 日日均」预估所需天数；\n· 若按当前节奏赶不上截止日，给出红色提醒。\n\n日均取自「写作进度 / 自动码字记录」近 7 天，没有产量记录时无法预估。'}
-          </HelpPopover>
-        </h2>
-        <WritingGoals totalWords={totalWords} dailyStats={dailyStats} />
-      </Panel>
 
       {/* 角色出场分布 */}
       {!isLite && (
@@ -763,6 +791,9 @@ export default function Dashboard({ onNavigate, projectId, onExport, refreshKey,
           {review.lastDay ? ` · 最近 ${review.lastDay}` : ''}
         </div>
       </Panel>
+          </div>}
+        </div>
+      </section>
     </div>
   )
 }

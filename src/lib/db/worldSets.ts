@@ -40,8 +40,9 @@ export async function saveSubSet(tabId: string, rec: CardRecord): Promise<void> 
 export async function saveSubSetFor(pid: string, tabId: string, rec: CardRecord): Promise<void> {
   // ⚠️ 不在这里对空 pid 早退：`saveSubSet` 历史上允许空 pid（worldPack 收集等纯逻辑场景就传 ''），
   //    凭空加一道静默跳过会改掉既有契约。需要"空就不写"的调用方（组件卸载补存）自己在调用处判。
-  await ops.put('cardRecords', { ...rec, projectId: pid, tabId: subTabIdOf(tabId) })
-  touchProject(pid)
+  const store = ops
+  await store.put('cardRecords', { ...rec, projectId: pid, tabId: subTabIdOf(tabId) })
+  touchProject(pid, store)
 }
 
 /**

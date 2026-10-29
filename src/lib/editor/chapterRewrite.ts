@@ -19,6 +19,7 @@ import type { Chapter, Volume } from '@/lib/types'
 import { withAiAssist, type AiSourceKind } from '@/lib/ai/aiAssist'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
 import { analyzeFutureImpact } from '@/lib/outline/futureImpact'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 /**
  * 本次改写的**期望字数** —— 异常判定的基准。
@@ -110,11 +111,13 @@ export async function applyChapterRewrite(
    * 传入则采纳前校验 —— 这一章若在生成之后被改动过，**拒绝覆盖**（防「旧候选盖掉作者编辑」）。
    * 不传 = 只做历史行为（兼容其他调用点）。
    */
-  opts?: { expectedFingerprint?: string },
+  opts?: { expectedFingerprint?: string; owner?: OwnedOperation },
 ): Promise<{ words: number }> {
+  const owner = opts?.owner
+  owner?.assertCurrent()
   const body = (text ?? '').trim()
   if (!body) throw new Error('改写结果为空，没有可写入的内容')
-  const chs = await db.getAllChapters()
+  const chs = await db.getAllChapters(owner)
   const ch = chs.find(c => c.id === chapterId)
   if (!ch) throw new Error('这一章已经不在项目里了')
   // 🔴 3.0 · W1-1 版本保护：候选产出后正文若被改动 ⇒ **拒绝静默覆盖**。
@@ -124,7 +127,7 @@ export async function applyChapterRewrite(
   }
   // 🔴 先留旧稿，再覆盖（顺序不能反：反了就丢原文）
   // 标成 AI 来源：裁剪时优先牺牲定时快照，保住这一版（2.4.0 · A3）
-  await db.createSnapshot(ch, 'ai-rewrite')
+  await db.createSnapshot(ch, 'ai-rewrite', owner)
   const words = countWords(body)
   // 🔴 B3（2.4.1）：记账 —— 本章正文由 AI 整章改写而来，把**本次产出字数**累加进 aiAssist。
   //    `withAiAssist` 是纯函数（返回新对象），不改 `ch` 本身；口径是"过程量"，见 lib/aiAssist.ts 文件头。
@@ -133,15 +136,16 @@ export async function applyChapterRewrite(
     kind,
     words,
   )
-  const [vols, all] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-  await db.saveChapter(next)
+  const [vols, all] = await Promise.all([db.getAllVolumes(owner), db.getAllChapters(owner)])
+  await db.saveChapter(next, owner)
   const seq = chapterSeqMap(vols, all).get(next.id) ?? 0
-  await syncChapterMaster(next, seq)
+  await syncChapterMaster(next, seq, undefined, owner)
   // 🔴 3.0 · W2-1 未来演化边界（§10.3 #3）：**已写历史被改动** ⇒ 章纲里「本章之后」的
   //    未来计划标记「待重审」。
   //    · 只在 `rewritten`（回改已写章）时打标 —— `generated` 是「创意写作产出新章」，
   //      那是**按计划推进**（把某个未来章变成已写章），不该反过来说后续计划失效。
   //    · 只标记、绝不改章纲内容；失败静默（提醒失败绝不能连累改写落库）。
-  if (kind === 'rewritten' && seq > 0) await analyzeFutureImpact(seq, '正文改写').catch(() => {})
+  if (kind === 'rewritten' && seq > 0) await analyzeFutureImpact(seq, '正文改写', undefined, owner).catch(() => {})
+  owner?.assertCurrent()
   return { words }
 }
