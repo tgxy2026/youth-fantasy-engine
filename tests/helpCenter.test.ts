@@ -109,10 +109,17 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   const missing = tabsWithoutHelp()
   ok('已覆盖页签都在真实页签表里', [...covered].every(tabId => ALL_TAB_IDS.includes(tabId)))
   ok('未覆盖页签与已覆盖互不重叠', missing.every(tabId => !covered.has(tabId)))
-  ok('🔴 手册尚未覆盖全部页签时，必须能算出缺口', missing.length > 0, `缺口 ${missing.length} 个，全部覆盖=${missing.length === 0}`)
+  // 覆盖度是「算出来的」而不是手写的：缺口必须正好等于全集减已覆盖（不论当前是否有缺口）
+  const complement = ALL_TAB_IDS.filter(tabId => !covered.has(tabId))
+  ok('🔴 缺口正好等于「全部页签 − 已覆盖」（不是手写清单）',
+    missing.length === complement.length && missing.every(tabId => complement.includes(tabId)),
+    `缺口 ${missing.length} 个 / 应有 ${complement.length} 个`)
 
   const ui = read('src/components/help/HelpCenter.tsx')
-  ok('🔴 手册页显示覆盖度（不能只说「完整手册」）', /已收录/.test(ui) && /暂无手册/.test(ui))
+  // 🔴 断言落在**渲染出来的字符串**上，不认注释里的话（注释写着「已收录」但界面没渲染过就白守）
+  const uiCode = ui.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
+  ok('🔴 手册页显示覆盖度（篇数 + 页签数）', /手册 \{HELP_ARTICLES\.length\} 篇 · 覆盖 \{coveredCount\} 个页签/.test(uiCode))
+  ok('有缺口时如实列出「暂无手册」，不冒充完整', /暂无手册/.test(uiCode) && /tabsWithoutHelp\(\)/.test(uiCode))
   const guide = read('src/components/app/GuidePage.tsx')
   ok('使用指南页接入手册（搜索与分类入口）', /HelpCenter/.test(guide))
 }

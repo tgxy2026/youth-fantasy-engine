@@ -50,10 +50,10 @@ try {
 
   // ① 进使用指南
   await page.getByRole('navigation').getByText('使用指南', { exact: true }).first().click()
-  await page.getByText('内置使用手册', { exact: true }).waitFor({ timeout: 20000 })
-  const headerText = await page.locator('section', { hasText: '内置使用手册' }).first().innerText()
-  check('手册区块渲染出来了', headerText.includes('内置使用手册'))
-  const coverage = headerText.match(/已收录 (\d+) 篇 · 覆盖 (\d+) 个页签/)
+  await page.getByRole('heading', { name: '使用答疑助手' }).waitFor({ timeout: 20000 })
+  const headerText = await page.locator('section', { hasText: '使用答疑助手' }).first().innerText()
+  check('手册区块渲染出来了', headerText.includes('使用答疑助手'))
+  const coverage = headerText.match(/手册 (\d+) 篇 · 覆盖 (\d+) 个页签/)
   check('如实显示收录篇数与覆盖页签数', !!coverage, headerText.slice(0, 80))
   check('未配置模型也能读手册（没有任何模型提示挡住）', !/需先接入 AI 模型/.test(headerText))
   await page.screenshot({ path: path.join(run, 'catalog.png') })
@@ -62,7 +62,7 @@ try {
   const search = page.getByRole('textbox', { name: '搜索使用手册' })
   await search.fill('字太小了怎么放大')
   await page.getByText(/本地手册检索结果/).waitFor({ timeout: 10000 })
-  const resultText = await page.locator('section', { hasText: '内置使用手册' }).first().innerText()
+  const resultText = await page.locator('section', { hasText: '使用答疑助手' }).first().innerText()
   check('本地检索给出了片段（并注明不联网、不调用模型）', /本地手册检索结果（\d+ 段）/.test(resultText) && /不联网、不调用模型/.test(resultText))
   check('「字太小」命中了界面缩放那篇', resultText.includes('字太小 / 太大怎么调'), resultText.slice(0, 200))
   await page.screenshot({ path: path.join(run, 'search.png') })
@@ -85,7 +85,7 @@ try {
   // ⑤ 按功能查阅 + 覆盖度缺口
   await search.fill('')
   await page.getByRole('button', { name: /按功能查阅/ }).click()
-  const byTab = await page.locator('section', { hasText: '内置使用手册' }).first().innerText()
+  const byTab = await page.locator('section', { hasText: '使用答疑助手' }).first().innerText()
   check('按功能查阅按栏目分组', byTab.includes('角色与世界') && byTab.includes('工作面板与正文'))
   check('🔴 覆盖缺口如实写出来（不假装完整手册）', /个页签暂无手册/.test(byTab), byTab.slice(-200))
   await page.screenshot({ path: path.join(run, 'by-tab.png') })

@@ -31,7 +31,7 @@ export const ROLE_LABEL: Record<TaskRole, string> = {
 export const ROLE_HINT: Record<TaskRole, string> = {
   create: '逐章连写、续写、AI 补全 —— 直接决定正文质量，建议给最好的模型',
   review: '颉文姬诊断、校对、节奏与爽点检查 —— 读的材料多、输出短，可用中等模型',
-  utility: 'AI 整理、表格导入、拆书、取名 —— 批量重复调用，建议给便宜 / 快的模型',
+  utility: 'AI 整理、表格导入、拆书、取名、使用答疑 —— 批量重复调用，建议给便宜 / 快的模型',
 }
 
 export type RoutingMap = Record<TaskRole, string>

@@ -10,7 +10,7 @@ import {
   HELP_ANSWER_FAILURE_TEXT, MAX_PROMPT_HITS, MIN_QUOTE_LENGTH,
   buildHelpAnswerPrompt, parseHelpAnswer, readHelpAnswer, verifyHelpAnswer,
 } from '../src/lib/aiTasks/helpAnswer'
-import { getHelpArticle, searchHelp } from '../src/lib/help'
+import { HELP_ARTICLES, getHelpArticle, searchHelp } from '../src/lib/help'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -29,9 +29,13 @@ const firstText = first ? (getHelpArticle(first.articleId)?.sections.find(s => s
   const prompt = buildHelpAnswerPrompt('保存状态怎么看', hits)
   ok('系统提示词要求「只根据片段回答」', prompt.system.includes('只根据下面给出的【手册片段】'))
   ok('系统提示词禁止编造按钮与能力', prompt.system.includes('不要编造'))
-  ok('系统提示词规定了 JSON 结构与 quote 逐字要求', prompt.system.includes('"sources"') && prompt.system.includes('逐字'))
-  ok('用户消息带上问题与片段 id', prompt.user.includes('保存状态怎么看')
-    && !!first && prompt.user.includes(`${first.articleId}/${first.sectionId}`))
+  ok('系统提示词规定了 JSON 结构并要求 quote 逐字复制',
+    prompt.system.includes('"quotes"') && prompt.system.includes('逐字'))
+  ok('🔴 提示词不要求模型抄 id（来源由程序按原文反查，少一个出错点）',
+    !prompt.system.includes('articleId') && !prompt.system.includes('sectionId'))
+  ok('用户消息带上问题与片段出处（文章标题 + 段落标题）', prompt.user.includes('保存状态怎么看')
+    && !!first && prompt.user.includes(first.articleTitle) && prompt.user.includes(first.heading))
+  ok('片段带序号，便于模型按段摘原文', prompt.user.includes('【片段 1】'))
   ok('片段数量不超过上限', buildHelpAnswerPrompt('保存', hits).user.split('【片段').length - 1 <= MAX_PROMPT_HITS)
   const empty = buildHelpAnswerPrompt('保存', [])
   ok('没有召回时明确告诉模型「没有任何片段」', empty.user.includes('没有召回到任何手册片段'))
@@ -44,7 +48,7 @@ const firstText = first ? (getHelpArticle(first.articleId)?.sections.find(s => s
     sources: [{ articleId: first.articleId, sectionId: first.sectionId, quote: firstText.slice(0, 20) }],
   })
   const parsed = parseHelpAnswer(good)
-  ok('合法 JSON 能解析', parsed.ok && parsed.value.sources.length === 1 && parsed.value.answer.length > 0)
+  ok('合法 JSON 能解析', parsed.ok && (parsed.value.sources ?? []).length === 1 && parsed.value.answer.length > 0)
 
   const fenced = '```json\n' + good + '\n```'
   ok('代码围栏里的 JSON 也能解析', parseHelpAnswer(fenced).ok)
@@ -53,7 +57,7 @@ const firstText = first ? (getHelpArticle(first.articleId)?.sections.find(s => s
 
   const partial = JSON.stringify({ answer: '答', sources: [{ articleId: '', sectionId: 'x', quote: 'y' }, { articleId: 'a', sectionId: 'b', quote: '一二三四五六七八九十' }] })
   const parsedPartial = parseHelpAnswer(partial)
-  ok('缺字段的来源被丢弃，不留半条', parsedPartial.ok && parsedPartial.value.sources.length === 1)
+  ok('缺字段的来源被丢弃，不留半条', parsedPartial.ok && (parsedPartial.value.sources ?? []).length === 1)
 }
 
 // ---------- ③ 引用校验 ----------
@@ -83,6 +87,43 @@ const firstText = first ? (getHelpArticle(first.articleId)?.sections.find(s => s
   // 召回列表为空时，任何来源都不可信
   const noRecall = verifyHelpAnswer({ answer: '答', sources: [{ articleId: first.articleId, sectionId: first.sectionId, quote: goodQuote }] }, [])
   ok('本次没有召回时，不认任何来源', !noRecall.ok && noRecall.reason === 'out-of-scope-source')
+}
+
+// ---------- ③-b 只给原文、来源由程序反查（新口径） ----------
+{
+  const goodQuote = firstText.slice(0, 24)
+
+  const resolved = verifyHelpAnswer({ answer: '答', quotes: [goodQuote] }, hits)
+  ok('🔴 只给逐字原文 ⇒ 程序反查出正确的那一段', resolved.ok
+    && resolved.sources.length === 1
+    && resolved.sources[0].articleId === first.articleId
+    && resolved.sources[0].sectionId === first.sectionId)
+
+  const decorated = verifyHelpAnswer({ answer: '答', quotes: [`「${goodQuote}」`] }, hits)
+  ok('模型给摘录加了引号也能认（排版不是原文）', decorated.ok && decorated.sources.length === 1)
+
+  const fabricated = verifyHelpAnswer({ answer: '答', quotes: ['这句话手册里根本没有出现过吧真的没有'] }, hits)
+  ok('🔴 编出来的摘录 ⇒ 拒绝（反查不到就不算依据）',
+    !fabricated.ok && fabricated.reason === 'unverifiable-source')
+
+  const shortQuote = verifyHelpAnswer({ answer: '答', quotes: [goodQuote.slice(0, MIN_QUOTE_LENGTH - 1)] }, hits)
+  ok('反查路径同样拒绝过短的摘录', !shortQuote.ok && shortQuote.reason === 'unverifiable-source')
+
+  ok('两条路径都为空 ⇒ no-sources', (() => {
+    const result = verifyHelpAnswer({ answer: '答', quotes: [] }, hits)
+    return !result.ok && result.reason === 'no-sources'
+  })())
+
+  const deduped = verifyHelpAnswer({ answer: '答', quotes: [goodQuote, goodQuote] }, hits)
+  ok('同一段被摘两次只算一条依据', deduped.ok && deduped.sources.length === 1)
+
+  // 把一段**没被召回**的手册原文当摘录：即使它在手册里真实存在，也不能当本次依据
+  const otherArticle = HELP_ARTICLES.find(article => article.id !== first.articleId
+    && !hits.some(hit => hit.articleId === article.id))
+  const otherText = otherArticle?.sections[0]?.body.join('\n').slice(0, 30) ?? ''
+  const outOfRecall = verifyHelpAnswer({ answer: '答', quotes: [otherText] }, hits)
+  ok('🔴 摘录取自召回之外的文章 ⇒ 拒绝（本次没给它看这段）',
+    !outOfRecall.ok && outOfRecall.reason === 'unverifiable-source', otherText.slice(0, 16))
 }
 
 // ---------- ④ 一步到位 + 失败文案 ----------

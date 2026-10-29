@@ -7,9 +7,14 @@
 //    先把「模型说了什么算数」这条判据钉死，再接请求。
 //
 // 🔴 三条硬规则（都不是可选项）：
-//   ① 来源只能取自**本次召回**的片段 —— 模型编一个 articleId 出来的回答一律不算数；
-//   ② 摘录（quote）必须能在该段原文里**逐字**找到 —— 「大意相近」不算有依据；
+//   ① 依据只能取自**本次召回**的片段 —— 模型编一段手册里没有的话，一律不算数；
+//   ② 摘录必须能在该段原文里**逐字**找到 —— 「大意相近」不算有依据；
 //   ③ 一条都校验不过 ⇒ 不显示为答案，退回手册检索结果（规划 §5.3 的回退）。
+//
+// 2026-10-29 实测修正（本地 27B 跑真链路）：模型能答对内容，却把片段 id 抄崩一个字符，
+//   于是整条回答被「引用了召回之外的内容」作废 —— 那是格式噪声，不是撒谎。
+//   现在改成**模型只摘原文、来源由程序反查**（`quotes` 路径）：模型连编造来源的机会都没有，
+//   而「逐字、不短于 8 字」这两条一寸没松。旧 `sources` 口径仍接受并逐条校验，向后兼容。
 import { parsePlainObjectDetailed } from '@/lib/ai/aiParse'
 import { getHelpArticle, type HelpHit } from '@/lib/help'
 
@@ -24,7 +29,16 @@ export interface HelpSourceRef {
 /** 模型的受约束输出 */
 export interface HelpAnswer {
   answer: string
-  sources: HelpSourceRef[]
+  /**
+   * 逐字摘的原文（**新口径，首选**）：只给句子，不给 id。
+   *
+   * 🔴 为什么不让模型报 id：实测（2026-10-29，本地 27B）它能答对内容，却把片段 id 写崩一个字符，
+   *    于是整条回答被判「引用了召回之外的内容」而作废 —— 那是格式噪声，不是撒谎。
+   *    来源本来就能由程序按原文精确定位，让模型手抄 id 只是多一个出错的地方。
+   */
+  quotes?: string[]
+  /** 模型自己报的来源（旧口径，仍接受并逐条校验；两侧都为空则判 no-sources） */
+  sources?: HelpSourceRef[]
 }
 
 export type HelpAnswerFailure =
@@ -60,14 +74,15 @@ function sectionText(articleId: string, sectionId: string): string | null {
 /**
  * 构造答疑提示词。
  *
- * 片段 id 直接写进提示词，并要求模型只能引用这些 id —— 这是「来源可追溯」的第一道闸；
- * 第二道闸是 `verifyHelpAnswer`，不靠提示词自觉。
+ * 片段带序号，要求模型只回报「摘了哪几句原文」，**不要抄 id** —— 来源由 `verifyHelpAnswer`
+ * 按原文反查，这样模型没有机会编造来源，也不会因为抄错一个字符就整条作废（见 `HelpAnswer.quotes`）。
+ * 提示词里给的约束只是第一道；第二道是逐字校验，不靠模型自觉。
  */
 export function buildHelpAnswerPrompt(question: string, hits: HelpHit[]): { system: string; user: string } {
   const picked = hits.slice(0, MAX_PROMPT_HITS)
   const blocks = picked.map((hit, index) => {
     const text = (sectionText(hit.articleId, hit.sectionId) ?? hit.excerpt).slice(0, MAX_SECTION_CHARS)
-    return `【片段 ${index + 1}】id=${hit.articleId}/${hit.sectionId}｜《${hit.articleTitle}》·${hit.heading}\n${text}`
+    return `【片段 ${index + 1}】《${hit.articleTitle}》· ${hit.heading}\n${text}`
   })
   const system = [
     '你是这款写作软件的内置手册答疑助手。只根据下面给出的【手册片段】回答「这个功能怎么用」。',
@@ -75,9 +90,10 @@ export function buildHelpAnswerPrompt(question: string, hits: HelpHit[]): { syst
     '1. 先直接回答，再给步骤；步骤里只出现片段中真实存在的入口与名称，不要编造按钮、菜单、快捷键或能力。',
     '2. 片段没覆盖的部分，明确说「手册里还没有写这一点」，并建议查看哪个栏目；不要凭常识补全。',
     '3. 不要评论作者的稿件内容，不要生成任何创作文本，不要执行或建议进入具体业务操作。',
-    '4. 只输出 JSON，不要额外文字：',
-    '{"answer":"给作者看的回答","sources":[{"articleId":"片段里的 id 前半段","sectionId":"id 后半段","quote":"从该片段逐字摘一句，8~80 字"}]}',
-    '5. sources 至少一条、最多三条；quote 必须是片段原文里的连续文字，不得改写。',
+    '4. 只输出 JSON，不要额外文字，不要写片段编号或文章 id：',
+    '{"answer":"给作者看的回答","quotes":["从片段里逐字复制的一句原文","再一句"]}',
+    '5. quotes 至少一条、最多三条；必须是片段中的连续原文（8~80 字），一个字都不许改写或拼接；',
+    '   不要写成「片段 1」「第一条」这类编号，也不要加引号或省略号。',
   ].join('\n')
   const user = [
     `作者的问题：${question.trim()}`,
@@ -95,6 +111,14 @@ export function parseHelpAnswer(raw: string): { ok: true; value: HelpAnswer } | 
   }
   const data = parsed.data
   const answer = typeof data.answer === 'string' ? data.answer.trim() : ''
+  const quotes: string[] = []
+  if (Array.isArray(data.quotes)) {
+    for (const item of data.quotes) {
+      if (typeof item !== 'string') continue
+      const quote = item.trim().slice(0, MAX_QUOTE_LENGTH)
+      if (quote) quotes.push(quote)
+    }
+  }
   const rawSources = Array.isArray(data.sources) ? data.sources : []
   const sources: HelpSourceRef[] = []
   for (const item of rawSources) {
@@ -106,35 +130,81 @@ export function parseHelpAnswer(raw: string): { ok: true; value: HelpAnswer } | 
     if (!articleId || !sectionId || !quote) continue
     sources.push({ articleId, sectionId, quote })
   }
-  return { ok: true, value: { answer, sources } }
+  return { ok: true, value: { answer, quotes, sources } }
+}
+
+/** 去掉模型常裹在摘录外的引号与省略号：这些是排版，不是原文的一部分 */
+function trimQuoteDecor(quote: string): string {
+  return quote
+    .replace(/^[\s「『“"'（(【\[]+/, '')
+    .replace(/[\s」』”"'）)】\]…。，、；：]+$/, '')
+    .trim()
 }
 
 /**
  * 校验答案与来源。
  *
+ * 两条路径，判定标准一样严：
+ *   · `quotes`（首选）：逐个在**本次召回**的段落里找逐字匹配 —— 找到哪段就算哪段的依据。
+ *     找不到 ⇒ 这条摘录不是原文（编的 / 改写过的），整条回答作废；
+ *   · `sources`（旧口径）：id 必须在召回里，摘录必须在**那一段**逐字出现。
+ *
+ * 🔴 两条都不放宽「逐字、且不短于 8 字」：两字摘录在任何段落里都能找到，等于没校验。
  * @param value 解析后的模型输出
  * @param hits  本次实际召回的片段（**不是**整本手册）—— 模型引用召回之外的条目一律不算
  */
 export function verifyHelpAnswer(value: HelpAnswer, hits: HelpHit[]): HelpAnswerCheck {
   if (!value.answer.trim()) return { ok: false, reason: 'empty-answer' }
-  if (value.sources.length === 0) return { ok: false, reason: 'no-sources' }
+  const quotes = value.quotes ?? []
+  const declared = value.sources ?? []
+  if (quotes.length === 0 && declared.length === 0) return { ok: false, reason: 'no-sources' }
+
   const recalled = new Map(hits.map(hit => [`${hit.articleId}/${hit.sectionId}`, hit]))
   const accepted: HelpSourceRef[] = []
-  for (const source of value.sources) {
+  const seen = new Set<string>()
+  const push = (source: HelpSourceRef) => {
+    const key = `${source.articleId}/${source.sectionId}`
+    if (seen.has(key)) return
+    seen.add(key)
+    accepted.push(source)
+  }
+
+  // ---- 路径一：模型只给原文，来源由程序反查 ----
+  for (const rawQuote of quotes) {
+    const quote = trimQuoteDecor(rawQuote).slice(0, MAX_QUOTE_LENGTH)
+    if (quote.length < MIN_QUOTE_LENGTH) {
+      return { ok: false, reason: 'unverifiable-source', detail: `摘录过短：${quote}` }
+    }
+    let matched: HelpSourceRef | null = null
+    for (const hit of hits) {
+      const text = sectionText(hit.articleId, hit.sectionId)
+      if (text && text.includes(quote)) {
+        matched = { articleId: hit.articleId, sectionId: hit.sectionId, quote }
+        break
+      }
+    }
+    // 召回里有、手册里查不到 ⇒ 索引与内容不同版本；都算「无法核对」，不放行
+    if (!matched) return { ok: false, reason: 'unverifiable-source', detail: quote.slice(0, 24) }
+    push(matched)
+  }
+
+  // ---- 路径二：模型自报 id（旧口径，兼容更"听话"的模型） ----
+  for (const source of declared) {
     const key = `${source.articleId}/${source.sectionId}`
     if (!recalled.has(key)) {
       return { ok: false, reason: 'out-of-scope-source', detail: key }
     }
     const text = sectionText(source.articleId, source.sectionId)
     if (!text) {
-      // 召回列表里有、手册里查不到 —— 说明索引与内容不同版本，按「无法核对」处理而不是硬认
       return { ok: false, reason: 'unverifiable-source', detail: `${key}（正文缺失）` }
     }
-    if (source.quote.length < MIN_QUOTE_LENGTH || !text.includes(source.quote)) {
-      return { ok: false, reason: 'unverifiable-source', detail: `${key}：${source.quote.slice(0, 24)}` }
+    const quote = trimQuoteDecor(source.quote).slice(0, MAX_QUOTE_LENGTH)
+    if (quote.length < MIN_QUOTE_LENGTH || !text.includes(quote)) {
+      return { ok: false, reason: 'unverifiable-source', detail: `${key}：${quote.slice(0, 24)}` }
     }
-    accepted.push(source)
+    push({ articleId: source.articleId, sectionId: source.sectionId, quote })
   }
+
   return { ok: true, answer: value.answer, sources: accepted }
 }
 

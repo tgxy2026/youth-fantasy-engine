@@ -18,6 +18,7 @@ import { TRACKING_ARTICLES } from '@/lib/help/articles/tracking'
 import { TOOLS_ARTICLES } from '@/lib/help/articles/tools'
 import { TAVERN_ARTICLES } from '@/lib/help/articles/tavern'
 import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
+import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
 export const CONTENT_VERSION = 1
@@ -37,6 +38,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   ...TOOLS_ARTICLES,
   ...TAVERN_ARTICLES,
   ...MISC_PAGE_ARTICLES,
+  ...PLOT_ARTICLES,
   ...FAQ_ARTICLES,
 ]
 

@@ -7,6 +7,8 @@ import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import HelpCenter from '@/components/help/HelpCenter'
+import { Modal } from '@/components/dialogs/Modal'
 import SafeImage from '@/components/common/SafeImage'
 import Tooltip from '@/components/common/Tooltip'
 import { Z } from '@/lib/app/zLayer'
@@ -59,6 +61,8 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState<{ name: string; cover: string; projectType: CreateType; features: string[]; genre: GenrePack }>({ name: '', cover: '', projectType: 'full', features: [], genre: DEFAULT_PACK })
   const [busy, setBusy] = useState(false)
+  /** 3.3.1 · P4：未打开项目也能读手册（规划 §4.3「项目管理页也提供手册入口」） */
+  const [helpOpen, setHelpOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   // 🔴 2.7.2：`genre` 加进编辑表单 —— 题材改到「新建项目 / 编辑项目」两处选了，
   //    页签里不再提供切换 ⇒ 这里成了老项目改题材的**唯一入口**，不能缺。
@@ -283,6 +287,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             </HelpPopover>
           </h2>
           <div className="flex gap-2 items-stretch shrink-0">
+            <Button variant="secondary" onClick={() => setHelpOpen(true)}
+              title="不用打开项目也能查使用手册、问功能用法"
+              className="flex items-center">
+              <Compass size={13} /> 使用手册
+            </Button>
             <Button onClick={createDemo}
               disabled={busy}
               
@@ -739,6 +748,16 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
         />
       )}
       {appIconOpen && <AppIconDialog onClose={() => setAppIconOpen(false)} />}
+      {helpOpen && (
+        <Modal open onClose={() => setHelpOpen(false)} title="使用答疑助手" width="2xl" maxHeight="86vh">
+          {/* projectOpen={false}：这里没有打开项目，所有「前往功能」禁用并说明要先开项目 */}
+          <HelpCenter
+            onNavigate={() => showToast('先打开一个项目，才能跳到这个功能页', 'info')}
+            ctx={{ type: 'full', features: [] }}
+            projectOpen={false}
+          />
+        </Modal>
+      )}
     </div>
   )
 }

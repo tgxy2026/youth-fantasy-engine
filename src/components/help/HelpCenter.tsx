@@ -11,7 +11,8 @@
 //   ③ 阅读现场要保住：打开文章、跳来源、返回搜索都保留查询词与已读文章，
 //      从搜索结果点进来要落到那一段（规划 §4.4）。
 import { useMemo, useRef, useState, useEffect } from 'react'
-import { BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, Search, Sparkles } from 'lucide-react'
+import { BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, MessageCircleQuestion, Search, Sparkles } from 'lucide-react'
+import AskPanel from '@/components/help/AskPanel'
 import { TABS, EDITOR_TAB, tabVisible, type VisCtx } from '@/lib/schema'
 import {
   HELP_ARTICLES, HELP_GROUPS, getHelpArticle, helpArticlesInGroup,
@@ -28,6 +29,11 @@ interface Props {
   ctx: VisCtx
   /** 当前所在页签：用于「本页帮助」与检索加权 */
   currentTabId?: string
+  /**
+   * 是否已打开项目。项目管理页（未进项目）也能读手册，但那里所有「前往功能」都必须先开项目 ——
+   * 给个能点亮却跳不动的按钮等于骗人，所以此时按钮禁用并写明原因。
+   */
+  projectOpen?: boolean
 }
 
 const tabName = (tabId: string): string =>
@@ -35,8 +41,12 @@ const tabName = (tabId: string): string =>
 
 type CatalogView = 'start' | 'by-tab' | 'faq'
 
-export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
+/** 3.3.1 · P4：同一个入口里区分「查手册」与「问 AI」（规划 §5.1 用词） */
+type AssistMode = 'manual' | 'ask'
+
+export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen = true }: Props) {
   const [query, setQuery] = useState('')
+  const [mode, setMode] = useState<AssistMode>('manual')
   const [view, setView] = useState<CatalogView>('start')
   const [openId, setOpenId] = useState<string | null>(null)
   const [anchor, setAnchor] = useState<string | null>(null)
@@ -91,11 +101,15 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
     if (lastQuery) setQuery(lastQuery)
   }
 
-  /** 文章视图 */
-  if (article) {
-    /** 这篇讲的功能里，哪个页签已经有分步引导 —— 有才给「重看引导」，不摆点了没反应的按钮 */
-    const guideTabId = article.tabIds.find(id => !!getPageGuide(id)) ?? null
-    return (
+  /**
+   * 文章视图。
+   *
+   * 🔴 从「早返回」改成先算好再渲染：问 AI 点依据会打开文章，如果这时整棵树换掉，
+   *    对话历史就被卸载清空了 —— 作者回不到刚才那句追问。现在文章与答疑面板并存，
+   *    只是同一时刻只显示一个。
+   */
+  const guideTabId = article ? (article.tabIds.find(id => !!getPageGuide(id)) ?? null) : null
+  const articleView = article ? (
       <section data-help-article={article.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
         <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <Button variant="bare" onClick={backToSearch} className="shrink-0 px-2 py-1 rounded-md text-11 text-ink-300 border border-ink-700 hover:text-amber hover:border-amber/40 transition-colors">
@@ -133,7 +147,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
               </div>
             </div>
           ))}
-          {guideTabId && (
+          {guideTabId && projectOpen && (
             <div className="pt-1">
               <Button variant="secondary" size="sm"
                 title={`跳到「${tabName(guideTabId)}」并重新分步介绍（不影响任何数据）`}
@@ -146,11 +160,14 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
           {article.actions && article.actions.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {article.actions.map(action => {
-                const enabled = tabVisible(action.tabId, ctx)
+                const enabled = projectOpen && tabVisible(action.tabId, ctx)
+                const reason = !projectOpen
+                  ? '先打开一个项目，才能跳到这个功能页'
+                  : `当前项目未启用「${tabName(action.tabId)}」，无法跳转`
                 return (
                   <Button key={action.tabId} variant="secondary" size="sm"
                     disabled={!enabled}
-                    title={enabled ? `跳转到「${tabName(action.tabId)}」` : `当前项目未启用「${tabName(action.tabId)}」，无法跳转`}
+                    title={enabled ? `跳转到「${tabName(action.tabId)}」` : reason}
                     onClick={() => enabled && onNavigate(action.tabId)}
                     className="text-11">
                     {action.label}
@@ -178,8 +195,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
           )}
         </div>
       </section>
-    )
-  }
+  ) : null
 
   const catalog = (list: HelpArticle[], empty: string) => (
     list.length === 0
@@ -199,22 +215,47 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
     <section className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
       <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex flex-wrap items-center gap-2">
         <BookOpen size={14} className="text-amber" />
-        <h2 className="text-13 font-semibold text-ink-100">内置使用手册</h2>
-        <span className="text-10 text-ink-500">已收录 {HELP_ARTICLES.length} 篇 · 覆盖 {coveredCount} 个页签</span>
+        <h2 className="text-13 font-semibold text-ink-100">使用答疑助手</h2>
+        <span className="text-10 text-ink-500">手册 {HELP_ARTICLES.length} 篇 · 覆盖 {coveredCount} 个页签</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 px-2 py-1">
-          <Search size={12} className="text-ink-500" />
-          <input
-            aria-label="搜索使用手册"
-            value={query}
-            onChange={event => { setQuery(event.target.value); setOpenId(null) }}
-            placeholder="问一句：字太小怎么放大 / 校对怎么定位原文"
-            className="w-64 max-w-full bg-transparent text-11 text-ink-100 placeholder:text-ink-600 outline-none"
-          />
+        {/* 查手册 = 只读本地；问 AI = 用手册内容回答。两者明确分开，不含糊成一个「搜索框」 */}
+        <div className="flex items-center gap-1">
+          {([
+            ['manual', '查手册', BookOpen],
+            ['ask', '问 AI', MessageCircleQuestion],
+          ] as [AssistMode, string, typeof BookOpen][]).map(([key, label, Icon]) => (
+            <Button key={key} variant="toggle" size="sm" selected={mode === key}
+              title={key === 'ask' ? '按内置手册回答你的问题；未配置模型时只给手册片段' : '直接翻内置手册，不联网、不用模型'}
+              onClick={() => { setMode(key); if (key === 'ask') { setOpenId(null); setAnchor(null) } }}
+              className="text-11">
+              <Icon size={12} /> {label}
+            </Button>
+          ))}
         </div>
+        {mode === 'manual' && !article && (
+          <div className="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 px-2 py-1">
+            <Search size={12} className="text-ink-500" />
+            <input
+              aria-label="搜索使用手册"
+              value={query}
+              onChange={event => { setQuery(event.target.value); setOpenId(null) }}
+              placeholder="搜一句：字太小怎么放大 / 校对怎么定位原文"
+              className="w-64 max-w-full bg-transparent text-11 text-ink-100 placeholder:text-ink-600 outline-none"
+            />
+          </div>
+        )}
       </header>
 
       <div className="p-5 space-y-4">
+        {/* 问 AI 面板常驻挂载（文章打开时只隐藏），否则点开依据就把对话历史卸载了 */}
+        {mode === 'ask' && (
+          <div className={article ? 'hidden' : ''}>
+            <AskPanel currentTabId={currentTabId} onOpenArticle={openArticle} />
+          </div>
+        )}
+
+        {article ? articleView : mode === 'ask' ? null : (
+        <>
         {/* 搜索优先：有查询词就给片段结果，不给「假装是 AI 回答」的任何东西 */}
         {query.trim() ? (
           <div className="space-y-3">
@@ -310,6 +351,8 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
             )}
             {view === 'faq' && catalog(helpArticlesInGroup('常见问题与任务教程'), '还没有常见问题文章')}
           </>
+        )}
+        </>
         )}
       </div>
     </section>
