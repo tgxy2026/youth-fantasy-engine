@@ -1,4 +1,5 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
+import '@/components/editor/editorMobile.css'
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
@@ -585,10 +586,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             </div>
 
             {/* 摘要行：自适应高度，内容多时自动展开完整显示 AI 压缩摘要 */}
-            <div className="px-5 py-1.5 border-b border-ink-700/50 bg-ink-900/30 shrink-0 flex items-start gap-1.5">
+            <div data-editor-summary className="px-5 py-1.5 border-b border-ink-700/50 bg-ink-900/30 shrink-0 flex items-start gap-1.5">
               <textarea
                 ref={summaryRef}
                 value={active.summary}
+                aria-label="章节压缩摘要"
                 onChange={e => updateMeta({ summary: e.target.value })}
                 placeholder="章节压缩摘要（AI 约 1/10，供综合诊断/推演简略模式）…"
                 rows={1}

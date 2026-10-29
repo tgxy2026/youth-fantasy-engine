@@ -25,7 +25,7 @@ export function useShortWritingArea(
   scrollRef: RefObject<HTMLDivElement> | MutableRefObject<HTMLDivElement | null>,
   loaded: boolean,
 ): { shortBody: boolean; minHeight: number } {
-  const [bodyH, setBodyH] = useState(0)
+  const [bodyH, setBodyH] = useState<number | null>(null)
   // 依赖必须带 `loaded`：`!loaded` 时渲染的是 LoadingState，那时正文壳还没挂上，
   // 依赖写成 [] 就只在挂载时白跑一趟，之后 height 恒为 0、判定永远 false。
   useEffect(() => {
@@ -38,5 +38,6 @@ export function useShortWritingArea(
     ro.observe(el)
     return () => ro.disconnect()
   }, [loaded, scrollRef])
-  return { shortBody: bodyH > 0 && bodyH < SHORT_THRESHOLD, minHeight: WRITING_MIN_H }
+  // 零高同样需要保底；null 才表示尚未测量。
+  return { shortBody: bodyH !== null && bodyH < SHORT_THRESHOLD, minHeight: WRITING_MIN_H }
 }

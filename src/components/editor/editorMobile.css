@@ -1,0 +1,14 @@
+/* 正文主操作在触摸屏保留足够的命中面积，不改变桌面布局。 */
+@media (max-width: 600px), (pointer: coarse) {
+  [data-editor-primary] button,
+  [data-editor-primary] select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* 长摘要允许在输入框内部滚动，不能挤没正文编辑区。 */
+  [data-editor-summary] textarea {
+    max-height: 64px;
+    overflow-y: auto !important;
+  }
+}
