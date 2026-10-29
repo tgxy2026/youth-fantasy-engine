@@ -261,11 +261,15 @@ function templateSteps(tab: TabDef): GuideStep[] | null {
 /** 专用页（不在共享组件里）的兜底：一条居中说明，只讲「这页做什么」，不编按钮 */
 function fallbackSteps(tab: TabDef): GuideStep[] {
   const purpose = tab.description?.trim() || `这一页用来处理「${tab.name}」相关内容。`
-  return [{
-    id: 'purpose',
-    title: `这一页是《${tab.name}》`,
-    body: `${purpose}\n\n这一页的操作入口较多，鼠标停在按钮上会显示说明；需要更细的步骤可以到「使用指南」里搜这个功能名。`,
-  }]
+  return [
+    { id: 'purpose', title: `这一页是《${tab.name}》`, body: purpose },
+    {
+      id: 'header',
+      anchor: 'page-header',
+      title: '标题旁的问号就是说明书',
+      body: '这一页的操作入口较多：鼠标停在按钮上会显示用途，标题旁的问号是整页说明。要更细的步骤可以到「使用指南」里搜这个功能名。',
+    },
+  ]
 }
 
 /**

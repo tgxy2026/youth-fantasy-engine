@@ -158,7 +158,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('Tab 焦点锁在卡片内', /event\.key !== 'Tab'/.test(overlay) && /focusables\[focusables\.length - 1\]/.test(overlay))
   ok('读屏能感知步骤变化', /aria-live="polite"/.test(overlay))
   ok('结束把焦点还给原触发元素', /restoreFocus/.test(overlay) && /previous\.focus/.test(overlay))
-  ok('目标不可见时降级而不是死等', /if \(!target\) \{ setRect\(null\); return \}/.test(overlay))
+  ok('目标不可见时先等一会儿再降级（3 秒上限，不死等）',
+    /deadline = performance\.now\(\) \+ 3000/.test(overlay) && /performance\.now\(\) < deadline/.test(overlay) && /setRect\(null\)/.test(overlay))
   ok('卡片可滚且步骤/退出保持可达', /overflowY: 'auto'/.test(overlay))
 
   ok('只有页面就绪 + 没看过 + 开着自动 ⇒ 才自动弹', /if \(!ready \|\| busy \|\| running\) return/.test(hook)
@@ -191,8 +192,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     return !!guide && guide.id === PAGE_GUIDES.find(item => item.tabId === id)!.id
   }))
 
-  /** 模板只允许用这些「共享组件里真实存在」的锚点 */
-  const KNOWN_TEMPLATE_ANCHORS = new Set(['form-header', 'form-fields', 'form-save', 'table-body', 'table-new', 'master-list', 'master-detail'])
+  /** 模板只允许用这些「共享组件里真实存在」的锚点（page-header 由专用页各自标注，见下） */
+  const KNOWN_TEMPLATE_ANCHORS = new Set(['form-header', 'form-fields', 'form-save', 'table-body', 'table-new', 'master-list', 'master-detail', 'page-header'])
   const templateAnchors = new Set<string>()
   for (const tab of TABS) {
     if (manualIds.has(tab.id)) continue
@@ -203,20 +204,44 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('模板只用共享组件里真实存在的锚点', stray.length === 0, stray.join('、'))
 
   const shellSources = ['src/components/sheets/FormSheet.tsx', 'src/components/sheets/TableSheet.tsx', 'src/components/common/MasterDetail.tsx'].map(read).join('\n')
-  const missingShell = [...templateAnchors].filter(anchor => !shellSources.includes(`data-guide="${anchor}"`))
+  const missingShell = [...templateAnchors].filter(anchor => anchor !== 'page-header' && !shellSources.includes(`data-guide="${anchor}"`))
   ok('🔴 模板锚点在共享组件源码里真实存在', missingShell.length === 0, missingShell.join('、'))
 
-  // 专用页（非共享组件）只能给「一条居中说明」，不能编造锚点
+  // 专用页（非共享组件）：一条用途说明 + 一个页头锚点，其余按钮不编
   const dedicated = TABS.filter(tab => !['form', 'table', 'card'].includes(tab.type) && !manualIds.has(tab.id))
   const badFallback = dedicated.filter(tab => {
     const guide = resolveGuide(tab.id)!
-    return guide.steps.length !== 1 || guide.steps.some(step => !!step.anchor)
+    return guide.steps.length !== 2 || !!guide.steps[0].anchor || guide.steps[1].anchor !== 'page-header'
   })
-  ok('专用页兜底只有一条说明且不伪造锚点', badFallback.length === 0, badFallback.map(tab => tab.id).join('、'))
+  ok('专用页兜底：一条用途说明 + 一个页头锚点（不编造其它按钮）', badFallback.length === 0, badFallback.map(tab => tab.id).join('、'))
   ok('专用页兜底文案写进了页签自己的用途', dedicated.every(tab => {
     const guide = resolveGuide(tab.id)!
     return guide.steps[0].title.includes(tab.name)
   }))
+
+  /** 18 个专用页各自的源文件：页头锚点必须真的标上去，否则第 2 步会静默降级 */
+  const DEDICATED_FILES = [
+    'src/components/world/GeoMapEditor.tsx',
+    'src/components/world/WorldLibraryPanel.tsx',
+    'src/components/outline/PlotCanvas.tsx',
+    'src/components/audit/TrajectoryPanel.tsx',
+    'src/components/app/AboutPage.tsx',
+    'src/components/creative/InspireTools.tsx',
+    'src/components/creative/CreativeWritingPanel.tsx',
+    'src/components/bookbreak/BookBreakPanel.tsx',
+    'src/components/audit/CheckTools.tsx',
+    'src/components/library/MaterialLibrary.tsx',
+    'src/components/tavern/TavernControl.tsx',
+    'src/components/tavern/TavernWorld.tsx',
+    'src/components/tavern/TavernPlot.tsx',
+    'src/components/tavern/TavernReport.tsx',
+    'src/components/tavern/TavernFree.tsx',
+    'src/components/tavern/RunPanel.tsx',
+    'src/components/tavern/TavernScript.tsx',
+    'src/components/tavern/TavernCard.tsx',
+  ]
+  const missingHeader = DEDICATED_FILES.filter(file => !read(file).includes('data-guide="page-header"'))
+  ok('🔴 每个专用页都真的标了页头锚点', missingHeader.length === 0, missingHeader.join('、'))
 
   const host = read('src/components/help/usePageGuideHost.ts')
   const app = read('src/App.tsx')
@@ -233,7 +258,38 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
   // 覆盖率：把「有锚点」与「只有居中说明」分开统计，供文档与维护用
   const withAnchor = TABS.filter(tab => (resolveGuide(tab.id)?.steps ?? []).some(step => !!step.anchor))
-  ok('有高亮锚点的页签已过半', withAnchor.length > TABS.length / 2, `${withAnchor.length}/${TABS.length}`)
+  ok('🔴 每个页签的引导都至少有一个可高亮锚点', withAnchor.length === TABS.length, `${withAnchor.length}/${TABS.length}`)
+}
+
+// ---------- ⑥ 跨页请求通道（查看完整手册 / 重看引导） ----------
+{
+  const nav = await import('../src/lib/help/helpNav')
+
+  ok('初始没有待处理请求', nav.peekHelpRequest('article') === null && nav.peekHelpRequest('guide') === null)
+
+  let notifications = 0
+  const unsubscribe = nav.subscribeHelpRequests(() => { notifications++ })
+  nav.requestHelpArticle('faq-zoom')
+  const article = nav.peekHelpRequest('article')
+  ok('请求文章后能读到（kind 正确）', article?.kind === 'article' && article.articleId === 'faq-zoom')
+  ok('peek 不消费（可以被多个消费方看到）', nav.peekHelpRequest('article') !== null)
+  ok('kind 不匹配时返回 null', nav.peekHelpRequest('guide') === null)
+  ok('投递会通知订阅者', notifications === 1)
+  const taken = nav.takeHelpRequest('article')
+  ok('take 之后就没有了（一次性，避免每次进页都触发）',
+    !!taken && taken.kind === 'article' && taken.articleId === 'faq-zoom' && nav.peekHelpRequest('article') === null)
+
+  nav.requestPageGuide('items')
+  const guide = nav.peekHelpRequest('guide')
+  ok('请求重看引导带上目标页签', guide?.kind === 'guide' && guide.tabId === 'items')
+  ok('第二次请求序号递增（连点两次不会被合并）', guide!.nonce > article!.nonce)
+
+  const before = notifications
+  unsubscribe()
+  nav.requestHelpArticle('faq-save-state')
+  ok('取消订阅后不再收到通知', notifications === before)
+  nav.resetHelpRequests()
+  ok('重置后通道为空', nav.peekHelpRequest('article') === null && nav.peekHelpRequest('guide') === null)
 }
 
 console.log(`\n—— pageGuide 用例结束：${pass} 通过 / ${fail} 失败`)

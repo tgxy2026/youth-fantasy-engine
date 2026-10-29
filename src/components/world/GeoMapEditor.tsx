@@ -83,7 +83,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   return (
     <div data-adaptive-map className="flex flex-col h-full min-h-0">
       {/* 顶部工具条（通栏） */}
-      <div className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
+      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <MapPin size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>

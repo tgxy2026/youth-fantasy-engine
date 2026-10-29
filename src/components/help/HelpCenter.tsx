@@ -10,13 +10,15 @@
 //      不猜路径、不让内容自己写 URL；
 //   ③ 阅读现场要保住：打开文章、跳来源、返回搜索都保留查询词与已读文章，
 //      从搜索结果点进来要落到那一段（规划 §4.4）。
-import { useMemo, useRef, useState } from 'react'
-import { BookOpen, ChevronLeft, Lightbulb, ListTree, Search, Sparkles } from 'lucide-react'
+import { useMemo, useRef, useState, useEffect } from 'react'
+import { BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, Search, Sparkles } from 'lucide-react'
 import { TABS, EDITOR_TAB, tabVisible, type VisCtx } from '@/lib/schema'
 import {
   HELP_ARTICLES, HELP_GROUPS, getHelpArticle, helpArticlesInGroup,
   searchHelp, suggestHelpGroups, tabsWithoutHelp, type HelpArticle, type HelpGroup,
 } from '@/lib/help'
+import { getPageGuide } from '@/lib/help/guides'
+import { requestPageGuide, subscribeHelpRequests, takeHelpRequest } from '@/lib/help/helpNav'
 import { Button } from '@/components/common/Button'
 
 interface Props {
@@ -66,6 +68,23 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
       })
     }
   }
+
+  /**
+   * 消费「打开某篇文章」的跨页请求。
+   *
+   * 🔴 两处都要：挂载时消费一次（从引导卡片点进来是「先导航、后挂载」，
+   *    订阅建好时那条请求已经发出去了），之后再订阅（已经在这一页时点手册链接）。
+   */
+  const openArticleRef = useRef(openArticle)
+  openArticleRef.current = openArticle
+  useEffect(() => {
+    const consume = () => {
+      const request = takeHelpRequest('article')
+      if (request && request.kind === 'article') openArticleRef.current(request.articleId)
+    }
+    consume()
+    return subscribeHelpRequests(consume)
+  }, [])
   const backToSearch = () => {
     setOpenId(null)
     setAnchor(null)
@@ -74,6 +93,8 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
 
   /** 文章视图 */
   if (article) {
+    /** 这篇讲的功能里，哪个页签已经有分步引导 —— 有才给「重看引导」，不摆点了没反应的按钮 */
+    const guideTabId = article.tabIds.find(id => !!getPageGuide(id)) ?? null
     return (
       <section data-help-article={article.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
         <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
@@ -112,6 +133,16 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId }: Props) {
               </div>
             </div>
           ))}
+          {guideTabId && (
+            <div className="pt-1">
+              <Button variant="secondary" size="sm"
+                title={`跳到「${tabName(guideTabId)}」并重新分步介绍（不影响任何数据）`}
+                onClick={() => { requestPageGuide(guideTabId); onNavigate(guideTabId) }}
+                className="flex items-center gap-1.5 text-11">
+                <Compass size={11} /> 重看这页的引导
+              </Button>
+            </div>
+          )}
           {article.actions && article.actions.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {article.actions.map(action => {

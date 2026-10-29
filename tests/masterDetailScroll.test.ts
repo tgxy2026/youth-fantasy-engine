@@ -81,8 +81,10 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
 {
   const tp = read('src/components/audit/TrajectoryPanel.tsx')
   ok('② 创作轨迹：根容器锁高', tp.includes('page-enter flex h-full flex-col overflow-hidden'))
+  // 允许元素上带其它属性（例如 3.3.1 引导锚点 `data-guide`）—— 本闸要守的是「这块 shrink-0」，
+  // 不是属性顺序；写死整串会变成「一加属性就红」，反而逼人删掉锚点。
   ok('② 创作轨迹：页头 + 总览 + AI 占比三块都 shrink-0（只让双栏区吃剩余高度）',
-    tp.includes('<header className="mb-5 shrink-0">') &&
+    /<header[^>]*className="mb-5 shrink-0"/.test(tp) &&
     tp.includes('grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 shrink-0') &&
     tp.includes('mb-5 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3'))
   ok('② 创作轨迹：双栏容器 flex-1 min-h-0', tp.includes('<div className="flex flex-1 min-h-0 gap-4">'))

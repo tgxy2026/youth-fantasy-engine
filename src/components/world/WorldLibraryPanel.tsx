@@ -178,7 +178,7 @@ export default function WorldLibraryPanel() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">世界引擎</h1>
         <HelpPopover title="世界引擎怎么用" width="24rem" size={14}>
           这里放的是可封存、可跨作品引用的世界。

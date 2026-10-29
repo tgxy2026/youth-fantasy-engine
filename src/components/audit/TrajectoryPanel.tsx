@@ -214,7 +214,7 @@ export default function TrajectoryPanel() {
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
       {candidateOpen && <CandidatePanel onClose={() => setCandidateOpen(false)} />}
       {reportOpen && <CheckReportPanel onClose={() => setReportOpen(false)} />}
-      <header className="mb-5 shrink-0">
+      <header data-guide="page-header" className="mb-5 shrink-0">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
           <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>

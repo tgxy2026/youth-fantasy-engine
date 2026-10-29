@@ -139,7 +139,7 @@ export default function TavernWorld() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
           <h1 className="text-lg font-bold text-ink-50">背景设定</h1>

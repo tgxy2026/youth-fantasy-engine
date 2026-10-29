@@ -86,7 +86,7 @@ export default function InspireTools() {
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6">
+      <header data-guide="page-header" className="mb-6">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">灵感启发</h1>
           <HelpPopover title="灵感启发怎么用" width="24rem" size={14}>

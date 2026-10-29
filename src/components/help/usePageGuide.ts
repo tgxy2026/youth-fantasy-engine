@@ -10,6 +10,7 @@
 // 🔴 绑定运行标识：`tabId` 变了就当作新页面，中断记忆清空、状态归位。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getPageGuide, guideRecordKey, type PageGuide } from '@/lib/help/guides'
+import { peekHelpRequest, takeAutoGuideSuppression, takeHelpRequest } from '@/lib/help/helpNav'
 import {
   hasGuideRecord, isGuideAutoEnabled, markGuideDone, markGuideSkipped, setGuideAutoEnabled,
 } from '@/lib/settings/guidePrefs'
@@ -48,11 +49,18 @@ export function usePageGuide({ tabId, ready, busy = false, enabled = true }: Opt
   /** 本次停留里被中断过的引导：不再自动重启，但作者点「本页指引」仍能看 */
   const interrupted = useRef<Set<string>>(new Set())
 
-  // 换页签 = 换上下文：中断记忆与运行状态一起清掉
+  // 换页签 = 换上下文：中断记忆与运行状态一起清掉；
+  // 同时看有没有「从手册点重看引导」留下的请求 —— 那是**主动**要看的，不受「已看过」限制。
   useEffect(() => {
     interrupted.current.clear()
     setRunning(false)
-  }, [tabId])
+    if (!enabled) return
+    const request = peekHelpRequest('guide')
+    if (request && request.kind === 'guide' && request.tabId === tabId) {
+      takeHelpRequest('guide')
+      setRunning(true)
+    }
+  }, [tabId, enabled])
 
   const key = guide ? guideRecordKey(guide) : ''
 
@@ -62,6 +70,8 @@ export function usePageGuide({ tabId, ready, busy = false, enabled = true }: Opt
     if (!isGuideAutoEnabled()) return
     if (hasGuideRecord(key)) return
     if (interrupted.current.has(key)) return
+    // 作者刚从引导点「查看完整手册」过来 ⇒ 他要读文章，别再用卡片挡住正文
+    if (takeAutoGuideSuppression()) return
     // 等一帧再起：让页面先画出真实布局，避免卡片定位在骨架屏上
     const timer = window.setTimeout(() => setRunning(true), 120)
     return () => window.clearTimeout(timer)

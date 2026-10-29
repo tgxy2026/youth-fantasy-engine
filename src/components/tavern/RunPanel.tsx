@@ -179,7 +179,7 @@ export default function RunPanel() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">跑团互动</h1>
         <HelpPopover title="跑团互动怎么用" width="26rem" size={14}>
           AI 在这里当 <b>KP（守秘人）</b>主持一次有始有终的冒险 —— 不是陪聊，而是裁决与推进。

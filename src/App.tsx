@@ -20,6 +20,7 @@ import ProjectHub from '@/components/app/ProjectHub'
 // 3.3.1 · P3：App 层统一托管的页签引导（非自管页），页面只标 data-guide 锚点
 import { useAppLevelGuide } from '@/components/help/usePageGuideHost'
 import GuideOverlay from '@/components/help/GuideOverlay'
+import { peekHelpRequest, subscribeHelpRequests } from '@/lib/help/helpNav'
 import AboutPage from '@/components/app/AboutPage'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
@@ -615,6 +616,18 @@ export default function App() {
    * 需要数据级就绪的页签仍走页面内托管（见 `SELF_MANAGED_GUIDE_TABS`）。
    */
   const appGuide = useAppLevelGuide(activeTab, !!projectId)
+
+  /**
+   * 3.3.1 · P3：「查看完整手册」与「重看本页引导」的跨页投递。
+   * 这里只负责**导航**（走既有 navGate，含保存屏障与可见性校验）；
+   * 打开文章由 `HelpCenter` 消费，启动引导由目标页的 `usePageGuide` 消费。
+   */
+  useEffect(() => subscribeHelpRequests(() => {
+    const article = peekHelpRequest('article')
+    if (article) { navigate('guide'); return }
+    const guide = peekHelpRequest('guide')
+    if (guide && guide.kind === 'guide') navigate(guide.tabId)
+  }), [navigate])
 
 
   // 启动失败：给一页能读懂的错误 + 一个重试入口，而不是永远停在黑屏上

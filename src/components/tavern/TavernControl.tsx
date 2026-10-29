@@ -41,7 +41,7 @@ export default function TavernControl() {
           ⚠️ 本页外层用 space-y-4 供间距，故**不加** mb-5（加了会双重间距）。 */}
       {/* 🔴 2026-10-09 与 TableSheet / CharacterSheet 同一处修复：工具条 `shrink-0` + 左栏可压缩
           ⇒ 窄窗口下左侧标题被挤成竖排（同一 bug 家族）。改成「放不下就折行」。 */}
-      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header data-guide="page-header" className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="min-w-[14rem] flex-1">
           {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
           <div className="flex items-center gap-1.5">

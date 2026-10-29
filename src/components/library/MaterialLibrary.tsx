@@ -23,7 +23,7 @@ export default function MaterialLibrary() {
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-5">
+      <header data-guide="page-header" className="mb-5">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">素材资料</h1>
           <span className="text-12 text-ink-400">内置写作参考素材库 · 只读</span>

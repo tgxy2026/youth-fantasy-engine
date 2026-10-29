@@ -346,7 +346,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* 顶部通栏标题条（与左侧「选择章节」窗口左缘对齐） */}
-      <div className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
+      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <GitBranch size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>

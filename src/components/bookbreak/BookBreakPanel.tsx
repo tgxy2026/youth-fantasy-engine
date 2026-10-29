@@ -326,7 +326,7 @@ function BookBreakWorkspace() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div data-guide="page-header" className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-center gap-2">
         <h1 className="text-15 font-medium text-ink-100">一键拆书</h1>
         <HelpPopover title="一键拆书怎么用" pin>

@@ -104,7 +104,7 @@ export default function AboutPage() {
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
       {/* 3.0 · W0-2：旧版数据迁移向导（手动入口触发） */}
       {migProbe && <MigrationWizard probe={migProbe} onClose={() => setMigProbe(null)} />}
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div data-guide="page-header" className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>

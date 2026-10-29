@@ -13,6 +13,7 @@ import { BookOpen, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 import { guideArticle, type PageGuide } from '@/lib/help/guides'
+import { requestHelpArticle } from '@/lib/help/helpNav'
 import { computeGuideLayout, guideMasks, type GuidePoint } from '@/lib/help/guideLayout'
 
 const GUIDE_Z = Z.modal - 100
@@ -74,6 +75,20 @@ export default function GuideOverlay({ guide, startStep = 0, onClose, onOpenArti
 
   const close = useCallback((reason: GuideCloseReason) => onClose(reason), [onClose])
 
+  /**
+   * 卡片上的「查看完整手册」。
+   *
+   * 🔴 默认行为就写在组件里（不靠每个接入方各写一遍）：
+   *    先投递「打开这篇文章」的请求（App 会走既有 navigate 到「使用指南」），
+   *    再按**中断**关闭本次引导 —— 打开手册既不是完成、也不是跳过，
+   *    所以不写完成记录；下次进来还能再看。
+   */
+  const openManual = useCallback((articleId: string) => {
+    if (onOpenArticle) { onOpenArticle(articleId); return }
+    requestHelpArticle(articleId)
+    close('interrupt')
+  }, [onOpenArticle, close])
+
   // 打开时接管焦点，关闭后还给原来的元素（自动触发时是页面本身，手动触发时是「本页指引」按钮）
   useEffect(() => {
     restoreFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -101,13 +116,17 @@ export default function GuideOverlay({ guide, startStep = 0, onClose, onOpenArti
    *    缩放比例变化、字体加载、分栏拖动都会改盒子尺寸，一改就重新测。
    */
   useLayoutEffect(() => {
-    const target = findVisibleTarget(step.anchor)
-    if (!target) { setRect(null); return }
     let frameId = 0
-    const startStableMeasure = () => {
+    let cancelled = false
+    let observer: ResizeObserver | null = null
+    /** 规划 §3.5 的等待上限：3 秒还没等到锚点就降级为居中说明，不无限等 */
+    const deadline = performance.now() + 3000
+
+    const startStableMeasure = (target: HTMLElement) => {
       cancelAnimationFrame(frameId)
       let frame = 0, stable = 0, previous = ''
       const tick = () => {
+        if (cancelled) return
         if (!target.isConnected) { setRect(null); return }
         const box = target.getBoundingClientRect()
         const zoom = layoutZoom()
@@ -122,13 +141,31 @@ export default function GuideOverlay({ guide, startStep = 0, onClose, onOpenArti
       }
       frameId = requestAnimationFrame(tick)
     }
-    target.scrollIntoView({ block: 'center', inline: 'nearest' })
-    startStableMeasure()
-    const observer = new ResizeObserver(() => startStableMeasure())
-    observer.observe(target)
+
+    /**
+     * 🔴 目标可能**还没渲染**：从手册点「重看引导」时，导航要过离页保存屏障，
+     *    卡片先挂载、页面后到位 —— 只测一次就会拿到「没有锚点」，整步降级成居中说明（实测）。
+     *    这里在 3 秒内逐帧等它出现。
+     */
+    const waitForTarget = () => {
+      if (cancelled) return
+      const target = findVisibleTarget(step.anchor)
+      if (!target) {
+        if (performance.now() < deadline) { frameId = requestAnimationFrame(waitForTarget); return }
+        setRect(null)
+        return
+      }
+      target.scrollIntoView({ block: 'center', inline: 'nearest' })
+      startStableMeasure(target)
+      observer = new ResizeObserver(() => startStableMeasure(target))
+      observer.observe(target)
+    }
+    waitForTarget()
+
     return () => {
+      cancelled = true
       cancelAnimationFrame(frameId)
-      observer.disconnect()
+      observer?.disconnect()
     }
   }, [step.anchor, measureToken])
 
@@ -242,8 +279,8 @@ export default function GuideOverlay({ guide, startStep = 0, onClose, onOpenArti
         </div>
         <h3 id="guide-step-title" className="mt-2 text-13 font-semibold text-ink-50">{step.title}</h3>
         <p className="mt-1 text-12 text-ink-300 leading-relaxed">{step.body}</p>
-        {article && onOpenArticle && (
-          <Button variant="bare" onClick={() => onOpenArticle(article.id)}
+        {article && (
+          <Button variant="bare" onClick={() => openManual(article.id)}
             className="mt-2 px-2 py-1 rounded-md text-11 text-ink-200 border border-ink-700 hover:text-amber hover:border-amber/40 transition-colors">
             <BookOpen size={11} className="inline mr-1" /> 查看完整手册
           </Button>

@@ -24,7 +24,7 @@ export default function CreativeWritingPanel() {
   const m = useCreativeWritingModel()
   const { inp, interview, setInterview } = m
   return (
-    <div className="mx-auto max-w-5xl">
+    <div data-guide="page-header" className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-center gap-2">
         <h1 className="text-15 font-medium text-ink-100">创意写作</h1>
         <HelpPopover title="创意写作怎么用" pin>

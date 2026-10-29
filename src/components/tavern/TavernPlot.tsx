@@ -428,7 +428,7 @@ export default function TavernPlot() {
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
       {/* ---------- 顶部工具条：只放「本场」的操作，导航（选/新建）都在左栏 ---------- */}
-      <header className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">剧情推演</h1>
 
         <HelpPopover title="剧情推演怎么用" width="24rem" size={14}>

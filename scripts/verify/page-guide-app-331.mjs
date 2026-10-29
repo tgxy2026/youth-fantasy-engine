@@ -71,12 +71,14 @@ try {
   check('卡片模板高亮了主从区域', await page.locator('[data-guide-hole]').count() === 1)
   await skipGuide()
 
-  // ④ 专用页：兜底一条说明，不伪造锚点
+  // ④ 专用页：第 1 步整页说明（无高亮），第 2 步高亮页头
   await nav.getByText('灵感启发', { exact: true }).first().click()
   await card.waitFor({ timeout: 15000 })
   const fallbackText = await card.innerText()
   check('专用页给出整页说明', /这一页是《灵感启发》/.test(fallbackText), fallbackText.slice(0, 80))
-  check('专用页没有锚点时不画高亮框（不假装有）', await page.locator('[data-guide-hole]').count() === 0)
+  check('专用页第 1 步没有锚点时就不画高亮框（不假装有）', await page.locator('[data-guide-hole]').count() === 0)
+  await page.getByRole('button', { name: '下一步' }).click()
+  check('专用页第 2 步高亮了页头（标题旁的问号）', await page.locator('[data-guide-hole]').count() === 1)
   await page.screenshot({ path: path.join(run, 'fallback.png') })
 
   // ⑤ 跳过之后不重弹；「本页指引」仍可重看

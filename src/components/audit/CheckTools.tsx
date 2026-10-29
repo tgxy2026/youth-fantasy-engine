@@ -246,7 +246,7 @@ export default function CheckTools() {
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6">
+      <header data-guide="page-header" className="mb-6">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-ink-50">检查工具</h1>
           <HelpPopover title="检查工具怎么用" width="22rem" size={14}>
