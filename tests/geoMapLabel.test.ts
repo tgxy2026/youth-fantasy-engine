@@ -53,8 +53,19 @@ const editor = read('src/components/world/GeoMapEditor.tsx')
 // ---------- ③ 选中提示行随单行标签上移 ----------
 // 原布局假设标题占两行（y 偏移 fs*2+3）；单行后必须改为 fs+3，否则提示飘到离标题老远
 {
-  ok('③ 选中提示行偏移随单行标签调整（fs + 3，不再是 fs * 2 + 3）',
-    editor.includes('y={vs.bbox.y - 5 + fs + 3}') && !editor.includes('fs * 2 + 3'))
+  // 🔴 2026-10-29：标签字号改成**屏幕恒定**后，行距也必须走同一个换算后的单位（fsView），
+  //    否则「近看字变大、提示行还按老单位挪」会叠在一起。判据改成「用 fsView 承接、且不再有 fs * 2 + 3」。
+  ok('③ 选中提示行偏移跟随换算后的字号（fsView + 3，不再是 fs * 2 + 3）',
+    editor.includes('y={vs.bbox.y - 5 / kSafe + fsView + 3 / kSafe}') && !editor.includes('fs * 2 + 3'))
+  // ⑥ 屏幕恒定字号 + 小区域剔除（2026-10-29 验收：远看合适 / 近看太小 / 首屏挤成一团）
+  ok('⑥ 标签字号按屏幕像素恒定（11~16px，再除回视图单位 fsView）',
+    editor.includes('const fsScreen = Math.min(16, Math.max(11, fs * 0.75))')
+    && editor.includes('const fsView = fsScreen / kSafe'))
+  ok('⑥ 名字放不下就不硬塞（按字数估宽；根范围/悬停仍显示）',
+    editor.includes('const needPx = (mk.name.length + mk.category.length + 3) * fsScreen * 0.6')
+    && editor.includes('const showLabel = depth === 0 || active || wPx >= needPx')
+    && editor.includes('{showLabel && (')
+    && editor.includes('fontSize={fsView}'))
 }
 
 // ---------- ④ 档位常量没被顺手改 ----------
