@@ -362,3 +362,15 @@ const destDir = path.join(root, 'release', '桌面安装版')
 mkdirSync(destDir, { recursive: true })
 copyFileSync(src, path.join(destDir, setupName))
 console.log(`\n打包完成：${path.join(destDir, setupName)}（${(setupSize / 1024 / 1024).toFixed(2)} MB，体积闸门已通过）`)
+/**
+ * 🔴 交付前必核对「安装包里那个 exe」——不只看 win-unpacked 里那个。
+ *
+ * 2026-10-29 实踩：外层 `cp 补写后的 exe` 紧跟 `--prepackaged` 重打时，electron-builder 读到的
+ * 仍是补写前的旧 exe（文件刚落盘/被杀软占用时可能如此）⇒ 交付的 Setup 里主 exe 少 248 KB、
+ * 缺 ProductName/图标，安装后 exe 也是旧的那份。而本脚本只校验 win-unpacked ⇒ 当时**没能发现**。
+ *
+ * 脚本内起子进程在本环境恒被拦成 EBUSY，所以无法自己解包核对；这里打印强制核对步骤与期望值。
+ */
+console.log(`[build:desktop] 交付前必核对：安装包内 YouthFantasyEngine.exe 应为 ${EXPECT_BASE_SIZE} 字节`)
+console.log('[build:desktop]   .workbuddy/tmp/eb-7zip/bin/7za.exe l "' + path.join(destDir, setupName) + '" | grep YouthFantasyEngine.exe')
+console.log('[build:desktop]   若与上面的期望值不一致 ⇒ 说明 prepackaged 打进了旧 exe：删掉包内 Setup 与 .__uninstaller.exe 后重跑 --prepackaged，再核一次')
