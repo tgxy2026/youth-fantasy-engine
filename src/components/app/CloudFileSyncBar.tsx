@@ -224,7 +224,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
   }
 
   const headCls = inSidebar
-    ? 'flex min-w-0 flex-nowrap items-center gap-1.5 pt-1 text-11 text-ink-300'
+    ? 'flex min-w-0 flex-nowrap items-center gap-1 pt-1 text-11 text-ink-300'
     : 'flex items-center gap-1.5 text-xs text-ink-300'
 
   return (
