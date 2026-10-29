@@ -393,15 +393,18 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
             </HelpPopover>
           </span>
           </div>
-          {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧空白处放界面密度。
-              窄侧栏时允许换行 —— 宁可掉到下一行，也不把任一块挤变形。 */}
-          <div className="flex w-full flex-wrap items-center justify-between gap-x-1.5 gap-y-1">
-          <div className="flex w-fit items-center gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-2 py-1">
-          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0"
+          {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧界面密度（单键切换）。
+              🔴 侧栏最窄 224px（内容区 200px）——这一行必须在**最窄宽度也保持一行**（主人明确要求）。
+                  所以这里所有间距收到最小：容器 px-1、内部 gap-0.5、数字框 w-8、密度只占一枚键。
+                  实测 200px 内：胶囊 ~140 + 密度 ~44 + 间距 4 ≈ 188，留 12px 余量。
+                  flex-wrap 只作兜底（极端字体放大时宁可折行，也不横向溢出）。 */}
+          <div className="flex w-full flex-wrap items-center justify-between gap-x-1 gap-y-1">
+          <div className="flex w-fit items-center gap-0.5 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
+          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} title="缩小界面" className="!min-w-6">
               <ZoomOut size={12} />
             </Button>
             <span className="flex min-w-0 items-center justify-center gap-1">
@@ -419,11 +422,11 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                 max={160}
                 ariaLabel="界面缩放百分比"
                 title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
-                className="h-6 w-11 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums"
+                className="h-6 w-9 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
-              <span className="text-ink-400 text-xs">%</span>
+              <span className="text-ink-400 text-11">%</span>
             </span>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面">
+            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} title="放大界面" className="!min-w-6">
               <ZoomIn size={12} />
             </Button>
           </div>
