@@ -23,6 +23,8 @@ try {
     await page.locator('[data-workspace-record="row1"]').click()
     let nav=page.locator('[data-atlas-nav]'); await nav.waitFor()
     if(!(await nav.evaluate(e=>e===document.activeElement))) throw Error(`${width}: navigation did not receive focus`)
+    await nav.dispatchEvent('keydown',{key:'ArrowRight',isComposing:true})
+    if(!/甲/.test(await nav.getAttribute('aria-label')))throw Error(`${width}: composition key changed entry`)
     const clipped=await nav.evaluate(el=>[...el.querySelectorAll('button')].some(button=>button.getBoundingClientRect().right>window.innerWidth+1))
     if(clipped)throw Error(`${width}: navigation button clipped by viewport`)
     await page.getByTitle('移除主图（文字内容不受影响）').click();await nav.focus();await page.keyboard.press('ArrowRight')
@@ -52,6 +54,7 @@ try {
     if(!/乙.*不在筛选/.test(await nav.getAttribute('aria-label'))||!await page.getByRole('button',{name:'撤销',exact:true}).isVisible())throw Error(`${width}: filter removed active editor`)
     await page.getByRole('button',{name:'撤销',exact:true}).click();await page.waitForTimeout(100)
     if(await nav.count())throw Error(`${width}: filtered clean detail did not close`)
+    if(!await page.locator('[data-atlas-list]').evaluate(el=>el===document.activeElement))throw Error(`${width}: filtered detail lost its return focus`)
     await page.close()
   }
   console.log(JSON.stringify({run,result:'grid focus and detail wide/narrow keys, boundaries, edit/mouse/filter blocking and clean close passed'}))

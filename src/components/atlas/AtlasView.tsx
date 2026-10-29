@@ -113,8 +113,8 @@ export default function AtlasView({
   const selectedCache = useRef<TableRow | null>(null)
   const matchedSelected = selectedId ? rows.find(row => row.id === selectedId) ?? null : null
   if (matchedSelected) selectedCache.current = matchedSelected
-  const selected = matchedSelected ?? (selectedId && selectedCache.current?.id === selectedId &&
-    (navigationGuard.current?.() || saving || dirtyOf?.(selectedId)) ? selectedCache.current : null)
+  // Keep the old panel mounted until the filter effect can inspect its focus and guard state.
+  const selected = matchedSelected ?? (selectedId && selectedCache.current?.id === selectedId ? selectedCache.current : null)
   const listRef = useRef<HTMLDivElement>(null), detailRef = useRef<HTMLDivElement>(null)
   const capture = usePaneWorkspaceScroll({ pageId, detailPageId: pageId,
     ownerKey: view.ownerKey, generation: view.generation, ready: true, query: '',

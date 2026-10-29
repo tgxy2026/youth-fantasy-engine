@@ -402,7 +402,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                   余量约 29px，所以 flex-wrap 只作极端字体放大的兜底。 */}
           <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1">
           <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
-          <Button variant="toggle" size="xs" selected={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
+          <Button variant="toggle" size="xs" selected={zoomAuto} aria-label="跟随窗口自动调整" aria-pressed={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
             title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
             自动
           </Button>
