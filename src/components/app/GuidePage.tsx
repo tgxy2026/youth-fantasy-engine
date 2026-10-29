@@ -3,6 +3,7 @@ import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '@/lib/sche
 import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
 import HelpCenter from '@/components/help/HelpCenter'
+import { GuideSettings } from '@/components/help/GuideSettings'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -102,6 +103,11 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
           比在页签清单里逐个点进去试更快。 */}
       <div className="mb-6">
         <HelpCenter onNavigate={onNavigate} ctx={ctx} currentTabId="guide" />
+      </div>
+
+      {/* 3.3.1 · P2：引导的开关与重置（关掉自动引导后，从这里恢复） */}
+      <div className="mb-6">
+        <GuideSettings />
       </div>
 
       {/* 推荐填写顺序 */}

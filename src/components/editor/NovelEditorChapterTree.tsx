@@ -100,6 +100,7 @@ export default function NovelEditorChapterTree({
   }, [chapters])
   return (
       <div
+        data-guide="chapter-tree"
         className="relative shrink-0 border-r border-ink-700 bg-ink-900 flex flex-col"
         style={{ width: pane.size, minWidth: pane.size }}
       >

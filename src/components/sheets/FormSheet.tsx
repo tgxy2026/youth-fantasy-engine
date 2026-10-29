@@ -20,6 +20,10 @@ import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldA
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
 import MarketRadarDialog from '@/components/dialogs/MarketRadarDialog'
+// 3.3.1 · P2：首次进入页签的分步引导（讲解模式，只读不改数据）
+import { usePageGuide } from '@/components/help/usePageGuide'
+import GuideOverlay from '@/components/help/GuideOverlay'
+import { PageGuideButton } from '@/components/help/PageGuideButton'
 
 // 力量体系是升级流的"宪法"：境界/数值类字段绝不能让 AI 凭空编造 ——
 // 常量已提到 lib/schema（C10 起母子面板共用同一套锁定判据，见 POWER_NUMERIC_HINTS 注释）。
@@ -214,6 +218,8 @@ export default function FormSheet({ tab }: Props) {
   // 渲染期派生（2026-10-04 六维审计 A5）：提到 `if (!loaded) return` **之前**（hook 不能条件调用）。
   const filledCount = useMemo(() => Object.values(data).filter(v => v && v.trim()).length, [data])
   const totalFields = useMemo(() => tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0, [tab])
+  /** 3.3.1 · P2：本页分步引导。数据就绪才起；有未保存改动时不自动弹（不抢焦点、不打断填写） */
+  const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirty })
 
   if (!loaded) return <LoadingState />
 
@@ -224,7 +230,7 @@ export default function FormSheet({ tab }: Props) {
     // 所有表单页一律 100% 宽度，跟随窗口自适应（模块列数按断点变化）
     <div className="w-full page-enter">
       {/* 头部 */}
-      <header className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header data-guide="form-header" className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -236,6 +242,7 @@ export default function FormSheet({ tab }: Props) {
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 pt-1">
+            {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
@@ -246,6 +253,7 @@ export default function FormSheet({ tab }: Props) {
               <RotateCcw size={12} /> 清空
             </Button>
           <Button variant="toggle" selected={dirty}
+            data-guide="form-save"
             onClick={save}
             disabled={!dirty || saving}
             className="font-medium hover:bg-amber/25"
@@ -290,13 +298,15 @@ export default function FormSheet({ tab }: Props) {
       </header>
 
       {/* 模块（C10：抽成 SchemaFieldGrid —— 母级表单与子世界表单共用同一份渲染，避免漂移） */}
-      <SchemaFieldGrid
-        modules={tab.modules!}
-        data={data}
-        onFieldChange={setField}
-        twoColumn={fullWidth}
-        tabId={tab.id}
-      />
+      <div data-guide="form-fields">
+        <SchemaFieldGrid
+          modules={tab.modules!}
+          data={data}
+          onFieldChange={setField}
+          twoColumn={fullWidth}
+          tabId={tab.id}
+        />
+      </div>
 
       {/* 底部提示 */}
       {tab.tips && tab.tips.length > 0 && (
@@ -312,6 +322,16 @@ export default function FormSheet({ tab }: Props) {
 
       {/* 底部浮动保存按钮（页面很长时方便） */}
       {dirty && <SaveFab onClick={save} label="保存修改" />}
+
+      {/* 3.3.1 · P2：本页分步引导层（讲解模式，只让作者操作卡片，背景点击不触发真实操作） */}
+      {pageGuide.running && pageGuide.guide && (
+        <GuideOverlay
+          guide={pageGuide.guide}
+          startStep={pageGuide.startStep}
+          onClose={pageGuide.close}
+          onDisableAuto={pageGuide.disableAuto}
+        />
+      )}
 
       {showFill && (
         <AITemplateFill

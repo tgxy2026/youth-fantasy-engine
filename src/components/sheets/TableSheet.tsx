@@ -23,6 +23,10 @@ import TableImportDialog from '@/components/sheets/TableImportDialog'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { exportRowsCsv } from '@/lib/storage/tableIO'
 import { downloadBlob } from '@/lib/storage/zip'
+// 3.3.1 · P2：首次进入的分步引导（空态样板走这张表）
+import { usePageGuide } from '@/components/help/usePageGuide'
+import GuideOverlay from '@/components/help/GuideOverlay'
+import { PageGuideButton } from '@/components/help/PageGuideButton'
 import FeedbackAIPanel from '@/components/ai/FeedbackAIPanel'
 import TermDedupPanel from '@/components/tools/TermDedupPanel'
 import CalendarRuleModal from '@/components/common/CalendarRuleModal'
@@ -128,6 +132,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
   const setViewMode: typeof storeViewMode = next => { captureWorkspaceView(); storeViewMode(next) }
+
+  /** 3.3.1 · P2：本页分步引导（目前只登记了「伏笔追踪」的空态样板；其余表格页没有引导就不渲染按钮） */
+  const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirtyKeys.length > 0 })
 
   /**
    * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。
@@ -562,8 +569,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               </Button>
             </div>
           )}
+          {!isMaster && pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
           {!isMaster && (
-          <Button onClick={addRow} variant="primary" size="md" className="flex items-center shrink-0">
+          <Button onClick={addRow} variant="primary" size="md" data-guide="table-new" className="flex items-center shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           )}
@@ -711,7 +719,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               {(rows.length === 0 || bodyRows.length === 0) && (
                 <tr>
                   <td colSpan={effectiveColumns.length + 2} className="px-4 py-16 text-center text-ink-500">
-                    <div className="flex flex-col items-center gap-2">
+                    <div data-guide="table-empty" className="flex flex-col items-center gap-2">
                       <Plus size={20} className="text-ink-600" />
                       <span>{rows.length === 0 ? (isMaster ? '各卷台账还没有章节，去左侧各卷「章节台账」表录入即可在此汇总显示' : '还没有记录，点击右上角「新增一行」开始') : '没有符合筛选条件的记录'}</span>
                     </div>
@@ -868,6 +876,15 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           aliases={mention.aliases}
           onClose={() => setMention(null)}
           onNavigate={onNavigate ?? (() => {})}
+        />
+      )}
+      {/* 3.3.1 · P2：本页分步引导层（空态样板：先讲「空表不是出错」，再指到「新增一行」） */}
+      {pageGuide.running && pageGuide.guide && (
+        <GuideOverlay
+          guide={pageGuide.guide}
+          startStep={pageGuide.startStep}
+          onClose={pageGuide.close}
+          onDisableAuto={pageGuide.disableAuto}
         />
       )}
     </div>

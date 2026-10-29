@@ -13,6 +13,10 @@ import { SensitiveCheck, VersionHistory, TrashBin, GlobalSearch, FocusLock, Proo
 import { ProofLocateReturnBar } from '@/components/editor/ProofLocateReturnBar'
 import { useProofLocateJump } from '@/components/editor/useProofLocateJump'
 import { requestProofLocate, type ProofLocateTarget } from '@/components/editor/proofLocateChannel'
+// 3.3.1 · P2：首次进入正文页的分步引导
+import { usePageGuide } from '@/components/help/usePageGuide'
+import GuideOverlay from '@/components/help/GuideOverlay'
+import { PageGuideButton } from '@/components/help/PageGuideButton'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
@@ -35,7 +39,7 @@ import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import PromptModal from '@/components/dialogs/PromptModal'
 import JieWenJi, { } from '@/components/jiewenji/JieWenJi'
 import { showToast } from '@/components/dialogs/dialogs'
-import { type VisCtx, } from '@/lib/schema'
+import { type VisCtx, EDITOR_ID } from '@/lib/schema'
 import { INLINE_SUGGEST_LIMITS, type InlineSuggestLength } from '@/lib/ai/aiTasks'
 import { Button } from '@/components/common/Button'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -144,6 +148,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 没有任何正文视图接手时（理论上不会发生：按钮就在编辑器里）如实说明，不假装成功
     if (!requestProofLocate(target)) showToast('当前不在正文页，无法定位原文', 'info')
   }
+
+  /** 3.3.1 · P2：正文页分步引导。本章真的加载出来才算就绪；保存中不自动弹，免得打断落盘判断 */
+  const pageGuide = usePageGuide({ tabId: EDITOR_ID, ready: loaded && !!active, busy: saving })
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
@@ -472,7 +479,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         {active ? (
           <>
             {/* 标题/状态/保存常驻；次工具按用途收纳，行高随实际内容分配。 */}
-            <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar>
+            <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar data-guide="editor-toolbar">
             <div className="flex flex-wrap items-center gap-2 px-4 py-2" data-editor-primary>
               {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
                 title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
@@ -541,12 +548,14 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 <Redo2 size={14} />
               </Button>
               <Button variant="secondary" size="sm" aria-pressed={jieWenJiOpen}
+                data-guide="jiewenji-entry"
                 onClick={() => setJieWenJiOpen(o => !o)}
                 className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
                 title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
                 <Wand2 size={14} /> 颉文姬
               </Button>
+              {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
               <div className="w-px h-4 bg-ink-700" />
               <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
@@ -645,7 +654,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
                 🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
                 几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
-            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef}>
+            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef} data-guide="body-editor">
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
               <div
                 className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative ${shortBody ? 'shrink-0' : 'flex-1 min-h-0'} flex flex-col overflow-hidden transition-[max-width] duration-300`}
@@ -945,6 +954,15 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           onApplyAdvice={insertAdvice}
           onClearAdvice={clearAdvice}
           onApplyContent={updateContent}
+        />
+      )}
+      {/* 3.3.1 · P2：正文页分步引导（讲目录 → 正文 → 工具 → 颉文姬，不创建任何内容） */}
+      {pageGuide.running && pageGuide.guide && (
+        <GuideOverlay
+          guide={pageGuide.guide}
+          startStep={pageGuide.startStep}
+          onClose={pageGuide.close}
+          onDisableAuto={pageGuide.disableAuto}
         />
       )}
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
