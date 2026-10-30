@@ -6,7 +6,7 @@
 //   ③ 「两份都留」必须先另存再拉，顺序反了本地就没了；
 //   ④ 未开启自动同步时不能显示"未同步"吓人。
 import {
-  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount, nextBindingAfterCommit,
+  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount, nextBindingAfterCommit, resolveDisplayState,
   type SyncBinding, type RemoteState,
 } from '@/lib/sync/projectBinding'
 
@@ -147,6 +147,22 @@ async function main() {
     ok('revision 为 0 时不回写（服务端没给出有效版本）', nextBindingAfterCommit(before, 'c1', 0, T0) === null)
     ok('revision 非数时不回写', nextBindingAfterCommit(before, 'c1', Number.NaN, T0) === null)
     ok('没有绑定时不回写', nextBindingAfterCommit(null, 'c1', 1, T0) === null)
+  }
+
+  // ---------- 13. 界面展示状态（实机验证抓到的「刚同步完却写未同步」）----------
+  {
+    const d = (over: Partial<Parameters<typeof resolveDisplayState>[0]>) => resolveDisplayState({
+      hasBinding: true, queueState: 'idle', cloudRevision: 1, baseRevision: 1, ...over,
+    })
+    // 🔴 这条是核心：队列跑空（idle）+ 基线一致 ⇒ 必须显示"已同步"
+    ok('队列 idle 但基线一致 ⇒ 已同步（不再写"未同步"）', d({}) === 'synced', d({}))
+    ok('未绑定时照实显示队列状态', d({ hasBinding: false, cloudRevision: null, baseRevision: 0 }) === 'idle')
+    ok('云端版本更高 ⇒ 排队中（有东西要拉/推）', d({ cloudRevision: 2, baseRevision: 1 }) === 'queued')
+    ok('云端版本更低 ⇒ 已暂停（回滚/换账号，不能显示已同步）', d({ cloudRevision: 0, baseRevision: 3 }) === 'blocked')
+    ok('同步中优先展示', d({ queueState: 'syncing' }) === 'syncing')
+    ok('冲突优先展示', d({ queueState: 'conflict' }) === 'conflict')
+    ok('离线优先展示', d({ queueState: 'offline' }) === 'offline')
+    ok('云端版本未知 ⇒ 沿用队列状态（不猜）', d({ cloudRevision: null }) === 'idle')
   }
 
   console.log(`\n▶ projectBinding: ${pass} passed, ${fail} failed`)

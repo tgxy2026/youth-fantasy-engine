@@ -28,7 +28,7 @@ import { getCurrentProjectId, ops } from '@/lib/db/core'
 import type { Project } from '@/lib/types'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
-import { decideSync, planConflict } from '@/lib/sync/projectBinding'
+import { decideSync, planConflict, resolveDisplayState } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
 import { runSaveBarrier } from '@/lib/app/bossSave'
 import { createCloudProject, probeCloudProject, restoreCloudProject, purgeCloudProject, listCloudProjects, listCloudRevisions } from '@/lib/cloud/syncApi'
@@ -268,7 +268,14 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     await load()
   }
 
-  const stateInfo = STATE_TEXT[state]
+  // 展示用状态：判据见 `resolveDisplayState`（纯函数，有单测）
+  const displayState = resolveDisplayState({
+    hasBinding: !!binding,
+    queueState: state,
+    cloudRevision,
+    baseRevision: binding?.baseRevision ?? 0,
+  })
+  const stateInfo = STATE_TEXT[displayState]
 
   /**
    * 手动动作前的保存屏障（规划 §13.1：点「立即同步」先完成本地保存）。

@@ -192,6 +192,36 @@ export function bindingToState(binding: SyncBinding | null, decisionAction: Sync
   return 'synced'
 }
 
+/**
+ * 界面该显示哪个同步状态。
+ *
+ * 🔴 不能直接用队列状态（2026-10-31 实机验证抓到）：队列跑空后 `deriveStateFromJobs` 返回
+ *    `idle`，界面就写「未同步」—— 可实际是"刚同步完、两边一致"。用户看到「未同步」
+ *    会以为没传上去，然后反复点同步。
+ *
+ * 🔴 判据用**基线是否一致**，不要绕 `decideSync`：后者还掺了"本地是否有改动"，
+ *    而"刚打开项目"就会让 `updatedAt > lastSyncedAt` 成立，界面于是在「未同步 / 排队中」
+ *    之间来回跳 —— 比显示错更让人不敢信。
+ */
+export function resolveDisplayState(input: {
+  hasBinding: boolean
+  queueState: SyncState
+  cloudRevision: number | null
+  baseRevision: number
+}): SyncState {
+  const { hasBinding, queueState, cloudRevision, baseRevision } = input
+  if (!hasBinding) return queueState
+  // 进行中/异常优先展示：它们比"已对齐"更该被看见
+  if (queueState === 'syncing' || queueState === 'offline' || queueState === 'conflict' || queueState === 'blocked') {
+    return queueState
+  }
+  if (cloudRevision === null) return queueState
+  if (cloudRevision === baseRevision) return 'synced'
+  if (cloudRevision > baseRevision) return 'queued'
+  // 云端比本机记的还旧：回滚/换账号，不能让界面显示"已同步"
+  return 'blocked'
+}
+
 /** 内存实现（单测用） */
 export function createMemoryBindingStore(seed: Record<string, SyncBinding> = {}): BindingStore {
   const m = new Map(Object.entries(seed))
