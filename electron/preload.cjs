@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld('electronAuth', {
    *        `origin` 传登录服务器地址：主进程会拒绝打到别的源，防止令牌被带去第三方。
    */
   fetch: (opts) => ipcRenderer.invoke('auth:desktopFetch', opts),
+  /** 登录服务器 origin（同步请求拼绝对地址用；未登录返回空串） */
+  origin: () => ipcRenderer.invoke('auth:desktopOrigin'),
 })
 
 // 3.3.2 · 老板键（规划 §15）：全局快捷键的注册与隐藏/恢复都在主进程；

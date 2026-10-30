@@ -19,8 +19,12 @@ export interface ElectronAuthAPI {
   >
   logout(): Promise<{ ok: boolean }>
   fetch(opts: {
-    url: string; method?: string; headers?: Record<string, string>; body?: string; origin?: string
-  }): Promise<{ ok: boolean; status: number; text?: string; error?: string }>
+    url: string; method?: string; headers?: Record<string, string>; body?: string | Uint8Array; origin?: string
+    /** true 时返回 base64（同步要下对象二进制）；不传仍返回 text */
+    binary?: boolean
+  }): Promise<{ ok: boolean; status: number; text?: string; base64?: string; error?: string }>
+  /** 登录服务器 origin（未登录返回空串） */
+  origin(): Promise<{ origin: string }>
 }
 
 declare global {
@@ -110,5 +114,55 @@ export async function desktopFetch(
     return { ok: r.ok, status: r.status, text: r.text ?? '', error: r.error }
   } catch (e) {
     return { ok: false, status: 0, text: '', error: e instanceof Error ? e.message : '请求失败' }
+  }
+}
+
+/** 登录服务器 origin（未登录时为空串） */
+export async function desktopOrigin(): Promise<string> {
+  if (!hasDesktopAuth()) return ''
+  try {
+    const r = await window.electronAuth!.origin()
+    return String(r?.origin || '')
+  } catch {
+    return ''
+  }
+}
+
+export interface DesktopBytesResult {
+  ok: boolean
+  status: number
+  bytes: Uint8Array
+  error?: string
+}
+
+function base64Bytes(b64: string): Uint8Array {
+  if (!b64) return new Uint8Array(0)
+  try {
+    const bin = atob(b64)
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  } catch {
+    return new Uint8Array(0)
+  }
+}
+
+/**
+ * 代发请求并取**二进制**（同步下载内容对象用）。
+ *
+ * 🔴 不能用上面的 `desktopFetch`：它按 UTF-8 解码正文，图片与二进制分片会被解坏，
+ *    表现为「哈希对不上」「图片打不开」。主进程侧 `binary:true` 返回 base64，浏览器侧再还原成字节。
+ */
+export async function desktopFetchBytes(
+  origin: string, path: string, init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array } = {},
+): Promise<DesktopBytesResult> {
+  if (!hasDesktopAuth()) return { ok: false, status: 0, bytes: new Uint8Array(0), error: '当前环境不支持' }
+  const url = path.startsWith('http') ? path : `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`
+  try {
+    const r = await window.electronAuth!.fetch({ url, origin, ...init, binary: true })
+    if (r.error) return { ok: false, status: r.status || 0, bytes: new Uint8Array(0), error: r.error }
+    return { ok: r.ok, status: r.status, bytes: base64Bytes(r.base64 || '') }
+  } catch (e) {
+    return { ok: false, status: 0, bytes: new Uint8Array(0), error: e instanceof Error ? e.message : '请求失败' }
   }
 }

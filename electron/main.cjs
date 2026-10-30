@@ -197,6 +197,21 @@ app.whenReady().then(() => {
   // 渲染层只拿到两个结果：「成功（带用户名）/ 失败（带原因）」，永远看不到令牌原文。
   const authTokenFile = path.join(app.getPath('userData'), 'desktop-session.bin')
   const tokenVault = desktopAuth.createTokenVault({ safeStorage, fs, file: authTokenFile })
+  /**
+   * 登录服务器 origin（3.3.2 · P5）：同步请求要打到**账号服务器**，而不是本机页面。
+   * 🔴 只记 origin（协议+域名+端口），不记任何凭据；登出时清掉。
+   * 🔴 与令牌分开存：origin 不是秘密，但"跟着令牌一起没了"会让用户每次都要重填服务器地址。
+   */
+  const authOriginFile = path.join(app.getPath('userData'), 'desktop-origin.txt')
+  let authOrigin = ''
+  try { authOrigin = String(fs.readFileSync(authOriginFile, 'utf8') || '').trim() } catch { authOrigin = '' }
+  const saveAuthOrigin = (origin) => {
+    authOrigin = origin || ''
+    try {
+      if (authOrigin) fs.writeFileSync(authOriginFile, authOrigin)
+      else fs.unlinkSync(authOriginFile)
+    } catch { /* 写不进去只影响"下次自动填地址"，不影响本次登录 */ }
+  }
 
   ipcMain.handle('auth:desktopStatus', () => {
     let available = false
@@ -234,6 +249,8 @@ app.whenReady().then(() => {
         return { ok: false, error: String((body && body.error) || `换取登录凭据失败（HTTP ${resp.status}）`) }
       }
       const saved = tokenVault.save(String(body.token))
+      // 记下服务器 origin：之后同步请求（Bearer）要打到同一个源
+      try { saveAuthOrigin(new URL(baseUrl).origin) } catch { /* baseUrl 已校验过，理论上不会失败 */ }
       return {
         ok: true,
         user: body.user ? { name: body.user.name } : null,
@@ -250,8 +267,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle('auth:desktopLogout', () => {
     tokenVault.clear()
+    saveAuthOrigin('')
     return { ok: true }
   })
+
+  /** 登录服务器 origin（同步请求用它拼绝对地址；未登录返回空串） */
+  ipcMain.handle('auth:desktopOrigin', () => ({ origin: tokenVault.load() ? authOrigin : '' }))
 
   /**
    * 代发带令牌的请求。
@@ -261,7 +282,7 @@ app.whenReady().then(() => {
     const token = tokenVault.load()
     if (!token) return { ok: false, status: 401, error: '未登录' }
     const url = String((opts && opts.url) || '')
-    const allowOrigin = String((opts && opts.origin) || '')
+    const allowOrigin = String((opts && opts.origin) || authOrigin || '')
     try {
       if (allowOrigin && new URL(url).origin !== new URL(allowOrigin).origin) {
         return { ok: false, status: 0, error: '请求目标与登录服务器不一致' }
@@ -275,7 +296,13 @@ app.whenReady().then(() => {
         headers: { ...((opts && opts.headers) || {}), Authorization: `Bearer ${token}` },
         body: opts && opts.body != null ? opts.body : undefined,
       })
-      return { ok: r.ok, status: r.status, text: await r.text() }
+      /**
+       * 🔴 3.3.2 · P5：同步要下**对象二进制**（图片/分片），`r.text()` 会把它们解坏。
+       * 调用方用 `binary: true` 明确要 base64；不传时仍返回 text（现有调用零变化）。
+       */
+      const buf = Buffer.from(await r.arrayBuffer())
+      if (opts && opts.binary) return { ok: r.ok, status: r.status, base64: buf.toString('base64') }
+      return { ok: r.ok, status: r.status, text: buf.toString('utf8') }
     } catch (err) {
       return { ok: false, status: 0, error: err && err.message ? String(err.message) : '请求失败' }
     }

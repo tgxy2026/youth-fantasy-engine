@@ -8,10 +8,33 @@
 //
 // 🔴 网络失败一律返回 `null` / 抛可识别的错误，**不要静默返回空数据**：
 //    "云端没有这本书"和"网络没通"在界面上是两句话，混在一起会让用户以为稿子丢了。
+import { cookieFetch, type CloudFetch } from '@/lib/cloud/cloudTransport'
+
 function apiBase(): string {
   const m = typeof window !== 'undefined' ? window.__YFE_PORTABLE__ : null
   if (m && typeof m === 'object' && typeof m.apiBase === 'string' && m.apiBase) return m.apiBase
   return ''
+}
+
+// ---------------- 请求通道（网页 Cookie / 桌面 Bearer） ----------------
+//
+// 🔴 默认不配置 = 网页行为逐字节不变（同源 Cookie）。
+//    桌面版由 `syncBoot` 在**已登录**时调用 `configureCloudTransport({ base, fetch })`。
+// 🔴 base 必须是绝对 origin（桌面页面在本机服务上，同源地址没有 `/api/v2` 路由）。
+let activeBase: string | null = null
+let activeFetch: CloudFetch | null = null
+
+export function configureCloudTransport(next: { base?: string | null; fetch?: CloudFetch | null } | null): void {
+  activeBase = next?.base ?? null
+  activeFetch = next?.fetch ?? null
+}
+
+function f(): CloudFetch {
+  return activeFetch ?? cookieFetch()
+}
+
+function baseOf(): string {
+  return activeBase ?? apiBase()
 }
 
 /** 云端这一版的摘要（章节数 / 创建时间）—— 覆盖前给用户看的依据，不是判定依据 */
@@ -44,9 +67,9 @@ export type CloudProbe =
  * 🔴 404 与"网络断"必须分开：404 说明确实没有（可以重新上传），
  *    网络断说明不知道（这轮别动）。见 `decideSync` 的 `remote-gone`。
  */
-export async function probeCloudProject(cloudProjectId: string, base = apiBase()): Promise<CloudProbe> {
+export async function probeCloudProject(cloudProjectId: string, base = baseOf()): Promise<CloudProbe> {
   try {
-    const res = await fetch(`${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}`, {
+    const res = await f()(`${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}`, {
       credentials: 'same-origin',
       cache: 'no-store',
     })
@@ -81,17 +104,17 @@ export async function probeCloudProject(cloudProjectId: string, base = apiBase()
 }
 
 /** 只取 revision（给自动同步用的便捷函数；查不到返回 null） */
-export async function fetchRemoteRevision(cloudProjectId: string, base = apiBase()): Promise<number | null> {
+export async function fetchRemoteRevision(cloudProjectId: string, base = baseOf()): Promise<number | null> {
   const p = await probeCloudProject(cloudProjectId, base)
   return p.ok ? p.state.revision : null
 }
 
 /** 列出云端作品 */
-export async function listCloudProjects(base = apiBase()): Promise<
+export async function listCloudProjects(base = baseOf()): Promise<
   Array<{ cloudProjectId: string; name: string; revision: number; updatedAt: number; objectBytes: number; deleted?: boolean }>
 > {
   try {
-    const res = await fetch(`${base}/api/v2/projects`, { credentials: 'same-origin', cache: 'no-store' })
+    const res = await f()(`${base}/api/v2/projects`, { credentials: 'same-origin', cache: 'no-store' })
     if (!res.ok) return []
     const b = await res.json() as { projects?: unknown }
     return Array.isArray(b.projects) ? b.projects as never : []
@@ -102,10 +125,10 @@ export async function listCloudProjects(base = apiBase()): Promise<
 
 /** 新建一本云端作品 */
 export async function createCloudProject(
-  input: { cloudProjectId?: string; name: string }, base = apiBase(),
+  input: { cloudProjectId?: string; name: string }, base = baseOf(),
 ): Promise<{ ok: true; cloudProjectId: string; revision: number } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${base}/api/v2/projects`, {
+    const res = await f()(`${base}/api/v2/projects`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -121,11 +144,11 @@ export async function createCloudProject(
 
 /** 取清单（不传 rev 就是最新） */
 export async function fetchManifest(
-  cloudProjectId: string, rev?: number, base = apiBase(),
+  cloudProjectId: string, rev?: number, base = baseOf(),
 ): Promise<Record<string, unknown> | null> {
   try {
     const q = rev ? `?rev=${rev}` : ''
-    const res = await fetch(
+    const res = await f()(
       `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/manifest${q}`,
       { credentials: 'same-origin', cache: 'no-store' },
     )
@@ -141,10 +164,10 @@ export async function fetchManifest(
  * @returns 字节；失败返回 null（调用方据此判"内容没下齐"，不要拿半个文件去应用）
  */
 export async function downloadObject(
-  cloudProjectId: string, hash: string, base = apiBase(),
+  cloudProjectId: string, hash: string, base = baseOf(),
 ): Promise<Uint8Array | null> {
   try {
-    const res = await fetch(
+    const res = await f()(
       `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/objects/${encodeURIComponent(hash)}`,
       { credentials: 'same-origin', cache: 'no-store' },
     )
@@ -164,10 +187,10 @@ export async function downloadObject(
  *    不自动把内容套到本机（原地落地未做）。
  */
 export async function restoreCloudProject(
-  cloudProjectId: string, opId: string, base = apiBase(),
+  cloudProjectId: string, opId: string, base = baseOf(),
 ): Promise<{ ok: true; revision: number; restoredFrom: number } | { ok: false; error: string; code?: string }> {
   try {
-    const res = await fetch(
+    const res = await f()(
       `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/restore?opId=${encodeURIComponent(opId)}`,
       { method: 'POST', credentials: 'same-origin' },
     )

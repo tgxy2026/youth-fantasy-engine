@@ -20,7 +20,10 @@ import { createSyncStateStores } from '@/lib/sync/syncQueueIdb'
 import type { SyncController } from '@/lib/sync/syncController'
 import { installSyncController, getSyncController } from '@/lib/sync/syncController'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
-import { fetchRemoteRevision } from '@/lib/cloud/syncApi'
+import { fetchRemoteRevision, configureCloudTransport } from '@/lib/cloud/syncApi'
+import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
+import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
+import { DESKTOP } from '@/lib/app/desktop'
 import { autoSyncTick, type AutoSyncDeps, type TickDecision } from '@/lib/app/syncAuto'
 
 /** 默认轮询间隔：用户在写稿，20 秒足够把改动送上去，又不至于太吵 */
@@ -47,6 +50,18 @@ export async function bootSync(): Promise<SyncController> {
   if (booting) return booting
 
   booting = (async () => {
+    // 桌面登录态：同步请求要走主进程的 Bearer 通道（本机页面没有 `/api/v2` 路由，也没有 Cookie）。
+    // 🔴 未登录 / 拿不到 origin 时保持默认 Cookie 通道 —— 网页版行为不受影响。
+    if (DESKTOP) {
+      try {
+        const st = await desktopAuthStatus()
+        const origin = st.signedIn ? await desktopOrigin() : ''
+        const transport = origin ? createDesktopCloudFetch(origin) : null
+        if (origin && transport) configureCloudTransport({ base: origin, fetch: transport })
+      } catch (e) {
+        console.warn('[sync] 桌面账号通道装配失败，保持默认通道（同步入口本版本不开放）：', e)
+      }
+    }
     // 🔴 队列打不开就降级内存：同步可以退让，编辑器不能因为同步起不来而卡住
     const { queue, tombstones } = await createSyncStateStores((reason) => {
       console.warn('[sync] 本机同步状态库打不开，已降级为内存队列（重启会丢任务）：', reason)
