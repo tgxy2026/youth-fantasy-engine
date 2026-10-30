@@ -55,29 +55,59 @@ export function loadOrCreateSecret(file) {
 
 const b64u = (buf) => Buffer.from(buf).toString('base64url')
 
-export function signSession(uid, exp, secret) {
-  const payload = `${uid}.${exp}`
+/**
+ * 签发会话令牌（3.3.2 起为 4 段：`uid.sid.exp.sig`）。
+ *
+ * 🔴 为什么要加 `sid`：旧格式只有 `uid`，一个账号签出的所有令牌互相不可区分，
+ *    服务端只能靠「记住当前那一个」来实现撤销（即单会话）。带上 `sid` 之后，
+ *    同一个账号的多台设备各持一段可单独撤销的标识，撤销也不必再顶掉别人。
+ * @param {string} uid 用户 id
+ * @param {string} sid 会话 id（随机，随会话表一起存）
+ * @param {number} exp 过期时间戳（ms）
+ * @param {Buffer} secret 服务端签名密钥
+ */
+export function signSession(uid, sid, exp, secret) {
+  if (!uid || !sid) throw new Error('signSession 需要 uid 与 sid')
+  const payload = `${uid}.${sid}.${exp}`
   const sig = b64u(createHmac('sha256', secret).update(payload).digest())
   return `${payload}.${sig}`
 }
 
 /**
+ * 令牌摘要 —— 会话表里**只存这个**，不存明文令牌。
+ *
+ * 🔴 换掉明文的意义：`users.json` 会被备份、会被运维拷走、可能被误传。
+ *    存明文＝把每台设备的登录凭据一起交出去；存 HMAC 摘要，即使泄漏也换不回令牌。
+ * 🔴 前缀 `session:` 是域分隔，避免与密码哈希等其他用途共用密钥时产生交叉场景。
+ */
+export function hashToken(token, secret) {
+  return b64u(createHmac('sha256', secret).update(`session:${token}`).digest())
+}
+
+/**
  * 验签 + 验过期。
- * @returns uid；无效返回 ''
+ * @returns {{ uid: string, sid: string } | null} 无效返回 null。
+ *   3 段旧令牌（`uid.exp.sig`）仍然接受，`sid` 返回空串 —— **升级时不能让所有老会话立刻掉线**。
  */
 export function verifySessionToken(token, secret) {
-  if (typeof token !== 'string') return ''
+  if (typeof token !== 'string') return null
   const parts = token.split('.')
-  if (parts.length !== 3) return ''
-  const [uid, expStr, sig] = parts
+  // 4 段 = 新格式；3 段 = 3.3.1 及更早的旧格式
+  if (parts.length !== 4 && parts.length !== 3) return null
+  const legacy = parts.length === 3
+  const uid = parts[0]
+  const sid = legacy ? '' : parts[1]
+  const expStr = legacy ? parts[1] : parts[2]
+  const sig = legacy ? parts[2] : parts[3]
   const exp = Number(expStr)
-  if (!uid || !Number.isFinite(exp)) return ''
-  const expect = b64u(createHmac('sha256', secret).update(`${uid}.${expStr}`).digest())
+  if (!uid || !Number.isFinite(exp)) return null
+  const payload = legacy ? `${uid}.${expStr}` : `${uid}.${sid}.${expStr}`
+  const expect = b64u(createHmac('sha256', secret).update(payload).digest())
   // 长度不等时 timingSafeEqual 会抛错，先挡掉
-  if (sig.length !== expect.length) return ''
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return ''
-  if (Date.now() > exp) return ''
-  return uid
+  if (sig.length !== expect.length) return null
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null
+  if (Date.now() > exp) return null
+  return { uid, sid }
 }
 
 /** 用户名规则：2–24 位，允许中英文、数字、下划线、连字符 */

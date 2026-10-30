@@ -75,14 +75,26 @@ try {
   } finally { await fs.rmdir(storedPath); await fs.rename(kept, storedPath) }
   check('异常队列释放后可按原基线重试', (await write(a, winnerText, currentRevision)).status === 200)
 
-  // A real TCP request whose body remains incomplete across session replacement must not commit.
+  // A real TCP request whose body remains incomplete across **会话撤销** must not commit.
+  //
+  // 🔴 3.3.2 契约变更（2026-10-30）：旧版这里用「另一处登录」触发，因为旧实现是**单会话**
+  //    —— 新登录直接顶掉本设备的令牌。3.3.2 起一个账号可多设备同时在线（这是本版的目的），
+  //    「别处登录」不再使本设备失效，所以同一个安全属性换成新模型下的等价触发：
+  //    **原会话被显式撤销**。判据本身没变：提交点必须重新鉴权，失效会话不得落库。
   const pending = http.request(origin + '/api/data', { method: 'PUT', headers: { Cookie: a, 'If-Match': currentRevision, 'Content-Type': 'application/json' } })
   const response = new Promise<number>(resolve => pending.on('response', res => { res.resume(); res.on('end', () => resolve(res.statusCode!)) }))
   const lateBody = document('late-session-write')
   pending.write(lateBody.slice(0, 20))
   const freshCookie = await auth('probe-cas-a', 'login')
+  const sessionList = await (await realFetch(origin + '/api/auth/sessions', { headers: { Cookie: freshCookie } })).json() as { sessions: { sid: string; current: boolean }[] }
+  const oldSid = sessionList.sessions.find(item => !item.current)!.sid
+  await realFetch(origin + '/api/auth/sessions/revoke', {
+    method: 'POST',
+    headers: { Cookie: freshCookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sid: oldSid }),
+  })
   pending.end(lateBody.slice(20))
-  check('请求体在途时会话替换不能落库', await response === 401 && (await (await read(freshCookie)).json()).text === winnerText)
+  check('请求体在途时会话撤销不能落库', await response === 401 && (await (await read(freshCookie)).json()).text === winnerText)
 
   // Real HTTP relay: drop the socket before or after an actual server commit; never fake a successful response.
   let mode: 'normal' | 'before' | 'after' | 'hold' = 'normal', putCount = 0

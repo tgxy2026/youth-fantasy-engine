@@ -14,6 +14,10 @@ import { readFileSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { USERS_FILE, USERS_FILE_VERSION, DEFAULT_QUOTA } from './config.mjs'
 import { writeTextAtomicSync } from './atomic.mjs'
+import {
+  createSession, findActive, touch, revoke, revokeOthers, revokeAll, prune,
+  migrateLegacySession, summarize, expiryReason,
+} from './sessions.mjs'
 
 let cache = null
 let cacheMtime = 0
@@ -151,9 +155,16 @@ export function resetPasswordByInvite(name, invite, newPasswordHash) {
     return { ok: false, error: '用户名或邀请码不正确' }
   }
   u.pwd = newPasswordHash
-  delete u.session
+  // 🔴 3.3.2：从「删掉那一个活跃会话」改为「撤销全部会话」——
+  //    用户来重置往往意味着怀疑账号被盗，多设备时代必须把所有设备一起踢下线。
+  const now = Date.now()
+  // 🔴 迁移可能替换 db.users[id] 的对象引用，所以必须用 readSessions 取回「当前那一个」，
+  //    否则撤销结果会写进孤儿对象（自检第 2 条抓到过的同一类错误）。
+  const { list, user: cur } = readSessions(db, u.id, now)
+  cur.sessionList = revokeAll(list, now).list
+  delete cur.session
   persist(db)
-  return { ok: true, value: u }
+  return { ok: true, value: cur }
 }
 
 export function listUsers() {
@@ -162,29 +173,142 @@ export function listUsers() {
 }
 
 /**
- * 记录该用户当前**唯一**的活跃会话 token。
+ * 取某用户的会话表，**并在需要时把旧的单会话字段搬过来**（不落盘，由调用方决定）。
  *
- * 🔴 为什么要有它：会话原先是无状态签名 Cookie（`uid.exp.hmac`），服务端不留痕 ⇒
- *    无法让旧设备下线，两个设备可以同时用一个账号各自写，然后互相覆盖（WEB-02 跨设备部分）。
- *    现在每次登录都覆盖这里的 token：旧设备下一次请求发现「服务端记的 token 不是我这个」，
- *    立刻失效。**从根上消除多端并发**，比做版本锁简单得多，也不要求用户记得手动退出。
- * ⚠️ 同一浏览器的多个标签页共用同一个 Cookie ⇒ 不受影响（不会自己踢自己）。
+ * 🔴 纯函数式地接在当前 db 引用上：本文件全部同步读写，中途不 await ⇒ 不存在读改写竞态。
+ * 🔴 迁移后删掉 `session` 字段：留着它会让两套来源同时存在，早晚有人只改其中一处。
  */
-export function setActiveSession(id, token) {
-  const db = loadUsers()
+function getSessionListIn(db, id, now) {
   const u = db.users[id]
-  if (!u) return
-  u.session = { token, at: Date.now() }
-  persist(db)
+  if (!u) return []
+  const { user, changed } = migrateLegacySession(u, now)
+  if (changed) {
+    db.users[id] = user
+    delete db.users[id].session
+  }
+  return db.users[id].sessionList || []
 }
 
-/** 主动退出：抹掉活跃会话（否则退出后旧 token 仍被服务端认可） */
-export function clearActiveSession(id) {
+/**
+ * 读会话表并**同时取回迁移后的用户对象**。
+ *
+ * 🔴 为什么必须一起返回：`getSessionListIn` 迁移时会把 `db.users[id]` **换成一个新对象**。
+ *    若调用方在调用前就 `const u = db.users[id]`，之后往这个旧对象上写 `sessionList`，
+ *    写的是已经从表里摘掉的孤儿对象 —— `persist(db)` 存下去的那份根本没有新会话。
+ *    这个 bug 真的发生过：注册后第二台设备登录，第一台的会话凭空消失（自检第 2 条抓到的）。
+ */
+function readSessions(db, id, now) {
+  const list = getSessionListIn(db, id, now)
+  return { list, user: db.users[id] }
+}
+
+/**
+ * 新建一条会话（登录 / 注册 / 桌面授权换取令牌时调用）。
+ *
+ * 与旧 `setActiveSession` 的根本区别：**不覆盖其他设备**。软上限（10）时照样放行，
+ * 只把 `limitExceeded` 交回给界面提示撤销；硬上限（20）才拒绝。
+ * @returns {{ ok: boolean, code?: string, session?: object, limitExceeded?: boolean, activeCount?: number }}
+ */
+export function openSession(id, { sid, tokenHash, kind = 'web', label = '', now = Date.now() }) {
+  const db = loadUsers()
+  if (!db.users[id]) return { ok: false, code: 'NO_USER' }
+  const { list, user: u } = readSessions(db, id, now)
+  const r = createSession(list, { sid, tokenHash, kind, label, now })
+  if (!r.ok) {
+    // 触顶时也要把清理结果写回（可能刚清掉一批过期行），否则名额永远不释放
+    u.sessionList = r.list
+    persist(db)
+    return { ok: false, code: r.code, activeCount: r.activeCount }
+  }
+  u.sessionList = r.list
+  persist(db)
+  return { ok: true, session: r.session, limitExceeded: !!r.limitExceeded, activeCount: r.activeCount }
+}
+
+/**
+ * 按令牌摘要找会话并刷新 lastSeenAt（1 小时节流，`changed=false` 时不落盘）。
+ * @returns {{ session: object|null, reason: string }}
+ *   reason 用于把 401 分成「过期」与「被撤销」两种话（前端文案不同）。
+ */
+export function checkSession(id, tokenHash, now = Date.now()) {
+  const db = loadUsers()
+  if (!db.users[id]) return { session: null, reason: 'NO_USER' }
+  const { list, user: u } = readSessions(db, id, now)
+  const s = findActive(list, tokenHash, now)
+  if (!s) {
+    const prev = list.find((x) => x.tokenHash === tokenHash)
+    // 有一模一样的摘要但已失效 ⇒ 说清是撤销还是到期；完全没这条 ⇒ 当作过期（可能来自旧表）
+    const reason = prev ? expiryReason(prev, now) || 'EXPIRED' : 'EXPIRED'
+    return { session: null, reason }
+  }
+  const t = touch(list, s.sid, now)
+  if (t.changed) {
+    u.sessionList = t.list
+    persist(db)
+  } else if (list !== u.sessionList) {
+    // 迁移或 prune 有变化但 touch 没写：补一次落盘，避免每次请求都重新迁移
+    u.sessionList = list
+    persist(db)
+  }
+  return { session: s, reason: '' }
+}
+
+/** 撤销单条会话；返回是否真的改了（幂等，重复调用不写盘） */
+export function revokeSessionById(id, sid, now = Date.now()) {
+  const db = loadUsers()
+  if (!db.users[id]) return false
+  const { list, user: u } = readSessions(db, id, now)
+  const r = revoke(list, sid, now)
+  if (!r.changed) return false
+  u.sessionList = r.list
+  persist(db)
+  return true
+}
+
+/** 撤销除当前会话外的全部；返回撤销条数 */
+export function revokeOtherSessions(id, keepSid, now = Date.now()) {
+  const db = loadUsers()
+  if (!db.users[id]) return 0
+  const { list, user: u } = readSessions(db, id, now)
+  const r = revokeOthers(list, keepSid, now)
+  if (!r.changed) return 0
+  u.sessionList = r.list
+  persist(db)
+  return r.changed
+}
+
+/** 撤销全部会话（改密 / 重置 / 禁用）；返回撤销条数 */
+export function revokeAllSessions(id, now = Date.now()) {
+  const db = loadUsers()
+  if (!db.users[id]) return 0
+  const { list, user: u } = readSessions(db, id, now)
+  const r = revokeAll(list, now)
+  delete u.session
+  if (!r.changed) { persist(db); return 0 }
+  u.sessionList = r.list
+  persist(db)
+  return r.changed
+}
+
+/** 供界面用的会话列表（**不含 tokenHash**）；顺带清掉过期/超期撤销的行 */
+export function listSessions(id, now = Date.now()) {
+  const db = loadUsers()
+  if (!db.users[id]) return []
+  const { list, user: u } = readSessions(db, id, now)
+  const p = prune(list, now)
+  if (p.removed) {
+    u.sessionList = p.list
+    persist(db)
+  }
+  return summarize(p.removed ? p.list : list, now)
+}
+
+/** 会话是否仍然有效（不含刷新副作用；给「当前会话」标记用） */
+export function isSessionActive(id, tokenHash, now = Date.now()) {
   const db = loadUsers()
   const u = db.users[id]
-  if (!u || !u.session) return
-  delete u.session
-  persist(db)
+  if (!u) return false
+  return !!findActive(getSessionListIn(db, id, now), tokenHash, now)
 }
 
 export function deleteUser(id) {

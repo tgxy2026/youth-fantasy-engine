@@ -11,6 +11,7 @@
 // 🔴 安全基线：路径遍历前缀断言、请求体上限、登录/注册限流、Cookie HttpOnly+SameSite、
 //    密码 scrypt、会话 HMAC 签名、外置 store 白名单。任何一条都不是「以后再补」。
 import { createServer } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { createReadStream, statSync, readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
 import { join, extname, normalize, sep } from 'node:path'
 import { createGzip } from 'node:zlib'
@@ -24,16 +25,23 @@ import {
 import { sendJSON, sendText, readBody, readJSONBody, parseCookies, buildCookie, clientIp } from './lib/http.mjs'
 import { rateLimit, resetLimit } from './lib/ratelimit.mjs'
 import { renderAuthPage, renderResetPage } from './lib/authPage.mjs'
+import {
+  DESKTOP_PENDING_COOKIE, DESKTOP_PENDING_TTL_MS,
+  parseDesktopRequest, encodePending, decodePending, issueCode, redeemCode,
+} from './lib/desktopAuth.mjs'
 import { GUEST_BANNER } from './lib/guestNotice.mjs'
 import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
-  claimInvite, createInvite, listInvites, newUserId, setActiveSession, clearActiveSession,
+  claimInvite, createInvite, listInvites, newUserId,
+  openSession, checkSession, revokeSessionById, revokeOtherSessions, listSessions,
   markIssued, resetPasswordByInvite,
 } from './lib/users.mjs'
 import {
-  hashPassword, verifyPassword, loadOrCreateSecret, signSession, verifySessionToken,
+  hashPassword, verifyPassword, loadOrCreateSecret, signSession, verifySessionToken, hashToken,
   validateName, validatePassword,
 } from './lib/auth.mjs'
+// 只在接口里回显上限数值；真正的判定在 users.mjs → sessions.mjs（单一真源）
+import { SESSION_LIMITS } from './lib/sessions.mjs'
 import {
   readUserData, writeUserData, usageOf, userDataFile,
   readBlob, writeBlob, deleteBlob, listBlobs, ensureUserDir,
@@ -77,24 +85,48 @@ if (listUsers().length === 0 && !listInvites().some((i) => i.note === '首次启
  *    混成一句「未登录」会让用户反复登录反复被踢，却完全看不出原因。
  * @returns {{user: object|null, reason: ''|'NO_TOKEN'|'EXPIRED'|'NO_USER'|'REPLACED'}}
  */
+/**
+ * 取本次请求携带的会话令牌：优先 Cookie，其次 `Authorization: Bearer`。
+ *
+ * 🔴 为什么要支持 Bearer（3.3.2）：桌面版走授权码换令牌，令牌存在系统安全存储里，
+ *    它**不是浏览器**，没有 Cookie 罐。让桌面自己拼 `Cookie:` 头能用但语义错乱
+ *    （Cookie 的 SameSite/Secure 规则对它没意义），而 Bearer 是 HTTP 客户端的正道。
+ * 🔴 收 Bearer 不引入 CSRF 面：浏览器不会自动附带 Authorization 头，
+ *    攻击者伪造的跨站请求带不上令牌；Cookie 那条路仍靠 SameSite=Lax。
+ */
+function readSessionToken(req) {
+  const fromCookie = parseCookies(req)[SESSION_COOKIE]
+  if (fromCookie) return fromCookie
+  const auth = String(req.headers.authorization || '')
+  return auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+}
+
 function authCheck(req) {
-  const token = parseCookies(req)[SESSION_COOKIE]
-  if (!token) return { user: null, reason: 'NO_TOKEN' }
-  const uid = verifySessionToken(token, SECRET)
-  if (!uid) return { user: null, reason: 'EXPIRED' }
-  const u = findById(uid)
-  if (!u) return { user: null, reason: 'NO_USER' }
-  // 单会话：服务端记录的活跃 token 与本次请求不一致 ⇒ 已被别处的登录顶掉
-  if (!u.session || u.session.token !== token) return { user: null, reason: 'REPLACED' }
-  return { user: u, reason: '' }
+  const token = readSessionToken(req)
+  if (!token) return { user: null, reason: 'NO_TOKEN', session: null }
+  const verified = verifySessionToken(token, SECRET)
+  if (!verified) return { user: null, reason: 'EXPIRED', session: null }
+  const u = findById(verified.uid)
+  if (!u) return { user: null, reason: 'NO_USER', session: null }
+  // 3.3.2：多会话。按**令牌摘要**查会话表（不按 sid 查）—— 旧令牌里没有 sid，
+  // 但它们迁移进表时也写了摘要，所以「摘要」是唯一能同时覆盖新旧两种令牌的键。
+  const r = checkSession(u.id, hashToken(token, SECRET))
+  if (!r.session) return { user: null, reason: r.reason, session: null }
+  return { user: u, reason: '', session: r.session }
 }
 
 function authUser(req) {
   return authCheck(req).user
 }
 
-/** 401 的 code：前端据此分流提示文案 */
-const sessionCode = (reason) => (reason === 'REPLACED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED')
+/**
+ * 401 的 code：前端据此分流提示文案。
+ * 🔴 只保留两个对外 code（前端已有对应文案）：
+ *    · `REVOKED` → 被撤销（在别的设备上退出/被重置密码）⇒ 沿用「已在别处登录」这句；
+ *    · 其余（到期 / 无令牌 / 用户没了）⇒ 「登录已过期」。
+ *    新增第三个 code 只会让老前端落到默认分支，反而说不清原因。
+ */
+const sessionCode = (reason) => (reason === 'REVOKED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED')
 
 const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https'
 
@@ -126,25 +158,74 @@ function recordStat(type) {
   } catch { /* 统计失败绝不能影响主流程 */ }
 }
 
-function sessionCookie(req, uid) {
-  const token = signSession(uid, Date.now() + SESSION_TTL_MS, SECRET)
-  // 直连 http 时不加 Secure（否则浏览器直接丢弃 Cookie）；走 https 反代时自动加
-  return buildCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS, secure: isHttps(req) })
+/**
+ * 设备标签：只留「浏览器 · 系统」这种最小信息。
+ * 🔴 刻意**不存** IP、不存完整 UA 串：会话列表只需要让人认得出「这是我哪台机器」，
+ *    存 IP 等于给一份泄漏即得的行为日志，收益远小于风险。
+ */
+function deviceLabel(req) {
+  const ua = String(req.headers['user-agent'] || '')
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\//.test(ua) ? 'Opera'
+      : /Chrome\//.test(ua) ? 'Chrome'
+        : /Firefox\//.test(ua) ? 'Firefox'
+          : /Safari\//.test(ua) ? 'Safari' : '浏览器'
+  const os = /Windows/.test(ua) ? 'Windows'
+    : /Android/.test(ua) ? 'Android'
+      : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+        : /Mac OS X/.test(ua) ? 'macOS'
+          : /Linux/.test(ua) ? 'Linux' : ''
+  return os ? `${browser} · ${os}` : browser
 }
 
 /**
- * 签发会话并写入「活跃会话」记录。
- * 🔴 单会话的关键一步：每次登录都覆盖 `user.session` ⇒ 旧设备的下一个请求
- *    会发现服务端记的 token 与自己不符，立刻失效（WEB-02 跨设备并发的根治方案）。
- *    同一浏览器多标签页共用同一 Cookie，不会自己踢自己。
+ * 只建会话、不种 Cookie（网页与桌面共用）。
+ * 桌面版要走「授权码换令牌」，令牌是**写进响应体**给桌面存的，不能靠 Cookie。
+ * @returns {{ ok: true, token: string, sid: string, limitExceeded: boolean, activeCount: number }
+ *          | { ok: false, code: string, activeCount?: number }}
  */
-function issueSession(req, uid) {
-  const token = signSession(uid, Date.now() + SESSION_TTL_MS, SECRET)
-  setActiveSession(uid, token)
-  return buildCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_MS, secure: isHttps(req) })
+function createSessionFor(req, uid, kind = 'web') {
+  const now = Date.now()
+  const sid = randomBytes(16).toString('base64url')
+  const token = signSession(uid, sid, now + SESSION_TTL_MS, SECRET)
+  const r = openSession(uid, { sid, tokenHash: hashToken(token, SECRET), kind, label: deviceLabel(req), now })
+  if (!r.ok) return { ok: false, code: r.code, activeCount: r.activeCount }
+  return { ok: true, token, sid, limitExceeded: !!r.limitExceeded, activeCount: r.activeCount ?? 0 }
 }
 
+/**
+ * 签发一条会话（3.3.2 · 多设备）+ 种 Cookie。
+ *
+ * 与旧实现的区别：**不再覆盖其他设备的会话**。每次登录新增一行，各设备可单独撤销。
+ * 软上限（10）时仍然放行，只把 `limitExceeded` 交给界面提示撤销；硬上限（20）才拒绝。
+ * @returns {{ ok: true, cookie: string, limitExceeded: boolean, activeCount: number }
+ *          | { ok: false, code: string, activeCount?: number }}
+ */
+function issueSession(req, uid, kind = 'web') {
+  const r = createSessionFor(req, uid, kind)
+  if (!r.ok) return r
+  // 直连 http 时不加 Secure（否则浏览器直接丢弃 Cookie）；走 https 反代时自动加
+  return {
+    ok: true,
+    cookie: buildCookie(SESSION_COOKIE, r.token, { maxAge: SESSION_TTL_MS, secure: isHttps(req) }),
+    limitExceeded: r.limitExceeded,
+    activeCount: r.activeCount,
+  }
+}
+
+/** 桌面授权：把 code 送到回环地址。🔴 只跳 127.0.0.1，不跳 localhost/外网 */
+function desktopCallbackUrl(port, code, state) {
+  return `http://127.0.0.1:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+}
+
+
 const clearCookie = (req) => buildCookie(SESSION_COOKIE, '', { maxAge: 0, secure: isHttps(req) })
+
+/** 桌面待授权参数：httpOnly + 10 分钟，只给服务端读，页面脚本拿不到 */
+const desktopPendingCookie = (req, p) => buildCookie(DESKTOP_PENDING_COOKIE, encodePending(p), {
+  maxAge: DESKTOP_PENDING_TTL_MS, secure: isHttps(req),
+})
+const clearDesktopPending = (req) => buildCookie(DESKTOP_PENDING_COOKIE, '', { maxAge: 0, secure: isHttps(req) })
 
 /** 游客「知情同意」标记：点了 /guest 才种下，一年有效 */
 const guestCookie = (req) => buildCookie(GUEST_COOKIE, '1', { maxAge: GUEST_COOKIE_TTL_MS, secure: isHttps(req) })
@@ -384,9 +465,14 @@ async function handleApi(req, res, url) {
     // 🔴 临界区结束
     console.log(`[auth] 新用户注册：${user.name} (${user.id}) from ${ip}`)
     recordStat('register')
-    return sendJSON(res, 200, { ok: true, user: publicUser(user) }, {
+    const issued = issueSession(req, user.id)
+    if (!issued.ok) {
+      // 理论上注册时不可能触顶（新账号没有会话），留这条是为了不把「拒绝」当成成功
+      return sendJSON(res, 409, { ok: false, code: issued.code, error: '登录设备过多，请先在其他设备上退出' })
+    }
+    return sendJSON(res, 200, { ok: true, user: publicUser(user), sessionLimitExceeded: issued.limitExceeded }, {
       // 注册即登录：种会话，同时清掉游客标记（否则下次打开还会被当成游客）
-      'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
+      'Set-Cookie': [issued.cookie, clearGuestCookie(req)],
     })
   }
 
@@ -407,16 +493,30 @@ async function handleApi(req, res, url) {
     touchLogin(user.id)
     console.log(`[auth] 登录：${user.name} from ${ip}`)
     recordStat('login')
-    return sendJSON(res, 200, { ok: true, user: publicUser(findById(user.id)) }, {
-      'Set-Cookie': [issueSession(req, user.id), clearGuestCookie(req)],
+    const issued = issueSession(req, user.id)
+    if (!issued.ok) {
+      // 硬上限（20 台）才会走到这里。软上限（10 台）是放行 + 提示撤销，不拒绝登录。
+      return sendJSON(res, 409, {
+        ok: false, code: issued.code,
+        error: '登录的设备太多（已达上限）。请先在常用设备上打开「登录设备」撤销一台，或凭邀请码重置密码。',
+      })
+    }
+    return sendJSON(res, 200, {
+      ok: true, user: publicUser(findById(user.id)),
+      // 界面据此提示「已登录 N 台，建议撤销不用的设备」；不自动踢人
+      sessionLimitExceeded: issued.limitExceeded,
+      sessionCount: issued.activeCount,
+    }, {
+      'Set-Cookie': [issued.cookie, clearGuestCookie(req)],
     })
   }
 
   // ---- 退出 ----
   if (path === '/api/auth/logout' && req.method === 'POST') {
-    // 抹掉活跃会话：否则退出后旧 Cookie 仍被服务端认可（单会话下等于没退干净）
-    const u = authUser(req)
-    if (u) clearActiveSession(u.id)
+    // 3.3.2：只撤销**本设备**这条会话。旧实现是「抹掉账号唯一的活跃会话」，
+    // 多设备时代那样做等于「一台退出，全部下线」，与「各设备可单独管理」正相反。
+    const chkOut = authCheck(req)
+    if (chkOut.user && chkOut.session) revokeSessionById(chkOut.user.id, chkOut.session.sid)
     return sendJSON(res, 200, { ok: true }, { 'Set-Cookie': clearCookie(req) })
   }
 
@@ -461,11 +561,71 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { ok: true, app: APP, now: Date.now() })
   }
 
+  // ---- 桌面授权交换（3.3.2 · 不需要 Cookie：授权码本身就是凭据）----
+  if (path === '/api/auth/desktop/exchange' && req.method === 'POST') {
+    const rl = rateLimit(`dp:${ip}`, 20, 10 * 60 * 1000)
+    if (!rl.ok) return sendJSON(res, 429, { ok: false, error: `尝试次数过多，请 ${rl.retryAfter} 秒后再试` })
+    let body
+    try { body = await readJSONBody(req, 8 * 1024) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }) }
+    const r = redeemCode({ code: String(body?.code || ''), verifier: String(body?.verifier || '') })
+    if (!r.ok) {
+      // 授权码相关错误一律 400 且不含细节来源（不告诉调用方是「过期」还是「不匹配」以外的东西）
+      return sendJSON(res, r.status || 400, { ok: false, error: r.error })
+    }
+    const du = findById(r.uid)
+    if (!du) return sendJSON(res, 400, { ok: false, error: '账号不存在' })
+    const s = createSessionFor(req, du.id, 'desktop')
+    if (!s.ok) {
+      return sendJSON(res, 409, {
+        ok: false, code: s.code,
+        error: '登录的设备太多（已达上限）。请先在浏览器里撤销一台不用的设备，或凭邀请码重置密码。',
+      })
+    }
+    console.log(`[auth] 桌面授权登录：${du.name} (端口 ${r.port}) from ${ip}`)
+    recordStat('desktop_login')
+    // 🔴 令牌只出现在响应体：不进 URL、不进日志
+    return sendJSON(res, 200, {
+      ok: true, token: s.token, expiresAt: Date.now() + SESSION_TTL_MS,
+      user: publicUser(du), sessionLimitExceeded: s.limitExceeded, sessionCount: s.activeCount,
+    })
+  }
+
   // ---- 以下全部需要登录 ----
   // 🔴 用 authCheck 而非 authUser：reason 要传给 401 的 code，前端靠它区分
   //    「登录过期」与「账号在别处登录」两句提示（WEB-02 单会话）。
   const chk = authCheck(req)
   const user = chk.user
+
+  // ---- 登录设备管理（3.3.2 · P1）----
+  // 软上限 10 / 硬上限 20：这里把两个数交给界面，避免前端另写一份（必然漂移）
+  if (path === '/api/auth/sessions' && req.method === 'GET') {
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    const cur = chk.session?.sid || ''
+    const list = listSessions(user.id).map((s) => ({ ...s, current: s.sid === cur }))
+    return sendJSON(res, 200, {
+      ok: true, sessions: list, softLimit: SESSION_LIMITS.soft, hardLimit: SESSION_LIMITS.hard,
+    })
+  }
+
+  if (path === '/api/auth/sessions/revoke' && req.method === 'POST') {
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    let body
+    try { body = await readJSONBody(req, 4 * 1024) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }) }
+    const sid = String(body?.sid || '')
+    if (!sid) return sendJSON(res, 400, { ok: false, error: '缺少会话 id' })
+    // 🔴 只按「自己的」会话表撤销：api 层从不接受外部传来的 uid，防越权
+    const changed = revokeSessionById(user.id, sid)
+    const isSelf = sid === (chk.session?.sid || '')
+    return sendJSON(res, 200, { ok: true, changed, selfRevoked: isSelf && changed },
+      isSelf && changed ? { 'Set-Cookie': clearCookie(req) } : undefined)
+  }
+
+  if (path === '/api/auth/sessions/revoke-others' && req.method === 'POST') {
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    const cur = chk.session?.sid || ''
+    const revoked = cur ? revokeOtherSessions(user.id, cur) : 0
+    return sendJSON(res, 200, { ok: true, revoked })
+  }
 
   // ---- 整库读写（契约与便携版一致）----
   if (path === '/api/data') {
@@ -644,12 +804,38 @@ const server = createServer((req, res) => {
     })
     return res.end(req.method === 'HEAD' ? undefined : body)
   }
+  if (pathOnly === '/auth/desktop') {
+    // 桌面版发起授权：系统浏览器打开这里。已登录就直接签发一次性授权码并回跳回环地址；
+    // 未登录则先把参数暂存到 httpOnly Cookie，登录完在 `/` 上自动续上 —— 不改前端一行代码。
+    const parsed = parseDesktopRequest(new URLSearchParams(url.split('?')[1] || ''))
+    if (!parsed.ok) return sendText(res, 400, `桌面登录参数无效（${parsed.error}）`)
+    const u = authUser(req)
+    if (u) {
+      const { code } = issueCode({ uid: u.id, challenge: parsed.challenge, port: parsed.port })
+      res.writeHead(302, {
+        Location: desktopCallbackUrl(parsed.port, code, parsed.state),
+        'Cache-Control': 'no-store',
+        'Set-Cookie': clearDesktopPending(req),
+      })
+      return res.end()
+    }
+    res.writeHead(302, {
+      Location: '/',
+      'Cache-Control': 'no-store',
+      'Set-Cookie': desktopPendingCookie(req, parsed),
+    })
+    return res.end()
+  }
   if (pathOnly === '/logout') {
     // 退出登录：会话与游客标记一并清除，回到「登录页」这个真正的入口分流点。
     // 两条 cookie 都要清：只清会话的话，曾经点过「游客试用」的人会直接掉进游客模式，
     // 而不是回到登录页（用户会以为「退出后怎么还是这个界面」）。
     const u = authUser(req)
-    if (u) clearActiveSession(u.id)
+    if (u) {
+      // 3.3.2：静态 /logout 也只退本设备（与 API 行为一致，避免两条路径语义打架）
+      const chkOut = authCheck(req)
+      if (chkOut.session) revokeSessionById(u.id, chkOut.session.sid)
+    }
     res.writeHead(302, {
       Location: '/',
       'Set-Cookie': [clearCookie(req), clearGuestCookie(req)],
@@ -675,6 +861,18 @@ const server = createServer((req, res) => {
   const cookies = parseCookies(req)
   const user = authUser(req)
   const isGuest = !user && cookies[GUEST_COOKIE] === '1'
+
+  // 桌面授权续上：刚在浏览器里登录完，且此前从 /auth/desktop 带了待授权参数过来
+  const pendingDesktop = decodePending(cookies[DESKTOP_PENDING_COOKIE])
+  if (user && pendingDesktop) {
+    const { code } = issueCode({ uid: user.id, challenge: pendingDesktop.challenge, port: pendingDesktop.port })
+    res.writeHead(302, {
+      Location: desktopCallbackUrl(pendingDesktop.port, code, pendingDesktop.state),
+      'Cache-Control': 'no-store',
+      'Set-Cookie': clearDesktopPending(req),
+    })
+    return res.end()
+  }
 
   if (!user && !isGuest) {
     // 只在根路径与「无扩展名」的路径上给登录页；/assets 之类不会走到这里
