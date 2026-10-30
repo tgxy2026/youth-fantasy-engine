@@ -33,6 +33,7 @@ import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import type { TemplateField } from '@/lib/ai'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import { useFrozenDetailScroll } from '@/components/common/useFrozenDetailScroll'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
 import PromptModal from '@/components/dialogs/PromptModal'
@@ -131,6 +132,9 @@ export default function WorldSetSheet({ tab }: Props) {
   const dirtyRef = useRef(dirty)
   const draftRef = useRef(draft)
   const selRef = useRef(sel)
+  /** 右栏冻结（3.3.1 回归修复）：切子项时右栏停在原处，不跳回顶部 */
+  const detailScrollRef = useRef<HTMLDivElement>(null)
+  useFrozenDetailScroll(detailScrollRef, sel)
   const subsRef = useRef(subs)
   /** 本面板属于哪个项目 —— 挂载时绑定（换项目会因 App 的 key 整体重挂，见 FormSheet 同名说明） */
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
@@ -459,7 +463,7 @@ export default function WorldSetSheet({ tab }: Props) {
         </div>
 
         {/* ---------- 右列：当前层的表单（独立滚动） ---------- */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div ref={detailScrollRef} data-set-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           <div className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 ${
             isMain ? 'border-amber/30 bg-amber/5' : 'border-ink-600 bg-ink-800/40'
           }`}>

@@ -22,6 +22,7 @@ import * as db from '@/lib/db'
 import { currentWorkspaceScope, registerWorkspaceCapture } from '@/lib/settings/workspaceRuntime'
 import { workspaceViews, type DetailView } from '@/lib/settings/workspaceViewState'
 import { scrollRatio } from '@/lib/editor/editorViewMath'
+import { useFrozenDetailScroll } from '@/components/common/useFrozenDetailScroll'
 
 /** 滚动停下多久算「停稳了」（只影响记录频率，不影响任何判定） */
 const SETTLE_MS = 300
@@ -65,6 +66,12 @@ export function useDetailWorkspaceView({ pageId, objectId, defaultGroups, scroll
   live.current = { objectId, expanded, defaults: defaultGroups }
   const restoreToken = useRef(0)
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * 记录里的滚动位置**只用于首次挂载**（换页签回来接上）。
+   * 同一次打开期间切卡片一律「冻结在原地」—— 见 `useFrozenDetailScroll` 与主人 2026-10-30 的反馈：
+   * 按对象恢复会让没打开过的卡片跳回顶部，那不是作者要的。
+   */
+  const scrollRestoredOnce = useRef(false)
 
   const write = useCallback((id: string | null, groups: Set<string>, el: HTMLElement | null) => {
     if (!id || !el) return
@@ -132,6 +139,8 @@ export function useDetailWorkspaceView({ pageId, objectId, defaultGroups, scroll
     if (!usable) return
     const el = scrollRef.current
     if (!el) return
+    if (scrollRestoredOnce.current) return
+    scrollRestoredOnce.current = true
     const token = restoreToken.current + 1
     restoreToken.current = token
     const cancelled = () => token !== restoreToken.current || workspaceViews.generation() !== generation
@@ -145,6 +154,9 @@ export function useDetailWorkspaceView({ pageId, objectId, defaultGroups, scroll
     // 默认分组由调用方按当前模板算出，模板/页签变化时会换引用 —— 不放进依赖，避免反复重置
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectId, pageId, scrollRef])
+
+  // 右栏冻结：换卡片时停在原处，不跳回顶部（与上面的「按对象记展开组」互不干扰）
+  useFrozenDetailScroll(scrollRef, objectId)
 
   return { expanded, toggle }
 }
