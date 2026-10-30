@@ -5,6 +5,7 @@
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
 import { addCustomItem, deleteTableRow, getCurrentProjectId } from '@/lib/db'
@@ -24,6 +25,7 @@ import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { exportRowsCsv } from '@/lib/storage/tableIO'
 import { downloadBlob } from '@/lib/storage/zip'
 // 3.3.1 · P2：首次进入的分步引导（空态样板走这张表）
+import { neighborRowIndex, nativeConsumesVerticalArrow } from '@/lib/table/gridNav'
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { PageGuideButton } from '@/components/help/PageGuideButton'
@@ -371,6 +373,61 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rows/totalWidth 变化会改变 scrollWidth，需重算
   }, [syncScrollHint, rows.length, totalWidth, tab.id])
 
+  /**
+   * 设定表的方向键（3.3.1 · §8）：在**同一列的上下行**之间移动焦点。
+   *
+   * 🔴 只接管「控件自己不会用掉上下箭头」的情形（单行输入框 / 没折行的单元格文本域 / 按钮）。
+   *    数字框（上下＝加减）、原生下拉（上下＝换选项）、折了行的长文本（上下＝在行间移光标）
+   *    一律让给原生行为 —— 判据只看控件此刻的事实，不按页签或列名写例外表，见 `lib/table/gridNav`。
+   *
+   * 表格是窗口化渲染的（只有近处几十行在 DOM 里），所以「到头」就交回浏览器：
+   * 不在这里硬翻页，也不去猜尚未渲染的行长什么样。
+   */
+  const onGridKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    if (event.nativeEvent.isComposing) return
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
+    const isTextarea = target instanceof HTMLTextAreaElement
+    const style = isTextarea ? getComputedStyle(target) : null
+    const lineHeightRaw = style ? Number.parseFloat(style.lineHeight) : Number.NaN
+    const fontSize = style ? Number.parseFloat(style.fontSize) : 0
+    if (nativeConsumesVerticalArrow({
+      tagName: target.tagName,
+      type: target instanceof HTMLInputElement ? target.type : null,
+      scrollHeight: isTextarea ? target.scrollHeight : undefined,
+      clientHeight: isTextarea ? target.clientHeight : undefined,
+      // `line-height: normal` 解析不出像素：按 1.4 倍字号估一个，够判「一行还是两行」
+      lineHeight: Number.isFinite(lineHeightRaw) ? lineHeightRaw : (fontSize > 0 ? fontSize * 1.4 : 0),
+      paddingY: style
+        ? (Number.parseFloat(style.paddingTop) || 0) + (Number.parseFloat(style.paddingBottom) || 0)
+        : 0,
+    })) return
+    const cell = target.closest('td')
+    const row = cell?.parentElement
+    if (!cell || !row || !(row instanceof HTMLTableRowElement) || !row.dataset.workspaceRecord) return
+    const rendered = [...(row.parentElement?.querySelectorAll<HTMLTableRowElement>('tr[data-workspace-record]') ?? [])]
+    const nextAt = neighborRowIndex(rendered.indexOf(row), rendered.length, event.key)
+    if (nextAt === null) return
+    const nextCell = rendered[nextAt]?.cells[cell.cellIndex]
+    const focusable = nextCell?.querySelector<HTMLElement>(
+      'textarea, input:not([type="hidden"]), select, button, [tabindex]:not([tabindex="-1"])',
+    )
+    if (!focusable) return
+    event.preventDefault()
+    focusable.focus({ preventScroll: true })
+    // 目标行可能在可视区外：按容器实滚高度换算后滚过去（界面缩放时 rect 是屏幕像素，offset 是布局单位）
+    const list = event.currentTarget
+    const bounds = list.getBoundingClientRect()
+    const headHeight = list.querySelector('thead')?.getBoundingClientRect().height ?? 0
+    const rect = focusable.getBoundingClientRect()
+    const scale = list.offsetHeight > 0 ? bounds.height / list.offsetHeight : 1
+    const topEdge = bounds.top + headHeight
+    if (rect.top < topEdge) list.scrollTop -= (topEdge - rect.top) / (scale || 1)
+    else if (rect.bottom > bounds.bottom) list.scrollTop += (rect.bottom - bounds.bottom) / (scale || 1)
+  }
+
   if (model.loadError) return <div role="alert" className="rounded-xl border border-danger/40 p-5 text-13 text-ink-200">
     <h1 className="mb-2 font-semibold">暂时无法读取{tab.name}</h1>
     <p className="mb-3 text-ink-400">请确认存储连接后重新读取。</p>
@@ -668,6 +725,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           ref={pan.ref}
           data-table-scroll
           data-guide="table-body"
+          onKeyDown={onGridKeyDown}
           onScroll={syncScrollHint}
           onMouseDown={pan.handlers.onMouseDown}
           onMouseMove={pan.handlers.onMouseMove}
