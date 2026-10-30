@@ -34,8 +34,12 @@ export type TickDecision =
   | { action: 'skip'; reason: 'unknown-remote' }
   /** 正在跑，别再入队 */
   | { action: 'skip'; reason: 'busy' }
+  /** 云端版本比本机记的还旧（被回滚/换账号）：不推也不拉 */
+  | { action: 'skip'; reason: 'remote-regressed' }
   /** 有改动，推上去 */
   | { action: 'push'; baseRevision: number }
+  /** 云端有新版本而本机没有未同步改动（原地落地未做，界面据此提示"可另存为新书接续"） */
+  | { action: 'remote-ahead'; remoteRevision: number }
   /** 云端有新版本而本地也改了，需要用户处理 */
   | { action: 'conflict'; localBase: number; remoteRevision: number }
 
@@ -65,22 +69,29 @@ export function decideTick(input: {
   if (busy) return { action: 'skip', reason: 'busy' }
 
   const dirty = local.updatedAt > binding.lastSyncedAt
-  if (!dirty) return { action: 'skip', reason: 'clean' }
 
-  // 云端 revision 未知：宁可这一轮不推。
+  // 云端 revision 未知：本地干净时无事可做；有改动也不猜基线。
   // 🔴 猜一个基线推上去，撞 409 还只是失败；猜对了会把别人的版本盖掉。
-  if (remoteRevision === null) return { action: 'skip', reason: 'unknown-remote' }
+  if (remoteRevision === null) {
+    return dirty
+      ? { action: 'skip', reason: 'unknown-remote' }
+      : { action: 'skip', reason: 'clean' }
+  }
 
   const d = decideSync({
     binding,
     remote: { exists: true, revision: remoteRevision },
-    localDirty: true,
+    localDirty: dirty,
   })
   if (d.action === 'push') return { action: 'push', baseRevision: d.baseRevision }
   if (d.action === 'conflict') {
     return { action: 'conflict', localBase: d.localBase, remoteRevision: d.remoteRevision }
   }
-  // up-to-date / pull / remote-* 都不在这里推（拉取由用户显式触发）
+  // 云端前进而本机干净：说明另一台设备写了新东西。
+  // 🔴 不自动应用 —— 原地落地（B3-2）还没做；这里只如实报出来，界面提示"可另存为新书接续"。
+  if (d.action === 'pull') return { action: 'remote-ahead', remoteRevision: d.toRevision }
+  if (d.action === 'remote-regressed') return { action: 'skip', reason: 'remote-regressed' }
+  // up-to-date：确实无事可做
   return { action: 'skip', reason: 'clean' }
 }
 
@@ -133,6 +144,7 @@ export async function autoSyncTick(deps: AutoSyncDeps): Promise<TickDecision> {
 /** 一轮结束后的界面提示文案（不需要每个调用方各写一份） */
 export function tickMessage(d: TickDecision): string {
   if (d.action === 'push') return '正在同步…'
+  if (d.action === 'remote-ahead') return `云端有新版本（第 ${d.remoteRevision} 版），可在同步面板下载为新书接续`
   if (d.action === 'conflict') return '云端与本机都有改动，需要你选择保留哪一份'
   switch (d.reason) {
     case 'unbound': return ''
@@ -141,6 +153,7 @@ export function tickMessage(d: TickDecision): string {
     case 'busy': return ''
     case 'clean': return ''
     case 'unknown-remote': return ''
+    case 'remote-regressed': return '云端版本比本机记录的还旧，已暂停自动同步'
     default: return ''
   }
 }

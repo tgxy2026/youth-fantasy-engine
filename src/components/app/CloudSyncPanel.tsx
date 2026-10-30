@@ -30,6 +30,8 @@ import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
 import { createCloudProject, probeCloudProject } from '@/lib/cloud/syncApi'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
+import { cloudCopyFileName, loadCloudCopy } from '@/lib/sync/projectPullBundle'
+import { downloadBlob } from '@/lib/storage/zip'
 import type { SyncState } from '@/lib/sync/syncMachine'
 
 const STATE_TEXT: Record<SyncState, { label: string; cls: string }> = {
@@ -238,6 +240,28 @@ export default function CloudSyncPanel() {
     }
   }
 
+  /**
+   * 把云端这一版导出成项目备份文件（不写库、不动本机）。
+   * 🔴 走与「另存为新书」同一条下载/还原链路，区别只在最后一步：这里不调用 importProject。
+   */
+  const exportCloudCopy = async () => {
+    if (!binding) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await loadCloudCopy({ cloudProjectId: binding.cloudProjectId, baseProject: project })
+      if (!r.ok || !r.bundle) { showToast(r.reason, 'error'); return }
+      const blob = new Blob([JSON.stringify(r.bundle)], { type: 'application/json' })
+      downloadBlob(cloudCopyFileName(r.name, r.revision), blob)
+      const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
+      showToast(`已导出云端第 ${r.revision} 版${notes}。可在项目中心用「导入项目」打开`, 'success')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '导出失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Button
@@ -335,7 +359,7 @@ export default function CloudSyncPanel() {
                     {decision.reason}。点「立即同步」会<strong>以本机这一版为准</strong>上传，
                     云端旧版会留在云端历史里。
                   </p>
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button variant="ghost" size="xs" disabled title="需要按项目原地改写 10 类记录与两套键前缀，必须先在真机回归后开放">
                       用云端覆盖本机（暂未开放）
                     </Button>
@@ -348,10 +372,40 @@ export default function CloudSyncPanel() {
                     >
                       {busy ? '另存中…' : '两份都留（另存为新书）'}
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => void exportCloudCopy()}
+                      disabled={busy}
+                      title="把云端这一版导出成项目备份文件，可在项目中心导入"
+                    >
+                      导出云端这一版
+                    </Button>
                   </div>
                   <p className="mt-1.5 text-11 text-rose-200/60">
                     想保住本机这一版，可以先用「导出项目」存一份备份。
                   </p>
+                </div>
+              )}
+
+              {binding && decision?.action === 'pull' && (
+                <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2.5">
+                  <p className="flex items-center gap-1.5 text-12 text-sky-200">
+                    <RefreshCw size={12} />
+                    云端有新版本（第 {decision.toRevision} 版）
+                  </p>
+                  <p className="mt-1 text-11 leading-relaxed text-sky-200/80">
+                    本机没有未同步的改动。直接替换本机内容要等原地落地开放（下个版本），
+                    现在可以先把云端这一版下载为新书，或导出成文件。
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button variant="ghost" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>
+                      下载为新书
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={() => void exportCloudCopy()} disabled={busy}>
+                      导出云端这一版
+                    </Button>
+                  </div>
                 </div>
               )}
 

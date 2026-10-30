@@ -47,6 +47,22 @@ function main() {
     const d = decideTick({ local: local(T0 - 1), binding: bind({ lastSyncedAt: T0 }), remoteRevision: 3, busy: false })
     return d.action === 'skip' && d.reason === 'clean'
   })())
+  // 🔴 云端前进而本机干净：这是"另一台设备写了新东西"。不自动应用，但要如实报出来 ——
+  //    否则用户在两台机器上来回切，永远看不到"云端已经更新"。
+  ok('云端前进而本机干净 ⇒ remote-ahead', (() => {
+    const d = decideTick({ local: local(T0 - 1), binding: bind({ baseRevision: 3 }), remoteRevision: 5, busy: false })
+    return d.action === 'remote-ahead' && d.remoteRevision === 5
+  })())
+  // 云端比本机记的还旧：既不能推也不能拉，报出来让界面显示"已暂停"
+  ok('云端比记录旧 ⇒ remote-regressed', (() => {
+    const d = decideTick({ local: local(T0 - 1), binding: bind({ baseRevision: 5 }), remoteRevision: 3, busy: false })
+    return d.action === 'skip' && d.reason === 'remote-regressed'
+  })())
+  // 云端前进但本机也脏：仍然是冲突（不能因为是"只拉"就绕过）
+  ok('云端前进且本机有改动 ⇒ conflict', (() => {
+    const d = decideTick({ local: local(T0 + 1), binding: bind({ baseRevision: 3 }), remoteRevision: 5, busy: false })
+    return d.action === 'conflict'
+  })())
   // 🔴 这条最关键：宁可这轮不推，也不猜基线
   ok('云端版本未知 ⇒ unknown-remote（不猜基线）', (() => {
     const d = decideTick({ local: local(T0 + 1), binding: bind(), remoteRevision: null, busy: false })
