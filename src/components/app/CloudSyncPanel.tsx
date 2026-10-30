@@ -29,6 +29,7 @@ import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
 import { createCloudProject, probeCloudProject, restoreCloudProject } from '@/lib/cloud/syncApi'
+import type { CloudVersionSummary } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
 import { applyCloudCopyInPlace } from '@/lib/sync/projectPullApply'
@@ -65,6 +66,8 @@ export default function CloudSyncPanel() {
   const [cloudDeletedAt, setCloudDeletedAt] = useState(0)
   /** 覆盖完成后的结果（含备份 id）—— 界面据此提示重新载入 */
   const [applied, setApplied] = useState<{ revision: number; backupId?: string } | null>(null)
+  /** 云端这一版的摘要（章节数 / 时间）—— 覆盖前给用户看得见的依据 */
+  const [cloudSummary, setCloudSummary] = useState<CloudVersionSummary | null>(null)
   const [state, setState] = useState<SyncState>('idle')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -77,7 +80,7 @@ export default function CloudSyncPanel() {
     setError('')
     try {
       const pid = getCurrentProjectId()
-      if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); setCloudDeletedAt(0); return }
+      if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null); return }
       const p = await ops.get<Project>('projects', pid)
       setProject(p ?? null)
       const b = await store.get(pid)
@@ -87,10 +90,12 @@ export default function CloudSyncPanel() {
         if (probe.ok) {
           setCloudRevision(probe.state.revision)
           setCloudDeletedAt(probe.state.deleted ? (probe.state.deletedAt || 1) : 0)
-        } else if (probe.reason === 'not-found') { setCloudRevision(null); setCloudDeletedAt(0) }
+          setCloudSummary(probe.state.summary ?? null)
+        } else if (probe.reason === 'not-found') { setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null) }
         else {
           setCloudRevision(null)
           setCloudDeletedAt(0)
+          setCloudSummary(null)
           // 🔴 网络问题与"云端没有"必须分开说，否则用户以为稿子丢了
           setError(probe.reason === 'unauthorized'
             ? '登录状态已失效，请重新登录后再同步'
@@ -99,6 +104,7 @@ export default function CloudSyncPanel() {
       } else {
         setCloudRevision(null)
         setCloudDeletedAt(0)
+        setCloudSummary(null)
       }
       const ctl = await bootSync()
       setState(await ctl.stateOf(pid))
@@ -433,7 +439,15 @@ export default function CloudSyncPanel() {
                         <Clock size={10} />
                         上次同步 {fmtWhen(binding.lastSyncedAt)}
                       </span>
-                      <span>云端版本 第 {cloudRevision ?? '?'} 版</span>
+                      <span>
+                        云端版本 第 {cloudRevision ?? '?'} 版
+                        {cloudSummary && (cloudSummary.counts.chapters || cloudSummary.createdAt) && (
+                          <span className="text-ink-600">
+                            {cloudSummary.counts.chapters ? ` · ${cloudSummary.counts.chapters} 章` : ''}
+                            {cloudSummary.createdAt ? ` · ${fmtWhen(cloudSummary.createdAt)}` : ''}
+                          </span>
+                        )}
+                      </span>
                       <span>本机基于 第 {binding.baseRevision} 版</span>
                     </div>
                   )
@@ -459,6 +473,10 @@ export default function CloudSyncPanel() {
                     云端旧版会留在云端历史里。
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button variant="primary" size="xs" onClick={() => void syncNow()} disabled={busy}
+                      title="把本机这一版传上去；云端旧版会留在历史里">
+                      保留本机并上传
+                    </Button>
                     <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy}
                       title="会用云端这一版替换本机内容；覆盖前自动备份一份">
                       用云端覆盖本机

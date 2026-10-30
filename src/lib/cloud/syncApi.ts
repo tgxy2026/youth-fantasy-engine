@@ -14,6 +14,12 @@ function apiBase(): string {
   return ''
 }
 
+/** 云端这一版的摘要（章节数 / 创建时间）—— 覆盖前给用户看的依据，不是判定依据 */
+export interface CloudVersionSummary {
+  createdAt: number
+  counts: Record<string, number>
+}
+
 export interface CloudProjectState {
   exists: boolean
   revision: number
@@ -23,6 +29,8 @@ export interface CloudProjectState {
   /** 删除时间（服务端事实，用于展示"删除于…"） */
   deletedAt?: number
   name?: string
+  /** 当前版本摘要（删除版没有） */
+  summary?: CloudVersionSummary | null
 }
 
 /** 云端还连得上吗（用来区分"网络问题"与"确实没有"） */
@@ -45,7 +53,16 @@ export async function probeCloudProject(cloudProjectId: string, base = apiBase()
     if (res.status === 404) return { ok: false, reason: 'not-found', status: 404 }
     if (res.status === 401) return { ok: false, reason: 'unauthorized', status: 401 }
     if (!res.ok) return { ok: false, reason: 'server', status: res.status }
-    const b = await res.json() as { revision?: number; snapshotId?: string; deleted?: boolean; deletedAt?: number; name?: string }
+    const b = await res.json() as {
+      revision?: number; snapshotId?: string; deleted?: boolean; deletedAt?: number; name?: string
+      summary?: { createdAt?: number; counts?: Record<string, number> } | null
+    }
+    const sum = b.summary && typeof b.summary === 'object'
+      ? {
+          createdAt: Number(b.summary.createdAt) || 0,
+          counts: (b.summary.counts && typeof b.summary.counts === 'object') ? b.summary.counts : {},
+        }
+      : null
     return {
       ok: true,
       state: {
@@ -55,6 +72,7 @@ export async function probeCloudProject(cloudProjectId: string, base = apiBase()
         deleted: !!b.deleted,
         deletedAt: Number(b.deletedAt) || 0,
         name: b.name,
+        summary: sum,
       },
     }
   } catch {

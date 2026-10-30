@@ -143,6 +143,12 @@ try {
   const got = await web.req('GET', `/api/v2/projects/${pid}/manifest`)
   ok('读回 manifest 且对象一致', got.status === 200 && got.json?.manifest?.objects?.[0]?.hash === h1, got.json)
 
+  // 8b. 状态摘要：客户端在"要不要覆盖本机"之前需要看得见的依据
+  const stSummary = await web.req('GET', `/api/v2/projects/${pid}`)
+  ok('状态返回云端版本摘要（创建时间）',
+    stSummary.status === 200 && !!stSummary.json?.summary && Number(stSummary.json.summary.createdAt) > 0,
+    stSummary.json?.summary)
+
   // 9. 列表
   const list = await web.req('GET', '/api/v2/projects')
   const row = (list.json?.projects || []).find((x) => x.cloudProjectId === pid)

@@ -84,9 +84,17 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
   // ---- GET /api/v2/projects/:pid —— 状态（含墓碑数量） ----
   if (seg.length === 2 && req.method === 'GET') {
     const st = getProjectState(storeRoot, pid, accountId)
+    // 云端这一版的摘要（章节数 / 创建时间）：客户端在"要不要覆盖本机"之前需要看得见的依据。
+    // 🔴 只读当前 revision 的 manifest，且只在未删除时给 —— 删除版的 manifest 没有 counts。
+    let summary = null
+    if (st.revision > 0 && !st.deleted) {
+      const m = readManifest(storeRoot, pid, st.revision)
+      if (m && !m.deleted) summary = { createdAt: Number(m.createdAt) || 0, counts: m.counts || {} }
+    }
     return sendJSON(res, 200, {
       ok: true, ...st, protocol: PROTOCOL_VERSION,
       tombstoneCount: effectiveTombstones(storeRoot, pid).length,
+      summary,
     }), true
   }
 
