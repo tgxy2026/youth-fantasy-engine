@@ -82,6 +82,28 @@ export default function NovelEditorChapterTree({
     const el = listRef.current.querySelector(`[data-chapter-id="${CSS.escape(activeId)}"]`)
     el?.scrollIntoView({ block: 'nearest' })
   }, [activeId])
+  /**
+   * 3.3.1（主人 2026-10-30）：**首次打开编辑器，列表直接停在最新一章**。
+   *
+   * 此前打开长书时列表停在最上面，作者每次都要往下翻几十行才看到新章。
+   * 只在**第一次**（这个组件挂载后的首帧）滚一次：之后一律跟随选中的章节，
+   * 免得作者正翻着目录被拽走。不改选中项 —— 想切哪章仍是作者自己点。
+   */
+  const didSeekLatest = useRef(false)
+  useEffect(() => {
+    if (didSeekLatest.current || !listRef.current) return
+    // 章节还没进来（首次加载）时别标记为已完成，等有内容再说
+    if (chapters.length === 0) return
+    didSeekLatest.current = true
+    const frame = requestAnimationFrame(() => {
+      const list = listRef.current
+      if (!list) return
+      const rows = list.querySelectorAll('[data-chapter-id]')
+      const last = rows[rows.length - 1] as HTMLElement | undefined
+      last?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [chapters.length])
   // 与 useNovelEditorModel 的 `active` 同一派生（同一份 chapters / activeId）：`active` 那边是
   // `chapters.find(c => c.id === activeId) ?? null`。此处自带一份，省得再往这棵树里传一个 prop。
   const activeChapter = chapters.find(c => c.id === activeId) ?? null

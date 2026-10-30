@@ -152,10 +152,25 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, co
     if (!scope) return
     const generation = workspaceViews.generation()
     const record = workspaceViews.get(scope, activeId)
-    if (!record || record.kind !== 'editor' || record.objectId !== activeId) return
     const expected = live.current.content
 
     const cancelled = () => token !== epoch.current || workspaceViews.generation() !== generation
+    if (!record || record.kind !== 'editor' || record.objectId !== activeId) {
+      /**
+       * 3.3.1（主人 2026-10-30）：**没打开过的章节落到尾部，不是开头**。
+       *
+       * 作者点开一章几乎都是「接着写」，不是「从头读」；停在第 0 行等于每次都要先滚一遍。
+       * 只处理「没有现场记录」的情形 —— 打开过的章仍回到上次光标与位置（那是另一件有价值的事，
+       * 不能为这条需求牺牲掉）。带定位请求（校对 / 检索跳转）时整个 hook 被 skipRestore 跳过，也不受影响。
+       */
+      void (async () => {
+        if (!(await settleEditor(ta, expected, cancelled)) || cancelled()) return
+        ta.scrollTop = ta.scrollHeight
+        const outer = scrollRef.current
+        if (outer) outer.scrollTop = Math.max(0, outer.scrollHeight - outer.clientHeight)
+      })().catch(() => { /* 可选能力，失败不影响编辑 */ })
+      return
+    }
     // 存储被清（换身份 / 换后端 / 整库替换）⇒ 立刻作废，别让旧会话的现场落到新上下文里
     const offInvalidate = workspaceViews.subscribeInvalidation(() => { epoch.current += 1 })
     /** 内容确实变了：只回章首，旧选区一律不套（它指向的已不是同一句话） */
