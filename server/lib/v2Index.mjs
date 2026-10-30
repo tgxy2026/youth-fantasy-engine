@@ -40,14 +40,68 @@ export function writeIndex(v2Root, accountId, idx) {
   fs.renameSync(tmp, file)
 }
 
-/** 该项目的对象字节（配额口径：按 manifest 声明累加，跨项目去重不折抵） */
+/** 该项目的对象字节（该项目自己看到的总量，不折抵与他人共享的对象） */
 export function projectBytes(idx, pid) {
   const p = idx.projects?.[pid]
   return p ? (p.objectBytes || 0) : 0
 }
 
+/**
+ * 账号已用字节 —— **按对象哈希去重**。
+ *
+ * 🔴 老实现是把每个项目的 `objectBytes` 直接相加，而对象库是账号级的：
+ *    两本书共用一张同样的封面时，盘上只存一份，配额却算了两份。
+ *    用户什么都没多做，空间就"凭空少了"。
+ * 🔴 已删除（在回收站）的项目**不计入**：物理空间还在盘上，但让用户为
+ *    "看不见的东西"付配额是更糟的体验；那部分由 `objectGc.purgeDeletedProjects`
+ *    在 30 天后真正清掉。
+ * 🔴 老记录没有 `objects`（3.3.2 之前写的索引）时退回 `objectBytes` 并单列一个键，
+ *    避免与真实哈希撞在一起。
+ */
 export function accountUsedBytes(idx) {
-  return Object.values(idx.projects || {}).reduce((n, p) => n + (p.objectBytes || 0), 0)
+  const seen = new Map()
+  for (const [pid, p] of Object.entries(idx.projects || {})) {
+    if (!p || p.deletedAt) continue
+    const list = Array.isArray(p.objects) ? p.objects : []
+    if (!list.length) {
+      // 老记录：没有对象清单，只能按声明值算（不能静默当 0，否则配额突然放宽）
+      seen.set(`__legacy__${pid}`, Number(p.objectBytes) || 0)
+      continue
+    }
+    for (const o of list) {
+      if (!o || typeof o.hash !== 'string' || seen.has(o.hash)) continue
+      seen.set(o.hash, Number(o.bytes) || 0)
+    }
+  }
+  let total = 0
+  for (const v of seen.values()) total += v
+  return total
+}
+
+/**
+ * 假设把 `pid` 换成 `objects` 之后，账号总共会用多少字节。
+ *
+ * 用于提交前的配额判断。不能写成 `已用 - 本项目 + 新增`：
+ * 本项目与他人共享的对象会被减掉两次（减的时候按项目算，加的时候按去重算）。
+ */
+export function projectedUsedBytes(idx, pid, objects = []) {
+  const seen = new Map()
+  for (const [key, p] of Object.entries(idx.projects || {})) {
+    if (!p || p.deletedAt || key === pid) continue
+    const list = Array.isArray(p.objects) ? p.objects : []
+    if (!list.length) { seen.set(`__legacy__${key}`, Number(p.objectBytes) || 0); continue }
+    for (const o of list) {
+      if (!o || typeof o.hash !== 'string' || seen.has(o.hash)) continue
+      seen.set(o.hash, Number(o.bytes) || 0)
+    }
+  }
+  for (const o of objects) {
+    if (!o || typeof o.hash !== 'string' || seen.has(o.hash)) continue
+    seen.set(o.hash, Number(o.bytes) || 0)
+  }
+  let total = 0
+  for (const v of seen.values()) total += v
+  return total
 }
 
 /** 更新一个项目的索引项（迁移与提交共用；字段合并而不是整体替换） */

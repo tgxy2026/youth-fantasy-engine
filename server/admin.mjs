@@ -15,6 +15,8 @@ import { existsSync, readdirSync, unlinkSync, rmdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DATA_DIR } from './lib/config.mjs'
 import { readLegacyGate, blockLegacyWrites, unblockLegacyWrites } from './lib/legacyGate.mjs'
+import { gcObjects, purgeDeletedProjects, listTrash } from './lib/objectGc.mjs'
+import { accountRoot } from './lib/v2Index.mjs'
 import {
   loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
 } from './lib/users.mjs'
@@ -211,6 +213,44 @@ function cmdGate(name, action, note) {
   console.log(`当前状态：${JSON.stringify(readLegacyGate(v2Root, u.id))}`)
 }
 
+/**
+ * 回收无人引用的对象 + 清理过期回收站。
+ *
+ * 🔴 只在**运维手动执行**时跑，不做定时任务：3.3.2 刚上，先让人看着输出跑几次，
+ *    确认 `keptRecent`（宽限期保护住的）数量合理，再考虑上定时。
+ * 🔴 默认先 dry-run，`--apply` 才真删。清理空间是不可逆动作，不该一个手滑就执行。
+ */
+function cmdGc(name) {
+  const u = name ? findByName(name) : null
+  if (name && !u) return console.error(`找不到用户：${name}`)
+  if (!u) return console.error('用法：node admin.mjs gc <用户名> [--apply] [--purge-trash]')
+  const apply = process.argv.includes('--apply')
+  const root = accountRoot(join(DATA_DIR, 'v2'), u.id)
+  if (!existsSync(root)) return console.log(`${u.name} 还没有 v2 数据目录`)
+
+  const r = gcObjects(root, { dryRun: !apply })
+  console.log(`对象回收${apply ? '' : '（预演）'}：扫描 ${r.scanned} 个，被引用 ${r.referenced} 个，`
+    + `可回收 ${r.removed} 个 / ${(r.freedBytes / 1048576).toFixed(2)} MiB，`
+    + `宽限期内暂留 ${r.keptRecent} 个`)
+  if (r.keptRecent > 0) {
+    console.log('  ↑ 这些可能是「已上传但还没提交」的对象，24 小时内不会动')
+  }
+
+  const trash = listTrash(root)
+  if (trash.length) {
+    console.log(`回收站 ${trash.length} 项：`)
+    for (const t of trash) {
+      console.log(`  ${t.pid}  ${t.name || '(无名)'}  ${(t.bytes / 1048576).toFixed(2)} MiB  `
+        + `${t.expiresInMs > 0 ? `${Math.ceil(t.expiresInMs / 86400000)} 天后清理` : '已过期，下次清理'}`)
+    }
+  }
+  if (process.argv.includes('--purge-trash')) {
+    const p = purgeDeletedProjects(root, { dryRun: !apply })
+    console.log(`回收站清理${apply ? '' : '（预演）'}：清掉 ${p.purged.length} 项，保留 ${p.kept} 项未到期`)
+  }
+  if (!apply) console.log('\n这只是预演。确认无误后加 --apply 真正执行。')
+}
+
 const [cmd, a1, a2] = process.argv.slice(2)
 switch (cmd) {
   case 'list': loadUsers(); cmdList(); break
@@ -224,6 +264,7 @@ switch (cmd) {
   case 'passwd': cmdPasswd(a1, a2); break
   case 'delete': cmdDelete(a1); break
   case 'gate': cmdGate(a1, a2, process.argv.slice(5).join(' ')); break
+  case 'gc': cmdGc(a1); break
   default:
     console.log(`用法：
   node admin.mjs list                    列出全部账号（含来源邀请码、配额占用）
@@ -236,5 +277,6 @@ switch (cmd) {
   node admin.mjs quota <用户名> <MB>      调整配额
   node admin.mjs passwd <用户名> <新密码>  重置密码
   node admin.mjs delete <用户名>          删除账号（连带数据，不可恢复）
-  node admin.mjs gate <用户名> [on|off] [备注]  旧路径门禁：迁移完成后停用旧版写入（不填动作=查状态）`)
+  node admin.mjs gate <用户名> [on|off] [备注]  旧路径门禁：迁移完成后停用旧版写入（不填动作=查状态）
+  node admin.mjs gc <用户名> [--apply] [--purge-trash]  回收无人引用的对象 / 清理过期回收站（默认预演）`)
 }

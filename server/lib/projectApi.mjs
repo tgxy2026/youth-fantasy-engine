@@ -15,7 +15,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { sendJSON, readJSONBody } from './http.mjs'
 import {
-  accountRoot, readIndex, writeIndex, projectBytes, accountUsedBytes, setProjectMeta,
+  accountRoot, readIndex, writeIndex, accountUsedBytes, projectedUsedBytes, setProjectMeta,
 } from './v2Index.mjs'
 import {
   stageObject, commitProjectSnapshot, readManifest, getProjectState, effectiveTombstones,
@@ -142,14 +142,21 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
     // 🔴 客户端可以谎报 `bytes:1` 而实际传 40 MiB —— 声明值只用于进度显示，
     //    记账必须看 statSync。同一哈希被多个 kind 引用时只算一次（内容寻址天然去重）。
     const seen = new Set()
+    const objectList = []
     let incoming = 0
     for (const entry of [...(manifest.objects || []), ...(manifest.assets || [])]) {
       const h = entry && entry.hash
       if (typeof h !== 'string' || seen.has(h)) continue
       seen.add(h)
-      try { incoming += fs.statSync(objectPath(storeRoot, h)).size } catch { /* 缺对象在校验阶段会拒 */ }
+      let size = 0
+      try { size = fs.statSync(objectPath(storeRoot, h)).size } catch { /* 缺对象在校验阶段会拒 */ }
+      incoming += size
+      // 记下这一版引用了哪些对象（配额按哈希去重、GC 靠它判"还被引用吗"）
+      objectList.push({ hash: h, bytes: size })
     }
-    const projected = accountUsedBytes(idx) - projectBytes(idx, pid) + incoming
+    // 🔴 不能用「已用 - 本项目 + 新增」：本项目与他人共享的对象会被减两次
+    //    （减的时候按项目总量算，加的时候按去重算），算出来偏小 = 悄悄放过超配额。
+    const projected = projectedUsedBytes(idx, pid, objectList)
     if (projected > user.quotaBytes) {
       return sendJSON(res, 413, {
         ok: false, code: 'QUOTA_EXCEEDED',
@@ -170,8 +177,12 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
 
     // 成功后更新索引（配额与列表都读它）
     idx.projects[pid] = {
+      ...(idx.projects[pid] || {}),
       name: idx.projects[pid]?.name || manifest.project?.name || '',
-      revision: r.revision, snapshotId: r.snapshotId, updatedAt: Date.now(), objectBytes: incoming,
+      revision: r.revision, snapshotId: r.snapshotId, updatedAt: Date.now(),
+      objectBytes: incoming, objects: objectList,
+      // 重新提交等于"复活"：清掉回收站标记，否则配额会一直把它当已删除
+      deletedAt: 0,
     }
     writeIndex(v2Root, accountId, idx)
     return sendJSON(res, 200, {
