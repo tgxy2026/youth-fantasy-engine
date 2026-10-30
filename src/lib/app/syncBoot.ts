@@ -1,0 +1,133 @@
+// ============ 3.3.2 · B1 同步装配（应用启动时装一次）============
+//
+// 【它做什么】把默认实现接上，让界面只需要 `bootSync()` + `getSyncController()`：
+//   · 队列与墓碑后端 → 独立 IDB `-syncq`（打不开降级内存）
+//   · 项目包 → `exportProject()`（P0 盘点已确认它就是成熟的项目级载荷）
+//   · 传输 → `createHttpTransport()`（Cookie 同源）
+//   · 绑定 → 项目级 `settingsKV`
+//
+// 🔴 **只在网页云端版 / 桌面登录态下装配**。游客版与未登录的桌面版装它没有意义
+//    （没有账号就没有云端项目），反而会白白起一个定时器。
+//
+// 🔴 定时器**必须在页面隐藏时停**（`visibilitychange`）：笔记本合盖、切到别的程序时
+//    还在每 20 秒打一次网络，是纯粹的电量与流量浪费。
+import type { ProjectBundle } from '@/lib/db/projects'
+import { exportProject } from '@/lib/db/projects'
+import { getCurrentProjectId, ops } from '@/lib/db/core'
+import type { Project } from '@/lib/types'
+import { createHttpTransport } from '@/lib/sync/syncClient'
+import { createSyncStateStores } from '@/lib/sync/syncQueueIdb'
+import type { SyncController } from '@/lib/sync/syncController'
+import { installSyncController, getSyncController } from '@/lib/sync/syncController'
+import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
+import { fetchRemoteRevision } from '@/lib/cloud/syncApi'
+import { autoSyncTick, type AutoSyncDeps, type TickDecision } from '@/lib/app/syncAuto'
+
+/** 默认轮询间隔：用户在写稿，20 秒足够把改动送上去，又不至于太吵 */
+export const AUTO_SYNC_INTERVAL_MS = 20_000
+
+let timer: ReturnType<typeof setInterval> | null = null
+let booting: Promise<SyncController> | null = null
+let onTick: ((d: TickDecision) => void) | null = null
+let visibilityBound = false
+
+/** 当前账号 id（网页版由 App 在登录后提供；未登录返回 undefined） */
+let accountId: string | undefined
+export function setSyncAccountId(id: string | undefined) { accountId = id }
+/** 当前账号 id（建立绑定时要写进绑定记录，用于"换账号后绑定作废"的判定） */
+export function getSyncAccountId(): string | undefined { return accountId }
+
+/**
+ * 装好同步能力（幂等）。
+ * @returns 控制器；任何一步失败都返回可用的降级版（内存队列），**不抛**。
+ */
+export async function bootSync(): Promise<SyncController> {
+  const existing = getSyncController()
+  if (existing) return existing
+  if (booting) return booting
+
+  booting = (async () => {
+    // 🔴 队列打不开就降级内存：同步可以退让，编辑器不能因为同步起不来而卡住
+    const { queue, tombstones } = await createSyncStateStores((reason) => {
+      console.warn('[sync] 本机同步状态库打不开，已降级为内存队列（重启会丢任务）：', reason)
+    })
+    const controller = installSyncController({
+      store: queue,
+      tombstones,
+      transport: createHttpTransport(),
+      loadBundle: async (pid: string) => {
+        try { return (await exportProject(pid)) as unknown as ProjectBundle } catch { return null }
+      },
+    })
+    // 启动准备：崩溃恢复 + 清理超期任务。失败不影响后续（下次启动再来）
+    try { await controller.init() } catch { /* ignore */ }
+    return controller
+  })()
+
+  return booting
+}
+
+/** 装配真实依赖给调度器 */
+function makeAutoDeps(controller: SyncController): AutoSyncDeps {
+  const bindingStore = createSettingBindingStore()
+  return {
+    getCurrentProject: async () => {
+      const id = getCurrentProjectId()
+      if (!id) return null
+      try {
+        const p = await ops.get<Project>('projects', id)
+        return p ? { id: p.id, updatedAt: Number(p.updatedAt) || 0 } : null
+      } catch {
+        return null
+      }
+    },
+    getBinding: (pid: string) => bindingStore.get(pid),
+    getRemoteRevision: (cloudPid: string) => fetchRemoteRevision(cloudPid),
+    controller,
+    getAccountId: () => accountId,
+  }
+}
+
+/**
+ * 起自动同步。
+ * @param cb 每轮结果的回调（界面据此更新徽标；不传就纯后台跑）
+ */
+export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<void> {
+  const controller = await bootSync()
+  onTick = cb ?? null
+  if (timer) return
+
+  const deps = makeAutoDeps(controller)
+  const run = async () => {
+    // 页面不可见时跳过：合盖/切走不该继续打网络
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    try {
+      const d = await autoSyncTick(deps)
+      onTick?.(d)
+    } catch (e) {
+      console.warn('[sync] 自动同步这一轮失败（不影响本地保存）：', e)
+    }
+  }
+
+  timer = setInterval(() => { void run() }, AUTO_SYNC_INTERVAL_MS)
+
+  // 切回前台立刻跑一轮：用户切回来时最想看到"刚写的东西已经上去了"
+  if (!visibilityBound && typeof document !== 'undefined') {
+    visibilityBound = true
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void run()
+    })
+  }
+  void run()
+}
+
+/** 停掉定时器（退出登录 / 关闭云端模式 / 组件卸载到不该同步的页面） */
+export function stopAutoSync(): void {
+  if (timer) { clearInterval(timer); timer = null }
+  onTick = null
+}
+
+/** 现在是否在自动同步（界面显示开关状态用） */
+export function isAutoSyncRunning(): boolean {
+  return timer !== null
+}

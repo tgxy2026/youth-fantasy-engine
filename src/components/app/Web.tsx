@@ -9,6 +9,8 @@ import { Button } from '@/components/common/Button'
 import StorageWriteStatus from '@/components/common/StorageWriteStatus'
 import AccountExit from '@/components/app/AccountExit'
 import LoginDevices from '@/components/app/LoginDevices'
+import CloudSyncPanel from '@/components/app/CloudSyncPanel'
+import { setSyncAccountId, startAutoSync, stopAutoSync } from '@/lib/app/syncBoot'
 
 /**
  * 网页版 · 云端账号数据条。
@@ -49,6 +51,26 @@ export function WebDataBar() {
   })
 
   useEffect(() => subscribePortable(() => setState(getPortableState())), [])
+
+  // 3.3.2 · B1：账号确定后启动自动同步。
+  // 🔴 只在网页云端版做：这里才有 `/api/v2` 与账号会话；桌面/便携/游客起定时器没有意义。
+  // 🔴 先拿账号 id 再起定时器：绑定记录里要写账号（换账号后绑定作废靠它判定），
+  //    拿不到就当作未登录，调度器会自行跳过（不会拿空账号去推）。
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await fetch('/api/auth/me', { cache: 'no-store' })
+        const j = await r.json().catch(() => null)
+        if (cancelled) return
+        if (j?.ok && j.user?.id) setSyncAccountId(String(j.user.id))
+        await startAutoSync()
+      } catch {
+        // 取不到账号就不同步：本地保存完全不受影响
+      }
+    })()
+    return () => { cancelled = true; stopAutoSync() }
+  }, [])
 
   // 用量随保存更新：每次落盘成功后（lastSavedAt 变化）向服务端要一次真实值。
   // 🔴 不能自己按内存里的数据算 —— 外置大块（备份载荷 / 向量）也在配额里，前端算不出来。
@@ -155,6 +177,8 @@ export function WebDataBar() {
         <span className={`ml-auto min-w-0 truncate tabular-nums ${quotaWarn ? 'text-amber' : 'text-ink-500'}`}>
           {quotaText}
         </span>
+        {/* 云端同步（3.3.2）：先看同步状态，再看设备，最后是退出 */}
+        <CloudSyncPanel />
         {/* 登录设备（3.3.2）：与退出登录同一行，先看设备再决定退哪个 */}
         <LoginDevices />
         {/* 退出登录：并入这一行（原先在屏幕底部正中常驻，2026-10-19 按主人要求挪过来） */}
