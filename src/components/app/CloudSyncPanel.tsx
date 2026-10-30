@@ -31,6 +31,7 @@ import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccoun
 import { createCloudProject, probeCloudProject, restoreCloudProject } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
+import { applyCloudCopyInPlace } from '@/lib/sync/projectPullApply'
 import { cloudCopyFileName, loadCloudCopy } from '@/lib/sync/projectPullBundle'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { SyncState } from '@/lib/sync/syncMachine'
@@ -62,6 +63,8 @@ export default function CloudSyncPanel() {
   const [cloudRevision, setCloudRevision] = useState<number | null>(null)
   /** 云端是否在回收站（0 = 否；>0 = 删除时间） */
   const [cloudDeletedAt, setCloudDeletedAt] = useState(0)
+  /** 覆盖完成后的结果（含备份 id）—— 界面据此提示重新载入 */
+  const [applied, setApplied] = useState<{ revision: number; backupId?: string } | null>(null)
   const [state, setState] = useState<SyncState>('idle')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -296,6 +299,54 @@ export default function CloudSyncPanel() {
     }
   }
 
+  /**
+   * 用云端这一版**覆盖本机**（B3-2）。
+   * 🔴 覆盖前先自动备份；备份失败即中止（没有退路时不做破坏性操作）。
+   * 🔴 覆盖后当前页面持有的章节 id 已失效 —— 必须提示重新载入，而不是让它继续用旧 id 渲染。
+   */
+  const applyCloud = async () => {
+    if (!binding || !project) return
+    const localDirty = (project.updatedAt || 0) > (binding.lastSyncedAt || 0)
+    const ok = await confirmDialog({
+      title: '用云端覆盖本机',
+      message: `会用云端第 ${cloudRevision ?? '?'} 版替换本机这本的全部内容。\n\n`
+        + (localDirty
+          ? '⚠️ 本机还有未同步的改动，这些改动会被丢弃；覆盖前会自动备份一份，可在「备份」里找回。\n\n'
+          : '本机没有未同步的改动。\n\n')
+        + '覆盖前的本机版本会自动备份一份；覆盖完成后请重新载入界面。',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await applyCloudCopyInPlace({
+        cloudProjectId: binding.cloudProjectId,
+        localProjectId: project.id,
+        localDirty,
+        allowLocalChanges: true,
+      })
+      if (!r.ok) {
+        showToast(r.reason, 'error')
+        await load()
+        return
+      }
+      const next: SyncBinding = {
+        ...binding,
+        baseRevision: r.revision ?? binding.baseRevision,
+        lastSyncedAt: Date.now(),
+        lastSnapshotId: r.snapshotId,
+      }
+      await store.set(project.id, next)
+      setBinding(next)
+      setApplied({ revision: r.revision ?? cloudRevision ?? 0, backupId: r.backupId })
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '覆盖失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Button
@@ -354,6 +405,20 @@ export default function CloudSyncPanel() {
             </p>
           )}
 
+          {applied && (
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5">
+              <p className="text-12 text-emerald-200">已用云端第 {applied.revision} 版覆盖本机</p>
+              <p className="mt-1 text-11 leading-relaxed text-emerald-200/80">
+                覆盖前的本机版本已自动备份
+                {applied.backupId ? `（备份 ${applied.backupId.slice(0, 8)}）` : ''}
+                ，可在「备份」里找回。当前页面还持有旧章节，建议现在重新载入。
+              </p>
+              <div className="mt-2">
+                <Button variant="primary" size="xs" onClick={() => window.location.reload()}>重新载入界面</Button>
+              </div>
+            </div>
+          )}
+
           {project && (
             <>
               <div className="rounded-lg border border-ink-700 px-3 py-2.5">
@@ -394,8 +459,9 @@ export default function CloudSyncPanel() {
                     云端旧版会留在云端历史里。
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="xs" disabled title="需要按项目原地改写 10 类记录与两套键前缀，必须先在真机回归后开放">
-                      用云端覆盖本机（暂未开放）
+                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy}
+                      title="会用云端这一版替换本机内容；覆盖前自动备份一份">
+                      用云端覆盖本机
                     </Button>
                     <Button
                       variant="ghost"
@@ -435,6 +501,10 @@ export default function CloudSyncPanel() {
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button variant="ghost" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>
                       下载为新书
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy}
+                      title="直接用云端这一版替换本机内容；覆盖前自动备份一份">
+                      用云端覆盖本机
                     </Button>
                     <Button variant="ghost" size="xs" onClick={() => void exportCloudCopy()} disabled={busy}>
                       导出云端这一版

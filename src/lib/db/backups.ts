@@ -628,6 +628,23 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
       await ops.put('snapshots', { ...s, chapterId: nid })
     }
   }
+  /**
+   * 🔴 3.3.2 · B3-2：**包里带了快照就写进去**（云端覆盖会带 AI 快照）。
+   *
+   * 此前这里只改指旧快照、从不写入包里的快照 —— 因为自动备份恒定不带快照，
+   * 唯一会带快照的「手动导出包」走 `importProject`。但云端项目的快照清单包含
+   * `snapshots` 分片，若不写，覆盖后「时光机」里云端那几年的记录会凭空消失。
+   *
+   * 口径与 `importProject` 完全一致：chapterId 必须映射到新章；映射不到就跳过
+   * （绝不按标题猜，同名章会串档）。
+   */
+  if (bundle.snapshots?.length) {
+    for (const s of bundle.snapshots) {
+      const ncid = chMap.get(s.chapterId)
+      if (!ncid) continue
+      await ops.put('snapshots', { ...s, id: uid(), projectId: targetPid, chapterId: ncid })
+    }
+  }
   for (const f of bundle.formData) {
     await ops.put('formData', { tabId: `${targetPid}::${f.tabId}`, data: f.data })
   }
