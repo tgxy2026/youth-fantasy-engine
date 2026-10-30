@@ -66,6 +66,29 @@ contextBridge.exposeInMainWorld('electronNet', {
   openExternal: (url) => ipcRenderer.invoke('net:open-external', url),
 })
 
+// 桌面账号登录（3.3.2 · P1-5b）：浏览器授权 + 回环端口。
+// 🔴 **令牌不出主进程**：这里只暴露「登录 / 退出 / 查状态 / 代发带令牌的请求」，
+//    渲染层永远拿不到令牌原文，也就没有"渲染层被 XSS 就丢账号"这条路。
+contextBridge.exposeInMainWorld('electronAuth', {
+  /** 当前是否已登录（读的是加密后的本地凭据，只返回布尔） */
+  status: () => ipcRenderer.invoke('auth:desktopStatus'),
+  /**
+   * 打开系统浏览器完成登录。
+   * @param {{ baseUrl: string, name?: string }} opts
+   * @returns {Promise<{ok:true,user:{name:string}|null,persisted:boolean,persistedReason:string}|{ok:false,error:string}>}
+   *          `persisted:false` 表示这台机器没有安全存储，本次登录**仅在本次运行有效** —— 必须如实告诉用户。
+   */
+  login: (opts) => ipcRenderer.invoke('auth:desktopLogin', opts),
+  /** 清掉本地凭据 */
+  logout: () => ipcRenderer.invoke('auth:desktopLogout'),
+  /**
+   * 用当前令牌代发一次请求（主进程会加 `Authorization: Bearer`）。
+   * @param {{url:string, method?:string, headers?:object, body?:string, origin?:string}} opts
+   *        `origin` 传登录服务器地址：主进程会拒绝打到别的源，防止令牌被带去第三方。
+   */
+  fetch: (opts) => ipcRenderer.invoke('auth:desktopFetch', opts),
+})
+
 // 窗口控制（2.5.1 · B2）：只暴露全屏切换三个口子，按键判定（F11/ESC）在渲染层。
 contextBridge.exposeInMainWorld('electronWindow', {
   /** 设置真全屏（无边框）；返回实际全屏态 */

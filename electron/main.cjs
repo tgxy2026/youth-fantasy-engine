@@ -17,6 +17,8 @@ const { webdavRequest, s3Request } = require('./remoteSync.cjs')
 const appIcon = require('./appIcon.cjs')
 // 3.2.2 · 审计 C2：换数据位置时把外置目录（blobs）一起搬走的内核（可被单测直接验）
 const blobMove = require('./blobMove.cjs')
+// 3.3.2 · P1-5b 桌面账号登录（浏览器授权 + 回环端口 + safeStorage 存令牌）
+const desktopAuth = require('./desktopAuth.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 // 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
@@ -184,6 +186,99 @@ app.whenReady().then(() => {
   } catch (e) {
     console.warn('[migration] 复制旧 IDB 目录失败（不挡启动）：', e && e.message)
   }
+  // ---- 3.3.2 · 桌面账号登录 IPC ----
+  //
+  // 为什么走主进程而不是渲染进程：
+  //   · 回环监听是「本机端口」，渲染层没有 raw socket；
+  //   · 令牌要写进系统安全存储（`safeStorage`），只能在主进程用；
+  //   · 打开系统浏览器也要 `shell.openExternal`。
+  // 渲染层只拿到两个结果：「成功（带用户名）/ 失败（带原因）」，永远看不到令牌原文。
+  const authTokenFile = path.join(app.getPath('userData'), 'desktop-session.bin')
+  const tokenVault = desktopAuth.createTokenVault({ safeStorage, fs, file: authTokenFile })
+
+  ipcMain.handle('auth:desktopStatus', () => {
+    let available = false
+    try { available = safeStorage.isEncryptionAvailable() } catch { available = false }
+    return { signedIn: !!tokenVault.load(), encrypted: available }
+  })
+
+  ipcMain.handle('auth:desktopLogin', async (_e, opts) => {
+    const baseUrl = String((opts && opts.baseUrl) || '').replace(/\/+$/, '')
+    if (!/^https?:\/\//.test(baseUrl)) return { ok: false, error: '服务器地址不合法' }
+    const { verifier, challenge } = desktopAuth.createPkce()
+    const state = desktopAuth.createState()
+    let srv
+    try {
+      srv = await desktopAuth.startLoopbackServer(async (query) => {
+        const v = desktopAuth.verifyCallback({ query, expectedState: state })
+        if (!v.ok) return { ok: false, title: '授权未完成', detail: v.reason }
+        return { ok: true, title: '授权成功', detail: '可以关闭这个页面，回到桌面版继续。' }
+      })
+      const url = desktopAuth.buildAuthorizeUrl({
+        baseUrl, port: srv.port, challenge, state, name: (opts && opts.name) || '',
+      })
+      await shell.openExternal(url)
+      const outcome = await srv.waitForCode()
+      if (!outcome.ok) return { ok: false, error: outcome.detail || '授权未完成' }
+
+      // 换令牌：code + verifier → 令牌。🔴 令牌只在主进程里过一手，不返回给渲染层。
+      const resp = await fetch(`${baseUrl}/api/auth/desktop/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: outcome.code, verifier }),
+      })
+      const body = await resp.json().catch(() => ({}))
+      if (!resp.ok || !body || !body.token) {
+        return { ok: false, error: String((body && body.error) || `换取登录凭据失败（HTTP ${resp.status}）`) }
+      }
+      const saved = tokenVault.save(String(body.token))
+      return {
+        ok: true,
+        user: body.user ? { name: body.user.name } : null,
+        // 🔴 没加密能力时明说"仅本次有效"，不要假装已记住
+        persisted: saved.persisted === true,
+        persistedReason: saved.persisted ? '' : (saved.reason || 'NO_SAFE_STORAGE'),
+      }
+    } catch (err) {
+      return { ok: false, error: err && err.message ? String(err.message) : '登录失败' }
+    } finally {
+      try { if (srv) srv.close() } catch { /* ignore */ }
+    }
+  })
+
+  ipcMain.handle('auth:desktopLogout', () => {
+    tokenVault.clear()
+    return { ok: true }
+  })
+
+  /**
+   * 代发带令牌的请求。
+   * 🔴 只允许打到登录时用的那个源：令牌是账号凭据，不能被渲染层的任意 URL 带走。
+   */
+  ipcMain.handle('auth:desktopFetch', async (_e, opts) => {
+    const token = tokenVault.load()
+    if (!token) return { ok: false, status: 401, error: '未登录' }
+    const url = String((opts && opts.url) || '')
+    const allowOrigin = String((opts && opts.origin) || '')
+    try {
+      if (allowOrigin && new URL(url).origin !== new URL(allowOrigin).origin) {
+        return { ok: false, status: 0, error: '请求目标与登录服务器不一致' }
+      }
+    } catch {
+      return { ok: false, status: 0, error: 'URL 不合法' }
+    }
+    try {
+      const r = await fetch(url, {
+        method: (opts && opts.method) || 'GET',
+        headers: { ...((opts && opts.headers) || {}), Authorization: `Bearer ${token}` },
+        body: opts && opts.body != null ? opts.body : undefined,
+      })
+      return { ok: r.ok, status: r.status, text: await r.text() }
+    } catch (err) {
+      return { ok: false, status: 0, error: err && err.message ? String(err.message) : '请求失败' }
+    }
+  })
+
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
   ipcMain.handle('store:load', () => {
