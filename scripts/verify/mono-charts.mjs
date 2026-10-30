@@ -92,6 +92,16 @@ async function main() {
       await page.evaluate((id) => window.dispatchEvent(new CustomEvent('yfe:navigate', { detail: id })), target.tab)
       await page.waitForTimeout(700)
       let entered = 'default'
+      /**
+       * 🔴 页签引导卡（`[data-guide-card]`）是 fixed 浮层，切页签后会盖住该页的工具栏：
+       *    实测点「关系图」时 20 秒都被它拦掉（与 workspace-entry 里同一类问题）。
+       *    每进一个页签先把它关掉，再点视图按钮。
+       */
+      const guide = page.locator('[data-guide-card]').first()
+      if (await guide.isVisible().catch(() => false)) {
+        await page.getByRole('button', { name: '跳过本页' }).first().click({ timeout: 2000 }).catch(() => {})
+        await guide.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      }
       if (target.view) {
         const button = page.getByRole('button', { name: target.view, exact: true })
         const has = await button.isVisible().catch(() => false)
