@@ -42,8 +42,10 @@ export function analyzeImeLog(events) {
     moveDuringComposing.length === 0, `${moveDuringComposing.length} 次`)
 
   // ② 有没有打出「两个相同右标点 / 两个相同左标点」（越打越多的那种）
+  //    兼容两种日志形状：控制台片段给 before/after，采集脚本给 around（光标前后各 8 字）
+  const textOf = event => String(event.around ?? event.value ?? `${event.before ?? ''}${event.after ?? ''}`)
   const doubled = events.filter(event => event.type === 'input'
-    && (REPEAT_CLOSE.test(String(event.value ?? '')) || REPEAT_OPEN.test(String(event.value ?? ''))))
+    && (REPEAT_CLOSE.test(textOf(event)) || REPEAT_OPEN.test(textOf(event))))
   add('🔴 没有出现连续两个相同标点（`““` / `””`）', doubled.length === 0, `${doubled.length} 处`)
 
   // ③ compositionend 与随后的 input 谁先谁后（决定两条补标点路径的实际命中情况）

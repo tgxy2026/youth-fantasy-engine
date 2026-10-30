@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>输入法引号取证页 · 一分钟</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font: 15px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f7f7f5; color: #1b1b1a; }
+  @media (prefers-color-scheme: dark) { body { background: #17171a; color: #e8e8e6; } .card { background: #202024 !important; border-color: #33333a !important; } textarea { background: #14141a !important; color: #e8e8e6 !important; } }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  .sub { font-size: 13px; opacity: .72; margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid #e2e2de; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  ol { margin: 6px 0 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .done { color: #1a7f37; font-weight: 600; }
+  textarea { width: 100%; min-height: 170px; padding: 12px 14px; border-radius: 10px; border: 1px solid #d6d6d2;
+    background: #fff; font: 17px/1.9 inherit; resize: vertical; outline: none; }
+  textarea:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  button { font: 600 14px/1 inherit; padding: 10px 16px; border-radius: 9px; border: 0; cursor: pointer;
+    background: #f59e0b; color: #1b1b1a; }
+  button.ghost { background: transparent; border: 1px solid #c9c9c4; color: inherit; font-weight: 500; }
+  .stat { font-size: 13px; opacity: .8; }
+  table { width: 100%; border-collapse: collapse; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(128,128,128,.2); white-space: nowrap; }
+  th { opacity: .7; font-weight: 600; }
+  .hint { font-size: 12.5px; opacity: .7; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>输入法引号取证页</h1>
+  <div class="sub">给「搜狗输入法」的用户用：打几个字，导出一个文件发回来即可。<b>只在你的浏览器里记录，不上传、不联网。</b></div>
+
+  <div class="card">
+    <b>请按顺序做三件事</b>（用你平时打字的那套输入法）：
+    <ol>
+      <li id="task1">先打一个逗号「，」，紧接着打一个双引号 —— 看它上屏成什么</li>
+      <li id="task2">打两个汉字（比如「你好」），紧接着打一个双引号</li>
+      <li id="task3">打一个书名号「《」，再打两个字（比如「山海」），再打一个「》」</li>
+    </ol>
+    <div class="hint">下面是记录区，随便打，别删。打完点「导出记录」把文件发回来。</div>
+  </div>
+
+  <div class="card">
+    <textarea id="ta" placeholder="在这里打字（不要粘贴，用输入法一个字一个字打）……" autofocus></textarea>
+    <div class="row">
+      <button id="export">导出记录</button>
+      <button class="ghost" id="clear">清空重来</button>
+      <span class="stat" id="stat">已记录 0 条事件</span>
+    </div>
+    <div class="hint" id="quoteStat">引号统计：左 “ 0 个 · 右 ” 0 个 · 《 0 个 · 》 0 个</div>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">最近的事件（导出里是全部）</b>
+    <table>
+      <thead><tr><th>时间</th><th>事件</th><th>上屏字符</th><th>组合中</th><th>光标位置</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(() => {
+  const ta = document.getElementById('ta')
+  const rows = document.getElementById('rows')
+  const stat = document.getElementById('stat')
+  const quoteStat = document.getElementById('quoteStat')
+  const log = []
+  const TYPES = ['compositionstart', 'compositionupdate', 'compositionend', 'beforeinput', 'input']
+
+  const render = () => {
+    stat.textContent = `已记录 ${log.length} 条事件`
+    rows.innerHTML = log.slice(-12).reverse().map(event => `<tr>
+      <td>${event.t}</td><td>${event.type}</td>
+      <td>${event.data === null || event.data === undefined ? '—' : JSON.stringify(event.data)}</td>
+      <td>${event.isComposing === null || event.isComposing === undefined ? '—' : event.isComposing}</td>
+      <td>${event.caret}</td></tr>`).join('')
+    const text = ta.value
+    const count = ch => [...text].filter(c => c === ch).length
+    quoteStat.textContent = `引号统计：左 “ ${count('“')} 个 · 右 ” ${count('”')} 个 · 《 ${count('《')} 个 · 》 ${count('》')} 个`
+    // 三件事的完成勾：只看文本特征，不做评判
+    const done1 = /，\s*[“”]/.test(text)
+    const done2 = /[\u4e00-\u9fff]\s*[“”]/.test(text)
+    const done3 = /《[^》]{1,}》/.test(text)
+    document.getElementById('task1').className = done1 ? 'done' : ''
+    document.getElementById('task2').className = done2 ? 'done' : ''
+    document.getElementById('task3').className = done3 ? 'done' : ''
+  }
+
+  for (const type of TYPES) {
+    ta.addEventListener(type, event => {
+      const caret = ta.selectionStart ?? 0
+      log.push({
+        t: Math.round(performance.now()),
+        type,
+        data: event.data ?? null,
+        isComposing: event.isComposing ?? null,
+        inputType: event.inputType ?? null,
+        caret,
+        head: ta.value.slice(Math.max(0, caret - 8), caret),
+        tail: ta.value.slice(caret, caret + 8),
+      })
+      render()
+    }, true)
+  }
+
+  document.getElementById('export').onclick = () => {
+    const payload = {
+      kind: 'ime-quote-probe',
+      at: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      text: ta.value,
+      events: log,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `ime-probe-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(link.href), 4000)
+  }
+
+  document.getElementById('clear').onclick = () => {
+    log.length = 0
+    ta.value = ''
+    render()
+    ta.focus()
+  }
+
+  render()
+})()
+</script>
+</body>
+</html>
