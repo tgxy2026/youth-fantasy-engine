@@ -16,6 +16,7 @@
     "electron:dev": "vite --port 5199 & ELECTRON_START_URL=http://localhost:5199 electron .",
     "preview": "vite preview --port 5199",
     "test": "node tests/run-all.mjs",
+    "test:server": "node scripts/verify/run-all-332.mjs",
     "release-check": "node scripts/release-check.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests --max-warnings 0",

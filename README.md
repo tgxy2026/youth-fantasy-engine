@@ -288,6 +288,7 @@ youth-fantasy-engine/
 | `npm run build` | 类型检查 + 构建前端 |
 | `npm run build:desktop` | 打包 Windows 桌面版 |
 | `npm test` | 跑基线测试与结构闸 |
+| `npm run test:server` | 跑服务端协议自检（真起临时服务，约 20 秒） |
 | `npm run typecheck` | 仅类型检查 |
 | `npm run lint` | ESLint 静态检查 |
 | `npm run verify` | 类型检查 + lint + 测试 |
