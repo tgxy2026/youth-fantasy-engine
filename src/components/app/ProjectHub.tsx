@@ -296,11 +296,6 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             </HelpPopover>
           </h2>
           <div className="flex gap-2 items-stretch shrink-0">
-            <Button variant="secondary" onClick={() => setHelpOpen(true)}
-              title="不用打开项目也能查使用手册、问功能用法"
-              className="flex items-center">
-              <Compass size={13} /> 使用手册
-            </Button>
             <Button onClick={createDemo}
               disabled={busy}
               
@@ -353,6 +348,13 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 <Compass size={13} /> 新手引导
               </Button>
             )}
+            {/* 🔴 使用手册紧跟「新手引导」：两者都是「不认识这个软件时从哪开始」的入口，
+                放在一起才找得到；此前它挤在「我的作品」操作条里，和新建/导入那些动手按钮混在一处。 */}
+            <Button variant="secondary" onClick={() => setHelpOpen(true)}
+              title="不用打开项目也能查使用手册、问功能用法"
+              className="transition-colors">
+              <Compass size={13} /> 使用手册
+            </Button>
           </div>
         </div>
 

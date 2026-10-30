@@ -148,6 +148,21 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
   ok('侧板与对话框都用「使用答疑助手」这个叫法', /使用答疑助手/.test(app) && /使用答疑助手/.test(dock))
 }
 
+// ---------- ⑨ 项目管理首页：手册入口与新手引导放在一起 ----------
+{
+  const hubSrc = read('src/components/app/ProjectHub.tsx')
+  const welcomeAt = hubSrc.indexOf('新手引导')
+  // 「使用手册」按钮（不是弹窗标题里的「使用答疑助手」）——按 onClick setHelpOpen 定位更准
+  const helpAt = hubSrc.indexOf("onClick={() => setHelpOpen(true)}")
+  ok('项目管理页有「使用手册」入口', helpAt > 0)
+  ok('🔴 「使用手册」排在「新手引导」之后（两者都是「不知道从哪开始」的入口）',
+    welcomeAt > 0 && helpAt > welcomeAt, `新手引导@${welcomeAt} 使用手册@${helpAt}`)
+  // 「搬走」而不是「复制一份」：全文只能有一处打开手册的按钮
+  ok('🔴 只保留一个「使用手册」入口（搬走时没有留下旧的）',
+    (hubSrc.match(/onClick=\{\(\) => setHelpOpen\(true\)\}/g) ?? []).length === 1,
+    String((hubSrc.match(/onClick=\{\(\) => setHelpOpen\(true\)\}/g) ?? []).length))
+}
+
 // ---------- ⑧ P6：把「覆盖度 + 内容自检 + 内容版本」做成检查入口里的一行摘要 ----------
 // 🔴 为什么要打印：`npm test` / `run-batches.sh all` 是日常唯一入口（规划 §P6「手册覆盖检查
 //    接入现有检查入口」）。只在文档里写「已覆盖 55 个入口」，改内容时没人看得见实际数字。
