@@ -42,6 +42,7 @@ import {
 } from './lib/auth.mjs'
 // 只在接口里回显上限数值；真正的判定在 users.mjs → sessions.mjs（单一真源）
 import { SESSION_LIMITS } from './lib/sessions.mjs'
+import { handleV2 } from './lib/projectApi.mjs'
 import {
   readUserData, writeUserData, usageOf, userDataFile,
   readBlob, writeBlob, deleteBlob, listBlobs, ensureUserDir,
@@ -595,6 +596,15 @@ async function handleApi(req, res, url) {
   //    「登录过期」与「账号在别处登录」两句提示（WEB-02 单会话）。
   const chk = authCheck(req)
   const user = chk.user
+
+  // ---- 项目版本服务 v2（3.3.2 · P2）----
+  // 🔴 先鉴权再过路由：未登录的请求一个字节都不该被写进磁盘。
+  //    上传对象是流式的（req 直接交给 store），所以这层挡在读取请求体之前是必须的。
+  if (path.startsWith('/api/v2/')) {
+    if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    const handled = await handleV2({ req, res, path, qs, user, v2Root: join(DATA_DIR, 'v2') })
+    if (handled) return
+  }
 
   // ---- 登录设备管理（3.3.2 · P1）----
   // 软上限 10 / 硬上限 20：这里把两个数交给界面，避免前端另写一份（必然漂移）
