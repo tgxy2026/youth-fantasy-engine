@@ -106,7 +106,9 @@ export default function BossKeySettings() {
         width="md"
         footer={(
           <div className="flex w-full items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void tryNow()} disabled={busy || !enabled}>
+            <Button variant="ghost" size="sm" onClick={() => void tryNow()}
+              disabled={busy || !enabled || (mode === 'desktop' && !active)}
+              title={mode === 'desktop' && !active ? '还没有注册成功的组合键 —— 隐藏后将无法用快捷键恢复' : '试一次隐藏 / 遮挡'}>
               现在试一次
             </Button>
             <div className="ml-auto">
