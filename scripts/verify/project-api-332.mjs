@@ -135,6 +135,10 @@ try {
   })
   ok('引用未上传对象 400 OBJECT_MISSING', missing.status === 400 && missing.json?.code === 'OBJECT_MISSING', missing.json)
 
+  // 7b. 历史版本列表（P2-5）
+  const revs = await web.req('GET', `/api/v2/projects/${pid}/revisions`)
+  ok('历史版本接口返回 revision 列表', revs.status === 200 && (revs.json?.revisions || []).some((r) => r.revision === 1), revs.json)
+
   // 8. 读 manifest
   const got = await web.req('GET', `/api/v2/projects/${pid}/manifest`)
   ok('读回 manifest 且对象一致', got.status === 200 && got.json?.manifest?.objects?.[0]?.hash === h1, got.json)

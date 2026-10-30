@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   PROTOCOL_VERSION, TOMBSTONE_TTL_MS, stageObject, commitProjectSnapshot, readManifest,
   getProjectState, effectiveTombstones, deleteProject, bumpEpoch, hasObject, objectPath,
+  listRevisions, pruneRevisions,
 } from '../../server/lib/projectStore.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -214,6 +215,23 @@ try {
     const wins = [r1, r2].filter((r) => r.ok).length
     assert.equal(wins, 1, JSON.stringify([r1, r2]))
     assert.equal(getProjectState(root, pid3, 'acc_1').revision, 2)
+  })
+  // 13. 历史版本：列表与清理
+  ok('历史版本按新到旧列出', () => {
+    const revs = listRevisions(root, 'prj_c')
+    assert.equal(revs.length, 2)
+    assert.equal(revs[0].revision, 2)
+    assert.equal(revs[1].revision, 1)
+  })
+
+  ok('清理历史永远保留最新版', () => {
+    const before = listRevisions(root, 'prj_c').length
+    const r = pruneRevisions(root, 'prj_c', { keep: 0, now: Date.now() + 60 * DAY, ttlMs: 1 })
+    const after = listRevisions(root, 'prj_c')
+    assert.equal(r.removed, before - 1)
+    assert.equal(after.length, 1)
+    assert.equal(after[0].revision, 2)
+    assert.ok(readManifest(root, 'prj_c', 2) !== null)
   })
 } catch (e) {
   fails.push({ name: '未预期异常', message: e instanceof Error ? e.stack : String(e) })

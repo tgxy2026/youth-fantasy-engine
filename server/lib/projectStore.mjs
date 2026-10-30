@@ -261,6 +261,8 @@ export function commitProjectSnapshot({ root, pid, accountId, opId, baseRevision
       epoch, tombs: merged, ops,
     }
     writeAtomic(p.state(root, pid), JSON.stringify(next))
+    // 发布之后顺手清历史：清理失败**不能**影响本次提交（提交已经生效了）
+    try { pruneRevisions(root, pid, { now }) } catch { /* 清理是维护动作，不影响提交结果 */ }
     return { ok: true, revision: nextRev, snapshotId }
   } finally {
     lock.release()
@@ -334,4 +336,54 @@ export function objectsBytes(root) {
     try { total += fs.statSync(path.join(dir, n)).size } catch { /* ignore */ }
   }
   return total
+}
+
+// ---------- 历史版本（P2-5）----------
+/** 每个项目保留的历史版本数（含最新）。超出且超过 TTL 才清理 —— 两个条件同时满足才删。 */
+export const REVISION_KEEP = 20
+
+/**
+ * 列出该项目的版本（新→旧）。
+ * @returns {{ revision: number, deleted: boolean, at: number }[]}
+ */
+export function listRevisions(root, pid) {
+  const dir = p.manifests(root, pid)
+  let names = []
+  try { names = fs.readdirSync(dir) } catch { return [] }
+  const revs = names
+    .map((n) => /^(\d+)\.json$/.exec(n))
+    .filter(Boolean)
+    .map((m) => Number(m[1]))
+    .sort((a, b) => b - a)
+  return revs.map((rev) => {
+    const m = readManifest(root, pid, rev)
+    return { revision: rev, deleted: !!(m && m.deleted), at: Number(m?.createdAt || 0) }
+  })
+}
+
+/**
+ * 清理历史版本：**最新一版永远保留**；其余「既超出 KEEP 条、又超过 TTL」才删。
+ *
+ * 🔴 为什么两个条件都要：只看条数会把「30 天内只提交了 3 次」的账号历史删光；
+ *    只看时间又会让高频保存的账号堆出上千个 manifest。
+ * 🔴 只删 manifest，**不删对象**：对象是内容寻址的，可能仍被其他版本或该项目当前版本引用。
+ *    真要回收对象得先有引用计数（P2-6），在没有计数的情况下删对象＝赌命。
+ */
+export function pruneRevisions(root, pid, { keep = REVISION_KEEP, now = Date.now(), ttlMs = TOMBSTONE_TTL_MS } = {}) {
+  const all = listRevisions(root, pid)
+  if (all.length <= 1) return { removed: 0 }
+  const newest = all[0].revision
+  let removed = 0
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i]
+    if (r.revision === newest) continue
+    const tooOld = r.at > 0 && now - r.at > ttlMs
+    const tooMany = i >= keep
+    if (!tooOld || !tooMany) continue
+    try {
+      fs.unlinkSync(path.join(p.manifests(root, pid), `${r.revision}.json`))
+      removed++
+    } catch { /* 已被别的进程清掉 */ }
+  }
+  return { removed }
 }

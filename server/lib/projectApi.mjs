@@ -15,46 +15,16 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { sendJSON, readJSONBody } from './http.mjs'
 import {
+  accountRoot, readIndex, writeIndex, projectBytes, accountUsedBytes, setProjectMeta,
+} from './v2Index.mjs'
+import {
   stageObject, commitProjectSnapshot, readManifest, getProjectState, effectiveTombstones,
-  deleteProject, objectPath, hasObject, PROTOCOL_VERSION,
+  deleteProject, objectPath, hasObject, PROTOCOL_VERSION, listRevisions,
 } from './projectStore.mjs'
 
 const PID_RE = /^[A-Za-z0-9_-]{6,40}$/
 const HASH_RE = /^[0-9a-f]{64}$/
 
-/**
- * 每个账号一个根：`<v2Root>/accounts/<accId>/`
- * 里面有 `index.json`（列表与配额）、`objects/`（内容库）、`projects/`（manifest 与状态）、`locks/`。
- *
- * 🔴 对象库**按账号隔离**，不做跨账号去重（协议草案 §4）：
- *    内容寻址意味着「知道哈希就能取」，若全站共用一个对象库，任何登录用户只要拿到哈希
- *    （比如从别人的截图、日志、或自己库里的公开素材反推）就能读到别人账号的正文。
- *    多花一点磁盘换掉这个存在性侧信道，值。
- */
-const accountRoot = (v2Root, accountId) => path.join(v2Root, 'accounts', accountId)
-const indexFile = (v2Root, accountId) => path.join(accountRoot(v2Root, accountId), 'index.json')
-
-function readIndex(v2Root, accountId) {
-  try { return JSON.parse(fs.readFileSync(indexFile(v2Root, accountId), 'utf8')) } catch { return { projects: {} } }
-}
-
-function writeIndex(v2Root, accountId, idx) {
-  const file = indexFile(v2Root, accountId)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  const tmp = `${file}.tmp-${process.pid}`
-  fs.writeFileSync(tmp, JSON.stringify(idx))
-  fs.renameSync(tmp, file)
-}
-
-/** 该项目在配额里算多少（对象按 manifest 声明累加；跨项目去重不折抵，见下方说明） */
-function projectBytes(idx, pid) {
-  const p = idx.projects?.[pid]
-  return p ? (p.objectBytes || 0) : 0
-}
-
-function accountUsedBytes(idx) {
-  return Object.values(idx.projects || {}).reduce((n, p) => n + (p.objectBytes || 0), 0)
-}
 
 /**
  * 处理 `/api/v2/*`。返回 true 表示已处理；false 表示不是本层的路由。
@@ -126,6 +96,11 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
     const m = readManifest(storeRoot, pid, rev)
     if (!m) return sendJSON(res, 404, { ok: false, error: '该版本不存在' }), true
     return sendJSON(res, 200, { ok: true, revision: rev, manifest: m, current: st.revision }), true
+  }
+
+  // ---- GET /api/v2/projects/:pid/revisions —— 历史版本（P2-5）----
+  if (seg.length === 3 && seg[2] === 'revisions' && req.method === 'GET') {
+    return sendJSON(res, 200, { ok: true, revisions: listRevisions(storeRoot, pid) }), true
   }
 
   // ---- PUT /api/v2/projects/:pid/objects/:hash —— 流式上传对象 ----
