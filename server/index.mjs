@@ -426,7 +426,46 @@ function renderIndex(user) {
 }
 
 // ---------- API ----------
+/**
+ * 状态变更请求的同源校验（3.3.2 · 规划 §4「CSRF/Origin 防护」）。
+ *
+ * 🔴 只查**写方法**：GET/HEAD 不改状态，cookie 的 SameSite=Lax 也不会随跨站写请求发出。
+ * 🔴 带 `Authorization: Bearer` 的请求直接放行：浏览器不会自动附带这个头，天然没有 CSRF 面
+ *    （桌面同步走这条）。
+ * 🔴 Origin/Referer 都没有时放行：那是 curl / 自检脚本 / 非浏览器客户端，
+ *    而"浏览器自动带 Cookie"的前提本来就不成立。
+ * 🔴 反向代理若改写了 Host，需要 `YFE_TRUST_PROXY=1` 才会比对 `x-forwarded-host`；
+ *    特殊来源可用 `YFE_TRUSTED_ORIGINS`（逗号分隔）显式放行。
+ */
+function sameOriginWriteOk(req) {
+  const method = String(req.method || '').toUpperCase()
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true
+  if (String(req.headers.authorization || '').startsWith('Bearer ')) return true
+
+  const host = String(req.headers.host || '')
+  if (!host) return false
+  const trusted = String(process.env.YFE_TRUSTED_ORIGINS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  const proxied = process.env.YFE_TRUST_PROXY === '1' ? String(req.headers['x-forwarded-host'] || '') : ''
+  const accept = (value) => {
+    let u
+    try { u = new URL(String(value)) } catch { return false }
+    if (trusted.includes(u.origin)) return true
+    if (u.host === host) return true
+    return !!proxied && u.host === proxied
+  }
+
+  const origin = req.headers.origin
+  if (origin) return accept(origin)
+  const referer = req.headers.referer
+  if (referer) return accept(referer)
+  return true
+}
+
 async function handleApi(req, res, url) {
+  if (!sameOriginWriteOk(req)) {
+    return sendJSON(res, 403, { ok: false, error: '请求来源不被信任（Origin/Referer 与本站不一致）' })
+  }
   const path = url.split('?')[0]
   const qs = new URLSearchParams(url.split('?')[1] || '')
   const ip = clientIp(req)

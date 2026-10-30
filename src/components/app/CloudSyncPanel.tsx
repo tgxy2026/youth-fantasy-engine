@@ -30,8 +30,9 @@ import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
-import { createCloudProject, probeCloudProject, restoreCloudProject, purgeCloudProject } from '@/lib/cloud/syncApi'
-import type { CloudVersionSummary } from '@/lib/cloud/syncApi'
+import { runSaveBarrier } from '@/lib/app/bossSave'
+import { createCloudProject, probeCloudProject, restoreCloudProject, purgeCloudProject, listCloudProjects, listCloudRevisions } from '@/lib/cloud/syncApi'
+import type { CloudProjectList, CloudProjectRow, CloudRevisionRow, CloudVersionSummary } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
 import { applyCloudCopyInPlace } from '@/lib/sync/projectPullApply'
@@ -59,6 +60,13 @@ const fmtWhen = (ms: number): string => {
   return new Date(ms).toLocaleString('zh-CN')
 }
 
+const fmtBytes = (n: number): string => {
+  if (!n) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
 export default function CloudSyncPanel({ inline = false }: { inline?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   const [project, setProject] = useState<Project | null>(null)
@@ -70,6 +78,11 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   const [applied, setApplied] = useState<{ revision: number; backupId?: string } | null>(null)
   /** 云端这一版的摘要（章节数 / 时间）—— 覆盖前给用户看得见的依据 */
   const [cloudSummary, setCloudSummary] = useState<CloudVersionSummary | null>(null)
+  /** 账号下的云端作品（含配额） */
+  const [cloudList, setCloudList] = useState<CloudProjectList | null>(null)
+  /** 展开历史版本的作品 id */
+  const [historyOpen, setHistoryOpen] = useState<string | null>(null)
+  const [historyData, setHistoryData] = useState<Record<string, CloudRevisionRow[]>>({})
   const [state, setState] = useState<SyncState>('idle')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -124,6 +137,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
       }
       const ctl = await bootSync()
       setState(await ctl.stateOf(pid))
+      // 账号下的云端作品 + 配额（失败返回空，不影响上面这次状态读取）
+      setCloudList(await listCloudProjects())
     } catch (e) {
       setError(e instanceof Error ? e.message : '读取同步状态失败')
     } finally {
@@ -160,6 +175,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   const bindAndUpload = async () => {
     const pid = getCurrentProjectId()
     if (!pid || !project) { showToast('先打开一本要同步的作品', 'error'); return }
+    if (!await ensureSaved()) return
     setBusy(true)
     setError('')
     try {
@@ -192,6 +208,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   const syncNow = async () => {
     const pid = getCurrentProjectId()
     if (!pid || !binding) return
+    if (!await ensureSaved()) return
     setBusy(true)
     try {
       const ctl = await bootSync()
@@ -244,6 +261,21 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   const stateInfo = STATE_TEXT[state]
 
   /**
+   * 手动动作前的保存屏障（规划 §13.1：点「立即同步」先完成本地保存）。
+   * 🔴 立即同步 / 另存 / 导出 / 覆盖都以**本机当前内容**为准，而 `exportProject()` 读的是 store；
+   *    正文草稿还在 2 秒防抖里时，上传出去的版本会少最后几句。
+   * 🔴 屏障失败就**不做**：保留现场让作者先处理（不拿半截内容去上传或覆盖）。
+   */
+  const ensureSaved = async (): Promise<boolean> => {
+    const r = await runSaveBarrier()
+    if (!r.ok) {
+      showToast(r.message, 'error', 6000)
+      return false
+    }
+    return true
+  }
+
+  /**
    * 冲突时「两份都留」：把云端这一版另存为一本新作品。
    * 🔴 不碰本机当前这本 —— 写入目标是 `importProject` 生成的全新项目 id，
    *    所以这里不需要先备份、也不需要"覆盖前再确认版本"。
@@ -256,6 +288,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         + '云端内容需要先下载，可能要等一会儿。',
     })
     if (!ok) return
+    if (!await ensureSaved()) return
     setBusy(true)
     setError('')
     try {
@@ -279,6 +312,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
    */
   const exportCloudCopy = async () => {
     if (!binding) return
+    if (!await ensureSaved()) return
     setBusy(true)
     setError('')
     try {
@@ -322,6 +356,57 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     }
   }
 
+  /** 从「云端作品」列表里下载一本为新的本机作品（不碰现有作品） */
+  const downloadCloudAsNew = async (row: CloudProjectRow) => {
+    if (!await ensureSaved()) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await saveCloudCopyAsNewProject({
+        cloudProjectId: row.cloudProjectId,
+        name: row.name ? `${row.name}（云端副本）` : undefined,
+      })
+      if (!r.ok) { showToast(r.reason, 'error'); return }
+      const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
+      showToast(`已下载为《${r.name}》${notes}。回项目中心即可打开`, 'success', 7000)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '下载失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 展开 / 收起某本云端作品的历史版本（只读，不改任何数据） */
+  const toggleHistory = async (row: CloudProjectRow) => {
+    if (historyOpen === row.cloudProjectId) { setHistoryOpen(null); return }
+    setHistoryOpen(row.cloudProjectId)
+    if (historyData[row.cloudProjectId]) return
+    const rows = await listCloudRevisions(row.cloudProjectId)
+    setHistoryData((m) => ({ ...m, [row.cloudProjectId]: rows }))
+  }
+
+  /** 导出云端某一版为项目备份文件（不写库、不覆盖本机） */
+  const exportCloudVersion = async (row: CloudProjectRow, rev: number) => {
+    if (!await ensureSaved()) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await loadCloudCopy({
+        cloudProjectId: row.cloudProjectId,
+        rev,
+        name: row.name ? `${row.name}（第 ${rev} 版）` : undefined,
+      })
+      if (!r.ok || !r.bundle) { showToast(r.reason, 'error'); return }
+      const blob = new Blob([JSON.stringify(r.bundle)], { type: 'application/json' })
+      downloadBlob(cloudCopyFileName(r.name, r.revision), blob)
+      showToast(`已导出云端第 ${rev} 版。可在项目中心用「导入项目」打开`, 'success', 6000)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '导出失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /**
    * 用云端这一版**覆盖本机**（B3-2）。
    * 🔴 覆盖前先自动备份；备份失败即中止（没有退路时不做破坏性操作）。
@@ -339,6 +424,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         + '覆盖前的本机版本会自动备份一份；覆盖完成后请重新载入界面。',
     })
     if (!ok) return
+    if (!await ensureSaved()) return
     setBusy(true)
     setError('')
     try {
@@ -627,6 +713,58 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                 同步只针对当前打开的这本作品。
               </p>
             </>
+          )}
+
+          {cloudList && cloudList.projects.length > 0 && (
+            <div className="rounded-lg border border-ink-700 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-11 text-ink-400">云端作品 {cloudList.projects.length} 本</p>
+                {cloudList.quotaBytes > 0 && (
+                  <p className="text-11 text-ink-500">
+                    已用 {fmtBytes(cloudList.usedBytes)} / {fmtBytes(cloudList.quotaBytes)}
+                  </p>
+                )}
+              </div>
+              <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto">
+                {cloudList.projects.slice(0, 20).map((row) => (
+                  <div key={row.cloudProjectId} className="rounded-md bg-ink-800/40 px-2 py-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-12 text-ink-200">{row.name || '未命名'}</span>
+                      <span className="shrink-0 text-11 text-ink-500">
+                        第 {row.revision} 版 · {fmtBytes(row.objectBytes)}
+                      </span>
+                      {row.deleted && <span className="shrink-0 text-11 text-rose-300">回收站</span>}
+                      <Button variant="ghost" size="xs" onClick={() => void toggleHistory(row)} disabled={busy}>
+                        {historyOpen === row.cloudProjectId ? '收起历史' : '历史'}
+                      </Button>
+                      <Button variant="ghost" size="xs" onClick={() => void downloadCloudAsNew(row)}
+                        disabled={busy || row.deleted} title="下载为一本新的本机作品，不覆盖现有作品">
+                        下载为新书
+                      </Button>
+                    </div>
+                    {historyOpen === row.cloudProjectId && (
+                      <div className="mt-1 space-y-1 border-t border-ink-700/60 pt-1">
+                        {(historyData[row.cloudProjectId] ?? []).slice(0, 10).map((h) => (
+                          <div key={h.revision} className="flex flex-wrap items-center gap-2 text-11">
+                            <span className="text-ink-400">第 {h.revision} 版{h.deleted ? '（删除）' : ''}</span>
+                            <span className="text-ink-600">{h.at ? fmtWhen(h.at) : ''}</span>
+                            <Button variant="ghost" size="xs" onClick={() => void exportCloudVersion(row, h.revision)} disabled={busy}>
+                              导出这一版
+                            </Button>
+                          </div>
+                        ))}
+                        {(historyData[row.cloudProjectId] ?? []).length === 0 && (
+                          <p className="text-11 text-ink-600">没有读到历史版本（网络或权限问题）</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1.5 text-11 text-ink-600">
+                下载会新建一本本机作品（不覆盖现有作品）；回收站里的作品要先恢复才能下载。
+              </p>
+            </div>
           )}
         </div>
       </Modal>

@@ -124,6 +124,15 @@ async function main() {
     ok('登录文案写明不上传作品', /不会上传、下载或合并任何作品/.test(account))
     ok('登录/登出都重配通道并广播', (account.match(/configureDesktopTransportIfSignedIn/g) || []).length >= 2
       && /DESKTOP_ACCOUNT_EVENT/.test(account))
+
+    // ⑤ 同源校验（服务端）与退出前提示（客户端）
+    const idx = read('server/index.mjs')
+    ok('写请求做同源校验', /function sameOriginWriteOk/.test(idx) && /请求来源不被信任/.test(idx))
+    ok('Bearer / 无 Origin 请求豁免', /startsWith\('Bearer '\)/.test(idx) && /if \(origin\) return accept\(origin\)/.test(idx))
+
+    const appSrc = read('src/App.tsx')
+    ok('退出项目前提示未同步内容', /还有未同步的内容/.test(appSrc) && /ctl\.stateOf\(pid\)/.test(appSrc))
+    ok('退出提示只提醒、不删队列', /退出项目不会删除它们/.test(appSrc))
   }
 
   console.log(`\n▶ cloudTransport: ${pass} passed, ${fail} failed`)

@@ -121,17 +121,35 @@ export async function fetchRemoteRevision(cloudProjectId: string, base = baseOf(
   return p.ok ? p.state.revision : null
 }
 
-/** 列出云端作品 */
-export async function listCloudProjects(base = baseOf()): Promise<
-  Array<{ cloudProjectId: string; name: string; revision: number; updatedAt: number; objectBytes: number; deleted?: boolean }>
-> {
+export interface CloudProjectRow {
+  cloudProjectId: string
+  name: string
+  revision: number
+  updatedAt: number
+  objectBytes: number
+  deleted?: boolean
+  deletedAt?: number
+}
+
+export interface CloudProjectList {
+  projects: CloudProjectRow[]
+  usedBytes: number
+  quotaBytes: number
+}
+
+/** 列出云端作品（含配额）—— 面板据此显示「云端已用 X / Y」与逐本下载入口 */
+export async function listCloudProjects(base = baseOf()): Promise<CloudProjectList> {
   try {
     const res = await f()(`${base}/api/v2/projects`, { credentials: 'same-origin', cache: 'no-store' })
-    if (!res.ok) return []
-    const b = await res.json() as { projects?: unknown }
-    return Array.isArray(b.projects) ? b.projects as never : []
+    if (!res.ok) return { projects: [], usedBytes: 0, quotaBytes: 0 }
+    const b = await res.json() as { projects?: unknown; usedBytes?: number; quotaBytes?: number }
+    return {
+      projects: Array.isArray(b.projects) ? b.projects as CloudProjectRow[] : [],
+      usedBytes: Number(b.usedBytes) || 0,
+      quotaBytes: Number(b.quotaBytes) || 0,
+    }
   } catch {
-    return []
+    return { projects: [], usedBytes: 0, quotaBytes: 0 }
   }
 }
 
@@ -217,6 +235,37 @@ export async function restoreCloudProject(
     return { ok: true, revision: Number(b.revision) || 0, restoredFrom: Number(b.restoredFrom) || 0 }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '恢复失败' }
+  }
+}
+
+export interface CloudRevisionRow {
+  revision: number
+  deleted: boolean
+  /** 服务端文件 mtime（不是客户端填的时间） */
+  at: number
+}
+
+/**
+ * 云端历史版本（新→旧）。
+ * 🔴 失败返回空数组：历史读不出来不该让整个同步面板报错（当前版本的状态仍然可用）。
+ */
+export async function listCloudRevisions(
+  cloudProjectId: string, base = baseOf(),
+): Promise<CloudRevisionRow[]> {
+  try {
+    const res = await f()(
+      `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/revisions`,
+      { credentials: 'same-origin', cache: 'no-store' },
+    )
+    if (!res.ok) return []
+    const b = await res.json() as { revisions?: unknown }
+    if (!Array.isArray(b.revisions)) return []
+    return b.revisions
+      .map((x) => x as Record<string, unknown>)
+      .map((x) => ({ revision: Number(x.revision) || 0, deleted: !!x.deleted, at: Number(x.at) || 0 }))
+      .filter((x) => x.revision > 0)
+  } catch {
+    return []
   }
 }
 

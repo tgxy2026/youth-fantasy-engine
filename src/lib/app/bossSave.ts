@@ -30,8 +30,12 @@ const SCOPE_TEXT: Record<LeaveScope, string> = {
 /**
  * 跑一次保存屏障。
  * @returns 成功/失败 + 一句能直接给作者看的话（失败时**不要说"已保存"**）
+ *
+ * 🔴 不只在老板键里用：任何"要以本机当前内容为准"的操作（立即同步 / 另存为新书 /
+ *    用云端覆盖）都必须先过这一关 —— `exportProject()` 读的是 store，
+ *    正文草稿还在 2 秒防抖里时，上传出去的"本机版本"会少最后几句。
  */
-export async function runBossSaveBarrier(): Promise<BossSaveResult> {
+export async function runSaveBarrier(): Promise<BossSaveResult> {
   // ① 组件内的未落库草稿（与换页签时同一套判据）
   const guard = await runLeaveGuard()
   if (!guard.ok) {
@@ -72,3 +76,6 @@ export async function runBossSaveBarrier(): Promise<BossSaveResult> {
 
   return { ok: true, scope: 'none', message: '' }
 }
+
+/** 老板键侧的旧名字（保留既有调用点）；新代码请用 `runSaveBarrier` */
+export const runBossSaveBarrier = runSaveBarrier

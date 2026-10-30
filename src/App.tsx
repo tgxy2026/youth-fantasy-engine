@@ -48,6 +48,7 @@ import {
   applyBossKey, bossKeyMode, matchesAccel, normalizeAccel, onBossKeyChanged,
 } from '@/lib/app/bossKey'
 import { runBossSaveBarrier } from '@/lib/app/bossSave'
+import { bootSync } from '@/lib/app/syncBoot'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
@@ -65,7 +66,7 @@ import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
 import GeoMapEditor from '@/components/world/GeoMapEditor'
 import PlotCanvas from '@/components/outline/PlotCanvas'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
@@ -692,7 +693,31 @@ export default function App() {
     if (entry) navGate.request({ kind: 'page', target: { ...entry.target }, back: entry })
   }, [navHistory, navGate])
 
-  const exitProject = useCallback(() => navGate.request({ kind: 'exit' }), [navGate])
+  const exitProject = useCallback(() => {
+    void (async () => {
+      // 🔴 规划 §13.1：退出项目前列出「待同步 / 上传中 / 冲突」并让用户明确知情退出。
+      //    退出**不会**删除队列（下次打开继续），所以这里只做提示、不拦死。
+      try {
+        const pid = db.getCurrentProjectId()
+        if (pid) {
+          const ctl = await bootSync()
+          const s = await ctl.stateOf(pid)
+          if (s === 'queued' || s === 'syncing' || s === 'conflict' || s === 'failed') {
+            const what = s === 'conflict' ? '有冲突要处理'
+              : s === 'failed' ? '有同步失败的内容'
+                : s === 'syncing' ? '正在同步' : '还没传完'
+            const ok = await confirmDialog({
+              title: '还有未同步的内容',
+              message: `这本云端同步${what}。\n\n退出项目不会删除它们：下次打开应用会继续同步，也可以回来点「立即同步」。`,
+              confirmText: '仍然退出',
+            })
+            if (!ok) return
+          }
+        }
+      } catch { /* 同步状态读不出来不拦退出 */ }
+      navGate.request({ kind: 'exit' })
+    })()
+  }, [navGate])
 
   // 跨组件跳转事件（地图详情「跳到地理风物」、数据体检「跳转修复」等场景派发 yfe:navigate）
   // detail 兼容两种形式：字符串 tabId，或 { tabId, rowId } 对象（直达并高亮具体行）

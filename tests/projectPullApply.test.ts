@@ -59,6 +59,15 @@ function main() {
     ok('二次确认写明会丢失本机改动', /这些改动会被丢弃/.test(panel) && /自动备份一份/.test(panel))
     ok('覆盖成功后提示重新载入', /重新载入界面/.test(panel) && /location\.reload/.test(panel))
     ok('覆盖成功会计入同步基线', /baseRevision: r\.revision/.test(panel) && /lastSnapshotId: r\.snapshotId/.test(panel))
+    ok('手动动作前有保存屏障', /const ensureSaved/.test(panel) && /runSaveBarrier/.test(panel))
+    ok('至少五个手动动作先过屏障', (panel.match(/await ensureSaved\(\)/g) || []).length >= 5,
+      String((panel.match(/await ensureSaved\(\)/g) || []).length))
+    ok('云端作品列表 / 历史 / 配额入口齐全', /listCloudProjects/.test(panel) && /listCloudRevisions/.test(panel))
+    // 只扫这个函数体：别处的注释会提到 importProject（"另存为新书"复用它）
+    const expStart = panel.indexOf('const exportCloudVersion')
+    const expEnd = panel.indexOf('const applyCloud', expStart)
+    const expBody = expStart >= 0 ? panel.slice(expStart, expEnd > expStart ? expEnd : expStart + 1200) : ''
+    ok('历史版本导出是只读的（不走 importProject）', expBody.length > 0 && !/importProject/.test(expBody))
   }
 
   console.log(`\n▶ projectPullApply: ${pass} passed, ${fail} failed`)
