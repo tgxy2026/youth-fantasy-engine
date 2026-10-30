@@ -11,11 +11,11 @@
 //   ③ 阅读现场要保住：打开文章、跳来源、返回搜索都保留查询词与已读文章，
 //      从搜索结果点进来要落到那一段（规划 §4.4）。
 import { useMemo, useRef, useState, useEffect } from 'react'
-import { BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, MessageCircleQuestion, Search, Sparkles } from 'lucide-react'
+import { AlertTriangle, BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, MessageCircleQuestion, RefreshCw, Search, Sparkles } from 'lucide-react'
 import AskPanel from '@/components/help/AskPanel'
 import { TABS, EDITOR_TAB, tabVisible, type VisCtx } from '@/lib/schema'
 import {
-  HELP_ARTICLES, HELP_GROUPS, getHelpArticle, helpArticlesInGroup,
+  HELP_ARTICLES, HELP_GROUPS, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, helpArticlesInGroup,
   searchHelp, suggestHelpGroups, tabsWithoutHelp, type HelpArticle, type HelpGroup,
 } from '@/lib/help'
 import { getPageGuide } from '@/lib/help/guides'
@@ -220,8 +220,24 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
       </div>
   )
 
+  /**
+   * 🔴 混版本横幅（规划 §4.4）：手册文章照常可读（就在本次加载的内存里），
+   *    但「据此生成 AI 回答」必须停 —— 入口同时给在这里，作者不用切到问 AI 才看到。
+   */
+  const build = checkHelpBuild()
+
   return (
     <section data-help-center className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+      {!build.aligned && (
+        <div data-help-build-mismatch className="px-5 py-2 bg-amber/10 border-b border-amber/30 text-11 text-amber/90 flex flex-wrap items-center gap-2">
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="flex-1 min-w-0">手册资源版本与当前页面不一致（常见于网页版更新后没刷新）。文章仍可阅读，但 AI 回答已暂停，以免依据旧内容作答。</span>
+          <Button variant="secondary" size="sm" onClick={() => window.location.reload()}
+            className="shrink-0 flex items-center gap-1 text-11">
+            <RefreshCw size={11} /> {HELP_RELOAD_LABEL}
+          </Button>
+        </div>
+      )}
       <header className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex flex-wrap items-center gap-2">
         <BookOpen size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">使用答疑助手</h2>

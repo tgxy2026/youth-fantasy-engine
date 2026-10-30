@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url'
 const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
 /**
+ * 每次启动 / 构建都不同的构建标识（版本号 + 启动时刻）。
+ * 用途只有一个：让运行期能判断「HTML 外壳」与「JS 包」是不是同一次构建（手册混版本的证据）。
+ */
+const helpBuild = `${appVersion}+${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`
+
+/**
  * ⚠️ dev 下 `define` 不会替换源码里的 `__APP_VERSION__`（2026-09-02 实测：vite dev 返回的
  * portable.ts 模块中该标识符**原样保留**，于是版本恒走 `typeof __APP_VERSION__ === 'undefined'`
  * 兜底分支，界面显示「开发版」）；而 `vite build` 会正常替换并常量折叠掉兜底。
@@ -13,16 +19,44 @@ const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta
  * 这里用一个极小的 transform 插件补上 dev 的替换，使 dev 与构建显示一致，
  * 且版本号仍只来自 package.json 一处（不必在 env.ts 里再硬编码一份）。
  */
-function injectAppVersion(version: string) {
+function injectAppVersion(version: string, helpBuild: string) {
   return {
     name: 'inject-app-version',
     transform(code: string, id: string) {
       const file = id.split('?')[0].replace(/\\/g, '/')
       // ⚠️ 3.0 目录整理（G3）把 env.ts 从 `src/lib/` 挪到 `src/lib/app/`，此处必须同步，
       // 否则 dev 下 `__APP_VERSION__` 不再被替换、对外文案退回「开发版」（静默，不报错）。
-      if (!file.endsWith('/src/lib/app/env.ts')) return null
-      if (!code.includes('__APP_VERSION__')) return null
-      return { code: code.replace(/__APP_VERSION__/g, JSON.stringify(version)), map: null }
+      if (file.endsWith('/src/lib/app/env.ts') && code.includes('__APP_VERSION__')) {
+        return { code: code.replace(/__APP_VERSION__/g, JSON.stringify(version)), map: null }
+      }
+      /**
+       * 手册构建标识（3.3.1 · P4）：dev 下 `define` 同样不替换，这里补上。
+       * 🔴 为什么必须和 HTML 里的 `<meta>` 同时注入：只有两边都来自同一次构建，
+       *    运行期比对才能发现「网页缓存了旧 HTML / 旧 chunk」这种真实的不一致。
+       */
+      if (file.endsWith('/src/lib/help/buildInfo.ts') && code.includes('__HELP_BUILD__')) {
+        return { code: code.replace(/__HELP_BUILD__/g, JSON.stringify(helpBuild)), map: null }
+      }
+      return null
+    },
+  }
+}
+
+/**
+ * 把手册构建标识写进 HTML —— 运行期拿它和 JS 包里的常量比对。
+ *
+ * 🔴 网页版更新后浏览器仍可能用旧的 index.html（强缓存 / CDN 边缘），此时外壳是旧构建、
+ *    懒加载的 chunk 是新构建：手册目录、正文、索引就此混版本。规划 §4.4 要求这种情况
+ *    **停止据此生成 AI 回答**并给出重新加载入口，所以必须有一个能被读到的不一致证据。
+ */
+function injectHelpBuildMeta(helpBuild: string): Plugin {
+  return {
+    name: 'inject-help-build-meta',
+    transformIndexHtml(html: string) {
+      return html.replace(
+        '</title>',
+        `</title>\n    <meta name="yfe-help-build" content="${helpBuild}" />`,
+      )
     },
   }
 }
@@ -60,7 +94,7 @@ function normalizeDevHost(): Plugin {
 }
 
 export default defineConfig(() => ({
-  plugins: [react(), injectAppVersion(appVersion), normalizeDevHost()],
+  plugins: [react(), injectAppVersion(appVersion, helpBuild), injectHelpBuildMeta(helpBuild), normalizeDevHost()],
   // 相对路径：桌面（Electron）版通过 file:// 加载 dist/index.html，绝对路径会解析到磁盘根目录
   // （对 dev server 无影响）
   // 路径别名 `@` → `src/`（2026-10-10 · 目录结构优化 G0）。
@@ -84,6 +118,8 @@ export default defineConfig(() => ({
     // —— 关于页「当前版本 vX.Y.Z」、侧栏、项目中心、便携版标题 —— 在 dev 下全部核对不了，
     // 只能等到封装后才发现对不对。改回真实号，dev 即可直接核对对外文案。
     __APP_VERSION__: JSON.stringify(appVersion),
+    // 手册构建标识：与 index.html 里的 <meta name="yfe-help-build"> 同源同值（见 injectHelpBuildMeta）
+    __HELP_BUILD__: JSON.stringify(helpBuild),
   },
   server: {
     port: 5199,

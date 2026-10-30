@@ -254,7 +254,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-transparent overflow-y-auto relative">
+    <div data-project-hub className="min-h-screen bg-transparent overflow-y-auto relative">
       {/* 与项目内页一致：金色线稿背景，透明底、置于最底层从半透明面板后透出（2.6.1 起受侧栏「背景」开关控制） */}
       {!bgHidden && (
       <div
@@ -264,7 +264,16 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       />
       )}
       {/* 右侧预留 gutter（sm+）：为右下角看板娘腾出空间，保证卡片不进入该区域，互不遮挡 */}
-      <div className="relative w-full max-w-[1400px] mx-auto px-6 lg:px-10 py-10 page-enter" style={{ zIndex: Z.pageHandle }}>
+      {/*
+        底部留白 = 左下角数据坞的实测高度（`--dock-height`，由 DataDock 按布局单位发布）。
+        🔴 3.3.1 · P5：手动 130% 缩放时那块浮层会把最后一行卡片的「打开项目」按钮压在下面，
+           鼠标点不到（探针实测 272×346）。留出空间让作者能把它滚上来 —— 不是把工具栏藏起来。
+        上限 340px：窗口很矮时不至于多出一大片空白。
+      */}
+      <div
+        className="relative w-full max-w-[1400px] mx-auto px-6 lg:px-10 pt-10 page-enter"
+        style={{ zIndex: Z.pageHandle, paddingBottom: 'min(calc(var(--dock-height, 0px) + 2.5rem), 340px)' }}
+      >
         {/* 品牌区 */}
         <header className="mb-10 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">

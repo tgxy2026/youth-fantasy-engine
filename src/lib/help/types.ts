@@ -95,6 +95,12 @@ export interface HelpIndexEntry {
   keywordText: string
   group: HelpGroup
   tabIds: string[]
+  /**
+   * 生成这条索引时的手册内容版本（`CONTENT_VERSION`）。
+   * 🔴 用途是「回答可追溯到当时的目录/正文版本」：会话里的旧回答要能说明自己基于哪一版，
+   *    而不是悄悄跟着新版本指向别的原文（规划 §4.4 末句）。
+   */
+  contentVersion: number
 }
 
 /** 一次检索命中的片段 */

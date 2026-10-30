@@ -113,6 +113,7 @@ export function buildHelpIndex(articles: HelpArticle[]): HelpIndexEntry[] {
         keywordText,
         group: article.group,
         tabIds: [...article.tabIds],
+        contentVersion: CONTENT_VERSION,
       })
     }
   }
@@ -122,7 +123,9 @@ export function buildHelpIndex(articles: HelpArticle[]): HelpIndexEntry[] {
 /** 索引：随注册表构建一次，检索直接用它（不重复计算） */
 export const HELP_INDEX: HelpIndexEntry[] = buildHelpIndex(HELP_ARTICLES)
 
-// 一次加载里的目录、正文与索引必须保持一致。资源首次加载就混入旧构建的情况仍需独立构建版本标记。
+// 一次加载里的目录、正文与索引必须保持一致。
+// 🔴 「资源首次加载就混入旧构建」这一层**不在本函数里**：它发生在模块之外
+//    （旧 HTML + 新 chunk），只能靠跨模块的构建标识发现 —— 见 `lib/help/buildInfo.ts`。
 const initialArticles = JSON.stringify(HELP_ARTICLES)
 const initialGroups = JSON.stringify(HELP_GROUPS)
 const initialIndex = JSON.stringify(HELP_INDEX)
@@ -133,6 +136,8 @@ export function isHelpContentConsistent(): boolean {
     && JSON.stringify(HELP_INDEX) === initialIndex
     && JSON.stringify(buildHelpIndex(HELP_ARTICLES)) === initialIndex
     && HELP_ARTICLES.every(article => HELP_GROUPS.includes(article.group))
+    // 索引自带的版本必须与当前内容版本一致：不一致说明索引是旧构建产出的快照
+    && HELP_INDEX.every(entry => entry.contentVersion === CONTENT_VERSION)
 }
 
 export interface HelpContentIssue {

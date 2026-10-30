@@ -33,6 +33,16 @@ export {
 export type { HelpContentIssue } from '@/lib/help/registry'
 
 export {
+  HELP_BUILD_ID,
+  HELP_BUILD_META,
+  HELP_BUILD_MISMATCH_NOTICE,
+  HELP_RELOAD_LABEL,
+  checkHelpBuild,
+  readShellBuildId,
+} from '@/lib/help/buildInfo'
+export type { HelpBuildState } from '@/lib/help/buildInfo'
+
+export {
   MAX_HITS,
   MAX_HITS_PER_ARTICLE,
   MIN_HIT_SCORE,

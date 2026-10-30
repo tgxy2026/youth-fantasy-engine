@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import { DesktopDataBar } from '@/components/app/Desktop'
@@ -10,7 +11,7 @@ import { PORTABLE } from '@/lib/storage/fileBackend'
 import { GUEST } from '@/lib/db/guestData'
 import { WEB } from '@/lib/app/platform'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
-import { foldVh } from '@/lib/settings/theme'
+import { currentUiZoom, foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import DensityControl from '@/components/settings/DensityControl'
@@ -45,6 +46,33 @@ export default function DataDock() {
   //   ⚠️ hook 必须写在 early return **之前**（否则违反 hooks 规则）。
   const [collapsed, setCollapsed] = usePersistedBool('dock-collapsed', false)
 
+  /**
+   * 🔴 3.3.1 · P5 遮挡修复（主人 2026-10-30 定「留底部空间」）：
+   *    把工具栏的实测高度发布成 `--dock-height`，项目管理页据此在内容底部留白 ——
+   *    手动 130% 缩放时这块浮层会压住卡片上的「打开项目」按钮（实测 272×346，鼠标点不到）。
+   *
+   * 写进去的是**布局单位**（`rect.height ÷ 界面缩放`）：CSS 长度会随 zoom 一起缩放，
+   * 混着写会放大两次（同一类坑见 GuideOverlay 的高亮框）。
+   * 高度随「收起 / 展开 / 云同步块出现」变化，所以用 ResizeObserver，不能只量一次。
+   */
+  const dockRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const element = dockRef.current
+    const root = document.documentElement
+    if (!element) return
+    const publish = () => {
+      const height = element.getBoundingClientRect().height / currentUiZoom()
+      root.style.setProperty('--dock-height', `${Math.round(height)}px`)
+    }
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--dock-height')
+    }
+  }, [])
+
   // 桌面版 / 便携版 / 网页云端 / 网页游客 / dev 预览五态判定（判定落在 lib/app/dataDockView，便于单测）
   // 🔴 网页版的云端模式同时带 PORTABLE 标记（复用它那套 HTTP StoreOps），
   //    所以必须把 `web` 传进去并**优先于便携判定** —— 否则会显示成便携版的「数据文件 ./data/xxx.json」。
@@ -57,6 +85,8 @@ export default function DataDock() {
   // 小屏自动收窄、大屏仍走 240px 上限 —— 大屏观感不变。下限靠内容自身撑开，故不再设 min-width。
   return (
     <div
+      ref={dockRef}
+      data-data-dock
       className={`fixed left-4 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
         // 收起＝贴到屏幕底边（bottom-0）+ 去掉下圆角，视觉上"缩进底边"；只留把手那一条
         collapsed ? 'bottom-0 py-0.5 rounded-b-none' : 'bottom-4 py-2'

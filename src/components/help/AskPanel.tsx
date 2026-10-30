@@ -6,10 +6,12 @@
 //   ② **回答必须带依据** —— 每条来源可点开原文那一段；校验不过就退回检索结果，不显示半真半假的答案；
 //   ③ **对话只在内存** —— 关掉面板即丢；不写项目数据、不写问题与回答全文（规划 §7 末段）。
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BookOpen, Loader2, Send, Square, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BookOpen, Loader2, RefreshCw, Send, Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
-import { getHelpArticle, type HelpHit } from '@/lib/help'
+import {
+  CONTENT_VERSION, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, type HelpHit,
+} from '@/lib/help'
 import { askHelpOnce, type AskResult } from '@/lib/aiTasks/helpAsk'
 import { helpSourceSnapshot } from '@/lib/aiTasks/helpAnswer'
 
@@ -28,6 +30,17 @@ interface Props {
 const sectionOf = (articleId: string, sectionId: string): string => {
   const article = getHelpArticle(articleId)
   return article?.sections.find(section => section.id === sectionId)?.heading ?? sectionId
+}
+
+/**
+ * 重新加载帮助资源。
+ *
+ * 🔴 只做「刷新页面」这一件事：不在这里尝试热替换内容、也不清缓存。
+ *    混版本的成因是外壳与 chunk 来自不同构建，只有整页重新拉取才能保证两边同时换新；
+ *    自作聪明地局部重建只会把「不知道哪个版本」变成「一半新一半旧」。
+ */
+const reloadHelpResources = () => {
+  if (typeof window !== 'undefined') window.location.reload()
 }
 
 export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
@@ -130,12 +143,38 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
             </div>
           )}
           {staleSourceTurn === turnId && <div role="status" className="text-11 text-amber">这条回答所依据的手册内容已变化，请重新提问后查看新原文。</div>}
-          <div className="text-9 text-ink-600">回答只依据内置手册，不读取你的稿件内容。</div>
+          <div className="text-9 text-ink-600">
+            回答只依据内置手册（v{result.contentVersion}），不读取你的稿件内容。
+            {result.contentVersion !== CONTENT_VERSION && (
+              <span className="text-amber/80"> 这条回答基于手册 v{result.contentVersion}，当前为 v{CONTENT_VERSION}：点开依据看到的是当时的原文快照，若已更新请重新提问。</span>
+            )}
+          </div>
         </div>
       )
     }
     if (result.kind === 'cancelled') {
       return <div className="text-11 text-ink-500">已停止这一轮提问。可以改个说法再问一次。</div>
+    }
+    /** 混版本：不是「没配模型」也不是「手册没写」，是资源本身不同步 */
+    if (result.kind === 'stale') {
+      return (
+        <div className="space-y-2">
+          <div className="flex items-start gap-1.5 text-11 leading-relaxed text-amber/90">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            <span>{result.message}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={reloadHelpResources} className="flex items-center gap-1 text-11">
+              <RefreshCw size={11} /> {HELP_RELOAD_LABEL}
+            </Button>
+            <Button variant="bare" size="sm"
+              onClick={() => void submit('这个功能怎么用')}
+              className="text-11 text-ink-300 hover:text-amber transition-colors">
+              换用本地手册检索
+            </Button>
+          </div>
+        </div>
+      )
     }
     /** 三种「没有 AI 回答」的情况：措辞必须分得清，不能都说成「手册没写」 */
     const notice = result.kind === 'no-model'
@@ -157,8 +196,25 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     )
   }
 
+  const build = checkHelpBuild()
+
   return (
     <div data-ask-panel className="space-y-3">
+      {/* 🔴 混版本时先说明再提供入口（规划 §4.4）：提问会被拒绝，不能让作者以为模型坏了 */}
+      {!build.aligned && (
+        <div data-help-build-mismatch
+          className="rounded-lg border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber/90 leading-relaxed space-y-1.5">
+          <div className="flex items-start gap-1.5">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            <span>手册资源版本不一致（页面外壳与内容包不是同一次加载）。为避免按旧内容回答，已暂停 AI 回答；手册文章仍可正常阅读。</span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={reloadHelpResources}
+            className="flex items-center gap-1 text-11">
+            <RefreshCw size={11} /> {HELP_RELOAD_LABEL}
+          </Button>
+          <div className="text-10 text-amber/70">外壳 {build.shell ?? '（未标注）'} · 内容包 {build.bundle}</div>
+        </div>
+      )}
       <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-3 py-2 text-11 text-ink-400 leading-relaxed">
         回答只依据内置手册，不读你的稿件、不改任何数据；对话只在本次打开期间存在，关闭即清空。
         {!aiReady && <span className="text-amber/80"> 未配置模型时只能给手册片段，不会有 AI 回答。</span>}

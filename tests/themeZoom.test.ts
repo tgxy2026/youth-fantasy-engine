@@ -98,5 +98,25 @@ const codeOnly = (src: string) => src.split('\n').filter(l => !l.trim().startsWi
   ok('未展开时把侧栏放进隐藏容器（不留可聚焦的重复控件）', /className="hidden"/.test(ws))
 }
 
+// ---------- ⑤ 3.3.1 · P5：左下角数据坞的遮挡（主人 2026-10-30 定「留底部空间」）----------
+{
+  const dock = read('src/components/app/DataDock.tsx')
+  const hub = read('src/components/app/ProjectHub.tsx')
+
+  ok('🔴 数据坞把自己的实测高度发布成 --dock-height', /setProperty\('--dock-height'/.test(dock))
+  ok('🔴 高度按布局单位写（rect ÷ 界面缩放，否则 zoom 下放大两次）',
+    /getBoundingClientRect\(\)\.height \/ currentUiZoom\(\)/.test(dock))
+  ok('高度变化用 ResizeObserver 跟踪（收起 / 展开 / 云同步块出现都要重算）',
+    /new ResizeObserver\(/.test(dock) && /observer\.observe\(/.test(dock))
+  ok('卸载时撤掉变量（别让项目内的页面误留空白）', /removeProperty\('--dock-height'\)/.test(dock))
+
+  ok('🔴 项目列表按 --dock-height 留底部空间（不是写死一个魔法数）',
+    /paddingBottom: '[^']*var\(--dock-height/.test(hub))
+  ok('留白有上限（窗口矮时不至于多出一大片空白）', /min\(calc\(var\(--dock-height/.test(hub))
+  ok('项目列表根节点有稳定锚点（探针按它找内部滚动容器）', /data-project-hub/.test(hub))
+  ok('🔴 不再用 py-10 同时控制上下（否则会盖掉 inline 的 paddingBottom）',
+    !/px-6 lg:px-10 py-10 page-enter/.test(hub))
+}
+
 console.log(`\nthemeZoom: ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

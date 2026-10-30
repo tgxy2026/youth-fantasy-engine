@@ -65,38 +65,55 @@ try {
   }
 
   /**
-   * 重载后不一定回到工作台：停在项目列表时用键盘打开第一张卡片的「打开项目」。
+   * 重载后不一定回到工作台：停在项目列表时**用鼠标**点第一张卡片的「打开项目」。
    *
-   * 🔴 为什么不用鼠标点：130% 这类缩放下左下角浮动工具栏会盖住这个按钮（实测记在 findings 里）。
-   *    收起工具栏能绕过，但 `dock-collapsed` 与侧栏「界面与数据」是**同一个持久键**，
-   *    一收就会把侧栏的缩放面板一起折叠，反而污染后续测量。键盘激活不受遮挡影响，也不会改任何偏好。
+   * 🔴 这里刻意用鼠标而不是键盘：3.3.1 之前 130% 缩放下这块按钮会被左下角数据坞压住、鼠标点不到，
+   *    所以只能靠键盘绕。现在项目列表按数据坞实测高度留了底部空间（主人 2026-10-30 定「留底部空间」），
+   *    鼠标点击本身就是那条修复的验收 —— 改成键盘反而验不到。
    */
   const reopenAfterReload = async (page) => {
     const back = page.getByTitle('返回项目列表')
     if (await back.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)) return
-    const open = page.getByRole('button', { name: '打开项目' }).first()
-    await open.focus()
-    await page.keyboard.press('Enter')
+    await scrollHubToBottom(page)
+    await page.getByRole('button', { name: '打开项目' }).first().click()
     await back.waitFor({ timeout: 60000 })
     await dismissExtras(page)
   }
 
-  /** 量「左下角浮动工具栏」与卡片操作按钮是否重叠（只记录，不改布局 —— 这是产品决定） */
-  const dockOverlap = (page) => page.evaluate(() => {
-    const open = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '打开项目')
-    const dockHandle = document.querySelector('[aria-label="收起左下角工具栏"]')
-    if (!open || !dockHandle) return { measured: false }
-    const dock = dockHandle.closest('div').getBoundingClientRect()
-    const btn = open.getBoundingClientRect()
-    const hit = document.elementFromPoint(btn.x + btn.width / 2, btn.y + btn.height / 2)
-    return {
-      measured: true,
-      covered: hit?.getAttribute('aria-label') === '收起左下角工具栏' || !!hit?.closest('[aria-label="收起左下角工具栏"]'),
-      button: { x: Math.round(btn.x), y: Math.round(btn.y) },
-      dock: { x: Math.round(dock.x), y: Math.round(dock.y), w: Math.round(dock.width), h: Math.round(dock.height) },
-      zoom: getComputedStyle(document.documentElement).zoom,
-    }
+  /** 项目列表是**内部滚动容器**（根节点 overflow-y-auto），不能只滚 document */
+  const scrollHubToBottom = (page) => page.evaluate(() => {
+    const hub = document.querySelector('[data-project-hub]')
+    const scroller = hub && hub.scrollHeight > hub.clientHeight + 2 ? hub : (document.scrollingElement || document.documentElement)
+    scroller.scrollTop = scroller.scrollHeight
+    return { scrollTop: Math.round(scroller.scrollTop), scrollHeight: Math.round(scroller.scrollHeight), clientHeight: Math.round(scroller.clientHeight) }
   })
+
+  /**
+   * 滚到内容底部后，量「左下角数据坞」是否还压着卡片的「打开项目」按钮。
+   * 🔴 命中测试比几何相交更可信：它问的是「这个点到底点到谁」。
+   */
+  const dockOverlap = async (page) => {
+    const scrolled = await scrollHubToBottom(page)
+    await page.waitForTimeout(120)
+    const probe = await page.evaluate(() => {
+      const open = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '打开项目')
+      const dockHandle = document.querySelector('[aria-label="收起左下角工具栏"]')
+      if (!open || !dockHandle) return { measured: false }
+      const dock = dockHandle.closest('div').getBoundingClientRect()
+      const btn = open.getBoundingClientRect()
+      const hit = document.elementFromPoint(btn.x + btn.width / 2, btn.y + btn.height / 2)
+      const inDock = !!hit?.closest('[aria-label="收起左下角工具栏"]')
+      return {
+        measured: true,
+        covered: inDock,
+        hitLabel: hit?.getAttribute('aria-label') || hit?.tagName || '',
+        button: { x: Math.round(btn.x), y: Math.round(btn.y) },
+        dock: { x: Math.round(dock.x), y: Math.round(dock.y), w: Math.round(dock.width), h: Math.round(dock.height) },
+        zoom: getComputedStyle(document.documentElement).zoom,
+      }
+    })
+    return { ...probe, scrolled }
+  }
   const findings = []
 
   /** 量一次缩放面板的几何与状态 */
@@ -179,10 +196,15 @@ try {
   await input.press('Enter')
   await page.waitForTimeout(150)
   await page.reload({ waitUntil: 'domcontentloaded' })
-  // 🔴 记录一条**发现**（不进通过/失败）：130% 下浮动工具栏是否压住卡片操作按钮 —— 是否改布局是产品决定
+  // 🔴 130% 缩放下「留底部空间」是否真的解决问题：滚到底后按钮中心必须点得到按钮自己
   await page.getByRole('button', { name: '打开项目' }).first().waitFor({ timeout: 20000 }).catch(() => {})
   const overlap = await dockOverlap(page)
-  if (overlap.measured) findings.push({ where: '项目管理页 · 手动 130% 重开后', ...overlap })
+  check('🔴 130% 下滚到内容底部后，卡片「打开项目」不再被数据坞压住',
+    !!overlap.measured && overlap.covered === false, JSON.stringify(overlap))
+  check('底部留白确实来自数据坞实测高度（--dock-height 已发布）',
+    (await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock-height')) || 0)) > 40,
+    await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--dock-height')))
+  if (overlap.measured) findings.push({ where: '项目管理页 · 手动 130% 重开后（已修）', ...overlap })
   await reopenAfterReload(page)
   const afterReload = await measure(page)
   check('🔴 手动 130% 重开后沿用（比例与「手动」模式都记住）',

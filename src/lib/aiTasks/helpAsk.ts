@@ -12,7 +12,10 @@
 //   ④ **不落盘**：问题、回答、召回片段只在本函数内存里存在。运行统计沿用公共账本，
 //      这里不额外写任何项目数据（规划 §7「不新建设定 / 快照 / 报告来存放答疑」）。
 import { chat, isCancelled, resolveProviderFor, type ChatMessage } from '@/lib/ai'
-import { isHelpContentConsistent, searchHelp, type HelpHit } from '@/lib/help'
+import {
+  CONTENT_VERSION, HELP_BUILD_MISMATCH_NOTICE, checkHelpBuild, isHelpContentConsistent, searchHelp,
+  type HelpBuildState, type HelpHit,
+} from '@/lib/help'
 import {
   buildHelpAnswerPrompt, prepareHelpPromptFragments, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
   type HelpAnswerFailure, type HelpPromptFragment, type HelpSourceRef,
@@ -24,8 +27,17 @@ export type AskResult =
   | { kind: 'no-model'; hits: HelpHit[] }
   /** 本地没有召回到任何片段：不请求模型（模型只能靠常识编） */
   | { kind: 'no-recall'; hits: HelpHit[] }
-  /** 有依据的 AI 回答 */
-  | { kind: 'answer'; answer: string; sources: HelpSourceRef[]; sourceSnapshots: Record<string, string>; hits: HelpHit[] }
+  /**
+   * 有依据的 AI 回答。
+   * `contentVersion` 是**生成这条回答那一刻**的手册版本：会话里可能同时存在跨版本的回答，
+   * 界面据此说明「基于哪一版」，而不是让它悄悄跟着新版本指向别的原文（规划 §4.4 末句）。
+   */
+  | { kind: 'answer'; answer: string; sources: HelpSourceRef[]; sourceSnapshots: Record<string, string>; contentVersion: number; hits: HelpHit[] }
+  /**
+   * 手册资源混版本（外壳与内容包不是同一次构建）：**不请求模型**。
+   * 规划 §4.4 明确要求「停止据此生成 AI 回答」，同时保留可读的手册文章。
+   */
+  | { kind: 'stale'; message: string; build: HelpBuildState; hits: HelpHit[] }
   /** 模型答了但校验不过（或调用失败）：退回检索结果 */
   | { kind: 'fallback'; message: string; hits: HelpHit[] }
   /** 作者主动停止：什么都不算，界面保留提问方便重试 */
@@ -77,6 +89,14 @@ export async function askHelpOnce(
   signal?: AbortSignal,
   dependencies: AskDependencies = defaultDependencies,
 ): Promise<AskResult> {
+  /**
+   * 🔴 两道版本闸，顺序不能反：
+   *   ① 外壳与内容包是不是同一次构建（跨模块，`buildInfo`）—— 旧缓存时命中；
+   *   ② 本次加载内目录/正文/索引是否自洽 —— 内存被改时命中。
+   * 任一条不成立都**不请求模型**：按混版本手册生成的回答，依据本身不可信。
+   */
+  const build = checkHelpBuild()
+  if (!build.aligned) return { kind: 'stale', message: HELP_BUILD_MISMATCH_NOTICE, build, hits: [] }
   if (!isHelpContentConsistent()) return { kind: 'fallback', message: '手册内容与索引不一致，暂不能生成回答；请先保存工作，再重新加载应用。', hits: [] }
   const hits = recallForAsk(question, currentTabId)
   if (signal?.aborted) return { kind: 'cancelled', hits }
@@ -121,6 +141,7 @@ export async function askHelpOnce(
   if (signal?.aborted) return { kind: 'cancelled', hits }
 
   // 请求期间手册若发生变化，旧答案不能静默指向新的正文。
+  if (!checkHelpBuild().aligned) return { kind: 'stale', message: HELP_BUILD_MISMATCH_NOTICE, build: checkHelpBuild(), hits }
   if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
 
   // ③ 校验：来源必须在本次召回内、摘录必须逐字出现在原文
@@ -131,7 +152,7 @@ export async function askHelpOnce(
   const sourceSnapshots = Object.fromEntries(fragments.map(fragment => [
     `${fragment.hit.articleId}/${fragment.hit.sectionId}`, fragment.sourceSnapshot,
   ]))
-  return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, hits }
+  return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, contentVersion: CONTENT_VERSION, hits }
 }
 
 /** 失败原因 → 一句话（供单测与界面复用，避免两处各写一份措辞） */
