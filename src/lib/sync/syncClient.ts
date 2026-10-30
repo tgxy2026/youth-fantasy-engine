@@ -12,12 +12,14 @@
 //    桌面原生窗口那套（Bearer + safeStorage）在 `electron/` 侧，不在这条路上。
 //
 // ⚠️ 尚未接线（诚实记录，别当成已实现）：
-//    · 项目级**墓碑**：`loadTombstones` 默认返回空数组，跨设备删除暂不会传播。
-//      这是 P4 的活（要按项目收集"上次成功提交以来删掉了哪些记录"）。
 //    · 保存流程还没有调用 `enqueue` —— 接线点见下方 `markDirty()` 注释。
+//    · 拉取（poll/pull）还缺一个"定时检查云端是否有新版本"的调度者，
+//      现在只能由界面显式调 `check()`。
 import type { ProjectBundle } from '@/lib/db/projects'
 import { exportProject } from '@/lib/db/projects'
 import type { SnapshotTombstone } from '@/lib/sync/projectSnapshot'
+import type { TombstoneStore } from '@/lib/sync/projectTombstone'
+import { clearSubmittedTombstones, tombstonesToSubmit } from '@/lib/sync/projectTombstone'
 import type { UploadTransport } from '@/lib/sync/projectUploader'
 import type { QueueStore, SyncJob } from '@/lib/sync/syncQueue'
 import { deriveStateFromJobs, enqueuePush, pendingJobsOf } from '@/lib/sync/syncQueue'
@@ -95,6 +97,8 @@ export function createHttpTransport(base = apiBase()): UploadTransport {
 
 export interface SyncClientOptions {
   store: QueueStore
+  /** 墓碑存储；不传则视为"这台设备不传播删除"（会显式记录，不静默） */
+  tombstones?: TombstoneStore
   transport?: UploadTransport
   loadBundle?: (projectId: string) => Promise<ProjectBundle | null>
   loadTombstones?: (projectId: string) => Promise<SnapshotTombstone[]>
@@ -119,11 +123,20 @@ export async function createSyncClient(opts: SyncClientOptions): Promise<SyncCli
   const loadBundle = opts.loadBundle ?? (async (pid: string) => {
     try { return (await exportProject(pid)) as unknown as ProjectBundle } catch { return null }
   })
-  // ⚠️ 墓碑未接线：跨设备删除暂不传播（P4 补）。这里显式保留注入点，
-  //    而不是静默返回空数组后假装"已经处理了删除"。
-  const loadTombstones = opts.loadTombstones ?? (async () => [])
+  const tombStore = opts.tombstones
+  const loadTombstones = opts.loadTombstones ?? (async (pid: string) => (
+    tombStore ? tombstonesToSubmit(tombStore, pid, now()) : []
+  ))
 
-  const runnerDeps = { store, transport, loadBundle, loadTombstones, now }
+  const runnerDeps = {
+    store, transport, loadBundle, loadTombstones, now,
+    // 提交成功后只清"这次带走的那批"墓碑（提交期间新删的必须留下）
+    afterCommit: tombStore
+      ? async (job: { projectId: string }, cutoff: number) => {
+          if (cutoff > 0) await clearSubmittedTombstones(tombStore, job.projectId, cutoff, now())
+        }
+      : undefined,
+  }
 
   return {
     async markDirty(input) {

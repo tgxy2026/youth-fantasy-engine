@@ -35,6 +35,13 @@ export interface SyncRunnerDeps {
   /** 状态变化回调（界面据此刷新徽标；不传就纯后台跑） */
   onState?: (projectId: string, state: SyncState, detail?: { job?: SyncJob; outcome?: UploadOutcome }) => void
   now?: () => number
+  /**
+   * 提交成功后的收尾（清掉已上报的墓碑）。
+   * @param tombstoneCutoff 本次快照带走的墓碑时间上限（只该清 ≤ 它的）
+   * 🔴 放在成功之后单独一步，而不是包进 transport：清墓碑失败**不能**把一次成功的提交
+   *    说成失败（那会让客户端重推一遍，白费一次全量上传）。
+   */
+  afterCommit?: (job: SyncJob, tombstoneCutoff: number, revision: number) => Promise<void>
   /** 每次尝试的重试次数（透传给 uploadSnapshot） */
   retries?: number
   backoffMs?: number
@@ -93,6 +100,7 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
   deps.onState?.(job.projectId, state, { job })
 
   let outcome: UploadOutcome
+  let tombstoneCutoff = 0
   try {
     const bundle = await deps.loadBundle(job.projectId)
     if (!bundle) {
@@ -105,6 +113,8 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
       return { jobId: job.id, projectId: job.projectId, state, outcome: null }
     }
     const tombstones = deps.loadTombstones ? await deps.loadTombstones(job.projectId) : []
+    // 记下"带走的是哪些"，成功后只清这一批（提交期间新删的必须留下）
+    if (tombstones.length) tombstoneCutoff = now()
     // 🔴 快照在这里**现算**，不用入队时的那份：
     //    排队期间用户可能又写了几章，用旧快照提交等于把新写的覆盖掉。
     const built = await buildProjectSnapshot(bundle, { tombstones, now: now() })
@@ -128,6 +138,11 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
 
   state = nextState('syncing', eventFromOutcome(outcome))
   await settle(deps, job, outcome, state, now())
+  if (outcome.ok && deps.afterCommit) {
+    try {
+      await deps.afterCommit(job, tombstoneCutoff, outcome.revision)
+    } catch { /* 收尾失败不影响"已提交"这个事实 */ }
+  }
   deps.onState?.(job.projectId, state, { job, outcome })
   return { jobId: job.id, projectId: job.projectId, state, outcome }
 }
