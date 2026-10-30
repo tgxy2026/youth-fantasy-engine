@@ -19,7 +19,7 @@ import {
 } from './v2Index.mjs'
 import {
   stageObject, commitProjectSnapshot, readManifest, getProjectState, effectiveTombstones,
-  deleteProject, objectPath, hasObject, PROTOCOL_VERSION, listRevisions,
+  deleteProject, restoreProject, objectPath, hasObject, PROTOCOL_VERSION, listRevisions,
 } from './projectStore.mjs'
 
 const PID_RE = /^[A-Za-z0-9_-]{6,40}$/
@@ -201,6 +201,28 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
     return sendJSON(res, 200, { ok: true, opId, revision: st.revision, snapshotId: st.snapshotId }), true
   }
 
+  // ---- POST /api/v2/projects/:pid/restore —— 从回收站恢复（写新 revision）----
+  if (seg.length === 3 && seg[2] === 'restore' && req.method === 'POST') {
+    const opId = String(qs.get('opId') || '')
+    if (!opId) return sendJSON(res, 400, { ok: false, error: '缺少 opId' }), true
+    const r = restoreProject({ root: storeRoot, pid, accountId, opId })
+    if (!r.ok) {
+      const status = r.code === 'FORBIDDEN' ? 403
+        : r.code === 'NOT_DELETED' ? 409
+          : r.code === 'NO_CONTENT_TO_RESTORE' ? 410 : 400
+      return sendJSON(res, status, { ok: false, code: r.code, error: codeText(r.code), revision: r.revision }), true
+    }
+    idx.projects[pid] = {
+      ...idx.projects[pid], revision: r.revision, snapshotId: r.snapshotId,
+      deletedAt: 0, updatedAt: Date.now(),
+    }
+    writeIndex(v2Root, accountId, idx)
+    return sendJSON(res, 200, {
+      ok: true, revision: r.revision, snapshotId: r.snapshotId,
+      restoredFrom: r.restoredFrom, replayed: !!r.replayed,
+    }), true
+  }
+
   // ---- DELETE /api/v2/projects/:pid —— 删除（写墓碑，不删目录） ----
   if (seg.length === 2 && req.method === 'DELETE') {
     const opId = String(qs.get('opId') || '')
@@ -222,6 +244,8 @@ function codeText(code) {
     case 'OBJECT_MISSING': return '有内容尚未上传完成'
     case 'FORBIDDEN': return '无权访问该云端作品'
     case 'PROTOCOL_UNSUPPORTED': return '客户端协议版本不受支持，请升级软件'
+    case 'NOT_DELETED': return '云端作品没有被删除，无需恢复'
+    case 'NO_CONTENT_TO_RESTORE': return '删除前的版本已被清理，无法恢复（可以从本机重新上传）'
     default: return '提交失败'
   }
 }

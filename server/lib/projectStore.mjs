@@ -189,6 +189,9 @@ export function getProjectState(root, pid, accountId) {
     snapshotId: st.snapshotId,
     epoch: st.epoch,
     tombstoneCount: (st.tombs || []).length,
+    // 回收站标记：客户端据此区分"云端没有这本"与"云端把它放进了回收站"
+    deleted: !!st.deletedAt,
+    deletedAt: st.deletedAt || 0,
   }
 }
 
@@ -321,6 +324,67 @@ export function deleteProject({ root, pid, accountId, opId, now = Date.now(), to
       epoch: readEpoch(root), tombs, ops, deletedAt: now,
     }))
     return { ok: true, revision: nextRev, snapshotId }
+  } finally {
+    lock.release()
+  }
+}
+
+/**
+ * 从回收站恢复一本云端作品。
+ *
+ * 【恢复成什么】删除只写了一条 `deleted:true` 的 manifest，**没有销毁内容版本**。
+ * 所以恢复 = 找到删除前的最后一个内容版本，把它复制成一个**新 revision**（新 snapshotId），
+ * 并清掉项目级墓碑与 `deletedAt`。
+ *
+ * 🔴 必须产生新 revision，不能把删除版直接删掉「退回去」：
+ *   离线设备手里可能还握着删除版的 revision，凭空倒退会让它判成"云端回滚"，
+ *   或者更糟 —— 用旧基线提交成功，把别人的版本盖掉。
+ * 🔴 只清 `kind==='project'` 的墓碑：记录级墓碑（删掉的章节等）是事实，恢复整本书不等于撤销它们。
+ * 🔴 找不到内容版就如实失败（`NO_CONTENT_TO_RESTORE`），不假装恢复出一本空书。
+ */
+export function restoreProject({ root, pid, accountId, opId, now = Date.now() }) {
+  if (!pid || !accountId || !opId) return { ok: false, code: 'BAD_REQUEST' }
+  ensureDirs(root, pid)
+  const lock = acquireProjectLock(root, pid)
+  try {
+    const st = readState(root, pid, accountId)
+    if (st.accountId && st.accountId !== accountId) return { ok: false, code: 'FORBIDDEN' }
+
+    // 幂等：同一 opId 返回当时的结果
+    const seen = st.ops?.[opId]
+    if (seen) return { ok: true, revision: seen.revision, snapshotId: seen.snapshotId, replayed: true }
+
+    if (!st.deletedAt) return { ok: false, code: 'NOT_DELETED' }
+
+    // 删除版是当前 revision；往下找第一个内容版本
+    let content = null
+    let contentRev = 0
+    for (let rev = st.revision - 1; rev >= 1; rev--) {
+      const m = readManifest(root, pid, rev)
+      if (m && !m.deleted) { content = m; contentRev = rev; break }
+    }
+    if (!content) return { ok: false, code: 'NO_CONTENT_TO_RESTORE', revision: st.revision }
+
+    const nextRev = st.revision + 1
+    const snapshotId = sha256(Buffer.from(`restored:${pid}:${nextRev}:${contentRev}`, 'utf8'))
+    writeAtomic(path.join(p.manifests(root, pid), `${nextRev}.json`), JSON.stringify({
+      ...content,
+      revision: nextRev,
+      snapshotId,
+      deleted: false,
+      restoredFrom: contentRev,
+    }))
+
+    const ops = pruneOps(st.ops || {}, now)
+    ops[opId] = { revision: nextRev, snapshotId, at: now }
+    const tombs = (st.tombs || []).filter((t) => !(t.kind === 'project' && String(t.id) === String(pid)))
+
+    writeAtomic(p.state(root, pid), JSON.stringify({
+      protocol: PROTOCOL_VERSION, accountId,
+      revision: nextRev, snapshotId,
+      epoch: readEpoch(root), tombs, ops, deletedAt: 0,
+    }))
+    return { ok: true, revision: nextRev, snapshotId, restoredFrom: contentRev }
   } finally {
     lock.release()
   }

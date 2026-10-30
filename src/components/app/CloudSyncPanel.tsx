@@ -28,7 +28,8 @@ import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
-import { createCloudProject, probeCloudProject } from '@/lib/cloud/syncApi'
+import { createCloudProject, probeCloudProject, restoreCloudProject } from '@/lib/cloud/syncApi'
+import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
 import { cloudCopyFileName, loadCloudCopy } from '@/lib/sync/projectPullBundle'
 import { downloadBlob } from '@/lib/storage/zip'
@@ -59,6 +60,8 @@ export default function CloudSyncPanel() {
   const [project, setProject] = useState<Project | null>(null)
   const [binding, setBinding] = useState<SyncBinding | null>(null)
   const [cloudRevision, setCloudRevision] = useState<number | null>(null)
+  /** 云端是否在回收站（0 = 否；>0 = 删除时间） */
+  const [cloudDeletedAt, setCloudDeletedAt] = useState(0)
   const [state, setState] = useState<SyncState>('idle')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -71,17 +74,20 @@ export default function CloudSyncPanel() {
     setError('')
     try {
       const pid = getCurrentProjectId()
-      if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); return }
+      if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); setCloudDeletedAt(0); return }
       const p = await ops.get<Project>('projects', pid)
       setProject(p ?? null)
       const b = await store.get(pid)
       setBinding(b)
       if (b?.cloudProjectId) {
         const probe = await probeCloudProject(b.cloudProjectId)
-        if (probe.ok) setCloudRevision(probe.state.revision)
-        else if (probe.reason === 'not-found') setCloudRevision(null)
+        if (probe.ok) {
+          setCloudRevision(probe.state.revision)
+          setCloudDeletedAt(probe.state.deleted ? (probe.state.deletedAt || 1) : 0)
+        } else if (probe.reason === 'not-found') { setCloudRevision(null); setCloudDeletedAt(0) }
         else {
           setCloudRevision(null)
+          setCloudDeletedAt(0)
           // 🔴 网络问题与"云端没有"必须分开说，否则用户以为稿子丢了
           setError(probe.reason === 'unauthorized'
             ? '登录状态已失效，请重新登录后再同步'
@@ -89,6 +95,7 @@ export default function CloudSyncPanel() {
         }
       } else {
         setCloudRevision(null)
+        setCloudDeletedAt(0)
       }
       const ctl = await bootSync()
       setState(await ctl.stateOf(pid))
@@ -118,7 +125,7 @@ export default function CloudSyncPanel() {
   const decision = binding && cloudRevision !== null
     ? decideSync({
         binding,
-        remote: { exists: true, revision: cloudRevision },
+        remote: { exists: true, revision: cloudRevision, deleted: cloudDeletedAt > 0 },
         localDirty: (project?.updatedAt ?? 0) > binding.lastSyncedAt,
       })
     : null
@@ -257,6 +264,33 @@ export default function CloudSyncPanel() {
       showToast(`已导出云端第 ${r.revision} 版${notes}。可在项目中心用「导入项目」打开`, 'success')
     } catch (e) {
       showToast(e instanceof Error ? e.message : '导出失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 从云端回收站恢复这一版。
+   * 🔴 恢复只改云端（写一个新 revision），不会把本机内容传上去 —— 避免"删了又活"。
+   *    恢复后云端 revision 变大，本机会自然显示"云端有新版本"。
+   */
+  const restoreCloudCopy = async () => {
+    if (!binding) return
+    const ok = await confirmDialog({
+      title: '恢复云端作品',
+      message: '会把云端回收站里的这一版恢复成最新版本。\n\n'
+        + '本机内容不会被自动上传；恢复后如需同步，请再点「立即同步」。',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await restoreCloudProject(binding.cloudProjectId, uid())
+      if (!r.ok) { showToast(r.error, 'error'); return }
+      showToast(`云端已恢复到第 ${r.revision} 版（内容来自第 ${r.restoredFrom} 版）`, 'success')
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '恢复失败', 'error')
     } finally {
       setBusy(false)
     }
@@ -404,6 +438,24 @@ export default function CloudSyncPanel() {
                     </Button>
                     <Button variant="ghost" size="xs" onClick={() => void exportCloudCopy()} disabled={busy}>
                       导出云端这一版
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {binding && decision?.action === 'remote-deleted' && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+                  <p className="flex items-center gap-1.5 text-12 text-amber-200">
+                    <AlertTriangle size={12} />
+                    云端把这本放进了回收站
+                  </p>
+                  <p className="mt-1 text-11 leading-relaxed text-amber-200/80">
+                    {cloudDeletedAt ? `删除于 ${fmtWhen(cloudDeletedAt)}，` : ''}
+                    30 天内可以恢复。恢复前不会把本机内容传上去，避免「删了又活」。
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Button variant="primary" size="xs" onClick={() => void restoreCloudCopy()} disabled={busy}>
+                      {busy ? '恢复中…' : '恢复云端这一版'}
                     </Button>
                   </div>
                 </div>

@@ -18,7 +18,10 @@ export interface CloudProjectState {
   exists: boolean
   revision: number
   snapshotId?: string
+  /** 是否在回收站里 */
   deleted?: boolean
+  /** 删除时间（服务端事实，用于展示"删除于…"） */
+  deletedAt?: number
   name?: string
 }
 
@@ -42,7 +45,7 @@ export async function probeCloudProject(cloudProjectId: string, base = apiBase()
     if (res.status === 404) return { ok: false, reason: 'not-found', status: 404 }
     if (res.status === 401) return { ok: false, reason: 'unauthorized', status: 401 }
     if (!res.ok) return { ok: false, reason: 'server', status: res.status }
-    const b = await res.json() as { revision?: number; snapshotId?: string; deleted?: boolean; name?: string }
+    const b = await res.json() as { revision?: number; snapshotId?: string; deleted?: boolean; deletedAt?: number; name?: string }
     return {
       ok: true,
       state: {
@@ -50,6 +53,7 @@ export async function probeCloudProject(cloudProjectId: string, base = apiBase()
         revision: Number(b.revision) || 0,
         snapshotId: b.snapshotId,
         deleted: !!b.deleted,
+        deletedAt: Number(b.deletedAt) || 0,
         name: b.name,
       },
     }
@@ -130,5 +134,35 @@ export async function downloadObject(
     return new Uint8Array(await res.arrayBuffer())
   } catch {
     return null
+  }
+}
+
+/**
+ * 从回收站恢复云端作品。
+ *
+ * 🔴 服务端会**写一个新 revision**（删除前的最后一个内容版本 → 新版本），不是"倒退回去"：
+ *    倒退会让握着删除版基线的离线设备判成云端回滚，甚至用旧基线把别人的版本盖掉。
+ * 🔴 恢复后云端 revision 变大，本机绑定里的基线自然落后 —— 客户端该显示"云端有新版本"，
+ *    不自动把内容套到本机（原地落地未做）。
+ */
+export async function restoreCloudProject(
+  cloudProjectId: string, opId: string, base = apiBase(),
+): Promise<{ ok: true; revision: number; restoredFrom: number } | { ok: false; error: string; code?: string }> {
+  try {
+    const res = await fetch(
+      `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/restore?opId=${encodeURIComponent(opId)}`,
+      { method: 'POST', credentials: 'same-origin' },
+    )
+    const b = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: String(b.error || `恢复失败（HTTP ${res.status}）`),
+        code: b.code ? String(b.code) : undefined,
+      }
+    }
+    return { ok: true, revision: Number(b.revision) || 0, restoredFrom: Number(b.restoredFrom) || 0 }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : '恢复失败' }
   }
 }

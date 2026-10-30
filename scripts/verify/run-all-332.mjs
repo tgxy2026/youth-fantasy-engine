@@ -28,6 +28,7 @@ const ORDER = [
   'desktop-client-332',
   'project-store-332',
   'project-api-332',
+  'restore-332',
   'legacy-gate-332',
   'object-gc-332',
   'migrate-v2-332',
