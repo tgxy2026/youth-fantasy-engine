@@ -41,6 +41,28 @@ export function setSyncAccountId(id: string | undefined) { accountId = id }
 export function getSyncAccountId(): string | undefined { return accountId }
 
 /**
+ * 桌面登录态：把同步请求切到主进程 Bearer 通道。
+ * 🔴 未登录 / 拿不到 origin 时**复原默认通道**（网页同源 Cookie）—— 登出后不能继续用旧通道。
+ * @returns 是否装上了 Bearer 通道
+ */
+export async function configureDesktopTransportIfSignedIn(): Promise<boolean> {
+  if (!DESKTOP) return false
+  try {
+    const st = await desktopAuthStatus()
+    const origin = st.signedIn ? await desktopOrigin() : ''
+    const transport = origin ? createDesktopCloudFetch(origin) : null
+    if (origin && transport) {
+      configureCloudTransport({ base: origin, fetch: transport })
+      return true
+    }
+    configureCloudTransport(null)
+  } catch (e) {
+    console.warn('[sync] 桌面账号通道装配失败，保持默认通道：', e)
+  }
+  return false
+}
+
+/**
  * 装好同步能力（幂等）。
  * @returns 控制器；任何一步失败都返回可用的降级版（内存队列），**不抛**。
  */
@@ -51,17 +73,7 @@ export async function bootSync(): Promise<SyncController> {
 
   booting = (async () => {
     // 桌面登录态：同步请求要走主进程的 Bearer 通道（本机页面没有 `/api/v2` 路由，也没有 Cookie）。
-    // 🔴 未登录 / 拿不到 origin 时保持默认 Cookie 通道 —— 网页版行为不受影响。
-    if (DESKTOP) {
-      try {
-        const st = await desktopAuthStatus()
-        const origin = st.signedIn ? await desktopOrigin() : ''
-        const transport = origin ? createDesktopCloudFetch(origin) : null
-        if (origin && transport) configureCloudTransport({ base: origin, fetch: transport })
-      } catch (e) {
-        console.warn('[sync] 桌面账号通道装配失败，保持默认通道（同步入口本版本不开放）：', e)
-      }
-    }
+    await configureDesktopTransportIfSignedIn()
     // 🔴 队列打不开就降级内存：同步可以退让，编辑器不能因为同步起不来而卡住
     const { queue, tombstones } = await createSyncStateStores((reason) => {
       console.warn('[sync] 本机同步状态库打不开，已降级为内存队列（重启会丢任务）：', reason)

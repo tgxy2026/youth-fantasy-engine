@@ -37,6 +37,18 @@ function baseOf(): string {
   return activeBase ?? apiBase()
 }
 
+/**
+ * 当前生效的传输与基地址。
+ * 🔴 上传编排（`syncClient`）也必须走这两个函数：只改读侧的话，桌面 Bearer 只会覆盖一半请求，
+ *    表现为「能查状态、一上传就 401/404」。
+ */
+export function cloudFetch(): CloudFetch {
+  return f()
+}
+export function cloudBase(): string {
+  return baseOf()
+}
+
 /** 云端这一版的摘要（章节数 / 创建时间）—— 覆盖前给用户看的依据，不是判定依据 */
 export interface CloudVersionSummary {
   createdAt: number

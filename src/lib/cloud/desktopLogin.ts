@@ -10,6 +10,9 @@
 //    而不是静默失败 —— 否则界面上会变成"点了没反应"。
 import { DESKTOP } from '@/lib/app/desktop'
 
+/** 登录状态变化（同窗口内通知同步入口显示 / 隐藏；跨窗口不保证） */
+export const DESKTOP_ACCOUNT_EVENT = 'yfe:desktop-account-changed'
+
 /** 主进程暴露的最小接口（见 `electron/preload.cjs` 的 `electronAuth`） */
 export interface ElectronAuthAPI {
   status(): Promise<{ signedIn: boolean; encrypted: boolean }>

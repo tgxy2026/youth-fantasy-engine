@@ -22,6 +22,8 @@ import { WEB } from '@/lib/app/platform'
 import { GUEST } from '@/lib/db/guestData'
 import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import BossKeySettings from '@/components/app/BossKeySettings'
+import DesktopCloudAccount from '@/components/app/DesktopCloudAccount'
+import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { useResizable } from '@/lib/app/useResizable'
@@ -462,6 +464,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         {WEB ? (GUEST ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
         {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
+        {/* 桌面版云端账号（3.3.2 · P5）：登录后才会出现「云端同步」入口 */}
+        {DESKTOP && <DesktopCloudAccount />}
+        {DESKTOP && <CloudSyncPanel inline />}
         {/* 老板键（3.3.2 · §15）：桌面=隐藏窗口，便携/网页=遮挡当前页面 */}
         <BossKeySettings />
         </div>

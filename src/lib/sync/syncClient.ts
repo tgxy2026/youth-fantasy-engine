@@ -26,12 +26,7 @@ import { deriveStateFromJobs, enqueuePush, pendingJobsOf } from '@/lib/sync/sync
 import type { SyncState } from '@/lib/sync/syncMachine'
 import { drainQueue, prepareQueue, type RunOneResult } from '@/lib/sync/syncRunner'
 
-/** 与服务端一致的接口前缀（同源，所以默认空串） */
-function apiBase(): string {
-  const m = typeof window !== 'undefined' ? window.__YFE_PORTABLE__ : null
-  if (m && typeof m === 'object' && typeof m.apiBase === 'string' && m.apiBase) return m.apiBase
-  return ''
-}
+import { cloudBase, cloudFetch } from '@/lib/cloud/syncApi'
 
 /** 响应体 → 统一形状；网络异常不抛出，翻译成 NETWORK */
 async function readJson(res: Response): Promise<Record<string, unknown>> {
@@ -44,12 +39,15 @@ async function readJson(res: Response): Promise<Record<string, unknown>> {
  * 🔴 上传对象必须发**原始字节**（不是 JSON 包一层）：服务端按收到的字节流算哈希，
  *    包一层就永远对不上（这会表现成"每个对象都 HASH_MISMATCH"）。
  */
-export function createHttpTransport(base = apiBase()): UploadTransport {
+export function createHttpTransport(base?: string): UploadTransport {
+  // 🔴 每次请求现取「通道 + 基地址」：桌面版登录/登出后 `configureCloudTransport` 会换通道，
+  //    若在装配时把地址钉死，登录后仍然打本机地址（表现为全部 404）。
+  const baseOf = () => base ?? cloudBase()
   return {
     async putObject(cloudProjectId, hash, bytes) {
       try {
-        const res = await fetch(
-          `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/objects/${encodeURIComponent(hash)}`,
+        const res = await cloudFetch()(
+          `${baseOf()}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/objects/${encodeURIComponent(hash)}`,
           {
             method: 'PUT',
             credentials: 'same-origin',
@@ -67,8 +65,8 @@ export function createHttpTransport(base = apiBase()): UploadTransport {
     },
     async commit(cloudProjectId, payload) {
       try {
-        const res = await fetch(
-          `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/commit`,
+        const res = await cloudFetch()(
+          `${baseOf()}/api/v2/projects/${encodeURIComponent(cloudProjectId)}/commit`,
           {
             method: 'POST',
             credentials: 'same-origin',

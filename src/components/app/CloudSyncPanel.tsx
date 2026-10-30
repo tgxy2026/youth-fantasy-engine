@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CloudUpload, CloudOff, RefreshCw, Cloud, Clock, AlertTriangle, Link2 } from 'lucide-react'
 import { WEB_CLOUD } from '@/lib/app/platform'
+import { DESKTOP } from '@/lib/app/desktop'
+import { desktopAuthStatus, DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLogin'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -57,7 +59,7 @@ const fmtWhen = (ms: number): string => {
   return new Date(ms).toLocaleString('zh-CN')
 }
 
-export default function CloudSyncPanel() {
+export default function CloudSyncPanel({ inline = false }: { inline?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   const [project, setProject] = useState<Project | null>(null)
   const [binding, setBinding] = useState<SyncBinding | null>(null)
@@ -72,8 +74,22 @@ export default function CloudSyncPanel() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** 桌面端：是否已登录云端账号（未登录时不显示入口） */
+  const [desktopSignedIn, setDesktopSignedIn] = useState(false)
 
   const store = createSettingBindingStore()
+
+  // 桌面端：登录状态决定入口是否出现（网页云端版恒出现）
+  useEffect(() => {
+    if (!DESKTOP) return
+    let alive = true
+    const read = () => {
+      void desktopAuthStatus().then((s) => { if (alive) setDesktopSignedIn(s.signedIn) })
+    }
+    read()
+    window.addEventListener(DESKTOP_ACCOUNT_EVENT, read)
+    return () => { alive = false; window.removeEventListener(DESKTOP_ACCOUNT_EVENT, read) }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,7 +145,8 @@ export default function CloudSyncPanel() {
     return () => { off?.() }
   }, [open])
 
-  if (!WEB_CLOUD) return null
+  const available = WEB_CLOUD || (DESKTOP && desktopSignedIn)
+  if (!available) return null
 
   const decision = binding && cloudRevision !== null
     ? decideSync({
@@ -356,14 +373,16 @@ export default function CloudSyncPanel() {
   return (
     <>
       <Button
-        variant="icon-muted"
-        iconOnly
+        variant={inline ? 'secondary' : 'icon-muted'}
+        iconOnly={!inline}
         size="xs"
         onClick={() => setOpen(true)}
         title={binding ? `云端同步（${stateInfo.label}）` : '同步到云端'}
-        className="shrink-0"
+        className={inline ? 'w-full !justify-start gap-1.5' : 'shrink-0'}
       >
         <Cloud size={12} />
+        {inline && <span>云端同步</span>}
+        {inline && <span className={`ml-auto truncate text-11 ${stateInfo.cls}`}>{stateInfo.label}</span>}
       </Button>
 
       <Modal

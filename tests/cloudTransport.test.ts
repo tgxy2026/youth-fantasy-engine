@@ -94,7 +94,8 @@ async function main() {
     ok('syncApi 所有请求走 f()', (api.match(/await f\(\)\(/g) || []).length >= 6, String((api.match(/await f\(\)\(/g) || []).length))
 
     const boot = read('src/lib/app/syncBoot.ts')
-    ok('桌面已登录时才装配 Bearer 通道', /if \(DESKTOP\)/.test(boot) && /desktopAuthStatus\(\)/.test(boot) && /configureCloudTransport\(\{ base: origin, fetch: transport \}\)/.test(boot))
+    ok('桌面已登录时才装配 Bearer 通道', /if \(!DESKTOP\) return false/.test(boot) && /desktopAuthStatus\(\)/.test(boot) && /configureCloudTransport\(\{ base: origin, fetch: transport \}\)/.test(boot))
+    ok('未登录 / 登出时复原默认通道', /configureCloudTransport\(null\)/.test(boot))
     ok('拿不到 origin 时保持默认通道', /st\.signedIn \? await desktopOrigin\(\) : ''/.test(boot))
 
     const dl = read('src/lib/cloud/desktopLogin.ts')
@@ -107,6 +108,22 @@ async function main() {
     ok('主进程有 origin 查询', /auth:desktopOrigin/.test(main))
     ok('主进程代发支持二进制返回', /opts\.binary/.test(main) && /base64: buf\.toString\('base64'\)/.test(main))
     ok('登录时记录 origin、登出时清掉', /saveAuthOrigin\(new URL\(baseUrl\)\.origin\)/.test(main) && /saveAuthOrigin\(''\)/.test(main))
+
+    const client = read('src/lib/sync/syncClient.ts')
+    ok('上传编排也走统一通道（不只读侧）', /cloudFetch\(\)/.test(client) && /baseOf\(\)/.test(client) && !/await fetch\(/.test(client))
+
+    const panel = read('src/components/app/CloudSyncPanel.tsx')
+    ok('桌面已登录才显示同步入口', /WEB_CLOUD \|\| \(DESKTOP && desktopSignedIn\)/.test(panel))
+    ok('桌面入口走整行样式（inline）', /inline \? 'secondary' : 'icon-muted'/.test(panel))
+
+    const sidebar = read('src/components/app/Sidebar.tsx')
+    ok('侧栏挂账号与同步入口（仅桌面）',
+      /\{DESKTOP && <DesktopCloudAccount \/>\}/.test(sidebar) && /\{DESKTOP && <CloudSyncPanel inline \/>\}/.test(sidebar))
+
+    const account = read('src/components/app/DesktopCloudAccount.tsx')
+    ok('登录文案写明不上传作品', /不会上传、下载或合并任何作品/.test(account))
+    ok('登录/登出都重配通道并广播', (account.match(/configureDesktopTransportIfSignedIn/g) || []).length >= 2
+      && /DESKTOP_ACCOUNT_EVENT/.test(account))
   }
 
   console.log(`\n▶ cloudTransport: ${pass} passed, ${fail} failed`)
