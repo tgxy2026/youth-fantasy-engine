@@ -30,7 +30,7 @@ import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
-import { createCloudProject, probeCloudProject, restoreCloudProject } from '@/lib/cloud/syncApi'
+import { createCloudProject, probeCloudProject, restoreCloudProject, purgeCloudProject } from '@/lib/cloud/syncApi'
 import type { CloudVersionSummary } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
@@ -370,6 +370,38 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     }
   }
 
+  /**
+   * 彻底删除云端这一本（只对回收站里的作品可用）。
+   * 🔴 不可恢复：必须 danger 确认；删除后本机与云端的绑定自动解除（否则会一直报 remote-gone）。
+   */
+  const purgeCloudCopy = async () => {
+    if (!binding || !project) return
+    const ok = await confirmDialog({
+      title: '彻底删除云端这一本',
+      message: '会从云端永久删除这本作品，回收站里也找不回。\n\n'
+        + '本机的这本作品不受影响；云端内容文件会在之后的回收任务中释放空间。\n\n'
+        + '彻底删除后，本机与云端的绑定会自动解除。',
+      confirmText: '彻底删除', danger: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await purgeCloudProject(binding.cloudProjectId, uid())
+      if (!r.ok) { showToast(r.error, 'error'); await load(); return }
+      await store.clear(project.id)
+      setBinding(null)
+      stopAutoSync()
+      const mb = (r.removedBytes / 1024 / 1024).toFixed(2)
+      showToast(`已彻底删除云端这本（释放 ${mb} MB 清单占用；内容文件稍后由回收任务释放）`, 'success', 8000)
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Button
@@ -560,9 +592,13 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                     {cloudDeletedAt ? `删除于 ${fmtWhen(cloudDeletedAt)}，` : ''}
                     30 天内可以恢复。恢复前不会把本机内容传上去，避免「删了又活」。
                   </p>
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button variant="primary" size="xs" onClick={() => void restoreCloudCopy()} disabled={busy}>
                       {busy ? '恢复中…' : '恢复云端这一版'}
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={() => void purgeCloudCopy()} disabled={busy}
+                      title="永久删除云端这本，回收站里也找不回">
+                      彻底删除
                     </Button>
                   </div>
                 </div>

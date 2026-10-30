@@ -19,7 +19,7 @@ import {
 } from './v2Index.mjs'
 import {
   stageObject, commitProjectSnapshot, readManifest, getProjectState, effectiveTombstones,
-  deleteProject, restoreProject, objectPath, hasObject, PROTOCOL_VERSION, listRevisions,
+  deleteProject, restoreProject, purgeProject, objectPath, hasObject, PROTOCOL_VERSION, listRevisions,
 } from './projectStore.mjs'
 
 const PID_RE = /^[A-Za-z0-9_-]{6,40}$/
@@ -235,6 +235,22 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
   if (seg.length === 2 && req.method === 'DELETE') {
     const opId = String(qs.get('opId') || '')
     if (!opId) return sendJSON(res, 400, { ok: false, error: '缺少 opId' }), true
+
+    // ?purge=1：彻底删除（只允许回收站里的作品）。不删共享对象库，对象交给 GC。
+    if (qs.get('purge') === '1') {
+      const r = purgeProject({ root: storeRoot, pid, accountId })
+      if (!r.ok) {
+        const status = r.code === 'FORBIDDEN' ? 403 : r.code === 'NOT_DELETED' ? 409 : 500
+        return sendJSON(res, status, {
+          ok: false, code: r.code,
+          error: r.code === 'NOT_DELETED' ? '只有回收站里的作品才能彻底删除（请先删除它）' : codeText(r.code),
+        }), true
+      }
+      delete idx.projects[pid]
+      writeIndex(v2Root, accountId, idx)
+      return sendJSON(res, 200, { ok: true, purged: true, removedBytes: r.removedBytes }), true
+    }
+
     const r = deleteProject({ root: storeRoot, pid, accountId, opId })
     if (!r.ok) return sendJSON(res, r.code === 'FORBIDDEN' ? 403 : 400, { ok: false, code: r.code, error: codeText(r.code) }), true
     idx.projects[pid] = { ...idx.projects[pid], revision: r.revision, snapshotId: r.snapshotId, deletedAt: Date.now() }
@@ -254,6 +270,7 @@ function codeText(code) {
     case 'PROTOCOL_UNSUPPORTED': return '客户端协议版本不受支持，请升级软件'
     case 'NOT_DELETED': return '云端作品没有被删除，无需恢复'
     case 'NO_CONTENT_TO_RESTORE': return '删除前的版本已被清理，无法恢复（可以从本机重新上传）'
+    case 'DELETE_FAILED': return '删除失败（文件被占用或权限不足），请稍后重试'
     default: return '提交失败'
   }
 }

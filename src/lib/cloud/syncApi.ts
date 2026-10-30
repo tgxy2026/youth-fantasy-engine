@@ -219,3 +219,32 @@ export async function restoreCloudProject(
     return { ok: false, error: e instanceof Error ? e.message : '恢复失败' }
   }
 }
+
+/**
+ * 彻底删除云端作品（回收站里的「永久删除」）。
+ *
+ * 🔴 服务端只允许**已进回收站**的作品走这一步；未删除的会被拒（409）。
+ * 🔴 只删项目目录与索引条目，**不删共享对象库** —— 对象交给 GC 按引用回收，
+ *    所以"配额立刻释放"与"磁盘空间立刻释放"不是同一时刻。
+ */
+export async function purgeCloudProject(
+  cloudProjectId: string, opId: string, base = baseOf(),
+): Promise<{ ok: true; removedBytes: number } | { ok: false; error: string; code?: string }> {
+  try {
+    const res = await f()(
+      `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}?purge=1&opId=${encodeURIComponent(opId)}`,
+      { method: 'DELETE', credentials: 'same-origin' },
+    )
+    const b = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: String(b.error || `删除失败（HTTP ${res.status}）`),
+        code: b.code ? String(b.code) : undefined,
+      }
+    }
+    return { ok: true, removedBytes: Number(b.removedBytes) || 0 }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : '删除失败' }
+  }
+}

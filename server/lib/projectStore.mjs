@@ -390,6 +390,48 @@ export function restoreProject({ root, pid, accountId, opId, now = Date.now() })
   }
 }
 
+/** 统计目录字节（purge 时告诉用户"释放了多少元数据/清单占用"） */
+function dirBytes(dir) {
+  let n = 0
+  let ents = []
+  try { ents = fs.readdirSync(dir, { withFileTypes: true }) } catch { return 0 }
+  for (const ent of ents) {
+    const f = path.join(dir, ent.name)
+    if (ent.isDirectory()) n += dirBytes(f)
+    else { try { n += fs.statSync(f).size } catch { /* 刚被清掉 */ } }
+  }
+  return n
+}
+
+/**
+ * 彻底删除一本云端作品（回收站里的"永久删除"）。
+ *
+ * 🔴 只允许**已进回收站**的作品（`deletedAt` 非 0）：绕过回收站直接物理删，会让
+ *    离线设备手里的旧基线既没有墓碑、也没有版本可比对 —— 那正是"删了复活"的温床。
+ * 🔴 **不删共享对象库**：内容寻址对象可能仍被其他项目/其他版本引用。项目目录（manifest/state）
+ *    删掉后，对象交给 `object-gc` 按引用与宽限期回收 —— 在这里顺手删＝赌命。
+ * 🔴 删除后索引条目一并移除（由路由层做，因为索引不在本模块）。配额随之释放，
+ *    但磁盘空间要等 GC；界面文案必须说清这两件事不是同一时刻。
+ */
+export function purgeProject({ root, pid, accountId }) {
+  if (!pid || !accountId) return { ok: false, code: 'BAD_REQUEST' }
+  const lock = acquireProjectLock(root, pid)
+  try {
+    const st = readState(root, pid, accountId)
+    if (st.accountId && st.accountId !== accountId) return { ok: false, code: 'FORBIDDEN' }
+    if (!st.deletedAt) return { ok: false, code: 'NOT_DELETED' }
+    const dir = p.project(root, pid)
+    const removedBytes = dirBytes(dir)
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (e) {
+      return { ok: false, code: 'DELETE_FAILED', error: e && e.message ? String(e.message) : '删除失败' }
+    }
+    try { fs.unlinkSync(p.lock(root, pid)) } catch { /* 锁文件可能已被 release */ }
+    return { ok: true, removedBytes }
+  } finally {
+    lock.release()
+  }
+}
+
 /** 统计用：对象库总字节（配额校验用；不做全量扫描时由调用方缓存） */
 export function objectsBytes(root) {
   let total = 0
