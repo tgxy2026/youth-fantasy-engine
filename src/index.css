@@ -851,3 +851,36 @@ button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible {
   .card-hover:hover { transform: none; }
 }
 
+
+/*
+ * 3.3.1 · P10：触摸设备的图标键热区（规划 §14.2「命中区域拟定至少 44×44 CSS px，
+ * 可通过按钮外层增加点击区域而不强迫图标变大」）。
+ *
+ * 命中目标由 `Button` 标出来，两种来源都要覆盖：
+ *   · `data-button-sizing="icon"` —— 显式 `iconOnly` / 圆形 / icon-* 变体；
+ *   · `data-button-icon-only="1"` —— 没传 iconOnly 但实际只有一个图标（移动端大量如此，实测 23～25px）。
+ *
+ * 🔴 只对**触点设备**生效（`hover: none` + `pointer: coarse`）：桌面鼠标不想要 44×44 的
+ *    隐形热区 —— 它会让相邻控件互相抢点击。视觉尺寸完全不变，只把可点范围外扩。
+ * 🔴 用 `::after` 而不是加 padding：加 padding 会撑开工具栏行高，手机上正文可视高度
+ *    本来就很紧（规划 §14.3 要求软键盘打开后仍能看到输入位置）。
+ * ⚠️ 已知取舍：紧凑排列（间距 < 12px）时两个图标键的 44×44 热区会相邻重叠，重叠处按
+ *    DOM 顺序命中后者。真机上是否误触尚未验证 —— 记录在进度文档 P10 段，不当已解决。
+ */
+@media (hover: none) and (pointer: coarse) {
+  button[data-button-sizing='icon'],
+  button[data-button-icon-only='1'] {
+    position: relative;
+  }
+
+  button[data-button-sizing='icon']::after,
+  button[data-button-icon-only='1']::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}

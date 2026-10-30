@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { Children, forwardRef, isValidElement, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 // 共享按钮：统一高度 / 圆角 / 内边距 / 字号，收敛全站 352 个手写 button 的字面量漂移。
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'info' | 'icon' | 'bare' | 'icon-amber' | 'icon-danger' | 'icon-muted' | 'icon-ghost' | 'toggle' | 'toggle-text'
@@ -151,6 +151,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const vCls = variantClass(variant, solid, selected)
   const sizing = iconOnly || shape === 'round' || isIconVariant ? 'icon' : variant === 'bare' || variant === 'toggle-text' ? 'content' : 'standard'
 
+  /**
+   * 3.3.1 · P10：标出「实际只有一个图标、没有可见文字」的按钮。
+   *
+   * 为什么在组件层判而不是在 CSS 里判：移动端大量图标键用的是 `bare` 变体
+   * （实测 23～25px），CSS 无法区分「bare 里放图标」与「bare 里放文字」；
+   * 而 `data-button-sizing` 只对显式传了 `iconOnly` 的按钮是 `icon` ——
+   * 现实是绝大部分调用点没传，它们的尺寸由内容撑开。
+   *
+   * 🔴 只加一个属性，**不改变任何尺寸/样式**：真正的外观与布局一字不动，
+   *    触摸设备的热区由 index.css 里 `pointer: coarse` 那段按这个属性补。
+   * 判定条件刻意从严（恰好一个子节点且是元素）：多图标、图标+文字都不算，
+   * 误判一个 `<span>文字</span>` 的代价也只是多一块 44×44 热区，不会影响视觉。
+   */
+  const childList = Children.toArray(children)
+  const looksIconOnly = !iconOnly && childList.length === 1 && isValidElement(childList[0])
+
   const cls = [
     'inline-flex items-center justify-center gap-1.5 select-none whitespace-normal',
     'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
@@ -161,7 +177,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ].join(' ')
 
   return (
-    <button type={type} ref={ref} className={cls} data-button-variant={variant} data-button-size={sizeKey} data-button-sizing={sizing} {...rest}>
+    <button type={type} ref={ref} className={cls} data-button-variant={variant} data-button-size={sizeKey} data-button-sizing={sizing}
+      {...(looksIconOnly ? { 'data-button-icon-only': '1' } : null)} {...rest}>
       {children}
     </button>
   )
