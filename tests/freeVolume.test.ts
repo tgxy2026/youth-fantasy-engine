@@ -76,10 +76,18 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'ut
 }
 
 // ---------- 6. 接线断言：建卷 order 只数真卷 ----------
+// 🔴 2026-10-30：卷章增删改名从 `useNovelEditorModel.ts` 外抽到 `useChapterCrud.ts`
+//    （模型层顶到 1200 行硬上限）。**判据没变**，只把扫描位置跟到新文件；
+//    同时反过来断言模型层不再自己建卷，避免"搬一半、两处各写一份"。
 {
-  const src = read('src/components/editor/useNovelEditorModel.ts')
-  const line = src.split('\n').find(l => l.includes('const vol: Volume') && l.includes('order:')) ?? ''
-  ok('建卷 order 走 nextVolumeOrder(volumes)', line.includes('nextVolumeOrder(volumes)'), line.trim().slice(0, 120))
+  const src = read('src/components/editor/useChapterCrud.ts')
+  // 取「const vol: Volume」之后的一小段来断言：对象字面量可能跨行，
+  // 逐行 find 会把跨行写法判成"没走 nextVolumeOrder"（这次外抽就踩到了）。
+  const at = src.indexOf('const vol: Volume')
+  const snippet = at >= 0 ? src.slice(at, at + 300) : ''
+  ok('建卷 order 走 nextVolumeOrder(volumes)', snippet.includes('order: nextVolumeOrder(volumes)'), snippet.replace(/\s+/g, ' ').slice(0, 120))
+  const model = read('src/components/editor/useNovelEditorModel.ts')
+  ok('模型层不再自己建卷（只有一处实现）', !/const vol: Volume/.test(model))
 }
 
 // ---------- 7. order 哨兵值：自由卷恒排最前 ----------

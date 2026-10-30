@@ -22,7 +22,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react'
 import type { Volume, Chapter } from '@/lib/types'
 import * as db from '@/lib/db'
-import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
@@ -53,8 +52,10 @@ import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
   GHOST_CONTEXT_CHARS, orderedChapters,
 } from '@/components/editor/novelEditorHelpers'
-import { isFreeVolume, realVolumes, ensureFreeVolume, findFreeVolume, nextVolumeOrder } from '@/lib/outline/freeVolume'
+import { isFreeVolume, realVolumes } from '@/lib/outline/freeVolume'
+import { latestChapterTarget } from '@/lib/outline/chapterAppend'
 import { useEditorChapterTarget } from '@/components/editor/useEditorChapterTarget'
+import { useChapterCrud } from '@/components/editor/useChapterCrud'
 import { runRegenSummaries, regenSummaryText, type RegenOutcome } from '@/components/editor/regenSummaries'
 import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardReorder'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
@@ -432,6 +433,12 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     for (const v of chapterSeqs.values()) if (v > max) max = v
     return max + 1
   }, [chapterSeqs])
+
+  /**
+   * 「新建最新章节」的落点：最新真卷 + 卷内下一序号（没有真卷时为 null，按钮会禁用）。
+   * 单独 memo 出来是为了让界面能显示"将挂到《第X卷》末尾"，而不是点完才知道挂哪去了。
+   */
+  const latestTarget = useMemo(() => latestChapterTarget(volumes, chapters), [volumes, chapters])
 
   // ============ 2.4.1 · B3 补做：编辑器内的 AI 产出记账 ============
   //
@@ -874,7 +881,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
 
   // ---- 卷/章操作 ----
   // v1.6：新建/改名改走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现、点击无反应）
-  const [namePrompt, setNamePrompt] = useState<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>(null)
+  const [namePrompt, setNamePrompt] = useState<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'addLastCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>(null)
 
   // ============ 颉文姬 · AI 编辑（v1.6 收官功能） ============
   const [jieWenJiOpen, setJieWenJiOpen] = useState(false)
@@ -967,63 +974,13 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     return flat.slice(0, 3).map(c => `${c.title}\n${c.content}`).join('\n\n')
   }, [volumes, chapters])
 
-  const doAddVolume = async (title: string) => {
-    if (!title) return
-    // 🔴 order 只数真卷：自由卷不占号，否则「第N卷」的默认名会被它挤偏一位（见 lib/freeVolume.ts）
-    const vol: Volume = { id: uid(), projectId: db.getCurrentProjectId(), order: nextVolumeOrder(volumes), title, description: '', createdAt: Date.now() }
-    await db.saveVolume(vol)
-    await load()
-    window.dispatchEvent(new Event('yfe:volumes-changed')) // 通知章节总表侧栏同步新增
-  }
-
-  const doAddChapter = async (volumeId: string, title: string) => {
-    if (!title) return
-    const volChs = chapters.filter(c => c.volumeId === volumeId)
-    const ch: Chapter = {
-      id: uid(), projectId: db.getCurrentProjectId(), volumeId, order: volChs.length, title, content: '', summary: '',
-      status: '构思', wordCount: 0, createdAt: Date.now(), updatedAt: Date.now(),
-    }
-    await saveChapterWithAi(ch)
-    // 目标卷可能是折叠状态下点的「新建章」：展开它，否则 load 后树上找不到新章高亮
-    //（2.6.1 修复配套：load 不再无条件展开所有卷，这里要显式补上定位展开）
-    setExpandedPersist(prev => new Set(prev).add(volumeId))
-    await load()
-    setActiveId(ch.id)
-    // 新章登记到对应卷的章节台账。序号取全局派生值——新章 order 为卷内最大值，
-    // 通常排在卷末，但作者随后拖拽到任意位置时会由 resyncChapterMasterNumbers 重排。
-    // ⚠️ 这里必须现读库：上方 setChapters 是异步的，闭包里的 chapters 还不含新章，
-    // 用旧 state 算出的序号恒为 0，台账会被误标「不计入序号」（章节号留空、行序错乱）。
-    const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-    await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
-  }
-
-  /**
-   * 新建「自由章节」—— 作者不必先建卷：托管卷不存在时自动建（lazy，不预建空卷），
-   * 随后复用 doAddChapter 的完整链路（展开该分组 / 定位高亮 / 登记章节台账 / 派生正文序号）。
-   */
-  const doAddFreeChapter = async (title: string) => {
-    if (!title) return
-    const wasMissing = !findFreeVolume(volumes)
-    const vol = await ensureFreeVolume(volumes)
-    await doAddChapter(vol.id, title)
-    // 托管卷是本次新建的才算「多了一个卷」，要通知章节总表侧栏同步（已存在时不必）
-    if (wasMissing) window.dispatchEvent(new Event('yfe:volumes-changed'))
-  }
-
-  const doRenameVolume = async (vol: Volume, title: string) => {
-    if (!title || title === vol.title) return
-    await db.saveVolume({ ...vol, title })
-    await load()
-    window.dispatchEvent(new Event('yfe:volumes-changed')) // 通知章节总表侧栏同步改名
-  }
-
-  const doRenameChapter = async (ch: Chapter, title: string) => {
-    if (!title || title === ch.title) return
-    const next = { ...ch, title }
-    setChapters(prev => prev.map(x => (x.id === ch.id ? next : x)))
-    const { no } = locate(next)
-    await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
-  }
+  // 卷 / 章的增删改名外抽到 useChapterCrud（模型层已顶到 1200 行硬上限）。
+  // 🔴 这里只传 setter 与「保存 + 重载」两个依赖：卷章 state 仍由本 hook 持有，避免两处 state 漂。
+  const {
+    doAddVolume, doAddChapter, doAddFreeChapter, doAddLatestChapter, doRenameVolume, doRenameChapter,
+  } = useChapterCrud({
+    volumes, chapters, saveChapterWithAi, setExpandedPersist, setChapters, setActiveId, load, locate,
+  })
 
   const submitNamePrompt = async (v: string) => {
     const p = namePrompt
@@ -1032,6 +989,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     if (p.kind === 'addVol') await doAddVolume(v)
     else if (p.kind === 'addCh') await doAddChapter(p.payload as string, v)
     else if (p.kind === 'addFreeCh') await doAddFreeChapter(v)
+    else if (p.kind === 'addLastCh') await doAddLatestChapter(v)
     else if (p.kind === 'renVol') await doRenameVolume(p.payload as Volume, v)
     else if (p.kind === 'renCh') await doRenameChapter(p.payload as Chapter, v)
   }
@@ -1182,6 +1140,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     exportFormatTab, setExportFormatTab,
     // 3.0.1 正文批量导入弹窗
     importOpen, setImportOpen,
+    // 「新建最新章节」的落点（null = 还没有真卷）
+    latestTarget,
     // 编辑器缩进（2.4.0 · A5）：单位是偏好，缩进动作本身在 NovelEditor 的键盘处理里
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出

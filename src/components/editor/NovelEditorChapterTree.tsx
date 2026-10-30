@@ -3,10 +3,10 @@ import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
-import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
+import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { flattenChapters } from '@/lib/outline/chapterSeq'
 
@@ -49,8 +49,13 @@ interface Props {
   handleDrop: () => void
   /** UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节 / 在真卷之间移动分卷 */
   moveByKeyboard: (kind: 'vol' | 'ch', id: string, dir: -1 | 1) => void
-  setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
+  setNamePrompt: Dispatch<SetStateAction<null | { kind: 'addVol' | 'addCh' | 'addFreeCh' | 'addLastCh' | 'renVol' | 'renCh'; title: string; def: string; payload?: unknown }>>
   nextChapterNo: number
+  /**
+   * 「新建最新章节」的落点：最新真卷 + 卷内下一序号；没有真卷时为 null（按钮禁用）。
+   * 🔴 由模型层算好传进来（`latestChapterTarget`），不要在视图里再判一次卷序 —— 两份判定必然漂。
+   */
+  latestTarget: { volumeId: string; volumeTitle: string; order: number } | null
   activeId: string | null
   openChapter: (id: string) => void
   chapterSeqs: Map<string, number>
@@ -70,10 +75,13 @@ interface Props {
 export default function NovelEditorChapterTree({
   pane, projectName, volumes, chapters, expanded, setExpanded,
   overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop, moveByKeyboard,
-  setNamePrompt, nextChapterNo, activeId, openChapter, chapterSeqs,
+  setNamePrompt, nextChapterNo, latestTarget, activeId, openChapter, chapterSeqs,
   removeVolume, removeChapter, toggleExcludeNumbering, runExport,
   exportOpen, setExportOpen, setExportFormatTab, setImportOpen,
 }: Props) {
+  /** 新建章节菜单开合（提示词弹窗由父组件管，这里只管这一小块 UI） */
+  const [addOpen, setAddOpen] = useState(false)
+
   // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
   // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
   const listRef = useRef<HTMLDivElement>(null)
@@ -132,7 +140,7 @@ export default function NovelEditorChapterTree({
           <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
-              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 不想归卷的章节走右上「新建自由章节」—— 它们统一收进「自由章节」托管卷（默认折叠、不可删除、排全书最后），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n· 右上「导入」图标（导出左侧）可批量导入正文：选文件（.txt / .md / .docx / .json，可多选）或粘贴原文，自动切成卷章，预览里可改卷名/章名、逐章勾选，确认后追加到当前项目（纯本地、不接 AI）。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
+              {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 右上「新建章节」是二选一：「最新章节」自动挂到**最后一卷的末尾**、正文序号接着上一章往下排；「自由章节」不归入任何卷、收进「自由章节」托管卷（排全书最前、不占正文序号），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n· 右上「导入」图标（导出左侧）可批量导入正文：选文件（.txt / .md / .docx / .json，可多选）或粘贴原文，自动切成卷章，预览里可改卷名/章名、逐章勾选，确认后追加到当前项目（纯本地、不接 AI）。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
             </HelpPopover>
           </span>
           <div className="flex gap-1">
@@ -263,9 +271,57 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="p-1 shrink-0">
               <FolderPlus size={13} />
             </Button>
-            <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` })} title="新建自由章节（不归入任何卷，收进「自由章节」托管卷）" className="p-1 shrink-0">
-              <FilePlus2 size={13} />
-            </Button>
+            {/* 新建章节：一个入口、二选一（2026-10-30 主人要求，原「新建自由章节」的功能保留）。
+                两条意图不一样，必须让作者自己选：
+                  · 最新章节 —— 挂到最后一卷末尾、进正文序号；
+                  · 自由章节 —— 不归卷、恒排全书最前、不占正文序号（见 lib/freeVolume.ts）。
+                用 bare + h-8 与同排导出键等高；面板/遮罩层号沿用导出菜单那套（Z.pagePanel）。 */}
+            <div className="relative shrink-0">
+              <Button variant="bare"
+                onClick={() => setAddOpen(o => !o)}
+                className={`flex items-center p-1 h-8 shrink-0 rounded-lg transition-colors ${addOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
+                title="新建章节：可选择「最新章节」（追加到最后一卷末尾）或「自由章节」（不归卷）"
+                aria-haspopup="menu"
+                aria-expanded={addOpen}
+              >
+                <FilePlus2 size={14} />
+                <ChevronDown size={9} className="ml-0.5 opacity-70" />
+              </Button>
+              {addOpen && (
+                <>
+                  <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setAddOpen(false)} aria-hidden />
+                  <div
+                    className="absolute left-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    style={{ zIndex: Z.pagePanelTop }}
+                    role="menu"
+                  >
+                    <Button variant="bare"
+                      role="menuitem"
+                      disabled={!latestTarget}
+                      onClick={() => { setAddOpen(false); setNamePrompt({ kind: 'addLastCh', title: '新建最新章节', def: `第${nextChapterNo}章` }) }}
+                      className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2 disabled:opacity-45"
+                      title={latestTarget ? `追加到「${latestTarget.volumeTitle}」末尾，序号接着往下排` : '还没有分卷，请先「新建卷」'}
+                    >
+                      <FilePlus size={11} className="text-amber" />
+                      <span className="flex-1 text-left">新建最新章节</span>
+                      <span className="shrink-0 text-10 text-ink-500">
+                        {latestTarget ? latestTarget.volumeTitle : '暂无分卷'}
+                      </span>
+                    </Button>
+                    <Button variant="bare"
+                      role="menuitem"
+                      onClick={() => { setAddOpen(false); setNamePrompt({ kind: 'addFreeCh', title: '新建自由章节', def: `第${nextChapterNo}章` }) }}
+                      className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      title="不归入任何卷，收进「自由章节」托管卷（排全书最前、不占正文序号）"
+                    >
+                      <FilePlus2 size={11} className="text-amber" />
+                      <span className="flex-1 text-left">新建自由章节</span>
+                      <span className="shrink-0 text-10 text-ink-500">不归卷</span>
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -273,7 +329,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
           {realVolumes(volumes).length === 0 && (
             <div className="text-center py-14 text-ink-500 text-12 border border-dashed border-ink-700 rounded-lg mx-1">
               <FolderPlus size={18} className="mx-auto mb-2 text-ink-600" />
-              点击右上角「新建卷」开始，或直接「新建自由章节」
+              点击右上角「新建卷」开始，或直接用「新建章节」写第一章
             </div>
           )}
           {volumes.map(vol => {
