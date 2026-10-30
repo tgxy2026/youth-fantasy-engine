@@ -6,11 +6,11 @@
 //   ② **回答必须带依据** —— 每条来源可点开原文那一段；校验不过就退回检索结果，不显示半真半假的答案；
 //   ③ **对话只在内存** —— 关掉面板即丢；不写项目数据、不写问题与回答全文（规划 §7 末段）。
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BookOpen, Loader2, RefreshCw, Send, Square, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BookOpen, CornerDownRight, HelpCircle, Loader2, RefreshCw, Send, Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import {
-  CONTENT_VERSION, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, type HelpHit,
+  CONTENT_VERSION, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, topicFromAnswer, type AskTopic, type HelpHit,
 } from '@/lib/help'
 import { askHelpOnce, type AskResult } from '@/lib/aiTasks/helpAsk'
 import { helpSourceSnapshot } from '@/lib/aiTasks/helpAnswer'
@@ -49,6 +49,11 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, setPending] = useState(false)
   const [staleSourceTurn, setStaleSourceTurn] = useState<number | null>(null)
+  /**
+   * 上一轮**已验证**的主题（规划 §5.5）。只有 `kind:'answer'` 会写入它 ——
+   * 失败输出、未校验流、"没有依据"都不会成为下一轮的上下文。
+   */
+  const [lastTopic, setLastTopic] = useState<AskTopic | null>(null)
   const nextId = useRef(1)
   /** 取消信号 + 代次：晚到的结果不许覆盖新一轮（连点、停止后重问都会发生） */
   const abort = useRef<AbortController | null>(null)
@@ -76,13 +81,19 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     const controller = new AbortController()
     abort.current = controller
     const mine = ++generation.current
-    const result = await askHelpOnce(text, currentTabId, controller.signal)
+    // 追问上下文只带「上一轮已验证的主题」，不带整段历史（规划 §5.5）
+    const result = await askHelpOnce(text, currentTabId, controller.signal, undefined, { lastTopic })
 
     // 代次不符说明这一轮已经作废（作者停止后又问了一次），结果直接丢弃
     if (mine !== generation.current) return
     abort.current = null
     setPending(false)
     setTurns(prev => [...prev, { id: nextId.current++, role: 'result', result }])
+    // 🔴 只有校验通过的回答才更新主题：答不出来时不把「半个答案」变成下一轮的依据
+    if (result.kind === 'answer') {
+      const topic = topicFromAnswer(text, result.answer, result.sources)
+      if (topic) setLastTopic(topic)
+    }
     scrollToEnd()
   }
 
@@ -114,10 +125,22 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     </div>
   )
 
+  /**
+   * 「本次参考」：规划 §5.5 要求跨功能 / 切页后继续提问时**显示当前参考主题**，
+   * 否则作者看不出这句「那…」是在接哪一问。只在真的借用了上一问主题时出现。
+   */
+  const topicChip = (topic?: AskTopic | null) => (topic ? (
+    <div data-help-topic className="flex items-start gap-1 text-10 text-ink-500 leading-relaxed">
+      <CornerDownRight size={10} className="mt-0.5 shrink-0" />
+      <span>接着上一问：{topic.titles.join('、')}</span>
+    </div>
+  ) : null)
+
   const resultBody = (result: AskResult, turnId: number) => {
     if (result.kind === 'answer') {
       return (
         <div className="space-y-2">
+          {topicChip(result.topic)}
           <div className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap">{result.answer}</div>
           {result.sources.length > 0 && (
             <div className="space-y-1 border-t border-ink-700/60 pt-2">
@@ -167,12 +190,37 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
             <Button variant="secondary" size="sm" onClick={reloadHelpResources} className="flex items-center gap-1 text-11">
               <RefreshCw size={11} /> {HELP_RELOAD_LABEL}
             </Button>
-            <Button variant="bare" size="sm"
-              onClick={() => void submit('这个功能怎么用')}
-              className="text-11 text-ink-300 hover:text-amber transition-colors">
-              换用本地手册检索
-            </Button>
           </div>
+          {/* 🔴 这里原有一个「换用本地手册检索」按钮，已去掉：混版本闸在 askHelpOnce 最前面，
+              再怎么问都会同样返回混版本 —— 那个按钮点下去只会多一条一模一样的提示。
+              手册文章本来就不受影响，说明白即可，不做一个点不出结果的按钮。 */}
+          <div className="text-10 text-ink-500">手册文章不受影响：切到「查手册」仍可正常翻阅，界面也可以继续用。</div>
+        </div>
+      )
+    }
+    /**
+     * 像追问、但不知道在问哪个功能：**本地澄清**，不请求模型（规划 §5.5）。
+     * 🔴 不能默认「这个」就是刚打开的那一页 —— 那会把作者的问题答到别的功能上。
+     */
+    if (result.kind === 'clarify') {
+      return (
+        <div data-help-clarify className="space-y-2">
+          <div className="flex items-start gap-1.5 text-11 leading-relaxed text-ink-300">
+            <HelpCircle size={12} className="mt-0.5 shrink-0" />
+            <span>{result.message}</span>
+          </div>
+          {result.options.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {result.options.map(option => (
+                <Button key={option.articleId} variant="bare"
+                  onClick={() => void submit(option.title)}
+                  title={`按《${option.title}》继续提问`}
+                  className="px-2 py-1 rounded-md text-11 text-ink-200 border border-ink-700 hover:text-amber hover:border-amber/40 transition-colors">
+                  {option.title}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       )
     }
@@ -184,6 +232,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
         : result.message
     return (
       <div className="space-y-2">
+        {topicChip(result.topic)}
         <div className={`flex items-start gap-1.5 text-11 leading-relaxed ${result.kind === 'no-recall' ? 'text-ink-300' : 'text-amber/90'}`}>
           {result.kind === 'fallback' && <AlertTriangle size={12} className="mt-0.5 shrink-0" />}
           <span>{notice}</span>
@@ -282,7 +331,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
           </Button>
         )}
         {turns.length > 0 && !pending && (
-          <Button variant="secondary" size="sm" onClick={() => setTurns([])}
+          <Button variant="secondary" size="sm" onClick={() => { setTurns([]); setLastTopic(null) }}
             title="清空本次对话（不影响任何数据，也不会删除运行统计）"
             className="flex items-center gap-1 text-11 shrink-0">
             <Trash2 size={11} /> 清空

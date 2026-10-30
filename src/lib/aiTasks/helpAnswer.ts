@@ -100,7 +100,17 @@ export function prepareHelpPromptFragments(hits: HelpHit[]): HelpPromptFragment[
  * 按原文反查，这样模型没有机会编造来源，也不会因为抄错一个字符就整条作废（见 `HelpAnswer.quotes`）。
  * 提示词里给的约束只是第一道；第二道是逐字校验，不靠模型自觉。
  */
-export function buildHelpAnswerPrompt(question: string, hits: HelpHit[], fragments = prepareHelpPromptFragments(hits)): { system: string; user: string } {
+export function buildHelpAnswerPrompt(
+  question: string,
+  hits: HelpHit[],
+  fragments = prepareHelpPromptFragments(hits),
+  /**
+   * 上一轮的上下文（规划 §5.5）：**只用来理解「这个 / 它」指什么**。
+   * 由 `help/thread.buildThreadContextLine` 生成，已经写明「不能当本轮依据」；
+   * 这里只负责放进 user 内容，不改变下面任何一条校验规则。
+   */
+  threadLine?: string | null,
+): { system: string; user: string } {
   const blocks = fragments.map(({ hit, text }, index) => {
     return `【片段 ${index + 1}】《${hit.articleTitle}》· ${hit.heading}\n${text}`
   })
@@ -117,6 +127,7 @@ export function buildHelpAnswerPrompt(question: string, hits: HelpHit[], fragmen
   ].join('\n')
   const user = [
     `作者的问题：${question.trim()}`,
+    ...(threadLine ? ['', threadLine] : []),
     '',
     blocks.length > 0 ? blocks.join('\n\n') : '（本次没有召回到任何手册片段）',
   ].join('\n')

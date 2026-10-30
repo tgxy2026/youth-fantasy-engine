@@ -20,9 +20,25 @@ import {
   buildHelpAnswerPrompt, prepareHelpPromptFragments, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
   type HelpAnswerFailure, type HelpPromptFragment, type HelpSourceRef,
 } from '@/lib/aiTasks/helpAnswer'
+import {
+  ASK_CLARIFY_TEXT, buildThreadContextLine, routeAskRecall, type AskTopic, type AskTopicOption,
+} from '@/lib/help/thread'
+
+/**
+ * 一轮提问的上下文（规划 §5.5）。
+ *
+ * 🔴 `lastTopic` 只能来自**上一轮校验通过的回答**（`topicFromAnswer`）：失败输出、未校验流、
+ *    无依据猜测都进不来。没有可信主题时，下一轮不会被上一轮污染。
+ */
+export interface AskThreadContext {
+  lastTopic?: AskTopic | null
+}
+
+/** 每个结果都带「本轮引用了哪个上一问主题」，界面据此显示「本次参考」 */
+type WithTopic<T> = T & { topic?: AskTopic | null }
 
 /** 一次提问的结果。`hits` 恒为**本次**召回，界面靠它渲染「也可以直接看这几段」。 */
-export type AskResult =
+export type AskResult = WithTopic<
   /** 还没配模型：只返回本地检索结果，不假装答过 */
   | { kind: 'no-model'; hits: HelpHit[] }
   /** 本地没有召回到任何片段：不请求模型（模型只能靠常识编） */
@@ -42,7 +58,12 @@ export type AskResult =
   | { kind: 'fallback'; message: string; hits: HelpHit[] }
   /** 作者主动停止：什么都不算，界面保留提问方便重试 */
   | { kind: 'cancelled'; hits: HelpHit[] }
-
+  /**
+   * 「像在追问，但不知道在问哪个功能」：**先本地澄清，不请求模型**。
+   * 规划 §5.5：不能默认「这个」＝刚打开的那一页。
+   */
+  | { kind: 'clarify'; message: string; options: AskTopicOption[]; hits: HelpHit[] }
+>
 /** 答疑的召回条数：比手册页的 5 段多一点，模型需要上下文拼接空间 */
 export const ASK_RECALL_LIMIT = 6
 
@@ -66,11 +87,14 @@ function fragmentsStillCurrent(hits: HelpHit[], fragments: HelpPromptFragment[])
   ))
 }
 
-const changedHelp = (hits: HelpHit[]): AskResult => ({
-  kind: 'fallback', message: '手册内容在回答期间发生变化，请重新提问；已退回手册检索结果。', hits,
+const changedHelp = (hits: HelpHit[], topic?: AskTopic | null): AskResult => ({
+  kind: 'fallback', message: '手册内容在回答期间发生变化，请重新提问；已退回手册检索结果。', hits, topic,
 })
 
-/** 召回：答疑与手册页复用同一套本地检索，口径一致才不会「搜得到、问不出」 */
+/**
+ * 召回：答疑与手册页复用同一套本地检索，口径一致才不会「搜得到、问不出」。
+ * 不带追问上下文时的单轮检索（`askHelpOnce` 走的是 `routeAskRecall`，两者排序口径一致）。
+ */
 export function recallForAsk(question: string, currentTabId?: string | null): HelpHit[] {
   if (!question.trim()) return []
   return searchHelp(question, { currentTabId: currentTabId ?? null, limit: ASK_RECALL_LIMIT })
@@ -82,12 +106,15 @@ export function recallForAsk(question: string, currentTabId?: string | null): He
  * @param question     作者原话
  * @param currentTabId 当前所在页签（只用于检索加权，**不进提示词** —— 页面标题不是产品事实）
  * @param signal       停止按钮
+ * @param dependencies 可替换的调用边界（仅验证用）
+ * @param thread       上一轮**已验证**的主题（规划 §5.5）；缺省等于「没有上下文」
  */
 export async function askHelpOnce(
   question: string,
   currentTabId?: string | null,
   signal?: AbortSignal,
   dependencies: AskDependencies = defaultDependencies,
+  thread?: AskThreadContext,
 ): Promise<AskResult> {
   /**
    * 🔴 两道版本闸，顺序不能反：
@@ -98,22 +125,31 @@ export async function askHelpOnce(
   const build = checkHelpBuild()
   if (!build.aligned) return { kind: 'stale', message: HELP_BUILD_MISMATCH_NOTICE, build, hits: [] }
   if (!isHelpContentConsistent()) return { kind: 'fallback', message: '手册内容与索引不一致，暂不能生成回答；请先保存工作，再重新加载应用。', hits: [] }
-  const hits = recallForAsk(question, currentTabId)
+  /**
+   * 召回走「追问感知」的路径（规划 §5.5）：
+   *   · 追问时不拿本页加权、并把上一问主题补进检索；
+   *   · 作者点名的主题优先于当前页；
+   *   · 像追问却没有可信主题 ⇒ 先澄清，**不问模型**。
+   */
+  const recall = routeAskRecall(question, currentTabId, thread?.lastTopic ?? null, ASK_RECALL_LIMIT)
+  const hits = recall.hits
+  const topic = recall.usedTopic
   if (signal?.aborted) return { kind: 'cancelled', hits }
+  if (recall.needsClarify) return { kind: 'clarify', message: ASK_CLARIFY_TEXT, options: recall.options, hits }
   // ① 没召回就不问模型：没有片段时模型只能凭常识编，而「凭常识编出来的软件用法」正是本功能要避免的
-  if (hits.length === 0) return { kind: 'no-recall', hits }
+  if (hits.length === 0) return { kind: 'no-recall', hits, topic }
   const fragments = prepareHelpPromptFragments(hits)
-  if (fragments.length === 0) return { kind: 'fallback', message: '手册内容暂时无法核对，已退回手册检索结果。', hits }
+  if (fragments.length === 0) return { kind: 'fallback', message: '手册内容暂时无法核对，已退回手册检索结果。', hits, topic }
 
   // ② 模型归属走「整理」用途：答疑是低频、短输出、要快的活，不该占创作模型
   let raw = ''
   try {
     const provider = await dependencies.resolveProviderFor('utility')
     // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
-    if (signal?.aborted) return { kind: 'cancelled', hits }
-    if (!provider) return { kind: 'no-model', hits }
-    if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
-    const prompt = buildHelpAnswerPrompt(question, hits, fragments)
+    if (signal?.aborted) return { kind: 'cancelled', hits, topic }
+    if (!provider) return { kind: 'no-model', hits, topic }
+    if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits, topic)
+    const prompt = buildHelpAnswerPrompt(question, hits, fragments, buildThreadContextLine(topic))
     const messages: ChatMessage[] = [
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
@@ -132,27 +168,27 @@ export async function askHelpOnce(
       signal,
     })
   } catch (error) {
-    if (isCancelled(error) || signal?.aborted) return { kind: 'cancelled', hits }
+    if (isCancelled(error) || signal?.aborted) return { kind: 'cancelled', hits, topic }
     // 网络 / 端点错误也走回退：手册片段已经拿到了，不能让作者空手
     const detail = error instanceof Error ? error.message : String(error)
-    return { kind: 'fallback', message: `答疑模型这次没能回答（${detail.slice(0, 80)}），已退回手册检索结果。`, hits }
+    return { kind: 'fallback', message: `答疑模型这次没能回答（${detail.slice(0, 80)}），已退回手册检索结果。`, hits, topic }
   }
 
-  if (signal?.aborted) return { kind: 'cancelled', hits }
+  if (signal?.aborted) return { kind: 'cancelled', hits, topic }
 
   // 请求期间手册若发生变化，旧答案不能静默指向新的正文。
-  if (!checkHelpBuild().aligned) return { kind: 'stale', message: HELP_BUILD_MISMATCH_NOTICE, build: checkHelpBuild(), hits }
-  if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits)
+  if (!checkHelpBuild().aligned) return { kind: 'stale', message: HELP_BUILD_MISMATCH_NOTICE, build: checkHelpBuild(), hits, topic }
+  if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits, topic)
 
   // ③ 校验：来源必须在本次召回内、摘录必须逐字出现在原文
   const checked = readHelpAnswer(raw, hits, fragments)
   if (!checked.ok) {
-    return { kind: 'fallback', message: HELP_ANSWER_FAILURE_TEXT[checked.reason], hits }
+    return { kind: 'fallback', message: HELP_ANSWER_FAILURE_TEXT[checked.reason], hits, topic }
   }
   const sourceSnapshots = Object.fromEntries(fragments.map(fragment => [
     `${fragment.hit.articleId}/${fragment.hit.sectionId}`, fragment.sourceSnapshot,
   ]))
-  return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, contentVersion: CONTENT_VERSION, hits }
+  return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, contentVersion: CONTENT_VERSION, hits, topic }
 }
 
 /** 失败原因 → 一句话（供单测与界面复用，避免两处各写一份措辞） */

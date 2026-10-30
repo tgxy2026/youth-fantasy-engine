@@ -52,3 +52,17 @@ export {
   suggestHelpGroups,
   tokenizeHelpQuery,
 } from '@/lib/help/search'
+
+// 连续追问的参考主题（规划 §5.5）：判据与措辞都在这里，界面不自己另写一份
+export {
+  ASK_CLARIFY_TEXT,
+  MAX_TOPIC_ANSWER,
+  SELF_TOPIC_SCORE,
+  buildThreadContextLine,
+  buildTopicQuery,
+  hasStrongAnaphora,
+  looksLikeFollowUp,
+  routeAskRecall,
+  topicFromAnswer,
+} from '@/lib/help/thread'
+export type { AskRecall, AskTopic, AskTopicOption } from '@/lib/help/thread'
