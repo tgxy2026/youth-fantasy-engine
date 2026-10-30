@@ -50,6 +50,8 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
     const list = Object.entries(idx.projects || {}).map(([pid, v]) => ({
       cloudProjectId: pid, name: v.name || '', revision: v.revision || 0,
       snapshotId: v.snapshotId || '', updatedAt: v.updatedAt || 0, objectBytes: v.objectBytes || 0,
+      // 已删除的作品也列出来并打标：客户端据此显示「云端有墓碑，可恢复 / 可彻底删」
+      deleted: !!v.deletedAt, deletedAt: v.deletedAt || 0,
     })).sort((a, b) => b.updatedAt - a.updatedAt)
     return sendJSON(res, 200, {
       ok: true, protocol: PROTOCOL_VERSION, projects: list,
@@ -136,9 +138,17 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
     const baseRevision = Number(body?.baseRevision ?? 0)
     if (!manifest || !opId) return sendJSON(res, 400, { ok: false, error: '缺少 manifest 或 opId' }), true
 
-    // 配额：按「提交后该项目对象字节」估算，超出直接拒（不写半套）
-    const incoming = (manifest.objects || []).reduce((n, o) => n + Number(o.bytes || 0), 0)
-      + (manifest.assets || []).reduce((n, a) => n + Number(a.bytes || 0), 0)
+    // 配额：按**磁盘上的真实字节**算，不信 manifest 里声明的 bytes。
+    // 🔴 客户端可以谎报 `bytes:1` 而实际传 40 MiB —— 声明值只用于进度显示，
+    //    记账必须看 statSync。同一哈希被多个 kind 引用时只算一次（内容寻址天然去重）。
+    const seen = new Set()
+    let incoming = 0
+    for (const entry of [...(manifest.objects || []), ...(manifest.assets || [])]) {
+      const h = entry && entry.hash
+      if (typeof h !== 'string' || seen.has(h)) continue
+      seen.add(h)
+      try { incoming += fs.statSync(objectPath(storeRoot, h)).size } catch { /* 缺对象在校验阶段会拒 */ }
+    }
     const projected = accountUsedBytes(idx) - projectBytes(idx, pid) + incoming
     if (projected > user.quotaBytes) {
       return sendJSON(res, 413, {

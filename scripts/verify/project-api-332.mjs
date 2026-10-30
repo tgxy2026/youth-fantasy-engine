@@ -148,13 +148,17 @@ try {
   const row = (list.json?.projects || []).find((x) => x.cloudProjectId === pid)
   ok('作品列表含该项目与 revision', list.status === 200 && row?.revision === 1, list.json)
 
-  // 10. 配额：声明 8 MiB（配额 4 MiB）→ 413
+  // 10. 配额必须按磁盘真实字节算，不能信客户端声明的 bytes
+  //     这里真的传 5 MiB（配额 4 MiB），但 manifest 里谎报 bytes:1
+  const bigBody = Buffer.alloc(5 * 1024 * 1024, 7)
+  const bigHash = sha(bigBody)
+  const upBig = await web.req('PUT', `/api/v2/projects/${pid}/objects/${bigHash}`, undefined, bigBody)
   const bigManifest = {
     ...manifest1,
-    objects: [{ kind: 'chapters', hash: h1, bytes: 8 * 1024 * 1024 }],
+    objects: [{ kind: 'chapters', hash: bigHash, bytes: 1 }],
   }
   const over = await web.req('POST', `/api/v2/projects/${pid}/commit`, { opId: 'op-big', baseRevision: 1, manifest: bigManifest })
-  ok('超配额提交 413 QUOTA_EXCEEDED', over.status === 413 && over.json?.code === 'QUOTA_EXCEEDED', over.json)
+  ok('谎报字节数也逃不过配额（413）', upBig.status === 200 && over.status === 413 && over.json?.code === 'QUOTA_EXCEEDED', { up: upBig.status, over: over.json })
 
   // 11. 路径穿越
   const evil = await web.req('GET', '/api/v2/projects/..%2F..%2Fetc/manifest')
@@ -163,6 +167,9 @@ try {
   // 12. 删除写墓碑，旧基线不能复活
   const del = await web.req('DELETE', `/api/v2/projects/${pid}?opId=op-del`)
   ok('删除作品推进 revision', del.status === 200 && del.json?.revision === 2, del.json)
+  const listAfterDelete = await web.req('GET', '/api/v2/projects')
+  const deadRow = (listAfterDelete.json?.projects || []).find((x) => x.cloudProjectId === pid)
+  ok('删除后的作品在列表里带 deleted 标记', deadRow?.deleted === true, deadRow)
   const revive = await web.req('POST', `/api/v2/projects/${pid}/commit`, { opId: 'op-old', baseRevision: 1, manifest: manifest1 })
   ok('删除后离线旧基线不能复活', revive.status === 409, revive.json)
 

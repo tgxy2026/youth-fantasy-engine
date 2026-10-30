@@ -11,7 +11,7 @@
 //
 // 🔴 全程同步读写：Node 单线程下同步操作不会被并发打断，等于天然互斥；用户表很小，代价可忽略。
 import { readFileSync, statSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { USERS_FILE, USERS_FILE_VERSION, DEFAULT_QUOTA } from './config.mjs'
 import { writeTextAtomicSync } from './atomic.mjs'
 import {
@@ -183,8 +183,9 @@ function getSessionListIn(db, id, now) {
   if (!u) return []
   const { user, changed } = migrateLegacySession(u, now)
   if (changed) {
+    // 🔴 只补 sessionList；旧 `session` 字段**留着**，等 checkSession 在旧令牌第一次到来时转正。
+    //    提前删掉它 = 升级那一刻所有旧令牌立刻失效（审查抓到的真问题）。
     db.users[id] = user
-    delete db.users[id].session
   }
   return db.users[id].sessionList || []
 }
@@ -230,24 +231,61 @@ export function openSession(id, { sid, tokenHash, kind = 'web', label = '', now 
  * @returns {{ session: object|null, reason: string }}
  *   reason 用于把 401 分成「过期」与「被撤销」两种话（前端文案不同）。
  */
-export function checkSession(id, tokenHash, now = Date.now()) {
+export function checkSession(id, { token, tokenHash, now = Date.now() } = {}) {
   const db = loadUsers()
   if (!db.users[id]) return { session: null, reason: 'NO_USER' }
   const { list, user: u } = readSessions(db, id, now)
-  const s = findActive(list, tokenHash, now)
+  // 🔴 用 cur 跟踪「当前这一份会话表」：转正会换掉它，后面 touch/prune 必须基于新的那份。
+  //    曾经这里直接用 `list`（转正前的空表）去 touch，并在 else 分支写回 u.sessionList ——
+  //    等于把刚转正的那条会话**覆盖成空**，表现是「旧令牌能过鉴权，但设备列表里没有它」。
+  let cur = list
+  let s = findActive(cur, tokenHash, now)
+
+  // 🔴 旧令牌就地转正（3.3.1 → 3.3.2 升级路径）：
+  //    旧版令牌 3 段、服务端只记一个 `session.token`。摘要只有拿到 SECRET 的层算得出来，
+  //    所以转正必须发生在这里（index.mjs 算好 tokenHash 传进来），而不是迁移函数里凭空造一个。
+  //    转正后就删掉旧字段 —— 从此只认会话表，避免两套来源并存。
+  if (!s && u.session && typeof u.session.token === 'string' && u.session.token) {
+    const same = (() => {
+      const a = Buffer.from(u.session.token)
+      const b = Buffer.from(String(token || ''))
+      return a.length === b.length && timingSafeEqual(a, b)
+    })()
+    if (same) {
+      const created = createSession(cur, {
+        sid: `legacy_${tokenHash.slice(0, 12)}`,
+        tokenHash,
+        kind: 'web',
+        label: '升级前的设备',
+        // 用旧记录里的登录时间，**不用 now**：否则等于给老会话偷偷续 90 天
+        now: Number(u.session.at) || now,
+      })
+      delete u.session
+      if (created.ok) {
+        // 软/硬上限：旧设备本来就存在，硬顶时也让它进来（否则升级即掉线）
+        u.sessionList = created.list
+        cur = created.list
+        persist(db)
+        s = created.session
+      } else {
+        persist(db)
+      }
+    }
+  }
+
   if (!s) {
-    const prev = list.find((x) => x.tokenHash === tokenHash)
+    const prev = cur.find((x) => x.tokenHash === tokenHash)
     // 有一模一样的摘要但已失效 ⇒ 说清是撤销还是到期；完全没这条 ⇒ 当作过期（可能来自旧表）
     const reason = prev ? expiryReason(prev, now) || 'EXPIRED' : 'EXPIRED'
     return { session: null, reason }
   }
-  const t = touch(list, s.sid, now)
+  const t = touch(cur, s.sid, now)
   if (t.changed) {
     u.sessionList = t.list
     persist(db)
-  } else if (list !== u.sessionList) {
+  } else if (cur !== u.sessionList) {
     // 迁移或 prune 有变化但 touch 没写：补一次落盘，避免每次请求都重新迁移
-    u.sessionList = list
+    u.sessionList = cur
     persist(db)
   }
   return { session: s, reason: '' }

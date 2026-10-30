@@ -175,35 +175,15 @@ export function prune(list, now) {
 export function migrateLegacySession(user, now) {
   if (!user) return { user, changed: false }
   if (Array.isArray(user.sessionList)) return { user, changed: false }
-  const legacy = user.session
-  if (!legacy || !legacy.token) {
-    // 没有旧会话：给一张空表，避免各处再判 undefined
-    if (user.sessionList === undefined) return { user: { ...user, sessionList: [] }, changed: true }
-    return { user, changed: false }
-  }
-  const token = String(legacy.token)
-  const session = {
-    sid: 'legacy_' + tokenHashStub(token),
-    tokenHash: tokenHashStub(token),
-    kind: 'web',
-    label: '升级前的设备',
-    createdAt: Number(legacy.at) || now,
-    lastSeenAt: Number(legacy.at) || now,
-    revokedAt: null,
-  }
-  const { sessionList, session: _drop, ...rest } = user
-  return { user: { ...rest, sessionList: [session] }, changed: true }
-}
-
-/**
- * 旧数据迁移用的稳定哈希（只用于生成 sid/tokenHash 的占位）。
- * 🔴 真正上线时 tokenHash 必须是 HMAC-SHA256(令牌, 服务端密钥)，见 auth.mjs；
- *    这里用纯 JS 的 djb2 只是为了让迁移函数在没有密钥的单元测试里也能跑。
- */
-function tokenHashStub(token) {
-  let h = 5381
-  for (let i = 0; i < token.length; i++) h = ((h << 5) + h + token.charCodeAt(i)) >>> 0
-  return 'stub_' + h.toString(16)
+  // 只补一张空表；**旧 `session` 字段必须留着** —— 那条令牌的摘要只能由持有密钥的层算，
+  // 本模块拿不到密钥（也不该拿）。让 `users.checkSession` 在旧令牌第一次到来时「就地转正」。
+  //
+  // 🔴 曾经在这里用 djb2 造了个「占位 tokenHash」把旧会话搬进表里 —— 那是错的：
+  //    认证时算的是 HMAC-SHA256，两边永远对不上 ⇒ 升级后**全员掉线**。
+  //    端到端自检当时是手工塞了一条用真 HMAC 的行，所以没露；这是审查时抓出来的。
+  void now
+  if (user.sessionList === undefined) return { user: { ...user, sessionList: [] }, changed: true }
+  return { user, changed: false }
 }
 
 /** 给界面的公开视图 —— **绝不包含 tokenHash**（防止 UI 泄漏凭据） */

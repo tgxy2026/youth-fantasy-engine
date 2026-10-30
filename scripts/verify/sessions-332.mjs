@@ -110,17 +110,17 @@ ok('prune：撤销痕迹 7 天后清、过期行不占名额', () => {
 })
 
 // 7. 迁移：旧单会话继续有效，且不凭空续期
-ok('迁移旧 session：token 仍是有效会话，createdAt 取旧 at', () => {
+ok('迁移只补空表，旧 session 字段留着等转正', () => {
   const legacyAt = T0 - 10 * DAY
   const user = { id: 'u1', name: 'a', session: { token: 'uid.exp.sig', at: legacyAt } }
   const { user: next, changed } = migrateLegacySession(user, T0)
   assert.equal(changed, true)
-  assert.equal(next.session, undefined, '旧字段应移除')
-  assert.equal(next.sessionList.length, 1)
-  assert.equal(next.sessionList[0].createdAt, legacyAt, '不得用 now 续期')
-  assert.equal(findActive(next.sessionList, next.sessionList[0].tokenHash, T0)?.sid, next.sessionList[0].sid)
-  // 迁移前已 10 天未活动 ⇒ 再过 21 天到 31 天，按不活动过期（不得因为迁移而重置计时）
-  assert.equal(findActive(next.sessionList, next.sessionList[0].tokenHash, T0 + 21 * DAY), null)
+  // 🔴 旧字段必须保留：真正的摘要只有持有 SECRET 的层算得出来，
+  //    在这里凭空造一个「占位哈希」会让升级后所有人掉线（审查抓到的真问题）。
+  assert.deepEqual(next.session, { token: 'uid.exp.sig', at: legacyAt })
+  assert.deepEqual(next.sessionList, [])
+  // 转正发生在 users.checkSession：这里不该出现任何伪造的会话行
+  assert.equal(next.sessionList.some((x) => String(x.tokenHash).startsWith('stub_')), false)
 })
 
 ok('迁移空账号：得到空表，不报错', () => {

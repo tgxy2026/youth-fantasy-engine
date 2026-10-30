@@ -114,7 +114,7 @@ function authCheck(req) {
   if (!u) return { user: null, reason: 'NO_USER', session: null }
   // 3.3.2：多会话。按**令牌摘要**查会话表（不按 sid 查）—— 旧令牌里没有 sid，
   // 但它们迁移进表时也写了摘要，所以「摘要」是唯一能同时覆盖新旧两种令牌的键。
-  const r = checkSession(u.id, hashToken(token, SECRET))
+  const r = checkSession(u.id, { token, tokenHash: hashToken(token, SECRET) })
   if (!r.session) return { user: null, reason: r.reason, session: null }
   return { user: u, reason: '', session: r.session }
 }
@@ -857,12 +857,10 @@ const server = createServer((req, res) => {
     // 退出登录：会话与游客标记一并清除，回到「登录页」这个真正的入口分流点。
     // 两条 cookie 都要清：只清会话的话，曾经点过「游客试用」的人会直接掉进游客模式，
     // 而不是回到登录页（用户会以为「退出后怎么还是这个界面」）。
-    const u = authUser(req)
-    if (u) {
-      // 3.3.2：静态 /logout 也只退本设备（与 API 行为一致，避免两条路径语义打架）
-      const chkOut = authCheck(req)
-      if (chkOut.session) revokeSessionById(u.id, chkOut.session.sid)
-    }
+    // 3.3.2：静态 /logout 也只退本设备（与 API 行为一致，避免两条路径语义打架）
+    // 🔴 只调一次 authCheck：它带 touch 副作用（可能落盘），调两次等于一次请求写两遍 users.json。
+    const chkOut = authCheck(req)
+    if (chkOut.user && chkOut.session) revokeSessionById(chkOut.user.id, chkOut.session.sid)
     res.writeHead(302, {
       Location: '/',
       'Set-Cookie': [clearCookie(req), clearGuestCookie(req)],

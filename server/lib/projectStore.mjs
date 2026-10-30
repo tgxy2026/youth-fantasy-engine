@@ -357,7 +357,11 @@ export function listRevisions(root, pid) {
     .sort((a, b) => b - a)
   return revs.map((rev) => {
     const m = readManifest(root, pid, rev)
-    return { revision: rev, deleted: !!(m && m.deleted), at: Number(m?.createdAt || 0) }
+    // 🔴 `at` 取**文件 mtime**，不取 manifest 里的 `createdAt`：
+    //    后者是客户端填的，一个乱填的值就能让清理逻辑判错（把别人的历史当"很旧"删掉）。
+    let at = 0
+    try { at = fs.statSync(path.join(dir, `${rev}.json`)).mtimeMs } catch { /* 刚被清理 */ }
+    return { revision: rev, deleted: !!(m && m.deleted), at }
   })
 }
 
