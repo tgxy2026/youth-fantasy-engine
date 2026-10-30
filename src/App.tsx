@@ -42,6 +42,12 @@ import { pageNavigationIntent, referenceNavigationIntent, commitNavigationHistor
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
+import BossOverlay from '@/components/app/BossOverlay'
+import {
+  BOSS_COVER_EVENT, BOSS_DEFAULT_ACCEL, BOSS_PREF_CHANGED_EVENT,
+  applyBossKey, bossKeyMode, matchesAccel, normalizeAccel, onBossKeyChanged,
+} from '@/lib/app/bossKey'
+import { runBossSaveBarrier } from '@/lib/app/bossSave'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
@@ -69,7 +75,7 @@ import { loadPromptOverrides } from '@/lib/ai/promptSettings'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { downloadBlob } from '@/lib/storage/zip'
 import workbenchBg from '@/assets/workbench-bg.png'
-import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/uiPrefs'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
@@ -267,6 +273,78 @@ export default function App() {
 
   // 真·全屏快捷键（2.5.1 · B2）：F11 进出无边框全屏、全屏态下 ESC 退出。仅桌面版安装；返回卸载函数。
   useEffect(() => installFullscreenShortcuts(), [])
+
+  // ---- 老板键（3.3.2 · 规划 §15）----
+  // 桌面：组合键由主进程注册，隐藏前主进程推 `boss:changed {hidden:true}`，这里据此启动保存；
+  // 便携 / 网页：没有系统热键能力，只能页内快捷键 + 遮挡屏（焦点离开本页就不生效）。
+  const [bossCovered, setBossCovered] = useState(false)
+  const [bossSave, setBossSave] = useState<{ ok: boolean; message: string } | null>(null)
+  const bossSaveRef = useRef<{ ok: boolean; message: string } | null>(null)
+  const bossCoveredRef = useRef(false)
+  const [bossAccel, setBossAccel] = useState(
+    () => normalizeAccel(readStringPref('boss-key-accel')) || BOSS_DEFAULT_ACCEL,
+  )
+  useEffect(() => { bossCoveredRef.current = bossCovered }, [bossCovered])
+
+  // 桌面启动时按偏好申请一次（失败不抢键、不阻塞启动；设置页会显示"未生效"）
+  useEffect(() => {
+    if (bossKeyMode() !== 'desktop') return
+    const enabled = readBoolPref('boss-key-enabled', true)
+    const accel = normalizeAccel(readStringPref('boss-key-accel')) || BOSS_DEFAULT_ACCEL
+    void applyBossKey(enabled ? accel : null).then((r) => {
+      if (!r.ok) console.warn('[boss] 老板键未生效（可在设置里换组合）：', r.error)
+    })
+  }, [])
+
+  // 桌面隐藏 / 恢复事件：隐藏后保存继续在后台跑，恢复时才有地方把失败说出来
+  useEffect(() => onBossKeyChanged((s) => {
+    if (s.hidden) {
+      void runBossSaveBarrier().then((r) => { bossSaveRef.current = r })
+      return
+    }
+    const r = bossSaveRef.current
+    bossSaveRef.current = null
+    if (r && !r.ok) showToast(r.message, 'error', 6000)
+  }), [])
+
+  const coverBoss = useCallback(() => {
+    setBossCovered(true)
+    void runBossSaveBarrier().then((r) => {
+      bossSaveRef.current = r
+      setBossSave({ ok: r.ok, message: r.message })
+    })
+  }, [])
+
+  const restoreBoss = useCallback(() => {
+    setBossCovered(false)
+    const r = bossSaveRef.current
+    bossSaveRef.current = null
+    if (r && !r.ok) showToast(r.message, 'error', 6000)
+  }, [])
+
+  useEffect(() => {
+    if (bossKeyMode() !== 'overlay') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!matchesAccel(e, bossAccel)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (bossCoveredRef.current) restoreBoss()
+      else coverBoss()
+    }
+    const onPref = () => setBossAccel(normalizeAccel(readStringPref('boss-key-accel')) || BOSS_DEFAULT_ACCEL)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener(BOSS_PREF_CHANGED_EVENT, onPref)
+    window.addEventListener(BOSS_COVER_EVENT, coverBoss)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener(BOSS_PREF_CHANGED_EVENT, onPref)
+      window.removeEventListener(BOSS_COVER_EVENT, coverBoss)
+    }
+  }, [bossAccel, coverBoss, restoreBoss])
+
+  const bossOverlay = bossCovered
+    ? <BossOverlay accel={bossAccel} onRestore={restoreBoss} saveOk={bossSave?.ok} saveMessage={bossSave?.message} />
+    : null
 
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
   useEffect(() => {
@@ -685,6 +763,7 @@ export default function App() {
           <p className="text-14 font-semibold text-content-primary">正在打开创作工作台…</p>
           <p className="text-12 text-content-muted">正在读取工作台数据与设置，请稍候。</p>
         </main>
+        {bossOverlay}
       </>
     )
   }
@@ -703,6 +782,7 @@ export default function App() {
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />
+        {bossOverlay}
       </>
     )
   }
@@ -901,6 +981,7 @@ export default function App() {
           onDisableAuto={appGuide.disableAuto}
         />
       )}
+      {bossOverlay}
     </div>
   )
 }

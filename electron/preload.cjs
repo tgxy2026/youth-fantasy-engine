@@ -89,6 +89,25 @@ contextBridge.exposeInMainWorld('electronAuth', {
   fetch: (opts) => ipcRenderer.invoke('auth:desktopFetch', opts),
 })
 
+// 3.3.2 · 老板键（规划 §15）：全局快捷键的注册与隐藏/恢复都在主进程；
+// 这里只暴露「申请 / 查询 / 手动触发 / 订阅状态」四个口子。
+// 🔴 隐藏时主进程会先推 `boss:changed {hidden:true, saving:true}`，渲染层据此启动保存；
+//    保存是异步的，失败结果由渲染层自己记账并在恢复后提示。
+contextBridge.exposeInMainWorld('electronBoss', {
+  /** 申请一个组合键（传 null 表示禁用）；失败返回 { ok:false, error } 且旧键仍可用 */
+  apply: (accel) => ipcRenderer.invoke('boss:apply', accel),
+  /** 当前状态：{ accel, display, hidden } */
+  status: () => ipcRenderer.invoke('boss:status'),
+  /** 手动隐藏/恢复一次（设置页的「试一下」；与快捷键同一条路径） */
+  toggle: () => ipcRenderer.invoke('boss:toggle'),
+  /** 订阅隐藏/恢复事件；返回退订函数 */
+  onChanged: (cb) => {
+    const h = (_e, s) => cb(s)
+    ipcRenderer.on('boss:changed', h)
+    return () => ipcRenderer.removeListener('boss:changed', h)
+  },
+})
+
 // 窗口控制（2.5.1 · B2）：只暴露全屏切换三个口子，按键判定（F11/ESC）在渲染层。
 contextBridge.exposeInMainWorld('electronWindow', {
   /** 设置真全屏（无边框）；返回实际全屏态 */

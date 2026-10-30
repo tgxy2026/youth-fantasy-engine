@@ -19,6 +19,8 @@ const appIcon = require('./appIcon.cjs')
 const blobMove = require('./blobMove.cjs')
 // 3.3.2 · P1-5b 桌面账号登录（浏览器授权 + 回环端口 + safeStorage 存令牌）
 const desktopAuth = require('./desktopAuth.cjs')
+// 3.3.2 · §15 老板键（全局快捷键隐藏/恢复 + 通知渲染层保存）
+const bossKey = require('./bossKey.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 // 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
@@ -906,6 +908,14 @@ app.whenReady().then(() => {
   win.on('enter-full-screen', pushFullscreen)
   win.on('leave-full-screen', pushFullscreen)
 
+  // ---- 老板键（3.3.2 · 规划 §15）----
+  // 🔴 默认**不在主进程自动注册**：组合键会抢占系统/其他程序，交给渲染层按用户偏好申请，
+  //    失败时界面能如实显示"被占用"，而不是启动时静默抢一个键。
+  // 🔴 没有可用快捷键时 `toggle()` 拒绝隐藏 —— 否则窗口藏了、没有任何恢复入口。
+  ipcMain.handle('boss:apply', (_e, accel) => bossKey.apply(win, accel))
+  ipcMain.handle('boss:status', () => bossKey.status(win))
+  ipcMain.handle('boss:toggle', () => bossKey.toggle(win))
+
   // ---- 应用图标（桌面快捷方式）切换 · 3.1.2 ----
   // 桌面 / 开始菜单两条快捷方式一起改；只动 .lnk，绝不碰主 exe 的 PE 图标资源（见 appIcon.cjs 头注释）。
   ipcMain.handle('appicon:supported', () => appIcon.supported())
@@ -1026,4 +1036,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   app.quit()
+})
+
+// 退出时释放全局热键：不释放的话，程序都退了 Ctrl+Shift+F9 仍被系统认为"已被占用"
+app.on('will-quit', () => {
+  bossKey.dispose()
 })
