@@ -463,7 +463,7 @@ export default function WorldSetSheet({ tab }: Props) {
         </div>
 
         {/* ---------- 右列：当前层的表单（独立滚动） ---------- */}
-        <div ref={detailScrollRef} data-set-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1" ref={detailScrollRef} data-set-detail>
           <div className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 ${
             isMain ? 'border-amber/30 bg-amber/5' : 'border-ink-600 bg-ink-800/40'
           }`}>

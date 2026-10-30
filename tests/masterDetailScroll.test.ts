@@ -61,8 +61,10 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
     ws.includes('w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden flex flex-col min-h-0'))
   ok('② 世界设定：左栏唯一滚动区 flex-1 min-h-0 overflow-y-auto',
     ws.includes('<div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">'))
+  // 允许元素上带其它属性（ref / data-*）—— 本闸要守的是类名，不是属性顺序；
+  // 写死整串会变成「一加属性就红」，反而逼人删掉功能所需的 ref（3.3.1 右栏冻结就踩到过）。
   ok('② 世界设定：右栏表单独立滚动（flex-1 min-w-0 min-h-0 overflow-y-auto）',
-    ws.includes('<div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">'))
+    /<div[^>]*className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1"[^>]*>/.test(ws))
   ok('② 世界设定：旧形态清干净——无 items-start 堆叠容器、无 lg:flex-row、无内联 maxHeight',
     !ws.includes('items-start') && !ws.includes('lg:flex-row') && !ws.includes('maxHeight: foldVh'))
   ok('② 世界设定：旧根容器类名已换（不再是 w-full page-enter）', !ws.includes('"w-full page-enter"'))
@@ -74,7 +76,8 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
   ok('② 制度四页签：双栏容器 flex-1 min-h-0', ps.includes('<div className="flex flex-1 min-h-0 gap-4">'))
   ok('② 制度四页签：左栏条目列表独立滚动（flex-1 min-h-0 overflow-y-auto）',
     ps.includes('<div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">'))
-  ok('② 制度四页签：右栏表单独立滚动', ps.includes('<div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">'))
+  ok('② 制度四页签：右栏表单独立滚动',
+    /<div[^>]*className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1"[^>]*>/.test(ps))
   ok('② 制度四页签：旧形态清干净——无 items-start / lg:flex-row / 内联 maxHeight',
     !ps.includes('items-start') && !ps.includes('lg:flex-row') && !ps.includes('maxHeight: foldVh'))
 }

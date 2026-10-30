@@ -479,7 +479,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
         </div>
 
         {/* ---------- 右列：当前条目的表单（独立滚动） ---------- */}
-        <div ref={detailScrollRef} data-set-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1" ref={detailScrollRef} data-set-detail>
           {!selSub ? (
             /* 🔴 空态盒撑满右栏并居中（2026-10-17 全局视觉巡检）：原来只有 `py-8`，
                盒高约 80px 贴在最上方，下方留 500px+ 空白 —— 政治架构 / 经济基础 /
