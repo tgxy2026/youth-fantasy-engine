@@ -117,10 +117,28 @@ export function useEditorOpenOffset({ enabled, activeId, openChapterId, offset, 
       const length = Number.isSafeInteger(matchLength) && (matchLength ?? 0) > 0 ? matchLength! : 0
       const end = Math.min(content.length, offset + length)
       const top = measureCaretTop(ta, offset)
+      /**
+       * 🔴 顺序必须是「先聚焦，再设选区」。
+       *
+       * 浏览器**不给未聚焦的 textarea 绘制选区**：先 setSelectionRange 再 focus 时，
+       * 选区虽然设上了，但作者看到的是「页面滚到了某处、却看不出是哪一句」——
+       * 等于把「精确跳转」做成了「跳到附近」。聚焦放在前面，选区才是可见的。
+       *
+       * 什么时候**不**抢焦点：焦点在**另一个可输入元素**里（输入框 / 文本域 / 可编辑区）——
+       * 那说明作者正在别处打字，跳过去抢走会打断他。
+       *
+       * 🔴 反过来说，焦点在按钮 / div / body 上时必须聚焦：定位是作者**刚点了**「定位原文」
+       *    或「某条检索结果」才发生的，焦点此刻往往还留在那个（已卸载的）按钮上或落在 body，
+       *    旧判据（只认 body）在实测里判成「不聚焦」，结果就是滚到了位置却看不出是哪一句
+       *    —— 自检探针 `acceptance-331` 的 6.2b 就是这么抓到的（hasFocus=true、activeIsEditor=false）。
+       */
+      const focused = document.activeElement
+      const focusedIsTextEntry = focused instanceof HTMLInputElement
+        || focused instanceof HTMLTextAreaElement
+        || (focused instanceof HTMLElement && focused.isContentEditable)
+      if (document.hasFocus() && (!focusedIsTextEntry || focused === ta)) ta.focus({ preventScroll: true })
       ta.setSelectionRange(offset, end, 'forward')
       ta.scrollTop = scrollTopForOffset(content, offset, Number.parseFloat(getComputedStyle(ta).lineHeight), ta.clientHeight, ta.scrollHeight, top)
-      const focused = document.activeElement
-      if (document.hasFocus() && (!focused || focused === document.body || focused === ta)) ta.focus({ preventScroll: true })
     })().catch(() => { /* Optional positioning must never change the chapter content or saving outcome. */ })
     return () => { disposed = true }
   }, [enabled, ownsPosition, activeId, openChapterId, requestKey, offset, matchLength, expectedRevision, content, taRef])
