@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ALL_TAB_IDS, HELP_ARTICLES, HELP_GROUPS, HELP_INDEX, MAX_HITS_PER_ARTICLE,
+  ALL_TAB_IDS, CONTENT_VERSION, SUPPORTED_APP_VERSION,
   checkHelpContent, coveredTabIds, getHelpArticle, helpArticlesForTab, searchHelp,
   suggestHelpGroups, tabsWithoutHelp, tokenizeHelpQuery,
 } from '../src/lib/help'
@@ -19,6 +20,8 @@ function ok(name: string, cond: boolean, extra = '') {
   else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
 }
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+/** 包版本：手册的 verifiedAgainst 必须跟着它走 */
+const pkgVersion = JSON.parse(read('package.json')).version as string
 
 // ---------- ① 内容结构 ----------
 {
@@ -143,6 +146,38 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('两种形态共用同一份 HelpCenter 属性（内容一致）',
     (app.match(/receiveArticleRequests=\{false\}/g) ?? []).length >= 2)
   ok('侧板与对话框都用「使用答疑助手」这个叫法', /使用答疑助手/.test(app) && /使用答疑助手/.test(dock))
+}
+
+// ---------- ⑧ P6：把「覆盖度 + 内容自检 + 内容版本」做成检查入口里的一行摘要 ----------
+// 🔴 为什么要打印：`npm test` / `run-batches.sh all` 是日常唯一入口（规划 §P6「手册覆盖检查
+//    接入现有检查入口」）。只在文档里写「已覆盖 55 个入口」，改内容时没人看得见实际数字。
+{
+  const sections = HELP_ARTICLES.reduce((sum, article) => sum + article.sections.length, 0)
+  const covered = coveredTabIds().size
+  const missing = tabsWithoutHelp()
+  const issues = checkHelpContent()
+  console.log(`\n手册：${HELP_ARTICLES.length} 篇 / ${sections} 段 / 覆盖 ${covered}/${ALL_TAB_IDS.length} 个入口`
+    + ` / 缺口 ${missing.length} / 内容版本 v${CONTENT_VERSION} / 自检 ${issues.length} 个问题`)
+
+  ok('🔴 覆盖度算得出来且不超过全集', covered > 0 && covered <= ALL_TAB_IDS.length, `${covered}/${ALL_TAB_IDS.length}`)
+  ok('🔴 内容自检在检查入口里为 0 问题（改坏内容门禁就红）', issues.length === 0)
+  /**
+   * 🔴 手册声明的核对版本**不能落后于包版本**：落后说明手册讲的是上一版界面，事实要重核。
+   * 允许「高于包版本」—— 开发期就是这么走的（包还是 3.3.0，手册已在按 3.3.1 核对），
+   * 这是提前定口径，不是错。真正要拦的是「包升到 3.3.2 了，手册还写 3.3.1」。
+   */
+  const compareVersion = (a: string, b: string) => {
+    const pa = a.split('.').map(Number)
+    const pb = b.split('.').map(Number)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+      if (diff !== 0) return diff > 0 ? 1 : -1
+    }
+    return 0
+  }
+  ok('🔴 手册核对版本不落后于包版本（包升版了手册必须重核）',
+    compareVersion(SUPPORTED_APP_VERSION, pkgVersion) >= 0,
+    `手册 ${SUPPORTED_APP_VERSION} / 包 ${pkgVersion}`)
 }
 
 console.log(`\n—— helpCenter 用例结束：${pass} 通过 / ${fail} 失败`)
