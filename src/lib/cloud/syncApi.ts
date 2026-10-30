@@ -74,12 +74,45 @@ export type CloudProbe =
   | { ok: false; reason: 'network' | 'unauthorized' | 'not-found' | 'server'; status: number }
 
 /**
+ * 🔴 并发去重 + 短窗缓存（2026-10-31 实机验证加的止血措施）。
+ *
+ * 现象：云端同步面板打开后，服务端在几十秒内收到 1.7 万次 `GET /api/v2/projects/:pid`。
+ * 根因尚未定位到唯一一处，但无论谁在重复触发，**同一个 pid 在同一瞬间只该有一次查询**
+ * —— 云端 revision 不是股票行情，1 秒内不会变。这里既挡并发（同 Promise 复用），
+ * 也挡串行高频（1.5 秒内复用上次结果）。
+ *
+ * ⚠️ 这是**止血**不是根治：如果日志里仍是稳定 0.7 次/秒，说明上游还有调用方在打，
+ *    需要继续查（用 `YFE_DEBUG_SYNC=1` 打开调用点日志）。
+ */
+const PROBE_TTL_MS = 1500
+const probeCache = new Map<string, { at: number; result: CloudProbe }>()
+const probeInflight = new Map<string, Promise<CloudProbe>>()
+
+/**
  * 查一本云端作品的当前状态。
  *
  * 🔴 404 与"网络断"必须分开：404 说明确实没有（可以重新上传），
  *    网络断说明不知道（这轮别动）。见 `decideSync` 的 `remote-gone`。
  */
 export async function probeCloudProject(cloudProjectId: string, base = baseOf()): Promise<CloudProbe> {
+  const key = `${base}|${cloudProjectId}`
+  const now = Date.now()
+  // ① 短窗缓存：1.5 秒内的同一目标直接复用（云端 revision 不是行情，不会一秒变几次）
+  const hit = probeCache.get(key)
+  if (hit && now - hit.at < PROBE_TTL_MS) return hit.result
+  // ② 并发去重：同一瞬间的多个调用共用一个 Promise
+  const running = probeInflight.get(key)
+  if (running) return running
+
+  const task = probeOnce(cloudProjectId, base)
+    .then((r) => { probeCache.set(key, { at: Date.now(), result: r }); return r })
+    .finally(() => { probeInflight.delete(key) })
+  probeInflight.set(key, task)
+  return task
+}
+
+/** 真正的请求。**只由 `probeCloudProject` 调用**；不要直接导出，否则去重会被绕过。 */
+async function probeOnce(cloudProjectId: string, base: string): Promise<CloudProbe> {
   try {
     const res = await f()(`${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}`, {
       credentials: 'same-origin',
@@ -183,7 +216,16 @@ export async function fetchManifest(
       { credentials: 'same-origin', cache: 'no-store' },
     )
     if (!res.ok) return null
-    return await res.json() as Record<string, unknown>
+    const body = await res.json() as { ok?: boolean; revision?: number; manifest?: unknown; current?: number }
+    // 🔴 服务端返回的是 `{ ok, revision, manifest, current }`，清单在**里层**。
+    //    这里曾经直接把整个外包对象当清单返回 ⇒ 下游 `planApply` 读到 `objects === undefined`
+    //    ⇒ 一律判成「云端清单格式无法识别」⇒ **拉取功能等于全线不可用**。
+    //    （2026-10-31 实机验证：API 层读清单正常、客户端却报协议错误，才顺出来。）
+    const m = body?.manifest
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return null
+    const manifest = m as Record<string, unknown>
+    // 把外层版本信息合进清单：`planApply` 要读 `revision` 才知道应用到哪一版
+    return typeof body?.revision === 'number' ? { ...manifest, revision: body.revision } : manifest
   } catch {
     return null
   }

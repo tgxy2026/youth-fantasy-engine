@@ -204,6 +204,34 @@ export function createMemoryBindingStore(seed: Record<string, SyncBinding> = {})
 
 
 /**
+ * 提交成功之后，绑定该变成什么样。
+ *
+ * 🔴 **这一步漏了就是"永远未同步"**（2026-10-31 实机验证抓到）：
+ *    `baseRevision` 不回写 ⇒ 面板一直显示「本机基于第 0 版」；
+ *    下一次自动同步 tick 拿 `baseRevision=0` 去比 `remote.revision=1`，
+ *    再叠上「本地有改动」（`updatedAt > lastSyncedAt=0`）⇒ 直接判成**假冲突**，
+ *    用户刚上传完就被告知"云端与本机各有改动"。
+ *
+ * @param binding 提交前的绑定
+ * @param revision 服务端返回的 revision（`replayed` 时也是同一个值）
+ * @param now 提交完成时刻
+ * @returns 新绑定；**绑定指向别的云端项目时返回 null**（提交期间被解绑/重绑，不该覆盖）
+ */
+export function nextBindingAfterCommit(
+  binding: SyncBinding | null, cloudProjectId: string, revision: number, now: number,
+): SyncBinding | null {
+  if (!binding) return null
+  if (binding.cloudProjectId !== cloudProjectId) return null
+  if (!Number.isFinite(revision) || revision <= 0) return null
+  return {
+    ...binding,
+    baseRevision: revision,
+    lastSyncedAt: now,
+    // 快照身份留给后续"云端变没变"的快速判断；这里拿不到就保持原值
+  }
+}
+
+/**
  * 这个绑定在当前账号下还有效吗。
  *
  * @returns 有效返回原绑定；账号不符（或记录里没有账号的老数据 + 当前有账号）返回 null

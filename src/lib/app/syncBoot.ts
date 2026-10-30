@@ -20,6 +20,7 @@ import { createSyncStateStores } from '@/lib/sync/syncQueueIdb'
 import type { SyncController } from '@/lib/sync/syncController'
 import { installSyncController, getSyncController } from '@/lib/sync/syncController'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
+import { nextBindingAfterCommit } from '@/lib/sync/projectBinding'
 import { fetchRemoteRevision, configureCloudTransport } from '@/lib/cloud/syncApi'
 import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
 import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
@@ -78,10 +79,23 @@ export async function bootSync(): Promise<SyncController> {
     const { queue, tombstones } = await createSyncStateStores((reason) => {
       console.warn('[sync] 本机同步状态库打不开，已降级为内存队列（重启会丢任务）：', reason)
     })
+    // 🔴 提交成功后必须回写绑定：不回写就会出现「本机基于第 0 版」+ 下一轮假冲突
+    //    （2026-10-31 实机验证抓到的阻断问题，见 `nextBindingAfterCommit` 注释）
+    const bindingStore = createSettingBindingStore()
     const controller = installSyncController({
       store: queue,
       tombstones,
       transport: createHttpTransport(),
+      onCommitted: async ({ projectId, cloudProjectId, revision }) => {
+        try {
+          const cur = await bindingStore.get(projectId)
+          const next = nextBindingAfterCommit(cur, cloudProjectId, revision, Date.now())
+          if (next) await bindingStore.set(projectId, next)
+        } catch (e) {
+          // 回写失败不该让"已提交"变成失败：下一次 tick 会用云端 revision 兜回来
+          console.warn('[sync] 回写绑定失败（不影响本次提交）：', e)
+        }
+      },
       loadBundle: async (pid: string) => {
         try { return (await exportProject(pid)) as unknown as ProjectBundle } catch { return null }
       },

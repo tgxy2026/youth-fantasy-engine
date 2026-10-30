@@ -26,6 +26,11 @@ export interface SyncControllerDeps {
   loadBundle: (projectId: string) => Promise<ProjectBundle | null>
   tombstones?: TombstoneStore
   now?: () => number
+  /**
+   * 提交成功后的回调（回写绑定：`baseRevision` / `lastSyncedAt`）。
+   * 🔴 不给这个回调，界面会永远停在「本机基于第 0 版」，并在下一轮 tick 判成假冲突。
+   */
+  onCommitted?: (info: { projectId: string; cloudProjectId: string; revision: number }) => Promise<void> | void
   /** 状态变化广播（界面订阅它刷新徽标） */
   onState?: (projectId: string, state: SyncState) => void
 }
@@ -73,11 +78,15 @@ export function createSyncController(deps: SyncControllerDeps): SyncController {
     loadTombstones: deps.tombstones
       ? async (pid: string) => tombstonesToSubmit(deps.tombstones!, pid, now())
       : undefined,
-    afterCommit: deps.tombstones
-      ? async (job, cutoff) => {
-          if (cutoff > 0) await clearSubmittedTombstones(deps.tombstones!, job.projectId, cutoff, now())
-        }
-      : undefined,
+    // 🔴 这个钩子**必须无条件存在**：清墓碑是"有墓碑时才有事做"，
+    //    但回写绑定是每次成功提交都要做。曾经写成 `deps.tombstones ? ... : undefined`，
+    //    结果没有墓碑存储时连绑定也不回写 —— 实机验证表现为"刚上传完就报冲突"。
+    afterCommit: async (job, cutoff, revision) => {
+      if (deps.tombstones && cutoff > 0) {
+        await clearSubmittedTombstones(deps.tombstones, job.projectId, cutoff, now())
+      }
+      await deps.onCommitted?.({ projectId: job.projectId, cloudProjectId: job.cloudProjectId, revision })
+    },
     onState: (pid, state) => {
       for (const fn of listeners) {
         try { fn(pid, state) } catch { /* 订阅方自己的异常不该影响同步 */ }

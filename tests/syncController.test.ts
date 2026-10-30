@@ -144,6 +144,36 @@ async function main() {
       JSON.stringify(await tombs.list('p1')))
   }
 
+  // ---------- 5b. 提交成功后必须回调 onCommitted（回写绑定）----------
+  {
+    const store = createMemoryQueueStore()
+    const got: { pid: string; cloud: string; rev: number }[] = []
+    const ctl = createSyncController({
+      store,
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: true, status: 200, revision: 4 } } },
+      loadBundle: async () => bundle(),
+      now: () => T0,
+      onCommitted: (info) => { got.push({ pid: info.projectId, cloud: info.cloudProjectId, rev: info.revision }) },
+    })
+    await ctl.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    // 🔴 这条漏了就是"刚上传完就报冲突"：基线不推进，下一轮 tick 必判假冲突
+    ok('成功提交后回调 onCommitted（带 revision）', got.length === 1 && got[0].rev === 4, JSON.stringify(got))
+    ok('回调带上项目与云端 id', got[0].pid === 'p1' && got[0].cloud === 'c1', JSON.stringify(got))
+  }
+  {
+    const store = createMemoryQueueStore()
+    let called = 0
+    const ctl = createSyncController({
+      store,
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: false, status: 409, code: 'BASELINE_MISMATCH' } } },
+      loadBundle: async () => bundle(),
+      now: () => T0,
+      onCommitted: () => { called++ },
+    })
+    await ctl.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    ok('冲突时不回调 onCommitted（基线不该被推进）', called === 0, String(called))
+  }
+
   // ---------- 6. 单例只装一次 ----------
   {
     resetSyncControllerForTest()

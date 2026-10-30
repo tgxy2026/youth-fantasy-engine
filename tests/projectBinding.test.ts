@@ -6,7 +6,7 @@
 //   ③ 「两份都留」必须先另存再拉，顺序反了本地就没了；
 //   ④ 未开启自动同步时不能显示"未同步"吓人。
 import {
-  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount,
+  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount, nextBindingAfterCommit,
   type SyncBinding, type RemoteState,
 } from '@/lib/sync/projectBinding'
 
@@ -124,6 +124,29 @@ async function main() {
     ok('老数据无账号 + 当前无账号→放行', bindingForAccount(bind(), undefined) !== null)
     ok('老数据无账号 + 当前有账号→作废（宁可重绑一次）', bindingForAccount(bind(), 'u2') === null)
     ok('没有绑定→null', bindingForAccount(null, 'u1') === null)
+  }
+
+  // ---------- 12. 提交成功后回写绑定（实机验证抓到的阻断问题）----------
+  {
+    const before = bind({ baseRevision: 0, lastSyncedAt: 0, accountId: 'u1' })
+    const after = nextBindingAfterCommit(before, 'c1', 1, T0 + 5000)
+    ok('提交成功 ⇒ 基线推进到云端 revision', after?.baseRevision === 1, String(after?.baseRevision))
+    ok('提交成功 ⇒ 上次同步时间更新', after?.lastSyncedAt === T0 + 5000, String(after?.lastSyncedAt))
+    ok('回写保留开关与账号', after?.enabled === true && after?.accountId === 'u1', JSON.stringify(after))
+    // 🔴 不回写的后果：下一轮 tick 会拿 baseRevision=0 比对 remote=1 + 本地有改动 ⇒ 假冲突
+    const decisionIfNotWritten = decideSync({
+      binding: before, remote: { exists: true, revision: 1 }, localDirty: true,
+    })
+    ok('不回写会判成假冲突（这条钉住"为什么必须回写"）', decisionIfNotWritten.action === 'conflict', decisionIfNotWritten.action)
+    ok('回写后同一条件下判成 push（不再冲突）', (() => {
+      const d = decideSync({ binding: after!, remote: { exists: true, revision: 1 }, localDirty: true })
+      return d.action === 'push'
+    })())
+
+    ok('绑定指向别的云端项目时不回写', nextBindingAfterCommit(before, 'other', 1, T0) === null)
+    ok('revision 为 0 时不回写（服务端没给出有效版本）', nextBindingAfterCommit(before, 'c1', 0, T0) === null)
+    ok('revision 非数时不回写', nextBindingAfterCommit(before, 'c1', Number.NaN, T0) === null)
+    ok('没有绑定时不回写', nextBindingAfterCommit(null, 'c1', 1, T0) === null)
   }
 
   console.log(`\n▶ projectBinding: ${pass} passed, ${fail} failed`)

@@ -16,7 +16,7 @@
  *    原项目的任何记录都不被改写，所以不需要"先备份再覆盖"那套风险承诺。
  *    副本不带自定义下拉选项（当前快照协议未包含），界面会如实说明。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CloudUpload, CloudOff, RefreshCw, Cloud, Clock, AlertTriangle, Link2 } from 'lucide-react'
 import { WEB_CLOUD } from '@/lib/app/platform'
 import { DESKTOP } from '@/lib/app/desktop'
@@ -90,7 +90,11 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   /** 桌面端：是否已登录云端账号（未登录时不显示入口） */
   const [desktopSignedIn, setDesktopSignedIn] = useState(false)
 
-  const store = createSettingBindingStore()
+  // 🔴 **必须是稳定引用**：直接写 `const store = createSettingBindingStore()` 会让
+  //    每次 render 都产生新对象 ⇒ 依赖它的 `load` 每次都是新函数 ⇒
+  //    `useEffect([open, load])` 每次 render 都重跑 ⇒ `load` 里 setState ⇒ 再 render ⇒ 死循环。
+  //    2026-10-31 实机验证踩到：服务端在几分钟内被灌了 3.7 万次 GET（面板一开就停不下来）。
+  const store = useMemo(() => createSettingBindingStore(), [])
 
   // 桌面端：登录状态决定入口是否出现（网页云端版恒出现）
   useEffect(() => {
@@ -104,7 +108,12 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     return () => { alive = false; window.removeEventListener(DESKTOP_ACCOUNT_EVENT, read) }
   }, [])
 
+  // 🔴 重入保护：即便 effect 因为父组件重挂而被反复触发，同一时刻也只跑一次读取。
+  //    （2026-10-31 实机验证：面板打开后服务端几十秒收到 1.7 万次 GET，加这层兜底）
+  const loadBusy = useRef(false)
   const load = useCallback(async () => {
+    if (loadBusy.current) return
+    loadBusy.current = true
     setLoading(true)
     setError('')
     try {
@@ -142,6 +151,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     } catch (e) {
       setError(e instanceof Error ? e.message : '读取同步状态失败')
     } finally {
+      loadBusy.current = false
       setLoading(false)
     }
   }, [store])

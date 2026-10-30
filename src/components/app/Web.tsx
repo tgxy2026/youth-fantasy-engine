@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { HardDriveUpload, FileInput, Cloud } from 'lucide-react'
 import {
   getPortableState, subscribePortable, flushPortable,
@@ -10,7 +10,7 @@ import StorageWriteStatus from '@/components/common/StorageWriteStatus'
 import AccountExit from '@/components/app/AccountExit'
 import LoginDevices from '@/components/app/LoginDevices'
 import CloudSyncPanel from '@/components/app/CloudSyncPanel'
-import { setSyncAccountId, startAutoSync, stopAutoSync } from '@/lib/app/syncBoot'
+import { setSyncAccountId, startAutoSync } from '@/lib/app/syncBoot'
 
 /**
  * 网页版 · 云端账号数据条。
@@ -53,23 +53,30 @@ export function WebDataBar() {
   useEffect(() => subscribePortable(() => setState(getPortableState())), [])
 
   // 3.3.2 · B1：账号确定后启动自动同步。
-  // 🔴 只在网页云端版做：这里才有 `/api/v2` 与账号会话；桌面/便携/游客起定时器没有意义。
-  // 🔴 先拿账号 id 再起定时器：绑定记录里要写账号（换账号后绑定作废靠它判定），
-  //    拿不到就当作未登录，调度器会自行跳过（不会拿空账号去推）。
+  //
+  // 🔴 **不能在这个组件的 cleanup 里 stopAutoSync()**（2026-10-31 实机验证踩到）：
+  //    数据条会在某些页签/状态切换时被反复卸载重挂，而"卸载就停、挂载就启"会形成
+  //    「mount → start（立刻跑一轮）→ unmount → stop → mount → …」的死循环。
+  //    实测 25 秒灌了 4500+ 次 `GET /api/v2/projects/:pid`（几分钟 14 万行日志）。
+  //    自动同步是**应用级**生命周期：跟着页面活，跟着登录变，不跟着某个组件挂载。
+  //
+  // 🔴 `startedRef` 兜一层：即便将来这块被挪到会重挂的父组件里，也不会重复请求 /api/auth/me。
+  //    `startAutoSync` 自己也幂等（已有 timer 直接返回），两层都要。
+  const autoSyncStarted = useRef(false)
   useEffect(() => {
-    let cancelled = false
+    if (autoSyncStarted.current) return
+    autoSyncStarted.current = true
     void (async () => {
       try {
         const r = await fetch('/api/auth/me', { cache: 'no-store' })
         const j = await r.json().catch(() => null)
-        if (cancelled) return
         if (j?.ok && j.user?.id) setSyncAccountId(String(j.user.id))
         await startAutoSync()
       } catch {
         // 取不到账号就不同步：本地保存完全不受影响
       }
     })()
-    return () => { cancelled = true; stopAutoSync() }
+    // 不在这里 stop：退出登录由 `AccountExit` 显式停（见该文件）
   }, [])
 
   // 用量随保存更新：每次落盘成功后（lastSavedAt 变化）向服务端要一次真实值。
