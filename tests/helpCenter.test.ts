@@ -8,8 +8,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ALL_TAB_IDS, HELP_ARTICLES, HELP_GROUPS, HELP_INDEX, MAX_HITS_PER_ARTICLE,
-  ALL_TAB_IDS, CONTENT_VERSION, SUPPORTED_APP_VERSION,
+  ALL_TAB_IDS, CONTENT_VERSION, HELP_ARTICLES, HELP_GROUPS, HELP_INDEX, MAX_HITS_PER_ARTICLE,
+  SUPPORTED_APP_VERSION,
   checkHelpContent, coveredTabIds, getHelpArticle, helpArticlesForTab, searchHelp,
   suggestHelpGroups, tabsWithoutHelp, tokenizeHelpQuery,
 } from '../src/lib/help'
