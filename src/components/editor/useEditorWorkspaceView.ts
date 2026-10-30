@@ -89,6 +89,8 @@ async function settleEditor(el: HTMLTextAreaElement, expected: string | null, ca
 
 export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, content = null, skipRestore = false }: EditorWorkspaceViewArgs): void {
   const epoch = useRef(0)
+  /** 这个组件实例里见过的当前章 id：用来区分「切章」与「重新挂载回到同一章」 */
+  const seenActiveId = useRef<string | null>(null)
   // 捕获可能在 React 之外被同步调用（离页点击那一刻），只能读 ref 里的最新值
   const live = useRef({ enabled, activeId, content })
   live.current = { enabled, activeId, content }
@@ -155,17 +157,24 @@ export function useEditorWorkspaceView({ enabled, activeId, taRef, scrollRef, co
     const expected = live.current.content
 
     const cancelled = () => token !== epoch.current || workspaceViews.generation() !== generation
-    if (!record || record.kind !== 'editor' || record.objectId !== activeId) {
-      /**
-       * 3.3.1（主人 2026-10-30）：**没打开过的章节落到尾部，不是开头**。
-       *
-       * 作者点开一章几乎都是「接着写」，不是「从头读」；停在第 0 行等于每次都要先滚一遍。
-       * 只处理「没有现场记录」的情形 —— 打开过的章仍回到上次光标与位置（那是另一件有价值的事，
-       * 不能为这条需求牺牲掉）。带定位请求（校对 / 检索跳转）时整个 hook 被 skipRestore 跳过，也不受影响。
-       */
+    /**
+     * 3.3.1（主人 2026-10-30）：**点开任何一章都落到该章末尾**，光标也放到文末 —— 作者点章节是接着写。
+     *
+     * 🔴 但「切章」和「回到同一章」必须分开，否则会把 2.6.1 的现场记忆一起废掉：
+     *   · `switched`（这个组件里见过别的章）⇒ 作者刚点了另一章 ⇒ **一律尾部**；
+     *   · 首次运行（组件刚挂载，`seen` 还是空）⇒ 是「打开项目 / 换页签回来」⇒ **按记录恢复**上次光标与位置；
+     *   · 首次运行但该章没记录 ⇒ 也是尾部（不是停在开头）。
+     *   于是「重开项目接着写上一处」和「点哪章都到末尾」两件事都成立，互不吃掉对方。
+     */
+    const switched = seenActiveId.current !== null && seenActiveId.current !== activeId
+    seenActiveId.current = activeId
+    if (switched || !record || record.kind !== 'editor' || record.objectId !== activeId) {
       void (async () => {
         if (!(await settleEditor(ta, expected, cancelled)) || cancelled()) return
         ta.scrollTop = ta.scrollHeight
+        // 光标也放到文末：否则一打字就从旧光标处跳回去，"到末尾"就成了看一眼而已
+        const end = ta.value.length
+        try { ta.setSelectionRange(end, end) } catch { /* 只读/不可聚焦时只保证滚动 */ }
         const outer = scrollRef.current
         if (outer) outer.scrollTop = Math.max(0, outer.scrollHeight - outer.clientHeight)
       })().catch(() => { /* 可选能力，失败不影响编辑 */ })

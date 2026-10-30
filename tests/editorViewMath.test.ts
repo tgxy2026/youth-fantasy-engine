@@ -81,6 +81,15 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     // 数据侧还没拿到时才退回 textarea 自洽兜底，不能把兜底当主判据
     && /contentRevision\(ta\.value\) !== record\.revision/.test(hook))
   ok('🔴 ④ 编辑器把当前章正文交给恢复判据（不只是 id）', /content: active\?\.content \?\? null/.test(editor))
+  // 3.3.1（主人 2026-10-30）：点开任何一章都落到末尾，但「切章」与「重挂载回到同一章」必须分开，
+  // 否则会把 2.6.1 的现场记忆一起废掉。
+  ok('🔴 ④ 切章一律落到章节末尾（不是开头）',
+    /ta\.scrollTop = ta\.scrollHeight/.test(hook))
+  ok('🔴 ④ 落到末尾时光标也放到文末（否则一打字就跳回旧光标）',
+    /setSelectionRange\(end, end\)/.test(hook))
+  ok('🔴 ④ 区分「切章」与「重新挂载回到同一章」—— 后者仍按记录恢复',
+    /const switched = seenActiveId\.current !== null/.test(hook) && /useRef<string \| null>\(null\)/.test(hook))
+
   ok('🔴 ④ 章节优先：记录的对象必须等于当前章才恢复（显式定位不会被会话记忆覆盖）',
     /record\.kind !== 'editor' \|\| record\.objectId !== activeId/.test(hook))
   ok('🔴 ④ 作者动手就作废在途恢复（键入/输入法/按键/指针/滚轮）',
