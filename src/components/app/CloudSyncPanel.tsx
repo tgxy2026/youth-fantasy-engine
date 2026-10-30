@@ -12,7 +12,9 @@
  * 🔴 冲突时**不自动选边**（`decideSync` 已定死）：只给「以本机为准重传」，
  *    「用云端覆盖本机」标为暂未开放 —— 它需要下载全部对象再套用，
  *    半路失败会留下写了一半的书，必须先在隔离环境验证过才敢放出来。
- * 🔴 「两份都留」同理：要先实现「另存为新书」，那是 B3。
+ * ✅ 「两份都留」已开放：走 `saveCloudCopyAsNewProject` —— 下载云端版本后**新建一本**，
+ *    原项目的任何记录都不被改写，所以不需要"先备份再覆盖"那套风险承诺。
+ *    副本不带自定义下拉选项（当前快照协议未包含），界面会如实说明。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { CloudUpload, CloudOff, RefreshCw, Cloud, Clock, AlertTriangle, Link2 } from 'lucide-react'
@@ -27,6 +29,7 @@ import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
 import { createCloudProject, probeCloudProject } from '@/lib/cloud/syncApi'
+import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
 import type { SyncState } from '@/lib/sync/syncMachine'
 
 const STATE_TEXT: Record<SyncState, { label: string; cls: string }> = {
@@ -205,6 +208,36 @@ export default function CloudSyncPanel() {
 
   const stateInfo = STATE_TEXT[state]
 
+  /**
+   * 冲突时「两份都留」：把云端这一版另存为一本新作品。
+   * 🔴 不碰本机当前这本 —— 写入目标是 `importProject` 生成的全新项目 id，
+   *    所以这里不需要先备份、也不需要"覆盖前再确认版本"。
+   */
+  const saveCloudCopy = async () => {
+    if (!binding) return
+    const ok = await confirmDialog({
+      title: '两份都留',
+      message: '会把云端这一版另存为一本新作品，本机当前这本保持原样。\n\n'
+        + '云端内容需要先下载，可能要等一会儿。',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await saveCloudCopyAsNewProject({
+        cloudProjectId: binding.cloudProjectId,
+        baseProject: project,
+      })
+      if (!r.ok) { showToast(r.reason, 'error'); return }
+      const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
+      showToast(`已另存为《${r.name || '云端副本'}》，本机这本保持不变${notes}。回项目中心即可打开`, 'success')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '另存失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Button
@@ -303,11 +336,17 @@ export default function CloudSyncPanel() {
                     云端旧版会留在云端历史里。
                   </p>
                   <div className="mt-2 flex items-center gap-2">
-                    <Button variant="ghost" size="xs" disabled title="需要先下载云端全部内容再套用，下个版本提供">
+                    <Button variant="ghost" size="xs" disabled title="需要按项目原地改写 10 类记录与两套键前缀，必须先在真机回归后开放">
                       用云端覆盖本机（暂未开放）
                     </Button>
-                    <Button variant="ghost" size="xs" disabled title="要先实现「另存为新书」，下个版本提供">
-                      两份都留（暂未开放）
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => void saveCloudCopy()}
+                      disabled={busy}
+                      title="把云端这一版另存为一本新作品，本机这本保持原样"
+                    >
+                      {busy ? '另存中…' : '两份都留（另存为新书）'}
                     </Button>
                   </div>
                   <p className="mt-1.5 text-11 text-rose-200/60">
