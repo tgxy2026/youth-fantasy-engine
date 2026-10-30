@@ -43,6 +43,7 @@ import {
 // 只在接口里回显上限数值；真正的判定在 users.mjs → sessions.mjs（单一真源）
 import { SESSION_LIMITS } from './lib/sessions.mjs'
 import { handleV2 } from './lib/projectApi.mjs'
+import { readLegacyGate, legacyBlockedPayload } from './lib/legacyGate.mjs'
 import {
   readUserData, writeUserData, usageOf, userDataFile,
   readBlob, writeBlob, deleteBlob, listBlobs, ensureUserDir,
@@ -50,6 +51,8 @@ import {
 import { SECRET_FILE } from './lib/config.mjs'
 
 const PORT = Number(process.env.PORT || 80)
+// 3.3.2 项目级协议的根（按账号分目录）；门禁状态也在这棵树里
+const V2_ROOT = join(DATA_DIR, 'v2')
 const HOST = process.env.HOST || '0.0.0.0'
 const APP = 'youth-fantasy-engine-web'
 
@@ -555,7 +558,11 @@ async function handleApi(req, res, url) {
     //    重度用户几千个文件时是几百毫秒的同步 IO，而页面加载 + 底部胶囊每次都要调这个接口。
     //    usedBytes 由 PUT /api/data 与 blob 写入时同步维护，这里直接返回记录值即可
     //    （配额提示不需要精确到字节，滞后一次保存完全可接受）。
-    return sendJSON(res, 200, { ok: true, user: publicUser(u) })
+    return sendJSON(res, 200, {
+      ok: true, user: publicUser(u),
+      // 旧版写入是否已被停用：前端据此**提前**告诉用户「该升级了」，而不是等他敲完一章再报错
+      legacyWriteBlocked: readLegacyGate(V2_ROOT, u.id).blocked,
+    })
   }
 
   if (path === '/api/ping') {
@@ -602,7 +609,7 @@ async function handleApi(req, res, url) {
   //    上传对象是流式的（req 直接交给 store），所以这层挡在读取请求体之前是必须的。
   if (path.startsWith('/api/v2/')) {
     if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
-    const handled = await handleV2({ req, res, path, qs, user, v2Root: join(DATA_DIR, 'v2') })
+    const handled = await handleV2({ req, res, path, qs, user, v2Root: V2_ROOT })
     if (handled) return
   }
 
@@ -652,6 +659,11 @@ async function handleApi(req, res, url) {
 
     // PUT（便携版常规写盘）与 POST（beforeunload 的 sendBeacon）都要接受
     if (req.method === 'PUT' || req.method === 'POST') {
+      // 🔴 3.3.2 旧路径门禁：账号一旦迁到项目级协议，整库覆盖必须停掉。
+      //    放在读体之前 —— 被拒的请求不该先在内存里缓冲几十 MB（也不该写进磁盘）。
+      //    读（GET）照常放行：用户升级前要靠它导出自己的东西。
+      const gate = readLegacyGate(V2_ROOT, user.id)
+      if (gate.blocked) return sendJSON(res, 409, legacyBlockedPayload(gate))
       let buf
       try {
         buf = await readBody(req, MAX_BODY)
@@ -730,6 +742,8 @@ async function handleApi(req, res, url) {
         return sendJSON(res, 200, { ok: true, value: r.value })
       }
       if (req.method === 'PUT' || req.method === 'POST') {
+        const gate = readLegacyGate(V2_ROOT, user.id)
+        if (gate.blocked) return sendJSON(res, 409, legacyBlockedPayload(gate))
         let value
         try { value = await readJSONBody(req, MAX_BODY) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }) }
         const r = await writeBlob(user.id, store, id, value)
@@ -738,6 +752,9 @@ async function handleApi(req, res, url) {
         return sendJSON(res, 200, { ok: true })
       }
       if (req.method === 'DELETE') {
+        // 🔴 删除也算写：迁到项目级之后，旧客户端的删除会与新版本互不知情地打架
+        const gate = readLegacyGate(V2_ROOT, user.id)
+        if (gate.blocked) return sendJSON(res, 409, legacyBlockedPayload(gate))
         const r = deleteBlob(user.id, store, id)
         if (!r.ok) return sendJSON(res, 400, { ok: false, error: 'store 不允许' })
         setUsedBytes(user.id, usageOf(user.id))

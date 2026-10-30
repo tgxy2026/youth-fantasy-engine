@@ -13,6 +13,8 @@
 //    所以改完**不需要重启** yfe-web —— 下一次请求就会读到新表。
 import { existsSync, readdirSync, unlinkSync, rmdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { DATA_DIR } from './lib/config.mjs'
+import { readLegacyGate, blockLegacyWrites, unblockLegacyWrites } from './lib/legacyGate.mjs'
 import {
   loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
 } from './lib/users.mjs'
@@ -185,6 +187,30 @@ function cmdDelete(name) {
   console.log(`已删除账号 ${u.name}（${u.id}）及其数据目录`)
 }
 
+/**
+ * 旧路径门禁：迁移完成后按账号停掉 /api/data 与 /api/blob 的写入。
+ *
+ * 🔴 为什么要按账号而不是全站：还没迁移完成的账号被停写就是事故。
+ *    另可用 YFE_LEGACY_WRITE=block 做全局急停（事故时先把所有旧写停住）。
+ */
+function cmdGate(name, action, note) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到用户：${name}`)
+  const v2Root = join(DATA_DIR, 'v2')
+  const act = String(action || '').toLowerCase()
+  if (act === 'on' || act === 'block') {
+    blockLegacyWrites(v2Root, u.id, { note })
+    console.log(`已停用 ${u.name}（${u.id}）的旧版写入：/api/data 与 /api/blob 写将返回 409 LEGACY_WRITE_BLOCKED（读与导出不受影响）`)
+    return
+  }
+  if (act === 'off' || act === 'unblock') {
+    unblockLegacyWrites(v2Root, u.id, { note: note || '运维手动解除' })
+    console.log(`已恢复 ${u.name}（${u.id}）的旧版写入`)
+    return
+  }
+  console.log(`当前状态：${JSON.stringify(readLegacyGate(v2Root, u.id))}`)
+}
+
 const [cmd, a1, a2] = process.argv.slice(2)
 switch (cmd) {
   case 'list': loadUsers(); cmdList(); break
@@ -197,6 +223,7 @@ switch (cmd) {
   case 'quota': cmdQuota(a1, a2); break
   case 'passwd': cmdPasswd(a1, a2); break
   case 'delete': cmdDelete(a1); break
+  case 'gate': cmdGate(a1, a2, process.argv.slice(5).join(' ')); break
   default:
     console.log(`用法：
   node admin.mjs list                    列出全部账号（含来源邀请码、配额占用）
@@ -208,5 +235,6 @@ switch (cmd) {
   node admin.mjs delinvite <邀请码>       彻底删除一张码（含使用记录，仅用于多余的码）
   node admin.mjs quota <用户名> <MB>      调整配额
   node admin.mjs passwd <用户名> <新密码>  重置密码
-  node admin.mjs delete <用户名>          删除账号（连带数据，不可恢复）`)
+  node admin.mjs delete <用户名>          删除账号（连带数据，不可恢复）
+  node admin.mjs gate <用户名> [on|off] [备注]  旧路径门禁：迁移完成后停用旧版写入（不填动作=查状态）`)
 }
