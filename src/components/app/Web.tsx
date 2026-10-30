@@ -8,6 +8,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import StorageWriteStatus from '@/components/common/StorageWriteStatus'
 import AccountExit from '@/components/app/AccountExit'
+import LoginDevices from '@/components/app/LoginDevices'
 
 /**
  * 网页版 · 云端账号数据条。
@@ -154,6 +155,8 @@ export function WebDataBar() {
         <span className={`ml-auto min-w-0 truncate tabular-nums ${quotaWarn ? 'text-amber' : 'text-ink-500'}`}>
           {quotaText}
         </span>
+        {/* 登录设备（3.3.2）：与退出登录同一行，先看设备再决定退哪个 */}
+        <LoginDevices />
         {/* 退出登录：并入这一行（原先在屏幕底部正中常驻，2026-10-19 按主人要求挪过来） */}
         <AccountExit />
       </div>
