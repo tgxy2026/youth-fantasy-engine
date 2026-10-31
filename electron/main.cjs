@@ -34,8 +34,14 @@ const { runSyncSelftest } = require('./syncSelftest.cjs')
  *
  * 🔴 默认写死线上地址；测试/自检用环境变量 `YFE_CLOUD_BASE` 覆盖。
  *    不放到渲染层：桌面登录由主进程发起，渲染层只需要"输入账号密码"。
+ *
+ * 🔴 **必须用域名，不许用 IP**（2026-10-31 主人指出后改）：
+ *    · 域名走 HTTPS（Caddy 自动证书），令牌与正文都不再明文过公网；IP 那条是 http。
+ *    · IP 会变（换机器 / 换线路就废），域名不变；用户重装也不用改任何东西。
+ *    · 服务端同源校验比对的是 Host，域名下才是正常形态（IP 只是备案前的临时入口，
+ *      现在仍可用，但只作为兜底，不再作为默认）。
  */
-const DEFAULT_CLOUD_BASE = String(process.env.YFE_CLOUD_BASE || 'http://115.120.232.153').replace(/\/+$/, '')
+const DEFAULT_CLOUD_BASE = String(process.env.YFE_CLOUD_BASE || 'https://youth-fantasy-engine.online').replace(/\/+$/, '')
 
 /**
  * 从 `Set-Cookie` 里取出会话令牌。
@@ -278,6 +284,18 @@ app.whenReady().then(() => {
   const authOriginFile = path.join(app.getPath('userData'), 'desktop-origin.txt')
   let authOrigin = ''
   try { authOrigin = String(fs.readFileSync(authOriginFile, 'utf8') || '').trim() } catch { authOrigin = '' }
+  /**
+   * 老安装的 origin 迁到正式域名（2026-10-31）。
+   * 🔴 只改「当年那个写死的 IP 默认值」：那是软件自己填的，不是用户选的；
+   *    用户显式填过的其它地址一律不动（自建服务器的人不能被改到线上）。
+   */
+  if (authOrigin === 'http://115.120.232.153') {
+    try {
+      authOrigin = DEFAULT_CLOUD_BASE
+      fs.writeFileSync(authOriginFile, authOrigin)
+      console.log('[auth] 旧 IP 默认地址已迁移到正式域名：' + authOrigin)
+    } catch { /* 写不进去也不影响本次运行（内存里已经是新地址） */ }
+  }
   const saveAuthOrigin = (origin) => {
     authOrigin = origin || ''
     try {
