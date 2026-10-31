@@ -211,6 +211,7 @@ if (!SRC) {
   //     （2026-09-25：types.ts 涨到 222 行后中招）—— 类型声明是代码结构不是数据，用具名豁免登记
   //     （同 ④ 的 JSON_PARSE_OK 手法：例外必须写清理由，否则就是给自己开后门）。
   const TYPE_FILE_OK: Record<string, string> = {
+    'src/lib/ai/aiTasks.ts': 'AI 任务门面：只有 import/export 与提示词注册表（PROMPT_ORDER / PROMPT_SETS），不含任何数据表；行数随域模块增加而增长（3.3.3 A2 新增一条提示词后过 200 行）',
     'src/lib/types.ts': '类型定义文件：15 个 interface/type + 1 个单行默认值常量（DEFAULT_CALENDAR_RULE，随 CalendarRule 类型走才内聚），不是数据表',
     // 2026-10-03：TABS 数组体按原顺序切到 schemaTabs/part1..3（schema.ts 一度 1199 行、离硬闸只差 1 行）。
     // 它们**不是数据表**：靠 schemaShared 的构造器（c / cr / f…）与 getter 拼装，题材一变内容就变，

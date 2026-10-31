@@ -8,6 +8,8 @@
 //    ③ 思考模式控制
 //    ④ 能力降级策略
 
+import { getCachedCapability } from '@/lib/ai/capabilityProfile'
+
 /**
  * 🔴 能力类型**住在本文件**，不放进 `revision/revisionTypes.ts`：
  *    那个文件是 MQ0 冻结的**跨包共用契约**，而"模型能力"是 AI 层的领域概念，
@@ -122,16 +124,42 @@ export interface CapabilityOverrides {
  *    模型名不是证据，检测表里的 `jsonOutput: true` 也只代表「提示词约束下大概能出 JSON」，
  *    同样不能当下发凭据。
  */
-export function capabilitiesOf(modelId: string, overrides?: CapabilityOverrides): ModelCapabilities {
+export function capabilitiesOf(
+  modelId: string,
+  overrides?: CapabilityOverrides,
+  endpoint?: string,
+  configFingerprint?: string,
+): ModelCapabilities {
   const caps = detectCapabilities(modelId)
   const structuredOutput = overrides?.structuredOutput
-  if (structuredOutput !== 'json-object' && structuredOutput !== 'json-schema') return caps
-  return {
-    ...caps,
-    source: 'user-config',
-    structuredOutput,
-    reasoningWithStructure: overrides?.reasoningWithStructure === true,
+  // ① 显式用户覆盖优先级最高（作者在模型配置里勾的，重启也保留）
+  if (structuredOutput === 'json-object' || structuredOutput === 'json-schema') {
+    return {
+      ...caps,
+      source: 'user-config',
+      structuredOutput,
+      reasoningWithStructure: overrides?.reasoningWithStructure === true,
+    }
   }
+  /**
+   * ② 同端点同模型、未过期的主动实测（3.3.3 · A3）。
+   *    🔴 只有作者真的测过才走这里；没测过 ⇒ 保持内置推断 + `unknown`，
+   *    请求形态与 3.3.2 逐字节一致（不能凭模型名猜端点能力）。
+   */
+  if (endpoint) {
+    const tested = getCachedCapability({ endpoint, modelId, ...(configFingerprint !== undefined ? { configFingerprint } : {}) })
+    if (tested) {
+      return {
+        ...caps,
+        source: 'isolated-test',
+        jsonOutput: tested.jsonObject ? true : caps.jsonOutput,
+        // 实测确认的是"下发 JSON 对象能不能解析"；schema 没测就仍按 none，不冒充
+        structuredOutput: tested.jsonObject ? 'json-object' : 'none',
+        reasoningWithStructure: tested.reasoningWithStructure === true,
+      }
+    }
+  }
+  return caps
 }
 
 // ============ JSON 输出能力声明 ============

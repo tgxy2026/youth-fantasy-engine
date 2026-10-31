@@ -3,27 +3,32 @@
  *
  * 依据：方案 §5.2 操作规则。本轮做到：
  *   新增 / 编辑（改名·说明·单位·选项·分组·适用类别·显示与 AI 开关）/ 归档 / 恢复 / 排序。
- *
- * 🔴 本轮**不做**的两件事（都写在方案里，别以为是漏了）：
- *   · 类型原位转换（文本↔长文本也留到后续，§5.2 要求预览与逐条处理超限值）；
- *   · 永久删除（§5.2 要求先出影响数 + 可恢复备份，属 F6 的活）。
- *   因此这里只有「归档」——定义与值都留着，随时能恢复。
+ *   ✅ 3.3.3 · B6 起补上「类型转换」与「永久删除」：
+ *     · 转换只改校验/展示方式，**不改值**；逐值可逆检查，有任何一条不可逆就整批阻止；
+ *     · 永久删除先出影响数与依赖（被摘要引用就阻止），执行前自动备份，再删定义与值。
+ *     「归档」仍是推荐的隐藏方式（定义与内容都留着）。
  *
  * 🔴 内置字段的**显示名**也在这里改（2026-10-18 主人反馈：表头「字段名」和「字段设置」是同一件事，
  *    不该并排两个按钮）。存储不变：仍写 `fieldAlias`（`{存储键: 显示名}`），
  *    所以 AI 读表的语义、分组归属、已填数据全都不受影响 —— 面板里只改「界面上那几个字」。
  *    其他页签（人物关系 / 历史事件…）没有本面板，仍用表头的「字段名」按钮，两边共用同一份存储。
  */
-import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Check, Pencil, Plus, RotateCcw, Type, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Check, Pencil, Plus, RotateCcw, Trash2, Type, X } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import { atlasBadgeKeys, atlasCategoryOptions, atlasGroupsOf } from '@/lib/atlas/schema'
 import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { newFieldId } from '@/lib/atlas/persistence'
+import { getCurrentProjectId } from '@/lib/db/core'
+import {
+  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, purgeFieldValues,
+  type ConversionPlan,
+} from '@/lib/atlas/fieldOps'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 
 interface Props {
   tab: TabDef
@@ -58,6 +63,85 @@ export default function AtlasFieldManager({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 3.3.3 · B6：类型转换预览（null = 未预览） */
+  const [convertPlan, setConvertPlan] = useState<ConversionPlan | null>(null)
+  const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
+  /** 换一个字段编辑时，清掉上一次的转换预览（否则会把 A 字段的结论套到 B 上） */
+  useEffect(() => { setConvertTarget(''); setConvertPlan(null) }, [editingId])
+
+  /** 转换/删除都要先读当前表的行（值都在 TableRow.data[字段 id]） */
+  const loadRows = async () => {
+    const pid = getCurrentProjectId()
+    if (!pid) { showToast('当前没有打开作品', 'error'); return null }
+    try {
+      return { pid, rows: await loadAtlasFieldRows(pid, tab.id) }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '读取字段值失败', 'error')
+      return null
+    }
+  }
+
+  /** 预览类型转换：只判断能不能整批通过，**不改任何值** */
+  const previewConversion = async (field: AtlasFieldDefinition, target: CustomFieldType) => {
+    const loaded = await loadRows()
+    if (!loaded) return
+    setConvertPlan(planFieldConversion(field, loaded.rows, target))
+  }
+
+  const applyConversion = async (field: AtlasFieldDefinition, plan: ConversionPlan) => {
+    if (!plan.ok) return
+    const loaded = await loadRows()
+    if (!loaded) return
+    setBusy(true)
+    try {
+      // 执行前备份：建不成备份就不做（与覆盖流程同一条纪律）
+      const backup = await backupBeforeAtlasFieldChange(loaded.pid, `字段「${field.label}」类型转换前自动备份`)
+      if (!backup) { showToast('备份没有建成，本次没有转换', 'error'); return }
+      const next: AtlasSchemaConfig = {
+        ...config,
+        fields: config.fields.map(f => (f.id === field.id ? { ...f, type: plan.target } : f)),
+      }
+      await onSave(next)
+      setConvertPlan(null)
+      setDraft(d => (d && d.id === field.id ? { ...d, type: plan.target } : d))
+      showToast(`已改为${ATLAS_FIELD_TYPE_LABEL[plan.target]}（值未改动；备份 ${backup.id.slice(0, 8)}）`, 'success', 7000)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '类型转换失败（备份已保留）', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 永久删除：先出影响数与依赖；有依赖就阻止 */
+  const requestDeleteField = async (field: AtlasFieldDefinition) => {
+    const loaded = await loadRows()
+    if (!loaded) return
+    const plan = planFieldDeletion(field, loaded.rows, config)
+    if (!plan.ok) { showToast(plan.reason, 'error', 8000); return }
+    const ok = await confirmDialog({
+      title: '永久删除这个字段',
+      message: `会删除字段「${field.label}」的定义，并清掉 ${plan.affected} 条已填内容。\n\n`
+        + '删除前会自动备份一份，可在「备份」里找回。\n\n'
+        + '如果你只是想让它不再显示，请用「归档」—— 归档保留定义与全部内容，随时能恢复。',
+      confirmText: '永久删除', danger: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const backup = await backupBeforeAtlasFieldChange(loaded.pid, `永久删除字段「${field.label}」前自动备份`)
+      if (!backup) { showToast('备份没有建成，本次没有删除', 'error'); return }
+      const next: AtlasSchemaConfig = { ...config, fields: config.fields.filter(f => f.id !== field.id) }
+      await onSave(next)
+      // 🔴 先删定义再清值：清值失败只会留下不可见的孤儿键，不会出现"类型与值不兼容"的半状态
+      const purged = await purgeFieldValues(loaded.pid, tab.id, field.id).catch(() => 0)
+      if (draft?.id === field.id) { setDraft(null); setEditingId(null) }
+      showToast(`已永久删除「${field.label}」（清理 ${purged} 条值；备份 ${backup.id.slice(0, 8)}）`, 'success', 8000)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败（备份已保留）', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   /* ---- 内置字段显示名（原表头「字段名」入口） ---- */
   // 复制成可变数组：校验/清洗函数签名收的是 string[]（它们会排序/去空，不该吃 readonly）
@@ -290,6 +374,9 @@ export default function AtlasFieldManager({
                       <Button variant="bare" iconOnly size="xs" className={SWITCH_OFF} onClick={() => setArchived(f, true)} disabled={busy} title="归档：字段与已填内容都保留，只是不再显示">
                         <Archive size={12} />
                       </Button>
+                      <Button variant="bare" iconOnly size="xs" className="text-ink-600 hover:text-danger" onClick={() => void requestDeleteField(f)} disabled={busy} title="永久删除：先备份，再删定义与已填值（只想隐藏请用归档）">
+                        <Trash2 size={12} />
+                      </Button>
                     </div>
                   )}
                 </li>
@@ -340,6 +427,53 @@ export default function AtlasFieldManager({
                   </label>
                 )}
               </div>
+
+              {/* 3.3.3 · B6：已有字段的类型转换（预览在前，值不改） */}
+              {editingId && (
+                <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-11 text-ink-400">转换类型</span>
+                    <select
+                      className="rounded border border-ink-700 bg-ink-950 px-1.5 py-1 text-11 text-ink-200 outline-none focus:border-amber"
+                      value={convertTarget}
+                      onChange={e => { setConvertTarget(e.target.value as CustomFieldType | ''); setConvertPlan(null) }}
+                    >
+                      <option value="">选择目标类型…</option>
+                      {(['text', 'longText', 'number'] as CustomFieldType[])
+                        .filter(t => t !== draft.type)
+                        .map(t => <option key={t} value={t}>{ATLAS_FIELD_TYPE_LABEL[t]}</option>)}
+                    </select>
+                    <Button size="xs" variant="secondary" disabled={busy || !convertTarget}
+                      onClick={() => { if (convertTarget) void previewConversion(draft, convertTarget) }}>
+                      预览影响
+                    </Button>
+                    {convertPlan && (
+                      <span className={convertPlan.ok ? 'text-10 text-success' : 'text-10 text-amber'}>
+                        {convertPlan.ok ? `可整批转换：${convertPlan.affected} 条有值` : convertPlan.reason}
+                      </span>
+                    )}
+                  </div>
+                  {convertPlan && (
+                    <div className="mt-1.5 space-y-1 text-10 leading-relaxed text-ink-400">
+                      {convertPlan.blocked.slice(0, 3).map(b => (
+                        <div key={b.rowId} className="text-amber">「{b.value}」— {b.reason}</div>
+                      ))}
+                      {convertPlan.blocked.length > 3 && (
+                        <div className="text-ink-500">…另有 {convertPlan.blocked.length - 3} 条不可转换</div>
+                      )}
+                      {convertPlan.ok && (
+                        <Button size="xs" variant="primary" solid disabled={busy}
+                          onClick={() => void applyConversion(draft, convertPlan)}>
+                          执行转换（先备份）
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  <p className="mt-1 text-10 leading-relaxed text-ink-500">
+                    只改校验与展示方式，<b>不改已填的值</b>；数字↔文本要求逐值精确可逆（前导零 / 科学计数法 / 超安全整数会被阻止，整批不写）。
+                  </p>
+                </div>
+              )}
 
               <label className="block">
                 <span className="text-11 text-ink-400">说明（给人看，也给 AI 看；≤500 字）</span>

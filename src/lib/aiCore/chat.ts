@@ -22,6 +22,7 @@ import { createLifecycle, transitionLifecycle } from '@/lib/ai/streaming'
 // 3.2.0 · WQ5：输出结构与推理需求分开解析（唯一口径）
 import { resolveOutputProtocol, type OutputKind, type ReasoningNeed } from '@/lib/ai/outputProtocol'
 import { capabilitiesOf } from '@/lib/ai/modelCapabilities'
+import { capabilityConfigFingerprint } from '@/lib/ai/capabilityProfile'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { uid } from '@/lib/app/id'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
@@ -205,7 +206,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
     ...(opts.think !== undefined ? { think: opts.think } : {}),
     ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     ...(config.temperature !== undefined ? { providerTemperature: config.temperature } : {}),
-    caps: capabilitiesOf(config.model, config),
+    caps: capabilitiesOf(config.model, config, config.baseUrl, capabilityConfigFingerprint(config)),
   })
   const think = protocol.think
   // 🔴 旧口径 `json:true` 即便端点已确认支持结构格式也**不下发** ——

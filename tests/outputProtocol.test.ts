@@ -224,7 +224,7 @@ function r(d: Partial<OutputDeclaration>): ReturnType<typeof resolveOutputProtoc
 // ---------- 十一、通道真的把格式发出去了（不是只判定） ----------
 {
   const chat = readFileSync('src/lib/aiCore/chat.ts', 'utf8')
-  ok('⑪ chat() 用作者确认过的能力解析协议（capabilitiesOf）', /capabilitiesOf\(config\.model, config\)/.test(chat))
+  ok('⑪ chat() 用作者确认过的能力解析协议（capabilitiesOf）', /capabilitiesOf\(config\.model, config, config\.baseUrl, capabilityConfigFingerprint\(config\)\)/.test(chat))
   ok('⑪ wireFormat 传进通道层', /wireFormat !== 'none' \? \{ wireFormat \}/.test(chat))
   ok('⑪ 旧 json:true 口径强制不下发（legacyJson ⇒ none）',
     /protocol\.legacyJson \? 'none' : protocol\.wireFormat/.test(chat))

@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
+import ModelCapabilityPanel from '@/components/settings/ModelCapabilityPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
 import { SELECT_PLACEHOLDER } from '@/lib/constants'
@@ -436,6 +437,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     <Globe size={13} /> 添加联网模型
                   </Button>
                 </div>
+                <ModelCapabilityPanel providers={providers} activeId={activeId} />
                 {LOCAL_MODEL_DISABLED && (
                   <p id="local-model-blocked" className="mt-2 text-11 text-amber/90 leading-relaxed" data-local-model-blocked>
                     {WEB_LOCAL_MODEL_NOTICE}

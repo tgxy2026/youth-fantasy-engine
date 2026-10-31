@@ -76,6 +76,7 @@ import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/l
 import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { applyStoredNetProxy } from '@/lib/settings/netPrefs'
 import { loadPromptOverrides } from '@/lib/ai/promptSettings'
+import { hydrateCapabilityCacheFromStore } from '@/lib/ai/capabilityProfile'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { downloadBlob } from '@/lib/storage/zip'
 import workbenchBg from '@/assets/workbench-bg.png'
@@ -246,6 +247,12 @@ export default function App() {
    * 🔴 未登录直接跳过：本机保存完全不受影响。
    */
   const autoSyncStarted = useRef(false)
+  /**
+   * 3.3.3 · A3：启动时读一次"模型能力实测缓存"（只读本机 meta，不发任何请求）。
+   * 🔴 不读的话，重启后 `capabilitiesOf` 看不到实测结论，会退回内置推断 ——
+   *    作者会以为"上次测了没用"。
+   */
+  useEffect(() => { void hydrateCapabilityCacheFromStore().catch(() => {}) }, [])
   useEffect(() => {
     if (!DESKTOP || autoSyncStarted.current) return
     autoSyncStarted.current = true

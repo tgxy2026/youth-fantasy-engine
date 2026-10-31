@@ -24,9 +24,10 @@ import { auditForeshadow, type ForeshadowResult } from '@/lib/outline/foreshadow
 import type { Observation } from '@/lib/audit/manuscriptCheck'
 // ④（2.9.2）：节奏与章末钩子。**只取类型**，算法仍在 paceAnalysis.ts（那边的定位逻辑不下沉到这里）
 import type { PaceReport } from '@/lib/outline/paceAnalysis'
+import type { RepetitionReport } from '@/lib/audit/repetition'
 
 // 本文件内部用的类型 —— 外部 0 引用，故不 export（多余 export 会让死代码清单失去信号，见审计纪律）
-type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace'
+type CheckEngine = 'continuity' | 'foreshadow' | 'manuscript' | 'pace' | 'repetition'
 
 interface CheckSnapshot {
   ts: number
@@ -196,6 +197,25 @@ export async function paceLogged(scope: string, report: PaceReport, model?: stri
     })
   }
   await logSnapshot('pace', scope, issues, model)
+}
+
+/**
+ * 重复与表达观察（③ · 3.3.3 A1）—— 只记**摘要**：每组的类型/次数/前 40 字。
+ *
+ * 🔴 `total` 不是"问题数"：完全重复按 `warn`、近似候选按 `info` 计入，用于趋势对比；
+ *    它不构成"这章有 N 个毛病"的结论（引用、刻意复沓都可能是正常写法）。
+ * 🔴 作用域用章节 id：重复的判断离不开"这一章 vs 前面几章"，全书混算没有意义。
+ */
+export async function repetitionLogged(scope: string, report: RepetitionReport): Promise<void> {
+  const label = { sentence: '句重复', paragraph: '段重复', gram: '词组重复' } as const
+  const issues: AuditIssue[] = report.groups.slice(0, MAX_TITLES).map((g, i) => ({
+    id: `R${i + 1}`,
+    severity: g.candidateOnly ? 'info' as const : 'warn' as const,
+    category: '重复与表达观察',
+    title: `${label[g.kind]} ×${g.count}`,
+    detail: g.text.slice(0, 40),
+  }))
+  await logSnapshot('repetition', scope, issues)
 }
 
 export interface CheckTrend {
