@@ -657,6 +657,26 @@ if (!SRC) {
 }
 
 {
+  // ⑮ 同步面板：必须**先把通道装好，再去问云端**（2026-10-31 桌面实机自检抓到）
+  //
+  // 桌面端的同步请求走主进程的 Bearer 通道，而这条通道是在 `bootSync()` 里装配的。
+  // 若「探测云端版本」写在 `bootSync()` 之前，本机**已有绑定**的用户每次启动后第一次打开
+  // 同步面板，探测都会打到本机页面自己的相对地址上（file:// 没有 `/api/v2` 路由）⇒ 恒定失败
+  // ⇒ 凭空弹「暂时连不上云端（网络问题），云端版本未知」。点一下「刷新」就好，
+  // 所以极易被当成偶发网络问题、没人会去查。
+  // 顺序错了不报错、单测也不会红 —— 这类只能靠闸。
+  const SRC4 = findSrc()
+  if (SRC4) {
+    const f = path.join(SRC4, 'components/app/CloudSyncPanel.tsx')
+    const t = fs.existsSync(f) ? stripCommentsAndStrings(fs.readFileSync(f, 'utf8')) : ''
+    const iBoot = t.indexOf('bootSync()')
+    const iProbe = t.indexOf('probeCloudProject(')
+    ok('⑮ 同步面板先装配通道（bootSync）再探测云端（probeCloudProject）',
+      iBoot >= 0 && iProbe > iBoot, iBoot >= 0 && iProbe >= 0 ? `bootSync@${iBoot} / probe@${iProbe}` : '有一处没找到')
+  }
+}
+
+{
   // ⑬ 归批完整性：写了测试但全量从不跑它 —— 这是最高危的假绿（"有测试"三个字骗了所有人）
   // 2026-10-20 加：本轮新增 5 个测试文件，全靠手工往 run-batches.sh 里加，漏一次就再也不会跑。
   const sh = fs.readFileSync(path.resolve('tests/run-batches.sh'), 'utf8')

@@ -120,6 +120,17 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     try {
       const pid = getCurrentProjectId()
       if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null); return }
+      /**
+       * 🔴 **通道要先装，再去问云端**（2026-10-31 桌面自检抓到）。
+       *
+       * 桌面端的同步请求走主进程的 Bearer 通道，而这条通道是在 `bootSync()` 里装配的
+       * （`configureDesktopTransportIfSignedIn`）。原先这行在 `probeCloudProject` 之后，
+       * 于是本机**已有绑定**的用户每次启动后第一次打开面板，探测都会打到本机页面自己的
+       * 相对地址上（file:// 没有 `/api/v2` 路由）⇒ 恒定失败 ⇒ 凭空弹出
+       * 「暂时连不上云端（网络问题），云端版本未知」。点一下「刷新」就好，所以极易被当成偶发网络问题。
+       * `bootSync()` 是幂等的，提前调用没有副作用。
+       */
+      const ctl = await bootSync()
       const p = await ops.get<Project>('projects', pid)
       setProject(p ?? null)
       const b = await store.get(pid)
@@ -145,7 +156,6 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         setCloudDeletedAt(0)
         setCloudSummary(null)
       }
-      const ctl = await bootSync()
       setState(await ctl.stateOf(pid))
       // 账号下的云端作品 + 配额（失败返回空，不影响上面这次状态读取）
       setCloudList(await listCloudProjects())

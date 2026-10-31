@@ -24,10 +24,36 @@ const appIcon = require('./appIcon.cjs')
 const blobMove = require('./blobMove.cjs')
 // 3.3.2 · P1-5b 桌面账号登录（浏览器授权 + 回环端口 + safeStorage 存令牌）
 const desktopAuth = require('./desktopAuth.cjs')
-// 3.3.2 · §15 老板键（全局快捷键隐藏/恢复 + 通知渲染层保存）
+// 3.3.2 · §16 老板键（全局快捷键隐藏/恢复 + 通知渲染层保存）
 const bossKey = require('./bossKey.cjs')
+// 3.3.2 · 桌面端同步整链自检（`--desktop-sync-selftest`，见文件内注释与 syncSelftest.cjs 头）
+const { runSyncSelftest } = require('./syncSelftest.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
+/**
+ * 桌面端同步整链自检（`--desktop-sync-selftest=<服务器地址>`）。
+ *
+ * 【为什么需要它】3.3.2 的「云→桌面→改→云」与「冲突三选一」两条验收项，
+ * 一直卡在"自动化工具控制不到 Electron 窗口"。而主进程本身就是这个窗口的宿主，
+ * 可以直接往**真实渲染层**注入点击/输入，再从服务器读云端状态做判据 ——
+ * 这条链路以前只能人工点，现在能一条命令跑完（实现见 `syncSelftest.cjs`）。
+ *
+ * 🔴 只在显式传参时生效，正常启动完全不经过这里。
+ */
+const DESKTOP_SYNC_SELFTEST = (() => {
+  const a = process.argv.find((x) => x.startsWith('--desktop-sync-selftest='))
+  return a ? a.slice('--desktop-sync-selftest='.length) : ''
+})()
+/** 自检用的账号（服务端开 `YFE_REGISTER=open` 时会在第一次运行时自动注册） */
+const argOf = (prefix, dflt) => {
+  const a = process.argv.find((x) => x.startsWith(prefix))
+  return a ? a.slice(prefix.length) : dflt
+}
+const SELFTEST_ACCOUNT = {
+  name: argOf('--selftest-user=', 'sync-selftest'),
+  password: argOf('--selftest-pass=', 'Selftest!332'),
+}
+
 /**
  * 桌面登录自检（`--desktop-auth-selftest=<服务器地址>`）。
  *
@@ -960,6 +986,13 @@ app.whenReady().then(() => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      /**
+       * 后台节流。默认（true）在窗口不可见时会把定时器降到 1 分钟一跳 ——
+       * 同步自检要跑「20 秒一跳的自动同步」，而自检窗口刻意不显示，
+       * 不关掉这个开关就只能等到超时（表现为"什么都没发生"）。
+       * 🔴 只在自检模式下关；正常启动保持 Electron 默认，省电且不改用户可见行为。
+       */
+      backgroundThrottling: !DESKTOP_SYNC_SELFTEST,
     },
   })
 
@@ -967,6 +1000,8 @@ app.whenReady().then(() => {
   // 刻意不用 fullscreen —— 那会连标题栏一起藏掉，还会和 F11 / 视频全屏的语义混淆。
   // 必须等 `ready-to-show`：那时渲染器已画好第一帧，「最大化 + 显示」同时发生，看不到跳变。
   const showMaximized = () => {
+    // 自检模式不弹窗：跑完即退，不该在主人的桌面上闪一下
+    if (DESKTOP_SYNC_SELFTEST) return
     if (win.isDestroyed()) return
     win.maximize()
     win.show()
@@ -1122,6 +1157,38 @@ app.whenReady().then(() => {
         console.log('SMOKE_OK')
         app.exit(0)
       }, 1500)
+    })
+  }
+
+  // ---- 桌面端同步整链自检（`--desktop-sync-selftest=<baseUrl>`）----
+  //
+  // 与 `--smoke-test` / `--desktop-auth-selftest` 同一类：只供自动化验证，正常启动不经过。
+  // 与它们的差别是**它要窗口**：判据是"界面上真的出现了/云端真的变了"，
+  // 所以这里不提前 return，而是等页面加载完再往渲染层注入。
+  if (DESKTOP_SYNC_SELFTEST) {
+    win.webContents.once('did-finish-load', () => {
+      ;(async () => {
+        // 兜底：任何一步卡住都要退出，不能留一个后台进程占着资料区
+        const guard = setTimeout(() => {
+          console.log('SYNC_SELFTEST FAIL 总超时（8 分钟）')
+          app.exit(2)
+        }, 8 * 60 * 1000)
+        try {
+          const r = await runSyncSelftest({
+            win,
+            baseUrl: String(DESKTOP_SYNC_SELFTEST).replace(/\/+$/, ''),
+            account: SELFTEST_ACCOUNT,
+            login: runDesktopLogin,
+            getToken: () => tokenVault.load() || '',
+          })
+          clearTimeout(guard)
+          app.exit(r.ok ? 0 : 1)
+        } catch (err) {
+          clearTimeout(guard)
+          console.log('SYNC_SELFTEST FAIL 未捕获异常：' + (err && err.message ? err.message : err))
+          app.exit(3)
+        }
+      })()
     })
   }
 })

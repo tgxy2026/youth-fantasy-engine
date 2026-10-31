@@ -32,6 +32,9 @@ import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
+// 3.3.2 · B1：桌面版登录后启动自动同步（见下方 effect 注释）
+import { desktopAuthStatus } from '@/lib/cloud/desktopLogin'
+import { startAutoSync } from '@/lib/app/syncBoot'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { useNavigationGate } from '@/lib/app/useNavigationGate'
@@ -227,6 +230,34 @@ export default function App() {
       })
       return () => { alive = false }
     }
+  }, [])
+
+  /**
+   * 3.3.2 · B1（桌面侧）：登录后启动自动同步。
+   *
+   * 【为什么必须有】自动同步的定时器原先只在**网页版**（`Web.tsx`）和「上传这本到云端」之后启动，
+   * 桌面版启动时从来没起过 —— 于是绑定了、也标着自动同步的作品，面板上写着「自动同步已关闭」，
+   * 按钮却显示「关闭」（`binding.enabled=true` 与定时器两套状态自相矛盾），
+   * 实际永不自动推送。2026-10-31 桌面自检（`--desktop-sync-selftest`）走到
+   * "改完正文、等云端版本变大"时 75 秒不动才暴露。
+   *
+   * 🔴 与网页版同样**不在 cleanup 里 stop**：自动同步是应用级生命周期，
+   *    跟着页面和登录态走，不跟着某个组件挂载（网页版那段注释里有 4500 次请求的实测教训）。
+   * 🔴 未登录直接跳过：本机保存完全不受影响。
+   */
+  const autoSyncStarted = useRef(false)
+  useEffect(() => {
+    if (!DESKTOP || autoSyncStarted.current) return
+    autoSyncStarted.current = true
+    void (async () => {
+      try {
+        const st = await desktopAuthStatus()
+        if (!st.signedIn) return
+        await startAutoSync()
+      } catch {
+        // 通道没装好就等用户手动同步：不同步不影响本地写作
+      }
+    })()
   }, [])
 
   // 关闭页面前确保未保存的修改写盘
