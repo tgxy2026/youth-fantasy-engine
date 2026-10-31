@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="600" viewBox="0 0 1080 600" role="img" aria-labelledby="title desc">
-  <title id="title">青春幻想引擎 3.3.0</title>
+  <title id="title">青春幻想引擎 3.3.2</title>
   <desc id="desc">面向长篇网文的本地创作工作台，支持桌面安装版、便携版和网页版。</desc>
   <rect width="1080" height="600" fill="#0c1829"/>
   <g text-anchor="middle" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif">
     <text x="540" y="215" fill="#f8fafc" font-size="88" font-weight="700">青春幻想引擎</text>
     <text x="540" y="288" fill="#f4b942" font-size="29">面向长篇网文的本地创作工作台</text>
     <path d="M380 319H700" stroke="#b8842d" stroke-opacity=".75"/>
-    <text x="540" y="376" fill="#f8fafc" font-size="32" font-weight="600">v3.3.0 · 桌面安装版 + 便携版 + 网页版</text>
+    <text x="540" y="376" fill="#f8fafc" font-size="32" font-weight="600">v3.3.2 · 桌面安装版 + 便携版 + 网页版</text>
     <text x="540" y="428" fill="#9baac3" font-size="22">设定 / 大纲 / 正文全打通</text>
     <text x="540" y="480" fill="#71839e" font-size="18">自主创作 · 可接本地或云端大模型 · 免费开源</text>
   </g>
