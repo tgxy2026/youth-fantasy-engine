@@ -24,7 +24,7 @@ import { desktopAuthStatus, DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLog
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
-import { getCurrentProjectId, ops } from '@/lib/db/core'
+import { getCurrentProjectId, getProjectContextEpoch, ops } from '@/lib/db/core'
 import type { Project } from '@/lib/types'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import { bindingAfterAttach } from '@/lib/sync/projectBinding'
@@ -220,6 +220,50 @@ export default function CloudSyncPanel({
   }, [store])
 
   useEffect(() => { if (open) void load() }, [open, load])
+
+  /**
+   * 3.3.2 · 2026-10-31 主人反馈 F4：进项目时那一行状态必须是**真实**的。
+   *
+   * 原先只有 `open` 变化才 `load()`，而 `state`/`binding` 初值是 `idle`/`null`
+   * ⇒ 侧栏那行一进项目就写「未登录 / 未同步」，点开面板才刷新（用户以为坏了）。
+   *
+   * 🔴 这个轻量刷新**只读本机、不碰云端**（绑定 + 控制器状态），所以可以挂在"进项目/切项目"上：
+   *    不打网络请求，也就不会重现当年"面板一开就 1.7 万次 GET"那种事故。
+   * 🔴 切项目靠 `projectContextEpoch` 感知：它由 `setCurrentProject` 在换项目时自增，
+   *    组件不需要额外订阅任何事件（Sidebar 每次换项目都会重渲染，读到的 epoch 就是新的）。
+   */
+  const refreshLocal = useCallback(async () => {
+    try {
+      const pid = getCurrentProjectId()
+      if (!pid) {
+        setProject(null); setBinding(null); setState('idle')
+        return
+      }
+      const p = await ops.get<Project>('projects', pid)
+      setProject(p ?? null)
+      const b = await store.get(pid)
+      setBinding(b)
+      /**
+       * 🔴 必须问一次云端版本，否则那行永远显示"未同步"：
+       *    `resolveDisplayState` 在 `cloudRevision === null` 时直接返回队列态（idle ⇒ 未同步），
+       *    只有拿到云端 revision 才可能判成"已同步"。
+       * 🔴 只问这一本、且走 `probeCloudProject`（自带 1.5 秒 TTL + 并发去重），
+       *    不会重现当年"面板一开 1.7 万次 GET"的事故。
+       */
+      if (b?.cloudProjectId) {
+        const probe = await probeCloudProject(b.cloudProjectId)
+        if (probe.ok) {
+          setCloudRevision(probe.state.revision)
+          setCloudDeletedAt(probe.state.deleted ? (probe.state.deletedAt || 1) : 0)
+        }
+      }
+      const ctl = await bootSync()
+      setState(await ctl.stateOf(pid))
+    } catch { /* 读本机失败就保持现状，等用户点开面板时再走完整 load() */ }
+  }, [store])
+
+  const projectEpoch = getProjectContextEpoch()
+  useEffect(() => { void refreshLocal() }, [refreshLocal, projectEpoch])
 
   // 订阅控制器状态：同步过程中界面要跟着变，而不是等用户点刷新
   useEffect(() => {

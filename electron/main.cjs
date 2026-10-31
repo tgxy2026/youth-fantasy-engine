@@ -6,7 +6,7 @@
 //    `app.whenReady()` 的同步段里，一抛就把**后面所有 IPC 注册与窗口创建**全跳过，
 //    表现为「双击没反应 / 桌面版整个打不开」。教训：主进程新增能力时，
 //    `require('electron')` 的解构列表要跟着改。
-const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
@@ -42,6 +42,9 @@ const { runSyncSelftest } = require('./syncSelftest.cjs')
  *      现在仍可用，但只作为兜底，不再作为默认）。
  */
 const DEFAULT_CLOUD_BASE = String(process.env.YFE_CLOUD_BASE || 'https://youth-fantasy-engine.online').replace(/\/+$/, '')
+
+/** 系统托盘句柄（模块级：`will-quit` 在模块作用域，必须能拿到它才能销毁） */
+let tray = null
 
 /**
  * 从 `Set-Cookie` 里取出会话令牌。
@@ -1110,6 +1113,56 @@ app.whenReady().then(() => {
   // 启动即「窗口化全屏」（最大化）：铺满工作区，但**保留标题栏与系统按钮**。
   // 刻意不用 fullscreen —— 那会连标题栏一起藏掉，还会和 F11 / 视频全屏的语义混淆。
   // 必须等 `ready-to-show`：那时渲染器已画好第一帧，「最大化 + 显示」同时发生，看不到跳变。
+  /**
+   * ============ 系统托盘（3.3.2 · 2026-10-31 主人反馈 F6）============
+   *
+   * 【为什么加】老板键会 `win.hide()`，任务栏图标也随之消失。进程其实还活着、数据也安全，
+   *   但站在用户角度就是"整个软件没了"，只能去开始菜单重开。加一个托盘图标，
+   *   点它就回来 —— Windows 会自动把它收进任务栏右侧那个 `^` 折叠区（用户截图确认的位置）。
+   *
+   * 【边界】
+   *   · 托盘**常驻**（软件运行期间一直有），不是"只在老板键后出现"：这样即使快捷键注册失败，
+   *     用户也有一个明确的恢复入口。
+   *   · 关闭窗口（X）仍然是**退出**（`window-all-closed` → quit），不偷偷驻留后台。
+   *   · 托盘创建失败**绝不阻断启动**：只打日志，退回"无托盘"行为（老板键照旧可用）。
+   *   · 退出时销毁，否则图标会留在托盘区直到用户把鼠标划过去（Windows 的已知表现）。
+   */
+  const createTray = () => {
+    if (tray) return
+    try {
+      const iconPath = path.join(__dirname, 'icon.ico')
+      const image = nativeImage.createFromPath(iconPath)
+      if (image.isEmpty()) {
+        console.warn('[tray] 图标读不到，跳过托盘：' + iconPath)
+        return
+      }
+      // 托盘里只有 16px，用原图会被系统粗暴缩放（发糊）；显式缩一次更清楚
+      tray = new Tray(image.resize({ width: 16, height: 16 }))
+      tray.setToolTip('青春幻想引擎')
+      tray.setContextMenu(Menu.buildFromTemplate([
+        {
+          label: '显示主窗口',
+          click: () => bossKey.showWindow(win),
+        },
+        {
+          label: '隐藏窗口（老板键）',
+          click: () => { if (win && !win.isDestroyed() && win.isVisible()) bossKey.toggle(win) },
+        },
+        { type: 'separator' },
+        {
+          label: '退出',
+          click: () => { app.quit() },
+        },
+      ]))
+      // 左键单击直接恢复窗口：这是用户最直觉的动作，不该先弹菜单
+      tray.on('click', () => bossKey.showWindow(win))
+      tray.on('double-click', () => bossKey.showWindow(win))
+    } catch (e) {
+      console.warn('[tray] 创建托盘失败（不影响使用）：', e)
+      tray = null
+    }
+  }
+
   const showMaximized = () => {
     // 自检模式不弹窗：跑完即退，不该在主人的桌面上闪一下
     if (DESKTOP_SYNC_SELFTEST) return
@@ -1261,6 +1314,9 @@ app.whenReady().then(() => {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  // 托盘：窗口对象已经就绪，建一次即可（内部有幂等判断）
+  createTray()
+
   // 冒烟测试：页面加载完成后自动退出（供构建流水线验证）
   if (SMOKE_TEST) {
     win.webContents.on('did-finish-load', () => {
@@ -1292,6 +1348,9 @@ app.whenReady().then(() => {
             login: runDesktopLogin,
             // 3.3.2 起界面上的登录方式就是"账号 + 密码直登"，自检必须走同一条路
             loginPassword: runPasswordLogin,
+            /** 托盘是否建起来了 + "点托盘恢复窗口"这条真实路径（F6） */
+            hasTray: () => !!tray && !tray.isDestroyed(),
+            showFromTray: () => bossKey.showWindow(win),
             getToken: () => tokenVault.load() || '',
           })
           clearTimeout(guard)
@@ -1313,4 +1372,6 @@ app.on('window-all-closed', () => {
 // 退出时释放全局热键：不释放的话，程序都退了 Ctrl+Shift+F9 仍被系统认为"已被占用"
 app.on('will-quit', () => {
   bossKey.dispose()
+  // 托盘图标不销毁会残留在右下角，直到用户把鼠标划过去（Windows 常见表现）
+  try { if (tray) { tray.destroy(); tray = null } } catch { /* ignore */ }
 })

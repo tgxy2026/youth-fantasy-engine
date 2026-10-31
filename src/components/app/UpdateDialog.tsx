@@ -298,15 +298,24 @@ export default function UpdateDialog({
         </div>
 
         {(phase.kind === 'idle' || phase.kind === 'error') && (
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-ink-700">
-            <span className="text-11 text-ink-500">网盘提取码</span>
+          /**
+           * 3.3.2 · 2026-10-31 主人反馈 F5：把按钮排成一行、整体矮一些。
+           * 原来那句「网盘由作者手动同步…」占了第二行（还常把按钮挤到第三行）。
+           * 现在：**一行只放"提取码 + 复制口令"**，说明改成复制按钮的悬停提示 —— 信息没丢，行数少了。
+           */
+          <div className="flex items-center gap-2 pt-1 border-t border-ink-700 whitespace-nowrap">
+            <span className="shrink-0 text-11 text-ink-500">网盘提取码</span>
             <code className="rounded bg-ink-900/60 border border-ink-700 px-2 py-0.5 text-xs text-ink-100 tracking-wider">
               {QUARK_CODE}
             </code>
-            <Button variant="bare" size="xs" onClick={() => copyText(QUARK_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')} className="gap-1 text-11 text-ink-400 hover:text-amber">
+            <Button
+              variant="bare" size="xs"
+              onClick={() => copyText(QUARK_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
+              className="gap-1 text-11 text-ink-400 hover:text-amber"
+              title="复制 APP 口令（网盘由作者手动同步，可能稍慢于 Gitee；直链下载不带校验摘要，只比对文件大小）"
+            >
               <Copy size={12} /> 复制 APP 口令
             </Button>
-            <span className="text-10 text-ink-600">网盘由作者手动同步，可能稍慢于 Gitee；直链下载不带校验摘要，只比对文件大小。</span>
           </div>
         )}
       </div>

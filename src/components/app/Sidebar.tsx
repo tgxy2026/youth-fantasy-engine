@@ -392,15 +392,6 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           </div>
         </section>
 
-        {/* 3.3.1 · P2/P3：本页指引（只有当前页签有引导时才传入；关掉自动引导后仍可从这里重看） */}
-        {onPageGuide && (
-          <Button variant="secondary" size="xs" onClick={onPageGuide}
-            className="w-full !justify-start gap-1.5"
-            title="分步认识当前页签（随时可重看，不新建记录、不改数据）">
-            <Compass size={12} /> 本页指引
-          </Button>
-        )}
-
         {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
         <div className="space-y-1.5" data-zoom-panel>
           <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
@@ -467,6 +458,19 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         {/* 桌面版云端账号（3.3.2 · P5）：登录后才会出现「云端同步」入口 */}
         {DESKTOP && <DesktopCloudAccount />}
         {DESKTOP && <CloudSyncPanel inline />}
+        {/* 3.3.1 · P2/P3：本页指引（只有当前页签有引导时才传入；关掉自动引导后仍可从这里重看）
+            🔴 3.3.2 · 2026-10-31 主人反馈 F3：位置从「界面与数据」最上面移到**云端同步之后、老板键之前**。
+            🔴 没有引导的页签**也占位（置灰）**：否则这一行时有时无，下面的「老板键」会跟着上下跳，
+               用户会以为点错了地方。占位比"干净"更重要。 */}
+        <Button variant="secondary" size="xs" onClick={onPageGuide}
+          disabled={!onPageGuide}
+          className="w-full !justify-start gap-1.5"
+          title={onPageGuide
+            ? '分步认识当前页签（随时可重看，不新建记录、不改数据）'
+            : '当前页签没有分步指引'}>
+          <Compass size={12} /> 本页指引
+          {!onPageGuide && <span className="ml-auto text-11 text-ink-600">此页无</span>}
+        </Button>
         {/* 老板键（3.3.2 · §15）：桌面=隐藏窗口，便携/网页=遮挡当前页面 */}
         <BossKeySettings />
         </div>

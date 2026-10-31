@@ -5,6 +5,7 @@ import type { Project } from '@/lib/types'
 import { createDemoProject } from '@/lib/app/seedData'
 import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
+  ChevronDown, BookOpen,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import HelpCenter from '@/components/help/HelpCenter'
@@ -92,6 +93,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [mascotHidden, setMascotHiddenState] = useState(() => readBoolPref('home-mascot-hidden', false))
   // 2.6.1 · R1：看板娘设置弹窗 + 自定义图（uiPrefs `yfe-ui:home-mascot-custom`，本机偏好不进云同步）
   const [mascotSettingOpen, setMascotSettingOpen] = useState(false)
+  /** 顶部「外观」「帮助」两个合并入口的展开态（2026-10-31 F1） */
+  const [appearanceMenuOpen, setAppearanceMenuOpen] = useState(false)
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false)
   const [mascotCustom, setMascotCustom] = useState<string | null>(() => readStringPref('home-mascot-custom'))
   const reloadMascotPrefs = () => {
     setMascotHiddenState(readBoolPref('home-mascot-hidden', false))
@@ -333,41 +337,100 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               <BookPlus size={14} /> 新建小说项目
             </Button>
             {/* 2.6.1 · R1：按钮升级为「看板娘设置」——开关与自定义图都进弹窗（原直接 toggle 行为收进弹窗内开关） */}
-            <Button
-              variant="toggle"
-              selected={!mascotHidden}
-              onClick={() => setMascotSettingOpen(true)}
-              title="看板娘设置：显示 / 隐藏、更换自定义图片"
-              className="flex items-center gap-1.5 px-3.5 h-9 text-13 rounded-lg"
-            >
-              {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 看板娘设置
-            </Button>
-            {/* 3.1.2：桌面图标（快捷方式）切换 —— 看板娘设置旁边，同档 secondary、同 size，
-                仅桌面安装版显示；三套内置预设（默认 / 幻想 / 典雅）在弹窗里选。 */}
-            {appIconOk && (
+            {/* ============ 3.3.2 · 顶部按钮合组（2026-10-31 主人反馈 F1）============
+                原来这里是四个按钮（看板娘设置 / 应用图标 / 新手引导 / 使用手册），1280 宽就换两排。
+                现在按"同一类意图"并成两个入口：
+                  · 外观 —— 看板娘设置 + 应用图标（都是"软件长什么样"）
+                  · 帮助 —— 新手引导 + 使用手册（都是"不认识这个软件时从哪开始"）
+                用下拉菜单而不是"弹窗里再点一次"：多一层弹窗只会让人多点一次，且都还要再开各自弹窗。
+                菜单层级沿用章节树那套（Z.pagePanel / pagePanelTop），点空白处关闭。 */}
+            <div className="relative">
               <Button
                 variant="secondary"
-                onClick={() => setAppIconOpen(true)}
-                title="应用图标：切换桌面快捷方式的图标（桌面 / 开始菜单同时生效）"
-                className="transition-colors"
+                onClick={() => setAppearanceMenuOpen(o => !o)}
+                title="外观：看板娘显示 / 隐藏、桌面图标样式"
+                aria-haspopup="menu"
+                aria-expanded={appearanceMenuOpen}
+                className="flex items-center gap-1.5"
               >
-                <ImageIcon size={13} /> 应用图标
+                {mascotHidden ? <EyeOff size={13} /> : <Eye size={13} />} 外观
+                <ChevronDown size={11} className="opacity-70" />
               </Button>
-            )}
-            {onReplayWelcome && (
-              <Button variant="secondary" onClick={onReplayWelcome}
-                title="重新看一遍新手引导（三选一 + 顺手指引）—— 不会改动任何已有数据"
-                className="transition-colors">
-                <Compass size={13} /> 新手引导
+              {appearanceMenuOpen && (
+                <>
+                  <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setAppearanceMenuOpen(false)} aria-hidden />
+                  <div
+                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    style={{ zIndex: Z.pagePanelTop }}
+                    role="menu"
+                  >
+                    <Button variant="bare" role="menuitem"
+                      onClick={() => { setAppearanceMenuOpen(false); setMascotSettingOpen(true) }}
+                      className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      title="看板娘：显示 / 隐藏、更换自定义图片"
+                    >
+                      {mascotHidden ? <EyeOff size={11} className="text-ink-500" /> : <Eye size={11} className="text-amber" />}
+                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">看板娘设置</span>
+                      <span className="shrink-0 text-10 text-ink-500">{mascotHidden ? '已隐藏' : '显示中'}</span>
+                    </Button>
+                    {/* 应用图标只有桌面安装版能改（.lnk 只在 Windows 安装版存在），其它形态不显示这一项 */}
+                    {appIconOk && (
+                      <Button variant="bare" role="menuitem"
+                        onClick={() => { setAppearanceMenuOpen(false); setAppIconOpen(true) }}
+                        className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        title="应用图标：切换桌面快捷方式的图标（桌面 / 开始菜单同时生效）"
+                      >
+                        <ImageIcon size={11} className="text-amber" />
+                        <span className="flex-1 min-w-0 text-left whitespace-nowrap">应用图标</span>
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="relative">
+              <Button
+                variant="secondary"
+                onClick={() => setHelpMenuOpen(o => !o)}
+                title="帮助：新手引导、使用手册"
+                aria-haspopup="menu"
+                aria-expanded={helpMenuOpen}
+                className="flex items-center gap-1.5"
+              >
+                <Compass size={13} /> 帮助
+                <ChevronDown size={11} className="opacity-70" />
               </Button>
-            )}
-            {/* 🔴 使用手册紧跟「新手引导」：两者都是「不认识这个软件时从哪开始」的入口，
-                放在一起才找得到；此前它挤在「我的作品」操作条里，和新建/导入那些动手按钮混在一处。 */}
-            <Button variant="secondary" onClick={() => setHelpOpen(true)}
-              title="不用打开项目也能查使用手册、问功能用法"
-              className="transition-colors">
-              <Compass size={13} /> 使用手册
-            </Button>
+              {helpMenuOpen && (
+                <>
+                  <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setHelpMenuOpen(false)} aria-hidden />
+                  <div
+                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    style={{ zIndex: Z.pagePanelTop }}
+                    role="menu"
+                  >
+                    {onReplayWelcome && (
+                      <Button variant="bare" role="menuitem"
+                        onClick={() => { setHelpMenuOpen(false); onReplayWelcome() }}
+                        className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                        title="重新看一遍新手引导（三选一 + 顺手指引）—— 不会改动任何已有数据"
+                      >
+                        <Compass size={11} className="text-amber" />
+                        <span className="flex-1 min-w-0 text-left whitespace-nowrap">新手引导</span>
+                      </Button>
+                    )}
+                    <Button variant="bare" role="menuitem"
+                      onClick={() => { setHelpMenuOpen(false); setHelpOpen(true) }}
+                      className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
+                      title="不用打开项目也能查使用手册、问功能用法"
+                    >
+                      <BookOpen size={11} className="text-amber" />
+                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">使用手册</span>
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

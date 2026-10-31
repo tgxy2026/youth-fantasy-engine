@@ -223,7 +223,7 @@ async function apiRegister(baseUrl, name, password) {
  * @param {number} [o.stepTimeout] 单步超时（毫秒）
  */
 async function runSyncSelftest(o) {
-  const { win, baseUrl, account, login, loginPassword, getToken } = o
+  const { win, baseUrl, account, login, loginPassword, getToken, hasTray, showFromTray } = o
   const log = o.log || ((s) => console.log(s))
   const dumpDir = o.dumpDir || path.join(process.cwd(), '.workbuddy', 'tmp', 'selftest')
   const stepTimeout = o.stepTimeout || 90_000
@@ -948,7 +948,28 @@ async function runSyncSelftest(o) {
       throw new Error(`自定义组合键（Ctrl+Alt+K）注册失败：${(r.custom && r.custom.error) || '未知'}`)
     }
     if (!r.customStatus || !r.customStatus.accel) throw new Error('自定义组合键注册成功但 status 里没有它')
-    return `${r.applied.display} 注册成功；隐藏→恢复一轮通过，保存通知成对；自定义 ${r.customStatus.accel} 也能注册`
+
+    /**
+     * 托盘（F6）：藏起来以后必须有一个"点一下就回来"的入口。
+     * 🔴 这一步不只查"托盘对象存在"，还要真的走一次 `showFromTray()` ——
+     *    用户抱怨的正是"藏了就再也找不到"，只验存在等于没验。
+     */
+    if (typeof hasTray === 'function' && hasTray() !== true) {
+      throw new Error('没有创建托盘图标（老板键藏起来后用户找不到入口）')
+    }
+    if (typeof showFromTray === 'function') {
+      // 🔴 走到这里时窗口是**藏着的**（上面那句 `win.hide()`），直接 toggle 会变成"显示"。
+      //    所以先显示回来，再藏一次，才有资格验"托盘能不能把藏起来的窗口叫回来"。
+      win.showInactive()
+      await new Promise((res) => setTimeout(res, 500))
+      const t1 = await js(`return await window.electronBoss.toggle()`)
+      if (!t1 || t1.hidden !== true) throw new Error('准备托盘测试：窗口没有隐藏')
+      const shown = await showFromTray()
+      if (!shown || shown.ok !== true) throw new Error('点托盘没有恢复窗口')
+      const st = await js(`return await window.electronBoss.status()`)
+      if (!st || st.hidden !== false) throw new Error('点托盘之后 status 仍是隐藏')
+    }
+    return `${r.applied.display} 注册成功；隐藏→恢复一轮通过，保存通知成对；自定义 ${r.customStatus.accel} 也能注册；托盘可恢复`
   }, 90_000)
 
   step('19 关键按钮的几何命中（不被遮挡）', async () => {
@@ -1145,6 +1166,57 @@ async function runSyncSelftest(o) {
     if (!back.ok) throw new Error(back.why || '恢复后仍显示「回收站」')
     return '删除进回收站 → 标记出现 → 恢复成功，全流程走真实 UI'
   }, 150_000)
+
+  step('22 侧栏顺序与状态（F3 / F4 回归）', async () => {
+    /**
+     * F3：侧栏「本页指引」必须在「云端同步」之下、「老板键」之上。
+     * F4：进项目时那一行「云端同步」必须**已经是真实状态**，不能等点开面板才刷新
+     *     （原先初值是 idle ⇒ 一进来写"未同步"，用户以为没同步）。
+     *
+     * 🔴 用**几何位置**判顺序，不用 DOM 顺序：条目之间有分组容器，DOM 顺序看得懂不代表屏幕上看得懂。
+     */
+    const r = await js(`
+      dismissStrays();
+      if (!document.querySelector('button[aria-label="打开项目"]')) {
+        clickAny(['切换项目']);
+        await waitFor(() => document.querySelector('button[aria-label="打开项目"]'), 20000);
+      }
+      const card = document.querySelector('button[aria-label="打开项目"]');
+      if (!card) return { ok: false, why: '项目中心里没有作品' };
+      card.click();
+      // 回到正文：侧栏在这些页签里才完整
+      let ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 6000);
+      if (!ok) { clickAny(['继续写作', '继续创作', '正文编辑']); ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 15000); }
+
+      const btn = (t) => clickable().find((e) => norm(e.textContent).includes(norm(t)));
+      // 状态可能稍晚才读到（挂载即读是异步的）：最多等 6 秒，等不到就用当时的文字
+      let label = '';
+      for (let i = 0; i < 24; i++) {
+        const b = btn('云端同步');
+        label = b ? norm(b.textContent) : '';
+        if (label && !label.includes('未同步') && !label.includes('未登录')) break;
+        await sleep(250);
+      }
+      const sync = btn('云端同步'), guide = btn('本页指引'), boss = btn('老板键');
+      const top = (e) => (e ? Math.round(e.getBoundingClientRect().top) : -1);
+      return {
+        ok: true, label,
+        syncTop: top(sync), guideTop: top(guide), bossTop: top(boss),
+        hasGuide: !!guide, hasBoss: !!boss,
+      };
+    `)
+    if (!r.ok) throw new Error(r.why || '进不去项目')
+    if (!r.hasGuide || !r.hasBoss) throw new Error(`侧栏缺条目（本页指引=${r.hasGuide} 老板键=${r.hasBoss}）`)
+    // F3：云端同步 < 本页指引 < 老板键
+    if (!(r.syncTop < r.guideTop && r.guideTop < r.bossTop)) {
+      throw new Error(`侧栏顺序不对：云端同步@${r.syncTop} 本页指引@${r.guideTop} 老板键@${r.bossTop}`)
+    }
+    // F4：一进来就该是真实状态（不是 idle 的"未同步"，也不是"未登录"）
+    if (/未同步|未登录/.test(r.label)) {
+      throw new Error(`进项目后云端同步那行仍是默认态：「${r.label}」（应直接显示真实状态）`)
+    }
+    return `顺序 云端同步(${r.syncTop}) < 本页指引(${r.guideTop}) < 老板键(${r.bossTop})；状态「${r.label}」`
+  }, 120_000)
 
   // ---------------- 执行 ----------------
 

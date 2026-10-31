@@ -28,6 +28,12 @@ export default function DesktopCloudAccount() {
   const [open, setOpen] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const [encrypted, setEncrypted] = useState(false)
+  /**
+   * 是否已经读过一次真实登录态（2026-10-31 主人反馈 F2）。
+   * 🔴 刚挂载时 `signedIn` 还是 false，直接显示「未登录」会给人"退出登录了"的错觉；
+   *    读到之前显示「…」，读到之后再写「已登录 / 未登录」。
+   */
+  const [ready, setReady] = useState(false)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   /** 主进程当前连的账号服务器（只读展示） */
@@ -47,13 +53,18 @@ export default function DesktopCloudAccount() {
     setSignedIn(st.signedIn)
     setEncrypted(st.encrypted)
     setServerBase(st.base)
+    setReady(true)
     // 冷启动时 bootSync 可能还没跑；这里顺手保证通道与登录态一致
     await configureDesktopTransportIfSignedIn()
   }, [])
 
-  useEffect(() => {
-    if (open) void refresh()
-  }, [open, refresh])
+  /**
+   * 🔴 **挂载就读一次**（2026-10-31 主人反馈 F2）：原先只在 `open` 变 true 时才 `refresh()`，
+   *    于是首页/侧栏那个按钮永远显示"未登录"，点开面板才变——用户以为掉线了。
+   *    切页面会重新挂载组件，所以这里读一次就能覆盖"退出项目再进来"的场景。
+   */
+  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { if (open) void refresh() }, [open, refresh])
 
   const login = async () => {
     setBusy(true)
@@ -103,8 +114,8 @@ export default function DesktopCloudAccount() {
         title="登录云端账号后，可逐本作品开启跨设备同步"
       >
         <Cloud size={12} /> 云端账号
-        <span className={`ml-auto truncate ${signedIn ? 'text-emerald-400' : 'text-ink-500'}`}>
-          {signedIn ? '已登录' : '未登录'}
+        <span className={`ml-auto truncate ${!ready ? 'text-ink-600' : signedIn ? 'text-emerald-400' : 'text-ink-500'}`}>
+          {!ready ? '…' : signedIn ? '已登录' : '未登录'}
         </span>
       </Button>
 

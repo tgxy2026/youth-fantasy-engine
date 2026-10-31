@@ -145,6 +145,26 @@ function dispose() {
   attachedWin = null
 }
 
+/**
+ * 从**外部**（托盘图标 / 任务栏激活）把窗口叫回来。
+ *
+ * 🔴 必须走这里而不是直接 `win.show()`：渲染层在隐藏时收到过 `{hidden:true, saving:true}`，
+ *    它据此显示"正在保存"并把界面当成隐藏态。只 show 不发事件，界面会一直停在那套状态里
+ *    （表现为回来以后还压着"保存中"或遮罩）。这里补发 `{hidden:false}`，与快捷键恢复走同一条路。
+ */
+function showWindow(win) {
+  const w = win || attachedWin
+  if (!w || w.isDestroyed()) return { ok: false, error: '窗口不可用' }
+  if (!w.isVisible()) {
+    w.show()
+    w.focus()
+    send(w, { hidden: false })
+  } else {
+    w.focus()
+  }
+  return { ok: true, hidden: false }
+}
+
 module.exports = {
   DEFAULT_ACCEL,
   normalize,
@@ -152,5 +172,6 @@ module.exports = {
   apply,
   status,
   toggle: manualToggle,
+  showWindow,
   dispose,
 }

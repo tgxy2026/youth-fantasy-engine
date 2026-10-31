@@ -42,7 +42,8 @@ const THANKS: string[] = [
 const CONTACT_LINKS = [
   { label: '青春幻想引擎交流群', value: '1106815480' },
   { label: '作者 QQ', value: '1822304733' },
-  { label: '公众号', value: '咸鱼哥的双线人生' },
+  // 🔴 2026-10-31 主人要求删除「公众号（咸鱼哥的双线人生）」：公众号已停更，
+  //    留着只会让人关注一个不更新的号。以后若再开新渠道，在这里加一条即可（列表是 flex 纵向布局，增减一项不影响排版）。
 ]
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
@@ -208,7 +209,7 @@ export default function AboutPage() {
                 <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
                 <p className="text-ink-400 text-xs leading-relaxed mb-4">
                   当前版本 <span className="text-ink-100 font-medium">{APP_VERSION_LABEL}</span>
-                  。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、公众号与 QQ 交流群——
+                  。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、小黑盒与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
                 {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
@@ -258,21 +259,25 @@ export default function AboutPage() {
                 {/* 下载入口排：原先是紧贴上一排的（这个 div 没有 mt）⇒ 两排按钮视觉上黏成一坨。
                     现在 mt-4 + pt-4 + 细分隔线分组；<a> 也改成与 Button md 同一套尺寸口径
                     （h-9 px-4 text-13 —— 原来是 py-2 text-sm，与旁边 Button 差 2px 高 / 1px 字号，并排不齐） */}
-                <div className="mt-4 pt-4 border-t border-ink-700/60 flex flex-wrap gap-2.5">
+                {/* 3.3.2 · 2026-10-31 主人反馈 F5：两个按钮**必须同一行**，且这一块要矮一些。
+                    原来用 `flex-wrap`：面板一窄就折成两行，卡片跟着长高。
+                    现在改成等宽两列（grid-cols-2）+ 文字不换行，窄到极限也是"两列变窄"而不是"变两行"。 */}
+                <div className="mt-3 pt-3 border-t border-ink-700/60 grid grid-cols-2 gap-2">
                   <a
                     href={QUARK_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg bg-amber text-13 font-medium text-ink-950 hover:opacity-90 transition-opacity"
+                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded-lg bg-amber text-12 font-medium text-ink-950 hover:opacity-90 transition-opacity whitespace-nowrap"
                   >
-                    <ExternalLink size={15} /> 打开网盘下载
+                    <ExternalLink size={13} /> 打开网盘下载
                   </a>
                   <Button
                     variant="secondary"
+                    size="sm"
                     onClick={() => copyText(QUARK_TOKEN, '已复制 APP 口令，打开夸克 APP 即可识别')}
-                    className="gap-2"
+                    className="gap-1.5 whitespace-nowrap"
                   >
-                    <Copy size={15} /> 复制 APP 口令
+                    <Copy size={13} /> 复制 APP 口令
                   </Button>
                 </div>
                 {/* 提取码：网页端 URL 已带 pwd 可自动填，但手机端 / 客户端常需手填，故单独明示 */}
@@ -291,7 +296,7 @@ export default function AboutPage() {
                   </Button>
                 </div>
                 <p className="mt-3 text-11 text-ink-500 leading-relaxed">
-                  若链接失效或提取码有误，请加 <span className="text-ink-300">QQ 交流群</span> 或关注公众号获取最新地址。
+                  若链接失效或提取码有误，请加 <span className="text-ink-300">QQ 交流群</span> 获取最新地址。
                 </p>
               </section>
             )}

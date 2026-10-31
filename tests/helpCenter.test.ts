@@ -149,18 +149,37 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
 }
 
 // ---------- ⑨ 项目管理首页：手册入口与新手引导放在一起 ----------
+//
+// 🔴 2026-10-31 主人反馈 F1 之后，顶部按钮由 8 个并成 6 个：
+//    「新手引导 + 使用手册」合并成「帮助」下拉，「看板娘设置 + 应用图标」合并成「外观」下拉。
+//    所以这里不能再找 `onClick={() => setHelpOpen(true)}` 这种"独立按钮"的写法，
+//    改为钉住三件事：① 手册入口还在且只有一处；② 它与新手引导同处「帮助」菜单；
+//    ③ 两个合并入口真的存在（否则按钮又被拆回去，两排问题会复发）。
 {
   const hubSrc = read('src/components/app/ProjectHub.tsx')
-  const welcomeAt = hubSrc.indexOf('新手引导')
-  // 「使用手册」按钮（不是弹窗标题里的「使用答疑助手」）——按 onClick setHelpOpen 定位更准
-  const helpAt = hubSrc.indexOf("onClick={() => setHelpOpen(true)}")
-  ok('项目管理页有「使用手册」入口', helpAt > 0)
-  ok('🔴 「使用手册」排在「新手引导」之后（两者都是「不知道从哪开始」的入口）',
-    welcomeAt > 0 && helpAt > welcomeAt, `新手引导@${welcomeAt} 使用手册@${helpAt}`)
-  // 「搬走」而不是「复制一份」：全文只能有一处打开手册的按钮
-  ok('🔴 只保留一个「使用手册」入口（搬走时没有留下旧的）',
-    (hubSrc.match(/onClick=\{\(\) => setHelpOpen\(true\)\}/g) ?? []).length === 1,
-    String((hubSrc.match(/onClick=\{\(\) => setHelpOpen\(true\)\}/g) ?? []).length))
+  const helpOpenCalls = (hubSrc.match(/setHelpOpen\(true\)/g) ?? []).length
+  ok('项目管理页有「使用手册」入口', helpOpenCalls > 0)
+  ok('🔴 只保留一个「使用手册」入口（合并菜单里只有一处，没有留下旧的）',
+    helpOpenCalls === 1, String(helpOpenCalls))
+
+  // 🔴 不要用 indexOf('帮助') 这类整文件下标比大小：同一个词在 title / 注释里也出现，
+  //    比出来的顺序毫无意义（第一次写就是这么红的）。改成**按块切片**：
+  //    从每个菜单的展开回调起、到下一个块的开头止，只在这段里查关键字。
+  const helpStart = hubSrc.indexOf('setHelpMenuOpen(o => !o)')
+  const helpEnd = hubSrc.indexOf('{/* 新建表单 */}')
+  const helpBlock = helpStart > 0 && helpEnd > helpStart ? hubSrc.slice(helpStart, helpEnd) : ''
+  ok('🔴 「新手引导」与「使用手册」在同一个「帮助」菜单里',
+    helpBlock.includes('新手引导') && helpBlock.includes('使用手册'),
+    helpBlock ? '' : '找不到帮助菜单块')
+
+  const appStart = hubSrc.indexOf('setAppearanceMenuOpen(o => !o)')
+  const appBlock = appStart > 0 && helpStart > appStart ? hubSrc.slice(appStart, helpStart) : ''
+  ok('🔴 顶部有「外观」合并入口，内含看板娘设置与应用图标（F1）',
+    appBlock.includes('看板娘设置') && appBlock.includes('应用图标'),
+    appBlock ? '' : '找不到外观菜单块')
+  ok('🔴 顶部不再有独立的应用图标 / 新手引导按钮（否则又会排成两排）',
+    (hubSrc.match(/<ImageIcon size=\{13\} \/> 应用图标/g) ?? []).length === 0
+    && (hubSrc.match(/<Compass size=\{13\} \/> 新手引导/g) ?? []).length === 0)
 }
 
 // ---------- ⑧ P6：把「覆盖度 + 内容自检 + 内容版本」做成检查入口里的一行摘要 ----------
