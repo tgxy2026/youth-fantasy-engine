@@ -262,6 +262,33 @@ export function nextBindingAfterCommit(
 }
 
 /**
+ * 「把云端这本接到本机」时该建的绑定。
+ *
+ * 🔴 与「下载为新书」的区别（这条是 2026-10-31 实机推桌面端时发现的）：
+ *    下载为新书只 `importProject` 一份**独立副本**，不建绑定 ⇒ 那本之后既不能推也不能拉，
+ *    「换设备接着写」根本走不通（要么再点上传、变成云端第二本书）。
+ *    接续要的是**同一本书**：下载内容 + 绑定到同一个 cloudProjectId。
+ *
+ * 🔴 `baseRevision` 取云端当前 revision、`lastSyncedAt` 取 now：
+ *    刚下载下来的这份内容与云端**完全一致**，若不这么设，下一次 tick 会因为
+ *    `updatedAt > lastSyncedAt` 判成"本机有改动"而立刻重推一遍（等于白传一遍全量）。
+ *
+ * @param accountId 当前账号（换账号后绑定要作废，见 `bindingForAccount`）
+ */
+export function bindingAfterAttach(
+  cloudProjectId: string, revision: number, accountId: string | undefined, now: number,
+): SyncBinding | null {
+  if (!cloudProjectId || !Number.isFinite(revision) || revision <= 0) return null
+  return {
+    cloudProjectId,
+    baseRevision: revision,
+    lastSyncedAt: now,
+    enabled: true,
+    ...(accountId ? { accountId } : {}),
+  }
+}
+
+/**
  * 这个绑定在当前账号下还有效吗。
  *
  * @returns 有效返回原绑定；账号不符（或记录里没有账号的老数据 + 当前有账号）返回 null

@@ -27,6 +27,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { getCurrentProjectId, ops } from '@/lib/db/core'
 import type { Project } from '@/lib/types'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
+import { bindingAfterAttach } from '@/lib/sync/projectBinding'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict, resolveDisplayState } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
@@ -314,6 +315,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         baseProject: project,
       })
       if (!r.ok) { showToast(r.reason, 'error'); return }
+      // 同上：另存出来的副本也要把基线钉在"刚下载的那一版"
+      await fixBindingAfterDownload(r.projectId, binding.cloudProjectId, cloudRevision ?? 0)
       const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
       showToast(`已另存为《${r.name || '云端副本'}》，本机这本保持不变${notes}。回项目中心即可打开`, 'success')
     } catch (e) {
@@ -403,6 +406,31 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     }
   }
 
+  /**
+   * 下载云端某一版之后，把新项目的**同步基线校正到这一版**。
+   *
+   * 【为什么需要】（2026-10-31 实机推桌面端时发现）
+   * 绑定存在项目级 `settingsKV` 里，而 `exportProject` 会把它一起带出去、`importProject`
+   * 又按新项目 id 写回。所以「下载为新书」拿到的副本**本来就带着绑定**——
+   * 这一点先前的判断是错的（以为不带）。真正的问题是：
+   * 带过来的 `baseRevision` 是**源项目当时的**值（实测 9），而下载下来的是云端第 10 版
+   * ⇒ 下一次 tick 立刻判成「云端有新版本」，界面弹冲突，用户莫名其妙。
+   *
+   * 所以下载完必须把它校正成「我刚同步过第 N 版」：`baseRevision=N`、`lastSyncedAt=now`。
+   * 校正后：本地无改动 ⇒ up-to-date（不白推）；继续写 ⇒ push（改动传回同一本云端作品），
+   * 这正是「换设备接着写」要的语义。
+   *
+   * 🔴 写失败不能影响下载结果：内容已经落库了，绑定下次还能重建。
+   */
+  const fixBindingAfterDownload = async (
+    projectId: string | undefined, cloudProjectId: string, revision: number,
+  ) => {
+    if (!projectId) return
+    const next = bindingAfterAttach(cloudProjectId, revision, getSyncAccountId(), Date.now())
+    if (!next) return
+    try { await store.set(projectId, next) } catch { /* 静默：不影响已下载的内容 */ }
+  }
+
   const downloadCloudAsNew = async (row: CloudProjectRow) => {
     if (!await ensureSaved()) return
     setBusy(true)
@@ -413,6 +441,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         name: row.name ? `${row.name}（云端副本）` : undefined,
       })
       if (!r.ok) { showToast(r.reason, 'error'); return }
+      // 🔴 副本会带着源项目的旧基线过来，不校正就会立刻被判定「云端有新版本」
+      await fixBindingAfterDownload(r.projectId, row.cloudProjectId, row.revision)
       const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
       showToast(`已下载为《${r.name}》${notes}。回项目中心即可打开`, 'success', 7000)
     } catch (e) {
@@ -790,7 +820,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                         {historyOpen === row.cloudProjectId ? '收起历史' : '历史'}
                       </Button>
                       <Button variant="ghost" size="xs" onClick={() => void downloadCloudAsNew(row)}
-                        disabled={busy || row.deleted} title="下载为一本新的本机作品，不覆盖现有作品">
+                        disabled={busy || row.deleted} title="下载为一本新的本机作品（不覆盖现有作品）；副本会延续与这本云端作品的同步">
                         下载为新书
                       </Button>
                     </div>
@@ -814,7 +844,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                 ))}
               </div>
               <p className="mt-1.5 text-11 text-ink-600">
-                下载会新建一本本机作品（不覆盖现有作品）；回收站里的作品要先点「恢复」才能下载。
+                下载会新建一本本机作品（不覆盖现有作品），并把同步基线钉在这一版；
+                回收站里的作品要先点「恢复」才能下载。
               </p>
             </div>
           )}

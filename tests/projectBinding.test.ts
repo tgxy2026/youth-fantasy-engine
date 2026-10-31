@@ -6,7 +6,7 @@
 //   ③ 「两份都留」必须先另存再拉，顺序反了本地就没了；
 //   ④ 未开启自动同步时不能显示"未同步"吓人。
 import {
-  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount, nextBindingAfterCommit, resolveDisplayState,
+  decideSync, planConflict, bindingToState, createMemoryBindingStore, bindingForAccount, nextBindingAfterCommit, resolveDisplayState, bindingAfterAttach,
   type SyncBinding, type RemoteState,
 } from '@/lib/sync/projectBinding'
 
@@ -163,6 +163,30 @@ async function main() {
     ok('冲突优先展示', d({ queueState: 'conflict' }) === 'conflict')
     ok('离线优先展示', d({ queueState: 'offline' }) === 'offline')
     ok('云端版本未知 ⇒ 沿用队列状态（不猜）', d({ cloudRevision: null }) === 'idle')
+  }
+
+  // ---------- 14. 「换设备接着写」的接续绑定 ----------
+  {
+    const b = bindingAfterAttach('c1', 7, 'u1', T0)
+    ok('接续绑定：基线取云端当前版本', b?.baseRevision === 7, String(b?.baseRevision))
+    ok('接续绑定：上次同步时间取此刻（否则下一跳立刻重推一遍全量）', b?.lastSyncedAt === T0, String(b?.lastSyncedAt))
+    ok('接续绑定：默认开启并记账号', b?.enabled === true && b?.accountId === 'u1', JSON.stringify(b))
+    // 🔴 这条是核心：刚接续下来的内容与云端一致，所以"本地无改动"时必须判 up-to-date，
+    //    不能因为 updatedAt > lastSyncedAt 就立刻推送（那等于白传一遍整本书）
+    const d = decideSync({ binding: b!, remote: { exists: true, revision: 7 }, localDirty: false })
+    ok('接续后本地无改动 ⇒ 立刻 up-to-date（不会白推一遍）', d.action === 'up-to-date', d.action)
+    ok('接续后接着写 ⇒ push（改动会传回同一本云端作品）', (() => {
+      const p2 = decideSync({ binding: b!, remote: { exists: true, revision: 7 }, localDirty: true })
+      return p2.action === 'push'
+    })())
+
+    ok('revision 非法（0 / NaN）不建绑定', bindingAfterAttach('c1', 0, 'u1', T0) === null
+      && bindingAfterAttach('c1', Number.NaN, 'u1', T0) === null)
+    ok('没有 cloudProjectId 不建绑定', bindingAfterAttach('', 1, 'u1', T0) === null)
+    ok('没有账号时不写 accountId（老数据形态）', (() => {
+      const x = bindingAfterAttach('c1', 1, undefined, T0)
+      return x !== null && !('accountId' in x)
+    })())
   }
 
   console.log(`\n▶ projectBinding: ${pass} passed, ${fail} failed`)
