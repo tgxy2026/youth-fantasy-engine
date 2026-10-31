@@ -1,7 +1,12 @@
 // Electron 主进程：窗口 + 本地数据文件读写（IPC）
 // 数据文件保存在系统用户数据目录（Windows: C:\Users\<用户>\AppData\Roaming\<应用名>\），
 // 格式与便携（U 盘）版完全一致 —— 可互相导出导入。
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
+// 🔴 `safeStorage` 不能漏（2026-10-31 实机抓到）：3.3.2 的桌面登录要用它加密令牌。
+//    漏了不会在语法检查/单测里暴露，只在真机启动时抛 ReferenceError —— 而它位于
+//    `app.whenReady()` 的同步段里，一抛就把**后面所有 IPC 注册与窗口创建**全跳过，
+//    表现为「双击没反应 / 桌面版整个打不开」。教训：主进程新增能力时，
+//    `require('electron')` 的解构列表要跟着改。
+const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
