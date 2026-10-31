@@ -9,10 +9,11 @@
  *    放个按钮出来只会让人点了报 404（同类判断见 `LoginDevices.tsx`）。
  * 🔴 **未绑定**时只有一条路：把本机这本传上去。不做"从云端拉一本新的回来"——
  *    那要先建本地项目再套用内容，涉及 id 重映射，属于 P5 的形态接入，这里不硬塞。
- * 🔴 冲突时**不自动选边**（`decideSync` 已定死）：只给「以本机为准重传」，
- *    「用云端覆盖本机」标为暂未开放 —— 它需要下载全部对象再套用，
- *    半路失败会留下写了一半的书，必须先在隔离环境验证过才敢放出来。
- * ✅ 「两份都留」已开放：走 `saveCloudCopyAsNewProject` —— 下载云端版本后**新建一本**，
+ * 🔴 冲突时**不自动选边**（`decideSync` 已定死）：给「以本机为准重传」「用云端覆盖本机」
+ *    「两份都留」三条路，由作者决定。
+ * ✅ 「用云端覆盖本机」3.3.2 已开放；3.3.3 · B1 起由 `cloudPullApply.ts` 执行：
+ *    钉住确认版本、保存屏障、写操作记录、备份、写前复检、失败保留恢复入口。
+ * ✅ 「两份都留」走 `saveCloudCopyAsNewProject` —— 下载云端版本后**新建一本**，
  *    原项目的任何记录都不被改写，所以不需要"先备份再覆盖"那套风险承诺。
  *    副本不带自定义下拉选项（当前快照协议未包含），界面会如实说明。
  */
@@ -36,7 +37,11 @@ import { createCloudProject, probeCloudProject, restoreCloudProject, deleteCloud
 import type { CloudProjectList, CloudProjectRow, CloudRevisionRow, CloudVersionSummary } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
-import { applyCloudCopyInPlace } from '@/lib/sync/projectPullApply'
+import { readPullOperation, type PullOperation } from '@/lib/sync/pullOperation'
+import {
+  acceptCloudPullCurrent, restoreCloudPullBackup, runCloudPull,
+} from '@/components/app/cloudPullApply'
+import { describePullPhase } from '@/lib/sync/pullTarget'
 import { cloudCopyFileName, loadCloudCopy } from '@/lib/sync/projectPullBundle'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { SyncState } from '@/lib/sync/syncMachine'
@@ -103,6 +108,11 @@ export default function CloudSyncPanel({
   const [applied, setApplied] = useState<{ revision: number; backupId?: string } | null>(null)
   /** 云端这一版的摘要（章节数 / 时间）—— 覆盖前给用户看得见的依据 */
   const [cloudSummary, setCloudSummary] = useState<CloudVersionSummary | null>(null)
+  /**
+   * 3.3.3 · B1：本机未走完的「用云端更新本机」操作（备份后中断 / 基线未写）。
+   * 🔴 有它时**自动同步被挡**（见 syncBoot.hasPendingPullOp），界面必须给出处理入口。
+   */
+  const [pullOp, setPullOp] = useState<PullOperation | null>(null)
   /** 账号下的云端作品（含配额） */
   const [cloudList, setCloudList] = useState<CloudProjectList | null>(null)
   /** 展开历史版本的作品 id */
@@ -166,6 +176,7 @@ export default function CloudSyncPanel({
         setCloudRevision(null)
         setCloudDeletedAt(0)
         setCloudSummary(null)
+        setPullOp(null)
       } else {
         const p = await ops.get<Project>('projects', pid)
         setProject(p ?? null)
@@ -184,6 +195,8 @@ export default function CloudSyncPanel({
           }
         }
         setBinding(b)
+        // 3.3.3 · B1：上次覆盖是否走完（有记录 ⇒ 该项目的自动同步已被挡住）
+        setPullOp(await readPullOperation(pid))
         if (b?.cloudProjectId) {
           const probe = await probeCloudProject(b.cloudProjectId)
           if (probe.ok) {
@@ -653,53 +666,35 @@ export default function CloudSyncPanel({
   }
 
   /**
-   * 用云端这一版**覆盖本机**（B3-2）。
-   * 🔴 覆盖前先自动备份；备份失败即中止（没有退路时不做破坏性操作）。
-   * 🔴 覆盖后当前页面持有的章节 id 已失效 —— 必须提示重新载入，而不是让它继续用旧 id 渲染。
+   * 「用云端新版更新本机」：四步顺序与失败语义在 `cloudPullApply.ts`。
+   *
+   * 🔴 抽出去的原因有两个：① 本文件撞了 1200 行硬上限（structureGates 会红）；
+   *    ② 那段顺序本身就是数据安全（钉版本 → 屏障 → 记录 → 备份 → 写前复检 → 写库 → 基线），
+   *    埋在几百行 JSX 之间最容易在下一次改界面时被顺手改错。
    */
-  const applyCloud = async () => {
-    if (!binding || !project) return
-    const localDirty = (project.updatedAt || 0) > (binding.lastSyncedAt || 0)
-    const ok = await confirmDialog({
-      title: '用云端覆盖本机',
-      message: `会用云端第 ${cloudRevision ?? '?'} 版替换本机这本的全部内容。\n\n`
-        + (localDirty
-          ? '⚠️ 本机还有未同步的改动，这些改动会被丢弃；覆盖前会自动备份一份，可在「备份」里找回。\n\n'
-          : '本机没有未同步的改动。\n\n')
-        + '覆盖前的本机版本会自动备份一份；覆盖完成后请重新载入界面。',
-    })
-    if (!ok) return
-    if (!await ensureSaved()) return
-    setBusy(true)
-    setError('')
-    try {
-      const r = await applyCloudCopyInPlace({
-        cloudProjectId: binding.cloudProjectId,
-        localProjectId: project.id,
-        localDirty,
-        allowLocalChanges: true,
-      })
-      if (!r.ok) {
-        showToast(r.reason, 'error')
-        await load()
-        return
-      }
-      const next: SyncBinding = {
-        ...binding,
-        baseRevision: r.revision ?? binding.baseRevision,
-        lastSyncedAt: Date.now(),
-        lastSnapshotId: r.snapshotId,
-      }
-      await store.set(project.id, next)
-      setBinding(next)
-      setApplied({ revision: r.revision ?? cloudRevision ?? 0, backupId: r.backupId })
-      await load()
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : '覆盖失败', 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const applyCloud = () => runCloudPull({
+    project,
+    binding,
+    cloudRevision,
+    localDirty: !!project && !!binding && (project.updatedAt || 0) > (binding.lastSyncedAt || 0),
+    store,
+    ensureSaved,
+    setBusy,
+    setPullOp,
+    setBinding,
+    onApplied: setApplied,
+    reload: load,
+  })
+
+  /** 上次覆盖没走完 —— 从覆盖前那份备份恢复本机（不改同步基线） */
+  const restoreFromPullOp = () => pullOp
+    ? restoreCloudPullBackup({ pullOp, binding, setBusy, setPullOp, reload: load })
+    : Promise.resolve()
+
+  /** 上次覆盖没走完 —— 作者核对过当前内容，把基线认到确认的版本 */
+  const acceptCurrentAfterPullOp = () => pullOp
+    ? acceptCloudPullCurrent({ pullOp, binding, store, setBusy, setBinding, setPullOp, reload: load })
+    : Promise.resolve()
 
   /**
    * 彻底删除云端这一本（只对回收站里的作品可用）。
@@ -801,6 +796,32 @@ export default function CloudSyncPanel({
             </p>
           )}
 
+          {/* 3.3.3 · B1：上次覆盖没走完 —— 先给处理入口，再谈同步 */}
+          {pullOp && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+              <p className="flex items-center gap-1.5 text-12 text-amber-200">
+                <AlertTriangle size={12} />
+                上次「用云端更新本机」没有走完
+              </p>
+              <p className="mt-1 text-11 leading-relaxed text-amber-200/80">
+                目标：云端第 {pullOp.confirmedRevision} 版 · 阶段：{describePullPhase(pullOp.phase)}
+                {pullOp.backupId ? ` · 备份 ${pullOp.backupId.slice(0, 8)}` : ' · 尚未创建备份'}。
+                在核对完成前，这本的自动同步已暂停。
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {pullOp.backupId && (
+                  <Button variant="secondary" size="xs" onClick={() => void restoreFromPullOp()} disabled={busy}>
+                    从这份备份恢复本机
+                  </Button>
+                )}
+                <Button variant="ghost" size="xs" onClick={() => void acceptCurrentAfterPullOp()} disabled={busy}
+                  title="只改同步基线，不改本机内容；写入中断过时请先逐章核对">
+                  当前内容我已核对
+                </Button>
+              </div>
+            </div>
+          )}
+
           {applied && (
             <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5">
               <p className="text-12 text-emerald-200">已用云端第 {applied.revision} 版覆盖本机</p>
@@ -867,7 +888,7 @@ export default function CloudSyncPanel({
                       title="把本机这一版传上去；云端旧版会留在历史里">
                       保留本机并上传
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy}
+                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
                       title="会用云端这一版替换本机内容；覆盖前自动备份一份">
                       用云端覆盖本机
                     </Button>
@@ -910,7 +931,7 @@ export default function CloudSyncPanel({
                     <Button variant="ghost" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>
                       下载为新书
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy}
+                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
                       title="直接用云端这一版替换本机内容；覆盖前自动备份一份">
                       用云端覆盖本机
                     </Button>

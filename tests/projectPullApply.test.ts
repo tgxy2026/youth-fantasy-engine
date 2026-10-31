@@ -53,12 +53,14 @@ function main() {
   // ④ 静态契约：界面
   {
     const panel = read('src/components/app/CloudSyncPanel.tsx')
+    // 3.3.3 · B1：四步流程抽到 cloudPullApply.ts（面板撞 1200 行硬上限），顺序断言看那一份
+    const pull = read('src/components/app/cloudPullApply.ts')
     ok('「用云端覆盖本机」已启用', panel.includes('void applyCloud()') && !panel.includes('用云端覆盖本机（暂未开放）'))
     ok('冲突区与云端新版本区都有入口', (panel.match(/void applyCloud\(\)/g) || []).length >= 2,
       String((panel.match(/void applyCloud\(\)/g) || []).length))
-    ok('二次确认写明会丢失本机改动', /这些改动会被丢弃/.test(panel) && /自动备份一份/.test(panel))
-    ok('覆盖成功后提示重新载入', /重新载入界面/.test(panel) && /location\.reload/.test(panel))
-    ok('覆盖成功会计入同步基线', /baseRevision: r\.revision/.test(panel) && /lastSnapshotId: r\.snapshotId/.test(panel))
+    ok('二次确认写明会丢失本机改动', /这些改动会被丢弃/.test(pull) && /会先创建一份备份/.test(pull))
+    ok('覆盖成功后提示重新载入', /重新载入界面/.test(pull) && /location\.reload/.test(panel))
+    ok('覆盖成功会计入同步基线', /baseRevision: r\.revision/.test(pull) && /lastSnapshotId: r\.snapshotId/.test(pull))
     ok('手动动作前有保存屏障', /const ensureSaved/.test(panel) && /runSaveBarrier/.test(panel))
     ok('至少五个手动动作先过屏障', (panel.match(/await ensureSaved\(\)/g) || []).length >= 5,
       String((panel.match(/await ensureSaved\(\)/g) || []).length))

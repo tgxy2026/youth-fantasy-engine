@@ -34,6 +34,12 @@ export type TickDecision =
   | { action: 'skip'; reason: 'unknown-remote' }
   /** 正在跑，别再入队 */
   | { action: 'skip'; reason: 'busy' }
+  /**
+   * 3.3.3 · B1：本机有一条「用云端新版更新本机」没走完（备份后中断 / 基线未写）。
+   * 🔴 此时**不推**：本机内容可能是写了一半的，推上去等于把半成品发布成新版本。
+   *    作者在同步面板核对或从备份恢复后再恢复推送。
+   */
+  | { action: 'skip'; reason: 'pull-pending' }
   /** 云端版本比本机记的还旧（被回滚/换账号）：不推也不拉 */
   | { action: 'skip'; reason: 'remote-regressed' }
   /** 有改动，推上去 */
@@ -57,6 +63,8 @@ export function decideTick(input: {
   accountId?: string
   remoteRevision: number | null
   busy: boolean
+  /** 3.3.3 · B1：存在未完成的「用云端更新本机」操作 */
+  pullPending?: boolean
   now?: number
 }): TickDecision {
   const { local, binding, accountId, remoteRevision, busy } = input
@@ -67,6 +75,8 @@ export function decideTick(input: {
   if (!bindingForAccount(binding, accountId)) return { action: 'skip', reason: 'other-account' }
   if (!binding.enabled) return { action: 'skip', reason: 'disabled' }
   if (busy) return { action: 'skip', reason: 'busy' }
+  // 未完成的覆盖操作优先于一切推送判断 —— 内容可能只写了一半
+  if (input.pullPending) return { action: 'skip', reason: 'pull-pending' }
 
   const dirty = local.updatedAt > binding.lastSyncedAt
 
@@ -108,6 +118,8 @@ export interface AutoSyncDeps {
   controller: SyncController
   /** 当前账号 id（网页版登录用户）；未登录不传 */
   getAccountId?: () => string | undefined | Promise<string | undefined>
+  /** 3.3.3 · B1：是否存在未完成的「用云端更新本机」操作（有则不推） */
+  hasPendingPullOp?: (projectId: string) => Promise<boolean>
   now?: () => number
 }
 
@@ -130,6 +142,11 @@ export async function autoSyncTick(deps: AutoSyncDeps): Promise<TickDecision> {
   const accountId = await deps.getAccountId?.()
   const filtered = bindingForAccount(binding, accountId)
   if (!filtered) return decideTick({ local, binding, accountId, remoteRevision: null, busy })
+
+  // 3.3.3 · B1：未完成的覆盖操作 ⇒ 不查云端、不推（连一次 GET 都不花）
+  if (deps.hasPendingPullOp && await deps.hasPendingPullOp(local.id)) {
+    return { action: 'skip', reason: 'pull-pending' }
+  }
 
   const remoteRevision = await deps.getRemoteRevision(filtered.cloudProjectId)
   const decision = decideTick({ local, binding, accountId, remoteRevision, busy })
@@ -167,6 +184,8 @@ export function nextTickDelay(prev: number, d: TickDecision): number {
   switch (d.reason) {
     case 'other-account':
     case 'remote-regressed':
+    // 未完成操作不会自己好，等作者去面板处理；别每 20 秒问一次
+    case 'pull-pending':
       return SYNC_TICK_MAX_MS
     default:
       return grow()
@@ -186,6 +205,7 @@ export function tickMessage(d: TickDecision): string {
     case 'clean': return ''
     case 'unknown-remote': return ''
     case 'remote-regressed': return '云端版本比本机记录的还旧，已暂停自动同步'
+    case 'pull-pending': return '「用云端更新本机」上次没有走完，已暂停自动同步；请到同步面板核对或恢复'
     default: return ''
   }
 }

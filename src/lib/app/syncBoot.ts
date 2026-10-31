@@ -20,6 +20,7 @@ import { createSyncStateStores } from '@/lib/sync/syncQueueIdb'
 import type { SyncController } from '@/lib/sync/syncController'
 import { installSyncController, getSyncController } from '@/lib/sync/syncController'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
+import { isPullOperationPending } from '@/lib/sync/pullOperation'
 import { nextBindingAfterCommit } from '@/lib/sync/projectBinding'
 import { fetchRemoteRevision, fetchManifest, fetchAccountId, configureCloudTransport } from '@/lib/cloud/syncApi'
 import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
@@ -221,6 +222,8 @@ function makeAutoDeps(controller: SyncController): AutoSyncDeps {
     getRemoteRevision: (cloudPid: string) => fetchRemoteRevision(cloudPid),
     controller,
     getAccountId: () => accountId,
+    // 3.3.3 · B1：未完成的覆盖操作记录在本机 meta 里；有它就先不推
+    hasPendingPullOp: (projectId: string) => isPullOperationPending(projectId),
   }
 }
 
