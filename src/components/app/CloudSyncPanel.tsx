@@ -374,6 +374,35 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   }
 
   /** 从「云端作品」列表里下载一本为新的本机作品（不碰现有作品） */
+  /**
+   * 把列表里某一本**回收站作品**恢复回来。
+   *
+   * 🔴 与 `restoreCloudCopy()` 的区别：那个只恢复「当前绑定的这本」，这里恢复列表里任意一本。
+   *    回收站里的作品不能下载（`downloadCloudAsNew` 对它禁用），所以不给这个入口，
+   *    用户唯一的出路就是去服务器上跑脚本 —— 界面上写着"要先恢复"，却没有任何地方能点。
+   * 🔴 `opId` 每次必须新：服务端按 opId 幂等，复用会当成重放，界面看起来"点了没反应"。
+   */
+  const restoreFromTrash = async (row: CloudProjectRow) => {
+    const ok = await confirmDialog({
+      title: '从回收站恢复',
+      message: `把《${row.name || '未命名'}》恢复为可用状态？\n\n`
+        + '恢复会推进一个云端版本（不会倒退），历史版本仍然保留；本机内容不会被改动。',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await restoreCloudProject(row.cloudProjectId, uid())
+      if (!r.ok) { showToast(r.error, 'error'); return }
+      showToast(`已恢复《${row.name || '未命名'}》到第 ${r.revision} 版`, 'success')
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '恢复失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const downloadCloudAsNew = async (row: CloudProjectRow) => {
     if (!await ensureSaved()) return
     setBusy(true)
@@ -751,6 +780,12 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                         第 {row.revision} 版 · {fmtBytes(row.objectBytes)}
                       </span>
                       {row.deleted && <span className="shrink-0 text-11 text-rose-300">回收站</span>}
+                      {row.deleted && (
+                        <Button variant="ghost" size="xs" onClick={() => void restoreFromTrash(row)} disabled={busy}
+                          title="把这本从回收站恢复成可用状态（推进一个版本，历史仍在）">
+                          恢复
+                        </Button>
+                      )}
                       <Button variant="ghost" size="xs" onClick={() => void toggleHistory(row)} disabled={busy}>
                         {historyOpen === row.cloudProjectId ? '收起历史' : '历史'}
                       </Button>
@@ -779,7 +814,7 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                 ))}
               </div>
               <p className="mt-1.5 text-11 text-ink-600">
-                下载会新建一本本机作品（不覆盖现有作品）；回收站里的作品要先恢复才能下载。
+                下载会新建一本本机作品（不覆盖现有作品）；回收站里的作品要先点「恢复」才能下载。
               </p>
             </div>
           )}
