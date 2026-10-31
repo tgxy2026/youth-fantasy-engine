@@ -76,6 +76,42 @@ const setTextarea = (selector, value) => {
   return true;
 };
 const clickSelector = (sel) => { const e = document.querySelector(sel); if (!e) return false; e.click(); return true; };
+/**
+ * 关掉"不请自来"的弹窗（备份提醒等）。
+ * 🔴 3.3.2 自检踩到：备份提醒（7 天未导出）会在流程中途弹出并压在最上层，
+ *    此时 DOM 级的 click() 依然能触发下层按钮，但**二次确认框的按钮**会因为不在最上层而点不到，
+ *    表现为"点了没反应、也没有报错"。每个关键动作前先清一遍现场。
+ */
+const dismissStrays = () => {
+  let n = 0;
+  for (const t of ['稍后再说', '以后再说', '知道了']) {
+    const e = clickable().find((x) => norm(x.textContent) === norm(t));
+    if (e) { e.click(); n++; }
+  }
+  return n;
+};
+/**
+ * 严格点击：先做命中测试，再派发点击，并把"被谁挡住"如实带回来。
+ * 与 clickText 的区别是**不假装成功** —— 被遮挡时调用方能看到 blocked 与挡住它的元素。
+ */
+const clickStrict = (t) => {
+  const el = findText(t);
+  if (!el) return { ok: false, why: '找不到「' + t + '」' };
+  el.scrollIntoView({ block: 'center' });
+  const b = el.getBoundingClientRect();
+  const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+  const top = document.elementFromPoint(cx, cy);
+  const blocked = !top || !(top === el || el.contains(top));
+  el.click();
+  return {
+    ok: true, blocked,
+    by: blocked ? (top ? top.tagName + ' ' + String(top.className || '').slice(0, 40) : 'null') : '',
+    // 诊断：到底是什么元素、有没有被禁用（禁用按钮的 click() 是**静默无效**的）
+    tag: el.tagName, cls: String(el.className || '').slice(0, 60),
+    disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
+    text: norm(el.textContent).slice(0, 24),
+  };
+};
 `;
 
 /** 把当前界面快照写到磁盘：断言失败时唯一的现场证据 */
@@ -193,8 +229,44 @@ async function runSyncSelftest(o) {
   const stepTimeout = o.stepTimeout || 90_000
   const cloud = makeCloud(baseUrl, getToken)
 
+  /**
+   * 🔴 PRELUDE 是模板字符串，里面**不能出现反引号** —— 一个反引号就会把整段截断，
+   *    注入到渲染层后变成语法错误（2026-10-31 真机崩过：主进程弹 "A JavaScript error occurred"，
+   *    屏幕上是一大段注入源码，看不出真正原因）。这里在注入前先自证一次。
+   */
+  if (PRELUDE.indexOf(String.fromCharCode(96)) >= 0) {
+    throw new Error('注入脚本里出现了反引号（会截断模板字符串）')
+  }
+
   /** 在渲染层里跑一段脚本；PRELUDE 每次都注入（页面可能被应用自己 reload 过） */
-  const js = (code) => win.webContents.executeJavaScript(`(async () => {${PRELUDE}\n${code}\n})()`, true)
+  const js = (code) => {
+    const src = `(async () => {${PRELUDE}\n${code}\n})()`
+    /**
+     * 🔴 注入前先验一遍语法。注入脚本是模板字符串拼出来的，一个多余的反引号 /
+     *    被外层吃掉的转义就会让它在渲染层变成语法错误，而 Electron 只回一句
+     *    "Script failed to execute, this normally means an error was thrown" —— 完全看不出原因
+     *    （2026-10-31 为此排查了三轮）。在这里提前炸，报错能直接指到问题。
+     */
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function(`return ${src}`)
+    } catch (e) {
+      throw new Error('注入脚本语法错误：' + (e && e.message ? e.message : e))
+    }
+    return win.webContents.executeJavaScript(src, true)
+  }
+
+  /** 等页面导航完成（应用自己点"重新载入界面"后，注入脚本会撞上导航中途） */
+  const waitReady = async () => {
+    for (let i = 0; i < 50; i++) {
+      try {
+        const st = await win.webContents.executeJavaScript('document.readyState')
+        if (st === 'complete') { await new Promise((r) => setTimeout(r, 700)); return true }
+      } catch { /* 导航中执行会抛，忽略后重试 */ }
+      await new Promise((r) => setTimeout(r, 300))
+    }
+    return false
+  }
 
   /**
    * 重载渲染层并等它重新加载完。
@@ -311,66 +383,72 @@ async function runSyncSelftest(o) {
     return r.skipped ? `已点「${r.skipped}」` : '没有引导页，直接进入'
   })
 
-  step('05 本地建一本有正文的作品', async () => {
-    // 已经有项目就不重复建（重复跑自检时同一资料区会被复用）
+  /**
+   * 🔴 这里刻意**不用「创建示范项目」**：示范项目不参与备份，而「用云端覆盖本机」的第二步
+   *    就是"先备份、备份不成就不覆盖"（`projectPullApply` 的 BACKUP 分支）。
+   *    拿示范项目跑，覆盖会被安全闸正确拒绝 —— 看起来像功能坏了，实际是数据不合适（实机踩到）。
+   *    所以自检从「一本普通书 + 一个章节」起步，与真实作者的书同构。
+   */
+  step('05 本地建一本普通作品', async () => {
     const has = await js(`return { n: document.querySelectorAll('button[aria-label="打开项目"]').length }`)
     if (has.n > 0) return `已有 ${has.n} 本，跳过创建`
-
-    const opened = await js(`return { ok: clickText('创建示范项目') }`)
-    if (!opened.ok) throw new Error('项目中心没有「创建示范项目」按钮')
-    // 确认框
-    const confirmed = await js(`
-      const ok = await waitFor(() => findText('确定'), 8000);
-      if (ok) ok.click();
+    const name = `同步自检-${Date.now().toString(36)}`
+    const r = await js(`
+      dismissStrays();
+      if (!clickText('新建小说项目')) return { ok: false, why: '项目中心没有「新建小说项目」' };
+      await waitFor(() => document.querySelector('input[placeholder^="给这本书起个名字"]'), 10000);
+      const input = document.querySelector('input[placeholder^="给这本书起个名字"]');
+      if (!input) return { ok: false, why: '没有书名输入框' };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(name)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(300);
+      if (!clickText('创建并进入项目')) return { ok: false, why: '点不到「创建并进入项目」' };
+      const ok = await waitFor(() => (norm(bodyText()).includes('当前项目') ? true : null), 90000);
       return { ok: !!ok };
     `)
-    if (!confirmed.ok) throw new Error('创建示范项目的确认框没有出现')
-    /**
-     * 🔴 等"项目卡片出现"或"已经进入编辑页"，不能等文案：`创建示范项目` 这个按钮本身
-     *    就一直带着"示范"两个字 —— 第一版用 `bodyText 包含 示范` 当条件，于是**立刻**
-     *    判成功，实际项目还没建出来，下一步必然找不到「打开项目」（已实机踩到）。
-     *    判据要盯"数量变化 / 目标元素出现"，不能盯"页面里出现过某个词"。
-     * ⚠️ 示范项目建完会直接进入编辑页（ProjectHub → onOpen），所以这里两种终态都算成功。
-     */
-    const done = await js(`
-      const inEditor = () => document.querySelector('textarea[placeholder^="落笔即入江湖"]');
-      const inProject = () => norm(bodyText()).includes('当前项目');
-      const ok = await waitFor(() => (inEditor() || inProject() || document.querySelectorAll('button[aria-label="打开项目"]').length > 0 ? true : null), 120000);
-      return { ok: !!ok, editor: !!inEditor(), project: !!inProject(), n: document.querySelectorAll('button[aria-label="打开项目"]').length };
-    `)
-    if (!done.ok) throw new Error('示范项目 120 秒内没建出来（约九万字，正常需要几秒）')
-    if (done.editor) return '已建好并直接进入编辑页'
-    // 建完落在「写作面板」，还没进正文（下一对步骤负责进去）
-    return done.project ? '已建好并进入作品（落在写作面板）' : `项目数 ${done.n}`
+    if (!r.ok) throw new Error(r.why || '没能建出新作品')
+    ctx.bookName = name
+    return `已建《${name}》并进入作品`
   })
 
-  step('06 打开这本并写一段正文', async () => {
-    const entered = await js(`
+  step('06 新建一个章节并写一段正文', async () => {
+    const r = await js(`
       const body = () => document.querySelector('textarea[placeholder^="落笔即入江湖"]');
+      // 新书落在「写作面板」：先试面板上的快捷入口，不行就走侧栏的「正文编辑」
+      if (!body()) { clickAny(['继续写作', '继续创作', '正文编辑']); await sleep(2500); }
+      if (!body()) { clickText('正文编辑'); await sleep(3000); }
       if (!body()) {
-        const btn = document.querySelector('button[aria-label="打开项目"]');
-        if (btn) btn.click();
+        /**
+         * 空项目没有章节。空态面板里直接就有「新建自由章节」（自由章节不归卷，空书也能建）；
+         * 右上角的「新建章节」是**图标按钮**（只有 title，没有文字）——用文案找它永远找不到，
+         * 这是实机踩到的（日志只有一句"找不到「新建章节」"）。
+         */
+        if (!clickText('新建自由章节')) {
+          if (!clickText('新建章节')) return { ok: false, why: '找不到新建章节的入口' };
+          await sleep(500);
+          if (!clickText('新建自由章节')) return { ok: false, why: '菜单里没有「新建自由章节」' };
+        }
+        await sleep(900);
+        const okBtn = await waitFor(() => {
+          const dlg = Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => norm(d.textContent).includes('章'));
+          if (!dlg) return null;
+          const b = Array.from(dlg.querySelectorAll('button')).find((x) => norm(x.textContent) === '确定');
+          return b || null;
+        }, 10000);
+        if (okBtn) okBtn.click();
+        await waitFor(() => body(), 20000);
       }
-      let ok = await waitFor(() => body(), 6000);
-      // 落在写作面板：点「继续写作」进正文（面板上的快捷入口，与用户手动点一致）
-      if (!ok) { clickAny(['继续写作', '继续创作']); ok = await waitFor(() => body(), 15000); }
-      // 还不行就试页签 / 侧边栏的「正文编辑」
-      if (!ok) { clickAny(['正文编辑']); ok = await waitFor(() => body(), 20000); }
-      return { ok: !!ok, text: ok ? '' : bodyText().slice(0, 400) };
-    `)
-    if (!entered.ok) throw new Error('没能进入正文编辑页')
-    const typed = await js(`
-      const el = document.querySelector('textarea[placeholder^="落笔即入江湖"]');
-      if (!el) return { ok: false };
-      const at = new Date().toISOString();
-      const mark = '【桌面自检标记 ' + at + '】';
-      setTextarea('textarea[placeholder^="落笔即入江湖"]', el.value + '\\n\\n' + mark);
+      const el = body();
+      if (!el) return { ok: false, why: '建完章节仍进不到正文', text: bodyText().slice(0, 400) };
+      const mark = '【桌面自检标记 ' + new Date().toISOString() + '】';
+      setTextarea('textarea[placeholder^="落笔即入江湖"]', '这是自检写下的第一句。 ' + mark);
       return { ok: true, mark };
     `)
-    if (!typed.ok) throw new Error('正文写入失败')
-    // 等自动保存（正文草稿有 2 秒防抖，落盘后 project.updatedAt 才会更新）
-    await new Promise((r) => setTimeout(r, 3500))
-    return `已写入标记 ${typed.mark}`
+    if (!r.ok) throw new Error(r.why || '没能进入正文编辑页')
+    await new Promise((res) => setTimeout(res, 4000))
+    ctx.mark = r.mark
+    return `章节已建好并写入标记 ${r.mark}`
   })
 
   step('07 云端同步面板读到服务器', async () => {
@@ -435,8 +513,9 @@ async function runSyncSelftest(o) {
      * （`downloadCloudAsNew` 里 `${row.name}（云端副本）`），直接按云端名推更可靠；
      * toast 只当兜底（第一版靠解析 toast，实测取不到名字）。
      */
-    const named = /已下载为\s*《([^》]+)》/.exec(String(r.text))
+    const named = /已下载为[^《]*《([^》]+)》/.exec(String(r.text))
     ctx.copyName = (named && named[1]) || `${pid.name || ''}（云端副本）`
+    ctx.downloadRevision = pid.revision || 0
     return `云端第 ${pid.revision} 版已落地为《${ctx.copyName || '（未取到名字）'}》`
   })
 
@@ -478,10 +557,20 @@ async function runSyncSelftest(o) {
       return { ok: true, base: Number(base) || 0, remote: Number(remote) || 0, text: t.slice(0, 900) };
     `)
     if (!panel.ok) throw new Error('打不开同步面板')
-    if (panel.base !== panel.remote) {
-      throw new Error(`副本基线没钉住：本机基于第 ${panel.base} 版，云端第 ${panel.remote} 版（会立刻判成假冲突）`)
+    /**
+     * 🔴 判据不能写"本机基于 == 云端当前"：打开一本作品会刷新 `updatedAt`，自动同步顺手推一版
+     *    （内容相同、对象哈希相同，见验证记录"观察"那条），云端的版本号会随时变大。
+     *    真正要守的是：**基线不许比"下载时那一版"还旧**（旧版 bug 就是带着源项目的 baseRevision
+     *    过来，比如 base=9 而下载的是第 10 版 ⇒ 立刻假冲突）。
+     */
+    const want = ctx.downloadRevision || 0
+    if (panel.base < want) {
+      throw new Error(`副本基线比下载时那一版还旧：本机基于第 ${panel.base} 版，下载的是第 ${want} 版`)
     }
-    return `本机与云端都是第 ${panel.base} 版`
+    if (/本机与云端各有改动/.test(String(panel.text || ''))) {
+      throw new Error(`刚下载就判成冲突（本机基于第 ${panel.base} 版，云端第 ${panel.remote} 版）`)
+    }
+    return `下载第 ${want} 版 → 本机基于第 ${panel.base} 版、云端第 ${panel.remote} 版，未出现假冲突`
   })
 
   step('11 改副本正文 → 自动同步把改动推回云端', async () => {
@@ -557,41 +646,10 @@ async function runSyncSelftest(o) {
   })
 
   step('13 制造真实冲突（模拟另一台设备写了新版本）', async () => {
-    /**
-     * 【为什么要造】冲突三选一要有两边都改过才谈得上选。这里用主进程直连服务器
-     * 扮演"另一台设备"：把云端正在用的那个正文对象**改一个字**、以内容寻址重新传一份，
-     * 再以当前 revision 为基线提交一版 —— 这与另一台桌面/网页设备提交的效果完全一致
-     * （服务端只看 protocol / epoch / baseRevision / 对象齐备，不区分谁提交）。
-     */
-    if (!ctx.cloudPid || !ctx.markHash) throw new Error('上一步没记下云端作品/对象')
-    const man = await cloud.manifest(ctx.cloudPid)
-    if (!man.ok || !man.json) throw new Error(`读云端清单失败：${man.error || man.status}`)
-    const base = man.json.revision
-    const next = JSON.parse(JSON.stringify(man.json.manifest))
-
-    const src = await cloud.object(ctx.cloudPid, ctx.markHash)
-    if (!src.ok) throw new Error('读不到云端那个正文对象')
-    const marker = `【另一台设备改的 ${Date.now()}】`
-    const bytes = Buffer.from(String(src.text) + '\n' + marker, 'utf8')
-    const hash = crypto.createHash('sha256').update(bytes).digest('hex')
-    const put = await cloud.putObject(ctx.cloudPid, hash, bytes)
-    if (!put.ok) throw new Error(`上传对象失败：${put.error || put.status}`)
-
-    let replaced = 0
-    for (const k of ['objects', 'assets']) {
-      for (const e of next[k] || []) {
-        if (e && e.hash === ctx.markHash) { e.hash = hash; e.bytes = bytes.length; replaced++ }
-      }
-    }
-    if (!replaced) throw new Error('清单里没找到要替换的对象（结构变了？）')
-
-    const c = await cloud.commit(ctx.cloudPid, {
-      manifest: next, baseRevision: base, opId: `selftest-remote-${Date.now()}`,
-    })
-    if (!c.ok) throw new Error(`模拟另一台设备提交失败：${c.error || c.status}（${c.json && c.json.code || ''}）`)
-    ctx.remoteMarker = marker
-    ctx.revisionAfterRemote = c.json.revision
-    return `云端 ${base} → ${c.json.revision} 版，正文对象 ${ctx.markHash.slice(0, 8)}… → ${hash.slice(0, 8)}…`
+    const r = await simulateRemoteCommit(cloud, ctx.cloudPid, '另一台设备改的')
+    ctx.remoteMarker = r.marker
+    ctx.revisionAfterRemote = r.revision
+    return `云端 ${r.base} → ${r.revision} 版，正文对象 ${r.before.slice(0, 8)}… → ${r.hash.slice(0, 8)}…`
   })
 
   step('14 本地也改一处 → 面板弹出三选一', async () => {
@@ -672,6 +730,267 @@ async function runSyncSelftest(o) {
     return `云端 ${before} → ${pushed} 版，内容已经是本机这一版（无对方标记）`
   }, 150_000)
 
+  step('16 冲突选「用云端覆盖本机」→ 本机换成云端那版', async () => {
+    const used = await js(`
+      if (!document.querySelector('textarea[placeholder^="落笔即入江湖"]')) {
+        clickAny(['继续写作', '继续创作', '正文编辑']);
+        await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 20000);
+      }
+      const el = document.querySelector('textarea[placeholder^="落笔即入江湖"]');
+      if (!el) return { ok: false, why: '不在正文编辑页' };
+      setTextarea('textarea[placeholder^="落笔即入江湖"]', el.value + ' 【覆盖前的本机改动 ' + Date.now() + '】');
+      return { ok: true };
+    `)
+    if (!used.ok) throw new Error(used.why || '本机改稿失败')
+    await new Promise((res) => setTimeout(res, 4000))
+    const remote = await simulateRemoteCommit(cloud, ctx.cloudPid, '覆盖测试的云端改动')
+    const revBefore = remote.revision
+
+    const panel = await js(`
+      dismissStrays();
+      if (!clickText('云端同步')) return { ok: false, why: '打不开面板' };
+      await sleep(600);
+      const rf = findText('刷新'); if (rf) rf.click();
+      let hit = await waitFor(() => (norm(bodyText()).includes('本机与云端各有改动') ? true : null), 20000);
+      if (!hit) { clickAny(['刷新']); hit = await waitFor(() => (norm(bodyText()).includes('本机与云端各有改动') ? true : null), 15000); }
+      if (!hit) return { ok: false, why: '没等到冲突框' };
+      dismissStrays();
+      const clicked = clickStrict('用云端覆盖本机');
+      if (!clicked.ok) return { ok: false, why: clicked.why };
+      /**
+       * 🔴 二次确认（"改动会被丢弃"）**不是立刻出现的**：覆盖前要先过一道保存屏障
+       *    （把编辑器 2 秒防抖里的草稿落盘），实测 2–4 秒后才弹。
+       *    第一版只等 1.5 秒就当"没有弹窗"，于是确认框一直挂着、覆盖永远不开始，
+       *    日志里只有一句"覆盖没有完成"（真机排查了很久）。
+       *    现在**认对话框容器**（含"会被丢弃"的那个 dialog）再点它自己的「确定」。
+       */
+      const confirmed = await waitFor(() => {
+        const dlg = Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => norm(d.textContent).includes('会被丢弃'));
+        if (!dlg) return null;
+        const btn = Array.from(dlg.querySelectorAll('button')).find((b) => norm(b.textContent) === '确定');
+        if (!btn) return null;
+        btn.click();
+        return true;
+      }, 30000);
+      if (!confirmed) return { ok: false, why: '没等到覆盖的二次确认框', clicked };
+      // 边等边记"现场出现过的提示"：失败/重试/请先/未保存 这类字样是排查的唯一线索（toast 几秒就淡了）
+      let note = '';
+      let done = null;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 90000) {
+        const t = bodyText();
+        if (norm(t).includes('已用云端第')) { done = true; break }
+        if (!note) {
+          // 🔴 不用正则：注入脚本本身是模板字符串，任何反斜杠转义都会被外层先「吃掉」一次（已踩过）
+          const hit = ['失败', '重试', '请先', '未保存', '不允许', '不支持'].find((k) => t.includes(k));
+          if (hit) {
+            const at = t.indexOf(hit);
+            note = t.slice(Math.max(0, at - 20), at + 40).split(String.fromCharCode(10)).join(' ');
+          }
+        }
+        await sleep(800);
+      }
+      return { ok: !!done, clicked, confirmed, note, reason: done ? '' : ('点了确定但没出现提示' + (note ? '；期间出现：' + note : '')) };
+    `)
+    if (!panel.ok) throw new Error(panel.why || panel.reason || '覆盖没有完成')
+
+    // 🔴 覆盖**只改本机**：云端版本号不许动（动了就说明偷偷上传了本机那份）
+    const after = await readCloudRevision(baseUrl, cloud, log)
+    if (after !== revBefore) throw new Error(`覆盖本机不该上传，但云端从第 ${revBefore} 版变成了 ${after} 版`)
+
+    // 按界面自己说的做：点「重新载入界面」，再看正文里是不是"对方"那一版
+    await js(`clickText('重新载入界面'); return true;`)
+    const ready = await waitReady()
+    if (!ready) throw new Error('重新载入后界面没就绪')
+    const seen = await js(`
+      if (!document.querySelector('button[aria-label="打开项目"]')) {
+        clickAny(['切换项目']);
+        await waitFor(() => document.querySelector('button[aria-label="打开项目"]'), 20000);
+      }
+      const want = ${JSON.stringify(ctx.copyName || '云端副本')};
+      const cards = Array.from(document.querySelectorAll('div')).filter((d) => norm(d.textContent).includes(norm(want)) && d.querySelector('button[aria-label="打开项目"]'));
+      if (!cards.length) return { ok: false, why: '项目中心里找不到副本' };
+      cards[0].querySelector('button[aria-label="打开项目"]').click();
+      let ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 6000);
+      if (!ok) { clickAny(['继续写作', '继续创作']); ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 15000); }
+      const el = document.querySelector('textarea[placeholder^="落笔即入江湖"]');
+      if (!el) return { ok: false, why: '打开副本后进不到正文' };
+      /**
+       * 判据：**本机那道未同步的改动必须消失**（覆盖＝用云端替换本机）。
+       * 🔴 不去找"对方那句话"：另一台设备的改动落在对象的哪个字段由结构决定，
+       *    不一定是编辑器当前展示的这一章（实测：改在别处，界面上看不到，会误判成覆盖失败）。
+       *    "本地标记没了"才是这个动作的直接后果。
+       */
+      return { ok: true, localGone: !el.value.includes('覆盖前的本机改动') };
+    `)
+    if (!seen.ok) throw new Error(seen.why || '覆盖后打不开副本')
+    if (!seen.localGone) throw new Error('覆盖后本机"覆盖前的那道改动"还在，说明本机没被替换')
+    return `云端第 ${revBefore} 版已落到本机（rev 不变），本机覆盖前的那道改动已被替换掉`
+  }, 300_000)
+
+  step('17 冲突选「两份都留」→ 另存为新书，本机这本不动', async () => {
+    await js(`
+      if (!document.querySelector('textarea[placeholder^="落笔即入江湖"]')) {
+        clickAny(['继续写作', '继续创作', '正文编辑']);
+        await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 20000);
+      }
+      const el = document.querySelector('textarea[placeholder^="落笔即入江湖"]');
+      if (el) setTextarea('textarea[placeholder^="落笔即入江湖"]', el.value + ' 【两份都留测试前的本机改动】');
+      return { ok: !!el };
+    `)
+    await new Promise((res) => setTimeout(res, 4000))
+    await simulateRemoteCommit(cloud, ctx.cloudPid, '两份都留测试的云端改动')
+
+    const r = await js(`
+      dismissStrays();
+      if (!clickText('云端同步')) return { ok: false, why: '打不开面板' };
+      await sleep(600);
+      const rf = findText('刷新'); if (rf) rf.click();
+      let hit = await waitFor(() => (norm(bodyText()).includes('本机与云端各有改动') ? true : null), 20000);
+      if (!hit) { clickAny(['刷新']); hit = await waitFor(() => (norm(bodyText()).includes('本机与云端各有改动') ? true : null), 15000); }
+      if (!hit) return { ok: false, why: '没等到冲突框' };
+      dismissStrays();
+      const clicked = clickStrict('两份都留');
+      if (!clicked.ok) return { ok: false, why: clicked.why };
+      // 同上：二次确认要等保存屏障，认对话框容器再点它的「确定」
+      const confirmed = await waitFor(() => {
+        const dlg = Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => norm(d.textContent).includes('会把云端这一版另存为一本新作品'));
+        if (!dlg) return null;
+        const btn = Array.from(dlg.querySelectorAll('button')).find((b) => norm(b.textContent) === '确定');
+        if (!btn) return null;
+        btn.click();
+        return true;
+      }, 30000);
+      if (!confirmed) return { ok: false, why: '没等到另存的二次确认框' };
+      /**
+       * 🔴 名字必须在**命中那一刻、从整页文本**里取：
+       *    第一版取的是 bodyText 的开头 900 字，而 toast 挂在页面末尾（侧栏文本就上千字），
+       *    截断后永远看不到提示 ⇒ "另存成功但找不到新书"（实机踩到）。
+       */
+      const done = await waitFor(() => {
+        const t = bodyText();
+        if (!norm(t).includes('已另存为')) return null;
+        const m = /已另存为[^《]*《([^》]+)》/.exec(t);
+        return { name: m ? m[1] : '', tail: t.slice(-400) };
+      }, 240000);
+      return { ok: !!done, name: done ? done.name : '', tail: done ? done.tail : '', reason: done ? '' : '点了确定但没出现"已另存为"' };
+    `)
+    if (!r.ok) throw new Error(r.why || r.reason || '另存没有完成')
+    let name = String(r.name || '')
+    if (!name) {
+      // toast 可能已经淡出：退回"项目中心里多了一本叫 xxx 的"判据
+      const fromDom = await js(`
+        closeModal(); await sleep(400); clickAny(['切换项目']);
+        await waitFor(() => document.querySelector('button[aria-label="打开项目"]'), 20000);
+        const names = Array.from(document.querySelectorAll('button[aria-label="打开项目"]')).map((b) => {
+          const card = b.closest('div'); return norm(card ? card.textContent : '');
+        });
+        return { names };
+      `)
+      name = (fromDom.names || []).find((n) => n.includes('云端副本')) || ''
+      if (!name) throw new Error('另存成功但找不到新书')
+      return `已另存（项目中心可见），原书保持原样`
+    }
+    const found = await js(`
+      closeModal();
+      await sleep(400);
+      clickAny(['切换项目']);
+      await waitFor(() => document.querySelector('button[aria-label="打开项目"]'), 20000);
+      const want = ${JSON.stringify('')} + ${JSON.stringify(name)};
+      const cards = Array.from(document.querySelectorAll('div')).filter((d) => norm(d.textContent).includes(norm(want)) && d.querySelector('button[aria-label="打开项目"]'));
+      return { ok: cards.length > 0, n: cards.length };
+    `)
+    if (!found.ok) throw new Error(`提示说另存为《${name}》，但项目中心里找不到这本`)
+    return `已另存为《${name}》（项目中心可见），原书保持原样`
+  }, 300_000)
+
+  step('18 老板键：注册 / 隐藏 / 恢复（真进程 + 真全局热键）', async () => {
+    // 🔴 隐藏路径要求窗口当前是可见的（不可见时 toggle 会走"恢复"分支），所以先悄悄显示一下
+    win.showInactive()
+    await new Promise((res) => setTimeout(res, 600))
+    const r = await js(`
+      if (!window.electronBoss) return { ok: false, why: '渲染层没有 window.electronBoss（preload 未生效）' };
+      const events = [];
+      const off = window.electronBoss.onChanged((s) => events.push(s));
+      // 默认组合被系统占用时换一个备选，别把"环境占用"当成功能坏了
+      let applied = null;
+      for (const accel of ['Ctrl+Shift+F9', 'Ctrl+Alt+F12', 'Ctrl+Shift+F11']) {
+        const a = await window.electronBoss.apply(accel);
+        if (a && a.ok) { applied = a; break }
+        applied = a;
+      }
+      const st1 = await window.electronBoss.status();
+      const t1 = await window.electronBoss.toggle();
+      await sleep(600);
+      const st2 = await window.electronBoss.status();
+      const t2 = await window.electronBoss.toggle();
+      await sleep(600);
+      const st3 = await window.electronBoss.status();
+      off();
+      return { ok: true, applied, st1, t1, st2, t2, st3, events };
+    `)
+    win.hide()
+    if (!r.ok) throw new Error(r.why || '老板键接口不可用')
+    if (!r.applied || r.applied.ok !== true) throw new Error(`注册组合键失败：${(r.applied && r.applied.error) || '未知'}`)
+    if (!r.st1 || !r.st1.accel) throw new Error('注册成功但 status 里没有组合键')
+    if (r.t1.hidden !== true || r.st2.hidden !== true) throw new Error('按下后窗口没有隐藏')
+    if (r.t2.hidden !== false || r.st3.hidden !== false) throw new Error('再按一次没有恢复')
+    const ev = Array.isArray(r.events) ? r.events : []
+    if (!ev.some((e) => e && e.hidden === true && e.saving === true)) throw new Error('隐藏前没有通知渲染层"开始保存"')
+    if (!ev.some((e) => e && e.hidden === false)) throw new Error('恢复时没有通知渲染层')
+    return `${r.applied.display} 注册成功；隐藏→恢复一轮通过，保存通知成对`
+  }, 90_000)
+
+  step('19 关键按钮的几何命中（不被遮挡）', async () => {
+    // 上一步把窗口藏起来了、页面也停在项目中心：几何测量需要可见窗口 + 编辑页
+    win.showInactive()
+    await new Promise((res) => setTimeout(res, 600))
+
+    /**
+     * 🔴 前面所有点击都是 DOM 级 `.click()`，它**绕过命中测试** —— 按钮被浮层盖住时照样"点得到"，
+     *    而真人点不到。所以这里补一道：取按钮矩形中心，用 `elementFromPoint` 看真正落在最上层的是谁。
+     *    这一步不点任何东西，只量几何。
+     */
+    const r = await js(`
+      const hitCheck = (el, label) => {
+        if (!el) return { label, ok: false, why: '元素不存在' };
+        const b = el.getBoundingClientRect();
+        if (!b.width || !b.height) return { label, ok: false, why: '尺寸为 0' };
+        const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+        if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) return { label, ok: false, why: '中心点不在视口内' };
+        const top = document.elementFromPoint(cx, cy);
+        const ok = !!top && (top === el || el.contains(top));
+        return { label, ok, why: ok ? '' : '被 ' + (top ? (top.tagName + ' ' + String(top.className || '').slice(0, 50)) : 'null') + ' 挡住' };
+      };
+      closeModal();
+      await sleep(400);
+      // 先回到一本作品的编辑页（这些控件都在编辑页的侧栏 / 工具条上）
+      if (!document.querySelector('textarea[placeholder^="落笔即入江湖"]')) {
+        const btn = document.querySelector('button[aria-label="打开项目"]');
+        if (btn) btn.click();
+        let ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 6000);
+        if (!ok) { clickAny(['继续写作', '继续创作', '正文编辑']); ok = await waitFor(() => document.querySelector('textarea[placeholder^="落笔即入江湖"]'), 15000); }
+      }
+      const out = [];
+      out.push(hitCheck(findText('切换项目'), '切换项目'));
+      out.push(hitCheck(findText('正文编辑'), '正文编辑'));
+      out.push(hitCheck(findText('云端同步'), '侧栏·云端同步'));
+      // 再开面板量里面的按钮（此时侧栏被弹窗盖住是正常的，上面已经量过）
+      if (clickText('云端同步')) {
+        await waitFor(() => findText('刷新'), 15000);
+        await sleep(600);
+        out.push(hitCheck(findText('刷新'), '面板·刷新'));
+        out.push(hitCheck(findText('立即同步') || findText('上传这本到云端'), '面板·主操作'));
+        closeModal();
+      }
+      return { list: out, bad: out.filter((x) => !x.ok) };
+    `)
+    win.hide()
+    const bad = (r.bad || []).filter((x) => x.why !== '元素不存在' || x.label !== '正文编辑')
+    if (bad.length) throw new Error(bad.map((x) => `${x.label}：${x.why}`).join('；'))
+    return `${(r.list || []).length} 个控件中心点命中的都是自己（无遮挡）`
+  }, 90_000)
+
   // ---------------- 执行 ----------------
 
   const t0 = Date.now()
@@ -700,6 +1019,84 @@ async function runSyncSelftest(o) {
   log(`SYNC_SELFTEST ${failed ? 'FAIL' : 'OK'} ${okCount}/${steps.length} 用时 ${Math.round((Date.now() - t0) / 1000)}s`)
   if (failed) log(`SYNC_SELFTEST_FIRST_FAIL ${failed.name} :: ${failed.detail}`)
   return { ok: !failed && okCount === steps.length, results }
+}
+
+/**
+ * 以"另一台设备"的身份提交一个云端新版本。
+ *
+ * 【做法】挑云端清单里**最大的文本对象**（整本正文），改一处、按内容寻址重新传一份，
+ * 再把清单里对它的引用换成新哈希，以当前 revision 为基线提交。
+ * 服务端只看 protocol / epoch / baseRevision / 对象齐备，不区分谁提交 ⇒ 与真实另一台设备等价。
+ *
+ * 🔴 为什么自己挑对象而不复用上一步的哈希：覆盖本机/两份都留都会换掉云端引用的对象，
+ *    旧哈希可能已经不在清单里；按"最大的文本对象"挑，任何状态都能找到那个正文。
+ *
+ * @returns {{base:number, revision:number, marker:string, hash:string, before:string}}
+ */
+/** 在 JSON 结构里找一个字符串字段追加标记（保证序列化后仍是合法 JSON） */
+function markInJson(node, marker) {
+  if (typeof node === 'string') return false
+  if (Array.isArray(node)) {
+    for (let i = node.length - 1; i >= 0; i--) {
+      if (typeof node[i] === 'string') { node[i] += marker; return true }
+      if (node[i] && typeof node[i] === 'object' && markInJson(node[i], marker)) return true
+    }
+    return false
+  }
+  if (node && typeof node === 'object') {
+    for (const k of Object.keys(node)) {
+      if (typeof node[k] === 'string') { node[k] += marker; return true }
+      if (node[k] && typeof node[k] === 'object' && markInJson(node[k], marker)) return true
+    }
+  }
+  return false
+}
+
+async function simulateRemoteCommit(cloud, pid, tag) {
+  const man = await cloud.manifest(pid)
+  if (!man.ok || !man.json || !man.json.manifest) throw new Error(`读云端清单失败：${man.error || man.status}`)
+  const base = man.json.revision
+  const list = (man.json.manifest.objects || []).filter((e) => e && typeof e.hash === 'string' && e.hash)
+  if (!list.length) throw new Error('云端清单里没有内容对象')
+  const sorted = list.slice().sort((a, b) => (Number(b.bytes) || 0) - (Number(a.bytes) || 0))
+  let target = null
+  let text = ''
+  for (const e of sorted.slice(0, 4)) {
+    const o = await cloud.object(pid, e.hash)
+    const body = String(o.text || '')
+    // 只认 JSON 形态的正文分片：图片/blob 是 base64，改它没有意义
+    if (o.ok && /^[[{]/.test(body.trim())) { target = e; text = body; break }
+  }
+  if (!target) throw new Error('云端找不到可改的正文对象')
+
+  /**
+   * 🔴 必须**保持 JSON 合法**：第一版是直接在原文末尾追加一句话，
+   *    结果云端这一版的对象不再是合法 JSON ⇒ 「用云端覆盖本机」下载后解析失败，
+   *    界面只说"1 份内容没下到，本次不切换"（很像网络问题，其实是自检自己把数据弄坏了）。
+   *    现在改成解析 → 在某个字符串字段里追加标记 → 重新序列化。
+   */
+  const marker = `【${tag} ${Date.now()}】`
+  let payload = text
+  try {
+    const parsed = JSON.parse(text)
+    if (markInJson(parsed, marker)) payload = JSON.stringify(parsed)
+  } catch { /* 不是 JSON 就按原文追加（下面仍会写出去） */ }
+  if (payload === text) payload = text + '\n' + marker
+  const bytes = Buffer.from(payload, 'utf8')
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex')
+  const put = await cloud.putObject(pid, hash, bytes)
+  if (!put.ok) throw new Error(`上传对象失败：${put.error || put.status}`)
+
+  const next = JSON.parse(JSON.stringify(man.json.manifest))
+  let replaced = 0
+  for (const k of ['objects', 'assets']) {
+    for (const e of next[k] || []) if (e && e.hash === target.hash) { e.hash = hash; e.bytes = bytes.length; replaced++ }
+  }
+  if (!replaced) throw new Error('清单里没找到要替换的对象（结构变了？）')
+
+  const c = await cloud.commit(pid, { manifest: next, baseRevision: base, opId: `selftest-remote-${Date.now()}` })
+  if (!c.ok) throw new Error(`模拟提交失败：${c.error || c.status}（${(c.json && c.json.code) || ''}）`)
+  return { base, revision: c.json.revision, marker, hash, before: target.hash }
 }
 
 /** 读云端当前 revision（取列表里最近更新的一本）：判据只认服务器 */

@@ -240,11 +240,16 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
           : binding.baseRevision
         : (cloudRevision ?? binding.baseRevision)
       await ctl.requestPush({ projectId: pid, cloudProjectId: binding.cloudProjectId, baseRevision: base })
-      if (base !== binding.baseRevision) {
-        const next = { ...binding, baseRevision: base, lastSyncedAt: Date.now() }
-        await store.set(pid, next)
-        setBinding(next)
-      }
+      /**
+       * 🔴 基线的**唯一真源是提交成功回调**（`onCommitted` → `nextBindingAfterCommit`，写的是
+       *    服务端确认的新 revision）。原先这里还手工写了一次 `baseRevision: base`，
+       *    而 `base` 是**推送时用的旧基线** —— 于是每次「立即同步 / 保留本机并上传」成功后，
+       *    刚被回调写好的正确基线又被旧值盖回去，下一轮 tick 立刻判"云端比本机新"，
+       *    再弹一次冲突/再提示一次，用户会以为根本没同步成功（2026-10-31 自检第 16 步踩到）。
+       *    这里只把最新值读回来刷新界面，不自己算。
+       */
+      const latest = await store.get(pid)
+      if (latest) setBinding(latest)
       await load()
     } catch (e) {
       showToast(e instanceof Error ? e.message : '同步失败', 'error')
