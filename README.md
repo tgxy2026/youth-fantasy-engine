@@ -11,6 +11,7 @@
 📦 仓库：[Gitee](https://gitee.com/tgxy2026/youth-fantasy-engine)　｜　[GitHub](https://github.com/tgxy2026/youth-fantasy-engine)　｜　⬇️ 下载：[Releases](https://gitee.com/tgxy2026/youth-fantasy-engine/releases)
 
 🖥️ 三种形态：**桌面安装版**（免 Node，双击安装）　｜　**便携版**（U 盘即走，需 Node.js）　｜　**网页版**（免安装，游客本地存 / 登录账号云端存）
+🌐 网页版直达：<https://youth-fantasy-engine.online>（浏览器打开就能写，不用装任何东西）
 🔗 3.3.2 起：**同一个账号，桌面、网页、换台电脑，接着上一句写**（云端作品库 · 逐本自动同步 · 冲突由你选 · 删了能捞回）
 
 </div>
