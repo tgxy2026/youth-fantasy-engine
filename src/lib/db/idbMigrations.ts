@@ -288,3 +288,27 @@ export function migrateV13toV14(db: Vdb) {
   payloadsStore.createIndex('projectId', 'projectId', { unique: false })
   payloadsStore.createIndex('jobId', 'jobId', { unique: false })
 }
+
+/**
+ * v14 → v15 迁移（3.3.3 · P1）：新增长任务单元台账 taskHeads / taskUnits。
+ *
+ * 🔴 两个都是**本机专属**（规划 §14.1）：不进云端同步、不进项目包。
+ *    见 `syncCore.LOCAL_ONLY_STORES` —— 判据只在那一处，别在这里各写一份。
+ *
+ * 为什么要两张表而不是一张：
+ *   · 任务头很少变（只看进度与执行权），单元每条都带产物；
+ *     合成一张的话，每次写一个单元都要重写整条任务（含所有已成功单元的产物）。
+ *   · 单元按 taskId 建索引 ⇒ 继续时只读这一份任务的单元，不扫全库。
+ */
+export function migrateV14toV15(db: Vdb) {
+  const heads = db.createObjectStore('taskHeads', { keyPath: 'id' })
+  // 按 projectId 索引：面板显示「本机该项目的拆书记录」、删项目级联清理
+  heads.createIndex('projectId', 'projectId', { unique: false })
+  heads.createIndex('status', 'status', { unique: false })
+
+  const units = db.createObjectStore('taskUnits', { keyPath: 'id' })
+  units.createIndex('taskId', 'taskId', { unique: false })
+  // 按 projectId 索引：配额统计与删项目级联清理
+  units.createIndex('projectId', 'projectId', { unique: false })
+  units.createIndex('status', 'status', { unique: false })
+}

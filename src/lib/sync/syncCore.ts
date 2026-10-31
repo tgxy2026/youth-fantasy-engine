@@ -32,6 +32,8 @@ export const SYNC_STORES = [
   //    这份清单是「对象库对账依据」，漏登记会让 seed/对账逻辑与库里的 store 数量对不上
   //    （cloudStoreWrapper 的守恒断言就是这么红的）。
   'revisionPayloads',
+  // 🔴 3.3.3 · P1：长任务单元台账同为**本地专属**（规划 §14.1）。登记理由同上（对账依据）。
+  'taskHeads', 'taskUnits',
 ] as const
 
 // 各 store 的主键字段（keyPath）
@@ -39,16 +41,21 @@ export const KEY_FIELD: Record<string, string> = {
   projects: 'id', volumes: 'id', chapters: 'id', tableRows: 'id',
   cardRecords: 'id', snapshots: 'id', trash: 'id', backups: 'id', backupPayloads: 'id', tavernReports: 'id',
   aiRuns: 'id', worlds: 'id', revisionJobs: 'id', revisionPayloads: 'id',
+  taskHeads: 'id', taskUnits: 'id',
   formData: 'tabId', meta: 'key', settingsKV: 'key', dailyStats: 'key',
 }
 
 /**
  * **本地专属 store**（云端永不参与其增删）—— 唯一判据，所有路径都从这里取。
  *
- * 🔴 当前包含：backups / backupPayloads / revisionPayloads。
+ * 🔴 当前包含：backups / backupPayloads / revisionPayloads / taskHeads / taskUnits。
  *    revisionJobs 是项目级数据，随项目走，故**不在**本地专属清单中。
+ *    taskHeads / taskUnits 是"这台机器上的一次运行结果"（规划 §14.1：不自动进入
+ *    云端快照、项目包或另一设备），故**属于**本地专属。
  */
-export const LOCAL_ONLY_STORES = ['backups', 'backupPayloads', 'revisionPayloads'] as const
+export const LOCAL_ONLY_STORES = [
+  'backups', 'backupPayloads', 'revisionPayloads', 'taskHeads', 'taskUnits',
+] as const
 export function isLocalOnlyStore(store: string): boolean {
   return (LOCAL_ONLY_STORES as readonly string[]).includes(store)
 }

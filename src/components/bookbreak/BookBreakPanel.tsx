@@ -26,7 +26,8 @@ import NumberField from '@/components/common/NumberField'
 import { showToast } from '@/components/dialogs/dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '@/lib/ai'
 import { adviseImport, type ImportAdvice } from '@/lib/bookbreak/recommend'
-import { estimateCalls, previewSplit, runBookBreak, initialBookBreakResume, bookBreakResumeIssue, bookBreakResumeOwnerCurrent, type BookBreakResume, type BookBreakFailedUnit } from '@/lib/bookbreak/run'
+import { estimateCalls, previewSplit, runBookBreak, initialBookBreakResume, bookBreakResumeIssue, bookBreakResumeOwnerCurrent, bookBreakExtractIdentity, type BookBreakResume, type BookBreakFailedUnit, type BookBreakUnitSummary } from '@/lib/bookbreak/run'
+import { discardBookBreakTask, modelTagOf, previewBookBreakTask, type BookBreakTaskPreview } from '@/lib/bookbreak/taskStore'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { readStringPref, writeStringPref, usePersistedBool } from '@/lib/settings/uiPrefs'
@@ -78,6 +79,8 @@ interface BookBreakTaskResult {
   doneKind: 'success' | 'info'
   /** 中止时的一句话交代（如"已写入的正文卷章保留在正文编辑里"） */
   abortText: string
+  /** 3.3.3 · P1：本次单元台账账目（复用/重跑/过期/成功数）；`attached=false` 表示本次进度不落盘 */
+  unitSummary: BookBreakUnitSummary
 }
 
 const fmtNum = (n: number) => n.toLocaleString('zh-CN')
@@ -113,6 +116,41 @@ function BookBreakWorkspace() {
   const summaries = task?.result?.summaries ?? EMPTY_SUMMARIES
   /** 中断后拿到的续跑断点（沿用原语义：显示「继续抽取」按钮） */
   const resume = task?.status === 'done' ? null : (task?.resume ?? null) as BookBreakResume | null
+  /**
+   * 3.3.3 · P1：本机拆书记录的**只读预览**（历史进度）。
+   * 🔴 只在界面显示"本机留有进度"，不 claim、不写任何东西；点「继续抽取」时才真正接管。
+   */
+  const [ledger, setLedger] = useState<BookBreakTaskPreview | null>(null)
+  /** 只记「服务商名/模型名」，写进任务头供事后核对（不含端点与密钥） */
+  const [activeModel, setActiveModel] = useState('')
+  /**
+   * 3.3.3 · P1：台账口径的剩余与失败数。
+   * 🔴 「剩余」不含失败：失败单元默认**不自动重试**（那是另一次付费），
+   *    所以主按钮的 N 只数 pending / interrupted / cancelled。
+   */
+  const ledgerCounts = ledger?.counts ?? null
+  const ledgerRemaining = ledgerCounts ? ledgerCounts.pending + ledgerCounts.interrupted + ledgerCounts.cancelled : 0
+  const ledgerFailed = ledgerCounts?.failed ?? 0
+  const ledgerHasProgress = !!ledgerCounts && (ledgerCounts.succeeded > 0 || ledgerCounts.failed > 0)
+  /** 失败清单优先用本次跑出来的（最新），否则用台账里留存的（重启后也能查到位置） */
+  const failedUnits: BookBreakFailedUnit[] = task?.result?.failedUnits?.length
+    ? task.result.failedUnits
+    : (ledger?.units.filter(u => u.status === 'failed').map(u => ({
+        unit: u.index + 1,
+        chapterTitle: u.chapterTitle,
+        ...(u.failure ? { reason: u.failure } : {}),
+      })) ?? [])
+  /** 丢弃本机记录：只清任务私有产物，不碰已经写进书库的正文/设定 */
+  const onDiscardLedger = async () => {
+    if (!ledger) return
+    try {
+      await discardBookBreakTask(ledger.head.id)
+      setLedger(null)
+      showToast('已清理本机的拆书记录（已写入书库的正文与设定不受影响）', 'success')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '清理失败', 'error')
+    }
+  }
   // 供下面那两个 effect 用的原始量：**只依赖原始值**，不依赖 task 对象本身
   // （task 的引用每次 store 变更都会换，直接当依赖会让 effect 无谓重跑）
   const taskId = task?.id ?? ''
@@ -148,6 +186,26 @@ function BookBreakWorkspace() {
     return () => clearTimeout(t)
   }, [raw])
 
+  /**
+   * 3.3.3 · P1：按「当前原文 + 抽取配置」算任务身份，再把本机留下的拆书记录读出来。
+   *
+   * 🔴 为什么必须先有原文才查：台账**不存原文**（那是第二份书稿）。重启后作者要重新
+   *    导入同一份原文，这里才有指纹可对 —— 对上了才显示"本机留有一份进度"。
+   *    对不上（改了原文 / 换了参数）就是另一个任务，旧记录不会冒充可续跑。
+   */
+  useEffect(() => {
+    if (!raw.trim()) { setLedger(null); return }
+    let alive = true
+    // 粘贴几万字时不必每敲一个键就查一次库
+    const t = setTimeout(() => {
+      const identity = bookBreakExtractIdentity(raw, { ...(titleSamples.trim() ? { titleSamples } : {}) })
+      previewBookBreakTask(identity)
+        .then(p => { if (alive) setLedger(p) })
+        .catch(() => { if (alive) setLedger(null) })
+    }, 400)
+    return () => { alive = false; clearTimeout(t) }
+  }, [raw, titleSamples, taskStatus])
+
   // 材料上限：从全局 meta 读（读不到就用推荐值 —— 绝不因读设置失败挡住拆书）
   useEffect(() => { getRelationLimits().then(setLimits).catch(() => {}) }, [])
 
@@ -163,6 +221,8 @@ function BookBreakWorkspace() {
         ])
         const p = providers.find(x => x.id === activeId) ?? null
         setCap(adviseCapacity(p, { numCtx: tav?.common.numCtx ?? 32768, contextBudget: tav?.common.contextBudget ?? 24000 }))
+        // 只记「服务商名/模型名」进任务头，供事后核对；不含端点与密钥
+        setActiveModel(modelTagOf(p ? { name: p.name, model: p.model } : null))
       } catch { /* 拿不到模型信息就不显示推荐，不影响拆书本身 */ }
     })()
   }, [])
@@ -207,12 +267,17 @@ function BookBreakWorkspace() {
   }
 
   /**
-   * 开始 / 继续抽取。
+   * 开始 / 继续抽取 / 只重试失败。
    *
    * 🔴 输入参数在这里**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载，
    *    绝不能在 `run` 里读组件 state（那时拿到的是过期 / 已卸载的值）。
+   *
+   * 三种入口（3.3.3 · A4）：
+   * · normal 「继续抽取（只补剩余）」—— 复用已成功单元；**失败单元不自动重试**。
+   * · retry  「只重试失败单元」—— 只有作者点这个按钮才会对失败单元再发请求。
+   * · fresh  「从头重跑」—— 先清本任务私有产物，所有单元重新抽。
    */
-  const start = (fromScratch = false) => {
+  const start = (mode: 'normal' | 'retry' | 'fresh' = 'normal') => {
     if (!raw.trim()) { showToast('请先粘贴或导入原文', 'info'); return }
     const rawText = raw
     const persistToChapters = writeToChapters
@@ -220,8 +285,11 @@ function BookBreakWorkspace() {
     const relationsOn = organizeRelations
     const samples = titleSamples
     const material = limits
-    // 「从头重跑」= 丢掉断点；否则有断点就接着抽
-    const useResume = fromScratch ? null : resume
+    const fromScratch = mode === 'fresh'
+    const retryOnly = mode === 'retry'
+    // 有台账时以台账为准（它按单元键判定，比"已完成 N 块"精确）。
+    // 台账不可用（存储故障）或本次是降级模式时，仍旧走内存断点。
+    const useResume = (fromScratch || retryOnly || !!ledger) ? null : resume
     const settings = { persistToChapters, summarizeForms: formsOn, organizeRelations: relationsOn,
       ...(samples.trim() ? { titleSamples: samples } : {}), relationMaterial: material }
     if (useResume) {
@@ -244,6 +312,9 @@ function BookBreakWorkspace() {
           signal: ctx.signal,
           onProgress: p => ctx.progress(p),
           ...settings,
+          ...(retryOnly ? { retryFailed: true } : {}),
+          ...(fromScratch ? { freshStart: true } : {}),
+          ...(activeModel ? { modelTag: activeModel } : {}),
           // 续跑：把上次的断点原样传回（阶段内断点 + 已完成阶段的产物）
           ...(useResume ? { resume: useResume } : {}),
           onResume: r => ctx.setResume(r),
@@ -288,6 +359,12 @@ function BookBreakWorkspace() {
               ? `写入中止：已写入 ${res.persist.chaptersCreated} 章`
               : `写入 ${res.persist.volumes.length} 卷 ${res.persist.chaptersCreated} 章 · ${fmtNum(res.persist.words)} 字`
         }
+        // 3.3.3 · P1：台账账目要说清"哪些是复用的、哪些是这次真跑的"，否则作者无法判断这次花了多少调用
+        sum.ledger = res.unitSummary.attached
+          ? (res.unitSummary.reused
+            ? `单元台账：复用 ${res.unitSummary.reused} 个 · 本次重跑 ${res.unitSummary.rerun} 个${res.unitSummary.stale ? ` · 过期重算 ${res.unitSummary.stale} 个` : ''}`
+            : `单元台账：本次抽了 ${res.unitSummary.rerun} 个单元`)
+          : '本次进度未落盘（存储不可用），重启后不能接着跑'
         const parts: string[] = []
         if (res.persist) {
           parts.push(res.persist.alreadyImported
@@ -307,13 +384,18 @@ function BookBreakWorkspace() {
           relationMaterialChars: res.relationMaterialChars,
           persist: res.persist,
           summaries: sum,
-          doneText: parts.join(' · ') + (res.bundle.stats.total > 0 ? '，请审阅后写入' : ''),
+          doneText: parts.join(' · ') + (res.bundle.stats.total > 0 ? '，请审阅后写入' : '')
+            + (res.unitSummary.attached ? '' : '（存储不可用，本次进度不会留存）'),
           doneKind: res.bundle.stats.total > 0 && !res.failedUnits.length ? 'success' : 'info',
           // 🔴 中止时要如实说明：写入正文发生在抽取之前，中止时正文可能**已经写进去一部分**
           abortText:
             (persistToChapters
               ? '已中止：设定草稿未产出；已写入的正文卷章保留在「正文编辑」里'
-              : '已中止，未写入任何数据') + '；可点「继续抽取」接着跑，已抽过的块不会重跑',
+              : '已中止，未写入任何数据')
+            + (res.unitSummary.attached
+              ? `；本机已留存 ${res.unitSummary.succeeded}/${res.unitSummary.total} 个单元结果，下次点「继续抽取」只补剩余`
+              : '；存储不可用，本次进度未留存，重跑需从头开始'),
+          unitSummary: res.unitSummary,
         }
       },
       notify: ({ status, result }) => {
@@ -545,14 +627,22 @@ function BookBreakWorkspace() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
+        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !aiReady || (!!ledgerCounts && ledgerRemaining === 0)} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-          {running ? '抽取中…' : resume ? '继续抽取' : '开始抽取'}
+          {running ? '抽取中…' : ledgerHasProgress ? (ledgerRemaining > 0 ? `继续抽取（只补剩余 ${ledgerRemaining}）` : ledgerFailed > 0 ? '没有待补单元' : '已完成（可从头重跑）') : resume ? '继续抽取' : '开始抽取'}
         </Button>
-        {!running && resume && (
-          <Button size="sm" variant="secondary" onClick={() => start(true)}>
+        {!running && ledgerFailed > 0 && (
+          <Button size="sm" variant="secondary" onClick={() => start('retry')}>
+            只重试失败单元（{ledgerFailed}）
+          </Button>
+        )}
+        {!running && (resume || ledgerHasProgress) && (
+          <Button size="sm" variant="secondary" onClick={() => start('fresh')}>
             从头重跑（丢弃断点）
           </Button>
+        )}
+        {!running && ledger && (
+          <Button size="sm" variant="ghost" onClick={() => void onDiscardLedger()}>丢弃本机记录</Button>
         )}
         {running && task && (
           <Button size="sm" variant="danger" onClick={() => abortTask(task.id)}>中止</Button>
@@ -561,8 +651,18 @@ function BookBreakWorkspace() {
       </div>
       {ownerChanged && <div role="alert" className="mt-2 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">已有拆书任务属于另一项目或存储空间，不能在当前空间查看或继续。请回到原项目核对。</div>}
       {startError && <div role="alert" className="mt-2 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">{startError}</div>}
-      {task?.status === 'failed' && <div role="alert" className="mt-2 rounded border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">上次拆书未完成，请检查网络和模型配置，并核对断点；已写入正文以实际内容为准。</div>}
-      {!running && resume && (
+      {task?.status === 'failed' && <div role="alert" className="mt-2 rounded border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">上次拆书未完成：{task.error ? task.error.slice(0, 160) : '请检查网络和模型配置，并核对断点'}；已写入正文以实际内容为准。</div>}
+      {/* 3.3.3 · P1：本机留存的拆书记录（只读摘要，不等于"一定能续跑"：要同一份原文才对得上） */}
+      {!running && ledgerCounts && (
+        <div className="mt-1 text-11 leading-relaxed text-ink-400">
+          本机留有这份书的拆书记录：<b className="text-ink-300">已成功 {ledgerCounts.succeeded}/{ledgerCounts.total}</b>
+          {ledgerFailed > 0 ? ` · 失败 ${ledgerFailed}` : ''}
+          {ledgerCounts.interrupted > 0 ? ` · 中断 ${ledgerCounts.interrupted}` : ''}
+          。已成功的单元不会重跑；
+          <span className="text-ink-500">失败单元只在点「只重试失败单元」时才重跑（重跑会产生新的模型调用）。重启后请先导入同一份原文，本页才会认出这条记录。</span>
+        </div>
+      )}
+      {!running && !ledgerCounts && resume && (
         <div className="mt-1 text-11 leading-relaxed text-ink-400">
           {task?.status === 'failed' ? '上次失败在' : '上次中止在'}：{resume.label}。点「继续抽取」会从这里接着跑，<b className="text-ink-300">已处理的单元不会重跑</b>；
           <span className="text-ink-500">原文、项目、存储或参数改变后，须由你选择从头重跑。先前失败的单元不会在续跑时自动重试。</span>
@@ -571,11 +671,15 @@ function BookBreakWorkspace() {
 
       {/* 进度：节点时间线（跑完保留，事后能看到每一步做了什么、花了多久） */}
       <WorkflowTimeline progress={progress} running={running} summaries={summaries} className="mt-2" />
-      {!!task?.result?.failedUnits?.length && (
+      {!running && failedUnits.length > 0 && (
         <details className="mt-3 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber" role="group">
-          <summary className="cursor-pointer">{task.result.failedUnits.length} 个抽取单元未成功，查看位置</summary>
-          <p className="mt-1">已生成的草稿可继续审阅。请检查网络或模型配置；可手动补充，或由你选择从头重跑，本页暂不支持只重试失败单元。</p>
-          <ul className="mt-1 list-disc pl-5">{task.result.failedUnits.map(unit => <li key={unit.unit}>第 {unit.unit} 个单元：{unit.chapterTitle}</li>)}</ul>
+          <summary className="cursor-pointer">{failedUnits.length} 个抽取单元未成功，查看位置</summary>
+          <p className="mt-1">已生成的草稿可继续审阅。请检查网络或模型配置；可手动补充、点「只重试失败单元」再试一次，或从头重跑。</p>
+          <ul className="mt-1 list-disc pl-5">
+            {failedUnits.map(unit => (
+              <li key={unit.unit}>第 {unit.unit} 个单元：{unit.chapterTitle}{unit.reason ? <span className="text-ink-500">（{unit.reason}）</span> : null}</li>
+            ))}
+          </ul>
         </details>
       )}
 

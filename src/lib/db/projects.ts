@@ -164,6 +164,14 @@ export async function deleteProject(id: string) {
   if (statKeys.length) await ops.bulkDel('dailyStats', statKeys)
   if (setKeys.length) await ops.bulkDel('settingsKV', setKeys)
 
+  // 3.3.3 · P1：拆书单元台账（taskHeads / taskUnits，本机专属）按项目级联清理。
+  // 🔴 它们是项目级语义的本机数据 —— 项目删了还留着，就是一份永远看不到、却持续占配额
+  //    的孤儿（配额判定会如实把它算进 50 MiB，作者却找不到在哪清）。
+  const taskHeads = await ops.getAllByIndex<{ id: string }>('taskHeads', 'projectId', id)
+  if (taskHeads.length) await ops.bulkDel('taskHeads', taskHeads.map(h => h.id))
+  const taskUnits = await ops.getAllByIndex<{ id: string }>('taskUnits', 'projectId', id)
+  if (taskUnits.length) await ops.bulkDel('taskUnits', taskUnits.map(u => u.id))
+
   // 独立库里的项目级数据：语义向量块（#013）+ 挂载的参考资料（#017）。
   // 上面那批走 `ops.bulkDel` 的 store 在同一个库里，这两个不是 —— 必须各自显式调。
   // 一律不抛：独立库暂时不可用不该让「删项目」失败（projects 记录已经删了，重删一遍也无害）。

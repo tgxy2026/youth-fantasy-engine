@@ -24,11 +24,11 @@ import { isDeleted } from '@/lib/sync/syncTombstone'
 import {
   migrateFreshInstall, migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5,
   migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10,
-  migrateV10toV11, migrateV11toV12, migrateV12toV13, migrateV13toV14,
+  migrateV10toV11, migrateV11toV12, migrateV12toV13, migrateV13toV14, migrateV14toV15,
 } from '@/lib/db/idbMigrations'
 
 const DB_NAME = 'youth-fantasy-engine'
-const DB_VERSION = 14
+const DB_VERSION = 15
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 /** 当前打开的项目 id（App 切换项目时设置） */
@@ -64,6 +64,7 @@ function getDB() {
         if (oldVersion < 12) migrateV11toV12(db)
         if (oldVersion < 13) migrateV12toV13(db)
         if (oldVersion < 14) migrateV13toV14(db)
+        if (oldVersion < 15) migrateV14toV15(db)
       },
     }).catch(err => {
       // 失败时重置缓存，避免 rejected promise 被永久缓存（如隐私模式下打开失败后所有后续调用都失败）

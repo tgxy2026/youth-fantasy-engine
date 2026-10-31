@@ -447,6 +447,8 @@ export const KEY_PATHS: Record<string, string> = {
   revisionJobs: 'id',
   // 3.2.0 · W2：修订载荷（**本地专属**：不进云同步，但必须落本机盘 —— 漏了就是"重启即丢候选"）。
   revisionPayloads: 'id',
+  // 3.3.3 · P1：长任务单元台账（**本机专属**：不进云同步；漏了就是"重启即丢进度"）。
+  taskHeads: 'id', taskUnits: 'id',
 }
 
 export interface DesktopState {

@@ -18,6 +18,8 @@ export const KEY_PATHS: Record<string, string> = {
   worlds: 'id',
   // 3.2.0 · W2 工作产物存储：revisionJobs 项目级、revisionPayloads 本地专属
   revisionJobs: 'id', revisionPayloads: 'id',
+  // 3.3.3 · P1 长任务单元台账（本机专属；与 desktop.KEY_PATHS 逐项一致）
+  taskHeads: 'id', taskUnits: 'id',
 }
 
 const stores = new Map<string, Map<string, unknown>>()

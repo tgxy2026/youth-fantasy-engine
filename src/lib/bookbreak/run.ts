@@ -20,12 +20,15 @@
  * ⚠️ B1 的抽取粒度是「专名清单」（name/desc/evidence），不含全字段（身份定位/外貌/境界…）。
  *    B2 会换成「两遍全字段抽取」，届时只需替换 extract 阶段的实现，draft/commit/UI 全不用改。
  */
-import { aiExtractSettingEntities, aiSummarizeFormSettings } from '@/lib/ai/aiTasks'
+import { aiExtractSettingEntitiesWithStatus, aiSummarizeFormSettings } from '@/lib/ai/aiTasks'
 import { aiBookBreakSplitChapters } from '@/lib/aiTasks/bookBreakSplit'
+import type { ExtractedEntity } from '@/lib/aiTasks/extract'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { getCurrentProjectId } from '@/lib/db'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
 import { isCancelled } from '@/lib/ai'
+import { bookBreakIdentity, bookBreakUnitKey, openBookBreakTask, type BookBreakTaskHandle } from '@/lib/bookbreak/taskStore'
+import { countUnits, planUnitRun, textFingerprint, type TaskHeadStatus, type UnitPlan, type UnitRunMode } from '@/lib/tasks/unitLedger'
 import { buildDraftBundle, bundleOf, type EntityBatch } from '@/lib/flow/draft'
 import { formDraftRows } from '@/lib/flow/formMap'
 import { createFlow, firstUnfinishedStage, type StageCtx } from '@/lib/flow/pipeline'
@@ -83,7 +86,12 @@ export interface BookBreakResume {
   failedUnits?: BookBreakFailedUnit[]
 }
 
-export interface BookBreakFailedUnit { unit: number; chapterTitle: string }
+export interface BookBreakFailedUnit {
+  unit: number
+  chapterTitle: string
+  /** 有限失败原因码（如 `parse-invalid` / `timeout`）；不含原始异常与请求内容 */
+  reason?: string
+}
 
 export interface BookBreakOptions {
   /** 最多处理多少章 / 块（默认 60，见 split.ts） */
@@ -126,6 +134,17 @@ export interface BookBreakOptions {
   relationMaterial?: Partial<RelationMaterialLimits>
   /** 中止信号（界面的「中止」按钮接它） */
   signal?: AbortSignal
+  /**
+   * 模型/提示来源的短标识（如「服务商名/模型名」），只记在任务头里供核对，**不含端点与密钥**。
+   */
+  modelTag?: string
+  /**
+   * 「只重试失败单元」（3.3.3 · A4）：已成功的照常复用，本次只对 failed 单元再发一次请求。
+   * 🔴 必须由作者显式触发 —— 自动重试等于替作者额外付费。
+   */
+  retryFailed?: boolean
+  /** 「从头重跑」：先清本任务私有产物，所有单元重新抽（不沿用任何旧结果）。 */
+  freshStart?: boolean
   /** 进度回调 */
   onProgress?: (p: FlowProgress) => void
   /** 每抽完一个单元回调一次（界面即时显示抽到了什么） */
@@ -165,6 +184,24 @@ export interface BookBreakResult {
    * 面板要显示它 —— 作者刚调过材料上限，跑完总得看见"调完是多少字"，否则不知道有没有被截断。
    */
   relationMaterialChars: number
+  /**
+   * 单元台账的本次账目（3.3.3 · P1）。`attached=false` 表示存储不可用、本次进度不会留存 ——
+   * 界面必须如实说明，不能显示成"可续跑"。
+   */
+  unitSummary: BookBreakUnitSummary
+}
+
+export interface BookBreakUnitSummary {
+  attached: boolean
+  /** 直接复用已成功结果的单元数 */
+  reused: number
+  /** 本次实际发起模型请求的单元数 */
+  rerun: number
+  /** 台账里的旧结果与当前原文/参数对不上、被判过期的单元数 */
+  stale: number
+  succeeded: number
+  total: number
+  failed: number
 }
 
 const DEFAULT_MAX_UNIT_CHARS = 4000
@@ -206,8 +243,28 @@ export function initialBookBreakResume(raw: string, opts: BookBreakOptions): Boo
     sourceText: raw, resumeKey: bookBreakResumeKey(opts), projectId: getCurrentProjectId(), storageKey: storageWriteContext(), failedUnits: [] }
 }
 
-function isAbort(e: unknown): boolean {
-  return !!e && typeof e === 'object' && (e as { name?: string }).name === 'AbortError'
+/** 造一个中止错误：让 `flow` 把本阶段记为 cancelled（而不是"失败"） */
+function abortError(): Error {
+  const e = new Error('已中止')
+  e.name = 'AbortError'
+  return e
+}
+
+/**
+ * 拆书任务身份（界面与管线共用**同一个函数**）。
+ *
+ * 🔴 为什么必须共用：界面若自己拼一份配置（比如漏了默认的 maxUnitChars），
+ *    算出的任务 id 与管线写入的完全不同 ⇒ 重启后永远找不到历史进度，
+ *    而且失败方式是"看起来没有记录"，没有任何报错。
+ */
+export function bookBreakExtractIdentity(raw: string, opts: Pick<BookBreakOptions, 'maxChunks' | 'maxUnitChars' | 'maxUnits' | 'chunkTokens' | 'titleSamples'> = {}) {
+  return bookBreakIdentity(raw, {
+    ...(opts.maxChunks !== undefined ? { maxChunks: opts.maxChunks } : {}),
+    ...(opts.chunkTokens !== undefined ? { chunkTokens: opts.chunkTokens } : {}),
+    maxUnitChars: opts.maxUnitChars ?? DEFAULT_MAX_UNIT_CHARS,
+    maxUnits: opts.maxUnits ?? DEFAULT_MAX_UNITS,
+    ...(opts.titleSamples ? { titleSamples: opts.titleSamples } : {}),
+  })
 }
 
 /** 一个抽取单元：章标题 + 该单元文本 + 所属章序号 */
@@ -283,6 +340,17 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   /** 已抽到的批次。跨阶段保留：中止时它就是续跑的起点（阶段没跑完时 bag 里是没有它的） */
   let partialBatches: EntityBatch[] = (opts.resume?.batches ?? []).map(b => ({ ...b, entities: [...b.entities] }))
   let failedUnits: BookBreakFailedUnit[] = (opts.resume?.failedUnits ?? []).map(unit => ({ ...unit }))
+  /** 单元台账句柄（存储不可用时为 null：本次只在内存里跑，不留断点） */
+  let ledgerHandle: BookBreakTaskHandle | null = null
+  /**
+   * 🔴 读句柄必须走这个函数：`ledgerHandle` 只在 extract 闭包里被赋值，TS 的控制流分析
+   *    在闭包外会把它一直窄化成 `null`（直接 `if (ledgerHandle)` 会得到 never）。
+   */
+  const currentLedger = (): BookBreakTaskHandle | null => ledgerHandle
+  /** 本次台账账目（界面据此如实说明"复用了几块、重跑了几块"） */
+  let unitSummary: BookBreakUnitSummary = {
+    attached: false, reused: 0, rerun: 0, stale: 0, succeeded: 0, total: 0, failed: 0,
+  }
 
   const flow = createFlow(BOOKBREAK_STAGES, {
     ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
@@ -365,67 +433,162 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     const sp = ctx.bag.split as SplitResult
     const { units, truncated } = expandUnits(sp.chapters, maxUnitChars, maxUnits)
     totalUnits = units.length
-    // 续跑：决定从哪个单元开始、装回哪些批次（判定逻辑抽成纯函数 planResume，便于单测）
-    const plan = planResume(units.length, opts.resume)
-    const start = plan.start
-    // 断点失效（原文改过）→ 已抽批次一并丢掉，别让上次的旧批次混进这次的结果
-    if (plan.reason !== 'resume') { doneUnits = 0; partialBatches = []; failedUnits = [] }
+
+    // ── 单元台账（3.3.3 · P1 / A4 + B3）────────────────────────────────────────
+    // 身份 = 原文指纹 + 抽取配置 + 协议版本。原文或参数一变就是另一个任务，旧结果不会被错用。
+    const identity = bookBreakExtractIdentity(raw, {
+      ...(opts.maxChunks !== undefined ? { maxChunks: opts.maxChunks } : {}),
+      ...(opts.chunkTokens !== undefined ? { chunkTokens: opts.chunkTokens } : {}),
+      maxUnitChars,
+      maxUnits,
+      ...(opts.titleSamples ? { titleSamples: opts.titleSamples } : {}),
+    })
+    const mode: UnitRunMode = opts.freshStart ? 'fresh' : opts.retryFailed ? 'retry-failed' : 'resume'
+    if (!ledgerHandle) {
+      // 🔴 存储不可用时返回 null（只降级为"本次不留断点"）；配额超限会抛错让任务停下。
+      ledgerHandle = await openBookBreakTask({
+        identity,
+        totalUnits,
+        modelTag: opts.modelTag ?? '',
+        label: `0/${totalUnits}`,
+        ...(opts.freshStart ? { freshStart: true } : {}),
+      })
+    }
+
+    const descriptors = units.map((u, i) => ({
+      index: i,
+      textFingerprint: textFingerprint(u.text),
+      chapterTitle: u.chapterTitle,
+    }))
+    const plan: UnitPlan | null = ledgerHandle
+      ? planUnitRun({ units: descriptors, existing: await ledgerHandle.units(), identity, mode })
+      : null
+
+    // 旧的内存断点仍在（降级模式 / 兼容）。有台账时**以台账为准**：它按单元键判定，比"已完成 N 块"精确。
+    const legacy = planResume(units.length, opts.resume)
+    const start = plan ? 0 : legacy.start
+    if (!plan) {
+      if (legacy.reason !== 'resume') { doneUnits = 0; partialBatches = []; failedUnits = [] }
+    }
+
     // 同章被细分成多块时，合并进同一个 EntityBatch（章标题/章号一致）
     const perChapter = new Map<number, EntityBatch>()
-    for (const b of plan.seedBatches) perChapter.set(b.index, b)
+    const pushEntities = (chapterIndex: number, title: string, entities: ExtractedEntity[]) => {
+      if (!entities.length) return
+      const b = perChapter.get(chapterIndex)
+      if (b) b.entities.push(...entities)
+      else perChapter.set(chapterIndex, { source: title, index: chapterIndex, entities: [...entities] })
+      opts.onBatch?.(perChapter.get(chapterIndex) as EntityBatch)
+    }
+
+    if (plan && ledgerHandle) {
+      // 已成功单元直接装回（**不调模型**）；它们的章内顺序与原文一致，所以合并结果与一次跑完等价
+      const known = new Map((await ledgerHandle.units()).map(u => [u.index, u]))
+      for (const idx of plan.reuse) {
+        const rec = known.get(idx)
+        if (!rec || !Array.isArray(rec.result)) continue
+        pushEntities(units[idx].chapterIndex, units[idx].chapterTitle, rec.result as ExtractedEntity[])
+      }
+      if (plan.reuse.length) {
+        ctx.report(plan.reuse.length / Math.max(1, units.length), `复用 ${plan.reuse.length}/${units.length} 个已成功单元，本次补 ${plan.run.length} 个`)
+      }
+      if (plan.stale.length) {
+        ctx.report(plan.reuse.length / Math.max(1, units.length), `有 ${plan.stale.length} 个旧结果与当前原文/参数不一致，已作废重跑`)
+      }
+    } else {
+      for (const b of legacy.seedBatches) perChapter.set(b.index, b)
+    }
     let entityCount = [...perChapter.values()].reduce((n, b) => n + b.entities.length, 0)
+    const runList = plan ? plan.run : Array.from({ length: Math.max(0, units.length - start) }, (_, k) => start + k)
     if (start > 0) {
       ctx.report(start / Math.max(1, units.length), `续跑：已完成 ${start}/${units.length} 块，从第 ${start + 1} 块接着抽`)
     }
 
-    for (let i = start; i < units.length; i++) {
+    /** 本次真正写成功的单元数（台账口径；不含复用） */
+    let settledThisRun = 0
+
+    for (const i of runList) {
       if (ctx.signal.aborted) break
       const u = units[i]
+      const meta = { index: i, key: bookBreakUnitKey(identity, i, u.text), chapterTitle: u.chapterTitle }
       ctx.report(i / Math.max(1, units.length), `${u.chapterTitle}（${i + 1}/${units.length}）`)
-      let entities: Awaited<ReturnType<typeof aiExtractSettingEntities>> = []
+      // 先记 running：进程在这里被强杀 ⇒ 重启后这一条是 interrupted，会被重新跑（结果本来就没落盘）
+      if (ledgerHandle) await ledgerHandle.beginUnit(meta)
       // B2 全字段抽取的输出是 B1 的好几倍，必须走流式（否则撞 180s 总超时墙）；
       // 这里把流式字节数做成「已收到 N 字」显示在节点时间线上，避免一行进度卡住不动。
       // 节流到每 ~120 字报一次：逐 token 上报会把 React 重渲染拖垮。
       let got = 0
       let reported = 0
-      try {
-        entities = await aiExtractSettingEntities(u.text, u.chapterTitle, {
-          signal: ctx.signal,
-          onToken: d => {
-            got += d.length
-            if (got - reported < 120 && got < 4096) return
-            reported = got
-            ctx.report(
-              (i + 0.5) / Math.max(1, units.length),
-              `${u.chapterTitle}（${i + 1}/${units.length}）· 已收到 ${got} 字`,
-            )
-          },
-        })
-      } catch (e) {
-        if (isAbort(e) || ctx.signal.aborted) throw e
-        // 单块失败不中断整本书，但不能伪装成「没有实体」。不把原始异常/请求内容回显到界面。
-        failedUnits.push({ unit: i + 1, chapterTitle: u.chapterTitle })
-        entities = []
+      // 🔴 用**带状态**版本：空结果（合法）与请求失败必须分开。
+      //    旧实现用 aiExtractSettingEntities()，它把失败也返回 []，于是"失败"被当成"这章没有设定"。
+      const step = await aiExtractSettingEntitiesWithStatus(u.text, u.chapterTitle, {
+        signal: ctx.signal,
+        onToken: d => {
+          got += d.length
+          if (got - reported < 120 && got < 4096) return
+          reported = got
+          ctx.report(
+            (i + 0.5) / Math.max(1, units.length),
+            `${u.chapterTitle}（${i + 1}/${units.length}）· 已收到 ${got} 字`,
+          )
+        },
+      })
+      if (step.state === 'cancelled') {
+        if (ledgerHandle) await ledgerHandle.cancelUnit(meta)
+        throw abortError()
       }
+      if (step.state !== 'completed') {
+        const reason = step.errorCode ?? step.state
+        // 单块失败不中断整本书，但不能伪装成「没有实体」。只存有限原因码，不回显原始异常/请求内容。
+        if (ledgerHandle) await ledgerHandle.failUnit(meta, reason)
+        failedUnits.push({ unit: i + 1, chapterTitle: u.chapterTitle, reason })
+        continue
+      }
+      const entities = step.result?.data ?? []
+      // 🔴 先落盘（结果与 succeeded 同一条记录），写成功之后才算这个单元完成
+      if (ledgerHandle) await ledgerHandle.settleUnit(meta, entities)
+      settledThisRun++
       entityCount += entities.length
-      if (entities.length) {
-        const b = perChapter.get(u.chapterIndex)
-        if (b) b.entities.push(...entities)
-        else {
-          const nb: EntityBatch = { source: u.chapterTitle, index: u.chapterIndex, entities: [...entities] }
-          perChapter.set(u.chapterIndex, nb)
-        }
-        opts.onBatch?.(perChapter.get(u.chapterIndex) as EntityBatch)
-      }
+      pushEntities(u.chapterIndex, u.chapterTitle, entities)
       // 阶段内断点：处理完一块就记一块 —— 中途被中止也能从下一块接着跑
-      doneUnits = i + 1
+      doneUnits = plan ? (plan.reuse.length + settledThisRun) : i + 1
       partialBatches = [...perChapter.values()].sort((a, b) => a.index - b.index)
     }
 
     const batches = [...perChapter.values()].sort((a, b) => a.index - b.index)
     partialBatches = batches
+    if (ledgerHandle && plan) {
+      const records = await ledgerHandle.units()
+      const counts = countUnits(records, units.length)
+      // 失败清单以**台账**为准：这样重试后已成功的单元不会继续挂在"未成功"里
+      failedUnits = records
+        .filter(u => u.status === 'failed')
+        .map(u => ({ unit: u.index + 1, chapterTitle: u.chapterTitle, ...(u.failure ? { reason: u.failure } : {}) }))
+      doneUnits = counts.succeeded
+      unitSummary = {
+        attached: true,
+        reused: plan.reuse.length,
+        rerun: runList.length,
+        stale: plan.stale.length,
+        succeeded: counts.succeeded,
+        total: units.length,
+        failed: counts.failed,
+      }
+    } else {
+      unitSummary = {
+        attached: false,
+        reused: 0,
+        rerun: runList.length,
+        stale: 0,
+        succeeded: Math.max(0, doneUnits),
+        total: units.length,
+        failed: failedUnits.length,
+      }
+    }
     const note = truncated ? `（已达到上限 ${maxUnits} 块，剩余未处理）` : ''
-    ctx.report(1, `${start > 0 ? '续跑后' : ''}共抽到 ${entityCount} 条实体${failedUnits.length ? `，${failedUnits.length} 个单元未成功` : ''}${note}`)
+    const reuseNote = unitSummary.reused ? `，复用 ${unitSummary.reused} 个已成功单元` : ''
+    const failNote = failedUnits.length ? `，${failedUnits.length} 个单元未成功` : ''
+    ctx.report(1, `${start > 0 ? '续跑后' : ''}共抽到 ${entityCount} 条实体${reuseNote}${failNote}${note}`)
     return batches
   })
 
@@ -490,6 +653,31 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
   })
 
   const res = await flow.run(opts.resume?.from)
+
+  // 🔴 这里必须经过 `currentLedger()`：直接读 `ledgerHandle` 会被 TS 窄化成 `null`（见其声明处）。
+  const activeLedger = currentLedger()
+  if (activeLedger) {
+    try {
+      const records = await activeLedger.units()
+      const counts = countUnits(records, totalUnits)
+      unitSummary = {
+        ...unitSummary, attached: true,
+        succeeded: counts.succeeded, total: totalUnits, failed: counts.failed,
+      }
+      const allOk = totalUnits > 0 && counts.succeeded === totalUnits
+      const status: TaskHeadStatus = res.status === 'done' && allOk
+        ? 'done'
+        : (res.status === 'cancelled' ? 'interrupted' : 'pending')
+      const label = totalUnits
+        ? `已成功 ${counts.succeeded}/${totalUnits}${counts.failed ? ` · 失败 ${counts.failed}` : ''}${counts.cancelled ? ` · 已取消 ${counts.cancelled}` : ''}`
+        : '未切分出抽取单元'
+      await activeLedger.finish(status, label)
+    } catch (e) {
+      // 执行权已被另一个窗口接管：结果照常返回，但**不写终态**（那边按自己的进度收尾）
+      console.warn('[bookbreak] 任务终态未写入（执行权已转移）：', e)
+    }
+  }
+
   if (res.status === 'cancelled' || res.status === 'error') {
     // 交回续跑信息：已完成到哪个阶段 + **阶段内断点**（已抽完多少块、已抽到哪些批次）
     opts.onResume?.({
@@ -526,6 +714,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     relationRows,
     relationTabs: relationRes?.perTab ?? [],
     relationMaterialChars: relationRes?.materialChars ?? 0,
+    unitSummary,
   }
 }
 

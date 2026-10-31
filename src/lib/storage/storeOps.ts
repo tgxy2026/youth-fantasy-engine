@@ -66,6 +66,8 @@ export const PORTABLE_KEY_FIELDS: Record<string, string> = {
   tavernReports: 'id', aiRuns: 'id', worlds: 'id',
   // 3.2.0 · W2 修订任务与载荷（与 desktop.KEY_PATHS 逐项一致）
   revisionJobs: 'id', revisionPayloads: 'id',
+  // 3.3.3 · P1 长任务单元台账（与 desktop.KEY_PATHS 逐项一致）
+  taskHeads: 'id', taskUnits: 'id',
   // ---- 便携版专属（语义检索 / 知识库并入整库，方案 A）----
   vecRows: 'id', kbDocs: 'id', kbBodies: 'id',
 }
