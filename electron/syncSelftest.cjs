@@ -223,7 +223,7 @@ async function apiRegister(baseUrl, name, password) {
  * @param {number} [o.stepTimeout] 单步超时（毫秒）
  */
 async function runSyncSelftest(o) {
-  const { win, baseUrl, account, login, getToken } = o
+  const { win, baseUrl, account, login, loginPassword, getToken } = o
   const log = o.log || ((s) => console.log(s))
   const dumpDir = o.dumpDir || path.join(process.cwd(), '.workbuddy', 'tmp', 'selftest')
   const stepTimeout = o.stepTimeout || 90_000
@@ -328,26 +328,23 @@ async function runSyncSelftest(o) {
     return `账号 ${who} 会话就绪`
   })
 
-  step('02 桌面登录（回环 + PKCE + 安全存储）', async () => {
+  step('02 桌面登录（账号 + 密码，不跳浏览器）', async () => {
+    /**
+     * 🔴 3.3.2 · 2026-10-31 起**界面上的登录方式就是这条**（主人要求：不填网址、不跳浏览器）。
+     *    自检必须走同一条路，否则测的是"已经没人用的回环 OAuth"，绿了也没意义。
+     *    回环 + PKCE 的实现保留在 `main.cjs`（服务端那套接口还在），只是界面不再调用它。
+     */
     if (getToken()) return '已有令牌，跳过'
-    const sess = await apiLogin(baseUrl, account.name, account.password)
-    if (!sess.ok) throw new Error(`拿会话失败：${sess.error}`)
-    const r = await login({
+    if (typeof loginPassword !== 'function') throw new Error('自检上下文没有 loginPassword（主进程接线漏了）')
+    const r = await loginPassword({
       baseUrl,
-      name: '同步自检设备',
-      // 生产是 shell.openExternal；自检里换成"自己去请求那个授权地址"，
-      // 效果与用户在浏览器里点「授权」一致（服务端照样 302 到回环、回环照样换令牌）
-      openBrowser: async (url) => {
-        const resp = await fetch(url, { headers: { cookie: `yfe_sid=${sess.sid}` }, redirect: 'manual' })
-        const loc = resp.headers.get('location')
-        if (!loc) throw new Error(`授权地址没有跳转（HTTP ${resp.status}）`)
-        await fetch(loc, { redirect: 'manual' })
-      },
+      name: account.name,
+      password: account.password,
     })
-    if (!r.ok) throw new Error(`桌面登录失败：${r.error}`)
+    if (!r.ok) throw new Error(`桌面登录失败：${r.error || '未知原因'}`)
     if (!getToken()) throw new Error('登录返回成功但令牌没落盘')
     await reloadRenderer()
-    return `已登录 persisted=${r.persisted === true}（界面已重载）`
+    return `已登录 ${r.user && r.user.name ? r.user.name : account.name}，persisted=${r.persisted === true}（界面已重载）`
   })
 
   step('02b 渲染层看得见登录态（通道装配）', async () => {
@@ -926,8 +923,17 @@ async function runSyncSelftest(o) {
       const t2 = await window.electronBoss.toggle();
       await sleep(600);
       const st3 = await window.electronBoss.status();
+      /**
+       * 自定义组合键（2026-10-31 新增功能：用户自己按一个）也要能真注册。
+       * 🔴 挑一个**不在三条预设里**的组合，才能证明"任意合法组合都行"，
+       *    只测预设等于没测这个功能。
+       */
+      const custom = await window.electronBoss.apply('Ctrl+Alt+K');
+      const customStatus = await window.electronBoss.status();
+      // 恢复回原来的组合，别把机器上的设置改乱
+      await window.electronBoss.apply(applied && applied.ok ? applied.accel : 'Ctrl+Shift+F9');
       off();
-      return { ok: true, applied, st1, t1, st2, t2, st3, events };
+      return { ok: true, applied, st1, t1, st2, t2, st3, events, custom, customStatus };
     `)
     win.hide()
     if (!r.ok) throw new Error(r.why || '老板键接口不可用')
@@ -938,7 +944,11 @@ async function runSyncSelftest(o) {
     const ev = Array.isArray(r.events) ? r.events : []
     if (!ev.some((e) => e && e.hidden === true && e.saving === true)) throw new Error('隐藏前没有通知渲染层"开始保存"')
     if (!ev.some((e) => e && e.hidden === false)) throw new Error('恢复时没有通知渲染层')
-    return `${r.applied.display} 注册成功；隐藏→恢复一轮通过，保存通知成对`
+    if (!r.custom || r.custom.ok !== true) {
+      throw new Error(`自定义组合键（Ctrl+Alt+K）注册失败：${(r.custom && r.custom.error) || '未知'}`)
+    }
+    if (!r.customStatus || !r.customStatus.accel) throw new Error('自定义组合键注册成功但 status 里没有它')
+    return `${r.applied.display} 注册成功；隐藏→恢复一轮通过，保存通知成对；自定义 ${r.customStatus.accel} 也能注册`
   }, 90_000)
 
   step('19 关键按钮的几何命中（不被遮挡）', async () => {

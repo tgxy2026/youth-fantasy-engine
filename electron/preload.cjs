@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld('electronAuth', {
    *          `persisted:false` 表示这台机器没有安全存储，本次登录**仅在本次运行有效** —— 必须如实告诉用户。
    */
   login: (opts) => ipcRenderer.invoke('auth:desktopLogin', opts),
+  /**
+   * 账号密码直登（不跳浏览器）。
+   * @param {{ name: string, password: string, baseUrl?: string }} opts
+   * @returns {Promise<{ok:true,user:{name:string}|null,persisted:boolean,persistedReason:string,sessionLimitExceeded:boolean,sessionCount:number}|{ok:false,error:string,status?:number,code?:string}>}
+   */
+  loginPassword: (opts) => ipcRenderer.invoke('auth:desktopLoginPassword', opts),
   /** 清掉本地凭据 */
   logout: () => ipcRenderer.invoke('auth:desktopLogout'),
   /**

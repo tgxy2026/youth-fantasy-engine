@@ -31,6 +31,8 @@ export interface SyncControllerDeps {
    * 装配在 `app/syncBoot.ts`，实现在 `cloud/syncApi.fetchManifest`。
    */
   loadKnownHashes?: (job: SyncJob) => Promise<ReadonlySet<string>>
+  /** 提交成功后把"这一版有哪些对象"交给上层缓存（下一次推送省一次清单下载） */
+  rememberHashes?: (job: SyncJob, revision: number, hashes: ReadonlySet<string>) => void
   now?: () => number
   /**
    * 提交成功后的回调（回写绑定：`baseRevision` / `lastSyncedAt`）。
@@ -85,6 +87,7 @@ export function createSyncController(deps: SyncControllerDeps): SyncController {
       ? async (pid: string) => tombstonesToSubmit(deps.tombstones!, pid, now())
       : undefined,
     loadKnownHashes: deps.loadKnownHashes,
+    rememberHashes: deps.rememberHashes,
     // 🔴 这个钩子**必须无条件存在**：清墓碑是"有墓碑时才有事做"，
     //    但回写绑定是每次成功提交都要做。曾经写成 `deps.tombstones ? ... : undefined`，
     //    结果没有墓碑存储时连绑定也不回写 —— 实机验证表现为"刚上传完就报冲突"。

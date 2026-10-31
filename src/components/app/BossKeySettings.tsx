@@ -9,7 +9,7 @@
  *    界面要明说"没生效"，否则用户会以为设置好了、按下去却没反应。
  * 🔴 便携 / 网页没有系统级热键能力，这里如实写成"页面遮挡"（规划 §15.1）。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { EyeOff, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
@@ -17,7 +17,8 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { readBoolPref, readStringPref, writeBoolPref, writeStringPref } from '@/lib/settings/uiPrefs'
 import {
   BOSS_COVER_EVENT, BOSS_DEFAULT_ACCEL, BOSS_PREF_CHANGED_EVENT, BOSS_PRESETS,
-  accelDisplay, applyBossKey, bossKeyLimits, bossKeyMode, bossKeyStatus, normalizeAccel, toggleBossKey,
+  accelDisplay, accelFromKeyboard, applyBossKey, bossKeyLimits, bossKeyMode, bossKeyStatus, normalizeAccel,
+  toggleBossKey,
 } from '@/lib/app/bossKey'
 
 export const BOSS_ENABLED_KEY = 'boss-key-enabled'
@@ -31,6 +32,17 @@ export default function BossKeySettings() {
   const [active, setActive] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /**
+   * 正在录制自定义组合键（3.3.2 · 2026-10-31 主人要求"用户自己定义用哪个键"）。
+   * 录制时整个窗口的按键都被截住，所以必须有明确的取消方式（Esc / 再点一次）。
+   */
+  const [recording, setRecording] = useState(false)
+  const [recordHint, setRecordHint] = useState('')
+  /**
+   * 录制回调里要用"最新的 commit"，但不能把 commit 放进依赖数组（它每次 render 都是新函数，
+   * 会不停重绑 keydown）。用 ref 转一手：监听只绑一次，永远调到最新那个。
+   */
+  const commitRef = useRef<(nextEnabled: boolean, nextAccel: string) => Promise<void>>(async () => {})
 
   const refresh = useCallback(async () => {
     const st = await bossKeyStatus()
@@ -41,6 +53,40 @@ export default function BossKeySettings() {
     if (!open) return
     void refresh()
   }, [open, refresh])
+
+  // 面板关了要停止录制，否则按键会被一直截住（用户会以为键盘坏了）
+  useEffect(() => {
+    if (!open) { setRecording(false); setRecordHint('') }
+  }, [open])
+
+  /**
+   * 录制自定义组合键。
+   * 🔴 用捕获阶段 + preventDefault + stopPropagation：录制时不能让按键漏到编辑器里
+   *    （否则用户按 Ctrl+A 会顺手把正文全选）。
+   * 🔴 判据全部交给 `accelFromKeyboard`（纯函数、已被单测穷举），这里只管提示。
+   */
+  useEffect(() => {
+    if (!recording) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setRecording(false)
+        setRecordHint('')
+        return
+      }
+      const accelText = accelFromKeyboard(e)
+      if (!accelText) {
+        setRecordHint('要按住 Ctrl / Alt（可再加 Shift），再按一个字母、数字或 F1–F24')
+        return
+      }
+      setRecording(false)
+      setRecordHint('')
+      void commitRef.current(true, accelText)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [recording])
 
   const commit = async (nextEnabled: boolean, nextAccel: string) => {
     setBusy(true)
@@ -64,6 +110,8 @@ export default function BossKeySettings() {
     }
   }
 
+  useEffect(() => { commitRef.current = commit })
+
   const tryNow = async () => {
     if (mode === 'desktop') {
       const r = await toggleBossKey()
@@ -81,6 +129,9 @@ export default function BossKeySettings() {
       </Button>
     )
   }
+
+  /** 当前组合不在三条预设里 ⇒ 视为"自定义"，单独显示一行，避免用户以为设置丢了 */
+  const customAccel = BOSS_PRESETS.some((p) => p.accel === normalizeAccel(accel)) ? '' : normalizeAccel(accel) || ''
 
   const summary = !enabled
     ? '未启用'
@@ -157,6 +208,38 @@ export default function BossKeySettings() {
                 )
               })}
             </div>
+            {/**
+              * 自定义组合键（3.3.2 · 2026-10-31 主人要求）。
+              * 三条预设不够用：不同键盘（F 区被 Fn 占用）、不同习惯都得能自己定。
+              */}
+            <div className="mt-2 rounded-md border border-ink-700/70 px-2 py-1.5">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-11 text-ink-400">
+                  自定义
+                  {customAccel && (
+                    <span className="ml-1.5 text-12 text-amber-200">{accelDisplay(customAccel)}</span>
+                  )}
+                </span>
+                <Button
+                  variant={recording ? 'primary' : 'secondary'}
+                  size="xs"
+                  disabled={busy}
+                  onClick={() => { setRecordHint(''); setRecording((v) => !v) }}
+                  title="按下你想用的组合键，会自动申请注册"
+                >
+                  {recording ? '按下组合键…（Esc 取消）' : (customAccel ? '重录' : '自己按一个')}
+                </Button>
+              </div>
+              {recordHint && (
+                <p className="mt-1 text-11 leading-relaxed text-amber-300/90">{recordHint}</p>
+              )}
+              {!recording && !recordHint && (
+                <p className="mt-1 text-11 leading-relaxed text-ink-600">
+                  必须带 Ctrl 或 Alt（可再加 Shift），主键用字母 / 数字 / F1–F24。
+                </p>
+              )}
+            </div>
+
             <p className="mt-2 text-11 leading-relaxed text-ink-500">
               选择会立刻申请注册；若提示「被占用」，换一个即可 —— 失败时原来的组合仍然可用。
             </p>

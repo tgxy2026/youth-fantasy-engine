@@ -10,7 +10,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  BOSS_DEFAULT_ACCEL, BOSS_PRESETS, accelDisplay, matchesAccel, normalizeAccel,
+  BOSS_DEFAULT_ACCEL, BOSS_PRESETS, accelDisplay, accelFromKeyboard, matchesAccel, normalizeAccel,
 } from '@/lib/app/bossAccel'
 
 let pass = 0, fail = 0
@@ -99,6 +99,32 @@ function main() {
     ok('设置页区分「已保存」与「已生效」', /未生效/.test(settingsSrc) && /applyBossKey/.test(settingsSrc))
     ok('便携/网页文案写明是页面遮挡', /当前页面遮挡/.test(settingsSrc) || /页面遮挡/.test(settingsSrc))
   }
+
+    // ---- ⑦ 自定义组合键（2026-10-31 主人要求：用户自己定义触发键）----
+    const kb = (key: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}) => ({
+      key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods,
+    })
+    ok('Ctrl+Alt+K 能录成组合键', accelFromKeyboard(kb('k', { ctrlKey: true, altKey: true })) === 'Control+Alt+K')
+    ok('录出来的写法与 Electron 认的一致（不是 Ctrl、不丢 Shift 顺序）',
+      accelFromKeyboard(kb('F7', { ctrlKey: true, shiftKey: true })) === 'Control+Shift+F7')
+    ok('只按修饰键不算（还没按到主键）',
+      accelFromKeyboard(kb('Control', { ctrlKey: true })) === null
+      && accelFromKeyboard(kb('Shift', { shiftKey: true })) === null)
+    ok('只有 Shift 不算（容易和输入法/Space 冲突，也不是用户意图）',
+      accelFromKeyboard(kb('F9', { shiftKey: true })) === null)
+    ok('只有 Alt / 只有 Ctrl 都算（Alt+F9、Ctrl+F9 是常见组合）',
+      accelFromKeyboard(kb('F9', { altKey: true })) === 'Alt+F9'
+      && accelFromKeyboard(kb('F9', { ctrlKey: true })) === 'Control+F9')
+    ok('裸键拒绝（会和别的程序抢键）',
+      accelFromKeyboard(kb('F9')) === null && accelFromKeyboard(kb('a')) === null)
+    ok('不支持的符号键拒绝（键盘布局差异太大）',
+      accelFromKeyboard(kb('`', { ctrlKey: true })) === null
+      && accelFromKeyboard(kb('Tab', { ctrlKey: true })) === null)
+    ok('数字与 F12/F24 边界都收',
+      accelFromKeyboard(kb('7', { ctrlKey: true, altKey: true })) === 'Control+Alt+7'
+      && accelFromKeyboard(kb('F24', { ctrlKey: true })) === 'Control+F24')
+    ok('默认预设本身是合法写法（否则"重置为默认"会失效）',
+      BOSS_PRESETS.every((p) => normalizeAccel(p.accel) === p.accel) && normalizeAccel(BOSS_DEFAULT_ACCEL) === BOSS_DEFAULT_ACCEL)
 
   console.log(`\n▶ bossKey: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)

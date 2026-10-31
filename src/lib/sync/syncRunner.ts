@@ -17,7 +17,7 @@
 import type { ProjectBundle } from '@/lib/db/projects'
 import type { UploadOutcome, UploadTransport } from '@/lib/sync/projectUploader'
 import { uploadSnapshot } from '@/lib/sync/projectUploader'
-import { buildProjectSnapshot, type SnapshotTombstone } from '@/lib/sync/projectSnapshot'
+import { buildProjectSnapshot, type BuiltSnapshot, type SnapshotTombstone } from '@/lib/sync/projectSnapshot'
 import type { QueueStore, SyncJob } from '@/lib/sync/syncQueue'
 import {
   claimNext, markDone, markFailed, pruneQueue, recoverRunning,
@@ -41,6 +41,15 @@ export interface SyncRunnerDeps {
    *    真空了服务端会回 OBJECT_MISSING，`uploadSnapshot` 会自动补传一轮。
    */
   loadKnownHashes?: (job: SyncJob) => Promise<ReadonlySet<string>>
+  /**
+   * 记下「这一版云端有哪些对象」——供**下一次**推送直接复用，省掉一次清单下载。
+   *
+   * 🔴 为什么值得：每次推送都要先 `GET manifest?rev=base` 才能知道"哪些对象已经存在"。
+   *    但那份清单就是**我们上一次提交的那份**，内容一个字都没变。
+   *    含图作品的清单可以到几十 KB，连续写作时每 20 秒一份，纯属白搬。
+   * 🔴 只记最近一版：`baseRevision` 对不上就照常去服务端问（别人的设备也可能提交过）。
+   */
+  rememberHashes?: (job: SyncJob, revision: number, hashes: ReadonlySet<string>) => void
   /** 状态变化回调（界面据此刷新徽标；不传就纯后台跑） */
   onState?: (projectId: string, state: SyncState, detail?: { job?: SyncJob; outcome?: UploadOutcome }) => void
   now?: () => number
@@ -110,6 +119,8 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
 
   let outcome: UploadOutcome
   let tombstoneCutoff = 0
+  /** 供提交成功后记缓存用；快照可能没建成（异常分支），所以单独存一份 */
+  let builtForCache: BuiltSnapshot | null = null
   try {
     const bundle = await deps.loadBundle(job.projectId)
     if (!bundle) {
@@ -127,6 +138,7 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
     // 🔴 快照在这里**现算**，不用入队时的那份：
     //    排队期间用户可能又写了几章，用旧快照提交等于把新写的覆盖掉。
     const built = await buildProjectSnapshot(bundle, { tombstones, now: now() })
+    builtForCache = built
     // 云端已有的对象不必重传（拿不到就当作"一个都没有"，退回全量上传）
     let knownHashes: ReadonlySet<string> | undefined
     if (deps.loadKnownHashes && job.baseRevision > 0) {
@@ -158,6 +170,18 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
 
   state = nextState('syncing', eventFromOutcome(outcome))
   await settle(deps, job, outcome, state, now())
+  // 成功提交后把这一版的对象集合记下来（下一次推送省一次清单下载）
+  if (outcome.ok && deps.rememberHashes) {
+    try {
+      // `built` 在上面 try 里声明，这里用闭包外的作用域拿不到 —— 见下面的 `builtForCache`
+      if (builtForCache) {
+        const hs = new Set<string>()
+        for (const o of builtForCache.manifest.objects) hs.add(o.hash)
+        for (const a of builtForCache.manifest.assets) hs.add(a.hash)
+        deps.rememberHashes(job, outcome.revision, hs)
+      }
+    } catch { /* 只是缓存，失败不影响结果 */ }
+  }
   if (outcome.ok && deps.afterCommit) {
     try {
       await deps.afterCommit(job, tombstoneCutoff, outcome.revision)

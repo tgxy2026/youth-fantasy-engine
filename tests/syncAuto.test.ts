@@ -6,7 +6,7 @@
 //   ③ 云端 revision 未知 ⇒ 不推（猜基线的代价是盖掉别人的版本）；
 //   ④ 真正有改动才推，且带的是绑定里记的基线；
 //   ⑤ 云端也前进了 ⇒ 报冲突，不自动选边。
-import { decideTick, autoSyncTick, tickMessage, type AutoSyncDeps } from '@/lib/app/syncAuto'
+import { decideTick, autoSyncTick, tickMessage, nextTickDelay, SYNC_TICK_FAST_MS, SYNC_TICK_MAX_MS, type AutoSyncDeps } from '@/lib/app/syncAuto'
 import type { SyncBinding } from '@/lib/sync/projectBinding'
 import type { SyncController } from '@/lib/sync/syncController'
 
@@ -157,6 +157,31 @@ function main() {
     ok('冲突文案是给人看的', /保留哪一份/.test(tickMessage({ action: 'conflict', localBase: 1, remoteRevision: 2 })))
     ok('换账号文案说清楚了原因', /另一个账号/.test(tickMessage({ action: 'skip', reason: 'other-account' })))
     ok('正常跳过不出文案', tickMessage({ action: 'skip', reason: 'clean' }) === '')
+
+    // ---- ⑥ 轮询节流（3.3.2 · 2026-10-31 主人提出月流量 300G）----
+    //
+    // 空闲每 20 秒问一次云端 revision，一个月 13 万次请求，永远不停。
+    // 退避规则：有活干回到最快档，连续没活干翻倍到 5 分钟。
+    ok('有空要干（push）立刻回到最快档',
+      nextTickDelay(SYNC_TICK_MAX_MS, { action: 'push', baseRevision: 3 }) === SYNC_TICK_FAST_MS)
+    ok('云端有新版本（remote-ahead）也回到最快档，别让用户等',
+      nextTickDelay(SYNC_TICK_MAX_MS, { action: 'remote-ahead', remoteRevision: 5 }) === SYNC_TICK_FAST_MS)
+    ok('冲突时保持最快档（要尽快让用户看到并处理）',
+      nextTickDelay(SYNC_TICK_MAX_MS, { action: 'conflict', localBase: 1, remoteRevision: 2 }) === SYNC_TICK_FAST_MS)
+    ok('空闲（clean）逐轮翻倍：20s → 40s → 80s',
+      nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'clean' }) === 40_000
+      && nextTickDelay(40_000, { action: 'skip', reason: 'clean' }) === 80_000)
+    ok('退避有上限（不会无限涨，最长 5 分钟）',
+      nextTickDelay(SYNC_TICK_MAX_MS, { action: 'skip', reason: 'clean' }) === SYNC_TICK_MAX_MS
+      && nextTickDelay(SYNC_TICK_MAX_MS * 3, { action: 'skip', reason: 'clean' }) === SYNC_TICK_MAX_MS)
+    ok('断网/查不到云端（unknown-remote）也退避，不每 20 秒撞一次',
+      nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'unknown-remote' }) === 40_000)
+    ok('账号不符 / 云端回滚：直接拉到上限（状态不会自己好）',
+      nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'other-account' }) === SYNC_TICK_MAX_MS
+      && nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'remote-regressed' }) === SYNC_TICK_MAX_MS)
+    ok('未绑定 / 关着自动同步也退避（这类书本来就不用问云端）',
+      nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'unbound' }) === 40_000
+      && nextTickDelay(SYNC_TICK_FAST_MS, { action: 'skip', reason: 'disabled' }) === 40_000)
 
     console.log(`\n▶ syncAuto: ${pass} passed, ${fail} failed`)
     if (fail) process.exit(1)

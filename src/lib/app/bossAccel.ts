@@ -56,6 +56,38 @@ export function normalizeAccel(input: string | null | undefined): string | null 
   return `${MOD_ORDER.filter((m) => mods.has(m)).join('+')}+${key}`
 }
 
+/**
+ * 把一次真实按键翻译成组合键（3.3.2 · 2026-10-31 主人要求"让用户自己定义"）。
+ *
+ * 返回 `null` 表示这次按键不能当老板键，调用方据此提示原因：
+ *   · 只按了修饰键（Ctrl/Shift/Alt/Cmd）—— 还没按到主键；
+ *   · 主键不在允许集合（只收 F1–F24 / A–Z / 0–9）—— 符号键在不同键盘布局下差异太大；
+ *   · 只有 Shift —— Shift+F9 这类几乎没人用，还容易和输入法冲突。
+ *
+ * 🔴 **必须要求至少 Control / Alt / Command 之一**：裸键（或仅 Shift）会抢走别的程序的按键，
+ *    而且 Electron 的全局热键注册对这类组合行为不稳定。
+ */
+export function accelFromKeyboard(e: {
+  key: string
+  ctrlKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+  metaKey: boolean
+}): string | null {
+  const raw = String(e.key || '')
+  // 纯修饰键：继续等用户按主键
+  if (/^(Control|Shift|Alt|AltGraph|Meta|CapsLock|Dead|Unidentified)$/i.test(raw)) return null
+  const upper = raw.length === 1 ? raw.toUpperCase() : raw
+  if (!KEY_RE.test(upper)) return null
+  const parts: string[] = []
+  if (e.ctrlKey) parts.push('Control')
+  if (e.altKey) parts.push('Alt')
+  if (e.shiftKey) parts.push('Shift')
+  if (e.metaKey) parts.push('Command')
+  if (!parts.some((p) => p === 'Control' || p === 'Alt' || p === 'Command')) return null
+  return normalizeAccel([...parts, upper].join('+'))
+}
+
 /** 给界面看的写法（`Control+Shift+F9` → `Ctrl + Shift + F9`） */
 export function accelDisplay(accel: string | null | undefined): string {
   const norm = normalizeAccel(accel)

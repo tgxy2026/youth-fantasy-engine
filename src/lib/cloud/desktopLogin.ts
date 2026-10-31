@@ -15,10 +15,18 @@ export const DESKTOP_ACCOUNT_EVENT = 'yfe:desktop-account-changed'
 
 /** 主进程暴露的最小接口（见 `electron/preload.cjs` 的 `electronAuth`） */
 export interface ElectronAuthAPI {
-  status(): Promise<{ signedIn: boolean; encrypted: boolean }>
+  status(): Promise<{ signedIn: boolean; encrypted: boolean; base?: string }>
   login(opts: { baseUrl: string; name?: string }): Promise<
     | { ok: true; user: { name: string } | null; persisted: boolean; persistedReason: string }
     | { ok: false; error: string }
+  >
+  /** 账号密码直登（3.3.2 · 2026-10-31 起界面用这条路，不跳浏览器） */
+  loginPassword(opts: { name: string; password: string; baseUrl?: string }): Promise<
+    | {
+        ok: true; user: { name: string } | null; persisted: boolean; persistedReason: string
+        sessionLimitExceeded?: boolean; sessionCount?: number
+      }
+    | { ok: false; error: string; status?: number; code?: string }
   >
   logout(): Promise<{ ok: boolean }>
   fetch(opts: {
@@ -53,13 +61,50 @@ export interface DesktopLoginResult {
 }
 
 /** 读取登录状态（桌面且已登录时返回用户名；调用方据此决定要不要显示"去登录"） */
-export async function desktopAuthStatus(): Promise<{ available: boolean; signedIn: boolean; encrypted: boolean }> {
-  if (!hasDesktopAuth()) return { available: false, signedIn: false, encrypted: false }
+export async function desktopAuthStatus(): Promise<{
+  available: boolean; signedIn: boolean; encrypted: boolean
+  /** 当前连的账号服务器（界面只读展示；改服务器走环境变量 YFE_CLOUD_BASE） */
+  base: string
+}> {
+  if (!hasDesktopAuth()) return { available: false, signedIn: false, encrypted: false, base: '' }
   try {
     const r = await window.electronAuth!.status()
-    return { available: true, signedIn: !!r.signedIn, encrypted: !!r.encrypted }
+    return { available: true, signedIn: !!r.signedIn, encrypted: !!r.encrypted, base: String(r.base || '') }
   } catch {
-    return { available: false, signedIn: false, encrypted: false }
+    return { available: false, signedIn: false, encrypted: false, base: '' }
+  }
+}
+
+/**
+ * 账号 + 密码登录（不跳浏览器、不填网址）。
+ *
+ * 🔴 密码只在这一次 IPC 里过一手，主进程不保存它；令牌进 safeStorage，渲染层拿不到。
+ * 🔴 失败原因原样透出：密码错 / 设备超限 / 连不上，界面上必须是三句不同的话。
+ */
+export async function desktopLoginPassword(name: string, password: string): Promise<DesktopLoginResult> {
+  if (!hasDesktopAuth()) {
+    return { ok: false, message: '', reason: '当前环境不支持桌面账号登录（仅桌面版可用）' }
+  }
+  const userName = String(name || '').trim()
+  if (!userName) return { ok: false, message: '', reason: '请输入账号' }
+  if (!password) return { ok: false, message: '', reason: '请输入密码' }
+  try {
+    const r = await window.electronAuth!.loginPassword({ name: userName, password })
+    if (!r.ok) return { ok: false, message: '', reason: r.error || '登录未完成' }
+    const who = r.user?.name || userName
+    const message = r.persisted
+      ? `${who}，已登录并记住这台设备`
+      : `${who}，已登录（这台机器没有可用的安全存储，重启后需重新登录）`
+    return {
+      ok: true,
+      message: r.sessionLimitExceeded
+        ? `${message}。已在 ${r.sessionCount || 0} 台设备登录，建议在「登录设备」里撤销不用的`
+        : message,
+      persisted: r.persisted,
+      userName: who,
+    }
+  } catch (e) {
+    return { ok: false, message: '', reason: e instanceof Error ? e.message : '登录失败' }
   }
 }
 

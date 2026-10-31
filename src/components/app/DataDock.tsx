@@ -15,6 +15,7 @@ import { currentUiZoom, foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import DensityControl from '@/components/settings/DensityControl'
+import DesktopCloudAccount from '@/components/app/DesktopCloudAccount'
 
 /**
  * 左下角统一「数据坞」—— 全应用**唯一允许**的全局浮层（#032 布局规范化）。
@@ -117,6 +118,19 @@ export default function DataDock() {
 
           <div className="flex flex-col gap-1.5">
             <DensityControl />
+            {/**
+              * 3.3.2 · 云端账号（2026-10-31 主人要求）。
+              *
+              * 🔴 本浮层只在**项目中心**（没有打开作品时）渲染，项目内用的是 Sidebar Footer ——
+              *    所以这里加一份不会和侧栏那份重复，正好补上"还没进作品就想登录"的入口。
+              * 🔴 只在桌面版出现：网页版的账号在左下角账号胶囊里，游客/便携没有账号概念。
+              */}
+            {DESKTOP && (
+              <>
+                <Divider />
+                <DesktopCloudAccount />
+              </>
+            )}
             <div className="flex items-center gap-1.5 text-xs text-ink-300">
               {/* 标题随形态变：桌面/便携说「本机」，云端说「云端」，游客说「本地」 */}
               <span className="font-medium">

@@ -29,6 +29,34 @@ const bossKey = require('./bossKey.cjs')
 // 3.3.2 · 桌面端同步整链自检（`--desktop-sync-selftest`，见文件内注释与 syncSelftest.cjs 头）
 const { runSyncSelftest } = require('./syncSelftest.cjs')
 
+/**
+ * 账号服务器地址（3.3.2 · 2026-10-31 起用户不用再填）。
+ *
+ * 🔴 默认写死线上地址；测试/自检用环境变量 `YFE_CLOUD_BASE` 覆盖。
+ *    不放到渲染层：桌面登录由主进程发起，渲染层只需要"输入账号密码"。
+ */
+const DEFAULT_CLOUD_BASE = String(process.env.YFE_CLOUD_BASE || 'http://115.120.232.153').replace(/\/+$/, '')
+
+/**
+ * 从 `Set-Cookie` 里取出会话令牌。
+ *
+ * 🔴 网页版登录接口把令牌放在 Cookie（`yfe_sid=<token>`）里，响应体不带令牌。
+ *    桌面版要的就是这个值 —— 它和 Bearer 用的是同一串（服务端 `issueSession` 的 `r.token`）。
+ *    取不到就如实报错，不要退回"登录成功但同步全 401"。
+ */
+function readSessionCookie(resp) {
+  try {
+    const list = typeof resp.headers.getSetCookie === 'function'
+      ? resp.headers.getSetCookie()
+      : [resp.headers.get('set-cookie') || '']
+    for (const line of list) {
+      const m = /(?:^|;\s*)yfe_sid=([^;]+)/.exec(String(line || ''))
+      if (m && m[1]) return decodeURIComponent(m[1])
+    }
+  } catch { /* 解析失败按拿不到处理 */ }
+  return ''
+}
+
 const SMOKE_TEST = process.argv.includes('--smoke-test')
 /**
  * 桌面端同步整链自检（`--desktop-sync-selftest=<服务器地址>`）。
@@ -261,7 +289,12 @@ app.whenReady().then(() => {
   ipcMain.handle('auth:desktopStatus', () => {
     let available = false
     try { available = safeStorage.isEncryptionAvailable() } catch { available = false }
-    return { signedIn: !!tokenVault.load(), encrypted: available }
+    return {
+      signedIn: !!tokenVault.load(),
+      encrypted: available,
+      // 界面只用来显示"连的是哪台服务器"，不是给用户改的（改服务器走 YFE_CLOUD_BASE）
+      base: (authOrigin || DEFAULT_CLOUD_BASE),
+    }
   })
 
   /**
@@ -333,6 +366,66 @@ app.whenReady().then(() => {
     baseUrl: opts && opts.baseUrl,
     name: opts && opts.name,
     openBrowser: (url) => shell.openExternal(url),
+  }))
+
+  /**
+   * 账号密码直登（3.3.2 · 主人 2026-10-31 要求）。
+   *
+   * 【为什么不再跳浏览器】回环 + PKCE 那一套是为"不想在桌面里输密码"设计的，
+   *   但对作者来说是三步（填网址 → 浏览器授权 → 回来确认），比直接输密码麻烦得多。
+   *   现在桌面只做一件事：把用户名密码交给**主进程**换令牌，全程不出这个进程。
+   *
+   * 🔴 令牌只留在主进程（safeStorage），渲染层只拿到"成功/失败 + 用户名"。
+   * 🔴 服务器地址不再让用户填：默认用 `DEFAULT_CLOUD_BASE`，只有换服务器运维时才用
+   *    环境变量 `YFE_CLOUD_BASE` 覆盖（自检也是靠它指到本地测试服务器）。
+   * 🔴 复用网页版的 `/api/auth/login`：令牌在 `Set-Cookie` 里（`yfe_sid=<token>`），
+   *    响应体不返回令牌 —— 主进程把 Cookie 头里的值取出来存进安全存储即可。
+   */
+  const runPasswordLogin = async ({ baseUrl: rawBase, name, password }) => {
+    const baseUrl = String(rawBase || DEFAULT_CLOUD_BASE || '').replace(/\/+$/, '')
+    if (!/^https?:\/\//.test(baseUrl)) return { ok: false, error: '账号服务器地址不合法' }
+    const userName = String(name || '').trim()
+    if (!userName) return { ok: false, error: '请输入账号' }
+    if (!String(password || '')) return { ok: false, error: '请输入密码' }
+    try {
+      const resp = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: userName, password: String(password) }),
+      })
+      const body = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        // 服务端的原话最准（"用户名或密码不正确"/"尝试次数过多"/"登录的设备太多"），
+        // 只在拿不到时给一句兜底；401 不外泄"用户是否存在"
+        return {
+          ok: false,
+          status: resp.status,
+          code: body && body.code ? String(body.code) : '',
+          error: String((body && body.error) || (resp.status === 401 ? '账号或密码不正确' : `登录失败（HTTP ${resp.status}）`)),
+        }
+      }
+      const token = readSessionCookie(resp)
+      if (!token) return { ok: false, error: '登录成功但没拿到会话凭据（服务器版本不匹配，请升级服务器）' }
+      const saved = tokenVault.save(token)
+      try { saveAuthOrigin(new URL(baseUrl).origin) } catch { /* baseUrl 已校验 */ }
+      return {
+        ok: true,
+        user: body && body.user ? { name: body.user.name } : { name: userName },
+        persisted: saved.persisted === true,
+        persistedReason: saved.persisted ? '' : (saved.reason || 'NO_SAFE_STORAGE'),
+        sessionLimitExceeded: body && body.sessionLimitExceeded === true,
+        sessionCount: Number(body && body.sessionCount) || 0,
+      }
+    } catch (e) {
+      // 网络层错误单独说：用户分不清"密码错了"和"连不上服务器"就会一直重试密码
+      return { ok: false, error: `连不上账号服务器：${e && e.message ? e.message : '网络错误'}` }
+    }
+  }
+
+  ipcMain.handle('auth:desktopLoginPassword', (_e, opts) => runPasswordLogin({
+    baseUrl: opts && opts.baseUrl,
+    name: opts && opts.name,
+    password: opts && opts.password,
   }))
 
   ipcMain.handle('auth:desktopLogout', () => {
@@ -1179,6 +1272,8 @@ app.whenReady().then(() => {
             baseUrl: String(DESKTOP_SYNC_SELFTEST).replace(/\/+$/, ''),
             account: SELFTEST_ACCOUNT,
             login: runDesktopLogin,
+            // 3.3.2 起界面上的登录方式就是"账号 + 密码直登"，自检必须走同一条路
+            loginPassword: runPasswordLogin,
             getToken: () => tokenVault.load() || '',
           })
           clearTimeout(guard)

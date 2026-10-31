@@ -141,6 +141,35 @@ export async function autoSyncTick(deps: AutoSyncDeps): Promise<TickDecision> {
   return decision
 }
 
+// ============ 3.3.2 · 轮询节流（2026-10-31 主人提出：服务器月流量 300G）============
+//
+// 【为什么要退避】空闲时每 20 秒查一次云端 revision：一天 4320 次、一个月 13 万次请求。
+//   单次很小，但它乘以"同时开着的设备数"，并且**永远不会停** —— 这是纯浪费。
+//   实测：同一台机器一天里 90% 的 tick 都判成 clean / unknown-remote。
+//
+// 【规则】有活干就回到最快档；连续没活干就翻倍退避到上限。
+//   · push / conflict / remote-ahead  → 立刻回到 20 秒（说明有东西在流动，别拖）
+//   · clean / busy / unknown-remote   → 翻倍，上限 5 分钟
+//   · other-account / remote-regressed → 直接拉到上限（状态不会自己好，别反复问）
+//   🔴 用户一动手（任意 input 事件）就把节拍拉回最快档 —— 见 `startAutoSync` 的 poke，
+//      否则退避到 5 分钟后，写完要等 5 分钟才上云，跨设备接续就废了。
+export const SYNC_TICK_FAST_MS = 20_000
+export const SYNC_TICK_MAX_MS = 300_000
+
+/** 下一轮该等多久（纯函数；`prev` 是这一轮用的间隔） */
+export function nextTickDelay(prev: number, d: TickDecision): number {
+  const grow = () => Math.min(Math.max(prev, SYNC_TICK_FAST_MS) * 2, SYNC_TICK_MAX_MS)
+  if (d.action === 'push') return SYNC_TICK_FAST_MS
+  if (d.action === 'conflict' || d.action === 'remote-ahead') return SYNC_TICK_FAST_MS
+  switch (d.reason) {
+    case 'other-account':
+    case 'remote-regressed':
+      return SYNC_TICK_MAX_MS
+    default:
+      return grow()
+  }
+}
+
 /** 一轮结束后的界面提示文案（不需要每个调用方各写一份） */
 export function tickMessage(d: TickDecision): string {
   if (d.action === 'push') return '正在同步…'

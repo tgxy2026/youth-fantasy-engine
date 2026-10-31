@@ -25,12 +25,12 @@ import { fetchRemoteRevision, fetchManifest, configureCloudTransport } from '@/l
 import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
 import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
 import { DESKTOP } from '@/lib/app/desktop'
-import { autoSyncTick, type AutoSyncDeps, type TickDecision } from '@/lib/app/syncAuto'
+import { autoSyncTick, nextTickDelay, SYNC_TICK_FAST_MS, SYNC_TICK_MAX_MS, type AutoSyncDeps, type TickDecision } from '@/lib/app/syncAuto'
 
 /** 默认轮询间隔：用户在写稿，20 秒足够把改动送上去，又不至于太吵 */
 export const AUTO_SYNC_INTERVAL_MS = 20_000
 
-let timer: ReturnType<typeof setInterval> | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
 let booting: Promise<SyncController> | null = null
 let onTick: ((d: TickDecision) => void) | null = null
 let visibilityBound = false
@@ -38,6 +38,13 @@ let visibilityBound = false
 /** 当前账号 id（网页版由 App 在登录后提供；未登录返回 undefined） */
 let accountId: string | undefined
 export function setSyncAccountId(id: string | undefined) { accountId = id }
+/**
+ * 每个云端作品「最近一次提交那一版包含的对象集合」。
+ * 🔴 只用来省一次清单下载；对不上就照常问服务端，**不能**当"云端一定有这些对象"的承诺
+ *    —— 对象可能被 GC 掉，那时服务端回 OBJECT_MISSING，上传器会自动补传一轮。
+ */
+const knownHashCache = new Map<string, { revision: number; hashes: ReadonlySet<string> }>()
+
 /** 当前账号 id（建立绑定时要写进绑定记录，用于"换账号后绑定作废"的判定） */
 export function getSyncAccountId(): string | undefined { return accountId }
 
@@ -97,6 +104,15 @@ export async function bootSync(): Promise<SyncController> {
       loadKnownHashes: async (job) => {
         const out = new Set<string>()
         if (job.baseRevision <= 0) return out
+        /**
+         * 先看"我上一次提交的那一版"：`baseRevision` 对得上就直接复用，**不发请求**。
+         *
+         * 🔴 每次推送前都要 `GET manifest?rev=base` 才知道"哪些对象云端已有"，
+         *    而刚提交的那份清单就是上一次推送自己传上去的。含图作品的清单几十 KB，
+         *    连续写作时每 20 秒下一份 —— 这是可省的纯浪费（主人 2026-10-31 提流量）。
+         */
+        const cached = knownHashCache.get(job.cloudProjectId)
+        if (cached && cached.revision === job.baseRevision) return cached.hashes
         const man = await fetchManifest(job.cloudProjectId, job.baseRevision)
         if (!man) return out
         const take = (arr: unknown) => {
@@ -108,7 +124,16 @@ export async function bootSync(): Promise<SyncController> {
         }
         take((man as { objects?: unknown }).objects)
         take((man as { assets?: unknown }).assets)
+        // 服务端回来的清单也存一份：同一 base 上如果再推一次（网络抖动重试）就不必再问
+        knownHashCache.set(job.cloudProjectId, { revision: job.baseRevision, hashes: out })
+        if (knownHashCache.size > 32) {
+          const first = knownHashCache.keys().next().value
+          if (typeof first === 'string') knownHashCache.delete(first)
+        }
         return out
+      },
+      rememberHashes: (job, revision, hashes) => {
+        knownHashCache.set(job.cloudProjectId, { revision, hashes })
       },
       onCommitted: async ({ projectId, cloudProjectId, revision }) => {
         try {
@@ -163,25 +188,67 @@ export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<voi
   if (timer) return
 
   const deps = makeAutoDeps(controller)
+  /**
+   * 当前这一轮的等待间隔。起手用最快档，之后由 `nextTickDelay` 按结果退避。
+   * 🔴 用 setTimeout 链而不是 setInterval：间隔要能变（空闲退避到 5 分钟），
+   *    setInterval 改不了周期，只能清掉重建，反而更容易漏清。
+   */
+  let delayMs: number = SYNC_TICK_FAST_MS
+  let lastRunAt = 0
+
+  const schedule = (ms: number) => {
+    if (!timer) return
+    delayMs = ms
+    timer = setTimeout(() => { void run() }, ms)
+  }
+
   const run = async () => {
     // 页面不可见时跳过：合盖/切走不该继续打网络
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      schedule(SYNC_TICK_MAX_MS)
+      return
+    }
+    let d: TickDecision | null = null
     try {
-      const d = await autoSyncTick(deps)
+      d = await autoSyncTick(deps)
       onTick?.(d)
     } catch (e) {
       console.warn('[sync] 自动同步这一轮失败（不影响本地保存）：', e)
     }
+    lastRunAt = Date.now()
+    // 出错也退避：断网时每 20 秒撞一次没有任何意义
+    schedule(d ? nextTickDelay(delayMs, d) : SYNC_TICK_MAX_MS)
   }
 
-  timer = setInterval(() => { void run() }, AUTO_SYNC_INTERVAL_MS)
+  // 占位，让 schedule 里 `if (!timer) return` 在首次调度时成立
+  timer = setTimeout(() => {}, 0)
+  schedule(SYNC_TICK_FAST_MS)
+
+  /**
+   * 用户一动手就把节拍拉回最快档。
+   *
+   * 🔴 没有这一条，退避就会伤害体验：写到第 6 分钟时下一轮在 5 分钟后，
+   *    云端要过 5 分钟才看到新内容，「换设备接着写」直接废掉。
+   * 🔴 用 `input` 而不是 `keydown`：粘贴、IME 上屏、拖拽插入都会发 input；
+   *    也不去订阅保存状态（那要动写盘路径，本项目红线）。
+   */
+  const poke = () => {
+    if (!timer) return
+    if (delayMs <= SYNC_TICK_FAST_MS) return
+    if (Date.now() - lastRunAt < 2_000) return
+    schedule(SYNC_TICK_FAST_MS)
+  }
 
   // 切回前台立刻跑一轮：用户切回来时最想看到"刚写的东西已经上去了"
   if (!visibilityBound && typeof document !== 'undefined') {
     visibilityBound = true
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void run()
+      if (document.visibilityState === 'visible') {
+        lastRunAt = 0
+        schedule(0)
+      }
     })
+    document.addEventListener('input', poke, true)
   }
   void run()
 }

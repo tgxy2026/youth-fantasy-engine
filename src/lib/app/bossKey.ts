@@ -18,7 +18,7 @@ import { accelDisplay } from '@/lib/app/bossAccel'
 
 export {
   BOSS_COVER_EVENT, BOSS_DEFAULT_ACCEL, BOSS_PREF_CHANGED_EVENT, BOSS_PRESETS,
-  accelDisplay, matchesAccel, normalizeAccel,
+  accelDisplay, accelFromKeyboard, matchesAccel, normalizeAccel,
 } from '@/lib/app/bossAccel'
 export type { BossPreset, KeyLike } from '@/lib/app/bossAccel'
 
