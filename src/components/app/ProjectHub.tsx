@@ -34,6 +34,7 @@ import workbenchBg from '@/assets/workbench-bg.png'
 //    要换回 PNG 只需把这行改回去，别删源文件。
 import jiewenjiGufeng from '@/assets/jiewenji-gufeng.webp'
 import { Button } from '@/components/common/Button'
+import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import MascotSettingsDialog from '@/components/settings/MascotSettingsDialog'
 import AppIconDialog from '@/components/settings/AppIconDialog'
@@ -295,7 +296,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入已有项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入已有项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（每 5 分钟 / 每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
             </HelpPopover>
           </h2>
-          <div className="flex gap-2 items-stretch shrink-0">
+          {/* 🔴 加了「云端同步」之后这排按钮更多了：允许换行（原先 shrink-0 不能换行，
+              窄窗口会把整排挤出可视区）。换行不影响任何按钮的点击。 */}
+          <div className="flex flex-wrap gap-2 items-stretch justify-end">
             <Button onClick={createDemo}
               disabled={busy}
               
@@ -305,6 +308,16 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="transition-colors">
               <FileDown size={13} /> 导入已有项目
             </Button>
+            {/**
+              * 3.3.2 · 换设备的第一步：**在没有本机作品时**把云端那本书取回来。
+              *
+              * 🔴 面板原先只挂在「作品内部」（桌面在侧栏、网页在账号行），项目中心没有任何云端入口
+              *    ⇒ 新设备上（0 本书）既看不到云端作品，也点不到「下载为新书」，头号场景第一步被堵死
+              *    （2026-10-31 真机验收 L16）。
+              * 🔴 这里必须给**看得见文字**的按钮：网页版那个纯图标入口按文案找不到，用户也发现不了。
+              * `onProjectsChanged={load}`：下载出来的新书要立刻出现在下面的列表里。
+              */}
+            <CloudSyncPanel inline block={false} showState={false} size="md" onProjectsChanged={load} />
             <input
               ref={fileRef}
               type="file"

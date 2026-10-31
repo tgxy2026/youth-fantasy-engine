@@ -991,6 +991,151 @@ async function runSyncSelftest(o) {
     return `${(r.list || []).length} 个控件中心点命中的都是自己（无遮挡）`
   }, 90_000)
 
+  step('20 项目中心能取回云端作品（L16 回归）', async () => {
+    /**
+     * 「换一台设备接着写」的第一步：**本机一本都没有时**，在项目中心把云端那本取回来。
+     *
+     * 🔴 3.3.2 首发版本在这里是死的：面板只挂在作品内部，项目中心没有云端入口；
+     *    而且 `load()` 在没有当前项目时直接 return，连云端列表都不拉
+     *    ⇒ 新设备上永远看不到「云端作品」，也点不到「下载为新书」（真机验收 L16）。
+     *    这一步不点下载（后面的步骤还要用当前这本书），只验两件事：
+     *    ① 项目中心有**看得见文字**的「云端同步」按钮；② 打开后真的列出了云端作品。
+     */
+    const r = await js(`
+      dismissStrays();
+      // 回项目中心
+      if (!document.querySelector('button[aria-label="打开项目"]')) {
+        closeModal();
+        await sleep(400);
+        clickAny(['切换项目']);
+        await waitFor(() => document.querySelector('button[aria-label="打开项目"]'), 20000);
+      }
+      const btn = findText('云端同步');
+      if (!btn) return { ok: false, why: '项目中心没有「云端同步」按钮（只有图标也算缺失：按文案找不到）' };
+      btn.click();
+      await sleep(900);
+      const diag1 = { dialogs: document.querySelectorAll('[role="dialog"]').length, tag: btn.tagName, disabled: btn.disabled === true };
+      if (!diag1.dialogs) {
+        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await sleep(900);
+      }
+      const diag2 = { dialogs: document.querySelectorAll('[role="dialog"]').length };
+      // 🔴 判据必须是**列表头部的计数**（"云端作品 N 本"），不能是"页面里出现过'云端作品'"
+      //    这几个字 —— 无项目时的提示语里就写着「从下面『云端作品』里挑一本」，
+      //    按词判断会立刻假绿（第一次跑就踩到：n=0 却被判成"列出了"）。
+      const listed = await waitFor(() => {
+        // 🔴 用 [0-9] 而不是 \\d：这段代码是模板字符串，单个反斜杠会被外层吃掉（本次踩到）
+        const m = /云端作品([0-9]+)本/.exec(norm(bodyText()));
+        return m ? { n: Number(m[1]) } : null;
+      }, 25000);
+      const t = norm(bodyText());
+      const hasDownload = t.includes('下载为新书');
+      const stillHintOnly = t.includes('当前没打开作品') && !listed;
+      const alert = document.querySelector('[role="alert"]');
+      const alertText = alert ? norm(alert.textContent).slice(0, 120) : '';
+      const dlgEl = document.querySelector('[role="dialog"]');
+      const modalText = dlgEl ? norm(dlgEl.textContent).slice(0, 400) : '';
+      closeModal();
+      await sleep(500);
+      return { ok: !!listed && listed.n > 0, n: listed ? listed.n : 0, hasDownload, stillHintOnly, alertText, diag1, diag2, modalText, text: t.slice(0, 80) };
+    `)
+    if (!r.ok) {
+      throw new Error(r.why || `项目中心的面板没列出云端作品（n=${r.n}，只有提示没有列表=${r.stillHintOnly}，报错=${r.alertText || '无'}，dialog=${JSON.stringify(r.diag1)}→${JSON.stringify(r.diag2)}，弹窗文本=${r.modalText}）`)
+    }
+    return `项目中心「云端同步」可用，列出云端作品 ${r.n} 本，下载入口=${r.hasDownload}`
+  }, 120_000)
+
+  step('21 云端回收站：删除 → 标回收站 → 恢复（L17 回归）', async () => {
+    /**
+     * 🔴 3.3.2 首发版本里**没有任何入口能把云端作品放进回收站**：客户端只封装了「彻底删除」，
+     *    而它只对已在回收站的作品可用 ⇒ 回收站、恢复、30 天到期清理在界面上全是死的
+     *    （真机验收 L17）。这一步走真实 UI：列表里点「删除」→ 确认 → 该行出现「回收站」→
+     *    点「恢复」→ 确认 → 恢复成可用。
+     */
+    const del = await js(`
+      dismissStrays();
+      if (!clickText('云端同步')) return { ok: false, why: '打不开面板' };
+      await sleep(600);
+      const rf = findText('刷新'); if (rf) rf.click();
+      await waitFor(() => norm(bodyText()).includes('云端作品'), 20000);
+
+      // 找一行"没在回收站"的作品，点它的「删除」
+      const rowOf = () => Array.from(document.querySelectorAll('div'))
+        .find((d) => d.querySelector('button[aria-label="打开项目"]') === null
+          && norm(d.textContent).includes('第')
+          && Array.from(d.querySelectorAll('button')).some((b) => norm(b.textContent) === '删除'));
+      let row = rowOf();
+      if (!row) return { ok: false, why: '云端作品列表里没有「删除」按钮（L17 未修）' };
+      let btn = Array.from(row.querySelectorAll('button')).find((b) => norm(b.textContent) === '删除');
+      btn.click();
+
+      const confirmed = await waitFor(() => {
+        const dlg = Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => norm(d.textContent).includes('放进云端回收站'));
+        if (!dlg) return null;
+        const ok2 = Array.from(dlg.querySelectorAll('button')).find((b) => norm(b.textContent) === '放进回收站' || norm(b.textContent) === '确定');
+        if (!ok2) return null;
+        ok2.click();
+        return true;
+      }, 20000);
+      if (!confirmed) {
+        const dlgs = Array.from(document.querySelectorAll('[role="dialog"]')).map((d) => norm(d.textContent).slice(0, 60));
+        return { ok: false, why: '删除的确认框没出现：' + JSON.stringify(dlgs) };
+      }
+
+      /**
+       * 🔴 判据要**结构化**：等"出现带「恢复」按钮的回收站行"，不能等"页面里出现回收站三个字"
+       *    —— 面板底部本来就写着「回收站里的作品要先点『恢复』才能下载」，按词判断会立刻假绿
+       *    （第一次跑就踩到：删除根本没成功，却被判成"已标回收站"）。
+       */
+      const rowHasRestore = () => Array.from(document.querySelectorAll('div'))
+        .some((d) => norm(d.textContent).includes('回收站')
+          && Array.from(d.querySelectorAll('button')).some((b) => norm(b.textContent) === '恢复'));
+      const marked = await waitFor(() => (rowHasRestore() ? true : null), 40000);
+      if (!marked) {
+        const t = norm(bodyText());
+        return { ok: false, why: '删除后列表里没有出现带「恢复」的回收站行；面板尾部=' + t.slice(-160) };
+      }
+      return { ok: true };
+    `)
+    if (!del.ok) throw new Error(del.why || '删除后列表里没有出现「回收站」标记')
+
+    const back = await js(`
+      const row = Array.from(document.querySelectorAll('div'))
+        .find((d) => norm(d.textContent).includes('回收站')
+          && Array.from(d.querySelectorAll('button')).some((b) => norm(b.textContent) === '恢复'));
+      if (!row) return { ok: false, why: '找不到带「恢复」按钮的回收站行' };
+      const btn = Array.from(row.querySelectorAll('button')).find((b) => norm(b.textContent) === '恢复');
+      btn.click();
+      const confirmed = await waitFor(() => {
+        const dlg = Array.from(document.querySelectorAll('[role="dialog"]')).find((d) => norm(d.textContent).includes('恢复为可用状态'));
+        if (!dlg) return null;
+        const ok2 = Array.from(dlg.querySelectorAll('button')).find((b) => norm(b.textContent) === '确定');
+        if (!ok2) return null;
+        ok2.click();
+        return true;
+      }, 20000);
+      if (!confirmed) return { ok: false, why: '恢复的确认框没出现' };
+      /**
+       * 🔴 判据同样要结构化：面板底部常驻一句「回收站里的作品要先点『恢复』才能下载」，
+       *    按"页面里还有没有回收站三个字"判断永远为真（本次踩到：恢复成功却被判失败）。
+       *    现在等两件事之一：出现「已恢复」提示，或者**再没有任何一行带「恢复」按钮**。
+       */
+      const stillTrash = () => Array.from(document.querySelectorAll('div'))
+        .some((d) => Array.from(d.querySelectorAll('button')).some((b) => norm(b.textContent) === '恢复'));
+      const done = await waitFor(() => {
+        if (norm(bodyText()).includes('已恢复')) return 'toast';
+        if (!stillTrash()) return 'row';
+        return null;
+      }, 60000);
+      closeModal();
+      return { ok: !!done, how: done || '' };
+    `)
+    if (!back.ok) throw new Error(back.why || '恢复后仍显示「回收站」')
+    return '删除进回收站 → 标记出现 → 恢复成功，全流程走真实 UI'
+  }, 150_000)
+
   // ---------------- 执行 ----------------
 
   const t0 = Date.now()

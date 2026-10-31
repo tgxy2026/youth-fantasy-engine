@@ -168,21 +168,40 @@ export interface CloudProjectList {
   projects: CloudProjectRow[]
   usedBytes: number
   quotaBytes: number
+  /**
+   * 这次读取**成功了吗**。
+   * 🔴 必须跟"云端确实一本都没有"分开：以前失败也返回空数组，界面就只剩一句
+   *    「云端一件也没有」，用户以为稿子丢了（本项目的红线之一：网络问题与"没有"不能混说）。
+   */
+  ok: boolean
+  /** 失败原因（401 单独说"登录失效"，别让用户去查网络） */
+  error?: string
 }
 
 /** 列出云端作品（含配额）—— 面板据此显示「云端已用 X / Y」与逐本下载入口 */
 export async function listCloudProjects(base = baseOf()): Promise<CloudProjectList> {
   try {
     const res = await f()(`${base}/api/v2/projects`, { credentials: 'same-origin', cache: 'no-store' })
-    if (!res.ok) return { projects: [], usedBytes: 0, quotaBytes: 0 }
+    if (!res.ok) {
+      return {
+        projects: [], usedBytes: 0, quotaBytes: 0, ok: false,
+        error: res.status === 401 || res.status === 403
+          ? '登录状态已失效，请重新登录后再看云端作品'
+          : `读取云端作品失败（HTTP ${res.status}）`,
+      }
+    }
     const b = await res.json() as { projects?: unknown; usedBytes?: number; quotaBytes?: number }
     return {
       projects: Array.isArray(b.projects) ? b.projects as CloudProjectRow[] : [],
       usedBytes: Number(b.usedBytes) || 0,
       quotaBytes: Number(b.quotaBytes) || 0,
+      ok: true,
     }
-  } catch {
-    return { projects: [], usedBytes: 0, quotaBytes: 0 }
+  } catch (e) {
+    return {
+      projects: [], usedBytes: 0, quotaBytes: 0, ok: false,
+      error: e instanceof Error ? `连不上云端：${e.message}` : '连不上云端',
+    }
   }
 }
 
@@ -277,6 +296,39 @@ export async function restoreCloudProject(
     return { ok: true, revision: Number(b.revision) || 0, restoredFrom: Number(b.restoredFrom) || 0 }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '恢复失败' }
+  }
+}
+
+/**
+ * 把云端这本**放进回收站**（软删除，30 天内可恢复）。
+ *
+ * 🔴 与 `purgeCloudProject` 是两个动作，不能混：
+ *    · 删除 = 写墓碑、推进一个 revision，回收站里能找回（`restoreCloudProject`）；
+ *    · 彻底删除 = 只对已在回收站里的作品可用，删了就找不回。
+ *   3.3.2 之前客户端只封装了后者，于是「云端回收站」在界面上根本没有入口 ——
+ *    只有服务端 DELETE 能用，用户永远走不到那一步（实机验收时发现）。
+ *
+ * 🔴 删除**不动本机**：本机那本还在，只是绑定会进入 `remote-deleted` 状态。
+ */
+export async function deleteCloudProject(
+  cloudProjectId: string, opId: string, base = baseOf(),
+): Promise<{ ok: true; revision: number } | { ok: false; error: string; code?: string }> {
+  try {
+    const res = await f()(
+      `${base}/api/v2/projects/${encodeURIComponent(cloudProjectId)}?opId=${encodeURIComponent(opId)}`,
+      { method: 'DELETE', credentials: 'same-origin' },
+    )
+    const b = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: String(b.error || `删除失败（HTTP ${res.status}）`),
+        code: b.code ? String(b.code) : undefined,
+      }
+    }
+    return { ok: true, revision: Number(b.revision) || 0 }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : '删除失败' }
   }
 }
 

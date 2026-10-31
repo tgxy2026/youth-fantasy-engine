@@ -32,7 +32,7 @@ import type { SyncBinding } from '@/lib/sync/projectBinding'
 import { decideSync, planConflict, resolveDisplayState } from '@/lib/sync/projectBinding'
 import { bootSync, startAutoSync, stopAutoSync, isAutoSyncRunning, getSyncAccountId } from '@/lib/app/syncBoot'
 import { runSaveBarrier } from '@/lib/app/bossSave'
-import { createCloudProject, probeCloudProject, restoreCloudProject, purgeCloudProject, listCloudProjects, listCloudRevisions } from '@/lib/cloud/syncApi'
+import { createCloudProject, probeCloudProject, restoreCloudProject, deleteCloudProject, purgeCloudProject, listCloudProjects, listCloudRevisions } from '@/lib/cloud/syncApi'
 import type { CloudProjectList, CloudProjectRow, CloudRevisionRow, CloudVersionSummary } from '@/lib/cloud/syncApi'
 import { uid } from '@/lib/app/id'
 import { saveCloudCopyAsNewProject } from '@/lib/sync/projectPullWrite'
@@ -68,7 +68,31 @@ const fmtBytes = (n: number): string => {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-export default function CloudSyncPanel({ inline = false }: { inline?: boolean } = {}) {
+/**
+ * 云端同步面板。三处入口共用同一份实现（3.3.2）：
+ * - 侧栏（`inline`）：整行按钮，带同步状态
+ * - 网页版账号行（默认）：纯图标按钮（空间紧）
+ * - **项目中心**（`inline block={false} showState={false}`）：一个看得见文字的「云端同步」按钮
+ *   —— 换设备的第一步就是在这里把云端作品取回来，不能只有图标（L16）
+ */
+export default function CloudSyncPanel({
+  inline = false,
+  /** 侧栏模式是否占满整行（项目中心里不能占满，否则会把那一排按钮挤爆） */
+  block,
+  /** 是否在按钮右侧显示同步状态文案（项目中心里不显示，避免按钮过宽） */
+  showState = true,
+  /** 从云端下载出一本新作品后通知外层（项目中心要刷新列表） */
+  onProjectsChanged,
+  /** 按钮尺寸档位；项目中心那排是 md，跟同排按钮保持一致（闸 uiUxGuards 同排同 size） */
+  size = 'xs',
+}: {
+  inline?: boolean
+  block?: boolean
+  showState?: boolean
+  onProjectsChanged?: () => void
+  size?: 'xs' | 'sm' | 'md' | 'lg'
+} = {}) {
+  const fullWidth = block ?? inline
   const [open, setOpen] = useState(false)
   const [project, setProject] = useState<Project | null>(null)
   const [binding, setBinding] = useState<SyncBinding | null>(null)
@@ -118,8 +142,6 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
     setLoading(true)
     setError('')
     try {
-      const pid = getCurrentProjectId()
-      if (!pid) { setProject(null); setBinding(null); setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null); return }
       /**
        * 🔴 **通道要先装，再去问云端**（2026-10-31 桌面自检抓到）。
        *
@@ -129,36 +151,53 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
        * 相对地址上（file:// 没有 `/api/v2` 路由）⇒ 恒定失败 ⇒ 凭空弹出
        * 「暂时连不上云端（网络问题），云端版本未知」。点一下「刷新」就好，所以极易被当成偶发网络问题。
        * `bootSync()` 是幂等的，提前调用没有副作用。
+       *
+       * 🔴 **没有打开作品时也不能提前 return**（2026-10-31 真机验收抓到 L16）：
+       * 「换一台设备接着写」的第一步就是在新设备上把云端那本书拿下来，而那时本机一本书都没有。
+       * 原先这里直接返回，连 `listCloudProjects()` 都不调 ⇒ 项目中心打开面板只有一句
+       * 「先打开一本作品再来同步」，看不到任何云端作品，也点不到「下载为新书」——
+       * 头号场景的第一步被堵死。
        */
       const ctl = await bootSync()
-      const p = await ops.get<Project>('projects', pid)
-      setProject(p ?? null)
-      const b = await store.get(pid)
-      setBinding(b)
-      if (b?.cloudProjectId) {
-        const probe = await probeCloudProject(b.cloudProjectId)
-        if (probe.ok) {
-          setCloudRevision(probe.state.revision)
-          setCloudDeletedAt(probe.state.deleted ? (probe.state.deletedAt || 1) : 0)
-          setCloudSummary(probe.state.summary ?? null)
-        } else if (probe.reason === 'not-found') { setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null) }
-        else {
-          setCloudRevision(null)
-          setCloudDeletedAt(0)
-          setCloudSummary(null)
-          // 🔴 网络问题与"云端没有"必须分开说，否则用户以为稿子丢了
-          setError(probe.reason === 'unauthorized'
-            ? '登录状态已失效，请重新登录后再同步'
-            : '暂时连不上云端（网络问题），云端版本未知')
-        }
-      } else {
+      const pid = getCurrentProjectId()
+      if (!pid) {
+        setProject(null)
+        setBinding(null)
         setCloudRevision(null)
         setCloudDeletedAt(0)
         setCloudSummary(null)
+      } else {
+        const p = await ops.get<Project>('projects', pid)
+        setProject(p ?? null)
+        const b = await store.get(pid)
+        setBinding(b)
+        if (b?.cloudProjectId) {
+          const probe = await probeCloudProject(b.cloudProjectId)
+          if (probe.ok) {
+            setCloudRevision(probe.state.revision)
+            setCloudDeletedAt(probe.state.deleted ? (probe.state.deletedAt || 1) : 0)
+            setCloudSummary(probe.state.summary ?? null)
+          } else if (probe.reason === 'not-found') { setCloudRevision(null); setCloudDeletedAt(0); setCloudSummary(null) }
+          else {
+            setCloudRevision(null)
+            setCloudDeletedAt(0)
+            setCloudSummary(null)
+            // 🔴 网络问题与"云端没有"必须分开说，否则用户以为稿子丢了
+            setError(probe.reason === 'unauthorized'
+              ? '登录状态已失效，请重新登录后再同步'
+              : '暂时连不上云端（网络问题），云端版本未知')
+          }
+        } else {
+          setCloudRevision(null)
+          setCloudDeletedAt(0)
+          setCloudSummary(null)
+        }
+        setState(await ctl.stateOf(pid))
       }
-      setState(await ctl.stateOf(pid))
-      // 账号下的云端作品 + 配额（失败返回空，不影响上面这次状态读取）
-      setCloudList(await listCloudProjects())
+      // 账号下的云端作品 + 配额（失败也返回结构，`ok:false` 用来把"读不到"和"没有"分开说）
+      const list = await listCloudProjects()
+      setCloudList(list)
+      if (!list.ok) setError((prev) => prev || list.error || '读取云端作品失败')
     } catch (e) {
       setError(e instanceof Error ? e.message : '读取同步状态失败')
     } finally {
@@ -422,6 +461,62 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
   }
 
   /**
+   * 把列表里某一本云端作品**放进回收站**（软删除）。
+   *
+   * 🔴 3.3.2 之前客户端根本没封装这个动作，界面上只有「彻底删除」且只对已在回收站的作品可用
+   *    ⇒ 用户永远无法把任何一本云端作品放进回收站，回收站/恢复/到期清理整条链在界面上是死的
+   *    （2026-10-31 真机验收时发现）。
+   * 🔴 删除**不动本机**：只给云端写墓碑；本机那本还在，只是绑定会进入「云端已删除」状态。
+   * 🔴 删除要进回收站，所以用普通确认（不是 danger）；真正不可逆的只有「彻底删除」。
+   */
+  const moveCloudToTrash = async (row: CloudProjectRow) => {
+    const ok = await confirmDialog({
+      title: '删除云端这一本',
+      message: `把《${row.name || '未命名'}》放进云端回收站？\n\n`
+        + '云端回收站保留 30 天，期间可以随时「恢复」；到期后由服务器自动清理。\n\n'
+        + '本机这本**不受影响**（不会删本机内容）。',
+      confirmText: '放进回收站',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await deleteCloudProject(row.cloudProjectId, uid())
+      if (!r.ok) { showToast(r.error, 'error'); await load(); return }
+      showToast(`《${row.name || '未命名'}》已放进云端回收站（30 天内可恢复）`, 'success', 6000)
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 彻底删除列表里某一本（只对**已在回收站**的作品可用；不可恢复） */
+  const purgeRow = async (row: CloudProjectRow) => {
+    const ok = await confirmDialog({
+      title: '彻底删除云端这一本',
+      message: `会从云端永久删除《${row.name || '未命名'}》，回收站里也找不回。\n\n`
+        + '本机内容不受影响；云端内容文件会在之后的回收任务中释放空间。',
+      confirmText: '彻底删除', danger: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await purgeCloudProject(row.cloudProjectId, uid())
+      if (!r.ok) { showToast(r.error, 'error'); await load(); return }
+      const mb = (r.removedBytes / 1024 / 1024).toFixed(2)
+      showToast(`已彻底删除（释放 ${mb} MB 清单占用；内容文件稍后由回收任务释放）`, 'success', 7000)
+      await load()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
    * 下载云端某一版之后，把新项目的**同步基线校正到这一版**。
    *
    * 【为什么需要】（2026-10-31 实机推桌面端时发现）
@@ -460,6 +555,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
       await fixBindingAfterDownload(r.projectId, row.cloudProjectId, row.revision)
       const notes = r.omitted.length ? `；${r.omitted.join('；')}` : ''
       showToast(`已下载为《${r.name}》${notes}。回项目中心即可打开`, 'success', 7000)
+      // 从项目中心触发时，外层列表得跟着刷新，否则「下载成功但列表里看不到」
+      onProjectsChanged?.()
     } catch (e) {
       showToast(e instanceof Error ? e.message : '下载失败', 'error')
     } finally {
@@ -584,14 +681,17 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
       <Button
         variant={inline ? 'secondary' : 'icon-muted'}
         iconOnly={!inline}
-        size="xs"
+        size={inline ? size : 'xs'}
         onClick={() => setOpen(true)}
+        // 纯图标模式下没有文字，title/aria-label 就是它唯一的"名字"——两处都要有，
+        // 否则读屏软件和自动化都找不到它（2026-10-31 实机验收踩到）
         title={binding ? `云端同步（${stateInfo.label}）` : '同步到云端'}
-        className={inline ? 'w-full !justify-start gap-1.5' : 'shrink-0'}
+        aria-label="云端同步"
+        className={inline ? `${fullWidth ? 'w-full' : ''} !justify-start gap-1.5` : 'shrink-0'}
       >
         <Cloud size={12} />
         {inline && <span>云端同步</span>}
-        {inline && <span className={`ml-auto truncate text-11 ${stateInfo.cls}`}>{stateInfo.label}</span>}
+        {inline && showState && <span className={`ml-auto truncate text-11 ${stateInfo.cls}`}>{stateInfo.label}</span>}
       </Button>
 
       <Modal
@@ -620,8 +720,8 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                     {busy ? '同步中…' : '立即同步'}
                   </Button>
                 )
-                : (
-                  <Button variant="primary" size="sm" onClick={() => void bindAndUpload()} disabled={busy || !project}>
+                : project && (
+                  <Button variant="primary" size="sm" onClick={() => void bindAndUpload()} disabled={busy}>
                     <CloudUpload size={12} />
                     {busy ? '上传中…' : '上传这本到云端'}
                   </Button>
@@ -631,7 +731,12 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
         )}
       >
         <div className="space-y-3">
-          {!project && <p className="text-12 text-ink-400">先打开一本作品再来同步。</p>}
+          {!project && (
+            <p className="text-12 leading-relaxed text-ink-400">
+              当前没打开作品。可以从下面「云端作品」里挑一本<strong className="text-ink-300">下载为新书</strong>，
+              落地后回项目中心打开它接着写；想把本机这本传上去，先打开它再来这里。
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-12 text-amber-200">
@@ -838,6 +943,19 @@ export default function CloudSyncPanel({ inline = false }: { inline?: boolean } 
                         disabled={busy || row.deleted} title="下载为一本新的本机作品（不覆盖现有作品）；副本会延续与这本云端作品的同步">
                         下载为新书
                       </Button>
+                      {row.deleted
+                        ? (
+                          <Button variant="ghost" size="xs" onClick={() => void purgeRow(row)} disabled={busy}
+                            title="从云端永久删除（回收站里也找不回）">
+                            彻底删除
+                          </Button>
+                        )
+                        : (
+                          <Button variant="ghost" size="xs" onClick={() => void moveCloudToTrash(row)} disabled={busy}
+                            title="放进云端回收站（30 天内可恢复）；不影响本机">
+                            删除
+                          </Button>
+                        )}
                     </div>
                     {historyOpen === row.cloudProjectId && (
                       <div className="mt-1 space-y-1 border-t border-ink-700/60 pt-1">
