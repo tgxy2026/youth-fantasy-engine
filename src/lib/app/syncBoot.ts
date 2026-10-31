@@ -21,7 +21,7 @@ import type { SyncController } from '@/lib/sync/syncController'
 import { installSyncController, getSyncController } from '@/lib/sync/syncController'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import { nextBindingAfterCommit } from '@/lib/sync/projectBinding'
-import { fetchRemoteRevision, configureCloudTransport } from '@/lib/cloud/syncApi'
+import { fetchRemoteRevision, fetchManifest, configureCloudTransport } from '@/lib/cloud/syncApi'
 import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
 import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
 import { DESKTOP } from '@/lib/app/desktop'
@@ -86,6 +86,30 @@ export async function bootSync(): Promise<SyncController> {
       store: queue,
       tombstones,
       transport: createHttpTransport(),
+      /**
+       * 云端基线已有的对象不必重传。
+       *
+       * 🔴 没有这段就等于「每 20 秒重传整本书」：自动同步一跳，改一个字就把
+       *    40 MiB 的含图作品再上行一次（2026-10-31 实机验证发现：一次推送
+       *    12 个对象、其中 6 个是同一个空数组哈希）。
+       * 清单拿不到就返回空集 ⇒ 退回全量上传（慢但正确）。
+       */
+      loadKnownHashes: async (job) => {
+        const out = new Set<string>()
+        if (job.baseRevision <= 0) return out
+        const man = await fetchManifest(job.cloudProjectId, job.baseRevision)
+        if (!man) return out
+        const take = (arr: unknown) => {
+          if (!Array.isArray(arr)) return
+          for (const x of arr) {
+            const h = x && typeof x === 'object' ? (x as { hash?: unknown }).hash : null
+            if (typeof h === 'string' && h) out.add(h)
+          }
+        }
+        take((man as { objects?: unknown }).objects)
+        take((man as { assets?: unknown }).assets)
+        return out
+      },
       onCommitted: async ({ projectId, cloudProjectId, revision }) => {
         try {
           const cur = await bindingStore.get(projectId)

@@ -291,7 +291,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 <>
                   <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setAddOpen(false)} aria-hidden />
                   <div
-                    className="absolute left-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    /* 🔴 右对齐 + 限宽：这个按钮在标题栏最右，用 left-0 展开会在窄面板里溢出被裁
+                       （2026-10-31 实机验证：399px 宽时菜单右半边被面板边缘切掉，只看到「新建最…」）。
+                       右侧两项的说明文字用 truncate，长卷名也不会把菜单撑出边界。 */
+                    className="absolute right-0 top-full mt-1 min-w-[200px] max-w-[min(280px,calc(100vw-24px))] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
                     style={{ zIndex: Z.pagePanelTop }}
                     role="menu"
                   >
@@ -303,8 +306,9 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       title={latestTarget ? `追加到「${latestTarget.volumeTitle}」末尾，序号接着往下排` : '还没有分卷，请先「新建卷」'}
                     >
                       <FilePlus size={11} className="text-amber" />
-                      <span className="flex-1 text-left">新建最新章节</span>
-                      <span className="shrink-0 text-10 text-ink-500">
+                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">新建最新章节</span>
+                      {/* 卷名可能很长（作者会写「第一卷 · 少年出山」这种）：截断而不是把菜单撑破 */}
+                      <span className="shrink min-w-0 max-w-[92px] truncate text-10 text-ink-500">
                         {latestTarget ? latestTarget.volumeTitle : '暂无分卷'}
                       </span>
                     </Button>
@@ -315,7 +319,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                       title="不归入任何卷，收进「自由章节」托管卷（排全书最前、不占正文序号）"
                     >
                       <FilePlus2 size={11} className="text-amber" />
-                      <span className="flex-1 text-left">新建自由章节</span>
+                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">新建自由章节</span>
                       <span className="shrink-0 text-10 text-ink-500">不归卷</span>
                     </Button>
                   </div>

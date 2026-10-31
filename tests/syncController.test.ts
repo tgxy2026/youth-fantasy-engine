@@ -174,6 +174,47 @@ async function main() {
     ok('冲突时不回调 onCommitted（基线不该被推进）', called === 0, String(called))
   }
 
+  // ---------- 5c. 云端已有的对象不再重传（实机抓到的"每次重传整本书"）----------
+  {
+    // 第一次：全量上传，记下都传了哪些哈希
+    const seen: string[] = []
+    const t1: UploadTransport = {
+      async putObject(_pid, hash) { seen.push(hash); return { ok: true } },
+      async commit() { return { ok: true, status: 200, revision: 1 } },
+    }
+    const c1 = createSyncController({ store: createMemoryQueueStore(), transport: t1, loadBundle: async () => bundle(), now: () => T0 })
+    await c1.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    ok('首次推送确实传了对象', seen.length > 0, String(seen.length))
+
+    // 第二次：同样的内容，但控制器告知"云端都有" ⇒ 一个都不该再传
+    const again: string[] = []
+    const t2: UploadTransport = {
+      async putObject(_pid, hash) { again.push(hash); return { ok: true } },
+      async commit() { return { ok: true, status: 200, revision: 2 } },
+    }
+    let asked = 0
+    const c2 = createSyncController({
+      store: createMemoryQueueStore(), transport: t2, loadBundle: async () => bundle(), now: () => T0,
+      loadKnownHashes: async () => { asked++; return new Set(seen) },
+    })
+    await c2.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 1 })
+    ok('装配层被问到"云端有哪些"', asked === 1, String(asked))
+    // 🔴 这条是核心：没有它 = 每次自动同步重传整本书（40 MiB 含图作品每次 40 MiB 上行）
+    ok('云端已有的对象全部跳过，一个都不再传', again.length === 0, JSON.stringify(again))
+  }
+  {
+    // baseRevision=0（首次）不该去问云端要清单：问了也没有
+    let asked = 0
+    const c = createSyncController({
+      store: createMemoryQueueStore(),
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: true, status: 200, revision: 1 } } },
+      loadBundle: async () => bundle(), now: () => T0,
+      loadKnownHashes: async () => { asked++; return new Set<string>() },
+    })
+    await c.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    ok('首次同步不去要基线清单（省一次请求）', asked === 0, String(asked))
+  }
+
   // ---------- 6. 单例只装一次 ----------
   {
     resetSyncControllerForTest()

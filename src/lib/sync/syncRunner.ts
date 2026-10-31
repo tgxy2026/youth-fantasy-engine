@@ -32,6 +32,15 @@ export interface SyncRunnerDeps {
   loadBundle: (projectId: string) => Promise<ProjectBundle | null>
   /** 取该项目的墓碑（删除记录必须带走，否则对方设备上"删了又活"） */
   loadTombstones?: (projectId: string) => Promise<SnapshotTombstone[]>
+  /**
+   * 取「云端基线版本已包含的对象哈希」，用于跳过重传。
+   *
+   * 🔴 不传就等于**每次同步都把整本书重传一遍**：自动同步是 20 秒一跳，
+   *    改一个字就把 40 MiB 的含图作品再上行一次（2026-10-31 实机验证发现）。
+   * 🔴 必须来自服务端清单，不能是本地缓存（对象可能被回收或换了账号）；
+   *    真空了服务端会回 OBJECT_MISSING，`uploadSnapshot` 会自动补传一轮。
+   */
+  loadKnownHashes?: (job: SyncJob) => Promise<ReadonlySet<string>>
   /** 状态变化回调（界面据此刷新徽标；不传就纯后台跑） */
   onState?: (projectId: string, state: SyncState, detail?: { job?: SyncJob; outcome?: UploadOutcome }) => void
   now?: () => number
@@ -118,11 +127,22 @@ export async function runOneJob(deps: SyncRunnerDeps, job: SyncJob): Promise<Run
     // 🔴 快照在这里**现算**，不用入队时的那份：
     //    排队期间用户可能又写了几章，用旧快照提交等于把新写的覆盖掉。
     const built = await buildProjectSnapshot(bundle, { tombstones, now: now() })
+    // 云端已有的对象不必重传（拿不到就当作"一个都没有"，退回全量上传）
+    let knownHashes: ReadonlySet<string> | undefined
+    if (deps.loadKnownHashes && job.baseRevision > 0) {
+      try {
+        knownHashes = await deps.loadKnownHashes(job)
+      } catch {
+        knownHashes = undefined
+      }
+    }
+
     outcome = await uploadSnapshot({
       cloudProjectId: job.cloudProjectId,
       built,
       baseRevision: job.baseRevision,
       opId: job.id,
+      knownHashes,
       transport: deps.transport,
       retries: deps.retries,
       backoffMs: deps.backoffMs,

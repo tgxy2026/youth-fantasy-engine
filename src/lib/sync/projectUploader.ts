@@ -59,6 +59,19 @@ export interface UploadOptions {
   sleep?: (ms: number) => Promise<void>
   /** 进度回调：UI 用它显示「正在上传 3/17」 */
   onProgress?: (done: number, total: number) => void
+  /**
+   * 云端**基线版本已包含**的对象哈希。这些不必再传。
+   *
+   * 🔴 为什么必须有：内容寻址不跳过就等于「每 20 秒重传整本书」——
+   *    改一个字触发自动同步，40 MiB 的含图作品就再走一遍 40 MiB 上行。
+   *    实测（2026-10-31 实机）：一次推送里同一个哈希被 PUT 了 5 次
+   *    （11 个分片里有 5 个是空数组、内容相同），更要按哈希去重。
+   *
+   * 来源必须是**服务端回来的清单**（`GET manifest?rev=baseRevision`），不能是本地缓存：
+   * 对象可能被回收或换了账号。真出现「以为有、其实没有」，服务端会回 OBJECT_MISSING，
+   * 那时会自动补传一轮（见下方 `uploadSnapshot`）。
+   */
+  knownHashes?: ReadonlySet<string>
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -99,6 +112,19 @@ function isRetryable(r: { ok: boolean; status?: number; code?: string }): boolea
  *   因为调用方是「队列」，抛异常会逼它包一层 try/catch 并容易漏掉重试标记。
  */
 export async function uploadSnapshot(opts: UploadOptions): Promise<UploadOutcome> {
+  const known = opts.knownHashes ?? EMPTY_HASHES
+  const first = await runUpload(opts, known)
+  // 服务端判定「对象缺失」⇒ 我们以为云端已有的那批不成立（被回收 / 换了账号 / 残留记录）。
+  // 这时**补传一轮、一个都不跳**；只补这一次，避免把 4xx 变成无限重试。
+  if (!first.ok && first.status === 'error' && first.code === 'OBJECT_MISSING' && known.size > 0) {
+    return runUpload(opts, EMPTY_HASHES)
+  }
+  return first
+}
+
+const EMPTY_HASHES: ReadonlySet<string> = new Set<string>()
+
+async function runUpload(opts: UploadOptions, knownHashes: ReadonlySet<string>): Promise<UploadOutcome> {
   const {
     cloudProjectId, built, baseRevision, opId, transport,
     retries = 2, backoffMs = 400, sleep = defaultSleep, onProgress,
@@ -108,9 +134,17 @@ export async function uploadSnapshot(opts: UploadOptions): Promise<UploadOutcome
   const assets: SnapshotAsset[] = built.assets
   const total = objects.length + assets.length
   let done = 0
+  // 已确定在云端的哈希：基线清单里的 + 本轮传成功的。同一个哈希只发一次。
+  const have = new Set<string>(knownHashes)
 
-  /** 带重试地上传一批字节；返回 null 表示「重试完仍失败」 */
+  /** 带重试地上传一批字节；返回 null 表示「重试完仍失败」或「云端已有、跳过」 */
   const push = async (hash: string, bytes: Uint8Array, label: string): Promise<UploadOutcome | null> => {
+    if (have.has(hash)) {
+      // 跳过也要推进进度，否则界面停在「3/17」不动，用户以为卡住了
+      done++
+      onProgress?.(done, total)
+      return null
+    }
     let attempt = 0
     for (;;) {
       let r: { ok: boolean; code?: string }
@@ -121,6 +155,7 @@ export async function uploadSnapshot(opts: UploadOptions): Promise<UploadOutcome
         void e
       }
       if (r.ok) {
+        have.add(hash)
         done++
         onProgress?.(done, total)
         return null

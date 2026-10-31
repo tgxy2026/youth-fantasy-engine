@@ -26,7 +26,7 @@ import { deriveStateFromJobs, enqueuePush, pendingJobsOf } from '@/lib/sync/sync
 import type { SyncState } from '@/lib/sync/syncMachine'
 import { drainQueue, prepareQueue, type RunOneResult } from '@/lib/sync/syncRunner'
 
-import { cloudBase, cloudFetch } from '@/lib/cloud/syncApi'
+import { cloudBase, cloudFetch, fetchManifest } from '@/lib/cloud/syncApi'
 
 /** 响应体 → 统一形状；网络异常不抛出，翻译成 NETWORK */
 async function readJson(res: Response): Promise<Record<string, unknown>> {
@@ -114,6 +114,14 @@ export interface SyncClient {
   stateOf(projectId: string): Promise<SyncState>
 }
 
+/**
+ * ⚠️ **目前没有任何地方调用它**（应用真正的装配在 `app/syncBoot.ts` + `sync/syncController.ts`）。
+ *
+ * 2026-10-31 的教训：给「跳过云端已有对象」打补丁时改到了本函数里，
+ * 编译、单测全绿、端口也不报错 —— 但线上行为一点没变，因为走的是 controller。
+ * 所以：**要改同步行为，请改 `syncController`；本函数只是同功能的另一份实现**，
+ * 留着是因为 `createHttpTransport` 就在本文件里、拆开反而更乱。
+ */
 export async function createSyncClient(opts: SyncClientOptions): Promise<SyncClient> {
   const { store } = opts
   const transport = opts.transport ?? createHttpTransport()
@@ -128,6 +136,27 @@ export async function createSyncClient(opts: SyncClientOptions): Promise<SyncCli
 
   const runnerDeps = {
     store, transport, loadBundle, loadTombstones, now,
+    /**
+     * 云端基线版本已有哪些对象 —— 传给上传器跳过重传。
+     *
+     * 🔴 走服务端清单（`GET manifest?rev=`），不看本地缓存：对象可能已被回收、
+     *    也可能这本被导入到了别的账号。清单拿不到就返回空集 ⇒ 退回全量上传（慢但正确）。
+     */
+    loadKnownHashes: async (job: { cloudProjectId: string; baseRevision: number }) => {
+      const man = await fetchManifest(job.cloudProjectId, job.baseRevision)
+      const out = new Set<string>()
+      if (!man) return out
+      const push = (arr: unknown) => {
+        if (!Array.isArray(arr)) return
+        for (const x of arr) {
+          const h = x && typeof x === 'object' ? (x as { hash?: unknown }).hash : null
+          if (typeof h === 'string' && h) out.add(h)
+        }
+      }
+      push((man as { objects?: unknown }).objects)
+      push((man as { assets?: unknown }).assets)
+      return out
+    },
     // 提交成功后只清"这次带走的那批"墓碑（提交期间新删的必须留下）
     afterCommit: tombStore
       ? async (job: { projectId: string }, cutoff: number) => {

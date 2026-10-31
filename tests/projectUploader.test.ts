@@ -140,6 +140,66 @@ async function main() {
     ok('图片无法解码时不上传任何东西', !r.ok && r.status === 'error' && r.code === 'ASSET_DECODE_FAILED' && calls.length === 0, JSON.stringify({ r, calls }))
   }
 
+  // ⑥ 同一哈希在一次推送里只传一次（实机验证发现：11 个分片里 5 个是空数组，被 PUT 了 5 次）
+  {
+    const dup = makeBuilt({
+      objects: [
+        { kind: 'chapters', hash: 'e'.repeat(64), bytes: 2, payload: '[1]' },
+        { kind: 'volumes', hash: 'e'.repeat(64), bytes: 2, payload: '[1]' },
+        { kind: 'tableRows', hash: 'e'.repeat(64), bytes: 2, payload: '[1]' },
+      ],
+      assets: [],
+    })
+    const { t, calls } = makeTransport({})
+    const progress: number[] = []
+    const r = await uploadSnapshot({
+      cloudProjectId: 'c1', built: dup, baseRevision: 0, opId: 'op1', transport: t,
+      onProgress: (d) => progress.push(d),
+    })
+    const puts = calls.filter((c) => c.op === 'put')
+    ok('同一哈希只传一次（不重复 PUT）', r.ok && puts.length === 1, JSON.stringify(calls))
+    // 跳过的也要推进进度，否则界面停在 1/3 不动
+    ok('跳过的对象也推进进度（3/3）', progress[progress.length - 1] === 3, JSON.stringify(progress))
+  }
+
+  // ⑦ 云端已有的对象不再重传（否则每次自动同步都重传整本书）
+  {
+    const built = makeBuilt()
+    const { t, calls } = makeTransport({})
+    const r = await uploadSnapshot({
+      cloudProjectId: 'c1', built, baseRevision: 3, opId: 'op1', transport: t,
+      // 两个分片都已在云端；只剩图片要传
+      knownHashes: new Set([built.objects[0].hash, built.objects[1].hash]),
+    })
+    const puts = calls.filter((c) => c.op === 'put').map((c) => c.hash)
+    ok('基线已有的对象被跳过', r.ok && puts.length === 1 && puts[0] === built.assets[0].hash, JSON.stringify(puts))
+    ok('跳过之后仍然提交', calls.some((c) => c.op === 'commit'))
+  }
+
+  // ⑧ 以为有、其实没有 ⇒ 服务端 OBJECT_MISSING ⇒ 自动补传一轮（不跳任何对象）
+  {
+    const built = makeBuilt()
+    let commitCount = 0
+    const puts: string[] = []
+    const t: UploadTransport = {
+      async putObject(_pid, hash) { puts.push(hash); return { ok: true } },
+      async commit() {
+        commitCount++
+        // 第一轮：因为跳过了对象，服务端说缺
+        if (commitCount === 1) return { ok: false, status: 400, code: 'OBJECT_MISSING' } as never
+        return { ok: true, status: 200, revision: 4, snapshotId: 's4' } as never
+      },
+    }
+    const r = await uploadSnapshot({
+      cloudProjectId: 'c1', built, baseRevision: 3, opId: 'op1', transport: t,
+      knownHashes: new Set([built.objects[0].hash, built.objects[1].hash]),
+    })
+    ok('缺对象时自动补传并成功', r.ok && r.status === 'published' && r.revision === 4, JSON.stringify(r))
+    // 第一轮跳过 2 个（只传图片），第二轮 3 个全传
+    ok('第二轮一个都不跳（补传全量）', puts.length === 1 + 3, JSON.stringify(puts))
+    ok('补传只做一次（不会无限循环）', commitCount === 2, String(commitCount))
+  }
+
   console.log(`\n▶ projectUploader: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }

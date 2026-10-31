@@ -25,6 +25,12 @@ export interface SyncControllerDeps {
   transport: UploadTransport
   loadBundle: (projectId: string) => Promise<ProjectBundle | null>
   tombstones?: TombstoneStore
+  /**
+   * 取「云端基线版本已有的对象哈希」，用于跳过重传。
+   * 不传 = 每次同步重传全部对象（40 MiB 含图作品就是每次 40 MiB 上行）。
+   * 装配在 `app/syncBoot.ts`，实现在 `cloud/syncApi.fetchManifest`。
+   */
+  loadKnownHashes?: (job: SyncJob) => Promise<ReadonlySet<string>>
   now?: () => number
   /**
    * 提交成功后的回调（回写绑定：`baseRevision` / `lastSyncedAt`）。
@@ -78,6 +84,7 @@ export function createSyncController(deps: SyncControllerDeps): SyncController {
     loadTombstones: deps.tombstones
       ? async (pid: string) => tombstonesToSubmit(deps.tombstones!, pid, now())
       : undefined,
+    loadKnownHashes: deps.loadKnownHashes,
     // 🔴 这个钩子**必须无条件存在**：清墓碑是"有墓碑时才有事做"，
     //    但回写绑定是每次成功提交都要做。曾经写成 `deps.tombstones ? ... : undefined`，
     //    结果没有墓碑存储时连绑定也不回写 —— 实机验证表现为"刚上传完就报冲突"。

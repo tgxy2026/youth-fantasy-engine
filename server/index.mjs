@@ -396,11 +396,31 @@ const escapeForHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
  */
 
 let indexCache = null
-function renderIndex(user) {
-  if (!indexCache) {
-    const p = join(WWW_DIR, 'index.html')
+let indexCacheMtime = 0
+/**
+ * 读入口 HTML（带缓存，但**按 mtime 失效**）。
+ *
+ * 🔴 曾经是 `if (!indexCache)` 一次读进来就永不刷新 —— 发布新版本、把 dist 覆盖掉之后，
+ *    只要进程没重启，服务端就一直在返回**旧 HTML**：旧 HTML 引用的是已被删掉的旧 JS 文件名，
+ *    浏览器要么用 HTTP 缓存里的旧 JS（用户看到的是上一版界面，功能怎么改都不生效），
+ *    要么直接 404 白屏。2026-10-31 实机验证就卡在这里：
+ *    改完代码、构建成功、服务也重启过一次，页面上却还是旧逻辑，排查了很久。
+ * @returns {{ html: string, changed: boolean }} changed 用于决定是否要读盘
+ */
+function readIndexHtml() {
+  const p = join(WWW_DIR, 'index.html')
+  let mtime = 0
+  try { mtime = statSync(p).mtimeMs } catch { mtime = 0 }
+  const changed = !indexCache || mtime !== indexCacheMtime
+  if (changed) {
     indexCache = existsSync(p) ? readFileSync(p, 'utf8') : '<!doctype html><p>前端产物缺失</p>'
+    indexCacheMtime = mtime
   }
+  return { html: indexCache, changed }
+}
+
+function renderIndex(user) {
+  const { html: source } = readIndexHtml()
 
   // 两种形态：
   //  · 已登录（云端存储）⇒ 注入 __YFE_PORTABLE__，前端走它已有的 HTTP StoreOps（接口即 /api/data）
@@ -414,8 +434,8 @@ function renderIndex(user) {
     //    漏注入的后果是游客看到「便携版不提供在线更新」「本机存储 ./data/…」——全是错的说法。
     : '<script>window.__YFE_GUEST__=1;window.__YFE_WEB__=1;</script>'
 
-  const insertAt = indexCache.includes('</head>') ? '</head>' : ''
-  let html = insertAt ? indexCache.replace(insertAt, `${script}</head>`) : script + indexCache
+  const insertAt = source.includes('</head>') ? '</head>' : ''
+  let html = insertAt ? source.replace(insertAt, `${script}</head>`) : script + source
   if (html.includes('</body>')) {
     // 🔴 2026-10-19：已登录用户**不再注入底部胶囊**（退出入口改到 Sidebar 左上角 / 项目首页按钮排，
     //    见 src/components/app/AccountExit.tsx）。游客提示照旧。
