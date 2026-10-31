@@ -122,7 +122,15 @@ async function main() {
     ok('同账号→绑定有效', bindingForAccount(b, 'u1')?.cloudProjectId === 'c1')
     ok('换账号→绑定作废（需重新绑定）', bindingForAccount(b, 'u2') === null)
     ok('老数据无账号 + 当前无账号→放行', bindingForAccount(bind(), undefined) !== null)
-    ok('老数据无账号 + 当前有账号→作废（宁可重绑一次）', bindingForAccount(bind(), 'u2') === null)
+    /**
+     * 🔴 口径变更（2026-10-31 全量审计）：旧绑定缺 accountId 时**认作当前账号**。
+     *    原因：桌面端此前从不写 accountId，升级后若按"作废"处理，所有已在同步的用户
+     *    都会看到"另一个账号下绑定"，要重传整本书。缺 id 只可能来自修复前的数据。
+     *    调用方读到后会回填（CloudSyncPanel.load），回填后就走严格比对。
+     */
+    ok('老数据无账号 + 当前有账号→认作当前账号（否则升级后全员要重绑）',
+      bindingForAccount(bind(), 'u2')?.cloudProjectId === 'c1')
+    ok('回填后严格比对：id 不同即作废', bindingForAccount(bind({ accountId: 'u2' }), 'u3') === null)
     ok('没有绑定→null', bindingForAccount(null, 'u1') === null)
   }
 

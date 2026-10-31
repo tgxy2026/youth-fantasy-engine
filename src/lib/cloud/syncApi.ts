@@ -164,6 +164,25 @@ export interface CloudProjectRow {
   deletedAt?: number
 }
 
+/**
+ * 当前登录账号的 id（`/api/auth/me`）。
+ *
+ * 🔴 桌面版必须靠它：绑定里记的 `accountId` 是「换账号后绑定作废」的唯一依据，
+ *    而桌面端不像网页版能从页面注入的用户信息里拿 id。取不到就返回 null ——
+ *    调用方据此把 accountId 清空（宁可"这一轮不推"，也不能拿别人的云端 id 一路 403）。
+ */
+export async function fetchAccountId(base = baseOf()): Promise<string | null> {
+  try {
+    const res = await f()(`${base}/api/auth/me`, { credentials: 'same-origin', cache: 'no-store' })
+    if (!res.ok) return null
+    const b = await res.json() as { user?: { id?: unknown } }
+    const id = b && b.user ? b.user.id : null
+    return typeof id === 'string' && id ? id : null
+  } catch {
+    return null
+  }
+}
+
 export interface CloudProjectList {
   projects: CloudProjectRow[]
   usedBytes: number

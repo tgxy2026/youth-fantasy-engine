@@ -21,7 +21,7 @@ import type { SyncController } from '@/lib/sync/syncController'
 import { installSyncController, getSyncController } from '@/lib/sync/syncController'
 import { createSettingBindingStore } from '@/lib/sync/projectBindingStore'
 import { nextBindingAfterCommit } from '@/lib/sync/projectBinding'
-import { fetchRemoteRevision, fetchManifest, configureCloudTransport } from '@/lib/cloud/syncApi'
+import { fetchRemoteRevision, fetchManifest, fetchAccountId, configureCloudTransport } from '@/lib/cloud/syncApi'
 import { createDesktopCloudFetch } from '@/lib/cloud/cloudTransport'
 import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
 import { DESKTOP } from '@/lib/app/desktop'
@@ -31,9 +31,21 @@ import { autoSyncTick, nextTickDelay, SYNC_TICK_FAST_MS, SYNC_TICK_MAX_MS, type 
 export const AUTO_SYNC_INTERVAL_MS = 20_000
 
 let timer: ReturnType<typeof setTimeout> | null = null
+/** 是否正在自动同步（不能用 `timer !== null` 判断：定时器在两次 tick 之间是空的） */
+let running = false
 let booting: Promise<SyncController> | null = null
 let onTick: ((d: TickDecision) => void) | null = null
-let visibilityBound = false
+/**
+ * 🔴 事件监听只绑一次，但必须调到**当前这一轮**的调度器（2026-10-31 审计发现）。
+ *
+ * 第一版把监听写在 `startAutoSync` 里、用闭包捕获 `schedule`：一旦「关掉自动同步再打开」，
+ * 旧监听仍然挂着，它的 poke 会调用**旧闭包**的 schedule —— 于是同时存在两条定时器链，
+ * 请求量翻倍、而且停不掉（`stopAutoSync` 只清得掉最后那个 timer 引用）。
+ * 现在监听只绑一次，永远转调 `pokeFn` / `kickFn`，`stopAutoSync` 把它们置空即可。
+ */
+let pokeFn: (() => void) | null = null
+let kickFn: (() => void) | null = null
+let listenersBound = false
 
 /** 当前账号 id（网页版由 App 在登录后提供；未登录返回 undefined） */
 let accountId: string | undefined
@@ -61,9 +73,24 @@ export async function configureDesktopTransportIfSignedIn(): Promise<boolean> {
     const transport = origin ? createDesktopCloudFetch(origin) : null
     if (origin && transport) {
       configureCloudTransport({ base: origin, fetch: transport })
+      /**
+       * 🔴 记下账号 id（2026-10-31 全量审计发现）。
+       *
+       * 绑定里写的 `accountId` 是「换账号后绑定立即作废」的唯一依据
+       * （`bindingForAccount` 在**当前账号未知时直接放行**）。桌面端原先从不设置它
+       * ⇒ 这道闸在桌面版等于不存在：退出登录换一个账号后，旧绑定照样指向别人账号下的云端作品，
+       * 一路 403 且界面只会反复"同步失败"。
+       * 现在登录/启动时问一次 `/api/auth/me`；拿不到就清空（宁可这一轮不推）。
+       */
+      try {
+        setSyncAccountId((await fetchAccountId(origin)) ?? undefined)
+      } catch {
+        setSyncAccountId(undefined)
+      }
       return true
     }
     configureCloudTransport(null)
+    setSyncAccountId(undefined)
   } catch (e) {
     console.warn('[sync] 桌面账号通道装配失败，保持默认通道：', e)
   }
@@ -145,12 +172,29 @@ export async function bootSync(): Promise<SyncController> {
           console.warn('[sync] 回写绑定失败（不影响本次提交）：', e)
         }
       },
+      /**
+       * 取本机项目包。
+       *
+       * 🔴 「项目不存在」与「导出失败」必须分开（2026-10-31 全量审计）：
+       *    原来两种都返回 null，而 `runOneJob` 把 null 解释成"本机已删除该项目"，直接把任务作废。
+       *    一次 IDB 抖动或张图片解码失败，就会被当成"书没了"，**任务被静默丢弃**，
+       *    界面只看到"未同步"、日志里一个字都没有。
+       *    现在：不存在 → null（作废是对的）；导出抛错 → 让异常往上走，
+       *    runner 会记成 `SNAPSHOT_FAILED`（不可重试但**看得见**）。
+       */
       loadBundle: async (pid: string) => {
-        try { return (await exportProject(pid)) as unknown as ProjectBundle } catch { return null }
+        const exists = await ops.get<Project>('projects', pid)
+        if (!exists) return null
+        return (await exportProject(pid)) as unknown as ProjectBundle
       },
     })
     // 启动准备：崩溃恢复 + 清理超期任务。失败不影响后续（下次启动再来）
-    try { await controller.init() } catch { /* ignore */ }
+    try {
+      await controller.init()
+    } catch (e) {
+      // 不挡启动（下次启动会再来一次），但**必须留痕**：静默吞掉就等于"同步从此不动，且查不到原因"
+      console.warn('[sync] 启动准备失败（崩溃恢复 / 清理超期任务），下次启动再试：', e)
+    }
     return controller
   })()
 
@@ -168,6 +212,8 @@ function makeAutoDeps(controller: SyncController): AutoSyncDeps {
         const p = await ops.get<Project>('projects', id)
         return p ? { id: p.id, updatedAt: Number(p.updatedAt) || 0 } : null
       } catch {
+        // 读不到就当作"这一轮没有可同步的项目"：不推也不拉。
+        // 🔴 不要在这里抛/打日志 —— 自动同步是 20 秒一跳，DB 坏掉时会刷满控制台而没有任何新信息。
         return null
       }
     },
@@ -185,7 +231,8 @@ function makeAutoDeps(controller: SyncController): AutoSyncDeps {
 export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<void> {
   const controller = await bootSync()
   onTick = cb ?? null
-  if (timer) return
+  if (running) return
+  running = true
 
   const deps = makeAutoDeps(controller)
   /**
@@ -197,8 +244,9 @@ export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<voi
   let lastRunAt = 0
 
   const schedule = (ms: number) => {
-    if (!timer) return
+    if (!running) return
     delayMs = ms
+    if (timer) clearTimeout(timer)
     timer = setTimeout(() => { void run() }, ms)
   }
 
@@ -220,10 +268,6 @@ export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<voi
     schedule(d ? nextTickDelay(delayMs, d) : SYNC_TICK_MAX_MS)
   }
 
-  // 占位，让 schedule 里 `if (!timer) return` 在首次调度时成立
-  timer = setTimeout(() => {}, 0)
-  schedule(SYNC_TICK_FAST_MS)
-
   /**
    * 用户一动手就把节拍拉回最快档。
    *
@@ -232,34 +276,42 @@ export async function startAutoSync(cb?: (d: TickDecision) => void): Promise<voi
    * 🔴 用 `input` 而不是 `keydown`：粘贴、IME 上屏、拖拽插入都会发 input；
    *    也不去订阅保存状态（那要动写盘路径，本项目红线）。
    */
-  const poke = () => {
-    if (!timer) return
+  pokeFn = () => {
+    if (!running) return
     if (delayMs <= SYNC_TICK_FAST_MS) return
     if (Date.now() - lastRunAt < 2_000) return
     schedule(SYNC_TICK_FAST_MS)
   }
-
   // 切回前台立刻跑一轮：用户切回来时最想看到"刚写的东西已经上去了"
-  if (!visibilityBound && typeof document !== 'undefined') {
-    visibilityBound = true
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        lastRunAt = 0
-        schedule(0)
-      }
-    })
-    document.addEventListener('input', poke, true)
-  }
-  void run()
+  kickFn = () => { lastRunAt = 0; schedule(0) }
+
+  bindSyncListeners()
+  schedule(SYNC_TICK_FAST_MS)
+}
+
+/**
+ * 绑定 visibility / input 监听（全局一次）。
+ * 🔴 只绑一次：绑在 `startAutoSync` 里会产生"关掉再打开就有两条监听"的隐患。
+ */
+function bindSyncListeners(): void {
+  if (listenersBound || typeof document === 'undefined') return
+  listenersBound = true
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') kickFn?.()
+  })
+  document.addEventListener('input', () => { pokeFn?.() }, true)
 }
 
 /** 停掉定时器（退出登录 / 关闭云端模式 / 组件卸载到不该同步的页面） */
 export function stopAutoSync(): void {
-  if (timer) { clearInterval(timer); timer = null }
+  running = false
+  pokeFn = null
+  kickFn = null
+  if (timer) { clearTimeout(timer); timer = null }
   onTick = null
 }
 
 /** 现在是否在自动同步（界面显示开关状态用） */
 export function isAutoSyncRunning(): boolean {
-  return timer !== null
+  return running
 }

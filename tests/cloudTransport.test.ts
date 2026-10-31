@@ -96,6 +96,15 @@ async function main() {
     const boot = read('src/lib/app/syncBoot.ts')
     ok('桌面已登录时才装配 Bearer 通道', /if \(!DESKTOP\) return false/.test(boot) && /desktopAuthStatus\(\)/.test(boot) && /configureCloudTransport\(\{ base: origin, fetch: transport \}\)/.test(boot))
     ok('未登录 / 登出时复原默认通道', /configureCloudTransport\(null\)/.test(boot))
+    /**
+     * 🔴 2026-10-31 全量审计抓到：桌面端从不设置账号 id ⇒ `bindingForAccount` 在"当前账号未知"
+     * 时直接放行，于是"换账号后绑定立即作废"这道闸在桌面版等于不存在。
+     * 这条钉住"装通道时必须顺手问一次 /api/auth/me 并写进 accountId"。
+     */
+    ok('装配 Bearer 通道时记下账号 id（否则换账号后旧绑定会推别人的云端作品）',
+      /setSyncAccountId\(\(await fetchAccountId\(origin\)\)/.test(boot)
+      && /fetchAccountId/.test(boot))
+    ok('拿不到账号 id 时清空，不沿用上一个账号', /setSyncAccountId\(undefined\)/.test(boot))
     ok('拿不到 origin 时保持默认通道', /st\.signedIn \? await desktopOrigin\(\) : ''/.test(boot))
 
     const dl = read('src/lib/cloud/desktopLogin.ts')

@@ -169,7 +169,20 @@ export default function CloudSyncPanel({
       } else {
         const p = await ops.get<Project>('projects', pid)
         setProject(p ?? null)
-        const b = await store.get(pid)
+        const b0 = await store.get(pid)
+        /**
+         * 旧绑定没有账号 id 时**就地回填**（2026-10-31 审计）。
+         * 不回填的话，`bindingForAccount` 每次都要走"缺 id ⇒ 放行"的宽松分支，
+         * 换账号后的作废检查就一直不生效。
+         */
+        let b = b0
+        if (b && !b.accountId) {
+          const acc = getSyncAccountId()
+          if (acc) {
+            b = { ...b, accountId: acc }
+            try { await store.set(pid, b) } catch { /* 回填失败不影响本次读取 */ }
+          }
+        }
         setBinding(b)
         if (b?.cloudProjectId) {
           const probe = await probeCloudProject(b.cloudProjectId)

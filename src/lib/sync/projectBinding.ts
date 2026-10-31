@@ -299,6 +299,16 @@ export function bindingAfterAttach(
 export function bindingForAccount(binding: SyncBinding | null, currentAccountId?: string): SyncBinding | null {
   if (!binding) return null
   if (!currentAccountId) return binding
-  if (!binding.accountId) return null
+  /**
+   * 🔴 旧绑定没有账号 id ⇒ **认作当前账号**（2026-10-31 全量审计后改的口径）。
+   *
+   * 原规则是"宁可重绑一次"，但那是桌面端还不会写 accountId 的时候定的：
+   * 桌面版此前从不设置账号 id（本轮才修），于是**每一个已经在用同步的用户**，
+   * 升级后打开软件都会看到"这本是在另一个账号下绑定的，请重新绑定"——
+   * 明明同一个账号、同一台机器，却要重传一遍整本书。
+   * 3.3.2 尚未发布，带 id 的绑定只能来自修复后的版本，因此"缺 id"只可能是旧数据，
+   * 认作当前账号是更安全的选择；调用方读到后会**回填**真实 id（见 CloudSyncPanel.load）。
+   */
+  if (!binding.accountId) return binding
   return binding.accountId === currentAccountId ? binding : null
 }

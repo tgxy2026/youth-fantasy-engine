@@ -14,6 +14,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Cloud, ShieldCheck } from 'lucide-react'
+import { readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
+
+/** 上次登录成功的账号名（只用于界面显示「登的是哪个号」；不是秘密，也不随同步走） */
+const NAME_KEY = 'desktop-cloud-name'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -28,6 +32,13 @@ export default function DesktopCloudAccount() {
   const [password, setPassword] = useState('')
   /** 主进程当前连的账号服务器（只读展示） */
   const [serverBase, setServerBase] = useState('')
+  /**
+   * 上次登录成功的账号名。
+   * 🔴 令牌只存在主进程、状态接口只回"是否已登录"，界面拿不到名字；
+   *    而"我现在登的是哪个号"必须能看见，否则换过账号也不知道。
+   *    存在本机界面偏好里（`yfe-ui:`），不随同步走、不是秘密。
+   */
+  const [lastName, setLastName] = useState(() => readStringPref(NAME_KEY) || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -52,6 +63,8 @@ export default function DesktopCloudAccount() {
       if (!r.ok) { setError(r.reason || '登录未完成'); return }
       // 🔴 成功就清掉密码：它只在这一次登录里有用，留在输入框里没有任何好处
       setPassword('')
+      const who = r.userName || name.trim()
+      if (who) { writeStringPref(NAME_KEY, who); setLastName(who) }
       showToast(r.message, 'success', 6000)
       await refresh()
       window.dispatchEvent(new CustomEvent(DESKTOP_ACCOUNT_EVENT))
@@ -72,6 +85,8 @@ export default function DesktopCloudAccount() {
     })) return
     await desktopLogout()
     setPassword('')
+    writeStringPref(NAME_KEY, '')
+    setLastName('')
     await configureDesktopTransportIfSignedIn()
     await refresh()
     window.dispatchEvent(new CustomEvent(DESKTOP_ACCOUNT_EVENT))
@@ -132,7 +147,8 @@ export default function DesktopCloudAccount() {
           {signedIn ? (
             <div className="space-y-2">
               <p className="flex items-center gap-1.5 text-12 text-emerald-300">
-                <ShieldCheck size={12} /> 已登录
+                <ShieldCheck size={12} />
+                <span className="min-w-0 truncate">已登录{lastName ? ` · ${lastName}` : ''}</span>
               </p>
               <p className="text-11 leading-relaxed text-ink-500">
                 {encrypted
