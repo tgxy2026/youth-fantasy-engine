@@ -33,6 +33,7 @@ const ORDER = [
   'origin-332',
   'legacy-gate-332',
   'object-gc-332',
+  'scheduler-332',
   'migrate-v2-332',
 ]
 

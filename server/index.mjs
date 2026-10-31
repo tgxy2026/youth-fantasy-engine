@@ -49,6 +49,8 @@ import {
   readBlob, writeBlob, deleteBlob, listBlobs, ensureUserDir,
 } from './lib/userdata.mjs'
 import { SECRET_FILE } from './lib/config.mjs'
+// 3.3.2 · 维护定时任务（回收站到期清理 + 对象回收）；以前只能人工 admin.mjs gc
+import { createScheduler, DEFAULT_INTERVAL_MS } from './lib/scheduler.mjs'
 
 const PORT = Number(process.env.PORT || 80)
 // 3.3.2 项目级协议的根（按账号分目录）；门禁状态也在这棵树里
@@ -989,14 +991,42 @@ const server = createServer((req, res) => {
   res.end(req.method === 'HEAD' ? undefined : body)
 })
 
+/**
+ * 维护定时任务：回收站到期清理（30 天）+ 无人引用的对象回收（24h 宽限）。
+ *
+ * 环境变量：
+ *   · `YFE_SCHEDULER=off`              关掉（自检/临时排障用）
+ *   · `YFE_SCHEDULER_INTERVAL_H=6`     间隔小时（最小 1）
+ *   · `YFE_SCHEDULER_FIRST_DELAY_S=300` 首轮延迟秒
+ *
+ * 🔴 默认**开着**：这两件事不做就会出事（配额被看不见的项目占着、盘只增不减），
+ *    而"默认关、等运维想起来手动跑"在本项目的历史里等于永远不跑。
+ */
+const MAINT = (() => {
+  if (String(process.env.YFE_SCHEDULER || '').toLowerCase() === 'off') return null
+  const hours = Number(process.env.YFE_SCHEDULER_INTERVAL_H || 0)
+  const delayS = Number(process.env.YFE_SCHEDULER_FIRST_DELAY_S || 0)
+  return createScheduler({
+    v2Root: V2_ROOT,
+    intervalMs: hours > 0 ? Math.max(1, hours) * 3600_000 : DEFAULT_INTERVAL_MS,
+    firstDelayMs: delayS >= 0 ? delayS * 1000 : undefined,
+    // 🔴 必须显式接上输出：`createScheduler` 的默认 log 是空函数（模块本身不该直接 console），
+    //    忘了接就等于"任务在跑但 journal 里一个字都没有"，排查时完全瞎（第一版就漏了）
+    log: (line) => console.log(line),
+  })
+})()
+if (!MAINT) console.log('[maint] 已按 YFE_SCHEDULER=off 关闭维护任务')
+
 server.listen(PORT, HOST, () => {
   console.log(`[yfe-web] listening on http://${HOST}:${PORT}`)
   console.log(`[yfe-web] www=${WWW_DIR} data=${DATA_DIR} quota=${(DEFAULT_QUOTA / 1048576).toFixed(0)}MB mode=${REGISTER_MODE}`)
+  if (MAINT) MAINT.start()
 })
 
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     console.log(`[yfe-web] ${sig} received, shutting down`)
+    if (MAINT) MAINT.stop()
     server.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 3000)
   })
