@@ -15,7 +15,7 @@ export const LEGACY_APP = 'novel-studio'
 export const NEW_APP = 'youth-fantasy-engine'
 
 /**
- * 旧 → 新 kind 映射（`docs/3.0-开发方案.md` §1 命名映射总表）。
+ * 旧 → 新 kind 映射（`docs/归档/3.0/3.0-开发方案.md` §1 命名映射总表）。
  * 整库 JSON 里通常**不含**这些（它们出现在独立证据包 / 酒馆预设文件里），
  * 但迁移时一并兜底 remap，避免漏网。
  */

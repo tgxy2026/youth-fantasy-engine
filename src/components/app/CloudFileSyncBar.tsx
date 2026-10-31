@@ -133,7 +133,7 @@ export default function CloudFileSyncBar({ variant = 'panel' }: { variant?: 'pan
       if (!res) return // 用户取消
       // 🔴 两套同步别指同一个目录：①「改数据文件位置」＝明文 JSON（含 AI apiKey 明文）
       //    ②「云盘文件同步」＝加密 .yfe。指到同一目录时，明文库会被网盘客户端一起传上云，
-      //    而且两边会互相覆盖（详见 docs/2.1.1-审计修复记录.md §四）。
+      //    而且两边会互相覆盖（详见 docs/归档/2.1/2.1.1-审计修复记录.md §四）。
       {
         const dataFilePath = await getDesktopDataFilePath()
         const BS = String.fromCharCode(92) // 反斜杠：不用正则，免得转义满天飞

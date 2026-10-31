@@ -5,7 +5,7 @@
  *   + 左列三个子组件（TavernControlBasics / Advanced / Protocol，只收 m）。
  * 右列仍是 TavernControlModes（上一轮拆出，靠 props 通信，本轮未动）。
  *
- * 🔴 三条不能动的地方（拆错了实机立刻现形，见 docs/2.4.2-C1-TavernControl拆分记录.md）：
+ * 🔴 三条不能动的地方（拆错了实机立刻现形，见 docs/归档/2.4/2.4.2-C1-TavernControl拆分记录.md）：
  *   ① 左列 div（leftColRef）与右列 div（rightColRef）必须留在本组件：协议窗高度同步量的是
  *      它们的**直接子节点**，子组件一律返回 Fragment ⇒ 这层子节点数恒为 5 与 3。
  *   ② 高度同步 effect（含 ResizeObserver/MatchMedia 清理）在 useTavernControlModel 里，未改。

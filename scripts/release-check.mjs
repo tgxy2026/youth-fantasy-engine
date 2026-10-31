@@ -175,6 +175,31 @@ else {
   else add('WARN', '文档引用 · check-doc-refs --inuse', `${real.length} 处待人工判断（工具报 ${bad}，已剔 ${bad - real.length} 处已知误报）：${real.slice(0, 8).map((x) => `${x.doc} → ${x.ref}`).join('；')}`)
 }
 
+// ==================== 4-b. 源码注释引用（3.3.3 · B2 门禁） ====================
+//
+// 与上面 Markdown 那份的分工：Markdown 查"文档里写的路径"，这里查"**源码注释**里写的路径"。
+// 🔴 源码注释失效一律 FAIL（不是 WARN）：注释是后来者改代码时的指路牌，指错了比没有更糟。
+// 🔴 exit=2 是工具异常（扫不到文件等），同样 FAIL —— 不能把"工具没跑起来"当绿灯。
+if (exists(docRefTool)) {
+  const rs = await run(process.execPath, [docRefTool, '--source'], 60000)
+  const badSrc = Number((rs.out.match(/（真失效）：\s*(\d+)\s*处/) || [])[1] ?? NaN)
+  const srcFiles = []
+  let inBadSrc = false
+  for (const ln of rs.out.split('\n')) {
+    if (/^=====/.test(ln)) { inBadSrc = /（真失效）/.test(ln); continue }
+    if (!inBadSrc) continue
+    const mh = ln.match(/^\[\d+\]\s+(\S+)\s*$/)
+    if (mh) srcFiles.push(mh[1])
+  }
+  if (rs.exitCode === 2 || Number.isNaN(badSrc)) {
+    add('FAIL', '源码注释引用 · check-doc-refs --source', `工具异常（exit=${rs.exitCode}），不算绿灯：${rs.out.trim().slice(0, 160)}`)
+  } else if (!rs.ok || badSrc > 0) {
+    add('FAIL', '源码注释引用 · check-doc-refs --source', `${badSrc} 处注释指向不存在的文档（${srcFiles.length} 份文件）：${[...new Set(srcFiles)].slice(0, 6).join('；')}`)
+  } else {
+    add('OK', '源码注释引用 · check-doc-refs --source', '注释内文档路径全部可达')
+  }
+}
+
 // ==================== 5. 外链（默认只列不探；--net 才探测且只记 INFO） ====================
 const mdFiles = [path.join(ROOT, 'README.md')]
 const docsRoot = path.join(ROOT, 'docs')

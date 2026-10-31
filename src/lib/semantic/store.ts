@@ -343,7 +343,7 @@ export function makeVecRow(input: {
  * 3.0 · W0-2 迁移：把旧品牌向量库的全部行搬到当前库，然后删掉旧库。**仅供迁移调用**。
  *
  * 🔴 为什么是「开旧库读 → 写新库 → 删旧库」而不是直接改文件名：IndexedDB 底层是 LevelDB，
- *    文件名按内容寻址、MANIFEST 相互引用，**不能简单改名**（见 `docs/3.0-开发方案.md` §3.4）。
+ *    文件名按内容寻址、MANIFEST 相互引用，**不能简单改名**（见 `docs/归档/3.0/3.0-开发方案.md` §3.4）。
  * 旧库不存在 → 视为「无数据可搬」，返回 count=0（不算失败）。
  */
 export async function migrateVecFromLegacy(

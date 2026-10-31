@@ -11,10 +11,11 @@
 //    网页版与桌面网页壳都在同源下，Cookie 是 httpOnly 且自动附带，脚本拿不到也不该拿。
 //    桌面原生窗口那套（Bearer + safeStorage）在 `electron/` 侧，不在这条路上。
 //
-// ⚠️ 尚未接线（诚实记录，别当成已实现）：
-//    · 保存流程还没有调用 `enqueue` —— 接线点见下方 `markDirty()` 注释。
-//    · 拉取（poll/pull）还缺一个"定时检查云端是否有新版本"的调度者，
-//      现在只能由界面显式调 `check()`。
+// ⚠️ 这个门面**目前没有调用方**（早期方案的产物，别当成线上同步实现在这里）：
+//    · 真正的装配是 `lib/app/syncBoot.ts` + `lib/sync/syncController.ts`；
+//    · 自动同步的触发也不是"保存流程调 enqueue"，而是 `syncAuto` 按 `project.updatedAt`
+//      与 `binding.lastSyncedAt` 比较后起 tick（3.3.2 定案，见 `lib/app/syncAuto.ts`）。
+//    · 读到"保存流程没有调用 enqueue"之类旧描述时，以 controller 侧实际装配为准。
 import type { ProjectBundle } from '@/lib/db/projects'
 import { exportProject } from '@/lib/db/projects'
 import type { SnapshotTombstone } from '@/lib/sync/projectSnapshot'

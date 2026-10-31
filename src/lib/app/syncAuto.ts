@@ -88,7 +88,10 @@ export function decideTick(input: {
     return { action: 'conflict', localBase: d.localBase, remoteRevision: d.remoteRevision }
   }
   // 云端前进而本机干净：说明另一台设备写了新东西。
-  // 🔴 不自动应用 —— 原地落地（B3-2）还没做；这里只如实报出来，界面提示"可另存为新书接续"。
+  // 🔴 **不自动应用**（这是有意的：本机正文只由作者点按钮才替换）。
+  //    原地覆盖的实现已经有了 —— `CloudSyncPanel` 手动「用云端覆盖本机」走 `applyCloudCopyInPlace`；
+  //    缺的是「云端有新版本」这条路上的入口，所以这里只如实报出来，界面提示"可另存为新书接续"。
+  //    3.3.3 · B1 补的正是这个入口（补上后本条同步改写）。
   if (d.action === 'pull') return { action: 'remote-ahead', remoteRevision: d.toRevision }
   if (d.action === 'remote-regressed') return { action: 'skip', reason: 'remote-regressed' }
   // up-to-date：确实无事可做
