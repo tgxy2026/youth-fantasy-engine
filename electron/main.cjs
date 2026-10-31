@@ -28,6 +28,20 @@ const desktopAuth = require('./desktopAuth.cjs')
 const bossKey = require('./bossKey.cjs')
 
 const SMOKE_TEST = process.argv.includes('--smoke-test')
+/**
+ * 桌面登录自检（`--desktop-auth-selftest=<服务器地址>`）。
+ *
+ * 【为什么需要它】桌面登录要开系统浏览器，窗口又不受自动化工具控制，
+ * 所以「真桌面进程能不能走通登录」以前只能靠人工点。加上这个开关后，
+ * 主进程会用**和生产完全相同的流程**（回环端口 + PKCE + 换令牌 + 写安全存储）跑一次，
+ * 只是把「打开浏览器」换成把授权地址打印到 stdout，外部脚本可以接着完成登录。
+ *
+ * 🔴 只在显式传参时生效，正常启动完全不受影响；跑完直接退出，不创建窗口。
+ */
+const DESKTOP_AUTH_SELFTEST = (() => {
+  const a = process.argv.find((x) => x.startsWith('--desktop-auth-selftest='))
+  return a ? a.slice('--desktop-auth-selftest='.length) : ''
+})()
 // 3.1.2 · 图标自检：真机跑一遍「应用 → 读回 → 还原」，供封装后 / CI 验证快捷方式确实被改（详见下方实现）
 const ICON_SELFTEST = process.argv.includes('--app-icon-selftest')
 /**
@@ -224,8 +238,18 @@ app.whenReady().then(() => {
     return { signedIn: !!tokenVault.load(), encrypted: available }
   })
 
-  ipcMain.handle('auth:desktopLogin', async (_e, opts) => {
-    const baseUrl = String((opts && opts.baseUrl) || '').replace(/\/+$/, '')
+  /**
+   * 桌面登录的**实际流程**：回环端口 → 浏览器授权 → code+verifier 换令牌 → 写安全存储。
+   *
+   * 抽成具名函数而不是内联在 IPC 里，是为了能被 `--desktop-auth-selftest` 直接调用。
+   * 否则这段最容易在装配层出错（漏个导入就整个启动中断，见文件头 safeStorage 的注释），
+   * 却只能靠人工点界面才能发现。
+   *
+   * @param {{ baseUrl: string, name?: string, openBrowser: (url: string) => Promise<void> }} o
+   *        `openBrowser` 由调用方决定：生产是 `shell.openExternal`，自检是打印到 stdout。
+   */
+  const runDesktopLogin = async ({ baseUrl: rawBase, name, openBrowser }) => {
+    const baseUrl = String(rawBase || '').replace(/\/+$/, '')
     if (!/^https?:\/\//.test(baseUrl)) return { ok: false, error: '服务器地址不合法' }
     const { verifier, challenge } = desktopAuth.createPkce()
     const state = desktopAuth.createState()
@@ -234,12 +258,21 @@ app.whenReady().then(() => {
       srv = await desktopAuth.startLoopbackServer(async (query) => {
         const v = desktopAuth.verifyCallback({ query, expectedState: state })
         if (!v.ok) return { ok: false, title: '授权未完成', detail: v.reason }
-        return { ok: true, title: '授权成功', detail: '可以关闭这个页面，回到桌面版继续。' }
+        /**
+         * 🔴 **必须把 code 带出来**（2026-10-31 实机抓到）。
+         *
+         * 这个回调的返回值有两个用途：① 渲染给浏览器的结果页（title/detail）；
+         * ② `waitForCode()` 的解析值 —— 下面换令牌用的就是它的 `.code`。
+         * 第一版只返回了 ①②里的标题/说明，把 code 丢了 ⇒ `outcome.code` 恒为 undefined
+         * ⇒ 换成令牌时服务端回 400「缺少授权码」⇒ **桌面登录永远不可能成功**。
+         * 单测没抓到是因为它直接测 `startLoopbackServer`，自己塞了自己的返回值。
+         */
+        return { ok: true, code: v.code, title: '授权成功', detail: '可以关闭这个页面，回到桌面版继续。' }
       })
       const url = desktopAuth.buildAuthorizeUrl({
-        baseUrl, port: srv.port, challenge, state, name: (opts && opts.name) || '',
+        baseUrl, port: srv.port, challenge, state, name: name || '',
       })
-      await shell.openExternal(url)
+      await openBrowser(url)
       const outcome = await srv.waitForCode()
       if (!outcome.ok) return { ok: false, error: outcome.detail || '授权未完成' }
 
@@ -268,7 +301,13 @@ app.whenReady().then(() => {
     } finally {
       try { if (srv) srv.close() } catch { /* ignore */ }
     }
-  })
+  }
+
+  ipcMain.handle('auth:desktopLogin', (_e, opts) => runDesktopLogin({
+    baseUrl: opts && opts.baseUrl,
+    name: opts && opts.name,
+    openBrowser: (url) => shell.openExternal(url),
+  }))
 
   ipcMain.handle('auth:desktopLogout', () => {
     tokenVault.clear()
@@ -312,6 +351,27 @@ app.whenReady().then(() => {
       return { ok: false, status: 0, error: err && err.message ? String(err.message) : '请求失败' }
     }
   })
+
+  // ---- 桌面登录自检（`--desktop-auth-selftest=<baseUrl>`）：跑完即退，不建窗口 ----
+  //
+  // 与 `--smoke-test` 同一类：只供自动化/流水线验证，正常启动完全不经过这里。
+  if (DESKTOP_AUTH_SELFTEST) {
+    ;(async () => {
+      const r = await runDesktopLogin({
+        baseUrl: DESKTOP_AUTH_SELFTEST,
+        // 把「打开浏览器」换成打印地址：外部脚本可以接着完成登录，不必真弹浏览器
+        openBrowser: async (url) => { console.log('DESKTOP_AUTH_URL ' + url) },
+      })
+      if (r.ok) {
+        const who = r.user && r.user.name ? r.user.name : '-'
+        console.log(`DESKTOP_AUTH_OK user=${who} persisted=${r.persisted === true}`)
+      } else {
+        console.log('DESKTOP_AUTH_FAIL ' + (r.error || 'unknown'))
+      }
+      app.exit(r.ok ? 0 : 1)
+    })()
+    return
+  }
 
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
