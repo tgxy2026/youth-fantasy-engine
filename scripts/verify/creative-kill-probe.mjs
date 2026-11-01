@@ -93,6 +93,17 @@ const provider = await page.evaluate(async () => {
 })
 console.log('模型配置就绪（provider 数）:', provider)
 
+// 🔴 直接 setMeta 不会刷新 UI 的「AI 就绪」状态 ⇒ 必须重载，让 aiReady 用新配置重算，
+//    否则「开始创作」会被前置校验拦掉（点了没反应，且 status 一直是 null）。
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(6500)
+if (!(await enterProject())) {
+  console.log('❗ 重载后没能进入作品，终止')
+  try { await ctx.close() } catch { /* 忽略 */ }
+  process.exit(1)
+}
+await dismissTips()
+
 // 上一轮若残留「进行中」，先中止（真实用户也会这么做）。
 // 注：progress 的 running→cancelled 降级修复（a28b9ce）在上游生效，正常不会残留；
 //     这里只是兜底，不再像上一版那样手工删 meta（删了会被退出前的持久化写回）。
@@ -115,23 +126,17 @@ await page.evaluate(() => {
 await page.waitForTimeout(600)
 
 // 参数：一句话 + 缩小规模（1 卷、每章 400 字）
-await page.evaluate(() => {
-  const ta = document.querySelector('textarea[placeholder*="吞噬他人修为"]')
-  if (ta) {
-    const set = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
-    set.call(ta, '一个靠替人记仇的抄书人，在王朝崩塌前夜发现自己记下的每一条仇都要由他来还。')
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-  }
-  const nums = [...document.querySelectorAll('input[type="number"]')]
-  const setNum = (el, v) => {
-    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-    set.call(el, String(v))
-    el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }))
-  }
-  if (nums[1]) setNum(nums[1], 1)
-  if (nums[2]) setNum(nums[2], 400)
-})
-await page.waitForTimeout(700)
+// 🔴 必须用 playwright 的 fill：直接改 .value + dispatchEvent 会被 React 受控组件忽略
+//    （之前"开始创作"点了没反应的根因就是参数其实没填进去）
+const seedBox = page.locator('textarea[placeholder*="吞噬他人修为"]')
+if (await seedBox.count()) await seedBox.fill('一个靠替人记仇的抄书人，在王朝崩塌前夜发现自己记下的每一条仇都要由他来还。')
+const nums = page.locator('input[type="number"]')
+if (await nums.count() >= 3) {
+  await nums.nth(1).fill('1')
+  await nums.nth(2).fill('400')
+  await nums.nth(2).blur()
+}
+await page.waitForTimeout(900)
 
 console.log('开始创作:', await page.evaluate(() => {
   const b = [...document.querySelectorAll('button')].find((x) => /^开始创作$/.test((x.textContent || '').trim()))
@@ -147,13 +152,13 @@ async function poke(round) {
     const pid = db.getCurrentProjectId()
     const meta = await db.getMeta('creativeSession:' + pid, null)
     const btns = [...document.querySelectorAll('button')]
+    const label = (x) => (x.textContent || '').trim()
     // 🔴 只在「已勾选 > 0」时才点确认：确认成功后按钮会变成「确认设定（0）」，
     //    继续点它就是空转（实测会死循环，白白错过强杀时机）。
     let clicked = null
     if (!window.__confirmedBible) {
       // ① 已勾选 > 0 ⇒ 直接确认；
       // ② 勾选数是 0（草稿已写过一次/默认没勾）⇒ 先「全选新建」，下一轮再确认。
-      const label = (x) => (x.textContent || '').trim()
       const confirmBtn = btns.find((x) => /^确认设定（[1-9]/.test(label(x)))
       if (confirmBtn) {
         confirmBtn.click(); window.__confirmedBible = true; clicked = label(confirmBtn)
@@ -161,9 +166,14 @@ async function poke(round) {
         const selectAll = btns.find((x) => /^全选新建$/.test(label(x)))
         if (selectAll) { selectAll.click(); clicked = '全选新建' }
       }
+    } else if (!window.__startedWriting) {
+      // 大纲阶段的确认按钮实测文案是「保存大纲并开始连写」
+      const go = btns.find((x) => /^保存大纲并开始连写/.test(label(x)))
+      if (go) { go.click(); window.__startedWriting = true; clicked = label(go) }
     }
     return {
       clicked,
+      confirmBtns: btns.map(label).filter(t => /确认|连写|开始|继续/.test(t)).slice(0, 8),
       chapterCount: chapters?.length ?? 0,
       status: meta?.progress?.status ?? null,
       ratio: meta?.progress?.ratio ?? null,
