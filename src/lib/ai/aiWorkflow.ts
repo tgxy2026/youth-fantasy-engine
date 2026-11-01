@@ -573,6 +573,8 @@ export interface CreativeWritingOptions {
   resume?: CreativeResume
   /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
   onResume?: (r: CreativeResume) => void
+  /** B-04：逐章检查点（强杀后只补剩余；章落库与检查点仍非同一事务，不承诺 exactly-once） */
+  onCheckpoint?: (r: CreativeResume) => void
   signal?: AbortSignal
   /**
    * 请求归属（3.2.0 · WQ7）：由**建了运行账本**的调用方传入（`taskId` = run id）。
@@ -880,6 +882,13 @@ export async function runCreativeWriting(
           createdEvidence.push({
             id: ch.id, title: ch.title ?? '', no: Number(ch.no) || 0,
             fingerprint: textFingerprint(ch.content ?? ''),
+          })
+          // B-04：每章一个检查点（不阻塞写章；调用方负责落盘）
+          opts.onCheckpoint?.({
+            bag: {}, from: 'draft',
+            doneChapters, totalChapters: plannedChapters,
+            label: `已写 ${doneChapters}/${plannedChapters} 章`,
+            evidence: [...createdEvidence],
           })
           ctx.report(done / remaining, `已写 ${doneChapters}/${plannedChapters} 章`)
           opts.onChapterSaved?.(ch)

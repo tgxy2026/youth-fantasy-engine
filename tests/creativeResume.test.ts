@@ -7,7 +7,7 @@
 //   ④ 标题改了不影响（作者常改标题），只看正文指纹；
 //   ⑤ 已完成章数与证据条数对不上 ⇒ 记录本身损坏，拒绝；
 //   ⑥ 书库里多出来的章不计问题（作者自己新写的）。
-import { describeResumeEvidence, verifyResumeEvidence } from '../src/lib/creative/resumeEvidence'
+import { describeResumeEvidence, isCreativeResumeShape, verifyResumeEvidence } from '../src/lib/creative/resumeEvidence'
 import { textFingerprint } from '../src/lib/tasks/unitLedger'
 
 let pass = 0, fail = 0
@@ -58,6 +58,17 @@ function main() {
 
   // ⑦ 边界：空正文也能校验（指纹对空串一致）
   ok('空正文可一致', verifyResumeEvidence([ev('e', '')], [ch('e', '')], 1).ok)
+
+  // ⑧ 旧记录的形状识别：坏形状不能当"没有记录"静默丢掉
+  const goodResume = { bag: {}, from: 'draft', doneChapters: 2, totalChapters: 5, label: '已写 2/5 章' }
+  ok('正常断点形状通过', isCreativeResumeShape(goodResume))
+  ok('旧记录没有 evidence 仍可识别形状', isCreativeResumeShape(goodResume))
+  ok('字符串断点不算', !isCreativeResumeShape('已写 2/5 章'))
+  ok('缺 doneChapters 不算', !isCreativeResumeShape({ ...goodResume, doneChapters: undefined }))
+  ok('章数不是数字不算', !isCreativeResumeShape({ ...goodResume, totalChapters: '5' }))
+  ok('0 总章数不算', !isCreativeResumeShape({ ...goodResume, totalChapters: 0 }))
+  ok('空对象不算', !isCreativeResumeShape({}))
+  ok('null 不算', !isCreativeResumeShape(null))
   ok('重复章 id 不能冒充两章', verifyResumeEvidence([ev('a', '正文A'), ev('a', '正文A')], [ch('a', '正文A')], 2).reason === 'invalid')
   ok('证据类型损坏时拒绝', verifyResumeEvidence({} as never, [ch('a', '正文A')], 1).reason === 'invalid')
   ok('缺失指纹时拒绝', verifyResumeEvidence([{ ...ev('a', '正文A'), fingerprint: '' }], [ch('a', '正文A')], 1).reason === 'invalid')

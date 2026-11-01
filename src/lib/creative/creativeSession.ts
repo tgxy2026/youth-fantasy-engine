@@ -29,7 +29,7 @@ import {
   type CreativeWritingResult,
 } from '@/lib/ai/aiWorkflow'
 import * as db from '@/lib/db'
-import { describeResumeEvidence, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
+import { describeResumeEvidence, isCreativeResumeShape, serializeResumeForPersist, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
 import { summarizeResult } from '@/lib/creative/resultSummary'
 import { createContextLoadGate } from '@/lib/creative/loadGate'
@@ -409,17 +409,8 @@ async function persistNow(pid?: string): Promise<boolean> {
   try {
     const target = pid ?? db.getCurrentProjectId()
     if (!target || !snap.hydrated || hydratedStorageContext !== storageWriteContext() || hydratedFor !== target) return false
-    // 断点只存里程，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
-    const resume = snap.resume
-      ? {
-          from: snap.resume.from,
-          doneChapters: snap.resume.doneChapters,
-          totalChapters: snap.resume.totalChapters,
-          label: snap.resume.label,
-          // B3：证据随断点落盘，续跑前回读核对；缺它（旧记录）就只能展示、不能续跑
-          ...(snap.resume.evidence ? { evidence: snap.resume.evidence } : {}),
-        }
-      : null
+    // 断点只存里程与证据，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
+    const resume = snap.resume ? serializeResumeForPersist(snap.resume) : null
     await db.setMeta(keyOf(target), {
       inputs: snap.inputs,
       log: snap.log.slice(-60),
@@ -516,9 +507,12 @@ async function loadSession(pid: string) {
     } | null>(keyOf(pid), null)
     if (saved) {
       // B3：断点带证据才可续跑 —— 回读书库核对章是否还在、正文是否被改过。
-      const resume = (saved.resume as CreativeResume | null) ?? null
-      let resumeNeedsReview = !!resume
-      let resumeBlockedReason = ''
+      const rawResume = saved.resume
+      const resume = isCreativeResumeShape(rawResume) ? (rawResume as CreativeResume) : null
+      // 旧记录形状都读不懂：不静默当"没有记录"删掉，保留原 meta 并明确告诉作者
+      const malformed = rawResume != null && !resume
+      let resumeNeedsReview = !!resume || malformed
+      let resumeBlockedReason = malformed ? '旧记录的结构无法被本版识别；原数据仍保留，但不会自动续跑。' : ''
       if (resume) {
         const chapters = await db.getAllChapters().catch(() => null)
         if (!chapters) {
@@ -682,6 +676,10 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
       notice(reason, 'error')
       return
     }
+    // B-04：满章断点（最后一章写完与整次收尾之间）直接收尾，不再发请求
+    if (checkedResume && checkedResume.doneChapters >= checkedResume.totalChapters) {
+      set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '' }); notice('上次记录显示章数已写满，无需继续；已按当前记录收尾。', 'info'); return
+    }
     if (snap.resumeNeedsReview) set({ resumeNeedsReview: false, resumeBlockedReason: '' })
   }
   // 🔴 绑定本次运行的项目（切项目时据此判断，见 abortRunIfProjectChanged）
@@ -736,6 +734,12 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         onResume: r => {
           gotResume = r
           set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
+        },
+        /** B-04：每章检查点立即写盘（防抖窗口正是"最后一章写完就断电"会丢的那段）；仍不承诺 exactly-once */
+        onCheckpoint: r => {
+          if (db.getCurrentProjectId() !== runProjectId) return
+          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
+          cancelScheduledPersist(); if (runProjectId) void persistNow(runProjectId)
         },
         onProgress: p => {
           const next = captureSummaries(p)

@@ -9,6 +9,7 @@
  * 🔴 只认**章 id + 正文指纹**：标题换字不影响续跑（作者常改标题），正文变了才危险。
  */
 import { textFingerprint } from '@/lib/tasks/unitLedger'
+import type { CreativeResume } from '@/lib/ai/aiWorkflow'
 
 export interface CreatedChapterEvidence {
   id: string
@@ -28,6 +29,27 @@ export interface ResumeEvidenceVerdict {
   missing: string[]
   /** 正文已变的章 id */
   changed: string[]
+}
+
+/** 断点落盘时只保留可序列化字段（bag 是内存产物，绝不进 meta） */
+export function serializeResumeForPersist(r: CreativeResume): CreativeResume {
+  return {
+    from: r.from,
+    doneChapters: r.doneChapters,
+    totalChapters: r.totalChapters,
+    label: r.label,
+    ...(r.evidence ? { evidence: r.evidence } : {}),
+  } as CreativeResume
+}
+
+/** 旧记录的结构是否至少能被本版读懂（不是"产物有效"，只是"不是坏 JSON 形状"） */
+export function isCreativeResumeShape(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Record<string, unknown>
+  return typeof r.from === 'string' && r.from.length > 0
+    && typeof r.doneChapters === 'number' && Number.isFinite(r.doneChapters) && r.doneChapters >= 0
+    && typeof r.totalChapters === 'number' && Number.isFinite(r.totalChapters) && r.totalChapters > 0
+    && typeof r.label === 'string'
 }
 
 /**
