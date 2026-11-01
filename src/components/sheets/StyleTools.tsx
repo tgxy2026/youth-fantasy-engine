@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FileDown, FileUp, Sparkles, Loader2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import { foldVh } from '@/lib/settings/theme'
 import { Modal } from '@/components/dialogs/Modal'
 import { showToast } from '@/components/dialogs/dialogs'
 import { getAllChapters } from '@/lib/db'
@@ -243,7 +244,7 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
               {preview.skippedEmpty > 0 && `本文件有 ${preview.skippedEmpty} 个字段是空的，已跳过。`}
               {preview.unchanged > 0 && ` ${preview.unchanged} 项与现有内容相同。`}
             </p>
-            <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-ink-700 divide-y divide-ink-700">
+            <div className="overflow-y-auto rounded-lg border border-ink-700 divide-y divide-ink-700" style={{ maxHeight: foldVh('50vh') }}>
               {preview.changed.map(c => (
                 <div key={c.key} className="p-3">
                   <div className="text-12 font-medium text-ink-100">{c.label}
@@ -331,7 +332,7 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
                     onClick={() => setPicked(new Set())}>全不选</button>
                 </div>
               </div>
-              <div className="max-h-[45vh] overflow-y-auto rounded-lg border border-ink-700 divide-y divide-ink-700">
+              <div className="overflow-y-auto rounded-lg border border-ink-700 divide-y divide-ink-700" style={{ maxHeight: foldVh('45vh') }}>
                 {suggestions.map(s => {
                   const cur = readData()[s.key] ?? ''
                   const same = cur === s.value

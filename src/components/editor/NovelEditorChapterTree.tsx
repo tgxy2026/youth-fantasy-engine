@@ -294,8 +294,8 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     /* 🔴 右对齐 + 限宽：这个按钮在标题栏最右，用 left-0 展开会在窄面板里溢出被裁
                        （2026-10-31 实机验证：399px 宽时菜单右半边被面板边缘切掉，只看到「新建最…」）。
                        右侧两项的说明文字用 truncate，长卷名也不会把菜单撑出边界。 */
-                    className="absolute right-0 top-full mt-1 min-w-[200px] max-w-[min(280px,calc(100vw-24px))] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
-                    style={{ zIndex: Z.pagePanelTop }}
+                    className="absolute right-0 top-full mt-1 min-w-[200px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    style={{ zIndex: Z.pagePanelTop, maxWidth: `min(280px, calc(${foldVh('100vw')} - 24px))` }}
                     role="menu"
                   >
                     <Button variant="bare"
