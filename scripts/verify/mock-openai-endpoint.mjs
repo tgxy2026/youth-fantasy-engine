@@ -11,6 +11,9 @@ import fs from 'node:fs'
 const PORT = Number(process.env.MOCK_PORT || 18080)
 const LOG = process.env.MOCK_LOG || '.workbuddy/tmp/mock-openai-requests.log'
 const DELAY_MS = Number(process.env.MOCK_DELAY_MS || 800)
+/** 让第 N 次「抽取类」请求返回 500（A-06 用：50 单元里第 37 个失败） */
+const FAIL_AT = Number(process.env.MOCK_FAIL_AT || 0)
+let extractSeq = 0
 
 /** 生成一段"像正文"的中文，长度可控，便于验证字数与段落 */
 function prose(seed, chars = 600) {
@@ -52,6 +55,15 @@ function jsonAnswer(promptText) {
       terms: [{ name: '仇契', desc: '记在纸上就必须由记仇人偿还的契约', category: '其他' }],
       items: [{ name: '玄铁墨锭', desc: '写下的字十年不褪', category: '材料', grade: '凡品' }],
     })
+  }
+  // 「拆书抽取」：返回**对象数组** [{type,name,aliases,desc,evidence}]，type 必须命中 ENTITY_TYPES
+  if (/抽取|实体/.test(promptText)) {
+    const m = promptText.match(/第(\d+)章/)
+    const n = m ? m[1] : '0'
+    return JSON.stringify([
+      { type: '人物', name: `测试人物${n}`, aliases: [], desc: `第${n}章出场`, evidence: `原文：测试人物${n}` },
+      { type: '地点', name: `测试地点${n}`, aliases: [], desc: `第${n}章场景`, evidence: `原文：测试地点${n}` },
+    ])
   }
   // 「分卷大纲」：结构照抄 planOutlineSys（volumes[] + chapters[]）
   if (/分卷大纲与逐章细纲/.test(promptText)) {
@@ -119,13 +131,24 @@ const server = http.createServer((req, res) => {
   req.on('end', () => {
     let body = {}
     try { body = JSON.parse(raw) } catch { /* 保留空对象 */ }
-    logRequest('chat', body)
+    logRequest((/抽取|实体|单元/.test((body.messages ?? []).map((m) => m.content ?? '').join('\n')) ? 'chat-extract' : 'chat'), body)
 
     const promptText = (body.messages ?? []).map((m) => m.content ?? '').join('\n')
+
+    // 抽取类请求单独计数，便于精确模拟"第 37 个单元失败"
+    const isExtract = /抽取|实体|单元/.test(promptText)
+    if (isExtract) extractSeq++
+    if (FAIL_AT && isExtract && extractSeq === FAIL_AT) {
+      logRequest('chat-FAIL#' + extractSeq, body)
+      res.writeHead(500, { 'Content-Type': 'application/json', ...CORS })
+      res.end(JSON.stringify({ error: { message: `mock 注入失败：第 ${extractSeq} 个抽取单元`, type: 'mock_fail' } }))
+      return
+    }
     // 提示词里明确要 JSON 的阶段（设定奠基 / 分卷大纲）走结构；写正文的阶段给正文
     const asksProse = /写正文|正文片段|本章正文|续写正文|接着写/.test(promptText)
-    const askJson = !asksProse && (!!body.response_format || /设定架构师|分卷大纲与逐章细纲|只输出 JSON|JSON 结构/.test(promptText))
-    const content = askJson ? jsonAnswer(promptText) : prose('续写', 900)
+    const askJson = !asksProse || /抽取|实体/.test(promptText)
+    const wantJson = askJson && (!!body.response_format || /设定架构师|分卷大纲与逐章细纲|只输出 JSON|JSON 结构|抽取|实体/.test(promptText))
+    const content = wantJson ? jsonAnswer(promptText) : prose('续写', 900)
     const stream = !!body.stream
 
     const finish = () => {
