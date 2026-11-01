@@ -19,6 +19,9 @@ import {
   listTaskUnits, loadTask, openTaskOwner, saveTaskHead, saveTaskUnit, taskUsage,
 } from '../src/lib/db/taskLedger'
 import { invalidateStorageContext } from '../src/lib/storage/contextEpoch'
+import { runBookBreak, bookBreakExtractIdentity } from '../src/lib/bookbreak/run'
+import { splitNovelText } from '../src/lib/bookbreak/split'
+import { startFakeOllama, fakeProvider, FAKE_PROVIDER_ID } from './fake-ollama'
 import {
   bookBreakIdentity, bookBreakUnitKey, discardBookBreakTask, openBookBreakTask, previewBookBreakTask,
 } from '../src/lib/bookbreak/taskStore'
@@ -266,6 +269,37 @@ async function main() {
     }
     ok('切换存储后拒绝旧任务写入', rejected && !(await memoryOps.get('taskUnits', 'late-context')))
   }
+  // 完整拆书入口：49 个已有成功产物，第 37 个失败，只发一个抽取请求。
+  {
+    __resetMockStores()
+    db.setCurrentProject(PID)
+    const raw = Array.from({ length: 50 }, (_, i) => `第${i + 1}章 测试${i + 1}\n人物在山谷中寻找失落的记录。`).join('\n')
+    const opts = { maxChunks: 50, maxUnitChars: 4000, maxUnits: 50, persistToChapters: false, summarizeForms: false, organizeRelations: false, retryFailed: true }
+    const chapters = splitNovelText(raw, { maxChunks: 50 }).chapters
+    if (chapters.length !== 50) throw new Error(`夹具必须切成 50 章，实际 ${chapters.length}`)
+    const identity = bookBreakExtractIdentity(raw, opts)
+    const task = await openBookBreakTask({ identity, totalUnits: 50, modelTag: 'local-fake', label: '49/50' })
+    if (!task) throw new Error('隔离任务台账不可用')
+    for (let i = 0; i < chapters.length; i++) {
+      const meta = { index: i, key: bookBreakUnitKey(identity, i, chapters[i].text), chapterTitle: chapters[i].title }
+      await task.beginUnit(meta)
+      if (i === 36) await task.failUnit(meta, 'test-failure')
+      else await task.settleUnit(meta, [{ type: '人物', name: `样本${i}`, desc: '', evidence: '' }])
+    }
+    await task.finish('pending', '49/50')
+    const before = await listTaskUnits(identity.taskId)
+    const fake = await startFakeOllama({ body: '[]', json: '[]' })
+    try {
+      await db.setMeta('aiProviders', [fakeProvider(fake.port)])
+      await db.setMeta('aiActiveProviderId', FAKE_PROVIDER_ID)
+      const result = await runBookBreak(raw, opts)
+      const after = await listTaskUnits(identity.taskId)
+      ok('50 单元只重试第 37 个时恰好请求一次', fake.calls.length === 1, String(fake.calls.length))
+      ok('重试后 50 单元均成功', !!result && after.length === 50 && after.every(u => u.status === 'succeeded'))
+      ok('其余 49 个成功单元记录不变', before.filter(u => u.index !== 36).every(u => JSON.stringify(u) === JSON.stringify(after.find(v => v.index === u.index))))
+    } finally { fake.close() }
+  }
+
   console.log(`\nTASK_LEDGER ${pass} passed, ${fail} failed`)
   process.exitCode = fail === 0 ? 0 : 1
 }
