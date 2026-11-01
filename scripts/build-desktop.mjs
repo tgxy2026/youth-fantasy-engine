@@ -304,13 +304,18 @@ if (existsSync(exePath)) {
      */
     const patchExe = () => {
       const rcedit = (() => {
+        // ① 优先 electron-builder 的 winCodeSign 缓存（版本与 builder 自带的一致）
         const cache = path.join(process.env.LOCALAPPDATA || '', 'electron-builder', 'Cache', 'winCodeSign')
-        if (!existsSync(cache)) return ''
-        for (const sub of readdirSync(cache)) {
-          const p = path.join(cache, sub, 'rcedit-x64.exe')
-          if (existsSync(p)) return p
+        if (existsSync(cache)) {
+          for (const sub of readdirSync(cache)) {
+            const p = path.join(cache, sub, 'rcedit-x64.exe')
+            if (existsSync(p)) return p
+          }
         }
-        return ''
+        // ② 兜底：项目自带的 rcedit（devDependency）—— 本机没有 winCodeSign 缓存时靠它。
+        //    🔴 2026-11-01：此前只找缓存，缓存从没下过 ⇒ 元数据一直补不上、exe 属性里的版本/图标是默认值。
+        const local = path.join(root, 'node_modules', 'rcedit', 'bin', 'rcedit-x64.exe')
+        return existsSync(local) ? local : ''
       })()
       if (!rcedit) {
         console.warn('[build:desktop] ❌ 找不到 rcedit，无法补写主 exe')
