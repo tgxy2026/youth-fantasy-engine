@@ -16,6 +16,7 @@ import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { beginRecordOperation } from '@/lib/storage/recordOperation'
 import { emptyAtlasSchema } from './schema'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from './types'
+import { withAtlasSchemaLock } from './schemaLock'
 
 /** 设置键：`atlasSchema::races` / `atlasSchema::items`（项目级，随项目走） */
 export function atlasSchemaKey(tabId: AtlasTabId): string {
@@ -176,9 +177,7 @@ export async function saveAtlasSchema(
    * 这里用与任务台账同源的 Web Locks 把临界区收进来；没有锁的环境（`window` 未定义 / 老浏览器）
    * 保持原行为（单窗口桌面/便携文件后端本来就没有第二个窗口）。
    */
-  const run = () => saveAtlasSchemaLocked(projectId, tabId, config)
-  if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.locks) return run()
-  return navigator.locks.request(`yfe-atlas-schema-v1:${projectId}:${tabId}`, { mode: 'exclusive' }, run)
+  return withAtlasSchemaLock(projectId, tabId, () => saveAtlasSchemaLocked(projectId, tabId, config))
 }
 
 async function saveAtlasSchemaLocked(

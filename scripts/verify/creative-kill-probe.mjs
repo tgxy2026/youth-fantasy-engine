@@ -1,6 +1,7 @@
 import { chromium } from 'playwright'
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
 
 // 3.3.3 · B-04 强杀探针（**测试脚手架，不是产品代码**）
 //
@@ -151,15 +152,19 @@ if (killed) {
   await page.screenshot({ path: `${OUT}/b04-before-kill.png` }).catch(() => {})
   // 真强杀：只杀本夹具 profile 的 Edge 进程，不动用户其它窗口
   try {
-    const ps = `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*edge-profile-b04*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
-    execSync(`powershell -NoProfile -Command "${ps}"`, { stdio: 'pipe', timeout: 20000 })
+    const target = path.resolve(PROFILE).replaceAll("'", "''")
+    const ps = `$target = '${target}'; $pattern = '(?i)--user-data-dir=(?:"' + [regex]::Escape($target) + '"|' + [regex]::Escape($target) + '(?=\\s|$))'; $list = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern }); if ($list.Count -eq 0) { throw 'No Edge processes matched the selected profile' }; $list | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop }`
+    const encoded = Buffer.from(ps, 'utf16le').toString('base64')
+    execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, { stdio: 'pipe', timeout: 20000 })
     console.log('已强杀 Edge 进程')
   } catch (e) {
     console.log('强杀失败:', String(e).slice(0, 120))
+    killed = false
   }
-  fs.writeFileSync(`${OUT}/b04-kill-state.json`, JSON.stringify({ lastState, at: new Date().toISOString() }, null, 2))
+  if (killed) fs.writeFileSync(`${OUT}/b04-kill-state.json`, JSON.stringify({ lastState, at: new Date().toISOString() }, null, 2))
 } else {
   console.log('未到达强杀点，最后状态:', JSON.stringify(lastState))
 }
 
 try { await ctx.close() } catch { /* 进程已被杀，忽略 */ }
+if (!killed) process.exitCode = 1

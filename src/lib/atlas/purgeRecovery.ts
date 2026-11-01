@@ -15,6 +15,7 @@ import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/app/desktop'
 import { PORTABLE, flushPortable, getPortableState } from '@/lib/storage/fileBackend'
 import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+import { withAtlasSchemaLock } from '@/lib/atlas/schemaLock'
 
 function capturePurgeStore(projectId: string) {
   const store = ops
@@ -99,6 +100,10 @@ export async function clearPendingFieldPurge(projectId: string, tabId: string, f
 
 /** Discard only an uncommitted deletion intent; never abandon orphaned values. */
 export async function discardIntactFieldPurge(projectId: string, target: Pick<PendingFieldPurge, 'tabId' | 'fieldId'>): Promise<void> {
+  return withAtlasSchemaLock(projectId, target.tabId, () => discardIntactFieldPurgeLocked(projectId, target))
+}
+
+async function discardIntactFieldPurgeLocked(projectId: string, target: Pick<PendingFieldPurge, 'tabId' | 'fieldId'>): Promise<void> {
   const owner = captureOwnedOperation(projectId)
   owner.assertCurrent()
   const raw = await db.getSettingFor<unknown>(projectId, `atlasSchema::${target.tabId}`, null, owner)
@@ -139,6 +144,14 @@ export async function retryPendingFieldPurge(
     const { purgeFieldValues } = await import('@/lib/atlas/fieldOps')
     return purgeFieldValues(pid, tab, field, owner)
   },
+): Promise<PurgeRetryResult> {
+  return withAtlasSchemaLock(projectId, target.tabId, () => retryPendingFieldPurgeLocked(projectId, target, purge))
+}
+
+async function retryPendingFieldPurgeLocked(
+  projectId: string,
+  target: Pick<PendingFieldPurge, 'tabId' | 'fieldId'>,
+  purge: (projectId: string, tabId: string, fieldId: string, owner: OwnedOperation) => Promise<number>,
 ): Promise<PurgeRetryResult> {
   const owner = captureOwnedOperation(projectId)
   try {

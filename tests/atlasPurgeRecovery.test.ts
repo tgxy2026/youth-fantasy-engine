@@ -7,6 +7,8 @@
 //   ④ 抛错时保留记录并给出剩余数（读不到就是 -1，不假装清干净）。
 import { __resetMockStores, memoryOps } from './mock-memory'
 import * as db from '../src/lib/db'
+import { saveAtlasSchema } from '../src/lib/atlas/persistence'
+import { emptyAtlasSchema } from '../src/lib/atlas/schema'
 import {
   clearPendingFieldPurge, countFieldValues, discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
 } from '../src/lib/atlas/purgeRecovery'
@@ -110,6 +112,41 @@ async function main() {
   } catch { corruptRejected = true }
   const corrupt = await memoryOps.get<{ value: unknown[] }>('meta', corruptKey)
   ok('损坏的恢复记录拒绝覆盖', corruptRejected && corrupt?.value.length === 1 && corrupt.value[0] === null)
+
+  // 真实入口共享同一锁：清理进行中，其他窗口不能插入 schema 写入。
+  {
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+    const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+    let tail = Promise.resolve()
+    const locks = { request: async <T>(_name: string, _opts: unknown, fn: () => Promise<T>): Promise<T> => {
+      let release!: () => void
+      const mine = new Promise<void>(r => { release = r })
+      const before = tail; tail = mine
+      await before
+      try { return await fn() } finally { release() }
+    } }
+    Object.defineProperty(globalThis, 'window', { value: globalThis, configurable: true })
+    Object.defineProperty(globalThis, 'navigator', { value: { locks }, configurable: true })
+    try {
+      const config = { ...emptyAtlasSchema(), revision: 2 }
+      let release!: () => void, entered!: () => void
+      const paused = new Promise<void>(r => { release = r })
+      const ready = new Promise<void>(r => { entered = r })
+      const retry = retryPendingFieldPurge(PID, { tabId: TAB, fieldId: 'cf_1' }, async () => { entered(); await paused; return 0 })
+      // 使用仍有值的字段触发实际清理回调。
+      await memoryOps.put('tableRows', { id: 'lock-row', projectId: PID, tabId: TAB, order: 4, data: { cf_1: 'v' } })
+      await ready
+      let saved = false
+      const write = saveAtlasSchema(PID, TAB, config).then(() => { saved = true })
+      await Promise.resolve(); await Promise.resolve()
+      ok('清理期间 schema 写入等待同一把锁', !saved)
+      release(); await retry; await write
+      ok('清理结束后 schema 写入继续', saved)
+    } finally {
+      if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow); else delete (globalThis as { window?: unknown }).window
+      if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator); else delete (globalThis as { navigator?: unknown }).navigator
+    }
+  }
 
   console.log(`\natlasPurgeRecovery: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
