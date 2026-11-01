@@ -58,6 +58,10 @@ function main() {
 
   // ⑦ 边界：空正文也能校验（指纹对空串一致）
   ok('空正文可一致', verifyResumeEvidence([ev('e', '')], [ch('e', '')], 1).ok)
+  ok('重复章 id 不能冒充两章', verifyResumeEvidence([ev('a', '正文A'), ev('a', '正文A')], [ch('a', '正文A')], 2).reason === 'invalid')
+  ok('证据类型损坏时拒绝', verifyResumeEvidence({} as never, [ch('a', '正文A')], 1).reason === 'invalid')
+  ok('缺失指纹时拒绝', verifyResumeEvidence([{ ...ev('a', '正文A'), fingerprint: '' }], [ch('a', '正文A')], 1).reason === 'invalid')
+  ok('无效完成章数时拒绝', verifyResumeEvidence([ev('a', '正文A')], [ch('a', '正文A')], Number.NaN).reason === 'count')
 
   console.log(`\ncreativeResume: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)

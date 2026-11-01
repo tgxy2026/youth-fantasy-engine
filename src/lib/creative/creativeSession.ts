@@ -31,6 +31,8 @@ import {
 } from '@/lib/ai/aiWorkflow'
 import * as db from '@/lib/db'
 import { describeResumeEvidence, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
+import { validateResumeForStart } from '@/lib/creative/resumeValidation'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import type { DraftBundle, DraftRow, FlowProgress } from '@/lib/flow/types'
 import {
   aiRewriteChapter,
@@ -652,9 +654,21 @@ async function settleCreativeLedger(
 export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
   await bindProject()
-  if (snap.resumeNeedsReview && !opts.fromScratch) {
-    notice('上次记录缺少可校验的章节信息，请先核对已保存章节，再选择从头开始。', 'error')
-    return
+  // 加载后作者仍可能编辑章节或参数，开跑前重新核验，不能沿用过期的通过结果。
+  const checkedResume = opts.fromScratch ? null : snap.resume
+  if (checkedResume) {
+    const pid = db.getCurrentProjectId()
+    const inputs = snap.inputs
+    const owner = captureOwnedOperation(pid ?? '')
+    const { reason, parameters } = await validateResumeForStart(checkedResume, inputs.chapters, owner, inputs.target)
+    if (db.getCurrentProjectId() !== pid || snap.resume !== checkedResume || snap.inputs !== inputs || snap.running) return
+    try { owner.assertCurrent() } catch { notice('作品或存储空间已切换，请重新核对断点。', 'error'); return }
+    if (reason) {
+      if (!parameters) set({ resumeNeedsReview: true, resumeBlockedReason: reason })
+      notice(reason, 'error')
+      return
+    }
+    if (snap.resumeNeedsReview) set({ resumeNeedsReview: false, resumeBlockedReason: '' })
   }
   // 🔴 绑定本次运行的项目（切项目时据此判断，见 abortRunIfProjectChanged）
   runProjectId = db.getCurrentProjectId() ?? ''

@@ -58,6 +58,8 @@ import type { Volume } from '@/lib/types'
 import { MAX_CHAPTERS } from '@/lib/outline/writingPace'
 import { textFingerprint } from '@/lib/tasks/unitLedger'
 import type { CreatedChapterEvidence } from '@/lib/creative/resumeEvidence'
+import { validateResumeForStart } from '@/lib/creative/resumeValidation'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 
 /** 从零创作：设定奠基 → 分卷大纲 → 逐章连写（`target='outline'` 时靠 `skipRest` 停在闸门②之后） */
 export const CREATIVE_STAGES: FlowStage[] = [
@@ -637,10 +639,14 @@ export async function runCreativeWriting(
     throw new Error('这个项目里还没有分卷大纲与章节细纲 —— 请先做「大纲规划」，再生成正文。')
   }
 
-  /** 续跑起点：已经写好多少章。参数对不上（或没给 resume）就不续，从零写 */
-  const baseDone = opts.resume && opts.resume.totalChapters === plannedChapters && opts.resume.doneChapters > 0
-    ? opts.resume.doneChapters
-    : 0
+  // 编排器也要守住续跑入口，调用方不能因参数不匹配而静默从头执行。
+  if (opts.resume) {
+    const owner = captureOwnedOperation(db.getCurrentProjectId() ?? '')
+    const verdict = await validateResumeForStart(opts.resume, plannedChapters, owner, target)
+    owner.assertCurrent()
+    if (verdict.reason) throw new Error(verdict.reason)
+  }
+  const baseDone = opts.resume?.doneChapters ?? 0
   let doneChapters = baseDone
   // B3：本次已落库的章（id + 正文指纹）—— 中止时交回给界面，续跑前回读校验。
   // 🔴 必须声明在阶段表之外：`onResume` 在中止时读它，而它由 `draft` 阶段写入。

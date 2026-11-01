@@ -107,6 +107,44 @@ console.log('\n── ③ 切项目时未落盘的想法归属 ──')
   db.setCurrentProject('')
 }
 
+// 加载通过后正文仍可能被作者修改；开始续跑时必须重新核验。
+{
+  const db = await import('@/lib/db')
+  const { memoryOps } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  const { textFingerprint } = await import('@/lib/tasks/unitLedger')
+  db.setCurrentProject('pResumeEdit')
+  const chapter = { id: 'resume-edit-ch', projectId: 'pResumeEdit', title: '章', content: '原文', summary: '', wordCount: 2, createdAt: 1, updatedAt: 1, tags: [], status: 'draft', order: 1 }
+  await db.saveChapter(chapter as never)
+  await db.setMeta('creativeSession:pResumeEdit', {
+    resume: { from: 'draft', doneChapters: 1, totalChapters: 10, label: '已写 1/10 章', evidence: [{ id: chapter.id, title: '章', no: 1, fingerprint: textFingerprint('原文') }] },
+  })
+  await creative.hydrateCreativeSession()
+  creative.updateInputs({ chapters: 9 })
+  const beforeMismatch = (await memoryOps.getAll('aiRuns')).length
+  await creative.startCreativeRun()
+  ok('修改总章数时拒绝静默从头开始', (await memoryOps.getAll('aiRuns')).length === beforeMismatch)
+  creative.updateInputs({ chapters: 10 })
+  const { invalidateStorageContext } = await import('@/lib/storage/contextEpoch')
+  const originalGetAll = memoryOps.getAll
+  memoryOps.getAll = async <T>(store: string): Promise<T[]> => {
+    const rows = await originalGetAll<T>(store)
+    if (store === 'chapters') invalidateStorageContext()
+    return rows
+  }
+  try {
+    await creative.startCreativeRun()
+    ok('核验期间切换存储空间不启动任务', (await originalGetAll('aiRuns')).length === beforeMismatch)
+  } finally { memoryOps.getAll = originalGetAll }
+  await db.saveChapter({ ...chapter, content: '修改后' } as never)
+  const before = (await memoryOps.getAll('aiRuns')).length
+  await creative.startCreativeRun()
+  ok('加载后正文修改，续跑前拒绝启动任务', (await memoryOps.getAll('aiRuns')).length === before)
+  creative.clearCreativeSession()
+  await creative.flushPersist('pResumeEdit')
+  db.setCurrentProject('')
+}
+
 /**
  * ④ 源码闸：中止路径上的两件"必须做否则会反噬"的事
  *

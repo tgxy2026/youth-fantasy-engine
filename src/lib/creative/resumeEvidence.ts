@@ -19,7 +19,7 @@ export interface CreatedChapterEvidence {
   fingerprint: string
 }
 
-export type ResumeEvidenceReason = '' | 'legacy' | 'count' | 'missing' | 'changed'
+export type ResumeEvidenceReason = '' | 'legacy' | 'count' | 'invalid' | 'missing' | 'changed'
 
 export interface ResumeEvidenceVerdict {
   ok: boolean
@@ -41,11 +41,19 @@ export function verifyResumeEvidence(
   chapters: readonly { id: string; content: string }[],
   doneChapters?: number,
 ): ResumeEvidenceVerdict {
-  if (!evidence || evidence.length === 0) {
+  if (!evidence || (Array.isArray(evidence) && evidence.length === 0)) {
     return { ok: false, reason: 'legacy', missing: [], changed: [] }
   }
-  if (typeof doneChapters === 'number' && Number.isFinite(doneChapters) && doneChapters !== evidence.length) {
+  if (!Array.isArray(evidence)) return { ok: false, reason: 'invalid', missing: [], changed: [] }
+  if (doneChapters !== undefined && (!Number.isSafeInteger(doneChapters) || doneChapters <= 0 || doneChapters !== evidence.length)) {
     return { ok: false, reason: 'count', missing: [], changed: [] }
+  }
+  const ids = new Set<string>()
+  for (const e of evidence) {
+    if (!e || typeof e.id !== 'string' || !e.id || typeof e.fingerprint !== 'string' || !e.fingerprint || ids.has(e.id)) {
+      return { ok: false, reason: 'invalid', missing: [], changed: [] }
+    }
+    ids.add(e.id)
   }
   const byId = new Map(chapters.map(c => [c.id, c]))
   const missing: string[] = []
@@ -65,6 +73,7 @@ export function describeResumeEvidence(v: ResumeEvidenceVerdict): string {
   switch (v.reason) {
     case 'legacy': return '这份记录来自旧版本，没有可校验的章节信息。'
     case 'count': return '记录里的已完成章数与证据对不上，可能已损坏。'
+    case 'invalid': return '记录里的章节证据无效或重复，无法安全续跑。'
     case 'missing': return `有 ${v.missing.length} 章已被删除，无法按原进度续跑。`
     case 'changed': return `有 ${v.changed.length} 章正文已被改动，续跑会按旧进度跳过错误的章。`
     default: return ''

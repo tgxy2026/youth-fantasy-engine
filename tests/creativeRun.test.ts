@@ -16,6 +16,7 @@ import * as db from '../src/lib/db'
 import { commitOutline, loadChapterOutlines, runCreativeWriting } from '../src/lib/ai/aiWorkflow'
 import { startFakeOllama, fakeProvider, FAKE_PROVIDER_ID } from './fake-ollama'
 import type { OutlineResult } from '../src/lib/ai/aiTasks'
+import { textFingerprint } from '../src/lib/tasks/unitLedger'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -179,6 +180,46 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
   ok('正文确实没落库', (await db.getAllChapters()).length === 0)
   ok('结果标记为「只做大纲」', res?.outlineOnly === true, String(res?.outlineOnly))
   fake.close()
+}
+
+// 编排器被直接调用时也不能绕过恢复证据与章数校验。
+{
+  __resetMockStores()
+  db.setCurrentProject('run-resume-guard')
+  await db.saveChapter({ id: 'existing', projectId: 'run-resume-guard', title: '章', content: '改过的正文', summary: '', wordCount: 5, createdAt: 1, updatedAt: 1, tags: [], status: 'draft', order: 1 } as never)
+  const resume = { bag: {}, from: 'draft', doneChapters: 1, totalChapters: 2, label: '1/2', evidence: [{ id: 'existing', title: '章', no: 1, fingerprint: textFingerprint('原正文') }] }
+  let mismatch = ''
+  try { await runCreativeWriting({}, { target: 'full', chapters: 3, resume }) } catch (e) { mismatch = String(e) }
+  ok('直接调用时总章数变化被拒绝', mismatch.includes('章数'))
+  let changed = ''
+  try { await runCreativeWriting({}, { target: 'full', chapters: 2, resume }) } catch (e) { changed = String(e) }
+  ok('直接调用时正文已改被拒绝', changed.includes('正文已被改动'))
+  let stage = ''
+  try { await runCreativeWriting({}, { target: 'full', chapters: 2, resume: { ...resume, from: 'bad-stage' } }) } catch (e) { stage = String(e) }
+  ok('无效续跑阶段被拒绝', stage.includes('断点阶段无效'))
+  let target = ''
+  try { await runCreativeWriting({}, { target: 'outline', chapters: 2, resume }) } catch (e) { target = String(e) }
+  ok('正文断点不能触发仅规划大纲', target.includes('正文断点不能用于'))
+  ok('拒绝后不创建新章节', (await db.getAllChapters()).length === 1)
+}
+
+// 有效断点仍能运行：已有章保留，只补剩余章，使用隔离假模型。
+{
+  __resetMockStores()
+  db.setCurrentProject('run-resume-valid')
+  const fake = await startFakeOllama({ body: BODY, json: '[]' })
+  try {
+    await useFake(fake.port)
+    await commitOutline(mkOutline(3, '恢复测试卷'))
+    const existing = { id: 'resume-saved', projectId: 'run-resume-valid', title: '已保存', content: '已有正文', summary: '', wordCount: 4, createdAt: 1, updatedAt: 1, tags: [], status: 'draft', order: 1 }
+    await db.saveChapter(existing as never)
+    const resume = { bag: {}, from: 'draft', doneChapters: 1, totalChapters: 2, label: '1/2', evidence: [{ id: existing.id, title: existing.title, no: 1, fingerprint: textFingerprint(existing.content) }] }
+    const result = await runCreativeWriting({}, { target: 'draft', chapters: 2, targetWords: 600, topUpLast: false, resume })
+    const chapters = await db.getAllChapters()
+    ok('有效断点只补一章', result?.chapters.length === 1 && chapters.length === 2)
+    ok('已有章节正文保持不变', chapters.find(c => c.id === existing.id)?.content === existing.content)
+    ok('有效续跑只发一次正文生成请求', fake.calls.filter(c => isBodyCall(c.sys)).length === 1)
+  } finally { fake.close() }
 }
 
 console.log(`\n—— creativeRun 用例结束：${pass} 通过 / ${fail} 失败`)
