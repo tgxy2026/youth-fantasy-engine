@@ -12,6 +12,8 @@ import {
   TEXT_MAX_CHARS, canonicalNumber, planFieldConversion, planFieldDeletion, purgeFieldValues, sameFieldRows,
 } from '../src/lib/atlas/fieldOps'
 import type { AtlasFieldDefinition } from '../src/lib/atlas/types'
+import { saveAtlasSchema } from '../src/lib/atlas/persistence'
+import { emptyAtlasSchema } from '../src/lib/atlas/schema'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean | undefined, e = '') => {
@@ -39,6 +41,13 @@ async function main() {
   ok('预览忽略仅有的行顺序变化', sameFieldRows(rowsOf(['12', '34']), rowsOf(['12', '34']).reverse()))
   await memoryOps.put('projects', { id: PID, name: 'B6 字段测试', createdAt: 0, updatedAt: 0 })
   db.setCurrentProject(PID)
+  {
+    const old = emptyAtlasSchema()
+    await saveAtlasSchema(PID, 'races', old)
+    let rejected = false
+    try { await saveAtlasSchema(PID, 'races', old) } catch { rejected = true }
+    ok('字段配置已更新时拒绝旧版本覆盖', rejected)
+  }
 
   // ───────────────── ① 数字字符串必须精确可逆 ─────────────────
   {

@@ -40,6 +40,8 @@ interface Props {
   onClose: () => void
   /** 配置来自更高版本：只读浏览，禁止修改（方案 §8.4） */
   readOnly?: boolean
+  /** Unsaved table drafts must not be ignored by destructive field operations. */
+  hasUnsavedChanges?: boolean
   /** 内置字段的存储键（＝列名，顺序即列顺序）；给了才显示「内置字段显示名」一块 */
   aliasKeys?: readonly string[]
   /** 当前显示名覆写表（来自 `lib/settings/fieldAlias` 的 `map`） */
@@ -54,7 +56,7 @@ const INPUT = 'w-full text-12 px-2 py-1.5 rounded-lg bg-ink-900 border border-in
 const SWITCH_OFF = 'text-ink-500 hover:text-danger'
 
 export default function AtlasFieldManager({
-  tab, config, onSave, onClose, readOnly, aliasKeys, aliases, onSaveAliases,
+  tab, config, onSave, onClose, readOnly, hasUnsavedChanges = false, aliasKeys, aliases, onSaveAliases,
 }: Props) {
   const groups = atlasGroupsOf(tab.id, config)
   const categories = atlasCategoryOptions(tab)
@@ -70,6 +72,13 @@ export default function AtlasFieldManager({
   const conversionBasis = useRef<{ pid: string; revision: number; rows: FieldRowLike[] } | null>(null)
   const configRef = useRef(config)
   configRef.current = config
+  const dirtyRef = useRef(hasUnsavedChanges)
+  dirtyRef.current = hasUnsavedChanges
+  const ensureClean = () => {
+    if (!dirtyRef.current) return true
+    showToast('本页还有未保存的修改，请先保存后再操作字段。', 'error')
+    return false
+  }
   const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
   /** 换一个字段编辑时，清掉上一次的转换预览（否则会把 A 字段的结论套到 B 上） */
   useEffect(() => { setConvertTarget(''); setConvertPlan(null) }, [editingId])
@@ -91,6 +100,7 @@ export default function AtlasFieldManager({
 
   /** 预览类型转换：只判断能不能整批通过，**不改任何值** */
   const previewConversion = async (field: AtlasFieldDefinition, target: CustomFieldType) => {
+    if (!ensureClean()) return
     const loaded = await loadRows()
     if (!loaded) return
     conversionBasis.current = { pid: loaded.pid, revision: config.revision, rows: loaded.rows }
@@ -98,7 +108,7 @@ export default function AtlasFieldManager({
   }
 
   const applyConversion = async (field: AtlasFieldDefinition, plan: ConversionPlan) => {
-    if (!plan.ok) return
+    if (!plan.ok || !ensureClean()) return
     const loaded = await loadRows()
     if (!loaded) return
     const owner = loaded.owner
@@ -109,7 +119,7 @@ export default function AtlasFieldManager({
       if (!backup) { showToast('备份没有建成，本次没有转换', 'error'); return }
       const current = await loadRows()
       const basis = conversionBasis.current
-      if (!owner.current() || !current || !basis || current.pid !== basis.pid
+      if (!ensureClean() || !owner.current() || !current || !basis || current.pid !== basis.pid
         || configRef.current.revision !== basis.revision || !sameFieldRows(current.rows, basis.rows)
         || !planFieldConversion(field, current.rows, plan.target).ok) {
         setConvertPlan(null)
@@ -133,6 +143,7 @@ export default function AtlasFieldManager({
 
   /** 永久删除：先出影响数与依赖；有依赖就阻止 */
   const requestDeleteField = async (field: AtlasFieldDefinition) => {
+    if (!ensureClean()) return
     const loaded = await loadRows()
     if (!loaded) return
     const owner = loaded.owner
@@ -151,7 +162,7 @@ export default function AtlasFieldManager({
       const backup = await backupBeforeAtlasFieldChange(loaded.pid, `永久删除字段「${field.label}」前自动备份`)
       if (!backup) { showToast('备份没有建成，本次没有删除', 'error'); return }
       const current = await loadRows()
-      if (!owner.current() || !current || current.pid !== loaded.pid
+      if (!ensureClean() || !owner.current() || !current || current.pid !== loaded.pid
         || configRef.current.revision !== config.revision
         || !sameFieldRows(current.rows, loaded.rows)) {
         showToast('字段数据已变化，请重新预览后再删除。', 'error')

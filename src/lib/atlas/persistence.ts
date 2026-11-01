@@ -178,6 +178,9 @@ export async function saveAtlasSchema(
   const check = checkAtlasWritable(raw)
   owner.assertCurrent()
   if (!check.allow) throw new Error(check.reason ?? '字段配置已锁定为只读，拒绝修改')
+  const storedRevision = raw && typeof raw === 'object' && typeof (raw as { revision?: unknown }).revision === 'number'
+    ? (raw as { revision: number }).revision : 0
+  if (storedRevision !== config.revision) throw new Error('字段配置已在其他窗口发生变化，请重新打开字段设置。')
   const next: AtlasSchemaConfig = {
     ...config,
     formatVersion: ATLAS_FORMAT_VERSION,

@@ -84,6 +84,29 @@ console.log('\n── ③ 切项目时未落盘的想法归属 ──')
   db.setCurrentProject('')
 }
 
+{
+  const db = await import('@/lib/db')
+  const { memoryOps } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pLegacy')
+  await db.setMeta('creativeSession:pLegacy', {
+    resume: { from: 'draft', doneChapters: 2, totalChapters: 5, label: '已写 2/5 章' },
+  })
+  await creative.hydrateCreativeSession()
+  const before = (await memoryOps.getAll('aiRuns')).length
+  await creative.startCreativeRun()
+  const after = (await memoryOps.getAll('aiRuns')).length
+  ok('缺少可校验产物的旧断点不启动新任务', before === after)
+  await creative.flushPersist('pLegacy')
+  const saved = await db.getMeta<{ resume?: unknown } | null>('creativeSession:pLegacy', null)
+  ok('旧断点保留供用户核对', !!saved?.resume)
+  creative.clearCreativeSession()
+  await creative.flushPersist('pLegacy')
+  const cleared = await db.getMeta<{ resume?: unknown } | null>('creativeSession:pLegacy', null)
+  ok('清空记录后不再保留旧断点', !cleared?.resume)
+  db.setCurrentProject('')
+}
+
 /**
  * ④ 源码闸：中止路径上的两件"必须做否则会反噬"的事
  *

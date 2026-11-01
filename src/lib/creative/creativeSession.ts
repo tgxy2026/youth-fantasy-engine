@@ -231,6 +231,8 @@ export interface CreativeSession {
   candidatesSelected: string[]
   result: CreativeResultSummary | null
   resume: CreativeResume | null
+  /** A restored legacy milestone lacks the evidence needed for safe automatic resume. */
+  resumeNeedsReview: boolean
   notice: CreativeNotice | null
   /**
    * 最近一次**成功落盘**的时间戳（0 = 还没保存过）。
@@ -260,6 +262,7 @@ let snap: CreativeSession = {
   candidatesSelected: [],
   result: null,
   resume: null,
+  resumeNeedsReview: false,
   notice: null,
   lastSavedAt: 0,
   rewrite: null,
@@ -460,7 +463,7 @@ const RUNTIME_RESET: Partial<CreativeSession> = {
 
 /** 结果类字段的"空"值（读不到会话时用它，而不是留着上一个项目的数据） */
 const SESSION_BLANK: Partial<CreativeSession> = {
-  log: [], resume: null, result: null, progress: null, summaries: {},
+  log: [], resume: null, resumeNeedsReview: false, result: null, progress: null, summaries: {},
 }
 
 /**
@@ -504,8 +507,9 @@ async function loadSession(pid: string) {
         ...patch,
         inputs: { ...DEFAULT_INPUTS, ...(saved.inputs ?? {}) },
         log: saved.log ?? [],
-        // 落盘的 resume 没有 bag（见阶段说明）—— 作为"里程"显示，续跑照常可用
+        // 旧记录只含里程，不足以验证章节和阶段产物；保留供作者查看，但不可自动续跑。
         resume: (saved.resume as CreativeResume | null) ?? null,
+        resumeNeedsReview: !!saved.resume,
         result: saved.result ?? null,
         progress: saved.progress ?? null,
         summaries: saved.summaries ?? {},
@@ -628,6 +632,10 @@ async function settleCreativeLedger(
 export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
   await bindProject()
+  if (snap.resumeNeedsReview && !opts.fromScratch) {
+    notice('上次记录缺少可校验的章节信息，请先核对已保存章节，再选择从头开始。', 'error')
+    return
+  }
   // 🔴 绑定本次运行的项目（切项目时据此判断，见 abortRunIfProjectChanged）
   runProjectId = db.getCurrentProjectId() ?? ''
   const inp = snap.inputs
@@ -635,7 +643,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   //    能把按钮直接禁用并写明原因）。这里不拦：编排器会给出同样的中文提示，
   //    而在 store 里凭一个静态开关拦，容易和自动判定的真实起点不一致。
   const useResume = opts.fromScratch ? null : snap.resume
-  if (opts.fromScratch) set({ resume: null })
+  if (opts.fromScratch) set({ resume: null, resumeNeedsReview: false })
   /** 本次是否交回了续跑信息（用局部变量判定：setState 异步，闭包里的 resume 还是旧值） */
   let gotResume: CreativeResume | null = null
   const ctl = new AbortController()
@@ -679,7 +687,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {
           gotResume = r
-          set({ resume: r })
+          set({ resume: r, resumeNeedsReview: false })
         },
         onProgress: p => {
           const next = captureSummaries(p)
@@ -756,7 +764,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
       await settleCreativeLedger(ledger, null)
       return
     }
-    set({ result: summarizeResult(res), resume: null })
+    set({ result: summarizeResult(res), resume: null, resumeNeedsReview: false })
     // 🔴 「一章都没写出来」不能再报成功（2026-09-19）：原先无论写了几章都弹绿色
     //    「创作完成：写了 N 章」，N=0 时作者会以为"跑完了、就是没内容"，而真正的原因
     //    （模型超时 / 未配置）就躺在日志里没人看。分开报，并把「去看日志」写进文案。
@@ -1135,7 +1143,7 @@ export function discardRewrite() {
 
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */
 export function clearCreativeSession() {
-  set({ result: null, log: [], progress: null, summaries: {}, resume: null })
+  set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false })
 }
 
 function summarizeResult(res: CreativeWritingResult): CreativeResultSummary {

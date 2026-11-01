@@ -961,6 +961,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           tab={tab}
           config={atlasConfig}
           readOnly={atlasNewerFormat}
+          hasUnsavedChanges={dirtyKeys.length > 0 || saving}
           aliasKeys={aliasCols}
           aliases={aliasRenamed}
           onSaveAliases={next => saveRenames(next, {})}
