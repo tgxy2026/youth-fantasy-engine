@@ -15,6 +15,8 @@ import {
 } from '../src/lib/ai/capabilityProfile'
 import { capabilitiesOf } from '../src/lib/ai/modelCapabilities'
 import { isLocalOnlyMetaKey } from '../src/lib/storage/sensitiveMeta'
+import { saveProviders } from '../src/lib/aiCore/session'
+import type { AIProvider } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean | undefined, e = '') => {
@@ -51,12 +53,14 @@ async function main() {
   // ───────────────── ① 端点规范化与键隔离 ─────────────────
   {
     ok('协议/大小写/尾斜杠视为同一端点',
-      normalizeEndpoint('HTTPS://API.Example.com/v1/') === normalizeEndpoint('api.example.com/v1'))
+      normalizeEndpoint('HTTPS://API.Example.com/v1/') === normalizeEndpoint('https://api.example.com/v1'))
     ok('userinfo / query / hash 不参与端点标识',
-      normalizeEndpoint('https://u:p@host/v1?x=1#y') === 'host/v1')
+      normalizeEndpoint('https://u:p@host/v1?x=1#y') === 'https://host/v1')
     const base = { endpoint: ENDPOINT, modelId: 'm', protocol: 'openai', configFingerprint: CFG }
     const k1 = capabilityKeyOf(base)
-    ok('同输入同键', k1 === capabilityKeyOf({ ...base, endpoint: 'api.example.com/v1' }))
+    ok('同输入同键', k1 === capabilityKeyOf({ ...base, endpoint: 'https://api.example.com/v1' }))
+    ok('http 与 https 不串缓存', k1 !== capabilityKeyOf({ ...base, endpoint: 'http://api.example.com/v1' }))
+    ok('路径大小写不串缓存', k1 !== capabilityKeyOf({ ...base, endpoint: 'https://api.example.com/V1' }))
     ok('换端点 ⇒ 换键', k1 !== capabilityKeyOf({ ...base, endpoint: 'https://relay.example.com/v1' }))
     ok('同名模型不同端点不串缓存', k1 !== capabilityKeyOf({ ...base, endpoint: 'https://other/v1' }))
     ok('换模型 ⇒ 换键', k1 !== capabilityKeyOf({ ...base, modelId: 'qwen-plus' }))
@@ -64,6 +68,16 @@ async function main() {
       capabilityConfigFingerprint({ type: 'ollama' }) !== capabilityConfigFingerprint({ type: 'openai' })
       && k1 !== capabilityKeyOf({ ...base, configFingerprint: capabilityConfigFingerprint({ type: 'ollama' }) }))
     ok('换配置指纹 ⇒ 换键', k1 !== capabilityKeyOf({ ...base, configFingerprint: 'other' }))
+    const provider: AIProvider = { id: 'credential-test', name: 'test', type: 'openai', baseUrl: ENDPOINT, apiKey: 'key-one', model: 'qwen-max' }
+    await saveProviders([provider])
+    const first = provider.capabilityVersion
+    await saveProviders([provider])
+    ok('凭据不变保留能力代次', !!first && provider.capabilityVersion === first)
+    const changed = { ...provider, apiKey: 'key-two' }
+    await saveProviders([changed])
+    ok('凭据变化使能力代次与缓存键变化', !!changed.capabilityVersion && changed.capabilityVersion !== first
+      && capabilityConfigFingerprint(changed) !== capabilityConfigFingerprint(provider))
+    ok('能力指纹不包含凭据', !capabilityConfigFingerprint(changed).includes('key-two'))
     ok('配置指纹不含密钥字段（只拼类型/结构/推理）',
       !/key|token|secret/i.test(capabilityConfigFingerprint({ type: 'openai', structuredOutput: '', reasoningWithStructure: false })))
   }
@@ -77,7 +91,8 @@ async function main() {
     await persistCapabilityTest(rec(), memoryOps)
     const tested = capabilitiesOf(model, undefined, ENDPOINT, CFG)
     ok('有未过期实测 ⇒ 来源 isolated-test', tested.source === 'isolated-test')
-    ok('实测能解析 JSON ⇒ 采用 json-object', tested.structuredOutput === 'json-object' && tested.jsonOutput === true)
+    ok('提示词返回 JSON 不证明结构化参数可用', tested.structuredOutput === 'none' && tested.jsonOutput === true)
+    ok('带查询参数的端点不复用被剥离参数的记录', !getCachedCapability({ endpoint: ENDPOINT + '?account=other', modelId: model, configFingerprint: CFG }))
     ok('schema 未测就不冒充', tested.structuredOutput !== 'json-schema')
 
     const user = capabilitiesOf(model, { structuredOutput: 'json-schema', reasoningWithStructure: true }, ENDPOINT, CFG)

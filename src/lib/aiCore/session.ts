@@ -12,6 +12,9 @@ import {
 } from '@/lib/aiCore/core'
 import type { AIProvider } from '@/lib/aiCore/core'
 import { isLocalModelBlocked, WEB_LOCAL_MODEL_NOTICE } from '@/lib/aiCore/localModelAccess'
+import { uid } from '@/lib/app/id'
+import { ops } from '@/lib/db/core'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 
 // ---- 设置持久化（走 db.meta，全局共享）----
 //
@@ -124,7 +127,18 @@ export async function loadProviders(): Promise<AIProvider[]> {
   return (await db.getMeta<AIProvider[]>(K_PROVIDERS, [])) ?? []
 }
 export async function saveProviders(list: AIProvider[]): Promise<void> {
-  await db.setMeta(K_PROVIDERS, list)
+  const store = ops
+  const context = storageWriteContext()
+  const current = () => store === ops && context === storageWriteContext()
+  const prior = (await store.get<{ key: string; value: AIProvider[] }>('meta', K_PROVIDERS))?.value ?? []
+  if (!current()) throw new Error('存储空间或账号已切换，模型配置未保存。')
+  for (const provider of list) {
+    const previous = prior.find(item => item.id === provider.id)
+    provider.capabilityVersion = previous && previous.apiKey === provider.apiKey && previous.capabilityVersion
+      ? previous.capabilityVersion : uid()
+  }
+  await store.put('meta', { key: K_PROVIDERS, value: list })
+  if (!current()) throw new Error('存储空间或账号已切换，请回到原空间检查模型配置。')
   await refreshAIReady()
 }
 export async function loadActiveId(): Promise<string | null> {

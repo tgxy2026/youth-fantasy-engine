@@ -57,6 +57,15 @@ export interface DeletionPlan {
 
 const SUPPORTED_TARGETS: CustomFieldType[] = ['text', 'longText', 'number']
 
+/** 比较预览时的字段数据；行顺序变化不视为数据变化。 */
+export function sameFieldRows(a: readonly FieldRowLike[], b: readonly FieldRowLike[]): boolean {
+  const fingerprint = (rows: readonly FieldRowLike[]) => JSON.stringify(
+    rows.map(row => [row.id, Object.entries(row.data ?? {}).sort(([x], [y]) => x.localeCompare(y))])
+      .sort(([x], [y]) => String(x).localeCompare(String(y))),
+  )
+  return fingerprint(a) === fingerprint(b)
+}
+
 /** 数字字符串是否**精确可逆**（String(Number(s)) === s） */
 export function canonicalNumber(value: string): { ok: boolean; reason?: string } {
   const s = String(value ?? '').trim()

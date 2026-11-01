@@ -16,8 +16,9 @@ import {
 } from '../src/lib/tasks/unitLedger'
 import {
   TaskExecutionLost, claimTask, deleteProjectTaskArtifacts, getTaskHead, listProjectTaskHeads,
-  listTaskUnits, loadTask, saveTaskHead, saveTaskUnit, taskUsage,
+  listTaskUnits, loadTask, openTaskOwner, saveTaskHead, saveTaskUnit, taskUsage,
 } from '../src/lib/db/taskLedger'
+import { invalidateStorageContext } from '../src/lib/storage/contextEpoch'
 import {
   bookBreakIdentity, bookBreakUnitKey, discardBookBreakTask, openBookBreakTask, previewBookBreakTask,
 } from '../src/lib/bookbreak/taskStore'
@@ -252,6 +253,19 @@ async function main() {
     ok('接管后任务头为 running 且代次 +1', claimed.head.status === 'running' && claimed.head.generation === h.head.generation + 1)
   }
 
+  {
+    const head = mkHead({ id: 'owner-context', ownerId: 'owner', generation: 1 })
+    await saveTaskHead(head)
+    const owner = openTaskOwner(head, 'owner')
+    invalidateStorageContext()
+    let rejected = false
+    try {
+      await saveTaskUnit(mkUnit({ id: 'late-context', taskId: head.id }), owner)
+    } catch (e) {
+      rejected = e instanceof TaskExecutionLost
+    }
+    ok('切换存储后拒绝旧任务写入', rejected && !(await memoryOps.get('taskUnits', 'late-context')))
+  }
   console.log(`\nTASK_LEDGER ${pass} passed, ${fail} failed`)
   process.exitCode = fail === 0 ? 0 : 1
 }

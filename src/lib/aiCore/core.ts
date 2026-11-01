@@ -11,6 +11,8 @@ export type AIProviderType = 'ollama' | 'openai'
 import type { SamplingValues } from '@/lib/ai/modelSampling'
 
 export interface AIProvider {
+  /** Opaque cache generation, renewed when credentials change; never derived from the secret. */
+  capabilityVersion?: string
   id: string
   /** 用户自定义显示名 */
   name: string

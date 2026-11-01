@@ -23,7 +23,7 @@ import { ops } from '@/lib/db/core'
 import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/app/desktop'
 import { PORTABLE, flushPortable, getPortableState } from '@/lib/storage/fileBackend'
 import type { StoreOps } from '@/lib/storage/storeOps'
-import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { captureStorageWriteOwner, storageWriteContext } from '@/lib/storage/writeOwner'
 
 /** 执行权已失效（别一个窗口接管 / 任务被清理 / 项目或存储空间已切换）。 */
 export class TaskExecutionLost extends Error {
@@ -35,6 +35,15 @@ export class TaskExecutionLost extends Error {
 
 export function isTaskExecutionLost(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as { name?: unknown }).name === 'TaskExecutionLost'
+}
+
+/** Serialize ledger mutations across same-origin windows; never pretend an unavailable lock is safe. */
+export async function withTaskLedgerLock<T>(action: () => Promise<T>): Promise<T> {
+  if (typeof window === 'undefined') return action()
+  if (typeof navigator === 'undefined' || !navigator.locks) {
+    throw new TaskExecutionLost('当前环境无法安全协调多个窗口，已暂停可恢复任务。')
+  }
+  return navigator.locks.request('yfe-task-ledger-v1', { mode: 'exclusive' }, action)
 }
 
 /** 一次运行的写入凭据：项目/存储空间 + 执行代次。**打开时捕获 StoreOps**，恢复时不再取全局。 */
@@ -52,15 +61,19 @@ export interface TaskWriteOwner {
 export function openTaskOwner(head: TaskHead, ownerId: string): TaskWriteOwner {
   const guard = captureStorageWriteOwner(head.projectId)
   const store = ops
+  const assertCurrent = () => {
+    if (!guard.current()) throw new TaskExecutionLost('存储空间或账号已切换，本次结果不再写入。')
+  }
   return {
     projectId: head.projectId,
     store,
     ownerId,
     generation: head.generation,
-    assertCurrent: () => guard.current(),
+    assertCurrent,
     assertGeneration: async () => {
-      guard.current()
+      assertCurrent()
       const fresh = await store.get<TaskHead>('taskHeads', head.id)
+      assertCurrent()
       if (!fresh) throw new TaskExecutionLost('任务记录已被清理，本次结果不再写入。')
       if (fresh.generation !== head.generation || fresh.ownerId !== ownerId) {
         throw new TaskExecutionLost()
@@ -119,6 +132,7 @@ export async function listTaskUnits(taskId: string, store: StoreOps = ops): Prom
  *    这个单元才算"可跳过"。界面/日志说的「已完成 N 个」以此为准，不以内存计数为准。
  */
 export async function saveTaskUnit(unit: TaskUnit, owner?: TaskWriteOwner): Promise<TaskUnit> {
+  return withTaskLedgerLock(async () => {
   if (owner) {
     owner.assertCurrent()
     await owner.assertGeneration()
@@ -128,6 +142,7 @@ export async function saveTaskUnit(unit: TaskUnit, owner?: TaskWriteOwner): Prom
   base.bytes = recordBytes(base)
   await writeStrict(owner?.store ?? ops, 'taskUnits', base, owner?.assertCurrent)
   return base
+  })
 }
 
 /** 只改状态（不改产物）。用于 running / cancelled / interrupted 这类中间态。 */
@@ -173,14 +188,24 @@ export async function loadTask(taskId: string, store: StoreOps = ops): Promise<T
  *    反过来的话，中途崩溃会留下「任务在跑、单元在跑、其实没人跑」的三重假象。
  */
 export async function claimTask(taskId: string, ownerId: string): Promise<TaskSnapshot> {
-  const head = await getTaskHead(taskId)
+  return withTaskLedgerLock(() => claimTaskLocked(taskId, ownerId))
+}
+
+/** Caller holds the task ledger lock. */
+export async function claimTaskLocked(taskId: string, ownerId: string): Promise<TaskSnapshot> {
+  const store = ops
+  const originalContext = storageWriteContext()
+  const head = await getTaskHead(taskId, store)
+  if (ops !== store || storageWriteContext() !== originalContext) throw new TaskExecutionLost('存储空间或账号已切换，不能接管任务。')
   if (!head) throw new Error('拆书任务记录已不存在，请重新开始。')
   const guard = captureStorageWriteOwner(head.projectId)
-  guard.current()
-  const raw = await listTaskUnits(taskId)
+  const check = () => { if (!guard.current() || ops !== store) throw new TaskExecutionLost('存储空间或账号已切换，不能接管任务。') }
+  check()
+  const raw = await listTaskUnits(taskId, store)
+  check()
   for (const u of raw) {
     if (u.status !== 'running') continue
-    await saveTaskUnit({ ...u, status: 'interrupted', updatedAt: Date.now() })
+    await writeStrict(store, 'taskUnits', { ...u, status: 'interrupted', updatedAt: Date.now() }, check)
   }
   const next: TaskHead = {
     ...head,
@@ -189,21 +214,30 @@ export async function claimTask(taskId: string, ownerId: string): Promise<TaskSn
     generation: head.generation + 1,
     updatedAt: Date.now(),
   }
-  await saveTaskHead(next)
+  await writeStrict(store, 'taskHeads', next, check)
   return { head: next, units: reconcileOnLoad(raw) }
 }
 
 /** 收尾：写入任务头终态（`done` = 全单元成功；有失败/中断则停在 pending 或 interrupted） */
 export async function finishTask(head: TaskHead, status: TaskHeadStatus, label: string, owner?: TaskWriteOwner): Promise<TaskHead> {
-  const next: TaskHead = { ...head, status, label, updatedAt: Date.now() }
-  await saveTaskHead(next, owner)
-  return next
+  return withTaskLedgerLock(async () => {
+    if (owner) await owner.assertGeneration()
+    const next: TaskHead = { ...head, status, label, updatedAt: Date.now() }
+    await saveTaskHead(next, owner)
+    return next
+  })
 }
 
 // ============ 清理 ============
 
 /** 丢弃任务私有产物：只删本任务的头与单元，**不碰已确认写入书库的正文/设定**。 */
 export async function deleteTaskArtifacts(taskId: string, owner?: TaskWriteOwner): Promise<void> {
+  return withTaskLedgerLock(() => deleteTaskArtifactsLocked(taskId, owner))
+}
+
+/** Caller holds the task ledger lock. */
+export async function deleteTaskArtifactsLocked(taskId: string, owner?: TaskWriteOwner): Promise<void> {
+  if (owner) await owner.assertGeneration()
   const store = owner?.store ?? ops
   const units = await listTaskUnits(taskId, store)
   if (units.length) await store.bulkDel('taskUnits', units.map(u => u.id))
@@ -212,10 +246,12 @@ export async function deleteTaskArtifacts(taskId: string, owner?: TaskWriteOwner
 
 /** 删项目时按 projectId 级联清理（项目没了，它的拆书台账没有继续存在的理由）。 */
 export async function deleteProjectTaskArtifacts(projectId: string, store: StoreOps = ops): Promise<void> {
+  return withTaskLedgerLock(async () => {
   const heads = await listProjectTaskHeads(projectId, store)
   if (heads.length) await store.bulkDel('taskHeads', heads.map(h => h.id))
   const units = await store.getAllByIndex<TaskUnit>('taskUnits', 'projectId', projectId)
   if (units.length) await store.bulkDel('taskUnits', units.map(u => u.id))
+  })
 }
 
 /** 项目级用量（配额判定用）：按单元记录里的真实字节累加 */

@@ -64,17 +64,22 @@ function hash(text: string): string {
 }
 
 /**
- * 规范化端点：协议、大小写、尾斜杠、userinfo、query / hash 都不该造成"同一端点两套缓存"。
+ * 规范化端点：保留协议和路径大小写，移除 userinfo、query 和片段。
  * 返回空串表示没填端点（此时不做实测缓存，避免把"没地址"当成一个端点）。
  */
 export function normalizeEndpoint(raw: string): string {
-  let s = String(raw ?? '').trim().toLowerCase()
+  const s = String(raw ?? '').trim()
   if (!s) return ''
-  s = s.replace(/^[a-z]+:\/\//, '')
-  s = s.split('#')[0].split('?')[0]
-  s = s.replace(/^[^@/]*@/, '')
-  s = s.replace(/\/+$/, '')
-  return s
+  try {
+    const url = new URL(s)
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -99,9 +104,11 @@ export function capabilityConfigFingerprint(p: {
   type?: string
   structuredOutput?: string
   reasoningWithStructure?: boolean
+  capabilityVersion?: string
 }): string {
   return JSON.stringify([
     String(p.type ?? ''), String(p.structuredOutput ?? ''), p.reasoningWithStructure === true ? '1' : '0',
+    String(p.capabilityVersion ?? ''),
   ])
 }
 
@@ -118,6 +125,13 @@ export function isCapabilityFresh(rec: CapabilityTestRecord | null | undefined, 
 
 /** 读进程内缓存；过期/缺失返回 null（**不会**回落到别的端点） */
 export function getCachedCapability(input: CapabilityInput, now = Date.now()): CapabilityTestRecord | null {
+  // 参数和 URL 凭据可能改变服务端行为，又可能包含秘密；不持久化这些值作为缓存身份。
+  try {
+    const url = new URL(input.endpoint)
+    if (url.search || url.username || url.password) return null
+  } catch {
+    return null
+  }
   const rec = memory.get(capabilityKeyOf(input))
   return isCapabilityFresh(rec, now) ? rec ?? null : null
 }
@@ -192,7 +206,7 @@ export function describeCapability(caps: ModelCapabilities, test: CapabilityTest
       + `${test.jsonSchema === 'unknown' ? ' · schema 未测' : ''}。`)
   }
   parts.push(source === 'unknown'
-    ? '下一步：要下发结构格式，请在模型配置里明确选择，或先做一次实测。'
+    ? '下一步：要下发结构格式，请在模型配置里明确选择；本次测试只验证响应。'
     : '下一步：如需重新确认，可再做一次实测（会调用模型）。')
   return {
     source,

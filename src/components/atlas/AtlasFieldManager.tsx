@@ -13,7 +13,7 @@
  *    所以 AI 读表的语义、分组归属、已填数据全都不受影响 —— 面板里只改「界面上那几个字」。
  *    其他页签（人物关系 / 历史事件…）没有本面板，仍用表头的「字段名」按钮，两边共用同一份存储。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Check, Pencil, Plus, RotateCcw, Trash2, Type, X } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
@@ -21,8 +21,10 @@ import { atlasBadgeKeys, atlasCategoryOptions, atlasGroupsOf } from '@/lib/atlas
 import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { newFieldId } from '@/lib/atlas/persistence'
 import { getCurrentProjectId } from '@/lib/db/core'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import {
-  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, purgeFieldValues,
+  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, purgeFieldValues, sameFieldRows,
+  type FieldRowLike,
   type ConversionPlan,
 } from '@/lib/atlas/fieldOps'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
@@ -65,6 +67,9 @@ export default function AtlasFieldManager({
   const [busy, setBusy] = useState(false)
   /** 3.3.3 · B6：类型转换预览（null = 未预览） */
   const [convertPlan, setConvertPlan] = useState<ConversionPlan | null>(null)
+  const conversionBasis = useRef<{ pid: string; revision: number; rows: FieldRowLike[] } | null>(null)
+  const configRef = useRef(config)
+  configRef.current = config
   const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
   /** 换一个字段编辑时，清掉上一次的转换预览（否则会把 A 字段的结论套到 B 上） */
   useEffect(() => { setConvertTarget(''); setConvertPlan(null) }, [editingId])
@@ -73,8 +78,11 @@ export default function AtlasFieldManager({
   const loadRows = async () => {
     const pid = getCurrentProjectId()
     if (!pid) { showToast('当前没有打开作品', 'error'); return null }
+    const owner = captureStorageWriteOwner(pid)
     try {
-      return { pid, rows: await loadAtlasFieldRows(pid, tab.id) }
+      const rows = await loadAtlasFieldRows(pid, tab.id)
+      if (!owner.current() || getCurrentProjectId() !== pid) throw new Error('作品或存储空间已切换，请重新操作。')
+      return { pid, rows, owner }
     } catch (e) {
       showToast(e instanceof Error ? e.message : '读取字段值失败', 'error')
       return null
@@ -85,6 +93,7 @@ export default function AtlasFieldManager({
   const previewConversion = async (field: AtlasFieldDefinition, target: CustomFieldType) => {
     const loaded = await loadRows()
     if (!loaded) return
+    conversionBasis.current = { pid: loaded.pid, revision: config.revision, rows: loaded.rows }
     setConvertPlan(planFieldConversion(field, loaded.rows, target))
   }
 
@@ -92,11 +101,21 @@ export default function AtlasFieldManager({
     if (!plan.ok) return
     const loaded = await loadRows()
     if (!loaded) return
+    const owner = loaded.owner
     setBusy(true)
     try {
       // 执行前备份：建不成备份就不做（与覆盖流程同一条纪律）
       const backup = await backupBeforeAtlasFieldChange(loaded.pid, `字段「${field.label}」类型转换前自动备份`)
       if (!backup) { showToast('备份没有建成，本次没有转换', 'error'); return }
+      const current = await loadRows()
+      const basis = conversionBasis.current
+      if (!owner.current() || !current || !basis || current.pid !== basis.pid
+        || configRef.current.revision !== basis.revision || !sameFieldRows(current.rows, basis.rows)
+        || !planFieldConversion(field, current.rows, plan.target).ok) {
+        setConvertPlan(null)
+        showToast('字段数据已变化，请重新预览后再转换。', 'error')
+        return
+      }
       const next: AtlasSchemaConfig = {
         ...config,
         fields: config.fields.map(f => (f.id === field.id ? { ...f, type: plan.target } : f)),
@@ -116,6 +135,7 @@ export default function AtlasFieldManager({
   const requestDeleteField = async (field: AtlasFieldDefinition) => {
     const loaded = await loadRows()
     if (!loaded) return
+    const owner = loaded.owner
     const plan = planFieldDeletion(field, loaded.rows, config)
     if (!plan.ok) { showToast(plan.reason, 'error', 8000); return }
     const ok = await confirmDialog({
@@ -130,10 +150,24 @@ export default function AtlasFieldManager({
     try {
       const backup = await backupBeforeAtlasFieldChange(loaded.pid, `永久删除字段「${field.label}」前自动备份`)
       if (!backup) { showToast('备份没有建成，本次没有删除', 'error'); return }
+      const current = await loadRows()
+      if (!owner.current() || !current || current.pid !== loaded.pid
+        || configRef.current.revision !== config.revision
+        || !sameFieldRows(current.rows, loaded.rows)) {
+        showToast('字段数据已变化，请重新预览后再删除。', 'error')
+        return
+      }
       const next: AtlasSchemaConfig = { ...config, fields: config.fields.filter(f => f.id !== field.id) }
       await onSave(next)
+      if (!owner.current()) throw new Error('存储空间已切换；字段值未继续清理，请回到原作品检查备份。')
       // 🔴 先删定义再清值：清值失败只会留下不可见的孤儿键，不会出现"类型与值不兼容"的半状态
-      const purged = await purgeFieldValues(loaded.pid, tab.id, field.id).catch(() => 0)
+      let purged: number
+      try {
+        purged = await purgeFieldValues(loaded.pid, tab.id, field.id)
+      } catch {
+        showToast(`字段定义已删除，但部分数据清理失败；请从备份 ${backup.id.slice(0, 8)} 恢复后重试。`, 'error', 10000)
+        return
+      }
       if (draft?.id === field.id) { setDraft(null); setEditingId(null) }
       showToast(`已永久删除「${field.label}」（清理 ${purged} 条值；备份 ${backup.id.slice(0, 8)}）`, 'success', 8000)
     } catch (e) {

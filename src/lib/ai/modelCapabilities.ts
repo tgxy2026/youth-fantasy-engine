@@ -153,9 +153,9 @@ export function capabilitiesOf(
         ...caps,
         source: 'isolated-test',
         jsonOutput: tested.jsonObject ? true : caps.jsonOutput,
-        // 实测确认的是"下发 JSON 对象能不能解析"；schema 没测就仍按 none，不冒充
-        structuredOutput: tested.jsonObject ? 'json-object' : 'none',
-        reasoningWithStructure: tested.reasoningWithStructure === true,
+        // 只验证了提示词下的响应，不能推断端点接受结构化请求参数。
+        structuredOutput: 'none',
+        reasoningWithStructure: false,
       }
     }
   }

@@ -22,8 +22,9 @@ import {
   type TaskCounts, type TaskHead, type TaskHeadStatus, type TaskIdentity, type TaskUnit,
 } from '@/lib/tasks/unitLedger'
 import {
-  claimTask, deleteTaskArtifacts, finishTask, getTaskHead, listProjectTaskHeads,
+  claimTaskLocked, deleteTaskArtifacts, deleteTaskArtifactsLocked, finishTask, getTaskHead, listProjectTaskHeads,
   loadTask, openTaskOwner, saveTaskHead, saveTaskUnit, taskUsage, TaskExecutionLost, isTaskExecutionLost,
+  withTaskLedgerLock,
 } from '@/lib/db/taskLedger'
 
 /** 配额/容量类拒绝：**必须**让作者看见原因，不能被降级吞掉。 */
@@ -132,8 +133,13 @@ export async function openBookBreakTask(input: {
   freshStart?: boolean
 }): Promise<BookBreakTaskHandle | null> {
   const { identity } = input
+  const context = storageWriteContext()
   try {
-    if (input.freshStart) await deleteTaskArtifacts(identity.taskId)
+    return await withTaskLedgerLock(async () => {
+    if (context !== storageWriteContext() || identity.projectId !== getCurrentProjectId()) {
+      throw new TaskExecutionLost('作品或存储空间已切换，不能启动原任务。')
+    }
+    if (input.freshStart) await deleteTaskArtifactsLocked(identity.taskId)
     let head = await getTaskHead(identity.taskId)
     if (!head) {
       // 新建前先过配额（条数 / 本项目总量）。超限抛 TaskQuotaError，绝不淘汰别人的产物。
@@ -174,7 +180,7 @@ export async function openBookBreakTask(input: {
       head = { ...head, totalUnits: input.totalUnits, updatedAt: Date.now() }
       await saveTaskHead(head)
     }
-    const snapshot = await claimTask(identity.taskId, uid())
+    const snapshot = await claimTaskLocked(identity.taskId, uid())
     const owner = openTaskOwner(snapshot.head, snapshot.head.ownerId)
     const known = new Map<number, TaskUnit>(snapshot.units.map(u => [u.index, u]))
     const list = () => Promise.resolve([...known.values()].sort((a, b) => a.index - b.index))
@@ -225,6 +231,7 @@ export async function openBookBreakTask(input: {
       },
     }
     return handle
+    })
   } catch (e) {
     if (isTaskQuotaError(e) || isTaskExecutionLost(e)) throw e
     // 存储不可用 ⇒ 降级为"只在内存里跑"。调用方必须如实告诉作者本次进度不会留存。

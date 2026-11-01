@@ -9,7 +9,7 @@
 import { __resetMockStores, memoryOps } from './mock-memory'
 import * as db from '../src/lib/db'
 import {
-  TEXT_MAX_CHARS, canonicalNumber, planFieldConversion, planFieldDeletion, purgeFieldValues,
+  TEXT_MAX_CHARS, canonicalNumber, planFieldConversion, planFieldDeletion, purgeFieldValues, sameFieldRows,
 } from '../src/lib/atlas/fieldOps'
 import type { AtlasFieldDefinition } from '../src/lib/atlas/types'
 
@@ -35,6 +35,8 @@ const rowsOf = (values: Array<string | null>) =>
 
 async function main() {
   __resetMockStores()
+  ok('预览检测字段内容改变', !sameFieldRows(rowsOf(['12']), rowsOf(['001'])))
+  ok('预览忽略仅有的行顺序变化', sameFieldRows(rowsOf(['12', '34']), rowsOf(['12', '34']).reverse()))
   await memoryOps.put('projects', { id: PID, name: 'B6 字段测试', createdAt: 0, updatedAt: 0 })
   db.setCurrentProject(PID)
 
