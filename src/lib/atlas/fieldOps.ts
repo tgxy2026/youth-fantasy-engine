@@ -18,7 +18,8 @@
  */
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import { getTableRowsFor, saveTableRow } from '@/lib/db/tabs'
-import type { OwnedOperation } from '@/lib/storage/ownedOperation'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+import type { TableRow } from '@/lib/types'
 import { createAutoBackup } from '@/lib/db/backups'
 import { emptyAtlasSchema } from '@/lib/atlas/schema'
 
@@ -159,13 +160,19 @@ export async function backupBeforeAtlasFieldChange(projectId: string, label: str
  * 返回清理了几行。这里**只删这一个键**，不碰其它字段。
  */
 export async function purgeFieldValues(projectId: string, tabId: string, fieldId: string, owner?: OwnedOperation): Promise<number> {
-  const rows = await getTableRowsFor(projectId, tabId as Parameters<typeof getTableRowsFor>[1], owner)
+  const operation = owner ?? captureOwnedOperation(projectId)
+  const rows = await getTableRowsFor(projectId, tabId as Parameters<typeof getTableRowsFor>[1], operation)
   let n = 0
   for (const row of rows) {
     if (!row.data || !(fieldId in row.data)) continue
-    const data = { ...row.data }
+    const latest = await operation.store.get<TableRow>('tableRows', row.id)
+    if (!latest) continue
+    if (latest.projectId !== projectId || latest.tabId !== tabId) throw new Error('条目归属已改变，已停止字段清理。')
+    if (!latest.data || !(fieldId in latest.data)) continue
+    if (latest.data[fieldId] !== row.data[fieldId]) throw new Error('字段值在清理期间发生变化，已停止清理，请重新核对。')
+    const data = { ...latest.data }
     delete data[fieldId]
-    await saveTableRow({ ...row, data }, owner)
+    await saveTableRow({ ...latest, data }, operation)
     n++
   }
   return n

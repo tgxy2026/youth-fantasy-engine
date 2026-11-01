@@ -111,6 +111,42 @@ async function main() {
     ok('再跑一次没有可清理的', (await purgeFieldValues(PID, TAB, 'cf_1')) === 0)
   }
 
+  {
+    await memoryOps.put('tableRows', { id: 'latest-row', projectId: PID, tabId: TAB, order: 4, data: { cf_1: 'old', other: 'old' } })
+    const originalGet = memoryOps.get
+    memoryOps.get = async <T>(store: string, key: string): Promise<T | undefined> => {
+      if (store === 'tableRows' && key === 'latest-row') {
+        await memoryOps.put('tableRows', { id: key, projectId: PID, tabId: TAB, order: 4, data: { cf_1: 'old', other: 'new edit' } })
+      }
+      return originalGet<T>(store, key)
+    }
+    try { await purgeFieldValues(PID, TAB, 'cf_1') } finally { memoryOps.get = originalGet }
+    const row = await memoryOps.get<{ data: Record<string, string> }>('tableRows', 'latest-row')
+    ok('清理前回读行，保留期间其他字段的新编辑', row?.data.other === 'new edit' && !('cf_1' in row.data))
+  }
+  {
+    await memoryOps.put('tableRows', { id: 'deleted-row', projectId: PID, tabId: TAB, order: 5, data: { cf_1: 'old' } })
+    const originalGet = memoryOps.get
+    memoryOps.get = async <T>(store: string, key: string): Promise<T | undefined> => {
+      if (store === 'tableRows' && key === 'deleted-row') await memoryOps.del(store, key)
+      return originalGet<T>(store, key)
+    }
+    try { await purgeFieldValues(PID, TAB, 'cf_1') } finally { memoryOps.get = originalGet }
+    ok('清理时已删除的行不会被旧快照重新创建', !(await memoryOps.get('tableRows', 'deleted-row')))
+  }
+  {
+    await memoryOps.put('tableRows', { id: 'changed-row', projectId: PID, tabId: TAB, order: 6, data: { cf_1: 'old' } })
+    const originalGet = memoryOps.get
+    memoryOps.get = async <T>(store: string, key: string): Promise<T | undefined> => {
+      if (store === 'tableRows' && key === 'changed-row') await memoryOps.put('tableRows', { id: key, projectId: PID, tabId: TAB, order: 6, data: { cf_1: 'new' } })
+      return originalGet<T>(store, key)
+    }
+    let rejected = false
+    try { await purgeFieldValues(PID, TAB, 'cf_1') } catch { rejected = true } finally { memoryOps.get = originalGet }
+    const row = await memoryOps.get<{ data: Record<string, string> }>('tableRows', 'changed-row')
+    ok('清理目标值已变化时停止并保留新值', rejected && row?.data.cf_1 === 'new')
+  }
+
   // ───────────────── ⑤ 静态契约：入口与安全文案 ─────────────────
   {
     const fs = await import('node:fs')
