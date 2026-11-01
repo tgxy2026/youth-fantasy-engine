@@ -56,6 +56,8 @@ import {
 import type { LedgerItem } from '@/lib/settings/settingLedger'
 import type { Volume } from '@/lib/types'
 import { MAX_CHAPTERS } from '@/lib/outline/writingPace'
+import { textFingerprint } from '@/lib/tasks/unitLedger'
+import type { CreatedChapterEvidence } from '@/lib/creative/resumeEvidence'
 
 /** 从零创作：设定奠基 → 分卷大纲 → 逐章连写（`target='outline'` 时靠 `skipRest` 停在闸门②之后） */
 export const CREATIVE_STAGES: FlowStage[] = [
@@ -462,6 +464,12 @@ export interface CreativeResume {
   totalChapters: number
   /** 给界面显示的一行说明 */
   label: string
+  /**
+   * 3.3.3 · B3：本次运行**已落库章节**的 id + 正文指纹。
+   * 续跑前由 `verifyResumeEvidence()` 回读核对：章被删/被改写 ⇒ 拒绝静默续跑。
+   * 旧记录没有这个字段 ⇒ 只能显示进度，不能自动续跑。
+   */
+  evidence?: CreatedChapterEvidence[]
 }
 
 /**
@@ -634,6 +642,12 @@ export async function runCreativeWriting(
     ? opts.resume.doneChapters
     : 0
   let doneChapters = baseDone
+  // B3：本次已落库的章（id + 正文指纹）—— 中止时交回给界面，续跑前回读校验。
+  // 🔴 必须声明在阶段表之外：`onResume` 在中止时读它，而它由 `draft` 阶段写入。
+  // 🔴 续跑时要把**上一次已验证的章**带进来：否则 evidence 条数 < doneChapters，
+  //    下一次加载会被判成"记录损坏"而拒绝续跑（作者明明什么都没改）。
+  const createdEvidence: CreatedChapterEvidence[] =
+    baseDone > 0 && opts.resume?.evidence ? [...opts.resume.evidence] : []
 
   // ④ 阶段表决定这次跑什么：
   //   · 从零创作（库里没大纲）→ 设定奠基 → 分卷大纲 → 连写（target='outline' 时靠 skipRest 停在闸门②之后）
@@ -857,6 +871,10 @@ export async function runCreativeWriting(
         onChapterSaved: ch => {
           done++
           doneChapters = baseDone + done
+          createdEvidence.push({
+            id: ch.id, title: ch.title ?? '', no: Number(ch.no) || 0,
+            fingerprint: textFingerprint(ch.content ?? ''),
+          })
           ctx.report(done / remaining, `已写 ${doneChapters}/${plannedChapters} 章`)
           opts.onChapterSaved?.(ch)
         },
@@ -886,6 +904,7 @@ export async function runCreativeWriting(
         doneChapters,
         totalChapters: plannedChapters,
         label: `已写 ${doneChapters}/${plannedChapters} 章`,
+        evidence: createdEvidence,
       })
     }
     return null

@@ -30,6 +30,7 @@ import {
   type CreativeWritingResult,
 } from '@/lib/ai/aiWorkflow'
 import * as db from '@/lib/db'
+import { describeResumeEvidence, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
 import type { DraftBundle, DraftRow, FlowProgress } from '@/lib/flow/types'
 import {
   aiRewriteChapter,
@@ -233,6 +234,8 @@ export interface CreativeSession {
   resume: CreativeResume | null
   /** A restored legacy milestone lacks the evidence needed for safe automatic resume. */
   resumeNeedsReview: boolean
+  /** 不能自动续跑的具体原因（缺章 / 正文被改 / 旧记录）；'' = 可续跑 */
+  resumeBlockedReason: string
   notice: CreativeNotice | null
   /**
    * 最近一次**成功落盘**的时间戳（0 = 还没保存过）。
@@ -263,6 +266,7 @@ let snap: CreativeSession = {
   result: null,
   resume: null,
   resumeNeedsReview: false,
+  resumeBlockedReason: '',
   notice: null,
   lastSavedAt: 0,
   rewrite: null,
@@ -411,6 +415,8 @@ async function persistNow(pid?: string): Promise<boolean> {
           doneChapters: snap.resume.doneChapters,
           totalChapters: snap.resume.totalChapters,
           label: snap.resume.label,
+          // B3：证据随断点落盘，续跑前回读核对；缺它（旧记录）就只能展示、不能续跑
+          ...(snap.resume.evidence ? { evidence: snap.resume.evidence } : {}),
         }
       : null
     await db.setMeta(keyOf(target), {
@@ -463,7 +469,7 @@ const RUNTIME_RESET: Partial<CreativeSession> = {
 
 /** 结果类字段的"空"值（读不到会话时用它，而不是留着上一个项目的数据） */
 const SESSION_BLANK: Partial<CreativeSession> = {
-  log: [], resume: null, resumeNeedsReview: false, result: null, progress: null, summaries: {},
+  log: [], resume: null, resumeNeedsReview: false, resumeBlockedReason: '', result: null, progress: null, summaries: {},
 }
 
 /**
@@ -503,13 +509,27 @@ async function loadSession(pid: string) {
       summaries?: Record<string, string>
     } | null>(keyOf(pid), null)
     if (saved) {
+      // B3：断点带证据才可续跑 —— 回读书库核对章是否还在、正文是否被改过。
+      const resume = (saved.resume as CreativeResume | null) ?? null
+      let resumeNeedsReview = !!resume
+      let resumeBlockedReason = ''
+      if (resume) {
+        const chapters = await db.getAllChapters().catch(() => null)
+        if (!chapters) {
+          resumeBlockedReason = '暂时读不到书库里的章节，无法核对断点。'
+        } else {
+          const verdict = verifyResumeEvidence(resume.evidence, chapters, resume.doneChapters)
+          resumeNeedsReview = !verdict.ok
+          resumeBlockedReason = verdict.ok ? '' : describeResumeEvidence(verdict)
+        }
+      }
       patch = {
         ...patch,
         inputs: { ...DEFAULT_INPUTS, ...(saved.inputs ?? {}) },
         log: saved.log ?? [],
-        // 旧记录只含里程，不足以验证章节和阶段产物；保留供作者查看，但不可自动续跑。
-        resume: (saved.resume as CreativeResume | null) ?? null,
-        resumeNeedsReview: !!saved.resume,
+        resume,
+        resumeNeedsReview,
+        resumeBlockedReason,
         result: saved.result ?? null,
         progress: saved.progress ?? null,
         summaries: saved.summaries ?? {},
@@ -643,7 +663,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   //    能把按钮直接禁用并写明原因）。这里不拦：编排器会给出同样的中文提示，
   //    而在 store 里凭一个静态开关拦，容易和自动判定的真实起点不一致。
   const useResume = opts.fromScratch ? null : snap.resume
-  if (opts.fromScratch) set({ resume: null, resumeNeedsReview: false })
+  if (opts.fromScratch) set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
   /** 本次是否交回了续跑信息（用局部变量判定：setState 异步，闭包里的 resume 还是旧值） */
   let gotResume: CreativeResume | null = null
   const ctl = new AbortController()
@@ -687,7 +707,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {
           gotResume = r
-          set({ resume: r, resumeNeedsReview: false })
+          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
         },
         onProgress: p => {
           const next = captureSummaries(p)
@@ -764,7 +784,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
       await settleCreativeLedger(ledger, null)
       return
     }
-    set({ result: summarizeResult(res), resume: null, resumeNeedsReview: false })
+    set({ result: summarizeResult(res), resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
     // 🔴 「一章都没写出来」不能再报成功（2026-09-19）：原先无论写了几章都弹绿色
     //    「创作完成：写了 N 章」，N=0 时作者会以为"跑完了、就是没内容"，而真正的原因
     //    （模型超时 / 未配置）就躺在日志里没人看。分开报，并把「去看日志」写进文案。
@@ -1143,7 +1163,7 @@ export function discardRewrite() {
 
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */
 export function clearCreativeSession() {
-  set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false })
+  set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
 }
 
 function summarizeResult(res: CreativeWritingResult): CreativeResultSummary {

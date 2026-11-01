@@ -110,7 +110,7 @@ export interface ContinueCallbacks {
   onBodyToken?: (delta: string) => void
   /** 正文经字数校准/改写后整体替换预览（流式增量已失真时用它纠正） */
   onBodyReplace?: (full: string) => void
-  onChapterSaved?: (ch: { id: string; title: string; no: number }) => void
+  onChapterSaved?: (ch: { id: string; title: string; no: number; content?: string }) => void
   /** 每章初稿完成后征询作者：采纳 / 重写 / 中止。不提供则自动采纳 */
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
   /** B 策略：返回用户勾选的待补登项；返回 null 表示跳过本次补登 */
@@ -924,7 +924,7 @@ export async function runAutoContinue(
       noteCandidate(cb.request?.taskId, {
         target: `chapter:${ch.id}`, fingerprint: hashOf(body), state: 'adopted',
       })
-      cb.onChapterSaved?.({ id: ch.id, title: ch.title, no })
+      cb.onChapterSaved?.({ id: ch.id, title: ch.title, no, content: body })
       created.push({ id: ch.id, title: ch.title, no })
       anchorId = ch.id
       lastBody = body

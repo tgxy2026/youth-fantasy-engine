@@ -245,7 +245,7 @@ const cfg = mkConfig()
   // 旧图鉴配置：两个自定义字段都「可读可写」—— 若直接上下文只读配置，它们会漏给模型
   const ctxConfig = {
     formatVersion: 1,
-    revision: 1,
+    revision: 0,
     fields: [
       { id: 'cf_secret', label: '密文', type: 'text', description: '', options: [], appliesTo: '*', groupId: 'g1', order: 0, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: true },
       { id: 'cf_legacy', label: '旧字段', type: 'text', description: '', options: [], appliesTo: '*', groupId: 'g1', order: 1, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: true },

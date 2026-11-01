@@ -57,6 +57,9 @@ export const LOCAL_ONLY_META_KEY_PREFIXES: readonly string[] = [
   // 🔴 3.3.3 · A2：变化清单报告与「我不认同」记录（同样本机专属）
   'auditChange:',
   'auditChangeDissent:',
+    // ?? 3.3.3 · B6：永久删除字段后没清干净的残留值（`atlasPurgePending::<项目id>`）。
+    //   记的是"这台机器上还有几行没清"；另一台设备可能根本没有那条备份，跟云走只会困惑。
+    'atlasPurgePending:',
   // 🔴 3.3.3 · A3：模型能力实测缓存（按端点/模型隔离；不含密钥）。
   //   换台设备后端点与网络环境都可能不同，能力结论不能跟着走。
   'aiCapability:',

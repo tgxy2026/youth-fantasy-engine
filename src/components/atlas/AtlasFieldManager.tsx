@@ -27,6 +27,10 @@ import {
   type FieldRowLike,
   type ConversionPlan,
 } from '@/lib/atlas/fieldOps'
+import {
+  countFieldValues, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
+  type PendingFieldPurge,
+} from '@/lib/atlas/purgeRecovery'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -80,6 +84,27 @@ export default function AtlasFieldManager({
     return false
   }
   const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
+  /** 3.3.3 · B6：清值失败留下的待清理项（本机记录，只由作者点「重试清理」触发） */
+  const [pendingPurges, setPendingPurges] = useState<PendingFieldPurge[]>([])
+  const reloadPending = async () => {
+    const pid = getCurrentProjectId()
+    setPendingPurges(pid ? await listPendingFieldPurges(pid).catch(() => []) : [])
+  }
+  useEffect(() => { void reloadPending() }, [])
+
+  const retryPurge = async (p: PendingFieldPurge) => {
+    const pid = getCurrentProjectId()
+    if (!pid || busy) return
+    setBusy(true)
+    try {
+      const r = await retryPendingFieldPurge(pid, p)
+      if (r.ok) showToast(`「${p.fieldLabel}」的残留值已清理干净（清掉 ${r.removed} 行）`, 'success', 6000)
+      else showToast(`「${p.fieldLabel}」还有 ${r.remaining < 0 ? '未知数量' : r.remaining} 行的值没清掉：${r.error ?? '请稍后重试'}`, 'error', 10000)
+    } finally {
+      setBusy(false)
+      await reloadPending()
+    }
+  }
   /** 换一个字段编辑时，清掉上一次的转换预览（否则会把 A 字段的结论套到 B 上） */
   useEffect(() => { setConvertTarget(''); setConvertPlan(null) }, [editingId])
 
@@ -176,7 +201,16 @@ export default function AtlasFieldManager({
       try {
         purged = await purgeFieldValues(loaded.pid, tab.id, field.id)
       } catch {
-        showToast(`字段定义已删除，但部分数据清理失败；请从备份 ${backup.id.slice(0, 8)} 恢复后重试。`, 'error', 10000)
+        // 🔴 失败要留下**可重试**的记录：只弹一次 toast，孤儿值重启后再也找不到
+        const remaining = await countFieldValues(loaded.pid, tab.id, field.id).catch(() => -1)
+        if (remaining !== 0) {
+          await recordPendingFieldPurge(loaded.pid, {
+            tabId: tab.id, fieldId: field.id, fieldLabel: field.label,
+            backupId: backup.id, remaining,
+          }).catch(() => {})
+          await reloadPending()
+        }
+        showToast(`字段定义已删除，但${remaining > 0 ? `还有 ${remaining} 行的` : '部分'}值没清掉。可在面板顶部「待清理」重试，或从备份 ${backup.id.slice(0, 8)} 恢复。`, 'error', 10000)
         return
       }
       if (draft?.id === field.id) { setDraft(null); setEditingId(null) }
@@ -365,6 +399,30 @@ export default function AtlasFieldManager({
         {readOnly && (
           <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber/90">
             这份字段配置来自更新版本的软件，本版只做只读展示 —— 为避免写坏结构，暂不允许修改。
+          </div>
+        )}
+
+        {/* 3.3.3 · B6：删除定义后没清干净的值 —— 给出明确的重试入口与备份线索 */}
+        {pendingPurges.length > 0 && (
+          <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2.5 space-y-2">
+            <div className="text-11 text-danger leading-relaxed">
+              有 {pendingPurges.length} 个已删除字段还留有值（定义已删，界面上看不到这些孤儿数据）。
+              只会清理对应的字段键，不碰其它内容；清到 0 才消失。
+            </div>
+            <ul className="space-y-1">
+              {pendingPurges.map(p => (
+                <li key={`${p.tabId}:${p.fieldId}`} className="flex flex-wrap items-center gap-2 text-11">
+                  <span className="text-ink-200">「{p.fieldLabel}」</span>
+                  <span className="text-ink-400">
+                    {p.tabId === tab.id ? '本页' : p.tabId} · 约 {p.remaining < 0 ? '未知' : p.remaining} 行
+                    {p.backupId ? ` · 备份 ${p.backupId.slice(0, 8)}` : ''}
+                  </span>
+                  <Button size="xs" variant="secondary" disabled={busy} onClick={() => void retryPurge(p)}>
+                    <RotateCcw size={11} /> 重试清理
+                  </Button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

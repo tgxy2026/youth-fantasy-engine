@@ -412,7 +412,7 @@ async function main() {
     // ① 作者自建的新字段：不在 schema 里、也没绑任何语义槽位 —— 一般阅读照样要看得到
     const atlasConfig = {
       formatVersion: 1,
-      revision: 1,
+      revision: 0,
       fields: [
         {
           id: 'cf_lore', label: '自建渊源', type: 'text', description: '', options: [], appliesTo: '*',

@@ -311,7 +311,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
         {!s.running && s.resume && (
           <div className="mt-1 text-11 leading-relaxed text-ink-400">
             {s.resumeNeedsReview
-              ? <>上次记录：{s.resume.label}。这份记录缺少可校验的章节信息，无法安全自动续跑；请先核对已保存章节，再选择「从头重写」。</>
+              ? <>上次记录：{s.resume.label}。{s.resumeBlockedReason || '这份记录缺少可校验的章节信息'}，无法安全自动续跑；请先核对已保存章节，再选择「从头重写」。</>
               : <>上次中止在：{s.resume.label}。点「继续写作」从断点接着写，
                 <b className="text-ink-300">已落库的章不会重写</b>；
                 <span className="text-ink-500">改了「连写章数」会令断点失效（自动从头跑），避免剩余章数算错。</span></>}
