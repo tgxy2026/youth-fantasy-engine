@@ -18,6 +18,7 @@
  */
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import { getTableRowsFor, saveTableRow } from '@/lib/db/tabs'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { createAutoBackup } from '@/lib/db/backups'
 import { emptyAtlasSchema } from '@/lib/atlas/schema'
 
@@ -157,14 +158,14 @@ export async function backupBeforeAtlasFieldChange(projectId: string, label: str
  * 永久删除字段后清理各行的值（在 schema 已删掉该字段之后调用）。
  * 返回清理了几行。这里**只删这一个键**，不碰其它字段。
  */
-export async function purgeFieldValues(projectId: string, tabId: string, fieldId: string): Promise<number> {
-  const rows = await getTableRowsFor(projectId, tabId as Parameters<typeof getTableRowsFor>[1])
+export async function purgeFieldValues(projectId: string, tabId: string, fieldId: string, owner?: OwnedOperation): Promise<number> {
+  const rows = await getTableRowsFor(projectId, tabId as Parameters<typeof getTableRowsFor>[1], owner)
   let n = 0
   for (const row of rows) {
     if (!row.data || !(fieldId in row.data)) continue
     const data = { ...row.data }
     delete data[fieldId]
-    await saveTableRow({ ...row, data })
+    await saveTableRow({ ...row, data }, owner)
     n++
   }
   return n

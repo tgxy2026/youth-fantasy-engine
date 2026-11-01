@@ -10,6 +10,52 @@
  * 🔴 不自动重试：清理是破坏性操作，只在作者点「重试清理」时执行。
  */
 import * as db from '@/lib/db'
+import { ops } from '@/lib/db/core'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { DESKTOP, flushDesktop, getDesktopState } from '@/lib/app/desktop'
+import { PORTABLE, flushPortable, getPortableState } from '@/lib/storage/fileBackend'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+
+function capturePurgeStore(projectId: string) {
+  const store = ops
+  const owner = captureStorageWriteOwner(projectId)
+  const check = () => {
+    if (!owner.current() || store !== ops) throw new Error('存储空间已切换，字段恢复记录未继续写入。')
+  }
+  return { store, check }
+}
+
+async function persistPurgeList(projectId: string, list: PendingFieldPurge[], captured: ReturnType<typeof capturePurgeStore>) {
+  const { store, check } = captured
+  check()
+  if (store.putStrict) await store.putStrict('meta', { key: keyOf(projectId), value: list })
+  else await store.put('meta', { key: keyOf(projectId), value: list })
+  check()
+  if (DESKTOP || PORTABLE) {
+    const state = DESKTOP ? getDesktopState : getPortableState
+    const flush = DESKTOP ? flushDesktop : flushPortable
+    const deadline = Date.now() + 10000
+    while (state().saving && Date.now() < deadline) {
+      check()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    check()
+    if (state().saving || !await flush()) throw new Error('字段恢复记录未能写盘，已停止操作。')
+    check()
+  }
+}
+
+async function readPurgeList(projectId: string, captured: ReturnType<typeof capturePurgeStore>): Promise<PendingFieldPurge[]> {
+  captured.check()
+  const row = await captured.store.get<{ key: string; value: unknown }>('meta', keyOf(projectId))
+  captured.check()
+  if (row && !Array.isArray(row.value)) throw new Error('字段恢复记录已损坏，请先检查备份。')
+  const list = row?.value as PendingFieldPurge[] | undefined ?? []
+  if (!list.every(p => p && typeof p.tabId === 'string' && !!p.tabId && typeof p.fieldId === 'string' && !!p.fieldId)) {
+    throw new Error('字段恢复记录包含无法识别的条目，请先检查备份。')
+  }
+  return list
+}
 
 export interface PendingFieldPurge {
   tabId: string
@@ -28,32 +74,48 @@ function keyOf(projectId: string): string {
 
 export async function listPendingFieldPurges(projectId: string): Promise<PendingFieldPurge[]> {
   if (!projectId) return []
-  const list = await db.getMeta<PendingFieldPurge[]>(keyOf(projectId), [])
-  if (!Array.isArray(list)) return []
-  return list.filter(p => p && p.tabId && p.fieldId)
+  return readPurgeList(projectId, capturePurgeStore(projectId))
 }
 
 /** 记录/更新一条待清理项（同一 tab+field 只保留一条，保留最早的时间） */
 export async function recordPendingFieldPurge(projectId: string, item: Omit<PendingFieldPurge, 'at'>): Promise<void> {
   if (!projectId || !item.tabId || !item.fieldId) return
-  const list = await listPendingFieldPurges(projectId)
+  const captured = capturePurgeStore(projectId)
+  const list = await readPurgeList(projectId, captured)
   const idx = list.findIndex(p => p.tabId === item.tabId && p.fieldId === item.fieldId)
   const next: PendingFieldPurge = { ...item, at: idx >= 0 ? list[idx].at : Date.now() }
   const merged = idx >= 0 ? list.map((p, i) => (i === idx ? next : p)) : [...list, next]
-  await db.setMeta(keyOf(projectId), merged)
+  await persistPurgeList(projectId, merged, captured)
 }
 
 export async function clearPendingFieldPurge(projectId: string, tabId: string, fieldId: string): Promise<void> {
-  const list = await listPendingFieldPurges(projectId)
+  const captured = capturePurgeStore(projectId)
+  const list = await readPurgeList(projectId, captured)
   const next = list.filter(p => !(p.tabId === tabId && p.fieldId === fieldId))
   if (next.length === list.length) return
   // 用空数组表示"没有待清理项"：约束层只给 get/set，没有 delMeta 也能表达同一语义
-  await db.setMeta(keyOf(projectId), next)
+  await persistPurgeList(projectId, next, captured)
+}
+
+/** Discard only an uncommitted deletion intent; never abandon orphaned values. */
+export async function discardIntactFieldPurge(projectId: string, target: Pick<PendingFieldPurge, 'tabId' | 'fieldId'>): Promise<void> {
+  const owner = captureOwnedOperation(projectId)
+  owner.assertCurrent()
+  const raw = await db.getSettingFor<unknown>(projectId, `atlasSchema::${target.tabId}`, null, owner)
+  if (!raw || typeof raw !== 'object') throw new Error('字段配置无法核验，不能移除记录。')
+  const config = raw as { formatVersion?: unknown; fields?: unknown }
+  if (config.formatVersion !== 1 || !Array.isArray(config.fields)
+    || !config.fields.every(field => !!field && typeof field === 'object' && typeof (field as { id?: unknown }).id === 'string')
+    || !config.fields.some(field => (field as { id: string }).id === target.fieldId)) {
+    throw new Error('字段定义已不存在或配置无法核验，请先处理残留数据。')
+  }
+  owner.assertCurrent()
+  await clearPendingFieldPurge(projectId, target.tabId, target.fieldId)
 }
 
 /** 行里还剩多少条该字段的值（重试前先核对，0 就直接收尾） */
-export async function countFieldValues(projectId: string, tabId: string, fieldId: string): Promise<number> {
-  const rows = await db.getTableRowsFor(projectId, tabId as Parameters<typeof db.getTableRowsFor>[1])
+export async function countFieldValues(projectId: string, tabId: string, fieldId: string, owner?: OwnedOperation): Promise<number> {
+  const rows = await db.getTableRowsFor(projectId, tabId as Parameters<typeof db.getTableRowsFor>[1], owner)
   let n = 0
   for (const row of rows) if (row.data && fieldId in row.data) n++
   return n
@@ -73,26 +135,42 @@ export interface PurgeRetryResult {
 export async function retryPendingFieldPurge(
   projectId: string,
   target: Pick<PendingFieldPurge, 'tabId' | 'fieldId'>,
-  purge: (projectId: string, tabId: string, fieldId: string) => Promise<number> = async (pid, tab, field) => {
+  purge: (projectId: string, tabId: string, fieldId: string, owner: OwnedOperation) => Promise<number> = async (pid, tab, field, owner) => {
     const { purgeFieldValues } = await import('@/lib/atlas/fieldOps')
-    return purgeFieldValues(pid, tab, field)
+    return purgeFieldValues(pid, tab, field, owner)
   },
 ): Promise<PurgeRetryResult> {
+  const owner = captureOwnedOperation(projectId)
   try {
-    const before = await countFieldValues(projectId, target.tabId, target.fieldId)
+    owner.assertCurrent()
+    const raw = await db.getSettingFor<unknown>(projectId, `atlasSchema::${target.tabId}`, null, owner)
+    if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { fields?: unknown }).fields)) {
+      throw new Error('字段配置无法核验，未清理任何值。')
+    }
+    const config = raw as { formatVersion?: unknown; fields: unknown[] }
+    if (config.formatVersion !== 1 || !config.fields.every(field =>
+      !!field && typeof field === 'object' && typeof (field as { id?: unknown }).id === 'string')) {
+      throw new Error('字段配置版本或结构无法核验，未清理任何值。')
+    }
+    if (config.fields.some(field => (field as { id: string }).id === target.fieldId)) {
+      throw new Error('字段定义仍然存在，不能清理它的值；请先核对字段设置或从备份恢复。')
+    }
+    const before = await countFieldValues(projectId, target.tabId, target.fieldId, owner)
     if (before === 0) {
+      owner.assertCurrent()
       await clearPendingFieldPurge(projectId, target.tabId, target.fieldId)
       return { ok: true, removed: 0, remaining: 0 }
     }
-    const removed = await purge(projectId, target.tabId, target.fieldId)
-    const remaining = await countFieldValues(projectId, target.tabId, target.fieldId)
+    const removed = await purge(projectId, target.tabId, target.fieldId, owner)
+    const remaining = await countFieldValues(projectId, target.tabId, target.fieldId, owner)
     if (remaining === 0) {
+      owner.assertCurrent()
       await clearPendingFieldPurge(projectId, target.tabId, target.fieldId)
       return { ok: true, removed, remaining }
     }
     return { ok: false, removed, remaining, error: `还有 ${remaining} 行的值没清掉` }
   } catch (e) {
-    const remaining = await countFieldValues(projectId, target.tabId, target.fieldId).catch(() => -1)
+    const remaining = await countFieldValues(projectId, target.tabId, target.fieldId, owner).catch(() => -1)
     return {
       ok: false, removed: 0, remaining,
       error: e instanceof Error ? e.message : '清理失败',

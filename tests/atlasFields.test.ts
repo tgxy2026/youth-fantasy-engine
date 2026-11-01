@@ -234,9 +234,13 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   // 3.3.3 · B6：永久删除已开放，但必须先出影响数/依赖、执行前备份，且删值在删定义之后
   ok('⑩ 永久删除入口存在（3.3.3 · B6）', /requestDeleteField/.test(mgr) && /永久删除/.test(mgr))
   ok('⑩ 删除前先出影响数与依赖', /planFieldDeletion\(/.test(mgr) && /plan\.affected/.test(mgr) && /plan\.reason/.test(mgr))
+  const deletion = mgr.slice(mgr.indexOf('const requestDeleteField'), mgr.indexOf('/* ---- 内置字段显示名'))
   ok('⑩ 删除前必须建备份，建不成即中止',
-    /backupBeforeAtlasFieldChange/.test(mgr) && /备份没有建成，本次没有删除/.test(mgr)
-    && mgr.indexOf('backupBeforeAtlasFieldChange') < mgr.indexOf('purgeFieldValues'))
+    /备份没有建成，本次没有删除/.test(deletion)
+    && deletion.indexOf('backupBeforeAtlasFieldChange') >= 0
+    && deletion.indexOf('backupBeforeAtlasFieldChange') < deletion.indexOf('recordPendingFieldPurge')
+    && deletion.indexOf('recordPendingFieldPurge') < deletion.indexOf('await onSave(next)')
+    && deletion.indexOf('await onSave(next)') < deletion.indexOf('retryPendingFieldPurge'))
 
   const row = read('src/components/sheets/TableSheetRow.tsx')
   ok('⑩ 行渲染：自定义字段走 AtlasCellInput 分流', row.includes('col.atlasField') && row.includes('AtlasCellInput'))

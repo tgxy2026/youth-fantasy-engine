@@ -23,12 +23,12 @@ import { newFieldId } from '@/lib/atlas/persistence'
 import { getCurrentProjectId } from '@/lib/db/core'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import {
-  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, purgeFieldValues, sameFieldRows,
+  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, sameFieldRows,
   type FieldRowLike,
   type ConversionPlan,
 } from '@/lib/atlas/fieldOps'
 import {
-  countFieldValues, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
+  discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
   type PendingFieldPurge,
 } from '@/lib/atlas/purgeRecovery'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
@@ -86,15 +86,26 @@ export default function AtlasFieldManager({
   const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
   /** 3.3.3 · B6：清值失败留下的待清理项（本机记录，只由作者点「重试清理」触发） */
   const [pendingPurges, setPendingPurges] = useState<PendingFieldPurge[]>([])
+  const [pendingError, setPendingError] = useState('')
   const reloadPending = async () => {
     const pid = getCurrentProjectId()
-    setPendingPurges(pid ? await listPendingFieldPurges(pid).catch(() => []) : [])
+    try {
+      const records = pid ? await listPendingFieldPurges(pid) : []
+      if (getCurrentProjectId() !== pid) return
+      setPendingPurges(records)
+      setPendingError('')
+    } catch {
+      if (getCurrentProjectId() === pid) {
+        setPendingPurges([])
+        setPendingError('无法读取字段删除记录，请检查存储后重试，勿假定清理已经完成。')
+      }
+    }
   }
   useEffect(() => { void reloadPending() }, [])
 
   const retryPurge = async (p: PendingFieldPurge) => {
     const pid = getCurrentProjectId()
-    if (!pid || busy) return
+    if (!pid || busy || !ensureClean()) return
     setBusy(true)
     try {
       const r = await retryPendingFieldPurge(pid, p)
@@ -104,6 +115,23 @@ export default function AtlasFieldManager({
       setBusy(false)
       await reloadPending()
     }
+  }
+  const dismissIntactPurge = async (p: PendingFieldPurge) => {
+    const pid = getCurrentProjectId()
+    if (!pid || busy) return
+    const confirmed = await confirmDialog({
+      title: '移除待核对记录',
+      message: '仅当字段定义仍存在时可移除记录，字段和数据会保留。若定义已删除，请先重试清理或恢复备份。',
+    })
+    if (!confirmed) return
+    setBusy(true)
+    try {
+      await discardIntactFieldPurge(pid, p)
+      showToast('已移除记录，字段和数据保留。', 'success')
+      await reloadPending()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '无法移除记录，请先核对字段。', 'error')
+    } finally { setBusy(false) }
   }
   /** 换一个字段编辑时，清掉上一次的转换预览（否则会把 A 字段的结论套到 B 上） */
   useEffect(() => { setConvertTarget(''); setConvertPlan(null) }, [editingId])
@@ -193,32 +221,28 @@ export default function AtlasFieldManager({
         showToast('字段数据已变化，请重新预览后再删除。', 'error')
         return
       }
+      // 写下并持久化恢复意图后才允许删除定义；异常退出时记录仍可发现。
+      await recordPendingFieldPurge(loaded.pid, {
+        tabId: tab.id, fieldId: field.id, fieldLabel: field.label,
+        backupId: backup.id, remaining: current.rows.filter(row => field.id in row.data).length,
+      })
+      if (!owner.current() || !ensureClean()) throw new Error('作品状态已变化；字段尚未删除，请重新检查。')
       const next: AtlasSchemaConfig = { ...config, fields: config.fields.filter(f => f.id !== field.id) }
       await onSave(next)
       if (!owner.current()) throw new Error('存储空间已切换；字段值未继续清理，请回到原作品检查备份。')
-      // 🔴 先删定义再清值：清值失败只会留下不可见的孤儿键，不会出现"类型与值不兼容"的半状态
-      let purged: number
-      try {
-        purged = await purgeFieldValues(loaded.pid, tab.id, field.id)
-      } catch {
-        // 🔴 失败要留下**可重试**的记录：只弹一次 toast，孤儿值重启后再也找不到
-        const remaining = await countFieldValues(loaded.pid, tab.id, field.id).catch(() => -1)
-        if (remaining !== 0) {
-          await recordPendingFieldPurge(loaded.pid, {
-            tabId: tab.id, fieldId: field.id, fieldLabel: field.label,
-            backupId: backup.id, remaining,
-          }).catch(() => {})
-          await reloadPending()
-        }
-        showToast(`字段定义已删除，但${remaining > 0 ? `还有 ${remaining} 行的` : '部分'}值没清掉。可在面板顶部「待清理」重试，或从备份 ${backup.id.slice(0, 8)} 恢复。`, 'error', 10000)
+      const result = await retryPendingFieldPurge(loaded.pid, { tabId: tab.id, fieldId: field.id })
+      await reloadPending()
+      if (!result.ok) {
+        showToast(`字段定义已删除，清理未完成：${result.error ?? '请重试'}。可从备份 ${backup.id.slice(0, 8)} 恢复。`, 'error', 10000)
         return
       }
       if (draft?.id === field.id) { setDraft(null); setEditingId(null) }
-      showToast(`已永久删除「${field.label}」（清理 ${purged} 条值；备份 ${backup.id.slice(0, 8)}）`, 'success', 8000)
+      showToast(`已永久删除「${field.label}」（清理 ${result.removed} 条值；备份 ${backup.id.slice(0, 8)}）`, 'success', 8000)
     } catch (e) {
       showToast(e instanceof Error ? e.message : '删除失败（备份已保留）', 'error')
     } finally {
       setBusy(false)
+      if (owner.current() && getCurrentProjectId() === loaded.pid) await reloadPending()
     }
   }
 
@@ -402,12 +426,18 @@ export default function AtlasFieldManager({
           </div>
         )}
 
-        {/* 3.3.3 · B6：删除定义后没清干净的值 —— 给出明确的重试入口与备份线索 */}
+        {pendingError && (
+          <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger" role="alert">
+            {pendingError}
+            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void reloadPending()}>重新读取</Button>
+          </div>
+        )}
+        {/* 3.3.3 · B6：删除恢复记录及备份线索 */}
         {pendingPurges.length > 0 && (
           <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2.5 space-y-2">
             <div className="text-11 text-danger leading-relaxed">
-              有 {pendingPurges.length} 个已删除字段还留有值（定义已删，界面上看不到这些孤儿数据）。
-              只会清理对应的字段键，不碰其它内容；清到 0 才消失。
+              有 {pendingPurges.length} 条字段删除记录需要核对。字段仍存在时不会清理其值；
+              字段已删除时可重试清理，也可从备份恢复。
             </div>
             <ul className="space-y-1">
               {pendingPurges.map(p => (
@@ -419,6 +449,9 @@ export default function AtlasFieldManager({
                   </span>
                   <Button size="xs" variant="secondary" disabled={busy} onClick={() => void retryPurge(p)}>
                     <RotateCcw size={11} /> 重试清理
+                  </Button>
+                  <Button size="xs" variant="secondary" disabled={busy} onClick={() => void dismissIntactPurge(p)}>
+                    字段仍在，移除记录
                   </Button>
                 </li>
               ))}
