@@ -10,6 +10,32 @@
  */
 import { textFingerprint } from '@/lib/tasks/unitLedger'
 import type { CreativeResume } from '@/lib/ai/aiWorkflow'
+import type { FlowProgress } from '@/lib/flow/types'
+
+/**
+ * 重开时把「上次没跑完」的进度**降级为已中止**（纯函数）。
+ *
+ * 🔴 为什么必须降级（2026-11-01 实机发现，`b04-kill.mjs` 跑到设定阶段后重开）：
+ *   进度快照会被持久化（`status / ratio / stages 摘要`），但**草稿 bag 不落盘**（设计如此）。
+ *   原样保留 `status: 'running'` 时，时间线在重开后仍显示「进行中」（`WorkflowTimeline` 在
+ *   `running=false` 时退回显示 `FLOW_STATUS_TEXT[progress.status]`），而实际既没有任务在跑、
+ *   也没有草稿可确认 —— 作者只能干瞪眼，还以为是卡住了。
+ *   降级成 `cancelled`（"已中止"）语义才正确。
+ *
+ * ⚠️ 只动展示态：**能否续跑看的是 `resume`/`evidence`**（见 `verifyResumeEvidence`），
+ *   与本字段无关，因此降级不会让本该可续跑的任务变得不可续。
+ */
+export function downgradeInterruptedProgress(p: FlowProgress | null | undefined): FlowProgress | null {
+  if (!p) return null
+  if (p.status !== 'running') return p
+  return {
+    ...p,
+    status: 'cancelled',
+    current: null,
+    message: '上次没跑完（已中断）：进度只作记录，草稿不在磁盘上，重开后请重新开始。',
+    stages: p.stages.map(s => (s.status === 'running' ? { ...s, status: 'cancelled' as const } : s)),
+  }
+}
 
 export interface CreatedChapterEvidence {
   id: string

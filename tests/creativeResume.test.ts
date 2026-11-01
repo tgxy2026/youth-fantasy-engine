@@ -7,7 +7,7 @@
 //   ④ 标题改了不影响（作者常改标题），只看正文指纹；
 //   ⑤ 已完成章数与证据条数对不上 ⇒ 记录本身损坏，拒绝；
 //   ⑥ 书库里多出来的章不计问题（作者自己新写的）。
-import { describeResumeEvidence, isCreativeResumeShape, verifyResumeEvidence } from '../src/lib/creative/resumeEvidence'
+import { describeResumeEvidence, downgradeInterruptedProgress, isCreativeResumeShape, verifyResumeEvidence } from '../src/lib/creative/resumeEvidence'
 import { textFingerprint } from '../src/lib/tasks/unitLedger'
 
 let pass = 0, fail = 0
@@ -73,6 +73,28 @@ function main() {
   ok('证据类型损坏时拒绝', verifyResumeEvidence({} as never, [ch('a', '正文A')], 1).reason === 'invalid')
   ok('缺失指纹时拒绝', verifyResumeEvidence([{ ...ev('a', '正文A'), fingerprint: '' }], [ch('a', '正文A')], 1).reason === 'invalid')
   ok('无效完成章数时拒绝', verifyResumeEvidence([ev('a', '正文A')], [ch('a', '正文A')], Number.NaN).reason === 'count')
+
+  // ⑦ 重开时"上次没跑完"的进度降级为已中止（2026-11-01 实机发现）
+  //
+  //    缺陷现场：设定阶段跑到 18% 后关掉页面，重开后时间线仍显示「进行中」，
+  //    但草稿只在内存里（bag 不落盘）⇒ 既没有任务在跑，也没有草稿可确认。
+  const running = {
+    status: 'running', ratio: 0.176, current: 'bible', message: '生成 6 条设定草稿，等待确认…',
+    stages: [
+      { id: 'bible', label: '设定奠基', status: 'running', ratio: 1, detail: '生成 6 条设定草稿，等待确认…' },
+      { id: 'outline', label: '分卷大纲', status: 'pending', ratio: 0, detail: '待处理' },
+    ],
+  } as unknown as import('../src/lib/flow/types').FlowProgress
+  const down = downgradeInterruptedProgress(running)
+  ok('running 进度 ⇒ 降级为已中止', down?.status === 'cancelled')
+  ok('降级后说明提到「中断」', !!down?.message && /中断/.test(down.message))
+  ok('running 阶段 ⇒ 也降级为 cancelled', down?.stages[0].status === 'cancelled')
+  ok('pending 阶段保持不动', down?.stages[1].status === 'pending')
+  ok('纯函数：不改原对象', running.status === 'running' && running.stages[0].status === 'running')
+  ok('done 不降级', downgradeInterruptedProgress({ ...running, status: 'done' } as never)?.status === 'done')
+  ok('error 不降级', downgradeInterruptedProgress({ ...running, status: 'error' } as never)?.status === 'error')
+  ok('null ⇒ null', downgradeInterruptedProgress(null) === null)
+  ok('undefined ⇒ null', downgradeInterruptedProgress(undefined) === null)
 
   console.log(`\ncreativeResume: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)

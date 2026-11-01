@@ -29,7 +29,7 @@ import {
   type CreativeWritingResult,
 } from '@/lib/ai/aiWorkflow'
 import * as db from '@/lib/db'
-import { describeResumeEvidence, isCreativeResumeShape, serializeResumeForPersist, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
+import { describeResumeEvidence, downgradeInterruptedProgress, isCreativeResumeShape, serializeResumeForPersist, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
 import { summarizeResult } from '@/lib/creative/resultSummary'
 import { createContextLoadGate } from '@/lib/creative/loadGate'
@@ -531,7 +531,7 @@ async function loadSession(pid: string) {
         resumeNeedsReview,
         resumeBlockedReason,
         result: saved.result ?? null,
-        progress: saved.progress ?? null,
+        progress: downgradeInterruptedProgress(saved.progress),
         summaries: saved.summaries ?? {},
       }
     } else {
