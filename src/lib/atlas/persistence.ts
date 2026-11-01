@@ -177,10 +177,14 @@ export async function saveAtlasSchema(
    * 这里用与任务台账同源的 Web Locks 把临界区收进来；没有锁的环境（`window` 未定义 / 老浏览器）
    * 保持原行为（单窗口桌面/便携文件后端本来就没有第二个窗口）。
    */
-  return withAtlasSchemaLock(projectId, tabId, () => saveAtlasSchemaLocked(projectId, tabId, config))
+  return withAtlasSchemaLock(projectId, tabId, () => saveAtlasSchemaInsideLock(projectId, tabId, config))
 }
 
-async function saveAtlasSchemaLocked(
+/**
+ * ⚠️ **只能在已持有 `yfe-atlas-schema-v1:<pid>:<tab>` 锁时调用**。
+ * Web Locks 同名锁不可重入（再次 request 会排队），所以锁内逻辑必须走这个不申请锁的版本。
+ */
+export async function saveAtlasSchemaInsideLock(
   projectId: string,
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
@@ -206,4 +210,46 @@ async function saveAtlasSchemaLocked(
   await setSettingFor(projectId, atlasSchemaKey(tabId), next)
   owner.assertCurrent()
   return next
+}
+
+/**
+ * 3.3.3 · B-07：把「删字段定义 + 清该字段各行的值」收进**同一段同源临界区**。
+ *
+ * 原先这两步各写一次：删定义走 `saveAtlasSchema`（自己申请锁），清值走 `purgeFieldValues`
+ * （不申请锁），中间锁已释放 ⇒ 另一个窗口可以插进来：既可能基于过期判断继续清，
+ * 也可能在清完之后又写回该字段的值（成为孤儿值）。
+ * 现在整段持锁：读配置 → 校验可写/revision → 写新配置 → 清值 → 复核孤儿。
+ *
+ * ⚠️ 备份必须在**调用前**完成（备份是独立事务，放进锁里只会拉长持锁时间）。
+ * ⚠️ 底层仍是多次写（IDB 单 store 事务、文件后端无事务），**不是数据库级事务**；
+ *    这里能保证的是「同一 origin 内不会有两个窗口同时做这件事」+ 清完后的孤儿复核。
+ */
+export async function removeAtlasFieldAtomically(
+  projectId: string,
+  tabId: AtlasTabId,
+  fieldId: string,
+  buildNext: (current: AtlasSchemaConfig) => AtlasSchemaConfig,
+  purge: (projectId: string, tabId: AtlasTabId, fieldId: string) => Promise<number>,
+  expectedRevision?: number,
+): Promise<{ config: AtlasSchemaConfig; removed: number; leftovers: number }> {
+  return withAtlasSchemaLock(projectId, tabId, async () => {
+    const loaded = await loadAtlasSchema(projectId, tabId)
+    if (loaded.error) throw new Error(`字段配置读取失败，已拒绝删除：${loaded.error}`)
+    if (loaded.newerFormat) throw new Error('字段配置来自更高版本，已锁定为只读，拒绝删除')
+    // 调用方给的期望 revision 仍要校验：别的窗口在这期间改过配置 ⇒ 让作者重开面板，而不是默默按最新删
+    if (expectedRevision !== undefined && loaded.config.revision !== expectedRevision) {
+      throw new Error('字段配置已在其他窗口发生变化，请重新打开字段设置。')
+    }
+    const config = await saveAtlasSchemaInsideLock(projectId, tabId, buildNext(loaded.config))
+    const removed = await purge(projectId, tabId, fieldId)
+    // 清值期间另一个窗口可能又写回该字段的值（孤儿）⇒ 锁内立即复核一次。
+    // 仍失败时不吞掉：返回 -1 让上层照常记 pending 并提示「可重试清理」。
+    let leftovers = 0
+    try {
+      leftovers = await purge(projectId, tabId, fieldId)
+    } catch {
+      leftovers = -1
+    }
+    return { config, removed: removed + Math.max(leftovers, 0), leftovers }
+  })
 }

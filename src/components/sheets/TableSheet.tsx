@@ -127,7 +127,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 视图与高亮
     viewMode, setViewMode: storeViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady,
     // 图鉴字段配置（3.1.3）
-    effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
+    effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, syncAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）
     templateDef,
     // 人物关系分组
@@ -966,6 +966,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           aliases={aliasRenamed}
           onSaveAliases={next => saveRenames(next, {})}
           onSave={saveAtlasConfig}
+          onConfigChanged={syncAtlasConfig}
           onClose={() => setShowFieldMgr(false)}
         />
       )}

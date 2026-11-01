@@ -16,19 +16,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Check, Pencil, Plus, RotateCcw, Trash2, Type, X } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
-import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
+import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { atlasBadgeKeys, atlasCategoryOptions, atlasGroupsOf } from '@/lib/atlas/schema'
 import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
-import { newFieldId } from '@/lib/atlas/persistence'
+import { newFieldId, removeAtlasFieldAtomically } from '@/lib/atlas/persistence'
 import { getCurrentProjectId } from '@/lib/db/core'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import {
-  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, sameFieldRows,
+  backupBeforeAtlasFieldChange, loadAtlasFieldRows, planFieldConversion, planFieldDeletion, purgeFieldValues, sameFieldRows,
   type FieldRowLike,
   type ConversionPlan,
 } from '@/lib/atlas/fieldOps'
 import {
-  discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
+  clearPendingFieldPurge, discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
   type PendingFieldPurge,
 } from '@/lib/atlas/purgeRecovery'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
@@ -41,6 +41,8 @@ interface Props {
   config: AtlasSchemaConfig
   /** 落库由父组件负责（它持有 projectId 与最新 revision） */
   onSave: (next: AtlasSchemaConfig) => void | Promise<void>
+  /** 3.3.3 · B-07：删除字段走锁内写库后，用它把新配置同步到父级状态（不要再写一次） */
+  onConfigChanged?: (next: AtlasSchemaConfig) => void
   onClose: () => void
   /** 配置来自更高版本：只读浏览，禁止修改（方案 §8.4） */
   readOnly?: boolean
@@ -60,7 +62,7 @@ const INPUT = 'w-full text-12 px-2 py-1.5 rounded-lg bg-ink-900 border border-in
 const SWITCH_OFF = 'text-ink-500 hover:text-danger'
 
 export default function AtlasFieldManager({
-  tab, config, onSave, onClose, readOnly, hasUnsavedChanges = false, aliasKeys, aliases, onSaveAliases,
+  tab, config, onSave, onConfigChanged, onClose, readOnly, hasUnsavedChanges = false, aliasKeys, aliases, onSaveAliases,
 }: Props) {
   const groups = atlasGroupsOf(tab.id, config)
   const categories = atlasCategoryOptions(tab)
@@ -227,13 +229,24 @@ export default function AtlasFieldManager({
         backupId: backup.id, remaining: current.rows.filter(row => field.id in row.data).length,
       })
       if (!owner.current() || !ensureClean()) throw new Error('作品状态已变化；字段尚未删除，请重新检查。')
-      const next: AtlasSchemaConfig = { ...config, fields: config.fields.filter(f => f.id !== field.id) }
-      await onSave(next)
+      // 🔴 3.3.3 · B-07：删定义与清值收进**同一段同源临界区**。
+      //    原先两步各申请一次锁，中间锁已释放 ⇒ 另一窗口可插入（改写配置 / 写回该字段的值）。
+      const result = await removeAtlasFieldAtomically(
+        loaded.pid, tab.id as AtlasTabId, field.id,
+        (cur) => ({ ...cur, fields: cur.fields.filter(f => f.id !== field.id) }),
+        (pid, tid, fid) => purgeFieldValues(pid, tid, fid),
+        config.revision,
+      )
+      onConfigChanged?.(result.config)
       if (!owner.current()) throw new Error('存储空间已切换；字段值未继续清理，请回到原作品检查备份。')
-      const result = await retryPendingFieldPurge(loaded.pid, { tabId: tab.id, fieldId: field.id })
+      await clearPendingFieldPurge(loaded.pid, tab.id, field.id)
       await reloadPending()
-      if (!result.ok) {
-        showToast(`字段定义已删除，清理未完成：${result.error ?? '请重试'}。可从备份 ${backup.id.slice(0, 8)} 恢复。`, 'error', 10000)
+      if (result.leftovers !== 0) {
+        showToast(
+          `字段定义已删除，但复核时仍有 ${result.leftovers < 0 ? '未知数量' : result.leftovers} 行的值没清掉`
+          + `（可能有窗口又在写）。备份 ${backup.id.slice(0, 8)}，可稍后「重试清理」。`,
+          'error', 10000,
+        )
         return
       }
       if (draft?.id === field.id) { setDraft(null); setEditingId(null) }

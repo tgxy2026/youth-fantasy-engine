@@ -9,7 +9,7 @@
 import { __resetMockStores, memoryOps } from './mock-memory'
 import * as db from '../src/lib/db'
 import { emptyAtlasSchema } from '../src/lib/atlas/schema'
-import { loadAtlasSchema, saveAtlasSchema } from '../src/lib/atlas/persistence'
+import { loadAtlasSchema, removeAtlasFieldAtomically, saveAtlasSchema } from '../src/lib/atlas/persistence'
 import type { AtlasSchemaConfig } from '../src/lib/atlas/types'
 
 let pass = 0, fail = 0
@@ -81,6 +81,58 @@ async function main() {
   removeLock()
   const plain = await saveAtlasSchema(PID, TAB, withField({ ...stored!, revision: stored!.revision }, '无锁'))
   ok('无 Web Locks 时保持原行为', plain.revision === stored!.revision + 1, `${plain.revision}`)
+
+  // ④ B-07：删字段定义 + 清该字段的值，收在**同一段同源临界区**
+  //
+  //    原先两步各申请一次锁（删定义走 saveAtlasSchema、清值不申请锁），中间锁已释放，
+  //    另一窗口可在中间改写配置或写回该字段的值。现在整段持锁，并在锁内复核一次孤儿值。
+  {
+    installLock()
+    __resetMockStores()
+    await memoryOps.put('projects', { id: PID, name: 'B07 原子删除', createdAt: 0, updatedAt: 0 })
+    db.setCurrentProject(PID)
+    const saved = await saveAtlasSchema(PID, TAB, withField(emptyAtlasSchema(), '备注X'))
+
+    let purgeCalls = 0
+    const purge = async () => { purgeCalls++; return purgeCalls === 1 ? 3 : 0 }
+    const r = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race',
+      cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+      purge,
+      saved.revision,
+    )
+    ok('删除后返回的配置里没有该字段', r.config.fields.every(f => f.id !== 'cf_race'))
+    ok('清值被调用两次（首清 + 锁内复核）', purgeCalls === 2)
+    ok('removed 反映首清条数（3）', r.removed === 3)
+    ok('复核无残留 ⇒ leftovers = 0', r.leftovers === 0)
+    const after = await loadAtlasSchema(PID, TAB)
+    ok('存储侧也已删除该字段', after.config.fields.every(f => f.id !== 'cf_race'))
+
+    // 期望 revision 过期（别的窗口改过配置）⇒ 明确拒绝，且不执行清值
+    let purged = false
+    let err = ''
+    try {
+      await removeAtlasFieldAtomically(
+        PID, TAB, 'cf_race',
+        cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+        async () => { purged = true; return 0 },
+        saved.revision,
+      )
+    } catch (e) { err = e instanceof Error ? e.message : String(e) }
+    ok('过期 revision ⇒ 明确拒绝（指向其他窗口）', /其他窗口发生变化/.test(err))
+    ok('拒绝时不执行清值', !purged)
+
+    // 复核阶段失败（值在变化）⇒ leftovers = -1，交给上层记 pending 并可重试
+    let n = 0
+    const flaky = async () => { n++; if (n === 2) throw new Error('字段值在清理期间发生变化'); return 2 }
+    const r2 = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race',
+      cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+      flaky,
+    )
+    ok('复核失败 ⇒ leftovers = -1（不吞掉）', r2.leftovers === -1)
+    ok('复核失败时首清条数仍返回', r2.removed === 2)
+  }
 
   removeLock()
   delete (globalThis as unknown as { window?: unknown }).window

@@ -181,6 +181,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       }
     }
   }, [tab.id, atlasConfig, beginOperation])
+  /** 3.3.3 · B-07：删除字段时由调用方**在锁内**写库，这里只把新配置同步到界面状态（不再写一次） */
+  const syncAtlasConfig = useCallback((next: AtlasSchemaConfig) => setAtlasConfig(next), [])
 
   /**
    * 项目图鉴图片占用（方案 §6.2）：**所有图鉴页签合计**，不是只算当前表。
@@ -1149,7 +1151,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     // 视图与高亮
     viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
     // 图鉴字段配置（3.1.3）
-    effectiveColumns, atlasConfig, atlasNewerFormat, atlasConfigError, saveAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
+    effectiveColumns, atlasConfig, atlasNewerFormat, atlasConfigError, saveAtlasConfig, syncAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）
     templateDef,
     // 人物关系分组

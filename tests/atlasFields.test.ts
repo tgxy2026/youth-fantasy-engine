@@ -235,12 +235,16 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('⑩ 永久删除入口存在（3.3.3 · B6）', /requestDeleteField/.test(mgr) && /永久删除/.test(mgr))
   ok('⑩ 删除前先出影响数与依赖', /planFieldDeletion\(/.test(mgr) && /plan\.affected/.test(mgr) && /plan\.reason/.test(mgr))
   const deletion = mgr.slice(mgr.indexOf('const requestDeleteField'), mgr.indexOf('/* ---- 内置字段显示名'))
+  // 3.3.3 · B-07：删定义与清值合并进**同一段临界区**（removeAtlasFieldAtomically），
+  // 不再走「onSave → retryPendingFieldPurge」两段。顺序语义保持：备份 → 记账 → 写库(+清值) → 清台账。
   ok('⑩ 删除前必须建备份，建不成即中止',
     /备份没有建成，本次没有删除/.test(deletion)
     && deletion.indexOf('backupBeforeAtlasFieldChange') >= 0
     && deletion.indexOf('backupBeforeAtlasFieldChange') < deletion.indexOf('recordPendingFieldPurge')
-    && deletion.indexOf('recordPendingFieldPurge') < deletion.indexOf('await onSave(next)')
-    && deletion.indexOf('await onSave(next)') < deletion.indexOf('retryPendingFieldPurge'))
+    && deletion.indexOf('recordPendingFieldPurge') < deletion.indexOf('removeAtlasFieldAtomically')
+    && deletion.indexOf('removeAtlasFieldAtomically') < deletion.indexOf('clearPendingFieldPurge'))
+  ok('⑩ 删除不得再分两段写（禁止回到 onSave + retryPendingFieldPurge 的老写法）',
+    !/await onSave\(next\)/.test(deletion) && !/retryPendingFieldPurge\(/.test(deletion))
 
   const row = read('src/components/sheets/TableSheetRow.tsx')
   ok('⑩ 行渲染：自定义字段走 AtlasCellInput 分流', row.includes('col.atlasField') && row.includes('AtlasCellInput'))
