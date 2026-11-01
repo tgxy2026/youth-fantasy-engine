@@ -230,6 +230,7 @@ export async function removeAtlasFieldAtomically(
   fieldId: string,
   buildNext: (current: AtlasSchemaConfig) => AtlasSchemaConfig,
   purge: (projectId: string, tabId: AtlasTabId, fieldId: string) => Promise<number>,
+  countRemaining: (projectId: string, tabId: AtlasTabId, fieldId: string) => Promise<number>,
   expectedRevision?: number,
 ): Promise<{ config: AtlasSchemaConfig; removed: number; leftovers: number }> {
   return withAtlasSchemaLock(projectId, tabId, async () => {
@@ -242,14 +243,14 @@ export async function removeAtlasFieldAtomically(
     }
     const config = await saveAtlasSchemaInsideLock(projectId, tabId, buildNext(loaded.config))
     const removed = await purge(projectId, tabId, fieldId)
-    // 清值期间另一个窗口可能又写回该字段的值（孤儿）⇒ 锁内立即复核一次。
-    // 仍失败时不吞掉：返回 -1 让上层照常记 pending 并提示「可重试清理」。
+    // 清值期间另一个窗口可能又写回该字段的值（孤儿）⇒ 锁内只读计数。
+    // 读取失败时返回 -1，上层保留已有恢复记录并提示「可重试清理」。
     let leftovers = 0
     try {
-      leftovers = await purge(projectId, tabId, fieldId)
+      leftovers = await countRemaining(projectId, tabId, fieldId)
     } catch {
       leftovers = -1
     }
-    return { config, removed: removed + Math.max(leftovers, 0), leftovers }
+    return { config, removed, leftovers }
   })
 }

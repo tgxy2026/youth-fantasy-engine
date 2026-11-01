@@ -245,6 +245,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
     && deletion.indexOf('removeAtlasFieldAtomically') < deletion.indexOf('clearPendingFieldPurge'))
   ok('⑩ 删除不得再分两段写（禁止回到 onSave + retryPendingFieldPurge 的老写法）',
     !/await onSave\(next\)/.test(deletion) && !/retryPendingFieldPurge\(/.test(deletion))
+  ok('⑩ 复核失败或存在残留时先返回并保留恢复记录',
+    deletion.indexOf('if (result.leftovers !== 0)') < deletion.indexOf('clearPendingFieldPurge')
+    && /if \(result\.leftovers !== 0\)\s*\{[\s\S]*?return\s*\}/.test(deletion))
 
   const row = read('src/components/sheets/TableSheetRow.tsx')
   ok('⑩ 行渲染：自定义字段走 AtlasCellInput 分流', row.includes('col.atlasField') && row.includes('AtlasCellInput'))

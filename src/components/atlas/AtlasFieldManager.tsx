@@ -28,7 +28,7 @@ import {
   type ConversionPlan,
 } from '@/lib/atlas/fieldOps'
 import {
-  clearPendingFieldPurge, discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
+  clearPendingFieldPurge, countFieldValues, discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
   type PendingFieldPurge,
 } from '@/lib/atlas/purgeRecovery'
 import { MAX_ALIAS_LEN, sanitizeAliases, validateAliasInput, type AliasMap } from '@/lib/settings/fieldAlias'
@@ -235,12 +235,11 @@ export default function AtlasFieldManager({
         loaded.pid, tab.id as AtlasTabId, field.id,
         (cur) => ({ ...cur, fields: cur.fields.filter(f => f.id !== field.id) }),
         (pid, tid, fid) => purgeFieldValues(pid, tid, fid),
+        (pid, tid, fid) => countFieldValues(pid, tid, fid),
         config.revision,
       )
       onConfigChanged?.(result.config)
       if (!owner.current()) throw new Error('存储空间已切换；字段值未继续清理，请回到原作品检查备份。')
-      await clearPendingFieldPurge(loaded.pid, tab.id, field.id)
-      await reloadPending()
       if (result.leftovers !== 0) {
         showToast(
           `字段定义已删除，但复核时仍有 ${result.leftovers < 0 ? '未知数量' : result.leftovers} 行的值没清掉`
@@ -249,6 +248,8 @@ export default function AtlasFieldManager({
         )
         return
       }
+      await clearPendingFieldPurge(loaded.pid, tab.id, field.id)
+      await reloadPending()
       if (draft?.id === field.id) { setDraft(null); setEditingId(null) }
       showToast(`已永久删除「${field.label}」（清理 ${result.removed} 条值；备份 ${backup.id.slice(0, 8)}）`, 'success', 8000)
     } catch (e) {

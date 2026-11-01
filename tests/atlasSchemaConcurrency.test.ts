@@ -94,15 +94,16 @@ async function main() {
     const saved = await saveAtlasSchema(PID, TAB, withField(emptyAtlasSchema(), '备注X'))
 
     let purgeCalls = 0
-    const purge = async () => { purgeCalls++; return purgeCalls === 1 ? 3 : 0 }
+    const purge = async () => { purgeCalls++; return 3 }
     const r = await removeAtlasFieldAtomically(
       PID, TAB, 'cf_race',
       cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
       purge,
+      async () => 0,
       saved.revision,
     )
     ok('删除后返回的配置里没有该字段', r.config.fields.every(f => f.id !== 'cf_race'))
-    ok('清值被调用两次（首清 + 锁内复核）', purgeCalls === 2)
+    ok('清值只调用一次，复核不额外删除', purgeCalls === 1)
     ok('removed 反映首清条数（3）', r.removed === 3)
     ok('复核无残留 ⇒ leftovers = 0', r.leftovers === 0)
     const after = await loadAtlasSchema(PID, TAB)
@@ -116,6 +117,7 @@ async function main() {
         PID, TAB, 'cf_race',
         cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
         async () => { purged = true; return 0 },
+        async () => 0,
         saved.revision,
       )
     } catch (e) { err = e instanceof Error ? e.message : String(e) }
@@ -123,15 +125,18 @@ async function main() {
     ok('拒绝时不执行清值', !purged)
 
     // 复核阶段失败（值在变化）⇒ leftovers = -1，交给上层记 pending 并可重试
-    let n = 0
-    const flaky = async () => { n++; if (n === 2) throw new Error('字段值在清理期间发生变化'); return 2 }
     const r2 = await removeAtlasFieldAtomically(
       PID, TAB, 'cf_race',
       cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
-      flaky,
+      async () => 2,
+      async () => { throw new Error('复核读取失败') },
     )
     ok('复核失败 ⇒ leftovers = -1（不吞掉）', r2.leftovers === -1)
     ok('复核失败时首清条数仍返回', r2.removed === 2)
+    const r3 = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race', cur => cur, async () => 2, async () => 1,
+    )
+    ok('复核发现残留时返回真实残留数量', r3.removed === 2 && r3.leftovers === 1)
   }
 
   removeLock()
