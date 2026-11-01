@@ -168,6 +168,24 @@ export async function saveAtlasSchema(
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
 ): Promise<AtlasSchemaConfig> {
+  /**
+   * 3.3.3 · B-07：**同源多窗口**下把「重读 revision → 比对 → 写」串成一段。
+   *
+   * 原先调用方（字段面板）先复检再调本函数，但两次操作之间仍可被另一个窗口插入：
+   * 两边都读到 revision N，各自写 N+1 —— 后写者覆盖前者的字段改动，而且 revision 还"看起来正常"。
+   * 这里用与任务台账同源的 Web Locks 把临界区收进来；没有锁的环境（`window` 未定义 / 老浏览器）
+   * 保持原行为（单窗口桌面/便携文件后端本来就没有第二个窗口）。
+   */
+  const run = () => saveAtlasSchemaLocked(projectId, tabId, config)
+  if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.locks) return run()
+  return navigator.locks.request(`yfe-atlas-schema-v1:${projectId}:${tabId}`, { mode: 'exclusive' }, run)
+}
+
+async function saveAtlasSchemaLocked(
+  projectId: string,
+  tabId: AtlasTabId,
+  config: AtlasSchemaConfig,
+): Promise<AtlasSchemaConfig> {
   const owner = beginRecordOperation(projectId, captureStorageWriteOwner(projectId).current)
   let raw: unknown = null
   try {
