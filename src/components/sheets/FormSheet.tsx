@@ -17,6 +17,7 @@ import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import StyleTools from '@/components/sheets/StyleTools'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
 import MarketRadarDialog from '@/components/dialogs/MarketRadarDialog'
@@ -250,6 +251,24 @@ export default function FormSheet({ tab }: Props) {
               intro="给这一页的字段起你自己看得懂的名字。"
               targets={moduleAliasTargets(tab.modules)}
             />
+            {/* 3.3.3 · B4：写作规范页多三个工具 —— 导出 / 导入 / 按章反推。
+                三者都只改**草稿**（取消即零写入），落库仍是作者按「保存」。 */}
+            {tab.id === 'style' && (
+              <StyleTools
+                tab={tab}
+                readData={() => dataRef.current}
+                applyValues={(values, keys) => {
+                  // 🔴 一次性合并后只 setState 一次：逐字段调用 setField 会连发多次渲染，
+                  //    且中途若组件卸载（切页签）会只写进去一半。
+                  const next = { ...dataRef.current }
+                  for (const k of keys) if (k in values) next[k] = values[k]
+                  dataRef.current = next
+                  dirtyRef.current = true
+                  setData(next)
+                  setDirty(true)
+                }}
+              />
+            )}
             <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-danger">
               <RotateCcw size={12} /> 清空
             </Button>

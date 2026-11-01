@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
-import { addCustomItem, deleteTableRow, getCurrentProjectId } from '@/lib/db'
+import { addCustomItem, deleteTableRow, getCurrentProjectId, saveTableRow } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
 import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
@@ -41,6 +41,9 @@ import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
 import TableSheetRow from '@/components/sheets/TableSheetRow'
+import IdeaConvertDialog, { type IdeaSource } from '@/components/sheets/IdeaConvertDialog'
+import { findIdeaDuplicates } from '@/lib/forms/ideasConvert'
+import type { IdeaDupHint } from '@/lib/forms/ideasConvert'
 import TableRelationGroups from '@/components/sheets/TableRelationGroups'
 import { useTableSheetModel, ROW_ACTION_COL_W } from '@/components/sheets/useTableSheetModel'
 import TableMoreMenu, { type MoreMenuItem } from '@/components/sheets/TableMoreMenu'
@@ -110,7 +113,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 
   const {
     // 落库与装载
-    rows, setRows, setDrafts, saving, saved, dirtyKeys, saveAll, loaded,
+    rows, setRows, setDrafts, drafts, saving, saved, dirtyKeys, saveAll, loaded,
     // 行编辑（图鉴详情的就地编辑走的也是这一份草稿，不另开一套）
     addRow, setCellDraft, cellVal, isRowDirty, revertCellDrafts,
     // 排序与筛选
@@ -135,6 +138,49 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     tableFields, showFill, setShowFill, showOrganize, setShowOrganize, showImport, setShowImport, fillRow, setFillRow, showFeedbackAI, setShowFeedbackAI, showDedupAI, setShowDedupAI, handleFill, handleFillRow, handleOrganize, handleImport,
   } = model
   const setViewMode: typeof storeViewMode = next => { captureWorkspaceView(); storeViewMode(next) }
+
+  // ── 3.3.3 · B4：灵感素材的重复提示与「转目标条目」 ──────────────────
+  const [ideaConvert, setIdeaConvert] = useState<IdeaSource | null>(null)
+
+  /**
+   * 重复提示：**只提示**（行号列一个小黄点），不拦输入、不合并、不删。
+   * 🔴 走 `sortedRows` + 草稿值：作者刚改的近似文本应当立刻提示，不必先保存。
+   */
+  const ideaDup = useMemo(() => {
+    if (tab.id !== 'ideas') return new Map<string, IdeaDupHint>()
+    return findIdeaDuplicates(sortedRows.map(r => ({
+      id: r.id,
+      code: cellVal(r, '编号').trim(),
+      text: cellVal(r, '内容'),
+    })))
+  }, [tab.id, sortedRows, cellVal])
+
+  const openIdeaConvert = (row: (typeof rows)[number]) => {
+    const data: Record<string, string> = { ...row.data, ...(drafts[row.id] ?? {}) }
+    setIdeaConvert({ row, code: String(data['编号'] ?? ''), text: String(data['内容'] ?? ''), data })
+  }
+
+  /**
+   * 目标行已建成后的来源标记：先写库，再同步界面（删掉这条草稿，避免"已保存"与草稿打架）。
+   * 🔴 失败只提示、不回滚目标行 —— 目标行是作者确认过的成果，不能因为标记失败把它删掉。
+   */
+  const handleIdeaConverted = async (info: { sourceId: string; label: string; code: string; sourcePatch: Record<string, string> }) => {
+    const base = rows.find(r => r.id === info.sourceId)
+    if (!base) return
+    const next = { ...base, data: { ...base.data, ...(drafts[base.id] ?? {}), ...info.sourcePatch } }
+    try {
+      await saveTableRow(next)
+      setRows(prev => prev.map(r => (r.id === next.id ? next : r)))
+      setDrafts(prev => {
+        if (!(next.id in prev)) return prev
+        const copy = { ...prev }
+        delete copy[next.id]
+        return copy
+      })
+    } catch {
+      showToast(`已建 ${info.label} ${info.code || ''}，但这条灵感的「已用 / 备注」没保存成功，请手动改一下`, 'error')
+    }
+  }
 
   /** 3.3.1 · P2/P3：只有「自管页」（目前是伏笔追踪的空态样板）在组件内托管，其余表格页由 App 层托管 */
   const pageGuide = usePageGuide({
@@ -803,6 +849,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                   index={rowWindow.start + i}
                   onNavigate={onNavigate}
                   onOpenMentions={(name, aliases) => setMention({ name, aliases })}
+                  dupHint={ideaDup.get(entry.row.id)}
+                  onConvert={tab.id === 'ideas' ? () => openIdeaConvert(entry.row) : undefined}
                   ctx={ctx}
                 />
               ))}
@@ -898,6 +946,15 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
       )}
       {showDedupAI && (
         <TermDedupPanel rows={rows.map(r => r.data)} onClose={() => setShowDedupAI(false)} />
+      )}
+      {/* 3.3.3 · B4：灵感转目标条目 —— 先预览，确认后才建行；取消零写入 */}
+      {tab.id === 'ideas' && (
+        <IdeaConvertDialog
+          open={!!ideaConvert}
+          source={ideaConvert}
+          onClose={() => setIdeaConvert(null)}
+          onConverted={info => { void handleIdeaConverted(info) }}
+        />
       )}
       {isAtlasCapable && showFieldMgr && atlasConfig && (
         <AtlasFieldManager

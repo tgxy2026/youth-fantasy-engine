@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import * as db from '@/lib/db'
 import { todayKey } from '@/lib/app/date'
+import { projectGoal } from '@/lib/stats/goalPace'
 import NumberField from '@/components/common/NumberField'
 import { GOAL_ACTUAL_COLOR } from '@/lib/settings/palette'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
@@ -35,20 +36,16 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
     })()
   }, [])
 
-  const recentPace = useMemo(() => {
-    // 🔴 2026-09-22 六维审计 P2：原来取「最近 7 **条**有记录的天」而不是「最近 7 个自然日」——
-    //    `dailyStats` 只会在真的写了字的那天落一条，所以断更时这 7 条的区间能跨远超 7 天，
-    //    算出来的「日均」被**系统性高估**（写在 UI 上却叫「近 7 日日均」）。
-    //    改为按日期键回填近 7 个自然日（缺日按 0 计），与下方燃尽图用同一套写法。
-    const byDate = new Map(dailyStats.map(d => [d.date, d.words]))
-    const now = new Date()
-    let sum = 0
-    for (let i = 6; i >= 0; i--) {
-      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
-      sum += byDate.get(todayKey(dt)) ?? 0
-    }
-    return Math.round(sum / 7)
-  }, [dailyStats])
+  /**
+   * 🔴 近 7 日日均与完稿预估走 `lib/stats/goalPace.ts`（3.3.3 · B4）：
+   *    这段口径原先只在本组件里，测试只能读代码；抽出去后才能钉住"缺日按 0 计入分母 /
+   *    没记录不编日期 / 手工登记不掺进自动统计"这几条。
+   */
+  const projection = useMemo(
+    () => projectGoal({ totalWords, goalTotal: total, stats: dailyStats }),
+    [totalWords, total, dailyStats],
+  )
+  const recentPace = projection.pace
 
   // v1.6.1：燃尽图数据 —— 近 14 天逐日累计「实际 / 目标」曲线（缺写字的天按 0 计）
   const BURNDOWN_DAYS = 14
@@ -73,9 +70,9 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
   const bPath = (key: 'actualCum' | 'targetCum') =>
     burndown.map((d, i) => `${i === 0 ? 'M' : 'L'}${bX(i).toFixed(1)},${bY(d[key]).toFixed(1)}`).join(' ')
 
-  const remaining = Math.max(0, total - totalWords)
-  const daysNeeded = recentPace > 0 && total > 0 ? Math.ceil(remaining / recentPace) : 0
-  const estDate = daysNeeded > 0 ? new Date(Date.now() + daysNeeded * 86400000) : null
+  const remaining = projection.remaining
+  const daysNeeded = projection.daysNeeded
+  const estDate = projection.estDate
   const totalPct = total > 0 ? Math.min(100, Math.round((totalWords / total) * 100)) : 0
 
   const save = async (patch: Partial<{ daily: number; total: number; deadline: string }>) => {
@@ -198,7 +195,11 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
 
       {deadline && (
         <div className="text-11 text-ink-400">
-          截止日 {deadline}：按当前日均，{daysNeeded > 0 ? `还需约 ${daysNeeded} 天（${estDate?.toLocaleDateString()} 前完稿可达成）` : '已达标或暂无法预估'}
+          截止日 {deadline}：{daysNeeded > 0
+            ? `按当前日均，还需约 ${daysNeeded} 天（${estDate?.toLocaleDateString()} 前完稿可达成）`
+            : projection.reason === 'reached' ? '全书目标已达成'
+              : projection.reason === 'no-goal' ? '还没设全书目标字数，无法预估'
+                : '近 7 日暂无码字记录，暂无法预估'}
           {(() => {
             const dl = new Date(deadline).getTime()
             if (isNaN(dl) || daysNeeded === 0) return null
@@ -209,7 +210,7 @@ export default function WritingGoals({ totalWords, dailyStats }: Props) {
         </div>
       )}
       {recentPace === 0 && total > 0 && (
-        <div className="text-11 text-ink-500">近 7 日暂无码字记录，无法预估完稿日期——先在编辑器写几章，或在「写作进度」登记每日字数。</div>
+        <div className="text-11 text-ink-500">近 7 日暂无码字记录，无法预估完稿日期——先在编辑器开始写作，系统会自动记录（「写作进度」的手工登记只作参考，不并入自动统计）。</div>
       )}
     </div>
   )

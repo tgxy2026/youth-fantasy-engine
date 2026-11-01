@@ -8,7 +8,7 @@
  * 状态一律来自 `model`（同名解构，JSX 保持原样）；本组件不持有任何状态。
  * ⚠️ 唯一改动：原来的 `i`（map 下标）改名为 `index` —— 单字符参数名做 props 太容易读错。
  */
-import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Search, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Link2, PenLine, Search, Sparkles, Trash2, ArrowUpRight } from 'lucide-react'
 import type { TabDef, TableRow } from '@/lib/types'
 import { SABC_LABELS, isVolumeLedgerTab } from '@/lib/schema'
 import type { VisCtx } from '@/lib/schema'
@@ -51,7 +51,7 @@ const MENTION_TABS = new Set<string>([
   'relations', 'nations', 'faction-rels', 'geography', 'races', 'items', 'history', 'terms', 'subplots',
 ])
 
-export default function TableSheetRow({ tab, model, entry, index, onNavigate, onOpenMentions, ctx }: {
+export default function TableSheetRow({ tab, model, entry, index, onNavigate, onOpenMentions, dupHint, onConvert, ctx }: {
   tab: TabDef
   model: TableSheetModel
   /** 一行 + 它在树形层级里的位置（父组件负责排列） */
@@ -60,6 +60,10 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
   onNavigate?: (id: string, chapterId?: string) => void
   /** 打开「资料提及」面板（3.1 P1）：主名称 + readAliases 别称列表 */
   onOpenMentions?: (name: string, aliases: string[]) => void
+  /** 灵感素材重复提示（3.3.3 · B4）：只提示，不拦编辑、不自动合并 */
+  dupHint?: { peers: string[]; exact: boolean }
+  /** 灵感素材「转为目标条目」（3.3.3 · B4）：只对 ideas 表传入 */
+  onConvert?: () => void
   ctx: VisCtx
 }) {
   const {
@@ -121,6 +125,12 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
         <td className="px-2 py-1 text-center text-ink-500 text-10 relative">
           {index + 1}
           {rowDirty && <span className="absolute left-0 top-1 w-0.5 h-5 bg-amber rounded-r" />}
+          {dupHint && (
+            <span
+              className="absolute right-0.5 top-1 w-1.5 h-1.5 rounded-full bg-amber/90"
+              title={`${dupHint.exact ? '与 ' : '近似于 '}${dupHint.peers.join('、')} 重复。只提示，不会自动合并或删除。`}
+            />
+          )}
         </td>
         {/* 🔴 行首操作列 2×2（OPT-008，主人 2026-10-17）：原为 w-7(28px) 窄列 flex-col 竖排，
             4 个图标钮把每一行撑高约 100px（「页面变得很长、很难看」）。改为可换行居中：
@@ -145,6 +155,15 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
               title={`查看「${mentionName}」在正文中的提及`}
             >
               <Search size={12} />
+            </Button>
+          )}
+          {onConvert && (
+            <Button variant="bare" iconOnly size="xs"
+              onClick={onConvert}
+              className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
+              title="把这条灵感转为目标条目（伏笔 / 支线 / 爽点）：先预览，确认后才建行"
+            >
+              <ArrowUpRight size={12} />
             </Button>
           )}
           {!isMaster && (

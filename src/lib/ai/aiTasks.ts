@@ -38,6 +38,7 @@ import { MARKET_RADAR_PROMPTS } from '@/lib/ai/marketRadar'
 import { STYLE_FINGERPRINT_PROMPTS } from '@/lib/ai/styleFingerprint'
 import { POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
 import { CHANGE_LIST_PROMPTS } from '@/lib/aiTasks/changeList'
+import { STYLE_INFER_PROMPTS } from '@/lib/aiTasks/styleInfer'
 
 export { rowFingerprint, aiOrganizeRows, keyRowToLine, organizeEmptyKind, organizeEmptyMessage } from '@/lib/aiTasks/organize'
 export type { OrganizeColumn, OrganizeRequest, OrganizeResult, OrganizeEmptyKind } from '@/lib/aiTasks/organize'
@@ -60,6 +61,9 @@ export type { BookBreakSplitRequest } from '@/lib/aiTasks/bookBreakSplit'
 // 3.3.3 · A2：本章变化清单（作者主动触发一次；引文核验在 audit/changeList）
 export { aiChapterChangeList, CHANGE_LIST_PROMPTS } from '@/lib/aiTasks/changeList'
 export type { ChapterChangeAiRequest, ChapterChangeAiResult } from '@/lib/aiTasks/changeList'
+// 3.3.3 · B4：按章反推写作规范（只产建议，逐条勾选才并入草稿）
+export { aiInferStyle, parseStyleSuggestions, STYLE_INFER_PROMPTS, STYLE_INFER_MATERIAL_LIMIT } from '@/lib/aiTasks/styleInfer'
+export type { StyleInferRequest, StyleSuggestion } from '@/lib/aiTasks/styleInfer'
 // 2026-10-02（2.7.0·社区反馈）：表格批量导入 · AI 智能拆分 —— 把粘贴的表格/散文解析成多条表格行，供导入预览勾选
 // 与「AI 整理」分工：整理是「从正文抽尚未登记的事实」（判重+增量），本任务是「把粘进来的内容解析成行」（不判重）
 export { aiSplitTableRows } from '@/lib/aiTasks/tableImport'
@@ -167,6 +171,8 @@ const PROMPT_ORDER = [
   'plan-compare',
   // 3.3.3 追加在末尾：本章变化清单（A2）
   'chapter-change-list',
+  // 3.3.3 追加在末尾：按章反推写作规范（B4）
+  'style-infer',
 ]
 
 const PROMPT_SETS: PromptDef[][] = [
@@ -189,6 +195,7 @@ const PROMPT_SETS: PromptDef[][] = [
   POST_PROCESS_PROMPTS,
   PLAN_COMPARE_PROMPTS,
   CHANGE_LIST_PROMPTS,
+  STYLE_INFER_PROMPTS,
 ]
 
 const byId = new Map<string, PromptDef>()
