@@ -9,6 +9,7 @@ import { __resetMockStores, memoryOps } from './mock-memory'
 import * as db from '../src/lib/db'
 import { saveAtlasSchema } from '../src/lib/atlas/persistence'
 import { emptyAtlasSchema } from '../src/lib/atlas/schema'
+import { invalidateStorageContext } from '../src/lib/storage/contextEpoch'
 import {
   clearPendingFieldPurge, countFieldValues, discardIntactFieldPurge, listPendingFieldPurges, recordPendingFieldPurge, retryPendingFieldPurge,
 } from '../src/lib/atlas/purgeRecovery'
@@ -117,11 +118,11 @@ async function main() {
   {
     const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
     const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
-    let tail = Promise.resolve()
-    const locks = { request: async <T>(_name: string, _opts: unknown, fn: () => Promise<T>): Promise<T> => {
+    const tails = new Map<string, Promise<void>>()
+    const locks = { request: async <T>(name: string, _opts: unknown, fn: () => Promise<T>): Promise<T> => {
       let release!: () => void
       const mine = new Promise<void>(r => { release = r })
-      const before = tail; tail = mine
+      const before = tails.get(name) ?? Promise.resolve(); tails.set(name, mine)
       await before
       try { return await fn() } finally { release() }
     } }
@@ -142,6 +143,23 @@ async function main() {
       ok('清理期间 schema 写入等待同一把锁', !saved)
       release(); await retry; await write
       ok('清理结束后 schema 写入继续', saved)
+      await Promise.all(['one', 'two'].map(fieldId => recordPendingFieldPurge(PID, {
+        tabId: TAB, fieldId, fieldLabel: fieldId, backupId: 'bk', remaining: 1,
+      })))
+      const records = await listPendingFieldPurges(PID)
+      ok('并发登记不同字段时两条记录都保留', ['one', 'two'].every(id => records.some(p => p.fieldId === id)))
+      await Promise.all(['one', 'two'].map(id => clearPendingFieldPurge(PID, TAB, id)))
+      ok('并发移除不同字段时两条记录都移除', !(await listPendingFieldPurges(PID)).some(p => p.fieldId === 'one' || p.fieldId === 'two'))
+      let unblock!: () => void, held!: () => void
+      const heldPromise = new Promise<void>(r => { held = r })
+      const blocked = new Promise<void>(r => { unblock = r })
+      const hold = locks.request(`yfe-atlas-purge-list-v1:${PID}`, { mode: 'exclusive' }, async () => { held(); await blocked })
+      await heldPromise
+      const stale = recordPendingFieldPurge(PID, { tabId: TAB, fieldId: 'stale', fieldLabel: 'stale', backupId: 'bk', remaining: 1 })
+      invalidateStorageContext(); unblock(); await hold
+      let rejected = false
+      try { await stale } catch { rejected = true }
+      ok('等待锁期间切换存储后不写入新空间', rejected && !(await listPendingFieldPurges(PID)).some(p => p.fieldId === 'stale'))
     } finally {
       if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow); else delete (globalThis as { window?: unknown }).window
       if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator); else delete (globalThis as { navigator?: unknown }).navigator

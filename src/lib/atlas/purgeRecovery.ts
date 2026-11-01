@@ -73,6 +73,11 @@ function keyOf(projectId: string): string {
   return `atlasPurgePending::${projectId}`
 }
 
+async function withPurgeListLock<T>(projectId: string, action: () => Promise<T>): Promise<T> {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.locks) return action()
+  return navigator.locks.request(`yfe-atlas-purge-list-v1:${projectId}`, { mode: 'exclusive' }, action)
+}
+
 export async function listPendingFieldPurges(projectId: string): Promise<PendingFieldPurge[]> {
   if (!projectId) return []
   return readPurgeList(projectId, capturePurgeStore(projectId))
@@ -82,6 +87,10 @@ export async function listPendingFieldPurges(projectId: string): Promise<Pending
 export async function recordPendingFieldPurge(projectId: string, item: Omit<PendingFieldPurge, 'at'>): Promise<void> {
   if (!projectId || !item.tabId || !item.fieldId) return
   const captured = capturePurgeStore(projectId)
+  return withPurgeListLock(projectId, () => recordPendingFieldPurgeLocked(projectId, item, captured))
+}
+
+async function recordPendingFieldPurgeLocked(projectId: string, item: Omit<PendingFieldPurge, 'at'>, captured: ReturnType<typeof capturePurgeStore>): Promise<void> {
   const list = await readPurgeList(projectId, captured)
   const idx = list.findIndex(p => p.tabId === item.tabId && p.fieldId === item.fieldId)
   const next: PendingFieldPurge = { ...item, at: idx >= 0 ? list[idx].at : Date.now() }
@@ -91,6 +100,10 @@ export async function recordPendingFieldPurge(projectId: string, item: Omit<Pend
 
 export async function clearPendingFieldPurge(projectId: string, tabId: string, fieldId: string): Promise<void> {
   const captured = capturePurgeStore(projectId)
+  return withPurgeListLock(projectId, () => clearPendingFieldPurgeLocked(projectId, tabId, fieldId, captured))
+}
+
+async function clearPendingFieldPurgeLocked(projectId: string, tabId: string, fieldId: string, captured: ReturnType<typeof capturePurgeStore>): Promise<void> {
   const list = await readPurgeList(projectId, captured)
   const next = list.filter(p => !(p.tabId === tabId && p.fieldId === fieldId))
   if (next.length === list.length) return
