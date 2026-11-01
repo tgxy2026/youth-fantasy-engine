@@ -22,7 +22,8 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
-  PORTABLE_KEY_FIELDS, keyOfRecord, upsertRows, deleteRowsOf, filterByIndex,
+  PORTABLE_KEY_FIELDS, keyOfRecord, upsertRows, deleteRowsOf, filterByIndex, replacePortableData, portableDataJSONReport,
+  portableStore, setPortableSidecarApi, resetPortableSidecarApi,
 } from '../src/lib/storage/fileBackend'
 
 let pass = 0, fail = 0
@@ -187,6 +188,24 @@ const asRows = (x: unknown[]): TestRow[] => x as TestRow[]
   const refs = [...core.matchAll(/tests\/([A-Za-z0-9_.-]+\.test\.ts)/g)].map(m => m[1])
   const broken = refs.filter(f => read(`tests/${f}`).length === 0)
   ok('⑥ core.ts 引用的测试文件均真实存在', broken.length === 0, broken.join(','))
+}
+
+// 真正经过便携数据文件导出，检查本机任务不随文件迁移。
+{
+  setPortableSidecarApi({ async listIds() { return [] }, async read() { return undefined }, async write() { return true }, async remove() { return true } })
+  try {
+    replacePortableData({ app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 2, savedAt: 1, stores: {
+      taskHeads: { h: { id: 'h', payload: 'HEAD_SENTINEL' } }, taskUnits: { u: { id: 'u', payload: 'UNIT_SENTINEL' } },
+      chapters: { c: { id: 'c', content: '作品正文' } }, backups: { b: { id: 'b' } },
+      meta: { 'aiCapability:test': { key: 'aiCapability:test', value: 'CACHE_SENTINEL' } },
+    } })
+    const report = await portableDataJSONReport()
+    const out = JSON.parse(report.json) as { stores: Record<string, unknown> }
+    ok('⑦ 数据文件没有任务头和任务单元', !('taskHeads' in out.stores) && !('taskUnits' in out.stores))
+    ok('⑦ 数据文件保留章节和备份', JSON.stringify(out.stores.chapters).includes('作品正文') && !!out.stores.backups)
+    ok('⑦ 数据文件不含能力缓存', !report.json.includes('CACHE_SENTINEL'))
+    ok('⑦ 导出未改动本机任务', (await portableStore.getAll('taskHeads')).length === 1 && (await portableStore.getAll('taskUnits')).length === 1)
+  } finally { resetPortableSidecarApi() }
 }
 
 console.log(`\n—— portableBackend 用例结束：${pass} 通过 / ${fail} 失败 ——`)

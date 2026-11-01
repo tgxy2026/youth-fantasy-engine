@@ -44,6 +44,7 @@ export function DesktopDataBar() {
         const tip = r.strippedSecrets?.length
           ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
           : ''
+        const taskTip = '\n\n拆书任务的恢复进度仅保存在本机，不随文件导出。'
         /**
          * 🔴 3.2.2（审计 C1 · P1）：**只有真完整才敢说"完整副本"**。
          * 读不出来的历史备份不会被带进包（以前照样报完整，作者拿它当唯一保险）。
@@ -52,11 +53,11 @@ export function DesktopDataBar() {
         if (missing.length) {
           const n = missing.length
           showToast(
-            `已导出可读取的内容到：\n${r.path}\n\n⚠️ 有 ${n} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。\n可以继续用它救急，但别把旧的那份覆盖掉。${tip}`,
+            `已导出可读取的内容到：\n${r.path}\n\n⚠️ 有 ${n} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。\n可以继续用它救急，但别把旧的那份覆盖掉。${tip}${taskTip}`,
             'error', 12000,
           )
         } else {
-          showToast(`已导出全部数据到：\n${r.path}\n\n本机数据已完整导出（含历史备份）：可以单独留档，换电脑时用「导入数据文件」还原。${tip}`, 'success', 6000)
+          showToast(`已导出作品数据到：\n${r.path}\n\n文件包含可读取的历史备份，可以留档或在换电脑时导入。${tip}${taskTip}`, 'success', 6000)
         }
       } else if (!r.cancelled) showToast(r.error || '导出失败', 'error')
     } catch (e) {
@@ -78,7 +79,7 @@ export function DesktopDataBar() {
     }
     if (!await confirmDialog({
       title: '导入数据文件',
-      message: '导入将用所选数据文件的【全部内容】替换本机当前全部数据（含所有项目），确定继续？',
+      message: '导入将替换本机当前数据（含所有项目）。文件中的拆书任务恢复进度不会导入；原文件不会改动。确定继续？',
       confirmText: '继续导入', danger: true,
     })) return
     setBusy('import')

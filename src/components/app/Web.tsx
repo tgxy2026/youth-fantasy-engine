@@ -106,8 +106,8 @@ export function WebDataBar() {
           ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换电脑后需重填一次模型配置）`
           : ''
         showToast(
-          `已导出云端账号的全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n`
-          + `可在桌面版「导入数据文件」里打开，也可以留档保存。${tip}`,
+          `已导出云端账号的作品数据（浏览器下载）：\n${r.fileName ?? ''}\n\n`
+          + `可在桌面版「导入数据文件」里打开，也可以留档保存。${tip}\n\n拆书任务的恢复进度仅保存在本机，不随文件导出。`,
           'success', 7000,
         )
       } else showToast(r.error || '导出失败', 'error')
@@ -119,7 +119,7 @@ export function WebDataBar() {
   const doImport = async () => {
     if (!await confirmDialog({
       title: '导入数据文件',
-      message: '导入将用所选文件的【全部内容】替换云端账号里的全部数据（含所有项目），确定继续？',
+      message: '导入将替换云端账号里的数据（含所有项目）。文件中的拆书任务恢复进度不会导入；原文件不会改动。确定继续？',
       confirmText: '继续导入', danger: true,
     })) return
     setBusy('import')

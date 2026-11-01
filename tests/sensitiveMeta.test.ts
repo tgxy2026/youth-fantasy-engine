@@ -14,9 +14,10 @@ import * as db from '../src/lib/db'
 import { ops } from '../src/lib/db/core'
 import { createDemoProject } from '../src/lib/app/seedData'
 import {
-  isSensitiveMetaKey, valueHasSecretField, isSensitiveSettingKey, stripSensitiveMeta,
+  isSensitiveMetaKey, valueHasSecretField, isSensitiveSettingKey, stripSensitiveMeta, stripLocalTaskStores,
 } from '../src/lib/storage/sensitiveMeta'
 import { migrateLegacyProjectAiKeys } from '../src/lib/db/migrations'
+import { buildProjectSnapshot } from '../src/lib/sync/projectSnapshot'
 import { __resetMockStores } from './mock-memory'
 
 let pass = 0, fail = 0
@@ -26,6 +27,15 @@ const ok = (name: string, cond: boolean, extra = '') => {
 }
 
 console.log('\n▶ sensitiveMeta')
+
+{
+  const source = { taskHeads: { h: { id: 'h' } }, taskUnits: { u: { id: 'u' } },
+    chapters: { c: { content: 'taskHeads 正文' } }, backups: { b: { id: 'b' } } }
+  const out = stripLocalTaskStores(source)
+  ok('数据文件排除任务头与任务单元', !('taskHeads' in out) && !('taskUnits' in out))
+  ok('剥离不修改本机任务记录', 'taskHeads' in source && 'taskUnits' in source)
+  ok('作品和备份保留', out.chapters.c.content === 'taskHeads 正文' && out.backups.b.id === 'b')
+}
 
 // ---------- 1. 纯判据 ----------
 {
@@ -101,6 +111,9 @@ db.setCurrentProject(pid)
   })
   // 一条正常设置：必须**原样保留**（防误伤）
   await ops.put('settingsKV', { key: `${pid}::kbInBackup`, value: true })
+  await ops.put('taskHeads', { id: 'local-head', projectId: pid, payload: 'HEAD_LOCAL_SENTINEL' })
+  await ops.put('taskUnits', { id: 'local-unit', projectId: pid, payload: 'UNIT_LOCAL_SENTINEL' })
+  await db.setMeta('aiCapability:probe', 'CAPABILITY_LOCAL_SENTINEL')
 
   const bundle = await db.exportProject(pid) as { settings?: { key: string }[] }
   const text = JSON.stringify(bundle)
@@ -110,6 +123,11 @@ db.setCurrentProject(pid)
   ok('🔴 值里藏密钥的设置也没进包', !text.includes('sk-VALUE-PROBE'))
   ok('🔴 settings 里没有 aiProviders 键', !keys.includes('aiProviders'))
   ok('正常设置 kbInBackup **原样保留**（没误伤）', keys.includes('kbInBackup'))
+  ok('项目包不含本机任务或能力缓存', !/HEAD_LOCAL_SENTINEL|UNIT_LOCAL_SENTINEL|CAPABILITY_LOCAL_SENTINEL/.test(text))
+  const snapshot = await buildProjectSnapshot(bundle as Parameters<typeof buildProjectSnapshot>[0])
+  const snapshotText = JSON.stringify(snapshot)
+  ok('项目云快照不含本机任务或能力缓存', !/HEAD_LOCAL_SENTINEL|UNIT_LOCAL_SENTINEL|CAPABILITY_LOCAL_SENTINEL/.test(snapshotText))
+  ok('生成导出数据不删除本机任务', !!(await ops.get('taskHeads', 'local-head')) && !!(await ops.get('taskUnits', 'local-unit')))
 }
 
 // ---------- 4. migrateLegacyProjectAiKeys 清残留 ----------

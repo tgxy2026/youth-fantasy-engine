@@ -14,7 +14,7 @@ import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarAp
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 import { markDeleted, clearDeleted, resetTombs } from '@/lib/sync/syncTombstone'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 叶子模块，不会与 sync 层成环
-import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
+import { stripLocalTaskStores, stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
 import { recordError } from '@/lib/app/errorLog'
 
 /** preload 注入的 IPC 接口结构（仅桌面版存在） */
@@ -863,7 +863,7 @@ export async function exportDesktopData(): Promise<{
   //    换机代价：AI 模型配置需要重填一次（与云同步同一取舍：密钥不离开本机）。
   //    ⚠️ stripSensitiveMeta **返回新对象**，不会动内存里的 data —— 见该函数注释。
   const { stores, removed } = stripSensitiveMeta({ ...data.stores, ...inline })
-  const snapshot = { ...data, savedAt: Date.now(), stores }
+  const snapshot = { ...data, savedAt: Date.now(), stores: stripLocalTaskStores(stores) }
   try {
     const p = await api().exportFile(JSON.stringify(snapshot))
     // 🔴 2026-10-07 六维审计 P2：取消与失败**必须分开返回** —— 混成一个 null 会让
@@ -934,7 +934,8 @@ export async function importDesktopData(): Promise<{ ok: boolean; cancelled?: bo
   // 🔴 格式版本闸必须在 `data = ...` 之前（理由同便携版：替换后再拒绝就晚了）
   const versionProblem = describeFileVersionProblem(parsed)
   if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
-  data = normalizePortableData(parsed)
+  const imported = normalizePortableData(parsed)
+  data = { ...imported, stores: stripLocalTaskStores(imported.stores) }
   invalidateStorageContext()
   dirty = true
   // 🔴 导入一个**校验通过**的数据文件正是「锁写盘」的恢复手段：锁着 flushDesktop 直接返回 false，

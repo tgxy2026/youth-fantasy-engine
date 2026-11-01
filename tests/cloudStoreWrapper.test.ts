@@ -153,6 +153,18 @@ async function main() {
 
   // ---------- 5) 播种口径：seedFromLocal 不再白读 backups ----------
   {
+    const cloud = stubCloud('cloud')
+    const local = spyLocal('local')
+    const up = db.makeCloudStoreWrapper(cloud.ops, local.ops, () => false)
+    await up.put('taskHeads', { id: 'local-h', projectId: 'p1' })
+    await up.put('taskUnits', { id: 'local-u', projectId: 'p1' })
+    const heads = await up.getAll<{ id: string }>('taskHeads')
+    const units = await up.getAll<{ id: string }>('taskUnits')
+    ok('任务头和单元实际写入并读回本机', heads.some(h => h.id === 'local-h') && units.some(u => u.id === 'local-u'))
+    ok('旧云盘包装器没有发送任务头或单元', !cloud.calls.some(c => /taskHeads|taskUnits/.test(c)))
+  }
+
+  {
     const seen: string[] = []
     const getAll = async (s: string) => { seen.push(s); return [] as any[] }
     const inst = createCloudStore(emptyTransport().t)
@@ -167,6 +179,7 @@ async function main() {
     // C2（2.4.2）：本地专属 store 从一个变两个 —— 断言改用**单一判据常量**，
     // 以后再新增本地专属 store 时这里自动跟上（原先写死 `- 1`，本轮就红了）
     ok('seedFromLocal 也不读 backupPayloads（C2 新增的本地专属 store）', !seen.includes('backupPayloads'), seen.join(','))
+    ok('seedFromLocal 不读取本机任务头和单元', !seen.includes('taskHeads') && !seen.includes('taskUnits'), seen.join(','))
     ok('seedFromLocal 仍遍历其余全部 store（未误伤）',
       seen.length === SYNC_STORES.length - LOCAL_ONLY_STORES.length,
       `实际=${seen.length} 期望=${SYNC_STORES.length - LOCAL_ONLY_STORES.length}`)

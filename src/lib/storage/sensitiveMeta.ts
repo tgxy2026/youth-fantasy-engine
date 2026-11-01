@@ -71,6 +71,15 @@ export function isLocalOnlyMetaKey(key: unknown): boolean {
   return LOCAL_ONLY_META_KEY_PREFIXES.some(p => key.startsWith(p))
 }
 
+/** Data-file exports omit machine-local resumable tasks while preserving backups and project data. */
+export function stripLocalTaskStores<T extends Record<string, unknown>>(stores: T): T {
+  if (!('taskHeads' in stores) && !('taskUnits' in stores)) return stores
+  const copy = { ...stores }
+  delete copy.taskHeads
+  delete copy.taskUnits
+  return copy
+}
+
 /**
  * 旧版**项目级** AI 配置键名（1.5.0 之前模型配置按项目存，键名与全局的相同）。
  *

@@ -8,10 +8,26 @@
 // 只测外置 store：未外置的 store 会触发 scheduleSave → flushDesktop → 调 window.electronStore
 // （Node 里不存在），故刻意避开，避免为测 A 而引入无关的副作用。
 import type { SidecarApi } from '../src/lib/storage/sidecar'
-import {
-  DESKTOP_SIDECAR, desktopStore, setDesktopSidecarApi, resetDesktopSidecarApi,
-} from '../src/lib/app/desktop'
 import { PORTABLE_SIDECAR } from '../src/lib/storage/fileBackend'
+
+let exportedText = ''
+;(globalThis as unknown as { localStorage: unknown }).localStorage = {
+  getItem() { return null }, setItem() {}, removeItem() {},
+}
+const seed = { app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 2, savedAt: 1, stores: {
+  taskHeads: { h: { id: 'h', payload: 'HEAD_SENTINEL' } }, taskUnits: { u: { id: 'u', payload: 'UNIT_SENTINEL' } },
+  chapters: { c: { id: 'c', content: '作品正文' } }, backups: { b: { id: 'b' } },
+  meta: { 'aiCapability:test': { key: 'aiCapability:test', value: 'CACHE_SENTINEL' } },
+} }
+;(globalThis as unknown as { window: unknown }).window = { electronStore: {
+  async load() { return { text: JSON.stringify(seed), path: 'isolated', error: null } },
+  async isCustomPath() { return false },
+  async exportFile(text: string) { exportedText = text; return 'isolated-export.json' },
+  async importFile() { return JSON.stringify(seed) },
+  async save() { return { ok: true, error: null } },
+  async payloadWrite() { return { ok: false } },
+} }
+const { DESKTOP_SIDECAR, desktopStore, setDesktopSidecarApi, resetDesktopSidecarApi, initDesktopStore, exportDesktopData, importDesktopData } = await import('../src/lib/app/desktop')
 
 let pass = 0
 let fail = 0
@@ -76,6 +92,21 @@ ok('② 便携版外置集合是桌面版的超集（向量/KB 为便携专属�
   resetDesktopSidecarApi()
   await desktopStore.put('backupPayloads', { id: 'd3' })
   ok('④ 复位后不再走注入通道（已切回真实 IPC）', !files.has('backupPayloads/d3') && !other.has('backupPayloads/d3'))
+}
+
+// 真正走桌面导出入口，IPC 和数据均为本进程内的隔离桩。
+{
+  await initDesktopStore()
+  setDesktopSidecarApi(memApi)
+  const result = await exportDesktopData()
+  const out = JSON.parse(exportedText) as { stores: Record<string, unknown> }
+  ok('⑤ 桌面数据文件不含任务头和单元', result.ok && !('taskHeads' in out.stores) && !('taskUnits' in out.stores))
+  ok('⑤ 桌面数据文件保留章节和备份', JSON.stringify(out.stores.chapters).includes('作品正文') && !!out.stores.backups)
+  ok('⑤ 桌面数据文件不含能力缓存', !exportedText.includes('CACHE_SENTINEL'))
+  ok('⑤ 导出不改动本机任务', (await desktopStore.getAll('taskHeads')).length === 1 && (await desktopStore.getAll('taskUnits')).length === 1)
+  const imported = await importDesktopData()
+  ok('⑤ 导入旧文件不会激活文件中的任务', imported.ok && (await desktopStore.getAll('taskHeads')).length === 0 && (await desktopStore.getAll('taskUnits')).length === 0)
+  ok('⑤ 导入保留作品正文且原文件不变', (await desktopStore.get<{ content: string }>('chapters', 'c'))?.content === '作品正文' && !!seed.stores.taskHeads.h)
 }
 
 console.log(`\ndesktopSidecar: ${pass} passed, ${fail} failed`)

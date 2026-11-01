@@ -25,7 +25,7 @@ import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarAp
 import { PORTABLE_FILE_VERSION, describeDataFileReject } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
 // 导出数据文件前剥敏感 meta（AI 密钥 / 检索密钥）—— 与桌面版 exportDesktopData 同口径
-import { stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
+import { stripLocalTaskStores, stripSensitiveMeta } from '@/lib/storage/sensitiveMeta'
 import { WEB_CLOUD } from '@/lib/app/platform'
 
 /** 服务注入到 window 的便携标记（见 portable-server.mjs 的注入注释） */
@@ -649,7 +649,7 @@ export async function portableDataJSONReport(): Promise<{
   //    ⚠️ stripSensitiveMeta 返回**新对象**，不会动内存里的 data。
   const { stores } = stripSensitiveMeta({ ...data.stores, ...collected.data })
   return {
-    json: JSON.stringify({ ...data, savedAt: Date.now(), stores }),
+    json: JSON.stringify({ ...data, savedAt: Date.now(), stores: stripLocalTaskStores(stores) }),
     missing: collected.issues,
   }
 }
@@ -749,7 +749,9 @@ export async function importPortableData(
   //    再拒绝就晚了（旧数据在内存里也没了，下次写盘变真丢）。
   const versionProblem = describeFileVersionProblem(parsed)
   if (versionProblem) return { ok: false, error: `${versionProblem}；已取消导入，本机数据未改动。` }
-  replacePortableData(parsed)
+  // 旧数据文件可能包含别处的任务台账；不在本机激活，原文件不改动。
+  const imported = normalizePortableData(parsed)
+  replacePortableData({ ...imported, stores: stripLocalTaskStores(imported.stores) })
   // 导入的文件里外置数据是**内联**的 ⇒ 拆开落盘（与老库升级同一条路径，幂等）
   await migratePortableSidecar()
   const ok = await flushPortable()
