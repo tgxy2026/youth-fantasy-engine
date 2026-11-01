@@ -21,66 +21,98 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   channel: 'msedge', viewport: { width: 1600, height: 950 }, args: ['--no-first-run'],
 })
 const page = ctx.pages()[0] ?? (await ctx.newPage())
+/**
+ * 轮询直到**真正进入作品**（右侧出现「创意写作」入口）；停在项目中心就点开。
+ * 🔴 这是上一轮反复失败的根因：reload 后只 waitForTimeout 就点「打开项目」，
+ *    点击常常落空 ⇒ store 从未 hydrate 该项目 ⇒ 读到的是库里残留状态，看着像"修了没生效"。
+ */
+async function enterProject() {
+  for (let i = 0; i < 20; i++) {
+    const inside = await page.evaluate(() =>
+      [...document.querySelectorAll('button')].some((b) => /创意写作/.test((b.textContent || '').trim())))
+    if (inside) return true
+    const clicked = await page.evaluate(() => {
+      const b = document.querySelector('[data-project-card] button[title="打开项目"]')
+      if (!b) return false
+      b.click(); return true
+    })
+    await page.waitForTimeout(clicked ? 5000 : 1200)
+  }
+  return false
+}
+
+async function dismissTips() {
+  for (let i = 0; i < 5; i++) {
+    const c = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => /稍后再|稍后|知道了|跳过本页/.test((x.textContent || '').trim()))
+      if (!b) return false
+      b.click(); return true
+    })
+    if (!c) break
+    await page.waitForTimeout(400)
+  }
+}
+
 await page.goto('http://localhost:5199/', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(6500)
-await page.evaluate(() => document.querySelector('[data-project-card] button[title="打开项目"]')?.click())
-await page.waitForTimeout(7000)
-for (let i = 0; i < 5; i++) {
-  const c = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => /稍后再|稍后|知道了|跳过本页/.test((x.textContent || '').trim()))
-    if (!b) return false
-    b.click(); return true
-  })
-  if (!c) break
-  await page.waitForTimeout(400)
-}
-// 🔴 先清掉上一轮残留的 progress/resume：草稿只在内存里，残留的 "等待确认" 会卡死新一轮
-await page.evaluate(async () => {
-  const db = await import('/src/lib/db.ts')
-  const pid = db.getCurrentProjectId()
-  const key = 'creativeSession:' + pid
-  const saved = await db.getMeta(key, null)
-  if (saved) {
-    delete saved.progress
-    delete saved.resume
-    await db.setMeta(key, saved)
-  }
-})
-await page.waitForTimeout(400)
 
-// 🔴 清完必须 reload：creativeSession 是模块级单例，页面加载时已经 hydrate 了旧 progress，
-//    不重载就等于没清（实测会一直停在"等待确认"）
-await page.reload({ waitUntil: 'domcontentloaded' })
-await page.waitForTimeout(6500)
-await page.evaluate(() => document.querySelector('[data-project-card] button[title="打开项目"]')?.click())
-await page.waitForTimeout(7000)
-for (let i = 0; i < 5; i++) {
-  const c = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => /稍后再|稍后|知道了|跳过本页/.test((x.textContent || '').trim()))
-    if (!b) return false
-    b.click(); return true
-  })
-  if (!c) break
-  await page.waitForTimeout(400)
+// 新 profile 会停在首启向导：「写我的第一本书」
+if (!(await enterProject())) {
+  const first = page.locator('button', { hasText: '写我的第一本书' }).first()
+  if (await first.count()) {
+    await first.click()
+    await page.waitForTimeout(600)
+    const next = page.getByRole('button', { name: '下一步' })
+    if (await next.count()) { await next.click(); await page.waitForTimeout(1200) }
+    const nameInput = page.locator('input[type="text"]').first()
+    if (await nameInput.count()) await nameInput.fill('B04强杀夹具')
+    const skip = page.getByRole('button', { name: /跳过，直接开始/ }).first()
+    if (await skip.count()) await skip.click()
+    else await page.getByRole('button', { name: /开始|创建|完成/ }).first().click().catch(() => {})
+    await page.waitForTimeout(7000)
+  }
 }
+const inside = await enterProject()
+console.log('进入作品:', inside)
+if (!inside) {
+  console.log('❗ 没能进入作品，终止（不要在半路跑，否则读到的是残留状态）')
+  try { await ctx.close() } catch { /* 忽略 */ }
+  process.exit(1)
+}
+await dismissTips()
+
+// 注入假模型配置（幂等）：新 profile 的库是空的，不注入就会报"没有可用模型"
+const provider = await page.evaluate(async () => {
+  const db = await import('/src/lib/db.ts')
+  await db.setMeta('aiProviders', [{
+    id: 'mock-1', name: 'Mock 本地端点', type: 'openai',
+    baseUrl: 'http://127.0.0.1:18080/v1', apiKey: 'test-key', model: 'mock-1', local: true,
+  }])
+  await db.setMeta('aiActiveProviderId', 'mock-1')
+  return (await db.getMeta('aiProviders', [])).length
+})
+console.log('模型配置就绪（provider 数）:', provider)
+
+// 上一轮若残留「进行中」，先中止（真实用户也会这么做）。
+// 注：progress 的 running→cancelled 降级修复（a28b9ce）在上游生效，正常不会残留；
+//     这里只是兜底，不再像上一版那样手工删 meta（删了会被退出前的持久化写回）。
+const aborted = await page.evaluate(() => {
+  const b = [...document.querySelectorAll('button')].find((x) => /^中止/.test((x.textContent || '').trim()))
+  if (!b) return 'no-abort-btn'
+  b.click(); return 'aborted'
+})
+console.log('残留状态处理:', aborted)
+await page.waitForTimeout(1500)
 
 await page.evaluate(() => {
   ;[...document.querySelectorAll('button')].find((x) => /创意写作/.test((x.textContent || '').trim()))?.click()
 })
 await page.waitForTimeout(2500)
+await dismissTips()
 await page.evaluate(() => {
   ;[...document.querySelectorAll('button')].filter((b) => /关闭|close/i.test((b.getAttribute('aria-label') || b.getAttribute('title') || '')))[0]?.click()
 })
 await page.waitForTimeout(600)
-
-// 若上次残留「进行中」，先中止掉（真实用户也会这么干），否则「开始创作」不可用
-const aborted = await page.evaluate(() => {
-  const b = [...document.querySelectorAll('button')].find((x) => /^中止$/.test((x.textContent || '').trim()))
-  if (!b) return 'no-abort-btn'
-  b.click(); return 'aborted'
-})
-console.log('处理残留状态:', aborted)
-await page.waitForTimeout(1500)
 
 // 参数：一句话 + 缩小规模（1 卷、每章 400 字）
 await page.evaluate(() => {
@@ -119,8 +151,16 @@ async function poke(round) {
     //    继续点它就是空转（实测会死循环，白白错过强杀时机）。
     let clicked = null
     if (!window.__confirmedBible) {
-      const b = btns.find((x) => /^确认设定（[1-9]/.test((x.textContent || '').trim()))
-      if (b) { b.click(); window.__confirmedBible = true; clicked = (b.textContent || '').trim() }
+      // ① 已勾选 > 0 ⇒ 直接确认；
+      // ② 勾选数是 0（草稿已写过一次/默认没勾）⇒ 先「全选新建」，下一轮再确认。
+      const label = (x) => (x.textContent || '').trim()
+      const confirmBtn = btns.find((x) => /^确认设定（[1-9]/.test(label(x)))
+      if (confirmBtn) {
+        confirmBtn.click(); window.__confirmedBible = true; clicked = label(confirmBtn)
+      } else {
+        const selectAll = btns.find((x) => /^全选新建$/.test(label(x)))
+        if (selectAll) { selectAll.click(); clicked = '全选新建' }
+      }
     }
     return {
       clicked,
