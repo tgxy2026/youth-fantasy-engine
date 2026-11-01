@@ -17,7 +17,6 @@
  */
 import { useSyncExternalStore } from 'react'
 import {
-  DEAI_TEMPLATES,
   extractAndCommitSettings,
   type ChapterDraft,
   type ContinueStrategy,
@@ -32,7 +31,11 @@ import {
 import * as db from '@/lib/db'
 import { describeResumeEvidence, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
+import { summarizeResult } from '@/lib/creative/resultSummary'
+import { createContextLoadGate } from '@/lib/creative/loadGate'
+import { deAiPromptOf } from '@/lib/creative/inputHelpers'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 import type { DraftBundle, DraftRow, FlowProgress } from '@/lib/flow/types'
 import {
   aiRewriteChapter,
@@ -310,12 +313,6 @@ export function useCreativeSession(): CreativeSession {
 
 // ============ 派生工具 ============
 
-/** 当前输入对应的去 AI 味儿提示词（自定义模板取输入框，其余取内置） */
-function deAiPromptOf(inp: CreativeInputs): string {
-  if (inp.deAiTpl === 'custom') return inp.deAiCustom.trim()
-  return DEAI_TEMPLATES.find(t => t.id === inp.deAiTpl)?.prompt ?? ''
-}
-
 function notice(text: string, kind: CreativeNotice['kind'] = 'info') {
   set({ notice: { id: ++noticeSeq, text, kind } })
 }
@@ -327,6 +324,7 @@ export function consumeNotice() {
 }
 
 export function updateInputs(patch: Partial<CreativeInputs>) {
+  if (!snap.hydrated || hydratedFor !== db.getCurrentProjectId() || hydratedStorageContext !== storageWriteContext()) { notice('作品或存储空间已切换，请重新读取创作记录。', 'error'); return }
   set({ inputs: { ...snap.inputs, ...patch } })
 }
 
@@ -339,7 +337,7 @@ export function updateInputs(patch: Partial<CreativeInputs>) {
  */
 export async function saveInputsNow() {
   const ok = await flushPersist()
-  notice(ok ? '已保存' : '保存失败：当前没有打开的项目', ok ? 'success' : 'error')
+  notice(ok ? '已保存' : '保存失败：请确认作品和存储已就绪', ok ? 'success' : 'error')
 }
 
 /**
@@ -359,6 +357,7 @@ export async function saveInputsQuiet() {
  * ⚠️ 破坏性动作的二次确认在**组件层**做（store 在 lib 层，不得 import 组件里的 `confirmDialog`）。
  */
 export async function clearSeed() {
+  if (!snap.hydrated) { notice('创作记录尚未读入，不能清空。', 'error'); return }
   updateInputs({ seed: '' })
   await flushPersist()
   notice('想法已清空', 'info')
@@ -409,7 +408,7 @@ function cancelScheduledPersist() {
 async function persistNow(pid?: string): Promise<boolean> {
   try {
     const target = pid ?? db.getCurrentProjectId()
-    if (!target) return false
+    if (!target || !snap.hydrated || hydratedStorageContext !== storageWriteContext() || hydratedFor !== target) return false
     // 断点只存里程，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
     const resume = snap.resume
       ? {
@@ -485,6 +484,8 @@ const SESSION_BLANK: Partial<CreativeSession> = {
  *    记住 id 之后，切项目（面板重新挂载）会自动换成新项目的会话。
  */
 let hydratedFor: string | null = null
+let hydratedStorageContext = ''
+const loadGate = createContextLoadGate(loadSession, () => { hydratedFor = null })
 
 /**
  * 面板挂载时调用：读回**当前项目**的上次会话。
@@ -494,12 +495,15 @@ let hydratedFor: string | null = null
  *  结构配比面板改 structureId）可 await 它，避免 hydration 未完成时 persistNow 把默认快照整份写盘
  *  覆盖已存会话（六维审计 2026-09-27 P2）。既有「发射后不管」的调用方不受影响。 */
 export function hydrateCreativeSession(): Promise<void> {
-  return loadSession(db.getCurrentProjectId() ?? '')
+  const pid = db.getCurrentProjectId() ?? '', context = `${db.getProjectContextEpoch()}:${storageWriteContext()}`
+  return loadGate(pid, context)
 }
 
 async function loadSession(pid: string) {
   if (hydratedFor === pid) return
   hydratedFor = pid
+  emitOnly({ hydrated: false })
+  const owner = pid ? captureOwnedOperation(pid) : null
   let patch: Partial<CreativeSession> = { ...RUNTIME_RESET, ...SESSION_BLANK, hydrated: true }
   try {
     const saved = await db.getMeta<{
@@ -552,8 +556,15 @@ async function loadSession(pid: string) {
       }
     }
   } catch {
-    /* 读不到就用默认值 */
+    try { owner?.assertCurrent() } catch { return }
+    if (hydratedFor !== pid || db.getCurrentProjectId() !== pid) return
+    hydratedFor = null
+    emitOnly({ ...RUNTIME_RESET, ...SESSION_BLANK, inputs: { ...DEFAULT_INPUTS }, hydrated: false, notice: { id: ++noticeSeq, text: '创作记录读取失败，请检查存储后重试；原记录未覆盖。', kind: 'error' } })
+    return
   }
+  try { owner?.assertCurrent() } catch { return }
+  if (hydratedFor !== pid || db.getCurrentProjectId() !== pid) return
+  hydratedStorageContext = storageWriteContext()
   set(patch)
 }
 
@@ -566,7 +577,7 @@ async function loadSession(pid: string) {
  * 有活任务时不动（那次运行自己认的是启动时的项目）。
  */
 async function bindProject() {
-  await loadSession(db.getCurrentProjectId() ?? '')
+  await hydrateCreativeSession()
 }
 
 // ============ 运行控制（任务跑在这里，不在组件里） ============
@@ -653,7 +664,10 @@ async function settleCreativeLedger(
 
 export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   if (snap.running) return
+  const project = db.getCurrentProjectId(), epoch = db.getProjectContextEpoch(), context = storageWriteContext()
   await bindProject()
+  if (db.getCurrentProjectId() !== project || db.getProjectContextEpoch() !== epoch || storageWriteContext() !== context) return
+  if (!snap.hydrated) return
   // 加载后作者仍可能编辑章节或参数，开跑前重新核验，不能沿用过期的通过结果。
   const checkedResume = opts.fromScratch ? null : snap.resume
   if (checkedResume) {
@@ -1178,16 +1192,4 @@ export function discardRewrite() {
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */
 export function clearCreativeSession() {
   set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
-}
-
-function summarizeResult(res: CreativeWritingResult): CreativeResultSummary {
-  return {
-    mode: res.mode,
-    bibleTotal: res.bible?.stats.total ?? 0,
-    bibleCreated: res.bibleCommit?.created ?? 0,
-    volumes: res.outline?.volumes.length ?? 0,
-    outlineChapters: res.outline?.chapters.length ?? 0,
-    wrote: res.chapters.length,
-    outlineOnly: res.outlineOnly,
-  }
 }

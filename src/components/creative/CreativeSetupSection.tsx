@@ -10,7 +10,7 @@ import { Button } from '@/components/common/Button'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import InspirationPicker from '@/components/creative/InspirationPicker'
 import { StyleProfilePicker } from '@/components/settings/StyleProfilePicker'
-import { clearCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '@/lib/creative/creativeSession'
+import { clearCreativeSession, hydrateCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '@/lib/creative/creativeSession'
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '@/lib/ai/aiTasks'
 import { DEAI_TEMPLATES } from '@/lib/outline/autoContinue'
 import { MAX_CHAPTERS } from '@/lib/outline/writingPace'
@@ -20,6 +20,12 @@ import type { CreativeWritingModel } from '@/components/creative/useCreativeWrit
 
 export default function CreativeSetupSection({ m }: { m: CreativeWritingModel }) {
   const { s, inp, setInterview, aiReady, busy, probe, onPickLength, onClearSeed, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel } = m
+  if (!s.hydrated) return (
+    <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-12 text-ink-300">
+      创作记录尚未读入；如果等待时间过长，请检查存储后重新读取。
+      <Button size="sm" variant="secondary" onClick={() => void hydrateCreativeSession()}>重新读取</Button>
+    </section>
+  )
   return (
     <>
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">

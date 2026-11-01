@@ -14,6 +14,9 @@ import {
 } from '../src/lib/ai/deAiStyle'
 import fs from 'node:fs'
 import path from 'node:path'
+import { deAiPromptOf } from '../src/lib/creative/inputHelpers'
+import { DEAI_TEMPLATES } from '../src/lib/outline/autoContinue'
+import type { CreativeInputs } from '../src/lib/creative/creativeSession'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -78,8 +81,10 @@ function read(rel: string): string {
   for (const id of ['natural', 'webnovel', 'literary', 'custom']) {
     ok(`保留模板 id「${id}」`, src.includes(`id: '${id}'`))
   }
-  // creativeSession 按 id 查表：查不到会返回空串 → 去味儿静默失效
-  ok('creativeSession 按 id 查 DEAI_TEMPLATES', read('src/lib/creative/creativeSession.ts').includes('DEAI_TEMPLATES.find'))
+  // 查表逻辑拆分后仍须返回实际模板，并保留自定义提示词。
+  const input = { deAiTpl: 'natural', deAiCustom: '' } as CreativeInputs
+  ok('内置模板按 id 返回提示词', deAiPromptOf(input) === DEAI_TEMPLATES.find(t => t.id === 'natural')?.prompt && !!deAiPromptOf(input))
+  ok('自定义提示词保留内容并去掉外侧空格', deAiPromptOf({ ...input, deAiTpl: 'custom', deAiCustom: ' 自定义 ' }) === '自定义')
   const tpls = src.slice(src.indexOf('DEAI_TEMPLATES: DeAiTemplate[]'), src.indexOf('export interface ChapterDraft'))
   ok('三套内置模板的提示词都非空', (tpls.match(/prompt: '/g) ?? []).length >= 3)
 }

@@ -17,6 +17,7 @@ import { BarChart3, Loader2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, TableRow } from '@/lib/types'
 import { hydrateCreativeSession, updateInputs, useCreativeSession, saveInputsQuiet } from '@/lib/creative/creativeSession'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
 import { getStoryTemplate } from '@/lib/outline/storyStructures'
 import { BEAT_COLORS } from '@/lib/settings/palette'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
@@ -147,10 +148,12 @@ export default function StructurePacePanel() {
   )
 
   const pickTemplate = async (id: string) => {
-    updateInputs({ structureId: id })
+    const pid = db.getCurrentProjectId(), epoch = db.getProjectContextEpoch(), context = storageWriteContext()
     // 🔴 六维审计 P2：先等 hydrate 完成（本页可能在创意写作从未打开过时进入）——
     //    否则 flushPersist 会把「默认+空运行态」整快照写盘，覆盖该项目已存的会话数据
     await hydrateCreativeSession()
+    if (db.getCurrentProjectId() !== pid || db.getProjectContextEpoch() !== epoch || storageWriteContext() !== context) return
+    updateInputs({ structureId: id })
     await saveInputsQuiet()
   }
 

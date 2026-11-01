@@ -145,6 +145,145 @@ console.log('\n── ③ 切项目时未落盘的想法归属 ──')
   db.setCurrentProject('')
 }
 
+// A 的读取晚于 B 返回，不能将 A 的会话写到 B。
+{
+  const db = await import('@/lib/db')
+  const { memoryOps } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  await db.setMeta('creativeSession:pRaceA', { inputs: { seed: 'A 原始想法' } })
+  await db.setMeta('creativeSession:pRaceB', { inputs: { seed: 'B 原始想法' } })
+  const originalGet = memoryOps.get
+  let release!: () => void
+  let started!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  const reading = new Promise<void>(resolve => { started = resolve })
+  memoryOps.get = async <T>(store: string, key: string): Promise<T | undefined> => {
+    if (store === 'meta' && key === 'creativeSession:pRaceA') { started(); await pending }
+    return originalGet<T>(store, key)
+  }
+  try {
+    db.setCurrentProject('pRaceA')
+    const a = creative.hydrateCreativeSession()
+    await reading
+    const before = (await memoryOps.getAll('aiRuns')).length
+    const oldRun = creative.startCreativeRun()
+    db.setCurrentProject('pRaceB')
+    await creative.hydrateCreativeSession()
+    creative.updateInputs({ seed: 'B 新想法' })
+    release()
+    await a; await oldRun
+    ok('旧作品的启动请求不会跑到新作品', (await memoryOps.getAll('aiRuns')).length === before)
+    await creative.flushPersist('pRaceB')
+    const b = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pRaceB', {})
+    ok('A 会话迟到不会覆盖 B 的会话和新输入', b.inputs?.seed === 'B 新想法')
+  } finally { memoryOps.get = originalGet; release(); db.setCurrentProject('') }
+}
+
+// 读取失败不能把默认空会话写回原记录，且不能启动任务。
+{
+  const db = await import('@/lib/db')
+  const { memoryOps, __failReads } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pReadFailure')
+  await db.setMeta('creativeSession:pReadFailure', { inputs: { seed: '必须保留的旧想法' } })
+  __failReads((store, key) => store === 'meta' && key === 'creativeSession:pReadFailure')
+  try {
+    await creative.hydrateCreativeSession()
+    creative.updateInputs({ seed: '读取失败时的新输入' })
+    const before = (await memoryOps.getAll('aiRuns')).length
+    await creative.startCreativeRun()
+    ok('会话读取失败不启动任务', (await memoryOps.getAll('aiRuns')).length === before)
+    ok('会话读取失败不允许将空会话写回', !(await creative.flushPersist('pReadFailure')))
+  } finally { __failReads(null) }
+  const original = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pReadFailure', {})
+  ok('读取失败后原始记录保留', original.inputs?.seed === '必须保留的旧想法')
+  await creative.hydrateCreativeSession()
+  db.setCurrentProject('')
+}
+
+// 并发启动与正在进行的同项目加载必须等待同一结果。
+{
+  const db = await import('@/lib/db')
+  const { memoryOps } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pPendingLoad')
+  await db.setMeta('creativeSession:pPendingLoad', { resume: { from: 'draft', doneChapters: 1, totalChapters: 10, label: '旧断点' } })
+  const originalGet = memoryOps.get
+  let release!: () => void
+  let started!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  const reading = new Promise<void>(resolve => { started = resolve })
+  memoryOps.get = async <T>(store: string, key: string): Promise<T | undefined> => {
+    if (store === 'meta' && key === 'creativeSession:pPendingLoad') { started(); await pending }
+    return originalGet<T>(store, key)
+  }
+  try {
+    const hydrate = creative.hydrateCreativeSession()
+    await reading
+    let finished = false
+    const run = creative.startCreativeRun().then(() => { finished = true })
+    await Promise.resolve(); await Promise.resolve()
+    ok('会话仍在读取时启动操作会等待', !finished)
+    release()
+    await hydrate; await run
+    ok('读取完成后旧断点仍不会启动任务', finished && (await memoryOps.getAll('aiRuns')).length === 0)
+  } finally { memoryOps.get = originalGet; release(); db.setCurrentProject('') }
+}
+
+{
+  const db = await import('@/lib/db')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pStructurePick')
+  await db.setMeta('creativeSession:pStructurePick', { inputs: { seed: '原有想法' } })
+  await creative.hydrateCreativeSession()
+  creative.updateInputs({ structureId: 'structure-choice' })
+  await creative.saveInputsQuiet()
+  const saved = await db.getMeta<{ inputs?: { seed?: string; structureId?: string } }>('creativeSession:pStructurePick', {})
+  ok('结构模板选择保留原有想法并落盘', saved.inputs?.seed === '原有想法' && saved.inputs?.structureId === 'structure-choice')
+  const fs = await import('node:fs')
+  const panel = fs.readFileSync('src/components/outline/StructurePacePanel.tsx', 'utf8')
+  const pick = /const pickTemplate = async[\s\S]*?\n  \}/.exec(panel)?.[0] ?? ''
+  ok('结构模板先等待读入再修改并检查作品归属', pick.indexOf('await hydrateCreativeSession()') < pick.indexOf('updateInputs(') && pick.includes('getProjectContextEpoch'))
+  db.setCurrentProject('')
+}
+
+// 同一个作品 id 在另一个存储空间里也必须重新读取，旧输入不能写入新空间。
+{
+  const db = await import('@/lib/db')
+  const { invalidateStorageContext } = await import('@/lib/storage/contextEpoch')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pSameId')
+  await db.setMeta('creativeSession:pSameId', { inputs: { seed: '旧空间' } })
+  await creative.hydrateCreativeSession()
+  invalidateStorageContext()
+  await db.setMeta('creativeSession:pSameId', { inputs: { seed: '新空间' } })
+  creative.updateInputs({ seed: '旧会话迟到的输入' })
+  ok('换存储后旧会话不能写盘', !(await creative.flushPersist('pSameId')))
+  let saved = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pSameId', {})
+  ok('换存储后新空间原记录保留', saved.inputs?.seed === '新空间')
+  await creative.hydrateCreativeSession()
+  creative.updateInputs({ seed: '新空间的新输入' })
+  await creative.flushPersist('pSameId')
+  saved = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pSameId', {})
+  ok('重新读取后可以正常编辑新空间', saved.inputs?.seed === '新空间的新输入')
+  db.setCurrentProject('')
+}
+
+{
+  const db = await import('@/lib/db')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pFlushOld')
+  await db.setMeta('creativeSession:pFlushOld', { inputs: { seed: '旧作品' } })
+  await db.setMeta('creativeSession:pFlushNew', { inputs: { seed: '新作品' } })
+  await creative.hydrateCreativeSession()
+  db.setCurrentProject('pFlushNew')
+  ok('切作品后未重读时默认保存被拒绝', !(await creative.flushPersist()))
+  ok('指定新作品也不能保存旧作品会话', !(await creative.flushPersist('pFlushNew')))
+  const saved = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pFlushNew', {})
+  ok('默认保存不会把旧作品写入新作品', saved.inputs?.seed === '新作品')
+  db.setCurrentProject('')
+}
+
 /**
  * ④ 源码闸：中止路径上的两件"必须做否则会反噬"的事
  *
