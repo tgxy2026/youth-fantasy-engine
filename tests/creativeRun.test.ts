@@ -222,5 +222,43 @@ const isBodyCall = (sys: string) => /续写助手/.test(sys)
   } finally { fake.close() }
 }
 
+{
+  __resetMockStores()
+  db.setCurrentProject('run-checkpoint-failure')
+  const fake = await startFakeOllama({ body: BODY, json: '[]' })
+  try {
+    await useFake(fake.port)
+    await commitOutline(mkOutline(3, '检查点测试卷'))
+    let error = ''
+    try {
+      await runCreativeWriting({}, { target: 'draft', chapters: 2, targetWords: 600, topUpLast: false,
+        onCheckpoint: async () => { throw new Error('模拟磁盘故障') } })
+    } catch (e) { error = String(e) }
+    ok('检查点写入失败明确报告并停止', error.includes('恢复进度未确认写盘'))
+    ok('检查点失败后不生成第二章', (await db.getAllChapters()).length === 1 && fake.calls.filter(c => isBodyCall(c.sys)).length === 1)
+  } finally { fake.close() }
+}
+
+{
+  __resetMockStores()
+  db.setCurrentProject('run-checkpoint-wait')
+  const fake = await startFakeOllama({ body: BODY, json: '[]' })
+  try {
+    await useFake(fake.port)
+    await commitOutline(mkOutline(3, '等待检查点测试卷'))
+    let release!: () => void, entered!: () => void
+    const pause = new Promise<void>(r => { release = r })
+    const ready = new Promise<void>(r => { entered = r })
+    let checkpoints = 0
+    const run = runCreativeWriting({}, { target: 'draft', chapters: 2, targetWords: 600, topUpLast: false,
+      onCheckpoint: async () => { if (++checkpoints === 1) { entered(); await pause } } })
+    await ready
+    ok('检查点未确认时不会请求下一章', fake.calls.filter(c => isBodyCall(c.sys)).length === 1)
+    release()
+    const result = await run
+    ok('检查点确认后继续生成剩余章节', result?.chapters.length === 2 && checkpoints === 2)
+  } finally { fake.close() }
+}
+
 console.log(`\n—— creativeRun 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

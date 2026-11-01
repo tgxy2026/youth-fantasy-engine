@@ -284,6 +284,35 @@ console.log('\n── ③ 切项目时未落盘的想法归属 ──')
   db.setCurrentProject('')
 }
 
+{
+  const db = await import('@/lib/db')
+  const { memoryOps } = await import('./mock-memory')
+  const creative = await import('@/lib/creative/creativeSession')
+  db.setCurrentProject('pSerialPersist')
+  await creative.hydrateCreativeSession()
+  const originalPut = memoryOps.put
+  let release!: () => void, entered!: () => void
+  const pause = new Promise<void>(r => { release = r })
+  const started = new Promise<void>(r => { entered = r })
+  let first = true
+  memoryOps.put = async (store: string, value: unknown) => {
+    if (store === 'meta' && (value as { key?: string }).key === 'creativeSession:pSerialPersist' && first) {
+      first = false; entered(); await pause
+    }
+    return originalPut(store, value)
+  }
+  try {
+    creative.updateInputs({ seed: '旧快照' })
+    const old = creative.flushPersist()
+    await started
+    creative.updateInputs({ seed: '新快照' })
+    const next = creative.flushPersist()
+    release(); await Promise.all([old, next])
+    const saved = await db.getMeta<{ inputs?: { seed?: string } }>('creativeSession:pSerialPersist', {})
+    ok('较早的延迟写入不会覆盖较新的会话', saved.inputs?.seed === '新快照')
+  } finally { memoryOps.put = originalPut; release(); db.setCurrentProject('') }
+}
+
 /**
  * ④ 源码闸：中止路径上的两件"必须做否则会反噬"的事
  *

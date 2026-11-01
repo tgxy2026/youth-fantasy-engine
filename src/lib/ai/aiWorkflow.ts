@@ -58,6 +58,7 @@ import type { Volume } from '@/lib/types'
 import { MAX_CHAPTERS } from '@/lib/outline/writingPace'
 import { textFingerprint } from '@/lib/tasks/unitLedger'
 import type { CreatedChapterEvidence } from '@/lib/creative/resumeEvidence'
+import { CreativeCheckpointError } from '@/lib/creative/checkpointError'
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 
@@ -574,7 +575,7 @@ export interface CreativeWritingOptions {
   /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
   onResume?: (r: CreativeResume) => void
   /** B-04：逐章检查点（强杀后只补剩余；章落库与检查点仍非同一事务，不承诺 exactly-once） */
-  onCheckpoint?: (r: CreativeResume) => void
+  onCheckpoint?: (r: CreativeResume) => void | Promise<void>
   signal?: AbortSignal
   /**
    * 请求归属（3.2.0 · WQ7）：由**建了运行账本**的调用方传入（`taskId` = run id）。
@@ -876,20 +877,20 @@ export async function runCreativeWriting(
         // 逐章日志（保存 / 失败原因）—— 原先不转发 ⇒ 「0 章」时界面上一条线索都没有
         onLog: line => opts.onRunLog?.(line),
         onPhase: msg => ctx.report(done / remaining, msg),
-        onChapterSaved: ch => {
+        onChapterSaved: async ch => {
           done++
           doneChapters = baseDone + done
           createdEvidence.push({
             id: ch.id, title: ch.title ?? '', no: Number(ch.no) || 0,
             fingerprint: textFingerprint(ch.content ?? ''),
           })
-          // B-04：每章一个检查点（不阻塞写章；调用方负责落盘）
-          opts.onCheckpoint?.({
-            bag: {}, from: 'draft',
-            doneChapters, totalChapters: plannedChapters,
-            label: `已写 ${doneChapters}/${plannedChapters} 章`,
-            evidence: [...createdEvidence],
-          })
+          // 等待检查点保存后再开始下一章。
+          try {
+            await opts.onCheckpoint?.({
+              bag: {}, from: 'draft', doneChapters, totalChapters: plannedChapters,
+              label: `已写 ${doneChapters}/${plannedChapters} 章`, evidence: [...createdEvidence],
+            })
+          } catch { throw new CreativeCheckpointError() }
           ctx.report(done / remaining, `已写 ${doneChapters}/${plannedChapters} 章`)
           opts.onChapterSaved?.(ch)
         },

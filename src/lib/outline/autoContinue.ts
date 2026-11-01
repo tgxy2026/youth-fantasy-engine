@@ -55,6 +55,7 @@ import { deAiGenerateRule, deAiPolishClause } from '@/lib/ai/deAiStyle'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
 import type { Chapter } from '@/lib/types'
+import { CreativeCheckpointError } from '@/lib/creative/checkpointError'
 import { registerPrompt } from '@/lib/ai/promptSettings'
 
 /** 「设定更新侦测」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
@@ -110,7 +111,7 @@ export interface ContinueCallbacks {
   onBodyToken?: (delta: string) => void
   /** 正文经字数校准/改写后整体替换预览（流式增量已失真时用它纠正） */
   onBodyReplace?: (full: string) => void
-  onChapterSaved?: (ch: { id: string; title: string; no: number; content?: string }) => void
+  onChapterSaved?: (ch: { id: string; title: string; no: number; content?: string }) => void | Promise<void>
   /** 每章初稿完成后征询作者：采纳 / 重写 / 中止。不提供则自动采纳 */
   onChapterDraft?: (d: ChapterDraft) => Promise<DraftDecision>
   /** B 策略：返回用户勾选的待补登项；返回 null 表示跳过本次补登 */
@@ -924,7 +925,7 @@ export async function runAutoContinue(
       noteCandidate(cb.request?.taskId, {
         target: `chapter:${ch.id}`, fingerprint: hashOf(body), state: 'adopted',
       })
-      cb.onChapterSaved?.({ id: ch.id, title: ch.title, no, content: body })
+      await cb.onChapterSaved?.({ id: ch.id, title: ch.title, no, content: body })
       created.push({ id: ch.id, title: ch.title, no })
       anchorId = ch.id
       lastBody = body
@@ -943,6 +944,7 @@ export async function runAutoContinue(
       // 滚动摘要回灌（应对多章记忆滚雪球），复用刚刚生成的 1/10 摘要
       if (sum) memory = (memory ? memory + '\n' : '') + `· 第${no}章《${ch.title}》：${sum.replace(/\s+/g, ' ').slice(0, 200)}`
     } catch (e) {
+      if (e instanceof CreativeCheckpointError) throw e
       if (isCancelled(e) || cb.signal?.aborted) {
         cb.onLog?.(`${tag}已停止`)
         aborted = true

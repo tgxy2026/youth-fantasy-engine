@@ -33,6 +33,7 @@ import { describeResumeEvidence, downgradeInterruptedProgress, isCreativeResumeS
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
 import { summarizeResult } from '@/lib/creative/resultSummary'
 import { createContextLoadGate } from '@/lib/creative/loadGate'
+import { CreativeCheckpointError, flushCreativeCheckpoint, persistCreativeSnapshot } from '@/lib/creative/serialPersist'
 import { deAiPromptOf } from '@/lib/creative/inputHelpers'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
@@ -411,7 +412,7 @@ async function persistNow(pid?: string): Promise<boolean> {
     if (!target || !snap.hydrated || hydratedStorageContext !== storageWriteContext() || hydratedFor !== target) return false
     // 断点只存里程与证据，不存 bag（bag 里的产物本就已落库，续跑跳过前序阶段是对的）
     const resume = snap.resume ? serializeResumeForPersist(snap.resume) : null
-    await db.setMeta(keyOf(target), {
+    await persistCreativeSnapshot(target, keyOf(target), {
       inputs: snap.inputs,
       log: snap.log.slice(-60),
       resume,
@@ -453,7 +454,6 @@ export async function flushPersist(pid?: string): Promise<boolean> {
   return persistNow(pid)
 }
 
-/** 切项目必须清掉的**运行态**：闸门 / 弹窗 / 改写 —— 它们都属于上一个项目，留着会串味 */
 const RUNTIME_RESET: Partial<CreativeSession> = {
   bibleGate: null, outlineGate: null, draftAsk: null, candidatesAsk: null, candidatesSelected: [],
   rewrite: null,
@@ -736,10 +736,10 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
           set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
         },
         /** B-04：每章检查点立即写盘（防抖窗口正是"最后一章写完就断电"会丢的那段）；仍不承诺 exactly-once */
-        onCheckpoint: r => {
-          if (db.getCurrentProjectId() !== runProjectId) return
+        onCheckpoint: async r => {
+          const pid = runProjectId; if (!pid || db.getCurrentProjectId() !== pid) throw new CreativeCheckpointError()
           set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
-          cancelScheduledPersist(); if (runProjectId) void persistNow(runProjectId)
+          cancelScheduledPersist(); if (!await persistNow(pid) || db.getCurrentProjectId() !== pid || runProjectId !== pid || !await flushCreativeCheckpoint(pid) || db.getCurrentProjectId() !== pid || runProjectId !== pid) throw new CreativeCheckpointError()
         },
         onProgress: p => {
           const next = captureSummaries(p)
