@@ -135,6 +135,7 @@ export default function CharacterSelect({ value, onChange, multi = false, placeh
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
           className="fixed overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1"
+          data-touch-menu="1"
         >
           <div className="px-2 py-1.5 border-b border-ink-700 bg-ink-900/60 sticky top-0">
             <input

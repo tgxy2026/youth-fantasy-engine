@@ -213,6 +213,37 @@ function main() {
       /revision: 2/.test(look) && /verifiedAgainst: '3\.3\.4'/.test(look) && /reviewedAt: '2026-11-02'/.test(look))
   }
 
+  // ——— ⑩ C3：本机 / 局域网模型策略（P3 后段，只做消费者与文案一致）———
+  {
+    const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+    const noticeSrc = read('src/lib/aiCore/localModelAccess.ts')
+    const routing = read('src/lib/ai/aiRouting.ts')
+    const session = read('src/lib/aiCore/session.ts')
+    const config = read('src/components/settings/AIConfigPanel.tsx')
+
+    const webLocal = capabilityOf('local-model', cloudSignals())
+    ok('网页版：策略禁用（policy-blocked），不是「平台不具备」',
+      webLocal.status === 'unsupported' && webLocal.reason === 'policy-blocked')
+    ok('网页版：动作清单为空 ⇒ canDo 一律 false（测试/生成/嵌入都拦）',
+      webLocal.actions.length === 0
+      && !canDo(webLocal, 'test') && !canDo(webLocal, 'use-for-generation') && !canDo(webLocal, 'use-for-embedding'))
+    ok('网页版说明同时写到「联网模型」与「桌面版 / 便携版」两条出路',
+      /联网模型/.test(webLocal.detail) && /桌面版 \/ 便携版/.test(webLocal.detail))
+    ok('网页版说明写清「手机 localhost 指手机自己」（防止把电脑地址填进去）',
+      /localhost 指手机自己/.test(webLocal.detail))
+    ok('桌面 / 便携：本机模型仍可用（不被网页策略误伤）',
+      capabilityOf('local-model', desktopSignals()).status === 'supported'
+      && capabilityOf('local-model', cloudSignals({ web: false, cloud: false, portable: true })).status === 'supported')
+
+    ok('生成 / 嵌入路由共用同一个判据（isLocalModelBlocked）',
+      /isLocalModelBlocked/.test(routing) && /isLocalModelBlocked/.test(session))
+    ok('模型设置：入口禁用与列表徽标都取同一常量（LOCAL_MODEL_DISABLED / WEB_LOCAL_MODEL_NOTICE）',
+      /LOCAL_MODEL_DISABLED/.test(config) && /WEB_LOCAL_MODEL_NOTICE/.test(config) && /WEB_LOCAL_MODEL_BADGE/.test(config))
+    ok('🔴 真源只有一处：消费者不另写「网页版不支持连接本机…」的第二种说法',
+      /网页版不支持连接本机/.test(noticeSrc)
+      && ![routing, session, config].some(text => /网页版不支持连接本机/.test(text)))
+  }
+
   console.log(`\n▶ capabilities: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }

@@ -322,7 +322,14 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
               ? <>上次记录：{s.resume.label}。{s.resumeBlockedReason || '这份记录缺少可校验的章节信息'}，无法安全自动续跑；请先核对已保存章节，再选择「从头重写」。</>
               : <>上次中止在：{s.resume.label}。点「继续写作」从断点接着写，
                 <b className="text-ink-300">已落库的章不会重写</b>；
-                <span className="text-ink-500">修改「连写章数」后不能按此断点续跑，请恢复原章数或主动选择从头重写。</span></>}
+                <span className="text-ink-500">修改「连写章数」后不能按此断点续跑，请恢复原章数或主动选择从头重写。</span>
+                {/* 🔴 3.3.4 · R-1：断点写 meta 与章落库**不是**跨 store 事务（文件后端没有事务原语）。
+                    规划允许的处置是「明确降级」：如实写明最坏情况，而不是承诺 exactly-once。
+                    详见 docs/3.3.4-开发规划-2026-10-31.md §11.1。 */}
+                <span className="mt-0.5 block text-ink-600">
+                  断点记录与章节落库不保证严格同一事务：若在写入途中被系统强杀，重开时最后一章可能需要重写一次（不会丢其它已确认保存的章节）。
+                </span>
+              </>}
           </div>
         )}
         <div className="mt-1.5 text-10 leading-relaxed text-ink-500">

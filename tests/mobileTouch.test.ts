@@ -59,7 +59,9 @@ const css = read('src/index.css')
 
 // ---------- ④ 3.3.4 · P1：文字按钮与手写裸 button（P0 基线的 60 处缺口） ----------
 {
-  const block = css.slice(css.indexOf('3.3.4 · P1：把最小命中区'))
+  // 只截到 P2 段落为止：P2 里对长表单弹窗用了 `!important`（覆盖行内 style），
+  // 那是 P2 的口径，不能拿来判 P1「不给按钮加 padding / 宽高」。
+  const block = css.slice(css.indexOf('3.3.4 · P1：把最小命中区'), css.indexOf('3.3.4 · P2：表格在粗指针下的密度'))
   ok('P1 段落存在', block.length > 600, `${block.length} 字符`)
   ok('🔴 文字按钮按 sizing=standard 选中，不做「所有 button 一律 44」',
     /button:where\(\[data-button-sizing='standard'\]\)/.test(block))
@@ -107,6 +109,19 @@ const css = read('src/index.css')
   ok('🔴 不动行首图标操作列（64px 列装不下 44×44 的 2×2）', !/table button/.test(block))
   ok('P2 段落仍只在 hover:none + pointer:coarse 内（桌面密度不变）',
     /@media \(hover: none\) and \(pointer: coarse\)/.test(block))
+  ok('下拉菜单选项行在触摸下 44（Portal 里不互压）', /\[data-touch-menu\] button/.test(block))
+  ok('单元格编号 chip 给真实 44×44（不用隐形热区，避免压到下一行）',
+    /\[data-touch-chip='1'\]/.test(block) && /min-width:\s*44px/.test(block))
+  ok('长表单弹窗在触摸下接近全屏，短确认框不受影响（按宽度档打标）',
+    /\[data-modal-size='large'\]/.test(block) && /96vw !important/.test(block))
+  ok('表格行内 chip 已标 data-touch-chip（TableSheetRow 3 处）',
+    (read('src/components/sheets/TableSheetRow.tsx').match(/data-touch-chip="1"/g) ?? []).length >= 3)
+  ok('五个下拉面板都标了 data-touch-menu',
+    ['src/components/common/CustomSelect.tsx', 'src/components/sheets/TableRefSelect.tsx',
+      'src/components/world/CharacterSelect.tsx', 'src/components/common/CalendarSelect.tsx',
+      'src/components/common/CalendarPicker.tsx'].every(f => /data-touch-menu="1"/.test(read(f))))
+  ok('Modal 按宽度档打 data-modal-size（≥576 才算长表单）',
+    /data-modal-size=\{widthPx >= 576 \? 'large' : 'small'\}/.test(read('src/components/dialogs/Modal.tsx')))
 
   // 控件源码：五个自定义选择器的收起态触发器都标了
   const triggers = [

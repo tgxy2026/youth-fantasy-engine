@@ -85,6 +85,7 @@ export default function CalendarSelect({ value, onChange, calendars }: Props) {
           ref={dropRef}
           style={{ zIndex: Z.dropdownNested, left: pos.left, top: pos.top, minWidth: pos.minWidth, transform: pos.flip ? 'translateY(-100%)' : undefined }}
           className="fixed overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1 max-h-72"
+          data-touch-menu="1"
         >
           {calendars.length === 0 && (
             <EmptyState text="暂无历法，请到页头「历法规则」里添加" />

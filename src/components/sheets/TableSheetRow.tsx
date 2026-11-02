@@ -219,7 +219,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                       <Button variant="bare"
                         key={code}
                         onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors" data-touch-chip="1"
                         title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                       >
                         <Link2 size={9} />{code}
@@ -337,7 +337,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                             <Button variant="bare"
                               key={code}
                               onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                              className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors" data-touch-chip="1"
                               title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                             >
                               <Link2 size={9} />{code}
@@ -363,7 +363,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
                         <Button variant="bare"
                           key={code}
                           onClick={() => onNavigate?.(code.startsWith('F') ? 'foreshadow' : 'history')}
-                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-px text-11 rounded bg-amber/10 text-amber/90 border border-amber/25 hover:bg-amber/25 transition-colors" data-touch-chip="1"
                           title={`查看 ${code}（跳转${code.startsWith('F') ? '伏笔追踪' : '历史事件'}）`}
                         >
                           <Link2 size={9} />{code}

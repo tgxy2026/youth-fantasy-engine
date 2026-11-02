@@ -972,4 +972,33 @@ button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible {
   [data-touch-control='1'] {
     min-height: 44px;
   }
+
+  /*
+   * 下拉菜单（Portal 里的选项行）：菜单项约 30px，触摸下点不准。
+   * 菜单不在表格里、也不属于行内并排，抬真实高度不会与谁互压 ⇒ 直接 44。
+   */
+  [data-touch-menu] button {
+    min-height: 44px;
+  }
+
+  /*
+   * 单元格内「编号跳转」chip（F01 / H01，约 30×16）：次要入口，但仍是可点动作。
+   * 用真实 44×44 而不是隐形热区 —— 它位于单元格底部，隐形热区会压到下一行。
+   */
+  [data-touch-chip='1'] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /*
+   * 长表单弹窗（`Modal` 的 lg/xl/2xl 档，`data-modal-size="large"`）：窄屏 / 触摸下接近全屏，
+   * 正文仍独立滚动、标题与底部按钮常驻（规划 §3.2「弹窗」）。
+   * 🔴 面板宽高写在行内 style 上，这里必须 `!important` 才能覆盖 —— 只覆盖宽高档，短确认框不动。
+   */
+  [data-modal-size='large'] {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    max-height: 92vh !important;
+    border-radius: 12px;
+  }
 }

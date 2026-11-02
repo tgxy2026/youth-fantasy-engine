@@ -180,6 +180,11 @@ export function Modal({
         if (overlayClose && e.target === e.currentTarget) onCloseRef.current()
       }}
     >
+      {/**
+        * 3.3.4 · P2（规划 §3.2「弹窗」）：长表单在窄屏 / 触摸下要接近全屏，短确认仍居中。
+        * `data-modal-size` 按**宽度档**打标：≥576px（lg/xl/2xl/大数字）算长表单，
+        * 由 `index.css` 的粗指针规则拉到 96vw × 92vh；sm/md 的确认框不受影响。
+        */}
       <div
         ref={panelRef}
         tabIndex={-1}
@@ -188,6 +193,7 @@ export function Modal({
         aria-labelledby={!ariaLabel && !hideHeader && (title || titleSlot) ? titleId : undefined}
         aria-label={ariaLabel ?? (hideHeader || !(title || titleSlot) ? title || '对话框' : undefined)}
         className={`${panelSurface} ${panelAccent} rounded-2xl shadow-2xl flex flex-col outline-none ${className}`}
+        data-modal-size={widthPx >= 576 ? 'large' : 'small'}
         style={{ width: `${widthPx}px`, maxWidth: foldVh('92vw'), maxHeight: foldVh(maxHeight), height: align === 'left' ? foldVh('100vh') : undefined }}
       >
         {!hideHeader && (

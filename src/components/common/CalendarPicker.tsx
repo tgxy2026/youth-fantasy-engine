@@ -115,6 +115,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
           className="fixed overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
+            data-touch-menu="1"
         >
           <div className="flex items-center justify-between mb-2">
             <Button variant="bare" type="button" onClick={() => shiftMonth(-1)} className="px-2 py-0.5 text-ink-300 hover:text-amber text-14">‹</Button>
