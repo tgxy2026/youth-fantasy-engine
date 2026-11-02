@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import type { PointerEvent as RPointerEvent } from 'react'
-import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X } from 'lucide-react'
+import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X, Plus, Minus } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
 import HelpPopover from '@/components/common/HelpPopover'
 import { MAP_SPACE_FALLBACK } from '@/lib/settings/palette'
@@ -26,7 +26,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   const {
     curMapName, mapNote, rows, stepCellKm, wrapRef, svgRef,
     load, categoryNames, markers, byId, depthMap, spaceColors,
-    spaceShapes, drawnIds, viewShapes, linked, fitView, enterPaint,
+    spaceShapes, drawnIds, viewShapes, linked, fitView, zoomBy, enterPaint,
     exitPaint, onPointerDown, onPointerMove, onPointerUp, createMarker, updateSelected,
     clearCoords, deleteMarker, gotoTable, selMarker, selLinked, anyLayerOn,
     allRows, maps, mapId, setMapId, loading, view,
@@ -97,7 +97,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               + '· 左侧「地图」列表管理多张地图：新建 / 重命名 / 删除，每张图是一块独立画布，互相不干扰。切换地图只会换画布，不会动任何地点数据。\n'
               + '· 点「绘制地图」选择一个范围（建议从最大的范围开始）。左键单击涂/擦一格；按住拖动框选一片批量填涂，Shift+框选批量擦除；右键单击退出、右键拖动平移画布。\n'
               + '· 右上角「精 / 粗」切换格子档位：每格边长 1 公里（精细）或 10 公里（粗略）。切档后同一区域会等比例缩放，比例尺真实；画大陆用粗档快速铺满，画城池切回精档。\n'
-              + '· 滚轮缩放画面、拖空白平移；拖动整块空间可挪位置（吸附整格）。\n'
+              + '· 滚轮缩放画面、拖空白平移；拖动整块空间可挪位置（吸附整格）；右上角 ＋/－ 与「重置」也能缩放 / 复位（手机、平板没有滚轮时用这对键）。\n'
               + '· 唯一规则：子范围必须完全画在父范围之内（无飞地）；祖先链上的范围可以叠涂，别的范围不行。\n'
               + '· 图层嵌套按「层级归属」自动分层，子空间格子叠涂在父空间之上。\n'
               + '· 颜色由系统按层级自动调配：父子高对比、兄弟错开，一眼区分隶属关系。\n'
@@ -174,6 +174,18 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
             <Button variant="bare" onClick={() => stepCellKm(-1)} disabled={cellKm === CELL_KM_STEPS[0]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="提高精度：每格边长 ÷10（1 公里格，画小范围用）"><ZoomIn size={11} />精</Button>
             <Button variant="bare" onClick={() => stepCellKm(1)} disabled={cellKm === CELL_KM_STEPS[CELL_KM_STEPS.length - 1]} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors disabled:opacity-40" title="降低精度：每格边长 ×10（10 公里格，画大范围快速铺格子）"><ZoomOut size={11} />粗</Button>
             <Button variant="bare" onClick={fitView} className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-ink-700 text-11 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors" title="重置视图（内容居中）"><Maximize2 size={11} />重置</Button>
+            {/* 3.3.4 · P2（规划 §3.2「画布/地图」）：触摸设备没有滚轮、画布又 touchAction:none，
+                只给滚轮缩放等于手机上没有任何缩放入口 ⇒ 补一对点击键，算式与滚轮同一套。 */}
+            <Button variant="bare" iconOnly size="xs" aria-label="放大画面" title="放大画面（手机 / 平板没有滚轮时用）"
+              onClick={() => zoomBy(1.25)}
+              className="rounded-md border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors">
+              <Plus size={12} />
+            </Button>
+            <Button variant="bare" iconOnly size="xs" aria-label="缩小画面" title="缩小画面（手机 / 平板没有滚轮时用）"
+              onClick={() => zoomBy(0.8)}
+              className="rounded-md border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors">
+              <Minus size={12} />
+            </Button>
           </span>
         </div>
       </div>
@@ -423,7 +435,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
                 时间脉络</span>}
             </>
           )}
-          <span className="text-ink-500">{painting ? '绘制中：左键涂/擦 · 拖动框选批量填涂（Shift=批量擦） · 右键退出/平移' : '单击空白新增 · 拖空白平移 · 滚轮缩放画面'}</span>
+          <span className="text-ink-500">{painting ? '绘制中：左键涂/擦 · 拖动框选批量填涂（Shift=批量擦） · 右键退出/平移' : '单击空白新增 · 拖空白平移 · 滚轮或 ＋/－ 缩放画面'}</span>
         </span>
       </div>
 

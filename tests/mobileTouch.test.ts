@@ -122,5 +122,20 @@ const css = read('src/index.css')
   }
 }
 
+// ---------- ⑦ 3.3.4 · P2：画布的点击式缩放（§3.2「不能只能鼠标拖拽」）----------
+{
+  const hook = read('src/components/world/useGeoMapModel.ts')
+  const editor = read('src/components/world/GeoMapEditor.tsx')
+  ok('视图层导出 zoomBy（与滚轮同一套锚点算法）',
+    /const zoomBy = useCallback/.test(hook) && /zoomBy,/.test(hook))
+  ok('缩放上下限与滚轮一致（0.04～3）',
+    /Math\.min\(3, Math\.max\(0\.04/.test(hook))
+  ok('地图工具栏有可点的放大 / 缩小键（触摸设备没有滚轮）',
+    /aria-label="放大画面"/.test(editor) && /aria-label="缩小画面"/.test(editor)
+    && (editor.match(/zoomBy\(/g) ?? []).length >= 2)
+  ok('帮助与状态条写明 ＋/－ 可缩放（不只写滚轮）',
+    /＋\/－/.test(editor) && /滚轮或 ＋\/－ 缩放/.test(editor))
+}
+
 console.log(`\n—— mobileTouch 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

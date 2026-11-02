@@ -369,6 +369,23 @@ export function useGeoMapModel() {
     //    不在依赖里的话后面形状齐了也不会再触发（会永远停在 k=1）。
   }, [loading, curMap, vp, cellKm, mapImage, mapImageSize, fitView, viewShapes])
 
+  /**
+   * 3.3.4 · P2：**点击式**视图缩放（规划 §3.2「画布/地图」）。
+   *
+   * 触摸设备没有滚轮，`touchAction: 'none'` 又挡掉了浏览器自带的双指缩放 —— 只给滚轮缩放，
+   * 手机 / 平板上就**没有任何**缩放入口，只能拖。这里复用滚轮那套算式（以视口中心为锚点），
+   * 只是步进固定；`viewTouched` 同样置真，避免下一次自动 fitView 把用户的操作冲掉。
+   */
+  const zoomBy = useCallback((factor: number) => {
+    viewTouched.current = true
+    setView(v => {
+      const k = Math.min(3, Math.max(0.04, v.k * factor))
+      const cx = vp.w / 2, cy = vp.h / 2
+      const wx = (cx - v.x) / v.k; const wy = (cy - v.y) / v.k
+      return { k, x: cx - wx * k, y: cy - wy * k }
+    })
+  }, [vp.w, vp.h])
+
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
@@ -703,6 +720,7 @@ export function useGeoMapModel() {
     viewShapes,
     linked,
     fitView,
+    zoomBy,
     enterPaint,
     exitPaint,
     onPointerDown,
