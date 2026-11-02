@@ -4,6 +4,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
 import HelpCenter from '@/components/help/HelpCenter'
 import { GuideSettings } from '@/components/help/GuideSettings'
+import CapabilityPanel from '@/components/app/CapabilityPanel'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -206,6 +207,10 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
           ))}
         </div>
       </section>
+
+      {/* 3.3.4 · P1：本机运行能力（C4）—— 手册侧消费同一份能力解析，
+          与设置页（老板键 / 模型设置）显示的是同一个结论，不各写一版说明。 */}
+      <CapabilityPanel />
 
       {/* 使用建议 */}
       <section className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">

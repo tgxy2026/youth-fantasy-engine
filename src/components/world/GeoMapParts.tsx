@@ -104,6 +104,7 @@ export function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disable
         <span className="text-11 font-medium text-ink-200">地图</span>
         <button type="button" disabled={disabled || busy} onClick={() => setAsk({ mode: 'add' })}
           title="新建一张独立画布"
+          data-touch-target="1"
           className="ml-auto inline-flex items-center justify-center h-6 w-6 rounded-md border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 disabled:opacity-40 transition-colors">
           <Plus size={11} />
         </button>
@@ -114,7 +115,8 @@ export function GeoMapList({ maps, mapId, onPick, rowCountOf, onChanged, disable
           const on = m.id === mapId
           return (
             <div key={m.id}
-              className={'group flex items-center gap-0.5 rounded-md border px-1.5 py-1 transition-colors ' + (on ? 'border-amber/40 bg-amber/15' : 'border-ink-700 hover:border-ink-600')}>
+              className={'group flex items-center gap-0.5 rounded-md border px-1.5 py-1 transition-colors ' + (on ? 'border-amber/40 bg-amber/15' : 'border-ink-700 hover:border-ink-600')}
+              data-touch-row>
               <button type="button" onClick={() => onPick(m.id)}
                 title={'切到「' + nm + '」（' + rowCountOf(nm) + ' 个地点）'}
                 className={'flex-1 min-w-0 text-left text-11 truncate ' + (on ? 'text-amber' : 'text-ink-300')}>

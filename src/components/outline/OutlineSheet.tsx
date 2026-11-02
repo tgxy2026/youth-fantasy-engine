@@ -669,6 +669,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="min-w-0 text-lg font-bold text-amber">
                   <button type="button" onClick={renameRecord} title="点击改名（保存后生效）"
+                    data-touch-target="1"
                     className="max-w-full [overflow-wrap:anywhere] text-left hover:text-amber-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
                     {draft.name}
                   </button>

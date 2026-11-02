@@ -7,6 +7,12 @@
 //   · 热区只加给「纯图标键」，不能顺手把文字按钮也套上；
 //   · 只对触点设备生效，桌面鼠标不塞隐形热区；
 //   · 只扩命中不改尺寸（用 ::after，不加 padding —— 加 padding 会撑高工具栏）。
+//
+// 🔴 3.3.4 · P1 **改了第二条口径**（有实测依据，不是顺手放宽）：
+//    P0 基线（docs/3.3.4-P0基线-2026-11-02.md §4.3）量出 60 处关键动作缺口，其中 47 处是
+//    文字按钮（h-7/h-8/h-9 = 28/32/36px，宽度本来就 60～246px，差的只是高度）。所以现在
+//    **文字按钮也加热区**，但只认 `data-button-sizing='standard'`、**排除表格内**（表格要
+//    整体抬行高，见 P2）。手写裸 button 一律不自动放大，必须显式标 `data-touch-target="1"`。
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -49,6 +55,43 @@ const css = read('src/index.css')
   const block = css.slice(css.indexOf('3.3.1 · P10：触摸设备的图标键热区'))
   ok('🔴 把「紧凑排列热区可能相邻重叠、真机未验」写在样式旁边',
     /相邻重叠|重叠/.test(block) && /真机/.test(block))
+}
+
+// ---------- ④ 3.3.4 · P1：文字按钮与手写裸 button（P0 基线的 60 处缺口） ----------
+{
+  const block = css.slice(css.indexOf('3.3.4 · P1：把最小命中区'))
+  ok('P1 段落存在', block.length > 600, `${block.length} 字符`)
+  ok('🔴 文字按钮按 sizing=standard 选中，不做「所有 button 一律 44」',
+    /button:where\(\[data-button-sizing='standard'\]\)/.test(block))
+  ok('🔴 表格内的文字按钮排除在外（表格行高留给 P2 统一抬）', /:not\(table \*\)/.test(block))
+  ok('🔴 手写裸 button 必须显式标记才放大',
+    /\[data-touch-target='1'\]/.test(block) && !/^\s*button::after/m.test(block))
+  ok('文字按钮同样只用 ::after 且尺寸 max(100%, 44px)',
+    (block.match(/max\(100%, 44px\)/g) ?? []).length >= 2)
+  ok('文字按钮不靠 padding / 固定宽高改布局', !/(^|\n)\s*padding\s*:/.test(block))
+  ok('紧凑行内操作组给**真实** 44×44 盒子（不是隐形热区）',
+    /\[data-touch-row\]\s*>\s*button/.test(block) && /min-width:\s*44px/.test(block) && /min-height:\s*44px/.test(block))
+  ok('粗指针下 hover 才显形的行内键常显（触摸没有 hover）',
+    /\[data-touch-row\]\s*\{[^}]*opacity:\s*1/.test(block) && /\[data-touch-row\]\s*>\s*button\s*\{[^}]*opacity:\s*1/.test(block))
+  ok('P1 段落仍限制在 hover:none + pointer:coarse（桌面鼠标不生效）',
+    /@media \(hover: none\) and \(pointer: coarse\)/.test(block))
+  ok('不用 !important 抢样式', !/!important/.test(block))
+}
+
+// ---------- ⑤ 源码侧：P0 §4.3 点名的裸 button 都已标上 ----------
+{
+  const parallel = read('src/components/sheets/ParallelSetSheet.tsx')
+  ok('制度四页签：行内「改名 / 删除」改由 data-touch-row 给真实 44 盒子',
+    /data-touch-row/.test(parallel))
+  ok('制度四页签：「新增」「从《世界设定》新建」标了 data-touch-target',
+    (parallel.match(/data-touch-target="1"/g) ?? []).length >= 2)
+  const geo = read('src/components/world/GeoMapParts.tsx')
+  ok('地图编辑：地图行标 data-touch-row，新建图按钮标 data-touch-target',
+    /data-touch-row/.test(geo) && /data-touch-target="1"/.test(geo))
+  const outline = read('src/components/outline/OutlineSheet.tsx')
+  const tavern = read('src/components/tavern/TavernFree.tsx')
+  ok('「点击改名」文字键（分卷 / 章节细纲、酒馆自由对话）都标了',
+    /data-touch-target="1"/.test(outline) && /data-touch-target="1"/.test(tavern))
 }
 
 console.log(`\n—— mobileTouch 用例结束：${pass} 通过 / ${fail} 失败`)

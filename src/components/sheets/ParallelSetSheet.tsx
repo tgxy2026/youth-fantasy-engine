@@ -413,6 +413,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
 
           <button onClick={() => void createFromWorldbase()}
             title="把《世界设定》里已有的条目名在这里建出空壳（只补缺，已有同名条目不动；内容各自填）"
+            data-touch-target="1"
             className="w-full flex items-center gap-1.5 px-3 py-1.5 text-10 text-ink-400 hover:bg-ink-800 border-b border-ink-700 transition-colors"
           >
             <Layers size={11} /> 从《世界设定》新建
@@ -448,8 +449,12 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
                   >
                     <span className="block truncate">{s.name}</span>
                   </button>
-                  {/* U-4 · 2.6.0：hover 显形的一组行内小按钮（对齐 SelectRow 的做法） */}
-                  <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  {/* U-4 · 2.6.0：hover 显形的一组行内小按钮（对齐 SelectRow 的做法）。
+                      🔴 3.3.4 · P1：两个键视觉只有 15×15（裸 button，绕过 Button 体系、没有热区），
+                      是全站最小的危险命中区。粗指针下改由 `data-touch-row` 给真实 44×44 盒子
+                      并常显（触摸没有 hover）；隐形热区在 15px 间距下会互相覆盖，反而让
+                      「删除」抢走「改名」的点击。 */}
+                  <span data-touch-row className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     {/* 🔴 必须先切到本行再动作：这两个按钮在 map 里，闭包里有 s，
                         但 setNaming / delSub 作用于「当前选中项」。不传 id ⇒ 点 A 行删掉 B 行，
                         且删除不可撤销。2026-10-02 六维审计 P0。 */}
@@ -472,6 +477,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
           </div>
 
           <button onClick={() => setNaming('new')}
+            data-touch-target="1"
             className="w-full shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
             <Plus size={12} /> {addLabel}

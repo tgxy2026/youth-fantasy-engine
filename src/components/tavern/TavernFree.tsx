@@ -262,6 +262,7 @@ export default function TavernFree() {
                       <button
                         type="button"
                         title="点击改名"
+                        data-touch-target="1"
                         onClick={() => { setTitleDraft(session.title); setEditingTitle(true) }}
                         className="group flex items-center gap-1.5 max-w-full text-left"
                       >

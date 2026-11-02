@@ -20,12 +20,29 @@ import {
   accelDisplay, accelFromKeyboard, applyBossKey, bossKeyLimits, bossKeyMode, bossKeyStatus, normalizeAccel,
   toggleBossKey,
 } from '@/lib/app/bossKey'
+import { REASON_LABEL, STATUS_LABEL, type CapabilityStatus } from '@/lib/app/capabilities'
+import { useCapabilities } from '@/lib/app/useCapabilities'
 
 export const BOSS_ENABLED_KEY = 'boss-key-enabled'
 export const BOSS_ACCEL_KEY = 'boss-key-accel'
 
+const STATUS_TONE: Record<CapabilityStatus, string> = {
+  supported: 'text-emerald-300',
+  conditional: 'text-amber',
+  unsupported: 'text-ink-500',
+  unknown: 'text-sky-300',
+}
+
 export default function BossKeySettings() {
   const mode = bossKeyMode()
+  /**
+   * 3.3.4 · P1：结论性文案改为消费 C4 能力矩阵（`capabilities.ts`），不再在这里另写一版。
+   * `bossKeyMode()` 仍是**行为判据**（真去注册快捷键），矩阵只是把同一结果翻译成人话 ——
+   * 两处都来自 `bossKey.ts`，不会出现"设置页说支持、按下去没反应"。
+   */
+  const { caps } = useCapabilities()
+  const cap = caps['boss-key']
+  const capReason = REASON_LABEL[cap.reason]
   const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState(() => readBoolPref(BOSS_ENABLED_KEY, true))
   const [accel, setAccel] = useState(() => normalizeAccel(readStringPref(BOSS_ACCEL_KEY)) || BOSS_DEFAULT_ACCEL)
@@ -124,8 +141,8 @@ export default function BossKeySettings() {
   if (mode === 'unsupported') {
     return (
       <Button variant="secondary" size="xs" className="w-full !justify-start gap-1.5" disabled
-        title="当前形态没有窗口隐藏或页面遮挡能力">
-        <EyeOff size={12} /> 老板键 <span className="ml-auto text-ink-600">不支持</span>
+        title={cap.detail}>
+        <EyeOff size={12} /> 老板键 <span className="ml-auto text-ink-600">{STATUS_LABEL[cap.status]}</span>
       </Button>
     )
   }
@@ -169,6 +186,14 @@ export default function BossKeySettings() {
         )}
       >
         <div className="space-y-3">
+          {/* 3.3.4 · P1：状态与原因取自能力矩阵（同一份解析，手册「本机运行能力」显示的是同一条） */}
+          <p className="text-11 text-ink-400">
+            当前形态：<span className={STATUS_TONE[cap.status]}>{STATUS_LABEL[cap.status]}</span>
+            {capReason && <span className="text-ink-600"> · {capReason}</span>}
+          </p>
+          {cap.status !== 'supported' && (
+            <p className="text-12 leading-relaxed text-ink-400">{cap.detail}</p>
+          )}
           <p className="whitespace-pre-line text-12 leading-relaxed text-ink-400">
             {bossKeyLimits(enabled ? accel : null)}
           </p>

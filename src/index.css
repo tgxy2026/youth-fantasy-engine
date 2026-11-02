@@ -884,3 +884,62 @@ button:focus-visible, a:focus-visible, [tabindex='0']:focus-visible {
     transform: translate(-50%, -50%);
   }
 }
+
+/*
+ * 3.3.4 · P1：把最小命中区从「图标键」扩到「文字按钮」与「手写裸 button」
+ * （规划 §3.2「命中区」、P0 基线 docs/3.3.4-P0基线-2026-11-02.md §4.3）。
+ *
+ * P0 盘点的 60 处关键缺口里，47 处是**文字按钮**（h-7/h-8/h-9 = 28/32/36px）：
+ * 宽度本来就是 60～246px，差的只是高度。所以这里同样用 `::after` 外扩，
+ * 而不是加高按钮 —— 加高会把工具栏行高顶起来，手机上正文可视高度本来就紧。
+ *
+ * 🔴 两条边界（P1 明确不越界，留给 P2 页面族）：
+ *   ① **表格内的文字按钮不在此列**：表格要整体抬行高才对（`TableSheet` 在粗指针下
+ *      统一加高行内输入/下拉/按键），单给按钮加隐形热区会让相邻行互相抢点击；
+ *   ② **手写裸 button 必须显式标记** `data-touch-target="1"` 才会被覆盖 —— 宁可漏标
+ *      由探针逐条查出来补，也不做「所有 button 一律 44」的隐身热区：全站还有
+ *      353 个手写 button，一刀切会把大卡片、正文里的小圆点一起撑开。
+ *
+ * ⚠️ 已知取舍（与图标键同一条）：紧凑排列下相邻文字按钮的 44px 隐形区可能重叠，
+ *    重叠处按 DOM 顺序命中后者。真机误触见 S-05 待验；行内紧凑操作组（如制度页
+ *    改名/删除）另用 `data-touch-row` 给真实 44 盒子，避免危险键被邻居热区抢走。
+ *
+ * ⚠️ `position: relative` 会不会改掉浮层的定位基准？已按 Button 子元素扫过全仓：
+ *    唯一在 Button **内部**用 `absolute` 的是 `JieWenJi` 的精灵开关（bare ⇒ sizing=content，
+ *    不在本条范围内，且它自带 `relative`）；其余 `absolute` 都在 Button 自己的 className 上，
+ *    特异性比本条高，仍按原样绝对定位。
+ */
+@media (hover: none) and (pointer: coarse) {
+  /* `:where()` 把特异性降为 0：绝对定位的按钮仍由自己的工具类说了算 */
+  button:where([data-button-sizing='standard']):not(table *),
+  [data-touch-target='1'] {
+    position: relative;
+  }
+
+  button:where([data-button-sizing='standard']):not(table *)::after,
+  [data-touch-target='1']::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /*
+   * 紧凑行内操作组：行内容不下并排两块 44×44 的隐形区（15px 的「改名 / 删除」就是这种），
+   * 隐形区重叠会让「删除」被「改名」的热区抢走点击 —— 危险操作尤其不能这样。
+   * 触摸环境直接给真实 44×44 盒子，同时把 hover 才显形的操作常显（§3.2「不能依赖 hover」）。
+   */
+  [data-touch-row] {
+    opacity: 1;
+  }
+
+  [data-touch-row] > button {
+    min-width: 44px;
+    min-height: 44px;
+    /* hover 才显形的行内键在触摸环境常显：没有 hover 时它们本来点不到（§3.2「触摸替代」） */
+    opacity: 1;
+  }
+}

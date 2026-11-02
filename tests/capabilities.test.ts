@@ -7,6 +7,8 @@
 //   ④ 桥要逐个探：有 store 不等于有 exportPdf，桌面缺 electronBoss 不许退化成「遮挡」；
 //   ⑤ 离线三段分开：已加载可编辑 / 冷启动 / 保存落盘，不能由 local-first 推出冷启动可用；
 //   ⑥ canDo 对 unsupported / unknown 一律 false，避免「按钮灰了但代码还能跑」。
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   resolveCapabilities, capabilityOf, canDo, isFixableGap, CAPABILITY_LABEL, STATUS_LABEL,
   type CapabilitySignals,
@@ -137,6 +139,31 @@ function main() {
     ok('四态都有中文标签', STATUS_LABEL.supported === '支持' && STATUS_LABEL.unknown === '待确认')
     ok('策略禁用不属于「可修」缺口（避免提示去换浏览器）', !isFixableGap('policy-blocked'))
     ok('平台不具备也不属于「可修」缺口', !isFixableGap('platform-missing'))
+  }
+
+  // ——— ⑧ 消费者一致：入口 / 设置 / 手册消费同一份解析（3.3.4 · P1 接入）———
+  {
+    const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+    const hook = read('src/lib/app/useCapabilities.ts')
+    const panel = read('src/components/app/CapabilityPanel.tsx')
+    const guide = read('src/components/app/GuidePage.tsx')
+    const boss = read('src/components/app/BossKeySettings.tsx')
+
+    ok('消费层唯一入口：useCapabilities = readCapabilitySignals + resolveCapabilities',
+      /readCapabilitySignals/.test(hook) && /resolveCapabilities/.test(hook))
+    ok('🔴 消费层不新写平台判断（不许 import WEB / DESKTOP 自己算）',
+      !/from '@\/lib\/app\/platform'/.test(hook) && !/from '@\/lib\/app\/desktop'/.test(hook))
+    ok('📖 手册页接入能力面板', /CapabilityPanel/.test(guide))
+    ok('面板文案取 CAPABILITY_LABEL / STATUS_LABEL / REASON_LABEL，不写第二版说明',
+      /CAPABILITY_LABEL/.test(panel) && /STATUS_LABEL/.test(panel) && /REASON_LABEL/.test(panel))
+    ok('面板覆盖九项能力（少一项就是手册漏了某一项）',
+      (panel.match(/'(?:fullscreen|pdf-export|file-download|boss-key|durable-save|offline-edit|offline-cold-start|cloud-sync|local-model)'/g) ?? []).length >= 9)
+    ok('面板不用 detail 之外的话术，也不发请求（只读探测）',
+      /cap\.detail/.test(panel) && !/fetch\(|axios|new WebSocket/.test(panel))
+    ok('设置页老板键消费矩阵的状态与原因',
+      /caps\['boss-key'\]/.test(boss) && /STATUS_LABEL/.test(boss) && /REASON_LABEL/.test(boss))
+    ok('🔴 设置页不再自己写「不支持」这类结论句（结论一律来自矩阵）',
+      !/当前形态没有窗口隐藏或页面遮挡能力/.test(boss))
   }
 
   console.log(`\n▶ capabilities: ${pass} passed, ${fail} failed`)
