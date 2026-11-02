@@ -43,6 +43,8 @@ export function readCapabilitySignals(overrides: Partial<CapabilitySignals> = {}
     fullscreenApi: !!doc && doc.fullscreenEnabled === true,
     downloadApi: !!doc && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
       && 'download' in doc.createElement('a'),
+    // 打印页（C2）：网页 / 便携 / 桌面 dev 都有；用来判定 pdf-export 的条件支持
+    printApi: typeof win?.print === 'function',
     online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
     // 云端账号模式的同步走服务器；其余形态要等用户选目录/填 WebDAV 才知道，默认按「未配置」
     syncChannel: WEB_CLOUD ? 'server' : 'none',

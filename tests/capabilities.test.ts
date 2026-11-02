@@ -25,7 +25,7 @@ const desktopSignals = (over: Partial<CapabilitySignals> = {}): CapabilitySignal
   web: false, guest: false, cloud: false, desktop: true, portable: false,
   bossMode: 'desktop',
   bridgeStore: true, bridgeNet: true, bridgePdf: true,
-  fullscreenApi: false, downloadApi: true, online: true, syncChannel: 'file',
+  fullscreenApi: false, downloadApi: true, printApi: true, online: true, syncChannel: 'file',
   ...over,
 })
 
@@ -34,7 +34,7 @@ const cloudSignals = (over: Partial<CapabilitySignals> = {}): CapabilitySignals 
   web: true, guest: false, cloud: true, desktop: false, portable: true,
   bossMode: 'overlay',
   bridgeStore: false, bridgeNet: false, bridgePdf: false,
-  fullscreenApi: true, downloadApi: true, online: true, syncChannel: 'server',
+  fullscreenApi: true, downloadApi: true, printApi: true, online: true, syncChannel: 'server',
   ...over,
 })
 
@@ -43,7 +43,7 @@ const guestSignals = (over: Partial<CapabilitySignals> = {}): CapabilitySignals 
   web: true, guest: true, cloud: false, desktop: false, portable: false,
   bossMode: 'overlay',
   bridgeStore: false, bridgeNet: false, bridgePdf: false,
-  fullscreenApi: true, downloadApi: true, online: true, syncChannel: 'none',
+  fullscreenApi: true, downloadApi: true, printApi: true, online: true, syncChannel: 'none',
   ...over,
 })
 
@@ -198,6 +198,16 @@ function main() {
       /toggleFullscreen/.test(hook) && /enterBrowserFullscreen/.test(hook) && !/from '@\/lib\/app\/platform'/.test(hook))
     ok('被拒 / 无 API 时给反馈（不是点了没反应）',
       /showToast\(/.test(sidebar) && /专注模式/.test(sidebar))
+
+    // —— 打印入口接上后，矩阵必须跟着改（C4「手册/设置/能力三者一致」）——
+    const webPdf = capabilityOf('pdf-export', cloudSignals())
+    ok('网页 / 便携：PDF 走打印页，状态是「有条件支持」而不是「本版尚未接入」',
+      webPdf.status === 'conditional' && webPdf.reason === 'ok' && webPdf.channel === 'browser-print')
+    ok('打印入口存在时 canDo(open-print-page) 为真，export-pdf 仍为假（不许假称直接存盘）',
+      canDo(webPdf, 'open-print-page') && !canDo(webPdf, 'export-pdf'))
+    ok('没有打印入口时才报不支持，且回退仍是导出 HTML',
+      capabilityOf('pdf-export', cloudSignals({ printApi: false })).status === 'unsupported'
+      && capabilityOf('pdf-export', cloudSignals({ printApi: false })).fallback === 'export-html')
 
     ok('打印页只接受本机生成的自包含 HTML 并直接写入（无 Blob URL 生命周期坑）',
       /document\.write/.test(print) && !/createObjectURL/.test(print))

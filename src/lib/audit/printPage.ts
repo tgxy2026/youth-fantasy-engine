@@ -37,13 +37,33 @@ export function openPrintPage(html: string, delayMs = 250): PrintOutcome {
     return 'unsupported'
   }
   // ③ 只唤起打印对话框：成功与否由用户在对话框里决定，界面不得报「已保存 PDF」
-  window.setTimeout(() => {
+  printWhenReady(w, delayMs)
+  return 'opened'
+}
+
+/**
+ * 等新窗口把文档排完再唤起打印。
+ *
+ * 🔴 固定延时不够：长篇证据包有几十页、还要加载中文字体，250ms 时可能仍在排版 ——
+ *    这时 `print()` 会打出空白页或截断内容（S-11 要求"正文/分页/内容完整"）。
+ * 做法：先等一个 `delayMs` 让 `document.write` 生效，再轮询 `readyState === 'complete'`，
+ * 最多等 `maxWaitMs`（超时也照样打印，避免用户点了没反应）。
+ */
+function printWhenReady(w: Window, delayMs: number, maxWaitMs = 3000): void {
+  const start = Date.now()
+  const attempt = () => {
     try {
+      if (w.closed) return
+      const ready = w.document.readyState === 'complete'
+      if (!ready && Date.now() - start < maxWaitMs) {
+        window.setTimeout(attempt, 100)
+        return
+      }
       w.focus()
       w.print()
     } catch {
       // 打印被浏览器拒绝时，打印页仍开着，用户可以自己按 Ctrl+P
     }
-  }, delayMs)
-  return 'opened'
+  }
+  window.setTimeout(attempt, delayMs)
 }

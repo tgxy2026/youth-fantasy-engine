@@ -73,6 +73,8 @@ export interface CapabilitySignals {
   fullscreenApi: boolean
   /** a[download] + URL.createObjectURL 是否可用 */
   downloadApi: boolean
+  /** 浏览器打印页（`window.print`）是否可用 —— C2 的打印入口靠它 */
+  printApi: boolean
   /** navigator.onLine（只作输入之一，不单独决定任何能力） */
   online: boolean
   /** 跨设备同步通道：云盘文件 / WebDAV / S3 / 服务器 */
@@ -142,8 +144,6 @@ const cap = (
  * 新增能力时同步改这里与 `CAPABILITY_LABEL`，并在 `ATLAS` 之外别再开第二份清单。
  */
 export function resolveCapabilities(s: CapabilitySignals): CapabilityMap {
-  const browserish = !s.desktop && !s.portable
-
   // —— 老板键：桌面有窗口隐藏，其余形态只有页内遮挡（这是产品能力差异，不是策略禁用）
   const bossKey = s.bossMode === 'desktop'
     ? cap('boss-key', 'supported', 'ok', 'electron-ipc', ['hide-window', 'restore-window'], null,
@@ -166,15 +166,15 @@ export function resolveCapabilities(s: CapabilitySignals): CapabilityMap {
       : cap('fullscreen', 'unsupported', 'platform-missing', 'none', [], 'focus-mode',
         '当前浏览器不提供全屏接口，可用「专注模式」代替（它不隐藏地址栏，也不等于全屏）。')
 
-  // —— 导出 PDF：桌面有直接落盘的 PDF 通道；浏览器打印入口尚未接入（C2）
+  // —— 导出 PDF：桌面有主进程直接落盘；其余形态走 C2 的打印页（由用户在打印对话框里另存）
   const pdfExport = s.bridgePdf
     ? cap('pdf-export', 'supported', 'ok', 'electron-ipc', ['export-pdf'], null,
       '直接生成 PDF 并由你选择保存位置；中文走系统字体，不会出现方块字。')
-    : browserish
-      ? cap('pdf-export', 'unknown', 'not-implemented', 'browser-print', ['open-print-page'], 'export-html',
-        '网页版尚未接入打印入口；现在可以先导出 HTML（同一份证据快照），再用浏览器打印 / 另存为 PDF。')
+    : s.printApi
+      ? cap('pdf-export', 'conditional', 'ok', 'browser-print', ['open-print-page'], 'export-html',
+        '点「打印 / 另存 PDF」会打开打印页，在打印对话框里选「另存为 PDF」；打印结果由你确认，界面不会替你报「已保存」。弹窗被拦时退回下载 HTML。')
       : cap('pdf-export', 'unsupported', 'platform-missing', 'none', [], 'export-html',
-        '当前形态没有 PDF 通道，可导出 HTML 后自行打印。')
+        '当前形态没有打印入口，可导出 HTML 后自行打印 / 另存为 PDF。')
 
   const fileDownload = s.downloadApi
     ? cap('file-download', 'supported', 'ok', 'browser-api', ['download'], null,

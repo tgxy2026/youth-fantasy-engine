@@ -412,7 +412,9 @@ ul.items li{margin:.55rem 0}
 footer{margin-top:3rem;border-top:1px solid var(--rule);padding-top:1rem;color:var(--soft);font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.74rem;line-height:1.9}
 .rawLabel{font-family:ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:.76rem;font-weight:600;color:var(--accent);margin:1.6rem 0 .45rem}
 pre.raw{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;font-family:inherit;font-size:.95em;line-height:1.9;background:var(--ubg);border-left:3px solid var(--rule);border-radius:0 .4rem .4rem 0;padding:.7rem 1rem;margin:0 0 1.1rem}
-@media print{body{background:#fff;color:#000}.wrap{max-width:none;padding:0}.meta{display:none}.msg.user{background:transparent}
+@media print{@page{margin:12mm}body{background:#fff;color:#000}.wrap{max-width:none;padding:0}
+.meta{display:flex}.chip{color:#333;border-color:#bbb}
+.msg.user{background:transparent}
 pre.raw{background:transparent;border-left-color:#d8d2c8;padding-left:.9rem}
 pre.raw,.msg,li{break-inside:avoid}
 h2,.rawLabel{break-after:avoid}
