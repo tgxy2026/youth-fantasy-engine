@@ -94,5 +94,33 @@ const css = read('src/index.css')
     /data-touch-target="1"/.test(outline) && /data-touch-target="1"/.test(tavern))
 }
 
+// ---------- ⑥ 3.3.4 · P2：表格行内控件（P0 §4.4 的 2641 处）----------
+{
+  const block = css.slice(css.indexOf('3.3.4 · P2：表格在粗指针下的密度'))
+  ok('P2 段落存在', block.length > 500, `${block.length} 字符`)
+  ok('🔴 表格行内原生控件抬到真实 44（不是隐形热区——相邻行会互抢点击）',
+    /table :is\(input, select, textarea\)/.test(block) && /min-height:\s*44px/.test(block))
+  ok('复选框 / 单选框不撑成 44（视觉图形不该变形）',
+    /:not\(\[type='checkbox'\]\)/.test(block) && /:not\(\[type='radio'\]\)/.test(block))
+  ok('自定义选择器触发器按标记覆盖（content 尺寸的 Button 标签规则抓不到）',
+    /\[data-touch-control='1'\]/.test(block))
+  ok('🔴 不动行首图标操作列（64px 列装不下 44×44 的 2×2）', !/table button/.test(block))
+  ok('P2 段落仍只在 hover:none + pointer:coarse 内（桌面密度不变）',
+    /@media \(hover: none\) and \(pointer: coarse\)/.test(block))
+
+  // 控件源码：五个自定义选择器的收起态触发器都标了
+  const triggers = [
+    'src/components/common/CustomSelect.tsx',
+    'src/components/sheets/TableRefSelect.tsx',
+    'src/components/world/CharacterSelect.tsx',
+    'src/components/common/CalendarSelect.tsx',
+    'src/components/common/CalendarPicker.tsx',
+  ]
+  for (const file of triggers) {
+    ok(`${file.split('/').pop()} 的触发器标了 data-touch-control`,
+      /data-touch-control="1"/.test(read(file)))
+  }
+}
+
 console.log(`\n—— mobileTouch 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

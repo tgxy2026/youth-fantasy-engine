@@ -132,6 +132,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
     <div ref={wrapRef} className="relative inline-block w-full min-w-[90px]">
       <Button variant="bare"
         ref={btnRef}
+        data-touch-control="1"
         aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}

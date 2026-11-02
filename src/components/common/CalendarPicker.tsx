@@ -94,6 +94,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
     <div className="relative inline-block w-full" ref={wrapRef}>
       <Button variant="bare"
         ref={btnRef}
+        data-touch-control="1"
         aria-expanded={open}
         type="button"
         onClick={() => setOpen(o => !o)}
