@@ -353,7 +353,7 @@ export default function TavernScript() {
   useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
@@ -379,7 +379,7 @@ export default function TavernScript() {
         </p>
       </header>
 
-      <div className="flex items-center gap-2 pt-3">
+      <div className="flex flex-wrap items-center gap-2 pt-3">
         <Button variant="primary" size="md" onClick={() => void createStoryNow()}>＋ 新建故事</Button>
         <Button
           variant="secondary" size="md"
@@ -447,7 +447,7 @@ export default function TavernScript() {
         }}
       />
 
-      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+      <div data-conversation-layout className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左：故事 → 剧本 树状列表（3.0 · W3-3 · §11.1 L5：抽成独立组件，props 面最窄的一头） */}
         <TavernScriptTree
           stories={stories} scripts={scripts} openIds={openIds}

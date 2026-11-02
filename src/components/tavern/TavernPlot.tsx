@@ -426,7 +426,7 @@ export default function TavernPlot() {
   const dialogChars = session ? messagesLen(session.messages) : 0
 
   return (
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       {/* ---------- 顶部工具条：只放「本场」的操作，导航（选/新建）都在左栏 ---------- */}
       <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">剧情推演</h1>
@@ -477,7 +477,7 @@ export default function TavernPlot() {
       <TavernEchoHints className="mt-3 shrink-0" />
 
       {/* ---------- 主体：左＝推演情景一览；右＝本场信息 + 对话区 ---------- */}
-      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+      <div data-conversation-layout data-plot-conversation className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左栏：推演情景（全部场次一览，点一下就切 —— 不再用下拉菜单挑） */}
         <PlotSessionList
           list={list}

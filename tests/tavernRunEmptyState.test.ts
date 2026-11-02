@@ -29,7 +29,7 @@ const BOX = 'rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-
 // ---------- ① 两个空态盒同款：撑满栏高 + 双向居中 + text-center ----------
 {
   ok('① 左栏空态盒：h-full + items/justify-center + text-center',
-    rp.includes(`<div className="${BOX}">\n              还没有跑团互动。`))
+    rp.includes(`<div className="${BOX}">\n              <p>还没有跑团互动。`))
   ok('① 右栏空态盒：与左栏逐字同款',
     rp.includes(`<div className="${BOX}">\n              从左边选一局，或新建一局。`))
 }
@@ -50,7 +50,7 @@ const BOX = 'rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-
 // 若有人把父容器改成 items-start / 去掉 flex，h-full 就失去等高基准
 {
   ok('③ 父级两栏容器仍为 flex + 默认 stretch（等高基准）',
-    rp.includes('<div className="flex flex-1 min-h-0 gap-3 pt-3">'))
+    rp.includes('<div data-conversation-layout className="flex flex-1 min-h-0 gap-3 pt-3">'))
   ok('③ 两栏滚动容器形态未动（aside w-72 / section flex-1，各滚各的）',
     rp.includes('<aside className="w-72 shrink-0 space-y-1.5 overflow-y-auto">')
     && rp.includes('<section className="flex-1 min-w-0 overflow-y-auto pr-1">'))

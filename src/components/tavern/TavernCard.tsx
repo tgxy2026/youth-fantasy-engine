@@ -96,7 +96,7 @@ export default function TavernCard() {
   return (
     /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
        内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
@@ -128,7 +128,7 @@ export default function TavernCard() {
       {loading ? <div className="min-h-0 flex-1 overflow-y-auto pt-3"><LoadingState /></div> : (
         /* 🔴 2026-10-05：去掉外层共享滚动容器，改为两栏各自滚（左栏见 TavernCardList，
            右栏见下方 overflow-y-auto）—— 原先两栏共用一个滚动条，左栏卡一多就带动右栏滑走。 */
-        <div className="flex gap-4 min-h-0 flex-1 pt-3">
+        <div data-conversation-layout data-tavern-card-layout className="flex gap-4 min-h-0 flex-1 pt-3">
           {/* 左：角色列表（已抽成独立组件，见 TavernCardList.tsx；自带独立滚动） */}
           <TavernCardList
             list={list}

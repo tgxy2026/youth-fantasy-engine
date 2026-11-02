@@ -380,7 +380,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
           <span className="flex items-center gap-1 text-10 text-ink-500 border border-ink-700 rounded-md px-1.5 py-1" title="按住鼠标左键拖动空白处即可平移画布">
             <Move size={10} /> 左键拖动平移
           </span>
-          <Button variant="bare"
+          <Button variant="bare" data-touch-control="1"
             onClick={() => { setConnectMode(v => !v); setPendingConn(null) }}
             className={`flex items-center gap-1 px-2 py-1 rounded-md border text-11 transition-colors ${connectMode ? 'border-amber/40 text-amber bg-amber/15' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
             title="连接模式：依次点两张卡连成推演链；鼠标移到连线上点 × 取消"
@@ -391,9 +391,9 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
       </div>
 
       {/* 主体：左章节选择 + 右推演画布（两列等高） */}
-      <div className="flex-1 flex min-h-0">
+      <div data-plot-layout className="flex-1 flex min-h-0">
         {/* 左侧：章节选择 */}
-        <div className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col min-h-0">
+        <div data-plot-sidebar className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col min-h-0">
           <div className="px-3 py-2.5 border-b border-ink-700">
             <div className="flex items-center gap-2 text-ink-100 font-medium"><GitBranch size={14} className="text-amber" /> 选择章节</div>
             <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线</div>
@@ -453,7 +453,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         </div>
 
         {/* 右侧：推演本画布 */}
-        <div className="flex-1 min-w-0 min-h-0">
+        <div data-plot-surface className="flex-1 min-w-0 min-h-0">
           <div
             ref={scrollRef}
             className={`h-full bg-ink-900 relative ${scrollable ? 'overflow-auto' : 'overflow-hidden'}`}

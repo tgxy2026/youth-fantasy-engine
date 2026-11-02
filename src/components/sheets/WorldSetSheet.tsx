@@ -455,7 +455,7 @@ export default function WorldSetSheet({ tab }: Props) {
             })}
           </div>
 
-          <button onClick={() => setNaming('new')}
+          <button data-touch-control="1" onClick={() => setNaming('new')}
             className="w-full shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-12 text-ink-300 hover:bg-ink-800 border-t border-ink-700 transition-colors"
           >
             <Plus size={12} /> {addLabel}

@@ -651,14 +651,23 @@
   [data-adaptive-conversation] { height: auto; min-height: 100%; overflow: visible; }
   [data-conversation-layout] { flex-direction: column; }
   [data-conversation-layout] > aside:first-child { width: 100%; height: 9rem; max-height: 9rem; }
+  /* 角色列表有固定搜索、操作头尾，9rem 会把中间列表挤到零高。 */
+  [data-tavern-card-layout] > aside:first-child { height: 32rem; max-height: 32rem; }
   [data-conversation-layout] > div { flex: none; min-height: 28rem; }
+  [data-conversation-layout] > section { width: 100%; flex: none; min-height: 28rem; }
   [data-conversation-layout] > aside:last-child:not(:first-child) { width: 100%; max-height: 28rem; }
+  [data-plot-conversation] > aside:not(:first-child) { width: 100%; max-height: 20rem; flex: none; }
   [data-adaptive-map] { height: auto; min-height: 100%; }
   [data-adaptive-map] > .flex-1 { flex-wrap: wrap; }
   [data-adaptive-map] > .flex-1 > .flex-1 { min-height: 28rem; min-width: min(100%, 20rem); }
   [data-adaptive-map] > .flex-1 > aside:last-child:not(:first-child) { width: 100%; max-height: 24rem; }
 }
 @container workspace (width < 40rem) {
+  /* 推演画布与章节选择上下排列；避免 256px 侧栏挤占窄屏画布。 */
+  [data-plot-layout] { flex-direction: column; overflow-y: auto; }
+  [data-plot-sidebar] { width: 100%; flex: none; max-height: 12rem; overflow-y: auto; }
+  [data-plot-sidebar] > .flex-1 { flex: none; max-height: 8rem; }
+  [data-plot-surface] { width: 100%; flex: none; min-height: 24rem; }
   /* 目录和详情仍各自滚动，窄屏改上下排列，避免固定目录挤出输入框。 */
   [data-master-detail], [data-adaptive-master] > .flex.flex-1 {
     flex-direction: column; height: 32rem !important; min-height: 32rem; gap: .75rem;

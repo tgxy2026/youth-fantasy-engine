@@ -178,7 +178,7 @@ export default function RunPanel() {
   const stats = session ? clueStats(session) : { acquired: 0, total: 0 }
 
   return (
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
         <h1 className="text-lg font-bold text-ink-50 mr-1">跑团互动</h1>
         <HelpPopover title="跑团互动怎么用" width="26rem" size={14}>
@@ -214,7 +214,7 @@ export default function RunPanel() {
         </div>
       </header>
 
-      <div className="flex flex-1 min-h-0 gap-3 pt-3">
+      <div data-conversation-layout className="flex flex-1 min-h-0 gap-3 pt-3">
         {/* 左：局列表 */}
         <aside className="w-72 shrink-0 space-y-1.5 overflow-y-auto">
           {list === null ? (
@@ -227,7 +227,7 @@ export default function RunPanel() {
             //    h-full 安全；非空态走条件渲染不受影响）。
             // ⚠️ 注释必须用行注释：这里是三目括号表达式，{/* … */} 会被解析成空对象字面量而炸语法。
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-4 text-12 leading-relaxed text-ink-400 h-full flex items-center justify-center text-center">
-              还没有跑团互动。<b className="text-ink-200">「＋ 新建一局」</b>开始 —— 之后在右侧输入你的行动就能开跑。
+              <p>还没有跑团互动。<b className="text-ink-200">「＋ 新建一局」</b>开始 —— 之后在右侧输入你的行动就能开跑。</p>
             </div>
           ) : list.map(it => (
             <div key={it.id}

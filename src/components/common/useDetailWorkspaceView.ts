@@ -42,17 +42,18 @@ export interface DetailWorkspaceArgs {
 
 const groupsEqual = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every(item => b.has(item))
 
-/** 等容器高度稳定两帧：分组展开/字体晚到都会改高度，别用固定 setTimeout 猜 */
+/** 等可视高度和内容高度均稳定两帧：分组展开会改变 scrollHeight，不能只看 clientHeight。 */
 async function settle(el: HTMLElement, cancelled: () => boolean): Promise<void> {
-  let last = -1
+  let last = ''
   let stable = 0
   for (let frame = 0; frame < STABLE_FRAMES; frame += 1) {
     if (cancelled()) return
-    if (el.clientHeight > 0 && el.clientHeight === last) {
+    const dimensions = `${el.clientHeight}:${el.scrollHeight}`
+    if (el.clientHeight > 0 && dimensions === last) {
       stable += 1
       if (stable >= 2) return
     } else stable = 0
-    last = el.clientHeight
+    last = dimensions
     await new Promise<void>(resolve => { requestAnimationFrame(() => resolve()) })
   }
 }
