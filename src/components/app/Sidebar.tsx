@@ -13,7 +13,8 @@ import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { nextVolumeNo, nextVolumeOrder, isFreeVolume } from '@/lib/outline/freeVolume'
 import { THEMES, applyTheme, applyZoom, getStoredTheme, getStoredZoom, autoZoom, isZoomAuto, getStoredCustomTheme, foldVh } from '@/lib/settings/theme'
-import { DESKTOP, HAS_WINDOW_BRIDGE, toggleFullscreen } from '@/lib/app/desktop'
+import { DESKTOP } from '@/lib/app/desktop'
+import { useAppFullscreen } from '@/lib/app/useAppFullscreen'
 import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
 import { WebDataBar } from '@/components/app/Web'
@@ -496,28 +497,42 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
  * 背景图 = 金色书本与房子的线条图案（assets/workbench-bg.png），App / 首页 / 向导三处共用同一偏好键。
  */
 function AppearanceToggles() {
-  const [on, setOn] = useState(false)
+  /**
+   * 3.3.4 · C2：全屏入口不再只对桌面窗口桥开放 —— 浏览器走 Fullscreen API（运行时探测），
+   * 两者都没有时不显示入口（改用编辑器的「专注模式」，规划 §4.1 末段）。
+   * 状态一律来自 `useAppFullscreen`（桌面：主进程推送；浏览器：fullscreenchange）。
+   */
+  const { mode, supported, active, error, toggle } = useAppFullscreen()
   const [bgHidden, setBgHidden] = usePersistedBool('workbench-bg-hidden', false)
+
+  // 被拒 / 无 API 时给一次明确反馈，而不是「点了没反应」（§4.1「受支持但被拒绝时保留可理解反馈」）
   useEffect(() => {
-    const w = window.electronWindow
-    if (!w) return
-    let alive = true
-    void w.isFullscreen().then(v => { if (alive) setOn(v) })
-    const unsub = w.onFullscreenChange(v => setOn(v))
-    return () => { alive = false; unsub?.() }
-  }, [])
+    if (!error) return
+    showToast(
+      error === 'denied'
+        ? '这次全屏请求被拒绝了：浏览器策略或权限不允许，可以按 F11，或改用编辑器的「专注模式」'
+        : '当前环境没有全屏接口：可用编辑器的「专注模式」代替（它不隐藏地址栏，也不等于全屏）',
+      'error',
+      6000,
+    )
+  }, [error])
+
   return (
     <div className="space-y-1.5 text-11 text-ink-300">
-      {HAS_WINDOW_BRIDGE && (<div className="flex items-center justify-between gap-2">
+      {supported && (<div className="flex items-center justify-between gap-2">
         <span className="flex shrink-0 items-center gap-1"><Maximize2 size={11} />全屏
           <HelpPopover title="全屏模式" width="20rem" size={11}>
-            {'进入无边框全屏，再按 F11 或 ESC 退出（ESC 仅在全屏时生效，不影响弹窗关闭）。\n\n· 旁边的开关与实际状态实时同步 —— 直接按 F11 它也会跟着变；\n· 启动时不会自动进入全屏，仍是常规的最大化窗口；\n· 该设置不跨启动记忆，重启后恢复普通窗口。'}
+            {mode === 'desktop'
+              ? '进入无边框全屏，再按 F11 或 ESC 退出（ESC 仅在全屏时生效，不影响弹窗关闭）。\n\n· 旁边的开关与实际状态实时同步 —— 直接按 F11 它也会跟着变；\n· 启动时不会自动进入全屏，仍是常规的最大化窗口；\n· 该设置不跨启动记忆，重启后恢复普通窗口。'
+              : '进入浏览器全屏（菜单、弹窗、下拉与提示都在全屏范围内），按 Esc 或再点一次退出。\n\n· 状态以浏览器的全屏事件为准 —— 按 Esc、系统退出后开关会跟着变；\n· 能否真正进入取决于本页权限与浏览器策略，被拒绝会给出提示，不会假装已全屏；\n· 手机浏览器可能只隐藏部分界面；若环境不支持全屏，请用编辑器的「专注模式」—— 它不隐藏地址栏，也不等于全屏。'}
           </HelpPopover>
         </span>
-        <Button variant="toggle" size="xs" selected={on} className="shrink-0"
-          onClick={() => { void toggleFullscreen() }}
-          title={on ? '退出全屏（F11 / ESC）' : '进入无边框全屏（F11）'}>
-          {on ? '已开' : '关'}
+        <Button variant="toggle" size="xs" selected={active} className="shrink-0"
+          onClick={() => void toggle()}
+          title={active
+            ? (mode === 'desktop' ? '退出全屏（F11 / ESC）' : '退出全屏（Esc）')
+            : (mode === 'desktop' ? '进入无边框全屏（F11）' : '进入浏览器全屏')}>
+          {active ? '已开' : '关'}
         </Button>
       </div>)}
       <div className="flex items-center justify-between gap-2">

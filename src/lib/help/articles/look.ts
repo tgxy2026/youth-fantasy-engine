@@ -1,14 +1,15 @@
 // ============ 手册内容 · 数据与界面（主题与密度） ============
 //
-// 事实来源（2026-10-29 人工核对）：`lib/settings/theme.ts` 的 THEMES 九项 + custom、
+// 事实来源（2026-11-02 人工核对）：`lib/settings/theme.ts` 的 THEMES 九项 + custom、
 // `components/settings/DensityControl.tsx` 的「紧凑 / 舒适」、`Sidebar` 的 AppearanceToggles（背景 / 全屏）。
-// 🔴 全屏依赖桌面窗口桥接，网页版没有这一项 —— 这类差异必须写出来，不能让网页版作者白找。
+// 🔴 全屏在 3.3.4 · C2 起不再只对桌面开放：桌面走窗口桥（F11/ESC），网页/便携走浏览器 Fullscreen API
+//    （Esc 退出、可能被权限策略拒绝）。这类差异必须写出来，不能让网页版作者白找。
 import type { HelpArticle } from '@/lib/help/types'
 
 export const LOOK_ARTICLES: HelpArticle[] = [
   {
     id: 'look-theme-density',
-    revision: 1,
+    revision: 2,
     title: '主题、密度与背景：界面长什么样',
     summary: '九种预制主题加自定义，密度只两档；这三项只管显示，不动正文一个字。',
     aliases: ['换肤', '配色', '深色模式', '护眼', '界面密度', '背景图'],
@@ -40,12 +41,12 @@ export const LOOK_ARTICLES: HelpArticle[] = [
         heading: '背景图案与全屏',
         body: [
           '背景：界面底层的金色书本与房子线条图案，可以关掉只留主题底色（工作区、项目管理首页、新手向导三处一起生效），设置跨启动记忆。',
-          '全屏：桌面版可在左下角进入无边框全屏，再按 F11 或 ESC 退出；网页版没有窗口桥接，不显示这一项。',
+          '全屏：左下角「外观」里的全屏开关。桌面版进入无边框全屏，再按 F11 或 ESC 退出；网页版 / 便携版走浏览器自带的 Fullscreen API（按 Esc 或再点一次退出），能否进入取决于本页权限与浏览器策略 —— 被拒绝会给出提示；环境不支持全屏时，开关不显示，请用编辑器的「专注模式」（它不隐藏地址栏，也不等于全屏）。',
         ],
       },
     ],
     related: ['faq-zoom'],
-    verifiedAgainst: '3.3.1',
-    reviewedAt: '2026-10-29',
+    verifiedAgainst: '3.3.4',
+    reviewedAt: '2026-11-02',
   },
 ]

@@ -21,6 +21,7 @@ import { downloadBlob } from '@/lib/storage/zip'
 import { renderDoc } from '@/lib/tavern/exportDoc'
 import { exportPdfDocument, DESKTOP } from '@/lib/app/desktop'
 import { WEB } from '@/lib/app/platform'
+import { openPrintPage } from '@/lib/audit/printPage'
 import {
   packToDocModel, packToJson, evidenceHtmlFileName, evidenceJsonFileName,
   evidenceSummary, dailyRange, DEFAULT_EVIDENCE_OPTIONS,
@@ -100,6 +101,30 @@ export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: 
     setPdfBusy(true)
     try {
       const f = htmlFile()
+      /**
+       * 3.3.4 · C2.2（规划 §4.2）：**先**打开打印页、再写入同一份冻结快照。
+       * 网页 / 便携没有主进程 PDF 通道，以前只能"下载 HTML 让用户自己按 Ctrl+P"；
+       * 现在用户在点击的当帧就拿到打印页，弹窗拦截 / 不支持时才退回下载。
+       */
+      const toPrintPage = (): boolean => {
+        const outcome = openPrintPage(f.content)
+        if (outcome === 'opened') {
+          showToast('已打开打印页：在打印对话框里选「另存为 PDF」；取消打印不会改动书库', 'info', 8000)
+          onClose()
+          return true
+        }
+        return false
+      }
+
+      if (!DESKTOP) {
+        if (!toPrintPage()) {
+          downloadBlob(f.filename, new Blob([f.content], { type: f.mime }))
+          showToast('浏览器拦住了打印窗口，已改为下载 HTML —— 打开后按 Ctrl+P 即可另存为 PDF', 'info', 8000)
+          onClose()
+        }
+        return
+      }
+
       const res = await exportPdfDocument(f.content, view.htmlName().replace(/\.html$/, '.pdf'))
       if (res.ok) {
         showToast('已保存 PDF')
@@ -107,7 +132,8 @@ export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: 
         return
       }
       if (res.cancelled) return // 用户自己按了取消，不该弹提示
-      // 桌面通道不可用（便携版 / 浏览器 dev）→ 如实退回 HTML，并说清怎么拿到 PDF
+      // 桌面通道不可用（便携版 / 浏览器 dev）→ 先试打印页；仍不行才退回下载
+      if (toPrintPage()) return
       downloadBlob(f.filename, new Blob([f.content], { type: f.mime }))
       showToast('当前版本不能直接存 PDF，已改为下载 HTML —— 打开后按 Ctrl+P 就能另存为 PDF', 'info', 6000)
       onClose()
@@ -176,14 +202,14 @@ export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: 
         >
           <span className="flex items-center gap-1.5 text-12 font-semibold">
             {pdfBusy ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-            存为 PDF
+            {DESKTOP ? '存为 PDF' : '打印 / 另存 PDF'}
           </span>
           <span className="text-10 text-ink-400 font-normal leading-relaxed">
             {DESKTOP
               ? '一键保存到本机，中文排版由系统打印引擎渲染。'
               : WEB
-                ? '网页版无法直接存 PDF：将下载 HTML，打开后按 Ctrl+P 另存为 PDF。'
-                : '当前不是桌面版：将改为下载 HTML，打开后按 Ctrl+P 另存。'}
+                ? '打开打印页，在打印对话框里选「另存为 PDF」；被拦或环境不支持时改为下载 HTML。'
+                : '便携版同样打开打印页另存 PDF；被拦或环境不支持时改为下载 HTML。'}
           </span>
         </Button>
 

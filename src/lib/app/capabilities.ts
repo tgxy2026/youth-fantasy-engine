@@ -156,13 +156,13 @@ export function resolveCapabilities(s: CapabilitySignals): CapabilityMap {
           ? '这个安装包的桌面壳没有窗口隐藏能力（旧版 preload），更新到较新版本才可用。'
           : '当前形态不支持老板键。')
 
-  // —— 全屏：桌面走窗口桥（C2 待接），浏览器走 Fullscreen API；有 API 不等于本次获准
+  // —— 全屏：桌面走窗口桥（C2 已接，左下角外观开关），浏览器走 Fullscreen API；有 API 不等于本次获准
   const fullscreen = s.desktop
-    ? cap('fullscreen', 'unknown', 'not-implemented', 'electron-ipc', ['enter-fullscreen', 'exit-fullscreen'], 'focus-mode',
-      '桌面版的全屏入口将在本版接入（C2）；在此之前可使用现有的专注布局。')
+    ? cap('fullscreen', 'supported', 'ok', 'electron-ipc', ['enter-fullscreen', 'exit-fullscreen'], 'focus-mode',
+      '可从左下角「外观」进入无边框全屏（F11 / ESC 退出）；进入、退出与外部退出都会同步到开关状态。')
     : s.fullscreenApi
       ? cap('fullscreen', 'conditional', 'ok', 'browser-api', ['enter-fullscreen', 'exit-fullscreen'], 'focus-mode',
-        '按运行时接口进入全屏；能否真正进入取决于本页权限与浏览器策略，被拒绝时会给出提示。没有全屏时用「专注模式」，它不会隐藏地址栏。')
+        '可从左下角「外观」按运行时接口进入全屏；能否真正进入取决于本页权限与浏览器策略，被拒绝时会给出提示。没有全屏时用「专注模式」，它不会隐藏地址栏。')
       : cap('fullscreen', 'unsupported', 'platform-missing', 'none', [], 'focus-mode',
         '当前浏览器不提供全屏接口，可用「专注模式」代替（它不隐藏地址栏，也不等于全屏）。')
 

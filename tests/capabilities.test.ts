@@ -166,6 +166,53 @@ function main() {
       !/当前形态没有窗口隐藏或页面遮挡能力/.test(boss))
   }
 
+  // ——— ⑨ C2：全屏入口与打印页（3.3.4 · P3）———
+  {
+    const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+    const fsApi = read('src/lib/app/browserFullscreen.ts')
+    const hook = read('src/lib/app/useAppFullscreen.ts')
+    const sidebar = read('src/components/app/Sidebar.tsx')
+    const print = read('src/lib/audit/printPage.ts')
+    const dialog = read('src/components/audit/EvidenceExportDialog.tsx')
+    const look = read('src/lib/help/articles/look.ts')
+
+    ok('桌面全屏已接：矩阵不再写「本版接入 / not-implemented」',
+      resolveCapabilities(desktopSignals())['fullscreen'].status === 'supported'
+      && resolveCapabilities(desktopSignals())['fullscreen'].reason === 'ok')
+    ok('浏览器全屏仍是「有条件」（API 存在 ≠ 本次获准）',
+      resolveCapabilities(cloudSignals())['fullscreen'].status === 'conditional')
+
+    // 只查**代码**，不查注释：注释里点名 Safari / iOS 是在交代现实，不是平台判断表
+    const fsCode = fsApi.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    ok('🔴 浏览器全屏不按平台名硬编码（代码里不出现 Safari / iOS 判断）',
+      !/Safari|iOS|iPad/.test(fsCode))
+    ok('全屏状态由事件校准（fullscreenchange + fullscreenerror）',
+      /fullscreenchange/.test(fsApi) && /fullscreenerror/.test(fsApi))
+    ok('请求失败有明确结果（denied / unsupported），不乐观显示已全屏',
+      /'denied'/.test(fsApi) && /'unsupported'/.test(fsApi))
+    ok('全屏根取 documentElement（浮层都挂在 body 下，替换成编辑区会让菜单消失）',
+      /documentElement/.test(fsApi))
+    ok('界面唯一状态来源：Sidebar 用 useAppFullscreen（不再自己读窗口桥）',
+      /useAppFullscreen/.test(sidebar) && !/electronWindow/.test(sidebar))
+    ok('hook 组合两条通道（桌面窗口桥 / 浏览器 API），不新增平台判断表',
+      /toggleFullscreen/.test(hook) && /enterBrowserFullscreen/.test(hook) && !/from '@\/lib\/app\/platform'/.test(hook))
+    ok('被拒 / 无 API 时给反馈（不是点了没反应）',
+      /showToast\(/.test(sidebar) && /专注模式/.test(sidebar))
+
+    ok('打印页只接受本机生成的自包含 HTML 并直接写入（无 Blob URL 生命周期坑）',
+      /document\.write/.test(print) && !/createObjectURL/.test(print))
+    ok('🔴 打印页断开 opener（不持有可操作原窗口的通道）', /w\.opener = null/.test(print))
+    ok('弹窗被拦时退回下载 HTML（有回退路径）',
+      /downloadBlob/.test(dialog) && /拦住了打印窗口/.test(dialog))
+    ok('🔴 网页 / 便携不再谎报「已保存 PDF」，按钮写「打印 / 另存 PDF」',
+      /打印 \/ 另存 PDF/.test(dialog) && !/网页版无法直接存 PDF/.test(dialog))
+
+    ok('手册与界面同口径：网页 / 便携也走 Fullscreen API、被拒会提示',
+      /Fullscreen API/.test(look) && !/网页版没有窗口桥接，不显示这一项/.test(look))
+    ok('手册改了内容 ⇒ revision / verifiedAgainst / reviewedAt 同步',
+      /revision: 2/.test(look) && /verifiedAgainst: '3\.3\.4'/.test(look) && /reviewedAt: '2026-11-02'/.test(look))
+  }
+
   console.log(`\n▶ capabilities: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }
