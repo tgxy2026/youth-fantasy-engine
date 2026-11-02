@@ -45,6 +45,12 @@ try{
   await page.goto(origin,{waitUntil:'commit'});await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click();await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
   await page.getByRole('button',{name:'稍后再说',exact:true}).click();const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
+  const guide=page.locator('[data-guide-card]').first()
+  if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)){
+    await page.getByRole('button',{name:'跳过本页'}).click()
+    await guide.waitFor({state:'detached',timeout:5000}).catch(()=>{})
+  }
+  await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
   await page.evaluate(async()=>{
     const db=await import('/src/lib/db.ts');(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true})
     await db.saveTableRow({id:'owned-image-row',projectId:db.getCurrentProjectId(),tabId:'races',data:{名称:'原仓主图条目',编号:'R9001'},order:9001})

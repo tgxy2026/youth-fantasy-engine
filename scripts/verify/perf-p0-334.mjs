@@ -5,7 +5,7 @@
 //
 // 测量协议（照 §10.2-4 写死，换设备/换夹具就不是同一条基线）：
 //   · 固定夹具：示例项目 + 正文编辑（示例自带 3 章）＋ 固定的 5 个页签导航；
-//   · 每项热身后 3 轮，输入每轮 100 字、导航每轮 20 次；
+//   · 每项热身后 3 轮，输入每轮 100 字、导航每轮 100 次；
 //   · **每轮单独记 p95**，不混设备、不挑最好一轮；
 //   · 输入延迟 = 输入事件到对应可见更新（下一帧）；另记 longtask（>50ms）作为「卡顿」旁证。
 //
@@ -23,7 +23,7 @@ const run = path.join(root, '.workbuddy/tmp', `perf-p0-334-${stamp}`)
 await fs.mkdir(run, { recursive: true })
 
 const KEYS_PER_ROUND = 100
-const NAV_PER_ROUND = 20
+const NAV_PER_ROUND = 100
 const ROUNDS = 3
 const NAV_TABS = ['char-main', 'chapter-master', 'geography', 'foreshadow', 'editor']
 

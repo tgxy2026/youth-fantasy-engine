@@ -49,6 +49,7 @@ try {
 
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })
+  await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:guide-auto', '0') } catch { /* non-origin document */ } })
   // 🔴 Playwright 的路由是「**后注册的先跑**」：必须先把兜底挂上，再挂假模型那条，
   //    否则兜底的 `continue` 会抢在前面，注入的 500 永远不会生效（本轮实测踩到）。
   await context.route('**/*', route => {

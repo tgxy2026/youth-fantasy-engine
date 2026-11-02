@@ -48,6 +48,7 @@ try {
 
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })
+  await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:guide-auto', '0') } catch { /* non-origin document */ } })
   await context.route('**/*', route => {
     const url = route.request().url()
     if (url.startsWith(MOCK) || url.startsWith(BASE)) return route.continue()

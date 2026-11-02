@@ -57,7 +57,7 @@ function jsonAnswer(promptText) {
     })
   }
   // 「拆书抽取」：返回**对象数组** [{type,name,aliases,desc,evidence}]，type 必须命中 ENTITY_TYPES
-  if (/抽取|实体/.test(promptText)) {
+  if (/抽取|实体/.test(promptText) && !/分卷大纲.{0,5}逐章细纲/.test(promptText)) {
     const m = promptText.match(/第(\d+)章/)
     const n = m ? m[1] : '0'
     return JSON.stringify([
@@ -66,7 +66,7 @@ function jsonAnswer(promptText) {
     ])
   }
   // 「分卷大纲」：结构照抄 planOutlineSys（volumes[] + chapters[]）
-  if (/分卷大纲与逐章细纲/.test(promptText)) {
+  if (/分卷大纲.{0,5}逐章细纲/.test(promptText)) {
     const m = promptText.match(/共\s*(\d+)\s*章/)
     const total = m ? Math.min(Number(m[1]), 30) : 5
     const chapters = Array.from({ length: total }, (_, i) => ({
@@ -94,6 +94,7 @@ function jsonAnswer(promptText) {
       chapters,
     })
   }
+  if (/JSON\s*数组|返回\s*\[\]/i.test(promptText)) return '[]'
   return JSON.stringify({ ok: true, items: [] })
 }
 
@@ -146,9 +147,11 @@ const server = http.createServer((req, res) => {
     }
     // 提示词里明确要 JSON 的阶段（设定奠基 / 分卷大纲）走结构；写正文的阶段给正文
     const asksProse = /写正文|正文片段|本章正文|续写正文|接着写/.test(promptText)
-    const askJson = !asksProse || /抽取|实体/.test(promptText)
+    const proseSystem = /续写助手/.test(body.messages?.[0]?.content || '')
+    const reviewSystem = /连续性审查专家|人设监督编辑|伏笔管理专家/.test(body.messages?.[0]?.content || '')
+    const askJson = reviewSystem || (!proseSystem && (!asksProse || /抽取|实体/.test(promptText)))
     const wantJson = askJson && (!!body.response_format || /设定架构师|分卷大纲与逐章细纲|只输出 JSON|JSON 结构|抽取|实体/.test(promptText))
-    const content = wantJson ? jsonAnswer(promptText) : prose('续写', 900)
+    const content = reviewSystem ? '[]' : wantJson ? jsonAnswer(promptText) : prose('续写', 900)
     const stream = !!body.stream
 
     const finish = () => {

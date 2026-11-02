@@ -42,6 +42,9 @@ try {
   await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
   await page.getByRole('button', { name: '稍后再说', exact: true }).click()
   await page.getByRole('navigation').waitFor()
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   page.setDefaultTimeout(15000)
 
   // 两张卡：字段填上标记文本，用来证明「记录里没有正文」

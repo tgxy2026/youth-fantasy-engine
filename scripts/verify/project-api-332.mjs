@@ -1,9 +1,8 @@
 // P2-1 · 项目版本服务 HTTP 端到端自检（真服务 + 临时数据目录，不碰真实账号）
 // 用法：node scripts/verify/project-api-332.mjs
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,7 +10,10 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const serverEntry = path.resolve(here, '../../server/index.mjs')
 
 const PORT = 18734
-const root = mkdtempSync(path.join(os.tmpdir(), 'yfe-v2-'))
+const evidenceDir = path.resolve(here, '../../.workbuddy/tmp')
+mkdirSync(evidenceDir, { recursive: true })
+const root = mkdtempSync(path.join(evidenceDir, 'yfe-v2-'))
+console.log('隔离证据目录:', root)
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
@@ -66,7 +68,6 @@ server.stdout.on('data', (d) => { log += d })
 server.stderr.on('data', (d) => { log += d })
 const cleanup = () => {
   try { server.kill('SIGKILL') } catch { /* ignore */ }
-  try { rmSync(root, { recursive: true, force: true }) } catch { /* ignore */ }
 }
 process.on('exit', cleanup)
 

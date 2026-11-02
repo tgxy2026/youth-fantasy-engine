@@ -24,6 +24,9 @@ try {
   await page.goto(origin, { waitUntil: 'commit' }); await page.getByRole('button', { name: /先看看示例/ }).click()
   await page.getByRole('button', { name: '下一步', exact: true }).click(); await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
   await page.getByRole('button', { name: '稍后再说', exact: true }).click(); page.setDefaultTimeout(20000)
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   await page.evaluate(async () => {
     const db = await import('/src/lib/db.ts'), pid = db.getCurrentProjectId()
     ;(await import('/src/lib/settings/theme.ts')).applyZoom(100, { manual: true })

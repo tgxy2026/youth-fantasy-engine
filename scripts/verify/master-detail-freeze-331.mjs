@@ -128,6 +128,11 @@ try {
   }
 
   // ---------- ② 世界设定（母子结构） ----------
+  await page.evaluate(async () => {
+    const db = await import('/src/lib/db.ts')
+    const projectId = db.getCurrentProjectId()
+    await db.saveSubSetFor(projectId, 'worldbase', { id: 'freeze-world-child', projectId, tabId: 'worldbase-sub', name: '冻结测试子世界', data: {}, order: 999 })
+  })
   await page.getByRole('navigation').getByText('世界设定', { exact: true }).first().click()
   const setDetail = '[data-set-detail]'
   const hasSetDetail = await page.waitForSelector(setDetail, { timeout: 20000 }).then(() => true).catch(() => false)
@@ -141,7 +146,7 @@ try {
     const subButtons = page.locator('button[title^="编辑子世界"]')
     const subCount = await subButtons.count()
     if ((setSeeded?.max ?? 0) < 80 || subCount === 0) {
-      check('记录：世界设定右栏不够长或没有子世界，跳过位置断言', true,
+      check('世界设定夹具须具备滚动空间及子世界', false,
         JSON.stringify({ seeded: setSeeded, subCount }))
     } else {
       await subButtons.first().click()

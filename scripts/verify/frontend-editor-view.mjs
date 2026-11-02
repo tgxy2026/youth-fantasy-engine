@@ -50,6 +50,9 @@ try {
   await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
   await page.getByRole('button', { name: '稍后再说', exact: true }).click()
   await page.getByRole('navigation').waitFor()
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   page.setDefaultTimeout(15000)
 
   const nav = name => page.getByRole('navigation').getByRole('button', { name, exact: true })
@@ -205,7 +208,7 @@ try {
   //    真正要证的是「上一章的记录没有被套到新章身上」——新章没有记录、只有离开章有。
   check('🔴 ④ 新章没有视图记录，上一章的位置不会落成新章的现场',
     nextDiag.records.length === 1 && nextDiag.activeId !== nextDiag.records[0].id, { beforeSwitch, onNext, nextDiag })
-  await page.getByTitle('上一章', { exact: true }).click()   // 回到原章：应恢复刚才的现场
+  await page.getByTitle('上一章', { exact: true }).click()   // 同页主动切章按 3.3.1 约定定位到章末
   const timeline = []
   for (let i = 0; i < 12; i += 1) {
     timeline.push(await editor.evaluate(el => ({
@@ -215,7 +218,8 @@ try {
     await page.waitForTimeout(120)
   }
   const backAgain = await readCursor()
-  check('🔴 ④ 同页切回原章时现场复原', !!backAgain && Math.abs(backAgain.top - beforeSwitch.top) <= 40 && backAgain.start === beforeSwitch.start, { beforeSwitch, backAgain, timeline })
+  const endLength = await editor.evaluate(el => el.value.length)
+  check('🔴 ④ 同页切回原章时定位章末', !!backAgain && Math.abs(backAgain.top - backAgain.max) <= 2 && backAgain.start === endLength && backAgain.end === endLength, { beforeSwitch, backAgain, timeline })
 
   // ---------- ⑤ 回来的一瞬间又切走：A 的位置不能漏到 B ----------
   await placeCursor()

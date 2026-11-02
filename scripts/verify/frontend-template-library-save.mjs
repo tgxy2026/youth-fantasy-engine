@@ -19,6 +19,9 @@ try {
   page = await context.newPage(); page.setDefaultTimeout(120000); page.on('pageerror', error => report.errors.push(error.message))
   await page.goto(origin, { waitUntil: 'commit' }); await page.getByRole('button', { name: /先看看示例/ }).click()
   await page.getByRole('button', { name: '下一步', exact: true }).click(); await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click(); await page.getByRole('button', { name: '稍后再说', exact: true }).click()
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   const seed = await page.evaluate(async () => {
     const db = await import('/src/lib/db.ts'), { TABS } = await import('/src/lib/schema.ts'), { snapshotOfBuiltin } = await import('/src/lib/templates/snapshot.ts')
     const store = await import('/src/lib/templates/store.ts'), library = await import('/src/lib/templates/library.ts')

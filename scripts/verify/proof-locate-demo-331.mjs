@@ -68,7 +68,7 @@ try {
   const afterClose = await page.locator('textarea').first().inputValue()
 
   // ③ 颉文姬诊室渲染
-  await page.getByRole('button', { name: '颉文姬' }).click()
+  await page.getByRole('button', { name: '颉文姬', exact: true }).click()
   const panel = page.getByText('颉文姬 · AI 编辑', { exact: true })
   await panel.waitFor({ timeout: 15000 })
   const clinicText = await page.locator('body').innerText()

@@ -54,6 +54,12 @@ try {
     await page.waitForTimeout(200)
   }
   await navRole.waitFor({ timeout: 10000 })
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {
+    await page.getByRole('button', { name: '跳过本页' }).click()
+    await guide.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  }
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   page.setDefaultTimeout(20000)
 
   // ---------- 播种：一张卡 + 一段提到它的正文 ----------

@@ -136,13 +136,17 @@ async function openProjectEditor(page) {
       await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
       entered = true
     } catch {
-      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+      for (const name of ['稍后再说', '知道了', '跳过，直接开始', '跳过本页']) {
         await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
       }
       await page.waitForTimeout(200)
     }
   }
   if (!entered) throw new Error('无法进入正文编辑：导航不可用或仍有提醒遮挡')
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {
+    await page.getByRole('button', { name: '跳过本页' }).click({ timeout: 1500 }).catch(() => {})
+  }
 }
 
 async function main() {
@@ -347,9 +351,11 @@ process.on('message',async message=>{
     const backA = await dataStatus(A.ctx)
     check('switch-back-restores-own-data', backA.status === 200 && JSON.parse(backA.body).text.includes('账号正文-a-1'), backA.status)
 
-    // ---------- ⑤ expired-session：同账号在别处登录 ⇒ 旧会话写盘被拒且如实返回原因 ----------
+    // ---------- ⑤ expired-session：另一会话明确撤销旧会话，旧会话写盘被拒 ----------
     const A2 = await openContext('a2')
     await login(A2.ctx, USER_A)
+    const revokeOld = await A2.ctx.request.post(origin + '/api/auth/sessions/revoke-others')
+    if (!revokeOld.ok()) throw new Error('revoke-others failed: ' + revokeOld.status())
     const replaced = await putData(A.ctx, 'a-stale')
     const replacedBody = JSON.parse(replaced.body)
     check('expired-session', replaced.status === 401 && replacedBody.code === 'SESSION_REPLACED',
@@ -573,10 +579,10 @@ process.on('message',async message=>{
       check('roundtrip-changed', true, 'server library now differs from the export')
 
       // 先注册 chooser/load 的等待再点确认：确认之后才会弹文件选择，导入成功才会 reload
-      const chooser = A.page.waitForEvent('filechooser', { timeout: 30000 })
-      const reloaded = A.page.waitForEvent('load', { timeout: 45000 })
       await A.page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      const chooser = A.page.waitForEvent('filechooser', { timeout: 30000 })
       await A.page.getByRole('button', { name: '继续导入', exact: true }).click()
+      const reloaded = A.page.waitForEvent('load', { timeout: 45000 })
       await (await chooser).setFiles(roundtripFile)
       await reloaded
       await waitUser(A.page)
@@ -704,10 +710,12 @@ process.on('message',async message=>{
       check('close-during-save.reopen-readback', reopenedText === afterChapter, reopenedText.slice(0, 24))
       A.page = reopened
 
-      // ② replace-session：同账号在别处登录 ⇒ 本页保存被 401 SESSION_REPLACED 拒绝
+      // ② replace-session：另一会话撤销本页会话 ⇒ 本页保存被 401 SESSION_REPLACED 拒绝
       //    要求：说清原因、草稿不丢、服务端文件不动（绝不能静默当已保存）
       const B2 = await openContext('a-replace')
       await login(B2.ctx, USER_A)
+      const revokePrevious = await B2.ctx.request.post(origin + '/api/auth/sessions/revoke-others')
+      if (!revokePrevious.ok()) throw new Error('revoke-others failed: ' + revokePrevious.status())
       const beforeReplace = await fs.readFile(activeDataFile, 'utf8')
       const draft = '账号在别处登录时正在写的草稿：不许丢，也不许静默当已保存。'
       await A.page.getByPlaceholder(EDITOR).fill(draft)

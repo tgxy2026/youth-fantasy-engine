@@ -115,6 +115,9 @@ try {
     await page.waitForTimeout(100)
   }
   await nav.waitFor(); page.setDefaultTimeout(20000)
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   await page.getByRole('button', { name: '收起左下角工具栏', exact: true }).click()
   await page.evaluate(async () => {
     window.appToasts = []

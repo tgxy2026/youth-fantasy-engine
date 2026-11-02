@@ -39,6 +39,7 @@ try {
   const origin = `http://localhost:${server.httpServer.address().port}`
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' })
+  await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:guide-auto', '0') } catch { /* non-origin document */ } })
   // 引用名高亮默认关闭：这里显式打开，才走得到那段 dangerouslySetInnerHTML
   await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:editor-reference-highlight', '1') } catch { /* 隐私模式 */ } })
   await context.route('**/*', route => {

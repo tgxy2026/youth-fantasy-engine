@@ -28,6 +28,9 @@ try{
   await page.goto(origin,{waitUntil:'commit'});await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click();await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
   await page.getByRole('button',{name:'稍后再说',exact:true}).click();const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
+  const guide=page.locator('[data-guide-card]').first()
+  if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
+  await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
   const fixture=await page.evaluate(async()=>{
     const db=await import('/src/lib/db.ts'),schema=await import('/src/lib/schema.ts'),atlas=await import('/src/lib/atlas/schema.ts')
     ;(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true})
@@ -111,7 +114,7 @@ try{
   check('narrow return restores keyboard focus to the original card',await card(60).evaluate(el=>el===document.activeElement&&!el.closest('[inert]')))
   check('closing a narrow detail deliberately restores the no-selection list',await page.locator('[data-atlas-list] [aria-current="true"]').count()===0)
   await page.keyboard.press('Enter');await back.waitFor()
-  check('keyboard opening moves focus into the narrow detail before the card wall becomes inert',await back.evaluate(el=>el===document.activeElement)
+  check('keyboard opening moves focus into the narrow detail before the card wall becomes inert',await back.evaluate(el=>el.closest('aside')?.contains(document.activeElement))
     &&await list().evaluate(el=>el.inert))
   await back.click();await detail().waitFor({state:'hidden'})
   await page.setViewportSize({width:1560,height:900});await page.evaluate(async()=>(await import('/src/lib/settings/theme.ts')).applyZoom(100,{manual:true}))

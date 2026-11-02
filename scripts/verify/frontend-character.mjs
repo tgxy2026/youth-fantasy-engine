@@ -29,6 +29,9 @@ try{
   await page.getByRole('button',{name:'下一步',exact:true}).click()
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
   await page.getByRole('button',{name:'稍后再说',exact:true}).click()
+  const guide=page.locator('[data-guide-card]').first()
+  if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
+  await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
   const seed=await page.evaluate(async()=>{
     const db=await import('/src/lib/db.ts'),{TABS}=await import('/src/lib/schema.ts')
     const tab=TABS.find(item=>item.id==='char-main'),projectId=db.getCurrentProjectId()
@@ -105,7 +108,7 @@ try{
   await empty.locator('summary').click()
   await page.getByRole('button',{name:'上传立绘 1',exact:true}).focus()
   check('portrait upload has a named keyboard control',await page.getByRole('button',{name:'上传立绘 1',exact:true}).evaluate(el=>el===document.activeElement))
-  // Hold an actual FileReader, switch card, then let normal image decode/compression finish.
+  // Hold an actual FileReader and verify that switching is blocked until processing finishes.
   await page.evaluate(()=>{
     const original=FileReader.prototype.readAsDataURL,encode=HTMLCanvasElement.prototype.toDataURL
     FileReader.prototype.readAsDataURL=function(file){window.__releasePortrait=()=>original.call(this,file)}
@@ -117,15 +120,15 @@ try{
   const file={name:'isolated-portrait.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')}
   await empty.locator('input[type=file]').first().setInputFiles(file)
   await page.waitForFunction(()=>typeof window.__releasePortrait==='function')
-  await choose('档案样板乙').click();await profile.getByRole('button',{name:'修改名称：档案样板乙',exact:true}).waitFor()
+  await choose('档案样板乙').click()
+  check('portrait processing blocks switching away from its owner',await profile.getByRole('button',{name:'修改名称：档案样板甲',exact:true}).isVisible())
   await page.evaluate(()=>window.__releasePortrait())
   await page.waitForFunction(()=>window.__portraitCompressed)
-  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+  const filled=page.locator('[data-character-portraits="filled"]');await filled.waitFor()
+  await choose('档案样板乙').click();await profile.getByRole('button',{name:'修改名称：档案样板乙',exact:true}).waitFor()
   check('late portrait completion cannot attach to a different character',await page.locator('[data-character-portraits="filled"]').count()===0&&!await profile.locator('img').count())
   await page.evaluate(()=>window.__restorePortraitIO())
-  await choose('档案样板甲').click();await empty.locator('summary').click()
-  await empty.locator('input[type=file]').first().setInputFiles(file)
-  const filled=page.locator('[data-character-portraits="filled"]');await filled.waitFor()
+  await choose('档案样板甲').click();await filled.waitFor()
   check('real portrait compression updates only the selected card',await profile.locator('img').count()===1&&await filled.locator('img').count()===1)
   await filled.locator('input[type=file]').first().setInputFiles([])
   check('empty file chooser change does not erase a portrait',await filled.locator('img').count()===1)

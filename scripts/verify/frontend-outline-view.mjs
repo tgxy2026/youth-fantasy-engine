@@ -32,6 +32,9 @@ try {
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
   await page.getByRole('button',{name:'稍后再说',exact:true}).click()
   const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
+  const guide=page.locator('[data-guide-card]').first()
+  if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
+  await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
   const fixture=await page.evaluate(async()=>{
     const db=await import('/src/lib/db.ts'),{getTab}=await import('/src/lib/schema.ts')
     const tab=getTab('chapter-outline'),keys=tab.modules.flatMap(mod=>mod.fields.map(field=>`${mod.name}::${field.name}`))

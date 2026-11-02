@@ -85,6 +85,11 @@ async function main() {
 
   /** 首启可能弹提醒框，会挡住点击 */
   async function dismiss(page) {
+    const guide = page.locator('[data-guide-card]').first()
+    if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {
+      await page.getByRole('button', { name: '跳过本页' }).click({ timeout: 1500 }).catch(() => {})
+      await guide.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    }
     for (const label of ['稍后再说', '知道了', '我知道了', '关闭']) {
       const hit = await page.evaluate((l) => {
         const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l)
@@ -265,6 +270,7 @@ async function main() {
 
     step('changed-in-idb')
     // ---------- ③ 导入：确认框 → 真实 filechooser → 应用 reload ----------
+    await dismiss(page)
     await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
     const chooser = page.waitForEvent('filechooser', { timeout: 30000 })
     const reloaded = page.waitForEvent('load', { timeout: 60000 })
@@ -325,6 +331,7 @@ async function main() {
       return JSON.stringify({ chapter: row?.content ?? null, projects })
     }
     async function importExpectRefusal(file, pattern, label) {
+      await dismiss(page)
       await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
       const ch = page.waitForEvent('filechooser', { timeout: 30000 })
       await page.getByRole('button', { name: '继续导入', exact: true }).click()

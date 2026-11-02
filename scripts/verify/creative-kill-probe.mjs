@@ -130,12 +130,12 @@ await page.waitForTimeout(600)
 //    （之前"开始创作"点了没反应的根因就是参数其实没填进去）
 const seedBox = page.locator('textarea[placeholder*="吞噬他人修为"]')
 if (await seedBox.count()) await seedBox.fill('一个靠替人记仇的抄书人，在王朝崩塌前夜发现自己记下的每一条仇都要由他来还。')
-const nums = page.locator('input[type="number"]')
-if (await nums.count() >= 3) {
-  await nums.nth(1).fill('1')
-  await nums.nth(2).fill('400')
-  await nums.nth(2).blur()
-}
+const chapterCount = page.getByTitle(/本次写几章：/)
+const wordCount = page.getByTitle(/每章目标字数：/)
+await chapterCount.fill('3')
+await chapterCount.blur()
+await wordCount.fill('800')
+await wordCount.blur()
 await page.waitForTimeout(900)
 
 console.log('开始创作:', await page.evaluate(() => {
@@ -203,12 +203,12 @@ if (killed) {
   // 真强杀：只杀本夹具 profile 的 Edge 进程，不动用户其它窗口
   try {
     const target = path.resolve(PROFILE).replaceAll("'", "''")
-    const ps = `$target = '${target}'; $pattern = '(?i)--user-data-dir=(?:"' + [regex]::Escape($target) + '"|' + [regex]::Escape($target) + '(?=\\s|$))'; $list = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern }); if ($list.Count -eq 0) { throw 'No Edge processes matched the selected profile' }; $list | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop }`
+    const ps = `$target = '${target}'; $pattern = '(?i)--user-data-dir=(?:"' + [regex]::Escape($target) + '"|' + [regex]::Escape($target) + '(?=\\s|$))'; $list = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern -and $_.CommandLine -notmatch '(?i)(?:^|\\s)--type=' }); if ($list.Count -ne 1) { throw ('Expected exactly one profile browser process, found ' + $list.Count) }; Stop-Process -Id $list[0].ProcessId -Force -ErrorAction Stop`
     const encoded = Buffer.from(ps, 'utf16le').toString('base64')
     execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, { stdio: 'pipe', timeout: 20000 })
     console.log('已强杀 Edge 进程')
   } catch (e) {
-    console.log('强杀失败:', String(e).slice(0, 120))
+    console.log('强杀失败:', String(e.stderr || e).slice(0, 1000))
     killed = false
   }
   if (killed) fs.writeFileSync(`${OUT}/b04-kill-state.json`, JSON.stringify({ lastState, at: new Date().toISOString() }, null, 2))

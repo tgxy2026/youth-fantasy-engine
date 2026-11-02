@@ -35,7 +35,11 @@ try {
     if (await nav.isVisible()) break
     await page.waitForTimeout(100)
   }
-  await nav.waitFor(); await nav.getByText('正文编辑', { exact: true }).click()
+  await nav.waitFor()
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
+  await nav.getByText('正文编辑', { exact: true }).click()
   const editor = page.locator('textarea.novel-textarea'), toolbar = page.locator('[data-editor-toolbar]')
   await editor.waitFor(); page.setDefaultTimeout(20000)
   const original = await editor.inputValue()

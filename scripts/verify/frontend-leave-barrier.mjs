@@ -57,6 +57,12 @@ try {
   await later.waitFor({ timeout: 60000 })
   await later.click()
   await page.getByRole('navigation').waitFor()
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {
+    await page.getByRole('button', { name: '跳过本页' }).click()
+    await guide.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  }
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
   page.setDefaultTimeout(15000)
 
   const nav = name => page.getByRole('navigation').getByRole('button', { name, exact: true })

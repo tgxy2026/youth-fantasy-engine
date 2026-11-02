@@ -63,7 +63,8 @@ try {
   await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
 
   const header = await center.innerText()
-  check('1.1', '手册区显示 41 篇 / 覆盖 55 个页签', /手册\s*41\s*篇/.test(header) && /覆盖\s*55\s*个页签/.test(header),
+  const counts = await page.evaluate(async () => { const r = await import('/src/lib/help/registry.ts'); return { articles: r.HELP_ARTICLES.length, tabs: r.coveredTabIds().size, missing: r.tabsWithoutHelp() } })
+  check('1.1', '手册显示实际文章与覆盖页签数量且没有遗漏', header.includes(`手册 ${counts.articles} 篇`) && header.includes(`覆盖 ${counts.tabs} 个页签`) && counts.tabs >= 55 && counts.missing.length === 0,
     header.slice(0, 80))
 
   await center.getByLabel('搜索使用手册').first().fill('字太小怎么放大')

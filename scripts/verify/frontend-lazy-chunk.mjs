@@ -44,6 +44,7 @@ try {
   const origin = `http://localhost:${server.httpServer.address().port}`
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' })
+  await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:guide-auto', '0') } catch { /* non-origin document */ } })
   await context.route('**/*', route => {
     const url = route.request().url()
     if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url)) report.modelRequests.push({ method: route.request().method(), origin: new URL(url).origin })

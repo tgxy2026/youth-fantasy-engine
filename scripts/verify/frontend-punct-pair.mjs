@@ -27,6 +27,7 @@ try {
   const origin = `http://localhost:${server.httpServer.address().port}`
   browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: 'reduce' })
+  await context.addInitScript(() => { try { localStorage.setItem('yfe-ui:guide-auto', '0') } catch { /* non-origin document */ } })
   await context.route('**/*', route => {
     const url = route.request().url()
     if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url)) report.modelRequests.push({ method: route.request().method(), origin: new URL(url).origin })
@@ -58,6 +59,7 @@ try {
   await nav.getByRole('button', { name: '正文编辑', exact: true }).click()
   const ta = page.locator('textarea.novel-textarea')
   await ta.waitFor()
+  await page.waitForFunction(() => (document.querySelector('textarea.novel-textarea')?.value.length ?? 0) > 500, null, { timeout: 30000 })
 
   /** 把正文换成给定内容，光标放到末尾（fill 派发的 input 没有 data，不会触发配对） */
   const reset = async (text) => {
