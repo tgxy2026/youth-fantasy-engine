@@ -9,11 +9,10 @@
 // 🔴 网络失败一律返回 `null` / 抛可识别的错误，**不要静默返回空数据**：
 //    "云端没有这本书"和"网络没通"在界面上是两句话，混在一起会让用户以为稿子丢了。
 import { cookieFetch, type CloudFetch } from '@/lib/cloud/cloudTransport'
+import { portableApiBase } from '@/lib/app/platform'
 
 function apiBase(): string {
-  const m = typeof window !== 'undefined' ? window.__YFE_PORTABLE__ : null
-  if (m && typeof m === 'object' && typeof m.apiBase === 'string' && m.apiBase) return m.apiBase
-  return ''
+  return portableApiBase()
 }
 
 // ---------------- 请求通道（网页 Cookie / 桌面 Bearer） ----------------

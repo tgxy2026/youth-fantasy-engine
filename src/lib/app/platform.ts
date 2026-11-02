@@ -17,6 +17,7 @@
 interface WebFlags {
   __YFE_WEB__?: boolean
   __YFE_GUEST__?: boolean
+  __YFE_PORTABLE__?: { apiBase?: string } | boolean
 }
 
 const flags = (typeof window !== 'undefined' ? window : {}) as unknown as WebFlags
@@ -33,3 +34,10 @@ export const WEB_GUEST: boolean = !!flags.__YFE_GUEST__
  *    所以任何 `PORTABLE ? ... : ...` 的分支在网页版里都必须**先判 WEB**，否则会显示成便携版。
  */
 export const WEB_CLOUD: boolean = !!flags.__YFE_WEB__ && !flags.__YFE_GUEST__
+
+/** 便携版或网页云端模式注入的数据 API 基址（默认同源；服务注入 apiBase 时用它，便于将来反代） */
+export function portableApiBase(): string {
+  const m = flags.__YFE_PORTABLE__
+  if (m && typeof m === 'object' && typeof m.apiBase === 'string' && m.apiBase) return m.apiBase
+  return ''
+}
