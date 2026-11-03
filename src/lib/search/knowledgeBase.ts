@@ -104,14 +104,14 @@ async function idbList(projectId: string): Promise<KbDoc[]> {
 
 const idbKbBackend: KbBackend = {
   list: idbList,
-  put: async doc => { (await getKbDB()).put(STORE_DOCS, doc) },
-  del: async id => { (await getKbDB()).delete(STORE_DOCS, id) },
+  put: async doc => { await (await getKbDB()).put(STORE_DOCS, doc) },
+  del: async id => { await (await getKbDB()).delete(STORE_DOCS, id) },
   getBody: async id => {
     const row = await (await getKbDB()).get(STORE_BODIES, id) as { id: string; text: string } | undefined
     return row?.text ?? ''
   },
-  putBody: async (id, text) => { (await getKbDB()).put(STORE_BODIES, { id, text }) },
-  delBody: async id => { (await getKbDB()).delete(STORE_BODIES, id) },
+  putBody: async (id, text) => { await (await getKbDB()).put(STORE_BODIES, { id, text }) },
+  delBody: async id => { await (await getKbDB()).delete(STORE_BODIES, id) },
   clearProject: async projectId => {
     const db = await getKbDB()
     const ids = (await idbList(projectId)).map(d => d.id)
@@ -549,6 +549,16 @@ export async function collectDocsForBundle(projectId: string): Promise<KbBundleD
   return out
 }
 
+/** 覆盖前安全备份必须区分读取失败与空资料。 */
+export async function collectDocsForSafetyBackup(projectId: string): Promise<KbBundleDoc[]> {
+  const docs = await listDocsStrict(projectId)
+  return Promise.all(docs.map(async d => {
+    const text = await getDocTextStrict(d.id)
+    if (!text || text.length !== d.chars) throw new Error(`参考资料「${d.title}」正文缺失或不完整`)
+    return { title: d.title, sourceType: d.sourceType, chars: d.chars, importedAt: d.importedAt, enabled: d.enabled, text }
+  }))
+}
+
 /**
  * 把导出包里的资料写回项目（导入项目 / 恢复备份时用）。
  *
@@ -557,32 +567,54 @@ export async function collectDocsForBundle(projectId: string): Promise<KbBundleD
  *    会把作者现有的资料清干净（`applyBundleToProject` 里有这道守卫）。
  * 🔴 清空时**连向量块一起清**：正文都换了，旧块仍留在索引里就会变成"指向已删资料的幽灵块"，
  *    召回时混进上下文（且从界面上完全看不出原因）。
- * @returns 成功写回的篇数（单篇失败不中断 —— 走 `importDoc` 的上限 / 截断规则）
+ * 先校验并写入新资料，全部读回成功后才删除旧资料；任何失败都不得报告完整成功。
  */
-export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[]): Promise<number> {
+export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[], expectedOld?: KbBundleDoc[]): Promise<number> {
   if (!projectId) return 0
-  const old = await listDocs(projectId)
-  // 🔴 清空失败必须**中止**（不能吞掉继续往下写）：恢复的语义是「回到那一刻」，
-  //    旧资料没清干净就写新的，两边会混在一起 —— 而且界面上完全看不出哪条是哪条。
-  //    ⚠️ 与 `clearProjectDocs`（删项目用、刻意吞错）口径不同：那条路失败的代价只是残留占空间，
-  //    这条路的代价是**数据可信度**，所以这里直接走 backend、让异常往上抛。
-  await kbBackend.clearProject(projectId)
+  if (!Array.isArray(bundleDocs) || bundleDocs.length > KB_MAX_DOCS) throw new Error('参考资料格式无效或数量超限')
+  const old = await listDocsStrict(projectId)
+  const oldBodies = await Promise.all(old.map(d => getDocTextStrict(d.id)))
+  if (expectedOld) {
+    const actual = old.map((d, i) => ({ title: d.title, sourceType: d.sourceType, chars: d.chars, importedAt: d.importedAt, enabled: d.enabled, text: oldBodies[i] }))
+    if (JSON.stringify(actual) !== JSON.stringify(expectedOld)) throw new Error('参考资料在安全备份后已变化，请重新确认恢复')
+  }
+  const staged = bundleDocs.map(d => {
+    if (typeof d?.text !== 'string') throw new Error('参考资料正文无效')
+    const text = normalizeText(d.text)
+    if (!text || text.length > KB_MAX_CHARS) throw new Error('参考资料为空或超出长度限制')
+    const doc: KbDoc = { id: uid(), projectId, title: (d.title ?? '').trim() || '未命名资料', sourceType: d.sourceType,
+      chars: text.length, chunkCount: 0, importedAt: Date.now(), enabled: d.enabled === true }
+    return { doc, text }
+  })
+  try {
+    for (const { doc, text } of staged) {
+      await kbBackend.putBody(doc.id, text)
+      await kbBackend.put(doc)
+      if (await kbBackend.getBody(doc.id) !== text) throw new Error('参考资料正文回读不一致')
+    }
+    const saved = await listDocsStrict(projectId)
+    for (const { doc } of staged) if (!saved.some(d => d.id === doc.id)) throw new Error('参考资料元数据回读失败')
+    const currentOld = saved.filter(d => !staged.some(s => s.doc.id === d.id))
+    if (currentOld.length !== old.length) throw new Error('参考资料已变化，请重新确认恢复')
+    for (let i = 0; i < old.length; i++) {
+      const previous = old[i], current = currentOld.find(d => d.id === previous.id)
+      if (!current || JSON.stringify(current) !== JSON.stringify(previous) || await getDocTextStrict(previous.id) !== oldBodies[i]) {
+        throw new Error('参考资料已变化，请重新确认恢复')
+      }
+    }
+  } catch (error) {
+    for (const { doc } of staged) {
+      await kbBackend.del(doc.id).catch(() => {})
+      await kbBackend.delBody(doc.id).catch(() => {})
+    }
+    throw error
+  }
   for (const d of old) {
-    // 逐篇按 ref 清（**不能**用 clearProjectVectors —— 那会连章节的语义索引一起清掉）
-    try { await removeByRef(projectId, d.id) } catch { /* 清不掉也只是残留块，不阻断还原 */ }
+    await kbBackend.del(d.id)
+    await kbBackend.delBody(d.id)
+    try { await removeByRef(projectId, d.id) } catch { /* 索引可重建 */ }
   }
-  let n = 0
-  for (const d of bundleDocs ?? []) {
-    const r = await importDoc({
-      projectId,
-      title: d.title,
-      text: d.text,
-      sourceType: d.sourceType,
-      enabled: d.enabled === true,
-    })
-    if (r.ok) n++
-  }
-  return n
+  return staged.length
 }
 
 /**

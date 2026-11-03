@@ -3,6 +3,7 @@ import * as db from '../src/lib/db'
 import { createDemoProject } from '../src/lib/app/seedData'
 import { __resetMockStores } from './mock-memory'
 import { ops } from '../src/lib/db/core'
+import { setKbBackend, importDoc, listDocs, getDocText, restoreDocsFromBundle, type KbDoc } from '../src/lib/search/knowledgeBase'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -104,6 +105,46 @@ async function run() {
 
   // 7. 验证 D3：还原后项目修改时间保持真实历史快照时间（语义明确）
   const histBundle = (await db.getBackupPayload(snap1.id))!
+  const docs = new Map<string, KbDoc>(), bodies = new Map<string, string>()
+  let failBody = false
+  let mutateDuringRestore = false
+  setKbBackend({
+    list: async projectId => [...docs.values()].filter(d => d.projectId === projectId),
+    put: async doc => { docs.set(doc.id, doc) }, del: async id => { docs.delete(id) },
+    getBody: async id => bodies.get(id) ?? '', putBody: async (id, text) => {
+      if (failBody && text === '第二篇正文') throw new Error('模拟写入失败')
+      if (mutateDuringRestore && text === '新资料正文') { const old = [...docs.values()][0]; if (old) bodies.set(old.id, '并发编辑的资料') }
+      bodies.set(id, text)
+    },
+    delBody: async id => { bodies.delete(id) }, clearProject: async () => { throw new Error('不应先清空') },
+  })
+  await importDoc({ projectId: pid, title: '旧资料', text: '必须保留的资料', sourceType: 'paste', enabled: true })
+  const incoming = { ...histBundle, knowledgeBase: [{ title: '新资料', text: '新资料正文', sourceType: 'paste' as const, chars: 5, importedAt: 1, enabled: true }] }
+  const kbRestore = await db.restoreBundleToProject(pid, incoming)
+  const safety = await db.getBackupPayload(kbRestore.preBackupId!)
+  ok('覆盖前备份可回读完整旧参考资料', safety?.knowledgeBase?.[0]?.text === '必须保留的资料')
+  ok('参考资料覆盖成功且报告成功', kbRestore.knowledgeBase?.ok === true && (await listDocs(pid))[0]?.title === '新资料')
+  const damaged = { ...incoming, knowledgeBase: [{ ...incoming.knowledgeBase[0], text: '' }] }
+  const partial = await db.restoreBundleToProject(pid, damaged)
+  const retained = (await listDocs(pid))[0]
+  ok('空资料恢复明确报告部分失败', partial.knowledgeBase?.ok === false)
+  ok('无效资料不能清空原有资料', retained?.title === '新资料' && await getDocText(retained.id) === '新资料正文')
+  let staleRejected = false
+  try { await restoreDocsFromBundle(pid, incoming.knowledgeBase, safety?.knowledgeBase) } catch { staleRejected = true }
+  ok('安全备份后的资料变化阻止覆盖', staleRejected && await getDocText(retained.id) === '新资料正文')
+  failBody = true
+  const failing = { ...incoming, knowledgeBase: [incoming.knowledgeBase[0], { ...incoming.knowledgeBase[0], title: '第二篇', text: '第二篇正文' }] }
+  const failedWrite = await db.restoreBundleToProject(pid, failing)
+  const afterFailure = await listDocs(pid)
+  ok('中途写入失败时报告部分失败', failedWrite.knowledgeBase?.ok === false)
+  ok('中途写入失败保留旧资料且撤除新片段', afterFailure.length === 1 && afterFailure[0].id === retained.id && await getDocText(retained.id) === '新资料正文')
+  failBody = false
+  mutateDuringRestore = true
+  const raced = await db.restoreBundleToProject(pid, incoming)
+  const afterRace = await listDocs(pid)
+  ok('恢复期间参考资料变化时拒绝替换', raced.knowledgeBase?.ok === false && afterRace.length === 1 && await getDocText(afterRace[0].id) === '并发编辑的资料')
+  mutateDuringRestore = false
+  setKbBackend(null)
   let missingTargetRejected = false
   try { await db.restoreBundleToProject('missing-target', histBundle) } catch { missingTargetRejected = true }
   ok('目标不存在时拒绝跳过预备份', missingTargetRejected)

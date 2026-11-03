@@ -19,7 +19,8 @@
 import type { Snapshot } from '@/lib/db/chapters'
 import { ops } from '@/lib/db/core'
 import { getProject } from '@/lib/db/projects'
-import { createAutoBackup, restoreBundleToProject } from '@/lib/db/backups'
+import { createAutoBackup, getBackupPayload, restoreBundleToProject } from '@/lib/db/backups'
+import { flushCreativeCheckpoint } from '@/lib/creative/serialPersist'
 import { loadCloudCopy } from '@/lib/sync/projectPullBundle'
 import type { PullDeps } from '@/lib/sync/projectPull'
 import { canApplyInPlace as canApplyGate, type ApplyInPlaceCode } from '@/lib/sync/applyGate'
@@ -103,8 +104,9 @@ export async function applyCloudCopyInPlace(input: ApplyInPlaceInput): Promise<A
 
   // ② 先备份：没有退路就不做破坏性操作
   let backupId = ''
+  let expectedKnowledgeBase: NonNullable<Awaited<ReturnType<typeof getBackupPayload>>>['knowledgeBase']
   try {
-    const meta = await createAutoBackup(input.localProjectId, 'manual', '用云端覆盖前自动备份')
+    const meta = await createAutoBackup(input.localProjectId, 'manual', '用云端覆盖前自动备份', { protectKnowledgeBase: loaded.bundle.knowledgeBase !== undefined })
     if (!meta) {
       return {
         ok: false, code: 'BACKUP',
@@ -112,6 +114,12 @@ export async function applyCloudCopyInPlace(input: ApplyInPlaceInput): Promise<A
       }
     }
     backupId = meta.id
+    if (!await flushCreativeCheckpoint(input.localProjectId)) throw new Error('覆盖前安全备份未确认持久化')
+    if (loaded.bundle.knowledgeBase !== undefined) {
+      const verified = await getBackupPayload(backupId)
+      if (!Array.isArray(verified?.knowledgeBase)) throw new Error('覆盖前安全备份缺少参考资料')
+      expectedKnowledgeBase = verified.knowledgeBase
+    }
   } catch (e) {
     return {
       ok: false, code: 'BACKUP',
@@ -164,7 +172,11 @@ export async function applyCloudCopyInPlace(input: ApplyInPlaceInput): Promise<A
 
   // ③ 写库（内部"先写后删"，失败时旧记录仍在）
   try {
-    await restoreBundleToProject(input.localProjectId, loaded.bundle, { skipPreBackup: true })
+    const outcome = await restoreBundleToProject(input.localProjectId, loaded.bundle, { skipPreBackup: true, expectedKnowledgeBase })
+    if (outcome.knowledgeBase && !outcome.knowledgeBase.ok) return {
+      ok: false, code: 'WRITE', backupId,
+      reason: `作品内容已覆盖，但参考资料恢复未完成：${outcome.knowledgeBase.error ?? '未知错误'}。请核对覆盖前安全备份。`,
+    }
   } catch (e) {
     return {
       ok: false, code: 'WRITE',

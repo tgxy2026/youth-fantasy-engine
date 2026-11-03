@@ -121,6 +121,8 @@ async function ensureFits() {
 }
 /** 点「让颉文姬续写」并等受控请求：预估是防抖异步的，未稳就点会被「清单已失效」挡住 */
 async function sendContinuation() {
+  // 完整请求预算还包括指令和系统提示；上一步的资料勾选可能使下一次请求超限。
+  await ensureFits()
   const btn = page.getByRole('button', { name: '让颉文姬续写', exact: true })
   const end = Date.now() + 25000
   while (Date.now() < end) {

@@ -588,7 +588,7 @@ export function useJieWenJiModel(props: Props) {
         summaryCount: live.contSummaryCount, prevTextCount: live.contPrevTextCount,
       })
       if (!stillValid.valid || live.chapterTitle !== snap.chapterTitle) throw new Error(stillValid.reason || '章节已变化，请重新确认')
-      if (refreshed.blocksText !== snap.blocksText || refreshed.promptText !== snap.promptText ||
+      if (refreshed.blocksText !== snap.blocksText || refreshed.promptText !== snap.promptText || refreshed.messages[0].content !== snap.messages[0].content ||
           !sameContinuationProvider(refreshed, snap) || JSON.stringify(refreshed.items) !== JSON.stringify(snap.items)) {
         throw new Error('资料或模型已变化，请重新打开续写并确认发送清单。')
       }

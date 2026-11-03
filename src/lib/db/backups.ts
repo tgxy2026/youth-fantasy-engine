@@ -6,7 +6,8 @@ import { uid } from '@/lib/app/id'
 import { ops } from '@/lib/db/core'
 import { WEB } from '@/lib/app/platform'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
-import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
+import { restoreDocsFromBundle, collectDocsForSafetyBackup, type KbBundleDoc } from '@/lib/search/knowledgeBase'
+import { flushCreativeCheckpoint } from '@/lib/creative/serialPersist'
 import { isDemoProjectName } from '@/lib/constants'
 import { currentSidecarApi } from '@/lib/storage/sidecar'
 // 只借类型：恢复后要把原快照重新指到新章 id（3.2.2 · D3）。运行时不依赖 chapters 模块。
@@ -201,7 +202,7 @@ function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
  *    ⚠️ 复制示范项目出来的副本名字不同 ⇒ 按普通项目对待，会正常备份（这是对的）。
  * @returns 备份元信息；**示范项目返回 null**（什么也没写）。
  */
-export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string): Promise<BackupMeta | null> {
+export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string, opts?: { protectKnowledgeBase?: boolean }): Promise<BackupMeta | null> {
   const proj = await getProject(projectId).catch((e) => {
     // 🔴 读失败**不能静默**（2026-10-12 全量审计 P2）：静默按「不是示范项目」继续，万一它
     //    正是示范项目，就会白写一份全量备份（还占掉一个淘汰名额）。口径同 kbInBackupOf。
@@ -214,6 +215,7 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   // 🔴 自动备份**也不带**参考资料（2.8.0 · #017）：同一条理由 —— 长文档单篇可达 40 万字，
   //    每 5 分钟重写一遍等于让数据文件持续膨胀。作者勾的「随包走」开关只作用于**手动导出**。
   const bundle = await exportProject(projectId, { includeSnapshots: false, includeKnowledgeBase: false })
+  if (opts?.protectKnowledgeBase) bundle.knowledgeBase = await collectDocsForSafetyBackup(projectId)
   /**
    * 3.1.3 逻辑分片（主人 2026-10-18 拍板）：
    *   文字片（`textBundle`，已剔除所有 dataURL）+ 媒体片（按内容去重）。
@@ -277,6 +279,12 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
     }
   }
   await ops.put('backups', meta)
+  if (opts?.protectKnowledgeBase) {
+    const verified = await getBackupPayload(id)
+    if (!verified || JSON.stringify(verified.knowledgeBase) !== JSON.stringify(bundle.knowledgeBase)) {
+      throw new Error('覆盖前参考资料备份回读不一致，已停止覆盖。')
+    }
+  }
   // 滚动淘汰：超过该类型上限则删除最早的（元数据与载荷一起删，避免留下孤儿载荷）。手动备份（limit=0）不淘汰。
   const limit = backupLimit(kind)
   if (limit > 0) {
@@ -492,6 +500,8 @@ export interface RestoreOptions {
   skipPreBackup?: boolean
   /** 显式预备份说明标签 */
   preBackupLabel?: string
+  /** 跳过内部备份时，由调用者提供已回读的资料安全备份。 */
+  expectedKnowledgeBase?: KbBundleDoc[]
 }
 
 export interface RestoreOutcome {
@@ -578,6 +588,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   // 🔴 无论通过什么入口恢复（备份列表恢复 / 外置文件导入覆盖），在动目标数据前必须先建好当前项目的快照，
   //    并且必须能够成功读回。若预备份失败，坚决拒绝覆盖。
   let preBackupMeta: BackupMeta | null = null
+  let expectedKnowledgeBase = opts?.expectedKnowledgeBase
   if (!opts?.skipPreBackup) {
     const proj = await getProject(targetPid)
     if (!proj) throw new Error('无法确认目标项目，已停止恢复。')
@@ -585,7 +596,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
     {
       const stamp = new Date().toLocaleString('zh-CN')
       const label = opts?.preBackupLabel ?? `还原前安全备份 · ${stamp}`
-      preBackupMeta = await createAutoBackup(targetPid, 'manual', label)
+      preBackupMeta = await createAutoBackup(targetPid, 'manual', label, { protectKnowledgeBase: bundle.knowledgeBase !== undefined })
       if (!preBackupMeta) {
         throw new Error('还原前安全预备份创建失败，为防止数据覆盖丢失，已终止还原操作。')
       }
@@ -594,6 +605,11 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
         await deleteBackup(preBackupMeta.id).catch(() => {})
         throw new Error('还原前安全预备份校验失败（载荷无法读取），为保护当前数据未执行覆盖。')
       }
+      if (bundle.knowledgeBase !== undefined && !Array.isArray(verified.knowledgeBase)) {
+        throw new Error('还原前安全备份缺少参考资料，已停止恢复。')
+      }
+      if (bundle.knowledgeBase !== undefined) expectedKnowledgeBase = verified.knowledgeBase
+      if (!await flushCreativeCheckpoint(targetPid)) throw new Error('还原前安全备份未确认持久化，已停止恢复。')
     }
   }
 
@@ -775,7 +791,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   let kbOutcome: RestoreOutcome['knowledgeBase'] = undefined
   if (bundle.knowledgeBase) {
     try {
-      const count = await restoreDocsFromBundle(targetPid, bundle.knowledgeBase)
+      const count = await restoreDocsFromBundle(targetPid, bundle.knowledgeBase, expectedKnowledgeBase)
       kbOutcome = { attempted: true, ok: true, count }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)

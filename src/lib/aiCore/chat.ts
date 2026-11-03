@@ -30,6 +30,8 @@ import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudge
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
 
 export interface ChatOptions {
+  /** 禁用兼容性降级重发，适用于不能自动重复调用的任务。 */
+  disableCompatibilityRetry?: boolean
   /** 超时毫秒，默认 CHAT_TIMEOUT_MS */
   timeoutMs?: number
   /**
@@ -160,6 +162,7 @@ interface ChatRaw {
 
 /** 内部调用参数：统一成对象，避免位置参数越加越乱 */
 interface CallOpts {
+  disableCompatibilityRetry?: boolean
   timeoutMs: number
   think?: boolean
   signal?: AbortSignal
@@ -281,6 +284,7 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
       ...(wireFormat !== 'none' ? { wireFormat } : {}),
       ...(wireFormat === 'json-schema' && opts.schema ? { jsonSchema: opts.schema } : {}),
       ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: opts.idleTimeoutMs } : {}),
+      ...(opts.disableCompatibilityRetry ? { disableCompatibilityRetry: true } : {}),
     })
     lifecycle = transitionLifecycle(lifecycle, 'completed')
     const out = raw.content
@@ -373,7 +377,7 @@ async function ollamaChatRaw(config: AIProvider, messages: ChatMessage[], o: Cal
   }
   // 🔴 格式是可选参数：端点临时不认（旧版 / 中转返回 400）时**只撤掉它**重发一次，
   //    其余参数（温度、采样、think）原样不动 —— 不因一个可选字段把整个功能弄坏。
-  if (!res.ok && res.status === 400 && body.format !== undefined) {
+  if (!o.disableCompatibilityRetry && !res.ok && res.status === 400 && body.format !== undefined) {
     const txt = await res.text().catch(() => '')
     if (shouldDegradeOn400(txt)) {
       delete body.format
@@ -574,7 +578,7 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: CallOp
     for (;;) {
       res = await doFetch(flags)
       attempts += 1
-      if (res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
+      if (o.disableCompatibilityRetry || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
       const txt = await res.text().catch(() => '')
       // 🔴 只降「不像别的原因」的 400 —— 模型名写错也降成裸请求的话，错误原因全变味
       if (!shouldDegradeOn400(txt)) { lastErrorText = txt; break }
