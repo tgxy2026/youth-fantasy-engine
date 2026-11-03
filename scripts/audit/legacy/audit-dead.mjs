@@ -199,6 +199,13 @@ const KEEP = {
     'syncCore 自己用的也是 SENSITIVE_META_KEYS / isSensitiveMetaKey）⇒ 安全上不留缺口。' +
     '保留理由：`electron/main.cjs:448` 与 4 个 src 文件的注释、以及 audit-sec 的 S4 文案' +
     '都逐条点名它，删了会让这些说明指向空气；且它就是"清单已下沉"这件事的唯一代码锚点',
+
+  // 📌 2026-11-03（3.3.5 全量审计）：
+  //    底层纯续写任务契约：由 lib/ai/aiTasks 门面导出；3.3.5 颉文姬接入带预算/快照/候选保护的
+  //    executeContinuationWithSnapshot 链路，底层接口保留作为无状态 AI 续写任务契约，归档文档点名保留
+  'src/lib/aiTasks/jieWenJi.ts:aiContinuePassage':
+    '底层纯续写任务契约：由 lib/ai/aiTasks 门面导出；3.3.5 颉文姬接入带预算/快照/候选保护的 ' +
+    'executeContinuationWithSnapshot 链路，底层接口保留作为无状态 AI 续写任务契约，归档文档点名保留',
 }
 const isKept = r => Object.prototype.hasOwnProperty.call(KEEP, `${r.file}:${r.name}`)
 

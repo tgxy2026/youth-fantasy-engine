@@ -7,6 +7,7 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import NumberField from '@/components/common/NumberField'
 import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import { copyText } from '@/components/dialogs/dialogs'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import InspirationPicker from '@/components/creative/InspirationPicker'
 import { StyleProfilePicker } from '@/components/settings/StyleProfilePicker'
@@ -313,7 +314,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
           {!s.running && s.resume && s.resumeState === 'blocked' && (
             <Button size="sm" variant="secondary" onClick={() => {
               const diag = JSON.stringify({ resume: s.resume, state: s.resumeState, reason: s.resumeBlockedReason, classification: s.resumeClassification }, null, 2)
-              void navigator.clipboard?.writeText(diag)
+              void copyText(diag, '诊断证据已复制到剪贴板')
             }}>
               复制诊断证据
             </Button>
