@@ -115,6 +115,8 @@ let P_continue_passage = `你是小说作者本人，正在接着本章已有正
 6. 标点必须完整：一句话中间的逗号、停顿一个都不要省，绝不能输出一长串中间没有标点的字。
 7. 直接输出正文，不要 markdown 代码块标记，也不要 JSON。`
 
+export function continuationPromptText(): string { return P_continue_passage }
+
 /** 「人设一致性（OOC）」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_ooc_check = `你是人设监督编辑。请对照角色卡中的性格/动机/价值观/说话风格，检查本章正文里角色的言行是否符合人设（OOC = Out Of Character）。
 

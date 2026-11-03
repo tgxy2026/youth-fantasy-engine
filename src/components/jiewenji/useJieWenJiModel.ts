@@ -22,8 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { buildProjectContext, getContinuationSources } from '@/lib/ai/aiContext'
 import { checkContinuationFocus, formatGap } from '@/lib/audit/evidenceGate'
 import { styleContextForAI } from '@/lib/ai/styleAudit'
-import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
-import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiContinuePassage, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, ProofreadResult, BriefingReport } from '@/lib/ai/aiTasks'
+import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePassage, aiContinuationAdvice, aiPleasureCheck, aiOpeningCheck, aiProofreadText, aiProofreadLogic, aiBriefing, aiExtractSettingEntities, EditorDiagnosis, ChapterReview, OocFinding, RewriteResult, ContinuationAdvice, PleasureReport, OpeningReport, ProofreadIssue, ProofreadResult, BriefingReport } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settings/settingLedger'
 import * as db from '@/lib/db'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
@@ -35,17 +34,23 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import type { Props } from '@/components/jiewenji/jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from '@/components/jiewenji/jieWenJiParts'
+import {
+  buildContinuationPlan,
+  validateContinuationSnapshot,
+  executeContinuationWithSnapshot,
+  verifyAndApplyContinuation,
+  sameContinuationProvider,
+  type ContinuationSnapshot,
+  type ContinuationManifestItem,
+} from '@/lib/creative/continuationPlan'
+import type { TokenSource } from '@/lib/ai/requestBudget'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 
 /** 校对返回（文字层 / 逻辑层同形状）：逐条问题 + 已扫 / 跳过数 + 失败与协议记账 */
 type ProofreadOutcome = ProofreadResult
 /** 校对进度（喂给 `onProgress`） */
 type ProofProgress = ChProgress & { done: number; total: number }
 
-/**
- * 续写（2.9.2 · ③）：本章正文只带**末尾**这么多字做衔接 ——
- * 续写要的是「接着最后一句往下写」，整章发过去既费预算又没必要。
- */
-const CONT_BODY_TAIL_CHARS = 3000
 /** 续写面板默认勾选的资料（与 `CONTINUE_PICKS.def` **同源**，杜绝两处各写一份） */
 const CONT_DEFAULT_PICKS = CONTINUE_PICKS.filter(p => p.def).map(p => p.key)
 
@@ -434,17 +439,34 @@ export function useJieWenJiModel(props: Props) {
   const [contSummaryCount, setContSummaryCount] = useState(3)
   /** 「前文章节」取几章（上限 5） */
   const [contPrevTextCount, setContPrevTextCount] = useState(1)
+  /** 3.3.5 · 冻结的续写计划快照（确保预估与发送完全同一份，变更即失效） */
+  const [contSnapshot, setContSnapshot] = useState<ContinuationSnapshot | null>(null)
+  const continuationOwner = useRef<{ snapshotId: string; assertCurrent: () => void } | null>(null)
+  const continuationLive = useRef({ content, focusChapterId, chapterTitle, contPlot, contWords, contPicks, contSummaryCount, contPrevTextCount })
+  continuationLive.current = { content, focusChapterId, chapterTitle, contPlot, contWords, contPicks, contSummaryCount, contPrevTextCount }
   /** 资料用量预览（勾选变化时防抖重算；**只读、不调模型、不烧额度**） */
   const [contPreview, setContPreview] = useState<{
     loading: boolean
     chars: number
     budget: number
+    tokens: number
+    budgetTokens: number
+    tokenSource: TokenSource
+    fits: boolean
+    overflowTokens: number
+    overflowChars: number
     dropped: string[]
     missingSummaries: number
     droppedPrevTexts: number
     /** 焦点章是否在叙事序里定位到（false ⇒ 只带得到设定资料，UI 要如实说明 —— 未知 ≠ 空） */
     srcFound: boolean
-  }>({ loading: true, chars: 0, budget: 0, dropped: [], missingSummaries: 0, droppedPrevTexts: 0, srcFound: true })
+    items: ContinuationManifestItem[]
+    warnings: string[]
+  }>({
+    loading: true, chars: 0, budget: 0, tokens: 0, budgetTokens: 0, tokenSource: 'heuristic-mixed',
+    fits: true, overflowTokens: 0, overflowChars: 0, dropped: [], missingSummaries: 0, droppedPrevTexts: 0,
+    srcFound: true, items: [], warnings: [],
+  })
 
   const toggleContPick = (key: string) =>
     setContPicks(prev => {
@@ -455,45 +477,53 @@ export function useJieWenJiModel(props: Props) {
     })
 
   /**
-   * 🔴 只读预估：勾选一变就重算「本次会带多少资料」，让作者在**发请求前**就看见会不会超。
-   *    · 防抖 350ms（连点几个勾只算一次）+ `cancelled` 守卫（晚到的结果不许覆盖新状态）；
-   *    · 失败就保持旧值、只收掉 loading（预估是辅助，绝不弹错打扰）；
-   *    · `contPicks` 是 Set，但只在勾选时换引用 ⇒ 依赖它不会「每渲染必跑」。
-   *    · ⚠️ 依赖里**刻意不含 content**：正文只是「末尾约 N 字」这一项固定估算，
-   *      写进去会变成每敲一个字都重算一遍资料用量（且毫无意义）。
+   * 🔴 只读预估：勾选或输入一变就重算「本次会带多少资料与预算」，让作者在**发请求前**就看见清单。
+   *    · 防抖 350ms（连点几个勾只算一次）+ `cancelled` 守卫；
+   *    · 失败就保持旧值、只收掉 loading；
+   *    · 3.3.5 · B2/B3：计算词元与字符分离、记录条目清单、产出冻结快照。
    */
   useEffect(() => {
     let cancelled = false
+    setContSnapshot(null)
+    setContPreview(p => ({ ...p, loading: true }))
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const budget = await writerBudgetFor('jiewenji-continue')
-          const wantSummaries = contPicks.has('summaries')
-          const wantPrevTexts = contPicks.has('prev-texts')
-          const src = await getContinuationSources(focusChapterId ?? '', {
-            summaryCount: wantSummaries ? contSummaryCount : 0,
-            prevTextCount: wantPrevTexts ? contPrevTextCount : 0,
-          })
-          const tabIds = CONTINUE_PICKS.filter(p => contPicks.has(p.key)).flatMap(p => p.tabIds)
-          const ctx = await buildProjectContext({
-            budget, onlyTabIds: tabIds, includeChapterList: false, focusChapterId,
+          // 🔴 3.3.5 · WQ4/Package B：实际资料预算与拼装（含 const fpLen = contPicks.has('fingerprint') 与【写作文风】块）
+          // 详见 buildContinuationPlan / continuationPlan.ts
+          const snap = await buildContinuationPlan({
+            projectId: db.getCurrentProjectId(),
+            chapterId: focusChapterId ?? '',
+            chapterTitle: chapterTitle ?? '',
+            currentContent: content,
+            plot: contPlot,
+            targetWords: contWords,
+            picks: contPicks,
+            summaryCount: contSummaryCount,
+            prevTextCount: contPrevTextCount,
           })
           if (cancelled) return
-          // 概览 = buildProjectContext 的实际用量 + 我们单独拼的几块 + 正文末尾（按上限估，文案里带「约」）
-          // 🔴 必须把「写作文风」的长度也算进去 —— 实际发请求时会多推一个块，漏算会让
-          //    「预计占用」偏小：勾了文风档却显示「未超预算」，到真跑时才超（＝预估骗人）。
-          const fpLen = contPicks.has('fingerprint') ? (await activeFingerprintNote()).length : 0
-          const extra =
-            (wantSummaries ? src.summaries.length : 0) +
-            (wantPrevTexts ? src.prevTexts.length : 0) +
-            fpLen +
-            CONT_BODY_TAIL_CHARS
+          setContSnapshot(snap)
+          const dropped = snap.manifest.entries
+            .filter(e => e.scope === 'dropped' && e.reason)
+            .map(e => `${e.source.ref}: ${e.reason}`)
+
           setContPreview({
-            loading: false, chars: ctx.chars + extra, budget,
-            dropped: ctx.dropped,
-            missingSummaries: wantSummaries ? src.missingSummaries : 0,
-            droppedPrevTexts: wantPrevTexts ? src.droppedPrevTexts : 0,
-            srcFound: src.found,
+            loading: false,
+            chars: snap.tokenEstimate.inputChars,
+            budget: snap.tokenEstimate.budgetChars,
+            tokens: snap.tokenEstimate.inputTokens,
+            budgetTokens: snap.tokenEstimate.budgetTokens,
+            tokenSource: snap.tokenEstimate.tokenSource,
+            fits: snap.fits,
+            overflowTokens: snap.overflowTokens,
+            overflowChars: snap.overflowChars,
+            dropped,
+            missingSummaries: snap.items.find(i => i.id === 'mat-summaries-missing') ? 1 : 0,
+            droppedPrevTexts: snap.items.find(i => i.id === 'mat-prev-texts-dropped') ? 1 : 0,
+            srcFound: !snap.warnings.some(w => w.includes('未能在叙事章节列表')),
+            items: snap.items,
+            warnings: snap.warnings,
           })
         } catch {
           if (!cancelled) setContPreview(p => ({ ...p, loading: false }))
@@ -501,25 +531,19 @@ export function useJieWenJiModel(props: Props) {
       })()
     }, 350)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [contPicks, contSummaryCount, contPrevTextCount, focusChapterId])
+  }, [contPicks, contSummaryCount, contPrevTextCount, focusChapterId, contPlot, contWords, content, chapterTitle])
 
-  const contT = useTaskRunner<ChOwned<{ text: string; dropped: string[] }>, ChProgress & { text?: string }>({
+  const contT = useTaskRunner<ChOwned<{ text: string; dropped: string[]; snapshot: ContinuationSnapshot }>, ChProgress & { text?: string }>({
     ownerTab: 'editor', kind: 'jiewenji-continue', title: '颉文姬 · 续写',
     writes: ['chapters'], // 续写最终以建议段写进正文
   })
-  /**
-   * 续写视图。
-   * ⚠️ **刻意不用 `chapterOwned()`**：流式文本要挂在 `progress` 上（形状多了 `text`），
-   *    而 `chapterOwned` 的签名把进度钉死在 `ChProgress` —— 传过去类型不兼容（逆变位置）。
-   *    这里照 `chapterOwned` 的同一口径手写，取值行为一致。
-   */
+
   const contTask = contT.task
   const contOwned = taskChapter(contTask) === ch
   const contDone = contTask?.status === 'done' && contTask.result?.ch === ch
   const contProg = contOwned ? (contTask?.progress as (ChProgress & { text?: string }) | null) : null
   const cont: { loading: boolean; text: string; dropped: string[]; error?: string } = {
     loading: contT.running && contOwned,
-    // 跑着 ⇒ 显示流式累积；跑完 ⇒ 取最终结果（已过 cleanChapterOutput，比流式缓冲更干净）
     text: contDone ? (contTask?.result?.v.text ?? '') : (contT.running && contOwned ? (contProg?.text ?? '') : ''),
     dropped: contDone ? (contTask?.result?.v.dropped ?? []) : [],
     error: contTask?.status === 'failed' && contOwned ? (contT.error || undefined) : undefined,
@@ -527,79 +551,116 @@ export function useJieWenJiModel(props: Props) {
 
   const runContinuation = () => {
     if (!aiReady || contT.running) return
-    // 🔴 输入全部在**发起时快照**：任务跑在 store 里，跑的过程中作者可能已经改了勾选 / 字数 / 情节
-    const snap = {
-      words: contWords,
+    const curPid = db.getCurrentProjectId()
+    // 3.3.5 · B3 发送前核对冻结快照：若自预估后正文、章节或勾选项被篡改，拒绝盲目发送旧清单
+    const validation = validateContinuationSnapshot(contSnapshot, {
+      projectId: curPid,
+      chapterId: focusChapterId ?? '',
+      currentContent: content,
       plot: contPlot,
-      picks: new Set(contPicks),
+      targetWords: contWords,
+      picks: contPicks,
       summaryCount: contSummaryCount,
       prevTextCount: contPrevTextCount,
+    })
+    if (!validation.valid || !contSnapshot) {
+      showToast(validation.reason || '资料清单已失效，请重新确认', 'info')
+      return
     }
-    const title = chapterTitle ?? ''
-    // 本章正文只带末尾一段做衔接
-    const bodyTail = content.trim().slice(-CONT_BODY_TAIL_CHARS)
+
+    const snap = contSnapshot
+    const owner = captureOwnedOperation(curPid)
+    continuationOwner.current = { snapshotId: snap.id, assertCurrent: owner.assertCurrent }
     showToast('颉文姬续写已启动，会接在本章末尾往下写；篇幅较大时耗时较久，并非卡死', 'info')
     contT.run(async job => {
-      job.progress({ ch, text: '' }) // 🔴 第一行盖章节戳，失败/中止时也判得出归属
-      const wantSummaries = snap.picks.has('summaries')
-      const wantPrevTexts = snap.picks.has('prev-texts')
-
-      const src = await getContinuationSources(focusChapterId ?? '', {
-        summaryCount: wantSummaries ? snap.summaryCount : 0,
-        prevTextCount: wantPrevTexts ? snap.prevTextCount : 0,
+      job.progress({ ch, text: '' })
+      owner.assertCurrent()
+      const refreshed = await buildContinuationPlan({
+        projectId: snap.projectId, chapterId: snap.chapterId, chapterTitle: snap.chapterTitle,
+        currentContent: content, plot: snap.inputs.plot, targetWords: snap.inputs.targetWords,
+        picks: new Set(snap.inputs.picks), summaryCount: snap.inputs.summaryCount, prevTextCount: snap.inputs.prevTextCount,
       })
-      // 🔴 3.0 · W1-2b 缺失即停（§10.3 #2）：勾了章节素材却定位不到本章 ⇒ **停止生成**，
-      //    不再「提示一句就照发」。`found:false` ＝ 章没定位到（不是「作者没勾素材」），
-      //    拿空上下文硬写会让模型凭空编 —— 抛出后任务中心会如实记为失败并说明原因。
+      owner.assertCurrent()
+      const live = continuationLive.current
+      const stillValid = validateContinuationSnapshot(snap, {
+        projectId: db.getCurrentProjectId(), chapterId: live.focusChapterId ?? '', currentContent: live.content,
+        plot: live.contPlot, targetWords: live.contWords, picks: live.contPicks,
+        summaryCount: live.contSummaryCount, prevTextCount: live.contPrevTextCount,
+      })
+      if (!stillValid.valid || live.chapterTitle !== snap.chapterTitle) throw new Error(stillValid.reason || '章节已变化，请重新确认')
+      if (refreshed.blocksText !== snap.blocksText || refreshed.promptText !== snap.promptText ||
+          !sameContinuationProvider(refreshed, snap) || JSON.stringify(refreshed.items) !== JSON.stringify(snap.items)) {
+        throw new Error('资料或模型已变化，请重新打开续写并确认发送清单。')
+      }
+      const wantSummaries = snap.inputs.picks.includes('summaries')
+      const wantPrevTexts = snap.inputs.picks.includes('prev-texts')
       if (wantSummaries || wantPrevTexts) {
+        const src = await getContinuationSources(focusChapterId ?? '', {
+          summaryCount: wantSummaries ? snap.inputs.summaryCount : 0,
+          prevTextCount: wantPrevTexts ? snap.inputs.prevTextCount : 0,
+        })
         const gap = checkContinuationFocus(src.found)
         if (gap) throw new Error(formatGap(gap))
       }
-      // 设定类：只把勾中的页签交给 buildProjectContext
-      const tabIds = CONTINUE_PICKS.filter(p => snap.picks.has(p.key)).flatMap(p => p.tabIds)
-      const ctx = await buildProjectContext({
-        budget: await writerBudgetFor('jiewenji-continue'),
-        onlyTabIds: tabIds,
-        // 章节清单不整本带：另走「章节摘要」（按章数精确取），否则目录会吃掉大半预算
-        includeChapterList: false,
-        focusChapterId,
+      owner.assertCurrent()
+      const beforeSend = continuationLive.current
+      const check = validateContinuationSnapshot(snap, {
+        projectId: db.getCurrentProjectId(), chapterId: beforeSend.focusChapterId ?? '', currentContent: beforeSend.content,
+        plot: beforeSend.contPlot, targetWords: beforeSend.contWords, picks: beforeSend.contPicks,
+        summaryCount: beforeSend.contSummaryCount, prevTextCount: beforeSend.contPrevTextCount,
       })
-      const fpNote = snap.picks.has('fingerprint') ? await activeFingerprintNote() : ''
-
-      // 拼装资料块（🔴 与上方预览的取数口径**逐块一致**，否则「预计占用」会骗人）
-      const blocks: string[] = []
-      if (wantSummaries && src.summaries) blocks.push(`【章节摘要】\n${src.summaries}`)
-      if (ctx.text) blocks.push(`【设定资料】\n${ctx.text}`)
-      if (wantPrevTexts && src.prevTexts) blocks.push(`【前文章节】\n${src.prevTexts}`)
-      if (fpNote) blocks.push(`【写作文风】\n${fpNote}`)
-
-      // 🔴 流式：每个 token 都上报会让整棵订阅树重渲染 ⇒ 按 150ms 节流
+      if (!check.valid || (beforeSend.chapterTitle ?? '') !== snap.chapterTitle) throw new Error(check.reason || '章节已变化，请重新确认')
       let lastFlush = 0
       let buf = ''
-      const text = await aiContinuePassage({
-        chapterTitle: title,
-        bodyTail,
-        projectContext: blocks.join('\n\n'),
-        plot: snap.plot,
-        targetWords: snap.words,
-      }, {
+      const res = await executeContinuationWithSnapshot(snap, {
         signal: job.signal,
         onToken: delta => {
           buf += delta
           const now = Date.now()
           if (now - lastFlush < 150) return
           lastFlush = now
-          job.progress({ ch, text: buf }) // ⚠️ 必须带 ch，否则章节戳被冲掉
+          job.progress({ ch, text: buf })
         },
       })
-      return { ch, v: { text, dropped: ctx.dropped } }
+      const droppedReasons = snap.manifest.entries
+        .filter(e => e.scope === 'dropped' && e.reason)
+        .map(e => e.reason as string)
+      owner.assertCurrent()
+      return { ch, v: { text: res.text, dropped: droppedReasons, snapshot: snap } }
     })
   }
 
   const applyContinuation = () => {
     if (!cont.text.trim()) { showToast('暂无可写入的续写内容，请先让颉文姬续写', 'info'); return }
-    // 🔴 续写落在**本章末尾**：sel 传 null ⇒ `insertAdvice` 取「正文长度」为插入点
-    onApplyAdvice?.(cont.text, null)
+    const resultSnapshot = contDone ? contTask?.result?.v.snapshot : undefined
+    if (resultSnapshot) {
+      try {
+        if (continuationOwner.current?.snapshotId !== resultSnapshot.id) throw new Error('续写上下文已失效')
+        continuationOwner.current.assertCurrent()
+      } catch {
+        showToast('项目或存储空间已变化，请复制内容并重新核对。', 'error')
+        return
+      }
+      if (db.getCurrentProjectId() !== resultSnapshot.projectId || (focusChapterId ?? '') !== resultSnapshot.chapterId) {
+        showToast('项目或章节已切换，请回到原章节核对续写。', 'error')
+        return
+      }
+      void verifyAndApplyContinuation({
+        snapshot: resultSnapshot,
+        generatedText: cont.text,
+        currentContent: content,
+        onApplyAdvice: (txt, sel) => onApplyAdvice?.(txt, sel),
+      }).then(res => {
+        if (res.conflict) {
+          showToast(res.reason ?? '检测到正文在生成期间已被改动，已将续写保存为候选审阅', 'info')
+        }
+      }).catch(err => {
+        console.error('[applyContinuation] 写入建议段失败:', err)
+        showToast('采纳续写建议失败，请重试', 'error')
+      })
+      return
+    }
+    showToast('无法确认这份续写的原始上下文，请复制内容并手动核对。', 'error')
   }
 
   // ============ 审读：编辑意见 / OOC / 续写方向 / 爽点毒点 / 黄金三章 ============
@@ -688,7 +749,7 @@ export function useJieWenJiModel(props: Props) {
     post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, loadImpacts,
     selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords, rewrite, runRewrite, applyAdvice,
     contOpen, setContOpen, contWords, setContWords, contPlot, setContPlot, contPicks, toggleContPick,
-    contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount, contPreview, cont, runContinuation, applyContinuation,
+    contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount, contPreview, contSnapshot, cont, runContinuation, applyContinuation,
     rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening,
     brief, runBrief, aiBtnCls, scoreCls,
   }

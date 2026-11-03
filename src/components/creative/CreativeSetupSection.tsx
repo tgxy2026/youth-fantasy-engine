@@ -292,14 +292,30 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
         )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" solid disabled={s.running || !canStart || (s.resumeNeedsReview && !!s.resume)}
-            onClick={() => void startCreativeRun()}>
-            {s.running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            {s.running ? '创作中…' : startLabel}
-          </Button>
+          {s.resumeState === 'review-needed' && s.resumeClassification?.canResumeFromSafeCheckpoint ? (
+            <Button size="sm" variant="primary" solid disabled={s.running || !canStart}
+              onClick={() => void startCreativeRun({ forceCheckpoint: true })}>
+              {s.running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              {s.running ? '创作中…' : `从安全检查点继续（第 ${s.resume?.doneChapters ?? 0} 章）`}
+            </Button>
+          ) : (
+            <Button size="sm" variant="primary" solid disabled={s.running || !canStart || (s.resumeNeedsReview && !!s.resume) || s.resumeState === 'blocked'}
+              onClick={() => void startCreativeRun()}>
+              {s.running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              {s.running ? '创作中…' : startLabel}
+            </Button>
+          )}
           {!s.running && s.resume && (
             <Button size="sm" variant="secondary" onClick={() => void startCreativeRun({ fromScratch: true })}>
               从头重写（丢弃断点）
+            </Button>
+          )}
+          {!s.running && s.resume && s.resumeState === 'blocked' && (
+            <Button size="sm" variant="secondary" onClick={() => {
+              const diag = JSON.stringify({ resume: s.resume, state: s.resumeState, reason: s.resumeBlockedReason, classification: s.resumeClassification }, null, 2)
+              void navigator.clipboard?.writeText(diag)
+            }}>
+              复制诊断证据
             </Button>
           )}
           {s.running && (
@@ -315,12 +331,28 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
         </div>
 
         {!s.running && (s.resume || s.resumeBlockedReason) && (
-          <div className="mt-1 text-11 leading-relaxed text-ink-400">
-            {!s.resume ? (
-              <>上次记录无法被本版识别：{s.resumeBlockedReason} 原数据仍保留；点「开始创作」会重新开始，请先核对已保存章节。</>
-            ) : s.resumeNeedsReview
-              ? <>上次记录：{s.resume.label}。{s.resumeBlockedReason || '这份记录缺少可校验的章节信息'}，无法安全自动续跑；请先核对已保存章节，再选择「从头重写」。</>
-              : <>上次中止在：{s.resume.label}。点「继续写作」从断点接着写，
+          <div className="mt-2 text-11 leading-relaxed">
+            {s.resumeState === 'blocked' ? (
+              <div className="rounded border border-red-500/40 bg-red-950/20 p-2.5 text-red-300">
+                <b className="font-semibold text-red-200">🚫 恢复已阻止：</b>
+                {s.resumeBlockedReason || '断点与当前书库存在严重冲突，无法安全自动续跑。'}
+                <div className="mt-1 text-10 text-red-400">
+                  正文被改动或章节丢失时坚决拒绝续跑，以防止剧情错位与重复生成。请核对章节后点击「从头重写」或点击「复制诊断证据」留档。
+                </div>
+              </div>
+            ) : s.resumeState === 'review-needed' ? (
+              <div className="rounded border border-amber/40 bg-amber-950/20 p-2.5 text-amber-200">
+                <b className="font-semibold text-amber-100">⚠️ 恢复需确认：</b>
+                {s.resumeBlockedReason || '当前断点缺少完整校验信息或存在非致命差异。'}
+                <div className="mt-1 text-10 text-amber-300/80">
+                  {s.resumeClassification?.canResumeFromSafeCheckpoint
+                    ? `可点击上方「从安全检查点继续」从第 ${s.resume?.doneChapters ?? 0} 章往下连写，也可选择「从头重写」。`
+                    : '请恢复原章数设置，或选择「从头重写」。'}
+                </div>
+              </div>
+            ) : (
+              <div className="text-ink-400">
+                上次中止在：{s.resume?.label}。点「继续写作」从断点接着写，
                 <b className="text-ink-300">已落库的章不会重写</b>；
                 <span className="text-ink-500">修改「连写章数」后不能按此断点续跑，请恢复原章数或主动选择从头重写。</span>
                 {/* 🔴 3.3.4 · R-1：断点写 meta 与章落库**不是**跨 store 事务（文件后端没有事务原语）。
@@ -329,7 +361,8 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
                 <span className="mt-0.5 block text-ink-600">
                   断点记录与章节落库不保证严格同一事务：若在写入途中被系统强杀，重开时最后一章可能需要重写一次（不会丢其它已确认保存的章节）。
                 </span>
-              </>}
+              </div>
+            )}
           </div>
         )}
         <div className="mt-1.5 text-10 leading-relaxed text-ink-500">

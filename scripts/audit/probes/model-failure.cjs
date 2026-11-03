@@ -107,7 +107,7 @@ async function main() {
       const b = page.getByRole('button', { name }).first()
       if (await b.count()) { await b.click(); await sleep(name.source.includes('跳过') ? 4000 : 2000) }
     }
-    for (const label of ['稍后再说', '知道了']) {
+    for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了']) {
       const b = page.getByRole('button', { name: label, exact: true })
       if (await b.isVisible().catch(() => false)) await b.click()
     }
@@ -151,7 +151,23 @@ async function main() {
     await page.getByPlaceholder(/开始写|在这里写|正文/).first().waitFor({ timeout: 30000 }).catch(() => {})
     await sleep(2500)
     const ta = page.locator('textarea.novel-textarea').first()
-    await ta.click()
+    /** 新手引导遮罩会盖住编辑器：先关引导，点不动就重试 */
+    const dismissGuide = async () => {
+      for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了']) {
+        const b = page.getByRole('button', { name: label, exact: true }).first()
+        if (await b.isVisible().catch(() => false)) await b.click({ timeout: 3000 }).catch(() => {})
+      }
+    }
+    const clickWithGuideRetry = async (locator) => {
+      for (let i = 0; i < 6; i++) {
+        await dismissGuide()
+        try { await locator.click({ timeout: 6000 }); return } catch (error) {
+          if (i === 5) throw error
+          await page.waitForTimeout(800)
+        }
+      }
+    }
+    await clickWithGuideRetry(ta)
     check('进入正文编辑', await ta.count() > 0)
     await page.keyboard.press('Control+End')
 

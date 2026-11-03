@@ -115,3 +115,30 @@ export function pickContinuationSources(
 
   return { found: true, summaries, missingSummaries, prevTexts, droppedPrevTexts }
 }
+
+/** 续写勾选素材项（2.9.2 · ③） */
+export interface ContinuePickItem {
+  key: string
+  label: string
+  /** 设定类：映射到 `buildProjectContext` 的页签 id；空数组表示另有专门取数 */
+  tabIds: string[]
+  /** 默认是否勾选 */
+  def: boolean
+  /** 悬停说明（作者据此判断要不要勾） */
+  hint: string
+}
+
+export const CONTINUE_PICKS: ContinuePickItem[] = [
+  { key: 'outline', label: '本章细纲', tabIds: ['chapter-outline'], def: true, hint: '续写要沿着本章既定目标走（最关键的一项）' },
+  { key: 'chars', label: '主要角色', tabIds: ['char-main'], def: true, hint: '人物言行与口吻保持一致；本章出场人物由正文自动识别' },
+  { key: 'summaries', label: '章节摘要', tabIds: [], def: true, hint: '本章及前几章的压缩摘要（章数可调）' },
+  { key: 'style', label: '写作规范', tabIds: ['style'], def: true, hint: '人称 / 时态 / 标点等硬约束' },
+  { key: 'prev-texts', label: '前文章节', tabIds: [], def: true, hint: '往前带几章的正文（取每章末尾）；最占预算，章数越多越容易超上下文' },
+  { key: 'world', label: '世界设定', tabIds: ['worldbase', 'power', 'terms'], def: false, hint: '世界设定 + 力量体系 + 名词术语' },
+  { key: 'volume', label: '分卷大纲', tabIds: ['volume-outline'], def: false, hint: '本章在卷里的位置与下一步走向' },
+  { key: 'master', label: '全书总纲', tabIds: ['master'], def: false, hint: '长线方向（很吃预算）' },
+  { key: 'foreshadow', label: '伏笔追踪', tabIds: ['foreshadow'], def: false, hint: '避免与既有伏笔冲突，也可顺手埋收' },
+  { key: 'pinned', label: '本章固定资料', tabIds: [], def: false, hint: '本章在资料面板中显式固定的参考卡片；默认不自动带入' },
+  { key: 'fingerprint', label: '写作文风', tabIds: [], def: false, hint: '按你的文风指纹（#015 写作文风档）保持一致' },
+  { key: 'hookpoints', label: '爽点节奏', tabIds: ['hookpoints'], def: false, hint: '续写的爽点安排参考' },
+]

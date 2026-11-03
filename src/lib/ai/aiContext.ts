@@ -63,6 +63,14 @@ export interface ProjectContextOptions {
   /** 是否附带章节清单（卷 / 章标题 / 字数 / 摘要），默认 true */
   includeChapterList?: boolean
   /**
+   * 是否注入**会随每次保存变化**的写作统计（作品体量、写作节奏摘要），默认 true。
+   *
+   * 🔴 3.3.5：续写（`creative/continuationPlan.ts`）传 `false`。它的预览快照要在发送前逐字比对，
+   *    而这些统计值会因为作者刚敲的一个字就变（`体量：77671 → 77685`），
+   *    比对必然误报「资料或模型已变化」，把功能整个挡死；对续写正文也无参考价值。
+   */
+  includeWriterStats?: boolean
+  /**
    * 只出「骨架」：作品概览 + 章节清单，**不带任何页签资料、也不做相关章节召回**。
    * 酒馆「设定来源 = 背景设定」档用它 —— 世界规则交给作者提炼过的背景设定，
    * 这里只保留「这本书写到哪了」这条最小上下文（章节清单每章带 120 字摘要，够用且便宜）。
@@ -905,7 +913,11 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
         //    见 `lib/ai/aiGenreHint.ts`。
         await genreLineForAI(proj.genre),
         proj.intro ? `简介：${clip(proj.intro, 200)}` : '',
-        `体量：${st.volumes} 卷 / ${st.chapters} 章 / ${st.words} 字`,
+        // 🔴 3.3.5：体量与写作节奏都是**每次保存都会变**的统计值。
+        //    续写要冻结预览快照并在发送前逐字比对（见 `creative/continuationPlan.ts`），
+        //    这类统计一抖就会让「资料或模型已变化」误报 —— 而这些数字对续写正文没有参考价值。
+        //    故新增 `includeWriterStats: false` 由续写链路显式关掉；其余入口默认仍带（行为不变）。
+        opts.includeWriterStats === false ? '' : `体量：${st.volumes} 卷 / ${st.chapters} 章 / ${st.words} 字`,
       ]
         .filter(Boolean)
         .join('\n')
@@ -932,7 +944,8 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   //    于是「创作健康诊断」拿不到真实更新节奏，只能凭设定与章数猜有没有断更。
   //    ⚠️ 写入侧仍然不接 AI（那张表本就是纯统计流水，AI 无从代笔）—— 这里只做**只读**注入。
   try {
-    const digest = await buildPaceDigest()
+    // 3.3.5：同上 —— 码字节奏是统计值，续写链路关掉它（预览冻结快照不能因一次保存就失效）。
+    const digest = opts.includeWriterStats === false ? '' : await buildPaceDigest()
     if (digest) push('写作节奏', digest)
   } catch {
     // 拿不到就少带一段，绝不阻断（与上面作品概览同一条纪律）

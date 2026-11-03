@@ -88,9 +88,9 @@ async function dismissModal(page) {
   })
   if (!text) return ''
   console.log('[step] modal -', text.replace(/\n+/g, ' / '))
-  for (const label of ['稍后再说', '知道了', '我知道了', '关闭', '取消', '确定', '好的']) {
+  for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '我知道了', '关闭', '取消', '确定', '好的']) {
     const hit = await page.evaluate((l) => {
-      const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l)
+      const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l || (x.getAttribute('aria-label') || '') === l)
       if (b) { b.click(); return true }
       return false
     }, label)
@@ -99,6 +99,14 @@ async function dismissModal(page) {
   await page.keyboard.press('Escape')
   await sleep(600)
   return 'escape'
+}
+
+/** 点编辑器：备份提醒 / 新手引导会**异步**挂上来，单次 dismiss 之后仍可能再盖一层 ⇒ 边关边重试 */
+async function clickEditor(page, ta) {
+  for (let i = 0; i < 8; i++) {
+    try { await ta.click({ timeout: 6000 }); return } catch { await dismissModal(page); await sleep(1200) }
+  }
+  throw new Error('编辑器被浮层持续遮挡，点不进去')
 }
 
 const readEditor = (page, tag) => page.evaluate((t) => {
@@ -154,7 +162,7 @@ const readEditor = (page, tag) => page.evaluate((t) => {
   const before = await ta.inputValue().catch(() => '')
   step('editor-value', { note: `原长 ${before.length}` })
   await page.route('**/api/data', (r) => r.abort())
-  await ta.click()
+  await clickEditor(page, ta)
   await page.keyboard.press('Control+End')
   await page.keyboard.type(MARKER, { delay: 30 })
   await sleep(4000)
@@ -164,7 +172,7 @@ const readEditor = (page, tag) => page.evaluate((t) => {
 
   // ---------- 4. 恢复 + Ctrl+S 重试 ----------
   await page.unroute('**/api/data')
-  await ta.click()
+  await clickEditor(page, ta)
   await page.keyboard.press('Control+s')
   await sleep(4000)
   const retried = await readEditor(page, 'after-retry')
@@ -174,7 +182,7 @@ const readEditor = (page, tag) => page.evaluate((t) => {
   // ---------- 5. 三条断言（retry 用磁盘级读回，最硬） ----------
   const failedText = failed.leaf.join(' ')
   check('accepted-vs-persisted：失败时明确说「保存出错」而非「已保存」',
-    /保存出错|保存失败/.test(failedText) && !failed.leaf.some((t) => t === '已保存'), failedText.slice(0, 160))
+    /保存出错|保存失败|保存未确认/.test(failedText) && !failed.leaf.some((t) => t === '已保存'), failedText.slice(0, 160))
   check('failure-preserves-draft：失败后正文输入未丢失',
     failed.hasMarker && failed.len >= before.length, `len=${failed.len}（原 ${before.length}）`)
   const dataFile = path.join(appRoot, 'data', 'youth-fantasy-engine-data.json')

@@ -23,7 +23,15 @@ export function storageWriteStatus(facts: StorageWriteFacts): StorageWritePresen
     ({ kind, label, tone, description, canSave })
   if (facts.saveConflict) return result('conflict', '存在冲突', 'danger', '保存存在冲突，尚未确认当前修改已保存。请先查看存储区的冲突说明，不要直接刷新或覆盖。')
   if (facts.writeLocked) return result('locked', '暂停写入', 'danger', '存储已暂停写入。请先查看存储区的原因和恢复入口；点击保存不能解除写入限制。')
-  if (facts.lastError) return result('error', '保存出错', 'danger', storageFailureReason(facts.lastError).description)
+  if (facts.lastError) {
+    const reason = storageFailureReason(facts.lastError)
+    const label = reason.code === 'quota' ? '空间不足'
+      : reason.code === 'network' ? '网络断开'
+      : reason.code === 'permissions' ? '写入受限'
+      : reason.code === 'session-expired' || reason.code === 'session-replaced' ? '登录失效'
+      : '保存出错'
+    return result('error', label, 'danger', reason.description)
+  }
   if (!facts.connected) return result('connecting', '等待存储', 'muted', '正在等待存储初始化，尚未确认本次写入。')
   if (facts.saving) return result('writing', '正在写入', 'warning', '存储正在写入，尚未确认完成。')
   if (facts.dirty) return result('pending', '待保存', 'warning', '存储中还有待写入的修改，尚未确认完成。')

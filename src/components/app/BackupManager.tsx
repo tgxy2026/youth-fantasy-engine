@@ -102,18 +102,23 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     if (busy) return
     if (!await confirmDialog({
       title: '恢复历史版本',
-      message: `确定将「${projectName}」恢复到该备份版本？\n时间：${new Date(b.createdAt).toLocaleString()}\n\n恢复会用备份内容覆盖当前全部数据（卷/章/设定表/角色卡），覆盖后不可撤销，建议先手动备份当前版本。`,
+      message: `确定将「${projectName}」恢复到该备份版本？\n时间：${new Date(b.createdAt).toLocaleString()}\n\n恢复会用备份内容覆盖当前全部数据（卷/章/设定表/角色卡）。系统会在恢复前自动创建当前作品的安全备份，确保随时可找回。`,
       confirmText: '恢复', danger: true,
     })) return
     setBusy(true)
     try {
-      await db.restoreBackup(b.id)
+      const outcome = await db.restoreBackup(b.id)
       // #017 收尾：包里带回来的「已启用」资料是没索引的，不重建＝静默降级（详见 kbRestoreIndex）
       void rebuildKbIndexAfterRestore(projectId)
       // WT0-2：恢复是**整份覆盖项目数据** —— 页签配置的 revision 可能「降」回旧值，
       // 恰好与模板缓存里某条旧条目一致（pid 也比得上），不清就会读到恢复前/恢复中的旧结构。
       invalidateTemplateCache()
       onRestored()
+      if (outcome.knowledgeBase?.attempted && !outcome.knowledgeBase.ok) {
+        showToast(`已恢复 ${outcome.restoredVolumes} 卷 ${outcome.restoredChapters} 章（参考资料未完全随包恢复：${outcome.knowledgeBase.error}）。已建还原前安全备份。`, 'info')
+      } else {
+        showToast(`已成功恢复历史版本（包含 ${outcome.restoredVolumes} 卷 ${outcome.restoredChapters} 章），已自动创建还原前安全备份。`, 'success')
+      }
     } catch (e) {
       showToast('恢复失败：' + (e as Error).message, 'error')
     } finally {
@@ -277,12 +282,17 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       if (!await confirmDialog({
         title: '从备份文件恢复',
         message: `将用文件里的备份（${parsed.meta.label} · ${when}）覆盖当前项目「${projectName}」的全部数据。\n\n`
-          + '覆盖后不可撤销，建议先「立即备份」一份当前版本。确定恢复？',
+          + '系统会在覆盖前自动生成当前作品的安全快照，无需担心覆盖后无法找回。确定恢复？',
         confirmText: '恢复', danger: true,
       })) { setBusy(false); return }
-      await db.restoreBundleToProject(projectId, parsed.bundle)
+      const outcome = await db.restoreBundleToProject(projectId, parsed.bundle)
       void rebuildKbIndexAfterRestore(projectId)
       onRestored()
+      if (outcome.knowledgeBase?.attempted && !outcome.knowledgeBase.ok) {
+        showToast(`已从备份文件恢复 ${outcome.restoredVolumes} 卷 ${outcome.restoredChapters} 章（参考资料未完全随包恢复：${outcome.knowledgeBase.error}）。已建还原前安全备份。`, 'info')
+      } else {
+        showToast(`已从备份文件恢复 ${outcome.restoredVolumes} 卷 ${outcome.restoredChapters} 章，已自动创建还原前安全备份。`, 'success')
+      }
     } catch (err) {
       showToast('恢复失败：' + (err as Error).message, 'error')
     } finally {

@@ -3,7 +3,7 @@
 // 🔴 备份是**本地专属**数据（不参与云盘同步），见 makeCloudStoreWrapper 的短路逻辑。
 import type { Project, FormData } from '@/lib/types'
 import { uid } from '@/lib/app/id'
-import { ops, touchProject } from '@/lib/db/core'
+import { ops } from '@/lib/db/core'
 import { WEB } from '@/lib/app/platform'
 import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
 import { restoreDocsFromBundle } from '@/lib/search/knowledgeBase'
@@ -487,18 +487,41 @@ export async function deleteOrphanPayloads(): Promise<number> {
   return ids.length
 }
 
+export interface RestoreOptions {
+  /** 是否跳过预备份（仅在调用方已经自行完成可靠预备份时使用，如 projectPullApply） */
+  skipPreBackup?: boolean
+  /** 显式预备份说明标签 */
+  preBackupLabel?: string
+}
+
+export interface RestoreOutcome {
+  ok: boolean
+  targetProjectId: string
+  preBackupId?: string
+  preBackupLabel?: string
+  restoredVolumes: number
+  restoredChapters: number
+  knowledgeBase?: {
+    attempted: boolean
+    ok: boolean
+    count?: number
+    error?: string
+  }
+}
+
 /**
  * 将一份项目数据包「覆盖写回」到目标项目（恢复历史版本用）。
  * 保留目标项目 id，但用备份包的内容替换其全部数据（卷/章/表/卡/表单/统计/设置），
  * 并将书名、封面、类型、简介同步为备份当时的快照。
+ * 🔴 3.3.5 · D2：还原前强制执行自动「预备份」，杜绝破坏性覆盖；返回结构化结果。
  */
-export async function restoreBackup(id: string): Promise<void> {
+export async function restoreBackup(id: string, opts?: RestoreOptions): Promise<RestoreOutcome> {
   const rec = await ops.get<BackupMeta>('backups', id)
   if (!rec) throw new Error('备份不存在')
   const bundle = await getBackupPayload(id)
   // 元数据还在、载荷没了（被外部清理过 / 写到一半断电）：必须明确报错，不能"恢复成功"却什么都没恢复
   if (!bundle) throw new Error('这份备份的数据已经找不到了（元数据仍在，载荷缺失），无法恢复')
-  await applyBundleToProject(rec.projectId, bundle)
+  return await applyBundleToProject(rec.projectId, bundle, opts)
 }
 
 // ============ 备份外置（C2 · 2.4.2）============
@@ -546,11 +569,34 @@ export function parseBackupFile(text: string): BackupFile {
 }
 
 /** 把外置备份文件里的数据包覆盖写回**当前项目**（file 恢复入口用；区别于导入迁移包=新建项目） */
-export async function restoreBundleToProject(projectId: string, bundle: ProjectBundle): Promise<void> {
-  await applyBundleToProject(projectId, bundle)
+export async function restoreBundleToProject(projectId: string, bundle: ProjectBundle, opts?: RestoreOptions): Promise<RestoreOutcome> {
+  return await applyBundleToProject(projectId, bundle, opts)
 }
 
-async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): Promise<void> {
+async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, opts?: RestoreOptions): Promise<RestoreOutcome> {
+  // 0. 强制自动预备份（3.3.5 · D2 破坏性操作前强制执行预备份）
+  // 🔴 无论通过什么入口恢复（备份列表恢复 / 外置文件导入覆盖），在动目标数据前必须先建好当前项目的快照，
+  //    并且必须能够成功读回。若预备份失败，坚决拒绝覆盖。
+  let preBackupMeta: BackupMeta | null = null
+  if (!opts?.skipPreBackup) {
+    const proj = await getProject(targetPid)
+    if (!proj) throw new Error('无法确认目标项目，已停止恢复。')
+    if (isDemoProjectName(proj.name)) throw new Error('示范项目不支持备份，请先复制为普通项目再恢复。')
+    {
+      const stamp = new Date().toLocaleString('zh-CN')
+      const label = opts?.preBackupLabel ?? `还原前安全备份 · ${stamp}`
+      preBackupMeta = await createAutoBackup(targetPid, 'manual', label)
+      if (!preBackupMeta) {
+        throw new Error('还原前安全预备份创建失败，为防止数据覆盖丢失，已终止还原操作。')
+      }
+      const verified = await getBackupPayload(preBackupMeta.id)
+      if (!verified || !verified.project) {
+        await deleteBackup(preBackupMeta.id).catch(() => {})
+        throw new Error('还原前安全预备份校验失败（载荷无法读取），为保护当前数据未执行覆盖。')
+      }
+    }
+  }
+
   // 1. 收集该项目现有的键 —— ⚠️ 只收集，**先不删**。
   //    🔴 旧实现是「先清空、再写回」：写到一半失败（配额满、断网、用户关窗），
   //    项目就变半空且无从恢复。改成「先写后删」之后，任一步失败最多留下些
@@ -725,14 +771,17 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
   //    若无条件清空，会把作者现有资料清干净 ——「恢复备份」的语义是"把备份里的内容还原"，
   //    不是"把备份没覆盖的也一并清掉"（与上面「不删快照」那条同口径）。
   // ⚠️ 成功/失败都不影响本次恢复的成败判定：它在独立库里，写不进去也只是资料没跟着回来。
+  // 3.3.5 · D2：将参考资料的真实还原成败明确记录在 RestoreOutcome 中。
+  let kbOutcome: RestoreOutcome['knowledgeBase'] = undefined
   if (bundle.knowledgeBase) {
-    await restoreDocsFromBundle(targetPid, bundle.knowledgeBase).catch((e) => {
-      // 🔴 2026-10-10 六维审计 P2：原先 `.catch(() => 0)` 无声吞错 —— 与上一段注释
-      //    「成功/失败都不影响本次恢复的成败判定」并不矛盾：不影响**成败判定**，
-      //    但必须留日志，否则作者只会看到"恢复成功但资料没回来"。
-      console.warn('[db] 恢复备份时写回参考资料失败（备份已恢复，仅资料未随包回来）：', e)
-      return 0
-    })
+    try {
+      const count = await restoreDocsFromBundle(targetPid, bundle.knowledgeBase)
+      kbOutcome = { attempted: true, ok: true, count }
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e)
+      console.warn('[db] 恢复备份时写回参考资料失败（主数据已恢复，仅资料未随包回来）：', e)
+      kbOutcome = { attempted: true, ok: false, error: errMsg }
+    }
   }
 
   // 4. 同步项目元数据（成为该历史版本）
@@ -744,8 +793,17 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle): P
       genre: bundle.project.genre ?? '',
       intro: bundle.project.intro ?? '',
       ...(bundle.project.cover !== undefined ? { cover: bundle.project.cover } : {}),
-      updatedAt: Date.now(),
+      // 3.3.5 · D3 语义准确：保留备份中真实的历史修改时间（若缺失则保留现有作品时间或当前时间）
+      updatedAt: bundle.project.updatedAt || old.updatedAt || Date.now(),
     })
   }
-  await touchProject(targetPid)
+
+  return {
+    ok: true,
+    targetProjectId: targetPid,
+    ...(preBackupMeta ? { preBackupId: preBackupMeta.id, preBackupLabel: preBackupMeta.label } : {}),
+    restoredVolumes: bundle.volumes.length,
+    restoredChapters: bundle.chapters.length,
+    ...(kbOutcome ? { knowledgeBase: kbOutcome } : {}),
+  }
 }

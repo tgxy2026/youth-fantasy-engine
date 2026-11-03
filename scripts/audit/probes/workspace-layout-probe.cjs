@@ -40,6 +40,9 @@ async function main() {
     if (!ready) throw new Error('vite dev server 120 秒内没有返回首页')
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--no-proxy-server'] })
     const page = await browser.newPage({ viewport: { width: 1000, height: 640 } })
+    // 🔴 本巡检只量布局：先按作者的「不再自动弹出」偏好关掉新手引导，
+    //    否则引导遮罩（`[data-guide-mask]`）会在随便哪个页签盖住按钮，点什么都 12s 超时。
+    await page.addInitScript(() => localStorage.setItem('yfe-ui:guide-auto', '0'))
     await page.route('**/*', route => {
       const url = new URL(route.request().url())
       if (/\/chat\/completions|\/api\/ai(?:\/|$)/.test(url.pathname)) {
@@ -55,9 +58,24 @@ async function main() {
     await page.getByRole('button', { name: '下一步', exact: true }).click()
     await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
     await page.locator('nav').waitFor()
+    // 🔴 首次进入会自动弹新手引导：它的遮罩（`[data-guide-mask]`）压住备份提醒的按钮，
+    //    直接点「稍后再说」会 12s 超时。先关引导，点不动就重试。
+    const closeGuide = async () => {
+      for (const label of ['关闭本页指引', '跳过本页']) {
+        const b = page.getByRole('button', { name: label, exact: true }).first()
+        if (await b.isVisible().catch(() => false)) await b.click({ timeout: 3000 }).catch(() => {})
+      }
+    }
+    await closeGuide()
     const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    await later.click()
-  await page.getByRole('navigation').waitFor()
+    for (let i = 0; i < 5; i++) {
+      try { await later.click({ timeout: 6000 }); break } catch (error) {
+        if (i === 4) throw error
+        await closeGuide()
+        await page.waitForTimeout(700)
+      }
+    }
+    await page.getByRole('navigation').waitFor()
     await page.evaluate(async value => {
       const { DENSITIES, DENSITY_PREF, applyDensity } = await import('/src/lib/settings/density.ts')
       const { writeEnumPref } = await import('/src/lib/settings/uiPrefs.ts')

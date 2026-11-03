@@ -49,12 +49,32 @@ async function until(fn, timeout = BOOT_TIMEOUT) {
   while (Date.now() < end) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 100)) }
   throw new Error('Timed out waiting for actual state')
 }
+async function dismiss(page) {
+  const closeGuide = page.getByRole('button', { name: '关闭本页指引', exact: true })
+  if (await closeGuide.isVisible().catch(() => false)) await closeGuide.click().catch(() => {})
+  for (const name of ['跳过本页', '稍后再说', '知道了', '我知道了', '跳过，直接开始']) {
+    const button = page.getByRole('button', { name, exact: true })
+    if (await button.isVisible().catch(() => false)) await button.click().catch(() => {})
+  }
+}
+async function clickSafely(page, locator, tries = 6) {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      await locator.click({ timeout: 4000 })
+      return
+    } catch {
+      await dismiss(page)
+      await page.keyboard.press('Escape').catch(() => {})
+      await new Promise(r => setTimeout(r, 600))
+    }
+  }
+  await dismiss(page)
+  await page.keyboard.press('Escape').catch(() => {})
+  await locator.click({ timeout: 4000 })
+}
 async function openEditor(page) {
   await page.getByRole('heading', { name: TITLE, exact: true }).waitFor({ timeout: BOOT_TIMEOUT })
-  for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
-    const button = page.getByRole('button', { name, exact: true })
-    if (await button.isVisible().catch(() => false)) await button.click()
-  }
+  await dismiss(page)
   await page.locator('div.card-hover').filter({ has: page.getByRole('heading', { name: TITLE, exact: true }) }).getByRole('button', { name: '打开项目', exact: true }).click()
   // 🔴 备份提醒会把背景置为 inert/aria-hidden ⇒ 背景里的 `<nav>` 从可访问性树消失，
   //    `getByRole('navigation')` 连 attached 都等不到（2026-10-26 实测同款问题）。
@@ -64,9 +84,7 @@ async function openEditor(page) {
   const nav = page.getByRole('navigation')
   const navDeadline = Date.now() + BOOT_TIMEOUT
   while (Date.now() < navDeadline && !(await nav.isVisible().catch(() => false))) {
-    for (const name of ['稍后再说', '知道了']) {
-      await page.getByRole('button', { name, exact: true }).click({ timeout: 2000 }).catch(() => {})
-    }
+    await dismiss(page)
     await page.waitForTimeout(200)
   }
   await nav.waitFor({ timeout: 5000 })
@@ -81,9 +99,7 @@ async function openEditor(page) {
       await page.getByPlaceholder(EDITOR).waitFor({ timeout: 8000 })
       entered = true
     } catch {
-      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
-        await page.getByRole('button', { name, exact: true }).click({ timeout: 1500 }).catch(() => {})
-      }
+      await dismiss(page)
       await page.waitForTimeout(200)
     }
   }
@@ -164,6 +180,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     // Refuse all network traffic in both renderer and main session. Local file assets remain usable.
     await app.evaluate(({ session }) => { session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_details, callback) => callback({ cancel: true })) })
     page = await app.firstWindow(); page.setDefaultTimeout(15000)
+    await page.evaluate(() => localStorage.setItem('yfe-ui:guide-auto', '0')).catch(() => {})
     page.on('pageerror', value => pageErrors.push(String(value)))
     await openEditor(page)
   }
@@ -217,7 +234,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     check('dirty-retry', true)
     check('failure-notice-bounded', await page.getByText(/^数据保存未确认：/).count() <= 1 && !(await page.locator('body').innerText()).includes('operation not permitted'))
     await page.screenshot({ path: path.join(runRoot, 'write-failure.png') })
-    await page.getByTitle('导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑', { exact: true }).click()
+    await clickSafely(page, page.getByTitle('导出数据文件：把本机全部数据导出一个 JSON 文件，用于留档或搬到别的电脑', { exact: true }))
     await until(async () => { try { return JSON.parse(await fs.readFile(exportFile, 'utf8')).stores.chapters[CH].content === DRAFT } catch { return false } })
     check('failure-export', true)
     check('export-preserves-failure', (await fs.stat(activeFile)).isDirectory() && hash(await fs.readFile(keptFile)) === hash(originalBytes) && (await page.getByPlaceholder(EDITOR).inputValue()) === DRAFT)
@@ -274,7 +291,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       check('secret-stripping.secret-present-before', seededFile.includes(SECRET), '数据文件里应能看到播种的密钥')
 
       await app.evaluate((_electron, target) => { global.__desktopProbe.savePath = target }, roundtripFile)
-      await page.getByTitle(EXPORT_TITLE, { exact: true }).click()
+      await clickSafely(page, page.getByTitle(EXPORT_TITLE, { exact: true }))
       await until(async () => {
         try { return chapterOf(await fs.readFile(roundtripFile, 'utf8'))?.content === DRAFT } catch { return false }
       }, 20000)
@@ -300,9 +317,9 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       // 导入：确认框 →「继续导入」→ 应用会 location.reload()
       // 🔴 必须真的等这次 reload：点了「继续导入」后页面还停在编辑器里，此时若按"textarea 在不在"判断，
       //    会立刻判成"已经回到编辑器"，然后 reload 一来又被打回项目中心（第一轮就这么超时的）。
-      await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+      await clickSafely(page, page.getByTitle(IMPORT_TITLE, { exact: true }))
       const reloaded = page.waitForEvent('load', { timeout: BOOT_TIMEOUT })
-      await page.getByRole('button', { name: '继续导入', exact: true }).click()
+      await clickSafely(page, page.getByRole('button', { name: '继续导入', exact: true }))
       await reloaded
       await openEditor(page)
       await until(async () => chapterOf(await fs.readFile(activeFile, 'utf8'))?.content === DRAFT, 25000)
@@ -328,8 +345,8 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       const beforeReject = await fs.readFile(activeFile, 'utf8')
       const importExpectRefusal = async (file, pattern, label) => {
         await app.evaluate((_electron, target) => { global.__desktopProbe.savePath = target }, file)
-        await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
-        await page.getByRole('button', { name: '继续导入', exact: true }).click()
+        await clickSafely(page, page.getByTitle(IMPORT_TITLE, { exact: true }))
+        await clickSafely(page, page.getByRole('button', { name: '继续导入', exact: true }))
         const toast = page.getByText(pattern).first()
         await toast.waitFor({ timeout: 25000 })
         check(label, true, ((await toast.textContent()) || '').trim().slice(0, 120))

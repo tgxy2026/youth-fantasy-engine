@@ -58,9 +58,9 @@ async function freePort() {
   })
 }
 async function dismiss(page) {
-  for (const label of ['稍后再说', '知道了', '跳过，直接开始', '关闭']) {
+  for (const label of ['稍后再说', '知道了', '跳过，直接开始', '关闭', '关闭本页指引', '跳过本页']) {
     const hit = await page.evaluate(l => {
-      const button = [...document.querySelectorAll('button')].find(node => (node.textContent || '').trim() === l)
+      const button = [...document.querySelectorAll('button')].find(node => (node.textContent || '').trim() === l || (node.getAttribute('aria-label') || '') === l)
       if (button) { button.click(); return true }
       return false
     }, label)
@@ -115,7 +115,15 @@ async function main() {
     await target.getByPlaceholder(EDITOR).waitFor({ timeout: 45000 })
   }
   const backToHub = async () => {
-    await page.getByTitle(BACK).first().click()
+    // 🔴 新手引导的遮罩（`[data-guide-mask]`）会盖住页头返回键：先关引导，点不动就重试。
+    const back = page.getByTitle(BACK).first()
+    for (let i = 0; i < 6; i++) {
+      await dismiss(page)
+      try { await back.click({ timeout: 8000 }); break } catch (error) {
+        if (i === 5) throw error
+        await page.waitForTimeout(700)
+      }
+    }
     await page.getByRole('heading', { name: TA, exact: true }).first().waitFor({ timeout: 45000 })
     await dismiss(page)
   }

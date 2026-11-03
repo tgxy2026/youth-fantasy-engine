@@ -5,6 +5,7 @@
  * 2.9.2 起：改稿下方新增「续写」折叠区块（②的额外要求 + 期望字数落在改稿区）。
  * ⚠️ 五个动作名（`INSTRUCTIONS`）会**直接进提示词**，改名须同步 `jieWenJi.ts` 的定义段。
  */
+import { useState } from 'react'
 import { PenLine, Wand2, Loader2, AlertTriangle, CheckCircle2, Trash2, Feather, ChevronDown, ChevronUp } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
@@ -24,13 +25,23 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
     contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount,
     contPreview, cont, runContinuation, applyContinuation,
   } = m
+  const [showManifest, setShowManifest] = useState(false)
   // 三类「本次未带入」并成一行（设定段被预算丢 / 前几章正文没带上 / 摘要有章没填）—— 绝不静默丢
   const contMissed = [
     ...contPreview.dropped,
     ...(contPreview.droppedPrevTexts > 0 ? [`前文章节 ${contPreview.droppedPrevTexts} 章`] : []),
     ...(contPreview.missingSummaries > 0 ? [`${contPreview.missingSummaries} 章未填摘要`] : []),
   ]
-  const contOver = contPreview.budget > 0 && contPreview.chars > contPreview.budget
+  const contOver = (contPreview.budget > 0 && contPreview.chars > contPreview.budget) || !contPreview.fits
+  /**
+   * 超额说明只说**确实超出**的那一项：
+   * 之前固定写「超出可用额度约 {overflowTokens} token（{overflowChars} 字）」，在「token 还够、字数超了」时会
+   * 显示成「超出可用额度约 0 token（5,933 字）」—— 前半句自相矛盾，读起来像没超。两档分开拼。
+   */
+  const contOverParts: string[] = []
+  if (contPreview.overflowTokens > 0) contOverParts.push(`约 ${contPreview.overflowTokens.toLocaleString()} token`)
+  if (contPreview.overflowChars > 0) contOverParts.push(`${contPreview.overflowChars.toLocaleString()} 字`)
+  const contOverLabel = contOverParts.length ? ` ${contOverParts.join(' / ')}` : '（估算超出模型可接受范围）'
   return (
           <>
             <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
@@ -221,26 +232,61 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
 
                   <div className="rounded-lg bg-ink-800/50 px-2 py-1.5 text-10 leading-relaxed">
                     {contPreview.loading ? (
-                      <span className="text-ink-500">正在估算资料用量…</span>
+                      <span className="text-ink-500">正在估算资料用量与词元…</span>
                     ) : (
-                      <>
-                        <span className={contOver ? 'text-danger' : 'text-ink-400'}>
-                          预计占用约 {contPreview.chars.toLocaleString()} 字 / 预算 {contPreview.budget.toLocaleString()} 字
-                        </span>
-                        {contOver && <span className="text-danger"> —— 超出的部分不会发送</span>}
+                      <div className="space-y-1">
+                        <div className={contOver ? 'text-danger font-medium' : 'text-ink-300'}>
+                          预计占用约 {contPreview.chars.toLocaleString()} 字（约 {contPreview.tokens.toLocaleString()} token）
+                          <span className="text-ink-500 font-normal"> / 额度 {contPreview.budget.toLocaleString()} 字（约 {contPreview.budgetTokens.toLocaleString()} token）</span>
+                        </div>
+                        <div className="text-9 text-ink-500">
+                          词元估算依据：中文 1 字≈1 token，字母符号约 4 字符/token（供参考，非精确计费）
+                        </div>
+                        {contOver && (
+                          <div className="text-danger font-medium">
+                            超出可用额度{contOverLabel} —— 请减少勾选项或调小前文章数
+                          </div>
+                        )}
                         {contMissed.length > 0 && (
                           <div className="text-amber/80">本次未带入：{contMissed.join('、')}</div>
                         )}
                         {!contPreview.srcFound && (
                           <div className="text-amber/80">未能在章节列表里定位到本章，本次只会带设定资料</div>
                         )}
-                      </>
+                        {contPreview.items && contPreview.items.length > 0 && (
+                          <div className="pt-1 border-t border-ink-700/60 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowManifest(s => !s)}
+                              className="flex items-center justify-between w-full text-10 text-amber hover:text-amber/80 py-0.5"
+                            >
+                              <span>本次发送材料清单（{contPreview.items.length}项）</span>
+                              <span>{showManifest ? '▲ 收起' : '▼ 展开核对'}</span>
+                            </button>
+                            {showManifest && (
+                              <div className="mt-1 space-y-1 max-h-36 overflow-y-auto pr-1">
+                                {contPreview.items.map(item => (
+                                  <div key={item.id} className="flex items-start justify-between gap-1.5 text-9 bg-ink-900/60 p-1 rounded border border-ink-700/50">
+                                    <span className="truncate text-ink-200" title={item.title}>{item.title}</span>
+                                    <span className="shrink-0 flex items-center gap-1">
+                                      <span className={item.scope === 'full' ? 'text-emerald-400' : item.scope === 'trimmed' ? 'text-amber' : 'text-danger'}>
+                                        {item.scope === 'full' ? '完整' : item.scope === 'trimmed' ? '裁剪' : '未带入'}
+                                      </span>
+                                      <span className="text-ink-500">{item.includedChars}字/{item.includedTokens}t</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   <Button variant="bare"
                     onClick={() => void runContinuation()}
-                    disabled={!aiReady || cont.loading}
+                    disabled={!aiReady || cont.loading || contPreview.loading || contOver}
                     className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
                     title={!aiReady ? AI_DISABLED_HINT : undefined}
                   >

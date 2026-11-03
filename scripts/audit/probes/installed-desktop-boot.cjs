@@ -50,6 +50,27 @@ async function main() {
     exeSha256: sha256(exe), exeBytes: (await fs.stat(exe)).size, asarSha256: sha256(asar),
     asarBytes: (await fs.stat(asar)).size, exePath: exe,
   }
+/**
+ * 同名按钮可能不止一个（侧栏 / 写作面板各有一处），只点**可见**的那个。
+ * 🔴 新手引导遮罩（`[data-guide-mask]`）会在任意时刻盖上来：点不动就再关一轮引导/提醒再试，
+ *    单次 60s 默认超时会把整轮判红（本轮实测：单独跑能过、接在 desktop-save 后面跑就挂）。
+ */
+async function clickVisible(page, name, tries = 6) {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const loc = page.getByRole('button', { name, exact: true })
+    const total = await loc.count()
+    for (let i = 0; i < total; i++) {
+      if (!(await loc.nth(i).isVisible().catch(() => false))) continue
+      try { await loc.nth(i).click({ timeout: 8000 }); return } catch { /* 被浮层挡住，下面关一轮再来 */ }
+    }
+    for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '继续上次', '打开项目']) {
+      const b = page.getByRole('button', { name: label, exact: true }).first()
+      if (await b.isVisible().catch(() => false)) await b.click({ timeout: 4000 }).catch(() => {})
+    }
+    await sleep(900)
+  }
+  throw new Error('点不到可见的「' + name + '」按钮（引导/提醒反复遮挡）')
+}
   const DRAFT = '已安装产物取证：这一行写在装好的桌面版里。'
   let app, page
   const launch = async () => {
@@ -62,10 +83,23 @@ async function main() {
     await page.waitForFunction(() => (document.querySelector('#root')?.childElementCount ?? 0) > 0, null, { timeout: 90_000 })
     await sleep(2000)
     // 首次启动会走示例引导；重启后先落「我的作品」还可能弹备份提醒 —— 两套入口都要过
-    for (const label of [/先看看示例/, /^下一步$/, /跳过，直接开始/, '稍后再说', '知道了', '继续上次', '打开项目']) {
+    // 🔴 首次启动还会弹「新手引导」浮层（aria-modal）—— 它把背景置为 inert，侧栏按钮既看不见也点不到。
+    //    只关提醒类按钮不够，必须先关引导：按 aria-label 关整页指引，再退回「跳过本页」。
+    for (const label of ['关闭本页指引', '跳过本页', /先看看示例/, /^下一步$/, /跳过，直接开始/, /跳过，直接进入项目管理/, '稍后再说', '知道了', '继续上次', '打开项目']) {
       const button = page.getByRole('button', { name: label }).first()
       if (await button.count()) { await button.click().catch(() => {}); await sleep(2000) }
     }
+    // 关到「正文编辑」真的可点为止（引导可能分步弹，或提醒层在导航可见后又盖上来）
+    const enterDeadline = Date.now() + 60_000
+    while (Date.now() < enterDeadline) {
+      if (await page.getByRole('button', { name: '正文编辑', exact: true }).first().isVisible().catch(() => false)) return
+      for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '继续上次', '打开项目']) {
+        const button = page.getByRole('button', { name: label, exact: true }).first()
+        if (await button.isVisible().catch(() => false)) await button.click().catch(() => {})
+      }
+      await sleep(500)
+    }
+    throw new Error('首启引导/提醒未关净：侧栏「正文编辑」始终不可点')
   }
 
   let error = null
@@ -82,7 +116,7 @@ async function main() {
     check('initial-flags', flags.hasStore && !flags.web && !flags.portable && !flags.guest, JSON.stringify(flags))
 
     // ② backend-selection：正文落盘到 <userData>/youth-fantasy-engine-data.json（IPC→文件，不是 IDB）
-    await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
+    await clickVisible(page, '正文编辑')
     const editor = page.locator('textarea.novel-textarea').first()
     await editor.waitFor()
     const before = await editor.inputValue()
@@ -100,8 +134,8 @@ async function main() {
     await app.close()
     await sleep(1500)
     await launch()
-    await page.getByRole('navigation').waitFor({ timeout: 90_000 })
-    await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
+    await page.getByRole('button', { name: '正文编辑', exact: true }).first().waitFor({ timeout: 90_000 })
+    await clickVisible(page, '正文编辑')
     const editor2 = page.locator('textarea.novel-textarea').first()
     await editor2.waitFor()
     await sleep(1500)

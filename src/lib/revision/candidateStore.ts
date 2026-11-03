@@ -150,10 +150,12 @@ export async function reclaimStaleCandidates(projectId: string, now: number = Da
  * 🔴 顺序：**先查配额 → 再写 → 再回读**。反过来先写再查配额，超限时就只能删掉刚写的那份，
  *    多一次失败路径；而"先查后写"最多是并发下略微超一点点，代价小得多。
  */
-export async function saveCandidate(c: RevisionCandidate, owner?: OwnedOperation, expected?: RevisionCandidate): Promise<SaveCandidateResult> {
+export async function saveCandidate(c: RevisionCandidate, owner?: OwnedOperation, expected?: RevisionCandidate, options?: { create?: boolean }): Promise<SaveCandidateResult> {
   owner?.assertCurrent()
   if (owner && owner.projectId !== c.projectId) throw new Error('候选不属于当前操作项目。')
-  if (owner && (!expected || expected.id !== c.id)) throw new Error('缺少待更新候选的原始版本。')
+  if (owner && expected && expected.id !== c.id) throw new Error('候选版本不匹配。')
+  if (owner && !expected && !options?.create) throw new Error('缺少待更新候选的原始版本。')
+  if (owner && !expected && await getRevisionPayload(c.id, owner)) throw new Error('候选已存在，请重新生成。')
   const payload = candidateToPayload(c)
 
   if (payload.bytes > MAX_PAYLOAD_BYTES) {

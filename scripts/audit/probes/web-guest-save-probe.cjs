@@ -46,9 +46,13 @@ async function readChapter(page, databaseName) {
   }), { databaseName, CH })
 }
 async function dismiss(page) {
-  for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+  // 🔴 新手引导（GuideOverlay）是 aria-modal 的 dialog，压住导航与编辑器；只点「稍后再说」关不掉它。
+  //    先按 aria-label 关整页指引，再退回「跳过本页」（单页跳过）。
+  const closeGuide = page.getByRole('button', { name: '关闭本页指引', exact: true })
+  if (await closeGuide.isVisible().catch(() => false)) await closeGuide.click().catch(() => {})
+  for (const name of ['跳过本页', '稍后再说', '知道了', '跳过，直接开始']) {
     const button = page.getByRole('button', { name, exact: true })
-    if (await button.isVisible().catch(() => false)) await button.click()
+    if (await button.isVisible().catch(() => false)) await button.click().catch(() => {})
   }
 }
 async function openEditor(page) {

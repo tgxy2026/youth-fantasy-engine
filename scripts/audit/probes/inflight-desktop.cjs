@@ -139,8 +139,29 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
     app.process().stderr?.on('data', value => { runtimeLog += value })
     await app.evaluate(({ session }) => { session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_details, callback) => callback({ cancel: true })) })
     page = await app.firstWindow(); page.setDefaultTimeout(20000)
+    await page.evaluate(() => localStorage.setItem('yfe-ui:guide-auto', '0')).catch(() => {})
     page.on('pageerror', value => pageErrors.push(String(value)))
     await openProject(TA)
+  }
+  const dismiss = async () => {
+    for (const label of ['稍后再说', '知道了', '跳过，直接开始', '关闭', '关闭本页指引', '跳过本页']) {
+      await page.evaluate(l => {
+        const button = [...document.querySelectorAll('button')].find(node => (node.textContent || '').trim() === l || (node.getAttribute('aria-label') || '') === l)
+        if (button) button.click()
+      }, label).catch(() => {})
+    }
+  }
+  const backToHub = async () => {
+    const back = page.getByTitle(BACK).first()
+    for (let i = 0; i < 6; i++) {
+      await dismiss()
+      try { await back.click({ timeout: 8000 }); break } catch (error) {
+        if (i === 5) throw error
+        await page.waitForTimeout(700)
+      }
+    }
+    await page.getByRole('heading', { name: TA, exact: true }).first().waitFor({ timeout: 45000 })
+    await dismiss()
   }
   /**
    * 进正文编辑器。两种入口都要认：
@@ -155,7 +176,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       page.locator('nav').first().waitFor({ state: 'attached', timeout: 45000 }).catch(() => {}),
     ])
     if (await card.isVisible()) {
-      for (const name of ['稍后再说', '知道了', '跳过，直接开始']) {
+      for (const name of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '跳过，直接开始', '跳过，直接进入项目管理']) {
         const button = page.getByRole('button', { name, exact: true })
         if (await button.isVisible().catch(() => false)) await button.click()
       }
@@ -223,8 +244,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       await page.keyboard.press('Control+s')
       await until(async () => (await calls()).some(call => call.channel === 'store:save' && call.body === TEXT_C && !call.doneAt), 30000, 'switch text save in flight')
       const switchedAt = Date.now()
-      await page.getByTitle(BACK).first().click()
-      await page.getByRole('heading', { name: TA, exact: true }).first().waitFor({ timeout: 45000 })
+      await backToHub()
       await openProject(TB)
       await until(async () => (await diskChapter(CA))?.content === TEXT_C, 45000, 'first project write landed')
       // 切换后允许请求尚未结束；磁盘读回后再核对这一笔的起止时间。
@@ -235,8 +255,7 @@ require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});
       check('project-switch.other-untouched', other?.content === ORIG_B && other?.projectId === PB, JSON.stringify(other?.content ?? '').slice(0, 24))
       await setDelay(0)
       await page.screenshot({ path: path.join(runRoot, 'project-switch.png') })
-      await page.getByTitle(BACK).first().click()
-      await page.getByRole('heading', { name: TA, exact: true }).first().waitFor({ timeout: 45000 })
+      await backToHub()
       await openProject(TA)
       check('project-switch.reopen-readback', (await ta().inputValue()) === TEXT_C)
     }

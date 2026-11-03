@@ -50,32 +50,7 @@ export const INSTRUCTIONS = ['润色', '扩写', '精简', '语气', '视角']
  * ⚠️ 这里只声明「勾什么」，**不声明「怎么取」** —— 取数实现一律在 lib 层，
  *    免得界面与取数各写一份口径（项目红线：AI 读哪些数据只能有一个源）。
  */
-interface ContinuePickItem {
-  key: string
-  label: string
-  /** 设定类：映射到 `buildProjectContext` 的页签 id；空数组表示另有专门取数 */
-  tabIds: string[]
-  /** 默认是否勾选 */
-  def: boolean
-  /** 悬停说明（作者据此判断要不要勾） */
-  hint: string
-}
-
-export const CONTINUE_PICKS: ContinuePickItem[] = [
-  { key: 'outline', label: '本章细纲', tabIds: ['chapter-outline'], def: true, hint: '续写要沿着本章既定目标走（最关键的一项）' },
-  { key: 'chars', label: '主要角色', tabIds: ['char-main'], def: true, hint: '人物言行与口吻保持一致；本章出场人物由正文自动识别' },
-  { key: 'summaries', label: '章节摘要', tabIds: [], def: true, hint: '本章及前几章的压缩摘要（章数可调）' },
-  { key: 'style', label: '写作规范', tabIds: ['style'], def: true, hint: '人称 / 时态 / 标点等硬约束' },
-  // 🔴 「前文章节」取每章的**末尾**，所以它同时是衔接参照 —— 原先独立的「上一章结尾」
-  //    选项已并入本项（2026-10-09 主人拍板删除，避免两个勾项做同一件事）。
-  { key: 'prev-texts', label: '前文章节', tabIds: [], def: true, hint: '往前带几章的正文（取每章末尾）；最占预算，章数越多越容易超上下文' },
-  { key: 'world', label: '世界设定', tabIds: ['worldbase', 'power', 'terms'], def: false, hint: '世界设定 + 力量体系 + 名词术语' },
-  { key: 'volume', label: '分卷大纲', tabIds: ['volume-outline'], def: false, hint: '本章在卷里的位置与下一步走向' },
-  { key: 'master', label: '全书总纲', tabIds: ['master'], def: false, hint: '长线方向（很吃预算）' },
-  { key: 'foreshadow', label: '伏笔追踪', tabIds: ['foreshadow'], def: false, hint: '避免与既有伏笔冲突，也可顺手埋收' },
-  { key: 'fingerprint', label: '写作文风', tabIds: [], def: false, hint: '按你的文风指纹（#015 写作文风档）保持一致' },
-  { key: 'hookpoints', label: '爽点节奏', tabIds: ['hookpoints'], def: false, hint: '续写的爽点安排参考' },
-]
+export { CONTINUE_PICKS, type ContinuePickItem } from '@/lib/editor/continuationPick'
 
 /**
  * 校对的**两块**（2026-09-20 拆分，老大要求）。

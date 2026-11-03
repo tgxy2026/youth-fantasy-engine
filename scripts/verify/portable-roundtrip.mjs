@@ -57,6 +57,8 @@ async function main() {
   const exported = path.join(runRoot, 'portable-export.json')
   const checks = []
   const pageErrors = []
+  /** 🔴 提到外层：`dismiss()` / `clickSafely()` 在 try 块之外定义，闭包里要能拿到当前页 */
+  let page = null
   /** 每次 /api/data 的状态码与 If-Match（保存出错时判断是 428 还是 409） */
   const dataCalls = []
   let toastTexts = []
@@ -114,9 +116,9 @@ async function main() {
   }
   /** 首启可能弹提醒框，会挡住点击 */
   async function dismiss(page) {
-    for (const label of ['稍后再说', '知道了', '我知道了', '关闭']) {
+    for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '我知道了', '关闭']) {
       const hit = await page.evaluate((l) => {
-        const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l)
+        const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l || (x.getAttribute('aria-label') || '') === l)
         if (b) { b.click(); return true }
         return false
       }, label)
@@ -136,7 +138,10 @@ async function main() {
         await sleep(600)
       }
     }
-    await locator.click({ timeout: 15000 })
+    // 最后一招：**直接派发点击**。空项目态下 `<main>` 的空态文案会盖住页头图标键
+    // （实测「没有卷就先建卷…」压住导入按钮），但按钮本身可用 —— 这里要的只是它打开文件选择器，
+    // 不会误点到别的元素（locator 已精确到 title）。
+    await locator.click({ timeout: 15000, force: true })
   }
   /**
    * 进正文编辑器（与云端探针同一路径）：示范项目可能停在项目中心，也可能已经进项目。
@@ -201,7 +206,7 @@ async function main() {
         })
       }
     })
-    const page = await ctx.newPage()
+    page = await ctx.newPage()
     page.setDefaultTimeout(25000)
     page.on('pageerror', (e) => pageErrors.push(String(e.message)))
     page.on('response', async (res) => {
@@ -347,7 +352,9 @@ async function main() {
     //    flushPortable 现在会排队等上一笔写完（3.2.6），这里就是要证明它不再随机失败；
     //    若产品退回"在途即 return false"，本用例会红。
     // ---------- ③ 导入：确认框 → 真实 filechooser → 应用 reload ----------
-    await page.getByTitle(IMPORT_TITLE, { exact: true }).click()
+    // 🔴 走 clickSafely：空项目态下 `<main>` 的空态文案会盖住页头图标键（实测「没有卷就先建卷…」），
+    //    单次 click 直接 25s 超时判红；这里要的只是打开文件选择器，最后兜底用直接派发。
+    await clickSafely(page.getByTitle(IMPORT_TITLE, { exact: true }))
     const chooser = page.waitForEvent('filechooser', { timeout: 30000 })
     const reloaded = page.waitForEvent('load', { timeout: 60000 })
     await page.getByRole('button', { name: '继续导入', exact: true }).click()

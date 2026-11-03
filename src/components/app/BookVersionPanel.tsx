@@ -121,19 +121,19 @@ export default function BookVersionPanel({
     if (busy) return
     if (!await confirmDialog({
       title: '恢复到这一版',
-      message: `确定把当前项目恢复到「${v.label}」？\n时间：${fmt(v.createdAt)}\n\n恢复会用这一版的内容覆盖当前全部数据（卷/章/设定表/角色卡），覆盖后不可撤销。\n建议先「冻结」当前稿留一份再恢复。`,
+      message: `确定把当前项目恢复到「${v.label}」？\n时间：${fmt(v.createdAt)}\n\n恢复会用这一版的内容覆盖当前全部数据（卷/章/设定表/角色卡）。系统会在恢复前自动创建当前作品的安全备份，确保随时可找回。`,
       confirmText: '恢复', danger: true,
     })) return
     setBusy(true)
     try {
-      await db.restoreBackup(v.id)
+      const outcome = await db.restoreBackup(v.id)
       // #017 收尾：包里带回来的「已启用」资料是没索引的，不重建＝静默降级（与 BackupManager 同一处理）
       void rebuildKbIndexAfterRestore(pid)
       // WT0-2：整份覆盖项目数据 ⇒ 模板缓存全清（revision 可能回退，pid 比对兜不住）
       invalidateTemplateCache()
       await load()
       onRestored?.()
-      showToast('已恢复到该版本', 'success')
+      showToast(`已恢复到「${v.label}」（包含 ${outcome.restoredVolumes} 卷 ${outcome.restoredChapters} 章），已自动创建还原前安全备份。`, 'success')
     } catch (e) {
       showToast('恢复失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {

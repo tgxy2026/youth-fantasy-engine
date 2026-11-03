@@ -164,7 +164,7 @@ export async function applyCloudCopyInPlace(input: ApplyInPlaceInput): Promise<A
 
   // ③ 写库（内部"先写后删"，失败时旧记录仍在）
   try {
-    await restoreBundleToProject(input.localProjectId, loaded.bundle)
+    await restoreBundleToProject(input.localProjectId, loaded.bundle, { skipPreBackup: true })
   } catch (e) {
     return {
       ok: false, code: 'WRITE',

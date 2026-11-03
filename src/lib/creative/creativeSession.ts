@@ -19,7 +19,6 @@ import { useSyncExternalStore } from 'react'
 import {
   extractAndCommitSettings,
   type ChapterDraft,
-  type ContinueStrategy,
   type DraftDecision,
 } from '@/lib/outline/autoContinue'
 import {
@@ -29,7 +28,16 @@ import {
   type CreativeWritingResult,
 } from '@/lib/ai/aiWorkflow'
 import * as db from '@/lib/db'
-import { describeResumeEvidence, downgradeInterruptedProgress, isCreativeResumeShape, serializeResumeForPersist, verifyResumeEvidence } from '@/lib/creative/resumeEvidence'
+import {
+  classifyResumeState,
+  describeResumeEvidence,
+  downgradeInterruptedProgress,
+  isCreativeResumeShape,
+  serializeResumeForPersist,
+  verifyResumeEvidence,
+  type ResumeClassification,
+  type ResumeTriState,
+} from '@/lib/creative/resumeEvidence'
 import { validateResumeForStart } from '@/lib/creative/resumeValidation'
 import { summarizeResult } from '@/lib/creative/resultSummary'
 import { createContextLoadGate } from '@/lib/creative/loadGate'
@@ -65,197 +73,14 @@ import {
 } from '@/lib/ai/requestLedger'
 import type { LedgerItem } from '@/lib/settings/settingLedger'
 
-/** 创作起点：从一句话想法从零写 / 接着项目已有内容往下写 */
-export type CreativeMode = 'scratch' | 'continue'
-
-/**
- * 产出目标 —— 定义在编排器侧（`aiWorkflow` 的 `CreativeTarget`），这里**再导出**给界面用。
- *   `'outline'` 只做大纲规划 / `'full'` 大纲 + 正文 / `'draft'` 只生成正文
- * 🔴 单一真理源：三个档位的语义与编排器的分支是同一处定义，别再本地抄一份（会漂）。
- */
-export type { CreativeTarget }
-
-/**
- * 篇幅（老大 2026-09-20 要求）：决定「这一次要产出什么」有哪几档，以及参数的语义。
- * - `short` 短篇：只做大纲规划 / 大纲 + 正文（一次跑完，1 卷）
- * - `long`  中长篇：只做大纲规划 / 只生成正文（多卷、分批次反复执行）
- */
-export type CreativeLength = 'short' | 'long'
-
-export interface CreativeInputs {
-  /** 篇幅（决定产出目标有哪几档 + 参数字义） */
-  length: CreativeLength
-  /** 一句话想法 —— 只在库里**还没有大纲**时用得上 */
-  seed: string
-  /** 情节概要（可选；只作用于正文生成，留空则严格承接上一章结尾） */
-  intent: string
-  /** **本批要排几卷**（大纲规划用；短篇固定 1） */
-  volumes: number
-  /** **每卷多少章**（硬指标；短篇时＝这一本共多少章） */
-  chaptersPerVolume: number
-  /** 这一次要产出什么 */
-  target: CreativeTarget
-  /** 本次写多少章正文（正文生成用） */
-  chapters: number
-  /** 每章目标字数 */
-  words: number
-  /** 设定更新策略（连写时如何补登设定） */
-  strategy: ContinueStrategy
-  /** 生成后自动去 AI 味儿 */
-  deAiOn: boolean
-  deAiTpl: string
-  deAiCustom: string
-  /** 本批选中的作者灵感（2.5.2 · A2，来自灵感夹的文本数组；空 = 不注入）。随会话输入持久化 */
-  inspirations?: string[]
-  /** 是否按已落库的《章节细纲》写 */
-  useOutline: boolean
-  /** 每章初稿先交作者确认（关掉＝全自动跑量） */
-  reviewEach: boolean
-  /**
-   * 🔴 **先补完最后一章**（2026-09-20，默认开）：上一批若因模型收尾过早只写了半章，
-   * 开写新章前先把它补到目标字数 —— 否则读到第 22 章会撞上情绪断层。
-   * 只补最后一章（最新章可放开、历史章冻结），只动正文与字数。
-   */
-  topUpLast: boolean
-  /**
-   * 结构模板（2.5.0 · A1）：大纲规划时给 AI 的「全书结构参考」。
-   * `''` = 不使用（默认，行为与旧版完全一致）；合法 id 见 `storyStructures.STORY_TEMPLATES`。
-   * 🔴 仅在「从零排 / 续排」时注入；**缺口补齐模式不注入**（走向已被既有卷约束，全书尺度的
-   * 节拍表对补几章没有意义，硬塞反而让模型两头为难）。
-   */
-  structureId: string
-}
-
-const DEFAULT_INPUTS: CreativeInputs = {
-  length: 'short',
-  seed: '',
-  intent: '',
-  volumes: 1,
-  chaptersPerVolume: 20,
-  target: 'full',
-  chapters: 10,
-  words: 2500,
-  strategy: 'add-only',
-  deAiOn: true,
-  deAiTpl: 'natural',
-  deAiCustom: '',
-  useOutline: true,
-  reviewEach: true,
-  topUpLast: true,
-  structureId: '',
-}
-
-/** 结果摘要（落盘用；完整结果里的草稿行可达几十条，没必要存） */
-export interface CreativeResultSummary {
-  mode: CreativeMode
-  /** 设定奠基产出（接着写模式无此阶段 → 0） */
-  bibleTotal: number
-  bibleCreated: number
-  /** 大纲产出 */
-  volumes: number
-  outlineChapters: number
-  /** 本次实际落库的正文章数 */
-  wrote: number
-  outlineOnly: boolean
-}
-
-/**
- * 「整章改写」的进行中状态。
- *
- * 🔴 结果只活在内存里 —— 作者点「替换该章正文」之前**绝不写库**。
- *    这是与「创作」不同的地方：创作产出的是新章，改写要覆盖旧正文，必须多一道人工确认。
- */
-export interface RewriteState {
-  chapterId: string
-  title: string
-  /** 全局叙事序号（0 = 不计入序号，如序章 / 番外） */
-  no: number
-  action: ChapterRewriteAction
-  /** 改写结果（流式累积） */
-  text: string
-  running: boolean
-  /** 原文字数 —— 界面用来显示「2200 → 3800 字」 */
-  fromWords: number
-  /**
-   * 本次改写的**期望字数**（异常判定的基准，见 `expectedRewriteWords`）：
-   * 润色＝原文长度；扩写 / 精简 / 改写＝面板上填的目标字数。
-   */
-  expectWords: number
-  /**
-   * 这一章是不是项目**最新章**（末章）。
-   *   · 最新章：改写档可放开（历史章不可），落库后补跑设定同步；
-   *   · 历史章：设定类内容一律冻结（提示词按动作分节硬约束），不跑设定同步 —— 它不是新信息源。
-   * ⚠️ 「最新章」只解除**改写档**的束缚：润色 / 扩写 / 精简在最新章同样守各自的动作纪律。
-   */
-  isLatest: boolean
-  /**
-   * 结果与**期望字数**差距过大 —— 多半是模型被截断、抽风，或与所选动作不符。
-   * 🔴 置位后**禁用「替换该章正文」**：那是覆盖作者正文的动作，不能在可疑结果上放开。
-   */
-  suspect?: boolean
-  /**
-   * 3.0 · W1-1 版本保护：**产出这份结果时**该章的指纹（`chapterFingerprint`）。
-   * 采纳前与当前正文比对 —— 不符（正文被改过）则拒绝替换，见 `applyChapterRewrite`。
-   */
-  baseFingerprint: string
-  /**
-   * 3.2.0 · W3：这份产出登记到「候选审阅」后的候选 id。
-   * 🔴 有了它，「替换该章正文」成功后才能把候选标成 `applied` ——
-   *    不标的话候选列表会一直挂着已经生效的稿子，作者点第二次就再覆盖一遍正文。
-   */
-  candidateId?: string
-  /**
-   * 3.2.0 · W3：候选没存成的原因（配额满 / 超过 256 KiB）。
-   * 🔴 **不影响改写结果**，只是这句提示让作者知道"这次找不回命令行式的候选"。
-   */
-  candidateError?: string
-}
-
-export interface CreativeNotice {
-  /** 自增 id：同一条文案连发两次也能各弹一次 */
-  id: number
-  text: string
-  kind: 'info' | 'success' | 'error'
-}
-
-/** 弹窗类交互（初稿裁决 / 设定补登）—— resolve 不进快照，放模块私有变量 */
-export interface CreativeSession {
-  hydrated: boolean
-  inputs: CreativeInputs
-  running: boolean
-  progress: FlowProgress | null
-  /** 阶段产物摘要（跑完保留，"事后能看到每步做了什么"） */
-  summaries: Record<string, string>
-  log: string[]
-  /** 闸门①：设定草稿（非空＝正等作者确认） */
-  bibleGate: DraftBundle | null
-  /** 闸门②：分卷大纲 */
-  outlineGate: OutlineResult | null
-  /** 每章初稿裁决 */
-  draftAsk: { d: ChapterDraft } | null
-  /** 设定补登候选 */
-  candidatesAsk: { cands: LedgerItem[] } | null
-  candidatesSelected: string[]
-  result: CreativeResultSummary | null
-  resume: CreativeResume | null
-  /** A restored legacy milestone lacks the evidence needed for safe automatic resume. */
-  resumeNeedsReview: boolean
-  /** 不能自动续跑的具体原因（缺章 / 正文被改 / 旧记录）；'' = 可续跑 */
-  resumeBlockedReason: string
-  notice: CreativeNotice | null
-  /**
-   * 最近一次**成功落盘**的时间戳（0 = 还没保存过）。
-   *
-   * 界面用它显示「已保存 · 08:23」，让作者对输入框里的想法有把握 ——
-   * 这是老大 2026-09-20 提的：「一句话生成的输入窗口没办法保存」。
-   *
-   * 🔴 它由 `persistNow` 直接写快照（走 `emitOnly`，**不走 `set`**）：
-   *    走 `set` 会再排一次写盘 → 「写盘 → 更新时间 → 再写盘」无限循环。
-   */
-  lastSavedAt: number
-  /** 整章改写（null = 没在改写） */
-  rewrite: RewriteState | null
-}
+export * from './sessionTypes'
+import {
+  DEFAULT_INPUTS,
+  type CreativeInputs,
+  type CreativeNotice,
+  type CreativeResultSummary,
+  type CreativeSession,
+} from './sessionTypes'
 
 let snap: CreativeSession = {
   hydrated: false,
@@ -273,6 +98,8 @@ let snap: CreativeSession = {
   resume: null,
   resumeNeedsReview: false,
   resumeBlockedReason: '',
+  resumeState: 'resumable',
+  resumeClassification: null,
   notice: null,
   lastSavedAt: 0,
   rewrite: null,
@@ -304,12 +131,12 @@ function subscribeCreative(fn: () => void): () => void {
     listeners.delete(fn)
   }
 }
-function creativeSnapshot(): CreativeSession {
+export function getCreativeSnapshot(): CreativeSession {
   return snap
 }
 /** 组件订阅点：切页签重挂载后拿到的就是原样状态（任务还在跑） */
 export function useCreativeSession(): CreativeSession {
-  return useSyncExternalStore(subscribeCreative, creativeSnapshot, creativeSnapshot)
+  return useSyncExternalStore(subscribeCreative, getCreativeSnapshot, getCreativeSnapshot)
 }
 
 // ============ 派生工具 ============
@@ -461,7 +288,7 @@ const RUNTIME_RESET: Partial<CreativeSession> = {
 
 /** 结果类字段的"空"值（读不到会话时用它，而不是留着上一个项目的数据） */
 const SESSION_BLANK: Partial<CreativeSession> = {
-  log: [], resume: null, resumeNeedsReview: false, resumeBlockedReason: '', result: null, progress: null, summaries: {},
+  log: [], resume: null, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable', resumeClassification: null, result: null, progress: null, summaries: {},
 }
 
 /**
@@ -513,14 +340,19 @@ async function loadSession(pid: string) {
       const malformed = rawResume != null && !resume
       let resumeNeedsReview = !!resume || malformed
       let resumeBlockedReason = malformed ? '旧记录的结构无法被本版识别；原数据仍保留，但不会自动续跑。' : ''
+      let resumeState: ResumeTriState = malformed ? 'blocked' : 'resumable'
+      let resumeClassification: ResumeClassification | null = null
       if (resume) {
         const chapters = await db.getAllChapters().catch(() => null)
         if (!chapters) {
           resumeBlockedReason = '暂时读不到书库里的章节，无法核对断点。'
+          resumeState = 'blocked'
         } else {
           const verdict = verifyResumeEvidence(resume.evidence, chapters, resume.doneChapters)
-          resumeNeedsReview = !verdict.ok
-          resumeBlockedReason = verdict.ok ? '' : describeResumeEvidence(verdict)
+          resumeClassification = classifyResumeState(verdict, resume, saved.inputs?.chapters ?? DEFAULT_INPUTS.chapters)
+          resumeNeedsReview = resumeClassification.state !== 'resumable'
+          resumeState = resumeClassification.state
+          resumeBlockedReason = resumeClassification.state === 'resumable' ? '' : (resumeClassification.detail || describeResumeEvidence(verdict))
         }
       }
       patch = {
@@ -530,6 +362,8 @@ async function loadSession(pid: string) {
         resume,
         resumeNeedsReview,
         resumeBlockedReason,
+        resumeState,
+        resumeClassification,
         result: saved.result ?? null,
         progress: downgradeInterruptedProgress(saved.progress),
         summaries: saved.summaries ?? {},
@@ -656,7 +490,7 @@ async function settleCreativeLedger(
   } catch { /* 静默 */ }
 }
 
-export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
+export async function startCreativeRun(opts: { fromScratch?: boolean; forceCheckpoint?: boolean } = {}) {
   if (snap.running) return
   const project = db.getCurrentProjectId(), epoch = db.getProjectContextEpoch(), context = storageWriteContext()
   await bindProject()
@@ -668,19 +502,28 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
     const pid = db.getCurrentProjectId()
     const inputs = snap.inputs
     const owner = captureOwnedOperation(pid ?? '')
-    const { reason, parameters } = await validateResumeForStart(checkedResume, inputs.chapters, owner, inputs.target)
+    const { reason, parameters, classification } = await validateResumeForStart(
+      checkedResume, inputs.chapters, owner, inputs.target, { allowReviewOverride: opts.forceCheckpoint }
+    )
     if (db.getCurrentProjectId() !== pid || snap.resume !== checkedResume || snap.inputs !== inputs || snap.running) return
     try { owner.assertCurrent() } catch { notice('作品或存储空间已切换，请重新核对断点。', 'error'); return }
     if (reason) {
-      if (!parameters) set({ resumeNeedsReview: true, resumeBlockedReason: reason })
+      if (!parameters) {
+        set({
+          resumeNeedsReview: true,
+          resumeBlockedReason: reason,
+          resumeState: classification.state,
+          resumeClassification: classification,
+        })
+      }
       notice(reason, 'error')
       return
     }
     // B-04：满章断点（最后一章写完与整次收尾之间）直接收尾，不再发请求
     if (checkedResume && checkedResume.doneChapters >= checkedResume.totalChapters) {
-      set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '' }); notice('上次记录显示章数已写满，无需继续；已按当前记录收尾。', 'info'); return
+      set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable', resumeClassification: null }); notice('上次记录显示章数已写满，无需继续；已按当前记录收尾。', 'info'); return
     }
-    if (snap.resumeNeedsReview) set({ resumeNeedsReview: false, resumeBlockedReason: '' })
+    if (snap.resumeNeedsReview) set({ resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable' })
   }
   // 🔴 绑定本次运行的项目（切项目时据此判断，见 abortRunIfProjectChanged）
   runProjectId = db.getCurrentProjectId() ?? ''
@@ -689,7 +532,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
   //    能把按钮直接禁用并写明原因）。这里不拦：编排器会给出同样的中文提示，
   //    而在 store 里凭一个静态开关拦，容易和自动判定的真实起点不一致。
   const useResume = opts.fromScratch ? null : snap.resume
-  if (opts.fromScratch) set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
+  if (opts.fromScratch) set({ resume: null, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable', resumeClassification: null })
   /** 本次是否交回了续跑信息（用局部变量判定：setState 异步，闭包里的 resume 还是旧值） */
   let gotResume: CreativeResume | null = null
   const ctl = new AbortController()
@@ -733,13 +576,27 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
         ...(useResume ? { resume: useResume } : {}),
         onResume: r => {
           gotResume = r
-          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
+          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable' })
         },
-        /** B-04：每章检查点立即写盘（防抖窗口正是"最后一章写完就断电"会丢的那段）；仍不承诺 exactly-once */
+        /** B-04 / 3.3.5 · A2：每章检查点立即写盘；写入失败时回滚内存 resume 到上一轮落盘状态，避免内存脏断点冒充已保存 */
         onCheckpoint: async r => {
-          const pid = runProjectId; if (!pid || db.getCurrentProjectId() !== pid) throw new CreativeCheckpointError()
-          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '' })
-          cancelScheduledPersist(); if (!await persistNow(pid) || db.getCurrentProjectId() !== pid || runProjectId !== pid || !await flushCreativeCheckpoint(pid) || db.getCurrentProjectId() !== pid || runProjectId !== pid) throw new CreativeCheckpointError()
+          const pid = runProjectId
+          if (!pid || db.getCurrentProjectId() !== pid) throw new CreativeCheckpointError()
+          const prevResume = snap.resume
+          set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable' })
+          cancelScheduledPersist()
+          const persisted = await persistNow(pid)
+          const flushed = persisted && await flushCreativeCheckpoint(pid)
+          const safe = flushed && db.getCurrentProjectId() === pid && runProjectId === pid
+          if (!safe) {
+            set({
+              resume: prevResume,
+              resumeNeedsReview: true,
+              resumeState: 'review-needed',
+              resumeBlockedReason: '检查点保存至磁盘时失败（可能存储空间不足、网络断开或写入冲突）。已安全暂停连写；已落库章节已保留。',
+            })
+            throw new CreativeCheckpointError()
+          }
         },
         onProgress: p => {
           const next = captureSummaries(p)
@@ -816,7 +673,7 @@ export async function startCreativeRun(opts: { fromScratch?: boolean } = {}) {
       await settleCreativeLedger(ledger, null)
       return
     }
-    set({ result: summarizeResult(res), resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
+    set({ result: summarizeResult(res), resume: null, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable', resumeClassification: null })
     // 🔴 「一章都没写出来」不能再报成功（2026-09-19）：原先无论写了几章都弹绿色
     //    「创作完成：写了 N 章」，N=0 时作者会以为"跑完了、就是没内容"，而真正的原因
     //    （模型超时 / 未配置）就躺在日志里没人看。分开报，并把「去看日志」写进文案。
@@ -1195,5 +1052,5 @@ export function discardRewrite() {
 
 /** 清掉结果卡片与日志（作者想重开一轮时用；不影响已落库的数据） */
 export function clearCreativeSession() {
-  set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false, resumeBlockedReason: '' })
+  set({ result: null, log: [], progress: null, summaries: {}, resume: null, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable', resumeClassification: null })
 }
