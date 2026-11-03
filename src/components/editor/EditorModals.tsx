@@ -14,7 +14,7 @@ import { aiProofreadText, aiProofreadLogic, isReplaceable, type ProofreadIssue, 
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
-import { confirmDialog } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
 import { locateFailureText, locateProofIssue } from '@/lib/editor/proofLocate'
 import type { ProofLocateTarget } from '@/components/editor/proofLocateChannel'
@@ -561,12 +561,16 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
   chapterId: string
   /** 当前正文 —— 「与当前稿对比」用它做新版 */
   current: string
-  onRestore: (content: string) => void
+  /** 3.4.0 · C：恢复必须 await 真实结果（留档 + 落库都成功才算恢复） */
+  onRestore: (snapshotId: string, content: string) => Promise<{ ok: boolean; message: string }>
   onClose: () => void
 }) {
   const [snaps, setSnaps] = useState<db.Snapshot[]>([])
   const [preview, setPreview] = useState<db.Snapshot | null>(null)
   const [tab, setTab] = useState<'content' | 'diff'>('content')
+  /** 恢复中 / 恢复失败原因 —— 失败时**不关弹窗**，让作者看清为什么没恢复 */
+  const [restoring, setRestoring] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
   /**
    * 对比基准（2.4.0 · A3 遗留补全）：默认 `'current'`＝当前稿（原行为），也可选**另一个版本**。
    * 此前只能「某版 vs 当前稿」，想看清"这两次改动之间到底动了什么"时没法比 —— 现在可以任意两版互比。
@@ -588,6 +592,30 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
   const diff = useMemo(() => (preview ? diffLines(baseContent, preview.content) : []), [preview, baseContent])
   const stats = useMemo(() => diffStats(diff), [diff])
 
+  const doRestore = async () => {
+    if (!preview || restoring) return
+    setRestoring(true)
+    setRestoreError('')
+    try {
+      const r = await onRestore(preview.id, preview.content)
+      if (r.ok) {
+        showToast(r.message || '已恢复', 'success')
+        onClose()
+      } else {
+        // 留档失败 / 落库失败 / 版本已被淘汰：正文保持原样，这里如实说明
+        setRestoreError(r.message)
+        // 版本池可能已变（失败原因之一是版本不存在），重读一次列表；重读失败不再覆盖上面的原因
+        try {
+          const next = await db.getSnapshots(chapterId)
+          setSnaps(next)
+          if (preview && !next.some(s => s.id === preview.id)) setPreview(null)
+        } catch { /* 列表刷新失败不影响已显示的失败原因 */ }
+      }
+    } finally {
+      setRestoring(false)
+    }
+  }
+
   return (
     <ToolModal title="时光机 · 本章版本历史（每章保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
       {snaps.length === 0 ? (
@@ -601,6 +629,11 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
           </div>
         </div>
       ) : (
+        <>
+        <p className="mb-2 text-10 text-ink-500 leading-relaxed">
+          对比基准「当前稿」＝编辑器里正在显示的内容（<b className="text-ink-400">包含尚未落库的草稿</b>）；
+          恢复前会自动把这份内容存成一版「恢复前留档」，所以点错了也能找回。
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             {snaps.map(s => {
@@ -609,7 +642,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
               return (
                 <Button variant="bare"
                   key={s.id}
-                  onClick={() => setPreview(s)}
+                  onClick={() => { setPreview(s); setRestoreError('') }}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/15' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
                 >
                   <span className="text-12 text-ink-200 shrink-0">{fmt(s.createdAt)}</span>
@@ -674,15 +707,21 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                     ))}
                   </div>
                 )}
-                <Button variant="primary" onClick={() => { onRestore(preview.content); onClose() }} className="mt-3 transition-colors">
-                  恢复到此版本（当前内容会先自动留档）
+                {restoreError && <p role="alert" className="mt-2 text-11 text-danger leading-relaxed">{restoreError}</p>}
+                <Button variant="primary" onClick={() => void doRestore()} disabled={restoring} className="mt-3 transition-colors">
+                  {restoring ? '恢复中（先留档，再写入）…' : '恢复到此版本（当前内容会先自动留档）'}
                 </Button>
+                <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">
+                  只恢复本章正文：不会恢复卷/章结构、设定或大纲，也不等于把整部作品回退到那个时间点。
+                  {restoring ? '恢复完成前请不要重复点击。' : ''}
+                </p>
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-12 text-ink-600">点击左侧版本查看内容或对比</div>
             )}
           </div>
         </div>
+        </>
       )}
     </ToolModal>
   )

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CardRecord, TableRow, TabDef } from '@/lib/types'
 import type { RecordRef } from '@/lib/revision/revisionTypes'
 import type { VisCtx } from '@/lib/schema'
@@ -15,6 +15,7 @@ import {
   type OutlinePurpose,
   type ChapterContextBinding,
 } from '@/lib/revision/chapterContext'
+import { bindingWriteGate, pinnedUnavailableLabel } from '@/lib/revision/chapterContextSafety'
 
 export interface ChapterContextCatalogItem {
   ref: RecordRef
@@ -46,42 +47,66 @@ function matchTerms(name: string, tabId: string, data: Record<string, string>): 
 interface Args { projectId: string; chapterId: string; ctx: VisCtx }
 
 export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
+  /**
+   * 绑定读取的三种状态（3.4.0 · B）。
+   *
+   * 🔴 「读失败」与「没绑定」必须分开：
+   *    原实现读失败后也把 `bindingLoaded` 置 true，界面照样允许固定/取消固定 ——
+   *    于是作者在"其实没读出来"的空绑定上点一下，就会把 `{outlineId: undefined, pinnedRefs: [...]}`
+   *    **整条覆盖**掉库里原本的绑定。规划 §四 明写「读取失败不当作空数据覆盖」。
+   *    现在 failed 状态下所有写入口一律关闭，并给出重试。
+   */
+  const [bindingStatus, setBindingStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [binding, setBinding] = useState<ChapterContextBinding>(() => emptyChapterContextBinding())
   const bindingRef = useRef(binding)
+  const persistedRef = useRef<ChapterContextBinding>(binding)
+  const statusRef = useRef(bindingStatus)
+  statusRef.current = bindingStatus
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
-  const [bindingLoaded, setBindingLoaded] = useState(false)
+  /** 读请求序号：切章/重试后，迟到的旧响应不许落到新上下文 */
+  const loadAttempt = useRef(0)
+  const [bindingError, setBindingError] = useState('')
+
   const [outlineCards, setOutlineCards] = useState<CardRecord[]>([])
   const [outlineTemplate, setOutlineTemplate] = useState<EffectiveTemplate | null>(null)
+  const [outlineError, setOutlineError] = useState('')
   const [catalog, setCatalog] = useState<ChapterContextCatalogItem[]>([])
   const [catalogLoaded, setCatalogLoaded] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
   const [query, setQuery] = useState('')
   const [loadingError, setLoadingError] = useState('')
   const outlineTab = getTab('chapter-outline')
 
-  useEffect(() => {
-    let alive = true
-    setBindingLoaded(false)
+  const loadBinding = useCallback(() => {
+    const attempt = ++loadAttempt.current
+    setBindingStatus('loading')
+    setBindingError('')
     setLoadingError('')
     void db.getSettingFor<unknown>(projectId, `${SETTING_PREFIX}${chapterId}`, null).then(raw => {
-      if (!alive) return
+      if (attempt !== loadAttempt.current) return
       const next = normalizeChapterContextBinding(raw, projectId)
       bindingRef.current = next
+      persistedRef.current = next
       setBinding(next)
-      setBindingLoaded(true)
+      setBindingStatus('ready')
     }).catch(() => {
-      if (!alive) return
-      const next = emptyChapterContextBinding()
-      bindingRef.current = next
-      setBinding(next)
-      setLoadingError('读取章节绑定失败；本次改动可能无法保存')
-      setBindingLoaded(true)
+      if (attempt !== loadAttempt.current) return
+      // 只清显示，不把空绑定当成"可写基线"：status=failed ⇒ 写入口全部关闭
+      const empty = emptyChapterContextBinding()
+      bindingRef.current = empty
+      persistedRef.current = empty
+      setBinding(empty)
+      setBindingStatus('failed')
+      setBindingError('读取本章资料绑定失败；为避免覆盖原记录，固定与解绑已暂时停用')
     })
-    return () => { alive = false }
   }, [projectId, chapterId])
+
+  useEffect(() => { loadBinding() }, [loadBinding])
 
   useEffect(() => {
     if (!outlineTab) return
     let alive = true
+    setOutlineError('')
     void Promise.all([
       db.getCardRecordsFor(projectId, outlineTab.id),
       loadTemplateDef(projectId, outlineTab.id),
@@ -93,13 +118,18 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
         ...(def ? { def } : {}),
         ...(fieldDefinitions ? { fieldDefinitions } : {}),
       }))
-    }).catch(() => { if (alive) setLoadingError('细纲资料加载失败') })
+    }).catch(() => {
+      if (!alive) return
+      setOutlineError('细纲资料加载失败')
+      setLoadingError('细纲资料加载失败')
+    })
     return () => { alive = false }
   }, [projectId, outlineTab])
 
   useEffect(() => {
     let alive = true
     setCatalogLoaded(false)
+    setCatalogError('')
     const sourceTabs = TABS.filter(tab =>
       (tab.type === 'card' || tab.type === 'table')
       && tab.id !== 'chapter-outline'
@@ -140,6 +170,8 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
       if (alive) {
         setCatalog([])
         setCatalogLoaded(true)
+        // 🔴 目录整体读失败 ≠「这些记录被删了」：分开记，固定项的失效说明据此区分
+        setCatalogError('关联资料目录读取失败')
         setLoadingError('关联资料加载失败')
       }
     })
@@ -147,14 +179,30 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
   }, [projectId, ctx])
 
   const saveBinding = (update: (previous: ChapterContextBinding) => ChapterContextBinding) => {
-    const next = { ...update(bindingRef.current), schema: 1 as const, updatedAt: Date.now() }
+    const gate = bindingWriteGate(statusRef.current)
+    if (!gate.allowed) {
+      setBindingError(gate.reason)
+      return
+    }
+    const previous = bindingRef.current
+    const next = { ...update(previous), schema: 1 as const, updatedAt: Date.now() }
     bindingRef.current = next
     setBinding(next)
     setLoadingError('')
     saveQueue.current = saveQueue.current
       .catch(() => undefined)
-      .then(() => db.setSettingFor(projectId, `${SETTING_PREFIX}${chapterId}`, next))
-      .catch(() => setLoadingError('保存章节资料失败，请重试'))
+      .then(async () => {
+        await db.setSettingFor(projectId, `${SETTING_PREFIX}${chapterId}`, next)
+        persistedRef.current = next
+      })
+      .catch(() => {
+        // 回滚到「上次确认写成功」的版本：界面不能停在"看起来已保存"的状态
+        if (bindingRef.current === next) {
+          bindingRef.current = persistedRef.current
+          setBinding(persistedRef.current)
+        }
+        setBindingError('保存本章资料失败，已恢复为上次保存的内容，请重试')
+      })
   }
 
   const outline = outlineCards.find(card => card.id === binding.outlineId)
@@ -176,9 +224,13 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
 
   const pinned = useMemo(() => binding.pinnedRefs.map(ref => {
     const item = catalog.find(candidate => chapterContextRefKey(candidate.ref) === chapterContextRefKey(ref))
-    const visible = tabVisible(ref.tabId, ctx)
-    return { ref, item, unavailable: !visible ? '当前项目未启用此资料模块' : item ? '' : '记录已删除或暂时不可用' }
-  }), [binding.pinnedRefs, catalog, ctx])
+    const unavailable = pinnedUnavailableLabel({
+      tabVisible: tabVisible(ref.tabId, ctx),
+      found: !!item,
+      catalogError,
+    })
+    return { ref, item, unavailable }
+  }), [binding.pinnedRefs, catalog, ctx, catalogError])
 
   const outlineSuggestions = useMemo(() => {
     if (!outline || !outlineTemplate) return []
@@ -220,7 +272,12 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
   }))
 
   return {
-    binding, bindingLoaded, outlineCards, outlineTemplate, catalogLoaded, query, setQuery,
+    binding,
+    /** 只有「确实读成功」才算 loaded；读失败必须让界面关掉写入口 */
+    bindingLoaded: bindingStatus === 'ready',
+    bindingStatus, bindingError, retryBinding: loadBinding,
+    outlineCards, outlineTemplate, outlineError,
+    catalogLoaded, catalogError, query, setQuery,
     loadingError, outline, groups, pinned, outlineSuggestions, results, pin, unpin, selectOutline,
   }
 }

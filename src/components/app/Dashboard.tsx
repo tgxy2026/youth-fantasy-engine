@@ -108,16 +108,28 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     [chapters, withPunct],
   )
 
+  /**
+   * 3.4.0 · A：读失败必须说出来。
+   * 🔴 原先 `load()` 没有 catch —— 读库失败时 Promise 静默 rejected、`loaded` 永远是 false，
+   *    页面就停在「加载中…」不动，作者既不知道发生了什么，也没有重试入口。
+   *    这里只负责**如实呈现 + 可重试**；不清空任何已有数据，也不碰规划板的本机视图偏好。
+   */
+  const [loadError, setLoadError] = useState('')
   const load = useCallback(async () => {
-    const [v, c, outlines, f, i, p, ds] = await Promise.all([
-      db.getAllVolumes(), db.getAllChapters(),
-      db.getCardRecords('chapter-outline'),
-      db.getTableRows('foreshadow'), db.getTableRows('ideas'), db.getTableRows('progress'),
-      db.getDailyStats(),
-    ])
-    setVolumes(v); setChapters(c); setChapterOutlines(outlines); setForeshadows(f); setIdeas(i); setProgress(p)
-    setDailyStats(ds)
-    setLoaded(true)
+    try {
+      const [v, c, outlines, f, i, p, ds] = await Promise.all([
+        db.getAllVolumes(), db.getAllChapters(),
+        db.getCardRecords('chapter-outline'),
+        db.getTableRows('foreshadow'), db.getTableRows('ideas'), db.getTableRows('progress'),
+        db.getDailyStats(),
+      ])
+      setVolumes(v); setChapters(c); setChapterOutlines(outlines); setForeshadows(f); setIdeas(i); setProgress(p)
+      setDailyStats(ds)
+      setLoadError('')
+      setLoaded(true)
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e))
+    }
   }, [])
 
   useEffect(() => { load() }, [load, refreshKey])
@@ -193,7 +205,22 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     return { cells, weeks, months, total, wroteDays, best, longest }
   }, [calYear, statMap])
 
-  if (!loaded) return <LoadingState />
+  if (!loaded) {
+    if (loadError) {
+      return <div role="alert" className="w-full max-w-xl mx-auto mt-10 rounded-xl border border-danger/30 bg-danger/5 p-6">
+        <div className="flex items-center gap-2 text-14 font-semibold text-danger"><AlertCircle size={16} /> 写作面板数据读取失败</div>
+        <p className="mt-2 text-12 text-content-secondary leading-relaxed">
+          章节、卷或统计有一项没能读出来，所以这里不会显示任何数字 —— 避免把读失败当成「项目是空的」。
+          规划板的筛选与滚动位置仍保留在本机，下次成功读取后会自动恢复。
+        </p>
+        <p className="mt-1 text-11 text-content-muted [overflow-wrap:anywhere]">{loadError}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => { setLoadError(''); void load() }}>重新读取</Button>
+        </div>
+      </div>
+    }
+    return <LoadingState />
+  }
 
   // AI 健康诊断：读项目实际资料 + 关键统计，输出健康分 + 风险 + 下一步建议
   const runDiag = async () => {
@@ -368,6 +395,13 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
             {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
       } />
+
+      {/* 刷新时读失败：保留上次成功读取的内容，但必须说明「这不是最新数据」 */}
+      {loadError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">
+        <AlertCircle size={13} className="shrink-0" />
+        <span className="min-w-0 flex-1">刷新数据失败（{loadError}）；下面显示的是上次成功读取的内容，可能不是最新的。</span>
+        <Button variant="ghost" size="xs" onClick={() => void load()}>重试</Button>
+      </div>}
 
       <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
         foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} summary={creationSummary} />

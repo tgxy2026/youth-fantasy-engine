@@ -144,9 +144,13 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
   ok('🔴 自动备份显式关掉快照（includeSnapshots: false）',
     /includeSnapshots:\s*false/.test(backups))
 
-  const model = read('src/components/editor/useNovelEditorModel.ts')
+  // 3.4.0 · C：恢复事务移到 restoreChapter.ts（单文件 1200 行闸），断言跟着走，
+  // 并顺带钉住「留档存的是当前草稿」——原实现存的是可能滞后的 active.content。
+  const run = read('src/components/editor/restoreChapter.ts')
   ok('时光机回滚前留档标成 manual-restore',
-    /createSnapshot\(active, 'manual-restore'\)/.test(model))
+    /createSnapshot\(/.test(run) && /'manual-restore'/.test(run))
+  ok('留档内容是编辑器当前草稿（不是可能滞后的章节正文）',
+    run.includes('const currentText = hooks.draft.current') && run.includes('content: currentText'))
 }
 
 console.log(`\n—— chapterSnapshot：${pass} 通过 / ${fail} 失败 ——`)

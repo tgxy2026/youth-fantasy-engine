@@ -1,6 +1,6 @@
 /** A1 · 正文编辑器内的章节资料抽屉。数据只读呈现，细纲编辑仍走原页面。 */
-import { useState } from 'react'
-import { BookOpen, FileText, Pin, PinOff, Search, Users, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BookOpen, FileText, Pin, PinOff, RefreshCw, Search, Users, X } from 'lucide-react'
 import type { RecordRef } from '@/lib/revision/revisionTypes'
 import type { VisCtx } from '@/lib/schema'
 import { getTab } from '@/lib/schema'
@@ -8,11 +8,15 @@ import { chapterContextRefKey, locateBodyQuote } from '@/lib/revision/chapterCon
 import type { RefName } from '@/components/editor/novelEditorHelpers'
 import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
+import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 import { runPlanCompareForChapter, describePlanCompareRun } from '@/lib/app/planCompareRun'
 import type { PlanCompareReview } from '@/lib/aiTasks/planCompareAi'
 import { Z } from '@/lib/app/zLayer'
 import { foldZoomLength } from '@/lib/settings/theme'
 import { useChapterContextData } from '@/components/editor/useChapterContextData'
+
+const CONTEXT_TABS = ['outline', 'materials', 'quotes'] as const
+type ContextTab = (typeof CONTEXT_TABS)[number]
 
 interface Props {
   projectId: string
@@ -22,6 +26,8 @@ interface Props {
   bodyText: string
   referenced: RefName[]
   ctx: VisCtx
+  /** 宽屏时正文区已为抽屉让出位置（不遮挡正文）；窄窗口退回浮层，仍可一键收起 */
+  docked?: boolean
   onClose: () => void
   onNavigate: (tabId: string) => void
   onOpenRecord: (ref: RecordRef) => void
@@ -32,22 +38,39 @@ function tabLabel(tabId: string): string {
 }
 
 export default function ChapterContextPanel({
-  projectId, chapterId, chapterTitle, chapterNo, bodyText, referenced, ctx,
+  projectId, chapterId, chapterTitle, chapterNo, bodyText, referenced, ctx, docked = false,
   onClose, onNavigate, onOpenRecord,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'outline' | 'materials' | 'quotes'>('outline')
+  // 页签是「视图偏好」，不是章节数据：换章不必每次重新点回「关联资料」
+  const [activeTab, setActiveTab] = usePersistedEnum<ContextTab>('chapter-context-tab', CONTEXT_TABS, 'outline')
   /** 3.2.1 · T-09：正文与细纲对照的即时结果（落档另存检查报告，这里只做当次展示） */
   const [planBusy, setPlanBusy] = useState(false)
   const [planReview, setPlanReview] = useState<PlanCompareReview | null>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const {
-    binding, bindingLoaded, outlineCards, catalogLoaded, query, setQuery, loadingError,
-    outline, groups, pinned, outlineSuggestions, results, pin, unpin, selectOutline,
+    binding, bindingLoaded, bindingStatus, bindingError, retryBinding,
+    outlineCards, catalogLoaded, query, setQuery, loadingError,
+    catalogError, outlineError, outline, groups, pinned, outlineSuggestions, results, pin, unpin, selectOutline,
   } = useChapterContextData({ projectId, chapterId, ctx })
   const outlineTab = getTab('chapter-outline')
+
+  // Esc = 收起抽屉（与弹窗同一习惯）；焦点与正文不受影响，作者接着写
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      // 弹窗开着时 Esc 先归弹窗：这里不去抢
+      if (document.querySelector('[role="dialog"]')) return
+      e.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   return (
     <section
       aria-label="本章资料"
+      data-docked={docked ? '1' : '0'}
       className="fixed right-3 top-14 bottom-10 w-72 max-w-[calc(100%-1.5rem)] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col"
       style={{
         zIndex: Z.pageBase,
@@ -56,6 +79,7 @@ export default function ChapterContextPanel({
         bottom: foldZoomLength('2.5rem'),
         width: foldZoomLength('18rem'),
       }}
+      ref={panelRef}
     >
       <header className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
         <BookOpen size={14} className="text-amber" />
@@ -70,12 +94,22 @@ export default function ChapterContextPanel({
           ['outline', '细纲'], ['materials', '关联资料'], ['quotes', '正文引用'],
         ] as const).map(([key, label]) => (
           <button key={key} type="button" onClick={() => setActiveTab(key)}
+            aria-pressed={activeTab === key}
             className={`flex-1 px-1 py-2 text-11 border-b-2 transition-colors ${activeTab === key ? 'border-amber text-amber' : 'border-transparent text-ink-400 hover:text-ink-100'}`}>
             {label}
           </button>
         ))}
       </nav>
-      {loadingError && <div role="status" className="px-3 py-1.5 text-10 text-danger">{loadingError}</div>}
+      {/* 3.4.0 · B：读取/保存失败分条说明 —— 不能把「没读出来」混成「没绑定」，更不能允许在失败态写覆盖 */}
+      {(bindingError || outlineError || catalogError) && <div role="status" className="px-3 py-1.5 space-y-1 text-10 text-danger border-b border-ink-700/60">
+        {bindingError && <div className="flex items-start gap-1">
+          <span className="min-w-0 flex-1">{bindingError}</span>
+          <Button variant="ghost" size="xs" onClick={retryBinding}><RefreshCw size={11} className="mr-0.5" />重试</Button>
+        </div>}
+        {outlineError && <div>{outlineError}；稍后重新打开本章资料可再试。</div>}
+        {catalogError && <div>{catalogError}；已固定条目是否仍存在暂时无法确认。</div>}
+      </div>}
+      {loadingError && !(bindingError || outlineError || catalogError) && <div role="status" className="px-3 py-1.5 text-10 text-danger">{loadingError}</div>}
 
       {activeTab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -83,11 +117,16 @@ export default function ChapterContextPanel({
             <label className="text-10 text-ink-400 shrink-0" htmlFor="chapter-outline-binding">绑定细纲</label>
             <select id="chapter-outline-binding" value={binding.outlineId ?? ''} onChange={e => selectOutline(e.target.value)}
               disabled={!bindingLoaded || !outlineTab}
+              aria-busy={bindingStatus === 'loading'}
               className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1.5 text-11 text-ink-100">
-              <option value="">未绑定</option>
+              <option value="">{bindingStatus === 'loading' ? '正在读取…' : bindingStatus === 'failed' ? '读取失败（已停用编辑）' : '未绑定'}</option>
               {outlineCards.map(card => <option key={card.id} value={card.id}>{card.name}</option>)}
             </select>
           </div>
+          <p className="text-9 text-ink-500 leading-relaxed">
+            绑定与固定都只作用于<b className="text-ink-400">当前这一章</b>（切换章节会换成该章自己的记录）；共用的细纲内容仍在「章节细纲」页编辑。
+          </p>
+          {bindingStatus === 'loading' && <p className="text-11 text-ink-500">正在读取本章绑定…</p>}
           {outline ? (
             <>
               <div className="flex items-center justify-between gap-2 text-10 text-ink-500">
@@ -189,7 +228,13 @@ export default function ChapterContextPanel({
             </>
           ) : (
             <div className="rounded-lg border border-dashed border-ink-700 p-3 text-11 text-ink-500 leading-relaxed">
-              {binding.outlineId ? '绑定的细纲卡已失效，请重新选择。' : '尚未绑定细纲。手动选择可避免同名章节或重复章号误绑。'}
+              {bindingStatus === 'loading'
+                ? '正在读取本章绑定，读完再判断是否已绑定。'
+                : binding.outlineId
+                  ? (outlineError
+                    ? `已记录绑定（${binding.outlineId}），但细纲列表没读出来 —— 暂时无法确认这张卡是否还在，请稍后重试。`
+                    : '绑定的细纲卡已失效，请重新选择。')
+                  : '尚未绑定细纲。手动选择可避免同名章节或重复章号误绑。'}
               <div className="mt-2">
                 <Button variant="secondary" size="xs" onClick={() => onNavigate('chapter-outline')}>
                   <FileText size={12} className="mr-1" />前往章节细纲
@@ -214,7 +259,7 @@ export default function ChapterContextPanel({
               <span className="min-w-0 flex-1"><span className="block truncate text-11 text-ink-100">{item.name}</span><span className="block truncate text-10 text-ink-500">{item.source}{item.value ? ` · ${item.value}` : ''}</span></span>
               <span className="text-10 text-amber">固定</span>
             </button>
-          )) : <p className="px-2 py-1 text-10 text-ink-500">没有找到可固定的资料。</p> : <p className="px-2 py-1 text-10 text-ink-500">正在读取资料…</p>)}
+          )) : <p className="px-2 py-1 text-10 text-ink-500">{catalogError ? '资料目录读取失败，暂时无法搜索；可稍后重新打开本章资料。' : '没有找到可固定的资料。'}</p> : <p className="px-2 py-1 text-10 text-ink-500">正在读取资料…</p>)}
           <div>
             <div className="px-1 py-1 text-10 text-ink-500">固定资料 · {pinned.length}</div>
             {pinned.length === 0 ? <p className="px-2 py-2 text-11 text-ink-500">暂时没有固定资料。固定只方便本章查看，不会自动加入 AI 请求。</p> : pinned.map(({ ref, item, unavailable }) => (
@@ -248,7 +293,9 @@ export default function ChapterContextPanel({
       )}
 
       <footer className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 leading-relaxed shrink-0">
-        切换章节会刷新这里的资料，正文草稿与光标保持在编辑区。
+        跟随当前章：切换章节会换成那一章自己的绑定与固定项，正文草稿与光标留在编辑区。
+        <span className="mt-1 block">固定只方便本章查看；续写是否带入固定资料，仍按「续写计划」里你勾选的来源，不因打开这个抽屉而改变。</span>
+        {!docked && <span className="mt-1 block text-ink-600">窄窗口下抽屉浮在正文右侧，按 Esc 或右上角 × 收起，快捷键与工具栏都仍可用。</span>}
       </footer>
     </section>
   )

@@ -1,7 +1,7 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import '@/components/editor/editorMobile.css'
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
-import { foldVh } from '@/lib/settings/theme'
+import { foldVh, foldZoomLength } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
 import type { ChapterStatus } from '@/lib/types'
@@ -111,7 +111,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
+    wrapRef, wrapW, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
@@ -157,6 +157,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const [chapterDrawer, setChapterDrawer] = useState(false)
   const [searchDrawer, setSearchDrawer] = useState(false)
   const [dirtySearch, setDirtySearch] = useState<'inline' | 'drawer' | null>(null)
+  /**
+   * 3.4.0 · B：宽窗「停靠」/ 窄窗「浮层」。
+   * 抽屉本身是 fixed 的 18rem；正文列按限宽居中，1440 视口下两者会叠出近百像素。
+   * 宽窗时给正文壳让出右侧 20rem（抽屉 18rem + 右侧 0.75rem + 间隙），正文与资料同时可读；
+   * 窄窗仍走浮层（正文让出 20rem 就没得写了），但可 Esc / × 收起，工具栏不被遮。
+   */
+  const refsDocked = wrapW >= 1120
   const searchDraftPending = (origin: 'inline' | 'drawer', pending: boolean) => {
     setDirtySearch(previous => pending ? origin : previous === origin ? null : previous)
   }
@@ -559,7 +566,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
               <div className="w-px h-4 bg-ink-700" />
-              <Button variant="secondary" size="sm" aria-pressed={showRefs} onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+              <Button variant="secondary" size="sm" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
               </Button>
               {secondaryTools}
@@ -657,7 +664,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             {/* 正文：码字区始终填满工具栏与状态栏之间的全部空间，宽高都随窗口自适应。
                 🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
                 几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
-            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef} data-guide="body-editor">
+            <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef} data-guide="body-editor"
+              style={showRefs && refsDocked ? { paddingRight: foldZoomLength('20rem') } : undefined}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
               <div
                 className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative ${shortBody ? 'shrink-0' : 'flex-1 min-h-0'} flex flex-col overflow-hidden transition-[max-width] duration-300`}
@@ -857,7 +865,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 bodyText={draftContent}
                 referenced={referenced}
                 ctx={ctx}
-                onClose={() => setShowRefs(false)}
+                docked={refsDocked}
+                onClose={() => {
+                  setShowRefs(false)
+                  // 键盘用户收起后焦点回到「本章资料」入口，不被丢到页面顶部
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-refs-trigger]')?.focus())
+                }}
                 onNavigate={id => onNavigate?.(id)}
                 onOpenRecord={ref => window.dispatchEvent(new CustomEvent('yfe:navigate', {
                   detail: { tabId: ref.tabId, rowId: ref.id },
@@ -888,7 +901,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         <SensitiveCheck content={draftContent} onApply={updateContent} onClose={() => setModal(null)} />
       )}
       {modal === 'history' && active && (
-        <VersionHistory chapterId={active.id} current={draftContent} onRestore={restoreSnapshot} onClose={() => setModal(null)} />
+        <VersionHistory chapterId={active.id} current={draftContent} onRestore={(snapshotId, content) => restoreSnapshot(active.id, snapshotId, content)} onClose={() => setModal(null)} />
       )}
       {modal === 'trash' && (
         <TrashBin onChanged={() => { load(); onStatsChange?.() }} onClose={() => setModal(null)} />

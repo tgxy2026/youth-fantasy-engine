@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, Compass, FileText, History } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, Compass, FileText, History, X } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
 import type { CardRecord, Chapter, TableRow, Volume } from '@/lib/types'
@@ -9,6 +9,10 @@ import { readSetPref, readStringPref, writeSetPref, writeStringPref, usePersiste
 import { showToast } from '@/components/dialogs/dialogs'
 import { humanAgo } from '@/lib/outline/chapterAudit'
 import { chapterStatusMismatch } from '@/lib/app/chapterBoardView'
+import {
+  loadBoardState, saveBoardState, limitCovering, locateBoardAnchor,
+  BOARD_STATUSES, type BoardStatus, type BoardView, type ChapterBoardState,
+} from '@/lib/app/chapterBoardState'
 
 interface Props {
   projectId: string
@@ -26,6 +30,31 @@ interface Props {
 
 const finished = new Set<Chapter['status']>(['完稿', '已发布'])
 
+/**
+ * 找到真正负责滚动的祖先（写作面板外层是 `<main overflow-y-auto>`）。
+ *
+ * 🔴 不能假设 `window` 滚动：本项目所有页签都滚在 main 里，window.scrollTop 恒为 0 ——
+ *    把 window 当滚动容器会让「记住滚动位置」永远记住 0，而且查不出原因。
+ */
+function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') return node
+    node = node.parentElement
+  }
+  return null
+}
+
+/** 挂载时算一次「回来该恢复成什么样」——之后作者怎么滚、怎么筛都不再改写它 */
+interface BoardRestorePlan {
+  scrollTop: number
+  anchor: ReturnType<typeof locateBoardAnchor> | null
+  anchorTitle: string
+  /** 锚点在筛选结果里的下标超出了已显示数量 ⇒ 需要先抬到这么多 */
+  limitBump: number | null
+}
+
 export default function WritingWorkflow({ projectId, chapters, chapterOutlines, volumes, ideas, foreshadows, ctx, onNavigate, onExport, summary }: Props) {
   const [guideHidden, setGuideHidden] = usePersistedBool(`writing-guide-hidden:${projectId}`, chapters.length > 0)
   const [ignored, setIgnored] = useState<Set<string>>(() => new Set(readSetPref(`writing-next-ignored:${projectId}`) ?? []))
@@ -36,13 +65,34 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     }
     catch { return {} }
   })
-  const [boardOpen, setBoardOpen] = useState(false)
-  const [boardView, setBoardView] = useState<'chapters' | 'outlines'>('chapters')
-  const [chapterLimit, setChapterLimit] = useState(60)
-  const [outlineLimit, setOutlineLimit] = useState(60)
-  const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('all')
-  const [volumeId, setVolumeId] = useState('all')
+  /**
+   * 规划板往返状态（3.4.0 · A）：只在本机记住「作者离开时看到的视图」。
+   *
+   * 🔴 初始化只读一次。写进依赖就会出事：作者筛到一半新建/删除一卷，volumes 一变
+   *    就会重新读档、把筛选打回全部 —— 那正是「视图在作者眼皮底下自己跳」的经典事故。
+   */
+  const [initial] = useState(() => {
+    const outlineTab = getTab('chapter-outline')
+    return loadBoardState(projectId, {
+      volumeIds: volumes.map(v => v.id),
+      outlinesAvailable: !!outlineTab && tabVisible(outlineTab.id, ctx),
+    })
+  })
+  const [boardOpen, setBoardOpen] = useState(initial.state.open)
+  const [boardView, setBoardView] = useState<BoardView>(initial.state.view)
+  const [chapterLimit, setChapterLimit] = useState(initial.state.chapterLimit)
+  const [outlineLimit, setOutlineLimit] = useState(initial.state.outlineLimit)
+  const [query, setQuery] = useState(initial.state.query)
+  const [status, setStatus] = useState<BoardStatus>(initial.state.status)
+  const [volumeId, setVolumeId] = useState(initial.state.volumeId)
+  const [restoreNotices, setRestoreNotices] = useState<string[]>(initial.notices)
+  const [anchorNotice, setAnchorNotice] = useState<string | null>(null)
+  const anchorRef = useRef<string | null>(initial.state.anchorId)
+  const scrollTopRef = useRef(initial.state.scrollTop)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const scrollElRef = useRef<HTMLElement | null>(null)
+  const restorePlanRef = useRef<BoardRestorePlan | null>(null)
+  const boardStateRef = useRef<ChapterBoardState>(initial.state)
 
   const visible = (id: string) => {
     const tab = getTab(id)
@@ -109,9 +159,86 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     () => groups.reduce((n, g) => n + g.chapters.filter(c => chapterStatusMismatch(c)).length, 0),
     [groups],
   )
+  const hasFilter = query.trim() !== '' || status !== 'all' || volumeId !== 'all'
+  const clearFilters = () => { setQuery(''); setStatus('all'); setVolumeId('all') }
+
+  /**
+   * 挂载时算一次「回来该恢复成什么样」。
+   * 🔴 用 **首帧** 的 filtered 快照：之后再算就变成「按当前筛选判断上次」，锚点永远判不到。
+   */
+  if (restorePlanRef.current === null) {
+    const st = initial.state
+    const ids = filtered.map(c => c.id)
+    const at = st.anchorId ? ids.indexOf(st.anchorId) : -1
+    restorePlanRef.current = {
+      scrollTop: st.scrollTop,
+      anchor: st.anchorId ? locateBoardAnchor(st.anchorId, ids) : null,
+      anchorTitle: chapters.find(c => c.id === st.anchorId)?.title || '未命名章',
+      limitBump: at >= 0 && at >= st.chapterLimit ? limitCovering(at, st.chapterLimit) : null,
+    }
+  }
+
+  // 记录滚动位置。滚动容器是外层 <main>，不是 window（见 scrollParentOf 的说明）。
+  useEffect(() => {
+    const el = scrollParentOf(rootRef.current)
+    scrollElRef.current = el
+    if (!el) return
+    const onScroll = () => { scrollTopRef.current = el.scrollTop }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // 回来时：先补足显示数量（锚点超出首批 60 条也能定位），再复原滚动位置；锚点不在了如实说。
+  useEffect(() => {
+    const plan = restorePlanRef.current
+    if (!initial.state.open || !plan) return
+    if (plan.limitBump) setChapterLimit(prev => Math.max(prev, plan.limitBump as number))
+    if (plan.anchor === 'missing') setAnchorNotice(`上次进入的「${plan.anchorTitle}」已不在项目中（可能被删到回收站）；筛选条件已保留。`)
+    else if (plan.anchor === 'filtered-out') setAnchorNotice(`上次进入的「${plan.anchorTitle}」不在当前筛选结果里；筛选条件已保留，可清除筛选后再找。`)
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        const el = scrollElRef.current
+        if (el) el.scrollTop = plan.scrollTop
+      })
+    })
+    return () => { cancelAnimationFrame(outer); if (inner) cancelAnimationFrame(inner) }
+  }, [initial])
+
+  // 视图状态 → 本机偏好（防抖 400ms；切走/关页时由卸载清理再落一次）
+  boardStateRef.current = {
+    version: 1,
+    open: boardOpen,
+    view: boardView,
+    query,
+    status,
+    volumeId,
+    chapterLimit,
+    outlineLimit,
+    scrollTop: scrollTopRef.current,
+    anchorId: anchorRef.current,
+    savedAt: initial.state.savedAt,
+  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveBoardState(projectId, { ...boardStateRef.current, scrollTop: scrollTopRef.current, anchorId: anchorRef.current })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [projectId, boardOpen, boardView, query, status, volumeId, chapterLimit, outlineLimit])
+  useEffect(() => () => {
+    saveBoardState(projectId, { ...boardStateRef.current, scrollTop: scrollTopRef.current, anchorId: anchorRef.current })
+  }, [projectId])
+
+  /** 从卡片进正文：先把锚点与当前位置写死，再跳 —— 回来才知道「刚才进的是哪一章」 */
+  const openChapterFromBoard = (id: string) => {
+    anchorRef.current = id
+    saveBoardState(projectId, { ...boardStateRef.current, scrollTop: scrollTopRef.current, anchorId: id })
+    setAnchorNotice(null)
+    onNavigate('editor', id)
+  }
 
   return (
-    <div className="space-y-4 mb-6">
+    <div ref={rootRef} className="space-y-4 mb-6">
       <Panel className="border-amber/25" aria-labelledby="continue-writing-title" data-continue-writing>
         {/* 🔴 快捷钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
             钮紧随 h2（gap-2）；窗口不够时 flex-wrap 让它整条落到下一行，也不挤成一条缝。 */}
@@ -176,6 +303,17 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
           <span className="text-13 font-semibold text-ink-100 flex items-center gap-2"><FileText size={14} className="text-amber" /> 章节规划板 <span className="text-11 font-normal text-ink-500">{boardView === 'outlines' && visible('chapter-outline') ? `${chapterOutlines.length} 张细纲卡` : `${chapters.length} 章`} · 只读视图</span>{boardOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
         </Button>
         {boardOpen && <div className="mt-4">
+          {/* 3.4.0 · A：回来时视图被降级 / 上次进的章不在了 —— 都要说清原因，不静默改筛选 */}
+          {(restoreNotices.length > 0 || anchorNotice) && <div role="status" className="mb-3 space-y-1 rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">
+            {anchorNotice && <div className="flex items-start gap-2">
+              <span className="min-w-0 flex-1">{anchorNotice}</span>
+              <Button variant="ghost" size="xs" aria-label="关闭提示" onClick={() => setAnchorNotice(null)}><X size={12} /></Button>
+            </div>}
+            {restoreNotices.map((notice, index) => <div key={`${notice}-${index}`} className="flex items-start gap-2">
+              <span className="min-w-0 flex-1">{notice}</span>
+              {index === restoreNotices.length - 1 && <Button variant="ghost" size="xs" aria-label="关闭提示" onClick={() => setRestoreNotices([])}><X size={12} /></Button>}
+            </div>)}
+          </div>}
           {visible('chapter-outline') && <div role="group" aria-label="章节规划板视图" className="mb-4 flex flex-wrap gap-2">
             <Button variant="toggle" size="sm" selected={boardView === 'chapters'} aria-pressed={boardView === 'chapters'} onClick={() => setBoardView('chapters')}>正文章节摘要（{chapters.length}）</Button>
             <Button variant="toggle" size="sm" selected={boardView === 'outlines'} aria-pressed={boardView === 'outlines'} onClick={() => setBoardView('outlines')}>章节细纲卡（{chapterOutlines.length}）</Button>
@@ -191,17 +329,21 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
           <div className="flex flex-wrap gap-2 mb-4">
             <input value={query} onChange={e => setQuery(e.target.value)} aria-label="搜索章节标题或摘要" placeholder="搜索标题或摘要" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100" />
             <select value={volumeId} onChange={e => setVolumeId(e.target.value)} aria-label="筛选分卷" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部分卷</option>{volumes.map(v => <option key={v.id} value={v.id}>{v.title}</option>)}</select>
-            <select value={status} onChange={e => setStatus(e.target.value)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{['构思', '细纲', '草稿', '修改', '完稿', '已发布'].map(s => <option key={s}>{s}</option>)}</select>
+            <select value={status} onChange={e => setStatus(e.target.value as BoardStatus)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{BOARD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
+            {hasFilter && <Button variant="ghost" size="sm" onClick={clearFilters} title="清除分卷、状态与关键词筛选">清除筛选</Button>}
           </div>
-          <p className="mb-2 text-11 text-ink-500">正文章节 · 来自编辑器</p>
+          <p className="mb-2 text-11 text-ink-500">正文章节 · 来自正文编辑器（只读，点卡片进入该章）</p>
           {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">
             <AlertTriangle size={11} className="shrink-0" /> 本页已显示的章节里有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
           </p>}
-          {groups.length === 0 ? <div className="py-6 text-center text-12 text-ink-500">{chapters.length ? '没有符合条件的章节' : '还没有章节，先去正文编辑器建立第一章'}</div> : groups.map(group => <section key={group.volume.id} className="mb-4">
+          {groups.length === 0 ? <div className="flex flex-col items-center gap-2 py-6 text-center text-12 text-ink-500">
+            <span>{chapters.length ? (hasFilter ? `没有符合当前筛选的章节（共 ${chapters.length} 章）` : '没有符合条件的章节') : '还没有章节，先去正文编辑器建立第一章'}</span>
+            {chapters.length > 0 && hasFilter && <Button variant="secondary" size="sm" onClick={clearFilters}>清除筛选，查看全部章节</Button>}
+          </div> : groups.map(group => <section key={group.volume.id} className="mb-4">
             <h3 className="mb-2 text-12 text-ink-300">{group.volume.title} · {group.chapters.length} 章</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">{group.chapters.map(c => {
               const mismatch = chapterStatusMismatch(c)
-              return <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => onNavigate('editor', c.id)}>
+              return <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => openChapterFromBoard(c.id)}>
                 <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
                 <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
                 <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'} · 更新于 {humanAgo(c.updatedAt)}</span>

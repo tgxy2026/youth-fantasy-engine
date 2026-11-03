@@ -23,6 +23,7 @@ import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } fr
 import type { Volume, Chapter } from '@/lib/types'
 import * as db from '@/lib/db'
 import { countWords } from '@/lib/editor/textStats'
+import { restoreChapter } from '@/components/editor/restoreChapter'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
 import { useShortWritingArea } from '@/components/editor/useShortWritingArea'
@@ -1017,12 +1018,36 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     onStatsChange?.()
   }
 
-  /** 时光机恢复：先把当前内容快照（标成"手动回滚前的留档"），再套用历史版本 */
-  const restoreSnapshot = async (content: string) => {
-    if (!active) return
-    await db.createSnapshot(active, 'manual-restore')
-    updateContent(content)
-  }
+  /**
+   * 时光机恢复（3.4.0 · C）—— 事务体在 `restoreChapter.ts`（单文件 1200 行闸，见 structureGates ①）。
+   * 这里只做装配：把 ref 与落库/回写动作交过去，**顺序与失败分支全在那个模块里**。
+   */
+  const restoreSnapshot = (
+    chapterId: string,
+    snapshotId: string,
+    content: string,
+  ): Promise<{ ok: boolean; message: string }> => restoreChapter({
+    chapters: chaptersRef,
+    active: activeRef,
+    draft: draftRef,
+    autosaveTimer,
+    enqueueSave,
+    locate,
+    syncChapterMaster,
+    setSaving,
+    applySaved: (written, text) => {
+      setChapters(prev => prev.map(c => (c.id === written.id
+        ? { ...c, content: written.content, wordCount: written.wordCount, updatedAt: written.updatedAt }
+        : c)))
+      draftRef.current = text
+      setDraftContent(text)
+      setSavedFlash(true)
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setSavedFlash(false), 1500)
+      onStatsChange?.()
+      loadTodayWords()
+    },
+  }, chapterId, snapshotId, content)
 
   /** 全文替换后的回写（只同步内存态与草稿镜像；落库由调用方 `db.patchChapter` 统一负责） */
   const applyChapterContent = (id: string, content: string) => {
@@ -1131,7 +1156,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
-    wrapRef, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
+    wrapRef, wrapW, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
     // 本章引用侧栏
     showRefs, setShowRefs, highlightOn, setHighlightOn,
     // 弹窗与抽屉
