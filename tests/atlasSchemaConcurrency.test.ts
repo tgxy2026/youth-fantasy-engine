@@ -1,0 +1,149 @@
+// ============ 3.3.3 · B-07 图鉴字段配置写入的跨窗口临界区 ============
+//
+// 钉住：
+//   ① 同源两个窗口同时用 revision N 写同一张表 ⇒ 一个成功（N+1）、另一个**明确被拒**；
+//      最终存储只前进一代，不出现"两边都成功、后写覆盖前者"。
+//   ② 没有 Web Locks 的环境保持原行为（串行调用照常成功）。
+//   ③ 拒绝错误文案指向"其他窗口"，作者知道要重开字段设置，而不是以为保存成功。
+// 🔴 Web Locks 用内存 FIFO 队列模拟；这是源码级证据，不等于真实 Edge 双标签或桌面/便携文件后端验证。
+import { __resetMockStores, memoryOps } from './mock-memory'
+import * as db from '../src/lib/db'
+import { emptyAtlasSchema } from '../src/lib/atlas/schema'
+import { loadAtlasSchema, removeAtlasFieldAtomically, saveAtlasSchema } from '../src/lib/atlas/persistence'
+import type { AtlasSchemaConfig } from '../src/lib/atlas/types'
+
+let pass = 0, fail = 0
+const ok = (n: string, c: boolean | undefined, e = '') => {
+  if (c) { pass++; console.log('  PASS', n) }
+  else { fail++; console.log('  FAIL', n, '::', e) }
+}
+
+const PID = 'p-atlas-race'
+const TAB = 'races' as const
+
+function installLock() {
+  let tail: Promise<void> = Promise.resolve()
+  const locks = {
+    request: async <T>(_name: string, _opts: unknown, cb: () => Promise<T>): Promise<T> => {
+      let release!: () => void
+      const mine = new Promise<void>(r => { release = r })
+      const prev = tail
+      tail = mine
+      await prev
+      try { return await cb() } finally { release() }
+    },
+  }
+  ;(globalThis as unknown as { window?: unknown }).window = globalThis
+  Object.defineProperty(globalThis, 'navigator', { value: { locks }, configurable: true })
+}
+
+function removeLock() {
+  Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true })
+}
+
+function withField(base: AtlasSchemaConfig, label: string): AtlasSchemaConfig {
+  return {
+    ...base,
+    fields: [{
+      id: 'cf_race', label, type: 'text', description: '', options: [], appliesTo: '*',
+      groupId: 'g1', order: 0, tableVisible: true, detailVisible: true, searchable: true,
+      aiReadable: true, aiWritable: true, archived: false,
+    }],
+    groups: [{ id: 'g1', label: '扩展', order: 0 }],
+  }
+}
+
+async function main() {
+  __resetMockStores()
+  await memoryOps.put('projects', { id: PID, name: 'B07 字段并发', createdAt: 0, updatedAt: 0 })
+  db.setCurrentProject(PID)
+
+  const base = emptyAtlasSchema()
+  const first = await saveAtlasSchema(PID, TAB, withField(base, '食性'))
+  ok('首次写入 revision=1', first.revision === 1, `${first.revision}`)
+
+  installLock()
+  const stale = withField({ ...first, revision: 1 }, '食性')
+  // 两个窗口都拿着 revision=1 同时写：锁内重读后只有一个能过
+  const results = await Promise.allSettled([
+    saveAtlasSchema(PID, TAB, stale),
+    saveAtlasSchema(PID, TAB, { ...stale, fields: [{ ...stale.fields[0], label: '食性2' }] }),
+  ])
+  const okCount = results.filter(r => r.status === 'fulfilled').length
+  const rejected = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+  ok('并发写入只成功一个', okCount === 1, JSON.stringify(results.map(r => r.status)))
+  ok('另一个明确被拒（不是静默覆盖）', !!rejected && String(rejected.reason).includes('其他窗口'), String(rejected?.reason))
+  const loaded = await loadAtlasSchema(PID, TAB)
+  const stored = loaded.config
+  ok('存储只前进一代', stored?.revision === 2, `${stored?.revision}`)
+  ok('失败者的字段改动没有覆盖成功者', stored?.fields[0]?.label === '食性' || stored?.fields[0]?.label === '食性2')
+
+  removeLock()
+  const plain = await saveAtlasSchema(PID, TAB, withField({ ...stored!, revision: stored!.revision }, '无锁'))
+  ok('无 Web Locks 时保持原行为', plain.revision === stored!.revision + 1, `${plain.revision}`)
+
+  // ④ B-07：删字段定义 + 清该字段的值，收在**同一段同源临界区**
+  //
+  //    原先两步各申请一次锁（删定义走 saveAtlasSchema、清值不申请锁），中间锁已释放，
+  //    另一窗口可在中间改写配置或写回该字段的值。现在整段持锁，并在锁内复核一次孤儿值。
+  {
+    installLock()
+    __resetMockStores()
+    await memoryOps.put('projects', { id: PID, name: 'B07 原子删除', createdAt: 0, updatedAt: 0 })
+    db.setCurrentProject(PID)
+    const saved = await saveAtlasSchema(PID, TAB, withField(emptyAtlasSchema(), '备注X'))
+
+    let purgeCalls = 0
+    const purge = async () => { purgeCalls++; return 3 }
+    const r = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race',
+      cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+      purge,
+      async () => 0,
+      saved.revision,
+    )
+    ok('删除后返回的配置里没有该字段', r.config.fields.every(f => f.id !== 'cf_race'))
+    ok('清值只调用一次，复核不额外删除', purgeCalls === 1)
+    ok('removed 反映首清条数（3）', r.removed === 3)
+    ok('复核无残留 ⇒ leftovers = 0', r.leftovers === 0)
+    const after = await loadAtlasSchema(PID, TAB)
+    ok('存储侧也已删除该字段', after.config.fields.every(f => f.id !== 'cf_race'))
+
+    // 期望 revision 过期（别的窗口改过配置）⇒ 明确拒绝，且不执行清值
+    let purged = false
+    let err = ''
+    try {
+      await removeAtlasFieldAtomically(
+        PID, TAB, 'cf_race',
+        cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+        async () => { purged = true; return 0 },
+        async () => 0,
+        saved.revision,
+      )
+    } catch (e) { err = e instanceof Error ? e.message : String(e) }
+    ok('过期 revision ⇒ 明确拒绝（指向其他窗口）', /其他窗口发生变化/.test(err))
+    ok('拒绝时不执行清值', !purged)
+
+    // 复核阶段失败（值在变化）⇒ leftovers = -1，交给上层记 pending 并可重试
+    const r2 = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race',
+      cur => ({ ...cur, fields: cur.fields.filter(f => f.id !== 'cf_race') }),
+      async () => 2,
+      async () => { throw new Error('复核读取失败') },
+    )
+    ok('复核失败 ⇒ leftovers = -1（不吞掉）', r2.leftovers === -1)
+    ok('复核失败时首清条数仍返回', r2.removed === 2)
+    const r3 = await removeAtlasFieldAtomically(
+      PID, TAB, 'cf_race', cur => cur, async () => 2, async () => 1,
+    )
+    ok('复核发现残留时返回真实残留数量', r3.removed === 2 && r3.leftovers === 1)
+  }
+
+  removeLock()
+  delete (globalThis as unknown as { window?: unknown }).window
+
+  console.log(`\natlasSchemaConcurrency: ${pass} passed, ${fail} failed`)
+  if (fail) process.exit(1)
+}
+
+main()
