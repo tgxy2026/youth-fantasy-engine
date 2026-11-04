@@ -187,10 +187,12 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
   if (restorePlanRef.current === null) {
     const st = initial.state
     const ids = filtered.map(c => c.id)
+    // 🔴 传全量章节 id：只看 `ids` 无法区分「被筛掉」与「已删到回收站」。
+    const existingIds = chapters.map(c => c.id)
     const at = st.anchorId ? ids.indexOf(st.anchorId) : -1
     restorePlanRef.current = {
       scrollTop: st.scrollTop,
-      anchor: st.anchorId ? locateBoardAnchor(st.anchorId, ids) : null,
+      anchor: st.anchorId ? locateBoardAnchor(st.anchorId, ids, existingIds) : null,
       anchorTitle: chapters.find(c => c.id === st.anchorId)?.title || '未命名章',
       limitBump: at >= 0 && at >= st.chapterLimit ? limitCovering(at, st.chapterLimit) : null,
     }

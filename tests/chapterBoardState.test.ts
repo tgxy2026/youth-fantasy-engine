@@ -56,6 +56,13 @@ const scope = { volumeIds: ['v1', 'v2'], outlinesAvailable: true }
   ok('在列表里 → found', locateBoardAnchor('c2', ['c1', 'c2']) === 'found')
   ok('不在列表里 → filtered-out（可能只是被筛掉）', locateBoardAnchor('c9', ['c1', 'c2']) === 'filtered-out')
   ok('没有锚点 → missing', locateBoardAnchor(null, ['c1']) === 'missing')
+  // 🔴 3.4.0 纵切发现：只看筛选结果会把「已删到回收站」误报成「被筛掉」。
+  ok('🔴 章节仍在项目中、只是被筛掉 → filtered-out',
+    locateBoardAnchor('c2', ['c1'], ['c1', 'c2', 'c3']) === 'filtered-out')
+  ok('🔴 章节已不在项目里（删到回收站）→ missing',
+    locateBoardAnchor('c9', ['c1'], ['c1', 'c2', 'c3']) === 'missing')
+  ok('不传存在集合时保持旧口径（向后兼容）',
+    locateBoardAnchor('c9', ['c1']) === 'filtered-out')
 }
 
 // ---------- ③ 读档：脏数据一律降级并说明 ----------

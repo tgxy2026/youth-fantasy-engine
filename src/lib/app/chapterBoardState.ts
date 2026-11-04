@@ -111,8 +111,17 @@ export type BoardAnchorState = 'found' | 'filtered-out' | 'missing'
  *
  * 🔴 三者必须分开提示：把 filtered-out 说成「已删除」会让作者以为丢了数据。
  */
-export function locateBoardAnchor(anchorId: string | null, ids: readonly string[]): BoardAnchorState {
+export function locateBoardAnchor(
+  anchorId: string | null,
+  ids: readonly string[],
+  /** 本项目**仍存在**的章节 id（可选）。不传时无法区分「被筛掉」与「已删除」，按旧口径只判 filtered-out。 */
+  existingIds?: readonly string[],
+): BoardAnchorState {
   if (!anchorId) return 'missing'
+  // 🔴 先判「还在不在项目里」：删到回收站的章不在本项目任何筛选结果里，
+  //    若只看 `ids` 会把它说成「不在当前筛选结果」——作者会以为只要清除筛选就能找回来，
+  //    但那一章其实在回收站（规划 A.2 要求「已删除」与「被筛掉」分别提示）。
+  if (existingIds && !existingIds.includes(anchorId)) return 'missing'
   return ids.includes(anchorId) ? 'found' : 'filtered-out'
 }
 
