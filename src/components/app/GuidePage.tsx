@@ -88,6 +88,29 @@ const REVISION_TIPS: { title: string; body: string }[] = [
   },
 ]
 
+/**
+ * 3.4.0 新增能力（长篇创作工作台）——**不新增页签**，补的是"规划 → 参考 → 修订 → 导出"的往返。
+ * 🔴 只写作者真能看见、真会用到的；失败与边界照实写（失效章节、12 版上限、不是备份）。
+ */
+const V340_TIPS: { title: string; body: string }[] = [
+  {
+    title: '规划板能看见每章的细纲绑定',
+    body: '写作面板的章节规划板里，每张卡会写「细纲：某卡 · 固定资料 N 条」。它读的是你在正文「本章资料」里亲手做的绑定，不按章节名去猜；没绑定就写「未绑定细纲」，绑定的卡被删了会写「已失效」。',
+  },
+  {
+    title: '收藏集：把跨卷的章收在一起',
+    body: '同一章可以进多个收藏集，按原有叙事顺序显示，不改正文顺序、不复制正文。删收藏集只删分组，章节还在；章节被删后成员会标为不可用，可手动移除。',
+  },
+  {
+    title: '导出方案只记选择，不是备份',
+    body: '平台粘贴版、Markdown、投稿 DOCX 都能只导选定章节，也能把当前选择存成具名方案。方案只存章节与排版意图；里面有已删章节时会拒绝应用并列出，不会静默漏导。稿件导出不等于作品备份 —— 备份仍走项目导出。',
+  },
+  {
+    title: '随手记与命名快照',
+    body: '「随手记灵感」直接存进本作品的灵感夹，可顺带关联一章（之后能从这里打开那一章）；保存失败会保留输入。时光机里可以存带名称/备注的快照，但它和自动快照共用每章 12 版上限，会被新版本挤出，不是永久归档。',
+  },
+]
+
 export default function GuidePage({ onNavigate, ctx }: Props) {
   return (
     <div className="w-full page-enter">
@@ -200,6 +223,26 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
           {REVISION_TIPS.map(tip => (
+            <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
+              <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
+              <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3.4.0 新增能力：规划板往返、收藏集、导出方案、随手记与命名快照 */}
+      <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+        <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+          <Sparkles size={14} className="text-amber" />
+          <h2 className="text-13 font-semibold text-ink-100">3.4.0 · 长篇创作工作台</h2>
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">本版新增</span>
+          <HelpPopover title="这一版改了什么" width="22rem">
+            {'这一版没有新页签，补的是「规划 → 参考 → 修订 → 导出」的连续工作流：\n\n· 规划板记住你离开时的筛选与位置，回来不用重筛；卡片顺带显示细纲绑定与固定资料条数；\n· 章节收藏集把跨卷章节收在一起，只分组、不动正文顺序；\n· 导出可只导选定章节，并把选择存成具名方案；失效章节会明确列出；\n· 写作面板可直接随手记灵感（可关联章节）；时光机可存带名称/备注的快照。\n\n边界照实写：失效章节不会静默跳过、命名快照仍受 12 版上限、稿件导出不是作品备份。'}
+          </HelpPopover>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {V340_TIPS.map(tip => (
             <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
               <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
               <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>

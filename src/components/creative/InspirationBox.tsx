@@ -147,7 +147,11 @@ export default function InspirationBox() {
         <div className="text-11 text-ink-500 py-2">夹子还是空的 —— 想到什么先记下来，攒几条再融合。</div>
       ) : (
         <div className="space-y-1.5">
-          {items.map((it, idx) => (
+          {items.map((it, idx) => {
+            // 3.4.0 · F：关联章节必须能「打开目标」。只认当前项目里真实存在的章，
+            // 章节被删时只显示「不可用」，不给一个点了会失败的死链。
+            const linkedChapter = it.chapterId && chapters ? chapters.find(ch => ch.id === it.chapterId) : undefined
+            return (
             <div key={it.id} className={`flex items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
               checked.has(it.id) ? 'border-amber/40 bg-amber/5' : 'border-ink-700 bg-ink-800/60'
             }`}>
@@ -159,13 +163,19 @@ export default function InspirationBox() {
                   ? <span className="flex items-center justify-center w-3.5 h-3.5 rounded bg-amber text-ink-950"><Check size={10} /></span>
                   : <span className="block w-3.5 h-3.5 rounded border border-ink-600" />}
               </Button>
-              <span className="flex-1 text-12 text-ink-200 leading-relaxed break-all">{it.text}{it.chapterId && <span className="block text-10 text-ink-400">关联章节：{chapters === null ? '暂时无法确认' : chapters.find(ch => ch.id === it.chapterId)?.title || '不可用'}</span>}</span>
+              <span className="flex-1 text-12 text-ink-200 leading-relaxed break-all">{it.text}{it.chapterId && <span className="block text-10 text-ink-400">
+                关联章节：{chapters === null ? '暂时无法确认' : linkedChapter?.title || '不可用'}
+                {linkedChapter && <Button variant="bare" className="ml-1 text-amber hover:text-amber/80" data-open-chapter={linkedChapter.id}
+                  title="在正文里打开这一章（不会改动灵感内容）"
+                  onClick={() => window.dispatchEvent(new CustomEvent('yfe:navigate', { detail: { tabId: 'editor', chapterId: linkedChapter.id } }))}>打开 →</Button>}
+              </span>}</span>
               <span className="text-10 text-ink-600 shrink-0 mt-0.5 tabular-nums">#{idx + 1}</span>
               <Button variant="icon-danger" className="p-0.5 shrink-0 mt-0.5" onClick={() => void del(it.id)} title="删除这条灵感" aria-label="删除">
                 <X size={11} />
               </Button>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

@@ -97,5 +97,17 @@ console.log('\n▶ inspirationFuse')
     readFileSync('src/lib/ai/aiTasks.ts', 'utf8').includes('inspiration-fuse'))
 }
 
+// ---------- ④ 3.4.0 · F：关联章节「打开目标」----------
+{
+  const box = readFileSync('src/components/creative/InspirationBox.tsx', 'utf8')
+  ok('🔴 关联章节可打开目标：发 yfe:navigate 到 editor + chapterId',
+    box.includes("tabId: 'editor', chapterId: linkedChapter.id")
+    && box.includes("new CustomEvent('yfe:navigate'"))
+  ok('🔴 只有章节真实存在才给「打开」（失效关联不给死链）',
+    box.includes('{linkedChapter && <Button'))
+  ok('章节列表读取失败时只说「暂时无法确认」，不假装不可用',
+    box.includes("chapters === null ? '暂时无法确认'"))
+}
+
 console.log(`\n  ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

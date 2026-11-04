@@ -373,7 +373,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
               const mismatch = chapterStatusMismatch(c)
               // A.3：只展示有据可查的绑定；未绑定照实说，不按名称猜
               const contextLine = visible('chapter-outline') ? describeChapterContext(chapterContexts[c.id], outlineNames) : null
-              return <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => openChapterFromBoard(c.id)}>
+              return <Button key={c.id} variant="bare" data-board-card={c.id} className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => openChapterFromBoard(c.id)}>
                 <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
                 <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
                 <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'} · 更新于 {humanAgo(c.updatedAt)}</span>
