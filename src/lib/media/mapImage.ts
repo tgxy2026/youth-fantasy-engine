@@ -14,7 +14,7 @@
  * ⚠️ 这里只负责"把图变成可入库的 dataURL"；**渲染与缩放交互在 `GeoMapEditor`**
  *    （图片作为 svg 里的一个 `<image>` 层，直接复用地图既有的 `view{x,y,k}` 变换 —— 不另搞一套 pan/zoom）。
  */
-import { dataUrlBytes } from '@/lib/media/imagePortrait'
+import { checkImageFile, readAsDataURL, shrinkToFit } from '@/lib/media/imageShrink'
 
 /** 原图体积上限（超出直接拒绝） */
 export const MAP_IMAGE_MAX_INPUT_BYTES = 16 * 1024 * 1024
@@ -37,60 +37,7 @@ export function fitLongSide(w: number, h: number, maxSide: number): { w: number;
 }
 
 export function isAcceptableMapImage(f: { size: number; type: string }): { ok: boolean; reason?: string } {
-  if (!f.type.startsWith('image/')) return { ok: false, reason: '请选择图片文件（PNG / JPG / WebP）' }
-  if (f.size <= 0) return { ok: false, reason: '这个文件是空的，换一张试试' }
-  if (f.size > MAP_IMAGE_MAX_INPUT_BYTES) {
-    return { ok: false, reason: `原图请控制在 ${MAP_IMAGE_MAX_INPUT_BYTES / 1024 / 1024}MB 以内（会自动缩放）` }
-  }
-  return { ok: true }
-}
-
-function readAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(String(r.result))
-    r.onerror = () => reject(new Error('读取文件失败'))
-    r.readAsDataURL(file)
-  })
-}
-
-function shrink(dataUrl: string): Promise<{ dataUrl: string; bytes: number; quality: number; w: number; h: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      try {
-        const srcW = img.naturalWidth || img.width
-        const srcH = img.naturalHeight || img.height
-        const { w, h } = fitLongSide(srcW, srcH, MAP_IMAGE_MAX_SIDE)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { reject(new Error('画布不可用')); return }
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, srcW, srcH, 0, 0, w, h)
-
-        const isWebp = (s: string) => s.startsWith('data:image/webp')
-        let best = { dataUrl: canvas.toDataURL('image/webp', MAP_IMAGE_QUALITY_STEPS[0]), quality: MAP_IMAGE_QUALITY_STEPS[0] as number }
-        if (!isWebp(best.dataUrl)) {
-          best = { dataUrl: canvas.toDataURL('image/jpeg', MAP_IMAGE_QUALITY_STEPS[0]), quality: MAP_IMAGE_QUALITY_STEPS[0] }
-        }
-        let bytes = dataUrlBytes(best.dataUrl)
-        for (const q of MAP_IMAGE_QUALITY_STEPS.slice(1)) {
-          if (bytes <= MAP_IMAGE_TARGET_BYTES) break
-          const next = isWebp(best.dataUrl) ? canvas.toDataURL('image/webp', q) : canvas.toDataURL('image/jpeg', q)
-          const nb = dataUrlBytes(next)
-          if (nb < bytes) { best = { dataUrl: next, quality: q }; bytes = nb }
-        }
-        resolve({ ...best, bytes, w, h })
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error('处理图片失败'))
-      }
-    }
-    img.onerror = () => reject(new Error('图片解码失败，可能不是常见的图片格式'))
-    img.src = dataUrl
-  })
+  return checkImageFile(f, MAP_IMAGE_MAX_INPUT_BYTES, '（会自动缩放）')
 }
 
 export interface MapImageResult {
@@ -108,7 +55,11 @@ export async function readMapImageFile(file: File): Promise<MapImageResult> {
   const check = isAcceptableMapImage(file)
   if (!check.ok) throw new Error(check.reason ?? '这张图不能用作底图')
   const raw = await readAsDataURL(file)
-  const r = await shrink(raw)
+  const r = await shrinkToFit(raw, {
+    fit: (w, h) => fitLongSide(w, h, MAP_IMAGE_MAX_SIDE),
+    targetBytes: MAP_IMAGE_TARGET_BYTES,
+    qualitySteps: MAP_IMAGE_QUALITY_STEPS,
+  })
   return { ...r, downscaled: r.quality !== MAP_IMAGE_QUALITY_STEPS[0] }
 }
 

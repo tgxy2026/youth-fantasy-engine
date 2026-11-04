@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useMonoTheme } from '@/lib/settings/useMonoTheme'
 import { monoDashLookup } from '@/lib/settings/monoMarks'
 import type { TableRow, TabDef, CalendarDef, CalendarRule } from '@/lib/types'
-import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, cappedPositions, formatDurationHuman } from '@/lib/app/storyDate'
+import { DEFAULT_CALENDAR_RULE, formatSpanDays, formatStoryRange, assignOverlapColors, interpolateX, spanLinePath, storyDateKey, storySpanDays, formatDurationHuman } from '@/lib/app/storyDate'
+import { useTimelinePositions, TIMELINE_SLOT_W } from '@/components/outline/useTimelinePositions'
 import { Calendar, Users, X, AlarmClock, Layers } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -65,7 +66,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 // 单行水平轴布局常量（2026-09-24 · 主人哥哥定版：蛇形取消，全部水平；
 // 二次定版：持续线条移到**轴上方**、尖角向下指轴，卡片留在轴下，靠同色对应）
-const SLOT_W = 240      // 相邻时间点组的间距（等距；区间端点在相邻组之间按时间比例插值）
+const SLOT_W = TIMELINE_SLOT_W
 const POINT_R = 9
 const CARD_W = 210
 const BRACKET_DEPTH = 18
@@ -154,27 +155,8 @@ export default function HistoryTimeline({ rows, calendars, calendarRule = DEFAUL
     return gs
   }, [data])
 
-  /**
-   * 横轴定位（2.7.2 新增「等比」模式）：
-   * · `even`（默认，零回归）= 等距槽位（旧行为）；
-   * · `proportional` = 按真实时间差排布 + **超长空档封顶**（否则一个三千年空档会把轴撑爆）；
-   *   无法解析时间的组（key=Infinity）排在末尾、按等距兜底。
-   */
-  const { groupPositions, breakIdx } = useMemo(() => {
-    const n = groups.length
-    const even = () => ({ groupPositions: groups.map((_, gi) => gi * SLOT_W + SLOT_W / 2), breakIdx: [] as number[] })
-    if (scale === 'even' || n === 0) return even()
-    const keys: number[] = []
-    const back: number[] = []
-    groups.forEach((g, gi) => { if (Number.isFinite(g.key)) { keys.push(g.key); back.push(gi) } })
-    if (keys.length === 0) return even()
-    const { x, breaks } = cappedPositions(keys, { slot: SLOT_W })
-    const pos = new Array<number>(n).fill(0)
-    back.forEach((gi, j) => { pos[gi] = x[j] })
-    let cursor = x[x.length - 1]
-    for (let gi = 0; gi < n; gi++) if (!Number.isFinite(groups[gi].key)) { cursor += SLOT_W; pos[gi] = cursor }
-    return { groupPositions: pos, breakIdx: breaks.map(i => back[i]) }
-  }, [groups, scale])
+  /** 横轴定位（2.7.2「等比」模式，与故事时间轴同口径） */
+  const { groupPositions, breakIdx } = useTimelinePositions(groups, scale)
 
   const groupX = (gi: number) => groupPositions[gi] ?? 0
 

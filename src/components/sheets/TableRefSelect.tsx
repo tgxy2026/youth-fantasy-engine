@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useDropdownReposition } from '@/components/common/useDropdownReposition'
 import { createPortal } from 'react-dom'
 import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { getTableRows } from '@/lib/db'
@@ -69,17 +70,7 @@ export default function TableRefSelect({ value, onChange, refTabId, refCol, plac
     setPos(computeDropdownPos(btn.getBoundingClientRect()))
   }
 
-  useEffect(() => {
-    if (!open) { setPos(null); return }
-    updatePos()
-    const onMove = () => updatePos()
-    window.addEventListener('scroll', onMove, true)
-    window.addEventListener('resize', onMove)
-    return () => {
-      window.removeEventListener('scroll', onMove, true)
-      window.removeEventListener('resize', onMove)
-    }
-  }, [open])
+  useDropdownReposition(open, updatePos, () => setPos(null))
 
   useEffect(() => {
     if (!open) return

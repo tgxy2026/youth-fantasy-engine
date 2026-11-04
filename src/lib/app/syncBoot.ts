@@ -28,8 +28,7 @@ import { desktopAuthStatus, desktopOrigin } from '@/lib/cloud/desktopLogin'
 import { DESKTOP } from '@/lib/app/desktop'
 import { autoSyncTick, nextTickDelay, SYNC_TICK_FAST_MS, SYNC_TICK_MAX_MS, type AutoSyncDeps, type TickDecision } from '@/lib/app/syncAuto'
 
-/** 默认轮询间隔：用户在写稿，20 秒足够把改动送上去，又不至于太吵 */
-export const AUTO_SYNC_INTERVAL_MS = 20_000
+/** 默认轮询间隔由 `syncAuto` 的 SYNC_TICK_FAST_MS / SYNC_TICK_MAX_MS 决定 */
 
 let timer: ReturnType<typeof setTimeout> | null = null
 /** 是否正在自动同步（不能用 `timer !== null` 判断：定时器在两次 tick 之间是空的） */

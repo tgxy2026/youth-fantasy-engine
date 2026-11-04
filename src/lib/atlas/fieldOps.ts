@@ -21,7 +21,6 @@ import { getTableRowsFor, saveTableRow } from '@/lib/db/tabs'
 import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
 import type { TableRow } from '@/lib/types'
 import { createAutoBackup } from '@/lib/db/backups'
-import { emptyAtlasSchema } from '@/lib/atlas/schema'
 
 /** 短文本上限（超过这个长度就只能留在长文本里；不截断） */
 export const TEXT_MAX_CHARS = 2000
@@ -176,9 +175,4 @@ export async function purgeFieldValues(projectId: string, tabId: string, fieldId
     n++
   }
   return n
-}
-
-/** 一份"删除后的空配置"：给测试与需要构造默认配置的调用方复用 */
-export function atlasFieldOpsEmptyConfig(): AtlasSchemaConfig {
-  return emptyAtlasSchema()
 }

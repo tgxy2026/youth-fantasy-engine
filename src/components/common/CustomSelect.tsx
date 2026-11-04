@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useDropdownReposition } from '@/components/common/useDropdownReposition'
 import { createPortal } from 'react-dom'
 import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import {
@@ -139,17 +140,7 @@ export default function CustomSelect({ tabId, colName, options, value, onChange,
   }
 
   // 打开时计算位置；容器滚动或窗口变化时跟随重算
-  useEffect(() => {
-    if (!open) { setPos(null); return }
-    updatePos()
-    const onMove = () => updatePos()
-    window.addEventListener('scroll', onMove, true)
-    window.addEventListener('resize', onMove)
-    return () => {
-      window.removeEventListener('scroll', onMove, true)
-      window.removeEventListener('resize', onMove)
-    }
-  }, [open])
+  useDropdownReposition(open, updatePos, () => setPos(null))
 
   // 点击外部关闭（浮层渲染在 body 上，需同时检查浮层自身）
   useEffect(() => {

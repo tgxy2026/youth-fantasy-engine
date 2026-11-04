@@ -16,6 +16,10 @@
  * 若放到 400KB，30 角色就 12MB，同步与备份会明显变沉。所以上限定在 200KB 并**显示已用体积**给作者。
  */
 import { PORTRAIT_ACCEPT, PORTRAIT_MAX_INPUT_BYTES, PORTRAIT_SIZE, PORTRAIT_TARGET_BYTES } from '@/lib/media/portraitSpec'
+import { checkImageFile, readAsDataURL, shrinkToFit } from '@/lib/media/imageShrink'
+
+/** dataURL 体积估算（历史调用方一直从本模块 import；真源在 imageShrink） */
+export { dataUrlBytes } from '@/lib/media/imageShrink'
 
 /** 等比缩放：把 (w,h) 放进 (tw,th) 内，返回缩放后的尺寸（至少 1px） */
 export function fitInside(w: number, h: number, tw: number, th: number): { w: number; h: number } {
@@ -29,21 +33,7 @@ export function fitInside(w: number, h: number, tw: number, th: number): { w: nu
 
 /** 输入体检（原因直接展示给作者） */
 export function isAcceptablePortrait(f: { size: number; type: string }): { ok: boolean; reason?: string } {
-  if (!f.type.startsWith('image/')) return { ok: false, reason: '请选择图片文件（PNG / JPG / WebP）' }
-  if (f.size <= 0) return { ok: false, reason: '这个文件是空的，换一张试试' }
-  if (f.size > PORTRAIT_MAX_INPUT_BYTES) {
-    return { ok: false, reason: `原图请控制在 ${PORTRAIT_MAX_INPUT_BYTES / 1024 / 1024}MB 以内（会自动等比缩放）` }
-  }
-  return { ok: true }
-}
-
-/** dataURL 的近似字节数（base64 膨胀约 4/3） */
-export function dataUrlBytes(dataUrl: string): number {
-  const i = dataUrl.indexOf(',')
-  if (i < 0) return 0
-  const b64 = dataUrl.slice(i + 1)
-  const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
-  return Math.floor((b64.length * 3) / 4) - pad
+  return checkImageFile(f, PORTRAIT_MAX_INPUT_BYTES, '（会自动等比缩放）')
 }
 
 /**
@@ -51,61 +41,6 @@ export function dataUrlBytes(dataUrl: string): number {
  * 🔴 顺序与"为什么"都写在这里 —— 别在组件里另写一套（规格说明与实现必须同源）。
  */
 export const PORTRAIT_QUALITY_STEPS = [0.9, 0.82, 0.74] as const
-
-function readAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(String(r.result))
-    r.onerror = () => reject(new Error('读取文件失败'))
-    r.readAsDataURL(file)
-  })
-}
-
-/**
- * 缩放到目标框内并导出，**按质量阶梯直到满足体积上限**。
- * 若最低档仍超限，返回最低档结果（**不继续压** —— 再压就该糊了，宁可让作者自己换小一点的图）。
- */
-function shrinkPortrait(dataUrl: string): Promise<{ dataUrl: string; bytes: number; quality: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      try {
-        const srcW = img.naturalWidth || img.width
-        const srcH = img.naturalHeight || img.height
-        const { w, h } = fitInside(srcW, srcH, PORTRAIT_SIZE.w, PORTRAIT_SIZE.h)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { reject(new Error('画布不可用')); return }
-        // 缩放时给点质量感（默认插值在大幅缩小时偏糊）
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, srcW, srcH, 0, 0, w, h)
-
-        let last = { dataUrl: canvas.toDataURL('image/webp', PORTRAIT_QUALITY_STEPS[0]), quality: PORTRAIT_QUALITY_STEPS[0] as number }
-        // 环境不支持 webp 时 toDataURL 会静默回落 png（体积大得多）→ 换 JPEG
-        if (!last.dataUrl.startsWith('data:image/webp')) {
-          last = { dataUrl: canvas.toDataURL('image/jpeg', PORTRAIT_QUALITY_STEPS[0]), quality: PORTRAIT_QUALITY_STEPS[0] }
-        }
-        let bytes = dataUrlBytes(last.dataUrl)
-        for (const q of PORTRAIT_QUALITY_STEPS.slice(1)) {
-          if (bytes <= PORTRAIT_TARGET_BYTES) break
-          const next = last.dataUrl.startsWith('data:image/webp')
-            ? canvas.toDataURL('image/webp', q)
-            : canvas.toDataURL('image/jpeg', q)
-          const nb = dataUrlBytes(next)
-          if (nb < bytes) { last = { dataUrl: next, quality: q }; bytes = nb }
-        }
-        resolve({ ...last, bytes })
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error('处理图片失败'))
-      }
-    }
-    img.onerror = () => reject(new Error('图片解码失败，可能不是常见的图片格式'))
-    img.src = dataUrl
-  })
-}
 
 export interface PortraitResult {
   /** 可直接入库的 dataURL */
@@ -122,7 +57,11 @@ export async function readPortraitFile(file: File): Promise<PortraitResult> {
   const check = isAcceptablePortrait(file)
   if (!check.ok) throw new Error(check.reason ?? '这张图不能用作立绘')
   const raw = await readAsDataURL(file)
-  const r = await shrinkPortrait(raw)
+  const r = await shrinkToFit(raw, {
+    fit: (w, h) => fitInside(w, h, PORTRAIT_SIZE.w, PORTRAIT_SIZE.h),
+    targetBytes: PORTRAIT_TARGET_BYTES,
+    qualitySteps: PORTRAIT_QUALITY_STEPS,
+  })
   return { ...r, downscaled: r.quality !== PORTRAIT_QUALITY_STEPS[0] }
 }
 

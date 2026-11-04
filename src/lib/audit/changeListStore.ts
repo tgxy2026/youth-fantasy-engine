@@ -40,10 +40,6 @@ export async function saveChangeList(projectId: string, report: ChangeListReport
   await writeValue(cacheKeyOf(projectId, report.chapterId), report, store)
 }
 
-export async function clearChangeList(projectId: string, chapterId: string, store: StoreOps = ops): Promise<void> {
-  await store.del('meta', cacheKeyOf(projectId, chapterId)).catch(() => {})
-}
-
 /** 报告是否仍对应当前章与当前正文（迟到回包 / 改文后复用都要经过它） */
 export function isReportCurrent(report: ChangeListReport, chapterId: string, chapterText: string): boolean {
   return report.chapterId === chapterId && report.inputFingerprint === fingerprintText(chapterText)

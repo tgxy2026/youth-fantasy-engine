@@ -291,8 +291,3 @@ export function currentUiZoom(): number {
 export function contentHeight(deductPx: number): string {
   return `calc(${foldVh('100vh')} - ${deductPx}px)`
 }
-
-/** 卡片型页签（角色卡）页头 + 工具条的高度，供 contentHeight 使用 */
-export const CARD_SHEET_CHROME_PX = 180
-/** 大纲型页签（细纲卡）页头 + 工具条的高度 */
-export const OUTLINE_SHEET_CHROME_PX = 200

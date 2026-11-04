@@ -71,9 +71,3 @@ export function requestProofLocate(target: ProofLocateTarget): boolean {
   }
   return handled
 }
-
-/** 仅供测试：清空订阅与序号，避免用例之间互相污染 */
-export function resetProofLocateChannel(): void {
-  handlers.clear()
-  sequence = 0
-}

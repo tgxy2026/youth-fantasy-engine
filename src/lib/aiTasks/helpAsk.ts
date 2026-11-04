@@ -18,7 +18,7 @@ import {
 } from '@/lib/help'
 import {
   buildHelpAnswerPrompt, prepareHelpPromptFragments, readHelpAnswer, HELP_ANSWER_FAILURE_TEXT,
-  type HelpAnswerFailure, type HelpPromptFragment, type HelpSourceRef,
+  type HelpPromptFragment, type HelpSourceRef,
 } from '@/lib/aiTasks/helpAnswer'
 import {
   ASK_CLARIFY_TEXT, buildThreadContextLine, routeAskRecall, type AskTopic, type AskTopicOption,
@@ -189,9 +189,4 @@ export async function askHelpOnce(
     `${fragment.hit.articleId}/${fragment.hit.sectionId}`, fragment.sourceSnapshot,
   ]))
   return { kind: 'answer', answer: checked.answer, sources: checked.sources, sourceSnapshots, contentVersion: CONTENT_VERSION, hits, topic }
-}
-
-/** 失败原因 → 一句话（供单测与界面复用，避免两处各写一份措辞） */
-export function askFailureText(reason: HelpAnswerFailure): string {
-  return HELP_ANSWER_FAILURE_TEXT[reason]
 }

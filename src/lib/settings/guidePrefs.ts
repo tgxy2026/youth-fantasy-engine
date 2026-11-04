@@ -142,10 +142,3 @@ function notify(): void {
   // 同窗口：复用 uiPrefs 的偏好事件；跨窗口靠 storage 事件
   window.dispatchEvent(new CustomEvent(PREF_EVENT, { detail: { key: 'guide' } }))
 }
-
-/** 仅供测试：清空会话内状态，避免用例互相污染 */
-export function resetGuideSessionForTest(): void {
-  session.autoOff = false
-  session.done.clear()
-  session.skipped.clear()
-}

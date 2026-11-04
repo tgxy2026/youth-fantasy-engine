@@ -16,7 +16,7 @@ import TemplateLibrary from '@/components/library/TemplateLibrary'
 import { MasterDetail, MasterList, useMasterFilter } from '@/components/common/MasterDetail'
 import { useMasterRecordNavigation } from '@/components/common/useMasterRecordNavigation'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
-import { useOutlineWorkspaceScroll } from '@/components/outline/useOutlineWorkspaceScroll'
+import { usePaneWorkspaceScroll } from '@/components/common/usePaneWorkspaceScroll'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
@@ -84,7 +84,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const [draft, setDraft] = useState<CardRecord | null>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const detailScrollRef = useRef<HTMLDivElement>(null)
-  const captureScroll = useOutlineWorkspaceScroll({ pageId: tab.id, ownerKey, generation: listView.generation,
+  const captureScroll = usePaneWorkspaceScroll({ pageId: tab.id, ownerKey, generation: listView.generation,
     ready: loaded, query: listQuery, selectedId: activeId, objectId: draft?.id ?? null,
     targetId: focusRowId ?? null, requestId: focusRequestId, listRef: listScrollRef, detailRef: detailScrollRef, isCurrent })
   // 🔴 用 ref 持有最新草稿：下面「切换卡片」的 effect 里读到的是**切换前**的那一份 —— 正是要落库的。

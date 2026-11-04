@@ -206,6 +206,34 @@ const KEEP = {
   'src/lib/aiTasks/jieWenJi.ts:aiContinuePassage':
     '底层纯续写任务契约：由 lib/ai/aiTasks 门面导出；3.3.5 颉文姬接入带预算/快照/候选保护的 ' +
     'executeContinuationWithSnapshot 链路，底层接口保留作为无状态 AI 续写任务契约，归档文档点名保留',
+
+  // 📌 2026-11-04（3.4.0 技术债整改）：下面 7 条是「零引用但确有契约 / 预留 / 唯一口径」的导出。
+  //    同一轮已直接删掉 8 条明确死代码（AUTO_SYNC_INTERVAL_MS / clearChangeList / CARD_SHEET_CHROME_PX /
+  //    OUTLINE_SHEET_CHROME_PX / resetProofLocateChannel / atlasFieldOpsEmptyConfig /
+  //    resetGuideSessionForTest / askFailureText）；这 7 条不删，理由逐条写明。
+  //    ⚠️ `linkCheckToCandidate` / `useFieldAliases` / `loadPendingFieldKeys` 仍**故意不进本表**：
+  //    它们是真的「该接没接」，进白名单等于发免责条款；见整改记录。
+  'src/lib/aiTasks/proofread.ts:ProofKind':
+    '公开类型面：由 `lib/ai/aiTasks` 门面 re-export，供调用方标注校对类型；零运行时开销，' +
+    '删除需同步改已声明门面，收益只是少一个类型名',
+  'src/lib/atlas/values.ts:serializeCustomValue':
+    '与 `coerceCustomValue` 成对的**反向序列化**（预留 API）：注释写明供后续配置 UI / AI 回填写回；' +
+    '删掉等于放弃自定义值写回能力，属能力缺口而非垃圾',
+  'src/lib/sync/syncQueueIdb.ts:createIdbQueueStore':
+    '预留 API：当前装配走 `createSyncStateStores`，此函数只服务「只要队列」的未来单队列场景；' +
+    '是已实现的完整能力，删掉不会减小产物（零引用已被 tree-shake），只会丢掉这条路径',
+  'src/lib/settings/theme.ts:contentHeight':
+    '布局**唯一锁高口径**（`height` 而非 `minHeight`，主从双栏独立滚动依赖它）；' +
+    '与 `contentMinH` 成对存在，删掉会让「为什么这里必须 height」的约定失去代码锚点',
+  'src/lib/sync/syncClient.ts:createSyncClient':
+    '同文件的完整客户端工厂，注释已写明线上装配在 `syncBoot + syncController`；' +
+    '保留作为就近的装配参考实现，删除不影响运行但会让 `createHttpTransport` 失去同文件使用范例',
+  'src/lib/db/taskLedger.ts:setTaskUnitStatus':
+    '中间态语义入口：注释声明「只改状态、不改产物」；当前被 `saveTaskUnit` 整体覆盖写入，' +
+    '保留是为了在需要「只推进状态」时有一个不会误写产物的明确 API',
+  'src/lib/revision/faultInjection.ts:rollbackMigration':
+    '只做状态转换的回滚入口；真实回滚在 `templates/migrate.ts`。保留是因为「回滚粒度」口径' +
+    '尚未定案，删掉会让故障注入的状态机缺一个可读的终点',
 }
 const isKept = r => Object.prototype.hasOwnProperty.call(KEEP, `${r.file}:${r.name}`)
 
