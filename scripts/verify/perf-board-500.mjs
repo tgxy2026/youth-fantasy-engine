@@ -5,34 +5,75 @@
 //       JS 堆内存、长任务数量与总时长。
 //
 // 用法：
-//   node scripts/verify/perf-board-500.mjs
-//   node scripts/verify/perf-board-500.mjs --label=f1d28a3   # 写入结果里的版本标签
+//   node scripts/verify/perf-board-500.mjs                              # 网页形态（Vite + Chromium + IndexedDB）
+//   node scripts/verify/perf-board-500.mjs --surface=desktop            # Electron 开发态 + 文件后端
+//   node scripts/verify/perf-board-500.mjs --surface=portable           # dist + portable-server（先 npm run build）
+//   node scripts/verify/perf-board-500.mjs --label=f1d28a3              # 写入结果里的版本标签
 //
-// 🔴 只测网页形态（Chromium headless + Vite 开发服务器 + IndexedDB）。
-//    不测桌面 / 便携：窗口尺寸、文件后端与浏览器内存口径不同，不能混在一起比较。
+// 🔴 各运行面结果**分别记录、不混在一起比较**：窗口尺寸、文件后端与浏览器内存口径不同。
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { chromium, _electron } from 'playwright'
+import { mkdtemp, mkdir, writeFile, cp } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 
 const ROOT = process.cwd()
-const label = process.argv.find(a => a.startsWith('--label='))?.slice('--label='.length) || 'current'
+const argSurface = process.argv.find(a => a.startsWith('--surface='))?.slice('--surface='.length)
+const surface = argSurface === 'desktop' || argSurface === 'portable' ? argSurface : 'web'
+const label = process.argv.find(a => a.startsWith('--label='))?.slice('--label='.length) || `current-${surface}`
 const run = await mkdtemp(path.join(ROOT, '.workbuddy/tmp/perf-board-500-'))
 const VOLUMES = 10
 const CHAPTERS_PER_VOLUME = 50
 const TOTAL = VOLUMES * CHAPTERS_PER_VOLUME
 
-const server = await createServer({ cacheDir: path.join(run, 'vite'), logLevel: 'error', server: { host: '127.0.0.1', port: 0 } })
+let server
+let portable
 let browser
+let app
 let page
-const report = { label, totalChapters: TOTAL, startedAt: new Date().toISOString(), steps: {} }
+const report = { label, surface, totalChapters: TOTAL, startedAt: new Date().toISOString(), steps: {} }
 const errors = []
 
 try {
-  await server.listen()
-  const url = `http://127.0.0.1:${server.httpServer.address().port}`
-  browser = await chromium.launch({ channel: 'msedge', headless: true })
-  page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  let url
+  if (surface === 'portable') {
+    const appRoot = path.join(run, 'app')
+    await mkdir(appRoot)
+    await cp(path.join(ROOT, 'dist'), path.join(appRoot, 'dist'), { recursive: true })
+    const port = 8905
+    portable = spawn(process.execPath, [path.join(ROOT, 'scripts/portable-server.mjs'), '--root', appRoot, '--no-open', '--port', String(port)], { stdio: 'ignore' })
+    url = `http://127.0.0.1:${port}`
+    let ready = false
+    for (let i = 0; i < 60; i++) {
+      try { const r = await fetch(url, { signal: AbortSignal.timeout(1000) }); if (r.ok) { ready = true; break } } catch { /* 等待启动 */ }
+      await new Promise(r => setTimeout(r, 500))
+    }
+    if (!ready) throw new Error('便携服务没有在 30s 内就绪')
+  } else {
+    server = await createServer({ cacheDir: path.join(run, 'vite'), logLevel: 'error', server: { host: '127.0.0.1', port: 0 } })
+    await server.listen()
+    url = `http://127.0.0.1:${server.httpServer.address().port}`
+  }
+
+  if (surface === 'desktop') {
+    const profile = path.join(run, 'profile')
+    const appData = path.join(run, 'appdata')
+    await mkdir(profile)
+    await mkdir(appData)
+    await writeFile(path.join(run, 'package.json'), JSON.stringify({ name: 'yfe-perf', version: '3.4.0', main: 'bootstrap.cjs' }))
+    await writeFile(path.join(run, 'bootstrap.cjs'), `const {app}=require('electron');app.setPath('appData',${JSON.stringify(appData)});require(${JSON.stringify(path.join(ROOT, 'electron/main.cjs'))});`)
+    app = await _electron.launch({
+      executablePath: path.join(ROOT, 'node_modules/electron/dist/electron.exe'),
+      args: [run, '--no-sandbox', '--no-proxy-server', '--user-data-dir=' + profile],
+      env: { ...process.env, ELECTRON_START_URL: url },
+      timeout: 90000,
+    })
+    page = await app.firstWindow()
+    page.setDefaultTimeout(30000)
+  } else {
+    browser = await chromium.launch({ channel: 'msedge', headless: true })
+    page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  }
   page.on('pageerror', e => errors.push(String(e)))
   await page.addInitScript(() => localStorage.setItem('yfe-ui:guide-auto', '0'))
   await page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -86,6 +127,8 @@ try {
   report.seeded = { ...seeded, ms: Date.now() - seedStart }
 
   // ---- 重新加载，确保从库里读到 500 章 ----
+  // 便携后端是整库 JSON 落盘，给防抖写入留出时间。
+  if (surface === 'portable') await page.waitForTimeout(3000)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('[data-project-hub]').waitFor({ timeout: 60000 })
   const card = page.locator('[data-project-card]').filter({ hasText: '性能夹具500' })
@@ -191,5 +234,7 @@ try {
   console.log(`\n结果已写入 ${out}`)
 } finally {
   await browser?.close().catch(() => {})
-  await server.close().catch(() => {})
+  await app?.close().catch(() => {})
+  portable?.kill()
+  await server?.close().catch(() => {})
 }
