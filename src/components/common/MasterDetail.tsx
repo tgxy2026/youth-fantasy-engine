@@ -13,7 +13,7 @@ import { Search } from 'lucide-react'
  *
  * ## 用法
  * ```tsx
- * <MasterDetail height={contentHeight(CARD_SHEET_CHROME_PX)}>
+ * <MasterDetail height={contentHeight('100vh - 12rem')}>
  *   <MasterList query={q} onQueryChange={setQ} placeholder="搜角色名…">
  *     {filtered.map(x => <Row …/>)}
  *   </MasterList>

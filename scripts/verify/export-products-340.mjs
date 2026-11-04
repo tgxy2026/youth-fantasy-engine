@@ -4,7 +4,7 @@
 // 说明：3.4.0 起 Markdown / Word / 平台粘贴版先打开「导出格式」弹窗，EPUB 仍是直接下载。
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { mkdtemp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, stat } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
@@ -19,8 +19,15 @@ const check = (id, ok, detail = '') => {
 }
 const unzip = async (file, name) => {
   const out = path.join(run, name)
-  await mkdir(out, { recursive: true })
-  execFileSync('tar', ['-xf', file, '-C', out], { stdio: 'pipe' })
+  // 🔴 不能用 `tar`：本机 Git Bash 的 /usr/bin/tar 是 **GNU tar 1.35**，不认 ZIP（EPUB/DOCX 都是 ZIP），
+  //    报 `This does not look like a tar archive`；传 Windows 绝对路径又会被当成 `host:path`。
+  // 🔴 也不能用 Expand-Archive：它按扩展名判断，`.epub` 直接拒绝（只认 .zip）。
+  //    改用 .NET ZipFile（不看扩展名），底层同一套压缩实现，能同时解 EPUB / DOCX。
+  const quote = (value) => `'${value.replace(/'/g, "''")}'`
+  execFileSync('powershell', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    `Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${quote(file)}, ${quote(out)})`,
+  ], { stdio: 'pipe' })
   return out
 }
 const walk = async dir => {
