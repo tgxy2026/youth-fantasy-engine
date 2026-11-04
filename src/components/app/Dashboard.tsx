@@ -25,6 +25,8 @@ import { LoadingState } from '@/components/common/LoadingState'
 import { useWordCountWithPunct } from '@/lib/editor/wordCountMode'
 import { countWords } from '@/lib/editor/textStats'
 import { buildWritingReview } from '@/lib/outline/writingReview'
+// 3.4.0 · A.3：规划板卡片上的「细纲绑定 / 固定资料」只读摘要（来源：chapterContext32:<章>）
+import { buildChapterContextIndex, type ChapterContextBrief } from '@/lib/app/chapterBoardContext'
 // 2.9.1 · E 档：把「检查工具 → 结构配比对照」的结论接到主面板（模板来源与创意写作共用同一份会话输入）
 import { hydrateCreativeSession, useCreativeSession } from '@/lib/creative/creativeSession'
 import { getStoryTemplate } from '@/lib/outline/storyStructures'
@@ -115,22 +117,27 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
    *    这里只负责**如实呈现 + 可重试**；不清空任何已有数据，也不碰规划板的本机视图偏好。
    */
   const [loadError, setLoadError] = useState('')
+  /** 3.4.0 · A.3：章节 → 细纲绑定 / 固定资料条数（只读，来自正文「本章资料」写入的项目设置） */
+  const [chapterContexts, setChapterContexts] = useState<Record<string, ChapterContextBrief>>({})
   const load = useCallback(async () => {
     try {
-      const [v, c, outlines, f, i, p, ds] = await Promise.all([
+      const [v, c, outlines, f, i, p, ds, ctxRaw] = await Promise.all([
         db.getAllVolumes(), db.getAllChapters(),
         db.getCardRecords('chapter-outline'),
         db.getTableRows('foreshadow'), db.getTableRows('ideas'), db.getTableRows('progress'),
         db.getDailyStats(),
+        // 一次批量读：逐章读设置会让 300 章的面板打开时打 300 次库（见 getSettingsByPrefix 注释）
+        db.getSettingsByPrefix(projectId, 'chapterContext32:'),
       ])
       setVolumes(v); setChapters(c); setChapterOutlines(outlines); setForeshadows(f); setIdeas(i); setProgress(p)
       setDailyStats(ds)
+      setChapterContexts(buildChapterContextIndex(c, ctxRaw))
       setLoadError('')
       setLoaded(true)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => { load() }, [load, refreshKey])
 
@@ -392,7 +399,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     <div className="w-full page-enter">
       <PageHeader title="写作面板" description={<><span className="font-medium [overflow-wrap:anywhere]">{projectName || '当前项目'}</span><span className="mx-2" aria-hidden="true">·</span>继续创作，掌握作品进度。</>} help={
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板（3.1 新增）：接着上次写、缺什么资料一眼看清、按卷排章规划（3.1.1 起每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板：接着上次写、缺什么资料一眼看清、按卷排章规划（每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；3.4.0 起每张章卡还显示该章的细纲绑定与固定资料条数（取自正文「本章资料」，不按章节名猜；未绑定写「未绑定细纲」，绑定的卡被删写「已失效」）；\n· 章节收藏集：把跨卷章节收在一起，按原有顺序浏览；删集不删章，失效成员会标出来；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
       } />
 
@@ -404,7 +411,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
       </div>}
 
       <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}
-        foreshadows={foreshadows} ctx={ctx} onNavigate={onNavigate} onExport={onExport} summary={creationSummary} />
+        foreshadows={foreshadows} ctx={ctx} chapterContexts={chapterContexts} onNavigate={onNavigate} onExport={onExport} summary={creationSummary} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 快捷入口 */}

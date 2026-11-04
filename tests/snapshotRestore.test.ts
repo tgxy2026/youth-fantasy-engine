@@ -88,7 +88,7 @@ ok('章在、当前就是这章、版本在、内容一致 → 放行', checkRes
   const modals = read('src/components/editor/EditorModals.tsx')
   ok('🔴 恢复按钮 await 真实结果，成功才关弹窗',
     modals.includes('const r = await onRestore(preview.id, preview.content)') && modals.includes('if (r.ok)'))
-  ok('恢复中禁止重复提交', modals.includes('if (!preview || restoring) return') && modals.includes('disabled={restoring}'))
+  ok('恢复中禁止重复提交', modals.includes('if (!preview || restoring) return') && modals.includes('disabled={restoring || creatingSnapshot}'))
   ok('失败时不关弹窗，并把原因显示出来', modals.includes('setRestoreError(r.message)') && modals.includes('{restoreError &&'))
   ok('界面写明「只恢复本章正文，不等于整部作品回退」', modals.includes('不等于把整部作品回退到那个时间点'))
 }

@@ -13,42 +13,69 @@
  */
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+import { withProjectSettingsLock } from '@/lib/storage/projectSettingsLock'
 
 export interface InspirationItem {
   id: string
   /** 一句话灵感（作者手记，不做结构化） */
   text: string
   createdAt: number
+  /** 可选章节引用；缺失或删除时保留失效标识，不复制正文。 */
+  chapterId?: string
 }
 
 const INSPIRATION_BOX_KEY = 'inspirationBox'
 export const INSPIRATION_MAX = 200
+const queues = new Map<string, Promise<unknown>>()
+
+function enqueue<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = queues.get(projectId) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(() => withProjectSettingsLock(projectId, INSPIRATION_BOX_KEY, operation))
+  queues.set(projectId, next)
+  void next.then(() => { if (queues.get(projectId) === next) queues.delete(projectId) }, () => { if (queues.get(projectId) === next) queues.delete(projectId) })
+  return next
+}
+
+async function readOwned(owner: OwnedOperation): Promise<InspirationItem[]> {
+  const items = await db.getSettingFor<InspirationItem[]>(owner.projectId, INSPIRATION_BOX_KEY, [], owner)
+  if (!Array.isArray(items) || items.some(item => !item || typeof item.id !== 'string' || typeof item.text !== 'string')) throw new Error('灵感夹数据格式无效')
+  return items
+}
 
 export async function loadBox(): Promise<InspirationItem[]> {
   return (await db.getSetting<InspirationItem[]>(INSPIRATION_BOX_KEY, [])) ?? []
 }
 
-async function saveBox(items: InspirationItem[]): Promise<void> {
-  await db.setSetting(INSPIRATION_BOX_KEY, items)
-}
-
 /** 新增一条灵感：trim、去重（与现有条目逐字相同的不重复收）、超上限拒绝。返回 { items, added } */
-export async function addItem(text: string, prev?: InspirationItem[]): Promise<{ items: InspirationItem[]; added: boolean; reason?: string }> {
+export async function addItem(text: string, prev?: InspirationItem[], projectId = db.getCurrentProjectId(), chapterId?: string): Promise<{ items: InspirationItem[]; added: boolean; reason?: string }> {
   const t = text.trim()
   if (!t) return { items: prev ?? [], added: false, reason: 'empty' }
-  const items = prev ?? (await loadBox())
-  if (items.some(i => i.text === t)) return { items, added: false, reason: 'dup' }
-  if (items.length >= INSPIRATION_MAX) return { items, added: false, reason: 'full' }
-  const next = [...items, { id: uid(), text: t, createdAt: Date.now() }]
-  await saveBox(next)
-  return { items: next, added: true }
+  const owner = captureOwnedOperation(projectId)
+  owner.assertCurrent()
+  return enqueue(projectId, async () => {
+    const items = await readOwned(owner)
+    if (chapterId) {
+      const chapter = await owner.store.get<{ projectId: string }>('chapters', chapterId)
+      if (!chapter || chapter.projectId !== projectId) throw new Error('关联章节已不存在或不属于本作品')
+    }
+    if (items.some(i => i.text === t)) return { items, added: false, reason: 'dup' }
+    if (items.length >= INSPIRATION_MAX) return { items, added: false, reason: 'full' }
+    const next = [...items, { id: uid(), text: t, createdAt: Date.now(), ...(chapterId ? { chapterId } : {}) }]
+    await db.setSettingFor(projectId, INSPIRATION_BOX_KEY, next, owner)
+    return { items: next, added: true }
+  })
 }
 
 /** 删除一条；返回删后的列表（未命中原样返回，不报错） */
-export async function removeItem(id: string, prev?: InspirationItem[]): Promise<InspirationItem[]> {
-  const items = prev ?? (await loadBox())
-  const next = items.filter(i => i.id !== id)
-  if (next.length === items.length) return items
-  await saveBox(next)
-  return next
+export async function removeItem(id: string, _prev?: InspirationItem[]): Promise<InspirationItem[]> {
+  const projectId = db.getCurrentProjectId()
+  const owner = captureOwnedOperation(projectId)
+  owner.assertCurrent()
+  return enqueue(projectId, async () => {
+    const items = await readOwned(owner)
+    const next = items.filter(i => i.id !== id)
+    if (next.length !== items.length) await db.setSettingFor(projectId, INSPIRATION_BOX_KEY, next, owner)
+    return next
+  })
 }

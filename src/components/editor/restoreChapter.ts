@@ -17,6 +17,17 @@ import * as db from '@/lib/db'
 import { countWords } from '@/lib/editor/textStats'
 import type { Chapter } from '@/lib/types'
 import { checkRestoreTarget, restoreFailureMessage } from '@/lib/editor/snapshotRestore'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { persistAfterRestore } from '@/lib/db/core'
+
+const defaultDependencies = {
+  capture: captureOwnedOperation,
+  getSnapshots: db.getSnapshots,
+  createSnapshot: db.createSnapshot,
+  patchChapter: db.patchChapter,
+  persist: persistAfterRestore,
+}
+export type RestoreDependencies = typeof defaultDependencies
 
 export interface RestoreChapterHooks {
   /** 现读，不能用渲染闭包（可能过期） */
@@ -43,13 +54,17 @@ export async function restoreChapter(
   chapterId: string,
   snapshotId: string,
   content: string,
+  deps: RestoreDependencies = defaultDependencies,
 ): Promise<RestoreResult> {
   const target = hooks.chapters.current.find(c => c.id === chapterId)
   // 先断一次让后续类型收窄；真正的判断在 checkRestoreTarget（顺序与文案统一在那里）
   if (!target) return { ok: false, message: '要恢复的章节已不在项目中，本次未做任何修改。' }
   hooks.setSaving(true)
+  let writeStarted = false
   try {
-    const snaps = await db.getSnapshots(chapterId)
+    const owner = deps.capture(target.projectId)
+    owner.assertCurrent()
+    const snaps = await deps.getSnapshots(chapterId)
     const check = checkRestoreTarget({
       chapterId,
       activeChapterId: hooks.active.current?.id ?? null,
@@ -61,33 +76,51 @@ export async function restoreChapter(
 
     // ① 留档 = 当前草稿；写完读回核实，才算留住了
     const currentText = hooks.draft.current
-    const saved = await db.createSnapshot(
+    const saved = await deps.createSnapshot(
       { ...target, content: currentText, wordCount: countWords(currentText) },
       'manual-restore',
+      owner,
     )
-    const verified = (await db.getSnapshots(chapterId)).find(s => s.id === saved.id)
+    const verified = (await deps.getSnapshots(chapterId)).find(s => s.id === saved.id)
     if (!verified) return { ok: false, message: '恢复前留档没有写成功，已停止恢复；正文保持原样。' }
     if (verified.content !== currentText) {
       return { ok: false, message: '恢复前留档读回的内容与当前草稿不一致，已停止恢复；正文保持原样。' }
     }
+    owner.assertCurrent()
+    if (!await deps.persist([{ store: 'snapshots', value: verified }])) {
+      return { ok: false, message: '恢复前留档未确认写入本机，已停止恢复；草稿仍在。' }
+    }
 
     // ② 落库：成功之前一律不碰界面
-    clearTimeout(hooks.autosaveTimer.current)
     const wc = countWords(content)
     const written = await hooks.enqueueSave(chapterId, async () => {
-      const cur = hooks.chapters.current.find(c => c.id === chapterId) ?? target
-      const merged = await db.patchChapter(chapterId, { content, wordCount: wc })
-      const row = merged ?? { ...cur, content, wordCount: wc, updatedAt: Date.now() }
+      owner.assertCurrent()
+      if (hooks.active.current?.id !== chapterId || hooks.draft.current !== currentText) {
+        throw new Error('章节或草稿已变化，请重新检查后再恢复')
+      }
+      clearTimeout(hooks.autosaveTimer.current)
+      writeStarted = true
+      const row = await deps.patchChapter(chapterId, { content, wordCount: wc }, owner)
+      if (!row) throw new Error('目标章节已不存在')
+      owner.assertCurrent()
+      if (!await deps.persist([{ store: 'chapters', value: row }])) throw new Error('正文未确认写入本机')
+      owner.assertCurrent()
       const { no } = hooks.locate(row)
       await hooks.syncChapterMaster(row, no)
       return row
     })
 
     // ③ 界面：用回执
+    owner.assertCurrent()
+    if (hooks.active.current?.id !== chapterId || hooks.draft.current !== currentText) {
+      return { ok: false, message: '恢复写入期间章节或草稿已变化；新草稿仍在，请检查原章节与时光机，并确认是否需要手动保存草稿。' }
+    }
     hooks.applySaved(written, content)
     return { ok: true, message: '已恢复到所选版本；恢复前的当前内容已存入时光机（来源：恢复前留档）。' }
   } catch (e) {
-    return { ok: false, message: restoreFailureMessage(e) }
+    return { ok: false, message: writeStarted
+      ? `恢复未能完整确认：${e instanceof Error ? e.message : String(e)}。正文可能已写入，请检查章节和时光机；当前草稿未被替换，请确认是否需要手动保存。`
+      : restoreFailureMessage(e) }
   } finally {
     hooks.setSaving(false)
   }

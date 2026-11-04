@@ -901,7 +901,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         <SensitiveCheck content={draftContent} onApply={updateContent} onClose={() => setModal(null)} />
       )}
       {modal === 'history' && active && (
-        <VersionHistory chapterId={active.id} current={draftContent} onRestore={(snapshotId, content) => restoreSnapshot(active.id, snapshotId, content)} onClose={() => setModal(null)} />
+        <VersionHistory projectId={active.projectId} chapterId={active.id} current={draftContent} onRestore={(snapshotId, content) => restoreSnapshot(active.id, snapshotId, content)} onClose={() => setModal(null)} />
       )}
       {modal === 'trash' && (
         <TrashBin onChanged={() => { load(); onStatsChange?.() }} onClose={() => setModal(null)} />

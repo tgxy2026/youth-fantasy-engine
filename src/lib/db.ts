@@ -38,6 +38,8 @@ export {
   getMeta, setMeta, hasMeta, getDailyStats, putDailyStat,
   getSetting, setSetting, delSetting,
   getSettingFor, setSettingFor, delSettingFor,
+  // 3.4.0 · A.3：一次按前缀读多条设置（规划板批量取章节绑定，避免逐章打库）
+  getSettingsByPrefix,
 } from '@/lib/db/meta'
 export * from '@/lib/db/tavernReports'
 export * from '@/lib/db/aiRuns'

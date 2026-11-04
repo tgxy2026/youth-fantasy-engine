@@ -6,6 +6,7 @@
 //  ③ 结构约定：PlotCanvas 的 idea 卡型存在且不进 HEADER_TO_TYPE（AI 简报永远产不出 idea 卡）。
 import { readFileSync } from 'node:fs'
 import * as db from '../src/lib/db'
+import { ops } from '../src/lib/db/core'
 import { addItem, removeItem, loadBox, INSPIRATION_MAX } from '../src/lib/creative/inspirationBox'
 import { parseFusedIdeas } from '../src/lib/aiTasks/inspiration'
 
@@ -19,6 +20,7 @@ console.log('\n▶ inspirationFuse')
 
 // ---------- ① 灵感夹 CRUD ----------
 {
+  db.setCurrentProject('inspiration-test')
   await db.setSetting('inspirationBox', []) // 起点干净
   const r1 = await addItem('  主角在钟楼里遇见未来的自己。 ', [])
   ok('新增：trim 后入库', r1.added && r1.items[0].text === '主角在钟楼里遇见未来的自己。')
@@ -42,6 +44,17 @@ console.log('\n▶ inspirationFuse')
   ok(`🔴 上限 ${INSPIRATION_MAX} 条：超出拒绝（reason=full）`, !over.added && over.reason === 'full' && over.items.length === INSPIRATION_MAX)
   // 持久化一致：loadBox 读回的与最后写入一致
   ok('loadBox 读回与写入一致', (await loadBox()).length === INSPIRATION_MAX)
+  await db.setSetting('inspirationBox', [])
+  await Promise.all([addItem('并发甲'), addItem('并发乙')])
+  const concurrent = await loadBox()
+  ok('并发新增不会互相覆盖', concurrent.some(i => i.text === '并发甲') && concurrent.some(i => i.text === '并发乙'))
+  await db.setSetting('inspirationBox', [])
+  await ops.put('chapters', { id: 'idea-chapter', projectId: 'inspiration-test' })
+  const linked = await addItem('关联灵感', undefined, 'inspiration-test', 'idea-chapter')
+  ok('灵感保留本项目章节引用', linked.added && linked.items[0].chapterId === 'idea-chapter')
+  let rejected = false
+  try { await addItem('无效关联', undefined, 'inspiration-test', 'other-chapter') } catch { rejected = true }
+  ok('不存在的关联章节被拒绝且不写入', rejected && (await loadBox()).length === 1)
   await db.setSetting('inspirationBox', [])
 }
 

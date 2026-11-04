@@ -50,6 +50,11 @@ await db.updateProject({ id: pid, name: '备份测试用项目（示范内容副
   const b0 = await db.exportProject(pid) as any
   const chapters0: any[] = [...(b0.chapters ?? [])].sort((a, z) => a.order - z.order)
   ok('示范项目有足够章节可供测试', chapters0.length > 1, String(chapters0.length))
+  const linkedChapter = chapters0[0]
+  const card0 = b0.cardRecords[0]
+  const row0 = b0.tableRows[0]
+  await db.setSetting('inspirationBox', [{ id: 'backup-idea', text: '关联灵感', createdAt: 1, chapterId: linkedChapter.id }])
+  await db.setSetting(`chapterContext32:${linkedChapter.id}`, { schema: 1, outlineId: card0.id, pinnedRefs: [{ kind: 'row', projectId: pid, tabId: row0.tabId, id: row0.id }], updatedAt: 1 })
 
   const base = await fingerprint(pid)
   const snap = (await db.createAutoBackup(pid, 'manual', '往返测试基线'))!
@@ -69,6 +74,13 @@ await db.updateProject({ id: pid, name: '备份测试用项目（示范内容副
   ok('恢复后卷数回到基线', restored.volCount === base.volCount, `${restored.volCount}/${base.volCount}`)
   ok('恢复后卷结构与基线一致', restored.volumes === base.volumes)
   ok('恢复后章节内容完全一致（篡改已撤销、删章已回来）', restored.chapters === base.chapters)
+  const newBundle = await db.exportProject(pid)
+  const restoredChapter = newBundle.chapters.find(c => c.title === linkedChapter.title)
+  const restoredIdea = await db.getSetting<{ chapterId?: string }[]>('inspirationBox', [])
+  const restoredBinding = await db.getSettingFor<{ outlineId?: string; pinnedRefs?: { id: string; tabId: string }[] } | null>(pid, `chapterContext32:${restoredChapter?.id}`, null)
+  const restoredRow = newBundle.tableRows.find(r => r.id === restoredBinding?.pinnedRefs?.[0]?.id)
+  ok('备份恢复后灵感与章节绑定指向新章节', !!restoredChapter && restoredIdea[0]?.chapterId === restoredChapter.id && !!restoredBinding)
+  ok('备份恢复后章节资料指向恢复后的卡片与表格行', !!restoredBinding && newBundle.cardRecords.some(c => c.id === restoredBinding.outlineId && c.name === card0.name) && !!restoredRow && restoredBinding.pinnedRefs?.[0]?.tabId === restoredRow.tabId && JSON.stringify(restoredRow.data) === JSON.stringify(row0.data))
 }
 
 // ---------- 2. 上限淘汰：auto5min / daily 各 30，manual 不限 ----------

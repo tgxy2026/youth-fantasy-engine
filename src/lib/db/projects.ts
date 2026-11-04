@@ -7,7 +7,7 @@ import type { TavernReport } from '@/lib/tavern/types'
 import type { AiRun } from '@/lib/ai/aiRunTypes'
 import { ops, currentProjectId } from '@/lib/db/core'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
-import { type Snapshot, isAISnapshot } from '@/lib/db/chapters'
+import { type Snapshot, isExportableSnapshot } from '@/lib/db/chapters'
 import type { DailyStat } from '@/lib/db/meta'
 // 🔴 语义向量索引（#013）与知识库资料（#017）住在**独立 IDB 库**里，上面这批 store 管不到 ——
 //    删项目时必须各自显式清理，否则会留下「界面上看不到、却一直占空间」的孤儿
@@ -29,7 +29,7 @@ function isLegacyProjectType(t: unknown): t is 'lite' | 'minimal' {
 }
 
 /**
- * 导入 / 恢复备份时，重映射 `settingsKV` 里存的 **cardRecords id 数组**。
+ * 导入 / 恢复备份时，重映射 `settingsKV` 里存的已知 **id 引用**。
  *
  * 🔴 2026-10-02 六维审计 P0：备份里的 `settings` 含「子项活跃态」（键 `worldSubActive::<tabId>`，
  *    值是 cardRecords 的 id 数组）。而 cardRecords 落到新项目时**全部换新 id**（`uid()`）——
@@ -37,17 +37,71 @@ function isLegacyProjectType(t: unknown): t is 'lite' | 'minimal' {
  *    所有多套条目（世界总览的子世界、力量体系的子体系、制度四页签的条目）
  *    **集体退化为「已完结」**，AI 上下文只剩一行「当前没有活跃的…」，且无任何报错。
  *
+ * 3.4.0 · D：增加 `chapterSets` 重映射。
+ *    收藏集存在 settingsKV（键 `chapterSets`），值是 `ChapterSet[]`，
+ *    每个 set 的 `chapterIds` 引用旧章节 id —— 导入时必须换成新 id，
+ *    找不到的 id 保留为失效标识，避免静默丢失或误指向其他项目。
+ *
  * 只重映射**已知的活跃态键**；其余 settings 值原样搬（别去猜别的键里有没有 id）。
- * 映射表里没有的旧 id 一律丢弃（对应记录没进这次导入，留着也只是悬空）。
+ * 活跃态中映射不到的卡片 id 丢弃；章节引用则保留为失效标识。
  */
 export function remapSettingValue(
   key: string,
   value: unknown,
   cardIdMap: ReadonlyMap<string, string>,
+  chapterIdMap?: ReadonlyMap<string, string>,
 ): unknown {
-  if (!key.startsWith('worldSubActive::')) return value
-  if (!Array.isArray(value)) return value
-  return value.map(id => (typeof id === 'string' ? cardIdMap.get(id) : undefined)).filter((v): v is string => !!v)
+  // 子项活跃态：cardRecords id 数组
+  if (key.startsWith('worldSubActive::')) {
+    if (!Array.isArray(value)) return value
+    return value.map(id => (typeof id === 'string' ? cardIdMap.get(id) : undefined)).filter((v): v is string => !!v)
+  }
+  if (key === 'inspirationBox' && chapterIdMap && Array.isArray(value)) {
+    return value.map((item: unknown) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+      const entry = item as Record<string, unknown>
+      if (typeof entry.chapterId !== 'string') return entry
+      const id = entry.chapterId
+      return { ...entry, chapterId: chapterIdMap.get(id) ?? (id.startsWith('missing:') ? id : `missing:${id}`) }
+    })
+  }
+  // 未匹配的引用保留为明确失效的标识，避免误指向其他作品或静默丢失。
+  if ((key === 'chapterSets' || key === 'exportSchemes') && chapterIdMap) {
+    if (!Array.isArray(value)) return value
+    return value.map((s: unknown) => {
+      if (!s || typeof s !== 'object') return null
+      const set = s as Record<string, unknown>
+      if (!Array.isArray(set.chapterIds)) return set
+      const remapped = (set.chapterIds as unknown[])
+        .filter((id): id is string => typeof id === 'string')
+        .map(id => chapterIdMap.get(id) ?? (id.startsWith('missing:') ? id : `missing:${id}`))
+      return { ...set, chapterIds: remapped }
+    }).filter((v): v is NonNullable<typeof v> => v !== null)
+  }
+  return value
+}
+
+/** 重建章节资料绑定的键和引用；无法映射的条目保留为不可用引用。 */
+export function remapChapterContextSetting(
+  key: string, value: unknown, projectId: string, sourceProjectId: string,
+  chapters: ReadonlyMap<string, string>, cards: ReadonlyMap<string, string>, rows: ReadonlyMap<string, string>, volumes: ReadonlyMap<string, string>,
+): { key: string; value: unknown } {
+  const prefix = 'chapterContext32:'
+  if (!key.startsWith(prefix) || !value || typeof value !== 'object' || Array.isArray(value)) return { key, value }
+  const originalChapter = key.slice(prefix.length)
+  const missing = (id: string) => id.startsWith('missing:') ? id : `missing:${id}`
+  const record = value as Record<string, unknown>
+  const outlineId = typeof record.outlineId === 'string' ? (cards.get(record.outlineId) ?? missing(record.outlineId)) : undefined
+  const pinnedRefs = Array.isArray(record.pinnedRefs) ? record.pinnedRefs.map((entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry
+    const ref = entry as Record<string, unknown>
+    if (typeof ref.id !== 'string') return ref
+    const map = ref.kind === 'chapter' ? chapters : ref.kind === 'card' || ref.kind === 'outline' ? cards : ref.kind === 'row' ? rows : undefined
+    const tabId = typeof ref.tabId === 'string' && ref.tabId.startsWith(VOL_LEDGER_PREFIX)
+      ? `${VOL_LEDGER_PREFIX}${volumes.get(ref.tabId.slice(VOL_LEDGER_PREFIX.length)) ?? missing(ref.tabId.slice(VOL_LEDGER_PREFIX.length))}` : ref.tabId
+    return { ...ref, projectId, tabId, id: (ref.projectId === sourceProjectId ? map?.get(ref.id) : undefined) ?? missing(ref.id) }
+  }) : record.pinnedRefs
+  return { key: `${prefix}${chapters.get(originalChapter) ?? missing(originalChapter)}`, value: { ...record, ...(outlineId ? { outlineId } : {}), pinnedRefs } }
 }
 function normalizeProject(p: Project): Project {
   if (isLegacyProjectType(p.projectType)) return { ...p, projectType: 'full' }
@@ -234,7 +288,7 @@ export interface ProjectBundle {
   /**
    * 章节快照（2.4.0 · A3，可选字段：旧备份没有）。
    *
-   * 🔴 **只带 AI 来源的快照**（改写 / 续写 / 生成前留的旧稿）。定时快照的价值主要在
+   * 🔴 只带 AI 来源与用户命名的快照。定时快照的价值主要在
    *    "本机写坏了能回退"，跨设备意义小；全带会让 300 章的书备份 JSON 胀到 20MB+、导入导出都变慢。
    */
   snapshots?: Snapshot[]
@@ -329,8 +383,8 @@ export async function exportProject(
       .map(s => ({ key: s.key.slice(customOptPrefix.length), value: s.value })),
     tavernReports: tavernReports.filter(r => r.projectId === id),
     aiRuns: aiRuns.filter(r => r.projectId === id),
-    // 只带 AI 快照（理由见 ProjectBundle.snapshots 的注释）
-    snapshots: snapshots.filter(s => isAISnapshot(s)),
+    // 只带 AI 与命名快照（自动备份不携带任何快照）
+    snapshots: snapshots.filter(s => isExportableSnapshot(s)),
     // 参考资料（#017）：没勾开关 / 一篇都没有 ⇒ **整个字段不出现**（与 snapshots 同为可选字段，
     // 旧格式 / 老客户端读到的是"没有这个字段"，向后兼容零成本）
     ...(kb.length ? { knowledgeBase: kb } : {}),
@@ -375,10 +429,12 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   for (const f of bundle.formData) {
     await ops.put('formData', { tabId: `${newPid}::${f.tabId}`, data: f.data })
   }
+  const rowIdMap = new Map<string, string>()
   for (const r of bundle.tableRows) {
     // 联动行（id 形如 ch-xxx）重定向到新章节 id；普通行换新 id
     const m = r.id.match(/^ch-(.+)$/)
     const nid = m && map.has(m[1]) ? `ch-${map.get(m[1])}` : uid()
+    rowIdMap.set(r.id, nid)
     // ⚠️ 卷台账行的 tabId 内嵌卷 id（chapter-vol-<volumeId>），必须重映射到新卷 id——
     // 否则导入后台账行指向不存在的卷，章节总表/连续性检查/搜索/AI 上下文的台账数据全部丢失
     const rawTab = String(r.tabId)
@@ -405,7 +461,10 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   }
   if (bundle.settings) {
     for (const s of bundle.settings) {
-      await ops.put('settingsKV', { key: `${newPid}::${s.key}`, value: remapSettingValue(s.key, s.value, cardIdMap) })
+      const sourceChapterId = s.key.startsWith('chapterContext32:') ? s.key.slice('chapterContext32:'.length) : ''
+      const sourceOwner = bundle.chapters.find(c => c.id === sourceChapterId)?.projectId || bundle.project.id
+      const context = remapChapterContextSetting(s.key, s.value, newPid, sourceOwner, map, cardIdMap, rowIdMap, volMap)
+      await ops.put('settingsKV', { key: `${newPid}::${context.key}`, value: remapSettingValue(context.key, context.value, cardIdMap, map) })
     }
   }
   if (bundle.customOptions) {

@@ -6,7 +6,7 @@
 
 **把世界观、角色、大纲、正文串成一条线的长篇创作工作台**
 
-桌面版（Windows）｜ 便携版（U 盘即走）｜ **网页版**（浏览器直接用） ｜ 源码版本 `v3.3.5`
+桌面版（Windows）｜ 便携版（U 盘即走）｜ **网页版**（浏览器直接用） ｜ 源码版本 `v3.4.0`（开发中）
 
 📦 仓库：[Gitee](https://gitee.com/tgxy2026/youth-fantasy-engine)　｜　[GitHub](https://github.com/tgxy2026/youth-fantasy-engine)　｜　⬇️ 下载：[Releases](https://gitee.com/tgxy2026/youth-fantasy-engine/releases)
 

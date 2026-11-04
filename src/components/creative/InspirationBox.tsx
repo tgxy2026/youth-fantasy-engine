@@ -25,6 +25,7 @@ import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
+import type { Chapter } from '@/lib/types'
 
 /** 融合产出的 idea 卡在画布上的排布：沿对角线错开，避免与已有卡片叠死 */
 function ideaCardPos(existing: number): { x: number; y: number } {
@@ -40,21 +41,32 @@ export default function InspirationBox() {
   const [fusing, setFusing] = useState(false)
   const [fused, setFused] = useState<FusedIdea[] | null>(null)
   const [error, setError] = useState('')
+  const [chapters, setChapters] = useState<Chapter[] | null>(null)
 
   const load = useCallback(async () => {
     setItems(await loadBox())
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    let alive = true
+    const pid = db.getCurrentProjectId()
+    void db.getAllChapters().then(rows => { if (alive && db.getCurrentProjectId() === pid) setChapters(rows) }).catch(() => { if (alive) setChapters(null) })
+    return () => { alive = false }
+  }, [])
 
   const add = async () => {
-    const r = await addItem(newText, items)
-    if (!r.added) {
-      if (r.reason === 'dup') showToast('这条灵感已经在夹子里了', 'info')
-      else if (r.reason === 'full') showToast(`灵感夹最多存 ${INSPIRATION_MAX} 条，先转化或清掉一些吧`, 'info')
-      else return
-    }
-    setItems(r.items)
-    setNewText('')
+    const text = newText, projectId = db.getCurrentProjectId()
+    try {
+      const r = await addItem(text, items, projectId)
+      if (db.getCurrentProjectId() !== projectId) return
+      if (!r.added) {
+        if (r.reason === 'dup') showToast('这条灵感已经在夹子里了', 'info')
+        else if (r.reason === 'full') showToast(`灵感夹最多存 ${INSPIRATION_MAX} 条，先转化或清掉一些吧`, 'info')
+        return
+      }
+      setItems(r.items)
+      setNewText(current => current === text ? '' : current)
+    } catch (error) { showToast(`灵感未能保存：${error instanceof Error ? error.message : String(error)}；输入已保留。`, 'error') }
   }
 
   const toggleChecked = (id: string) => {
@@ -67,7 +79,12 @@ export default function InspirationBox() {
   }
 
   const del = async (id: string) => {
-    setItems(await removeItem(id, items))
+    const projectId = db.getCurrentProjectId()
+    let next: InspirationItem[]
+    try { next = await removeItem(id, items) }
+    catch { showToast('灵感删除失败，请检查存储后重试。', 'error'); return }
+    if (db.getCurrentProjectId() !== projectId) return
+    setItems(next)
     setChecked(prev => { const n = new Set(prev); n.delete(id); return n })
     setFused(null) // 删掉的条目可能被上一轮产出引用，溯源标注不再可信
   }
@@ -142,7 +159,7 @@ export default function InspirationBox() {
                   ? <span className="flex items-center justify-center w-3.5 h-3.5 rounded bg-amber text-ink-950"><Check size={10} /></span>
                   : <span className="block w-3.5 h-3.5 rounded border border-ink-600" />}
               </Button>
-              <span className="flex-1 text-12 text-ink-200 leading-relaxed break-all">{it.text}</span>
+              <span className="flex-1 text-12 text-ink-200 leading-relaxed break-all">{it.text}{it.chapterId && <span className="block text-10 text-ink-400">关联章节：{chapters === null ? '暂时无法确认' : chapters.find(ch => ch.id === it.chapterId)?.title || '不可用'}</span>}</span>
               <span className="text-10 text-ink-600 shrink-0 mt-0.5 tabular-nums">#{idx + 1}</span>
               <Button variant="icon-danger" className="p-0.5 shrink-0 mt-0.5" onClick={() => void del(it.id)} title="删除这条灵感" aria-label="删除">
                 <X size={11} />

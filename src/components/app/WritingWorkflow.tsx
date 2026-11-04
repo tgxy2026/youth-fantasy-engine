@@ -9,6 +9,10 @@ import { readSetPref, readStringPref, writeSetPref, writeStringPref, usePersiste
 import { showToast } from '@/components/dialogs/dialogs'
 import { humanAgo } from '@/lib/outline/chapterAudit'
 import { chapterStatusMismatch } from '@/lib/app/chapterBoardView'
+import { describeChapterContext, type ChapterContextBrief } from '@/lib/app/chapterBoardContext'
+import ChapterSetsPanel from '@/components/app/ChapterSetsPanel'
+import QuickInspiration from '@/components/app/QuickInspiration'
+import { flattenAll } from '@/lib/outline/chapterSeq'
 import {
   loadBoardState, saveBoardState, limitCovering, locateBoardAnchor,
   BOARD_STATUSES, type BoardStatus, type BoardView, type ChapterBoardState,
@@ -22,6 +26,11 @@ interface Props {
   ideas: TableRow[]
   foreshadows: TableRow[]
   ctx: VisCtx
+  /**
+   * 3.4.0 · A.3：章节 → 细纲绑定 / 固定条数（来源 `chapterContext32:<章>`，由写作面板批量读入）。
+   * 没有条目 = 未绑定；有 outlineId 但卡片不在项目里 = 失效。
+   */
+  chapterContexts?: Record<string, ChapterContextBrief>
   onNavigate: (id: string, chapterId?: string) => void
   onExport: () => void | Promise<void>
   /** The dashboard owns its metrics; this slot places them ahead of optional planning panels. */
@@ -55,7 +64,7 @@ interface BoardRestorePlan {
   limitBump: number | null
 }
 
-export default function WritingWorkflow({ projectId, chapters, chapterOutlines, volumes, ideas, foreshadows, ctx, onNavigate, onExport, summary }: Props) {
+export default function WritingWorkflow({ projectId, chapters, chapterOutlines, volumes, ideas, foreshadows, ctx, chapterContexts = {}, onNavigate, onExport, summary }: Props) {
   const [guideHidden, setGuideHidden] = usePersistedBool(`writing-guide-hidden:${projectId}`, chapters.length > 0)
   const [ignored, setIgnored] = useState<Set<string>>(() => new Set(readSetPref(`writing-next-ignored:${projectId}`) ?? []))
   const [snoozed, setSnoozed] = useState<Record<string, number>>(() => {
@@ -79,6 +88,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     })
   })
   const [boardOpen, setBoardOpen] = useState(initial.state.open)
+  const [setsOpen, setSetsOpen] = useState(false)
   const [boardView, setBoardView] = useState<BoardView>(initial.state.view)
   const [chapterLimit, setChapterLimit] = useState(initial.state.chapterLimit)
   const [outlineLimit, setOutlineLimit] = useState(initial.state.outlineLimit)
@@ -98,6 +108,14 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
     const tab = getTab(id)
     return !tab || tabVisible(tab.id, ctx)
   }
+  /**
+   * A.3：细纲卡 id → 卡名。绑定只认这张表 —— 卡片名与章节名相同**不代表有关联**，
+   * 规划明确禁止按名称猜关系（同名章节 / 重复章号会猜错）。
+   */
+  const outlineNames = useMemo(
+    () => new Map(chapterOutlines.map(card => [card.id, card.name?.trim() || '未命名细纲'])),
+    [chapterOutlines],
+  )
   const { recent, recentSource } = useMemo(() => {
     const lastOpened = readStringPref(`editor-last-chapter:${projectId}`)
     const opened = chapters.find(c => c.id === lastOpened)
@@ -277,6 +295,16 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
 
       {summary}
 
+      {visible('inspire-tools') && <Panel><QuickInspiration projectId={projectId} chapters={flattenAll(volumes, chapters)} onOpen={() => onNavigate('inspire-tools')} /></Panel>}
+
+      <Panel>
+        <Button variant="bare" className="w-full flex items-center !justify-start text-left" onClick={() => setSetsOpen(!setsOpen)} aria-expanded={setsOpen}>
+          <span className="text-13 font-semibold text-ink-100 flex items-center gap-2"><BookOpen size={14} className="text-amber" /> 章节收藏集 {setsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+        </Button>
+        {setsOpen && <div className="mt-3 h-96 border border-ink-700 rounded-lg overflow-hidden">
+          <ChapterSetsPanel key={projectId} projectId={projectId} chapters={flattenAll(volumes, chapters)} onNavigate={openChapterFromBoard} />
+        </div>}
+      </Panel>
       <Panel>
         {/* 🔴 折叠钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
             「展开/收起」紧随「项目起步清单」标题。 */}
@@ -332,7 +360,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <select value={status} onChange={e => setStatus(e.target.value as BoardStatus)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{BOARD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
             {hasFilter && <Button variant="ghost" size="sm" onClick={clearFilters} title="清除分卷、状态与关键词筛选">清除筛选</Button>}
           </div>
-          <p className="mb-2 text-11 text-ink-500">正文章节 · 来自正文编辑器（只读，点卡片进入该章）</p>
+          <p className="mb-2 text-11 text-ink-500">正文章节 · 来自正文编辑器（只读，点卡片进入该章）· 细纲绑定与固定条数取自正文「本章资料」，不按名称匹配</p>
           {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">
             <AlertTriangle size={11} className="shrink-0" /> 本页已显示的章节里有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
           </p>}
@@ -343,10 +371,16 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <h3 className="mb-2 text-12 text-ink-300">{group.volume.title} · {group.chapters.length} 章</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">{group.chapters.map(c => {
               const mismatch = chapterStatusMismatch(c)
+              // A.3：只展示有据可查的绑定；未绑定照实说，不按名称猜
+              const contextLine = visible('chapter-outline') ? describeChapterContext(chapterContexts[c.id], outlineNames) : null
               return <Button key={c.id} variant="bare" className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => openChapterFromBoard(c.id)}>
                 <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
                 <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
                 <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'} · 更新于 {humanAgo(c.updatedAt)}</span>
+                {contextLine && <span
+                  className={`mt-1 flex items-center gap-1 text-10 ${contextLine.kind === 'stale' ? 'text-amber' : contextLine.kind === 'unbound' ? 'text-ink-600' : 'text-ink-400'}`}
+                  title={contextLine.title}
+                ><BookOpen size={10} className="shrink-0" /> {contextLine.text}</span>}
                 {mismatch && <span className="mt-1 flex items-center gap-1 text-10 text-amber"><AlertTriangle size={10} className="shrink-0" /> {mismatch}</span>}
               </Button>
             })}</div>

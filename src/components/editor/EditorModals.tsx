@@ -19,6 +19,7 @@ import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
 import { locateFailureText, locateProofIssue } from '@/lib/editor/proofLocate'
 import type { ProofLocateTarget } from '@/components/editor/proofLocateChannel'
 import { Modal as BaseModal } from '@/components/dialogs/Modal'
+import { createNamedChapterSnapshot } from '@/components/editor/createNamedSnapshot'
 
 // ============ 通用外壳（转发到统一 Modal，保留原 API：title / icon / onClose / children / wide）============
 export function ToolModal({ title, icon, onClose, children, wide, help }: {
@@ -555,9 +556,11 @@ const SNAP_SOURCE_LABEL: Record<db.SnapshotSource, string> = {
   'ai-continue': 'AI 续写前',
   'ai-generate': 'AI 生成前',
   'manual-restore': '回滚前留档',
+  'manual-named': '命名快照',
 }
 
-export function VersionHistory({ chapterId, current, onRestore, onClose }: {
+export function VersionHistory({ projectId, chapterId, current, onRestore, onClose }: {
+  projectId: string
   chapterId: string
   /** 当前正文 —— 「与当前稿对比」用它做新版 */
   current: string
@@ -566,17 +569,33 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
   onClose: () => void
 }) {
   const [snaps, setSnaps] = useState<db.Snapshot[]>([])
+  const [snapshotsLoading, setSnapshotsLoading] = useState(true)
+  const [snapshotsReadFailed, setSnapshotsReadFailed] = useState(false)
   const [preview, setPreview] = useState<db.Snapshot | null>(null)
   const [tab, setTab] = useState<'content' | 'diff'>('content')
   /** 恢复中 / 恢复失败原因 —— 失败时**不关弹窗**，让作者看清为什么没恢复 */
   const [restoring, setRestoring] = useState(false)
   const [restoreError, setRestoreError] = useState('')
+  const [snapshotLabel, setSnapshotLabel] = useState('')
+  const [snapshotNote, setSnapshotNote] = useState('')
+  const createBusy = useRef(false)
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false)
   /**
    * 对比基准（2.4.0 · A3 遗留补全）：默认 `'current'`＝当前稿（原行为），也可选**另一个版本**。
    * 此前只能「某版 vs 当前稿」，想看清"这两次改动之间到底动了什么"时没法比 —— 现在可以任意两版互比。
    */
   const [baseId, setBaseId] = useState<'current' | string>('current')
-  useEffect(() => { db.getSnapshots(chapterId).then(setSnaps) }, [chapterId])
+  useEffect(() => {
+    let alive = true
+    setSnapshotsLoading(true)
+    setSnapshotsReadFailed(false)
+    void db.getSnapshots(chapterId).then(items => {
+      if (alive && db.getCurrentProjectId() === projectId) { setSnaps(items); setSnapshotsLoading(false) }
+    }).catch(() => {
+      if (alive) { setSnapshotsReadFailed(true); setRestoreError('版本列表读取失败，请关闭后重试。'); setSnapshotsLoading(false) }
+    })
+    return () => { alive = false }
+  }, [chapterId, projectId])
 
   const fmt = (t: number) => {
     const d = new Date(t)
@@ -616,9 +635,39 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
     }
   }
 
+  const doCreateSnapshot = async () => {
+    if (createBusy.current || snapshotsLoading || snapshotsReadFailed || !snapshotLabel.trim()) return
+    createBusy.current = true
+    setCreatingSnapshot(true)
+    setRestoreError('')
+    try {
+      const created = await createNamedChapterSnapshot(projectId, chapterId, current, snapshotLabel, snapshotNote)
+      const next = await db.getSnapshots(chapterId)
+      if (db.getCurrentProjectId() !== projectId) return
+      setSnaps(next)
+      setPreview(next.find(item => item.id === created.id) ?? null)
+      setSnapshotLabel('')
+      setSnapshotNote('')
+      showToast('命名快照已保存。', 'success')
+    } catch (error) {
+      setRestoreError(`快照未能确认：${error instanceof Error ? error.message : String(error)}。可能已创建，请重新打开列表核对。`)
+    } finally { createBusy.current = false; setCreatingSnapshot(false) }
+  }
+
   return (
     <ToolModal title="时光机 · 本章版本历史（每章保留最近 12 版）" icon={<History size={16} />} onClose={onClose} wide>
-      {snaps.length === 0 ? (
+      <div className="mb-3 space-y-2 rounded-lg border border-ink-700 p-3">
+        <label className="block text-11 text-ink-300">命名当前稿
+          <input aria-label="快照名称" maxLength={40} disabled={creatingSnapshot} value={snapshotLabel} onChange={e => setSnapshotLabel(e.target.value)} className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100" />
+        </label>
+        <label className="block text-11 text-ink-300">备注（可选）
+          <textarea aria-label="快照备注" maxLength={200} disabled={creatingSnapshot} value={snapshotNote} onChange={e => setSnapshotNote(e.target.value)} rows={2} className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100" />
+        </label>
+        <Button size="sm" disabled={creatingSnapshot || restoring || snapshotsLoading || snapshotsReadFailed || !snapshotLabel.trim()} onClick={() => void doCreateSnapshot()}>{creatingSnapshot ? '保存中…' : '保存命名快照'}</Button>
+        <p className="text-10 text-ink-500">命名版本占用本章 12 版额度；手动项目包包含命名版本，自动备份不包含快照。</p>
+      </div>
+      {restoreError && <p role="alert" className="mb-2 text-11 text-danger">{restoreError}</p>}
+      {snapshotsLoading ? <p role="status" className="text-12 text-ink-400">正在读取版本历史…</p> : snapshotsReadFailed ? null : snaps.length === 0 ? (
         /* 🔴 视觉巡检（2026-10-17）：空态原来只有 `py-8`，弹窗被压到 177px 高 —— 比
            标题栏高不了多少，看着像一条报错提示而不是一个「版本历史」面板。给个最小高度 +
            居中，空态与有内容时体量接近，打开时不会觉得「点错了」。 */
@@ -646,6 +695,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                   className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${preview?.id === s.id ? 'border-amber/40 bg-amber/15' : 'border-ink-700 bg-ink-800 hover:border-ink-600'}`}
                 >
                   <span className="text-12 text-ink-200 shrink-0">{fmt(s.createdAt)}</span>
+                  {s.label && <span className="text-11 text-ink-200 truncate" title={s.label}>{s.label}</span>}
                   <span className={`shrink-0 px-1.5 py-px rounded text-10 ${isAI ? 'bg-amber/15 text-amber' : 'bg-ink-700/60 text-ink-400'}`}>
                     {SNAP_SOURCE_LABEL[src]}
                   </span>
@@ -664,6 +714,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                     <Button variant="toggle" selected={tab === 'diff'} size="xs" onClick={() => setTab('diff')}>对比</Button>
                   </div>
                 </div>
+                {preview.note && <p className="mb-2 whitespace-pre-wrap break-words text-11 text-ink-300">备注：{preview.note}</p>}
                 {/* 对比基准可选（A3 遗留补全）：默认当前稿；换成另一版就能比"这两次改动之间动了什么" */}
                 {tab === 'diff' && (
                   <div className="flex items-center gap-1.5 mb-1.5">
@@ -707,8 +758,7 @@ export function VersionHistory({ chapterId, current, onRestore, onClose }: {
                     ))}
                   </div>
                 )}
-                {restoreError && <p role="alert" className="mt-2 text-11 text-danger leading-relaxed">{restoreError}</p>}
-                <Button variant="primary" onClick={() => void doRestore()} disabled={restoring} className="mt-3 transition-colors">
+                <Button variant="primary" onClick={() => void doRestore()} disabled={restoring || creatingSnapshot} className="mt-3 transition-colors">
                   {restoring ? '恢复中（先留档，再写入）…' : '恢复到此版本（当前内容会先自动留档）'}
                 </Button>
                 <p className="mt-1.5 text-10 text-ink-500 leading-relaxed">

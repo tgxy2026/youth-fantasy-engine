@@ -52,12 +52,15 @@ export async function saveChapter(c: Chapter, owner?: OwnedOperation) {
 export async function patchChapter(
   id: string,
   patch: Partial<Omit<Chapter, 'id' | 'projectId'>>,
+  owner?: OwnedOperation,
 ): Promise<Chapter | undefined> {
-  const old = await ops.get<Chapter>('chapters', id)
+  const store = owner?.store ?? ops
+  const old = await store.get<Chapter>('chapters', id)
   if (!old) return undefined
+  if (owner && old.projectId !== owner.projectId) throw new Error('章节不属于当前操作项目。')
   const next: Chapter = { ...old, ...patch, updatedAt: patch.updatedAt ?? Date.now() }
-  await ops.put('chapters', { ...next, projectId: old.projectId || currentProjectId })
-  await afterChapterWrite(old, next)
+  await store.put('chapters', { ...next, projectId: old.projectId || currentProjectId })
+  await afterChapterWrite(old, next, owner, store)
   return next
 }
 
@@ -101,7 +104,7 @@ export async function deleteChapter(id: string) {
  * 前者是"这一章我是怎么写出来的"的证据（作者事后最想找回来的往往是它），
  * 后者只是过程中的常规留档。两者抢同一个名额时，必须先牺牲后者（见 pruneSnapshots）。
  */
-export type SnapshotSource = 'auto' | 'ai-rewrite' | 'ai-continue' | 'ai-generate' | 'manual-restore'
+export type SnapshotSource = 'auto' | 'ai-rewrite' | 'ai-continue' | 'ai-generate' | 'manual-restore' | 'manual-named'
 
 export interface Snapshot {
   id: string
@@ -116,6 +119,8 @@ export interface Snapshot {
    * 读取侧统一走 `snapshotSourceOf()`，别直接读 `s.source`（会拿到 undefined）。
    */
   source?: SnapshotSource
+  label?: string
+  note?: string
 }
 
 /** 读快照来源：老数据缺字段时按「自动」处理 */
@@ -126,6 +131,11 @@ export function snapshotSourceOf(s: Snapshot): SnapshotSource {
 /** AI 来源的快照（进备份的那一类） */
 export function isAISnapshot(s: Snapshot): boolean {
   return snapshotSourceOf(s).startsWith('ai-')
+}
+
+/** 显式命名的版本和 AI 版本随手动项目包携带；自动备份仍不包含快照。 */
+export function isExportableSnapshot(s: Snapshot): boolean {
+  return isAISnapshot(s) || snapshotSourceOf(s) === 'manual-named'
 }
 
 /** 每章快照上限：**所有来源共用这一个池子**（老大 2026-09-21 定：不减少现有保护力度） */
@@ -161,13 +171,15 @@ async function pruneSnapshots(chapterId: string, owner?: OwnedOperation): Promis
  * @param source 来源，默认 `'auto'`（写作过程中的定时留档）；
  *               AI 动笔前请显式传 `'ai-rewrite'` / `'ai-continue'` / `'ai-generate'`。
  */
-export async function createSnapshot(ch: Chapter, source: SnapshotSource = 'auto', owner?: OwnedOperation): Promise<Snapshot> {
+export async function createSnapshot(ch: Chapter, source: SnapshotSource = 'auto', owner?: OwnedOperation, metadata?: { label: string; note: string }): Promise<Snapshot> {
   owner?.assertCurrent()
   if (owner && ch.projectId !== owner.projectId) throw new Error('章节快照不属于当前操作项目。')
+  if (source === 'manual-named' && (!metadata || !metadata.label.trim() || metadata.label.trim().length > 40 || metadata.note.trim().length > 200)) throw new Error('请填写 1 至 40 字的名称，备注最多 200 字。')
   const snap: Snapshot = {
     id: uid(), projectId: ch.projectId || currentProjectId, chapterId: ch.id,
     chapterTitle: ch.title, content: ch.content, wordCount: ch.wordCount, createdAt: Date.now(),
     source,
+    ...(source === 'manual-named' && metadata ? { label: metadata.label.trim(), note: metadata.note.trim() } : {}),
   }
   await (owner?.store ?? ops).put('snapshots', snap)
   await pruneSnapshots(ch.id, owner)

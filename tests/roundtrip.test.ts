@@ -197,5 +197,25 @@ ok('legacy-name 曾用名（别称）往返后不丢且可解析',
   !!legacyRow && readAliases('races', legacyRow.data).join('|') === '青岚旧部|岚部',
   JSON.stringify(legacyRow?.data ?? null))
 
+// 使用真实导入路径检验章节资料和灵感的引用映射。
+const source = b3 as unknown as ProjectBundle
+const oldChapter = source.chapters[0], oldCard = source.cardRecords[0], oldRow = source.tableRows[0]
+if (oldChapter && oldCard && oldRow) {
+  // 云端新设备副本可能没有项目元数据中的原 ID；记录仍保留来源项目 ID。
+  const fixture: ProjectBundle = { ...source, project: { ...source.project, id: '' }, settings: [...(source.settings ?? []),
+    { key: `chapterContext32:${oldChapter.id}`, value: { schema: 1, outlineId: oldCard.id, pinnedRefs: [{ kind: 'row', projectId: source.project.id, tabId: oldRow.tabId, id: oldRow.id }], updatedAt: 1 } },
+    { key: 'inspirationBox', value: [{ id: 'idea-test', text: '测试灵感', createdAt: 1, chapterId: oldChapter.id }] },
+  ] }
+  const copied = await db.importProject(fixture)
+  const bundle = await db.exportProject(copied)
+  const newChapter = bundle.chapters.find(c => c.title === oldChapter.title)
+  const context = bundle.settings?.find(s => s.key === `chapterContext32:${newChapter?.id}`)?.value as { outlineId?: string; pinnedRefs?: { id: string; projectId: string; tabId: string }[] } | undefined
+  const mappedCard = bundle.cardRecords.find(c => c.name === oldCard.name && c.tabId === oldCard.tabId)
+  const mappedRow = bundle.tableRows.find(r => r.id === context?.pinnedRefs?.[0]?.id)
+  const ideas = bundle.settings?.find(s => s.key === 'inspirationBox')?.value as { chapterId?: string }[] | undefined
+  ok('导入后章节资料引用指向新项目中的对应记录', !!context && !!mappedRow && JSON.stringify(mappedRow.data) === JSON.stringify(oldRow.data) && context.outlineId === mappedCard?.id && context.pinnedRefs?.[0]?.tabId === mappedRow.tabId && context.pinnedRefs?.[0]?.projectId === copied, JSON.stringify({ context, card: mappedCard?.id, row: mappedRow?.id }))
+  ok('导入后灵感关联新章节', !!newChapter && ideas?.[0]?.chapterId === newChapter.id)
+} else ok('导入映射夹具含章节、卡片和表格行', false)
+
 console.log(`\n===== 结果：${pass} PASS / ${fail} FAIL =====`)
 process.exit(fail > 0 ? 1 : 0)

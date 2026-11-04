@@ -4,7 +4,7 @@
 //   ① **来源标记** —— 老库里的快照没有 `source` 字段，必须按「自动」处理而不是变成 undefined；
 //   ② 🔴 **裁剪优先级** —— 名额不够时**先丢最旧的自动快照**，AI 动笔前留的旧稿要保住；
 //      这是 A3 最核心的一条策略，写反了（比如按时间一刀切）就会把改写前的原文丢掉；
-//   ③ **备份往返** —— 只带 AI 快照进 bundle；导入后 chapterId 必须换成新 id，
+//   ③ **备份往返** —— 带 AI 与命名快照进 bundle；导入后 chapterId 必须换成新 id，
 //      否则快照会指向不存在的章节（界面表现：时光机里一片空白，且查不出原因）。
 import fs from 'node:fs'
 import path from 'node:path'
@@ -102,7 +102,7 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
   ok('⑤ 另一章的快照不会挤掉本章的', l5.length === 12 && l6.length === 1, `${l5.length}/${l6.length}`)
 }
 
-// ---------- ⑥ 备份往返：只带 AI 快照 + 导入后 chapterId 重映射 ----------
+// ---------- ⑥ 备份往返：AI 与命名快照 + 导入后 chapterId 重映射 ----------
 {
   const pid2 = 'p-snap2'
   await memoryOps.put('projects', { id: pid2, name: '往返测试', intro: '', cover: '', projectType: 'full', createdAt: 0, updatedAt: 0 })
@@ -110,20 +110,21 @@ const snapsOf = async (chId: string) => (await db.getSnapshots(chId)).sort((a, b
   await memoryOps.put('chapters', { ...mkCh('cc1', '正文一'), projectId: pid2, volumeId: 'v2' })
   await memoryOps.put('snapshots', { id: 'k-au', projectId: pid2, chapterId: 'cc1', chapterTitle: '章', content: '自动', wordCount: 2, createdAt: 1, source: 'auto' })
   await memoryOps.put('snapshots', { id: 'k-ai', projectId: pid2, chapterId: 'cc1', chapterTitle: '章', content: 'AI 前旧稿', wordCount: 6, createdAt: 2, source: 'ai-rewrite' })
+  await db.createSnapshot({ ...mkCh('cc1', '手动稿'), projectId: pid2, volumeId: 'v2' }, 'manual-named', undefined, { label: '修改前', note: '保留开头' })
 
   const bundle = await db.exportProject(pid2)
-  ok('⑥ 导出只带 AI 快照（定时快照不进备份）',
-    (bundle.snapshots?.length ?? 0) === 1 && bundle.snapshots?.[0].content === 'AI 前旧稿',
+  ok('⑥ 导出包含 AI 和命名快照（定时快照不进备份）',
+    (bundle.snapshots?.length ?? 0) === 2 && !!bundle.snapshots?.some(s => s.content === 'AI 前旧稿') && !!bundle.snapshots?.some(s => s.label === '修改前' && s.note === '保留开头'),
     JSON.stringify(bundle.snapshots))
 
   const newPid = await db.importProject(bundle)
   const newChs = (await memoryOps.getAll<Chapter>('chapters')).filter(c => c.projectId === newPid)
   const newSnaps = (await memoryOps.getAll<db.Snapshot>('snapshots')).filter(s => s.projectId === newPid)
-  ok('⑥ 导入带回 1 份 AI 快照', newSnaps.length === 1, String(newSnaps.length))
+  ok('⑥ 导入带回 AI 和命名快照', newSnaps.length === 2 && newSnaps.some(s => s.label === '修改前' && s.note === '保留开头'), String(newSnaps.length))
   ok('🔴 导入后快照的 chapterId 已指向新章节（不是旧 id）',
-    newSnaps.length === 1 && newSnaps[0].chapterId === newChs[0].id && newSnaps[0].chapterId !== 'cc1',
+    newSnaps.length === 2 && newSnaps.every(s => s.chapterId === newChs[0].id && s.chapterId !== 'cc1'),
     `snap.chapterId=${newSnaps[0]?.chapterId} newCh=${newChs[0]?.id}`)
-  ok('⑥ 内容原样搬运', newSnaps[0]?.content === 'AI 前旧稿', JSON.stringify(newSnaps[0]?.content))
+  ok('⑥ 内容原样搬运', newSnaps.some(s => s.content === 'AI 前旧稿') && newSnaps.some(s => s.content === '手动稿'))
 
   // 自动备份那条路径必须不带快照（高频全量，带了会撑大本地存储）
   const noSnap = await db.exportProject(pid2, { includeSnapshots: false })

@@ -5,7 +5,7 @@ import type { Project, FormData } from '@/lib/types'
 import { uid } from '@/lib/app/id'
 import { ops } from '@/lib/db/core'
 import { WEB } from '@/lib/app/platform'
-import { exportProject, remapSettingValue, type ProjectBundle, getProject } from '@/lib/db/projects'
+import { exportProject, remapSettingValue, remapChapterContextSetting, type ProjectBundle, getProject } from '@/lib/db/projects'
 import { restoreDocsFromBundle, collectDocsForSafetyBackup, type KbBundleDoc } from '@/lib/search/knowledgeBase'
 import { flushCreativeCheckpoint } from '@/lib/creative/serialPersist'
 import { isDemoProjectName } from '@/lib/constants'
@@ -710,9 +710,11 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   for (const f of bundle.formData) {
     await ops.put('formData', { tabId: `${targetPid}::${f.tabId}`, data: f.data })
   }
+  const rowIdMap = new Map<string, string>()
   for (const r of bundle.tableRows) {
     const m = r.id.match(/^ch-(.+)$/)
     const nid = m && chMap.has(m[1]) ? `ch-${chMap.get(m[1])}` : uid()
+    rowIdMap.set(r.id, nid)
     // 卷台账行的 tabId 内嵌卷 id（chapter-vol-<volumeId>），须随新卷 id 重映射，
     // 否则恢复后台账行指向不存在的卷，卷台账数据全部丢失（与 importProject 的写法一致）
     const rawTab = String(r.tabId)
@@ -736,7 +738,10 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   }
   if (bundle.settings) {
     for (const s of bundle.settings) {
-      await ops.put('settingsKV', { key: `${targetPid}::${s.key}`, value: remapSettingValue(s.key, s.value, cardIdMap) })
+      const sourceChapterId = s.key.startsWith('chapterContext32:') ? s.key.slice('chapterContext32:'.length) : ''
+      const sourceOwner = bundle.chapters.find(c => c.id === sourceChapterId)?.projectId || bundle.project.id
+      const context = remapChapterContextSetting(s.key, s.value, targetPid, sourceOwner, chMap, cardIdMap, rowIdMap, volMap)
+      await ops.put('settingsKV', { key: `${targetPid}::${context.key}`, value: remapSettingValue(context.key, context.value, cardIdMap, chMap) })
     }
   }
   if (bundle.customOptions) {

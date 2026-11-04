@@ -86,6 +86,28 @@ export async function setSettingFor(pid: string, key: string, value: unknown, ow
 }
 
 /**
+ * 按前缀**一次读出**某个项目的多条设置（3.4.0 · A.3）。
+ *
+ * 🔴 为什么要这个口子：规划板要给每张章卡显示「绑定了哪张细纲」，
+ *    绑定存在 `chapterContext32:<章 id>`。逐章 `getSettingFor` 是 300 章 = 300 次 IndexedDB get，
+ *    面板一打开就把主线程拖住；这里一次 getAll 再按 `<pid>::<prefix>` 前缀过滤。
+ *
+ * 🔴 前缀必须带 `pid::`：settingsKV 是**所有项目共表**的，
+ *    只按 `chapterContext32:` 过滤会把别的书的绑定也读进来（显示成"串书"）。
+ *    返回 Map 的键是**去掉前缀后的部分**（即章节 id），调用方不必再切字符串。
+ */
+export async function getSettingsByPrefix<T = unknown>(pid: string, prefix: string): Promise<Map<string, T>> {
+  const head = `${pid}::${prefix}`
+  const all = await ops.getAll<{ key: string; value: T }>('settingsKV')
+  const out = new Map<string, T>()
+  for (const rec of all) {
+    if (!rec || typeof rec.key !== 'string' || !rec.key.startsWith(head)) continue
+    out.set(rec.key.slice(head.length), rec.value)
+  }
+  return out
+}
+
+/**
  * 删除**当前项目**的一条设置（键不存在也算成功 —— 幂等）。
  *
  * 🔴 为什么必须补这个口子（2026-10-13）：此前只有 get / set，没有 del ⇒

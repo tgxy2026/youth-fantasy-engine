@@ -51,6 +51,7 @@ const SOURCE_LABEL: Record<SnapshotSource, string> = {
   'ai-continue': 'AI 续写前 · 旧稿',
   'ai-generate': 'AI 生成前 · 旧稿',
   'manual-restore': '回滚版本前 · 留档',
+  'manual-named': '作者命名 · 留档',
 }
 
 /** 该来源是不是「AI 动笔前的旧稿」—— 证据包里最值钱的那一类，UI 里高亮 */
