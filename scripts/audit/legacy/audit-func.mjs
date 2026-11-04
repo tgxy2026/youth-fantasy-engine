@@ -60,6 +60,9 @@ const P = s => out.push(s)
     for (const mm of s.matchAll(/export\s+(?:default\s+)?(?:const|function)\s+([A-Z]\w*)/g)) names.add(mm[1])
     for (const mm of s.matchAll(/export\s+default\s+([A-Z]\w*)/g)) names.add(mm[1])
     for (const name of names) {
+      // 全大写下划线是**常量**（如 BOSS_ENABLED_KEY），不是组件：`export const Xxx` 一律当组件
+      // 会稳定产出假报（2026-11-04 复核：2 个孤儿全是常量）。真组件名至少带一个小写字母。
+      if (/^[A-Z][A-Z0-9_]*$/.test(name)) continue
       // app 入口与 index 不算引用彼方 —— 要找的是"有没有组件子树引用它"
       let refs = 0
       for (const g of tsFiles) {

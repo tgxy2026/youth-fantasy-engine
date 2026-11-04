@@ -82,6 +82,19 @@ try {
   const backValue = await page.getByRole('textbox', { name: '搜索使用手册' }).inputValue()
   check('返回后查询词保留（不用重新输入）', backValue === '字太小了怎么放大', backValue)
 
+  // ④b 强调渲染：帮助文案按 markdown 习惯写了 **…**，正文是纯文本容器 ⇒ 必须转成加粗，
+  //     不能把星号原样显示给作者（2026-11-04 六维审计 §8 命中，本轮修 EmphasisText）。
+  await search.fill('老板键')
+  await page.getByRole('button', { name: /一键隐藏窗口的「老板键」怎么用/ }).first().click()
+  await page.locator('[data-help-article]').waitFor({ timeout: 10000 })
+  const bossText = await page.locator('[data-help-article]').innerText()
+  const strongCount = await page.locator('[data-help-article] strong').count()
+  check('帮助正文没有把 ** 原样显示给作者', !bossText.includes('**'), bossText.slice(0, 240))
+  check('**…** 渲染成了真正的加粗（strong）', strongCount > 0, `strong=${strongCount}`)
+  check('加粗之后文字本身没丢（Ctrl + Shift + F9 仍在）', bossText.includes('Ctrl + Shift + F9'), bossText.slice(0, 240))
+  await page.screenshot({ path: path.join(run, 'emphasis.png') })
+  await page.getByRole('button', { name: /返回/ }).first().click()
+
   // ⑤ 按功能查阅 + 覆盖度缺口
   await search.fill('')
   await page.getByRole('button', { name: /按功能查阅/ }).click()

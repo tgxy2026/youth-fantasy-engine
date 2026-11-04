@@ -148,6 +148,9 @@ assets.sort((a, b) => b.tokens - a.tokens)
 {
   // 「闭嘴条款」的中文说法很多，漏一种就是一片假报；另外调用点传 `json: true`（response_format 强约束）
   // 比提示词里写十句「只输出 JSON」都管用 —— 那类要降为提醒，不能算缺失。
+  // 🔴 2026-11-04 复核：3.2.0 起统一走 `output: 'json-object' | 'json-schema'`
+  //    （aiCore/chat.ts 里映射成 `response_format: { type: 'json_object' }`），
+  //    只认旧的 `json: true` 会把 3 处**已经强约束**的调用点误报成"缺闭嘴条款"。
   const SHUTUP = /只输出|仅输出|不要输出|除此之外|不加任何|不要包含|不要 markdown|markdown 代码块|不要用代码块|严格的 JSON|合法的? JSON|纯 JSON|按上述 JSON|只返回|严格按照/
     // ⚠️ 「不要 JSON、不要代码块」是**明确拒绝** JSON，别当成"要求 JSON"（实测误报源）。
     //    判定要看肯定/否定语气：必须出现肯定的 JSON 索取，且没有否定句。
@@ -158,10 +161,10 @@ assets.sort((a, b) => b.tokens - a.tokens)
   const weak = asksJSON.filter(a => {
     if (SHUTUP.test(a.body)) return false
     const after = raw68.get(files.find(f => rel(f) === a.file)).split('\n').slice(a.line - 1, a.line + 45).join('\n')
-    if (/json:\s*true/.test(after)) { mitigated.add(a); return false }
+    if (/json:\s*true/.test(after) || /output:\s*['"]json-(?:object|schema)['"]/.test(after)) { mitigated.add(a); return false }
     return true
   })
-  P(`\n── P4. 要求结构化输出但缺少「闭嘴条款」（${weak.length}/${asksJSON.length}，另有 ${mitigated.size} 处靠 json:true 兜住）──`)
+  P(`\n── P4. 要求结构化输出但缺少「闭嘴条款」（${weak.length}/${asksJSON.length}，另有 ${mitigated.size} 处靠 response_format 兜住）──`)
   P('  判读：只说「输出 JSON」没说「除此之外别写」→ 小模型先来一段「好的，以下是…」，解析端全丢（表现为"成功但 0 条"）。')
   for (const a of (process.env.YFE_AUDIT_FULL === '1' ? weak : weak.slice(0, 12))) P(`  ▸ ${a.name}  ${a.file}:${a.line}`)
   if (!weak.length) P('  ✅ 结构化类提示词都有输出约束')

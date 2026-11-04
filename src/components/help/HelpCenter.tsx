@@ -13,6 +13,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { AlertTriangle, BookOpen, ChevronLeft, Compass, Lightbulb, ListTree, MessageCircleQuestion, RefreshCw, Search, Sparkles } from 'lucide-react'
 import AskPanel from '@/components/help/AskPanel'
+import EmphasisText from '@/components/common/EmphasisText'
 import { TABS, EDITOR_TAB, tabVisible, type VisCtx } from '@/lib/schema'
 import {
   HELP_ARTICLES, HELP_GROUPS, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, helpArticlesInGroup,
@@ -129,7 +130,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
           </span>
         </header>
         <div className="p-5 space-y-4">
-          <p className="text-12 text-ink-300 leading-relaxed">{article.summary}</p>
+          <p className="text-12 text-ink-300 leading-relaxed"><EmphasisText text={article.summary} /></p>
           {article.prerequisites && article.prerequisites.length > 0 && (
             <div className="rounded-lg bg-amber/10 border border-amber/25 px-3 py-2 text-11 text-amber/90">
               前提：{article.prerequisites.join('；')}
@@ -148,7 +149,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
               <h3 className="text-12 font-semibold text-amber/90 mb-1.5">{section.heading}</h3>
               <div className="space-y-1.5">
                 {section.body.map((paragraph, index) => (
-                  <p key={index} className="text-12 text-ink-300 leading-relaxed whitespace-pre-wrap">{paragraph}</p>
+                  <p key={index} className="text-12 text-ink-300 leading-relaxed whitespace-pre-wrap"><EmphasisText text={paragraph} /></p>
                 ))}
               </div>
             </div>

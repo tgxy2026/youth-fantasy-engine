@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { isOverlayObscured, usePopupLayer } from '@/lib/app/overlayScope'
 import { HelpCircle } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import EmphasisText from '@/components/common/EmphasisText'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh, currentUiZoom } from '@/lib/settings/theme'
 
@@ -184,7 +185,9 @@ export default function HelpPopover({
           <div className="font-semibold text-amber mb-1.5 flex items-center gap-1">
             <HelpCircle size={11} /> {title}
           </div>
-          <div className="whitespace-pre-wrap">{typeof children === 'function' ? children(closeContent) : children}</div>
+          <div className="whitespace-pre-wrap">{typeof children === 'function'
+            ? children(closeContent)
+            : typeof children === 'string' ? <EmphasisText text={children} /> : children}</div>
         </div>,
         portalHost()
       )}

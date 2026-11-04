@@ -319,12 +319,18 @@ const vhSites = []
 for (const f of files) {
   const r = rel(f)
   if (r === 'src/components/dialogs/Modal.tsx') continue // foldVh 宿主，其 maxHeight/topOffset 默认值就是喂给 foldVh 的
+  const fileText = maskLines.get(f).join('\n')
   maskLines.get(f).forEach((l, i) => {
     if (/--ui-zoom|foldVh\(/.test(l)) return // 已折算
     // 传给 <Modal> 的 prop（maxHeight/topOffset/maxWidth）不在组件里直接生效 ——
     // Modal 内部会 foldVh() 折算，故这些行不算违规（否则每个用 Modal 的地方都误报）。
     if (/(?:maxHeight|topOffset|maxWidth)\s*=\s*["']\s*\d+(?:\.\d+)?(?:vh|vw)\s*["']/.test(l)) return
     if (!/\b\d+(?:\.\d+)?(?:vh|vw)\b/.test(l)) return
+    // 🔴 跨行常量：`const DOCK_WIDTH = 'min(430px, 40vw)'` 本身不含折算，
+    //    但使用处写的是 `calc(${DOCK_WIDTH} / var(--ui-zoom, 1))`。
+    //    只按行判断会稳定误报 1 处（AssistantDock，2026-11-04 复核实测）。
+    const def = /^\s*(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/.exec(l)
+    if (def && new RegExp(`\\$\\{${def[1]}\\}`).test(fileText) && /--ui-zoom|foldVh\(/.test(fileText)) return
     vhSites.push(`${r}:${i + 1}  ${l.trim().slice(0, 110)}`)
   })
 }

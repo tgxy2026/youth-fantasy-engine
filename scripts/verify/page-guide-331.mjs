@@ -101,7 +101,9 @@ try {
   check('🔴 跳过之后不再自动弹', await page.locator('[data-guide-card]').count() === 0)
 
   // ⑥ 本页指引：主动重看
-  await page.getByRole('button', { name: '本页指引' }).click()
+  // exact：侧栏设置区还有一个「本页指引 此页无」（当前页签无引导时的禁用项），
+  // 不带 exact 会 strict mode 命中两个（2026-11-04 复核复跑时暴露）。
+  await page.getByRole('button', { name: '本页指引', exact: true }).click()
   await card.waitFor({ timeout: 5000 })
   check('「本页指引」可以随时重看', (await badge())?.[1] === '1')
 

@@ -228,7 +228,7 @@ export default function ManuscriptCheckPanel() {
     const ok = await confirmDialog({
       title: '生成本章变化清单',
       message: `会把本章${mat.truncated
-        ? `前 ${mat.chars.toLocaleString()} 字（本章共 ${mat.totalChars.toLocaleString()} 字，超出 ${CHANGE_MATERIAL_LIMIT.toLocaleString()} 字的部分**不会发送**）`
+        ? `前 ${mat.chars.toLocaleString()} 字（本章共 ${mat.totalChars.toLocaleString()} 字，超出 ${CHANGE_MATERIAL_LIMIT.toLocaleString()} 字的部分不会发送）`
         : `全文 ${mat.chars.toLocaleString()} 字`}交给当前模型，只调用 1 次。\n\n`
         + '不会自动重试、不会自动换模型。结果只作线索：每条必须能在正文里逐字找到，否则会被丢弃。',
       confirmText: '生成（1 次调用）',

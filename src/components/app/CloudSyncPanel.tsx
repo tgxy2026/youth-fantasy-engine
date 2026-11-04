@@ -544,7 +544,7 @@ export default function CloudSyncPanel({
       title: '删除云端这一本',
       message: `把《${row.name || '未命名'}》放进云端回收站？\n\n`
         + '云端回收站保留 30 天，期间可以随时「恢复」；到期后由服务器自动清理。\n\n'
-        + '本机这本**不受影响**（不会删本机内容）。',
+        + '本机这本不受影响（不会删本机内容）。',
       confirmText: '放进回收站',
     })
     if (!ok) return

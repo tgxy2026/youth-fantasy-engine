@@ -162,16 +162,25 @@ const RISKY = /(?:^|[\s"])(?:hover:|focus:|active:|dark:)*(?:bg|text|border|ring
 // ── U5. 可访问性 / 交互可达性 ─────────────────────────────────────
 {
   const noLabel = [], noAlt = [], fakeBtn = []
+  // 🔴 注释里的标签不是代码：SafeImage 的文件头与 props 说明里都写了 `<img>`，
+  //    不跳注释行会稳定误报 2 处「缺 alt」（2026-11-04 复核实测）。
+  const isComment = l => /^\s*(?:\*|\/\/|\/\*|\{\/\*)/.test(l)
   for (const f of files) {
     const s = src.get(f)
     s.split(/\r?\n/).forEach((l, i) => {
+      if (isComment(l)) return
       const at = `${rel(f)}:${i + 1}`
       // 图标按钮：Button 开了 iconOnly 或有 aria-label/title 才算可读
       if (/<(?:button|Button)\b/.test(l) && /iconOnly/.test(l)) {
         if (!/aria-label|title=/.test(l) && !/aria-label|title=/.test(s.slice(s.indexOf('\n', s.indexOf(l)) + 1, s.indexOf(l) + 400))) noLabel.push(at)
       }
       if (/<img\b/.test(l) && !/alt=/.test(l) && !/alt=/.test(s.slice(s.indexOf(l), s.indexOf(l) + 300))) noAlt.push(at)
-      if (/<(?:div|span)\b[^>]*onClick=/.test(l) && !/role=|tabIndex=/.test(s.slice(s.indexOf(l), s.indexOf(l) + 300))) fakeBtn.push(at)
+      // 「点外部关闭」的装饰遮罩带 aria-hidden：朗读器本就忽略它，关闭另有 Esc / 再点触发键两条路径，
+      // 不是"假按钮"（2026-09-22 六维审计 U5 已判，2026-11-04 复核重申）。
+      if (/<(?:div|span)\b[^>]*onClick=/.test(l)) {
+        const near = s.slice(s.indexOf(l), s.indexOf(l) + 300)
+        if (!/role=|tabIndex=/.test(near) && !/aria-hidden/.test(near)) fakeBtn.push(at)
+      }
     })
   }
   P(`\n── U5. 可访问性 / 交互可达性 ──`)
