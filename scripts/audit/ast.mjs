@@ -80,11 +80,22 @@ export function scanAst(root, contracts) {
   })
   for (const item of inventory.filter(x => x.mono && !x.registered)) findings.push({ rule: 'coverage.chart', confidence: 'review', file: item.file, line: 1, message: 'mono感知组件未列入图表清单；确认是已覆盖的子组件或补运行场景' })
   // Audit the auditors too: the historical camelCase CSSOM bug lived in a browser tool, not src/.
-  const toolsDir = path.join(root, '.workbuddy/tools')
-  if (fs.existsSync(toolsDir)) for (const name of fs.readdirSync(toolsDir)) {
-    if (!/\.(cjs|mjs|js)$/.test(name)) continue
-    const filename = path.join(toolsDir, name)
-    const u = { file: `.workbuddy/tools/${name}`, ast: ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true) }
+  // 🔴 3.4.1：规则文件现都在 scripts/audit/（含 legacy/ platform/ probes/ 子目录），
+  //    只扫 .workbuddy/tools/ 会让「审计审计者」对真正的工具代码完全失明。
+  const toolFiles = []
+  const collectTools = (dir, rel) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name), name = `${rel}/${e.name}`
+      if (e.isDirectory()) collectTools(abs, name)
+      else if (/\.(cjs|mjs|js)$/.test(e.name)) toolFiles.push({ abs, name })
+    }
+  }
+  for (const rel of ['.workbuddy/tools', 'scripts/audit']) {
+    const dir = path.join(root, rel)
+    if (fs.existsSync(dir)) collectTools(dir, rel)
+  }
+  for (const { abs, name } of toolFiles) {
+    const u = { file: name, ast: ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true) }
     visit(u.ast, n => {
       if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'getPropertyValue') {
         const arg = n.arguments[0]

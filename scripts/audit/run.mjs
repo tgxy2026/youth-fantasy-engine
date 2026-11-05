@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { scanAst } from './ast.mjs'
 import { auditHeaders } from './probes.mjs'
 import context from './context.cjs'
+import { auditSelfCheck } from './self-check.mjs'
 
 const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const args = process.argv.slice(2)
@@ -27,7 +28,12 @@ const out = path.join(root, '.workbuddy/tmp/audit', stamp)
 fs.mkdirSync(out, { recursive: true })
 const fingerprint = () => context.sourceFingerprint(root)
 const sourceFingerprint = fingerprint()
-const report = { schemaVersion: 1, scope: 'audit-contracts-v1; excludes packaged desktop, real API and dual-device acceptance', generatedAt: new Date().toISOString(), sourceFingerprint, static: scanAst(root, contracts), legacy: [], observations: [], diagnostics: [], contracts: [] }
+const staticResult = scanAst(root, contracts)
+// 🔴 3.4.1：开场自检登记项与扫描覆盖度，防止「搬文件后扫 0 个文件仍报 0 候选」的假绿灯。
+//    复用上面算好的 staticResult，避免重复解析全部 ts/tsx。schemaVersion 保持 1：只增字段、不改契约语义。
+const selfCheck = auditSelfCheck(root, { staticResult })
+const report = { schemaVersion: 1, scope: 'audit-contracts-v1; excludes packaged desktop, real API and dual-device acceptance', generatedAt: new Date().toISOString(), appVersion: selfCheck.appVersion, toolFingerprint: selfCheck.toolFingerprint, sourceFingerprint, static: staticResult, selfCheck: { ok: selfCheck.ok, checks: selfCheck.checks, issues: selfCheck.issues }, legacy: [], observations: [], diagnostics: [], contracts: [] }
+if (!selfCheck.ok) report.diagnostics.push({ status: 'blocked', reason: `审计工具自检失败：${selfCheck.issues.join('; ')}` })
 const legacyNames = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
 function runLegacy(name) {
   return new Promise(resolve => {
@@ -98,8 +104,9 @@ if (fingerprint() !== sourceFingerprint) report.diagnostics.push({ status: 'bloc
 const failures = report.contracts.filter(c => c.status === 'failed')
 report.status = failures.length || report.static.findings.some(f => f.disposition === 'confirmed') ? 'failed' : report.contracts.every(c => c.status === 'passed') && report.static.findings.every(f => f.disposition === 'dismissed') && !report.diagnostics.length && report.legacy.every(c => c.status === 'executed') ? 'complete' : 'incomplete'
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))
-const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描完成不等于功能验收通过。`, '', `源码指纹：\`${sourceFingerprint}\``, '', '## 必要运行证据', '', ...report.contracts.map(c => `- **${c.status}** ${c.id}：${c.reason}`), '', '## 静态缺陷候选（须人工确认）', '', ...report.static.findings.map(f => `- ${f.file}:${f.line} [${f.rule}/${f.confidence}/${f.disposition}] ${f.message}${f.reviewReason ? '；复核：' + f.reviewReason : ''}`), '', '## 执行说明', '', ...report.diagnostics.map(d => `- ${d.status}: ${d.reason}`), ...report.legacy.map(l => `- ${l.name}: ${l.status}；原始日志 ${l.log}`), '', '旧扫描器以完整候选模式执行，原始日志不丢弃；此报告不会把旧脚本的退出0直接解释成产品通过。']
+const unregisteredMono = report.static.inventory.filter(x => x.mono && !x.registered)
+const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描完成不等于功能验收通过。`, '', `源码指纹：\`${sourceFingerprint}\``, '', '## 本次扫描', '', `- 软件版本：\`v${report.appVersion}\`　|　审计工具指纹：\`${report.toolFingerprint.slice(0, 16)}\``, `- 静态扫描：\`${report.static.files}\` 个 ts/tsx 文件、\`${report.static.findings.length}\` 个候选；图表 / mono 清单 \`${report.static.inventory.length}\` 项（未登记 \`${unregisteredMono.length}\` 项）`, `- 工具自检：**${selfCheck.ok ? 'passed' : 'failed'}**（${selfCheck.checks.length} 项）；自检失败会阻止报告判为 complete`, ...(selfCheck.ok ? [] : ['', ...selfCheck.issues.map(issue => `- ⚠️ ${issue}`)]), '', '## 必要运行证据', '', ...report.contracts.map(c => `- **${c.status}** ${c.id}：${c.reason}`), '', '## 静态缺陷候选（须人工确认）', '', ...report.static.findings.map(f => `- ${f.file}:${f.line} [${f.rule}/${f.confidence}/${f.disposition}] ${f.message}${f.reviewReason ? '；复核：' + f.reviewReason : ''}`), '', '## 执行说明', '', ...report.diagnostics.map(d => `- ${d.status}: ${d.reason}`), ...report.legacy.map(l => `- ${l.name}: ${l.status}；原始日志 ${l.log}`), '', '旧扫描器以完整候选模式执行，原始日志不丢弃；此报告不会把旧脚本的退出0直接解释成产品通过。']
 fs.writeFileSync(path.join(out, 'report.md'), md.join('\n'))
-console.log(`Audit ${report.status}: ${report.static.findings.length} candidates; ${failures.length} failing contracts.\nReport: ${path.join(out, 'report.md')}`)
+console.log(`Audit ${report.status}: ${report.static.findings.length} candidates; ${failures.length} failing contracts.\nScanned ${report.static.files} ts/tsx files; tool self-check ${selfCheck.ok ? 'passed' : 'FAILED'}; app v${report.appVersion}; tool ${report.toolFingerprint.slice(0, 12)}.\nReport: ${path.join(out, 'report.md')}`)
 process.exitCode = report.status === 'failed' ? 1 : report.status === 'incomplete' ? 2 : 0
 }
