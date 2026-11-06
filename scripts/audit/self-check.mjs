@@ -14,7 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { scanAst } from './ast.mjs'
 import { parse, initializer } from './platform/source.mjs'
-import { validateRegistry, countSourceFiles, toolFingerprint } from './registry-check.mjs'
+import { validateRegistry, countSourceFiles, toolFingerprint, staleToolHints } from './registry-check.mjs'
 
 export { validateRegistry, toolFingerprint }
 
@@ -42,6 +42,16 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     result.checks.push({ name: `sidecar 符号 ${entry.symbol}`, status: found ? 'passed' : 'failed', detail: entry.file })
     if (!found) result.issues.push(`sidecar[${i}] ${entry.file} 中找不到 ${entry.symbol} 的变量声明`)
   }
+
+  // 3.4.1 第二轮：工具输出给用户的命令提示不能指向不存在的脚本（tmp 不入库）。
+  const stale = options.staleHints ?? staleToolHints(root)
+  result.checks.push({
+    name: '工具提示路径有效',
+    status: stale.length ? 'failed' : 'passed',
+    detail: stale.length ? stale.map(h => `${h.file}:${h.line} → ${h.target}`).join(', ') : '0 处失效提示',
+  })
+  if (stale.length) result.issues.push(`审计工具输出了 ${stale.length} 处失效脚本路径提示：${stale.map(h => h.target).join(', ')}`)
+
   result.ok = result.issues.length === 0
 
   return {

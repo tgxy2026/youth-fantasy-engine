@@ -43,3 +43,4 @@ export declare function registeredPaths(
 export declare function validateRegistry(input: RegistryInput): RegistryResult
 export declare function countSourceFiles(dir: string): number
 export declare function toolFingerprint(root: string): string
+export declare function staleToolHints(root: string): Array<{ file: string; line: number; target: string }>

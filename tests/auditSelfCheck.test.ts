@@ -6,8 +6,9 @@
 //   · 真实仓库自检通过、工具指纹可复现、主调度确实接了自检。
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { spawn } from 'node:child_process'
-import { validateRegistry, toolFingerprint, countSourceFiles } from '../scripts/audit/registry-check.mjs'
+import { validateRegistry, toolFingerprint, countSourceFiles, staleToolHints } from '../scripts/audit/registry-check.mjs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -91,6 +92,27 @@ const cli = await new Promise<{ code: number | null; out: string }>((resolve, re
 })
 ok('CLI 对真实仓库自检通过', cli.code === 0 && /Self-check PASSED/.test(cli.out), cli.out.slice(-400))
 ok('CLI 覆盖 sidecar 符号核对', /sidecar 符号/.test(cli.out), cli.out.slice(-400))
+ok('CLI 覆盖工具提示路径检查', /\[passed\] 工具提示路径有效/.test(cli.out), cli.out.slice(-400))
+ok('真实仓库无失效工具提示', staleToolHints(process.cwd()).length === 0, JSON.stringify(staleToolHints(process.cwd())))
+
+// 负向：临时工具目录里放一个失效提示，守卫必须抓到；注释里的兼容入口说明必须豁免
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yfe-stale-hint-'))
+  try {
+    const fake = path.join(tmp, 'scripts/audit/fake.mjs')
+    fs.mkdirSync(path.dirname(fake), { recursive: true })
+    fs.writeFileSync(fake, "console.log('node .workbuddy/tmp/no-such-tool.mjs --matrix')\n")
+    const hits = staleToolHints(tmp)
+    ok('失效工具提示被守卫抓到', hits.length === 1 && hits[0].target === '.workbuddy/tmp/no-such-tool.mjs', JSON.stringify(hits))
+    fs.writeFileSync(fake, '// 用法：node .workbuddy/tmp/audit-scan.mjs [工作区路径]\n')
+    ok('注释里的兼容入口说明被豁免', staleToolHints(tmp).length === 0)
+  } finally {
+    const real = fs.realpathSync(tmp)
+    if (path.dirname(real) === fs.realpathSync(os.tmpdir()) && path.basename(real).startsWith('yfe-stale-hint-')) {
+      fs.rmSync(real, { recursive: true, force: true })
+    }
+  }
+}
 
 // 主调度接线：防止以后有人把自检从 run.mjs 里摘掉，报告又变回「0 候选即绿灯」
 const runSrc = fs.readFileSync(path.join(process.cwd(), 'scripts/audit/run.mjs'), 'utf8')

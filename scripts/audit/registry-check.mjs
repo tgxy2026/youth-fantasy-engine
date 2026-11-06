@@ -91,3 +91,34 @@ export function toolFingerprint(root) {
   }
   return h.digest('hex')
 }
+
+/**
+ * 审计工具「输出给用户的命令提示」是否指向不存在的脚本（3.4.1 第二轮）。
+ *
+ * 背景：`compat.mjs` 曾提示 `node .workbuddy/tmp/audit-platform.mjs --matrix`，
+ * 但 tmp 不入库、本机也没恢复该入口 ⇒ 用户照抄必然失败，而扫描器自己毫无察觉。
+ * 只查**真正会输出的行**，跳过注释：legacy 文件头的「用法：node .workbuddy/tmp/audit-*.mjs」
+ * 是兼容入口说明，README 已交代需先跑 install-entrypoints.mjs，不算失效提示。
+ */
+export function staleToolHints(root) {
+  const dir = path.join(root, 'scripts/audit'), hits = []
+  const scanFile = file => {
+    fs.readFileSync(file, 'utf8').split(/\r?\n/).forEach((line, i) => {
+      const t = line.trim()
+      if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return
+      const m = /node\s+(\.workbuddy\/(?:tmp|tools)\/[\w.-]+\.(?:mjs|cjs|js))/.exec(line)
+      if (m && !fs.existsSync(path.join(root, m[1]))) {
+        hits.push({ file: path.relative(root, file).replaceAll('\\', '/'), line: i + 1, target: m[1] })
+      }
+    })
+  }
+  const walk = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (/\.(mjs|cjs|js)$/.test(e.name)) scanFile(p)
+    }
+  }
+  if (fs.existsSync(dir)) walk(dir)
+  return hits
+}

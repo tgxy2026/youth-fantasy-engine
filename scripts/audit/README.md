@@ -34,8 +34,11 @@ node scripts/audit/self-check.mjs          # 单独跑，失败退出 1
 | 必要契约 id 唯一且非空 | 契约表被改坏、id 重复 |
 | 静态扫描覆盖与源码一致 | AST 实扫文件数 ≠ 独立 walk 出的 `src/**/*.ts(x)` 数，或为 0 ——**「扫 0 个文件所以 0 候选」的假绿灯** |
 | sidecar 符号可解析 | 外置 store 白名单常量被改名，`platform` 扫描少一项却不报错 |
+| 工具提示路径有效 | 工具输出给用户的 `node .workbuddy/tmp/...` 命令指向不存在的脚本（tmp 不入库、照抄必失败）；注释里的兼容入口说明豁免 |
 
 自检失败 ⇒ `report.diagnostics` 写入 `blocked`，`status` 绝不可能是 `complete`。分层：纯数据校验在 `registry-check.mjs`（零 typescript 依赖，单测可直接静态 import，避免把 CommonJS 的 typescript 打进 ESM 测试包），真实配置组装与 AST 侧符号核对在 `self-check.mjs`。回归用例见 `tests/auditSelfCheck.test.ts`。
+
+2026-11-06 第二轮：`compat.mjs` 曾提示运行不存在的 `.workbuddy/tmp/audit-platform.mjs`，已改为入库入口 `scripts/audit/run.mjs --platform --matrix`；「工具提示路径有效」随之加入自检（现 8 项），修复前自检 `FAILED` / `run.mjs` 写 blocked 诊断，修复后恢复 `complete`。
 
 另外，`ast.mjs` 的「审计审计者」规则（`cssom.name`）现在同时覆盖 `.workbuddy/tools/` 与 `scripts/audit/`（含 `legacy/` `platform/` `probes/` 子目录）——以前只扫前者，等于对真正的工具代码失明。
 
