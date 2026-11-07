@@ -28,7 +28,7 @@ import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 export const CONTENT_VERSION = 7
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.4.2'
+export const SUPPORTED_APP_VERSION = '3.4.3'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [
