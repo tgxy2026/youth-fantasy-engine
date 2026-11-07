@@ -41,7 +41,8 @@ import {
   loadAiTimeoutSec, saveAiTimeoutSec,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
   LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
-  isLocalModelBlocked, usableProviders, protocolOf, WIRE_PROTOCOL_LABELS,
+  isLocalModelBlocked, usableProviders, protocolOf, WIRE_PROTOCOL_LABELS, protocolSwitchPatch,
+  type WireProtocol,
 } from '@/lib/ai'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
@@ -285,13 +286,29 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     }
   }
 
+  /**
+   * 3.4.2 · 手动切换**线协议**（自定义端点也能声明）。
+   *
+   * 🔴 为什么要有这个入口：预设里已带协议，但「自定义」只能填 baseUrl ——
+   *    想接自建 Anthropic 兼容网关、远程 Ollama、或官方原生端点时必须能显式选协议，
+   *    否则只能继承上一个预设的协议（静默错配：地址是 A 家、协议还是 B 家）。
+   *
+   * 切换后清空两边的模型清单与上次测试结果 —— 它们属于**上一个端点**，留着会误导。
+   */
+  const applyProtocolSwitch = (next: WireProtocol) => {
+    setEditing(prev => (prev ? { ...prev, ...protocolSwitchPatch(next, prev) } : prev))
+    setOllamaModels([])
+    setOpenaiModels([])
+    setEditResult(null)
+  }
+
   /** 编辑态（openai 类型）平台预设下拉：本地 / 联网各自只列本组 */
   const presetList =
-    editing && editing.type === 'openai'
+    editing && protocolOf(editing) !== 'ollama'
       ? editing.local
         ? [...LOCAL_OPENAI_PRESETS, { label: '自定义', baseUrl: '' }]
         : ONLINE_PRESETS
-      : ONLINE_PRESETS
+      : LOCAL_PRESETS
 
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
@@ -573,6 +590,26 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               <div>
                 <label className="block text-11 text-ink-500 mb-1">显示名称</label>
                 <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="如：本地 llama3 / DeepSeek" />
+              </div>
+
+              {/* 3.4.2 · 线协议显式入口。
+                  🔴 不能塞进下面的「平台预设」块 —— 那个块只在非 Ollama 分支渲染，
+                     一旦切成 Ollama 原生就再也切不回来（只能取消重开）。
+                  预设已带协议；这里补的是「自定义 / 自建网关 / 远程 Ollama」这类只能手填地址的场景。 */}
+              <div>
+                <label className="block text-11 text-ink-500 mb-1">接口协议</label>
+                <select
+                  className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
+                  value={protocolOf(editing)}
+                  onChange={e => applyProtocolSwitch(e.target.value as WireProtocol)}
+                >
+                  {(Object.keys(WIRE_PROTOCOL_LABELS) as WireProtocol[]).map(p => (
+                    <option key={p} value={p}>{WIRE_PROTOCOL_LABELS[p]}</option>
+                  ))}
+                </select>
+                <p className="text-11 text-ink-500 mt-1 leading-relaxed">
+                  决定请求路径、鉴权方式与消息结构（<span className="text-ink-600">选平台预设会自动带好；自建端点或远程 Ollama 在这里手动指定。切换会清空已拉取的模型清单与该端点的结构化输出确认。</span>）
+                </p>
               </div>
 
               <div>

@@ -50,7 +50,7 @@ export const FAQ_MODEL_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'faq-multi-protocol',
-    revision: 1,
+    revision: 2,
     title: '怎么接入 Anthropic Claude / Google Gemini / OpenAI Responses',
     summary: '3.4.2 起模型配置可直接选这三家官方端点；地址、密钥、模型清单与结构化输出在这里说清。',
     aliases: ['Claude 配置', 'Gemini 配置', 'Responses 配置', 'x-api-key', 'x-goog-api-key', '多协议', '官方端点'],
@@ -92,6 +92,15 @@ export const FAQ_MODEL_ARTICLES: HelpArticle[] = [
         body: [
           '地址填 `https://api.openai.com/v1`，接口是 `/v1/responses`，密钥用 Bearer（与 OpenAI Chat Completions 同一份密钥）。它和「OpenAI」预设是两套格式，不要混选。',
           '结构化输出确认后下发 `text.format`；模型清单仍走 `/models`，语义索引仍走 `/embeddings`。',
+        ],
+      },
+      {
+        id: 'custom',
+        heading: '自定义端点与远程 Ollama',
+        body: [
+          '编辑模型时，「接口协议」下拉可以手动指定线协议：自建 Anthropic 兼容网关、局域网里的远程 Ollama、或路径不标准的中转都能用。选平台预设时它会自动带好，一般不需要手动改。',
+          '切换协议会清空已拉取的模型清单与该端点的「结构化输出能力」确认 —— 这两项都是针对**上一个**端点的结论，换协议后请重新获取 / 确认；接口地址、模型名与密钥不受影响。',
+          '切换时「本地 / 联网」标记也会跟着复位：Ollama 原生视为本地（免密钥），三家官方协议一律按联网端点校验密钥，避免沿用上一条配置的免密钥判定。',
         ],
       },
       {

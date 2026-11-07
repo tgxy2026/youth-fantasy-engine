@@ -245,6 +245,45 @@ export function headersForPresetSwitch(
   return Object.keys(next).length ? next : undefined
 }
 
+/**
+ * 切换**线协议**时要一并同步的字段（3.4.2 补 · 自定义端点协议选择）。
+ *
+ * 🔴 为什么不能只改 `protocol`：
+ *   · `type` 是存储键（`'ollama' | 'openai'`），旧库反序列化靠它映射协议；两者必须同时落。
+ *   · `local` 是「本地 / 联网」语义，与协议正交 —— 但 Ollama 原生预设默认本机，
+ *     而三家官方协议（Anthropic / Gemini / Responses）一律是联网端点。
+ *     若从本地 OpenAI 兼容服务切到 Anthropic 还留着 `local: true`，`precheck` 会**跳过密钥校验**，
+ *     网页形态还会把这条配置当成本机端点禁用（P9）—— 属静默失明，必须显式复位。
+ *   · 结构化输出 / 推理兼结构是「该端点已确认」的结论，换协议等于换端点语义，一并回到未确认。
+ *
+ * 返回补丁供 `setEditing({ ...prev, ...patch })` 使用；不改 baseUrl / 模型名 / 密钥。
+ */
+export function protocolSwitchPatch(
+  next: WireProtocol,
+  current: { protocol?: WireProtocol; local?: boolean } | null | undefined,
+): {
+  protocol: WireProtocol
+  type: AIProviderType
+  local: boolean
+  structuredOutput: undefined
+  reasoningWithStructure: undefined
+} {
+  const isOllama = next === 'ollama'
+  const wasOllama = protocolOf(current) === 'ollama'
+  // openai-chat 可能是本机兼容服务（LM Studio / LocalAI），保留作者原有标记；
+  // 但 Ollama 的 local 是本函数**强设**的，切回来时必须复位 —— 否则联网模型会顶着
+  // 「本地」标记出现在本地预设组里（探针实测：Anthropic → Ollama → OpenAI 兼容后预设变成本地列表）。
+  // 三家官方协议固定联网，从任何来源切过去都复位成本地 false。
+  const local = isOllama ? true : wasOllama ? false : next === 'openai-chat' ? !!current?.local : false
+  return {
+    protocol: next,
+    type: isOllama ? 'ollama' : 'openai',
+    local,
+    structuredOutput: undefined,
+    reasoningWithStructure: undefined,
+  }
+}
+
 /** 联网 OpenAI 兼容平台预设（需 API 密钥，baseUrl 为 chat/completions 前缀） */
 export const ONLINE_PRESETS: PlatformPreset[] = [
   { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },

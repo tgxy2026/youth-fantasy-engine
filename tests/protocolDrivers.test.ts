@@ -8,7 +8,7 @@ import { isCancelled } from '../src/lib/aiCore/transport'
 import { protocolOf } from '../src/lib/aiCore/protocol'
 import { driverFor, listModelsFor, capabilitiesOfProtocol } from '../src/lib/aiCore/protocols'
 import type { AIProvider } from '../src/lib/aiCore/core'
-import { OLLAMA_PRESET, ONLINE_PRESETS, providerFromPreset } from '../src/lib/aiCore/core'
+import { OLLAMA_PRESET, ONLINE_PRESETS, providerFromPreset, protocolSwitchPatch } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -405,6 +405,43 @@ async function run(): Promise<void> {
   threw = ''
   try { await chat(bogus, msgs, { timeoutMs: 5000 }) } catch (e) { threw = String((e as Error).message) }
   ok('未登记协议在发送前明确报错（不静默退回 OpenAI 兼容）', threw.includes('暂不支持'), threw)
+
+  // ---------- 手动切换线协议（3.4.2 · 自定义端点入口）----------
+  // 判据：切协议必须同时把存储键 type / 本地标记 / 端点能力确认一起带走，否则
+  // 「本地标记」会让 precheck 跳过密钥校验、网页形态还会误禁用（静默失明）。
+  {
+    const fromOllama = { protocol: 'ollama' as const, local: true }
+    const toOllama = protocolSwitchPatch('ollama', { protocol: 'openai-chat', local: false })
+    ok('切协议 → ollama：type 同步为存储键 ollama，且标记本地',
+      toOllama.protocol === 'ollama' && toOllama.type === 'ollama' && toOllama.local === true)
+
+    const toAnthropic = protocolSwitchPatch('anthropic', fromOllama)
+    ok('从 ollama 切到 anthropic：type 回 openai、本地标记复位（不继承免密钥）',
+      toAnthropic.protocol === 'anthropic' && toAnthropic.type === 'openai' && toAnthropic.local === false)
+
+    const backFromOllama = protocolSwitchPatch('openai-chat', toOllama)
+    ok('从 ollama 切回 openai-chat：本地标记复位（不继承强设的 local）',
+      backFromOllama.protocol === 'openai-chat' && backFromOllama.local === false)
+
+    const localCompat = protocolSwitchPatch('openai-chat', { protocol: 'openai-chat', local: true })
+    ok('本地 OpenAI 兼容 → openai-chat：保留本地标记', localCompat.local === true)
+
+    const localToGemini = protocolSwitchPatch('gemini', { protocol: 'openai-chat', local: true })
+    const localToResponses = protocolSwitchPatch('openai-responses', { protocol: 'openai-chat', local: true })
+    ok('本地兼容 → gemini / responses：一律复位为联网端点',
+      localToGemini.local === false && localToResponses.local === false)
+
+    const confirmed = protocolSwitchPatch('gemini', {
+      protocol: 'openai-chat', local: false,
+    })
+    ok('切协议清空「已确认结构化输出 / 推理兼结构」', confirmed.structuredOutput === undefined && confirmed.reasoningWithStructure === undefined)
+
+    const legacyPatch = protocolSwitchPatch('ollama', {})
+    ok('旧配置（无 protocol 字段）切协议不抛错且落 type', legacyPatch.protocol === 'ollama' && legacyPatch.type === 'ollama')
+
+    ok('协议补丁只碰协议相关字段（不动地址 / 模型 / 密钥）',
+      !('baseUrl' in toOllama) && !('model' in toOllama) && !('apiKey' in toOllama))
+  }
 
   console.log(`\n———— protocolDrivers：${pass} 通过 / ${fail} 失败 ————`)
   server.close()
