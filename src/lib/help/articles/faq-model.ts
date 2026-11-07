@@ -48,4 +48,65 @@ export const FAQ_MODEL_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.3.1',
     reviewedAt: '2026-10-30',
   },
+  {
+    id: 'faq-multi-protocol',
+    revision: 1,
+    title: '怎么接入 Anthropic Claude / Google Gemini / OpenAI Responses',
+    summary: '3.4.2 起模型配置可直接选这三家官方端点；地址、密钥、模型清单与结构化输出在这里说清。',
+    aliases: ['Claude 配置', 'Gemini 配置', 'Responses 配置', 'x-api-key', 'x-goog-api-key', '多协议', '官方端点'],
+    keywords: ['Anthropic', 'Claude', 'Gemini', 'Responses', 'x-api-key', 'x-goog-api-key', '结构化输出', '模型清单', 'embedding', 'CORS'],
+    group: '常见问题与任务教程',
+    tabIds: ['model-settings'],
+    availability: 'all',
+    aiRequirement: 'none',
+    sections: [
+      {
+        id: 'choose',
+        heading: '在模型配置里直接选官方端点',
+        body: [
+          '打开「模型设置 → 模型配置 → 添加联网模型」，平台预设里会多出 **Anthropic Claude**、**Google Gemini**、**OpenAI Responses** 三条。选中后地址会自动填好，密钥与模型名按下面填写即可。',
+          '它们与原本的 OpenAI 兼容预设共用同一份模型配置；已有模型不会因为升级被改动，旧配置仍然按原协议工作。',
+        ],
+      },
+      {
+        id: 'anthropic',
+        heading: 'Anthropic Claude',
+        body: [
+          '地址填 `https://api.anthropic.com`，接口是 `/v1/messages`。密钥填在「API 密钥（x-api-key）」；软件会自动带上版本头，不需要你手填。',
+          '模型清单可以点「获取可用模型」自动拉取（`/v1/models`），也可以手动填写。已退役的模型不会列出来。',
+          '结构化输出：先在「结构化输出能力」里确认该端点支持，之后 JSON schema 任务才会下发 `output_config.format`；默认不确认时只靠提示词约束，不会贸然下发。Anthropic 本版不提供 embedding 接口，语义索引请另选 Gemini / OpenAI / Ollama。',
+        ],
+      },
+      {
+        id: 'gemini',
+        heading: 'Google Gemini',
+        body: [
+          '地址填 `https://generativelanguage.googleapis.com`，接口走 `generateContent`；流式走独立的 `streamGenerateContent` 端点。密钥填在「API 密钥（x-goog-api-key）」。',
+          '模型清单可以自动拉取（`/v1beta/models`），只列出支持 `generateContent` 的模型。结构化输出确认后下发 `responseMimeType` 与 `responseJsonSchema`。',
+          '语义索引可用 Gemini 的 `batchEmbedContents`：在「语义检索」里选同一个 Gemini 模型，嵌入模型名填类似 `gemini-embedding-001` 的名称即可。',
+        ],
+      },
+      {
+        id: 'responses',
+        heading: 'OpenAI Responses',
+        body: [
+          '地址填 `https://api.openai.com/v1`，接口是 `/v1/responses`，密钥用 Bearer（与 OpenAI Chat Completions 同一份密钥）。它和「OpenAI」预设是两套格式，不要混选。',
+          '结构化输出确认后下发 `text.format`；模型清单仍走 `/models`，语义索引仍走 `/embeddings`。',
+        ],
+      },
+      {
+        id: 'web',
+        heading: '网页版的限制',
+        body: [
+          '网页版是**浏览器直连厂商**：能不能用取决于厂商是否允许当前网站来源跨域（CORS），以及浏览器是否放行。本版没有新增服务端代理，因此**未通过 CORS 实测的协议不保证网页可用**。',
+          '密钥由你自己提供，在网页形态下浏览器可见；这是既有边界，本版没有改变。桌面版与便携版不受这条 CORS 限制。',
+          '本版未接入 Amazon Bedrock 与厂商私有协议；接入前请以厂商当期官方文档为准。',
+        ],
+      },
+    ],
+    related: ['faq-web-local-model', 'faq-model-gray'],
+    actions: [{ label: '打开模型设置', tabId: 'model-settings' }],
+    verifiedAgainst: '3.4.2',
+    reviewedAt: '2026-11-07',
+  },
 ]

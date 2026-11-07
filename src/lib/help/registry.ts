@@ -25,7 +25,7 @@ import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
 import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-export const CONTENT_VERSION = 6
+export const CONTENT_VERSION = 7
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.4.2'
