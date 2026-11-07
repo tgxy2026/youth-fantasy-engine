@@ -14,7 +14,7 @@ import type { AIProvider, ChatMessage } from '@/lib/aiCore/core'
 import {
   fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled,
   AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, AIStreamStalledError,
-  describeApiError, AIRefusalError,
+  describeApiError, AIRefusalError, listOpenAIModels,
   type SseLineOutcome, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
@@ -178,4 +178,5 @@ export const responsesDriver: ChatDriver = defineDriver({
   structuredWire: true,
   parseStreamLine: responsesStreamParser,
   chat: responsesChat,
+  listModels: config => listOpenAIModels(config),
 })

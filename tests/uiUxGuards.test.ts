@@ -162,8 +162,8 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('🔴 向导的平台预设直接取自共享常量 LOCAL_PRESETS / ONLINE_PRESETS（同源，改一处即可）',
     /const cloudPresets:\s*PlatformPreset\[\]\s*=\s*ONLINE_PRESETS/.test(wa)
     && /const localPresets:\s*PlatformPreset\[\]\s*=\s*LOCAL_PRESETS/.test(wa))
-  ok('🔴 向导接了云端端点拉取模型清单（listOpenAIModels），不只是本地 Ollama',
-    /listOpenAIModels/.test(wa))
+  ok('🔴 向导接了统一模型清单入口（listModelsFor），不只是本地 Ollama',
+    /listModelsFor\(/.test(wa))
   ok('🔴 「获取模型列表」按钮对所有平台可见（不再用 isOllama 包住按钮）',
     /获取模型列表/.test(wa) && !/\{isOllama && \(\s*<Button[\s\S]{0,120}获取本地模型/.test(wa))
 }

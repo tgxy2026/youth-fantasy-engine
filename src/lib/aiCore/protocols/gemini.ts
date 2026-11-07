@@ -27,6 +27,37 @@ function geminiBaseOf(raw: string): string {
   return /\/v1(beta)?\d*$/.test(base) ? base : `${base}/v1beta`
 }
 
+/** GET /v1beta/models：取支持 generateContent 的模型（去掉 `models/` 前缀） */
+export async function listGeminiModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+  const base = geminiBaseOf(config.baseUrl || '')
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。Gemini 官方地址为 https://generativelanguage.googleapis.com。')
+  if (!config.apiKey.trim()) throw new Error('未填写 Gemini API 密钥（x-goog-api-key）。')
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${base}/models`, {
+      headers: mergeHeaders({ 'x-goog-api-key': config.apiKey }, config.headers),
+    }, 10_000)
+  } catch (e) {
+    if (isAbortError(e)) throw new Error('获取 Gemini 模型列表超时（10 秒）：请检查接口地址与网络。')
+    throw new Error('无法连接 Gemini：请检查接口地址与网络；网页版还可能受到浏览器跨域（CORS）限制。')
+  }
+  if (!res.ok) throw new Error(describeApiError(res.status, await res.text().catch(() => '')))
+  const data = await res.json().catch(() => ({}))
+  const rows = Array.isArray(data?.models) ? data.models as { name?: unknown; supportedGenerationMethods?: unknown }[] : []
+  return rows
+    .filter(r => {
+      if (!r || typeof r !== 'object') return false
+      const methods = r.supportedGenerationMethods
+      // 字段缺失时保留（老接口兼容）；有字段时必须明确支持 generateContent
+      return !Array.isArray(methods) || methods.includes('generateContent')
+    })
+    .map(r => {
+      const name = typeof r.name === 'string' ? r.name : ''
+      return name.startsWith('models/') ? name.slice('models/'.length) : name
+    })
+    .filter(Boolean)
+}
+
 interface GeminiPart { text?: unknown }
 interface GeminiContent { role?: string; parts?: GeminiPart[] }
 interface GeminiCandidate { content?: GeminiContent; finishReason?: unknown }
@@ -187,4 +218,5 @@ export const geminiDriver: ChatDriver = defineDriver({
   structuredWire: true,
   parseStreamLine: geminiStreamParser,
   chat: geminiChat,
+  listModels: config => listGeminiModels(config),
 })

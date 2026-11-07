@@ -34,7 +34,7 @@ import {
   type AIProvider, type AITestResult, type PlatformPreset,
   LOCAL_PRESETS, ONLINE_PRESETS, LOCAL_OPENAI_PRESETS, providerFromPreset, OPENCODE_GO_BASE,
   headersForPresetSwitch,
-  listOllamaModels, listOpenAIModels, testProvider,
+  listOllamaModels, listModelsFor, testProvider,
   loadProviders, saveProviders, loadActiveId, saveActiveId, typeLabel,
   TASK_ROLES, ROLE_LABEL, ROLE_HINT, DEFAULT_ROUTING, loadRouting, saveRouting, rolesOf,
   type TaskRole, type RoutingMap,
@@ -222,12 +222,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     }
   }
 
-  /** 2.5.2：拉 OpenAI 兼容端点（官方 / 中转站 / 本地兼容服务）的可用模型清单。失败只报原因，不破坏手动填写。 */
-  const fetchOpenAIModels = async () => {
+  /** 3.4.2：按线协议拉取可用模型清单（Ollama / OpenAI / Anthropic / Gemini / Responses 各自端点）。失败只报原因，不破坏手动填写。 */
+  const fetchModelsForProtocol = async () => {
     if (!editing) return
     setFetchingOpenAI(true)
     try {
-      const models = await listOpenAIModels(editing)
+      const models = await listModelsFor(editing)
       setOpenaiModels(models)
       if (models.length === 0) {
         setEditResult(fail('端点已连通，但模型列表为空：请核对该接口地址是否正确，或手动填写模型名。'))
@@ -717,13 +717,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
                     <div className="flex gap-2">
                       <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder={protocolOf(editing) === 'anthropic' ? 'https://api.anthropic.com' : protocolOf(editing) === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.deepseek.com/v1'} />
-                      {(protocolOf(editing) !== 'anthropic' && protocolOf(editing) !== 'gemini') && (
-                        <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
-                      )}
+                      <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchModelsForProtocol()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（Ollama / OpenAI / Anthropic / Gemini / Responses 均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
                     </div>
-                    {(protocolOf(editing) === 'anthropic' || protocolOf(editing) === 'gemini') && (
-                      <p className="text-11 text-ink-500 mt-1">该协议暂不支持自动拉取模型清单，请手动填写模型名。</p>
-                    )}
                   </div>
                   {/* 3.1.1 第 4 项 · 自定义请求头：给「要求额外请求头才认」的订阅 / 网关用
                       （代表场景：OpenCode Go 的 x-opencode-session，缺了直接 400）。

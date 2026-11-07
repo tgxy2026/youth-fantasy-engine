@@ -49,6 +49,32 @@ export function anthropicStreamParser(payload: string): SseLineOutcome | null {
   return null
 }
 
+/** GET /v1/models：取可用模型（过滤已退役 lifecycle=retired） */
+export async function listAnthropicModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+  const base = anthropicBaseOf(config.baseUrl || '')
+  if (!base) throw new Error('未填写 API 接口地址（baseUrl）。Anthropic 官方地址为 https://api.anthropic.com。')
+  if (!config.apiKey.trim()) throw new Error('未填写 Anthropic API 密钥（x-api-key）。')
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${base}/models`, {
+      headers: mergeHeaders({
+        'x-api-key': config.apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+      }, config.headers),
+    }, 10_000)
+  } catch (e) {
+    if (isAbortError(e)) throw new Error('获取 Anthropic 模型列表超时（10 秒）：请检查接口地址与网络。')
+    throw new Error('无法连接 Anthropic：请检查接口地址与网络；网页版还可能受到浏览器跨域（CORS）限制。')
+  }
+  if (!res.ok) throw new Error(describeApiError(res.status, await res.text().catch(() => '')))
+  const data = await res.json().catch(() => ({}))
+  const rows = Array.isArray(data?.data) ? data.data as { id?: unknown; lifecycle?: unknown }[] : []
+  return rows
+    .filter(r => r && typeof r === 'object' && r.lifecycle !== 'retired')
+    .map(r => (typeof r.id === 'string' ? r.id.trim() : ''))
+    .filter(Boolean)
+}
+
 interface AnthropicChunk {
   type?: string
   delta?: { type?: string; text?: unknown; stop_reason?: unknown }
@@ -185,4 +211,5 @@ export const anthropicDriver: ChatDriver = defineDriver({
   structuredWire: 'json-schema',
   parseStreamLine: anthropicStreamParser,
   chat: anthropicChat,
+  listModels: config => listAnthropicModels(config),
 })

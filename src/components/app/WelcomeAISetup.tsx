@@ -24,7 +24,7 @@ import AIDisabledNotice from '@/components/ai/AIDisabledNotice'
 import { showToast } from '@/components/dialogs/dialogs'
 import {
   type AIProvider, type AITestResult, type PlatformPreset,
-  testProvider, providerFromPreset, listOllamaModels, listOpenAIModels,
+  testProvider, providerFromPreset, listModelsFor,
   loadProviders, saveProviders, saveActiveId,
   LOCAL_PRESETS, ONLINE_PRESETS, protocolOf,
 } from '@/lib/ai'
@@ -84,17 +84,9 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
    */
   const fetchModels = async () => {
     if (!draft) return
-    const proto = protocolOf(draft)
-    // 🔴 3.4.2：Anthropic / Gemini 的模型清单端点与 OpenAI 不同，本版未接入 —— 如实提示手填
-    if (proto === 'anthropic' || proto === 'gemini') {
-      setResult({ ok: false, latencyMs: 0, loadMs: 0, reply: '', error: '该协议暂不支持自动拉取模型清单，请手动填写模型名。' })
-      return
-    }
     setFetching(true)
     try {
-      const list = proto === 'ollama'
-        ? await listOllamaModels(draft.baseUrl)
-        : await listOpenAIModels(draft)
+      const list = await listModelsFor(draft)
       setModels(list)
       if (list.length === 0) {
         setResult({
@@ -158,7 +150,6 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
   const isLocalOpenAI = !!draft && protocolOf(draft) === 'openai-chat' && !!draft.local
   const isOllama = !!draft && protocolOf(draft) === 'ollama'
   const proto = draft ? protocolOf(draft) : 'openai-chat'
-  const canFetchModels = proto === 'ollama' || proto === 'openai-chat' || proto === 'openai-responses'
 
   return (
     <div className="space-y-5">
@@ -239,19 +230,15 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                     placeholder={isOllama ? 'http://localhost:11434' : proto === 'anthropic' ? 'https://api.anthropic.com' : proto === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.deepseek.com/v1'}
                     className="w-full text-12 font-mono"
                   />
-                  {canFetchModels ? (
-                    <Button
-                      variant="secondary" size="sm" onClick={fetchModels}
-                      disabled={fetching || !draft.baseUrl.trim()}
-                      className="shrink-0"
-                      title="按当前接口地址拉取该端点可用的模型清单（本地 Ollama / 官方平台 / 中转站 / 本地兼容服务均支持）"
-                    >
-                      {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      {fetching ? '获取中…' : '获取模型列表'}
-                    </Button>
-                  ) : (
-                    <span className="shrink-0 self-center text-11 text-ink-500">请手动填写模型名</span>
-                  )}
+                  <Button
+                    variant="secondary" size="sm" onClick={fetchModels}
+                    disabled={fetching || !draft.baseUrl.trim()}
+                    className="shrink-0"
+                    title="按当前接口地址拉取该端点可用的模型清单（Ollama / OpenAI / Anthropic / Gemini / Responses 均支持）"
+                  >
+                    {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {fetching ? '获取中…' : '获取模型列表'}
+                  </Button>
                 </div>
               </div>
 

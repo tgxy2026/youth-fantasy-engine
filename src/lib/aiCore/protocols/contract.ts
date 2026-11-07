@@ -87,6 +87,8 @@ export interface ChatDriver {
   structuredWire: boolean | 'json-schema'
   /** 流式单行解析器；非流式协议可省略 */
   parseStreamLine?: SseLineParser
+  /** 拉取该协议的可用模型清单（配置界面用）；未实现由调用方如实报错 */
+  listModels?: (config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>) => Promise<string[]>
   /** 发一次逻辑调用（含协议自身的兼容降级） */
   chat(config: AIProvider, messages: ChatMessage[], o: DriverCallOpts): Promise<DriverResult>
 }

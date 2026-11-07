@@ -43,6 +43,8 @@ export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from '@/
 // 3.4.2 · 线协议判据与类型（新协议接入层共用；门面显式再导出，禁 export *）
 export { protocolOf, WIRE_PROTOCOL_LABELS, isOllamaProtocol } from '@/lib/aiCore/protocol'
 export type { WireProtocol } from '@/lib/aiCore/protocol'
+// 3.4.2 · 统一模型清单入口（按线协议分流，不静默退回 OpenAI /models）
+export { listModelsFor } from '@/lib/aiCore/protocols'
 
 // ---- 补全提示词语境 ----
 export type { FillContext } from '@/lib/aiCore/prompts'

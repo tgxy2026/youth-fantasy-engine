@@ -6,7 +6,7 @@ import http from 'node:http'
 import { chat } from '../src/lib/aiCore/chat'
 import { isCancelled } from '../src/lib/aiCore/transport'
 import { protocolOf } from '../src/lib/aiCore/protocol'
-import { driverFor } from '../src/lib/aiCore/protocols'
+import { driverFor, listModelsFor } from '../src/lib/aiCore/protocols'
 import type { AIProvider } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
@@ -50,6 +50,26 @@ const server = http.createServer((req, res) => {
       res.end()
     }
 
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        data: [
+          { id: 'claude-active', lifecycle: 'active' },
+          { id: 'claude-retired', lifecycle: 'retired' },
+        ],
+      }))
+      return
+    }
+    if (req.method === 'GET' && req.url === '/v1beta/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        models: [
+          { name: 'models/gemini-a', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/text-embedding', supportedGenerationMethods: ['embedContent'] },
+        ],
+      }))
+      return
+    }
     if (mode === 'parity-anthropic') {
       if (lastBody.stream === true) {
         return stream([
@@ -341,6 +361,17 @@ async function run(): Promise<void> {
   await chat(providerOf('openai-chat'), parityMsgs, { timeoutMs: 5000, onToken: t => oParts.push(t) })
   ok('B 类长文流式：跨协议片段拼接一致',
     aParts.join('') === oParts.join('') && aParts.join('') === '第一段第二段', `${aParts.join('|')} / ${oParts.join('|')}`)
+
+  // ---------- 模型清单：按协议走各自端点 ----------
+  const aModels = await listModelsFor(providerOf('anthropic'))
+  ok('Anthropic 模型清单：GET /v1/models，过滤 retired', JSON.stringify(aModels) === JSON.stringify(['claude-active']), JSON.stringify(aModels))
+  ok('Anthropic 模型清单：带 x-api-key + anthropic-version',
+    lastHeaders['x-api-key'] === 'test-key' && typeof lastHeaders['anthropic-version'] === 'string')
+
+  const gModels = await listModelsFor(providerOf('gemini'))
+  ok('Gemini 模型清单：GET /v1beta/models，过滤非 generateContent 并去前缀',
+    JSON.stringify(gModels) === JSON.stringify(['gemini-a']), JSON.stringify(gModels))
+  ok('Gemini 模型清单：带 x-goog-api-key', lastHeaders['x-goog-api-key'] === 'test-key')
 
   // ---------- 未登记协议 ----------
   const bogus = { ...providerOf('openai-chat'), protocol: 'bogus' } as unknown as AIProvider

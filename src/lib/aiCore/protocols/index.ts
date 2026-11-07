@@ -6,6 +6,8 @@
  */
 
 import type { WireProtocol } from '@/lib/aiCore/protocol'
+import { protocolOf } from '@/lib/aiCore/protocol'
+import type { AIProvider } from '@/lib/aiCore/core'
 import type { ChatDriver } from '@/lib/aiCore/protocols/contract'
 import { ollamaDriver } from '@/lib/aiCore/protocols/ollama'
 import { openaiChatDriver } from '@/lib/aiCore/protocols/openaiChat'
@@ -34,4 +36,17 @@ export function registerDriver(driver: ChatDriver): void {
 /** 已登记的 driver（配置界面 / 诊断用） */
 export function registeredDrivers(): ChatDriver[] {
   return Object.values(REGISTRY).filter((d): d is ChatDriver => !!d)
+}
+
+/**
+ * 统一模型清单入口（3.4.2）：按 provider 的线协议找对应 driver。
+ * 未接入的协议明确报错，不静默退回 OpenAI 的 /models。
+ */
+export async function listModelsFor(config: AIProvider): Promise<string[]> {
+  const protocol = protocolOf(config)
+  const driver = driverFor(protocol)
+  if (!driver?.listModels) {
+    throw new Error(`暂不支持拉取该线协议（${protocol}）的模型清单。`)
+  }
+  return driver.listModels(config)
 }

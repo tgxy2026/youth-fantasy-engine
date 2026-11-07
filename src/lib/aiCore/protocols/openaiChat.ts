@@ -10,7 +10,7 @@ import {
   fetchWithTimeout, readSSE, secs, openaiBaseOf, describeApiError, AIRefusalError,
   isRefusalStatus, looksLikeSafetyMessage, looksLikeRefusalText, extractPlatformMessage,
   isAbortError, isCancelled, AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, stripThink,
-  AIStreamStalledError, type SseChunk, type StreamReport,
+  AIStreamStalledError, listOpenAIModels, type SseChunk, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromOpenAI, usageFromStreamChunk, type RealUsage } from '@/lib/aiCore/usageParse'
@@ -211,4 +211,5 @@ export const openaiChatDriver: ChatDriver = defineDriver({
   usageSource: 'openai',
   structuredWire: true,
   chat: openaiChat,
+  listModels: config => listOpenAIModels(config),
 })

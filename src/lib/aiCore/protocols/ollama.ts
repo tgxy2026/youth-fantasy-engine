@@ -9,7 +9,7 @@ import { OLLAMA_DEFAULT_URL, type AIProvider, type ChatMessage } from '@/lib/aiC
 import {
   fetchWithTimeout, readSSE, secs, stripSlash, stripThink, isAbortError, isCancelled,
   AICancelled, isStreamStalled, STREAM_IDLE_TIMEOUT_MS, withWebLocalConnectionHint,
-  AIStreamStalledError, type SseChunk, type StreamReport,
+  AIStreamStalledError, listOllamaModels, type SseChunk, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeUsage, usageFromOllama, usageFromStreamChunk, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
@@ -141,4 +141,5 @@ export const ollamaDriver: ChatDriver = defineDriver({
   usageSource: 'ollama',
   structuredWire: true,
   chat: ollamaChat,
+  listModels: config => listOllamaModels(config.baseUrl),
 })
