@@ -8,6 +8,7 @@ import { isCancelled } from '../src/lib/aiCore/transport'
 import { protocolOf } from '../src/lib/aiCore/protocol'
 import { driverFor, listModelsFor, capabilitiesOfProtocol } from '../src/lib/aiCore/protocols'
 import type { AIProvider } from '../src/lib/aiCore/core'
+import { OLLAMA_PRESET, ONLINE_PRESETS, providerFromPreset } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -200,6 +201,22 @@ async function run(): Promise<void> {
     }))
   ok('能力声明：Anthropic 无 embedding', capabilitiesOfProtocol('anthropic')?.embedding === false)
   ok('能力声明：Ollama 是本地额度', capabilitiesOfProtocol('ollama')?.quota === 'local')
+
+  // ---------- 预设写入侧：protocol 与旧存储键 ----------
+  const presetOf = (label: string) => ONLINE_PRESETS.find(p => p.label === label)!
+  const anth = providerFromPreset(presetOf('Anthropic Claude'))
+  ok('预设写入：Anthropic protocol + 旧存储键 type=openai + 非本地',
+    anth.protocol === 'anthropic' && anth.type === 'openai' && anth.local === false,
+    `${anth.protocol}/${anth.type}/${anth.local}`)
+  const gem = providerFromPreset(presetOf('Google Gemini'))
+  ok('预设写入：Gemini protocol', gem.protocol === 'gemini' && gem.type === 'openai')
+  const resp = providerFromPreset(presetOf('OpenAI Responses'))
+  ok('预设写入：Responses protocol', resp.protocol === 'openai-responses' && resp.type === 'openai')
+  const olla = providerFromPreset(OLLAMA_PRESET)
+  ok('预设写入：Ollama protocol=ollama',
+    olla.protocol === 'ollama' && olla.type === 'ollama' && olla.local === true)
+  const custom = providerFromPreset(presetOf('自定义'))
+  ok('预设写入：自定义默认 openai-chat', custom.protocol === 'openai-chat' && custom.type === 'openai')
 
   // ---------- Anthropic ----------
   mode = 'anthropic-json'
