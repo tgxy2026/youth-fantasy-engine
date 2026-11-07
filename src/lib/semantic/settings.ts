@@ -82,7 +82,11 @@ export async function resolveEmbedConfig(
   const model = set.model.trim() || p.model
   if (!model) return null
   if (!(p.baseUrl ?? '').trim()) return null
-  return { type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey, model, headers: p.headers }
+  const proto = protocolOf(p)
+  // Anthropic 不提供 embedding 接口；Responses 走 OpenAI /embeddings
+  const type = proto === 'ollama' ? 'ollama' : proto === 'gemini' ? 'gemini' : proto === 'anthropic' ? null : 'openai'
+  if (!type) return null
+  return { type, baseUrl: p.baseUrl, apiKey: p.apiKey, model, headers: p.headers }
 }
 
 export interface EmbeddingStatus {
@@ -112,9 +116,9 @@ export async function embeddingStatus(
   if (!model) return { ready: false, reason: '未填写嵌入模型名', label: '' }
   if (!(p.baseUrl ?? '').trim()) return { ready: false, reason: '所选的模型缺少接口地址', label: '' }
   const proto = protocolOf(p)
-  // 🔴 3.4.2：新线协议暂不接入 embedding 旁路（规划明确列为未覆盖）—— 如实提示，不发错端点
-  if (proto !== 'ollama' && proto !== 'openai-chat') {
-    return { ready: false, reason: '该线协议暂不支持语义索引（3.4.2 未覆盖），请改用 Ollama 或 OpenAI 兼容模型做嵌入', label: '' }
+  // 🔴 3.4.2：Anthropic 未提供 embedding 接口；Gemini / Responses / 旧两通道可用
+  if (proto === 'anthropic') {
+    return { ready: false, reason: 'Anthropic 未提供 embedding 接口，请改用 Gemini / OpenAI / Ollama 做嵌入', label: '' }
   }
   const where = proto === 'ollama' || p.local ? '本地' : '联网'
   return { ready: true, reason: '', label: `${where} · ${model}` }

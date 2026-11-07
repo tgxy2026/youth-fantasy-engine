@@ -17,7 +17,8 @@ import { fetchWithTimeout, isCancelled, openaiBaseOf } from '@/lib/aiCore/transp
 import { mergeHeaders } from '@/lib/aiCore/headers'
 
 export interface EmbedConfig {
-  type: 'ollama' | 'openai'
+  /** 3.4.2：新增 gemini；anthropic 不提供 embedding 接口，不会出现在这里 */
+  type: 'ollama' | 'openai' | 'gemini'
   /** Ollama 默认 http://localhost:11434；OpenAI 兼容填到 …/v1 之类前缀 */
   baseUrl: string
   apiKey?: string
@@ -57,13 +58,22 @@ function stripSlash(s: string): string {
  */
 export function embedBaseOf(cfg: Pick<EmbedConfig, 'type' | 'baseUrl'>): string {
   if (cfg.type === 'ollama') return stripSlash(cfg.baseUrl)
+  if (cfg.type === 'gemini') {
+    const base = stripSlash(cfg.baseUrl)
+    return /\/v1(beta)?\d*$/.test(base) ? base : `${base}/v1beta`
+  }
   const base = openaiBaseOf(cfg.baseUrl)
   return base.endsWith('/embeddings') ? stripSlash(base.slice(0, -'/embeddings'.length)) : base
 }
 
-/** 嵌入端点路径（纯函数，便于单测钉住两种平台的差异） */
-export function embedPath(cfg: Pick<EmbedConfig, 'type' | 'baseUrl'>): string {
-  return cfg.type === 'ollama' ? `${embedBaseOf(cfg)}/api/embed` : `${embedBaseOf(cfg)}/embeddings`
+/** 嵌入端点路径（纯函数，便于单测钉住各平台的差异） */
+export function embedPath(cfg: Pick<EmbedConfig, 'type' | 'baseUrl'> & { model?: string }): string {
+  if (cfg.type === 'ollama') return `${embedBaseOf(cfg)}/api/embed`
+  if (cfg.type === 'gemini') {
+    const model = (cfg.model ?? '').trim().replace(/^models\//, '')
+    return `${embedBaseOf(cfg)}/models/${encodeURIComponent(model)}:batchEmbedContents`
+  }
+  return `${embedBaseOf(cfg)}/embeddings`
 }
 
 /** 配置是否填全（缺一不可）。不完整时连请求都不发 —— 与 `precheck` 同思路 */
@@ -72,6 +82,7 @@ export function embedConfigError(cfg: EmbedConfig | null | undefined): string {
   if (!stripSlash(cfg.baseUrl)) return '嵌入模型缺少接口地址'
   if (!(cfg.model ?? '').trim()) return '嵌入模型缺少模型名'
   // 非本机的 OpenAI 兼容端必须有密钥；ollama 与 local 走免密钥
+  if (cfg.type === 'gemini' && !(cfg.apiKey ?? '').trim()) return 'Gemini 嵌入模型缺少 API 密钥'
   if (cfg.type === 'openai' && !(cfg.apiKey ?? '').trim()) {
     const host = embedBaseOf(cfg)
     const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(host)
@@ -88,6 +99,21 @@ export function embedConfigError(cfg: EmbedConfig | null | undefined): string {
 export function buildEmbedRequest(cfg: EmbedConfig, texts: string[]): { url: string; init: RequestInit } {
   const url = embedPath(cfg)
   const clipped = texts.map(t => (t ?? '').slice(0, EMBED_TEXT_CAP))
+  // 3.4.2 · Gemini：官方 batchEmbedContents（requests[].content.parts[].text）
+  if (cfg.type === 'gemini') {
+    const model = (cfg.model ?? '').trim().replace(/^models\//, '')
+    const headers = mergeHeaders({
+      'Content-Type': 'application/json',
+      ...(cfg.apiKey ? { 'x-goog-api-key': cfg.apiKey } : {}),
+    }, cfg.headers)
+    const body = {
+      requests: clipped.map(text => ({
+        model: `models/${model}`,
+        content: { parts: [{ text }] },
+      })),
+    }
+    return { url, init: { method: 'POST', headers, body: JSON.stringify(body) } }
+  }
   // 与对话链路同一出口：自定义头走 mergeHeaders（合法名放行、浏览器禁止的头不静默丢弃）。
   // 🔴 口径与 `aiCore/chat.ts` 对齐：自定义头**只对 OpenAI 兼容端点有意义** ——
   //    Ollama 原生走 `/api/embed`，不认这套头；模型配置界面也只在 `type !== 'ollama'`
@@ -117,6 +143,16 @@ export function parseEmbedResponse(type: EmbedConfig['type'], json: unknown): nu
     const arr = o.embeddings
     if (!Array.isArray(arr)) return null
     const out = arr.map(v => (Array.isArray(v) ? v.map(n => Number(n)) : null))
+    return out.every(Array.isArray) ? (out as number[][]) : null
+  }
+  // 3.4.2 · Gemini：`{ embeddings: [{ values: number[] }] }`
+  if (type === 'gemini') {
+    const arr = o.embeddings
+    if (!Array.isArray(arr)) return null
+    const out = arr.map(v => {
+      const values = (v as { values?: unknown } | null)?.values
+      return Array.isArray(values) ? values.map(n => Number(n)) : null
+    })
     return out.every(Array.isArray) ? (out as number[][]) : null
   }
   const data = o.data
