@@ -243,8 +243,10 @@ export async function chat(config: AIProvider, messages: ChatMessage[], opts: Ch
   if (!driver) {
     throw new Error(`暂不支持该线协议（${wireProtocol}）：请到「模型设置 → 模型配置」改选已支持的协议，或升级到包含该协议的新版本。`)
   }
-  // 3.4.2：新协议本版未接入厂商结构化字段 ⇒ 实际下发降为 none，账本如实记录
-  const effectiveWireFormat = driver.structuredWire ? wireFormat : 'none'
+  // 3.4.2：按 driver 能力决定实际下发到哪一档（Anthropic 只支持 json-schema）
+  const canWire = driver.structuredWire === true
+    || (driver.structuredWire === 'json-schema' && wireFormat === 'json-schema')
+  const effectiveWireFormat = canWire ? wireFormat : 'none'
   const limitations = effectiveWireFormat === wireFormat
     ? protocol.limitations
     : [...protocol.limitations, '该线协议本版未接入结构化输出字段：本次只靠提示词约束。']

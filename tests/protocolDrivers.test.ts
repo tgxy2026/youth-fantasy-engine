@@ -22,11 +22,13 @@ type Mode = 'anthropic-json' | 'anthropic-stream' | 'anthropic-error' | 'anthrop
   | 'gemini-json' | 'gemini-stream' | 'gemini-blocked'
   | 'responses-json' | 'responses-stream' | 'responses-failed'
   | 'legacy-ollama' | 'legacy-openai'
+  | 'parity-anthropic' | 'parity-openai'
 
 let mode: Mode = 'anthropic-json'
 let lastUrl = ''
 let lastHeaders: http.IncomingHttpHeaders = {}
 let lastBody: Record<string, unknown> = {}
+const sent: { url: string; body: Record<string, unknown> }[] = []
 let hits = 0
 
 const server = http.createServer((req, res) => {
@@ -37,6 +39,7 @@ const server = http.createServer((req, res) => {
     lastUrl = req.url ?? ''
     lastHeaders = req.headers
     try { lastBody = JSON.parse(raw) as Record<string, unknown> } catch { lastBody = {} }
+    sent.push({ url: lastUrl, body: lastBody })
     const json = (obj: unknown) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(obj))
@@ -47,6 +50,26 @@ const server = http.createServer((req, res) => {
       res.end()
     }
 
+    if (mode === 'parity-anthropic') {
+      if (lastBody.stream === true) {
+        return stream([
+          anthEvent('content_block_delta', { type: 'content_block_delta', delta: { type: 'text_delta', text: '第一段' } }),
+          anthEvent('content_block_delta', { type: 'content_block_delta', delta: { type: 'text_delta', text: '第二段' } }),
+          anthEvent('message_stop', { type: 'message_stop' }),
+        ])
+      }
+      return json({ content: [{ type: 'text', text: '{"a":1}' }], usage: { input_tokens: 1, output_tokens: 1 } })
+    }
+    if (mode === 'parity-openai') {
+      if (lastBody.stream === true) {
+        return stream([
+          sse({ choices: [{ delta: { content: '第一段' } }] }),
+          sse({ choices: [{ delta: { content: '第二段' } }] }),
+          'data: [DONE]\n\n',
+        ])
+      }
+      return json({ choices: [{ message: { content: '{"a":1}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } })
+    }
     if (mode === 'legacy-ollama') {
       return json({ message: { content: '旧版' }, done: true, prompt_eval_count: 1, eval_count: 1 })
     }
@@ -248,11 +271,76 @@ async function run(): Promise<void> {
   try { await pending } catch (e) { cancelled = isCancelled(e); cancelErr = `${(e as Error)?.name}: ${String((e as Error)?.message)}` }
   ok('Anthropic 流式中途取消 ⇒ AICancelled', cancelled, cancelErr)
 
-  // ---------- 结构化能力已确认也不向新协议下发字段 ----------
+  // ---------- 结构化能力已确认：按官方字段下发 ----------
   mode = 'gemini-json'
   await chat({ ...providerOf('gemini'), structuredOutput: 'json-object' }, msgs, { timeoutMs: 5000, output: 'json-object' })
   const gen = (lastBody.generationConfig as Record<string, unknown>) ?? {}
-  ok('Gemini 即使 provider 确认结构能力，本版也不下发 responseMimeType', !('responseMimeType' in gen), JSON.stringify(gen))
+  ok('Gemini 确认 json-object 能力后下发 responseMimeType', gen.responseMimeType === 'application/json', JSON.stringify(gen))
+
+  const schema = {
+    type: 'object',
+    properties: { name: { type: 'string' } },
+    required: ['name'],
+    additionalProperties: false,
+  }
+
+  mode = 'parity-anthropic'
+  await chat({ ...providerOf('anthropic'), structuredOutput: 'json-schema' }, msgs, { timeoutMs: 5000, output: 'json-schema', schema })
+  const aStruct = (sent[sent.length - 1].body.output_config as { format?: { type?: string; schema?: unknown } } | undefined)?.format
+  ok('Anthropic json-schema ⇒ output_config.format', aStruct?.type === 'json_schema' && JSON.stringify(aStruct?.schema) === JSON.stringify(schema), JSON.stringify(aStruct))
+
+  mode = 'parity-anthropic'
+  await chat({ ...providerOf('anthropic'), structuredOutput: 'json-object' }, msgs, { timeoutMs: 5000, output: 'json-object' })
+  ok('Anthropic json-object 不下发（该协议只支持带 schema 的格式）', !('output_config' in sent[sent.length - 1].body))
+
+  mode = 'gemini-json'
+  await chat({ ...providerOf('gemini'), structuredOutput: 'json-schema' }, msgs, { timeoutMs: 5000, output: 'json-schema', schema })
+  const gStruct = (sent[sent.length - 1].body.generationConfig as Record<string, unknown>) ?? {}
+  ok('Gemini json-schema ⇒ responseMimeType + responseJsonSchema',
+    gStruct.responseMimeType === 'application/json' && JSON.stringify(gStruct.responseJsonSchema) === JSON.stringify(schema), JSON.stringify(gStruct))
+
+  mode = 'responses-json'
+  await chat({ ...providerOf('openai-responses'), structuredOutput: 'json-schema' }, msgs, { timeoutMs: 5000, output: 'json-schema', schema })
+  const rStruct = (sent[sent.length - 1].body.text as { format?: { type?: string; schema?: unknown } } | undefined)?.format
+  ok('Responses json-schema ⇒ text.format', rStruct?.type === 'json_schema' && JSON.stringify(rStruct?.schema) === JSON.stringify(schema), JSON.stringify(rStruct))
+
+  mode = 'responses-json'
+  await chat({ ...providerOf('openai-responses'), structuredOutput: 'json-object' }, msgs, { timeoutMs: 5000, output: 'json-object' })
+  const rStruct2 = (sent[sent.length - 1].body.text as { format?: { type?: string } } | undefined)?.format
+  ok('Responses json-object ⇒ text.format json_object', rStruct2?.type === 'json_object', JSON.stringify(rStruct2))
+
+  // ---------- 三类抽样：提示词内容与解析键名不因协议变化 ----------
+  const parityMsgs = [
+    { role: 'system' as const, content: '固定系统规则' },
+    { role: 'user' as const, content: '第一问' },
+    { role: 'assistant' as const, content: '第一答' },
+    { role: 'user' as const, content: '第二问' },
+  ]
+  mode = 'parity-anthropic'
+  const aOut = await chat(providerOf('anthropic'), parityMsgs, { timeoutMs: 5000, output: 'json-object' })
+  const aReq = sent[sent.length - 1]
+  mode = 'parity-openai'
+  const oOut = await chat(providerOf('openai-chat'), parityMsgs, { timeoutMs: 5000, output: 'json-object' })
+  const oReq = sent[sent.length - 1]
+  const aMsgs = (aReq.body.messages ?? []) as { role: string; content: string }[]
+  const oMsgs = (oReq.body.messages ?? []) as { role: string; content: string }[]
+  const oRest = oMsgs.filter(m => m.role !== 'system')
+  ok('A 类 JSON：同一请求跨协议返回相同文本', aOut === oOut && aOut === '{"a":1}', `${aOut} / ${oOut}`)
+  ok('A 类 JSON：system 内容逐字一致', aReq.body.system === oMsgs[0]?.content, `${String(aReq.body.system)} / ${oMsgs[0]?.content}`)
+  ok('A 类 JSON：非 system 消息内容与顺序逐字一致',
+    JSON.stringify(aMsgs.map(m => m.content)) === JSON.stringify(oRest.map(m => m.content)))
+  ok('C 类多轮：角色序列等价（顶层 system vs messages 内 system）',
+    JSON.stringify(aMsgs.map(m => m.role)) === JSON.stringify(['user', 'assistant', 'user'])
+    && JSON.stringify(oMsgs.map(m => m.role)) === JSON.stringify(['system', 'user', 'assistant', 'user']))
+
+  mode = 'parity-anthropic'
+  const aParts: string[] = []
+  await chat(providerOf('anthropic'), parityMsgs, { timeoutMs: 5000, onToken: t => aParts.push(t) })
+  mode = 'parity-openai'
+  const oParts: string[] = []
+  await chat(providerOf('openai-chat'), parityMsgs, { timeoutMs: 5000, onToken: t => oParts.push(t) })
+  ok('B 类长文流式：跨协议片段拼接一致',
+    aParts.join('') === oParts.join('') && aParts.join('') === '第一段第二段', `${aParts.join('|')} / ${oParts.join('|')}`)
 
   // ---------- 未登记协议 ----------
   const bogus = { ...providerOf('openai-chat'), protocol: 'bogus' } as unknown as AIProvider

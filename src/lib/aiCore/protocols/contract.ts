@@ -77,12 +77,14 @@ export interface ChatDriver {
   /** 用量账本的来源标签（旧两值保持不变） */
   usageSource: ChatUsage['source']
   /**
-   * 本驱动是否真的能把 `wireFormat` 落成厂商结构化输出字段。
+   * 本驱动能落成厂商结构化输出字段的范围。
    *
-   * 🔴 3.4.2 首批新协议暂不向厂商下发结构字段（字段名近年改名、未经当期官方文档逐条取证），
-   *    置 false。`chat()` 会把 wireFormat 降为 `none` 并如实记录，避免账本写「已下发」而实际没发。
+   * · `true`：`json-object` 与 `json-schema` 都能下发；
+   * · `'json-schema'`：只能下发带 schema 的格式（如 Anthropic `output_config.format` 只支持 json_schema，
+   *   不提供无 schema 的 JSON 对象模式）；`json-object` 时会降为 `none` 并如实记录；
+   * · `false`：本版不向该厂商下发结构字段。
    */
-  structuredWire: boolean
+  structuredWire: boolean | 'json-schema'
   /** 流式单行解析器；非流式协议可省略 */
   parseStreamLine?: SseLineParser
   /** 发一次逻辑调用（含协议自身的兼容降级） */

@@ -82,6 +82,12 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
     stream: !!o.onToken,
     ...(instructions ? { instructions } : {}),
   }
+  // 🔴 官方 structured outputs：text.format（不是 response_format）
+  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
+    body.text = { format: { type: 'json_schema', name: 'response', schema: o.jsonSchema } }
+  } else if (o.wireFormat === 'json-object') {
+    body.text = { format: { type: 'json_object' } }
+  }
 
   const headers = mergeHeaders({
     'Content-Type': 'application/json',
@@ -169,7 +175,7 @@ export const responsesDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'openai-responses',
-  structuredWire: false,
+  structuredWire: true,
   parseStreamLine: responsesStreamParser,
   chat: responsesChat,
 })

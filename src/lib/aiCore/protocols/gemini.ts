@@ -78,9 +78,17 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
 
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
   const contents = toGeminiContents(messages)
+  const gen: Record<string, unknown> = { temperature: o.temperature }
+  // 🔴 官方 structured outputs：responseMimeType + responseJsonSchema（JSON Schema 子集）
+  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
+    gen.responseMimeType = 'application/json'
+    gen.responseJsonSchema = o.jsonSchema
+  } else if (o.wireFormat === 'json-object') {
+    gen.responseMimeType = 'application/json'
+  }
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { temperature: o.temperature },
+    generationConfig: gen,
     ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
   }
 
@@ -176,7 +184,7 @@ export const geminiDriver: ChatDriver = defineDriver({
   assistantRole: 'model',
   streamEndpoint: 'separate',
   usageSource: 'gemini',
-  structuredWire: false,
+  structuredWire: true,
   parseStreamLine: geminiStreamParser,
   chat: geminiChat,
 })

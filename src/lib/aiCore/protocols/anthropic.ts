@@ -20,8 +20,8 @@ import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromAnthropic, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 
-/** Anthropic 的 API 版本头（官方当前稳定值；升级前按当期文档核对） */
-export const ANTHROPIC_VERSION = '2023-06-01'
+/** Anthropic 的 API 版本头（官方 structured outputs 文档示例值） */
+export const ANTHROPIC_VERSION = '2026-10-21'
 
 /** baseUrl 归一：允许用户填 `…/v1` 或不带版本段 */
 function anthropicBaseOf(raw: string): string {
@@ -77,6 +77,10 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
     temperature: o.temperature,
     stream: !!o.onToken,
     ...(system ? { system } : {}),
+  }
+  // 🔴 官方 structured outputs：output_config.format（仅 json_schema；无无 schema 的 JSON 对象模式）
+  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
+    body.output_config = { format: { type: 'json_schema', schema: o.jsonSchema } }
   }
 
   const headers = mergeHeaders({
@@ -178,7 +182,7 @@ export const anthropicDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'anthropic',
-  structuredWire: false,
+  structuredWire: 'json-schema',
   parseStreamLine: anthropicStreamParser,
   chat: anthropicChat,
 })
