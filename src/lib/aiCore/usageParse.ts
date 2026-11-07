@@ -86,3 +86,54 @@ export function mergeUsage(a: RealUsage, b: RealUsage): RealUsage {
 export function hasRealUsage(u: RealUsage | undefined): boolean {
   return u != null && (u.promptTokens !== undefined || u.completionTokens !== undefined)
 }
+
+// ---- 3.4.2 · 新增协议的用量字段（各协议响应体形状不同，逐协议解析） ----
+
+/** Anthropic Messages：`usage.input_tokens` / `usage.output_tokens`，`stop_reason` */
+export function usageFromAnthropic(data: unknown): RealUsage {
+  if (!data || typeof data !== 'object') return {}
+  const d = data as Record<string, unknown>
+  const u = (d.usage ?? null) as Record<string, unknown> | null
+  const promptTokens = num(u?.input_tokens)
+  const completionTokens = num(u?.output_tokens)
+  const sr = typeof d.stop_reason === 'string' && d.stop_reason ? d.stop_reason : undefined
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+    ...(sr ? { finishReason: sr } : {}),
+  }
+}
+
+/** Gemini generateContent：`usageMetadata.promptTokenCount` / `candidatesTokenCount` */
+export function usageFromGemini(data: unknown): RealUsage {
+  if (!data || typeof data !== 'object') return {}
+  const d = data as Record<string, unknown>
+  const u = (d.usageMetadata ?? null) as Record<string, unknown> | null
+  const promptTokens = num(u?.promptTokenCount)
+  const completionTokens = num(u?.candidatesTokenCount)
+  const fr = (d.candidates as { finishReason?: unknown }[] | undefined)?.[0]?.finishReason
+  const finishReason = typeof fr === 'string' && fr ? fr : undefined
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+    ...(finishReason ? { finishReason } : {}),
+  }
+}
+
+/** OpenAI Responses：`usage.input_tokens` / `usage.output_tokens`，`status` / `incomplete_details` */
+export function usageFromResponses(data: unknown): RealUsage {
+  if (!data || typeof data !== 'object') return {}
+  const d = data as Record<string, unknown>
+  const u = (d.usage ?? null) as Record<string, unknown> | null
+  const promptTokens = num(u?.input_tokens)
+  const completionTokens = num(u?.output_tokens)
+  const status = typeof d.status === 'string' && d.status ? d.status : undefined
+  const incomplete = (d.incomplete_details ?? null) as { reason?: unknown } | null
+  const reason = typeof incomplete?.reason === 'string' && incomplete.reason ? incomplete.reason : undefined
+  const finishReason = reason ?? status
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+    ...(finishReason ? { finishReason } : {}),
+  }
+}

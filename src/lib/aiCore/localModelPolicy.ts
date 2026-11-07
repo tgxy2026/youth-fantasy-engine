@@ -1,6 +1,7 @@
 // P9 · 识别配置中明确指向本机或局域网的模型端点。
 // 这是地址分类，不做 DNS 查询、网络请求，也不等同于浏览器连接能力检测。
 import type { AIProvider } from '@/lib/aiCore/core'
+import { protocolOf } from '@/lib/aiCore/protocol'
 
 function localIpv4(host: string): boolean {
   const octets = host.split('.').map(Number)
@@ -36,9 +37,9 @@ export function isLocalModelAddress(raw: string): boolean {
 }
 
 /** 显式本地标记和实际地址独立判断；协议类型本身不等于网络位置。 */
-export function isLocalModelProvider(provider: Pick<AIProvider, 'type' | 'local' | 'baseUrl'>): boolean {
+export function isLocalModelProvider(provider: Pick<AIProvider, 'type' | 'protocol' | 'local' | 'baseUrl'>): boolean {
   // Ollama 留空会使用默认 localhost；显式公网地址不因协议品牌而误判为本机。
-  if (provider.type === 'ollama' && !provider.baseUrl.trim()) return true
+  if (protocolOf(provider) === 'ollama' && !provider.baseUrl.trim()) return true
   return !!provider.local || isLocalModelAddress(provider.baseUrl)
 }
 

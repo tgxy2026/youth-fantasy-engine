@@ -17,6 +17,7 @@
 import * as db from '@/lib/db'
 import { loadProviders } from '@/lib/aiCore/session'
 import type { AIProvider } from '@/lib/aiCore/core'
+import { protocolOf } from '@/lib/aiCore/core'
 import type { EmbedConfig } from '@/lib/semantic/embed'
 
 /** 存储键（落 `meta`，全局共享 —— 与模型配置同理，不随小说项目切换） */
@@ -110,6 +111,11 @@ export async function embeddingStatus(
   const model = set.model.trim() || p.model
   if (!model) return { ready: false, reason: '未填写嵌入模型名', label: '' }
   if (!(p.baseUrl ?? '').trim()) return { ready: false, reason: '所选的模型缺少接口地址', label: '' }
-  const where = p.type === 'ollama' || p.local ? '本地' : '联网'
+  const proto = protocolOf(p)
+  // 🔴 3.4.2：新线协议暂不接入 embedding 旁路（规划明确列为未覆盖）—— 如实提示，不发错端点
+  if (proto !== 'ollama' && proto !== 'openai-chat') {
+    return { ready: false, reason: '该线协议暂不支持语义索引（3.4.2 未覆盖），请改用 Ollama 或 OpenAI 兼容模型做嵌入', label: '' }
+  }
+  const where = proto === 'ollama' || p.local ? '本地' : '联网'
   return { ready: true, reason: '', label: `${where} · ${model}` }
 }

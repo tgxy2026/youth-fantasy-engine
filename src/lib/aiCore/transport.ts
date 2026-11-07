@@ -9,7 +9,7 @@
  *    不是「模型正文 → 结构化数据」—— 后者必须走 `aiParse`。见 tests/structureGates 的 JSON_PARSE_OK。
  */
 
-import { OLLAMA_DEFAULT_URL } from '@/lib/aiCore/core'
+import { OLLAMA_DEFAULT_URL, protocolOf } from '@/lib/aiCore/core'
 import { DEFAULT_TIMEOUTS } from '@/lib/ai/streaming'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import type { AIProvider } from '@/lib/aiCore/core'
@@ -230,7 +230,7 @@ export async function listOllamaModels(baseUrl: string): Promise<string[]> {
  * @returns 真的发出并成功了才返回 true；跳过或失败返回 false（调用方据此提示）
  */
 export async function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): Promise<boolean> {
-  if (!config || config.type !== 'ollama') return false
+  if (!config || protocolOf(config) !== 'ollama') return false
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
   // 只认本机地址：远程机器上的 Ollama 不归我们管（也可能是别人在用的服务）
   if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(base)) return false
@@ -280,6 +280,50 @@ export interface ReadSseOptions {
    * 省略或 0 ⇒ 不设（与旧行为一致）；生产路径传 `STREAM_IDLE_TIMEOUT_MS`。
    */
   idleTimeoutMs?: number
+  /**
+   * 单行载荷解析器（3.4.2 · 多协议）。
+   * 省略时走内置的两格式解析（OpenAI `[DONE]` / Ollama `done:true`），行为与升级前逐字一致。
+   */
+  parseLine?: SseLineParser
+  /**
+   * 外部取消信号（3.4.2）：流读取期间逐次检查。
+   * 🔴 只依赖 fetch 的 abort 不够 —— 响应头已返回后，部分运行时不会立刻中止 body；
+   *    没有这层检查，「停止」在流式阶段会等到对端自然结束才生效。
+   */
+  signal?: AbortSignal
+}
+
+/**
+ * 单行 SSE 载荷的解析结论（3.4.2）。
+ *
+ * 设计口径：`json` 与 `done` 可以同时存在 —— Ollama 的最后一块既带 `done:true`
+ * 又带 `prompt_eval_count` / `eval_count`，必须既记结束又交给 onJson 收用量。
+ */
+export interface SseLineOutcome {
+  /** 解析出的 JSON 增量；`undefined` ＝ 不回调 onJson */
+  json?: unknown
+  /** 协议结束标记 */
+  done?: boolean
+  /** 服务端在流里主动报的错（有它就不能算成功） */
+  error?: string
+  /**
+   * 是否算「有进展」（重置空闲计时、触发首字）。
+   * 缺省 true；`[DONE]`、`message_stop` 这类纯收尾标记应为 false。
+   */
+  progress?: boolean
+}
+
+/** 把一行 `data:` 载荷翻译成解析结论；返回 null ＝ 无法解析，静默跳过且不算进展 */
+export type SseLineParser = (payload: string) => SseLineOutcome | null
+
+/** 内置两格式解析（升级前 `flushLine` 的原有逻辑，逐字保留） */
+function defaultSseLineParser(payload: string): SseLineOutcome | null {
+  if (payload === '[DONE]') return { done: true, progress: false }
+  let obj: unknown
+  try { obj = JSON.parse(payload) } catch { return null /* 解析不了的行不致命，也不当作进展 */ }
+  const err = errorTextOf(obj)
+  if (err) return { error: err }
+  return { json: obj, done: (obj as { done?: unknown })?.done === true, progress: true }
 }
 
 /**
@@ -297,7 +341,11 @@ export async function readSSE(
   opts: ReadSseOptions = {},
 ): Promise<StreamReport> {
   if (!res.body) throw new Error('当前环境不支持流式读取响应体。')
+  const signal = opts.signal
   const reader = res.body.getReader()
+  // 🔴 3.4.2：外部取消要能**立即**打断正在等待的 read（只靠循环顶部检查会等到下一块才生效）
+  const onAbort = () => { reader.cancel().catch(() => { /* 已结束或已取消 */ }) }
+  signal?.addEventListener('abort', onAbort, { once: true })
   const decoder = new TextDecoder()
   let buf = ''
   let firedFirst = false
@@ -306,6 +354,8 @@ export async function readSSE(
   let sawDone = false
   let errorMessage: string | undefined
   const idle = opts.idleTimeoutMs ?? 0
+  const parseLine = opts.parseLine ?? defaultSseLineParser
+  if (signal?.aborted) throw new AICancelled()
   let timer: ReturnType<typeof setTimeout> | null = null
   /** 停滞时用来把 `reader.read()` 的等待打断 */
   let rejectIdle: ((e: Error) => void) | null = null
@@ -333,13 +383,12 @@ export async function readSSE(
     if (!payload) return
     // 协议结束标记：OpenAI 用一行 `[DONE]`，Ollama 用块里的 `done:true`（下面一起认）
     if (payload === '[DONE]') { sawDone = true; return }
-    let obj: unknown
-    try { obj = JSON.parse(payload) } catch { return /* 解析不了的行不致命，也不当作进展 */ }
-    // 🔴 服务端在流里报错：HTTP 200 不代表成功（方案 §16.7「HTTP 200 之后的错误不能作为成功」）
-    const err = errorTextOf(obj)
-    if (err) { errorMessage = err; return }
-    if ((obj as { done?: unknown })?.done === true) sawDone = true
-    onJson(obj)
+    const outcome = parseLine(payload)
+    if (!outcome) return
+    if (outcome.done) sawDone = true
+    if (outcome.error) { errorMessage = outcome.error; return }
+    if (outcome.json !== undefined) onJson(outcome.json)
+    if (outcome.progress === false) return
     parsedChunks += 1
     arm()
     if (!firedFirst) { firedFirst = true; onFirstByte?.() }
@@ -348,13 +397,17 @@ export async function readSSE(
   arm()
   try {
     for (;;) {
+      if (signal?.aborted) throw new AICancelled()
       const { done, value } = idle > 0
         ? await new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
           rejectIdle = reject
           reader.read().then(resolve, reject)
         })
         : await reader.read()
-      if (done) break
+      if (done) {
+        if (signal?.aborted) throw new AICancelled()
+        break
+      }
       buf += decoder.decode(value, { stream: true })
       let idx: number
       while ((idx = buf.indexOf('\n')) >= 0) {
@@ -372,6 +425,7 @@ export async function readSSE(
   } finally {
     disarm()
     rejectIdle = null
+    signal?.removeEventListener('abort', onAbort)
   }
 }
 

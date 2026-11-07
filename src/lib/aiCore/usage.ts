@@ -53,8 +53,8 @@ export interface ChatUsage {
   attempts?: number
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
-  /** 来源通道 */
-  source: 'openai' | 'ollama'
+  /** 来源通道（3.4.2：新增协议按线协议如实记录，旧两值保持不变） */
+  source: 'openai' | 'ollama' | 'anthropic' | 'gemini' | 'openai-responses'
   at: number
 }
 

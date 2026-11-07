@@ -7,7 +7,7 @@
 
 import * as db from '@/lib/db'
 import {
-  precheck, setChatTimeoutMs,
+  precheck, setChatTimeoutMs, protocolOf,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
 } from '@/lib/aiCore/core'
 import type { AIProvider } from '@/lib/aiCore/core'
@@ -151,7 +151,8 @@ export async function saveActiveId(id: string | null): Promise<void> {
 }
 
 export function typeLabel(p: AIProvider): string {
-  return p.type === 'ollama' || p.local ? '本地' : '联网'
+  // 🔴 保持升级前口径：Ollama 协议（含远程 Ollama）一律标「本地」，不看地址。
+  return protocolOf(p) === 'ollama' || p.local ? '本地' : '联网'
 }
 
 // ---- AI 就绪状态（全局订阅）----

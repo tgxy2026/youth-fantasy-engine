@@ -6,9 +6,12 @@
  * 🔴 本文件**不 import 任何兄弟模块** —— 它是依赖图的叶子，循环依赖的风险在这里归零。
  */
 
-export type AIProviderType = 'ollama' | 'openai'
-
 import type { SamplingValues } from '@/lib/ai/modelSampling'
+import { protocolOf, type WireProtocol } from '@/lib/aiCore/protocol'
+
+export type AIProviderType = 'ollama' | 'openai'
+export { protocolOf }
+export type { WireProtocol }
 
 export interface AIProvider {
   /** Opaque cache generation, renewed when credentials change; never derived from the secret. */
@@ -17,6 +20,14 @@ export interface AIProvider {
   /** 用户自定义显示名 */
   name: string
   type: AIProviderType
+  /**
+   * 线协议（3.4.2 · 与「本地 / 联网」正交）。
+   *
+   * 🔴 存储键 `type` 保持不变（旧库反序列化不能失效）；新增协议只写这里。
+   *    缺省时由 {@link protocolOf} 按 `type` 映射：`'ollama'` ⇒ `'ollama'`，其余 ⇒ `'openai-chat'`。
+   *    这样 3.4.1 保存的 provider 不写该字段也逐字保持原行为。
+   */
+  protocol?: WireProtocol
   /** Ollama 默认 http://localhost:11434；OpenAI 兼容填到 …/v1 之类前缀 */
   baseUrl: string
   apiKey: string
@@ -156,6 +167,8 @@ export interface PlatformPreset {
   local?: boolean
   /** 该预设对应的 provider 类型：'ollama' 走原生 /api/chat；'openai'（默认）走 OpenAI 兼容 */
   type?: AIProviderType
+  /** 线协议（3.4.2）：新协议预设在此声明；缺省按 type 映射，保持旧预设行为 */
+  protocol?: WireProtocol
 }
 
 /** Ollama 本地预设：原生 API，单独用 type:'ollama' 走 /api/chat 路径 */
@@ -249,20 +262,28 @@ export const ONLINE_PRESETS: PlatformPreset[] = [
   // OpenCode Go（订阅制）：OpenAI 兼容端点，**强制要求 `x-opencode-session` 请求头**
   // （2026-09-06 起；缺失即 400）。选中后由 `providerFromPreset` 预置一个随机会话 id。
   { label: 'OpenCode Go', baseUrl: OPENCODE_GO_BASE },
+  // OpenAI（Chat Completions）
   { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  // 3.4.2 · 首批新协议官方端点（protocol 决定真实线协议；type 仍写存储键 'openai'）
+  { label: 'Anthropic Claude', baseUrl: 'https://api.anthropic.com', protocol: 'anthropic' },
+  { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com', protocol: 'gemini' },
+  { label: 'OpenAI Responses', baseUrl: 'https://api.openai.com/v1', protocol: 'openai-responses' },
   { label: '自定义', baseUrl: '' },
 ]
 
 /** 由平台预设生成一条未保存的 provider 草稿（类型 / 本地标记自动带好） */
 export function providerFromPreset(p: PlatformPreset): AIProvider {
   const id = 'p_' + Math.random().toString(36).slice(2, 9)
-  const isOllama = p.type === 'ollama'
+  const protocol = protocolOf(p)
+  const isOllama = protocol === 'ollama'
   const local = p.local ?? isOllama
   const name = (p.label.replace(/（本地）|（联网）|\(local\)/gi, '').trim()) || (isOllama ? '本地 Ollama' : '联网模型')
   return {
     id,
     name,
     type: isOllama ? 'ollama' : 'openai',
+    // 🔴 写入侧同步（3.4.2）：新数据显式带协议，旧数据缺省仍由 protocolOf 映射。
+    protocol,
     baseUrl: p.baseUrl,
     apiKey: '',
     model: '',
@@ -332,13 +353,27 @@ export function injectUserSystemPrompt(messages: ChatMessage[], provider?: AIPro
 
 /** 测试前的本地校验：缺字段就别浪费一次网络往返（`aiCore/chat.ts` 与 `aiCore/session.ts` 共用） */
 export function precheck(config: AIProvider): string {
-  if (config.type === 'ollama') {
+  const proto = protocolOf(config)
+  if (proto === 'ollama') {
     if (!config.model.trim()) return '未选择模型：请先「获取本地模型」并选择一个，或手动填写模型名。'
     return ''
   }
-  if (!config.baseUrl.trim()) return '未填写 API 接口地址（baseUrl）。'
+  if (!config.baseUrl.trim()) {
+    const hint = proto === 'anthropic'
+      ? 'Anthropic 官方地址为 https://api.anthropic.com。'
+      : proto === 'gemini'
+        ? 'Gemini 官方地址为 https://generativelanguage.googleapis.com。'
+        : proto === 'openai-responses'
+          ? 'Responses 官方地址为 https://api.openai.com/v1。'
+          : ''
+    return `未填写 API 接口地址（baseUrl）。${hint}`
+  }
   if (!config.model.trim()) return '未填写模型名称。'
   // 本地 OpenAI 兼容服务（LM Studio / LocalAI 等）大多免密钥，故仅联网模型强制要求密钥
-  if (!config.local && !config.apiKey.trim()) return '未填写 API 密钥（本地兼容服务可留空）。'
+  if (!config.local && !config.apiKey.trim()) {
+    if (proto === 'anthropic') return '未填写 Anthropic API 密钥（x-api-key）。'
+    if (proto === 'gemini') return '未填写 Gemini API 密钥（x-goog-api-key）。'
+    return '未填写 API 密钥（本地兼容服务可留空）。'
+  }
   return ''
 }

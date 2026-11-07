@@ -6,7 +6,7 @@
  *   而它们的判据必须**同源**（都在问"这台服务认不认 Ollama 原生参数"），
  *   分开写就会出现「一处改了判据、另两处没跟上」的漂移。
  *
- * 🔴 判据见 `lib/modelSampling.ts#isOllamaSamplingChannel`：是 `type === 'ollama'`，
+ * 🔴 判据见 `lib/modelSampling.ts#isOllamaSamplingChannel`：是 `protocolOf(...) === 'ollama'`，
  *    **不是** `local` —— 本地 OpenAI 兼容服务（LM Studio / LocalAI / GPT4All / Jan…）也是「本地」，
  *    但它走 openaiChat 的白名单，`top_k` / `repeat_penalty` / `repeat_last_n` 会被静默丢弃。
  *    （2026-10-09 六维审计发现：起先三处都按 `local` 判，本地 OpenAI 兼容模型下会

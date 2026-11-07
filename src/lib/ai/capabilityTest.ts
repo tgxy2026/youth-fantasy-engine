@@ -13,7 +13,7 @@
  */
 import { chat } from '@/lib/ai'
 import { parseLooseObject } from '@/lib/ai/aiParse'
-import type { AIProvider } from '@/lib/aiCore/core'
+import { protocolOf, type AIProvider } from '@/lib/aiCore/core'
 import {
   CAPABILITY_TTL_MS, capabilityConfigFingerprint, capabilityKeyOf, classifyCapabilityError, normalizeEndpoint,
   type CapabilityFailureReason, type CapabilityTestRecord,
@@ -41,7 +41,7 @@ export async function testModelCapability(input: {
   const timeoutMs = input.timeoutMs ?? CAPABILITY_TEST_TIMEOUT_MS
   const configFingerprint = capabilityConfigFingerprint(provider)
   const key = capabilityKeyOf({
-    endpoint: provider.baseUrl, modelId: provider.model, protocol: provider.type, configFingerprint,
+    endpoint: provider.baseUrl, modelId: provider.model, protocol: protocolOf(provider), configFingerprint,
   })
 
   const ctrl = new AbortController()
@@ -73,7 +73,7 @@ export async function testModelCapability(input: {
       key,
       endpointKey: normalizeEndpoint(provider.baseUrl),
       modelId: provider.model,
-      protocol: provider.type,
+      protocol: protocolOf(provider),
       configFingerprint,
       state: 'supported',
       jsonObject,

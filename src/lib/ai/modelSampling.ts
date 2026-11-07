@@ -15,6 +15,8 @@
  * 纯数据 + 纯函数，不含 React。
  */
 
+import { protocolOf, type WireProtocol } from '@/lib/aiCore/protocol'
+
 /** 六个可调参数的语义名（`temperature` 不在此列 —— 它早就有独立字段 `AIProvider.temperature`） */
 type SamplingKey =
   | 'topP' | 'topK' | 'repeatPenalty' | 'repeatLastN' | 'frequencyPenalty' | 'presencePenalty'
@@ -108,7 +110,7 @@ export function samplingOptionsOf(
 /**
  * 这些参数会走 **Ollama 原生通道**吗（＝ `top_k` / `repeat_penalty` / `repeat_last_n` 是否真生效）。
  *
- * 🔴🔴 判据必须是 `type === 'ollama'`，**不是 `local`**。
+ * 🔴🔴 判据必须是 `protocolOf(p) === 'ollama'`，**不是 `local`**。
  *   `local` 在本项目里的语义是「本机 / 局域网服务」（免密钥、窗口由显存决定那一类判断），
  *   而**本地 OpenAI 兼容服务**（LM Studio / LocalAI / GPT4All / Jan…）虽然 `local: true`，
  *   走的却是 `openaiChat` —— 它只认 `OPENAI_SAFE_SAMPLING` 白名单，上面三个键会被**静默丢弃**。
@@ -118,6 +120,6 @@ export function samplingOptionsOf(
  *   `AIConfigPanel` 的「文本生成微调」、`TavernControlModes` 的采样参数、
  *   `TavernControlBasics` 的「上下文窗口长度」，统一走 `components/SamplingUnavailable.tsx`。
  */
-export function isOllamaSamplingChannel(p: { type?: string } | null | undefined): boolean {
-  return p?.type === 'ollama'
+export function isOllamaSamplingChannel(p: { type?: string; protocol?: WireProtocol } | null | undefined): boolean {
+  return protocolOf(p) === 'ollama'
 }

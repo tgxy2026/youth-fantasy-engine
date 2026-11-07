@@ -132,7 +132,7 @@ const full: SamplingValues = {
     three.every(l => (modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length === 2),
     three.map(l => `${l}:${(modes.match(new RegExp(`<CloudOnlyNA label="${l}"`, 'g')) || []).length}`).join(' '))
   ok('🔴 酒馆：判定由父组件统一传入，且用 type（不是 local —— LM Studio 也是 local）',
-    readSrc('src/components/tavern/TavernControl.tsx').includes("ollamaNative={m.activeProvider?.type === 'ollama'}"))
+    readSrc('src/components/tavern/TavernControl.tsx').includes("ollamaNative={protocolOf(m.activeProvider) === 'ollama'}"))
 
   const cfg = readSrc('src/components/settings/AIConfigPanel.tsx')
   ok('🔴 模型配置页：「文本生成微调」区块在位且位于自定义系统提示词之后',

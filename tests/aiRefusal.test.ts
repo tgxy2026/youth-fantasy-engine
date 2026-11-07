@@ -93,7 +93,7 @@ console.log('\n—— aiRefusal 用例开始 ——')
 
 // ---------- ⑧ 源码闸（接线是否真的落地） ----------
 {
-  const src = fs.readFileSync('src/lib/aiCore/chat.ts', 'utf8')
+  const src = fs.readFileSync('src/lib/aiCore/protocols/openaiChat.ts', 'utf8')
   ok('🔴 chat.ts 真的读 finish_reason（此前全仓零读取）', src.includes('finish_reason'))
   ok('🔴 content_filter ⇒ 抛 AIRefusalError', src.includes("=== 'content_filter'") && src.includes('AIRefusalError'))
   ok('🔴 HTTP 错误先分流（isRefusalStatus + looksLikeSafetyMessage）',

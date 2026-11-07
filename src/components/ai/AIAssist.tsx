@@ -15,7 +15,7 @@ import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
 import {
   type AIProvider, type ChatMessage,
   chat, loadProviders, loadActiveId, saveActiveId, typeLabel,
-  requireActiveProvider, composeSystemPrompt,
+  requireActiveProvider, composeSystemPrompt, protocolOf,
 } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
@@ -241,7 +241,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       {/* 当前模型状态条 */}
       {active ? (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-12">
-          <span className={`px-1.5 py-0.5 rounded text-10 ${active.type === 'ollama' || active.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-10 ${protocolOf(active) === 'ollama' || active.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
             {typeLabel(active)}
           </span>
           <span className="text-ink-200">{active.name}</span>

@@ -235,7 +235,11 @@ async function main() {
 
   // ---------- ⑦ 静态闸 ----------
   {
-    const src = readFileSync('src/lib/aiCore/chat.ts', 'utf8')
+    const src = [
+      readFileSync('src/lib/aiCore/protocols/ollama.ts', 'utf8'),
+      readFileSync('src/lib/aiCore/protocols/openaiChat.ts', 'utf8'),
+      readFileSync('src/lib/aiCore/protocols/shared.ts', 'utf8'),
+    ].join('\n')
     ok('⑥ chat() 两条通道都检查流内错误',
       (src.match(/report\.errorMessage|streamReport\.errorMessage/g) ?? []).length >= 2)
     ok('⑥ chat() 用 sawDone 判结束标记，缺标记记 eof',

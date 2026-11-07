@@ -26,7 +26,7 @@ import {
   type AIProvider, type AITestResult, type PlatformPreset,
   testProvider, providerFromPreset, listOllamaModels, listOpenAIModels,
   loadProviders, saveProviders, saveActiveId,
-  LOCAL_PRESETS, ONLINE_PRESETS,
+  LOCAL_PRESETS, ONLINE_PRESETS, protocolOf,
 } from '@/lib/ai'
 import { currentModelAdvice, getWriterBudget, saveWriterBudget } from '@/lib/ai/aiWriterBudget'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
@@ -84,16 +84,22 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
    */
   const fetchModels = async () => {
     if (!draft) return
+    const proto = protocolOf(draft)
+    // 🔴 3.4.2：Anthropic / Gemini 的模型清单端点与 OpenAI 不同，本版未接入 —— 如实提示手填
+    if (proto === 'anthropic' || proto === 'gemini') {
+      setResult({ ok: false, latencyMs: 0, loadMs: 0, reply: '', error: '该协议暂不支持自动拉取模型清单，请手动填写模型名。' })
+      return
+    }
     setFetching(true)
     try {
-      const list = draft.type === 'ollama'
+      const list = proto === 'ollama'
         ? await listOllamaModels(draft.baseUrl)
         : await listOpenAIModels(draft)
       setModels(list)
       if (list.length === 0) {
         setResult({
           ok: false, latencyMs: 0, loadMs: 0, reply: '',
-          error: draft.type === 'ollama'
+          error: protocolOf(draft) === 'ollama'
             ? 'Ollama 已连接，但本机还没有任何模型：请先在终端执行 ollama pull <模型名> 拉取一个。'
             : '端点已连通，但模型列表为空：请核对该接口地址是否正确，或手动填写模型名。',
         })
@@ -149,8 +155,10 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
     setTesting(false)
   }
 
-  const isLocalOpenAI = !!draft && draft.type === 'openai' && !!draft.local
-  const isOllama = !!draft && draft.type === 'ollama'
+  const isLocalOpenAI = !!draft && protocolOf(draft) === 'openai-chat' && !!draft.local
+  const isOllama = !!draft && protocolOf(draft) === 'ollama'
+  const proto = draft ? protocolOf(draft) : 'openai-chat'
+  const canFetchModels = proto === 'ollama' || proto === 'openai-chat' || proto === 'openai-responses'
 
   return (
     <div className="space-y-5">
@@ -228,25 +236,29 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
                   <input
                     value={draft.baseUrl}
                     onChange={e => patch({ baseUrl: e.target.value })}
-                    placeholder={isOllama ? 'http://localhost:11434' : 'https://api.deepseek.com/v1'}
+                    placeholder={isOllama ? 'http://localhost:11434' : proto === 'anthropic' ? 'https://api.anthropic.com' : proto === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.deepseek.com/v1'}
                     className="w-full text-12 font-mono"
                   />
-                  <Button
-                    variant="secondary" size="sm" onClick={fetchModels}
-                    disabled={fetching || !draft.baseUrl.trim()}
-                    className="shrink-0"
-                    title="按当前接口地址拉取该端点可用的模型清单（本地 Ollama / 官方平台 / 中转站 / 本地兼容服务均支持）"
-                  >
-                    {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    {fetching ? '获取中…' : '获取模型列表'}
-                  </Button>
+                  {canFetchModels ? (
+                    <Button
+                      variant="secondary" size="sm" onClick={fetchModels}
+                      disabled={fetching || !draft.baseUrl.trim()}
+                      className="shrink-0"
+                      title="按当前接口地址拉取该端点可用的模型清单（本地 Ollama / 官方平台 / 中转站 / 本地兼容服务均支持）"
+                    >
+                      {fetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      {fetching ? '获取中…' : '获取模型列表'}
+                    </Button>
+                  ) : (
+                    <span className="shrink-0 self-center text-11 text-ink-500">请手动填写模型名</span>
+                  )}
                 </div>
               </div>
 
               {!isOllama && (
                 <div>
                   <label className="block text-11 text-ink-400 mb-1">
-                    API 密钥{isLocalOpenAI && <span className="text-ink-600"> · 本地服务一般免填</span>}
+                    API 密钥{isLocalOpenAI && <span className="text-ink-600"> · 本地服务一般免填</span>}{proto === 'anthropic' ? ' · x-api-key' : proto === 'gemini' ? ' · x-goog-api-key' : ''}
                   </label>
                   <input
                     type="password"

@@ -60,7 +60,7 @@ type Props = {
    *    此前云端模型下照旧可编辑，改了却不生效（下发时被 `openaiSampling()` 白名单静默丢弃），
    *    与「上下文窗口长度」在两态化之前的老毛病同一类。
    *
-   * ⚠️ 判据是 **`type === 'ollama'`，不是「本地」** —— 本地 OpenAI 兼容服务（LM Studio 等）
+   * ⚠️ 判据是 **`protocolOf(...) === 'ollama'`（3.4.2 前的 `type === 'ollama'`），不是「本地」** —— 本地 OpenAI 兼容服务（LM Studio 等）
    *    也是本地，却同样认不了这三个键（2026-10-09 审计修）。
    */
   ollamaNative: boolean

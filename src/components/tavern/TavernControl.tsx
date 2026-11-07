@@ -25,6 +25,7 @@ import TavernControlBasics from '@/components/tavern/TavernControlBasics'
 import TavernControlAdvanced from '@/components/tavern/TavernControlAdvanced'
 import TavernControlProtocol from '@/components/tavern/TavernControlProtocol'
 import { SaveFab } from '@/components/common/SaveFab'
+import { protocolOf } from '@/lib/ai'
 export default function TavernControl() {
   const m = useTavernControlModel()
   // 前置数据未就绪：与拆分前一样先出 LoadingState（判断已随 hook 前移，语义不变）
@@ -99,9 +100,9 @@ export default function TavernControl() {
             modelOptions={modelOptions}
             advice={{ rec, gSoft, gHard, gLong, gDiary }}
             // 2026-10-09：三项 Ollama 专有采样参数按它灰显（此前云端下照旧可编辑，改了不生效）。
-            // 🔴 判据是 type==='ollama'，**不是** cap.local —— 本地 OpenAI 兼容（LM Studio 等）
+            // 🔴 判据是 protocolOf(...)==='ollama'，**不是** cap.local —— 本地 OpenAI 兼容（LM Studio 等）
             //    也是「本地」，但它走 openaiChat 白名单，这三个键会被静默丢弃（审计修）。
-            ollamaNative={m.activeProvider?.type === 'ollama'}
+            ollamaNative={protocolOf(m.activeProvider) === 'ollama'}
           />
         </div>
       </div>

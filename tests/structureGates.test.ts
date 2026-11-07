@@ -267,6 +267,10 @@ if (!SRC) {
     // safeJsonText 解析的是**联网检索托管 API 的 HTTP 响应体**（各家字段名不一，失败即退回原文），
     // 与 transport.ts 的「信封解析」同类，不是「模型正文 → 结构化数据」。
     'src/lib/ai/webSearch.ts': '联网检索的 HTTP 响应体解析（safeJsonText），非模型文本解析；与 transport.ts 同属「信封解析」',
+    // 3.4.2：新协议的 SSE 单行信封解析（data: {...}）；与 transport.ts 同性质，不是「模型正文 → 结构化数据」
+    'src/lib/aiCore/protocols/anthropic.ts': 'Anthropic SSE 单行信封解析，非模型正文结构化解析',
+    'src/lib/aiCore/protocols/gemini.ts': 'Gemini SSE 单行信封解析，非模型正文结构化解析',
+    'src/lib/aiCore/protocols/openaiResponses.ts': 'Responses SSE 单行信封解析，非模型正文结构化解析',
   }
   {
     const bad: string[] = []
@@ -488,11 +492,14 @@ if (!SRC) {
     const EDGE_OK: Record<string, string> = {
       'src/lib/aiCore/chat.ts': '全项目唯一的对话出口 —— 兜底注入就在这里',
     }
+    // 3.4.2：线协议 driver 是 chat() 的**受控实现层**（由 chatRaw 按 protocol 调度），
+    // 不是独立对话链路；协议适配必须在这里发请求，故整目录登记为合法落点。
+    const DRIVER_DIR = 'src/lib/aiCore/protocols/'
     const bypass: string[] = []
     for (const f of files) {
       const r = rel(f).replace(/\\/g, '/')
       if (!r.startsWith('src/lib/')) continue
-      if (EDGE_OK[r]) continue
+      if (EDGE_OK[r] || r.startsWith(DRIVER_DIR)) continue
       // ⚠️ 只认「当真在拼请求地址」的写法：**同一行既有端点路径、又有模板串插值 `${`**。
       //    这样 `base.endsWith('/chat/completions')` 这类纯字符串处理不会误报
       //    （transport 的 baseUrl 归一就是干这个的）—— 闸的假阳性一多，就没人信它了。

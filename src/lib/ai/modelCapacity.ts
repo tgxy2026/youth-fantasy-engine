@@ -24,15 +24,16 @@
  * 并给出 `scaleGuide()` 用来**动态放宽输入框上限** —— 那些上限同样是按本地设备定的：
  * `contextBudget` 静态上限 100000，1M 窗口的云端模型本可用到 41 万，却被输入框卡住。
  *
- * 本模块是纯逻辑、零运行时依赖（只 `import type`），便于单测。
+ * 本模块是纯逻辑，便于单测；只额外引入同样零依赖的线协议判据叶子 `aiCore/protocol.ts`。
  */
+import { protocolOf } from '@/lib/aiCore/protocol'
 import type { AIProvider } from '@/lib/ai'
 import type { ParamGuide } from '@/lib/tavern/paramGuide'
 
 /** 本地部署判定：Ollama 原生，或标记为「本机/局域网」的 OpenAI 兼容服务 */
-export function isLocalProvider(p: Pick<AIProvider, 'type' | 'local'> | null | undefined): boolean {
+export function isLocalProvider(p: Pick<AIProvider, 'type' | 'protocol' | 'local'> | null | undefined): boolean {
   if (!p) return true // 未知就当本地（保守：不放宽预算）
-  return p.type === 'ollama' || p.local === true
+  return protocolOf(p) === 'ollama' || p.local === true
 }
 
 /**

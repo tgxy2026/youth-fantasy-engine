@@ -40,6 +40,9 @@ export {
   providerFromPreset, composeSystemPrompt,
 } from '@/lib/aiCore/core'
 export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from '@/lib/aiCore/core'
+// 3.4.2 · 线协议判据与类型（新协议接入层共用；门面显式再导出，禁 export *）
+export { protocolOf, WIRE_PROTOCOL_LABELS, isOllamaProtocol } from '@/lib/aiCore/protocol'
+export type { WireProtocol } from '@/lib/aiCore/protocol'
 
 // ---- 补全提示词语境 ----
 export type { FillContext } from '@/lib/aiCore/prompts'

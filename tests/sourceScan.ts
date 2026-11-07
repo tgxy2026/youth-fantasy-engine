@@ -54,9 +54,9 @@ export function readAllSrc(): string {
   return walk('src').join('\n')
 }
 
-/** ai 模块全量源码 = 门面 `ai.ts` + 实现段 `aiCore/*`（拆分前读门面就能扫全，现在必须拼上 aiCore） */
+/** ai 模块全量源码 = 门面 `ai.ts` + 实现段 `aiCore/*` + 线协议 driver `aiCore/protocols/*` */
 export function readAiModule(): string {
-  return tryRead('src/lib/ai.ts') + '\n' + readTsDir('src/lib/aiCore')
+  return tryRead('src/lib/ai.ts') + '\n' + readTsDir('src/lib/aiCore') + '\n' + readTsDir('src/lib/aiCore/protocols')
 }
 
 /** 设定 schema 全量源码 = 门面 `schema.ts` + `schemaShared.ts` + 段文件 `schemaTabs/*` + 题材包 `schemaTemplates/*` */

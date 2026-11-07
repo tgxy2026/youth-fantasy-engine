@@ -41,7 +41,7 @@ import {
   loadAiTimeoutSec, saveAiTimeoutSec,
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
   LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
-  isLocalModelBlocked, usableProviders,
+  isLocalModelBlocked, usableProviders, protocolOf, WIRE_PROTOCOL_LABELS,
 } from '@/lib/ai'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
@@ -355,7 +355,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   {providers.map(p => (
                     <div key={p.id} className="rounded-lg bg-ink-800 border border-ink-700">
                       <div className="flex items-center gap-2 px-3 py-2">
-                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${p.type === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-10 ${protocolOf(p) === 'ollama' || p.local ? 'bg-success/15 text-success' : 'bg-info/15 text-info'}`}>
                           {typeLabel(p)}
                         </span>
                         {/* 🔴 3.3.1 · P9：网页版里这条配置不会被任何功能使用（判据在 aiCore/localModelAccess） */}
@@ -561,12 +561,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-12">
-                {editing.type === 'ollama' ? (
+                {protocolOf(editing) === 'ollama' ? (
                   <span className="flex items-center gap-1 text-success"><Cpu size={13} /> 本地 Ollama</span>
                 ) : editing.local ? (
                   <span className="flex items-center gap-1 text-success"><Cpu size={13} /> 本地 OpenAI 兼容</span>
                 ) : (
-                  <span className="flex items-center gap-1 text-info"><Globe size={13} /> 联网 OpenAI 兼容</span>
+                  <span className="flex items-center gap-1 text-info"><Globe size={13} /> {WIRE_PROTOCOL_LABELS[protocolOf(editing)]}</span>
                 )}
               </div>
 
@@ -653,7 +653,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </p>
               </div>
 
-              {editing.type === 'ollama' ? (
+              {protocolOf(editing) === 'ollama' ? (
                 <>
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">Ollama 地址</label>
@@ -700,12 +700,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     <label className="block text-11 text-ink-500 mb-1">平台预设</label>
                     <select
                       className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40"
-                      value={presetList.find(p => p.baseUrl === editing.baseUrl)?.label ?? '自定义'}
+                      value={presetList.find(p => p.baseUrl === editing.baseUrl && protocolOf(p) === protocolOf(editing))?.label ?? '自定义'}
                       onChange={e => {
                         const pre = presetList.find(p => p.label === e.target.value)
                         // 🔴 切换预设必须一并算 headers（独立复核 P2）：从普通模型切到 OpenCode Go
                         //    若不补 `x-opencode-session`，要等真发请求才 400，界面上看不出问题。
-                        if (pre && pre.baseUrl !== '') setEditing({ ...editing, baseUrl: pre.baseUrl, local: !!pre.local, name: editing.name || pre.label, headers: headersForPresetSwitch(pre, editing.headers) })
+                        if (pre && pre.baseUrl !== '') setEditing({ ...editing, baseUrl: pre.baseUrl, local: !!pre.local, protocol: protocolOf(pre), name: editing.name || pre.label, headers: headersForPresetSwitch(pre, editing.headers) })
                         else if (pre && pre.baseUrl === '') setEditing({ ...editing, baseUrl: '', local: editing.local, name: editing.name, headers: headersForPresetSwitch(pre, editing.headers) })
                       }}
                     >
@@ -716,9 +716,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   <div>
                     <label className="block text-11 text-ink-500 mb-1">API 接口地址（baseUrl）</label>
                     <div className="flex gap-2">
-                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder="https://api.deepseek.com/v1" />
-                      <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
+                      <input className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 placeholder:text-ink-600" value={editing.baseUrl} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} placeholder={protocolOf(editing) === 'anthropic' ? 'https://api.anthropic.com' : protocolOf(editing) === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.deepseek.com/v1'} />
+                      {(protocolOf(editing) !== 'anthropic' && protocolOf(editing) !== 'gemini') && (
+                        <Button variant="secondary" size="sm" disabled={fetchingOpenAI || !editing.baseUrl.trim()} onClick={() => void fetchOpenAIModels()} className="shrink-0" title="按当前接口地址拉取该端点可用的模型清单（官方平台 / 中转站 / 本地兼容服务均支持）">{fetchingOpenAI ? '获取中…' : '获取可用模型'}</Button>
+                      )}
                     </div>
+                    {(protocolOf(editing) === 'anthropic' || protocolOf(editing) === 'gemini') && (
+                      <p className="text-11 text-ink-500 mt-1">该协议暂不支持自动拉取模型清单，请手动填写模型名。</p>
+                    )}
                   </div>
                   {/* 3.1.1 第 4 项 · 自定义请求头：给「要求额外请求头才认」的订阅 / 网关用
                       （代表场景：OpenCode Go 的 x-opencode-session，缺了直接 400）。
@@ -758,7 +763,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     )
                   })()}
                   <div>
-                    <label className="block text-11 text-ink-500 mb-1">API 密钥</label>
+                    <label className="block text-11 text-ink-500 mb-1">{protocolOf(editing) === 'anthropic' ? 'Anthropic API 密钥（x-api-key）' : protocolOf(editing) === 'gemini' ? 'Gemini API 密钥（x-goog-api-key）' : 'API 密钥'}</label>
                     <input type="password" className="w-full bg-ink-800 border border-ink-700 rounded-lg text-ink-100 text-12 px-3 py-1.5 outline-none focus:border-amber/40 font-mono placeholder:text-ink-600" value={editing.apiKey} onChange={e => setEditing({ ...editing, apiKey: e.target.value })} placeholder="密钥只存本机，不随云盘同步" />
                   </div>
                   <div>
@@ -771,14 +776,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               {/* 上下文窗口（必填 + K/token 换算 + 越界提示）—— 实现在 AIConfigFields.tsx */}
               <ContextWindowField
                 value={editing.contextWindow}
-                local={editing.type === 'ollama' || !!editing.local}
+                local={protocolOf(editing) === 'ollama' || !!editing.local}
                 onChange={v => setEditing(prev => (prev ? { ...prev, contextWindow: v } : prev))}
               />
 
               {/* 采样温度档位（按 provider 存、随模型走）—— 实现在 AIConfigFields.tsx */}
               <TemperatureField
                 value={editing.temperature}
-                local={editing.type === 'ollama' || !!editing.local}
+                local={protocolOf(editing) === 'ollama' || !!editing.local}
                 onChange={v => setEditing(prev => (prev ? { ...prev, temperature: v } : prev))}
               />
 

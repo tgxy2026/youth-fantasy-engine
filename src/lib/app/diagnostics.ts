@@ -15,7 +15,7 @@
  */
 import * as db from '@/lib/db'
 import { APP_VERSION_LABEL, DESKTOP } from '@/lib/app/env'
-import { loadProviders } from '@/lib/ai'
+import { loadProviders, protocolOf } from '@/lib/ai'
 import { countWords } from '@/lib/editor/textStats'
 import { recentErrors } from '@/lib/app/errorLog'
 
@@ -65,7 +65,7 @@ export async function collectDiagnostics(): Promise<string> {
   if (provs.length === 0) {
     put('AI', '未配置模型（仅本地能力可用）')
   } else {
-    const local = provs.filter(p => p.type === 'ollama' || p.local).length
+    const local = provs.filter(p => protocolOf(p) === 'ollama' || p.local).length
     put('AI', `已配置 ${provs.length} 个模型（本地 ${local} · 云端 ${provs.length - local}）`)
   }
 
