@@ -19,6 +19,10 @@ import {
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromGemini, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
+import {
+  budgetExhaustedMessage, initialWireFlags, nextWireFlags,
+  MAX_REQUESTS_PER_CALL, type WireFlags,
+} from '@/lib/aiCore/protocols/shared'
 
 /** baseUrl 归一：允许填 `…/v1beta` 或不带版本段 */
 function geminiBaseOf(raw: string): string {
@@ -109,22 +113,30 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
 
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
   const contents = toGeminiContents(messages)
-  const gen: Record<string, unknown> = { temperature: o.temperature }
-  // 🔴 官方 structured outputs：responseMimeType + responseJsonSchema（JSON Schema 子集）
-  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
-    gen.responseMimeType = 'application/json'
-    gen.responseJsonSchema = o.jsonSchema
-  } else if (o.wireFormat === 'json-object') {
-    gen.responseMimeType = 'application/json'
-  }
-  const body: Record<string, unknown> = {
-    contents,
-    generationConfig: gen,
-    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+  // 🔴 3.4.2 · D-1：可选参数分两档（结构字段 / 采样），400 时逐档撤。
+  //    Gemini 的 temperature 是 [0, 2]，个别模型只收 [0, 1]；老网关也常不认 responseJsonSchema。
+  const canFormat = o.wireFormat === 'json-schema' && !!o.jsonSchema
+  const canJsonObject = o.wireFormat === 'json-object'
+  let flags: WireFlags = initialWireFlags(canFormat || canJsonObject)
+  const buildBody = (f: WireFlags): Record<string, unknown> => {
+    const gen: Record<string, unknown> = { ...(f.sampling ? { temperature: o.temperature } : {}) }
+    // 官方 structured outputs：responseMimeType + responseJsonSchema（JSON Schema 子集）
+    if (f.format && canFormat) {
+      gen.responseMimeType = 'application/json'
+      gen.responseJsonSchema = o.jsonSchema
+    } else if (f.format && canJsonObject) {
+      gen.responseMimeType = 'application/json'
+    }
+    return {
+      contents,
+      generationConfig: gen,
+      ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    }
   }
 
   const modelPath = encodeURIComponent(config.model)
-  const url = o.onToken
+  const streaming = !!o.onToken
+  const urlOf = (stream: boolean) => stream
     ? `${base}/models/${modelPath}:streamGenerateContent?alt=sse`
     : `${base}/models/${modelPath}:generateContent`
   const headers = mergeHeaders({
@@ -134,14 +146,39 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
 
   let res: Response
   let clearTimer: (() => void) | null = null
+  /** 本次逻辑调用实际发了几次请求 */
+  let attempts = 0
+  /** 已读过的 400 响应体（流已消费，重读只会得到空串） */
+  let lastErrorText = ''
+  const doFetch = (f: WireFlags, stream: boolean) => fetchWithTimeout(
+    urlOf(stream),
+    { method: 'POST', headers, body: JSON.stringify(buildBody(f)) },
+    timeoutMs,
+    o.signal,
+    stream ? (ct) => { clearTimer = ct } : undefined,
+  )
+  /** 非流式响应体 → 结果（直接非流式与「流式解析不出内容」的降级重试共用） */
+  const nonStreamOf = (data: unknown): DriverResult => {
+    const d = data as { promptFeedback?: { blockReason?: unknown }; candidates?: GeminiCandidate[] }
+    const block = d?.promptFeedback?.blockReason
+    if (typeof block === 'string' && block) throw new AIRefusalError('content-filter', `blockReason=${block}`)
+    const cand = (d?.candidates ?? [])[0]
+    const content = candidateText(cand)
+    const finishReason = typeof cand?.finishReason === 'string' ? cand.finishReason : ''
+    if (GEMINI_REFUSAL_REASONS.has(finishReason)) throw new AIRefusalError('content-filter', `finishReason=${finishReason}`)
+    if (!content.trim()) throw new Error('Gemini 未返回内容：请确认模型名称正确、该模型已开通，且请求未被安全策略拦截。')
+    return { content: stripThink(content), loadMs: 0, usage: usageFromGemini(d) }
+  }
   try {
-    res = await fetchWithTimeout(
-      url,
-      { method: 'POST', headers, body: JSON.stringify(body) },
-      timeoutMs,
-      o.signal,
-      o.onToken ? (ct) => { clearTimer = ct } : undefined,
-    )
+    for (;;) {
+      res = await doFetch(flags, streaming)
+      attempts += 1
+      if (o.disableCompatibilityRetry || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
+      const txt = await res.text().catch(() => '')
+      const next = nextWireFlags(flags, txt)
+      if (!next) { lastErrorText = txt; break }
+      flags = next
+    }
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Gemini 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)
@@ -149,7 +186,7 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
   }
 
   if (!res.ok) {
-    const txt = await res.text().catch(() => '')
+    const txt = lastErrorText || await res.text().catch(() => '')
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Gemini 鉴权失败（HTTP ${res.status}）：请检查 x-goog-api-key 是否有效、该模型是否已开通。`)
     }
@@ -183,28 +220,33 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
     }
     if (report.errorMessage) throw new Error(`Gemini 在生成过程中报错：${report.errorMessage}`)
     if (GEMINI_REFUSAL_REASONS.has(finishReason)) throw new AIRefusalError('content-filter', `finishReason=${finishReason}`)
-    if (!content.trim()) throw new Error('Gemini 未返回内容：请确认模型名称正确、该模型已开通，且请求未被安全策略拦截。')
+    if (!content.trim()) {
+      // 🔴 3.4.2 · D-1：`alt=sse` 不是所有兼容网关都实现（有的直接吐整段 JSON）⇒ 退一次**非流式**。
+      if (o.disableCompatibilityRetry) throw new Error('Gemini 未返回内容：请确认模型名称正确、该模型已开通，且请求未被安全策略拦截。')
+      if (attempts >= MAX_REQUESTS_PER_CALL) throw new Error(budgetExhaustedMessage('Gemini', attempts))
+      attempts += 1
+      const retry = await fetchWithTimeout(
+        urlOf(false),
+        { method: 'POST', headers, body: JSON.stringify(buildBody(flags)) },
+        timeoutMs, o.signal,
+      )
+      if (retry.ok) {
+        const out = nonStreamOf(await retry.json().catch(() => ({})))
+        o.onToken?.(out.content)
+        return { ...out, usage: { ...out.usage, attempts } }
+      }
+      throw new Error('Gemini 未返回可用内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 streamGenerateContent 的 SSE 格式——请确认中转站文档给出的接口地址与模型名。')
+    }
     return {
       content: stripThink(content),
       loadMs: 0,
       // 无结束哨兵：内容可用，结束原因未知时记 eof
-      usage: { ...usage, finishReason: finishReason || 'eof' },
+      usage: { ...usage, finishReason: finishReason || 'eof', ...(attempts > 1 ? { attempts } : {}) },
     }
   }
 
-  const data = await res.json().catch(() => ({}))
-  const block = (data?.promptFeedback as { blockReason?: unknown } | undefined)?.blockReason
-  if (typeof block === 'string' && block) throw new AIRefusalError('content-filter', `blockReason=${block}`)
-  const cand = (data?.candidates ?? [])[0] as GeminiCandidate | undefined
-  const content = candidateText(cand)
-  const finishReason = typeof cand?.finishReason === 'string' ? cand.finishReason : ''
-  if (GEMINI_REFUSAL_REASONS.has(finishReason)) throw new AIRefusalError('content-filter', `finishReason=${finishReason}`)
-  if (!content.trim()) throw new Error('Gemini 未返回内容：请确认模型名称正确、该模型已开通，且请求未被安全策略拦截。')
-  return {
-    content: stripThink(content),
-    loadMs: 0,
-    usage: usageFromGemini(data),
-  }
+  const out = nonStreamOf(await res.json().catch(() => ({})))
+  return { ...out, usage: { ...out.usage, ...(attempts > 1 ? { attempts } : {}) } }
 }
 
 export const geminiDriver: ChatDriver = defineDriver({

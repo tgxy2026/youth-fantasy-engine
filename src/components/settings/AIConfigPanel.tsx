@@ -42,8 +42,10 @@ import {
   AI_TIMEOUT_MIN_SEC, AI_TIMEOUT_MAX_SEC, AI_TIMEOUT_DEFAULT_SEC,
   LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
   isLocalModelBlocked, usableProviders, protocolOf, WIRE_PROTOCOL_LABELS, protocolSwitchPatch,
+  webProtocolCorsNote, webProtocolCorsBadge,
   type WireProtocol,
 } from '@/lib/ai'
+import { WEB } from '@/lib/app/platform'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
 import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, StructureCapabilityField } from '@/components/settings/AIConfigFields'
@@ -382,6 +384,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                             {WEB_LOCAL_MODEL_BADGE}
                           </span>
                         )}
+                        {/* 3.4.2 · D-3：网页形态下该协议没拿到 CORS 通过结论 ⇒ 行上也要看得见，
+                            不能只在编辑表单里说（列表才是作者一眼扫过的地方）。被 P9 禁掉的配置不重复标。 */}
+                        {!isLocalModelBlocked(p) && webProtocolCorsBadge(protocolOf(p)) && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded text-10 bg-amber/15 text-amber"
+                            title={webProtocolCorsNote(WEB, protocolOf(p))}>
+                            {webProtocolCorsBadge(protocolOf(p))}
+                          </span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="text-12 text-ink-100 truncate">{p.name}</div>
                           <div className="text-11 text-ink-500 font-mono truncate">{p.model || '（未设置模型）'}</div>
@@ -585,6 +595,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 ) : (
                   <span className="flex items-center gap-1 text-info"><Globe size={13} /> {WIRE_PROTOCOL_LABELS[protocolOf(editing)]}</span>
                 )}
+                {/* 3.4.2 · D-3：网页形态照 CORS 台账说话 —— 未验证就写「未验证」，不显示成可用 */}
+                {webProtocolCorsBadge(protocolOf(editing)) && (
+                  <span className="px-1.5 py-0.5 rounded text-10 border border-amber/40 text-amber">
+                    {webProtocolCorsBadge(protocolOf(editing))}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -610,6 +626,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 <p className="text-11 text-ink-500 mt-1 leading-relaxed">
                   决定请求路径、鉴权方式与消息结构（<span className="text-ink-600">选平台预设会自动带好；自建端点或远程 Ollama 在这里手动指定。切换会清空已拉取的模型清单与该端点的结构化输出确认。</span>）
                 </p>
+                {/* 3.4.2 · D-3 · 规划 §4.F.3：未取得通过结论的协议不许「看起来能用」 */}
+                {webProtocolCorsNote(WEB, protocolOf(editing)) && (
+                  <p className="text-11 text-amber mt-1 leading-relaxed">
+                    ⚠️ {webProtocolCorsNote(WEB, protocolOf(editing))}
+                  </p>
+                )}
               </div>
 
               <div>

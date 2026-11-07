@@ -83,6 +83,77 @@ export interface OpenAIFlags {
 /** 错误文案是否明确指向结构格式参数（response_format / json_schema） */
 const FORMAT_REJECTED_RE = /(response[_ ]?format|json[_ ]?schema|structured[_ ]?output|\bformat\b)/i
 
+/**
+ * 错误文案是否明确指向**采样参数**（temperature / top_p / top_k / 通用参数不支持）（3.4.2 · D-1）
+ *
+ * 🔴 为什么不能复用 `shouldDegradeOn400()`：它把 "model" 当硬失败关键词，但推理系模型的原话是
+ *    「Unsupported parameter: 'temperature' is not supported with this model.」—— 里面就有 "model"，
+ *    照那条判据会被判成「配置写错了、别重试」，于是温度导致的 400 永远降不下来。
+ *    所以这里**先排硬失败、再认采样关键词**，两条判据分开、各管一段。
+ */
+const SAMPLING_REJECTED_RE = /(temperature|top[ _]?p\b|top[ _]?k\b|\bsampling\b|unsupported[ _]parameter|unrecognized[ _]request[ _]argument|invalid[ _]parameter|not supported with this model|does(?: not|n't) support)/i
+
+/** 与可选参数无关的硬失败（模型名 / 鉴权 / 额度 / 内容政策 / 上下文）—— 撤参数也救不回来 */
+const HARD_CONFIG_FAIL_RE = /(model[ _]not[ _]found|does(?: not|n't) exist|no such model|invalid[ _]api[ _]?key|api[ _]?key|unauthor|forbidden|quota|balance|insufficient|content[ _]policy|context[ _]length|too many tokens)/i
+
+/**
+ * 这条 400 是不是「采样参数不被接受」？（3.4.2 · D-1，三家官方协议共用）
+ *
+ * 🔴 空响应体**不降级**：与 OpenAI 兼容通道的兼容性降级不同 —— 那边空 400 常是老中转站的怪癖，
+ *    这三家走的是官方字段，空错误体更可能是别的问题，撤采样只是白花一次钱。
+ */
+export function shouldDegradeSamplingOn400(errorText: string): boolean {
+  const t = errorText.trim()
+  if (!t) return false
+  if (HARD_CONFIG_FAIL_RE.test(t)) return false
+  return SAMPLING_REJECTED_RE.test(t)
+}
+
+/**
+ * 官方协议（Anthropic / Gemini / Responses）的可选参数开关（3.4.2 · D-1）。
+ *
+ * 与 OpenAI 兼容通道的区别：这三家本版只下发 `temperature`（＋可选结构字段），没有思考开关，
+ * 所以是两档：`format`（结构输出字段）、`sampling`（采样参数）。
+ */
+export interface WireFlags {
+  /** 是否随请求下发结构输出字段 */
+  format: boolean
+  /** 是否随请求下发采样参数（temperature） */
+  sampling: boolean
+}
+
+/** 初始开关：结构字段只在调用方确实要、且驱动能落成时才算「开着」 */
+export function initialWireFlags(canFormat: boolean): WireFlags {
+  return { format: canFormat, sampling: true }
+}
+
+/** 错误文案是否明确指向结构输出字段 */
+export function isFormatRejected(errorText: string): boolean {
+  return FORMAT_REJECTED_RE.test(errorText)
+}
+
+/**
+ * 下一级请求参数；`null` ＝ 已无可撤的可选参数，别再发。
+ *
+ * 顺序固定：先撤被**明确点名**的结构字段 → 再撤采样 → 最后才在「说不清是什么」的 400 上撤结构字段。
+ * 🔴 每轮只撤一档，且调用方必须把 `attempts` 记进 `MAX_REQUESTS_PER_CALL` 的同一本账。
+ */
+export function nextWireFlags(f: WireFlags, errorText: string): WireFlags | null {
+  if (f.format && isFormatRejected(errorText)) return { ...f, format: false }
+  if (f.sampling && shouldDegradeSamplingOn400(errorText)) return { ...f, sampling: false }
+  if (f.format && shouldDegradeOn400(errorText)) return { ...f, format: false }
+  return null
+}
+
+/**
+ * 「流式解析不出内容 → 非流式重试一次」的预算文案（三家共用）。
+ * 🔴 必须把**已发出的请求次数**写出来：否则作者以为只试了一次，实际付了三次钱、等了三个超时。
+ */
+export function budgetExhaustedMessage(label: string, attempts: number): string {
+  return `${label} 没有返回可用内容，且本次调用已发出 ${attempts} 次请求（上限 ${MAX_REQUESTS_PER_CALL}）：`
+    + '已停止重试。请确认接口地址与模型名是否匹配该服务商的文档。'
+}
+
 /** 下一级请求参数；`null` ＝ 已无可撤的可选参数 */
 export function nextOpenAIFlags(f: OpenAIFlags, errorText: string): OpenAIFlags | null {
   if (f.format && FORMAT_REJECTED_RE.test(errorText)) return { ...f, format: false }

@@ -20,6 +20,10 @@ import {
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromResponses, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
+import {
+  budgetExhaustedMessage, initialWireFlags, nextWireFlags,
+  MAX_REQUESTS_PER_CALL, type WireFlags,
+} from '@/lib/aiCore/protocols/shared'
 
 /** baseUrl 归一：允许填 `…/v1` 或不带版本段 */
 function responsesBaseOf(raw: string): string {
@@ -75,20 +79,28 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
 
-  const body: Record<string, unknown> = {
-    model: config.model,
-    input,
-    temperature: o.temperature,
-    stream: !!o.onToken,
-    ...(instructions ? { instructions } : {}),
+  // 🔴 3.4.2 · D-1：可选参数分两档（结构字段 / 采样），400 时逐档撤。
+  //    实测最常见的两种 400：① 推理系模型拒绝 `temperature ≠ 1`（原话还带 "with this model"）；
+  //    ② 中转不认 `text.format`。撤掉能救回来；模型名 / 鉴权 / 额度写错就别白发请求。
+  const canFormat = (o.wireFormat === 'json-schema' && !!o.jsonSchema) || o.wireFormat === 'json-object'
+  let flags: WireFlags = initialWireFlags(canFormat)
+  const buildBody = (f: WireFlags, stream: boolean): Record<string, unknown> => {
+    const b: Record<string, unknown> = {
+      model: config.model,
+      input,
+      stream,
+      ...(instructions ? { instructions } : {}),
+      ...(f.sampling ? { temperature: o.temperature } : {}),
+    }
+    // 官方 structured outputs：text.format（不是 response_format）
+    if (f.format && o.wireFormat === 'json-schema' && o.jsonSchema) {
+      b.text = { format: { type: 'json_schema', name: 'response', schema: o.jsonSchema } }
+    } else if (f.format && o.wireFormat === 'json-object') {
+      b.text = { format: { type: 'json_object' } }
+    }
+    return b
   }
-  // 🔴 官方 structured outputs：text.format（不是 response_format）
-  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
-    body.text = { format: { type: 'json_schema', name: 'response', schema: o.jsonSchema } }
-  } else if (o.wireFormat === 'json-object') {
-    body.text = { format: { type: 'json_object' } }
-  }
-
+  const streaming = !!o.onToken
   const headers = mergeHeaders({
     'Content-Type': 'application/json',
     ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
@@ -96,14 +108,36 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
 
   let res: Response
   let clearTimer: (() => void) | null = null
+  /** 本次逻辑调用实际发了几次请求 */
+  let attempts = 0
+  /** 已读过的 400 响应体（流已消费，重读只会得到空串） */
+  let lastErrorText = ''
+  const doFetch = (f: WireFlags, stream: boolean) => fetchWithTimeout(
+    `${base}/responses`,
+    { method: 'POST', headers, body: JSON.stringify(buildBody(f, stream)) },
+    timeoutMs,
+    o.signal,
+    stream ? (ct) => { clearTimer = ct } : undefined,
+  )
+  /** 非流式响应体 → 结果（直接非流式与「流式解析不出内容」的降级重试共用） */
+  const nonStreamOf = (data: unknown): DriverResult => {
+    const d = data as { output?: ResponsesOutputItem[] }
+    const content = outputTextOf(d)
+    const usage = usageFromResponses(d)
+    if (usage.finishReason === 'content_filter') throw new AIRefusalError('content-filter', '')
+    if (!content.trim()) throw new Error('Responses 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Responses API。')
+    return { content: stripThink(content), loadMs: 0, usage }
+  }
   try {
-    res = await fetchWithTimeout(
-      `${base}/responses`,
-      { method: 'POST', headers, body: JSON.stringify(body) },
-      timeoutMs,
-      o.signal,
-      o.onToken ? (ct) => { clearTimer = ct } : undefined,
-    )
+    for (;;) {
+      res = await doFetch(flags, streaming)
+      attempts += 1
+      if (o.disableCompatibilityRetry || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
+      const txt = await res.text().catch(() => '')
+      const next = nextWireFlags(flags, txt)
+      if (!next) { lastErrorText = txt; break }
+      flags = next
+    }
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Responses 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)
@@ -111,7 +145,7 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
   }
 
   if (!res.ok) {
-    const txt = await res.text().catch(() => '')
+    const txt = lastErrorText || await res.text().catch(() => '')
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Responses 鉴权失败（HTTP ${res.status}）：请检查 API 密钥与模型权限。`)
     }
@@ -147,24 +181,32 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
     }
     if (report.errorMessage) throw new Error(`Responses 在生成过程中报错：${report.errorMessage}`)
     if (finishReason === 'content_filter') throw new AIRefusalError('content-filter', '')
-    if (!content.trim()) throw new Error('Responses 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Responses API。')
+    if (!content.trim()) {
+      // 🔴 3.4.2 · D-1：`response.output_text.delta` 事件族不标准（兼容网关常见）⇒ 退一次**非流式**。
+      if (o.disableCompatibilityRetry) throw new Error('Responses 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Responses API。')
+      if (attempts >= MAX_REQUESTS_PER_CALL) throw new Error(budgetExhaustedMessage('Responses', attempts))
+      attempts += 1
+      const retry = await fetchWithTimeout(
+        `${base}/responses`,
+        { method: 'POST', headers, body: JSON.stringify(buildBody(flags, false)) },
+        timeoutMs, o.signal,
+      )
+      if (retry.ok) {
+        const out = nonStreamOf(await retry.json().catch(() => ({})))
+        o.onToken?.(out.content)
+        return { ...out, usage: { ...out.usage, attempts } }
+      }
+      throw new Error('Responses 未返回可用内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 Responses 的事件流格式——请确认中转站文档给出的接口地址与模型名。')
+    }
     return {
       content: stripThink(content),
       loadMs: 0,
-      usage: { ...usage, ...(finishReason ? { finishReason } : {}) },
+      usage: { ...usage, ...(finishReason ? { finishReason } : {}), ...(attempts > 1 ? { attempts } : {}) },
     }
   }
 
-  const data = await res.json().catch(() => ({}))
-  const content = outputTextOf(data)
-  const usage = usageFromResponses(data)
-  if (usage.finishReason === 'content_filter') throw new AIRefusalError('content-filter', '')
-  if (!content.trim()) throw new Error('Responses 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Responses API。')
-  return {
-    content: stripThink(content),
-    loadMs: 0,
-    usage,
-  }
+  const out = nonStreamOf(await res.json().catch(() => ({})))
+  return { ...out, usage: { ...out.usage, ...(attempts > 1 ? { attempts } : {}) } }
 }
 
 export const responsesDriver: ChatDriver = defineDriver({

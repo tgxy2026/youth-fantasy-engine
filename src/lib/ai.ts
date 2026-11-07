@@ -42,6 +42,11 @@ export {
 export type { AIProviderType, AIProvider, ChatMessage, PlatformPreset } from '@/lib/aiCore/core'
 // 3.4.2 · 线协议判据与类型（新协议接入层共用；门面显式再导出，禁 export *）
 export { protocolOf, WIRE_PROTOCOL_LABELS, isOllamaProtocol } from '@/lib/aiCore/protocol'
+// 3.4.2 · D-3：网页形态「浏览器直连厂商」的 CORS 台账（界面照它说话，不另写判断）
+export {
+  PROTOCOL_WEB_CORS, CORS_VERDICT_LABEL, PROTOCOL_WEB_CORS_CHECKED_AT,
+  webProtocolCorsNote, webProtocolCorsBadge,
+} from '@/lib/aiCore/webCors'
 export type { WireProtocol } from '@/lib/aiCore/protocol'
 // 3.4.2 · 统一模型清单入口（按线协议分流，不静默退回 OpenAI /models）
 export { listModelsFor, capabilitiesOfProtocol } from '@/lib/aiCore/protocols'

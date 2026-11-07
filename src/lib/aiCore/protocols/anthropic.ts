@@ -19,6 +19,11 @@ import {
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromAnthropic, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
+import {
+  budgetExhaustedMessage, initialWireFlags, nextWireFlags,
+  MAX_REQUESTS_PER_CALL, type WireFlags,
+} from '@/lib/aiCore/protocols/shared'
+import { WEB } from '@/lib/app/platform'
 
 /** Anthropic 的 API 版本头（官方 structured outputs 文档示例值） */
 export const ANTHROPIC_VERSION = '2026-10-21'
@@ -60,6 +65,7 @@ export async function listAnthropicModels(config: Pick<AIProvider, 'baseUrl' | '
       headers: mergeHeaders({
         'x-api-key': config.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
+        ...(WEB ? { 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
       }, config.headers),
     }, 10_000)
   } catch (e) {
@@ -96,35 +102,67 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
 
-  const body: Record<string, unknown> = {
+  // 🔴 3.4.2 · D-1：可选参数分两档（结构字段 / 采样），400 时**逐档撤**而不是整轮失败。
+  //    实测会撞的两种 400：① 部分模型只接受 temperature 0–1（作者填 1.2 就整轮挂）；
+  //    ② 中转 / 兼容网关不认 output_config。撤掉能救回来，撤不掉（模型名、鉴权、额度）就别白发请求。
+  const canFormat = o.wireFormat === 'json-schema' && !!o.jsonSchema
+  let flags: WireFlags = initialWireFlags(canFormat)
+  const buildBody = (f: WireFlags, stream: boolean): Record<string, unknown> => ({
     model: config.model,
     max_tokens: o.outputTokens ?? 8192,
     messages: rest,
-    temperature: o.temperature,
-    stream: !!o.onToken,
+    stream,
     ...(system ? { system } : {}),
-  }
-  // 🔴 官方 structured outputs：output_config.format（仅 json_schema；无无 schema 的 JSON 对象模式）
-  if (o.wireFormat === 'json-schema' && o.jsonSchema) {
-    body.output_config = { format: { type: 'json_schema', schema: o.jsonSchema } }
-  }
+    ...(f.sampling ? { temperature: o.temperature } : {}),
+    // 官方 structured outputs：output_config.format（仅 json_schema；无无 schema 的 JSON 对象模式）
+    ...(f.format && canFormat ? { output_config: { format: { type: 'json_schema', schema: o.jsonSchema } } } : {}),
+  })
+  const streaming = !!o.onToken
 
   const headers = mergeHeaders({
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey,
     'anthropic-version': ANTHROPIC_VERSION,
+    // 🔴 网页版是**浏览器直连厂商**：Anthropic 只有收到这个头才会回 CORS 响应头（官方要求）。
+    //    桌面 / 便携版不加，请求逐字节与 3.4.1 一致（`WEB` 为假时整行消失）。
+    ...(WEB ? { 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
   }, config.headers)
 
   let res: Response
   let clearTimer: (() => void) | null = null
+  /** 本次逻辑调用实际发了几次请求（预算与用量都可核对） */
+  let attempts = 0
+  /** 已读过的 400 响应体 —— 流已消费，重读只会得到空串 */
+  let lastErrorText = ''
+  const doFetch = (f: WireFlags, stream: boolean) => fetchWithTimeout(
+    `${base}/messages`,
+    { method: 'POST', headers, body: JSON.stringify(buildBody(f, stream)) },
+    timeoutMs,
+    o.signal,
+    stream ? (ct) => { clearTimer = ct } : undefined,
+  )
+  /** 非流式响应体 → 结果（直接非流式请求与「流式解析不出内容」的降级重试共用同一段解析） */
+  const nonStreamOf = (data: unknown): DriverResult => {
+    const d = data as { content?: { type?: string; text?: unknown }[]; stop_reason?: string }
+    const text = (d?.content ?? [])
+      .filter(b => b?.type === 'text' && typeof b.text === 'string')
+      .map(b => b.text as string)
+      .join('')
+    if (d?.stop_reason === 'refusal') throw new AIRefusalError('content-filter', '')
+    if (!text.trim()) throw new Error('Anthropic 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Messages API。')
+    return { content: stripThink(text), loadMs: 0, usage: usageFromAnthropic(d) }
+  }
+
   try {
-    res = await fetchWithTimeout(
-      `${base}/messages`,
-      { method: 'POST', headers, body: JSON.stringify(body) },
-      timeoutMs,
-      o.signal,
-      o.onToken ? (ct) => { clearTimer = ct } : undefined,
-    )
+    for (;;) {
+      res = await doFetch(flags, streaming)
+      attempts += 1
+      if (o.disableCompatibilityRetry || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
+      const txt = await res.text().catch(() => '')
+      const next = nextWireFlags(flags, txt)
+      if (!next) { lastErrorText = txt; break }
+      flags = next
+    }
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Anthropic 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)
@@ -132,7 +170,7 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
   }
 
   if (!res.ok) {
-    const txt = await res.text().catch(() => '')
+    const txt = lastErrorText || await res.text().catch(() => '')
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Anthropic 鉴权失败（HTTP ${res.status}）：请检查 x-api-key 是否正确、是否有该模型权限。`)
     }
@@ -174,7 +212,24 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
     }
     if (report.errorMessage) throw new Error(`Anthropic 在生成过程中报错：${report.errorMessage}`)
     if (stopReason === 'refusal') throw new AIRefusalError('content-filter', '')
-    if (!content.trim()) throw new Error('Anthropic 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Messages API。')
+    if (!content.trim()) {
+      // 🔴 3.4.2 · D-1：流式解析不出内容（兼容网关的 SSE 事件族不标准）⇒ 退一次**非流式**。
+      //    宁可多等一整轮，也要把「跑不通」变成「慢一点但能跑」；次数进同一本预算账。
+      if (o.disableCompatibilityRetry) throw new Error('Anthropic 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Messages API。')
+      if (attempts >= MAX_REQUESTS_PER_CALL) throw new Error(budgetExhaustedMessage('Anthropic', attempts))
+      attempts += 1
+      const retry = await fetchWithTimeout(
+        `${base}/messages`,
+        { method: 'POST', headers, body: JSON.stringify(buildBody(flags, false)) },
+        timeoutMs, o.signal,
+      )
+      if (retry.ok) {
+        const out = nonStreamOf(await retry.json().catch(() => ({})))
+        o.onToken?.(out.content)
+        return { ...out, usage: { ...out.usage, attempts } }
+      }
+      throw new Error('Anthropic 未返回可用内容（流式响应体无法解析，非流式重试也失败）：该接口地址可能不兼容 Messages 流式格式——请确认中转站文档给出的接口地址与模型名。')
+    }
     return {
       content: stripThink(content),
       loadMs: 0,
@@ -182,22 +237,13 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
         ...usage,
         ...(stopReason ? { finishReason: stopReason } : {}),
         ...(report.sawDone ? {} : { finishReason: stopReason || 'eof' }),
+        ...(attempts > 1 ? { attempts } : {}),
       },
     }
   }
 
-  const data = await res.json().catch(() => ({}))
-  const content = ((data?.content ?? []) as { type?: string; text?: unknown }[])
-    .filter(b => b.type === 'text' && typeof b.text === 'string')
-    .map(b => b.text as string)
-    .join('')
-  if (data?.stop_reason === 'refusal') throw new AIRefusalError('content-filter', '')
-  if (!content.trim()) throw new Error('Anthropic 未返回内容：请确认模型名称正确、账户有额度，且该模型支持 Messages API。')
-  return {
-    content: stripThink(content),
-    loadMs: 0,
-    usage: usageFromAnthropic(data),
-  }
+  const out = nonStreamOf(await res.json().catch(() => ({})))
+  return { ...out, usage: { ...out.usage, ...(attempts > 1 ? { attempts } : {}) } }
 }
 
 export const anthropicDriver: ChatDriver = defineDriver({
