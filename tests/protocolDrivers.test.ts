@@ -6,7 +6,7 @@ import http from 'node:http'
 import { chat } from '../src/lib/aiCore/chat'
 import { isCancelled } from '../src/lib/aiCore/transport'
 import { protocolOf } from '../src/lib/aiCore/protocol'
-import { driverFor, listModelsFor } from '../src/lib/aiCore/protocols'
+import { driverFor, listModelsFor, capabilitiesOfProtocol } from '../src/lib/aiCore/protocols'
 import type { AIProvider } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
@@ -190,6 +190,16 @@ async function run(): Promise<void> {
   ok('protocolOf：显式 protocol 优先', protocolOf({ type: 'openai', protocol: 'gemini' }) === 'gemini')
   ok('注册表：五个协议都有 driver',
     ['ollama', 'openai-chat', 'anthropic', 'gemini', 'openai-responses'].every(p => !!driverFor(p as never)))
+  ok('能力声明：五个协议都有完整字段',
+    ['ollama', 'openai-chat', 'anthropic', 'gemini', 'openai-responses'].every(p => {
+      const c = capabilitiesOfProtocol(p as never)
+      return !!c && typeof c.stream === 'boolean' && typeof c.cancel === 'boolean'
+        && typeof c.multiTurn === 'boolean' && typeof c.embedding === 'boolean'
+        && ['low', 'medium', 'high'].includes(c.latency) && typeof c.unattended === 'boolean'
+        && ['local', 'subscription', 'metered', 'unknown'].includes(c.quota)
+    }))
+  ok('能力声明：Anthropic 无 embedding', capabilitiesOfProtocol('anthropic')?.embedding === false)
+  ok('能力声明：Ollama 是本地额度', capabilitiesOfProtocol('ollama')?.quota === 'local')
 
   // ---------- Anthropic ----------
   mode = 'anthropic-json'

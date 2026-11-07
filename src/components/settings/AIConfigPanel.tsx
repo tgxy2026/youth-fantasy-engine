@@ -786,6 +786,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               <StructureCapabilityField
                 structured={editing.structuredOutput}
                 reasoningWithStructure={editing.reasoningWithStructure}
+                protocol={protocolOf(editing)}
                 onChange={patch => setEditing(prev => (prev ? { ...prev, ...patch } : prev))}
               />
 

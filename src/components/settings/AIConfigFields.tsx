@@ -20,7 +20,7 @@ import { checkContextWindow, MAX_WINDOW } from '@/lib/ai/modelCapacity'
 import {
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '@/lib/ai'
-import type { AITestResult } from '@/lib/ai'
+import type { AITestResult, WireProtocol } from '@/lib/ai'
 
 function fmtMs(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
@@ -125,12 +125,22 @@ export function ContextWindowField({ value, local, onChange }: {
  *    有的直接 400；Ollama 的 `format` 也分版本。按模型名猜不可靠，猜错等于整条链路静默失败。
  *    不打开时只靠提示词约束 —— 请求体与 3.1.x 逐字节一致。
  */
-export function StructureCapabilityField({ structured, reasoningWithStructure, onChange }: {
+export function StructureCapabilityField({ structured, reasoningWithStructure, protocol, onChange }: {
   structured: 'json-object' | 'json-schema' | undefined
   reasoningWithStructure: boolean | undefined
+  /** 3.4.2：按线协议显示不同的结构化字段说明（Anthropic 只支持带 schema 的格式） */
+  protocol?: WireProtocol
   onChange: (patch: { structuredOutput?: 'json-object' | 'json-schema'; reasoningWithStructure?: boolean }) => void
 }) {
   const on = structured === 'json-object' || structured === 'json-schema'
+  const isAnthropic = protocol === 'anthropic'
+  const formatHint = isAnthropic
+    ? '该端点支持下发 JSON schema（Anthropic 走 output_config.format）'
+    : protocol === 'gemini'
+      ? '该端点支持下发 JSON 格式（Gemini 走 responseMimeType / responseJsonSchema）'
+      : protocol === 'openai-responses'
+        ? '该端点支持下发 JSON 格式（Responses 走 text.format）'
+        : '该端点支持下发 JSON 对象格式（OpenAI 兼容走 response_format，Ollama 走 format）'
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
@@ -143,10 +153,10 @@ export function StructureCapabilityField({ structured, reasoningWithStructure, o
             className="mt-0.5 accent-amber"
             checked={on}
             onChange={e => onChange(e.target.checked
-              ? { structuredOutput: 'json-object' }
+              ? { structuredOutput: isAnthropic ? 'json-schema' : 'json-object' }
               : { structuredOutput: undefined, reasoningWithStructure: undefined })}
           />
-          <span>该端点支持下发 JSON 对象格式（OpenAI 兼容走 <code>response_format</code>，Ollama 走 <code>format</code>）</span>
+          <span>{formatHint}</span>
         </label>
         <label className={`flex items-start gap-2 text-12 ${on ? 'text-ink-200' : 'text-ink-600'}`}>
           <input
@@ -162,6 +172,11 @@ export function StructureCapabilityField({ structured, reasoningWithStructure, o
           不确定就保持关闭：关闭时只靠提示词约束，请求体与升级前完全一致。
           打开后若端点返回 400，会自动撤掉这个可选参数重试一次；老式的 JSON 任务不受影响。
         </p>
+        {isAnthropic && (
+          <p className="text-10 leading-relaxed text-ink-500">
+            Anthropic 只支持带 schema 的格式：本项只声明端点能力，实际下发仍取决于任务是否提供 schema；只要求 JSON 对象的任务不会下发结构字段。
+          </p>
+        )}
       </div>
     </div>
   )

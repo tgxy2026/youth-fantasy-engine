@@ -215,6 +215,7 @@ export const geminiDriver: ChatDriver = defineDriver({
   assistantRole: 'model',
   streamEndpoint: 'separate',
   usageSource: 'gemini',
+  capabilities: { stream: true, cancel: true, multiTurn: true, embedding: true, latency: 'medium', unattended: true, quota: 'metered' },
   structuredWire: true,
   parseStreamLine: geminiStreamParser,
   chat: geminiChat,

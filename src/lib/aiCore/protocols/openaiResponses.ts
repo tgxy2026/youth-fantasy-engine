@@ -175,6 +175,7 @@ export const responsesDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'openai-responses',
+  capabilities: { stream: true, cancel: true, multiTurn: true, embedding: true, latency: 'medium', unattended: true, quota: 'metered' },
   structuredWire: true,
   parseStreamLine: responsesStreamParser,
   chat: responsesChat,

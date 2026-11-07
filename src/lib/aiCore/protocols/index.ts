@@ -8,7 +8,7 @@
 import type { WireProtocol } from '@/lib/aiCore/protocol'
 import { protocolOf } from '@/lib/aiCore/protocol'
 import type { AIProvider } from '@/lib/aiCore/core'
-import type { ChatDriver } from '@/lib/aiCore/protocols/contract'
+import type { ChatDriver, DriverCapabilities } from '@/lib/aiCore/protocols/contract'
 import { ollamaDriver } from '@/lib/aiCore/protocols/ollama'
 import { openaiChatDriver } from '@/lib/aiCore/protocols/openaiChat'
 import { anthropicDriver } from '@/lib/aiCore/protocols/anthropic'
@@ -36,6 +36,11 @@ export function registerDriver(driver: ChatDriver): void {
 /** 已登记的 driver（配置界面 / 诊断用） */
 export function registeredDrivers(): ChatDriver[] {
   return Object.values(REGISTRY).filter((d): d is ChatDriver => !!d)
+}
+
+/** 能力声明（规划 §4.A）：未登记协议返回 undefined，由调用方如实处理 */
+export function capabilitiesOfProtocol(protocol: WireProtocol): DriverCapabilities | undefined {
+  return REGISTRY[protocol]?.capabilities
 }
 
 /**

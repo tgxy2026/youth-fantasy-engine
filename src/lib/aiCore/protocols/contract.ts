@@ -57,6 +57,28 @@ export type AssistantRole = 'assistant' | 'model'
 export type StreamEndpoint = 'same' | 'separate'
 
 /**
+ * driver 能力声明（规划 §4.A 的最小落地）。
+ *
+ * 结构化输出能力不在此重复 —— 由 {@link ChatDriver.structuredWire} 单一表达。
+ */
+export interface DriverCapabilities {
+  /** 能否 SSE 逐块输出 */
+  stream: boolean
+  /** 能否中途取消并保留片段 */
+  cancel: boolean
+  /** 能否接受外部 `messages` 历史 */
+  multiTurn: boolean
+  /** 是否有可用的 embedding 通道 */
+  embedding: boolean
+  /** 首响应量级（经验声明，不是实测质量证据） */
+  latency: 'low' | 'medium' | 'high'
+  /** 是否允许无人值守循环（条款约束，不是技术能力） */
+  unattended: boolean
+  /** 额度口径 */
+  quota: 'local' | 'subscription' | 'metered' | 'unknown'
+}
+
+/**
  * 线协议 driver。
  *
  * 🔴 只做协议适配：不碰提示词、不做内容改写、不缓存作品正文。
@@ -76,6 +98,11 @@ export interface ChatDriver {
   streamEndpoint: StreamEndpoint
   /** 用量账本的来源标签（旧两值保持不变） */
   usageSource: ChatUsage['source']
+  /**
+   * 能力声明（3.4.2 · 规划 §4.A）：作为后续三轨路由 / 降级的唯一依据。
+   * 🔴 只声明**协议客观能力**，不承诺模型质量、额度稳定性或厂商条款长期不变。
+   */
+  capabilities: DriverCapabilities
   /**
    * 本驱动能落成厂商结构化输出字段的范围。
    *

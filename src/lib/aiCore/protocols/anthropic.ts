@@ -208,6 +208,7 @@ export const anthropicDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'anthropic',
+  capabilities: { stream: true, cancel: true, multiTurn: true, embedding: false, latency: 'medium', unattended: true, quota: 'metered' },
   structuredWire: 'json-schema',
   parseStreamLine: anthropicStreamParser,
   chat: anthropicChat,

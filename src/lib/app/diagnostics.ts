@@ -15,7 +15,7 @@
  */
 import * as db from '@/lib/db'
 import { APP_VERSION_LABEL, DESKTOP } from '@/lib/app/env'
-import { loadProviders, protocolOf } from '@/lib/ai'
+import { loadProviders, protocolOf, WIRE_PROTOCOL_LABELS } from '@/lib/ai'
 import { countWords } from '@/lib/editor/textStats'
 import { recentErrors } from '@/lib/app/errorLog'
 
@@ -67,6 +67,13 @@ export async function collectDiagnostics(): Promise<string> {
   } else {
     const local = provs.filter(p => protocolOf(p) === 'ollama' || p.local).length
     put('AI', `已配置 ${provs.length} 个模型（本地 ${local} · 云端 ${provs.length - local}）`)
+    // 3.4.2：只报「协议分布」，不报模型名 / 地址 / 密钥（红线②）
+    const byProtocol = new Map<string, number>()
+    for (const p of provs) {
+      const label = WIRE_PROTOCOL_LABELS[protocolOf(p)]
+      byProtocol.set(label, (byProtocol.get(label) ?? 0) + 1)
+    }
+    put('AI 协议', [...byProtocol.entries()].map(([label, n]) => `${label} ${n}`).join(' · '))
   }
 
   // ── 语义索引（取不到就跳过这一行，不报错） ──

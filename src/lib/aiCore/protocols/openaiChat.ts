@@ -209,6 +209,7 @@ export const openaiChatDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'openai',
+  capabilities: { stream: true, cancel: true, multiTurn: true, embedding: true, latency: 'medium', unattended: true, quota: 'metered' },
   structuredWire: true,
   chat: openaiChat,
   listModels: config => listOpenAIModels(config),

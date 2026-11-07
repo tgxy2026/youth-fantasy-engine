@@ -139,6 +139,7 @@ export const ollamaDriver: ChatDriver = defineDriver({
   assistantRole: 'assistant',
   streamEndpoint: 'same',
   usageSource: 'ollama',
+  capabilities: { stream: true, cancel: true, multiTurn: true, embedding: true, latency: 'high', unattended: true, quota: 'local' },
   structuredWire: true,
   chat: ollamaChat,
   listModels: config => listOllamaModels(config.baseUrl),
