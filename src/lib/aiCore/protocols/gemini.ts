@@ -20,7 +20,7 @@ import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromGemini, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import {
-  budgetExhaustedMessage, initialWireFlags, nextWireFlags,
+  budgetExhaustedMessage, fetchWithWireDegrade, initialWireFlags,
   MAX_REQUESTS_PER_CALL, type WireFlags,
 } from '@/lib/aiCore/protocols/shared'
 
@@ -170,15 +170,14 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
     return { content: stripThink(content), loadMs: 0, usage: usageFromGemini(d) }
   }
   try {
-    for (;;) {
-      res = await doFetch(flags, streaming)
-      attempts += 1
-      if (o.disableCompatibilityRetry || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
-      const txt = await res.text().catch(() => '')
-      const next = nextWireFlags(flags, txt)
-      if (!next) { lastErrorText = txt; break }
-      flags = next
-    }
+    const out = await fetchWithWireDegrade(doFetch, flags, {
+      streaming,
+      singleAttempt: !!o.disableCompatibilityRetry,
+    })
+    res = out.res
+    flags = out.flags
+    attempts = out.attempts
+    lastErrorText = out.lastErrorText
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Gemini 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)

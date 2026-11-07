@@ -146,6 +146,36 @@ export function nextWireFlags(f: WireFlags, errorText: string): WireFlags | null
 }
 
 /**
+ * 400 可选参数降级重试循环（三家官方协议共用一份，3.4.2 · D-1）。
+ *
+ * 🔴 为什么必须只写一份：三个驱动各抄一遍时，改一处忘两处 ⇒ 降级行为静默漂移，
+ *    而「按协议分别实现、不得串味」正是靠这份**共用判据**（`nextWireFlags`）兑现的。
+ * 🔴 调用方仍各自 `try/catch`：连接失败文案要带各自的服务商名，不能在这里统一。
+ * 🔴 `lastErrorText` 只在「读过 400 且决定不再重试」时非空 —— 若最后一次成功发出的是别种错误，
+ *    调用方必须回去读 `res.text()`（此时响应体还没被消费）。保持这个语义，别顺手改成「读过的都留」。
+ */
+export async function fetchWithWireDegrade(
+  doFetch: (flags: WireFlags, streaming: boolean) => Promise<Response>,
+  startFlags: WireFlags,
+  opts: { streaming: boolean; singleAttempt?: boolean },
+): Promise<{ res: Response; flags: WireFlags; attempts: number; lastErrorText: string }> {
+  let flags = startFlags
+  let res!: Response
+  let attempts = 0
+  let lastErrorText = ''
+  for (;;) {
+    res = await doFetch(flags, opts.streaming)
+    attempts += 1
+    if (opts.singleAttempt || res.status !== 400 || attempts >= MAX_REQUESTS_PER_CALL) break
+    const txt = await res.text().catch(() => '')
+    const next = nextWireFlags(flags, txt)
+    if (!next) { lastErrorText = txt; break }
+    flags = next
+  }
+  return { res, flags, attempts, lastErrorText }
+}
+
+/**
  * 「流式解析不出内容 → 非流式重试一次」的预算文案（三家共用）。
  * 🔴 必须把**已发出的请求次数**写出来：否则作者以为只试了一次，实际付了三次钱、等了三个超时。
  */
