@@ -17,6 +17,7 @@ import * as db from '@/lib/db'
 import { DESKTOP, flushDesktop } from '@/lib/app/desktop'
 import { PORTABLE, flushPortable } from '@/lib/storage/fileBackend'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { submissionBlockReason, platformSubmissionState } from '@/lib/storage/submissionState'
 import { leaveGuardDirty } from '@/lib/editor/leaveBarrier'
 import { countWords } from '@/lib/editor/textStats'
 import { uid } from '@/lib/app/id'
@@ -32,7 +33,7 @@ import {
   MAX_CARD_NAME_CHARS, MAX_CARD_TOTAL_CHARS, MAX_CONTENT_CHARS, MAX_FIELD_CHARS, MAX_NAME_CHARS,
   agentActionAllowed, chapterSummary, fail, projectSummary,
   type AgentAction, type AgentChapterWriteResult, type AgentScope, type AgentToolCall,
-  type AgentToolResult, type SettingTabInfo,
+  type AgentToolResult, type AgentWriteNotice, type SettingTabInfo,
 } from '@/lib/agentHost/contract'
 
 export interface AgentExecutorDeps {
@@ -49,6 +50,8 @@ export interface AgentExecutorDeps {
   chapterSeqOf(volumes: Volume[], chapters: Chapter[], chapterId: string): number
   flush(): Promise<boolean>
   unsavedDraft(): boolean
+  storageBlockReason(): string
+  notify(notice: AgentWriteNotice): void
   now(): number
   uid(): string
   countWords(text: string): number
@@ -77,6 +80,15 @@ export function defaultExecutorDeps(): AgentExecutorDeps {
     chapterSeqOf: (volumes, chapters, chapterId) => chapterSeqOf(volumes, chapters, chapterId),
     flush: async () => (DESKTOP ? flushDesktop() : PORTABLE ? flushPortable() : true),
     unsavedDraft: () => leaveGuardDirty(),
+    storageBlockReason: () => submissionBlockReason(platformSubmissionState()),
+    notify: notice => {
+      if (typeof window === 'undefined') return
+      try {
+        window.dispatchEvent(new CustomEvent('yfe:agent-write', { detail: notice }))
+        // 章节结构变了：复用既有侧栏事件，让章节树 / 卷台账刷新
+        if (notice.kind === 'chapter') window.dispatchEvent(new Event('yfe:volumes-changed'))
+      } catch { /* 界面通知失败不影响已确认的写入结果 */ }
+    },
     now: () => Date.now(),
     uid: () => uid(),
     countWords: text => countWords(text),
@@ -129,12 +141,21 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
       : fail('SCOPE_DENIED', `当前连接未授权该项目执行「${action}」动作。请在引擎「模型设置 → Agent 连接」中勾选授权。`)
   }
 
+  /** 写前检查存储是否可写：冲突 / 锁写 / 未连接时明确拒绝，不进入保存兜底。 */
+  function storageBlocked(): AgentToolResult | null {
+    const reason = deps.storageBlockReason()
+    return reason
+      ? fail('STORAGE_BLOCKED', `引擎存储当前不可写入：${reason}。请先在引擎中保存 / 解锁 / 解决冲突后再试。`)
+      : null
+  }
+
   /** 写后统一收口：落盘确认 + 回读确认。失败区分“确定没写”与“结果不明”。 */
   async function confirmWrite<T>(
     owner: OwnedOperation,
     verify: () => Promise<boolean>,
     value: T,
     describeFailure: string,
+    notice: AgentWriteNotice,
   ): Promise<AgentToolResult> {
     let flushed = false
     try {
@@ -155,6 +176,8 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     if (!(await verify())) {
       return fail('OUTCOME_UNKNOWN', `${describeFailure}：落盘后回读不到刚写入的内容，结果不明。请先在引擎中核对，不要盲目重试。`)
     }
+    // 写已确认：通知当前界面刷新（编辑器 / 设定卡页 / 章节树）
+    deps.notify(notice)
     return { ok: true, value }
   }
 
@@ -212,19 +235,57 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     }
   }
 
-  async function listSettingTabs(args: Record<string, unknown>): Promise<AgentToolResult> {
+  async function listSettingTabs(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
     const project = await projectOf(projectId)
     if ('ok' in project) return project
-    const tabs: SettingTabInfo[] = []
+    const writable = agentActionAllowed(scope, projectId, 'setting:create')
+    const tabs: (SettingTabInfo & { writable: boolean })[] = []
     // 只列 card 型页签：首期写工具只支持设定卡（表格题不在其中）
     for (const tab of cardTabs()) {
       tabs.push({
         tabId: tab.id, name: tab.name, group: tab.group, description: tab.description,
         fields: deps.cardFieldsOf(tab).map(f => ({ path: f.path, name: f.name, desc: f.desc })),
+        writable,
       })
     }
-    return { ok: true, value: { projectId, tabs } }
+    const grantedActions = scope.projects.find(g => g.projectId === projectId)?.actions ?? []
+    return { ok: true, value: { projectId, grantedActions, tabs } }
+  }
+
+  /** 一次查询：项目 + 卷 + 章节统计 + 设定栏目 + 可写能力 + 版本（updatedAt）。 */
+  async function getProject(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    owner.assertCurrent()
+    const [volumes, chapters] = await Promise.all([deps.getVolumes(owner), deps.getChapters(owner)])
+    const cards = await owner.store.getAll<CardRecord>('cardRecords')
+    owner.assertCurrent()
+    const projectVolumes = volumes.filter(v => v.projectId === projectId)
+    const projectChapters = chapters.filter(c => c.projectId === projectId)
+    const grantedActions = scope.projects.find(g => g.projectId === projectId)?.actions ?? []
+    const writable = agentActionAllowed(scope, projectId, 'setting:create')
+    return {
+      ok: true,
+      value: {
+        ...projectSummary(project),
+        open: true,
+        grantedActions,
+        volumes: projectVolumes
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .map(v => ({ id: v.id, title: v.title, order: v.order, isFree: v.isFree === true })),
+        chapters: projectChapters.length,
+        totalWords: projectChapters.reduce((sum, c) => sum + (typeof c.wordCount === 'number' ? c.wordCount : 0), 0),
+        chapterUpdatedAt: projectChapters.reduce((max, c) => Math.max(max, c.updatedAt || 0), 0),
+        settings: cardTabs().map(tab => ({
+          tabId: tab.id, name: tab.name, group: tab.group,
+          cardCount: cards.filter(r => r.projectId === projectId && r.tabId === tab.id).length,
+          writable,
+        })),
+      },
+    }
   }
 
   function cardTabs(): TabDef[] {
@@ -242,6 +303,8 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     const projectId = str(args, 'projectId', 200)
     const denied = requireAction(scope, projectId, 'setting:create')
     if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
     const project = await projectOf(projectId)
     if ('ok' in project) return project
     const tabId = str(args, 'tabId', 120)
@@ -283,13 +346,16 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     return confirmWrite(owner, async () => {
       const saved = await owner.store.get<CardRecord>('cardRecords', rec.id)
       return !!saved && saved.projectId === projectId && saved.tabId === tabId && saved.name === name
-    }, { cardId: rec.id, tabId, name, order, saved: true }, '创建设定卡后未能确认保存')
+    }, { cardId: rec.id, tabId, name, order, saved: true }, '创建设定卡后未能确认保存',
+      { projectId, kind: 'setting', cardId: rec.id, tabId })
   }
 
   async function createChapter(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
     const denied = requireAction(scope, projectId, 'chapter:create')
     if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
     const project = await projectOf(projectId)
     if ('ok' in project) return project
     const title = str(args, 'title', MAX_NAME_CHARS).trim()
@@ -332,13 +398,16 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     return confirmWrite(owner, async () => {
       const saved = await owner.store.get<Chapter>('chapters', ch.id)
       return !!saved && saved.projectId === projectId && saved.content === content
-    }, value, '创建章节后未能确认保存')
+    }, value, '创建章节后未能确认保存',
+      { projectId, kind: 'chapter', chapterId: ch.id })
   }
 
   async function appendOrReplace(args: Record<string, unknown>, scope: AgentScope, mode: 'append' | 'replace'): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
     const denied = requireAction(scope, projectId, 'chapter:write')
     if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
     const project = await projectOf(projectId)
     if ('ok' in project) return project
     const chapterId = str(args, 'chapterId', 200)
@@ -382,7 +451,8 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     return confirmWrite(owner, async () => {
       const saved = await owner.store.get<Chapter>('chapters', updated.id)
       return !!saved && saved.content === nextContent && saved.wordCount === updated.wordCount
-    }, value, mode === 'replace' ? '覆盖正文后未能确认保存' : '追加正文后未能确认保存')
+    }, value, mode === 'replace' ? '覆盖正文后未能确认保存' : '追加正文后未能确认保存',
+      { projectId, kind: 'chapter', chapterId: updated.id })
   }
 
   return {
@@ -390,9 +460,10 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
       try {
         switch (call.tool) {
           case AGENT_TOOL_NAMES.listProjects: return await listProjects(scope)
+          case AGENT_TOOL_NAMES.getProject: return await getProject(call.args, scope)
           case AGENT_TOOL_NAMES.listChapters: return await listChapters(call.args, scope)
           case AGENT_TOOL_NAMES.readChapter: return await readChapter(call.args)
-          case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args)
+          case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args, scope)
           case AGENT_TOOL_NAMES.createSettingCard: return await createSettingCard(call.args, scope)
           case AGENT_TOOL_NAMES.createChapter: return await createChapter(call.args, scope)
           case AGENT_TOOL_NAMES.appendChapter: return await appendOrReplace(call.args, scope, 'append')

@@ -26,6 +26,7 @@ import { countWords } from '@/lib/editor/textStats'
 import { restoreChapter } from '@/components/editor/restoreChapter'
 import { registerEditorDraftFlush, flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { useEditorLeaveBarrier } from '@/components/editor/useEditorLeaveBarrier'
+import { useAgentWriteSync } from '@/components/editor/useAgentWriteSync'
 import { useShortWritingArea } from '@/components/editor/useShortWritingArea'
 import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 import { todayKey } from '@/lib/app/date'
@@ -569,6 +570,9 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       setDeferredContent(ch.content ?? '')
     }
   }, [activeId, setDeferredContent, enqueueSave])
+
+  // 外部 Agent 写入正文后原地刷新当前章（内部再判草稿是否干净；见 useAgentWriteSync 头注释）
+  useAgentWriteSync({ activeRef, draftRef, setChapters, setDraftContent, setDeferredContent, onStatsChangeRef })
 
   // 🔴 关窗前冲刷草稿（2026-10-17 全量审计 P1）：
   //   1) 向 App 注册「立刻落草稿」的通道（beforeunload/pagehide 时先调它、再写盘）；

@@ -65,7 +65,12 @@ async function main() {
   ok('相同 requestId 重放标记 replayed', replay.replayed === true, JSON.stringify(replay))
   ok('重放没有重复建章', (await memoryOps.getAll<Chapter>('chapters')).length === 1)
 
-  // ③ 新 requestId → 追加正文（先读版本）
+  // ③ 一次查询：项目 + 栏目可写能力 + 版本
+  const info = await invoke('yfe_get_project', { projectId }, configFile) as { ok: boolean; value?: { chapters?: number; settings?: { writable?: boolean }[] } }
+  ok('桥可一次查询项目与可写能力', info.ok === true && info.value?.chapters === 1
+    && info.value?.settings?.every(tab => tab.writable === true) === true, JSON.stringify(info))
+
+  // ④ 新 requestId → 追加正文（先读版本）
   const read = await invoke('yfe_read_chapter', { projectId, chapterId }, configFile) as { ok: boolean; value?: { updatedAt?: number } }
   ok('桥可读章节版本', read.ok === true && typeof read.value?.updatedAt === 'number', JSON.stringify(read))
   const append = await invoke('yfe_append_chapter', {

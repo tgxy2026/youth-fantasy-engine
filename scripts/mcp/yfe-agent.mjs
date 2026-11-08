@@ -113,7 +113,11 @@ async function requestStatus(host, requestId) {
   } catch (error) {
     throw new Error(`连不上引擎宿主：${error && error.message ? error.message : String(error)}`)
   }
-  return res.json()
+  const body = await res.json()
+  if (body && body.request && body.request.state === 'unknown') {
+    return { ...body, actionRequired: '上一次写入结果不明：请先在引擎中核对，不要复用同一 requestId 重复写入。' }
+  }
+  return body
 }
 
 // ---------- 工具定义 ----------
@@ -139,6 +143,7 @@ const WRITE_TOOLS = [
       required: ['projectId', 'tabId', 'name', 'fields', 'requestId'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'setting:create',
   },
   {
@@ -157,6 +162,7 @@ const WRITE_TOOLS = [
       required: ['projectId', 'title', 'requestId'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'chapter:create',
   },
   {
@@ -174,6 +180,7 @@ const WRITE_TOOLS = [
       required: ['projectId', 'chapterId', 'content', 'expectedUpdatedAt', 'requestId'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'chapter:write',
   },
   {
@@ -191,6 +198,7 @@ const WRITE_TOOLS = [
       required: ['projectId', 'chapterId', 'content', 'expectedUpdatedAt', 'requestId'],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     action: 'chapter:write',
   },
 ]
@@ -198,13 +206,25 @@ const WRITE_TOOLS = [
 const READ_TOOLS = [
   {
     name: 'yfe_host_info',
-    description: '查看 Agent 连接是否开启、引擎宿主端口与当前授权的项目 / 动作（不含 token）。',
+    description: '查看 Agent 连接是否开启、引擎宿主端口与当前授权的项目 / 动作（不含 token，也不返回本机文件路径）。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'yfe_list_projects',
     description: '列出全部项目，并标出哪些项目已授权写入、当前打开的是哪一个。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_get_project',
+    description: '按项目 ID 一次查询：项目信息、卷、章节统计、设定栏目、卡片数与当前可写能力（含版本 updatedAt）。',
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'string' } },
+      required: ['projectId'], additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'yfe_list_chapters',
@@ -214,6 +234,7 @@ const READ_TOOLS = [
       properties: { projectId: { type: 'string' } },
       required: ['projectId'], additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'yfe_read_chapter',
@@ -223,15 +244,17 @@ const READ_TOOLS = [
       properties: { projectId: { type: 'string' }, chapterId: { type: 'string' } },
       required: ['projectId', 'chapterId'], additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'yfe_list_setting_tabs',
-    description: '列出可创建设定的栏目及每个栏目的字段（字段名 / 全路径 / 说明）。',
+    description: '列出可创建设定的栏目、每个栏目的字段（字段名 / 全路径 / 说明）与当前是否可写。',
     inputSchema: {
       type: 'object',
       properties: { projectId: { type: 'string' } },
       required: ['projectId'], additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'yfe_request_status',
@@ -241,6 +264,7 @@ const READ_TOOLS = [
       properties: { requestId: { type: 'string' } },
       required: ['requestId'], additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
 ]
 
@@ -266,7 +290,6 @@ async function invoke(name, args, hostFile = HOST_FILE) {
   if (name === 'yfe_host_info') {
     return {
       available: true,
-      hostFile,
       port: host.port,
       enabled: host.enabled === true,
       scope: host.scope ?? { projects: [] },
@@ -314,7 +337,7 @@ async function handle(msg) {
   }
   if (method === 'ping') { reply(id, {}); return }
   if (method === 'tools/list') {
-    reply(id, { tools: BRIDGE_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) })
+    reply(id, { tools: BRIDGE_TOOLS.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, ...(annotations ? { annotations } : {}) })) })
     return
   }
   if (method === 'tools/call') {

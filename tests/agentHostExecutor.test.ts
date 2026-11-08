@@ -12,7 +12,7 @@
 //   ⑨ 未知工具 / 缺参 → BAD_REQUEST / UNKNOWN_TOOL。
 import type { Chapter, Volume } from '@/lib/types'
 import * as db from '@/lib/db'
-import { AGENT_ACTIONS, AGENT_TOOL_NAMES, agentErrorRetryable } from '@/lib/agentHost/contract'
+import { AGENT_ACTIONS, AGENT_TOOL_NAMES, agentErrorRetryable, type AgentAction } from '@/lib/agentHost/contract'
 import { createAgentExecutor, defaultExecutorDeps, appendText } from '@/lib/agentHost/executor'
 import { __resetMockStores, memoryOps } from './mock-memory'
 
@@ -36,12 +36,14 @@ async function seed() {
   db.setCurrentProject(projectId)
 }
 
-function executor(overrides: { flush?: () => Promise<boolean>; draft?: boolean } = {}) {
+function executor(overrides: { flush?: () => Promise<boolean>; draft?: boolean; blocked?: string; notices?: unknown[] } = {}) {
   const base = defaultExecutorDeps()
   return createAgentExecutor({
     ...base,
     flush: overrides.flush ?? (async () => true),
     unsavedDraft: () => overrides.draft === true,
+    storageBlockReason: () => overrides.blocked ?? '',
+    notify: notice => { overrides.notices?.push(notice) },
   })
 }
 
@@ -179,6 +181,76 @@ async function main() {
       projectId, tabId: 'char-main', name: '无名', fields: { 并不存在的字段: 'x' },
     })
     ok('未知设定字段 → BAD_REQUEST（不静默丢弃）', badField.ok === false && badField.code === 'BAD_REQUEST', JSON.stringify(badField))
+  }
+
+  // ⑩ 撤销授权：先授权建卡，再撤销后同动作被拒
+  {
+    await seed()
+    const first = await callWrite(AGENT_TOOL_NAMES.createSettingCard, {
+      projectId, tabId: 'char-main', name: '先建', fields: { 姓名: '先建' },
+    })
+    ok('授权时创建设定卡成功', first.ok === true, JSON.stringify(first))
+    const revoked = await callWrite(AGENT_TOOL_NAMES.createSettingCard, {
+      projectId, tabId: 'char-main', name: '撤销后', fields: { 姓名: '撤销后' },
+    }, { projects: [] })
+    ok('撤销授权后立即拒绝（SCOPE_DENIED）', revoked.ok === false && revoked.code === 'SCOPE_DENIED', JSON.stringify(revoked))
+    const rows = await memoryOps.getAll<{ name: string }>('cardRecords')
+    ok('撤销后没有新增卡片', rows.filter(r => r.name === '撤销后').length === 0)
+  }
+
+  // ⑪ 存储被阻断：冲突 / 锁写时不进入写入
+  {
+    await seed()
+    const exec = executor({ blocked: '存储存在冲突' })
+    const res = await exec.call({
+      sessionId: 'test-session', requestId: 'req-00000006', tool: AGENT_TOOL_NAMES.createChapter,
+      args: { projectId, title: '不该写入', content: '内容' },
+    }, fullScope)
+    ok('存储冲突时拒绝写入（STORAGE_BLOCKED）', res.ok === false && res.code === 'STORAGE_BLOCKED', JSON.stringify(res))
+    ok('STORAGE_BLOCKED 不允许自动重试', agentErrorRetryable('STORAGE_BLOCKED') === false)
+    ok('阻断时没有写入章节', (await memoryOps.getAll<Chapter>('chapters')).length === 0)
+  }
+
+  // ⑫ 一次查询：项目 + 栏目可写能力 + 版本
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '第一章', content: '正文' })
+    const info = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000007', tool: AGENT_TOOL_NAMES.getProject,
+      args: { projectId },
+    }, { projects: [{ projectId, actions: ['chapter:create'] as AgentAction[] }] })
+    ok('getProject 返回卷 / 章节统计与版本', info.ok === true && (info.value as { chapters?: number }).chapters === 1
+      && typeof (info.value as { chapterUpdatedAt?: number }).chapterUpdatedAt === 'number', JSON.stringify(info))
+    ok('未授权 setting 时栏目 writable=false',
+      info.ok === true && (info.value as { settings: { writable: boolean }[] }).settings.every(s => s.writable === false))
+
+    const tabsForbidden = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000008', tool: AGENT_TOOL_NAMES.listSettingTabs,
+      args: { projectId },
+    }, { projects: [{ projectId, actions: ['chapter:create'] as AgentAction[] }] })
+    ok('list_setting_tabs 返回可写能力（未授权）',
+      tabsForbidden.ok === true && (tabsForbidden.value as { grantedActions: string[] }).grantedActions.join(',') === 'chapter:create'
+      && (tabsForbidden.value as { tabs: { writable: boolean }[] }).tabs.every(t => t.writable === false))
+
+    const tabsAllowed = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000009', tool: AGENT_TOOL_NAMES.listSettingTabs,
+      args: { projectId },
+    }, { projects: [{ projectId, actions: ['setting:create'] as AgentAction[] }] })
+    ok('授权后栏目 writable=true',
+      tabsAllowed.ok === true && (tabsAllowed.value as { tabs: { writable: boolean }[] }).tabs.every(t => t.writable === true))
+  }
+
+  // ⑬ 写成功后通知界面刷新字段
+  {
+    await seed()
+    const notices: unknown[] = []
+    const exec = executor({ notices })
+    const res = await exec.call({
+      sessionId: 'test-session', requestId: 'req-00000010', tool: AGENT_TOOL_NAMES.createChapter,
+      args: { projectId, title: '通知测试', content: '内容' },
+    }, fullScope)
+    ok('写成功后发出界面刷新通知', res.ok === true && notices.length === 1
+      && (notices[0] as { kind?: string }).kind === 'chapter', JSON.stringify(notices))
   }
 
   console.log(`\nAGENT_EXECUTOR_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)

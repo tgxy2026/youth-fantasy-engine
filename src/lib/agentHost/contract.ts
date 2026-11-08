@@ -86,6 +86,7 @@ export function actionsForProject(scope: AgentScope, projectId: string): AgentAc
 
 export const AGENT_TOOL_NAMES = {
   listProjects: 'yfe_list_projects',
+  getProject: 'yfe_get_project',
   listChapters: 'yfe_list_chapters',
   readChapter: 'yfe_read_chapter',
   listSettingTabs: 'yfe_list_setting_tabs',
@@ -133,6 +134,7 @@ export type AgentErrorCode =
   | 'NO_VOLUME'
   | 'SAVE_FAILED'
   | 'OUTCOME_UNKNOWN'
+  | 'STORAGE_BLOCKED'
   | 'DUPLICATE_IN_FLIGHT'
   | 'HOST_DISABLED'
   | 'UNAUTHORIZED'
@@ -144,9 +146,10 @@ export const AGENT_RETRYABLE_ERRORS: readonly AgentErrorCode[] = [
   'HOST_DISABLED', 'UNAUTHORIZED',
 ]
 
-/** `INTERNAL` 不在此列：它可能是「写后抛错」，按结果不明处理，禁止自动重试。 */
+/** `INTERNAL` 不在此列：它可能是「写后抛错」，按结果不明处理，禁止自动重试。
+ *  `STORAGE_BLOCKED` 也不在此列：存储冲突 / 锁写 / 未连接需要作者先处理，自动重试只会反复失败。 */
 export function agentErrorRetryable(code: AgentErrorCode): boolean {
-  return code !== 'SAVE_FAILED' && code !== 'OUTCOME_UNKNOWN' && code !== 'INTERNAL'
+  return code !== 'SAVE_FAILED' && code !== 'OUTCOME_UNKNOWN' && code !== 'INTERNAL' && code !== 'STORAGE_BLOCKED'
 }
 
 export interface AgentFailure {
@@ -280,6 +283,15 @@ export interface AgentChapterWriteResult {
   wordCount: number
   updatedAt: number
   saved: boolean
+}
+
+/** 写成功后通知当前界面（编辑器 / 设定卡页 / 章节树）刷新；不覆盖正在编辑的草稿。 */
+export interface AgentWriteNotice {
+  projectId: string
+  kind: 'chapter' | 'setting'
+  chapterId?: string
+  cardId?: string
+  tabId?: string
 }
 
 /** 内部：把章节写成结果时保留 record 引用，供宿主回读确认 */

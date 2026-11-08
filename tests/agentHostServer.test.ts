@@ -127,8 +127,9 @@ async function main() {
 
     // ⑤ 桥：host 文件 / 工具表 / requestId 必填
     ok('桥工具表含全部读写工具', BRIDGE_TOOL_NAMES.includes('yfe_create_setting_card') && BRIDGE_TOOL_NAMES.includes('yfe_list_projects'), JSON.stringify(BRIDGE_TOOL_NAMES))
-    const info = await invoke('yfe_host_info', {}, configFile) as { available: boolean; hostFile: string; enabled: boolean }
+    const info = await invoke('yfe_host_info', {}, configFile) as { available: boolean; enabled: boolean }
     ok('桥能读取 host 状态且不回传 token', info.available === true && info.enabled === true && !JSON.stringify(info).includes(config.token), JSON.stringify(info))
+    ok('桥不回传宿主文件系统路径', !JSON.stringify(info).includes('agent-host.json'), JSON.stringify(info))
     const list = await invoke('yfe_list_chapters', { projectId }, configFile) as { ok: boolean; value?: { echo?: string } }
     ok('只读工具经宿主执行', list.ok === true && list.value?.echo === 'yfe_list_chapters', JSON.stringify(list))
 

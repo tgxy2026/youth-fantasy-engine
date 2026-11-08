@@ -481,6 +481,22 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
     return () => { alive = false }
   }, [tab.id, saveDraftIfAllowed])
 
+  // 外部 Agent 创建设定卡后的界面同步（3.4.3）：只刷新本栏目、且不覆盖正在编辑的草稿。
+  // 执行器写入前已拒绝未保存草稿；这里仍再判一次 dirtyRef，避免任何窗口期把编辑中的卡换掉。
+  useEffect(() => {
+    let alive = true
+    const onAgentWrite = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string; kind?: string; tabId?: string }>).detail
+      if (!detail || detail.kind !== 'setting' || detail.tabId !== tab.id) return
+      if (detail.projectId && detail.projectId !== getCurrentProjectId()) return
+      if (dirtyRef.current) return
+      void getCardRecords(tab.id).then(list => { if (alive) setRecords(list) })
+        .catch(() => { /* 读取失败不打断编辑，手动切页签即可刷新 */ })
+    }
+    window.addEventListener('yfe:agent-write', onAgentWrite)
+    return () => { alive = false; window.removeEventListener('yfe:agent-write', onAgentWrite) }
+  }, [tab.id])
+
   // 切换 active（同一页签内不同卡片）时刷新 draft；切换前先落盘上一卡未保存的修改，避免静默丢稿
   useEffect(() => {
     const prev = prevActiveRef.current

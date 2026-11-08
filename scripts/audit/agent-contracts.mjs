@@ -22,6 +22,10 @@ export const AGENT_AUDIT = {
     snapshot: '写入前留下可恢复快照',
     draft: '存在未保存草稿时拒绝写入（DRAFT_DIRTY）',
     saveFail: '落盘失败时如实报 SAVE_FAILED',
+    revoke: '撤销授权后立即拒绝（SCOPE_DENIED）',
+    storage: '存储冲突时拒绝写入（STORAGE_BLOCKED）',
+    query: 'list_setting_tabs 返回可写能力（未授权）',
+    notify: '写成功后发出界面刷新通知',
   } },
   'agent.host': { test: 'agentHostServer', cases: {
     token: '无 token 调用 → 401',
@@ -30,10 +34,12 @@ export const AGENT_AUDIT = {
     unknown: 'SAVE_FAILED 记为 unknown 并拒绝自动重试',
     page: '缺页面头的状态请求被拒',
     bridge: '只读工具经宿主执行',
+    noPath: '桥不回传宿主文件系统路径',
   } },
   'agent.e2e': { test: 'agentHostEndToEnd', cases: {
     create: '端到端创建章节成功',
     idempotent: '重放没有重复建章',
+    query: '桥可一次查询项目与可写能力',
     append: '追加内容真实写入',
     conflict: '端到端版本冲突被拒绝',
     status: '账本记录成功状态',
