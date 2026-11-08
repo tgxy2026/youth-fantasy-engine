@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef } from '@/lib/types'
 import { getFormDataFor, saveFormDataFor, getCurrentProjectId } from '@/lib/db'
@@ -26,6 +26,7 @@ import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { PageGuideButton } from '@/components/help/PageGuideButton'
 import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
+import { registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
 
 // 力量体系是升级流的"宪法"：境界/数值类字段绝不能让 AI 凭空编造 ——
 // 常量已提到 lib/schema（C10 起母子面板共用同一套锁定判据，见 POWER_NUMERIC_HINTS 注释）。
@@ -117,26 +118,28 @@ export default function FormSheet({ tab }: Props) {
    * 🔴 卸载时冲刷未保存修改。原因同 TableSheet：`App.tsx` 的「key={tab.id}」会让下面那个
    * [tab.id] 守卫里的 tabIdRef 初值即新 id，分支永不执行。
    */
-  useEffect(() => () => {
-    if (dirtyRef.current && storageOwner.current()) {
-      void saveFormDataFor(pidRef.current, tabIdRef.current, dataRef.current).catch(() => {
-        showToast('离开前保存表单失败，请回到原页面核对草稿', 'error')
-      })
+  useLayoutEffect(() => {
+    const capturedTab = tab.id
+    // 捕获挂载时的归属：cleanup 执行时 ref 可能已指向新项目 / 新面板
+    const owner = storageOwner
+    const pid = pidRef.current
+    setLoaded(false)
+    const unregister = registerFormEditor(pid, capturedTab)
+    return () => {
+      if (dirtyRef.current && tabIdRef.current === capturedTab && owner.current()) {
+        void saveFormDataFor(pid, capturedTab, dataRef.current).catch(() => {
+          showToast('离开前保存表单失败，请回到原页面核对草稿', 'error')
+        })
+      }
+      unregister()
     }
-  }, [storageOwner])
+  }, [tab.id, storageOwner])
 
   useEffect(() => {
-    // 切到别的页签前，先把当前页签未保存的修改落库（之前会静默丢弃）
-    const prevId = tabIdRef.current
-    if (dirtyRef.current && prevId && prevId !== tab.id && storageOwner.current()) {
-      void saveFormDataFor(pidRef.current, prevId, dataRef.current).catch(() => {
-        showToast('切换前保存表单失败，请回到原页面核对草稿', 'error')
-      })
-    }
     tabIdRef.current = tab.id
     // 读也走显式 pid：退出项目那一瞬全局值已被清空，读全局会拿到别的书的空白表单
     let alive = true
-    getFormDataFor(pidRef.current, tab.id).then(d => {
+    waitForAgentForm(pidRef.current, tab.id).then(() => getFormDataFor(pidRef.current, tab.id)).then(d => {
       if (!alive || !storageOwner.current()) return
       dataRef.current = d; dirtyRef.current = false
       setData(d)

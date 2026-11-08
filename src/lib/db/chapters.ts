@@ -36,6 +36,15 @@ export async function saveChapter(c: Chapter, owner?: OwnedOperation) {
   await afterChapterWrite(old, { ...c, projectId: pid }, owner, store)
 }
 
+/** 创建章时也必须使用捕获的存储归属，不能覆盖已存在的 ID。 */
+export async function createChapterForOwner(c: Chapter, owner: OwnedOperation) {
+  owner.assertCurrent()
+  if (!c.id || c.projectId !== owner.projectId) throw new Error('章节 ID 或项目归属不合法。')
+  if (await owner.store.get<Chapter>('chapters', c.id)) throw new Error('章节 ID 已存在。')
+  await owner.store.put('chapters', c)
+  await afterChapterWrite(undefined, c, owner, owner.store)
+}
+
 /**
  * 字段级修补一章：**只覆盖 `patch` 里出现的字段**（读-改-写在同一函数内完成）。
  *

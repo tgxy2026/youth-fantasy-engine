@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef, CardRecord } from '@/lib/types'
@@ -9,6 +9,8 @@ import { uid } from '@/lib/app/id'
 import { candidateApplyContext, captureCandidateOwner } from '@/lib/ai/candidateContext'
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { cardLeaseKey, registerFormEditor, waitForAgentForm, withFormSave } from '@/lib/agentHost/formLease'
 import { Plus, Trash2, UserRound, Info, Save, EyeOff, Search } from 'lucide-react'
 import { useCardDraftSave } from './useCardDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
@@ -400,12 +402,14 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
     const owner = draftStorageOwner
     if (!owner.current() || rec.projectId !== owner.projectId) return false
     try {
-      if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
-      if (!owner.current()) return false
-      const records = await getCardRecordsFor(rec.projectId, rec.tabId)
-      if (!owner.current() || !records.some(record => record.id === rec.id)) return false
-      await saveCardRecord(rec)
-      return owner.current()
+      return await withFormSave(rec.projectId, cardLeaseKey(rec.tabId), async () => {
+        if (await guardTabWrite(rec.projectId, rec.tabId, 'autosave')) return false
+        if (!owner.current()) return false
+        const records = await getCardRecordsFor(rec.projectId, rec.tabId)
+        if (!owner.current() || !records.some(record => record.id === rec.id)) return false
+        await saveCardRecord(rec)
+        return owner.current()
+      })
     } catch { return false }
   }, [draftStorageOwner])
 
@@ -453,20 +457,21 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
    * 会让下面那个 [tab.id] 守卫在重挂后失效（dirtyRef 初值为 false）。
    * 注意：同页签内切卡（activeId 变化）不会重挂，那条守卫仍然有效，与此条互补。
    */
-  useEffect(() => () => {
-    if (dirtyRef.current && draftRef.current) void saveDraftIfAllowed(draftRef.current)
-  }, [saveDraftIfAllowed])
+  useLayoutEffect(() => {
+    setLoaded(false)
+    const unregister = registerFormEditor(draftStorageOwner.projectId, cardLeaseKey(tab.id))
+    return () => {
+      if (dirtyRef.current && draftRef.current && draftRef.current.tabId === tab.id) void saveDraftIfAllowed(draftRef.current)
+      unregister()
+    }
+  }, [tab.id, draftStorageOwner, saveDraftIfAllowed])
 
   useEffect(() => {
-    // 切到别的页签前，先把当前卡片未保存的修改落库（之前会静默丢弃）
-    if (dirtyRef.current && draftRef.current) {
-      void saveDraftIfAllowed(draftRef.current)
-    }
     tabIdRef.current = tab.id
     // 🔴 补 alive 守卫（2026-10-10 六维审计）：读写途中卸载会往已卸载组件 setState。
     //    同文件其它 effect、TavernScript 的同类 effect 都已有守卫，只有这里漏了。
     let alive = true
-    void getCardRecords(tab.id).then(r => {
+    void waitForAgentForm(draftStorageOwner.projectId, cardLeaseKey(tab.id)).then(() => getCardRecordsFor(draftStorageOwner.projectId, tab.id)).then(r => {
       if (!alive) return
       setRecords(r)
       if (r.length > 0) {
@@ -479,7 +484,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
       setLoaded(true)
     })
     return () => { alive = false }
-  }, [tab.id, saveDraftIfAllowed])
+  }, [tab.id, saveDraftIfAllowed, draftStorageOwner])
 
   // 外部 Agent 创建设定卡后的界面同步（3.4.3）：只刷新本栏目、且不覆盖正在编辑的草稿。
   // 执行器写入前已拒绝未保存草稿；这里仍再判一次 dirtyRef，避免任何窗口期把编辑中的卡换掉。
@@ -490,7 +495,16 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
       if (!detail || detail.kind !== 'setting' || detail.tabId !== tab.id) return
       if (detail.projectId && detail.projectId !== getCurrentProjectId()) return
       if (dirtyRef.current) return
-      void getCardRecords(tab.id).then(list => { if (alive) setRecords(list) })
+      const projectId = detail.projectId || getCurrentProjectId()
+      const owner = captureOwnedOperation(projectId)
+      void getCardRecordsFor(projectId, tab.id, owner).then(list => {
+        if (!alive || dirtyRef.current) return
+        owner.assertCurrent()
+        setRecords(previous => {
+          try { owner.assertCurrent() } catch { return previous }
+          return alive && !dirtyRef.current ? list : previous
+        })
+      })
         .catch(() => { /* 读取失败不打断编辑，手动切页签即可刷新 */ })
     }
     window.addEventListener('yfe:agent-write', onAgentWrite)

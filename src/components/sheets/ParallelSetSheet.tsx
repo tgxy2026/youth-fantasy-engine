@@ -25,12 +25,12 @@
  * · **数值字段锁定**：power 页的数值锁定逻辑对本结构无意义（制度页本就无 numeric 字段），故不接。
  * · **AI 补全 / AI 数据源说明**：都在，照挂。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import type { CardRecord, TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
-import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '@/lib/world/worldSets'
+import { activeKeyOf, FREE_DRAFT_KEY, isInternalFieldKey, splitActive, subTabIdOf } from '@/lib/world/worldSets'
 import { addButtonLabel, modulesFor, subItemLabel, getActivePack, type GenrePack } from '@/lib/schemaTemplates/index'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -44,12 +44,18 @@ import { LoadingState } from '@/components/common/LoadingState'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { useFrozenDetailScroll } from '@/components/common/useFrozenDetailScroll'
+import { useAgentWorldSetSync } from '@/components/sheets/useAgentWorldSetSync'
+import { cardLeaseKey, registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
+import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import type { TemplateField } from '@/lib/ai'
 
 export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
+  const pidRef = useRef(db.getCurrentProjectId())
+  const [storageOwner] = useState(() => captureStorageWriteOwner(pidRef.current))
   const [subs, setSubs] = useState<CardRecord[]>([])
+  useAgentWorldSetSync(tab.id, setSubs)
   const [activeIds, setActiveIds] = useState<string[]>([])
   /** 当前选中的条目 id（空串 = 还没选，界面给一个引导态） */
   const [sel, setSel] = useState('')
@@ -171,12 +177,17 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   )
 
   const load = useCallback(async () => {
-    const s = await db.getSubSets(tab.id)
-    const a = await db.getActiveSubIds(tab.id)
+    await waitForAgentForm(pidRef.current, cardLeaseKey(subTabIdOf(tab.id)))
+    if (!storageOwner.current()) return
+    const [s, a] = await Promise.all([
+      db.getCardRecordsFor(pidRef.current, subTabIdOf(tab.id)),
+      db.getSettingFor<string[]>(pidRef.current, activeKeyOf(tab.id), []),
+    ])
+    if (!storageOwner.current()) return
     setSubs(s)
-    setActiveIds(a)
+    setActiveIds(Array.isArray(a) ? a.filter(id => typeof id === 'string') : [])
     setLoading(false)
-  }, [tab.id])
+  }, [tab.id, storageOwner])
   useEffect(() => { void load() }, [load])
 
   /**
@@ -194,12 +205,20 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   useEffect(() => { draftRef.current = draft }, [draft])
   useEffect(() => { selRef.current = sel }, [sel])
   useEffect(() => { subsRef.current = subs }, [subs])
-  useEffect(() => () => {
-    if (!dirtyRef.current) return
-    const cur = selRef.current
-    const sub = subsRef.current.find(s => s.id === cur)
-    if (sub) void db.saveSubSet(tab.id, { ...sub, data: draftRef.current })
-  }, [tab.id])
+  useLayoutEffect(() => {
+    setLoading(true)
+    const owner = storageOwner
+    const pid = pidRef.current
+    const unregister = registerFormEditor(pid, cardLeaseKey(subTabIdOf(tab.id)))
+    return () => {
+      if (dirtyRef.current && owner.current()) {
+        const sub = subsRef.current.find(item => item.id === selRef.current)
+        if (sub) void db.saveSubSetFor(pid, tab.id, { ...sub, data: draftRef.current })
+          .catch(() => showToast('离开前保存设定失败，请回到原页面核对草稿', 'error'))
+      }
+      unregister()
+    }
+  }, [tab.id, storageOwner])
 
   const selSub = useMemo(() => subs.find(s => s.id === sel), [subs, sel])
   /** 其它活跃条目的已填摘要（2026-10-03）—— 补全当前这条时可勾选带进对话上下文 */

@@ -15,6 +15,9 @@ import * as db from '@/lib/db'
 import { AGENT_ACTIONS, AGENT_TOOL_NAMES, agentErrorRetryable, type AgentAction } from '@/lib/agentHost/contract'
 import { createAgentExecutor, defaultExecutorDeps, appendText } from '@/lib/agentHost/executor'
 import { __resetMockStores, memoryOps } from './mock-memory'
+import { getTab } from '@/lib/schema'
+import { getActivePack, modulesFor } from '@/lib/schemaTemplates/index'
+import { acquireAgentForm, cardLeaseKey, registerFormEditor, tableLeaseKey, tryRegisterFormEditor, waitForAgentForm, withFormSave } from '@/lib/agentHost/formLease'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -36,12 +39,13 @@ async function seed() {
   db.setCurrentProject(projectId)
 }
 
-function executor(overrides: { flush?: () => Promise<boolean>; draft?: boolean; blocked?: string; notices?: unknown[] } = {}) {
+function executor(overrides: { flush?: () => Promise<boolean>; draft?: boolean; blocked?: string; notices?: unknown[]; activeChapterId?: () => string | null } = {}) {
   const base = defaultExecutorDeps()
   return createAgentExecutor({
     ...base,
     flush: overrides.flush ?? (async () => true),
     unsavedDraft: () => overrides.draft === true,
+    activeChapterId: overrides.activeChapterId ?? (() => null),
     storageBlockReason: () => overrides.blocked ?? '',
     notify: notice => { overrides.notices?.push(notice) },
   })
@@ -54,6 +58,110 @@ async function callWrite(tool: string, args: Record<string, unknown>, scope = fu
 }
 
 async function main() {
+  {
+    await seed()
+    const module = modulesFor('worldbase', getActivePack())?.[0]
+    const field = module?.fields[0]
+    if (!module || !field) throw new Error('合成世界设定需要模板字段')
+    const path = `${module.name}::${field.name}`
+    const created = await callWrite(AGENT_TOOL_NAMES.createWorldSet, { projectId, tabId: 'worldbase', name: '合成子世界', fields: { [path]: '旧设定' } })
+    const cardId = created.ok ? (created.value as { cardId: string }).cardId : ''
+    ok('创建多套世界设定默认未激活', created.ok && !!cardId && (created.value as { active: boolean }).active === false, JSON.stringify(created))
+    const updated = await callWrite(AGENT_TOOL_NAMES.updateSettingCard, { projectId, tabId: 'worldbase', cardId, fields: { [path]: '新设定' }, expectedFields: { [path]: '旧设定' } })
+    ok('按旧值修改世界设定字段', updated.ok === true, JSON.stringify(updated))
+    const active = await callWrite(AGENT_TOOL_NAMES.setWorldSetActive, { projectId, tabId: 'worldbase', cardId, active: true, expectedActive: false })
+    ok('按旧状态激活世界设定', active.ok === true, JSON.stringify(active))
+    const stale = await callWrite(AGENT_TOOL_NAMES.setWorldSetActive, { projectId, tabId: 'worldbase', cardId, active: true, expectedActive: false })
+    ok('世界设定活跃状态冲突被拒绝', stale.ok === false && stale.code === 'CONFLICT', JSON.stringify(stale))
+  }
+
+  {
+    await seed()
+    const args = { projectId, tabId: 'nations', fields: { 名称: '合成势力' } }
+    const close = registerFormEditor(projectId, tableLeaseKey('nations'))
+    const blocked = await callWrite(AGENT_TOOL_NAMES.createTableRow, args)
+    ok('表格打开时 Agent 创建条目被拒绝', blocked.ok === false && blocked.code === 'DRAFT_DIRTY')
+    close()
+    const created = await callWrite(AGENT_TOOL_NAMES.createTableRow, args)
+    ok('关闭表格后可创建合成势力', created.ok === true, JSON.stringify(created))
+    const rows = await memoryOps.getAll<{ projectId: string; tabId: string; data: Record<string, string> }>('tableRows')
+    ok('引擎生成编号且条目归属正确', rows.some(row => row.projectId === projectId && row.tabId === 'nations' && row.data['名称'] === '合成势力' && row.data['编号'] === 'N0001'))
+    const duplicate = await callWrite(AGENT_TOOL_NAMES.createTableRow, args)
+    ok('重复设定表条目被拒绝', duplicate.ok === false && duplicate.code === 'BAD_REQUEST', JSON.stringify(duplicate))
+    const row = (await memoryOps.getAll<{ id: string; tabId: string }>('tableRows')).find(item => item.tabId === 'nations')
+    const updateArgs = { projectId, tabId: 'nations', rowId: row?.id, fields: { 备注: '新备注' }, expectedFields: { 备注: '' } }
+    const updated = await callWrite(AGENT_TOOL_NAMES.updateTableRow, updateArgs)
+    ok('可按旧值前置条件修改基础文本字段', updated.ok === true, JSON.stringify(updated))
+    const stale = await callWrite(AGENT_TOOL_NAMES.updateTableRow, updateArgs)
+    ok('表格旧值不符时拒绝覆盖', stale.ok === false && stale.code === 'CONFLICT', JSON.stringify(stale))
+    const invalidRef = await callWrite(AGENT_TOOL_NAMES.updateTableRow, { projectId, tabId: 'nations', rowId: row?.id, fields: { 上级: '不存在的势力' }, expectedFields: { 上级: '' } })
+    ok('表格修改拒绝不存在的引用', invalidRef.ok === false && invalidRef.code === 'BAD_REQUEST', JSON.stringify(invalidRef))
+    const selected = await callWrite(AGENT_TOOL_NAMES.updateTableRow, { projectId, tabId: 'nations', rowId: row?.id, fields: { 类别: '宗门' }, expectedFields: { 类别: '' } })
+    ok('表格修改支持有效下拉选项', selected.ok === true, JSON.stringify(selected))
+    const badDate = await callWrite(AGENT_TOOL_NAMES.createTableRow, { projectId, tabId: 'timeline', fields: { 章节标题: '合成章', 发生时间: '1年13月1日' } })
+    ok('时间线拒绝超出项目历法的日期', badDate.ok === false && badDate.code === 'BAD_REQUEST', JSON.stringify(badDate))
+    const timeline = await callWrite(AGENT_TOOL_NAMES.createTableRow, { projectId, tabId: 'timeline', fields: { 章节标题: '合成章', 发生时间: '1年2月1日' } })
+    const savedTimeline = (await memoryOps.getAll<{ tabId: string; data: Record<string, string> }>('tableRows')).find(item => item.tabId === 'timeline')
+    ok('时间线创建遵循结束时间自动跟随规则', timeline.ok === true && savedTimeline?.data['结束时间'] === '1年2月1日', JSON.stringify(timeline))
+  }
+
+  // 先开发并登记用例，按要求在功能完成后统一执行。
+  {
+    await seed()
+    const tab = getTab('positioning')
+    const module = tab?.modules?.[0]
+    const field = module?.fields[0]
+    if (!module || !field) throw new Error('合成测试需要作品信息字段')
+    const path = `${module.name}::${field.name}`
+    const args = { projectId, tabId: 'positioning', fields: { [path]: '新值' }, expectedFields: { [path]: '' } }
+    const close = registerFormEditor(projectId, 'positioning')
+    const busy = await callWrite(AGENT_TOOL_NAMES.updateForm, args)
+    ok('表单打开时 Agent 修改被拒绝', busy.ok === false && busy.code === 'DRAFT_DIRTY')
+    close()
+    const saved = await callWrite(AGENT_TOOL_NAMES.updateForm, args)
+    ok('关闭表单后可修改指定字段', saved.ok === true, JSON.stringify(saved))
+    const again = await callWrite(AGENT_TOOL_NAMES.updateForm, args)
+    ok('表单旧值不匹配时拒绝覆盖', again.ok === false && again.code === 'CONFLICT', JSON.stringify(again))
+    const record = await memoryOps.get<{ data: Record<string, string> }>('formData', `${projectId}::positioning`)
+    ok('表单冲突保留已保存内容', record?.data[path] === '新值')
+  }
+
+  {
+    let finishSave!: () => void
+    const pending = withFormSave(projectId, 'lease-test', () => new Promise<void>(resolve => { finishSave = resolve }))
+    ok('普通保存期间拒绝 Agent 取得表单写入锁', acquireAgentForm(projectId, 'lease-test') === null)
+    finishSave()
+    await pending
+    const release = acquireAgentForm(projectId, 'lease-test')
+    ok('保存结束后 Agent 可取得表单写入锁', !!release)
+    ok('Agent 写入期间拒绝打开旧值的内联编辑', tryRegisterFormEditor(projectId, 'lease-test') === null)
+    let loaded = false
+    const waiting = waitForAgentForm(projectId, 'lease-test').then(() => { loaded = true })
+    await Promise.resolve()
+    ok('Agent 写入中页面加载等待', !loaded)
+    release?.()
+    await waiting
+    ok('Agent 写入完成后页面加载继续', loaded)
+  }
+
+  // 创建操作在最后一次异步检查之后切换项目，也不能写入新归属。
+  {
+    await seed()
+    const base = defaultExecutorDeps()
+    const guarded = createAgentExecutor({
+      ...base,
+      createChapter: async (chapter, owner) => {
+        db.setCurrentProject('another-project')
+        await base.createChapter(chapter, owner)
+      },
+      flush: async () => true, unsavedDraft: () => false,
+      storageBlockReason: () => '', notify: () => {},
+    })
+    const res = await guarded.call({ sessionId: 'test-session', requestId: 'req-switch01', tool: AGENT_TOOL_NAMES.createChapter, args: { projectId, title: '禁止误写' } }, fullScope)
+    ok('创建章节前切换项目时拒绝写入', res.ok === false && (await memoryOps.getAll<Chapter>('chapters')).length === 0, JSON.stringify(res))
+    db.setCurrentProject(projectId)
+  }
+
   // ① 未授权
   {
     await seed()
@@ -88,6 +196,28 @@ async function main() {
     ok('设定卡已进入引擎 store', !!saved)
     ok('字段按 schema 全路径落库', !!saved && Object.keys(saved.data).some(k => k.endsWith('::姓名') && saved.data[k] === '林昭'))
     ok('第一张卡 order = 0', saved?.order === 0, String(saved?.order))
+    const listed = await callWrite(AGENT_TOOL_NAMES.listSettingCards, { projectId, tabId: 'char-main', limit: 1 })
+    const listValue = listed.ok ? listed.value as { total: number; cards: { id: string }[] } : null
+    ok('Agent 可以分页列出设定卡', listValue?.total === 1 && listValue.cards[0]?.id === saved?.id, JSON.stringify(listed))
+    const read = await callWrite(AGENT_TOOL_NAMES.readSettingCard, { projectId, cardId: saved?.id })
+    const readValue = read.ok ? read.value as { fields: Record<string, string> } : null
+    ok('Agent 可以读取设定字段', !!readValue && Object.values(readValue.fields).includes('冷静'), JSON.stringify(read))
+    const personalityPath = Object.keys(readValue?.fields ?? {}).find(path => path.endsWith('::核心性格'))
+    if (!personalityPath || !saved) throw new Error('合成角色缺少测试字段')
+    const updateCard = { projectId, tabId: 'char-main', cardId: saved.id, fields: { [personalityPath]: '谨慎' }, expectedFields: { [personalityPath]: '冷静' } }
+    const close = registerFormEditor(projectId, cardLeaseKey('char-main'))
+    const busy = await callWrite(AGENT_TOOL_NAMES.updateSettingCard, updateCard)
+    ok('设定栏目打开时字段修改被拒绝', busy.ok === false && busy.code === 'DRAFT_DIRTY')
+    close()
+    const changed = await callWrite(AGENT_TOOL_NAMES.updateSettingCard, updateCard)
+    ok('按旧值修改设定卡字段', changed.ok === true, JSON.stringify(changed))
+    const staleCard = await callWrite(AGENT_TOOL_NAMES.updateSettingCard, updateCard)
+    ok('设定卡旧值变化时拒绝覆盖', staleCard.ok === false && staleCard.code === 'CONFLICT', JSON.stringify(staleCard))
+    const badLimit = await callWrite(AGENT_TOOL_NAMES.listSettingCards, { projectId, tabId: 'char-main', limit: 101 })
+    ok('设定卡分页限制有效', badLimit.ok === false && badLimit.code === 'BAD_REQUEST')
+    await memoryOps.put('cardRecords', { id: 'foreign-card', projectId: 'another-project', tabId: 'char-main', name: '隔离', data: { secret: '不要读取' }, order: 0, createdAt: Date.now() })
+    const foreign = await callWrite(AGENT_TOOL_NAMES.readSettingCard, { projectId, cardId: 'foreign-card' })
+    ok('不可读取不存在或其他项目的卡片', foreign.ok === false && foreign.code === 'NOT_FOUND')
   }
 
   // ④ 创建章节：无卷 → NO_VOLUME
@@ -274,6 +404,80 @@ async function main() {
       okCount === 1 && [a, b].some(r => r.ok === false && r.code === 'CONFLICT'), JSON.stringify([a, b]))
     const after = await memoryOps.get<Chapter>('chapters', ch.id)
     ok('串行化没有丢掉先写入的那一段', !!after && after.content.includes('并发A') && !after.content.includes('并发B'), after?.content)
+  }
+
+  // ⑮ 分卷修改：版本条件、自由卷拒绝
+  {
+    await seed()
+    const vol = await memoryOps.get<Volume>('volumes', volumeId)
+    const changed = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000021', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId, expectedTitle: vol?.title ?? '', title: '第二卷', description: '新的描述' },
+    }, fullScope)
+    ok('修改分卷成功', changed.ok === true, JSON.stringify(changed))
+    const saved = await memoryOps.get<Volume>('volumes', volumeId)
+    ok('分卷标题与描述已落库', saved?.title === '第二卷' && saved?.description === '新的描述', JSON.stringify(saved))
+    const conflict = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000022', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId, expectedTitle: vol?.title ?? '', title: '第三卷' },
+    }, fullScope)
+    ok('旧标题版本条件不符 → CONFLICT', conflict.ok === false && conflict.code === 'CONFLICT', JSON.stringify(conflict))
+    await memoryOps.put('volumes', { id: 'free-vol', projectId, order: -999, title: '自由卷', description: '', isFree: true })
+    const free = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000023', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId: 'free-vol', expectedTitle: '自由卷', title: '改自由卷' },
+    }, fullScope)
+    ok('自由卷拒绝修改', free.ok === false && free.code === 'BAD_REQUEST', JSON.stringify(free))
+  }
+
+  // ⑯ 删除章节：编辑器打开 / 版本冲突 / 成功进回收站
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '待删章', content: '正文' })
+    const ch = (await memoryOps.getAll<Chapter>('chapters'))[0]
+    await memoryOps.put('snapshots', { id: 'snap-1', projectId, chapterId: ch.id, chapterTitle: ch.title, content: '旧', wordCount: 1, createdAt: Date.now(), source: 'ai-rewrite' })
+
+    const active = await executor({ activeChapterId: () => ch.id }).call({
+      sessionId: 'test-session', requestId: 'req-00000024', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id },
+    }, fullScope)
+    ok('正在编辑的章拒绝删除', active.ok === false && active.code === 'DRAFT_DIRTY', JSON.stringify(active))
+
+    const conflict = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000025', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id, expectedUpdatedAt: ch.updatedAt - 1 },
+    }, fullScope)
+    ok('章节版本不符拒绝删除', conflict.ok === false && conflict.code === 'CONFLICT', JSON.stringify(conflict))
+
+    const removed = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000026', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id, expectedUpdatedAt: ch.updatedAt },
+    }, fullScope)
+    ok('删除章节成功', removed.ok === true, JSON.stringify(removed))
+    ok('章节已移除且进入回收站', !(await memoryOps.get('chapters', ch.id))
+      && (await memoryOps.get<{ kind?: string }>('trash', ch.id))?.kind === 'chapter')
+    ok('章节快照已清理', (await memoryOps.getAll('snapshots')).length === 0)
+  }
+
+  // ⑰ 灵感夹读 / 写 / 授权
+  {
+    await seed()
+    const added = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000027', tool: AGENT_TOOL_NAMES.addInspiration,
+      args: { projectId, text: '一个突然想到的点子' },
+    }, fullScope)
+    ok('写入灵感成功', added.ok === true, JSON.stringify(added))
+    const listed = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000028', tool: AGENT_TOOL_NAMES.listInspirations,
+      args: { projectId },
+    }, fullScope)
+    const items = listed.ok ? (listed.value as { text: string }[]) : []
+    ok('读取灵感夹可见新条目', items.some(item => item.text === '一个突然想到的点子'), JSON.stringify(listed))
+    const denied = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000029', tool: AGENT_TOOL_NAMES.addInspiration,
+      args: { projectId, text: '未授权' },
+    }, { projects: [{ projectId, actions: ['chapter:create'] as AgentAction[] }] })
+    ok('未授权灵感写入被拒绝', denied.ok === false && denied.code === 'SCOPE_DENIED', JSON.stringify(denied))
   }
 
   console.log(`\nAGENT_EXECUTOR_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)

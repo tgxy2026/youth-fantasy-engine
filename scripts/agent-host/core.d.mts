@@ -39,7 +39,7 @@ export interface RequestRecordLike {
 export interface LedgerLike {
   get(requestId: string): RequestRecordLike | null
   list(): RequestRecordLike[]
-  begin(requestId: string, meta: { tool?: string; projectId?: string; sessionId?: string }): { kind: 'replay' | 'unknown' | 'in-flight' | 'started'; record?: RequestRecordLike }
+  begin(requestId: string, meta: { tool?: string; projectId?: string; sessionId?: string; args?: unknown }): { kind: 'replay' | 'unknown' | 'in-flight' | 'started' | 'conflict'; record?: RequestRecordLike }
   finish(requestId: string, result: unknown): void
   markUnknown(requestId: string, error: unknown): void
 }

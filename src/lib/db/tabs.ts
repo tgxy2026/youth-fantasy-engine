@@ -4,6 +4,7 @@ import type { FormData, TableRow, CardRecord } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
+import { cardLeaseKey, tableLeaseKey, withFormSave } from '@/lib/agentHost/formLease'
 
 // ============ 表单数据 ============
 export async function getFormData(tabId: string): Promise<Record<string, string>> {
@@ -12,8 +13,10 @@ export async function getFormData(tabId: string): Promise<Record<string, string>
 }
 export async function saveFormData(tabId: string, data: Record<string, string>) {
   const store = ops, pid = currentProjectId
-  await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
-  touchProject(pid, store)
+  await withFormSave(pid, tabId, async () => {
+    await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
+    void touchProject(pid, store)
+  })
 }
 
 /**
@@ -34,8 +37,10 @@ export async function getFormDataFor(pid: string, tabId: string): Promise<Record
 export async function saveFormDataFor(pid: string, tabId: string, data: Record<string, string>) {
   if (!pid || !tabId) return
   const store = ops
-  await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
-  touchProject(pid, store)
+  await withFormSave(pid, tabId, async () => {
+    await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
+    void touchProject(pid, store)
+  })
 }
 
 // ============ 表格行 ============
@@ -65,8 +70,11 @@ export async function saveTableRow(row: TableRow, owner?: OwnedOperation) {
   const store = owner?.store ?? ops, pid = row.projectId || currentProjectId
   owner?.assertCurrent()
   if (owner && owner.projectId !== pid) throw new Error('表格行不属于当前操作项目。')
-  await store.put('tableRows', { ...row, projectId: pid, updatedAt: Date.now() })
-  touchProject(pid, store)
+  await withFormSave(pid, tableLeaseKey(row.tabId), async () => {
+    owner?.assertCurrent()
+    await store.put('tableRows', { ...row, projectId: pid, updatedAt: Date.now() })
+    void touchProject(pid, store)
+  })
 }
 export async function deleteTableRow(id: string) {
   await ops.del('tableRows', id)
@@ -107,13 +115,16 @@ export async function saveCardRecord(rec: CardRecord, owner?: OwnedOperation) {
   // 创建时间（2.4.0 · A4 遗留补全）：**首次落库写一次，之后编辑不改动它**。
   // 🔴 必须回读原值再决定：若直接 `rec.createdAt ?? Date.now()`，每次用新对象保存同一张卡
   //    都会刷新成"现在"，那这个字段就失去意义（它要回答的是"这张卡什么时候建的"）。
-  let createdAt = rec.createdAt
-  if (createdAt === undefined) {
-    const prev = await store.get<CardRecord>('cardRecords', rec.id)
-    createdAt = prev?.createdAt ?? Date.now()
-  }
-  await store.put('cardRecords', { ...rec, projectId: pid, createdAt })
-  touchProject(pid, store)
+  await withFormSave(pid, cardLeaseKey(rec.tabId), async () => {
+    owner?.assertCurrent()
+    let createdAt = rec.createdAt
+    if (createdAt === undefined) {
+      const prev = await store.get<CardRecord>('cardRecords', rec.id)
+      createdAt = prev?.createdAt ?? Date.now()
+    }
+    await store.put('cardRecords', { ...rec, projectId: pid, createdAt })
+    void touchProject(pid, store)
+  })
 }
 export async function deleteCardRecord(id: string) {
   await ops.del('cardRecords', id)

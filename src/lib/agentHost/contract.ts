@@ -16,15 +16,23 @@ import type { Project, TabDef, CardRecord, Chapter } from '@/lib/types'
 // ---------- 授权范围 ----------
 
 /** 写动作（读取不受这些动作约束：默认只读，允许读） */
-export type AgentAction = 'setting:create' | 'chapter:create' | 'chapter:write'
+export type AgentAction = 'setting:create' | 'setting:write' | 'form:write' | 'table:create' | 'table:write' | 'volume:create' | 'volume:write' | 'chapter:create' | 'chapter:write' | 'chapter:delete' | 'inspiration:write'
 
-export const AGENT_ACTIONS: readonly AgentAction[] = ['setting:create', 'chapter:create', 'chapter:write']
+export const AGENT_ACTIONS: readonly AgentAction[] = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write']
 
 /** 动作的中文说明（界面与错误文案共用，避免两处各写一份） */
 export const AGENT_ACTION_LABELS: Record<AgentAction, string> = {
   'setting:create': '创建设定卡',
+  'setting:write': '修改设定卡字段',
+  'form:write': '修改作品表单',
+  'table:create': '创建设定表条目',
+  'table:write': '修改设定表条目',
+  'volume:create': '创建分卷',
+  'volume:write': '修改分卷',
   'chapter:create': '创建章节',
   'chapter:write': '追加 / 覆盖正文',
+  'chapter:delete': '删除章节到回收站',
+  'inspiration:write': '写入灵感夹',
 }
 
 export interface AgentProjectGrant {
@@ -90,10 +98,39 @@ export const AGENT_TOOL_NAMES = {
   listChapters: 'yfe_list_chapters',
   readChapter: 'yfe_read_chapter',
   listSettingTabs: 'yfe_list_setting_tabs',
+  listSettingCards: 'yfe_list_setting_cards',
+  readSettingCard: 'yfe_read_setting_card',
+  listDataTabs: 'yfe_list_data_tabs',
+  readForm: 'yfe_read_form',
+  listTableRows: 'yfe_list_table_rows',
+  listTavernReports: 'yfe_list_tavern_reports',
+  readTavernReport: 'yfe_read_tavern_report',
+  listChapterSnapshots: 'yfe_list_chapter_snapshots',
+  readChapterSnapshot: 'yfe_read_chapter_snapshot',
+  listWorldSets: 'yfe_list_world_sets',
+  listWorldPacks: 'yfe_list_world_packs',
+  readWorldPackTable: 'yfe_read_world_pack_table',
+  listProjectBackups: 'yfe_list_project_backups',
+  listMaps: 'yfe_list_maps',
+  listMapPlaces: 'yfe_list_map_places',
+  searchProject: 'yfe_search_project',
+  readPlotCanvas: 'yfe_read_plot_canvas',
   createSettingCard: 'yfe_create_setting_card',
+  updateSettingCard: 'yfe_update_setting_card',
+  createWorldSet: 'yfe_create_world_set',
+  setWorldSetActive: 'yfe_set_world_set_active',
+  updateForm: 'yfe_update_form',
+  createTableRow: 'yfe_create_table_row',
+  updateTableRow: 'yfe_update_table_row',
+  createVolume: 'yfe_create_volume',
   createChapter: 'yfe_create_chapter',
   appendChapter: 'yfe_append_chapter',
   replaceChapter: 'yfe_replace_chapter',
+  updateChapterInfo: 'yfe_update_chapter_info',
+  updateVolume: 'yfe_update_volume',
+  deleteChapter: 'yfe_delete_chapter',
+  listInspirations: 'yfe_list_inspirations',
+  addInspiration: 'yfe_add_inspiration',
   requestStatus: 'yfe_request_status',
 } as const
 
@@ -102,16 +139,38 @@ export type AgentToolName = (typeof AGENT_TOOL_NAMES)[keyof typeof AGENT_TOOL_NA
 /** 写工具（需要对应授权动作） */
 export const AGENT_WRITE_TOOLS: readonly AgentToolName[] = [
   AGENT_TOOL_NAMES.createSettingCard,
+  AGENT_TOOL_NAMES.updateSettingCard,
+  AGENT_TOOL_NAMES.createWorldSet,
+  AGENT_TOOL_NAMES.setWorldSetActive,
+  AGENT_TOOL_NAMES.updateForm,
+  AGENT_TOOL_NAMES.createTableRow,
+  AGENT_TOOL_NAMES.updateTableRow,
+  AGENT_TOOL_NAMES.createVolume,
   AGENT_TOOL_NAMES.createChapter,
   AGENT_TOOL_NAMES.appendChapter,
   AGENT_TOOL_NAMES.replaceChapter,
+  AGENT_TOOL_NAMES.updateChapterInfo,
+  AGENT_TOOL_NAMES.updateVolume,
+  AGENT_TOOL_NAMES.deleteChapter,
+  AGENT_TOOL_NAMES.addInspiration,
 ]
 
 export const AGENT_WRITE_TOOL_ACTIONS: Record<string, AgentAction> = {
   [AGENT_TOOL_NAMES.createSettingCard]: 'setting:create',
+  [AGENT_TOOL_NAMES.updateSettingCard]: 'setting:write',
+  [AGENT_TOOL_NAMES.createWorldSet]: 'setting:create',
+  [AGENT_TOOL_NAMES.setWorldSetActive]: 'setting:write',
+  [AGENT_TOOL_NAMES.updateForm]: 'form:write',
+  [AGENT_TOOL_NAMES.createTableRow]: 'table:create',
+  [AGENT_TOOL_NAMES.updateTableRow]: 'table:write',
+  [AGENT_TOOL_NAMES.createVolume]: 'volume:create',
   [AGENT_TOOL_NAMES.createChapter]: 'chapter:create',
   [AGENT_TOOL_NAMES.appendChapter]: 'chapter:write',
   [AGENT_TOOL_NAMES.replaceChapter]: 'chapter:write',
+  [AGENT_TOOL_NAMES.updateChapterInfo]: 'chapter:write',
+  [AGENT_TOOL_NAMES.updateVolume]: 'volume:write',
+  [AGENT_TOOL_NAMES.deleteChapter]: 'chapter:delete',
+  [AGENT_TOOL_NAMES.addInspiration]: 'inspiration:write',
 }
 
 /**
@@ -288,7 +347,10 @@ export interface AgentChapterWriteResult {
 /** 写成功后通知当前界面（编辑器 / 设定卡页 / 章节树）刷新；不覆盖正在编辑的草稿。 */
 export interface AgentWriteNotice {
   projectId: string
-  kind: 'chapter' | 'setting'
+  kind: 'chapter' | 'setting' | 'volume' | 'world-set' | 'form' | 'table' | 'inspiration'
+  /** 删除动作（章节移入回收站） */
+  deleted?: boolean
+  volumeId?: string
   chapterId?: string
   cardId?: string
   tabId?: string

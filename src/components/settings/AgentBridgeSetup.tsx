@@ -3,7 +3,7 @@ import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import { DESKTOP, agentBridgeDataPath, agentBridgeScriptPath } from '@/lib/app/desktop'
 import { PORTABLE } from '@/lib/storage/fileBackend'
-import { makeAgentBridgeConfig, makeBridgeConfig, type BridgeDataSource } from '@/lib/aiCore/backend/bridgeConfig'
+import { makeAgentBridgeConfig, makeCodexAgentBridgeConfig, makeBridgeConfig, type BridgeDataSource } from '@/lib/aiCore/backend/bridgeConfig'
 import * as db from '@/lib/db'
 import type { Project } from '@/lib/types'
 import {
@@ -77,6 +77,7 @@ function WriteConnection({ node }: { node: string }) {
   const [writeScript, setWriteScript] = useState('')
   const [portableRoot, setPortableRoot] = useState('')
   const [writeConfig, setWriteConfig] = useState('')
+  const [clientFormat, setClientFormat] = useState<'json' | 'codex'>('json')
 
   useEffect(() => {
     let active = true
@@ -118,7 +119,7 @@ function WriteConnection({ node }: { node: string }) {
     try {
       const hostFile = status?.bridgeFile ?? ''
       const source = PORTABLE ? { kind: 'portable' as const, root: portableRoot } : { kind: 'hostFile' as const, path: hostFile }
-      setWriteConfig(makeAgentBridgeConfig(node, writeScript, source))
+      setWriteConfig(clientFormat === 'codex' ? makeCodexAgentBridgeConfig(node, writeScript, source) : makeAgentBridgeConfig(node, writeScript, source))
     } catch (error) {
       setWriteConfig('')
       showToast(error instanceof Error ? error.message : '无法生成配置', 'error')
@@ -167,6 +168,7 @@ function WriteConnection({ node }: { node: string }) {
         </span>
       </div>
       <div className="space-y-1 border-t border-ink-700 pt-2">
+        <label className="block">Agent 客户端配置格式<select className={field} value={clientFormat} onChange={e => { setClientFormat(e.target.value as 'json' | 'codex'); setWriteConfig('') }}><option value="json">通用 MCP JSON</option><option value="codex">Codex TOML</option></select></label>
         <label className="block">可写桥脚本完整路径<input className={field} value={writeScript} onChange={e => { setWriteScript(e.target.value); setWriteConfig('') }} placeholder="…/scripts/mcp/yfe-agent.mjs" /></label>
         {PORTABLE && <label className="block">便携版根目录<input className={field} value={portableRoot} onChange={e => { setPortableRoot(e.target.value); setWriteConfig('') }} /></label>}
         {!PORTABLE && status?.bridgeFile && <p className="break-all text-11 text-ink-500">宿主配置：{status.bridgeFile}</p>}
@@ -174,7 +176,7 @@ function WriteConnection({ node }: { node: string }) {
         {writeConfig && <>
           <textarea aria-label="可写桥连接配置" className={`${field} min-h-32 font-mono`} value={writeConfig} readOnly />
           <Button variant="secondary" onClick={() => void copyWrite()}>复制可写配置</Button>
-          <p className="text-11 text-ink-500">把 yfe-agent 条目合并进已有的 mcpServers，不要覆盖其它服务。宿主配置含本机随机连接令牌，请勿分享。</p>
+          <p className="text-11 text-ink-500">{clientFormat === 'codex' ? '将 yfe_agent 表合并进 Codex 的 config.toml，保留已有设置；重启客户端后检查连接。' : '把 yfe-agent 条目合并进已有的 mcpServers，不要覆盖其它服务。'} 宿主配置含本机随机连接令牌，请勿分享。</p>
         </>}
       </div>
     </div>

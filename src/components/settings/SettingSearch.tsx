@@ -20,6 +20,8 @@ import { useFieldDefinitionRevision } from '@/lib/templates/useFieldRenames'
 // 卡片页签的字段键与「字段名」按钮**同源**（moduleAliasTargets）—— 各算一份必然漂移
 import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
 import { Button } from '@/components/common/Button'
+import { showToast } from '@/components/dialogs/dialogs'
+import { cardLeaseKey, tableLeaseKey, tryRegisterFormEditor, withFormSave } from '@/lib/agentHost/formLease'
 
 type DocKind = 'card' | 'table' | 'relation'
 
@@ -89,6 +91,8 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
   const [indexError, setIndexError] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [reloadKey, setReloadKey] = useState(0)
+  const indexRevision = useRef(0)
+  const indexStale = useRef(true)
   /** 别名版本号：任何页签改了字段显示名 → +1 ⇒ 重建索引（否则检索里还印着旧字段名） */
   const aliasRev = useAliasRevision()
   /** 轻量定义（改名 / 含义确认）变更 → 重建索引，否则检索里还印着旧字段名 */
@@ -111,13 +115,17 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
    */
   const [fieldError, setFieldError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const closeEditing = () => { fieldSwitch.current++; editTarget.current = null; editEpoch.current++; setEditing(null); setFieldError(''); onDraftPendingChange?.(false) }
+  const editLease = useRef<(() => void) | null>(null)
+  const releaseEditLease = () => { editLease.current?.(); editLease.current = null }
+  const closeEditing = () => { releaseEditLease(); fieldSwitch.current++; editTarget.current = null; editEpoch.current++; setEditing(null); setFieldError(''); onDraftPendingChange?.(false) }
   const pendingNotice = useRef(onDraftPendingChange)
   pendingNotice.current = onDraftPendingChange
   useEffect(() => {
+    editLease.current?.(); editLease.current = null
     editTarget.current = null; fieldSwitch.current++; editEpoch.current++; setEditing(null); setFieldError(''); setSavingField(false); jobs.current.clear()
     pendingNotice.current?.(false)
   }, [context])
+  useEffect(() => () => { editLease.current?.(); editLease.current = null }, [])
   const fieldDirty = useMemo(() => () => !!editTarget.current && (draftRef.current !== editTarget.current.field.value || jobs.current.size > 0), [])
   const flushField = useRef<() => Promise<LeaveFlushResult>>(async () => ({ ok: true }))
   useEffect(() => registerAuxiliaryLeaveGuard({
@@ -160,6 +168,8 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
   useEffect(() => {
     if (editing) return
     let cancelled = false
+    const revision = indexRevision.current
+    indexStale.current = true
     setLoadedContext('')
     setIndexError('')
     ;(async () => {
@@ -323,8 +333,9 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
           })
         }
       }
-      if (cancelled || !current()) return
+      if (cancelled || !current() || revision !== indexRevision.current) return
       setDocs(out.map(doc => ({ ...doc, ownerContext: context })))
+      indexStale.current = false
       setLoadedContext(context)
     })().catch(() => { if (!cancelled && current()) setIndexError('暂时无法读取设定索引。请检查存储连接后重试，不会修改原有设定。') })
     return () => { cancelled = true }
@@ -332,6 +343,18 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
     // 直接依赖 hiddenTabs 这个 Set 会因引用每次重建把 effect 拖进循环，故刻意不加。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey, hiddenTabsKey, aliasRev, defRev, context, current, editing])
+
+  useEffect(() => {
+    const onAgentWrite = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string; kind?: string }>).detail
+      if (!detail || detail.projectId !== projectId || (detail.kind !== 'setting' && detail.kind !== 'table')) return
+      indexRevision.current++
+      indexStale.current = true
+      setReloadKey(value => value + 1)
+    }
+    window.addEventListener('yfe:agent-write', onAgentWrite)
+    return () => window.removeEventListener('yfe:agent-write', onAgentWrite)
+  }, [projectId])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])
@@ -404,17 +427,19 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
     pendingNotice.current?.(true)
     setFieldError('')
     const job = writeField({ kind: doc.kind, tabId: doc.tabId, recordId: doc.recordId, dataKey: field.dataKey, value: val })
+    const leaseKey = doc.kind === 'card' ? cardLeaseKey(doc.tabId) : tableLeaseKey(doc.tabId)
+    const tracked = withFormSave(projectId, leaseKey, () => job)
     if (jobs.current.has(job)) {
-      const outcome = await job
+      const outcome = await tracked
       return outcome.ok && current() && epoch === editEpoch.current && draftRef.current === val
     }
     jobs.current.add(job)
-    const outcome = await job
+    const outcome = await tracked
     jobs.current.delete(job)
     if (!current()) return false
     setSavingField(jobs.current.size > 0)
     if (epoch !== editEpoch.current || draftRef.current !== val) { pendingNotice.current?.(fieldDirty()); return false }
-    if (outcome.ok) { editTarget.current = null; setReloadKey(k => k + 1); setEditing(null) }
+    if (outcome.ok) { releaseEditLease(); editTarget.current = null; setReloadKey(k => k + 1); setEditing(null) }
     else setFieldError(outcome.message)
     pendingNotice.current?.(fieldDirty())
     return outcome.ok
@@ -430,9 +455,15 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
     return { ok: false, scope: 'record', error: '设定修改尚未确认提交，请保留输入并重试。' }
   }
   const openField = async (doc: Doc, field: DocField) => {
+    if (indexStale.current) { showToast('设定正在刷新，请稍后再编辑。', 'info'); return }
     const request = ++fieldSwitch.current
     if (fieldDirty() && !(await flushField.current()).ok) return
     if (!current() || request !== fieldSwitch.current) return
+    releaseEditLease()
+    const leaseKey = doc.kind === 'card' ? cardLeaseKey(doc.tabId) : tableLeaseKey(doc.tabId)
+    const lease = tryRegisterFormEditor(projectId, leaseKey)
+    if (!lease) { showToast('Agent 正在修改该栏目，请稍后再编辑。', 'info'); return }
+    editLease.current = lease
     editEpoch.current++; editTarget.current = { doc, field }
     setEditing({ key: doc.key, dataKey: field.dataKey }); setDraft(field.value); setFieldError('')
   }

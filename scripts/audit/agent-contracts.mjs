@@ -27,6 +27,11 @@ export const AGENT_AUDIT = {
     query: 'list_setting_tabs 返回可写能力（未授权）',
     notify: '写成功后发出界面刷新通知',
     concurrent: '并发追加被串行化：一个成功、一个冲突',
+    volume: '修改分卷成功',
+    volumeConflict: '旧标题版本条件不符 → CONFLICT',
+    deleteChapter: '删除章节成功',
+    deleteActive: '正在编辑的章拒绝删除',
+    inspiration: '写入灵感成功',
   } },
   'agent.host': { test: 'agentHostServer', cases: {
     token: '无 token 调用 → 401',

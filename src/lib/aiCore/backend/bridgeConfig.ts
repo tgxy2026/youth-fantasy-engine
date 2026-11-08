@@ -30,7 +30,8 @@ export function makeBridgeConfig(nodeCommand: string, script: string, source: Br
  * 桌面版宿主文件在 userData（界面上由主进程返回），便携版在 `<根目录>/data/` 下。
  */
 export type AgentHostSource = { kind: 'hostFile'; path: string } | { kind: 'portable'; root: string }
-export function makeAgentBridgeConfig(nodeCommand: string, script: string, source: AgentHostSource): string {
+
+function agentBridgeSpec(nodeCommand: string, script: string, source: AgentHostSource): { node: string; args: string[] } {
   const node = nodeCommand.trim()
   const bridge = script.trim()
   const absolute = (p: string) => /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(p)
@@ -46,5 +47,16 @@ export function makeAgentBridgeConfig(nodeCommand: string, script: string, sourc
     if (!absolute(root)) throw new Error('请填写便携版根目录的完整路径')
     args.push('--portable-root', root)
   }
+  return { node, args }
+}
+
+export function makeAgentBridgeConfig(nodeCommand: string, script: string, source: AgentHostSource): string {
+  const { node, args } = agentBridgeSpec(nodeCommand, script, source)
   return JSON.stringify({ mcpServers: { 'yfe-agent': { command: node, args } } }, null, 2)
+}
+
+/** Codex 使用 TOML；JSON 字符串转义同时符合 TOML 基本字符串的转义要求。 */
+export function makeCodexAgentBridgeConfig(nodeCommand: string, script: string, source: AgentHostSource): string {
+  const { node, args } = agentBridgeSpec(nodeCommand, script, source)
+  return `[mcp_servers.yfe_agent]\ncommand = ${JSON.stringify(node)}\nargs = [${args.map(value => JSON.stringify(value)).join(', ')}]\n`
 }

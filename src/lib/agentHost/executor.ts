@@ -19,15 +19,31 @@ import { PORTABLE, flushPortable } from '@/lib/storage/fileBackend'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { submissionBlockReason, platformSubmissionState } from '@/lib/storage/submissionState'
 import { leaveGuardDirty } from '@/lib/editor/leaveBarrier'
+import { getAgentActiveChapter } from '@/lib/editor/activeChapter'
+import { addInspiration, deleteChapter, listInspirations, updateVolume } from '@/lib/agentHost/contentOps'
 import { countWords } from '@/lib/editor/textStats'
 import { uid } from '@/lib/app/id'
-import { getTab } from '@/lib/schema'
+import { getTab, TABS } from '@/lib/schema'
 import { cardFieldsOf } from '@/lib/storage/cardIO'
 import { latestChapterTarget, nextOrderInVolume } from '@/lib/outline/chapterAppend'
 import { chapterSeqOf } from '@/lib/outline/chapterSeq'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
+import { activeKeyOf, isInternalFieldKey, isMultiSetTab, subTabIdOf } from '@/lib/world/worldSets'
+import { getActivePack, modulesFor } from '@/lib/schemaTemplates/index'
+import { acquireAgentForm, tableLeaseKey } from '@/lib/agentHost/formLease'
+import { guardTabWrite, isTabMigrationActive } from '@/lib/templates/migrationGuard'
+import { AUTONUM_GROUPS, nextAutoCode } from '@/lib/ai/autoCode'
+import { validateImport } from '@/lib/storage/tableIO'
+import { AGENT_MUTABLE_TABLES, updateTableRow } from '@/lib/agentHost/updateTableRow'
+import { validateTableFields } from '@/lib/agentHost/validateTableFields'
+import { updateSettingCard } from '@/lib/agentHost/updateSettingCard'
+import { setWorldSetActive } from '@/lib/agentHost/setWorldSetActive'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
-import type { CardRecord, Chapter, Project, TabDef, Volume } from '@/lib/types'
+import type { CardRecord, Chapter, FormData, Project, TabDef, TableRow, Volume } from '@/lib/types'
+import type { TavernReport } from '@/lib/tavern/types'
+import type { Snapshot } from '@/lib/db/chapters'
+import type { WorldStoredRecord } from '@/lib/world/worldTypes'
+import type { BackupMeta } from '@/lib/db/backups'
 import {
   AGENT_TOOL_NAMES,
   MAX_CARD_NAME_CHARS, MAX_CARD_TOTAL_CHARS, MAX_CONTENT_CHARS, MAX_FIELD_CHARS, MAX_NAME_CHARS,
@@ -42,7 +58,7 @@ export interface AgentExecutorDeps {
   getProjects(): Promise<Project[]>
   getVolumes(owner?: OwnedOperation): Promise<Volume[]>
   getChapters(owner?: OwnedOperation): Promise<Chapter[]>
-  saveChapter(ch: Chapter, owner?: OwnedOperation): Promise<void>
+  createChapter(ch: Chapter, owner: OwnedOperation): Promise<void>
   patchChapter(id: string, patch: Partial<Omit<Chapter, 'id' | 'projectId'>>, owner?: OwnedOperation): Promise<Chapter | undefined>
   saveCardRecord(rec: CardRecord, owner?: OwnedOperation): Promise<void>
   createSnapshot(ch: Chapter, source: 'ai-rewrite', owner?: OwnedOperation): Promise<unknown>
@@ -50,6 +66,7 @@ export interface AgentExecutorDeps {
   chapterSeqOf(volumes: Volume[], chapters: Chapter[], chapterId: string): number
   flush(): Promise<boolean>
   unsavedDraft(): boolean
+  activeChapterId(): string | null
   storageBlockReason(): string
   notify(notice: AgentWriteNotice): void
   now(): number
@@ -72,7 +89,7 @@ export function defaultExecutorDeps(): AgentExecutorDeps {
     getProjects: () => db.getAllProjects(),
     getVolumes: owner => (owner ? owner.store.getAll<Volume>('volumes') : db.getAllVolumes()),
     getChapters: owner => (owner ? owner.store.getAll<Chapter>('chapters') : db.getAllChapters()),
-    saveChapter: (ch, owner) => db.saveChapter(ch, owner),
+    createChapter: (ch, owner) => db.createChapterForOwner(ch, owner),
     patchChapter: (id, patch, owner) => db.patchChapter(id, patch, owner),
     saveCardRecord: (rec, owner) => db.saveCardRecord(rec, owner),
     createSnapshot: (ch, source, owner) => db.createSnapshot(ch, source, owner),
@@ -80,13 +97,15 @@ export function defaultExecutorDeps(): AgentExecutorDeps {
     chapterSeqOf: (volumes, chapters, chapterId) => chapterSeqOf(volumes, chapters, chapterId),
     flush: async () => (DESKTOP ? flushDesktop() : PORTABLE ? flushPortable() : true),
     unsavedDraft: () => leaveGuardDirty(),
-    storageBlockReason: () => submissionBlockReason(platformSubmissionState()),
+    activeChapterId: () => getAgentActiveChapter(),
+    storageBlockReason: () => submissionBlockReason(platformSubmissionState())
+      || (db.isDesktopCloudSyncActive() ? '云同步模式下尚无法保证 Agent 写入与其他设备原子隔离' : ''),
     notify: notice => {
       if (typeof window === 'undefined') return
       try {
         window.dispatchEvent(new CustomEvent('yfe:agent-write', { detail: notice }))
-        // 章节结构变了：复用既有侧栏事件，让章节树 / 卷台账刷新
-        if (notice.kind === 'chapter') window.dispatchEvent(new Event('yfe:volumes-changed'))
+        // 分卷变更通知总表侧栏；编辑器使用带归属校验的 Agent 专用同步。
+        if (notice.kind === 'volume' || (notice.kind === 'chapter' && notice.deleted)) window.dispatchEvent(new CustomEvent('yfe:volumes-changed', { detail: { agentSource: true } }))
       } catch { /* 界面通知失败不影响已确认的写入结果 */ }
     },
     now: () => Date.now(),
@@ -131,9 +150,20 @@ class AgentInputError extends Error {}
 //    跨窗口 / 云同步的竞态不在本队列范围内（文档如实声明，需存储层 CAS）。
 const WRITE_TOOL_SET = new Set<string>([
   AGENT_TOOL_NAMES.createSettingCard,
+  AGENT_TOOL_NAMES.updateSettingCard,
+  AGENT_TOOL_NAMES.createWorldSet,
+  AGENT_TOOL_NAMES.setWorldSetActive,
+  AGENT_TOOL_NAMES.updateForm,
+  AGENT_TOOL_NAMES.createTableRow,
+  AGENT_TOOL_NAMES.updateTableRow,
+  AGENT_TOOL_NAMES.createVolume,
   AGENT_TOOL_NAMES.createChapter,
   AGENT_TOOL_NAMES.appendChapter,
   AGENT_TOOL_NAMES.replaceChapter,
+  AGENT_TOOL_NAMES.updateChapterInfo,
+  AGENT_TOOL_NAMES.updateVolume,
+  AGENT_TOOL_NAMES.deleteChapter,
+  AGENT_TOOL_NAMES.addInspiration,
 ])
 let writeChain: Promise<unknown> = Promise.resolve()
 
@@ -259,17 +289,343 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     const project = await projectOf(projectId)
     if ('ok' in project) return project
     const writable = agentActionAllowed(scope, projectId, 'setting:create')
-    const tabs: (SettingTabInfo & { writable: boolean })[] = []
+    const tabs: (SettingTabInfo & { writable: boolean; canUpdate: boolean })[] = []
     // 只列 card 型页签：首期写工具只支持设定卡（表格题不在其中）
     for (const tab of cardTabs()) {
       tabs.push({
         tabId: tab.id, name: tab.name, group: tab.group, description: tab.description,
         fields: deps.cardFieldsOf(tab).map(f => ({ path: f.path, name: f.name, desc: f.desc })),
         writable,
+        canUpdate: agentActionAllowed(scope, projectId, 'setting:write'),
       })
     }
     const grantedActions = scope.projects.find(g => g.projectId === projectId)?.actions ?? []
     return { ok: true, value: { projectId, grantedActions, tabs } }
+  }
+
+  async function listSettingCards(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const tabId = str(args, 'tabId', 120)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 50 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tab = deps.getTab(tabId)
+    if (!tab || tab.type !== 'card') return fail('BAD_REQUEST', `不是设定卡栏目：${tabId}`)
+    const owner = deps.captureOwner(projectId)
+    const cards = (await owner.store.getAll<CardRecord>('cardRecords'))
+      .filter(card => card.projectId === projectId && card.tabId === tabId)
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    return { ok: true, value: { projectId, tabId, total: cards.length, offset, cards: cards.slice(offset, offset + limit).map(card => ({ id: card.id, name: card.name, order: card.order, createdAt: card.createdAt })) } }
+  }
+
+  async function readSettingCard(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const cardId = str(args, 'cardId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const card = await owner.store.get<CardRecord>('cardRecords', cardId)
+    if (!card || card.projectId !== projectId) return fail('NOT_FOUND', `设定卡不存在：${cardId}`)
+    const fields = Object.fromEntries(Object.entries(card.data).filter(([key]) => !isInternalFieldKey(key)))
+    return { ok: true, value: { id: card.id, projectId, tabId: card.tabId, name: card.name, order: card.order, createdAt: card.createdAt, fields } }
+  }
+
+  async function listDataTabs(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    return { ok: true, value: { projectId, tabs: TABS.filter(tab => tab.type === 'form' || tab.type === 'table').map(tab => ({
+      tabId: tab.id, name: tab.name, group: tab.group, type: tab.type, description: tab.description,
+      canCreate: tab.type === 'table' && AGENT_MUTABLE_TABLES.has(tab.id) && agentActionAllowed(scope, projectId, 'table:create'),
+      canUpdate: tab.type === 'form' ? agentActionAllowed(scope, projectId, 'form:write') : tab.type === 'table' && AGENT_MUTABLE_TABLES.has(tab.id) && agentActionAllowed(scope, projectId, 'table:write'),
+      fields: tab.type === 'form' ? tab.modules?.flatMap(module => module.fields.map(field => ({ path: `${module.name}::${field.name}`, name: field.name, description: field.desc }))) : undefined,
+      columns: tab.type === 'table' ? tab.columns?.filter(column => !column.hidden).map(column => ({
+        name: column.name, type: column.type ?? 'text', description: column.tip,
+        options: column.options, fixedOptions: column.fixedOptions === true, calendar: column.calendar === true,
+        refTab: column.refTab, refCol: column.refCol, multiValue: column.multiValue === true,
+      })) : undefined,
+    })) } }
+  }
+
+  async function readForm(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const tabId = str(args, 'tabId', 120)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tab = TABS.find(item => item.id === tabId && item.type === 'form')
+    if (!tab) return fail('BAD_REQUEST', `不是可读取的表单：${tabId}`)
+    const owner = deps.captureOwner(projectId)
+    const record = await owner.store.get<FormData>('formData', `${projectId}::${tabId}`)
+    const fields = Object.fromEntries(Object.entries(record?.data ?? {}).filter(([key]) => !isInternalFieldKey(key)))
+    return { ok: true, value: { projectId, tabId, name: tab.name, fields } }
+  }
+
+  async function listTableRows(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const tabId = str(args, 'tabId', 120)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tab = TABS.find(item => item.id === tabId && item.type === 'table')
+    if (!tab) return fail('BAD_REQUEST', `不是可读取的表格：${tabId}`)
+    const columns = new Set((tab.columns ?? []).filter(column => !column.hidden).map(column => column.name))
+    const owner = deps.captureOwner(projectId)
+    const rows = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', tabId))
+      .filter(row => row.projectId === projectId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    return { ok: true, value: { projectId, tabId, total: rows.length, offset, rows: rows.slice(offset, offset + limit).map(row => ({
+      id: row.id, order: row.order, updatedAt: row.updatedAt, fields: Object.fromEntries(Object.entries(row.data).filter(([key]) => columns.has(key))),
+    })) } }
+  }
+
+  async function listTavernReports(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const owner = deps.captureOwner(projectId)
+    const reports = (await owner.store.getAllByIndex<TavernReport>('tavernReports', 'projectId', projectId))
+      .filter(report => report.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+    return { ok: true, value: { projectId, total: reports.length, offset, reports: reports.slice(offset, offset + limit).map(report => ({
+      id: report.id, sessionTitle: report.sessionTitle, anchorChapterId: report.anchorChapterId,
+      anchorChapterLabel: report.anchorChapterLabel, mode: report.mode, createdAt: report.createdAt,
+    })) } }
+  }
+
+  async function readTavernReport(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const reportId = str(args, 'reportId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const report = await owner.store.get<TavernReport>('tavernReports', reportId)
+    if (!report || report.projectId !== projectId) return fail('NOT_FOUND', `推演报告不存在：${reportId}`)
+    return { ok: true, value: report }
+  }
+
+  async function listChapterSnapshots(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const chapterId = str(args, 'chapterId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const chapter = await owner.store.get<Chapter>('chapters', chapterId)
+    if (!chapter || chapter.projectId !== projectId) return fail('NOT_FOUND', `章节不存在：${chapterId}`)
+    const snapshots = (await owner.store.getAllByIndex<Snapshot>('snapshots', 'chapterId', chapterId))
+      .filter(snapshot => snapshot.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt)
+    return { ok: true, value: { projectId, chapterId, snapshots: snapshots.map(snapshot => ({
+      id: snapshot.id, chapterTitle: snapshot.chapterTitle, wordCount: snapshot.wordCount,
+      createdAt: snapshot.createdAt, source: snapshot.source ?? 'auto', label: snapshot.label, note: snapshot.note,
+    })) } }
+  }
+
+  async function readChapterSnapshot(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const snapshotId = str(args, 'snapshotId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const snapshot = await owner.store.get<Snapshot>('snapshots', snapshotId)
+    if (!snapshot || snapshot.projectId !== projectId) return fail('NOT_FOUND', `章节快照不存在：${snapshotId}`)
+    return { ok: true, value: { ...snapshot, source: snapshot.source ?? 'auto' } }
+  }
+
+  async function listWorldSets(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const tabId = str(args, 'tabId', 120)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    if (!isMultiSetTab(tabId)) return fail('BAD_REQUEST', `不是多套世界设定栏目：${tabId}`)
+    const owner = deps.captureOwner(projectId)
+    const [cards, rawActive] = await Promise.all([
+      owner.store.getAll<CardRecord>('cardRecords'),
+      db.getSettingFor<unknown>(projectId, activeKeyOf(tabId), [], owner),
+    ])
+    const active = new Set(Array.isArray(rawActive) ? rawActive.filter((id): id is string => typeof id === 'string') : [])
+    const sets = cards.filter(card => card.projectId === projectId && card.tabId === subTabIdOf(tabId))
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      .map(card => ({ id: card.id, name: card.name, order: card.order, active: active.has(card.id) }))
+    const fields = (modulesFor(tabId, getActivePack()) ?? []).flatMap(module => module.fields.map(field => ({
+      path: `${module.name}::${field.name}`, name: field.name, description: field.desc,
+    })))
+    return { ok: true, value: { projectId, tabId, fields, sets } }
+  }
+
+  async function listWorldPacks(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const worlds = (await owner.store.getAll<WorldStoredRecord>('worlds'))
+      .filter(world => world.origin?.projectId === projectId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map(world => ({ id: world.id, name: world.name, updatedAt: world.updatedAt, fingerprint: world.fingerprint,
+        tables: (world.tables ?? []).map(table => ({ tabId: table.tabId, kind: table.kind, rows: table.rows.length })),
+        versions: (world.versions ?? []).map(version => ({ version: version.v, at: version.at, fingerprint: version.fingerprint, note: version.note })),
+      }))
+    return { ok: true, value: { projectId, worlds } }
+  }
+
+  async function readWorldPackTable(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const worldId = str(args, 'worldId', 200)
+    const tabId = str(args, 'tabId', 120)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    const version = args.version === undefined ? undefined : num(args, 'version')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const world = await owner.store.get<WorldStoredRecord>('worlds', worldId)
+    if (!world || world.origin?.projectId !== projectId) return fail('NOT_FOUND', `世界包不存在：${worldId}`)
+    const source = version === undefined ? world : (world.versions ?? []).find(item => item.v === version)
+    if (!source) return fail('NOT_FOUND', `世界包版本不存在：${version}`)
+    const table = (source.tables ?? []).find(item => item.tabId === tabId)
+    if (!table) return fail('NOT_FOUND', `世界包栏目不存在：${tabId}`)
+    return { ok: true, value: { projectId, worldId, tabId, version: version ?? null, kind: table.kind,
+      total: table.rows.length, offset, rows: table.rows.slice(offset, offset + limit).map(row => ({
+        id: row.id, name: row.name, order: row.order,
+        fields: Object.fromEntries(Object.entries(row.data).filter(([key]) => !isInternalFieldKey(key))),
+      })), activeIds: source.activeSubs?.[tabId] ?? [],
+    } }
+  }
+
+  async function listProjectBackups(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const backups = (await owner.store.getAll<BackupMeta>('backups')).filter(item => item.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+    return { ok: true, value: { projectId, total: backups.length, offset, backups: backups.slice(offset, offset + limit).map(item => ({
+      id: item.id, kind: item.kind, label: item.label, createdAt: item.createdAt, bytes: item.bytes,
+      note: item.note, fingerprint: item.fingerprint, stats: item.stats,
+    })) } }
+  }
+
+  async function listMaps(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const maps = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', 'geomaps'))
+      .filter(row => row.projectId === projectId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      .map(row => ({ id: row.id, code: row.data['编号'], name: row.data['名称'],
+        kilometersPerCell: row.data['每格公里'], description: row.data['说明'],
+        backgroundMode: row.data['底图模式'] === '图片' ? '图片' : '格子', updatedAt: row.updatedAt }))
+    return { ok: true, value: { projectId, maps } }
+  }
+
+  async function listMapPlaces(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const mapId = str(args, 'mapId', 200)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const map = await owner.store.get<TableRow>('tableRows', mapId)
+    if (!map || map.projectId !== projectId || map.tabId !== 'geomaps') return fail('NOT_FOUND', `地图不存在：${mapId}`)
+    const name = map.data['名称'] || ''
+    if (!name) return fail('BAD_REQUEST', '地图没有名称，无法确定关联地点。')
+    const places = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', 'geography'))
+      .filter(row => row.projectId === projectId && row.data['所属地图'] === name)
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    return { ok: true, value: { projectId, mapId, mapName: name, total: places.length, offset,
+      places: places.slice(offset, offset + limit).map(row => ({ id: row.id, name: row.data['名称'],
+        code: row.data['编号'], category: row.data['类别'], parent: row.data['层级归属'],
+        position: row.data['地理位置'], description: row.data['备注'], updatedAt: row.updatedAt })) } }
+  }
+
+  async function searchProject(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const query = str(args, 'query', 200).trim()
+    const limit = args.limit === undefined ? 30 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const [chapters, cards, rows, forms] = await Promise.all([
+      deps.getChapters(owner), owner.store.getAll<CardRecord>('cardRecords'),
+      owner.store.getAll<TableRow>('tableRows'), owner.store.getAll<FormData>('formData'),
+    ])
+    const results: { kind: string; id: string; tabId?: string; title: string; field: string; excerpt: string }[] = []
+    const needle = query.toLocaleLowerCase()
+    const add = (kind: string, id: string, title: string, field: string, value: unknown, tabId?: string) => {
+      if (results.length >= limit || typeof value !== 'string') return
+      const index = value.toLocaleLowerCase().indexOf(needle)
+      if (index < 0) return
+      results.push({ kind, id, ...(tabId ? { tabId } : {}), title, field,
+        excerpt: value.slice(Math.max(0, index - 80), Math.min(value.length, index + query.length + 80)) })
+    }
+    for (const chapter of chapters.filter(item => item.projectId === projectId)) {
+      add('chapter', chapter.id, chapter.title, 'title', chapter.title)
+      add('chapter', chapter.id, chapter.title, 'summary', chapter.summary)
+      add('chapter', chapter.id, chapter.title, 'content', chapter.content)
+      if (results.length >= limit) break
+    }
+    for (const card of cards.filter(item => item.projectId === projectId)) {
+      add('card', card.id, card.name, 'name', card.name, card.tabId)
+      for (const [key, value] of Object.entries(card.data ?? {})) {
+        if (!isInternalFieldKey(key)) add('card', card.id, card.name, key, value, card.tabId)
+      }
+      if (results.length >= limit) break
+    }
+    for (const row of rows.filter(item => item.projectId === projectId)) {
+      const tab = TABS.find(item => item.id === row.tabId && item.type === 'table')
+      if (!tab) continue
+      const allowed = new Set((tab.columns ?? []).filter(column => !column.hidden).map(column => column.name))
+      for (const [key, value] of Object.entries(row.data ?? {})) {
+        if (allowed.has(key)) add('table', row.id, row.data[tab.displayCol ?? '名称'] ?? '', key, value, row.tabId)
+      }
+      if (results.length >= limit) break
+    }
+    for (const tab of TABS.filter(item => item.type === 'form')) {
+      const form = forms.find(item => item.tabId === `${projectId}::${tab.id}`)
+      if (!form) continue
+      for (const [key, value] of Object.entries(form.data ?? {})) {
+        if (!isInternalFieldKey(key)) add('form', tab.id, tab.name, key, value, tab.id)
+      }
+      if (results.length >= limit) break
+    }
+    owner.assertCurrent()
+    return { ok: true, value: { projectId, query, limit, results, limitReached: results.length >= limit } }
+  }
+
+  async function readPlotCanvas(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const offset = args.offset === undefined ? 0 : num(args, 'offset')
+    const limit = args.limit === undefined ? 20 : num(args, 'limit')
+    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    const raw = await db.getSettingFor<unknown>(projectId, 'plotCanvas', null, owner)
+    const canvas = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+    const all = Array.isArray(canvas.cards) ? canvas.cards : []
+    const cards = all.slice(offset, offset + limit).flatMap((item: unknown) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+      const card = item as Record<string, unknown>
+      if (typeof card.id !== 'string') return []
+      return [{ id: card.id, chapter: card.chapter, type: card.type, text: card.text, x: card.x, y: card.y, basedOn: card.basedOn }]
+    })
+    const ids = new Set(cards.map(card => card.id))
+    const connections = (Array.isArray(canvas.conns) ? canvas.conns : []).filter((conn: unknown) =>
+      Array.isArray(conn) && conn.length === 2 && typeof conn[0] === 'string' && typeof conn[1] === 'string'
+      && (ids.has(conn[0]) || ids.has(conn[1])))
+    owner.assertCurrent()
+    return { ok: true, value: { projectId, total: all.length, offset, cards, connections,
+      selected: Array.isArray(canvas.selected) ? canvas.selected.filter((id: unknown) => typeof id === 'string') : [] } }
   }
 
   /** 一次查询：项目 + 卷 + 章节统计 + 设定栏目 + 可写能力 + 版本（updatedAt）。 */
@@ -302,6 +658,7 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
           tabId: tab.id, name: tab.name, group: tab.group,
           cardCount: cards.filter(r => r.projectId === projectId && r.tabId === tab.id).length,
           writable,
+          canUpdate: agentActionAllowed(scope, projectId, 'setting:write'),
         })),
       },
     }
@@ -361,12 +718,199 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     const rec: CardRecord = {
       id: deps.uid(), projectId, tabId, name, data, order, createdAt: deps.now(),
     }
+    if (await owner.store.get<CardRecord>('cardRecords', rec.id)) return fail('INTERNAL', '设定卡 ID 已存在，未创建。')
     await deps.saveCardRecord(rec, owner)
     return confirmWrite(owner, async () => {
       const saved = await owner.store.get<CardRecord>('cardRecords', rec.id)
       return !!saved && saved.projectId === projectId && saved.tabId === tabId && saved.name === name
+        && Object.entries(data).every(([key, value]) => saved.data[key] === value)
     }, { cardId: rec.id, tabId, name, order, saved: true }, '创建设定卡后未能确认保存',
       { projectId, kind: 'setting', cardId: rec.id, tabId })
+  }
+
+  async function createWorldSet(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const denied = requireAction(scope, projectId, 'setting:create')
+    if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tabId = str(args, 'tabId', 120)
+    if (!isMultiSetTab(tabId)) return fail('BAD_REQUEST', `不是多套世界设定栏目：${tabId}`)
+    const name = str(args, 'name', MAX_CARD_NAME_CHARS).trim()
+    const fields = args.fields
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return fail('BAD_REQUEST', 'fields 必须是对象。')
+    const modules = modulesFor(tabId, getActivePack()) ?? []
+    const schema = modules.flatMap(module => module.fields.map(field => ({ name: field.name, path: `${module.name}::${field.name}` })))
+    const nameCounts = new Map<string, number>()
+    for (const field of schema) nameCounts.set(field.name, (nameCounts.get(field.name) ?? 0) + 1)
+    const paths = new Set(schema.map(field => field.path))
+    const byName = new Map(schema.filter(field => nameCounts.get(field.name) === 1).map(field => [field.name, field.path]))
+    const data: Record<string, string> = {}
+    let total = 0
+    for (const [key, value] of Object.entries(fields as Record<string, unknown>)) {
+      if (typeof value !== 'string' || value.length > MAX_FIELD_CHARS) return fail('BAD_REQUEST', `字段 ${key} 必须是长度合规的字符串。`)
+      const path = paths.has(key) ? key : byName.get(key)
+      if (!path) return fail('BAD_REQUEST', `未知或重名字段：${key}，请使用完整字段路径。`)
+      total += value.length
+      if (total > MAX_CARD_TOTAL_CHARS) return fail('BAD_REQUEST', '字段内容总量超过上限。')
+      data[path] = value
+    }
+    if (!Object.keys(data).length) return fail('BAD_REQUEST', '至少需要一个设定字段。')
+    const owner = deps.captureOwner(projectId)
+    const all = await owner.store.getAll<CardRecord>('cardRecords')
+    const subTab = subTabIdOf(tabId)
+    const order = all.filter(card => card.projectId === projectId && card.tabId === subTab)
+      .reduce((max, card) => Math.max(max, card.order || 0), -1) + 1
+    const record: CardRecord = { id: deps.uid(), projectId, tabId: subTab, name, data, order, createdAt: deps.now() }
+    if (await owner.store.get<CardRecord>('cardRecords', record.id)) return fail('INTERNAL', '设定 ID 已存在，未创建。')
+    await deps.saveCardRecord(record, owner)
+    return confirmWrite(owner, async () => {
+      const saved = await owner.store.get<CardRecord>('cardRecords', record.id)
+      return !!saved && saved.projectId === projectId && saved.tabId === subTab && saved.name === name
+        && Object.entries(data).every(([key, value]) => saved.data[key] === value)
+    }, { cardId: record.id, tabId, name, order, active: false, saved: true }, '创建世界设定后未能确认保存',
+    { projectId, kind: 'world-set', cardId: record.id, tabId })
+  }
+
+  async function updateForm(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const denied = requireAction(scope, projectId, 'form:write')
+    if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tabId = str(args, 'tabId', 120)
+    const tab = TABS.find(item => item.id === tabId && item.type === 'form')
+    if (!tab) return fail('BAD_REQUEST', `不是可修改的表单：${tabId}`)
+    const changes = args.fields, expected = args.expectedFields
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)
+      || !expected || typeof expected !== 'object' || Array.isArray(expected)) {
+      return fail('BAD_REQUEST', 'fields 和 expectedFields 都必须是字段路径到字符串的对象。')
+    }
+    const paths = new Set((tab.modules ?? []).flatMap(module => module.fields.map(field => `${module.name}::${field.name}`)))
+    const entries = Object.entries(changes as Record<string, unknown>)
+    if (!entries.length || entries.length > 200) return fail('BAD_REQUEST', '必须提供 1 到 200 个字段。')
+    const expectedValues = expected as Record<string, unknown>
+    let total = 0
+    for (const [path, value] of entries) {
+      if (!paths.has(path) || isInternalFieldKey(path)) return fail('BAD_REQUEST', `未知或内部字段：${path}`)
+      if (typeof value !== 'string' || value.length > MAX_FIELD_CHARS
+        || typeof expectedValues[path] !== 'string' || (expectedValues[path] as string).length > MAX_FIELD_CHARS) {
+        return fail('BAD_REQUEST', `字段 ${path} 和预期旧值必须为长度合规的字符串。`)
+      }
+      total += value.length
+      if (total > MAX_CARD_TOTAL_CHARS) return fail('BAD_REQUEST', '字段内容总量超过上限。')
+    }
+    if (Object.keys(expectedValues).some(path => !Object.prototype.hasOwnProperty.call(changes, path))) {
+      return fail('BAD_REQUEST', 'expectedFields 只能包含本次修改的字段。')
+    }
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '引擎中有未保存的编辑草稿，请先保存后再修改表单。')
+    const release = acquireAgentForm(projectId, tabId)
+    if (!release) return fail('DRAFT_DIRTY', '该表单正在引擎中编辑或保存，请先离开并保存后重试。')
+    try {
+      const owner = deps.captureOwner(projectId)
+      const migration = await guardTabWrite(projectId, tabId, 'import')
+      if (migration) return fail('STORAGE_BLOCKED', `${migration.message} ${migration.hint}`)
+      const key = `${projectId}::${tabId}`
+      const old = await owner.store.get<FormData>('formData', key)
+      const data = old?.data ?? {}
+      for (const [path] of entries) {
+        if ((data[path] ?? '') !== expectedValues[path]) return fail('CONFLICT', `字段已变化：${path}。请重新读取表单。`)
+      }
+      const next = { ...data, ...Object.fromEntries(entries) } as Record<string, string>
+      if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '读取期间出现未保存的编辑草稿，请先保存。')
+      if (isTabMigrationActive(projectId, tabId)) return fail('STORAGE_BLOCKED', '该表单正在迁移模板，请稍后重新读取。')
+      await owner.store.put('formData', { tabId: key, data: next } as FormData)
+      void db.touchProject(projectId, owner.store)
+      return await confirmWrite(owner, async () => {
+        const saved = await owner.store.get<FormData>('formData', key)
+        return !!saved && entries.every(([path, value]) => saved.data[path] === value)
+      }, { projectId, tabId, fields: entries.map(([path]) => path), saved: true }, '修改表单后未能确认保存',
+      { projectId, kind: 'form', tabId })
+    } finally { release() }
+  }
+
+  async function createTableRow(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const denied = requireAction(scope, projectId, 'table:create')
+    if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const tabId = str(args, 'tabId', 120)
+    const tab = TABS.find(item => item.id === tabId && item.type === 'table' && AGENT_MUTABLE_TABLES.has(item.id))
+    if (!tab) return fail('BAD_REQUEST', `该表格暂不支持创建条目：${tabId}`)
+    if (!args.fields || typeof args.fields !== 'object' || Array.isArray(args.fields)) return fail('BAD_REQUEST', 'fields 必须是对象。')
+    const columns = tab.columns ?? []
+    const data: Record<string, string> = Object.fromEntries(columns.map(column => [column.name, '']))
+    let total = 0
+    for (const [key, value] of Object.entries(args.fields as Record<string, unknown>)) {
+      const column = columns.find(item => item.name === key)
+      if (!column || column.hidden || key === '编号') return fail('BAD_REQUEST', `不可写或未知的字段：${key}`)
+      if (typeof value !== 'string' || value.length > MAX_FIELD_CHARS) return fail('BAD_REQUEST', `字段 ${key} 必须是长度合规的字符串。`)
+      total += value.length
+      if (total > MAX_CARD_TOTAL_CHARS) return fail('BAD_REQUEST', '字段内容总量超过上限。')
+      data[key] = value
+    }
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '引擎中有未保存的编辑草稿，请先保存。')
+    const release = acquireAgentForm(projectId, tableLeaseKey(tabId))
+    if (!release) return fail('DRAFT_DIRTY', '该表格正在引擎中编辑或保存，请先保存并离开后重试。')
+    try {
+      const owner = deps.captureOwner(projectId)
+      const migration = await guardTabWrite(projectId, tabId, 'import')
+      if (migration) return fail('STORAGE_BLOCKED', `${migration.message} ${migration.hint}`)
+      const existing = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)).filter(row => row.projectId === projectId)
+      if (columns.some(column => column.name === '编号') && AUTONUM_GROUPS.has(tab.group)) data['编号'] = nextAutoCode(tabId, existing)
+      const fieldError = await validateTableFields(owner, tab, args.fields as Record<string, string>)
+      if (fieldError) return fail('BAD_REQUEST', fieldError)
+      if ((tabId === 'timeline' || tabId === 'history') && data['发生时间'] && !data['结束时间']) data['结束时间'] = data['发生时间']
+      const check = validateImport([data], tab, { existing, refValues: new Map() })[0]
+      if (check.missing.length || check.dupExisting || check.codeConflict || check.dangling.length) {
+        return fail('BAD_REQUEST', '条目缺少主字段、重复、编号冲突或存在无效引用。')
+      }
+      const now = deps.now()
+      const row: TableRow = { id: deps.uid(), projectId, tabId, data, order: existing.reduce((max, item) => Math.max(max, item.order || 0), -1) + 1, createdAt: now, updatedAt: now }
+      if (await owner.store.get<TableRow>('tableRows', row.id)) return fail('INTERNAL', '表格条目 ID 已存在，未创建。')
+      if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '读取期间出现未保存的编辑草稿，请先保存。')
+      if (isTabMigrationActive(projectId, tabId)) return fail('STORAGE_BLOCKED', '该表格正在迁移模板，请稍后重新读取。')
+      await owner.store.put('tableRows', row)
+      void db.touchProject(projectId, owner.store)
+      return await confirmWrite(owner, async () => {
+        const saved = await owner.store.get<TableRow>('tableRows', row.id)
+        return !!saved && saved.projectId === projectId && saved.tabId === tabId
+          && Object.entries(data).every(([key, value]) => saved.data[key] === value)
+      }, { projectId, tabId, rowId: row.id, code: data['编号'] || undefined, saved: true }, '创建表格条目后未能确认保存',
+      { projectId, kind: 'table', tabId })
+    } finally { release() }
+  }
+
+  async function createVolume(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const denied = requireAction(scope, projectId, 'volume:create')
+    if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const title = str(args, 'title', MAX_NAME_CHARS).trim()
+    const description = str(args, 'description', MAX_FIELD_CHARS, false)
+    const owner = deps.captureOwner(projectId)
+    const volumes = await deps.getVolumes(owner)
+    const order = volumes.filter(volume => volume.projectId === projectId && !volume.isFree)
+      .reduce((max, volume) => Math.max(max, volume.order), -1) + 1
+    const volume: Volume = { id: deps.uid(), projectId, title, description, order, createdAt: deps.now() }
+    if (await owner.store.get<Volume>('volumes', volume.id)) return fail('INTERNAL', '分卷 ID 已存在，未创建分卷。')
+    await owner.store.put('volumes', volume)
+    void db.touchProject(projectId, owner.store)
+    return confirmWrite(owner, async () => {
+      const saved = await owner.store.get<Volume>('volumes', volume.id)
+      return !!saved && saved.projectId === projectId && saved.title === title
+    }, { volumeId: volume.id, title, order, saved: true }, '创建分卷后未能确认保存',
+    { projectId, kind: 'volume', volumeId: volume.id })
   }
 
   async function createChapter(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
@@ -403,7 +947,7 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
       content, summary, status: '草稿', wordCount: deps.countWords(content),
       createdAt: now, updatedAt: now,
     }
-    await deps.saveChapter(ch)
+    await deps.createChapter(ch, owner)
     owner.assertCurrent()
     // 台账 / 序号是派生行为：失败不能让已写入的章节变成“未知”，但要如实带回警告
     const warnings: string[] = []
@@ -419,6 +963,41 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
       return !!saved && saved.projectId === projectId && saved.content === content
     }, value, '创建章节后未能确认保存',
       { projectId, kind: 'chapter', chapterId: ch.id })
+  }
+
+  async function updateChapterInfo(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const denied = requireAction(scope, projectId, 'chapter:write')
+    if (denied) return denied
+    const blocked = storageBlocked()
+    if (blocked) return blocked
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const chapterId = str(args, 'chapterId', 200)
+    const expected = num(args, 'expectedUpdatedAt')
+    if (args.title === undefined && args.summary === undefined) return fail('BAD_REQUEST', '必须提供 title 或 summary。')
+    const title = args.title === undefined ? undefined : str(args, 'title', MAX_NAME_CHARS).trim()
+    const summary = args.summary === undefined ? undefined : str(args, 'summary', MAX_FIELD_CHARS, false)
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '引擎中有未保存的编辑草稿，请先保存后再修改章节。')
+    const owner = deps.captureOwner(projectId)
+    const old = await owner.store.get<Chapter>('chapters', chapterId)
+    if (!old || old.projectId !== projectId) return fail('NOT_FOUND', `章节不存在：${chapterId}`)
+    if (old.updatedAt !== expected) return fail('CONFLICT', '章节已更新，请重新读取后再试。', { chapterId, updatedAt: old.updatedAt })
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '读取期间出现未保存的编辑草稿，请先保存。')
+    const patch = { ...(title === undefined ? {} : { title }), ...(summary === undefined ? {} : { summary }), updatedAt: Math.max(deps.now(), (old.updatedAt || 0) + 1) }
+    const updated = await deps.patchChapter(chapterId, patch, owner)
+    if (!updated) return fail('OUTCOME_UNKNOWN', '章节修改结果不明，请在引擎中核对。')
+    const warnings: string[] = []
+    try {
+      const [volumes, chapters] = await Promise.all([deps.getVolumes(owner), deps.getChapters(owner)])
+      await deps.syncChapterMaster(updated, deps.chapterSeqOf(volumes, chapters, updated.id), undefined, owner)
+    } catch (error) { warnings.push(`章节台账同步失败：${error instanceof Error ? error.message : String(error)}`) }
+    return confirmWrite(owner, async () => {
+      const saved = await owner.store.get<Chapter>('chapters', chapterId)
+      return !!saved && saved.projectId === projectId && saved.updatedAt === updated.updatedAt
+        && saved.title === updated.title && saved.summary === updated.summary
+    }, { ...toWriteResult(updated), summary: updated.summary, ...(warnings.length ? { warnings } : {}) },
+    '修改章节信息后未能确认保存', { projectId, kind: 'chapter', chapterId })
   }
 
   async function appendOrReplace(args: Record<string, unknown>, scope: AgentScope, mode: 'append' | 'replace'): Promise<AgentToolResult> {
@@ -489,10 +1068,39 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
             case AGENT_TOOL_NAMES.listChapters: return await listChapters(call.args, scope)
             case AGENT_TOOL_NAMES.readChapter: return await readChapter(call.args)
             case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args, scope)
+            case AGENT_TOOL_NAMES.listSettingCards: return await listSettingCards(call.args)
+            case AGENT_TOOL_NAMES.readSettingCard: return await readSettingCard(call.args)
+            case AGENT_TOOL_NAMES.listDataTabs: return await listDataTabs(call.args, scope)
+            case AGENT_TOOL_NAMES.readForm: return await readForm(call.args)
+            case AGENT_TOOL_NAMES.listTableRows: return await listTableRows(call.args)
+            case AGENT_TOOL_NAMES.listTavernReports: return await listTavernReports(call.args)
+            case AGENT_TOOL_NAMES.readTavernReport: return await readTavernReport(call.args)
+            case AGENT_TOOL_NAMES.listChapterSnapshots: return await listChapterSnapshots(call.args)
+            case AGENT_TOOL_NAMES.readChapterSnapshot: return await readChapterSnapshot(call.args)
+            case AGENT_TOOL_NAMES.listWorldSets: return await listWorldSets(call.args)
+            case AGENT_TOOL_NAMES.listWorldPacks: return await listWorldPacks(call.args)
+            case AGENT_TOOL_NAMES.readWorldPackTable: return await readWorldPackTable(call.args)
+            case AGENT_TOOL_NAMES.listProjectBackups: return await listProjectBackups(call.args)
+            case AGENT_TOOL_NAMES.listMaps: return await listMaps(call.args)
+            case AGENT_TOOL_NAMES.listMapPlaces: return await listMapPlaces(call.args)
+            case AGENT_TOOL_NAMES.searchProject: return await searchProject(call.args)
+            case AGENT_TOOL_NAMES.readPlotCanvas: return await readPlotCanvas(call.args)
             case AGENT_TOOL_NAMES.createSettingCard: return await createSettingCard(call.args, scope)
+            case AGENT_TOOL_NAMES.updateSettingCard: return await updateSettingCard(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.createWorldSet: return await createWorldSet(call.args, scope)
+            case AGENT_TOOL_NAMES.setWorldSetActive: return await setWorldSetActive(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updateForm: return await updateForm(call.args, scope)
+            case AGENT_TOOL_NAMES.createTableRow: return await createTableRow(call.args, scope)
+            case AGENT_TOOL_NAMES.updateTableRow: return await updateTableRow(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.createVolume: return await createVolume(call.args, scope)
             case AGENT_TOOL_NAMES.createChapter: return await createChapter(call.args, scope)
             case AGENT_TOOL_NAMES.appendChapter: return await appendOrReplace(call.args, scope, 'append')
             case AGENT_TOOL_NAMES.replaceChapter: return await appendOrReplace(call.args, scope, 'replace')
+            case AGENT_TOOL_NAMES.updateChapterInfo: return await updateChapterInfo(call.args, scope)
+            case AGENT_TOOL_NAMES.updateVolume: return await updateVolume(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.deleteChapter: return await deleteChapter(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.listInspirations: return await listInspirations(call.args, deps)
+            case AGENT_TOOL_NAMES.addInspiration: return await addInspiration(call.args, scope, deps)
             default: return fail('UNKNOWN_TOOL', `未知工具：${call.tool}`)
           }
         } catch (error) {

@@ -16,7 +16,7 @@
  *   ③ 子项的活跃开关照旧走 `db.setSubActive`（**不要自己拼 settingsKV**）——
  *      删除子项时清理活跃列表的逻辑在存储层，绕过去就会留下幽灵 id。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Copy, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { useManualDraftSave } from '@/components/common/useManualDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
@@ -25,7 +25,7 @@ import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import type { CardRecord, TabDef } from '@/lib/types'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
-import { FREE_DRAFT_KEY, isInternalFieldKey, splitActive } from '@/lib/world/worldSets'
+import { activeKeyOf, FREE_DRAFT_KEY, isInternalFieldKey, splitActive, subTabIdOf } from '@/lib/world/worldSets'
 import { isNumericPowerField } from '@/lib/schema'
 import { addButtonLabel, getActivePack, modulesFor, subItemLabel } from '@/lib/schemaTemplates/index'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -34,6 +34,8 @@ import type { TemplateField } from '@/lib/ai'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { useFrozenDetailScroll } from '@/components/common/useFrozenDetailScroll'
+import { useAgentWorldSetSync } from '@/components/sheets/useAgentWorldSetSync'
+import { cardLeaseKey, registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
 import PromptModal from '@/components/dialogs/PromptModal'
@@ -57,6 +59,7 @@ export default function WorldSetSheet({ tab }: Props) {
   const [loading, setLoading] = useState(true)
   const [main, setMain] = useState<Record<string, string>>({})
   const [subs, setSubs] = useState<CardRecord[]>([])
+  useAgentWorldSetSync(tab.id, setSubs)
   const [activeIds, setActiveIds] = useState<string[]>([])
   const [sel, setSel] = useState<string>(MAIN)
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -108,17 +111,20 @@ export default function WorldSetSheet({ tab }: Props) {
   const freeDraftChars = freeDraft.trim().length
 
   const load = useCallback(async () => {
+    await Promise.all([waitForAgentForm(pidRef.current, tab.id), waitForAgentForm(pidRef.current, cardLeaseKey(subTabIdOf(tab.id)))])
+    if (!storageOwner.current()) return
     const [m, s, a] = await Promise.all([
-      db.getFormData(tab.id).catch(() => ({})),
-      db.getSubSets(tab.id).catch(() => [] as CardRecord[]),
-      db.getActiveSubIds(tab.id).catch(() => []),
+      db.getFormDataFor(pidRef.current, tab.id).catch(() => ({})),
+      db.getCardRecordsFor(pidRef.current, subTabIdOf(tab.id)).catch(() => [] as CardRecord[]),
+      db.getSettingFor<string[]>(pidRef.current, activeKeyOf(tab.id), []).catch(() => []),
     ])
+    if (!storageOwner.current()) return
     setMain(m)
     setSubs(s)
-    setActiveIds(a)
+    setActiveIds(Array.isArray(a) ? a.filter(id => typeof id === 'string') : [])
     setDraft(m)
     setLoading(false)
-  }, [tab.id])
+  }, [tab.id, storageOwner])
   useEffect(() => { void load() }, [load])
 
   /**
@@ -141,19 +147,24 @@ export default function WorldSetSheet({ tab }: Props) {
   useEffect(() => { draftRef.current = draft }, [draft])
   useEffect(() => { selRef.current = sel }, [sel])
   useEffect(() => { subsRef.current = subs }, [subs])
-  useEffect(() => () => {
-    if (!dirtyRef.current || !storageOwner.current()) return
-    const d = draftRef.current
-    const cur = selRef.current
-    // 🔴 3.2.2（审计 C3 同族）：卸载补存必须带**挂载时绑定的项目 id**。
-    //    `exitProject()` 会先把全局 currentProjectId 清成 ''，此刻再让存储层去读全局，
-    //    写进去的就是无归属记录 —— 重开原书这层改动会消失。
-    if (!pidRef.current) return
-    const pending = cur === MAIN ? db.saveFormDataFor(pidRef.current, tab.id, d) : (() => {
-      const sub = subsRef.current.find(s => s.id === cur)
-      return sub ? db.saveSubSetFor(pidRef.current, tab.id, { ...sub, data: d }) : Promise.resolve()
-    })()
-    void pending.catch(() => showToast('离开前保存设定失败，请回到原页面核对草稿', 'error'))
+  useLayoutEffect(() => {
+    setLoading(true)
+    const owner = storageOwner
+    const pid = pidRef.current
+    const unregister = registerFormEditor(pid, tab.id)
+    const unregisterCards = registerFormEditor(pid, cardLeaseKey(subTabIdOf(tab.id)))
+    return () => {
+      if (dirtyRef.current && owner.current() && pid) {
+        const d = draftRef.current, cur = selRef.current
+        const pending = cur === MAIN ? db.saveFormDataFor(pid, tab.id, d) : (() => {
+          const sub = subsRef.current.find(s => s.id === cur)
+          return sub ? db.saveSubSetFor(pid, tab.id, { ...sub, data: d }) : Promise.resolve()
+        })()
+        void pending.catch(() => showToast('离开前保存设定失败，请回到原页面核对草稿', 'error'))
+      }
+      unregister()
+      unregisterCards()
+    }
   }, [tab.id, storageOwner])
 
   const isMain = sel === MAIN

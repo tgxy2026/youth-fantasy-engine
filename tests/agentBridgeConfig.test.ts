@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { makeAgentBridgeConfig, makeBridgeConfig } from '../src/lib/aiCore/backend/bridgeConfig'
+import { makeAgentBridgeConfig, makeCodexAgentBridgeConfig, makeBridgeConfig } from '../src/lib/aiCore/backend/bridgeConfig'
 const script = 'C:\\Program Files\\YFE\\resources\\scripts\\mcp\\yfe-readonly.mjs'
 const desktop = JSON.parse(makeBridgeConfig('node', script, { kind: 'desktop' }))
 assert.deepEqual(desktop.mcpServers['yfe-readonly'], { command: 'node', args: [script] })
@@ -54,5 +54,10 @@ try {
   assert.throws(() => makeAgentBridgeConfig('node', 'relative.mjs', { kind: 'portable', root: '/tmp' }), /完整路径/)
   assert.throws(() => makeAgentBridgeConfig('node', agentScript, { kind: 'hostFile', path: 'relative.json' }), /完整路径/)
   assert.throws(() => makeAgentBridgeConfig('', agentScript, { kind: 'hostFile', path: '/tmp/agent-host.json' }), /Node/)
+  const codex = makeCodexAgentBridgeConfig('C:\\node\\node.exe', agentScript, { kind: 'hostFile', path: 'C:\\Users\\作者\\agent-host.json' })
+  assert.ok(codex.startsWith('[mcp_servers.yfe_agent]\n'))
+  assert.ok(codex.includes(`command = ${JSON.stringify('C:\\node\\node.exe')}`))
+  assert.ok(codex.includes(JSON.stringify('C:\\Users\\作者\\agent-host.json')))
+  assert.throws(() => makeCodexAgentBridgeConfig('node', 'relative.mjs', { kind: 'hostFile', path: '/tmp/agent-host.json' }), /完整路径/)
   console.log('PASS 可写桥配置指向宿主文件并保留空格路径')
 }

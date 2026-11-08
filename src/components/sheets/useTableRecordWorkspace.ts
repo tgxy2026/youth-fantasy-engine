@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { getAllChapterLedgerRows, getCurrentProjectId, getTableRowsFor } from '@/lib/db'
 import type { TableRow } from '@/lib/types'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
@@ -9,6 +9,7 @@ import { registerLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBar
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { showToast } from '@/components/dialogs/dialogs'
 import { commitTableDrafts, flushDrafts, type DraftMap } from './tableSheetDraftOps'
+import { registerFormEditor, tableLeaseKey, waitForAgentForm } from '@/lib/agentHost/formLease'
 
 export function useTableRecordWorkspace(tabId: string, validate: () => string | null) {
   const view = useListWorkspaceView(getCurrentProjectId(), 'table-records:' + tabId)
@@ -40,7 +41,9 @@ export function useTableRecordWorkspace(tabId: string, validate: () => string | 
     rowsRef.current = []; draftsRef.current = {}; storeRows([]); storeDrafts({}); setJobs(0)
     source.current = { key: ownerKey, pid: getCurrentProjectId(), tabId, owner: captureStorageWriteOwner(getCurrentProjectId()) }
     setErrorOwner(''); setLoadedOwner('')
-    const loading = tabId === 'chapter-master' ? getAllChapterLedgerRows() : getTableRowsFor(source.current.pid, tabId)
+    const pid = source.current.pid
+    const loading = waitForAgentForm(pid, tableLeaseKey(tabId)).then(() =>
+      tabId === 'chapter-master' ? getAllChapterLedgerRows() : getTableRowsFor(pid, tabId))
     void loading.then(value => {
       if (cancelled || !current()) return
       rowsRef.current = value; storeRows(value); setLoadedOwner(ownerKey)
@@ -80,13 +83,18 @@ export function useTableRecordWorkspace(tabId: string, validate: () => string | 
     } })
     return () => registerLeaveGuard(null)
   }, [flushRecords])
-  useEffect(() => () => {
-    const owner = source.current, pending = draftsRef.current
-    if (!Object.keys(pending).length || !owner.owner.current()) return
-    void flushDrafts(owner.pid, owner.tabId, rowsRef.current, pending).then(ok => {
-      if (!ok) showToast('离开前表格修改没能提交，请回到原表格核对草稿', 'error')
-    }).catch(() => showToast('离开前保存表格失败，请回到原表格核对草稿', 'error'))
-  }, [])
+  useLayoutEffect(() => {
+    const unregister = registerFormEditor(projectId, tableLeaseKey(tabId))
+    return () => {
+      const owner = source.current, pending = draftsRef.current
+      if (owner.pid === projectId && owner.tabId === tabId && Object.keys(pending).length && owner.owner.current()) {
+        void flushDrafts(owner.pid, owner.tabId, rowsRef.current, pending).then(ok => {
+          if (!ok) showToast('离开前表格修改没能提交，请回到原表格核对草稿', 'error')
+        }).catch(() => showToast('离开前保存表格失败，请回到原表格核对草稿', 'error'))
+      }
+      unregister()
+    }
+  }, [projectId, tabId])
   return { rows, setRows, rowsRef, drafts, setDrafts, draftsRef, loaded: loadedOwner === ownerKey,
     loadError: errorOwner === ownerKey, retry: () => setRevision(value => value + 1), saving: jobs > 0, flushRecords, ownerKey,
     saveState: { saving: jobs > 0, submitted: receiptOwner === ownerKey, error: saveError.owner === ownerKey ? saveError.message : '' },

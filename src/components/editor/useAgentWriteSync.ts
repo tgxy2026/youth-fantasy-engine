@@ -14,33 +14,70 @@
 import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import * as db from '@/lib/db'
-import type { Chapter } from '@/lib/types'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { setAgentActiveChapter } from '@/lib/editor/activeChapter'
+import type { Chapter, Volume } from '@/lib/types'
 
 export interface AgentWriteSyncDeps {
+  activeId: string | null
   activeRef: { current: Chapter | null }
   draftRef: { current: string }
   setChapters: Dispatch<SetStateAction<Chapter[]>>
+  setVolumes: Dispatch<SetStateAction<Volume[]>>
   setDraftContent: (value: string) => void
   setDeferredContent: (value: string) => void
   onStatsChangeRef: { current: (() => void) | undefined }
 }
 
 export function useAgentWriteSync(deps: AgentWriteSyncDeps): void {
-  const { activeRef, draftRef, setChapters, setDraftContent, setDeferredContent, onStatsChangeRef } = deps
+  const { activeId, activeRef, draftRef, setChapters, setVolumes, setDraftContent, setDeferredContent, onStatsChangeRef } = deps
+  // 供 Agent 写操作判断「该章是否正被编辑」：打开中的章拒绝删除 / 覆盖由执行器统一处理。
+  useEffect(() => {
+    setAgentActiveChapter(activeId)
+    return () => setAgentActiveChapter(null)
+  }, [activeId])
   useEffect(() => {
     let alive = true
+    let refreshSequence = 0
     const onAgentWrite = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: string; kind?: string; chapterId?: string }>).detail
-      if (!detail || detail.kind !== 'chapter' || !detail.chapterId) return
+      if (!detail || (detail.kind !== 'chapter' && detail.kind !== 'volume')) return
       if (detail.projectId && detail.projectId !== db.getCurrentProjectId()) return
       const current = activeRef.current
-      if (!current || current.id !== detail.chapterId) return
+      if (detail.kind === 'volume' || !current || current.id !== detail.chapterId) {
+        const owner = captureOwnedOperation(detail.projectId || db.getCurrentProjectId())
+        const sequence = ++refreshSequence
+        void Promise.all([db.getAllVolumes(owner), db.getAllChapters(owner)]).then(([volumes, chapters]) => {
+          if (!alive || sequence !== refreshSequence) return
+          owner.assertCurrent()
+          setVolumes(previous => {
+            try { owner.assertCurrent() } catch { return previous }
+            return alive && sequence === refreshSequence ? volumes : previous
+          })
+          setChapters(previous => {
+            try { owner.assertCurrent() } catch { return previous }
+            if (!alive || sequence !== refreshSequence) return previous
+            const active = activeRef.current
+            const local = active && previous.find(chapter => chapter.id === active.id)
+            return local ? chapters.map(chapter => chapter.id === local.id ? local : chapter) : chapters
+          })
+        }).catch(() => { /* 保留当前列表，切换视图时可重试 */ })
+        return
+      }
       if (draftRef.current !== (current.content ?? '')) return // 有未保存输入：不覆盖
-      void db.getAllChapters().then(list => {
-        if (!alive) return
+      const owner = captureOwnedOperation(detail.projectId || db.getCurrentProjectId())
+      const sequence = ++refreshSequence
+      void db.getAllChapters(owner).then(list => {
+        if (!alive || sequence !== refreshSequence) return
+        owner.assertCurrent()
+        // 读取时用户可能开始输入或切换章节；此时不能覆盖新的草稿。
+        if (activeRef.current !== current || draftRef.current !== (current.content ?? '')) return
         const next = list.find(c => c.id === detail.chapterId)
         if (!next) return
-        setChapters(list)
+        setChapters(previous => {
+          try { owner.assertCurrent() } catch { return previous }
+          return alive && sequence === refreshSequence && activeRef.current === current ? list : previous
+        })
         draftRef.current = next.content ?? ''
         setDraftContent(next.content ?? '')
         setDeferredContent(next.content ?? '')
@@ -49,5 +86,5 @@ export function useAgentWriteSync(deps: AgentWriteSyncDeps): void {
     }
     window.addEventListener('yfe:agent-write', onAgentWrite)
     return () => { alive = false; window.removeEventListener('yfe:agent-write', onAgentWrite) }
-  }, [activeRef, draftRef, setChapters, setDraftContent, setDeferredContent, onStatsChangeRef])
+  }, [activeRef, draftRef, setChapters, setVolumes, setDraftContent, setDeferredContent, onStatsChangeRef])
 }

@@ -14,17 +14,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createServer } from 'node:http'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 
 export const HOST_FILE_NAME = 'agent-host.json'
 export const LEDGER_FILE_NAME = 'agent-host-requests.json'
 export const HOST_VERSION = 1
 /** 浏览器页面请求必须带这个头：跨源页面带自定义头会触发 CORS 预检并被拒绝 */
 export const PAGE_HEADER = 'x-yfe-agent-page'
-const MAX_LEDGER = 300
 const CALL_TIMEOUT_MS = 45_000
+// 只读请求不需要幂等账本，也不能把作品正文或设定保存在账本中。
+const READ_TOOLS = new Set(['yfe_list_projects', 'yfe_get_project', 'yfe_list_chapters', 'yfe_read_chapter', 'yfe_list_setting_tabs', 'yfe_list_setting_cards', 'yfe_read_setting_card', 'yfe_list_data_tabs', 'yfe_read_form', 'yfe_list_table_rows', 'yfe_list_tavern_reports', 'yfe_read_tavern_report', 'yfe_list_chapter_snapshots', 'yfe_read_chapter_snapshot', 'yfe_list_world_sets', 'yfe_list_world_packs', 'yfe_read_world_pack_table', 'yfe_list_project_backups', 'yfe_list_maps', 'yfe_list_map_places', 'yfe_search_project', 'yfe_read_plot_canvas'])
 
-export const ACTIONS = ['setting:create', 'chapter:create', 'chapter:write']
+export const ACTIONS = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write']
 const MAX_GRANTED_PROJECTS = 200
 
 export function emptyScope() {
@@ -103,34 +104,63 @@ export function saveConfig(file, config) {
 
 // ---------- 请求账本 ----------
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+function requestDigest(meta) {
+  return createHash('sha256').update(canonicalJson({ tool: meta.tool || '', projectId: meta.projectId || '', args: meta.args ?? null })).digest('hex')
+}
+
 export function createLedger(file) {
   let state = readJson(file)
-  if (!state || typeof state !== 'object' || typeof state.requests !== 'object' || !state.requests) {
+  if (!state && !fs.existsSync(file)) {
     state = { version: 1, requests: {} }
   }
+  if (!state || typeof state !== 'object' || !state.requests || typeof state.requests !== 'object' || Array.isArray(state.requests)) {
+    throw new Error('Agent 请求账本无法读取或格式损坏；为避免重复写入，已拒绝启动，请保留账本并排查。')
+  }
+  state.requests = Object.assign(Object.create(null), state.requests)
+  // 不自动清除账本：遗忘一次已完成或结果不明的写入会让同一 ID 再次执行。
   const save = () => {
-    const entries = Object.values(state.requests)
-    if (entries.length > MAX_LEDGER) {
-      entries.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0))
-      for (const drop of entries.slice(0, entries.length - MAX_LEDGER)) delete state.requests[drop.requestId]
-    }
     writeAtomicSync(file, JSON.stringify({ version: 1, requests: state.requests }, null, 2) + '\n')
   }
+  const expire = rec => {
+    if (rec && rec.state === 'pending' && Date.now() - (rec.updatedAt || 0) >= CALL_TIMEOUT_MS) {
+      rec.state = 'unknown'
+      rec.code = 'OUTCOME_UNKNOWN'
+      rec.error = '请求超时或宿主重启，无法确认是否已写入。'
+      rec.updatedAt = Date.now()
+      save()
+    }
+    return rec
+  }
   return {
-    get(requestId) { return state.requests[requestId] || null },
-    list() { return Object.values(state.requests) },
+    get(requestId) { return expire(state.requests[requestId]) || null },
+    list() { return Object.values(state.requests).map(expire) },
     begin(requestId, meta) {
+      const digest = requestDigest(meta)
       const prev = state.requests[requestId]
       if (prev) {
+        // 旧版记录没有摘要，无法证明参数相同，必须人工核对。
+        if (!prev.digest) return { kind: 'unknown', record: prev }
+        if (prev.digest !== digest) return { kind: 'conflict', record: prev }
         if (prev.state === 'success') return { kind: 'replay', record: prev }
         if (prev.state === 'unknown') return { kind: 'unknown', record: prev }
-        if (prev.state === 'pending' && Date.now() - (prev.updatedAt || 0) < CALL_TIMEOUT_MS) return { kind: 'in-flight', record: prev }
-        // failed / 过期 pending：允许重试（覆盖为本次 pending）
+        if (prev.state === 'pending') {
+          expire(prev)
+          return { kind: prev.state === 'unknown' ? 'unknown' : 'in-flight', record: prev }
+        }
+        // 仅确定未写入的 failed 允许重试。
       }
       const now = Date.now()
       state.requests[requestId] = {
-        requestId, tool: String(meta.tool || ''), projectId: String(meta.projectId || ''),
-        sessionId: String(meta.sessionId || ''), state: 'pending', createdAt: now, updatedAt: now,
+        requestId, tool: String(meta.tool || ''), projectId: String(meta.args?.projectId || meta.projectId || ''),
+        sessionId: String(meta.sessionId || ''), digest, state: 'pending', createdAt: now, updatedAt: now,
       }
       save()
       return { kind: 'started' }
@@ -195,6 +225,16 @@ export function createPageQueue({ timeoutMs = CALL_TIMEOUT_MS } = {}) {
       if (typeof clientId === 'string' && clientId) clients.set(clientId, Date.now())
       // 清掉长时间不再轮询的客户端（状态展示用）
       for (const [key, seenAt] of clients) if (Date.now() - seenAt > 30_000) clients.delete(key)
+      if (clients.size > 1 && pending.length && !READ_TOOLS.has(pending[0].payload?.call?.tool)) {
+        const blocked = pending.shift()
+        const waiter = waiting.get(blocked.id)
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          waiting.delete(blocked.id)
+          waiter.resolve({ ok: false, code: 'STORAGE_BLOCKED', error: '检测到多个引擎页面，为避免并发覆盖，请只保留一个页面后重试。' })
+        }
+        return null
+      }
       const item = pending.shift()
       return item ? { id: item.id, payload: item.payload } : null
     },
@@ -300,12 +340,23 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0 })
       return { ok: false, code: 'HOST_DISABLED', error: 'Agent 写入连接未开启。请在青春幻想引擎「模型设置 → Agent 连接」中开启并授权项目。' }
     }
     const call = body && body.call
-    if (!call || typeof call !== 'object' || typeof call.tool !== 'string' || typeof call.requestId !== 'string') {
+    if (!call || typeof call !== 'object' || typeof call.tool !== 'string' || typeof call.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,64}$/.test(call.requestId)) {
       return { ok: false, code: 'BAD_REQUEST', error: '请求格式不合法（缺少 call.tool / call.requestId）' }
     }
+    if (READ_TOOLS.has(call.tool)) {
+      try {
+        return { ok: true, result: await callPage({ call: { ...call }, scope: normalizeScope(config.scope) }) }
+      } catch (error) {
+        return { ok: false, code: 'INTERNAL', error: `页面读取失败：${error instanceof Error ? error.message : String(error)}` }
+      }
+    }
+    if (clientCount() > 1) return { ok: false, code: 'STORAGE_BLOCKED', error: '检测到多个引擎页面，为避免并发覆盖，请只保留一个页面后重试。' }
     const begin = ledger.begin(call.requestId, call)
+    if (begin.kind === 'conflict') {
+      return { ok: false, code: 'REQUEST_ID_REUSED', error: '该 requestId 已用于不同的工具或参数，请为新操作使用新的 requestId。' }
+    }
     if (begin.kind === 'replay') {
-      return { ok: true, result: begin.record.result, replayed: true }
+      return { ok: true, result: { ok: true, value: begin.record.result }, replayed: true }
     }
     if (begin.kind === 'unknown') {
       return {

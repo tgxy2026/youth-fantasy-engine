@@ -10,6 +10,7 @@ import { saveTableRow } from '@/lib/db'
 import type { TableRow } from '@/lib/types'
 import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGuard'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
+import { tableLeaseKey, withFormSave } from '@/lib/agentHost/formLease'
 
 export type DraftMap = Record<string, Record<string, string>>
 
@@ -36,14 +37,16 @@ export async function flushDrafts(
   drafts: DraftMap,
   source: TabWriteSource = 'autosave',
 ): Promise<boolean> {
-  const owner = captureStorageWriteOwner(pid)
-  if (await guardTabWrite(pid, tabId, source)) return false
-  for (const rowId of Object.keys(drafts)) {
-    if (!owner.current()) return false
-    const orig = rows.find(r => r.id === rowId)
-    if (orig) await saveTableRow({ ...orig, data: { ...orig.data, ...drafts[rowId] } })
-  }
-  return owner.current()
+  return withFormSave(pid, tableLeaseKey(tabId), async () => {
+    const owner = captureStorageWriteOwner(pid)
+    if (await guardTabWrite(pid, tabId, source)) return false
+    for (const rowId of Object.keys(drafts)) {
+      if (!owner.current()) return false
+      const orig = rows.find(r => r.id === rowId)
+      if (orig) await saveTableRow({ ...orig, data: { ...orig.data, ...drafts[rowId] } })
+    }
+    return owner.current()
+  })
 }
 
 /**

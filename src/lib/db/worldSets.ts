@@ -15,6 +15,7 @@ import type { CardRecord } from '@/lib/types'
 import { activeKeyOf, pruneActiveIds, subTabIdOf, toggleActiveId } from '@/lib/world/worldSets'
 import { currentProjectId, ops, touchProject } from '@/lib/db/core'
 import { getSetting, setSetting } from '@/lib/db/meta'
+import { cardLeaseKey, withFormSave } from '@/lib/agentHost/formLease'
 
 /** 该母级页签下的全部子项（按 order 排） */
 export async function getSubSets(tabId: string): Promise<CardRecord[]> {
@@ -41,8 +42,11 @@ export async function saveSubSetFor(pid: string, tabId: string, rec: CardRecord)
   // ⚠️ 不在这里对空 pid 早退：`saveSubSet` 历史上允许空 pid（worldPack 收集等纯逻辑场景就传 ''），
   //    凭空加一道静默跳过会改掉既有契约。需要"空就不写"的调用方（组件卸载补存）自己在调用处判。
   const store = ops
-  await store.put('cardRecords', { ...rec, projectId: pid, tabId: subTabIdOf(tabId) })
-  touchProject(pid, store)
+  const subTab = subTabIdOf(tabId)
+  await withFormSave(pid, cardLeaseKey(subTab), async () => {
+    await store.put('cardRecords', { ...rec, projectId: pid, tabId: subTab })
+    void touchProject(pid, store)
+  })
 }
 
 /**

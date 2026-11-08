@@ -27,7 +27,8 @@ import { randomBytes } from 'node:crypto'
 export const BRIDGE_VERSION = '0.1.0'
 export const HOST_FILE_NAME = 'agent-host.json'
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18']
-const DEFAULT_PROTOCOL = '2024-11-05'
+// 未识别客户端版本时返回本服务支持的最新版本，由客户端决定是否接受。
+const DEFAULT_PROTOCOL = '2025-06-18'
 const DATA_FILE_NAME = 'youth-fantasy-engine-data.json'
 const CALL_TIMEOUT_MS = 60_000
 
@@ -128,6 +129,83 @@ const REQUEST_ID_SCHEMA = {
 }
 
 const WRITE_TOOLS = [
+  {
+    name: 'yfe_set_world_set_active',
+    description: '修改多套世界设定的活跃状态；先列出设定并传入预期旧状态。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string', enum: ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] }, cardId: { type: 'string' }, active: { type: 'boolean' }, expectedActive: { type: 'boolean' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'cardId', 'active', 'expectedActive', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'setting:write',
+  },
+  {
+    name: 'yfe_update_setting_card',
+    description: '修改现有设定卡或多套世界设定的指定字段。先读取条目，以完整字段路径传入新值与预期旧值；多套世界设定的 tabId 使用 yfe_list_world_sets 的母栏目 ID。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, cardId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, expectedFields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'cardId', 'fields', 'expectedFields', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'setting:write',
+  },
+  {
+    name: 'yfe_update_table_row',
+    description: '修改设定表中已有条目；先读取条目，逐字段提供读取时旧值。校验选项、引用和项目历法；表格正在编辑或保存时拒绝。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, rowId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, expectedFields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'rowId', 'fields', 'expectedFields', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'table:write',
+  },
+  {
+    name: 'yfe_create_table_row',
+    description: '在当前项目的支持的设定表中创建一行；先查询栏目与字段，自动编号由引擎分配，引用须已存在。表格正在编辑或保存时拒绝。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'fields', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'table:create',
+  },
+  {
+    name: 'yfe_update_form',
+    description: '修改当前项目表单的指定字段。先读取表单，按完整字段路径同时传入新值和读取时的旧值；表单正在编辑或保存时拒绝。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, expectedFields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'fields', 'expectedFields', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'form:write',
+  },
+  {
+    name: 'yfe_create_world_set',
+    description: '按当前题材模板创建一条多套世界设定，初始为未激活；需要创建设定卡授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string', enum: ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] }, name: { type: 'string' }, fields: { type: 'object' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'name', 'fields', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'setting:create',
+  },
+  {
+    name: 'yfe_update_chapter_info',
+    description: '修改已有章节标题和/或概要；先读取章节版本，写入时需要章节写入授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, title: { type: 'string' }, summary: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'chapter:write',
+  },
+  {
+    name: 'yfe_update_volume',
+    description: '修改分卷标题或描述；expectedTitle 必须是读取时的旧标题（版本条件）。自由卷不支持。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, volumeId: { type: 'string' }, expectedTitle: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'volumeId', 'expectedTitle', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'volume:write',
+  },
+  {
+    name: 'yfe_delete_chapter',
+    description: '把章节移入回收站（可恢复），同时清理该章快照与台账；正在编辑器中打开的章、或有未保存草稿时拒绝。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    action: 'chapter:delete',
+  },
+  {
+    name: 'yfe_add_inspiration',
+    description: '向项目灵感夹追加一条灵感，可选关联章节；需要灵感写入授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, text: { type: 'string' }, chapterId: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'text', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'inspiration:write',
+  },
+  {
+    name: 'yfe_create_volume',
+    description: '在当前项目末尾创建分卷，需要单独授予创建分卷权限。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'title', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'volume:create',
+  },
   {
     name: 'yfe_create_setting_card',
     description: '在指定项目的设定栏目中新建一张设定卡（角色卡 / 其他设定 / 分卷大纲 / 章节细纲）。字段按栏目 schema 校验；需要「创建设定卡」授权。',
@@ -257,6 +335,120 @@ const READ_TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: 'yfe_list_setting_cards',
+    description: '分页列出当前项目指定设定栏目的卡片摘要；使用 yfe_read_setting_card 读取字段。',
+    inputSchema: {
+      type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } },
+      required: ['projectId', 'tabId'], additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_setting_card',
+    description: '读取当前项目的一张设定卡及字段内容。',
+    inputSchema: {
+      type: 'object', properties: { projectId: { type: 'string' }, cardId: { type: 'string' } },
+      required: ['projectId', 'cardId'], additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_data_tabs',
+    description: '列出作品表单与表格的基础栏目及字段；不含项目自定义模板字段。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_form',
+    description: '读取当前项目的作品信息、世界设定、力量体系、总纲等表单；返回已保存数据。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' } }, required: ['projectId', 'tabId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_table_rows',
+    description: '分页读取当前项目表格的可见基础列，例如人物关系、势力、地理、伏笔与时间线；不含隐藏列和自定义列。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId', 'tabId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_tavern_reports',
+    description: '分页列出当前项目的酒馆推演报告摘要。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_tavern_report',
+    description: '读取当前项目的一份酒馆推演报告。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, reportId: { type: 'string' } }, required: ['projectId', 'reportId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_chapter_snapshots',
+    description: '列出当前项目指定章节的可恢复历史版本摘要。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' } }, required: ['projectId', 'chapterId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_chapter_snapshot',
+    description: '读取当前项目某个历史版本的正文；不执行恢复。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, snapshotId: { type: 'string' } }, required: ['projectId', 'snapshotId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_world_sets',
+    description: '列出当前项目的多套世界、力量、政治、经济、信仰或司法设定及其活跃状态。使用 yfe_read_setting_card 读取某项字段。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string', enum: ['worldbase', 'power', 'politics', 'economy', 'belief', 'justice'] } }, required: ['projectId', 'tabId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_world_packs',
+    description: '列出来源于当前项目的世界引擎世界包、栏目和封存版本摘要。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_world_pack_table',
+    description: '分页读取当前项目来源的世界包草稿或指定封存版本的某个栏目；不返回图片或内部草稿。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, worldId: { type: 'string' }, tabId: { type: 'string' }, version: { type: 'integer', minimum: 1 }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId', 'worldId', 'tabId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_project_backups',
+    description: '分页列出当前项目的备份和定稿版本元数据；不读取载荷，也不执行恢复或删除。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_maps',
+    description: '列出当前项目的地图摘要；不返回底图文件或内部绘图数据。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_map_places',
+    description: '分页列出属于指定地图的地点摘要；不返回内部绘图坐标。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, mapId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId', 'mapId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_search_project',
+    description: '在当前项目已保存的章节、设定卡、表单和基础表格可见列中搜索文字；返回有限条摘要，不搜索内部草稿或隐藏列。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, query: { type: 'string', minLength: 1, maxLength: 200 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId', 'query'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_plot_canvas',
+    description: '分页读取当前项目已保存的情节推演画布卡片，以及与当页卡片相关的连线。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_inspirations',
+    description: '列出当前项目已保存的灵感夹条目（文字、时间、可选章节引用）。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: 'yfe_request_status',
     description: '按 requestId 查询之前那次写入的状态（pending / success / failed / unknown）。unknown = 结果不明，必须在引擎中核对后才能继续。',
     inputSchema: {
@@ -332,6 +524,7 @@ async function handle(msg) {
       protocolVersion: SUPPORTED_PROTOCOLS.includes(wanted) ? wanted : DEFAULT_PROTOCOL,
       capabilities: { tools: {} },
       serverInfo: { name: 'yfe-agent-bridge', version: BRIDGE_VERSION },
+      instructions: '先列出项目并确认当前打开的目标项目。读取反映已保存的数据；写入需要引擎内对应项目与动作的授权。每次新写入使用唯一 requestId；重试同一请求使用原 requestId，结果不明时先查询状态并在引擎中核对。修改章节前先读取最新 updatedAt；不要覆盖未保存草稿。',
     })
     return
   }
@@ -349,7 +542,7 @@ async function handle(msg) {
     }
     try {
       const result = await invoke(name, params?.arguments || {})
-      reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] })
+      reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], ...(result?.ok === false ? { isError: true } : {}) })
     } catch (error) {
       reply(id, { content: [{ type: 'text', text: (error && error.message) || String(error) }], isError: true })
     }

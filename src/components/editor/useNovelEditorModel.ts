@@ -370,7 +370,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
 
   // 跨视图联动：在「章节总表」侧栏增/删/改卷后，本编辑器章节管理需同步刷新卷列表
   useEffect(() => {
-    const onVol = () => {
+    const onVol = (event: Event) => {
+      if ((event as CustomEvent<{ agentSource?: boolean }>).detail?.agentSource) return
       void reloadVolumes().then(([vols]) => {
         // 总表侧新增的卷在树里默认展开（seen 里没有 = 新卷）。用 seen 而非 expandedRef 判定，
         // 否则「用户在树里折叠了卷 → 总表改个名」会把折叠的卷误判成新卷再掀开。
@@ -572,7 +573,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   }, [activeId, setDeferredContent, enqueueSave])
 
   // 外部 Agent 写入正文后原地刷新当前章（内部再判草稿是否干净；见 useAgentWriteSync 头注释）
-  useAgentWriteSync({ activeRef, draftRef, setChapters, setDraftContent, setDeferredContent, onStatsChangeRef })
+  useAgentWriteSync({ activeId, activeRef, draftRef, setChapters, setVolumes, setDraftContent, setDeferredContent, onStatsChangeRef })
 
   // 🔴 关窗前冲刷草稿（2026-10-17 全量审计 P1）：
   //   1) 向 App 注册「立刻落草稿」的通道（beforeunload/pagehide 时先调它、再写盘）；

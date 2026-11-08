@@ -11,7 +11,7 @@
   "bridgeAdapters": ["src/lib/app/desktop.ts"],
   "rawFlagAdapters": ["src/lib/app/desktop.ts","src/lib/app/platform.ts","src/lib/storage/fileBackend.ts"],
   "httpStoreAdapters": ["src/lib/storage/fileBackend.ts"],
-  "agentAuditPaths": ["src/lib/aiCore/chat.ts","scripts/mcp/yfe-readonly.mjs","scripts/mcp/yfe-agent.mjs","scripts/agent-host/core.mjs","src/lib/agentHost/contract.ts","src/lib/agentHost/executor.ts","src/lib/agentHost/host.ts","tests/mcpReadonlyBridge.test.ts","tests/agentHostExecutor.test.ts","tests/agentHostServer.test.ts","tests/agentHostEndToEnd.test.ts","scripts/verify/agent-contract.mjs","scripts/audit/agent-contracts.mjs","src/lib/aiCore/backend/bridgeConfig.ts","src/components/settings/AgentBridgeSetup.tsx","tests/agentBridgeConfig.test.ts"],
+  "agentAuditPaths": ["src/lib/aiCore/chat.ts","scripts/mcp/yfe-readonly.mjs","scripts/mcp/yfe-agent.mjs","scripts/agent-host/core.mjs","src/lib/agentHost/contract.ts","src/lib/agentHost/executor.ts","src/lib/agentHost/host.ts","src/lib/agentHost/contentOps.ts","src/lib/editor/activeChapter.ts","tests/mcpReadonlyBridge.test.ts","tests/agentHostExecutor.test.ts","tests/agentHostServer.test.ts","tests/agentHostEndToEnd.test.ts","scripts/verify/agent-contract.mjs","scripts/audit/agent-contracts.mjs","src/lib/aiCore/backend/bridgeConfig.ts","src/components/settings/AgentBridgeSetup.tsx","tests/agentBridgeConfig.test.ts"],
   "sidecars": [
     {"file":"electron/main.cjs","symbol":"BLOB_STORES","expected":["backupPayloads"],"reason":"桌面向量/知识库独立存储，不强行要求与HTTP形态一致"},
     {"file":"scripts/portable-server.mjs","symbol":"BLOB_STORES","expected":["backupPayloads","vecRows","kbDocs","kbBodies"],"reason":"便携数据必须随应用目录携带"},

@@ -5,6 +5,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
+import readline from 'node:readline'
 import type { Chapter, Volume } from '@/lib/types'
 import * as db from '@/lib/db'
 import { AGENT_ACTIONS } from '@/lib/agentHost/contract'
@@ -61,8 +63,8 @@ async function main() {
   // ② 幂等：相同 requestId 重放不重复创建
   const replay = await invoke('yfe_create_chapter', {
     projectId, title: '闭环第一章', content: '这是通过 MCP 工具写入的正文。', requestId: 'req-e2e-0001',
-  }, configFile) as { replayed?: boolean }
-  ok('相同 requestId 重放标记 replayed', replay.replayed === true, JSON.stringify(replay))
+  }, configFile) as { ok?: boolean; value?: { chapterId?: string }; replayed?: boolean }
+  ok('相同 requestId 重放保留原结果及 replayed', replay.ok === true && replay.replayed === true && replay.value?.chapterId === chapterId, JSON.stringify(replay))
   ok('重放没有重复建章', (await memoryOps.getAll<Chapter>('chapters')).length === 1)
 
   // ③ 一次查询：项目 + 栏目可写能力 + 版本
@@ -86,6 +88,43 @@ async function main() {
   }, configFile) as { ok: boolean; code?: string }
   ok('端到端版本冲突被拒绝', conflict.ok === false && conflict.code === 'CONFLICT', JSON.stringify(conflict))
   ok('冲突未改动正文', (await memoryOps.get<Chapter>('chapters', chapterId))?.content === after?.content)
+
+  const createdCard = await invoke('yfe_create_setting_card', {
+    projectId, tabId: 'char-main', name: '闭环角色', fields: { 姓名: '闭环角色', 核心性格: '诚实' }, requestId: 'req-e2e-card1',
+  }, configFile) as { ok: boolean; value?: { cardId: string } }
+  const listedCards = await invoke('yfe_list_setting_cards', { projectId, tabId: 'char-main' }, configFile) as { ok: boolean; value?: { cards: { id: string }[] } }
+  const readCard = await invoke('yfe_read_setting_card', { projectId, cardId: createdCard.value?.cardId }, configFile) as { ok: boolean; value?: { fields: Record<string, string> } }
+  ok('桥可创建并列出设定卡', createdCard.ok && listedCards.ok && listedCards.value?.cards.some(c => c.id === createdCard.value?.cardId) === true)
+  ok('桥可读取已创建设定的字段', readCard.ok && Object.values(readCard.value?.fields ?? {}).includes('诚实'))
+  await memoryOps.put('formData', { tabId: `${projectId}::worldbase`, data: { '世界::背景': '合成世界' } })
+  await memoryOps.put('tableRows', { id: 'row-e2e', projectId, tabId: 'relations', data: { 人物A: '甲', 人物B: '乙', 内部字段: '不公开' }, order: 0 })
+  await memoryOps.put('tableRows', { id: 'row-other', projectId: 'other-project', tabId: 'relations', data: { 人物A: '其他书' }, order: 1 })
+  const dataTabs = await invoke('yfe_list_data_tabs', { projectId }, configFile) as { ok: boolean; value?: { tabs: { tabId: string }[] } }
+  const form = await invoke('yfe_read_form', { projectId, tabId: 'worldbase' }, configFile) as { ok: boolean; value?: { fields: Record<string, string> } }
+  const table = await invoke('yfe_list_table_rows', { projectId, tabId: 'relations' }, configFile) as { ok: boolean; value?: { total: number; rows: { fields: Record<string, string> }[] } }
+  ok('桥可发现表单和表格栏目', dataTabs.ok && dataTabs.value?.tabs.some(t => t.tabId === 'worldbase') === true && dataTabs.value?.tabs.some(t => t.tabId === 'relations') === true)
+  ok('桥读取当前项目表单', form.ok && form.value?.fields['世界::背景'] === '合成世界')
+  ok('桥读取表格时隔离其他项目和未公开列', table.ok && table.value?.total === 1 && table.value.rows[0]?.fields['人物A'] === '甲' && !('内部字段' in table.value.rows[0].fields))
+  const ledger = fs.readFileSync(path.join(tmp, 'agent-host-requests.json'), 'utf8')
+  ok('只读正文和设定内容不进入请求账本', !ledger.includes('这是通过 MCP 工具写入的正文') && !ledger.includes('诚实'))
+
+  // 真正通过 stdio / JSON-RPC 调用，确认工具业务失败会按 MCP 错误标记返回。
+  const child = spawn(process.execPath, ['scripts/mcp/yfe-agent.mjs', '--host-file', configFile], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const output = readline.createInterface({ input: child.stdout })
+  const protocolResult = await new Promise<{ result?: { isError?: boolean; content?: { text: string }[] } }>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('MCP stdio 测试超时')), 10_000)
+    output.on('line', line => {
+      const msg = JSON.parse(line) as { id?: number; result?: { isError?: boolean; content?: { text: string }[] } }
+      if (msg.id === 3) { clearTimeout(timer); resolve(msg) }
+    })
+    child.once('error', reject)
+    for (const msg of [
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'synthetic-test', version: '1' } } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'yfe_read_chapter', arguments: { projectId, chapterId: 'not-found' } } },
+    ]) child.stdin.write(JSON.stringify(msg) + '\n')
+  }).finally(() => { output.close(); child.stdin.end() })
+  ok('真实 MCP stdio 对业务失败设置 isError', protocolResult.result?.isError === true && protocolResult.result.content?.[0]?.text.includes('NOT_FOUND') === true, JSON.stringify(protocolResult))
 
   // ⑤ 状态查询
   const status = await invoke('yfe_request_status', { requestId: 'req-e2e-0001' }, configFile) as { request?: { state?: string } }
