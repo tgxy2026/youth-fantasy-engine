@@ -11,6 +11,7 @@
   "bridgeAdapters": ["src/lib/app/desktop.ts"],
   "rawFlagAdapters": ["src/lib/app/desktop.ts","src/lib/app/platform.ts","src/lib/storage/fileBackend.ts"],
   "httpStoreAdapters": ["src/lib/storage/fileBackend.ts"],
+  "agentAuditPaths": ["src/lib/aiCore/backend/contract.ts","src/lib/aiCore/backend/router.ts","src/lib/aiCore/backend/registry.ts","src/lib/aiCore/chat.ts","scripts/mcp/yfe-readonly.mjs","tests/backendTrack.test.ts","tests/mcpReadonlyBridge.test.ts","scripts/verify/agent-contract.mjs","scripts/audit/agent-contracts.mjs"],
   "sidecars": [
     {"file":"electron/main.cjs","symbol":"BLOB_STORES","expected":["backupPayloads"],"reason":"桌面向量/知识库独立存储，不强行要求与HTTP形态一致"},
     {"file":"scripts/portable-server.mjs","symbol":"BLOB_STORES","expected":["backupPayloads","vecRows","kbDocs","kbBodies"],"reason":"便携数据必须随应用目录携带"},

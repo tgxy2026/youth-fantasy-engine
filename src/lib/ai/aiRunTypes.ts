@@ -1,4 +1,5 @@
 import type { MaterialManifest } from '@/lib/ai/requestBudget'
+import type { UsageQuota } from '@/lib/aiCore/usage'
 /**
  * AI 运行账本 · 类型定义（3.0 · W1-1）· 纯类型模块，无任何 import。
  *
@@ -63,6 +64,12 @@ export interface AiRunCallRequest {
 /** 单次模型调用账（供 §10.3 #6 消耗统计 + §14 拒答感知共用） */
 export interface AiRunCall {
   model: string
+  /**
+   * 额度口径（3.4.3 · 后端轨）：本地 / 订阅 / 按量 / 未知。
+   * 🔴 可选 —— 旧账没有这个字段，语义是「当时未记口径」，不需要迁移；
+   *    订阅调用绝不许报成按量（规划 §6.B）。
+   */
+  quota?: UsageQuota
   /** 本次调用耗时（毫秒） */
   ms: number
   promptTokens?: number

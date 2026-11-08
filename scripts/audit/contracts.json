@@ -6,7 +6,9 @@
     {"id":"preset.routes","description":"新增与编辑下拉两条预设入口都初始化必需配置"},
     {"id":"mono.rendered","description":"有真实绘制样本、当前主题正确、颜色及有效透明度严格二值"},
     {"id":"draft.failure","description":"旧草稿保存失败时不换选择、不关闭导入、不丢原编辑"},
-    {"id":"io.roundtrip","description":"历史记录、空姓名、重复名、导出再导入的实际存储结果"}
+    {"id":"io.roundtrip","description":"历史记录、空姓名、重复名、导出再导入的实际存储结果"},
+    {"id":"agent.routing","description":"受控后端验证显式路由、自动链、JSON 闸、取消与额度口径"},
+    {"id":"agent.readonly","description":"隔离数据夹具验证桥只读、敏感字段与桌面便携路径"}
   ],
   "charts": [
     "src/components/creative/WritingGoals.tsx",

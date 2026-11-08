@@ -93,7 +93,7 @@ const VARIANTS = [
 if (!existsSync(path.join(DIST_DIR, 'index.html'))) {
   fail(`未找到前端产物：${DIST_DIR}/index.html\n  请先执行：npm run build:portable`)
 }
-for (const f of ['scripts/portable-server.mjs', README_NAME]) {
+for (const f of ['scripts/portable-server.mjs', 'scripts/mcp/yfe-readonly.mjs', README_NAME]) {
   if (!existsSync(path.join(PORTABLE_SRC, f)) && !existsSync(path.join(root, f))) {
     fail(`缺少 ${f} —— 应位于 portable/（说明与启动脚本）或仓库根（服务脚本）`)
   }
@@ -273,6 +273,8 @@ for (const v of VARIANTS) {
   // ② 本地服务源码（回退路径与"这套东西是什么"的可读凭证）
   mkdirSync(path.join(dir, 'scripts'), { recursive: true })
   copyFileSync(path.join(root, 'scripts', 'portable-server.mjs'), path.join(dir, 'scripts', 'portable-server.mjs'))
+  mkdirSync(path.join(dir, 'scripts', 'mcp'), { recursive: true })
+  copyFileSync(path.join(root, 'scripts', 'mcp', 'yfe-readonly.mjs'), path.join(dir, 'scripts', 'mcp', 'yfe-readonly.mjs'))
   // ③ 本平台的启动脚本
   for (const s of v.scripts) {
     const src = path.join(PORTABLE_SRC, s)

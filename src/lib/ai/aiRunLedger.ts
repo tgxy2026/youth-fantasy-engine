@@ -151,6 +151,7 @@ function toRunCall(u: ChatUsage, via: 'task-id' | 'legacy-single-run'): AiRunCal
   return {
     model: u.model,
     ms: u.ms,
+    ...(u.quota !== undefined ? { quota: u.quota } : {}),
     ...(u.promptTokens !== undefined ? { promptTokens: u.promptTokens } : {}),
     ...(u.completionTokens !== undefined ? { completionTokens: u.completionTokens } : {}),
     ...(u.tokensEstimated ? { tokensEstimated: true } : {}),

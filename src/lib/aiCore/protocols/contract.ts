@@ -11,7 +11,7 @@
 import type { AIProvider, ChatMessage, WireProtocol } from '@/lib/aiCore/core'
 import type { SseLineParser } from '@/lib/aiCore/transport'
 import type { RealUsage } from '@/lib/aiCore/usageParse'
-import type { ChatUsage } from '@/lib/aiCore/usage'
+import type { ChatUsage, UsageQuota } from '@/lib/aiCore/usage'
 
 /** driver 的内部调用参数（与 `chat.ts` 的 CallOpts 同形；由 chat 统一解析后传入） */
 export interface DriverCallOpts {
@@ -74,8 +74,8 @@ export interface DriverCapabilities {
   latency: 'low' | 'medium' | 'high'
   /** 是否允许无人值守循环（条款约束，不是技术能力） */
   unattended: boolean
-  /** 额度口径 */
-  quota: 'local' | 'subscription' | 'metered' | 'unknown'
+  /** 额度口径（3.4.3 起与用量账本共用 UsageQuota，单一真源在 usage.ts） */
+  quota: UsageQuota
 }
 
 /**

@@ -6,6 +6,8 @@ import { scanAst } from './ast.mjs'
 import { auditHeaders } from './probes.mjs'
 import context from './context.cjs'
 import { auditSelfCheck } from './self-check.mjs'
+import { AGENT_AUDIT } from './agent-contracts.mjs'
+import { captureInputs } from '../verify/evidence.mjs'
 
 const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const args = process.argv.slice(2)
@@ -28,6 +30,7 @@ const out = path.join(root, '.workbuddy/tmp/audit', stamp)
 fs.mkdirSync(out, { recursive: true })
 const fingerprint = () => context.sourceFingerprint(root)
 const sourceFingerprint = fingerprint()
+const inputHash = (await captureInputs(root)).combined
 const staticResult = scanAst(root, contracts)
 // 🔴 3.4.1：开场自检登记项与扫描覆盖度，防止「搬文件后扫 0 个文件仍报 0 候选」的假绿灯。
 //    复用上面算好的 staticResult，避免重复解析全部 ts/tsx。schemaVersion 保持 1：只增字段、不改契约语义。
@@ -66,6 +69,7 @@ if (index >= 0) {
   try {
     evidence = JSON.parse(fs.readFileSync(path.resolve(args[index + 1]), 'utf8'))
     if (evidence.sourceFingerprint !== sourceFingerprint) throw new Error('Evidence fingerprint differs from current source (including uncommitted edits)')
+    if (evidence.dirty || evidence.inputHash !== inputHash) throw new Error('Evidence inputs changed or producer marked dirty')
     if (!Array.isArray(evidence.checks)) throw new Error('Evidence checks must be an array')
     if (evidence.reviews !== undefined && !Array.isArray(evidence.reviews)) throw new Error('Evidence reviews must be an array')
     const ids = evidence.checks.map(c => c.id)
@@ -84,7 +88,7 @@ for (const required of contracts.required) {
   if (provided) {
     const artifact = typeof provided.artifact === 'string' && fs.existsSync(path.resolve(root, provided.artifact)) && fs.statSync(path.resolve(root, provided.artifact)).isFile()
     const sample = Number.isInteger(provided.samples) && provided.samples > 0
-    const expectedCases = { 'preset.routes': ['new', 'edit'], 'mono.rendered': contracts.charts, 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'] }[required.id] ?? []
+    const expectedCases = { 'preset.routes': ['new', 'edit'], 'mono.rendered': contracts.charts, 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'], ...Object.fromEntries(Object.entries(AGENT_AUDIT).map(([id, spec]) => [id, Object.keys(spec.cases)])) }[required.id] ?? []
     const cases = Array.isArray(provided.cases) && expectedCases.every(c => provided.cases.includes(c))
     if (provided.status === 'failed') { status = 'failed'; reason = '运行证据报告失败' }
     else if (provided.status === 'blocked') { status = 'blocked'; reason = provided.reason ?? '执行受阻' }
@@ -100,7 +104,7 @@ for (const finding of report.static.findings) {
   finding.disposition = review && ['dismissed', 'confirmed'].includes(review.status) && typeof review.reason === 'string' && review.reason.trim().length >= 10 ? review.status : 'unreviewed'
   if (finding.disposition !== 'unreviewed') finding.reviewReason = review.reason
 }
-if (fingerprint() !== sourceFingerprint) report.diagnostics.push({ status: 'blocked', reason: 'Source changed during audit; results are stale. Rerun after edits settle.' })
+if (fingerprint() !== sourceFingerprint || (await captureInputs(root)).combined !== inputHash) report.diagnostics.push({ status: 'blocked', reason: 'Audit inputs changed during audit; results are stale. Rerun after edits settle.' })
 const failures = report.contracts.filter(c => c.status === 'failed')
 report.status = failures.length || report.static.findings.some(f => f.disposition === 'confirmed') ? 'failed' : report.contracts.every(c => c.status === 'passed') && report.static.findings.every(f => f.disposition === 'dismissed') && !report.diagnostics.length && report.legacy.every(c => c.status === 'executed') ? 'complete' : 'incomplete'
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))

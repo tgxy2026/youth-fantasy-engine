@@ -3,14 +3,15 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { AGENT_AUDIT } from '../scripts/audit/agent-contracts.mjs'
 import { validateAuditBundle } from '../scripts/verify/audit-contracts.mjs'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-audit-bundle-'))
 const dir = path.join(root, '.workbuddy/tmp/bundle')
 const expected = { inputHash: 'current-tools', sourceFingerprint: 'current-source' }
-const ids = ['preset.routes', 'io.roundtrip', 'draft.failure', 'mono.rendered']
+const ids = ['preset.routes', 'io.roundtrip', 'draft.failure', 'mono.rendered', ...Object.keys(AGENT_AUDIT)]
 const legacy = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
-const cases: Record<string, string[]> = { 'preset.routes': ['new', 'edit'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'], 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'mono.rendered': ['chart-a', 'chart-b'] }
+const cases: Record<string, string[]> = { 'preset.routes': ['new', 'edit'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'], 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'mono.rendered': ['chart-a', 'chart-b'], ...Object.fromEntries(Object.entries(AGENT_AUDIT).map(([id, spec]) => [id, Object.keys(spec.cases)])) }
 const contracts = { required: ['headers.case', 'headers.syntax', ...ids].map(id => ({ id })), charts: cases['mono.rendered'] }
 const hash = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex')
 const processOK = { ok: true, exitCode: 0, signal: null, timedOut: false, aborted: false, outputLimit: false, error: null, cleanupComplete: true }
@@ -24,6 +25,10 @@ try {
     'evidence.json': { ...expected, sourceFingerprint: expected.sourceFingerprint, checks: ids.map(id => ({ id, status: 'passed', samples: cases[id].length, cases: cases[id], artifact: path.relative(root, path.join(dir, id + '.json')), ...(id === 'mono.rendered' ? { theme: 'mono' } : {}) })), runs: ids.map(id => ({ id, ...processOK })) },
   }
   for (const id of ids) raw[id + '.json'] = { contract: id, samples: cases[id].length, passed: cases[id].length, failed: 0, ...(id === 'mono.rendered' ? { theme: 'mono', results: cases[id].map(file => ({ file, ok: true, painted: 4, violations: [], unknownCount: 0 })), pageErrors: [] } : { cases: cases[id].map(name => ({ ok: true, ...(id === 'preset.routes' ? { route: name } : { case: name }) })) }) }
+  for (const id of Object.keys(AGENT_AUDIT)) {
+    ;(raw[id + '.json'] as Record<string, unknown>).process = { ok: true, exitCode: 0 }
+    await fs.writeFile(path.join(dir, id + '.test.log'), Object.values(AGENT_AUDIT[id].cases).map(label => 'PASS ' + label).join('\n'))
+  }
   const strings = ['producer-evidence.json', 'producer.log', 'audit.log', 'draft.failure.png', 'mono.rendered.png', ...ids.map(id => id + '.log'), ...legacy.map(name => 'legacy-' + name + '.log')]
   for (const [name, value] of Object.entries(raw)) await fs.writeFile(path.join(dir, name), JSON.stringify(value))
   for (const name of strings) await fs.writeFile(path.join(dir, name), '{}')
@@ -34,7 +39,7 @@ try {
     await fs.writeFile(path.join(dir, 'result.json'), JSON.stringify({ ...base, artifacts, ...extra }))
   }
   await seal()
-  assert.equal(await validateAuditBundle(root, dir, expected), 6); passed++; console.log('PASS 本轮完整契约与原始产物可接收')
+  assert.equal(await validateAuditBundle(root, dir, expected), 8); passed++; console.log('PASS 本轮完整契约与原始产物可接收')
   async function reject(name: string, action: () => Promise<void>, reset: () => Promise<void>) {
     await action(); await assert.rejects(() => validateAuditBundle(root, dir, expected)); passed++; console.log('PASS ' + name); await reset()
   }
@@ -56,6 +61,9 @@ try {
     ['mono.rendered.json', { contract: 'mono.rendered', samples: 2, passed: 2, failed: 0, theme: 'mono', results: cases['mono.rendered'].map(file => ({ file, ok: true, painted: 0, violations: [], unknownCount: 0 })) }, '无绘制样本不能通过'],
     ['preset.routes.json', { contract: 'preset.routes', samples: 2, passed: 2, failed: 0, cases: [{ route: 'new', ok: true }, { route: 'new', ok: true }] }, '只有新增入口不能冒充新增和编辑'],
   ] as const) await reject(label, () => mutate(name, value), () => mutate(name, raw[name]))
+  const agentLog = path.join(dir, 'agent.routing.test.log')
+  const originalAgentLog = await fs.readFile(agentLog, 'utf8')
+  await reject('Agent 断言缺失即使重封哈希也不得通过', async () => { await fs.writeFile(agentLog, ''); await seal() }, async () => { await fs.writeFile(agentLog, originalAgentLog); await seal() })
   await reject('哈希被改动不得接收', () => fs.writeFile(path.join(dir, 'audit.log'), 'tampered'), async () => { await fs.writeFile(path.join(dir, 'audit.log'), '{}'); await seal() })
   await reject('遗漏产物不能通过', () => fs.unlink(path.join(dir, 'audit.log')), async () => { await fs.writeFile(path.join(dir, 'audit.log'), '{}'); await seal() })
   const result = JSON.parse(await fs.readFile(path.join(dir, 'result.json'), 'utf8'))

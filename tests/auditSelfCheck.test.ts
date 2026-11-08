@@ -67,6 +67,9 @@ for (const [name, patch, expect] of broken) {
   ok(`坏配置被拦：${name}`, !r.ok && r.issues.some(i => i.includes(expect)), r.issues.join(' | '))
 }
 
+const missingAgent = validateRegistry({ ...base, policy: { ...goodPolicy, schemaVersion: 1 } })
+ok('Agent 登记被整体删除时自检失败', !missingAgent.ok && missingAgent.issues.some(i => i.includes('Agent 契约与路径登记完整')))
+
 // 真实仓库：用真实配置 + 独立 walk 的文件数核对登记项
 const realContracts = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'scripts/audit/contracts.json'), 'utf8'))
 const realPolicy = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'scripts/audit/platform/policy.json'), 'utf8'))

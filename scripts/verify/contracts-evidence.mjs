@@ -13,6 +13,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { runProcess } from './process.mjs'
 import { captureInputs } from './evidence.mjs'
+import { AGENT_AUDIT } from '../audit/agent-contracts.mjs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -42,6 +43,7 @@ const PRODUCERS = [
     id: 'mono.rendered', script: 'scripts/verify/mono-charts.mjs', cases: CONTRACTS.charts, theme: 'mono',
     summary: /MONO_CHARTS samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'MONO_CHARTS',
   },
+  ...Object.entries(AGENT_AUDIT).map(([id, spec]) => ({ id, script: 'scripts/verify/agent-contract.mjs', args: [id], cases: Object.keys(spec.cases), summary: /AGENT_AUDIT samples=(\d+) passed=(\d+) failed=(\d+)/, label: 'AGENT_AUDIT' })),
 ]
 
 async function main() {
@@ -64,7 +66,7 @@ async function main() {
   for (const producer of PRODUCERS) {
     if (only && !producer.id.includes(only)) continue
     console.log('Producer ' + producer.id)
-    const result = await runProcess(process.execPath, [producer.script], { cwd: ROOT, timeoutMs: 240000 })
+    const result = await runProcess(process.execPath, [producer.script, ...(producer.args ?? [])], { cwd: ROOT, timeoutMs: 240000 })
     await fs.writeFile(path.join(outDir, producer.id + '.log'), result.out)
     const summary = producer.summary.exec(result.out)
     const artifactLine = /^artifact=(.+)$/m.exec(result.out)?.[1]?.trim() ?? ''

@@ -16,6 +16,10 @@ files:
   - dist/**/*
   - package.json
 
+extraResources:
+  - from: scripts/mcp/yfe-readonly.mjs
+    to: scripts/mcp/yfe-readonly.mjs
+
 asar: true
 
 # 🔴 只保留中英两套 Chromium 语言包（2026-10-07 · 2.9.0 重封时新增）。

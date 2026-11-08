@@ -19,10 +19,12 @@ export interface RegistryContracts {
 }
 
 export interface RegistryPolicy {
+  schemaVersion?: number
   flagSources?: Record<string, string>
   bridgeAdapters?: string[]
   rawFlagAdapters?: string[]
   httpStoreAdapters?: string[]
+  agentAuditPaths?: string[]
   sidecars?: Array<{ file: string; symbol?: string; expected?: string[]; reason?: string }>
   [key: string]: unknown
 }

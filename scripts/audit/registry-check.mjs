@@ -18,6 +18,7 @@ export function registeredPaths(contracts, policy) {
   for (const key of ['bridgeAdapters', 'rawFlagAdapters', 'httpStoreAdapters']) {
     for (const [i, file] of (policy[key] ?? []).entries()) push(`policy.${key}[${i}]`, file)
   }
+  for (const [i, file] of (policy.agentAuditPaths ?? []).entries()) push(`policy.agentAuditPaths[${i}]`, file)
   for (const [i, s] of (policy.sidecars ?? []).entries()) push(`policy.sidecars[${i}].file`, s?.file)
   for (const [i, file] of (contracts.charts ?? []).entries()) push(`contracts.charts[${i}]`, file)
   for (const [i, x] of (contracts.nonChartMono ?? []).entries()) push(`contracts.nonChartMono[${i}].file`, x?.file)
@@ -53,6 +54,14 @@ export function validateRegistry({ contracts, policy, exists, srcFileCount, stat
   const ids = (contracts.required ?? []).map(r => r.id)
   check('必要契约 id 唯一且非空', ids.length > 0 && new Set(ids).size === ids.length && ids.every(Boolean),
     `${ids.length} 个契约`)
+
+  // Agent 覆盖不能因登记项被整体删掉而静默退回旧版六契约。
+  if (policy.schemaVersion === 1) {
+    const agentPaths = policy.agentAuditPaths ?? []
+    const requiredPaths = ['src/lib/aiCore/backend/contract.ts', 'src/lib/aiCore/backend/router.ts', 'src/lib/aiCore/backend/registry.ts', 'src/lib/aiCore/chat.ts', 'scripts/mcp/yfe-readonly.mjs', 'tests/backendTrack.test.ts', 'tests/mcpReadonlyBridge.test.ts', 'scripts/verify/agent-contract.mjs', 'scripts/audit/agent-contracts.mjs']
+    const ok = ['agent.routing', 'agent.readonly'].every(id => ids.includes(id)) && requiredPaths.every(file => agentPaths.includes(file)) && new Set(agentPaths).size === agentPaths.length
+    check('Agent 契约与路径登记完整', ok, `contracts=${ids.length}, paths=${agentPaths.length}`)
+  }
 
   // 🔴 核心防失明：AST 扫描的文件数必须等于独立 walk 出的真实数量，且不能为 0。
   check('静态扫描覆盖与源码一致', Number.isInteger(staticFiles) && staticFiles > 0 && staticFiles === srcFileCount,

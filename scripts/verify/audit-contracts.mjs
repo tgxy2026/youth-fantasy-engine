@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { runProcess } from './process.mjs'
 import { captureInputs, hashPaths } from './evidence.mjs'
+import { AGENT_AUDIT } from '../audit/agent-contracts.mjs'
 
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const within = (root, file) => { const rel = path.relative(root, file); return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel) }
-const ids = ['preset.routes', 'io.roundtrip', 'draft.failure', 'mono.rendered']
+const baseIds = ['preset.routes', 'io.roundtrip', 'draft.failure', 'mono.rendered']
+const producerIds = contracts => [...baseIds, ...Object.keys(AGENT_AUDIT).filter(id => contracts.required.some(row => row.id === id))]
 const legacy = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
 const success = item => item?.ok === true && item.exitCode === 0 && !item.signal && !item.timedOut && !item.aborted && !item.error && !item.outputLimit && item.cleanupComplete !== false
 const sameIds = (rows, expected, field = 'id') => Array.isArray(rows) && rows.length === expected.length && new Set(rows.map(row => row[field])).size === rows.length && expected.every(id => rows.some(row => row[field] === id))
@@ -20,6 +22,7 @@ export async function validateAuditBundle(root, directory, expected) {
   const result = JSON.parse(await fs.readFile(path.join(dir, 'result.json'), 'utf8'))
   const contractsBytes = await fs.readFile(path.join(root, 'scripts/audit/contracts.json'))
   const contracts = JSON.parse(contractsBytes)
+  const ids = producerIds(contracts)
   if (result.kind !== 'audit-contracts' || result.status !== 'passed' || result.inputHash !== expected.inputHash || result.sourceFingerprint !== expected.sourceFingerprint || result.contractsHash !== hash(contractsBytes)) throw new Error('Audit bundle failed or is stale')
   if (!sameIds(result.processes, ['producer', 'audit']) || !result.processes.every(success)) throw new Error('Audit processes did not complete normally')
   if (!Array.isArray(result.artifacts) || !result.artifacts.length) throw new Error('Audit artifacts missing')
@@ -38,11 +41,17 @@ export async function validateAuditBundle(root, directory, expected) {
   if (!sameIds(report.legacy, legacy, 'name') || report.legacy.some(row => row.status !== 'executed' || row.code !== 0)) throw new Error('Legacy audit is incomplete')
   if (!Array.isArray(report.static?.findings) || report.static.findings.some(row => row.disposition !== 'dismissed' || typeof row.reviewReason !== 'string' || row.reviewReason.trim().length < 10)) throw new Error('Unreviewed or confirmed audit findings')
   if (evidence.sourceFingerprint !== expected.sourceFingerprint || evidence.inputHash !== expected.inputHash || evidence.dirty || !sameIds(evidence.checks, ids) || !sameIds(evidence.runs, ids) || !evidence.runs.every(success)) throw new Error('Producer evidence incomplete')
-  const cases = { 'preset.routes': ['new', 'edit'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'], 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'mono.rendered': contracts.charts }
+  const cases = { 'preset.routes': ['new', 'edit'], 'io.roundtrip': ['legacy-name', 'duplicate', 'roundtrip'], 'draft.failure': ['save-failure', 'preserve-selection', 'preserve-storage'], 'mono.rendered': contracts.charts, ...Object.fromEntries(Object.entries(AGENT_AUDIT).map(([id, spec]) => [id, Object.keys(spec.cases)])) }
   for (const id of ids) {
     const check = evidence.checks.find(row => row.id === id)
     if (check.status !== 'passed' || path.resolve(root, check.artifact) !== path.join(dir, id + '.json')) throw new Error('Producer artifact not bound to bundle')
     const raw = JSON.parse(await fs.readFile(path.join(dir, id + '.json'), 'utf8'))
+    if (AGENT_AUDIT[id]) {
+      const logFile = path.join(dir, id + '.test.log')
+      if (!files.has(logFile) || raw.process?.ok !== true || raw.process?.exitCode !== 0) throw new Error('Agent fixture process evidence missing')
+      const lines = new Set((await fs.readFile(logFile, 'utf8')).split(/\r?\n/))
+      if (Object.values(AGENT_AUDIT[id].cases).some(label => !lines.has('PASS ' + label))) throw new Error('Agent fixture assertions missing')
+    }
     const rows = id === 'mono.rendered' ? raw.results : raw.cases
     if (raw.contract !== id || !Number.isInteger(raw.samples) || raw.samples < 1 || raw.samples !== check.samples || raw.failed !== 0 || raw.passed !== raw.samples || !Array.isArray(rows) || rows.length !== raw.samples || rows.some(row => row.ok !== true) || (raw.pageErrors && raw.pageErrors.length)) throw new Error('Raw producer result did not pass')
     const observed = rows.map(row => id === 'mono.rendered' ? row.file : id === 'preset.routes' ? row.route : row.case)
@@ -61,6 +70,7 @@ async function main() {
   const temp = await fs.realpath(path.join(ROOT, '.workbuddy/tmp'))
   if (!within(temp, dir) || dir === temp) throw new Error('Output must be under workspace tmp')
   await fs.mkdir(dir) // Refuse to overwrite evidence from a previous run.
+  const ids = producerIds(JSON.parse(await fs.readFile(path.join(ROOT, 'scripts/audit/contracts.json'), 'utf8')))
   const inputHash = (await captureInputs(ROOT)).combined, sourceFingerprint = context.sourceFingerprint(ROOT)
   const result = { kind: 'audit-contracts', status: 'failed', inputHash, sourceFingerprint, contractsHash: hash(await fs.readFile(path.join(ROOT, 'scripts/audit/contracts.json'))), processes: [] }
   try {
@@ -75,6 +85,7 @@ async function main() {
       if (!within(temp, original)) throw new Error('Producer artifact outside temporary workspace')
       const copy = path.join(dir, check.id + '.json')
       await fs.copyFile(original, copy)
+      if (AGENT_AUDIT[check.id]) await fs.copyFile(path.join(path.dirname(original), check.id + '.test.log'), path.join(dir, check.id + '.test.log'))
       if (['draft.failure', 'mono.rendered'].includes(check.id)) await fs.copyFile(path.join(path.dirname(original), check.id === 'draft.failure' ? 'draft-failure.png' : 'mono-charts.png'), path.join(dir, check.id + '.png'))
       check.artifact = path.relative(ROOT, copy)
     }
