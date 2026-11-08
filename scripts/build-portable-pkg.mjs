@@ -93,7 +93,7 @@ const VARIANTS = [
 if (!existsSync(path.join(DIST_DIR, 'index.html'))) {
   fail(`未找到前端产物：${DIST_DIR}/index.html\n  请先执行：npm run build:portable`)
 }
-for (const f of ['scripts/portable-server.mjs', 'scripts/mcp/yfe-readonly.mjs', README_NAME]) {
+for (const f of ['scripts/portable-server.mjs', 'scripts/mcp/yfe-readonly.mjs', 'scripts/mcp/yfe-agent.mjs', 'scripts/agent-host/core.mjs', README_NAME]) {
   if (!existsSync(path.join(PORTABLE_SRC, f)) && !existsSync(path.join(root, f))) {
     fail(`缺少 ${f} —— 应位于 portable/（说明与启动脚本）或仓库根（服务脚本）`)
   }
@@ -275,6 +275,9 @@ for (const v of VARIANTS) {
   copyFileSync(path.join(root, 'scripts', 'portable-server.mjs'), path.join(dir, 'scripts', 'portable-server.mjs'))
   mkdirSync(path.join(dir, 'scripts', 'mcp'), { recursive: true })
   copyFileSync(path.join(root, 'scripts', 'mcp', 'yfe-readonly.mjs'), path.join(dir, 'scripts', 'mcp', 'yfe-readonly.mjs'))
+  copyFileSync(path.join(root, 'scripts', 'mcp', 'yfe-agent.mjs'), path.join(dir, 'scripts', 'mcp', 'yfe-agent.mjs'))
+  // 3.4.3：Agent 宿主核心（便携服务与之共用；页面轮询执行写工具）
+  copyTree(path.join(root, 'scripts', 'agent-host'), path.join(dir, 'scripts', 'agent-host'))
   // ③ 本平台的启动脚本
   for (const s of v.scripts) {
     const src = path.join(PORTABLE_SRC, s)

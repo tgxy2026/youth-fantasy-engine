@@ -40,6 +40,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomBytes, createHash } from 'node:crypto'
+// 3.4.3 · Agent 可写工具宿主：与桌面主进程**共用同一份核心**
+// （配置 / 幂等账本 / 本地端点）。页面通过本服务的 /api/agent/* 轮询任务并回传结果。
+import { createAgentHost, createPageQueue, sameOriginPage as isSameOriginAgentPage } from './agent-host/core.mjs'
 
 // 【路径解析】直接用 import.meta.url 定位本脚本所在目录。
 //   （2026-10-14：Node SEA 单文件 exe 方案已放弃 —— 原因见 memory/2026-10-14.md。
@@ -218,6 +221,11 @@ function sendJson(res, code, obj) {
   res.end(body)
 }
 
+// Agent 可写工具宿主：请求经页面轮询执行；服务进程本身**不直接写数据文件**。
+// 🔴 与桌面主进程同一条红线：数据真源在页面内存 store，绕过它写盘会与防抖 / 云同步互相覆盖。
+const agentQueue = createPageQueue()
+let agentHost = null
+
 /**
  * 读请求体。超限时不 `req.destroy()` —— 那样 socket 立刻关闭、413 根本发不出去，
  * 前端只看到 "fetch failed"（作者以为软件坏了，其实是自己的库超大了）。
@@ -344,6 +352,39 @@ const server = createServer(async (req, res) => {
   if (url.startsWith('/api/')) {
     try {
       if (url === '/api/ping') return sendJson(res, 200, { ok: true, app: 'youth-fantasy-engine' })
+
+      // ---- Agent 可写工具（3.4.3）----
+      // 页面端点（status / config / next / result）只接受同源页面请求；
+      // Agent 桥走的是 core 自己的随机端口，带 host 文件里的 Bearer token。
+      if (url.startsWith('/api/agent/')) {
+        const route = url.split('?')[0]
+        if (!agentHost) return sendJson(res, 503, { ok: false, error: 'Agent 宿主尚未就绪，请稍后重试。' })
+        if (!isSameOriginAgentPage(req)) {
+          return sendJson(res, 403, { ok: false, error: 'forbidden: Agent 页面端点只接受本页同源请求' })
+        }
+        if (route === '/api/agent/status' && req.method === 'GET') {
+          return sendJson(res, 200, { ok: true, ...agentHost.status() })
+        }
+        if (route === '/api/agent/config' && req.method === 'POST') {
+          const buf = await readBody(req)
+          let body
+          try { body = JSON.parse(buf.toString('utf8')) } catch { return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' }) }
+          return sendJson(res, 200, { ok: true, status: agentHost.setConfig(body) })
+        }
+        if (route === '/api/agent/next' && req.method === 'GET') {
+          const u = new URL(url, 'http://127.0.0.1')
+          const item = agentQueue.next(u.searchParams.get('clientId') || '')
+          return sendJson(res, 200, { ok: true, request: item })
+        }
+        if (route === '/api/agent/result' && req.method === 'POST') {
+          const buf = await readBody(req)
+          let body
+          try { body = JSON.parse(buf.toString('utf8')) } catch { return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' }) }
+          if (!body || typeof body.id !== 'string') return sendJson(res, 400, { ok: false, error: '缺少任务 id' })
+          return sendJson(res, 200, { ok: agentQueue.settle(body.id, body.clientId, body.result) })
+        }
+        return sendJson(res, 404, { ok: false, error: 'unknown agent api' })
+      }
 
       if (url.startsWith('/api/data')) {
         if (req.method === 'GET') {
@@ -584,6 +625,19 @@ async function main() {
   writeFileSync(PORT_LOCK, String(PORT), 'utf8')
   const url = `http://127.0.0.1:${PORT}`
 
+  // Agent 可写工具宿主：起独立随机端口（桥用 host 文件里的 port + token 连接）。
+  // 失败不阻断便携服务：只读 / 写作仍照常工作。
+  try {
+    agentHost = createAgentHost({
+      configFile: path.join(DATA_DIR, 'agent-host.json'),
+      callPage: payload => agentQueue.push(payload),
+      clientCount: () => agentQueue.clients.size,
+    })
+    await agentHost.start()
+  } catch (error) {
+    console.error('[portable] ⚠️ Agent 宿主启动失败（不影响正常写作）：', error?.message ?? error)
+  }
+
   log('==================================================')
   log('  青春幻想引擎 · 便携版已启动')
   log(`  地址：${url}`)
@@ -598,6 +652,7 @@ async function main() {
 
   const shutdown = () => {
     try { if (existsSync(PORT_LOCK)) writeFileSync(PORT_LOCK, '', 'utf8') } catch { /* 忽略 */ }
+    try { void agentHost?.stop?.() } catch { /* 退出阶段不阻断 */ }
     process.exit(0)
   }
   process.on('SIGINT', shutdown)

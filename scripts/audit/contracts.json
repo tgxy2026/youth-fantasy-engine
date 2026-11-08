@@ -7,8 +7,11 @@
     {"id":"mono.rendered","description":"有真实绘制样本、当前主题正确、颜色及有效透明度严格二值"},
     {"id":"draft.failure","description":"旧草稿保存失败时不换选择、不关闭导入、不丢原编辑"},
     {"id":"io.roundtrip","description":"历史记录、空姓名、重复名、导出再导入的实际存储结果"},
-    {"id":"agent.routing","description":"受控后端验证显式路由、自动链、JSON 闸、取消与额度口径"},
-    {"id":"agent.readonly","description":"隔离数据夹具验证桥只读、敏感字段与桌面便携路径"}
+    {"id":"agent.readonly","description":"隔离数据夹具验证桥只读、敏感字段与桌面便携路径"},
+    {"id":"agent.bridge-config","description":"只读桥配置生成与隔离数据端到端联通"},
+    {"id":"agent.write","description":"隔离夹具验证可写工具的授权、归属、冲突、草稿保护与落盘失败"},
+    {"id":"agent.host","description":"宿主端点鉴权、未开启失败关闭、requestId 幂等与页面同源限制"},
+    {"id":"agent.e2e","description":"可写桥 → 宿主 → 页面执行器 → 内存 store 的合成项目闭环"}
   ],
   "charts": [
     "src/components/creative/WritingGoals.tsx",

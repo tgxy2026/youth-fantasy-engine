@@ -51,14 +51,6 @@ export type { WireProtocol } from '@/lib/aiCore/protocol'
 // 3.4.2 · 统一模型清单入口（按线协议分流，不静默退回 OpenAI /models）
 export { listModelsFor, capabilitiesOfProtocol } from '@/lib/aiCore/protocols'
 export type { DriverCapabilities } from '@/lib/aiCore/protocols/contract'
-// 3.4.3 · 后端轨（与协议轨正交）：契约 / 三轨路由 / 注册表。门面显式再导出，禁 export *。
-export { BACKEND_EVENT_KINDS, CAPABILITY_KEYS, assertBackendCapabilities, defineAgentBackend } from '@/lib/aiCore/backend/contract'
-export type { AgentBackend, BackendArtifact, BackendEvent, BackendSession, BackendSessionState, BackendTask, RecordedBackendEvent } from '@/lib/aiCore/backend/contract'
-export { createBackendRouter, BackendTrackSkipError, skipMessage } from '@/lib/aiCore/backend/router'
-export type { BackendRouter, RouteCall, RouteLedgerEntry, RouteOutcome, AgentRunResult } from '@/lib/aiCore/backend/router'
-export { registerAgentBackend, unregisterAgentBackend, getAgentBackend, listAgentBackends, backendTrackStatus } from '@/lib/aiCore/backend/registry'
-export type { UsageQuota } from '@/lib/aiCore/usage'
-
 // ---- 补全提示词语境 ----
 export type { FillContext } from '@/lib/aiCore/prompts'
 

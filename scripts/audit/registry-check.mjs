@@ -58,8 +58,8 @@ export function validateRegistry({ contracts, policy, exists, srcFileCount, stat
   // Agent 覆盖不能因登记项被整体删掉而静默退回旧版六契约。
   if (policy.schemaVersion === 1) {
     const agentPaths = policy.agentAuditPaths ?? []
-    const requiredPaths = ['src/lib/aiCore/backend/contract.ts', 'src/lib/aiCore/backend/router.ts', 'src/lib/aiCore/backend/registry.ts', 'src/lib/aiCore/chat.ts', 'scripts/mcp/yfe-readonly.mjs', 'tests/backendTrack.test.ts', 'tests/mcpReadonlyBridge.test.ts', 'scripts/verify/agent-contract.mjs', 'scripts/audit/agent-contracts.mjs']
-    const ok = ['agent.routing', 'agent.readonly'].every(id => ids.includes(id)) && requiredPaths.every(file => agentPaths.includes(file)) && new Set(agentPaths).size === agentPaths.length
+    const requiredPaths = ['src/lib/aiCore/chat.ts', 'scripts/mcp/yfe-readonly.mjs', 'tests/mcpReadonlyBridge.test.ts', 'scripts/verify/agent-contract.mjs', 'scripts/audit/agent-contracts.mjs', 'src/lib/aiCore/backend/bridgeConfig.ts', 'src/components/settings/AgentBridgeSetup.tsx', 'tests/agentBridgeConfig.test.ts']
+    const ok = ['agent.readonly', 'agent.bridge-config'].every(id => ids.includes(id)) && requiredPaths.every(file => agentPaths.includes(file)) && new Set(agentPaths).size === agentPaths.length
     check('Agent 契约与路径登记完整', ok, `contracts=${ids.length}, paths=${agentPaths.length}`)
   }
 

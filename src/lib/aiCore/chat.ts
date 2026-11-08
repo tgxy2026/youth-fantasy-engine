@@ -30,11 +30,6 @@ import { uid } from '@/lib/app/id'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
 import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
-// 3.4.3 · 后端轨：显式 opt-in 的 Agent 闸（默认不传 ⇒ 与 3.4.2 逐字一致）
-import { createBackendRouter, BackendTrackSkipError, skipMessage, type AgentRunResult } from '@/lib/aiCore/backend/router'
-import { getAgentBackend, listAgentBackends } from '@/lib/aiCore/backend/registry'
-import type { AgentBackend, BackendTask } from '@/lib/aiCore/backend/contract'
-
 // 3.4.2：旧的公共符号仍从本文件再导出，保持既有 import 契约不变
 export { OPENAI_SAFE_SAMPLING, MAX_REQUESTS_PER_CALL, shouldDegradeOn400 } from '@/lib/aiCore/protocols/shared'
 
@@ -152,18 +147,7 @@ export interface ChatOptions {
    *    独立调用（编辑器伴写 / 酒馆）应显式传 `scope: 'independent'`。
    */
   request?: CallRequestContext
-  /**
-   * Agent 后端轨 · 显式 opt-in（3.4.3）。**不传 = 协议轨，行为与 3.4.2 逐字一致。**
-   *
-   * 🔴 只有新增链路（增强轨 / 人在回路的长任务）才该传它；既有调用点一律不许顺手加。
-   * 传入即视为「显式选择 Agent」（task.select 强制为 'agent'），路由硬闸照常生效：
-   * 自动静默 / 无人值守 → 仍走保底轨；consumes='json-string' → 抛 BackendTrackSkipError
-   * （本次未执行、已留痕），绝不返回空串冒充成功。
-   *
-   * 边界（如实）：Agent 自管理上下文，本轨不做协议轨的窗口预算核对；onToken 流式回调
-   * 不透传（Agent 的过程事件流不是 token 流）；取消经 signal 转发给 session.cancel()。
-   */
-  agent?: { task: BackendTask; backendId?: string }
+
 }
 
 /** 内部调用参数：统一成对象，避免位置参数越加越乱 */
@@ -182,99 +166,8 @@ async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts)
 
 /**
  * 统一对话入口：按 provider 的线协议分发。
- * 3.4.3：仅当调用方显式传 `opts.agent` 才进后端轨闸；否则直走协议轨（逐字一致）。
  */
 export async function chat(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
-  if (opts.agent) return chatViaAgent(config, messages, opts)
-  return chatViaProtocol(config, messages, opts)
-}
-
-/**
- * Agent 后端轨闸（3.4.3 · P4）：三轨路由的 chat 接线点。
- * 跳过必留痕（路由账本 + 用量账本各一笔）并抛 BackendTrackSkipError；成功只回 message 事件正文。
- */
-async function chatViaAgent(config: AIProvider, messages: ChatMessage[], opts: ChatOptions): Promise<string> {
-  const decl = opts.agent!
-  const backend = decl.backendId
-    ? getAgentBackend(decl.backendId)
-    : (listAgentBackends().length === 1 ? listAgentBackends()[0] : null)
-  // 取消转发：协议轨的 signal 语义在后端轨映射为 session.cancel()（保留已收片段）
-  const signal = opts.signal
-  let detachAbort: (() => void) | undefined
-  const cancellable: AgentBackend | null = backend && {
-    ...backend,
-    async createSession(task: BackendTask) {
-      const session = await backend.createSession(task)
-      if (signal) {
-        if (signal.aborted) session.cancel()
-        else {
-          const onAbort = () => session.cancel()
-          signal.addEventListener('abort', onAbort, { once: true })
-          detachAbort = () => signal.removeEventListener('abort', onAbort)
-        }
-      }
-      return session
-    },
-  }
-  const t0 = Date.now()
-  const request: CallRequestContext = { ...opts.request, callId: opts.request?.callId ?? uid() }
-  const router = createBackendRouter<string>({
-    runBaseline: () => chatViaProtocol(config, messages, opts),
-    baselineQuota: driverFor(protocolOf(config))?.capabilities.quota ?? null,
-    agentBackend: cancellable,
-  })
-  const automatic = decl.task.kind === 'auto-silent' || decl.task.requires?.unattended === true
-  const structured = opts.json === true || opts.output === 'json-object' || opts.output === 'json-schema'
-  if (!automatic && decl.task.consumes === 'artifacts' && !structured) {
-    const reason = 'agent-artifact-requires-session'
-    reportUsage({ model: backend?.id ?? 'agent', ms: Date.now() - t0, source: 'agent', at: Date.now(), request, finishReason: `skipped:${reason}`, ...(backend ? { quota: backend.capabilities.quota } : {}) })
-    throw new BackendTrackSkipError(reason, skipMessage(reason))
-  }
-  let outcome
-  try {
-    outcome = await router.route({ ...decl.task, ...(structured ? { consumes: 'json-string' as const } : {}), select: 'agent' }, { messages })
-  } catch (error) {
-    if (!automatic) {
-      reportUsage({ model: backend?.id ?? 'agent', ms: Date.now() - t0, source: 'agent', at: Date.now(), request, finishReason: signal?.aborted ? 'cancelled' : 'error', ...(backend ? { quota: backend.capabilities.quota } : {}) })
-      if (signal?.aborted) throw new AICancelled()
-    }
-    throw error
-  } finally {
-    detachAbort?.()
-  }
-  if (outcome.action === 'skipped') {
-    // 🔴 拒绝必须可观测：用量账本记一笔「skipped:原因」，界面按错误提示如实说话
-    reportUsage({
-      model: backend?.id ?? 'agent', ms: Date.now() - t0, source: 'agent', at: Date.now(),
-      request, finishReason: `skipped:${outcome.reason}`,
-      ...(backend ? { quota: backend.capabilities.quota } : {}),
-    })
-    throw new BackendTrackSkipError(outcome.reason, skipMessage(outcome.reason))
-  }
-  if (outcome.track === 'baseline') return outcome.result as string
-  const run = outcome.result as AgentRunResult
-  if (signal?.aborted) {
-    // 与协议轨同口径：取消也记一笔（同 callId 串起复盘），但不拿片段冒充完成
-    reportUsage({
-      model: backend!.id, ms: Date.now() - t0, source: 'agent', at: Date.now(), request,
-      quota: backend!.capabilities.quota, finishReason: 'cancelled',
-    })
-    throw new AICancelled()
-  }
-  // 🔴 无 message 正文 = 未完成，不是「空成功」；如实报错，绝不拿过程文本凑数
-  if (!run.text) {
-    reportUsage({ model: backend!.id, ms: Date.now() - t0, source: 'agent', at: Date.now(), request, quota: backend!.capabilities.quota, finishReason: 'error' })
-    throw new Error('Agent 会话已结束，但没有产出正文内容（事件流中无 message）；本次未采用任何过程文本。')
-  }
-  reportUsage({
-    model: backend!.id, ms: Date.now() - t0, source: 'agent', at: Date.now(), request,
-    quota: backend!.capabilities.quota,
-  })
-  return run.text
-}
-
-/** 协议轨（3.4.2 原 chat 本体，行为逐字保留）：按 provider 的线协议分发 */
-async function chatViaProtocol(config: AIProvider, messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   // 输出结构与推理需求在这里**一次**解析（唯一口径在 `ai/outputProtocol.ts`）。
   //
   // 历史备案（3.1.x，仍然有效的一部分）：本地思考型模型思考开 ⇒ 实测 50.5 秒 / 思考链 12687 字 /
@@ -392,7 +285,7 @@ async function chatViaProtocol(config: AIProvider, messages: ChatMessage[], opts
     const hasRealPrompt = real?.promptTokens !== undefined
     reportUsage({
       model: config.model, ms: Date.now() - t0, source: usageSource, at: Date.now(),
-      // 3.4.3：额度口径按协议 driver 能力声明如实记（本地 / 按量），订阅口径留给 Agent 轨
+      // 按协议驱动的能力声明记录额度口径
       quota: driver.capabilities.quota,
       request,
       protocol: {

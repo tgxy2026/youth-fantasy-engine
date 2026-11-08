@@ -45,6 +45,7 @@ import { pageNavigationIntent, referenceNavigationIntent, commitNavigationHistor
 import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/contextEpoch'
 import { captureWorkspaceView, observeWorkspaceLifecycle } from '@/lib/settings/workspaceRuntime'
 import { PORTABLE, initPortableStore, flushPortableBeacon, flushPortableOnLeave, getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
+import { installAgentHostBridge } from '@/lib/agentHost/host'
 import BossOverlay from '@/components/app/BossOverlay'
 import {
   BOSS_COVER_EVENT, BOSS_DEFAULT_ACCEL, BOSS_PREF_CHANGED_EVENT,
@@ -217,7 +218,11 @@ export default function App() {
   useEffect(() => {
     if (DESKTOP) {
       let alive = true
-      void initDesktopStore().then(() => { if (alive) setFileReady(true) })
+      void initDesktopStore().then(() => {
+        // 数据装载完成后再登记 Agent 宿主桥：执行器读的就是这份内存库，
+        // 早登记会让外部调用在空库上判「项目不存在」。
+        if (alive) { installAgentHostBridge(); setFileReady(true) }
+      })
       return () => { alive = false }
     }
     if (PORTABLE) {
@@ -227,7 +232,7 @@ export default function App() {
         //    内存 cache，早于装载会把语义向量 / 参考资料当成空库，切项目时清空它们。
         //    （2026-10-10 方案 A：便携版把 `-vec` / `-kb` 两独立 IDB 库并入整库 JSON）
         installPortableVecKb()
-        if (alive) setFileReady(true)
+        if (alive) { installAgentHostBridge(); setFileReady(true) }
       })
       return () => { alive = false }
     }

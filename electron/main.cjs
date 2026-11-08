@@ -10,6 +10,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage, Tray, 
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
+const { pathToFileURL } = require('url')
 // 2.9.0 · 应用内下载安装包的内核（只允许 http/https、先写 .part、下完比对大小）
 const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
 // 3.0 · W0-2 老用户数据迁移内核（探测旧 userData / 窗口前复制旧 IDB / 读写整库 JSON / profile / 卸载引导）
@@ -689,7 +690,118 @@ app.whenReady().then(() => {
     shell.showItemInFolder(dataFile())
   })
 
-  ipcMain.handle('store:path', () => dataFile())
+ipcMain.handle('store:path', () => dataFile())
+  ipcMain.handle('agent:bridge-script-path', () => {
+    const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
+    const script = path.join(root, 'scripts', 'mcp', 'yfe-readonly.mjs')
+    return fs.existsSync(script) ? script : ''
+  })
+  // ---- Agent 可写工具宿主（3.4.3）----
+  // 🔴 写请求必须进入渲染进程的内存 store：主进程只负责本地 HTTP + 幂等账本 + IPC 转发。
+  //    外部进程（MCP 桥）即使猜到端口，没有 host 文件里的随机 token 也调不动。
+  let agentHost = null
+  let agentHostStarting = null
+  let agentBridgeReady = false
+  let agentCallSeq = 0
+  const agentCalls = new Map()
+  const AGENT_PAGE_TIMEOUT_MS = 40_000
+
+  function callAgentPage(payload) {
+    return new Promise(resolve => {
+      if (!agentBridgeReady || !win || win.isDestroyed()) {
+        resolve({ ok: false, code: 'NOT_READY', error: '引擎窗口尚未就绪，请稍等后重试。' })
+        return
+      }
+      const id = `h${++agentCallSeq}`
+      const timer = setTimeout(() => {
+        agentCalls.delete(id)
+        resolve({ ok: false, code: 'OUTCOME_UNKNOWN', error: '页面在 40 秒内未回传结果（结果不明，请先在引擎中核对，不要盲目重复写入）。' })
+      }, AGENT_PAGE_TIMEOUT_MS)
+      agentCalls.set(id, { resolve, timer })
+      win.webContents.send('agent-host:request', { id, payload })
+    })
+  }
+
+  ipcMain.on('agent-host:ready', () => { agentBridgeReady = true })
+  ipcMain.on('agent-host:result', (_e, msg) => {
+    if (!msg || typeof msg.id !== 'string') return
+    const pending = agentCalls.get(msg.id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    agentCalls.delete(msg.id)
+    pending.resolve(msg.result)
+  })
+
+  function agentHostRoot() {
+    return app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
+  }
+
+  async function startAgentHost() {
+    if (agentHost) return agentHost
+    if (agentHostStarting) return agentHostStarting
+    const corePath = path.join(agentHostRoot(), 'scripts', 'agent-host', 'core.mjs')
+    if (!fs.existsSync(corePath)) return null
+    agentHostStarting = (async () => {
+      const core = await import(pathToFileURL(corePath).href)
+      const host = core.createAgentHost({
+        configFile: path.join(app.getPath('userData'), 'agent-host.json'),
+        callPage: payload => callAgentPage(payload),
+        clientCount: () => (agentBridgeReady ? 1 : 0),
+      })
+      await host.start()
+      agentHost = host
+      return host
+    })().catch(error => {
+      agentHostStarting = null
+      throw error
+    })
+    return agentHostStarting
+  }
+
+  ipcMain.handle('agent-host:status', async () => {
+    try {
+      const host = await startAgentHost()
+      if (!host) {
+        return {
+          running: false, enabled: false, port: null, bridgeFile: null,
+          scope: { projects: [] }, clients: 0,
+          lastError: '当前安装包缺少 Agent 宿主脚本（scripts/agent-host/core.mjs）。',
+        }
+      }
+      return host.status()
+    } catch (error) {
+      return {
+        running: false, enabled: false, port: null, bridgeFile: null,
+        scope: { projects: [] }, clients: 0,
+        lastError: error && error.message ? error.message : String(error),
+      }
+    }
+  })
+
+  ipcMain.handle('agent-host:set-config', async (_e, patch) => {
+    try {
+      const host = await startAgentHost()
+      if (!host) return { ok: false, error: 'Agent 宿主脚本缺失，无法保存配置。' }
+      const safe = patch && typeof patch === 'object' ? patch : {}
+      return { ok: true, status: host.setConfig({ enabled: safe.enabled, scope: safe.scope }) }
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('agent-host:write-bridge-script-path', () => {
+    const script = path.join(agentHostRoot(), 'scripts', 'mcp', 'yfe-agent.mjs')
+    return fs.existsSync(script) ? script : ''
+  })
+
+  app.on('will-quit', () => {
+    try { agentHost?.stop?.() } catch { /* 退出阶段不阻断 */ }
+    for (const [, pending] of agentCalls) {
+      clearTimeout(pending.timer)
+      pending.resolve({ ok: false, code: 'NOT_READY', error: '应用正在退出，本次调用未执行。' })
+    }
+    agentCalls.clear()
+  })
 
   // ---- 自定义数据文件位置（#033）----
   // 目的：让用户把「数据文件」指到 WPS 云盘 / OneDrive 等同步目录，由云盘客户端
@@ -1313,6 +1425,12 @@ app.whenReady().then(() => {
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  // Agent 可写工具宿主：随应用启动（用户不开也不影响任何现有功能）。
+  // 失败只记日志：版本差异 / 只读安装目录等情况不应阻断正常写作。
+  void startAgentHost().catch(error => {
+    console.warn('[agent-host] 启动失败：' + (error && error.message ? error.message : String(error)))
+  })
 
   // 托盘：窗口对象已经就绪，建一次即可（内部有幂等判断）
   createTray()

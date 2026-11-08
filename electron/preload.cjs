@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronStore', {
   revealDataFile: () => ipcRenderer.invoke('store:reveal'),
   /** 本地数据文件完整路径（提示用） */
   dataPath: () => ipcRenderer.invoke('store:path'),
+  bridgeScriptPath: () => ipcRenderer.invoke('agent:bridge-script-path'),
   /** 数据文件是否已被改到自定义位置（决定要不要显示「恢复默认」） */
   isCustomPath: () => ipcRenderer.invoke('store:isCustomPath'),
   /** 选择数据文件的新存放位置，返回完整文件路径或 null（取消） */
@@ -45,6 +46,27 @@ contextBridge.exposeInMainWorld('electronStore', {
   payloadDel: (store, id) => ipcRenderer.invoke('payload:del', store, id),
   /** 列该 store 的全部外置 id */
   payloadList: (store) => ipcRenderer.invoke('payload:list', store),
+})
+
+// Agent 可写工具宿主（3.4.3）：主进程持本地 HTTP + 幂等账本，页面只负责执行。
+// 🔴 页面拿不到 token / 端口：请求由主进程转进来，页面只回传执行结果。
+contextBridge.exposeInMainWorld('electronAgentHost', {
+  status: () => ipcRenderer.invoke('agent-host:status'),
+  setConfig: patch => ipcRenderer.invoke('agent-host:set-config', patch),
+  writeBridgeScriptPath: () => ipcRenderer.invoke('agent-host:write-bridge-script-path'),
+  ready: () => ipcRenderer.send('agent-host:ready'),
+  onCall: handler => {
+    ipcRenderer.on('agent-host:request', (_event, msg) => {
+      if (!msg || typeof msg.id !== 'string') return
+      Promise.resolve()
+        .then(() => handler(msg.payload))
+        .then(result => ipcRenderer.send('agent-host:result', { id: msg.id, result }))
+        .catch(error => ipcRenderer.send('agent-host:result', {
+          id: msg.id,
+          result: { ok: false, code: 'INTERNAL', error: error && error.message ? error.message : String(error) },
+        }))
+    })
+  },
 })
 
 // 联网检索：由主进程代发请求。搜索接口大多不带 CORS 头，渲染进程直连会被同源策略拦掉，

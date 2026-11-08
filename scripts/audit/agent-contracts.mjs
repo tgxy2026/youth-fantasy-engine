@@ -1,25 +1,41 @@
 // The case labels bind audit coverage to assertions that actually ran in the isolated fixtures.
 export const AGENT_AUDIT = {
-  'agent.routing': { test: 'backendTrack', cases: {
-    fallback: '未显式选择 ⇒ 保底轨纯透传（配置了 Agent 也一样）',
-    automatic: 'auto-silent 经 chat() 闸仍强制保底',
-    json: 'json-string 经 chat() 闸：抛错留痕不伪装成功',
-    events: 'chat() 显式 Agent + text ⇒ 只回 message 正文',
-    quota: 'Agent 轨用量记 source=agent + quota=subscription',
-    cancel: 'signal 取消映射 session.cancel 并抛 AICancelled',
-    earlyCancel: '提前取消即使 send 抛错仍保留取消口径',
-    cleanup: 'Agent 完成后移除取消监听器',
-    jsonMismatch: 'JSON 参数与任务声明不一致仍强制硬闸',
-    artifactChat: 'chat 拒绝无法返回的产物任务并留痕',
-    failure: 'Agent 创建会话异常记失败',
-    enhance: '增强轨：手动+显式 ⇒ 产物 descriptor',
+  'agent.bridge-config': { test: 'agentBridgeConfig', cases: {
+    format: '外部桥配置对路径、空格和三种数据来源正确编码',
+    integration: '生成的配置可启动真实只读桥并读取隔离夹具',
   } },
-  'agent.readonly': { test: 'mcpReadonlyBridge', cases: {
+'agent.readonly': { test: 'mcpReadonlyBridge', cases: {
     tools: '工具清单 = 12 个只读工具，无写工具',
     desktop: '单章正文完整可读',
     portable: '便携数组形态：项目/正文/灵感/表单全可读',
     secrets: '全程输出无明文 apiKey / 检索密钥',
     noWrite: '会话后数据文件 sha256 不变',
     web: '数据文件缺失 → isError 且明说网页版不可用',
+  } },
+  // 3.4.3：可写工具（页面执行器）与宿主（账本 / 鉴权）
+  'agent.write': { test: 'agentHostExecutor', cases: {
+    scope: '未授权动作被拒绝（SCOPE_DENIED）',
+    owner: '非当前打开项目被拒绝（PROJECT_NOT_OPEN）',
+    setting: '创建设定卡成功',
+    chapter: '创建章节成功',
+    conflict: '版本不符时拒绝追加（CONFLICT）',
+    snapshot: '写入前留下可恢复快照',
+    draft: '存在未保存草稿时拒绝写入（DRAFT_DIRTY）',
+    saveFail: '落盘失败时如实报 SAVE_FAILED',
+  } },
+  'agent.host': { test: 'agentHostServer', cases: {
+    token: '无 token 调用 → 401',
+    disabled: '未开启连接 → HOST_DISABLED',
+    replay: '相同 requestId 重放，不重复执行',
+    unknown: 'SAVE_FAILED 记为 unknown 并拒绝自动重试',
+    page: '缺页面头的状态请求被拒',
+    bridge: '只读工具经宿主执行',
+  } },
+  'agent.e2e': { test: 'agentHostEndToEnd', cases: {
+    create: '端到端创建章节成功',
+    idempotent: '重放没有重复建章',
+    append: '追加内容真实写入',
+    conflict: '端到端版本冲突被拒绝',
+    status: '账本记录成功状态',
   } },
 }

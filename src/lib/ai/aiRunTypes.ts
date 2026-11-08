@@ -65,7 +65,7 @@ export interface AiRunCallRequest {
 export interface AiRunCall {
   model: string
   /**
-   * 额度口径（3.4.3 · 后端轨）：本地 / 订阅 / 按量 / 未知。
+   * 额度口径：本地 / 订阅 / 按量 / 未知。
    * 🔴 可选 —— 旧账没有这个字段，语义是「当时未记口径」，不需要迁移；
    *    订阅调用绝不许报成按量（规划 §6.B）。
    */

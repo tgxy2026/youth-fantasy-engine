@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import AgentBridgeSetup from '@/components/settings/AgentBridgeSetup'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
 import ModelCapabilityPanel from '@/components/settings/ModelCapabilityPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -43,7 +44,6 @@ import {
   LOCAL_MODEL_DISABLED, WEB_LOCAL_MODEL_NOTICE, WEB_LOCAL_MODEL_BADGE,
   isLocalModelBlocked, usableProviders, protocolOf, WIRE_PROTOCOL_LABELS, protocolSwitchPatch,
   webProtocolCorsNote, webProtocolCorsBadge,
-  backendTrackStatus,
   type WireProtocol,
 } from '@/lib/ai'
 import { WEB } from '@/lib/app/platform'
@@ -585,46 +585,9 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </div>
               </div>
 
-              {/* Agent 后端（3.4.3 · 后端轨）：与协议轨正交的可选后端，不挤进协议下拉 ——
-                  Agent 是有状态会话（过程事件 / 可暂停 / 产物文件），不是第六种线协议。
-                  🔴 本版如实展示框架状态：未内置真实 Agent 驱动（官方 ACP 交互式待真实账号
-                  验证后提供），不做假开关；未配置时所有 AI 功能与旧版逐字一致。 */}
               <div className="mt-5 pt-4 border-t border-ink-700">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <h3 className="text-12 text-ink-200">Agent 后端</h3>
-                  <HelpPopover title="Agent 后端是什么" width="23rem" size={13}>
-                    <p>把外部 Agent 软件接入为<b>可选</b>后端，与现有 API 模型双轨并存：不配置时一切照旧；配置后默认也仍走 API 模型，只有显式选择的任务才交给 Agent。</p>
-                    <p className="mt-1.5">Agent 适合「整库级、多步、人在回路」的长任务；结构化小任务（审读 / 取名 / 抽取等）仍由 API 模型承担 —— Agent 的过程文本结构上混不进 JSON。</p>
-                    <p className="mt-1.5">自动链路（伴写 / 连写 / 章后整理）不交给 Agent；这是当前产品的统一限制。</p>
-                    <p className="mt-1.5">外部 Agent 经<b>只读数据桥</b>读取本机库（桌面 / 便携）；回写只走「导出项目包 → 导入」，没有直接写库路径。详见使用手册「Agent 后端与只读数据桥」。</p>
-                  </HelpPopover>
-                </div>
-                {WEB ? (
-                  <p className="text-11 text-ink-500 leading-relaxed">
-                    网页版不可用：Agent 后端与只读数据桥都跑在本机，读不到浏览器里的数据。请使用桌面版 / 便携版。
-                  </p>
-                ) : (() => {
-                  const status = backendTrackStatus()
-                  return status.available ? (
-                    <div className="space-y-1.5">
-                      {status.backends.map(b => (
-                        <div key={b.id} className="flex items-center gap-2 text-12 text-ink-300">
-                          <span className="truncate">{b.label}</span>
-                          <span className="ml-auto shrink-0 text-11 text-ink-500">{b.quota === 'subscription' ? '订阅额度' : b.quota === 'metered' ? '按量计费' : b.quota === 'local' ? '本地' : '口径未知'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-11 text-ink-500 leading-relaxed">
-                      未配置 Agent 驱动。后端轨框架已就绪；内置驱动将在官方 ACP 交互式通道完成真实账号验证后提供。当前所有 AI 功能走上面的 API 模型，行为与旧版一致。
-                    </p>
-                  )
-                })()}
-                {!WEB && (
-                  <p className="text-11 text-ink-600 mt-2 leading-relaxed">
-                    只读数据桥已可用：外部 Agent 软件（MCP client）可经它读取项目 / 章节 / 设定 / 灵感，不提供模型密钥配置和备份数据。配置方法见使用手册「Agent 后端与只读数据桥」。
-                  </p>
-                )}
+                <h3 className="text-12 text-ink-200">外部 Agent 协作</h3>
+                {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机只读桥。</p> : <><p className="text-11 text-ink-500">外部 Agent 可通过只读桥读取已保存的本机数据；创建设定及录入正文的接口仍在开发。</p><AgentBridgeSetup /></>}
               </div>
             </div>
             </div>

@@ -34,6 +34,7 @@ export interface ElectronStoreAPI {
   importFile(): Promise<string | null>
   revealDataFile(): Promise<void>
   dataPath(): Promise<string>
+  bridgeScriptPath?(): Promise<string>
   /** 数据文件是否已被改到自定义位置 */
   isCustomPath(): Promise<boolean>
   /** 选择数据文件的新存放位置，返回完整文件路径或 null（取消） */
@@ -1155,3 +1156,15 @@ export const desktopStore: StoreOps = withSidecar(
 // 登记通道：业务层要「列外置 id」做孤儿对账（与便携版互斥，故共用一个槽位无冲突）。
 // 🔴 同样必须**只在桌面模式下登记**（见 fileBackend 同款注释：无条件登记会被后加载者顶掉）。
 if (DESKTOP) registerSidecarApi(sidecarProxy)
+
+/** 当前桌面安装的只读桥路径；旧版或非桌面环境返回空。 */
+export async function agentBridgeScriptPath(): Promise<string> {
+  if (!DESKTOP || !window.electronStore?.bridgeScriptPath) return ''
+  try { return await window.electronStore.bridgeScriptPath() } catch { return '' }
+}
+
+/** 返回桌面当前实际数据文件路径；读取失败时不冒充成功。 */
+export async function agentBridgeDataPath(): Promise<string> {
+  if (!DESKTOP || !window.electronStore?.dataPath) return ''
+  try { return await window.electronStore.dataPath() } catch { return '' }
+}

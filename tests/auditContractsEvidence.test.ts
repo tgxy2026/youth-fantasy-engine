@@ -39,7 +39,7 @@ try {
     await fs.writeFile(path.join(dir, 'result.json'), JSON.stringify({ ...base, artifacts, ...extra }))
   }
   await seal()
-  assert.equal(await validateAuditBundle(root, dir, expected), 8); passed++; console.log('PASS 本轮完整契约与原始产物可接收')
+  assert.equal(await validateAuditBundle(root, dir, expected), contracts.required.length); passed++; console.log('PASS 本轮完整契约与原始产物可接收')
   async function reject(name: string, action: () => Promise<void>, reset: () => Promise<void>) {
     await action(); await assert.rejects(() => validateAuditBundle(root, dir, expected)); passed++; console.log('PASS ' + name); await reset()
   }
@@ -61,7 +61,7 @@ try {
     ['mono.rendered.json', { contract: 'mono.rendered', samples: 2, passed: 2, failed: 0, theme: 'mono', results: cases['mono.rendered'].map(file => ({ file, ok: true, painted: 0, violations: [], unknownCount: 0 })) }, '无绘制样本不能通过'],
     ['preset.routes.json', { contract: 'preset.routes', samples: 2, passed: 2, failed: 0, cases: [{ route: 'new', ok: true }, { route: 'new', ok: true }] }, '只有新增入口不能冒充新增和编辑'],
   ] as const) await reject(label, () => mutate(name, value), () => mutate(name, raw[name]))
-  const agentLog = path.join(dir, 'agent.routing.test.log')
+  const agentLog = path.join(dir, 'agent.readonly.test.log')
   const originalAgentLog = await fs.readFile(agentLog, 'utf8')
   await reject('Agent 断言缺失即使重封哈希也不得通过', async () => { await fs.writeFile(agentLog, ''); await seal() }, async () => { await fs.writeFile(agentLog, originalAgentLog); await seal() })
   await reject('哈希被改动不得接收', () => fs.writeFile(path.join(dir, 'audit.log'), 'tampered'), async () => { await fs.writeFile(path.join(dir, 'audit.log'), '{}'); await seal() })

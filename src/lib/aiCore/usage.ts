@@ -13,16 +13,16 @@
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 
 /**
- * 额度口径（3.4.3 · 后端轨）：与 `DriverCapabilities.quota` 同一份 union ——
+ * 额度口径：与 `DriverCapabilities.quota` 同一份 union ——
  * 协议层 contract.ts 从这里取引用，保证「能力声明」与「记账口径」不漂移。
  * 🔴 订阅调用绝不许报成按量（规划 §6.B）；拿不到口径就如实 'unknown'。
  */
 export type UsageQuota = 'local' | 'subscription' | 'metered' | 'unknown'
 
 export interface ChatUsage {
-  /** 模型名（provider 配置里的 model；Agent 轨记后端 id） */
+  /** 模型名（provider 配置里的 model） */
   model: string
-  /** 本次调用的额度口径（3.4.3）：协议轨按 driver 能力声明如实记；Agent 轨按后端声明记 */
+  /** 本次调用的额度口径（3.4.3）：按协议驱动能力声明记录 */
   quota?: UsageQuota
   /** 本次调用耗时（毫秒） */
   ms: number
@@ -62,8 +62,8 @@ export interface ChatUsage {
   attempts?: number
   /** 结束原因（stop / length / content_filter…） */
   finishReason?: string
-  /** 来源通道（3.4.2：新增协议按线协议如实记录，旧两值保持不变；3.4.3 增 Agent 后端轨，不改写既有标签） */
-  source: 'openai' | 'ollama' | 'anthropic' | 'gemini' | 'openai-responses' | 'agent'
+  /** 来源通道（3.4.2：新增协议按线协议如实记录，旧两值保持不变） */
+  source: 'openai' | 'ollama' | 'anthropic' | 'gemini' | 'openai-responses'
   at: number
 }
 

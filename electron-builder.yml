@@ -19,6 +19,11 @@ files:
 extraResources:
   - from: scripts/mcp/yfe-readonly.mjs
     to: scripts/mcp/yfe-readonly.mjs
+  # 3.4.3：可写工具桥 + 宿主核心（桌面主进程动态 import）随包分发
+  - from: scripts/mcp/yfe-agent.mjs
+    to: scripts/mcp/yfe-agent.mjs
+  - from: scripts/agent-host
+    to: scripts/agent-host
 
 asar: true
 
