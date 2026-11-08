@@ -253,6 +253,29 @@ async function main() {
       && (notices[0] as { kind?: string }).kind === 'chapter', JSON.stringify(notices))
   }
 
+  // ⑭ 并发写同一章：串行化后后到者冲突，不丢已写入内容
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '并发章', content: '起点' })
+    const ch = (await memoryOps.getAll<Chapter>('chapters'))[0]
+    const exec = executor()
+    const [a, b] = await Promise.all([
+      exec.call({
+        sessionId: 'test-session', requestId: 'req-00000011', tool: AGENT_TOOL_NAMES.appendChapter,
+        args: { projectId, chapterId: ch.id, content: '并发A', expectedUpdatedAt: ch.updatedAt },
+      }, fullScope),
+      exec.call({
+        sessionId: 'test-session', requestId: 'req-00000012', tool: AGENT_TOOL_NAMES.appendChapter,
+        args: { projectId, chapterId: ch.id, content: '并发B', expectedUpdatedAt: ch.updatedAt },
+      }, fullScope),
+    ])
+    const okCount = [a, b].filter(r => r.ok).length
+    ok('并发追加被串行化：一个成功、一个冲突',
+      okCount === 1 && [a, b].some(r => r.ok === false && r.code === 'CONFLICT'), JSON.stringify([a, b]))
+    const after = await memoryOps.get<Chapter>('chapters', ch.id)
+    ok('串行化没有丢掉先写入的那一段', !!after && after.content.includes('并发A') && !after.content.includes('并发B'), after?.content)
+  }
+
   console.log(`\nAGENT_EXECUTOR_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)
   if (fail > 0) process.exitCode = 1
 }

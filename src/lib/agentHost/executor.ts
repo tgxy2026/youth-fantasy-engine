@@ -124,6 +124,25 @@ class AgentInputError extends Error {}
 
 // ---------- 执行器 ----------
 
+// 同一页面进程内的 Agent 写操作串行队列。
+// 🔴 为什么必须有：两个不同 requestId 并发追加同一章时，各自都读到同一份旧正文，
+//    后写者会把先写者刚追加的内容覆盖掉（读-改-写丢更新）。串行化后第二个请求
+//    进入时 updatedAt 已变化 ⇒ 返回 CONFLICT，让 Agent 重新读取，而不是静默丢内容。
+//    跨窗口 / 云同步的竞态不在本队列范围内（文档如实声明，需存储层 CAS）。
+const WRITE_TOOL_SET = new Set<string>([
+  AGENT_TOOL_NAMES.createSettingCard,
+  AGENT_TOOL_NAMES.createChapter,
+  AGENT_TOOL_NAMES.appendChapter,
+  AGENT_TOOL_NAMES.replaceChapter,
+])
+let writeChain: Promise<unknown> = Promise.resolve()
+
+function enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn)
+  writeChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
 export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
   async function projectOf(projectId: string): Promise<Project | AgentToolResult> {
     const projects = await deps.getProjects()
@@ -435,9 +454,14 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     } catch {
       return fail('SAVE_FAILED', '无法创建可恢复版本，已放弃本次正文写入（未改动原章节）。')
     }
+    // 每次 Agent 写入让 updatedAt **严格递增**：同一毫秒内的两次写入若更新值相同，
+    // 后一个请求的 expectedUpdatedAt 仍会「看起来匹配」，版本前置条件就失效了。
+    // 只抬高 Agent 写入自身的 updatedAt，不改引擎其他保存路径的取值口径。
+    const nextUpdatedAt = Math.max(deps.now(), (old.updatedAt || 0) + 1)
     const updated = await deps.patchChapter(chapterId, {
       content: nextContent,
       wordCount: deps.countWords(nextContent),
+      updatedAt: nextUpdatedAt,
     }, owner)
     if (!updated) return fail('OUTCOME_UNKNOWN', '写入过程中章节已不存在，结果不明。请先在引擎中核对。')
     const warnings: string[] = []
@@ -457,29 +481,32 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
 
   return {
     async call(call: AgentToolCall, scope: AgentScope): Promise<AgentToolResult> {
-      try {
-        switch (call.tool) {
-          case AGENT_TOOL_NAMES.listProjects: return await listProjects(scope)
-          case AGENT_TOOL_NAMES.getProject: return await getProject(call.args, scope)
-          case AGENT_TOOL_NAMES.listChapters: return await listChapters(call.args, scope)
-          case AGENT_TOOL_NAMES.readChapter: return await readChapter(call.args)
-          case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args, scope)
-          case AGENT_TOOL_NAMES.createSettingCard: return await createSettingCard(call.args, scope)
-          case AGENT_TOOL_NAMES.createChapter: return await createChapter(call.args, scope)
-          case AGENT_TOOL_NAMES.appendChapter: return await appendOrReplace(call.args, scope, 'append')
-          case AGENT_TOOL_NAMES.replaceChapter: return await appendOrReplace(call.args, scope, 'replace')
-          default: return fail('UNKNOWN_TOOL', `未知工具：${call.tool}`)
+      const invoke = async (): Promise<AgentToolResult> => {
+        try {
+          switch (call.tool) {
+            case AGENT_TOOL_NAMES.listProjects: return await listProjects(scope)
+            case AGENT_TOOL_NAMES.getProject: return await getProject(call.args, scope)
+            case AGENT_TOOL_NAMES.listChapters: return await listChapters(call.args, scope)
+            case AGENT_TOOL_NAMES.readChapter: return await readChapter(call.args)
+            case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args, scope)
+            case AGENT_TOOL_NAMES.createSettingCard: return await createSettingCard(call.args, scope)
+            case AGENT_TOOL_NAMES.createChapter: return await createChapter(call.args, scope)
+            case AGENT_TOOL_NAMES.appendChapter: return await appendOrReplace(call.args, scope, 'append')
+            case AGENT_TOOL_NAMES.replaceChapter: return await appendOrReplace(call.args, scope, 'replace')
+            default: return fail('UNKNOWN_TOOL', `未知工具：${call.tool}`)
+          }
+        } catch (error) {
+          if (error instanceof AgentInputError) return fail('BAD_REQUEST', error.message)
+          const message = error instanceof Error ? error.message : String(error)
+          // 归属 / 存储上下文切换：写函数在写前抛错＝未写入；写后抛错＝结果不明。
+          // 这里无法区分，按**结果不明**上报（宁可让作者核对，也不能让 Agent 盲目重试造成重复追加）。
+          if (message.includes('项目或存储空间已切换') || message.includes('存储空间已切换')) {
+            return fail('OUTCOME_UNKNOWN', `${message}（结果不明，请先在引擎中核对，不要复用同一 requestId 重试）`)
+          }
+          return fail('INTERNAL', `执行失败（未确认写入）：${message}`)
         }
-      } catch (error) {
-        if (error instanceof AgentInputError) return fail('BAD_REQUEST', error.message)
-        const message = error instanceof Error ? error.message : String(error)
-        // 归属 / 存储上下文切换：写函数在写前抛错＝未写入；写后抛错＝结果不明。
-        // 这里无法区分，按**结果不明**上报（宁可让作者核对，也不能让 Agent 盲目重试造成重复追加）。
-        if (message.includes('项目或存储空间已切换') || message.includes('存储空间已切换')) {
-          return fail('OUTCOME_UNKNOWN', `${message}（结果不明，请先在引擎中核对，不要复用同一 requestId 重试）`)
-        }
-        return fail('INTERNAL', `执行失败（未确认写入）：${message}`)
       }
+      return WRITE_TOOL_SET.has(call.tool) ? enqueueWrite(invoke) : invoke()
     },
   }
 }

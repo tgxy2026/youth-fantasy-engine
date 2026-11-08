@@ -26,6 +26,7 @@ export const AGENT_AUDIT = {
     storage: '存储冲突时拒绝写入（STORAGE_BLOCKED）',
     query: 'list_setting_tabs 返回可写能力（未授权）',
     notify: '写成功后发出界面刷新通知',
+    concurrent: '并发追加被串行化：一个成功、一个冲突',
   } },
   'agent.host': { test: 'agentHostServer', cases: {
     token: '无 token 调用 → 401',
