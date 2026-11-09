@@ -14,6 +14,7 @@
 //    口径与 `webSearch` 一致。
 
 import { fetchWithTimeout, isCancelled, openaiBaseOf } from '@/lib/aiCore/transport'
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 
 export interface EmbedConfig {
@@ -208,19 +209,28 @@ export async function embedTexts(
     if (signal?.aborted) return { ok: false, error: '已取消' }
     const { url, init } = buildEmbedRequest(cfg, batches[i])
     let res: Response
+    let payload: unknown = null
+    let errorText = ''
     try {
-      res = await fetchWithTimeout(url, init, EMBED_TIMEOUT_MS, signal)
+      // 🔴 租约覆盖响应体读取：Agent 模式下整批嵌入请求不会发出。
+      const read = await withApiModeLease(async (): Promise<{ response: Response; payload: unknown; text: string }> => {
+        const response = await fetchWithTimeout(url, init, EMBED_TIMEOUT_MS, signal)
+        if (!response.ok) return { response, payload: null, text: await response.text().catch(() => '') }
+        return { response, payload: await response.json().catch(() => null), text: '' }
+      })
+      res = read.response
+      payload = read.payload
+      errorText = read.text
     } catch (e) {
       if (isCancelled(e)) return { ok: false, error: '已取消' }
-      return { ok: false, error: `连接嵌入服务失败：${url}（请确认服务已启动、地址可达）` }
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: /Agent 连接模式|连接模式/.test(msg) ? msg : `连接嵌入服务失败：${url}（请确认服务已启动、地址可达）` }
     }
     if (!res.ok) {
-      const detail = await res.text().catch(() => '')
-      const brief = detail.slice(0, 200).replace(/\s+/g, ' ').trim()
+      const brief = errorText.slice(0, 200).replace(/\s+/g, ' ').trim()
       return { ok: false, error: `嵌入服务返回 ${res.status}${brief ? `：${brief}` : ''}` }
     }
-    const json = await res.json().catch(() => null)
-    const vecs = parseEmbedResponse(cfg.type, json)
+    const vecs = parseEmbedResponse(cfg.type, payload)
     if (!vecs) return { ok: false, error: '嵌入服务返回的数据无法识别（既非 embeddings 也非 data[].embedding）' }
     if (vecs.length !== batches[i].length) {
       return { ok: false, error: `嵌入结果条数不符：请求 ${batches[i].length} 条、返回 ${vecs.length} 条` }

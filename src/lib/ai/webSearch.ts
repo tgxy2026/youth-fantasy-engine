@@ -25,6 +25,7 @@
  * 🔴 本文件只负责「查」，不负责「决定要不要查」：模式、开关、回退都在调用方（draft / 界面）里判。
  */
 import { HAS_NET_BRIDGE, netFetch } from '@/lib/app/desktop'
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 
 export type SearchEngine = 'bocha' | 'searxng' | 'custom'
 
@@ -290,7 +291,7 @@ export async function webSearch(
   const transport = deps.transport ?? defaultTransport
 
   try {
-    const r = await transport(req, signal)
+    const r = await withApiModeLease(() => transport(req, signal))
     if (!r.ok) {
       const hint = /Failed to fetch|NetworkError|load failed|跨域/i.test(r.error) && !HAS_NET_BRIDGE
         ? '（多半是跨域被拦 —— 桌面版会由主进程代发、不受此限；便携版只能用自带跨域许可的接口）'

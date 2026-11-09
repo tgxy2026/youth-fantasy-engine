@@ -23,9 +23,9 @@ export const HOST_VERSION = 1
 export const PAGE_HEADER = 'x-yfe-agent-page'
 const CALL_TIMEOUT_MS = 45_000
 // 只读请求不需要幂等账本，也不能把作品正文或设定保存在账本中。
-const READ_TOOLS = new Set(['yfe_list_projects', 'yfe_get_project', 'yfe_list_chapters', 'yfe_read_chapter', 'yfe_list_setting_tabs', 'yfe_list_setting_cards', 'yfe_read_setting_card', 'yfe_list_data_tabs', 'yfe_read_form', 'yfe_list_table_rows', 'yfe_list_tavern_reports', 'yfe_read_tavern_report', 'yfe_list_chapter_snapshots', 'yfe_read_chapter_snapshot', 'yfe_list_world_sets', 'yfe_list_world_packs', 'yfe_read_world_pack_table', 'yfe_list_project_backups', 'yfe_list_maps', 'yfe_list_map_places', 'yfe_search_project', 'yfe_read_plot_canvas'])
+const READ_TOOLS = new Set(['yfe_list_projects', 'yfe_get_project', 'yfe_list_chapters', 'yfe_read_chapter', 'yfe_check_chapter_words', 'yfe_check_chapter_typos', 'yfe_list_setting_tabs', 'yfe_list_setting_cards', 'yfe_read_setting_card', 'yfe_list_data_tabs', 'yfe_read_form', 'yfe_list_table_rows', 'yfe_list_tavern_reports', 'yfe_read_tavern_report', 'yfe_list_chapter_snapshots', 'yfe_read_chapter_snapshot', 'yfe_list_world_sets', 'yfe_list_world_packs', 'yfe_read_world_pack_table', 'yfe_list_project_backups', 'yfe_list_maps', 'yfe_list_map_places', 'yfe_search_project', 'yfe_read_plot_canvas', 'yfe_preview_world_import', 'yfe_preview_backup_restore', 'yfe_list_chapter_trash', 'yfe_list_check_reports', 'yfe_read_check_report', 'yfe_list_agent_tasks', 'yfe_get_agent_task'])
 
-export const ACTIONS = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write']
+export const ACTIONS = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write', 'map:create', 'map:write', 'map:delete', 'canvas:write', 'world:read', 'world:write', 'backup:restore', 'chapter:restore', 'report:write', 'task:write']
 const MAX_GRANTED_PROJECTS = 200
 
 export function emptyScope() {
@@ -222,9 +222,15 @@ export function createPageQueue({ timeoutMs = CALL_TIMEOUT_MS } = {}) {
       })
     },
     next(clientId) {
+      if (typeof clientId !== 'string' || !clientId || clientId.length > 200) return null
       if (typeof clientId === 'string' && clientId) clients.set(clientId, Date.now())
       // 清掉长时间不再轮询的客户端（状态展示用）
       for (const [key, seenAt] of clients) if (Date.now() - seenAt > 30_000) clients.delete(key)
+      if (clients.size > 1) {
+        for (const waiter of waiting.values()) {
+          if (waiter.clientId && waiter.isWrite) waiter.competingPage = true
+        }
+      }
       if (clients.size > 1 && pending.length && !READ_TOOLS.has(pending[0].payload?.call?.tool)) {
         const blocked = pending.shift()
         const waiter = waiting.get(blocked.id)
@@ -236,15 +242,24 @@ export function createPageQueue({ timeoutMs = CALL_TIMEOUT_MS } = {}) {
         return null
       }
       const item = pending.shift()
+      if (item) {
+        const waiter = waiting.get(item.id)
+        if (waiter) {
+          waiter.clientId = clientId
+          waiter.isWrite = !READ_TOOLS.has(item.payload?.call?.tool)
+        }
+      }
       return item ? { id: item.id, payload: item.payload } : null
     },
     settle(id, clientId, result) {
       const waiter = waiting.get(id)
-      if (!waiter) return false
+      if (!waiter || !waiter.clientId || waiter.clientId !== clientId) return false
       clearTimeout(waiter.timer)
       waiting.delete(id)
       if (typeof clientId === 'string' && clientId) clients.set(clientId, Date.now())
-      waiter.resolve(result)
+      waiter.resolve(waiter.competingPage
+        ? { ok: false, code: 'OUTCOME_UNKNOWN', error: '执行期间检测到其他引擎页面，写入结果不明；请核对数据和草稿，勿盲目重试。' }
+        : result)
       return true
     },
     size() { return pending.length },
@@ -298,12 +313,20 @@ function sendJson(res, code, obj, extra = {}) {
  * @param {(payload:object)=>Promise<object>} opts.callPage  把调用交给页面执行
  * @param {()=>number} [opts.clientCount]
  */
-export function createAgentHost({ configFile, callPage, clientCount = () => 0 }) {
+export function createAgentHost({ configFile, callPage, clientCount = () => 0, modeGate = null }) {
+  const configPending = `${configFile}.pending`
+  try {
+    fs.lstatSync(configPending)
+    throw new Error('Agent 配置更新未确认，请先检查并恢复配置')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
   const ledgerFile = path.join(path.dirname(configFile), LEDGER_FILE_NAME)
   const ledger = createLedger(ledgerFile)
   let config = loadConfig(configFile)
   let server = null
   let port = 0
+  let configBlocked = false
 
   function status() {
     return {
@@ -313,19 +336,39 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0 })
       bridgeFile: configFile,
       scope: normalizeScope(config.scope),
       clients: clientCount(),
-      lastError: '',
+      lastError: configBlocked ? 'Agent 配置更新未确认，连接已停用；请先检查并恢复配置。' : '',
       tokenConfigured: !!config.token,
     }
   }
 
   function setConfig(patch) {
-    config = {
+    if (configBlocked) throw new Error('Agent 配置更新未确认，请先检查并恢复配置')
+    if (patch?.enabled === true && modeGate) {
+      const mode = modeGate.snapshot()
+      if (mode.phase !== 'stable' || mode.mode !== 'agent' || mode.busy) throw new Error('当前模式不允许开启 Agent 连接。')
+    }
+    const next = {
       ...config,
       ...(patch && typeof patch.enabled === 'boolean' ? { enabled: patch.enabled } : {}),
       ...(patch && patch.scope ? { scope: normalizeScope(patch.scope) } : {}),
       port: port || config.port,
     }
-    config = saveConfig(configFile, config)
+    try {
+      // 先建立持久的中断标记；意外退出或配置写入失败时启动不能沿用旧授权。
+      fs.mkdirSync(path.dirname(configFile), { recursive: true })
+      const fd = fs.openSync(configPending, 'wx', 0o600)
+      try { fs.writeFileSync(fd, 'Agent config update pending\n'); fs.fsyncSync(fd) }
+      finally { fs.closeSync(fd) }
+      const saved = saveConfig(configFile, next)
+      fs.unlinkSync(configPending)
+      config = saved
+    } catch (error) {
+      // 授权写入失败时，既不能应用未保存的授权，也不能继续接受写入。
+      // 磁盘记录可能仍是旧值；下次启动前必须修复存储故障并重新核对授权。
+      config = { ...config, enabled: false }
+      configBlocked = true
+      throw error
+    }
     return status()
   }
 
@@ -335,7 +378,7 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0 })
     return !!token && token === config.token
   }
 
-  async function handleCall(body) {
+  async function handleCallInner(body) {
     if (!config.enabled) {
       return { ok: false, code: 'HOST_DISABLED', error: 'Agent 写入连接未开启。请在青春幻想引擎「模型设置 → Agent 连接」中开启并授权项目。' }
     }
@@ -377,6 +420,22 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0 })
     }
     ledger.finish(call.requestId, result)
     return { ok: true, result }
+  }
+
+  // 可注入的宿主租约接线。调用方必须提供与 API 请求共用的唯一 modeGate；
+  // 未传入时保留旧行为，不得将该兼容路径称为已实现互斥。
+  async function handleCall(body) {
+    if (!modeGate) return handleCallInner(body)
+    const owner = 'agent-host'
+    let lease
+    try { lease = modeGate.acquire('agent', owner) }
+    catch { return { ok: false, code: 'MODE_BLOCKED', error: '当前模式不允许 Agent 调用。' } }
+    // 超时、异常可能仍有页面写入在途，保留租约使模式切换失败关闭；
+    // 不凭超时自动释放，直至将来由可信宿主确认任务终止并人工恢复。
+    const result = await handleCallInner(body)
+    if (result?.code === 'OUTCOME_UNKNOWN' || result?.result?.code === 'OUTCOME_UNKNOWN') return result
+    if (!modeGate.release(lease, owner)) throw new Error('Agent 任务租约释放未确认，请核对任务状态')
+    return result
   }
 
   const serverImpl = createServer(async (req, res) => {
@@ -431,16 +490,28 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0 })
       })
       server = serverImpl
       port = serverImpl.address().port
-      config = saveConfig(configFile, { ...config, port })
+      try {
+        config = saveConfig(configFile, { ...config, port })
+      } catch (error) {
+        // 配置落盘失败时不能留下监听器：调用方可能随即释放唯一宿主锁。
+        await new Promise((resolve, reject) => serverImpl.close(closeError => closeError ? reject(closeError) : resolve()))
+        server = null
+        port = 0
+        throw error
+      }
       return port
     },
     async stop() {
       if (!server) return
       const current = server
+      // 只有确认监听器关闭后才能让模式服务释放宿主锁。
+      await new Promise((resolve, reject) => current.close(error => error ? reject(error) : resolve()))
       server = null
       port = 0
-      await new Promise(resolve => current.close(() => resolve()))
-      try { config = saveConfig(configFile, { ...config, port: 0 }) } catch { /* 退出阶段写不进去不阻断 */ }
+      // 配置结果不明时保留磁盘原状，不能用退出时的内存快照覆盖待核对的证据。
+      if (!configBlocked) {
+        try { config = saveConfig(configFile, { ...config, port: 0 }) } catch { /* 退出阶段写不进去不阻断 */ }
+      }
     },
   }
 }

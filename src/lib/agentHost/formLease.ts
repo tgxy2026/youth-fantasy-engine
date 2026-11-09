@@ -5,6 +5,8 @@ const keyOf = (projectId: string, tabId: string) => JSON.stringify([projectId, t
 /** 表格与表单使用不同命名空间，避免页签名碰撞。 */
 export const tableLeaseKey = (tabId: string) => `table::${tabId}`
 export const cardLeaseKey = (tabId: string) => `card::${tabId}`
+/** 情节画布不是页签表格：用独立命名空间，避免与同名页签碰撞。 */
+export const canvasLeaseKey = 'canvas::plot'
 function slotOf(projectId: string, tabId: string): Slot {
   const key = keyOf(projectId, tabId)
   let slot = slots.get(key)
@@ -42,6 +44,12 @@ export async function withFormSave<T>(projectId: string, tabId: string, save: ()
   slot.saves++
   try { return await save() }
   finally { slot.saves--; cleanup(projectId, tabId, slot) }
+}
+
+/** 页面是否正在编辑或保存该表（批量覆盖前预检用；不占用 Agent 租约）。 */
+export function isFormLeaseBusy(projectId: string, tabId: string): boolean {
+  const slot = slots.get(keyOf(projectId, tabId))
+  return !!slot && (slot.editors > 0 || slot.saves > 0 || !!slot.agent)
 }
 
 /** 不等待作者的编辑或保存；忙时直接拒绝。 */

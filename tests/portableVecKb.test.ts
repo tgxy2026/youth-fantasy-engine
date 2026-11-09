@@ -280,8 +280,8 @@ await (async () => {
   ok('删文档连带删正文（两 store 各清空）', after.length === 0 && afterBody.length === 0)
 
   ok('KB 后端源码里 clearProject 同时删 docs 与 bodies',
-    /del\(PORTABLE_KB_DOCS_STORE, d\.id\)/.test(read('src/lib/storage/portableVecKb.ts')) &&
-    /del\(PORTABLE_KB_BODIES_STORE, d\.id\)/.test(read('src/lib/storage/portableVecKb.ts')))
+    /delStrict\(PORTABLE_KB_DOCS_STORE, d\.id\)/.test(read('src/lib/storage/portableVecKb.ts')) &&
+    /delStrict\(PORTABLE_KB_BODIES_STORE, d\.id\)/.test(read('src/lib/storage/portableVecKb.ts')))
 
   await resetPortableStores()
 })()
@@ -386,6 +386,19 @@ function toStoredRowLike(r: ReturnType<typeof makeVecRow>): Record<string, unkno
 // ⚠️ Node 里 `window.__YFE_PORTABLE__` 不存在 ⇒ `PORTABLE=false`，`installPortableVecKb()` 不生效。
 //    故「装桥后两库走便携后端」这条**已由 §②/§②b 直接注入 `portableVecBackend` /
 //    `portableKbBackend` 覆盖**（那正是 install 生效后的运行时状态）。本节只钉导出面与复位卫生。
+{
+  setPortableSidecarApi({ ...memSidecar, async write() { return false } })
+  let bodyFailed = false, metaFailed = false
+  try { await portableKbBackend.putBody('failed-body', '正文') } catch { bodyFailed = true }
+  const failedDoc: KbDoc = { id: 'failed-meta', projectId: 'p1', title: 'test', sourceType: 'paste', chars: 1, chunkCount: 0, importedAt: 100, enabled: false }
+  try { await portableKbBackend.put(failedDoc) } catch { metaFailed = true }
+  ok('便携正文写入失败会抛出', bodyFailed)
+  ok('便携元信息写入失败会抛出', metaFailed)
+  let deletionFailed = false
+  try { await portableKbBackend.del('failed-meta') } catch { deletionFailed = true }
+  ok('便携元信息删除失败会抛出', deletionFailed)
+  setPortableSidecarApi(memSidecar)
+}
 {
   ok('模块导出 installPortableVecKb 为函数', typeof installPortableVecKb === 'function')
   ok('模块导出 uninstallPortableVecKb 为函数', typeof uninstallPortableVecKb === 'function')

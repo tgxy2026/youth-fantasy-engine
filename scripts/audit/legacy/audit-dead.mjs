@@ -50,7 +50,9 @@ function walk(dir, out = []) {
 }
 function walkAny(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['node_modules', '.git', 'dist', 'dist-web', 'release', '.workbuddy'].includes(e.name)) continue
+    // 本机构建会将旧 dist 保留为 dist_bak_*；这些产物既不是引用源，
+    // 也会被逐字符解析并掩盖死代码，目录多时可能导致扫描超时。
+    if (['node_modules', '.git', 'dist', 'dist-web', 'release', '.workbuddy'].includes(e.name) || (e.isDirectory() && e.name.startsWith('dist_bak_'))) continue
     // 🔴 2026-09-19 加固：dot 前缀文件/目录一律不参与「被引用」统计 ——
     //    tests/.xxx.test.mjs 是 build-test.mjs 用 esbuild 打包出的**整份源码副本**（把整段实现抄进来，
     //    于是「只在 bundle 里出现」的符号被误判成有人用）；.workbuddy/** 是工作区临时脚本。

@@ -10,6 +10,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage, Tray, 
 const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
+const net = require('net')
+const { createHash } = require('crypto')
 const { pathToFileURL } = require('url')
 // 2.9.0 · 应用内下载安装包的内核（只允许 http/https、先写 .part、下完比对大小）
 const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
@@ -243,7 +245,7 @@ async function writeAtomic(file, text) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // 字体枚举权限（2026-09-28 · 社区需求）：渲染层 navigator.queryLocalFonts() 需要
   // local-fonts 权限。Chromium 把它归为需授权能力，Electron 无授权 UI、无 handler 时
   // 对该权限默认拒绝 —— 必须显式放行。
@@ -261,6 +263,33 @@ app.whenReady().then(() => {
   } catch { /* 权限注册失败不挡启动：字体枚举降级为预置清单 + 自定义输入 */ }
 
   loadCustomPath() // 恢复用户自定义的数据文件位置（若有）
+
+  // 按真实数据目录持有系统端口锁：同目录的数据文件共享 blobs，不能只锁文件名。
+  // 持有的所有锁随进程退出释放；端口碰撞时保守拒绝写入。
+  const ownedDataPaths = new Set()
+  const dataGuards = []
+  function dataIdentity(file) {
+    const parent = fs.realpathSync(path.dirname(file))
+    return process.platform === 'win32' ? parent.toLowerCase() : parent
+  }
+  async function acquireDataGuard(file) {
+    let identity
+    try { identity = dataIdentity(file) } catch { return false }
+    if (ownedDataPaths.has(identity)) return true
+    // 与便携服务使用相同目录身份和端口范围，跨形态也不能并行写同一目录。
+    const port = 20000 + createHash('sha256').update(identity).digest().readUInt32BE(0) % 10000
+    const server = net.createServer(socket => socket.destroy())
+    try {
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve) })
+    } catch { return false }
+    dataGuards.push(server)
+    ownedDataPaths.add(identity)
+    return true
+  }
+  await acquireDataGuard(dataFile())
+  function ownsCurrentData() {
+    try { return ownedDataPaths.has(dataIdentity(dataFile())) } catch { return false }
+  }
 
   // 🔴 3.0 · W0-2：**窗口创建前**先把旧版 IndexedDB 目录复制过来。
   //    时机是关键 —— IDB 是进程内 LevelDB，窗口起来后再替换目录不生效且可能损坏；
@@ -517,12 +546,14 @@ app.whenReady().then(() => {
   // ---- 存储相关 IPC ----
   // 启动时读取本地数据文件
   ipcMain.handle('store:load', () => {
+    if (!ownsCurrentData()) return { text: null, path: dataFile(), missing: false, error: '数据目录正在被其他实例使用，当前实例已禁止写入。' }
     const r = readDataFileSync()
     return { text: r.text, path: dataFile(), missing: r.missing === true, error: r.error ?? null }
   })
 
   // 防抖后的异步写盘（渲染层每次数据变更后调用）。原子写，见 writeAtomic 注释。
   ipcMain.handle('store:save', async (_e, text) => {
+    if (!ownsCurrentData()) return { ok: false, error: '数据目录未取得独占权，已禁止写入。' }
     try {
       await writeAtomic(dataFile(), String(text))
       return { ok: true, error: null }
@@ -571,6 +602,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('payload:write', async (_e, store, id, text) => {
+    if (!ownsCurrentData()) return { ok: false, error: '数据目录未取得独占权，已禁止写入。' }
     try {
       const abs = resolveBlobPath(store, id)
       if (!abs) return { ok: false, error: '外置记录的 store / id 不合法' }
@@ -587,6 +619,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('payload:del', async (_e, store, id) => {
+    if (!ownsCurrentData()) return { ok: false, error: '数据目录未取得独占权，已禁止写入。' }
     try {
       const abs = resolveBlobPath(store, id)
       if (!abs) return { ok: false, error: '外置记录的 store / id 不合法' }
@@ -614,6 +647,7 @@ app.whenReady().then(() => {
 
   // 同步写盘：窗口关闭（beforeunload）时保证未保存数据落盘。同样原子写。
   ipcMain.on('store:save-sync', (e, text) => {
+    if (!ownsCurrentData()) { e.returnValue = { ok: false, error: '数据目录未取得独占权，已禁止写入。' }; return }
     try {
       writeAtomicSync(dataFile(), String(text))
       e.returnValue = { ok: true, error: null }
@@ -696,15 +730,20 @@ ipcMain.handle('store:path', () => dataFile())
     const script = path.join(root, 'scripts', 'mcp', 'yfe-readonly.mjs')
     return fs.existsSync(script) ? script : ''
   })
-  // ---- Agent 可写工具宿主（3.4.3）----
-  // 🔴 写请求必须进入渲染进程的内存 store：主进程只负责本地 HTTP + 幂等账本 + IPC 转发。
+  // ---- 连接模式服务 + Agent 可写工具宿主（3.4.3）----
+  // 🔴 同一资料范围只允许一个可信宿主：模式记录、Agent 宿主与 API 租约必须来自同一个服务实例。
   //    外部进程（MCP 桥）即使猜到端口，没有 host 文件里的随机 token 也调不动。
-  let agentHost = null
-  let agentHostStarting = null
+  let modeService = null
+  let modeServiceStarting = null
+  let modeClosing = false
+  let modeClosed = false
+  const modeSwitchControllers = new Map()
   let agentBridgeReady = false
   let agentCallSeq = 0
   const agentCalls = new Map()
   const AGENT_PAGE_TIMEOUT_MS = 40_000
+  /** 页面租约的归属由主进程固定，不接受模型 / 外部客户端自报。 */
+  const RENDERER_LEASE_OWNER = 'engine-renderer'
 
   function callAgentPage(payload) {
     return new Promise(resolve => {
@@ -736,54 +775,141 @@ ipcMain.handle('store:path', () => dataFile())
     return app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
   }
 
-  async function startAgentHost() {
-    if (agentHost) return agentHost
-    if (agentHostStarting) return agentHostStarting
-    const corePath = path.join(agentHostRoot(), 'scripts', 'agent-host', 'core.mjs')
-    if (!fs.existsSync(corePath)) return null
-    agentHostStarting = (async () => {
-      const core = await import(pathToFileURL(corePath).href)
-      const host = core.createAgentHost({
-        configFile: path.join(app.getPath('userData'), 'agent-host.json'),
+  async function startModeService() {
+    if (modeService) return modeService
+    if (modeServiceStarting) return modeServiceStarting
+    const modulePath = path.join(agentHostRoot(), 'scripts', 'agent-host', 'mode-service.mjs')
+    if (!fs.existsSync(modulePath)) return null
+    modeServiceStarting = (async () => {
+      const module = await import(pathToFileURL(modulePath).href)
+      const service = await module.createModeService({
+        dataDir: app.getPath('userData'),
         callPage: payload => callAgentPage(payload),
         clientCount: () => (agentBridgeReady ? 1 : 0),
       })
-      await host.start()
-      agentHost = host
-      return host
+      modeService = service
+      return service
     })().catch(error => {
-      agentHostStarting = null
+      modeServiceStarting = null
       throw error
     })
-    return agentHostStarting
+    return modeServiceStarting
+  }
+
+  function blockedModeStatus(reason, canRecover) {
+    return {
+      phase: 'blocked', mode: null, reason, busy: false,
+      active: { api: 0, agent: 0 }, ownsLock: false, lock: null, agent: null, canRecover,
+    }
+  }
+
+  async function currentModeStatus() {
+    try {
+      const service = await startModeService()
+      if (service) return await service.status()
+      return blockedModeStatus('当前安装包缺少连接模式服务脚本（scripts/agent-host/mode-service.mjs）。', false)
+    } catch (error) {
+      return blockedModeStatus(error && error.message ? error.message : String(error), true)
+    }
+  }
+
+  function agentStatusFromMode(status) {
+    const agent = status && status.agent ? status.agent : null
+    return {
+      running: !!agent && agent.running === true,
+      enabled: !!agent && agent.enabled === true,
+      port: agent ? agent.port : null,
+      bridgeFile: agent ? agent.bridgeFile : null,
+      scope: agent && agent.scope ? agent.scope : { projects: [] },
+      clients: agent && Number.isInteger(agent.clients) ? agent.clients : 0,
+      lastError: agent ? (agent.lastError || '') : (status && status.phase === 'blocked' ? status.reason : ''),
+      tokenConfigured: !!agent && agent.tokenConfigured === true,
+      connectionMode: status ? { phase: status.phase, mode: status.mode, busy: status.busy, reason: status.reason } : null,
+    }
   }
 
   ipcMain.handle('agent-host:status', async () => {
+    const status = await currentModeStatus()
+    return agentStatusFromMode(status)
+  })
+
+  ipcMain.handle('agent-host:mode-status', () => currentModeStatus())
+
+  // 页面把**整段任务**包在租约里（流式响应体消费完毕才释放）。拒绝时明确告知切换模式。
+  ipcMain.handle('agent-host:mode-lease', async (_e, mode) => {
     try {
-      const host = await startAgentHost()
-      if (!host) {
-        return {
-          running: false, enabled: false, port: null, bridgeFile: null,
-          scope: { projects: [] }, clients: 0,
-          lastError: '当前安装包缺少 Agent 宿主脚本（scripts/agent-host/core.mjs）。',
-        }
-      }
-      return host.status()
+      const service = await startModeService()
+      if (!service) return { ok: false, error: '连接模式服务不可用（脚本缺失）。' }
+      return { ok: true, leaseId: service.acquire(mode, RENDERER_LEASE_OWNER) }
     } catch (error) {
-      return {
-        running: false, enabled: false, port: null, bridgeFile: null,
-        scope: { projects: [] }, clients: 0,
-        lastError: error && error.message ? error.message : String(error),
+      return { ok: false, error: error && error.message ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('agent-host:mode-release', async (_e, leaseId) => {
+    try {
+      if (!modeService || typeof leaseId !== 'string' || !leaseId) return { ok: false }
+      return { ok: modeService.release(leaseId, RENDERER_LEASE_OWNER) }
+    } catch {
+      return { ok: false }
+    }
+  })
+
+  ipcMain.handle('agent-host:mode-switch', async (_e, payload) => {
+    const to = payload && payload.to
+    const transitionId = payload && payload.transitionId
+    let controller
+    try {
+      const service = await startModeService()
+      if (!service) return { ok: false, error: '连接模式服务不可用（脚本缺失）。' }
+      controller = new AbortController()
+      if (typeof transitionId !== 'string' || !transitionId) return { ok: false, error: '缺少切换标识' }
+      if (modeSwitchControllers.has(transitionId)) return { ok: false, error: '该切换标识正在使用' }
+      modeSwitchControllers.set(transitionId, controller)
+      const status = await service.switchTo(to, transitionId, controller.signal)
+      return { ok: true, status }
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : String(error) }
+    } finally {
+      if (typeof transitionId === 'string' && modeSwitchControllers.get(transitionId) === controller) modeSwitchControllers.delete(transitionId)
+    }
+  })
+
+  ipcMain.handle('agent-host:mode-cancel', (_e, transitionId) => {
+    const controller = modeSwitchControllers.get(transitionId)
+    if (!controller) return { ok: false }
+    controller.abort()
+    return { ok: true }
+  })
+
+  ipcMain.handle('agent-host:mode-recover', async (_e, payload) => {
+    const confirm = payload && payload.confirm === true
+    const confirmPid = payload && Number.isInteger(payload.confirmPid) ? payload.confirmPid : null
+    try {
+      let service = modeService
+      if (!service) {
+        try { service = await startModeService() } catch { service = null }
       }
+      if (service) return { ok: true, status: await service.recover({ confirm, confirmPid }) }
+      // 服务创建阶段就失败（遗留锁 / 配置不可读）时，先做文件级恢复再重建服务。
+      const modulePath = path.join(agentHostRoot(), 'scripts', 'agent-host', 'mode-service.mjs')
+      if (!fs.existsSync(modulePath)) return { ok: false, error: '当前安装包缺少连接模式服务脚本。' }
+      const module = await import(pathToFileURL(modulePath).href)
+      await module.recoverConnectionFiles({ dataDir: app.getPath('userData'), confirm, confirmPid })
+      modeServiceStarting = null
+      service = await startModeService()
+      return { ok: true, status: await service.status() }
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : String(error) }
     }
   })
 
   ipcMain.handle('agent-host:set-config', async (_e, patch) => {
     try {
-      const host = await startAgentHost()
-      if (!host) return { ok: false, error: 'Agent 宿主脚本缺失，无法保存配置。' }
+      const service = await startModeService()
+      if (!service) return { ok: false, error: '连接模式服务缺失，无法保存配置。' }
       const safe = patch && typeof patch === 'object' ? patch : {}
-      return { ok: true, status: host.setConfig({ enabled: safe.enabled, scope: safe.scope }) }
+      return { ok: true, status: service.setAgentConfig({ enabled: safe.enabled, scope: safe.scope }) }
     } catch (error) {
       return { ok: false, error: error && error.message ? error.message : String(error) }
     }
@@ -795,12 +921,29 @@ ipcMain.handle('store:path', () => dataFile())
   })
 
   app.on('will-quit', () => {
-    try { agentHost?.stop?.() } catch { /* 退出阶段不阻断 */ }
     for (const [, pending] of agentCalls) {
       clearTimeout(pending.timer)
       pending.resolve({ ok: false, code: 'NOT_READY', error: '应用正在退出，本次调用未执行。' })
     }
     agentCalls.clear()
+    for (const controller of modeSwitchControllers.values()) {
+      try { controller.abort() } catch { /* 退出阶段不阻断 */ }
+    }
+    modeSwitchControllers.clear()
+  })
+
+  // 退出前先释放模式锁与监听器；关闭失败也要在限时后退出，遗留锁由下次启动的「安全恢复」处理。
+  app.on('before-quit', event => {
+    if (modeClosed || !modeService) return
+    if (modeClosing) { event.preventDefault(); return }
+    modeClosing = true
+    event.preventDefault()
+    const finish = () => { modeClosed = true; app.quit() }
+    const timer = setTimeout(finish, 5000)
+    Promise.resolve(modeService.close()).catch(() => undefined).finally(() => {
+      clearTimeout(timer)
+      finish()
+    })
   })
 
   // ---- 自定义数据文件位置（#033）----
@@ -838,6 +981,7 @@ ipcMain.handle('store:path', () => dataFile())
       const p = String(target || '')
       if (!p || !path.isAbsolute(p)) return { ok: false, path: null, adopted: false, error: '路径无效' }
       await fsp.mkdir(path.dirname(p), { recursive: true })
+      if (!await acquireDataGuard(p)) return { ok: false, path: null, adopted: false, error: '目标数据文件正被其他实例使用或无法取得独占权。' }
       let adopted = false
       let copied = 0
       try {
@@ -869,6 +1013,7 @@ ipcMain.handle('store:path', () => dataFile())
   ipcMain.handle('store:resetDataPath', async (_e, text) => {
     try {
       const p = path.join(app.getPath('userData'), 'youth-fantasy-engine-data.json')
+      if (!await acquireDataGuard(p)) return { ok: false, path: null, adopted: false, error: '目标数据文件正被其他实例使用或无法取得独占权。' }
       let adopted = false
       let copied = 0
       try {
@@ -1426,10 +1571,10 @@ ipcMain.handle('store:path', () => dataFile())
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
-  // Agent 可写工具宿主：随应用启动（用户不开也不影响任何现有功能）。
+  // 连接模式服务 + Agent 可写工具宿主：随应用启动（用户不开也不影响任何现有功能）。
   // 失败只记日志：版本差异 / 只读安装目录等情况不应阻断正常写作。
-  void startAgentHost().catch(error => {
-    console.warn('[agent-host] 启动失败：' + (error && error.message ? error.message : String(error)))
+  void startModeService().catch(error => {
+    console.warn('[connection-mode] 启动失败：' + (error && error.message ? error.message : String(error)))
   })
 
   // 托盘：窗口对象已经就绪，建一次即可（内部有幂等判断）

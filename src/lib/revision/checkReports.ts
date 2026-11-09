@@ -181,6 +181,7 @@ export function reportSourceLabel(source: string): string {
   if (source === 'local') return '本地诊断'
   if (source === 'local-recheck') return '改后复检'
   if (source === 'self-refine') return '连写自检'
+  if (source === 'agent') return '外部 Agent'
   return 'AI 检查'
 }
 

@@ -35,6 +35,10 @@ export interface AgentHostStatus {
   clients: number
   /** 不可用 / 出错原因（空 = 正常） */
   lastError: string
+  /** 宿主是否配置了连接令牌（只返回布尔，不返回令牌本身） */
+  tokenConfigured?: boolean
+  /** 3.4.3：连接模式真源摘要（页面只读，不可由此推断权限） */
+  connectionMode?: { phase: 'stable' | 'switching' | 'blocked'; mode: 'api' | 'agent' | null; busy: boolean; reason: string } | null
 }
 
 const EMPTY_STATUS: AgentHostStatus = {
@@ -167,6 +171,7 @@ async function runOne(payload: unknown): Promise<AgentToolResult> {
 /** 便携页面轮询间隔。任务由服务端原子领取，重复轮询不会拿到同一条。 */
 const PORTABLE_POLL_MS = 800
 let installed = false
+let documentClientId = ''
 
 /**
  * 安装页面侧宿主桥。多次调用保持幂等。
@@ -214,6 +219,7 @@ export function installAgentHostBridge(): () => void {
       }
     }
     const timer = setInterval(() => { void tick() }, PORTABLE_POLL_MS)
+    void tick()
     return () => { stopped = true; clearInterval(timer); installed = false }
   }
   installed = false
@@ -221,13 +227,13 @@ export function installAgentHostBridge(): () => void {
 }
 
 function portableClientId(): string {
-  try {
-    const existing = sessionStorage.getItem('yfe.agentHost.clientId')
-    if (existing) return existing
-    const next = Math.random().toString(36).slice(2) + Date.now().toString(36)
-    sessionStorage.setItem('yfe.agentHost.clientId', next)
-    return next
-  } catch {
-    return 'page-' + Math.random().toString(36).slice(2)
+  // sessionStorage 可被 window.open / 复制标签克隆，不能用作页面身份。
+  // 同一文档重新安装桥时复用；新文档（包括重载）必须使用新的身份。
+  if (!documentClientId) {
+    const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+    documentClientId = `page-${random}`
   }
+  return documentClientId
 }

@@ -20,8 +20,19 @@ import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { submissionBlockReason, platformSubmissionState } from '@/lib/storage/submissionState'
 import { leaveGuardDirty } from '@/lib/editor/leaveBarrier'
 import { getAgentActiveChapter } from '@/lib/editor/activeChapter'
-import { addInspiration, deleteChapter, listInspirations, updateVolume } from '@/lib/agentHost/contentOps'
+import { addInspiration, AgentContentInputError, deleteChapter, deleteInspiration, listChapterTrash, listInspirations, restoreChapter, updateInspiration, updateVolume } from '@/lib/agentHost/contentOps'
+import { createMap, createMapPlace, deleteMap, listMapPlaces, listMaps, updateMap, updateMapPlaceCells } from '@/lib/agentHost/mapOps'
+import {
+  createPlotCard, deletePlotCard, readPlotCanvas, updatePlotCard, updatePlotConnections,
+} from '@/lib/agentHost/canvasOps'
+import {
+  importWorldPack, previewBackupRestore, previewWorldImport, restoreProjectBackup,
+} from '@/lib/agentHost/worldBackupOps'
+import { cancelAgentTask, finishAgentTask, getAgentTask, listAgentTasks, startAgentTask, updateAgentTask } from '@/lib/agentHost/taskOps'
+import { listCheckReports, readCheckReport, saveCheckReport } from '@/lib/agentHost/reportOps'
 import { countWords } from '@/lib/editor/textStats'
+import { scanText } from '@/lib/editor/sensitiveWords'
+import { scanTypos } from '@/lib/editor/typoWords'
 import { uid } from '@/lib/app/id'
 import { getTab, TABS } from '@/lib/schema'
 import { cardFieldsOf } from '@/lib/storage/cardIO'
@@ -163,7 +174,26 @@ const WRITE_TOOL_SET = new Set<string>([
   AGENT_TOOL_NAMES.updateChapterInfo,
   AGENT_TOOL_NAMES.updateVolume,
   AGENT_TOOL_NAMES.deleteChapter,
-  AGENT_TOOL_NAMES.addInspiration,
+AGENT_TOOL_NAMES.addInspiration,
+  AGENT_TOOL_NAMES.updateInspiration,
+  AGENT_TOOL_NAMES.deleteInspiration,
+  AGENT_TOOL_NAMES.saveCheckReport,
+  AGENT_TOOL_NAMES.restoreChapter,
+  AGENT_TOOL_NAMES.createMap,
+  AGENT_TOOL_NAMES.updateMap,
+  AGENT_TOOL_NAMES.deleteMap,
+  AGENT_TOOL_NAMES.createMapPlace,
+  AGENT_TOOL_NAMES.updateMapPlaceCells,
+  AGENT_TOOL_NAMES.createPlotCard,
+  AGENT_TOOL_NAMES.updatePlotCard,
+  AGENT_TOOL_NAMES.deletePlotCard,
+  AGENT_TOOL_NAMES.updatePlotConnections,
+  AGENT_TOOL_NAMES.importWorldPack,
+  AGENT_TOOL_NAMES.restoreProjectBackup,
+  AGENT_TOOL_NAMES.startAgentTask,
+  AGENT_TOOL_NAMES.updateAgentTask,
+  AGENT_TOOL_NAMES.finishAgentTask,
+  AGENT_TOOL_NAMES.cancelAgentTask,
 ])
 let writeChain: Promise<unknown> = Promise.resolve()
 
@@ -282,6 +312,48 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
         createdAt: chapter.createdAt,
       },
     }
+  }
+
+  /** 复用检查工具的本地词库，只检查已保存正文，不修改作品或调用模型。 */
+  async function checkChapterWords(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const chapterId = str(args, 'chapterId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    owner.assertCurrent()
+    const chapter = await owner.store.get<Chapter>('chapters', chapterId)
+    if (!chapter || chapter.projectId !== projectId) return fail('NOT_FOUND', `章节不存在：${chapterId}`)
+    const customRecord = await owner.store.get<{ value?: unknown }>('settingsKV', `${projectId}::customSensitiveWords`)
+    const custom = customRecord ? customRecord.value : []
+    owner.assertCurrent()
+    if (!Array.isArray(custom) || custom.length > 5000 || custom.some(word => typeof word !== 'string' || word.length > 200)) {
+      return fail('BAD_REQUEST', '自定义词库格式无效或过大，请先在检查工具中核对。')
+    }
+    if ((chapter.content?.length ?? 0) * (custom.length + 50) > 100_000_000) {
+      return fail('BAD_REQUEST', '正文与自定义词库组合过大，请缩小检查范围或整理词库后再试。')
+    }
+    const hits = scanText(chapter.content || '', custom as string[])
+    return { ok: true, value: { projectId, chapterId, title: chapter.title, updatedAt: chapter.updatedAt,
+      totalHits: hits.length, hits: hits.slice(0, 200), truncated: hits.length > 200,
+      note: '仅供人工核对，词库并非完整的平台规则；检查的是已保存正文。' } }
+  }
+
+  async function checkChapterTypos(args: Record<string, unknown>): Promise<AgentToolResult> {
+    const projectId = str(args, 'projectId', 200)
+    const chapterId = str(args, 'chapterId', 200)
+    const project = await projectOf(projectId)
+    if ('ok' in project) return project
+    const owner = deps.captureOwner(projectId)
+    owner.assertCurrent()
+    const chapter = await owner.store.get<Chapter>('chapters', chapterId)
+    owner.assertCurrent()
+    if (!chapter || chapter.projectId !== projectId) return fail('NOT_FOUND', `章节不存在：${chapterId}`)
+    if ((chapter.content?.length ?? 0) > MAX_CONTENT_CHARS) return fail('BAD_REQUEST', '章节正文过长，请先在引擎中核对。')
+    const hits = scanTypos(chapter.content || '')
+    return { ok: true, value: { projectId, chapterId, title: chapter.title, updatedAt: chapter.updatedAt,
+      totalHits: hits.length, hits: hits.slice(0, 200), truncated: hits.length > 200,
+      note: '仅供人工核对，建议可能不适用于上下文；检查的是已保存正文。' } }
   }
 
   async function listSettingTabs(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
@@ -512,41 +584,6 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     })) } }
   }
 
-  async function listMaps(args: Record<string, unknown>): Promise<AgentToolResult> {
-    const projectId = str(args, 'projectId', 200)
-    const project = await projectOf(projectId)
-    if ('ok' in project) return project
-    const owner = deps.captureOwner(projectId)
-    const maps = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', 'geomaps'))
-      .filter(row => row.projectId === projectId).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-      .map(row => ({ id: row.id, code: row.data['编号'], name: row.data['名称'],
-        kilometersPerCell: row.data['每格公里'], description: row.data['说明'],
-        backgroundMode: row.data['底图模式'] === '图片' ? '图片' : '格子', updatedAt: row.updatedAt }))
-    return { ok: true, value: { projectId, maps } }
-  }
-
-  async function listMapPlaces(args: Record<string, unknown>): Promise<AgentToolResult> {
-    const projectId = str(args, 'projectId', 200)
-    const mapId = str(args, 'mapId', 200)
-    const offset = args.offset === undefined ? 0 : num(args, 'offset')
-    const limit = args.limit === undefined ? 20 : num(args, 'limit')
-    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
-    const project = await projectOf(projectId)
-    if ('ok' in project) return project
-    const owner = deps.captureOwner(projectId)
-    const map = await owner.store.get<TableRow>('tableRows', mapId)
-    if (!map || map.projectId !== projectId || map.tabId !== 'geomaps') return fail('NOT_FOUND', `地图不存在：${mapId}`)
-    const name = map.data['名称'] || ''
-    if (!name) return fail('BAD_REQUEST', '地图没有名称，无法确定关联地点。')
-    const places = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', 'geography'))
-      .filter(row => row.projectId === projectId && row.data['所属地图'] === name)
-      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-    return { ok: true, value: { projectId, mapId, mapName: name, total: places.length, offset,
-      places: places.slice(offset, offset + limit).map(row => ({ id: row.id, name: row.data['名称'],
-        code: row.data['编号'], category: row.data['类别'], parent: row.data['层级归属'],
-        position: row.data['地理位置'], description: row.data['备注'], updatedAt: row.updatedAt })) } }
-  }
-
   async function searchProject(args: Record<string, unknown>): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
     const query = str(args, 'query', 200).trim()
@@ -602,32 +639,6 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     return { ok: true, value: { projectId, query, limit, results, limitReached: results.length >= limit } }
   }
 
-  async function readPlotCanvas(args: Record<string, unknown>): Promise<AgentToolResult> {
-    const projectId = str(args, 'projectId', 200)
-    const offset = args.offset === undefined ? 0 : num(args, 'offset')
-    const limit = args.limit === undefined ? 20 : num(args, 'limit')
-    if (limit < 1 || limit > 100) return fail('BAD_REQUEST', 'limit 必须在 1 到 100 之间。')
-    const project = await projectOf(projectId)
-    if ('ok' in project) return project
-    const owner = deps.captureOwner(projectId)
-    const raw = await db.getSettingFor<unknown>(projectId, 'plotCanvas', null, owner)
-    const canvas = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
-    const all = Array.isArray(canvas.cards) ? canvas.cards : []
-    const cards = all.slice(offset, offset + limit).flatMap((item: unknown) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return []
-      const card = item as Record<string, unknown>
-      if (typeof card.id !== 'string') return []
-      return [{ id: card.id, chapter: card.chapter, type: card.type, text: card.text, x: card.x, y: card.y, basedOn: card.basedOn }]
-    })
-    const ids = new Set(cards.map(card => card.id))
-    const connections = (Array.isArray(canvas.conns) ? canvas.conns : []).filter((conn: unknown) =>
-      Array.isArray(conn) && conn.length === 2 && typeof conn[0] === 'string' && typeof conn[1] === 'string'
-      && (ids.has(conn[0]) || ids.has(conn[1])))
-    owner.assertCurrent()
-    return { ok: true, value: { projectId, total: all.length, offset, cards, connections,
-      selected: Array.isArray(canvas.selected) ? canvas.selected.filter((id: unknown) => typeof id === 'string') : [] } }
-  }
-
   /** 一次查询：项目 + 卷 + 章节统计 + 设定栏目 + 可写能力 + 版本（updatedAt）。 */
   async function getProject(args: Record<string, unknown>, scope: AgentScope): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
@@ -650,7 +661,7 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
         grantedActions,
         volumes: projectVolumes
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-          .map(v => ({ id: v.id, title: v.title, order: v.order, isFree: v.isFree === true })),
+          .map(v => ({ id: v.id, title: v.title, description: v.description ?? '', order: v.order, isFree: v.isFree === true })),
         chapters: projectChapters.length,
         totalWords: projectChapters.reduce((sum, c) => sum + (typeof c.wordCount === 'number' ? c.wordCount : 0), 0),
         chapterUpdatedAt: projectChapters.reduce((max, c) => Math.max(max, c.updatedAt || 0), 0),
@@ -1033,6 +1044,12 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     } catch {
       return fail('SAVE_FAILED', '无法创建可恢复版本，已放弃本次正文写入（未改动原章节）。')
     }
+    // 创建快照会让出事件循环，作者可能在这段时间开始输入或保存新版本。
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '创建快照期间出现未保存草稿，请先保存后重试。')
+    const latest = await owner.store.get<Chapter>('chapters', chapterId)
+    if (!latest || latest.projectId !== projectId) return fail('NOT_FOUND', '章节已不存在或不属于该项目。')
+    if (latest.updatedAt !== expected || latest.content !== old.content) return fail('CONFLICT', '创建快照期间章节已变化，请重新读取后再试。', { chapterId, updatedAt: latest.updatedAt })
+    if (deps.unsavedDraft()) return fail('DRAFT_DIRTY', '读取章节期间出现未保存草稿，请先保存后重试。')
     // 每次 Agent 写入让 updatedAt **严格递增**：同一毫秒内的两次写入若更新值相同，
     // 后一个请求的 expectedUpdatedAt 仍会「看起来匹配」，版本前置条件就失效了。
     // 只抬高 Agent 写入自身的 updatedAt，不改引擎其他保存路径的取值口径。
@@ -1067,6 +1084,8 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
             case AGENT_TOOL_NAMES.getProject: return await getProject(call.args, scope)
             case AGENT_TOOL_NAMES.listChapters: return await listChapters(call.args, scope)
             case AGENT_TOOL_NAMES.readChapter: return await readChapter(call.args)
+            case AGENT_TOOL_NAMES.checkChapterWords: return await checkChapterWords(call.args)
+            case AGENT_TOOL_NAMES.checkChapterTypos: return await checkChapterTypos(call.args)
             case AGENT_TOOL_NAMES.listSettingTabs: return await listSettingTabs(call.args, scope)
             case AGENT_TOOL_NAMES.listSettingCards: return await listSettingCards(call.args)
             case AGENT_TOOL_NAMES.readSettingCard: return await readSettingCard(call.args)
@@ -1081,10 +1100,10 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
             case AGENT_TOOL_NAMES.listWorldPacks: return await listWorldPacks(call.args)
             case AGENT_TOOL_NAMES.readWorldPackTable: return await readWorldPackTable(call.args)
             case AGENT_TOOL_NAMES.listProjectBackups: return await listProjectBackups(call.args)
-            case AGENT_TOOL_NAMES.listMaps: return await listMaps(call.args)
-            case AGENT_TOOL_NAMES.listMapPlaces: return await listMapPlaces(call.args)
+            case AGENT_TOOL_NAMES.listMaps: return await listMaps(call.args, deps)
+            case AGENT_TOOL_NAMES.listMapPlaces: return await listMapPlaces(call.args, deps)
             case AGENT_TOOL_NAMES.searchProject: return await searchProject(call.args)
-            case AGENT_TOOL_NAMES.readPlotCanvas: return await readPlotCanvas(call.args)
+            case AGENT_TOOL_NAMES.readPlotCanvas: return await readPlotCanvas(call.args, deps)
             case AGENT_TOOL_NAMES.createSettingCard: return await createSettingCard(call.args, scope)
             case AGENT_TOOL_NAMES.updateSettingCard: return await updateSettingCard(call.args, scope, deps)
             case AGENT_TOOL_NAMES.createWorldSet: return await createWorldSet(call.args, scope)
@@ -1100,11 +1119,37 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
             case AGENT_TOOL_NAMES.updateVolume: return await updateVolume(call.args, scope, deps)
             case AGENT_TOOL_NAMES.deleteChapter: return await deleteChapter(call.args, scope, deps)
             case AGENT_TOOL_NAMES.listInspirations: return await listInspirations(call.args, deps)
+            case AGENT_TOOL_NAMES.listChapterTrash: return await listChapterTrash(call.args, deps)
+            case AGENT_TOOL_NAMES.saveCheckReport: return await saveCheckReport(call.args, scope, deps, call.requestId)
+            case AGENT_TOOL_NAMES.listCheckReports: return await listCheckReports(call.args, deps)
+            case AGENT_TOOL_NAMES.readCheckReport: return await readCheckReport(call.args, deps)
+            case AGENT_TOOL_NAMES.updateInspiration: return await updateInspiration(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.deleteInspiration: return await deleteInspiration(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.startAgentTask: return await startAgentTask(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updateAgentTask: return await updateAgentTask(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.finishAgentTask: return await finishAgentTask(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.cancelAgentTask: return await cancelAgentTask(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.listAgentTasks: return await listAgentTasks(call.args, deps)
+            case AGENT_TOOL_NAMES.getAgentTask: return await getAgentTask(call.args, deps)
+            case AGENT_TOOL_NAMES.restoreChapter: return await restoreChapter(call.args, scope, deps)
             case AGENT_TOOL_NAMES.addInspiration: return await addInspiration(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.createMap: return await createMap(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updateMap: return await updateMap(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.deleteMap: return await deleteMap(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.createMapPlace: return await createMapPlace(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updateMapPlaceCells: return await updateMapPlaceCells(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.createPlotCard: return await createPlotCard(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updatePlotCard: return await updatePlotCard(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.deletePlotCard: return await deletePlotCard(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.updatePlotConnections: return await updatePlotConnections(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.previewWorldImport: return await previewWorldImport(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.importWorldPack: return await importWorldPack(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.previewBackupRestore: return await previewBackupRestore(call.args, scope, deps)
+            case AGENT_TOOL_NAMES.restoreProjectBackup: return await restoreProjectBackup(call.args, scope, deps)
             default: return fail('UNKNOWN_TOOL', `未知工具：${call.tool}`)
           }
         } catch (error) {
-          if (error instanceof AgentInputError) return fail('BAD_REQUEST', error.message)
+          if (error instanceof AgentInputError || error instanceof AgentContentInputError) return fail('BAD_REQUEST', error.message)
           const message = error instanceof Error ? error.message : String(error)
           // 归属 / 存储上下文切换：写函数在写前抛错＝未写入；写后抛错＝结果不明。
           // 这里无法区分，按**结果不明**上报（宁可让作者核对，也不能让 Agent 盲目重试造成重复追加）。

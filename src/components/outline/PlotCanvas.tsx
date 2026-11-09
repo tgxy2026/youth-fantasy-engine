@@ -6,6 +6,7 @@ import { monoCardBorder } from '@/lib/settings/monoMarks'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { Loader2, Eraser, Sparkles, GitBranch, Check, X, Move, LayoutGrid } from 'lucide-react'
 import * as db from '@/lib/db'
+import { canvasLeaseKey, registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
 import type { TableRow, TabDef } from '@/lib/types'
 import { aiBriefing } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -115,8 +116,15 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   // 载入章节 + 从项目库恢复推演快照（切页 / 重启后内容不丢）
   useEffect(() => {
     let alive = true
-    void db.getAllChapterLedgerRows().then(setChapters)
-    db.getSetting<PlotPersist>('plotCanvas', { selected: [], cards: [], conns: [] }).then(p => {
+    const pid = db.getCurrentProjectId()
+    // 画布有 300ms 防抖与卸载冲刷：打开期间不允许 Agent 改画布（页面租约）。
+    const release = registerFormEditor(pid, canvasLeaseKey)
+    void (async () => {
+      // 若 Agent 正在写画布，先等它落盘再读，避免读到半旧数据后用本地状态覆盖。
+      await waitForAgentForm(pid, canvasLeaseKey)
+      if (!alive) return
+      void db.getAllChapterLedgerRows().then(setChapters)
+      const p = await db.getSetting<PlotPersist>('plotCanvas', { selected: [], cards: [], conns: [] })
       if (!alive) return
       if (p.selected) setSelected(new Set(p.selected))
       // 🔴 3.1.2：旧快照坐标自愈 —— 会把滚出可见区的卡片挪回可见区内（见 MIN_CARD_* 注释）。
@@ -128,8 +136,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
       })))
       if (p.conns) setConns(p.conns)
       loadedRef.current = true
-    })
-    return () => { alive = false }
+    })()
+    return () => { alive = false; release() }
   }, [])
 
   // 任何改动后（载入完成后）自动落库，形成持久化的推演快照

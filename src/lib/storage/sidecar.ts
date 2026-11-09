@@ -31,6 +31,21 @@ export type SidecarLayout = 'per-id' | 'whole'
  */
 export const SIDECAR_WHOLE_KEY = '__all__'
 
+/**
+ * 整表条件写的最大合并次数与每次冲突后的短暂退避。
+ *
+ * 每次冲突都会重新读取整表并重新施加本次修改；正常并发一般 1~2 次即成功。
+ * 🔴 为什么不能只给 3~5 次：真实双页同时各写多行时，另一页的写会连续抢先落盘，
+ *    5 次仍可能全部撞上（实测 10 个并发写时有一笔连续冲突 5 次后失败）。
+ *    这里给足够的重试余量，并在每次冲突后小睡 20~40ms，让对方队列先排空；
+ *    上限仍然存在 —— 遇到持续冲突时必须**失败关闭**，不能无限重试把页面卡死。
+ */
+const WHOLE_MERGE_ATTEMPTS = 12
+const WHOLE_MERGE_RETRY_MS = 20
+const wholeRetryDelay = () => new Promise<void>((resolve) => {
+  setTimeout(resolve, WHOLE_MERGE_RETRY_MS + Math.floor(Math.random() * WHOLE_MERGE_RETRY_MS))
+})
+
 /** 单个外置 store 的配置 */
 export interface SidecarStoreSpec {
   layout: SidecarLayout
@@ -40,6 +55,46 @@ export interface SidecarStoreSpec {
 
 /** store 名 -> 配置。不在表里的 store 一律走原后端 */
 export type SidecarSpec = Record<string, SidecarStoreSpec>
+
+/**
+ * 带版本的读取结果（整表条件写用）。
+ * `revision` 由服务端/主进程按内容计算；旧通道不认识版本时返回 null。
+ */
+export interface SidecarVersionedRead {
+  value: unknown | undefined
+  revision: string | null
+}
+
+/**
+ * 条件写结果。
+ * · `conflict` 为真 ⇒ 版本前置条件不满足，**本次写入没有发生**，调用方应重读并合并；
+ * · `unknown` 为真 ⇒ 传输中断，无法判断是否已落盘（结果不明，不能盲目重试）。
+ */
+export interface SidecarConditionalWriteResult {
+  ok: boolean
+  conflict?: boolean
+  unknown?: boolean
+  revision?: string | null
+}
+
+/** 跨整表原子提交的一条：目标 store 的完整新表 + 前置版本 */
+export interface SidecarWholeCommitEntry {
+  store: string
+  value: unknown[]
+  expectedRevision: string | null
+}
+
+/** 跨整表提交结果；`unsupported` 为真 ⇒ 通道没有原子提交能力，调用方应走旧路径 */
+export interface SidecarMultiWriteResult {
+  ok: boolean
+  conflict?: boolean
+  unknown?: boolean
+  unsupported?: boolean
+  revisions?: Record<string, string | null>
+}
+
+/** 通道不支持跨文件原子提交（旧服务 / 旧注入实现）。业务层据此回退旧路径，而不是假装有事务。 */
+export class SidecarUnsupportedError extends Error {}
 
 /**
  * 外置记录的读写通道 —— **两个后端各自实现一份**：
@@ -56,6 +111,28 @@ export interface SidecarApi {
   remove(store: string, id: string): Promise<boolean>
   /** 列出该 store 当前全部记录 id（whole 布局下返回 `[SIDECAR_WHOLE_KEY]` 或 []）；失败必须 reject。 */
   listIds(store: string): Promise<string[]>
+  /**
+   * 可选：带版本的读取。whole 布局的「读整表 → 改 → 写整表」必须用它拿到前置版本，
+   * 否则两个标签同时改不同行时，后写会静默覆盖先写。缺失或文件不存在时也要给出 revision
+   * （服务端/主进程以 `missing` 内容算版本）。
+   */
+  readVersioned?(store: string, id: string): Promise<SidecarVersionedRead>
+  /**
+   * 可选：条件写。`expectedRevision` 为 null 时表示「不认识的旧通道」，允许退化为无条件写；
+   * 非 null 时传输层必须带 If-Match 语义。**不得把冲突伪装成成功。**
+   */
+  writeConditional?(
+    store: string,
+    id: string,
+    value: unknown,
+    expectedRevision: string | null,
+  ): Promise<SidecarConditionalWriteResult>
+  /**
+   * 可选：多个整表 store 的原子提交（当前为知识库 kbDocs + kbBodies）。
+   * 服务端必须在同一把锁下核对全部前置版本、要么全部落盘、要么留下可恢复日志；
+   * 通道没有该能力时返回 `unsupported`，**不得用两次独立条件写冒充原子提交**。
+   */
+  commitWhole?(entries: SidecarWholeCommitEntry[]): Promise<SidecarMultiWriteResult>
 }
 
 /** withSidecar 额外提供仅供迁移使用的严格批量写入，避免迁移失败时删掉主库源数据。 */
@@ -71,6 +148,18 @@ export type SidecarStoreOps = StoreOps & {
    *    ⇒ 备份载荷这类"不落盘就等于撒谎"的写，必须走这里拿可判断的结果。
    */
   putStrict(store: string, value: unknown): Promise<void>
+  delStrict(store: string, key: string): Promise<void>
+  putIfAbsentStrict(store: string, value: unknown): Promise<void>
+  /**
+   * 多个整表 store 的一次性提交（读快照 → 施加修改 → 原子条件写），失败一律抛错。
+   * 冲突后重读重放，但目标记录在首次读取后被其他操作修改时拒绝覆盖；
+   * 通道不支持时抛 `SidecarUnsupportedError`，由业务层回退旧路径。
+   */
+  transactWhole(
+    stores: string[],
+    mutate: (rowsByStore: Record<string, unknown[]>) => Record<string, unknown[]>,
+    affectedKeys: Record<string, Set<string>>,
+  ): Promise<void>
 }
 
 /** 该 store 是否已外置 */
@@ -142,14 +231,155 @@ export function withSidecar(
     return out
   }
 
-  /** 写整表（仅 whole 布局用） */
-  async function writeAll(store: string, rows: unknown[], throwOnFailure = false): Promise<void> {
-    const ok = await api.write(store, SIDECAR_WHOLE_KEY, rows)
-    if (!ok) {
-      const message = `外置 store「${store}」整表写入失败（数据可能未落盘）`
+  /**
+   * 同页面内按 store 串行化整表「读 → 改 → 写」。
+   *
+   * 🔴 为什么还需要这一层（服务端已有按文件队列）：同一页面里两处业务代码
+   *    （例如向量索引与知识库保存）可能同时发起写；它们各自先读快照再写整表，
+   *    即使服务端有 CAS，也会互相冲突并消耗重试次数。这里先在本进程排序，
+   *    让绝大多数同页并发直接读到上一笔的结果。
+   * 🔴 上一笔失败不能卡死后续写：队列尾部吞掉异常，但调用方仍能拿到自己的异常。
+   */
+  const wholeQueues = new Map<string, Promise<unknown>>()
+  function runSerialWhole<T>(store: string, task: () => Promise<T>): Promise<T> {
+    const prev = wholeQueues.get(store) ?? Promise.resolve()
+    const run = prev.catch(() => undefined).then(task)
+    wholeQueues.set(store, run.then(() => undefined, () => undefined))
+    return run
+  }
+
+  /** 读整表 + 版本（整表条件写的前置快照） */
+  async function readWholeSnapshot(
+    store: string,
+    s: SidecarStoreSpec,
+  ): Promise<{ rows: unknown[]; revision: string | null }> {
+    if (api.readVersioned) {
+      const r = await api.readVersioned(store, SIDECAR_WHOLE_KEY)
+      return { rows: Array.isArray(r.value) ? r.value : [], revision: r.revision }
+    }
+    return { rows: await readAll(store, s), revision: null }
+  }
+
+  /**
+   * 整表「读 → 改 → 条件写」，冲突时重读并重新施加本次修改。
+   *
+   * 只有目标记录在首次读取后未被对方修改时，才可在新快照上重放本次修改。
+   * 同一记录发生变化（包括新增、删除）时拒绝覆盖，避免冲突重试吞掉别人的修改。
+   * 🔴 结果不明（传输中断）**不重试**：无法判断那次写是否已经落盘，
+   *    盲目重放可能把「已成功」当成「没写」。此时保留现场并让作者核对。
+   */
+  async function mutateWhole(
+    store: string,
+    s: SidecarStoreSpec,
+    mutate: (rows: unknown[]) => unknown[],
+    affectedKeys: Set<string>,
+    throwOnFailure: boolean,
+    requireRevision = false,
+  ): Promise<void> {
+    await runSerialWhole(store, async () => {
+      let baseline: string | undefined
+      for (let attempt = 0; attempt < WHOLE_MERGE_ATTEMPTS; attempt++) {
+        const snapshot = await readWholeSnapshot(store, s)
+        if (requireRevision && (!snapshot.revision || !api.writeConditional)) throw new Error('存储不支持安全的条件恢复')
+        const targetRows = JSON.stringify(snapshot.rows.filter(row => affectedKeys.has(keyOf(s, row))))
+        if (baseline === undefined) baseline = targetRows
+        else if (baseline !== targetRows) {
+          const message = `外置 store「${store}」的目标记录已在其他窗口变更，本次修改未保存；请保留输入并核对后重试`
+          onError(message)
+          throw new Error(message)
+        }
+        const next = mutate(snapshot.rows)
+        if (!api.writeConditional) {
+          // 旧通道没有版本语义：保持原行为（无条件写），不假装有保护。
+          const ok = await api.write(store, SIDECAR_WHOLE_KEY, next)
+          if (ok) return
+          const message = `外置 store「${store}」整表写入失败（数据可能未落盘）`
+          onError(message)
+          if (throwOnFailure) throw new Error(message)
+          return
+        }
+        const r = await api.writeConditional(store, SIDECAR_WHOLE_KEY, next, snapshot.revision)
+        if (r.ok) return
+        if (r.conflict) {
+          // 让对方页面的写队列先排空，再读最新整表；否则双方可能在同一步反复互撞
+          if (attempt + 1 < WHOLE_MERGE_ATTEMPTS) await wholeRetryDelay()
+          continue
+        }
+        const message = r.unknown
+          ? `外置 store「${store}」整表写入结果不明（可能已落盘，也可能没有）；请重新打开页面核对，勿直接覆盖`
+          : `外置 store「${store}」整表写入失败（数据可能未落盘）`
+        onError(message)
+        if (throwOnFailure) throw new Error(message)
+        return
+      }
+      const message = `外置 store「${store}」连续 ${WHOLE_MERGE_ATTEMPTS} 次因其他窗口同时修改而未能保存；本次修改未落盘，请稍后重试`
       onError(message)
       if (throwOnFailure) throw new Error(message)
+    })
+  }
+
+  /**
+   * 多个整表 store 的一次性提交。与 `mutateWhole` 同一套冲突纪律：
+   * 首次快照记录目标行，冲突重读后目标行已变化则拒绝覆盖；结果不明不重试。
+   * 页面内按 store 排序依次进入各串行队列，保证与单表写互斥且不会互相死锁。
+   */
+  async function transactWhole(
+    stores: string[],
+    mutate: (rowsByStore: Record<string, unknown[]>) => Record<string, unknown[]>,
+    affectedKeys: Record<string, Set<string>>,
+  ): Promise<void> {
+    const sorted = [...new Set(stores)].sort()
+    if (sorted.length < 2) throw new Error('跨表提交至少需要两个整表 store')
+    const specs = sorted.map(store => {
+      const s = specOf(store)
+      if (!s || s.layout !== 'whole') throw new Error(`外置 store「${store}」不是整表布局，无法跨表提交`)
+      return s
+    })
+    const run = async (): Promise<void> => {
+      if (!api.commitWhole || !api.readVersioned) throw new SidecarUnsupportedError('存储通道不支持跨文件原子提交')
+      let baseline: string | undefined
+      for (let attempt = 0; attempt < WHOLE_MERGE_ATTEMPTS; attempt++) {
+        const snapshots: { rows: unknown[]; revision: string | null }[] = []
+        for (let i = 0; i < sorted.length; i++) snapshots.push(await readWholeSnapshot(sorted[i], specs[i]))
+        if (snapshots.some(s => !s.revision)) throw new SidecarUnsupportedError('存储通道缺少整表版本，无法安全跨文件提交')
+        const targetRows = JSON.stringify(sorted.map((store, i) =>
+          snapshots[i].rows.filter(row => (affectedKeys[store] ?? new Set<string>()).has(keyOf(specs[i], row)))))
+        if (baseline === undefined) baseline = targetRows
+        else if (baseline !== targetRows) {
+          const message = `外置 store「${sorted.join('、')}」的目标记录已在其他窗口变更，本次修改未保存；请保留输入并核对后重试`
+          onError(message)
+          throw new Error(message)
+        }
+        const rowsByStore: Record<string, unknown[]> = {}
+        sorted.forEach((store, i) => { rowsByStore[store] = snapshots[i].rows })
+        const next = mutate(rowsByStore)
+        const entries: SidecarWholeCommitEntry[] = sorted.map((store, i) => ({
+          store, value: next[store] ?? [], expectedRevision: snapshots[i].revision,
+        }))
+        const r = await api.commitWhole(entries)
+        if (r.ok) return
+        if (r.unsupported) throw new SidecarUnsupportedError('存储通道不支持跨文件原子提交')
+        if (r.conflict) {
+          if (attempt + 1 < WHOLE_MERGE_ATTEMPTS) await wholeRetryDelay()
+          continue
+        }
+        const message = r.unknown
+          ? `外置 store「${sorted.join('、')}」跨文件提交结果不明（可能已落盘，也可能没有）；请重新打开页面核对，勿直接覆盖`
+          : `外置 store「${sorted.join('、')}」跨文件提交失败；服务已保留恢复日志，下次操作或重启会自动完成或提示核对`
+        onError(message)
+        throw new Error(message)
+      }
+      const message = `外置 store「${sorted.join('、')}」连续 ${WHOLE_MERGE_ATTEMPTS} 次因其他窗口同时修改而未能保存；本次修改未落盘，请稍后重试`
+      onError(message)
+      throw new Error(message)
     }
+    let chained = run
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const store = sorted[i]
+      const inner = chained
+      chained = () => runSerialWhole(store, inner)
+    }
+    await chained()
   }
 
   async function bulkPut(store: string, values: unknown[], throwOnFailure: boolean): Promise<void> {
@@ -175,7 +405,8 @@ export function withSidecar(
       return
     }
     // whole：合并后**只写一次**（整表一个文件，逐条写等于重写 N 遍）
-    await writeAll(store, upsertInto(s, await readAll(store, s), values), throwOnFailure)
+    // 但合并必须带版本前置条件：否则两个标签同时新增不同行时，后写会把先写的整表抹掉。
+    await mutateWhole(store, s, (rows) => upsertInto(s, rows, values), new Set(values.map(v => keyOf(s, v)).filter(Boolean)), throwOnFailure)
   }
 
   /**
@@ -204,7 +435,23 @@ export function withSidecar(
       }
       return
     }
-    await writeAll(store, upsertInto(s, await readAll(store, s), [value]), throwOnFailure)
+    await mutateWhole(store, s, (rows) => upsertInto(s, rows, [value]), new Set([keyOf(s, value)]), throwOnFailure)
+  }
+
+  async function deleteOne(store: string, key: string, strict: boolean): Promise<void> {
+    const s = specOf(store)
+    if (!s) return base.del(store, key)
+    if (s.layout === 'per-id') {
+      const ok = await api.remove(store, String(key))
+      if (!ok) {
+        const message = `外置 store「${store}」记录 ${String(key)} 删除失败`
+        onError(message)
+        if (strict) throw new Error(message)
+      }
+      return
+    }
+    const k = String(key)
+    await mutateWhole(store, s, rows => rows.filter(r => keyOf(s, r) !== k), new Set([k]), strict)
   }
 
   return {
@@ -232,18 +479,31 @@ export function withSidecar(
       await writeOne(store, value, true)
     },
 
-    async del(store: string, key: string): Promise<void> {
+    async putIfAbsentStrict(store: string, value: unknown): Promise<void> {
       const s = specOf(store)
-      if (!s) return base.del(store, key)
-      if (s.layout === 'per-id') {
-        const ok = await api.remove(store, String(key))
-        if (!ok) onError(`外置 store「${store}」记录 ${String(key)} 删除失败`)
-        return
-      }
-      const k = String(key)
-      await writeAll(store, (await readAll(store, s)).filter(r => keyOf(s, r) !== k))
+      if (!s || s.layout !== 'whole') throw new Error('该存储不支持条件恢复')
+      const k = keyOf(s, value)
+      if (!k) throw new Error('条件恢复缺少主键')
+      await mutateWhole(store, s, rows => {
+        if (rows.some(row => keyOf(s, row) === k)) throw new Error('记录已被其他操作恢复或修改')
+        return upsertInto(s, rows, [value])
+      }, new Set([k]), true, true)
     },
 
+    async del(store: string, key: string): Promise<void> {
+      await deleteOne(store, key, false)
+    },
+
+    async delStrict(store: string, key: string): Promise<void> {
+      await deleteOne(store, key, true)
+    },
+    async transactWhole(
+      stores: string[],
+      mutate: (rowsByStore: Record<string, unknown[]>) => Record<string, unknown[]>,
+      affectedKeys: Record<string, Set<string>>,
+    ): Promise<void> {
+      await transactWhole(stores, mutate, affectedKeys)
+    },
     async getAllByIndex<T>(store: string, indexName: string, value: unknown): Promise<T[]> {
       const s = specOf(store)
       if (!s) return base.getAllByIndex<T>(store, indexName, value)
@@ -274,7 +534,7 @@ export function withSidecar(
         }
         return
       }
-      await writeAll(store, (await readAll(store, s)).filter(r => !set.has(keyOf(s, r))))
+      await mutateWhole(store, s, (rows) => rows.filter(r => !set.has(keyOf(s, r))), set, false)
     },
   }
 }

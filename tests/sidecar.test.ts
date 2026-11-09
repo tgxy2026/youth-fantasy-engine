@@ -4,8 +4,8 @@
 //    它一旦与底层后端（fileBackend 的 upsertRows 等）对不齐，症状是「桌面版能恢复备份、
 //    便携版不能」这类**双端不一致** —— 正是本项目最忌讳的同构被打破，且极难排查。
 import type { StoreOps } from '../src/lib/storage/storeOps'
-import type { SidecarApi, SidecarSpec } from '../src/lib/storage/sidecar'
-import { withSidecar, extractSidecarRows, isSidecarStore, SIDECAR_WHOLE_KEY, collectSidecarForExport, registerSidecarApi } from '../src/lib/storage/sidecar'
+import type { SidecarApi, SidecarSpec, SidecarWholeCommitEntry, SidecarMultiWriteResult, SidecarVersionedRead } from '../src/lib/storage/sidecar'
+import { withSidecar, extractSidecarRows, isSidecarStore, SIDECAR_WHOLE_KEY, collectSidecarForExport, registerSidecarApi, SidecarUnsupportedError } from '../src/lib/storage/sidecar'
 // ③-b 只读源码做契约守卫（生产适配器在 app/desktop.ts，跑真身要起 Electron）
 import { readFileSync } from 'node:fs'
 
@@ -289,6 +289,360 @@ class FlakyApi extends MemApi {
   ok('③-b 缺文件（missing）走 undefined，不算错误', /if \(r\.missing\) return undefined/.test(apiBlock))
   ok('🔴 ③-b 读失败（!r.ok）必须抛，不许当"不存在"', /if \(!r\.ok\) throw new Error/.test(apiBlock))
   ok('③-b 列目录失败同样抛（否则整批被当成空）', /payloadList[\s\S]{0,120}throw new Error/.test(apiBlock))
+}
+
+// ============ ⑥ whole 布局：同页串行 + 跨窗口条件写合并 ============
+//
+// 现场：整表 store（向量 / 知识库）每次写都是「读整表 → 改内存 → 写整表」。
+// 两个标签同时改不同行时，后写的会静默覆盖先写的。修法是带版本条件写 + 冲突后重读重放。
+class CasMemApi implements SidecarApi {
+  files = new Map<string, unknown>()
+  writes = 0
+  /** 下一次条件写之前注入「另一个窗口的更新」 */
+  beforeConditionalWrite: (() => Promise<void> | void) | null = null
+  /** 模拟另一个窗口持续写入：条件写永远冲突 */
+  alwaysConflict = false
+  /** 下一次条件写传输中断（无法判断是否落盘） */
+  unknownNext = false
+
+  private revOf(store: string, id: string): string {
+    const key = `${store}/${id}`
+    return 'rev:' + (this.files.has(key) ? JSON.stringify(this.files.get(key)) : 'missing')
+  }
+  async read(store: string, id: string): Promise<unknown | undefined> {
+    return this.files.get(`${store}/${id}`)
+  }
+  async write(store: string, id: string, value: unknown): Promise<boolean> {
+    this.writes++
+    this.files.set(`${store}/${id}`, value)
+    return true
+  }
+  async remove(store: string, id: string): Promise<boolean> {
+    return this.files.delete(`${store}/${id}`)
+  }
+  async listIds(store: string): Promise<string[]> {
+    const p = store + '/'
+    return [...this.files.keys()].filter(k => k.startsWith(p)).map(k => k.slice(p.length))
+  }
+  async readVersioned(store: string, id: string) {
+    return { value: this.files.get(`${store}/${id}`), revision: this.revOf(store, id) }
+  }
+  async writeConditional(store: string, id: string, value: unknown, expected: string | null) {
+    this.writes++
+    const hook = this.beforeConditionalWrite
+    this.beforeConditionalWrite = null
+    if (hook) await hook()
+    if (this.unknownNext) {
+      this.unknownNext = false
+      return { ok: false, unknown: true }
+    }
+    if (this.alwaysConflict) return { ok: false, conflict: true, revision: this.revOf(store, id) }
+    const current = this.revOf(store, id)
+    if (expected !== null && expected !== current) return { ok: false, conflict: true, revision: current }
+    this.files.set(`${store}/${id}`, value)
+    return { ok: true, revision: this.revOf(store, id) }
+  }
+  /** 模拟另一个窗口直接落盘（绕过本页队列） */
+  externalWrite(rows: unknown[]) { this.files.set(`vecRows/${SIDECAR_WHOLE_KEY}`, rows) }
+}
+
+{
+  const api = new CasMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE, (m) => errs.push(m))
+  await Promise.all([
+    ops.put('vecRows', { id: 'a', projectId: 'p1' }),
+    ops.put('vecRows', { id: 'b', projectId: 'p1' }),
+  ])
+  const ids = (await ops.getAll<{ id: string }>('vecRows')).map(r => r.id).sort()
+  ok('⑥ 同页并发写不同行：最终都在（不丢写）', JSON.stringify(ids) === '["a","b"]', JSON.stringify(ids))
+  ok('⑥ 同页并发没有写失败告警', errs.length === 0, JSON.stringify(errs))
+}
+
+{
+  const api = new CasMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE, (m) => errs.push(m))
+  await ops.put('vecRows', { id: 'first', projectId: 'p1' })
+  // 本页读出快照之后、条件写之前，另一个窗口先落盘
+  // （真实窗口同样是「读当前整表 → 加自己的行 → 写回」，故它写入的内容里应已含 first）
+  api.beforeConditionalWrite = () => {
+    api.externalWrite([{ id: 'first', projectId: 'p1' }, { id: 'external', projectId: 'p1' }])
+  }
+  await ops.put('vecRows', { id: 'second', projectId: 'p1' })
+  const ids = (await ops.getAll<{ id: string }>('vecRows')).map(r => r.id).sort()
+  ok('🔴 ⑥ 读后另一窗口先写：冲突重读重放，两边修改都保留',
+    JSON.stringify(ids) === '["external","first","second"]', JSON.stringify(ids))
+  ok('⑥ 冲突确实触发重试（条件写 ≥ 2 次）', api.writes >= 2, String(api.writes))
+  ok('⑥ 成功合并后没有告警', errs.length === 0, JSON.stringify(errs))
+}
+
+{
+  const api = new CasMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE, (m) => errs.push(m))
+  await ops.put('vecRows', { id: 'base', projectId: 'p1' })
+  api.alwaysConflict = true
+  let threw = false
+  try { await ops.put('vecRows', { id: 'lost', projectId: 'p1' }) } catch { threw = true }
+  ok('⑥ 持续冲突时普通 put 不抛（StoreOps 契约不变）', !threw)
+  ok('🔴 ⑥ 持续冲突有可见告警（不谎报成功）', errs.some(m => m.includes('连续')), JSON.stringify(errs))
+  let strictThrew = false
+  try { await ops.putStrict('vecRows', { id: 'lost2', projectId: 'p1' }) } catch { strictThrew = true }
+  ok('🔴 ⑥ 持续冲突时 putStrict 抛错（严格写拿得到可判断结果）', strictThrew)
+}
+
+{
+  const api = new CasMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE, (m) => errs.push(m))
+  await ops.put('vecRows', { id: 'base2', projectId: 'p1' })
+  const writesBefore = api.writes
+  api.unknownNext = true
+  await ops.put('vecRows', { id: 'maybe', projectId: 'p1' })
+  ok('🔴 ⑥ 传输中断 ⇒ 明确「结果不明」，不盲目重试',
+    errs.some(m => m.includes('结果不明')), JSON.stringify(errs))
+  ok('⑥ 结果不明的写只尝试一次', api.writes - writesBefore === 1, String(api.writes - writesBefore))
+}
+
+{
+  const api = new CasMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE, (m) => errs.push(m))
+  api.externalWrite([{ id: 'same', projectId: 'p1', content: 'original' }])
+  api.beforeConditionalWrite = () => api.externalWrite([{ id: 'same', projectId: 'p1', content: 'newer' }])
+  try { await ops.put('vecRows', { id: 'same', projectId: 'p1', content: 'older draft' }) } catch { /* 冲突可抛出 */ }
+  const rows = await ops.getAll<{ content: string }>('vecRows')
+  ok('同一记录并发修改不得覆盖对方新内容', rows[0]?.content === 'newer' && errs.length > 0, JSON.stringify({ rows, errs }))
+  api.beforeConditionalWrite = () => api.externalWrite([{ id: 'same', projectId: 'p1', content: 'newest' }])
+  try { await ops.del('vecRows', 'same') } catch { /* 冲突可抛出 */ }
+  const afterDelete = await ops.getAll<{ content: string }>('vecRows')
+  ok('并发删除不得删除对方更新后的记录', afterDelete[0]?.content === 'newest', JSON.stringify(afterDelete))
+}
+
+{
+  const api = new CasMemApi()
+  const ops = withSidecar(new MemBase(), api, SPEC_WHOLE)
+  api.externalWrite([{ id: 'same', text: 'newer' }])
+  let refused = false
+  try { await ops.putIfAbsentStrict('vecRows', { id: 'same', text: 'older' }) } catch { refused = true }
+  const rows = await ops.getAll<{ text: string }>('vecRows')
+  ok('条件恢复拒绝覆盖已存在记录', refused && rows[0]?.text === 'newer')
+  api.externalWrite([])
+  api.beforeConditionalWrite = () => api.externalWrite([{ id: 'same', text: 'concurrent' }])
+  let raced = false
+  try { await ops.putIfAbsentStrict('vecRows', { id: 'same', text: 'restore' }) } catch { raced = true }
+  const final = await ops.getAll<{ text: string }>('vecRows')
+  ok('条件恢复期间出现并发记录时不覆盖', raced && final[0]?.text === 'concurrent')
+}
+
+// ============ ⑦ transactWhole：跨文件原子提交（kbDocs + kbBodies）============
+//
+// 现场：知识库删除/导入要同时改两个整表文件。两次独立条件写之间崩溃会留下孤儿。
+// 这里把客户端纪律钉死：一次 commitWhole 带双方前置版本；冲突重读重放但目标行被改过
+// 就拒绝覆盖；结果不明不重试；旧通道抛 SidecarUnsupportedError（业务层回退，不假装有事务）。
+const SPEC_KB: SidecarSpec = {
+  kbDocs: { layout: 'whole', keyField: 'id' },
+  kbBodies: { layout: 'whole', keyField: 'id' },
+}
+
+class TxnMemApi implements SidecarApi {
+  files = new Map<string, unknown>()
+  commits: SidecarWholeCommitEntry[][] = []
+  beforeCommit: (() => Promise<void> | void) | null = null
+  resultOverride: SidecarMultiWriteResult | null = null
+  alwaysConflict = false
+
+  private revOf(store: string, id: string): string {
+    const key = `${store}/${id}`
+    return 'rev:' + (this.files.has(key) ? JSON.stringify(this.files.get(key)) : 'missing')
+  }
+  async read(store: string, id: string): Promise<unknown | undefined> {
+    return this.files.get(`${store}/${id}`)
+  }
+  async write(store: string, id: string, value: unknown): Promise<boolean> {
+    this.files.set(`${store}/${id}`, value)
+    return true
+  }
+  async remove(store: string, id: string): Promise<boolean> {
+    return this.files.delete(`${store}/${id}`)
+  }
+  async listIds(store: string): Promise<string[]> {
+    const p = store + '/'
+    return [...this.files.keys()].filter(k => k.startsWith(p)).map(k => k.slice(p.length))
+  }
+  async readVersioned(store: string, id: string): Promise<SidecarVersionedRead> {
+    return { value: this.files.get(`${store}/${id}`), revision: this.revOf(store, id) }
+  }
+  async writeConditional(store: string, id: string, value: unknown, expected: string | null) {
+    const current = this.revOf(store, id)
+    if (expected !== null && expected !== current) return { ok: false, conflict: true, revision: current }
+    this.files.set(`${store}/${id}`, value)
+    return { ok: true, revision: this.revOf(store, id) }
+  }
+  async commitWhole(entries: SidecarWholeCommitEntry[]): Promise<SidecarMultiWriteResult> {
+    this.commits.push(entries.map(e => ({ ...e })))
+    const hook = this.beforeCommit
+    this.beforeCommit = null
+    if (hook) await hook()
+    if (this.resultOverride) { const r = this.resultOverride; this.resultOverride = null; return r }
+    if (this.alwaysConflict) return { ok: false, conflict: true }
+    for (const e of entries) {
+      if (e.expectedRevision !== null && e.expectedRevision !== this.revOf(e.store, SIDECAR_WHOLE_KEY)) {
+        return { ok: false, conflict: true }
+      }
+    }
+    const revisions: Record<string, string | null> = {}
+    for (const e of entries) {
+      this.files.set(`${e.store}/${SIDECAR_WHOLE_KEY}`, e.value)
+      revisions[e.store] = this.revOf(e.store, SIDECAR_WHOLE_KEY)
+    }
+    return { ok: true, revisions }
+  }
+}
+
+const addPair = (id: string) => (rows: Record<string, unknown[]>) => ({
+  kbDocs: [...rows.kbDocs, { id, projectId: 'p1' }],
+  kbBodies: [...rows.kbBodies, { id, text: 'body-' + id }],
+})
+const keysOf = (id: string) => ({ kbDocs: new Set([id]), kbBodies: new Set([id]) })
+const idsIn = (api: TxnMemApi, store: string) =>
+  ((api.files.get(`${store}/${SIDECAR_WHOLE_KEY}`) ?? []) as { id: string }[]).map(r => r.id).sort()
+
+{
+  const api = new TxnMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_KB, m => errs.push(m))
+  const beforeDocs = (await api.readVersioned('kbDocs', SIDECAR_WHOLE_KEY)).revision
+  const beforeBodies = (await api.readVersioned('kbBodies', SIDECAR_WHOLE_KEY)).revision
+  await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1'))
+  ok('⑦ 原子提交一次完成：两表都拿到新行', JSON.stringify(idsIn(api, 'kbDocs')) === '["d1"]' && JSON.stringify(idsIn(api, 'kbBodies')) === '["d1"]')
+  ok('🔴 ⑦ 只调用一次 commitWhole（不是两次独立条件写冒充）', api.commits.length === 1, String(api.commits.length))
+  const entries = api.commits[0]
+  ok('⑦ 提交按 store 排序（与服务端锁顺序一致）', entries[0].store === 'kbBodies' && entries[1].store === 'kbDocs')
+  ok('🔴 ⑦ 双方前置版本都带上（缺失文件也有版本）',
+    entries[0].expectedRevision === beforeBodies && entries[1].expectedRevision === beforeDocs)
+  ok('⑦ 成功提交没有告警', errs.length === 0, JSON.stringify(errs))
+}
+
+{
+  // 旧通道：没有 commitWhole ⇒ 类型化错误，业务层据此回退旧路径
+  const api = new CasMemApi()
+  const ops = withSidecar(new MemBase(), api, SPEC_KB)
+  let unsupported = false
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { unsupported = e instanceof SidecarUnsupportedError }
+  ok('🔴 ⑦ 通道无 commitWhole ⇒ SidecarUnsupportedError（不假装有事务）', unsupported)
+}
+
+{
+  const api = new TxnMemApi()
+  const ops = withSidecar(new MemBase(), api, SPEC_KB)
+  api.resultOverride = { ok: false, unsupported: true }
+  let unsupported = false
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { unsupported = e instanceof SidecarUnsupportedError }
+  ok('⑦ 服务端答复 unsupported ⇒ 同样抛类型化错误', unsupported)
+}
+
+{
+  const api = new TxnMemApi()
+  api.readVersioned = async (store, id) => ({ value: await api.read(store, id), revision: null })
+  const ops = withSidecar(new MemBase(), api, SPEC_KB)
+  let unsupported = false
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { unsupported = e instanceof SidecarUnsupportedError }
+  ok('🔴 ⑦ 快照缺版本 ⇒ 拒绝提交（不能裸写两个文件）', unsupported && api.commits.length === 0)
+}
+
+{
+  const api = new TxnMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_KB, m => errs.push(m))
+  // 首次提交前另一窗口先落盘（改的是别的行）⇒ 冲突后重读重放，双方都保留
+  api.beforeCommit = () => { api.files.set(`kbDocs/${SIDECAR_WHOLE_KEY}`, [{ id: 'external', projectId: 'p1' }]) }
+  await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1'))
+  ok('🔴 ⑦ 冲突重读重放：另一窗口的行与本次的行都在',
+    JSON.stringify(idsIn(api, 'kbDocs')) === '["d1","external"]' && JSON.stringify(idsIn(api, 'kbBodies')) === '["d1"]',
+    JSON.stringify(idsIn(api, 'kbDocs')))
+  ok('⑦ 确实重试了一次提交', api.commits.length === 2, String(api.commits.length))
+  ok('⑦ 合并成功没有告警', errs.length === 0, JSON.stringify(errs))
+}
+
+{
+  const api = new TxnMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_KB, m => errs.push(m))
+  api.files.set(`kbDocs/${SIDECAR_WHOLE_KEY}`, [{ id: 'd1', projectId: 'p1', content: 'original' }])
+  api.files.set(`kbBodies/${SIDECAR_WHOLE_KEY}`, [{ id: 'd1', text: 'original-body' }])
+  api.beforeCommit = () => { api.files.set(`kbDocs/${SIDECAR_WHOLE_KEY}`, [{ id: 'd1', projectId: 'p1', content: 'newer' }]) }
+  let threw = false
+  try {
+    await ops.transactWhole(['kbDocs', 'kbBodies'], rows => ({
+      kbDocs: rows.kbDocs.map(r => (r as { id: string }).id === 'd1' ? { ...(r as Record<string, unknown>), content: 'my draft' } : r),
+      kbBodies: rows.kbBodies,
+    }), keysOf('d1'))
+  } catch { threw = true }
+  const docs = api.files.get(`kbDocs/${SIDECAR_WHOLE_KEY}`) as { content: string }[]
+  ok('🔴 ⑦ 目标行已被其他窗口修改 ⇒ 拒绝覆盖并抛错', threw && docs[0].content === 'newer', JSON.stringify(docs))
+  ok('⑦ 拒绝覆盖有可见告警', errs.some(m => m.includes('其他窗口')), JSON.stringify(errs))
+}
+
+{
+  const api = new TxnMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_KB, m => errs.push(m))
+  api.resultOverride = { ok: false, unknown: true }
+  let msg = ''
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { msg = e instanceof Error ? e.message : String(e) }
+  ok('🔴 ⑦ 结果不明 ⇒ 抛错且只尝试一次（不盲目重放）', api.commits.length === 1 && msg.includes('结果不明'), msg)
+  ok('⑦ 结果不明有告警', errs.length > 0)
+}
+
+{
+  const api = new TxnMemApi()
+  const ops = withSidecar(new MemBase(), api, SPEC_KB)
+  api.resultOverride = { ok: false }
+  let msg = ''
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { msg = e instanceof Error ? e.message : String(e) }
+  ok('⑦ 服务端保留日志的中断 ⇒ 抛错并说明会自动恢复', msg.includes('恢复日志'), msg)
+}
+
+{
+  const api = new TxnMemApi()
+  const ops = withSidecar(new MemBase(), api, SPEC_KB)
+  api.alwaysConflict = true
+  let msg = ''
+  try { await ops.transactWhole(['kbDocs', 'kbBodies'], addPair('d1'), keysOf('d1')) }
+  catch (e) { msg = e instanceof Error ? e.message : String(e) }
+  ok('🔴 ⑦ 持续冲突 ⇒ 有限重试后失败关闭（不无限卡死）', api.commits.length === 12 && msg.includes('连续'), `${api.commits.length} ${msg}`)
+}
+
+{
+  const api = new TxnMemApi()
+  const ops = withSidecar(new MemBase(), api, { ...SPEC_KB, backupPayloads: { layout: 'per-id', keyField: 'id' } })
+  let single = false, perId = false, unknownStore = false
+  try { await ops.transactWhole(['kbDocs'], addPair('d1'), keysOf('d1')) } catch { single = true }
+  try { await ops.transactWhole(['kbDocs', 'backupPayloads'], addPair('d1'), keysOf('d1')) } catch { perId = true }
+  try { await ops.transactWhole(['kbDocs', 'vecRows'], addPair('d1'), keysOf('d1')) } catch { unknownStore = true }
+  ok('⑦ 参数校验：单 store / per-id / 未外置 store 都拒绝', single && perId && unknownStore)
+  ok('⑦ 校验失败不发起任何提交', api.commits.length === 0)
+}
+
+{
+  // 同页互斥：单表写与跨表事务并发，最终两边修改都在（共享串行队列）
+  const api = new TxnMemApi()
+  const errs: string[] = []
+  const ops = withSidecar(new MemBase(), api, SPEC_KB, m => errs.push(m))
+  await Promise.all([
+    ops.put('kbDocs', { id: 'single', projectId: 'p1' }),
+    ops.transactWhole(['kbDocs', 'kbBodies'], addPair('txn'), keysOf('txn')),
+  ])
+  ok('🔴 ⑦ 同页单表写与跨表事务并发：两边修改都在',
+    JSON.stringify(idsIn(api, 'kbDocs')) === '["single","txn"]', JSON.stringify(idsIn(api, 'kbDocs')))
+  ok('⑦ 并发互斥没有告警', errs.length === 0, JSON.stringify(errs))
 }
 
 console.log(`\nsidecar: ${pass} passed, ${fail} failed`)

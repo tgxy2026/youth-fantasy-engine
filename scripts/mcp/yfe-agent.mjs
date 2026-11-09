@@ -24,7 +24,7 @@ import readline from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { randomBytes } from 'node:crypto'
 
-export const BRIDGE_VERSION = '0.1.0'
+export const BRIDGE_VERSION = '0.1.1'
 export const HOST_FILE_NAME = 'agent-host.json'
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18']
 // 未识别客户端版本时返回本服务支持的最新版本，由客户端决定是否接受。
@@ -61,13 +61,24 @@ export function resolveHostFile(args) {
   return path.join(desktopUserDataDir(), HOST_FILE_NAME)
 }
 
+/**
+ * 宿主级失败的统一信封：第三方客户端可直接按 code 分支，不必解析文案。
+ * 工具级失败（引擎把失败包在 {ok:true,result} 里）仍原样透传，不受影响。
+ */
+function hostFailure(code, error, extra) {
+  const failure = { ok: false, code, error, ...(extra || {}) }
+  const err = new Error(error)
+  err.failure = failure
+  return err
+}
+
 function loadHost(file) {
   let raw
   try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) } catch {
-    throw new Error(`找不到 Agent 宿主配置：${file}。请先在青春幻想引擎「模型设置 → Agent 连接」中开启连接（桌面版需要引擎正在运行）。`)
+    throw hostFailure('HOST_CONFIG_MISSING', `找不到 Agent 宿主配置：${file}。请先在青春幻想引擎「模型设置 → Agent 连接」中开启连接（桌面版需要引擎正在运行）。`)
   }
   if (!raw || typeof raw !== 'object' || typeof raw.token !== 'string' || raw.token.length < 32 || !Number.isInteger(raw.port) || raw.port <= 0) {
-    throw new Error('Agent 宿主配置不完整（缺少 port / token）。请在引擎中重新开启 Agent 连接。')
+    throw hostFailure('HOST_CONFIG_INCOMPLETE', 'Agent 宿主配置不完整（缺少 port / token）。请在引擎中重新开启 Agent 连接。')
   }
   return raw
 }
@@ -92,14 +103,14 @@ async function callHost(host, tool, args, requestId) {
       signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
     })
   } catch (error) {
-    throw new Error(`连不上引擎宿主（127.0.0.1:${host.port}）：${error && error.message ? error.message : String(error)}。请确认青春幻想引擎正在运行且已开启 Agent 连接。`)
+    throw hostFailure('HOST_UNREACHABLE', `连不上引擎宿主（127.0.0.1:${host.port}）：${error && error.message ? error.message : String(error)}。请确认青春幻想引擎正在运行且已开启 Agent 连接。`)
   }
   let body
   try { body = await res.json() } catch {
-    throw new Error(`宿主返回了非 JSON 响应（HTTP ${res.status}）`)
+    throw hostFailure('HOST_BAD_RESPONSE', `宿主返回了非 JSON 响应（HTTP ${res.status}）`)
   }
   if (!res.ok && body && body.code === 'UNAUTHORIZED') {
-    throw new Error('宿主拒绝了连接 token（可能引擎已重新生成配置）。请在引擎中重新开启 Agent 连接并更新配置。')
+    throw hostFailure('HOST_UNAUTHORIZED', '宿主拒绝了连接 token（可能引擎已重新生成配置）。请在引擎中重新开启 Agent 连接并更新配置。')
   }
   return body
 }
@@ -112,9 +123,12 @@ async function requestStatus(host, requestId) {
       signal: AbortSignal.timeout(15_000),
     })
   } catch (error) {
-    throw new Error(`连不上引擎宿主：${error && error.message ? error.message : String(error)}`)
+    throw hostFailure('HOST_UNREACHABLE', `连不上引擎宿主：${error && error.message ? error.message : String(error)}`)
   }
-  const body = await res.json()
+  let body
+  try { body = await res.json() } catch {
+    throw hostFailure('HOST_BAD_RESPONSE', `宿主返回了非 JSON 响应（HTTP ${res.status}）`)
+  }
   if (body && body.request && body.request.state === 'unknown') {
     return { ...body, actionRequired: '上一次写入结果不明：请先在引擎中核对，不要复用同一 requestId 重复写入。' }
   }
@@ -180,15 +194,15 @@ const WRITE_TOOLS = [
   },
   {
     name: 'yfe_update_volume',
-    description: '修改分卷标题或描述；expectedTitle 必须是读取时的旧标题（版本条件）。自由卷不支持。',
-    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, volumeId: { type: 'string' }, expectedTitle: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'volumeId', 'expectedTitle', 'requestId'], additionalProperties: false },
+    description: '修改分卷标题或描述；先用 yfe_get_project 读取旧标题和描述，修改描述时必须提供 expectedDescription。自由卷不支持。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, volumeId: { type: 'string' }, expectedTitle: { type: 'string' }, expectedDescription: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'volumeId', 'expectedTitle', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'volume:write',
   },
   {
     name: 'yfe_delete_chapter',
     description: '把章节移入回收站（可恢复），同时清理该章快照与台账；正在编辑器中打开的章、或有未保存草稿时拒绝。',
-    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'requestId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     action: 'chapter:delete',
   },
@@ -198,6 +212,139 @@ const WRITE_TOOLS = [
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, text: { type: 'string' }, chapterId: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'text', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'inspiration:write',
+  },
+  {
+    name: 'yfe_update_inspiration',
+    description: '修改一条灵感；先用 yfe_list_inspirations 读取旧文本并作为 expectedText。需要灵感写入授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, inspirationId: { type: 'string' }, text: { type: 'string' }, expectedText: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'inspirationId', 'text', 'expectedText', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'inspiration:write',
+  },
+  {
+    name: 'yfe_delete_inspiration',
+    description: '删除一条灵感；需 expectedText 与 confirm:true。需要灵感写入授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, inspirationId: { type: 'string' }, expectedText: { type: 'string' }, confirm: { const: true }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'inspirationId', 'expectedText', 'confirm', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    action: 'inspiration:write',
+  },
+  {
+    name: 'yfe_save_check_report',
+    description: '把外部 Agent 的结构化检查发现写入引擎检查报告，作者可在「创作轨迹 → 检查报告」回看并加入工单。findings.level 只能是「严重 / 中等 / 提示」；没有发现问题时不要落报告。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, checkId: { type: 'string' }, chapterId: { type: 'string' }, chapterNo: { type: 'integer', minimum: 0 }, chapterTitle: { type: 'string' }, summary: { type: 'string' }, findings: { type: 'array', minItems: 1, maxItems: 200, items: { type: 'object', properties: { level: { type: 'string', enum: ['严重', '中等', '提示'] }, title: { type: 'string' }, detail: { type: 'string' }, where: { type: 'string' } }, required: ['level', 'title'], additionalProperties: false } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'checkId', 'findings', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'report:write',
+  },
+  {
+    name: 'yfe_start_agent_task',
+    description: '登记一个跨多次调用的外部 Agent 任务（如全书审读、逐章改写），任务台账会持久化到项目，断开重连后可用 yfe_list_agent_tasks 找回 taskId。需要「登记外部 Agent 任务进度」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, title: { type: 'string', maxLength: 200 }, kind: { type: 'string', maxLength: 80 }, note: { type: 'string', maxLength: 2000 }, totalSteps: { type: 'integer', minimum: 1, maximum: 10000 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'title', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'task:write',
+  },
+  {
+    name: 'yfe_update_agent_task',
+    description: '更新任务进度 / 当前步骤 / 备注，或置为 paused。先读取 expectedUpdatedAt；已结束的任务不能再更新。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, taskId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, status: { type: 'string', enum: ['running', 'paused'] }, progress: { type: 'integer', minimum: 0, maximum: 100 }, currentStep: { type: 'integer', minimum: 0, maximum: 1000000 }, note: { type: 'string', maxLength: 2000 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'taskId', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'task:write',
+  },
+  {
+    name: 'yfe_finish_agent_task',
+    description: '结束任务（done / cancelled / failed）并写入简短总结。done 会把进度置为 100。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, taskId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, status: { type: 'string', enum: ['done', 'cancelled', 'failed'] }, summary: { type: 'string', maxLength: 4000 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'taskId', 'expectedUpdatedAt', 'status', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'task:write',
+  },
+  {
+    name: 'yfe_cancel_agent_task',
+    description: '登记协作式取消请求。引擎无法终止外部 Agent 进程：Agent 需在下一步读取任务状态并自行停止，然后调用 yfe_finish_agent_task 置为 cancelled。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, taskId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'taskId', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'task:write',
+  },
+  {
+    name: 'yfe_restore_chapter',
+    description: '从回收站恢复章节（原卷不在时放入「已恢复章节」卷并重建章节台账）；可用 yfe_list_chapter_trash 取得 id 与 deletedAt。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, expectedDeletedAt: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'chapter:restore',
+  },
+  {
+    name: 'yfe_create_map',
+    description: '在当前项目创建一张地图（名称唯一、自动编号）。需要「创建地图 / 地点」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, kilometersPerCell: { type: 'string', enum: ['1', '10'] }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'name', 'kilometersPerCell', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'map:create',
+  },
+  {
+    name: 'yfe_update_map',
+    description: '修改地图名称 / 每格公里 / 说明；改名会级联更新《地理风物》的「所属地图」。先读取 expectedName 与 expectedUpdatedAt。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, mapId: { type: 'string' }, expectedName: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, name: { type: 'string' }, description: { type: 'string' }, kilometersPerCell: { type: 'string', enum: ['1', '10'] }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'mapId', 'expectedName', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'map:write',
+  },
+  {
+    name: 'yfe_delete_map',
+    description: '删除地图；仍有《地理风物》引用时拒绝并返回引用清单。需要 confirm:true、读取时的 expectedUpdatedAt 与「删除地图」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, mapId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, confirm: { const: true }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'mapId', 'expectedUpdatedAt', 'confirm', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    action: 'map:delete',
+  },
+  {
+    name: 'yfe_create_map_place',
+    description: '在指定地图下创建《地理风物》条目（格子初始为空）。父级必须同属该地图。需要「创建地图 / 地点」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, mapId: { type: 'string' }, name: { type: 'string' }, category: { type: 'string' }, parent: { type: 'string' }, description: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'mapId', 'name', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'map:create',
+  },
+  {
+    name: 'yfe_update_map_place_cells',
+    description: '增量涂 / 擦地图格子。先由 yfe_list_map_places 取得 cellsHash 与 updatedAt；格子格式 "x,y"。会校验祖先范围、无祖先关系的重叠与子孙占用。需要「修改地图 / 绘制格子」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, placeId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, expectedCellsHash: { type: 'string' }, add: { type: 'array', maxItems: 20000, items: { type: 'string' } }, remove: { type: 'array', maxItems: 20000, items: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'placeId', 'expectedUpdatedAt', 'expectedCellsHash', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'map:write',
+  },
+  {
+    name: 'yfe_create_plot_card',
+    description: '在情节画布创建一张卡；必须携带 yfe_read_plot_canvas 返回的 expectedFingerprint。需要「修改情节画布」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'expectedFingerprint', 'text', 'x', 'y', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'canvas:write',
+  },
+  {
+    name: 'yfe_update_plot_card',
+    description: '修改情节卡的文字 / 类型 / 章节引用 / 坐标；需 expectedFingerprint 与「修改情节画布」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, cardId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'cardId', 'expectedFingerprint', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'canvas:write',
+  },
+  {
+    name: 'yfe_delete_plot_card',
+    description: '删除情节卡及与之相关的全部连线；需 expectedFingerprint 与「修改情节画布」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, cardId: { type: 'string' }, expectedFingerprint: { type: 'string' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'cardId', 'expectedFingerprint', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    action: 'canvas:write',
+  },
+  {
+    name: 'yfe_update_plot_connections',
+    description: '增加 / 移除情节卡连线；add / remove 为 [from,to] 数组，两端必须是既有卡片。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, expectedFingerprint: { type: 'string' }, add: { type: 'array', maxItems: 2000, items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'string' } } }, remove: { type: 'array', maxItems: 2000, items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'string' } } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'expectedFingerprint', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    action: 'canvas:write',
+  },
+  {
+    name: 'yfe_import_world_pack',
+    description: '把世界包某一版引入当前项目（快照复制、覆盖对应表）。必须先用 yfe_preview_world_import 并回传 requiredTabs、fingerprint 和 projectUpdatedAt，再传 confirm:true。失败时尝试安全回滚，结果不明时须人工核对。需要「引入世界包」授权；跨项目来源还需来源项目的「读取其它项目的世界包」。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, worldId: { type: 'string' }, version: { type: 'integer', minimum: 0 }, expectedTabs: { type: 'array', items: { type: 'string' } }, expectedFingerprint: { type: 'string', minLength: 1, maxLength: 200 }, expectedProjectUpdatedAt: { type: 'integer', minimum: 0 }, confirm: { const: true }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'worldId', 'expectedTabs', 'expectedFingerprint', 'expectedProjectUpdatedAt', 'confirm', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    action: 'world:write',
+  },
+  {
+    name: 'yfe_restore_project_backup',
+    description: '把某份备份恢复到当前项目（覆盖卷 / 章 / 表 / 卡 / 表单）。必须先用 yfe_preview_backup_restore 并回传 projectUpdatedAt，再传 confirm:true。引擎会先创建并校验安全备份；恢复后需要重新打开项目。需要「恢复项目备份」授权。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, backupId: { type: 'string' }, expectedProjectUpdatedAt: { type: 'integer', minimum: 0 }, confirm: { const: true }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'backupId', 'expectedProjectUpdatedAt', 'confirm', 'requestId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    action: 'backup:restore',
   },
   {
     name: 'yfe_create_volume',
@@ -325,6 +472,18 @@ const READ_TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: 'yfe_check_chapter_words',
+    description: '使用引擎内置及项目自定义词库检查已保存章节，返回命中及上下文，仅供人工核对；不调用模型、不修改正文。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' } }, required: ['projectId', 'chapterId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_check_chapter_typos',
+    description: '使用引擎内置词典检查已保存章节中的常见错别字，提供上下文和候选写法供人工核对；不调用模型、不修改正文。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' } }, required: ['projectId', 'chapterId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: 'yfe_list_setting_tabs',
     description: '列出可创建设定的栏目、每个栏目的字段（字段名 / 全路径 / 说明）与当前是否可写。',
     inputSchema: {
@@ -449,6 +608,48 @@ const READ_TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: 'yfe_preview_world_import',
+    description: '预览把世界包引入当前项目会影响哪些表、当前各有多少内容；不写入。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, worldId: { type: 'string' }, version: { type: 'integer', minimum: 0 } }, required: ['projectId', 'worldId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_preview_backup_restore',
+    description: '预览某份备份恢复后的内容摘要与当前项目摘要；不写入。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, backupId: { type: 'string' } }, required: ['projectId', 'backupId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_check_reports',
+    description: '列出当前项目的检查报告摘要（引擎自身和外部 Agent 落库的报告）。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_read_check_report',
+    description: '读取一份检查报告的结构化发现（级别 / 标题 / 原文位置 / 说明）。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, reportId: { type: 'string' } }, required: ['projectId', 'reportId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_chapter_trash',
+    description: '分页列出当前项目回收站中的章节（可恢复）；返回删除时间与所属卷。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_list_agent_tasks',
+    description: '列出当前项目的外部 Agent 任务台账（按更新时间倒序），用于断线重连后恢复进度。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['projectId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'yfe_get_agent_task',
+    description: '读取单条外部 Agent 任务（含完整总结与取消请求标记）。',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, taskId: { type: 'string' } }, required: ['projectId', 'taskId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: 'yfe_request_status',
     description: '按 requestId 查询之前那次写入的状态（pending / success / failed / unknown）。unknown = 结果不明，必须在引擎中核对后才能继续。',
     inputSchema: {
@@ -490,21 +691,24 @@ async function invoke(name, args, hostFile = HOST_FILE) {
   }
   if (name === 'yfe_request_status') {
     const requestId = args?.requestId
-    if (!REQUEST_ID_RE.test(String(requestId ?? ''))) throw new Error('参数 requestId 不合法（8~64 位字母 / 数字 / 下划线 / 短横线）')
+    if (!REQUEST_ID_RE.test(String(requestId ?? ''))) throw hostFailure('INVALID_ARGUMENT', '参数 requestId 不合法（8~64 位字母 / 数字 / 下划线 / 短横线）')
     return requestStatus(host, requestId)
   }
   const tool = BRIDGE_TOOLS.find(t => t.name === name)
-  if (!tool) throw new Error(`未知工具：${name}`)
+  if (!tool) throw hostFailure('UNKNOWN_TOOL', `未知工具：${name}`)
   let requestId = typeof args?.requestId === 'string' ? args.requestId : ''
   if (tool.action) {
-    if (!REQUEST_ID_RE.test(requestId)) throw new Error('写工具必须提供合法 requestId（8~64 位字母 / 数字 / 下划线 / 短横线）')
+    if (!REQUEST_ID_RE.test(requestId)) throw hostFailure('INVALID_ARGUMENT', '写工具必须提供合法 requestId（8~64 位字母 / 数字 / 下划线 / 短横线）')
   } else {
     requestId = generatedRequestId()
   }
   const cleaned = { ...args }
   if (tool.action) delete cleaned.requestId
   const body = await callHost(host, name, cleaned, requestId)
-  if (body && body.ok === false) throw new Error(body.error || body.code || '宿主拒绝了本次调用')
+  if (body && body.ok === false) {
+    const { ok, ...rest } = body
+    throw hostFailure(body.code || 'HOST_ERROR', body.error || body.code || '宿主拒绝了本次调用', rest)
+  }
   if (body && body.replayed) {
     return { ...(body.result ?? {}), replayed: true, requestId }
   }
@@ -537,14 +741,15 @@ async function handle(msg) {
     const name = params?.name
     const tool = BRIDGE_TOOLS.find(t => t.name === name)
     if (!tool) {
-      reply(id, { content: [{ type: 'text', text: `未知工具：${name}` }], isError: true })
+      reply(id, { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'UNKNOWN_TOOL', error: `未知工具：${name}` }, null, 2) }], isError: true })
       return
     }
     try {
       const result = await invoke(name, params?.arguments || {})
       reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], ...(result?.ok === false ? { isError: true } : {}) })
     } catch (error) {
-      reply(id, { content: [{ type: 'text', text: (error && error.message) || String(error) }], isError: true })
+      const text = error && error.failure ? JSON.stringify(error.failure, null, 2) : ((error && error.message) || String(error))
+      reply(id, { content: [{ type: 'text', text }], isError: true })
     }
     return
   }

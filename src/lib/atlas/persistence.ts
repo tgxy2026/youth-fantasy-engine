@@ -14,6 +14,7 @@ import { getSettingFor, setSettingFor } from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { beginRecordOperation } from '@/lib/storage/recordOperation'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { emptyAtlasSchema } from './schema'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from './types'
 import { withAtlasSchemaLock } from './schemaLock'
@@ -90,9 +91,9 @@ export interface LoadedAtlasSchema {
 }
 
 /** 读取某项目的某个页签配置。永远返回一份可用的配置，不抛异常 */
-export async function loadAtlasSchema(projectId: string, tabId: AtlasTabId): Promise<LoadedAtlasSchema> {
+export async function loadAtlasSchema(projectId: string, tabId: AtlasTabId, owner?: OwnedOperation): Promise<LoadedAtlasSchema> {
   try {
-    const raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null)
+    const raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null, owner)
     if (raw == null) return { config: emptyAtlasSchema(), newerFormat: false }
     const ver = (raw as Record<string, unknown>).formatVersion
     if (typeof ver === 'number' && ver > ATLAS_FORMAT_VERSION) {
@@ -168,6 +169,7 @@ export async function saveAtlasSchema(
   projectId: string,
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
+  operationOwner?: OwnedOperation,
 ): Promise<AtlasSchemaConfig> {
   /**
    * 3.3.3 · B-07：**同源多窗口**下把「重读 revision → 比对 → 写」串成一段。
@@ -177,7 +179,7 @@ export async function saveAtlasSchema(
    * 这里用与任务台账同源的 Web Locks 把临界区收进来；没有锁的环境（`window` 未定义 / 老浏览器）
    * 保持原行为（单窗口桌面/便携文件后端本来就没有第二个窗口）。
    */
-  return withAtlasSchemaLock(projectId, tabId, () => saveAtlasSchemaInsideLock(projectId, tabId, config))
+  return withAtlasSchemaLock(projectId, tabId, () => saveAtlasSchemaInsideLock(projectId, tabId, config, operationOwner))
 }
 
 /**
@@ -188,16 +190,18 @@ export async function saveAtlasSchemaInsideLock(
   projectId: string,
   tabId: AtlasTabId,
   config: AtlasSchemaConfig,
+  operationOwner?: OwnedOperation,
 ): Promise<AtlasSchemaConfig> {
   const owner = beginRecordOperation(projectId, captureStorageWriteOwner(projectId).current)
   let raw: unknown = null
   try {
-    raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null)
+    raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null, operationOwner)
   } catch (e) {
     throw new Error(`字段配置读取失败，已拒绝修改：${e instanceof Error ? e.message : String(e)}`)
   }
   const check = checkAtlasWritable(raw)
   owner.assertCurrent()
+  operationOwner?.assertCurrent()
   if (!check.allow) throw new Error(check.reason ?? '字段配置已锁定为只读，拒绝修改')
   const storedRevision = raw && typeof raw === 'object' && typeof (raw as { revision?: unknown }).revision === 'number'
     ? (raw as { revision: number }).revision : 0
@@ -207,8 +211,9 @@ export async function saveAtlasSchemaInsideLock(
     formatVersion: ATLAS_FORMAT_VERSION,
     revision: config.revision + 1,
   }
-  await setSettingFor(projectId, atlasSchemaKey(tabId), next)
+  await setSettingFor(projectId, atlasSchemaKey(tabId), next, operationOwner)
   owner.assertCurrent()
+  operationOwner?.assertCurrent()
   return next
 }
 

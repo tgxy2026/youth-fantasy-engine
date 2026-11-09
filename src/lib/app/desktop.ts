@@ -1080,6 +1080,17 @@ const sidecarProxy: SidecarApi = {
   write: (s, i, v) => activeSidecarApi.write(s, i, v),
   remove: (s, i) => activeSidecarApi.remove(s, i),
   listIds: (s) => activeSidecarApi.listIds(s),
+  /**
+   * 版本能力必须经代理转发（与 fileBackend 同构）：桌面目前只外置 per-id 的备份载荷，
+   * 不走整表条件写；但若将来把整表 store 也外置，漏转发会让 CAS 静默退化为无条件写。
+   * 旧实现没有版本能力时给 null / 普通写，不伪造版本。
+   */
+  readVersioned: (s, i) => activeSidecarApi.readVersioned
+    ? activeSidecarApi.readVersioned(s, i)
+    : activeSidecarApi.read(s, i).then(value => ({ value, revision: null })),
+  writeConditional: (s, i, v, expected) => activeSidecarApi.writeConditional
+    ? activeSidecarApi.writeConditional(s, i, v, expected)
+    : activeSidecarApi.write(s, i, v).then(ok => ({ ok })),
 }
 
 /** 原生的（未外置）桌面存储原语实现（内存数据 + 防抖写回本地数据文件） */

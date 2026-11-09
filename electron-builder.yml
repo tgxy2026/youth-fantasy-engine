@@ -24,6 +24,10 @@ extraResources:
     to: scripts/mcp/yfe-agent.mjs
   - from: scripts/agent-host
     to: scripts/agent-host
+  - from: docs/3.4.3-MCP第三方开发者适配规范.md
+    to: docs/3.4.3-MCP第三方开发者适配规范.md
+  - from: docs/3.4.3-API与Agent互斥模式设计.md
+    to: docs/3.4.3-API与Agent互斥模式设计.md
 
 asar: true
 

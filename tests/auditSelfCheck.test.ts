@@ -124,5 +124,36 @@ ok('自检失败写入 blocked 诊断', /!selfCheck\.ok\)[\s\S]{0,160}diagnostic
 ok('报告写入 appVersion 与 toolFingerprint', /appVersion:\s*selfCheck\.appVersion/.test(runSrc) && /toolFingerprint:\s*selfCheck\.toolFingerprint/.test(runSrc))
 ok('自检复用同一次 scanAst 结果', /auditSelfCheck\(root, \{ staticResult \}\)/.test(runSrc))
 
+// 构建备份不能充当源码引用；真实源码引用仍必须计数。
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yfe-dead-backup-'))
+  fs.mkdirSync(path.join(tmp, 'src'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'dist_bak_fixture'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, '.workbuddy/tmp'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'src', 'fixture.ts'), 'export function backupOnlySymbol() {}\nexport function liveSymbol() {}\n')
+  fs.writeFileSync(path.join(tmp, 'src', 'consumer.ts'), 'liveSymbol()\n')
+  fs.writeFileSync(path.join(tmp, 'dist_bak_fixture', 'old.js'), 'backupOnlySymbol()\n')
+  const result = await new Promise<{ code: number | null; out: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(process.cwd(), 'scripts/audit/legacy/audit-dead.mjs'), tmp])
+    let out = ''
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr?.on('data', (d: Buffer) => { out += d.toString() })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, out }))
+  })
+  const dead = result.out.split('## B.')[0]
+  ok('构建备份不掩盖零引用，真实引用仍被统计', result.code === 0 && dead.includes('backupOnlySymbol') && !dead.includes('liveSymbol'), result.out.slice(0, 500))
+  const scan = await new Promise<{ code: number | null; out: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(process.cwd(), 'scripts/audit/legacy/audit-scan.mjs'), tmp])
+    let out = ''
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr?.on('data', (d: Buffer) => { out += d.toString() })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, out }))
+  })
+  const scanDead = (scan.out.split('## 1.')[1] ?? '').split('## 2.')[0]
+  ok('综合扫描同样排除构建备份引用', scan.code === 0 && scanDead.includes('backupOnlySymbol') && !scanDead.includes('liveSymbol'), scan.out.slice(0, 500))
+}
+
 console.log(`\n—— auditSelfCheck 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

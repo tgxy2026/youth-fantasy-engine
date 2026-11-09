@@ -22,6 +22,7 @@
 
 import { openDB, type IDBPDatabase } from 'idb'
 import { idbDbExists, idbDeleteDatabase } from '@/lib/storage/idbMigrateUtil'
+import { SidecarUnsupportedError } from '@/lib/storage/sidecar'
 import { uid } from '@/lib/app/id'
 import { tokenize } from '@/lib/editor/tokenize'
 import { chunkChapter } from '@/lib/semantic/chunk'
@@ -73,6 +74,11 @@ export interface KbBackend {
   getBody(id: string): Promise<string>
   putBody(id: string, text: string): Promise<void>
   delBody(id: string): Promise<void>
+  /** 后端能同时提交两张表时使用同一个事务；其余后端保留原有失败语义。 */
+  deleteDocAndBody?(id: string): Promise<void>
+  /** 元数据与正文一次提交；通道不支持时抛 SidecarUnsupportedError，调用方回退分步写。 */
+  putDocAndBody?(doc: KbDoc, text: string): Promise<void>
+  restoreDocIfAbsent?(doc: KbDoc): Promise<void>
   clearProject(projectId: string): Promise<void>
 }
 
@@ -112,12 +118,43 @@ const idbKbBackend: KbBackend = {
   },
   putBody: async (id, text) => { await (await getKbDB()).put(STORE_BODIES, { id, text }) },
   delBody: async id => { await (await getKbDB()).delete(STORE_BODIES, id) },
+  deleteDocAndBody: async id => {
+    const db = await getKbDB()
+    const tx = db.transaction([STORE_DOCS, STORE_BODIES], 'readwrite')
+    try {
+      await Promise.all([tx.objectStore(STORE_DOCS).delete(id), tx.objectStore(STORE_BODIES).delete(id), tx.done])
+    } catch (error) {
+      try { tx.abort() } catch { /* 事务可能已自动中止 */ }
+      await tx.done.catch(() => undefined)
+      throw error
+    }
+  },
+  putDocAndBody: async (doc, text) => {
+    const db = await getKbDB()
+    const tx = db.transaction([STORE_DOCS, STORE_BODIES], 'readwrite')
+    try {
+      await Promise.all([tx.objectStore(STORE_DOCS).put(doc), tx.objectStore(STORE_BODIES).put({ id: doc.id, text }), tx.done])
+    } catch (error) {
+      try { tx.abort() } catch { /* 事务可能已自动中止 */ }
+      await tx.done.catch(() => undefined)
+      throw error
+    }
+  },
   clearProject: async projectId => {
     const db = await getKbDB()
     const ids = (await idbList(projectId)).map(d => d.id)
-    for (const id of ids) {
-      await db.delete(STORE_DOCS, id)
-      await db.delete(STORE_BODIES, id)
+    if (!ids.length) return
+    const tx = db.transaction([STORE_DOCS, STORE_BODIES], 'readwrite')
+    try {
+      for (const id of ids) {
+        await tx.objectStore(STORE_DOCS).delete(id)
+        await tx.objectStore(STORE_BODIES).delete(id)
+      }
+      await tx.done
+    } catch (error) {
+      try { tx.abort() } catch { /* 事务可能已自动中止 */ }
+      await tx.done.catch(() => undefined)
+      throw error
     }
   },
 }
@@ -193,6 +230,39 @@ export async function kbStats(projectId: string): Promise<KbStats> {
 
 // ============ 写接口 ============
 
+/**
+ * 元数据 + 正文成对写入：后端支持原子提交时走同一事务；
+ * 通道不支持（SidecarUnsupportedError）才回退「先正文后元数据」的旧顺序。
+ * 返回是否走了原子路径（原子提交的成功回执即落盘证明，无需再回读）。
+ */
+async function putDocWithBody(doc: KbDoc, text: string): Promise<boolean> {
+  if (kbBackend.putDocAndBody) {
+    try {
+      await kbBackend.putDocAndBody(doc, text)
+      return true
+    } catch (e) {
+      if (!(e instanceof SidecarUnsupportedError)) throw e
+    }
+  }
+  await kbBackend.putBody(doc.id, text)
+  await kbBackend.put(doc)
+  return false
+}
+
+/** 成对删除：原子后端一次事务；旧通道保持先元数据后正文（调用方负责补偿）。 */
+async function delDocWithBody(id: string): Promise<void> {
+  if (kbBackend.deleteDocAndBody) {
+    try {
+      await kbBackend.deleteDocAndBody(id)
+      return
+    } catch (e) {
+      if (!(e instanceof SidecarUnsupportedError)) throw e
+    }
+  }
+  await kbBackend.del(id)
+  await kbBackend.delBody(id)
+}
+
 export interface ImportDocInput {
   projectId: string
   title: string
@@ -249,8 +319,19 @@ export async function importDoc(input: ImportDocInput): Promise<ImportDocResult>
     enabled: input.enabled === true,
   }
   try {
-    await kbBackend.put(doc)
+    if (kbBackend.putDocAndBody) {
+      let atomic = false
+      try {
+        await kbBackend.putDocAndBody(doc, text)
+        atomic = true
+      } catch (e) {
+        if (!(e instanceof SidecarUnsupportedError)) throw e
+      }
+      if (atomic) return { ok: true, doc, truncated }
+    }
     await kbBackend.putBody(doc.id, text)
+    if (await kbBackend.getBody(doc.id) !== text) throw new Error('正文回读不一致')
+    await kbBackend.put(doc)
   } catch (e) {
     return { ok: false, error: `写入失败：${e instanceof Error ? e.message : String(e)}` }
   }
@@ -260,11 +341,36 @@ export async function importDoc(input: ImportDocInput): Promise<ImportDocResult>
 /** 删除一篇：元数据 + 正文 + **它的全部向量块**（不删就会召回已删除的内容） */
 export async function removeDoc(projectId: string, id: string): Promise<boolean> {
   if (!id) return false
-  try {
-    await kbBackend.del(id)
-    await kbBackend.delBody(id)
-  } catch {
-    return false
+  let removed = false
+  if (kbBackend.deleteDocAndBody) {
+    try {
+      // 原子后端：失败时两表要么都未动、要么由服务端恢复日志收口；不做客户端补偿以免覆盖并发修改。
+      await kbBackend.deleteDocAndBody(id)
+      removed = true
+    } catch (e) {
+      if (!(e instanceof SidecarUnsupportedError)) return false
+    }
+  }
+  if (!removed) {
+    let original: KbDoc | undefined
+    let originalBody: string | undefined
+    try {
+      if (kbBackend.restoreDocIfAbsent) {
+        original = (await kbBackend.list(projectId)).find(doc => doc.id === id)
+        if (!original) return false
+        originalBody = await kbBackend.getBody(id)
+      }
+      await kbBackend.del(id)
+      await kbBackend.delBody(id)
+    } catch {
+      // 只在正文仍与删除前完全一致时尝试恢复元数据；恢复操作必须原子地拒绝覆盖已有记录。
+      if (original && originalBody !== undefined && kbBackend.restoreDocIfAbsent) {
+        try {
+          if (await kbBackend.getBody(id) === originalBody) await kbBackend.restoreDocIfAbsent(original)
+        } catch { /* 结果不明时保留现场，不覆盖并发修改 */ }
+      }
+      return false
+    }
   }
   // 向量块清理失败不该让"删除"看起来失败 —— 元数据已经没了，召回时也拿不到它
   try { if (projectId) await removeByRef(projectId, id) } catch { /* 忽略 */ }
@@ -588,8 +694,7 @@ export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBun
   })
   try {
     for (const { doc, text } of staged) {
-      await kbBackend.putBody(doc.id, text)
-      await kbBackend.put(doc)
+      await putDocWithBody(doc, text)
       if (await kbBackend.getBody(doc.id) !== text) throw new Error('参考资料正文回读不一致')
     }
     const saved = await listDocsStrict(projectId)
@@ -604,14 +709,12 @@ export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBun
     }
   } catch (error) {
     for (const { doc } of staged) {
-      await kbBackend.del(doc.id).catch(() => {})
-      await kbBackend.delBody(doc.id).catch(() => {})
+      await delDocWithBody(doc.id).catch(() => {})
     }
     throw error
   }
   for (const d of old) {
-    await kbBackend.del(d.id)
-    await kbBackend.delBody(d.id)
+    await delDocWithBody(d.id)
     try { await removeByRef(projectId, d.id) } catch { /* 索引可重建 */ }
   }
   return staged.length

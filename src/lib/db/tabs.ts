@@ -27,17 +27,19 @@ export async function saveFormData(tabId: string, data: Record<string, string>) 
  *    表现是"A 书迁移，B 书的值被改了"，而且这类串书极难定位。
  *    凡"要动的不是当前项目"一律走带 `For` 的版本（判据同 `getSettingFor` / `delSettingFor`）。
  */
-export async function getFormDataFor(pid: string, tabId: string): Promise<Record<string, string>> {
+export async function getFormDataFor(pid: string, tabId: string, owner?: OwnedOperation): Promise<Record<string, string>> {
   if (!pid || !tabId) return {}
-  const rec = await ops.get<FormData>('formData', `${pid}::${tabId}`)
+  const rec = await (owner?.store ?? ops).get<FormData>('formData', `${pid}::${tabId}`)
   return rec?.data ?? {}
 }
 
 /** 按**指定项目 id** 写表单数据（同上；只在真有变化时调用，避免无谓 touchProject） */
-export async function saveFormDataFor(pid: string, tabId: string, data: Record<string, string>) {
+export async function saveFormDataFor(pid: string, tabId: string, data: Record<string, string>, owner?: OwnedOperation) {
   if (!pid || !tabId) return
-  const store = ops
+  const store = owner?.store ?? ops
+  owner?.assertCurrent()
   await withFormSave(pid, tabId, async () => {
+    owner?.assertCurrent()
     await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
     void touchProject(pid, store)
   })

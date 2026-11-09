@@ -47,6 +47,10 @@ import {
   type WireProtocol,
 } from '@/lib/ai'
 import { WEB } from '@/lib/app/platform'
+import {
+  cancelConnectionModeSwitch, connectionModeStatus, recoverConnectionMode, switchConnectionMode,
+  type ConnectionModeStatus,
+} from '@/lib/agentHost/modeBridge'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
 import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, StructureCapabilityField } from '@/components/settings/AIConfigFields'
@@ -68,6 +72,68 @@ const BODY = 'max-w-3xl'
 const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-x-6 gap-y-5 items-start'
 
 export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
+  const [connectionView, setConnectionView] = useState<'api' | 'agent'>('api')
+  /** 3.4.3：模式真源来自宿主；页签只是它的显示，不再用页面 state 冒充模式。 */
+  const [modeStatus, setModeStatus] = useState<ConnectionModeStatus | null>(null)
+  const [switchId, setSwitchId] = useState<string | null>(null)
+  const [recoverConfirmed, setRecoverConfirmed] = useState(false)
+  const [recovering, setRecovering] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const load = () => {
+      void connectionModeStatus().then(status => { if (active) setModeStatus(status) }).catch(() => undefined)
+    }
+    load()
+    const timer = setInterval(load, 3000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+
+  // 只在稳定状态同步页签：切换中保留用户选择的目标页，避免界面来回跳。
+  useEffect(() => {
+    if (modeStatus?.phase === 'stable' && modeStatus.mode) setConnectionView(modeStatus.mode)
+  }, [modeStatus?.phase, modeStatus?.mode])
+
+  const requestMode = async (to: 'api' | 'agent') => {
+    if (!modeStatus) return
+    if (modeStatus.phase === 'blocked') {
+      showToast(modeStatus.reason || '连接模式不可用，请先按提示安全恢复', 'error')
+      return
+    }
+    if (modeStatus.phase === 'stable' && modeStatus.mode === to) { setConnectionView(to); return }
+    if (switchId) return
+    const transitionId = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setSwitchId(transitionId)
+    setConnectionView(to)
+    const result = await switchConnectionMode(to, transitionId)
+    setSwitchId(null)
+    const next = result.status ?? await connectionModeStatus()
+    setModeStatus(next)
+    if (!result.ok) showToast(result.error ?? '模式切换未完成', 'error')
+    else showToast(to === 'api' ? '已切换到 API 模型模式' : '已切换到 Agent 模式', 'success')
+  }
+
+  const cancelSwitch = async () => {
+    if (!switchId) return
+    await cancelConnectionModeSwitch(switchId)
+    showToast('已请求取消；未确认结束的任务不会被当作已完成', 'info')
+  }
+
+  const recoverMode = async () => {
+    if (!recoverConfirmed) {
+      showToast('请先勾选「没有其他引擎实例和任务在运行」再恢复', 'error')
+      return
+    }
+    setRecovering(true)
+    try {
+      const result = await recoverConnectionMode(modeStatus?.lock?.pid ?? null)
+      if (!result.ok) { showToast(result.error ?? '安全恢复失败', 'error'); return }
+      setModeStatus(result.status ?? await connectionModeStatus())
+      setConnectionView('api')
+      setRecoverConfirmed(false)
+      showToast('已恢复到 API 模式；Agent 连接保持停用', 'success')
+    } finally { setRecovering(false) }
+  }
   const [providers, setProviders] = useState<AIProvider[]>([])
   /** 3.3.1 · P9：网页版里本机模型不可用 —— 用途下拉与嵌入选择只看这份 */
   const usable = usableProviders(providers)
@@ -317,7 +383,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-13 text-amber">模型配置</h2>
+          <h2 className="text-13 text-amber">{connectionView === 'agent' ? 'Agent 连接' : '模型配置'}</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
             <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
@@ -339,13 +405,56 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </p>
           </HelpPopover>
         </div>
-        <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
+        {connectionView === 'api' && <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
           全局设置：全应用的 AI 功能都按这里选中的「当前」模型执行。改完即存，不需要另找保存按钮。
           每条配置必填「上下文窗口（tokens）」（1K = 1024）—— 额度与记忆档都按它推算。
-        </p>
+        </p>}
       </div>
 
-      <div className="p-4">
+      <div className="flex gap-2 px-4 pt-3" role="group" aria-label="连接设置页面">
+        <Button
+          variant={connectionView === 'api' ? 'primary' : 'secondary'}
+          onClick={() => void requestMode('api')}
+          disabled={!!switchId || modeStatus?.phase === 'blocked'}
+          data-connection-mode-tab="api"
+        >API 模型</Button>
+        <Button
+          variant={connectionView === 'agent' ? 'primary' : 'secondary'}
+          onClick={() => void requestMode('agent')}
+          disabled={!!switchId || modeStatus?.phase === 'blocked' || WEB}
+          data-connection-mode-tab="agent"
+        >Agent 模式</Button>
+      </div>
+      <div className="px-4 pt-3" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
+        {modeStatus === null ? <p className="text-11 text-ink-500">正在读取连接模式…</p> : modeStatus.phase === 'switching' ? (
+          <div className="rounded border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
+            <p>正在切换连接模式：等待在途任务结束（API 任务 {modeStatus.active.api} 个、Agent 任务 {modeStatus.active.agent} 个）。</p>
+            <Button variant="secondary" className="mt-2" onClick={() => void cancelSwitch()} disabled={!switchId}>取消等待</Button>
+          </div>
+        ) : modeStatus.phase === 'blocked' ? (
+          <div className="rounded border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
+            <p className="font-bold">连接模式不可用：{modeStatus.reason || '状态未确认'}</p>
+            {modeStatus.lock && <p>检测到宿主锁：PID {modeStatus.lock.pid ?? '未知（记录损坏）'}{modeStatus.lock.alive === true ? '（进程仍在运行）' : modeStatus.lock.alive === false ? '（进程已退出）' : ''}</p>}
+            <p>安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 模式；不会删除作品数据或 Agent 请求账本。</p>
+            <label className="mt-1 flex items-center gap-2">
+              <input type="checkbox" checked={recoverConfirmed} onChange={e => setRecoverConfirmed(e.target.checked)} />
+              我已确认没有其他引擎实例和未结束的任务在运行
+            </label>
+            <Button variant="secondary" className="mt-2" onClick={() => void recoverMode()} disabled={recovering || !recoverConfirmed}>
+              {recovering ? '恢复中…' : '安全恢复到 API 模式'}
+            </Button>
+          </div>
+        ) : (
+          <p className="text-11 text-ink-500 leading-relaxed" data-connection-mode={modeStatus.mode ?? undefined}>
+            {modeStatus.mode === 'agent'
+              ? '当前为 Agent 模式：引擎内置的 API 模型调用已停用，只接受已授权的 Agent 工具调用。切换回 API 模式会先等待在途 Agent 任务结束。'
+              : '当前为 API 模型模式：Agent 工具调用会被拒绝。切换模式不会改动模型配置、密钥、项目授权或正文草稿。'}
+          </p>
+        )}
+      </div>
+      {connectionView === 'agent' ? <div className="p-4">
+        {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机 Agent 桥。</p> : <AgentBridgeSetup />}
+      </div> : <div className="p-4">
         {/* 🔴 列表态**不套 BODY**：`max-w-3xl`(≈768px) 会把两栏一起卡在左半边，
             右侧仍是死区（实测两栏总宽只有 794px，section 有 1289px）。
             编辑态是逐项纵向表单，才需要收窄到易读行宽。 */}
@@ -585,10 +694,6 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 </div>
               </div>
 
-              <div className="mt-5 pt-4 border-t border-ink-700">
-                <h3 className="text-12 text-ink-200">外部 Agent 协作</h3>
-                {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机只读桥。</p> : <><p className="text-11 text-ink-500">外部 Agent 可通过只读桥读取已保存的本机数据；创建设定及录入正文的接口仍在开发。</p><AgentBridgeSetup /></>}
-              </div>
             </div>
             </div>
           ) : (
@@ -873,7 +978,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </section>
   )
 }

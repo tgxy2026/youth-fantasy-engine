@@ -14,6 +14,8 @@ import { DEFAULT_TIMEOUTS } from '@/lib/ai/streaming'
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import type { AIProvider } from '@/lib/aiCore/core'
 import { WEB } from '@/lib/app/platform'
+// 3.4.3：API 与 Agent 互斥 —— 旁路模型请求同样必须持有 API 模式租约
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 
 /** A fetch failure does not reveal whether the service or the browser blocked it. */
 export function withWebLocalConnectionHint(message: string, web = WEB): string {
@@ -131,7 +133,7 @@ const NON_CHAT_MODEL_RE = /embedding|dall-e|whisper|tts|moderation|babbage|davin
  * 中转站的清单可能上百条且混入非对话模型 → 按 NON_CHAT_MODEL_RE 剔除后原序返回。
  * 失败抛中文可读原因（调用方 toast 展示，UI 保留手动填写，不阻塞配置）。
  */
-export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+async function listOpenAIModelsInner(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
   const base = openaiBaseOf(config.baseUrl)
   if (!base) throw new Error('未填写 API 接口地址（baseUrl）：先填地址再获取模型列表。')
   let res: Response
@@ -162,6 +164,11 @@ export async function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'api
     out.push(n)
   }
   return out
+}
+
+/** 拉取可用模型清单：整段请求持有 API 租约（Agent 模式下直接拒绝）。 */
+export function listOpenAIModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+  return withApiModeLease(() => listOpenAIModelsInner(config))
 }
 
 /**
@@ -196,7 +203,7 @@ export function secs(ms: number) {
 }
 
 /** 拉取 Ollama 本机已拉取的模型列表 */
-export async function listOllamaModels(baseUrl: string): Promise<string[]> {
+async function listOllamaModelsInner(baseUrl: string): Promise<string[]> {
   const base = stripSlash(baseUrl || OLLAMA_DEFAULT_URL)
   let res: Response
   try {
@@ -208,6 +215,11 @@ export async function listOllamaModels(baseUrl: string): Promise<string[]> {
   if (!res.ok) throw new Error(`Ollama 返回错误（HTTP ${res.status}），请确认服务正常。`)
   const data = await res.json().catch(() => ({}))
   return (data.models ?? []).map((m: { name?: string; model?: string }) => m.name ?? m.model ?? '').filter(Boolean)
+}
+
+/** 拉取 Ollama 模型清单：整段请求持有 API 租约（Agent 模式下直接拒绝）。 */
+export function listOllamaModels(baseUrl: string): Promise<string[]> {
+  return withApiModeLease(() => listOllamaModelsInner(baseUrl))
 }
 
 /**
@@ -229,7 +241,7 @@ export async function listOllamaModels(baseUrl: string): Promise<string[]> {
  * @param timeoutMs 超时。卸载是收尾后的最后一件事，不值得为它多等 —— 默认 8 秒。
  * @returns 真的发出并成功了才返回 true；跳过或失败返回 false（调用方据此提示）
  */
-export async function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): Promise<boolean> {
+async function unloadOllamaModelInner(config: AIProvider, timeoutMs = 8_000): Promise<boolean> {
   if (!config || protocolOf(config) !== 'ollama') return false
   const base = stripSlash(config.baseUrl || OLLAMA_DEFAULT_URL)
   // 只认本机地址：远程机器上的 Ollama 不归我们管（也可能是别人在用的服务）
@@ -246,6 +258,11 @@ export async function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): 
   } catch {
     return false
   }
+}
+
+/** 卸载 Ollama 模型：持有 API 租约；被模式拒绝时按「未执行」返回 false（调用方只做提示）。 */
+export function unloadOllamaModel(config: AIProvider, timeoutMs = 8_000): Promise<boolean> {
+  return withApiModeLease(() => unloadOllamaModelInner(config, timeoutMs)).catch(() => false)
 }
 
 // ---- 流式 SSE 解析 ----

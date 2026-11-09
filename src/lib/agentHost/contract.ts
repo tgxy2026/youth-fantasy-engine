@@ -16,9 +16,9 @@ import type { Project, TabDef, CardRecord, Chapter } from '@/lib/types'
 // ---------- 授权范围 ----------
 
 /** 写动作（读取不受这些动作约束：默认只读，允许读） */
-export type AgentAction = 'setting:create' | 'setting:write' | 'form:write' | 'table:create' | 'table:write' | 'volume:create' | 'volume:write' | 'chapter:create' | 'chapter:write' | 'chapter:delete' | 'inspiration:write'
+export type AgentAction = 'setting:create' | 'setting:write' | 'form:write' | 'table:create' | 'table:write' | 'volume:create' | 'volume:write' | 'chapter:create' | 'chapter:write' | 'chapter:delete' | 'inspiration:write' | 'map:create' | 'map:write' | 'map:delete' | 'canvas:write' | 'world:read' | 'world:write' | 'backup:restore' | 'chapter:restore' | 'report:write' | 'task:write'
 
-export const AGENT_ACTIONS: readonly AgentAction[] = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write']
+export const AGENT_ACTIONS: readonly AgentAction[] = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write', 'map:create', 'map:write', 'map:delete', 'canvas:write', 'world:read', 'world:write', 'backup:restore', 'chapter:restore', 'report:write', 'task:write']
 
 /** 动作的中文说明（界面与错误文案共用，避免两处各写一份） */
 export const AGENT_ACTION_LABELS: Record<AgentAction, string> = {
@@ -33,6 +33,16 @@ export const AGENT_ACTION_LABELS: Record<AgentAction, string> = {
   'chapter:write': '追加 / 覆盖正文',
   'chapter:delete': '删除章节到回收站',
   'inspiration:write': '写入灵感夹',
+  'map:create': '创建地图 / 地点',
+  'map:write': '修改地图 / 绘制格子',
+  'map:delete': '删除地图',
+  'canvas:write': '修改情节画布',
+  'world:read': '读取其它项目的世界包',
+  'world:write': '引入世界包到本项目',
+  'backup:restore': '恢复项目备份（覆盖当前项目）',
+  'chapter:restore': '从回收站恢复章节',
+  'report:write': '保存检查报告',
+  'task:write': '登记外部 Agent 任务进度',
 }
 
 export interface AgentProjectGrant {
@@ -97,6 +107,8 @@ export const AGENT_TOOL_NAMES = {
   getProject: 'yfe_get_project',
   listChapters: 'yfe_list_chapters',
   readChapter: 'yfe_read_chapter',
+  checkChapterWords: 'yfe_check_chapter_words',
+  checkChapterTypos: 'yfe_check_chapter_typos',
   listSettingTabs: 'yfe_list_setting_tabs',
   listSettingCards: 'yfe_list_setting_cards',
   readSettingCard: 'yfe_read_setting_card',
@@ -131,6 +143,32 @@ export const AGENT_TOOL_NAMES = {
   deleteChapter: 'yfe_delete_chapter',
   listInspirations: 'yfe_list_inspirations',
   addInspiration: 'yfe_add_inspiration',
+  createMap: 'yfe_create_map',
+  updateMap: 'yfe_update_map',
+  deleteMap: 'yfe_delete_map',
+  createMapPlace: 'yfe_create_map_place',
+  updateMapPlaceCells: 'yfe_update_map_place_cells',
+  createPlotCard: 'yfe_create_plot_card',
+  updatePlotCard: 'yfe_update_plot_card',
+  deletePlotCard: 'yfe_delete_plot_card',
+  updatePlotConnections: 'yfe_update_plot_connections',
+  previewWorldImport: 'yfe_preview_world_import',
+  importWorldPack: 'yfe_import_world_pack',
+  previewBackupRestore: 'yfe_preview_backup_restore',
+  restoreProjectBackup: 'yfe_restore_project_backup',
+  listChapterTrash: 'yfe_list_chapter_trash',
+  restoreChapter: 'yfe_restore_chapter',
+  saveCheckReport: 'yfe_save_check_report',
+  listCheckReports: 'yfe_list_check_reports',
+  readCheckReport: 'yfe_read_check_report',
+  updateInspiration: 'yfe_update_inspiration',
+  deleteInspiration: 'yfe_delete_inspiration',
+  startAgentTask: 'yfe_start_agent_task',
+  updateAgentTask: 'yfe_update_agent_task',
+  finishAgentTask: 'yfe_finish_agent_task',
+  cancelAgentTask: 'yfe_cancel_agent_task',
+  listAgentTasks: 'yfe_list_agent_tasks',
+  getAgentTask: 'yfe_get_agent_task',
   requestStatus: 'yfe_request_status',
 } as const
 
@@ -194,6 +232,8 @@ export type AgentErrorCode =
   | 'SAVE_FAILED'
   | 'OUTCOME_UNKNOWN'
   | 'STORAGE_BLOCKED'
+  | 'DEPENDENCY_BLOCKED'
+  | 'ROLLED_BACK'
   | 'DUPLICATE_IN_FLIGHT'
   | 'HOST_DISABLED'
   | 'UNAUTHORIZED'
@@ -202,13 +242,13 @@ export type AgentErrorCode =
 export const AGENT_RETRYABLE_ERRORS: readonly AgentErrorCode[] = [
   'BAD_REQUEST', 'UNKNOWN_TOOL', 'NOT_READY', 'PROJECT_NOT_FOUND', 'PROJECT_NOT_OPEN',
   'NOT_FOUND', 'SCOPE_DENIED', 'CONFLICT', 'DRAFT_DIRTY', 'NO_VOLUME', 'DUPLICATE_IN_FLIGHT',
-  'HOST_DISABLED', 'UNAUTHORIZED',
+  'HOST_DISABLED', 'UNAUTHORIZED', 'ROLLED_BACK',
 ]
 
 /** `INTERNAL` 不在此列：它可能是「写后抛错」，按结果不明处理，禁止自动重试。
  *  `STORAGE_BLOCKED` 也不在此列：存储冲突 / 锁写 / 未连接需要作者先处理，自动重试只会反复失败。 */
 export function agentErrorRetryable(code: AgentErrorCode): boolean {
-  return code !== 'SAVE_FAILED' && code !== 'OUTCOME_UNKNOWN' && code !== 'INTERNAL' && code !== 'STORAGE_BLOCKED'
+  return code !== 'SAVE_FAILED' && code !== 'OUTCOME_UNKNOWN' && code !== 'INTERNAL' && code !== 'STORAGE_BLOCKED' && code !== 'DEPENDENCY_BLOCKED'
 }
 
 export interface AgentFailure {
@@ -347,7 +387,7 @@ export interface AgentChapterWriteResult {
 /** 写成功后通知当前界面（编辑器 / 设定卡页 / 章节树）刷新；不覆盖正在编辑的草稿。 */
 export interface AgentWriteNotice {
   projectId: string
-  kind: 'chapter' | 'setting' | 'volume' | 'world-set' | 'form' | 'table' | 'inspiration'
+  kind: 'chapter' | 'setting' | 'volume' | 'world-set' | 'form' | 'table' | 'inspiration' | 'canvas' | 'world-import' | 'backup-restore' | 'agent-task'
   /** 删除动作（章节移入回收站） */
   deleted?: boolean
   volumeId?: string

@@ -6,9 +6,10 @@
 //   ③ 引入**指定版本** = 当时那份快照，而不是最新草稿（不可变版本的意义）；
 //   ④ 子项活跃状态随引入带过来（否则 AI 侧静默失忆，界面却看不出问题）。
 import * as db from '../src/lib/db'
-import { __resetMockStores } from './mock-memory'
+import { __resetMockStores, memoryOps } from './mock-memory'
 import { createWorldFromCurrentProject, freezeWorld, updateWorldDraft } from '../src/lib/world/worlds'
-import { importWorldIntoCurrent, getWorldImportRecord } from '../src/lib/world/worldImport'
+import { importWorldIntoCurrent, importWorldIntoProject, getWorldImportRecord } from '../src/lib/world/worldImport'
+import { captureOwnedOperation } from '../src/lib/storage/ownedOperation'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -92,6 +93,43 @@ async function main() {
     db.setCurrentProject('pB')
     ok('世界不存在 ⇒ null', (await importWorldIntoCurrent('nope')) === null)
     ok('版本不存在 ⇒ null', (await importWorldIntoCurrent('nope', 3)) === null)
+  }
+
+  // 自定义图鉴字段与世界包读取必须经过入口捕获的 store。
+  {
+    __resetMockStores()
+    db.setCurrentProject('pB')
+    await memoryOps.put('worlds', { id: 'w-atlas', name: '合成', fingerprint: 'fp-1', activeSubs: {}, versions: [], tables: [{
+      tabId: 'nations', kind: 'table', rows: [{ id: 'r1', data: { 名称: '合成国' }, order: 0 }],
+      atlasFields: [{ id: 'cf_source', label: '合成字段', type: 'text', description: '', appliesTo: '*', groupId: 'g', order: 0, tableVisible: true, detailVisible: true, searchable: true, aiReadable: true, aiWritable: true, archived: false }],
+    }] })
+    const owner = captureOwnedOperation('pB')
+    const accessed: string[] = []
+    const store = new Proxy(owner.store, { get(target, prop, receiver) {
+      if (prop === 'get') return async (name: string, key: string) => { accessed.push(`${name}:${key}`); return target.get(name, key) }
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+    const guarded = { ...owner, store }
+    let stale = false
+    try { await importWorldIntoProject('w-atlas', 0, 'pB', guarded, 'old-fingerprint') } catch { stale = true }
+    ok('世界包最终读取指纹变化时拒绝写入', stale && (await memoryOps.getAll('tableRows')).length === 0)
+    const result = await importWorldIntoProject('w-atlas', 0, 'pB', guarded, 'fp-1')
+    ok('世界与图鉴字段配置均通过捕获的 store 读取', !!result && accessed.includes('worlds:w-atlas') && accessed.some(key => key.startsWith('settingsKV:pB::atlasSchema::nations')))
+    const owner2 = captureOwnedOperation('pB')
+    let switched = false
+    const switchingStore = new Proxy(owner2.store, { get(target, prop, receiver) {
+      if (prop === 'get') return async (name: string, key: string) => {
+        const value = await target.get(name, key)
+        if (!switched && name === 'settingsKV' && key === 'pB::atlasSchema::nations') { switched = true; db.setCurrentProject('pC') }
+        return value
+      }
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+    let interrupted = false
+    try { await importWorldIntoProject('w-atlas', 0, 'pB', { ...owner2, store: switchingStore }, 'fp-1') } catch { interrupted = true }
+    ok('读取图鉴字段期间切换项目后不写入新项目', switched && interrupted && !await memoryOps.get('settingsKV', 'pC::atlasSchema::nations'))
   }
 
   console.log(`\nworldImport: ${pass} passed, ${fail} failed`)

@@ -18,10 +18,12 @@ import { uid } from '@/lib/app/id'
 import { isAtlasTab } from '@/lib/atlas/schema'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
 import { sameAtlasFieldDefinition, uniqueFieldLabel } from '@/lib/atlas/packageIO'
-import type { WorldPackTable } from '@/lib/world/worldTypes'
+import type { WorldPackTable, WorldStoredRecord } from '@/lib/world/worldTypes'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
 
 /** `settingsKV` 里的键名（与项目绑定） */
 const KEY = 'worldImport'
+export class WorldImportStaleError extends Error {}
 
 export interface WorldImportRecord {
   worldId: string
@@ -36,7 +38,15 @@ export interface WorldImportRecord {
 
 /** 本项目的引入溯源（没引入过返回 null） */
 export async function getWorldImportRecord(): Promise<WorldImportRecord | null> {
-  const v = await db.getSetting<WorldImportRecord | null>(KEY, null)
+  return getWorldImportRecordFor(db.getCurrentProjectId())
+}
+
+/**
+ * 按指定项目 / 捕获的 store 读溯源。
+ * 🔴 引入是长异步操作，期间作者可能切书；用当前项目读会拿错本子，误判「回读不一致」。
+ */
+export async function getWorldImportRecordFor(projectId: string, owner?: OwnedOperation): Promise<WorldImportRecord | null> {
+  const v = await db.getSettingFor<WorldImportRecord | null>(projectId, KEY, null, owner)
   return v && typeof v === 'object' && typeof v.worldId === 'string' ? v : null
 }
 
@@ -51,108 +61,153 @@ export async function clearWorldImportRecord(): Promise<void> {
  * @returns 引入记录；世界不存在 / 版本不存在返回 `null`（不抛）
  */
 export async function importWorldIntoCurrent(worldId: string, version = 0): Promise<WorldImportRecord | null> {
-  const rec = await db.getWorld(worldId)
-  if (!rec) return null
-  const versions = rec.versions ?? []
-  const ver = version > 0 ? versions.find(x => x.v === version) : undefined
-  if (version > 0 && !ver) return null
+  const projectId = db.getCurrentProjectId()
+  if (!projectId) return null
+  return importWorldIntoProject(worldId, version, projectId, captureOwnedOperation(projectId))
+}
 
-  const tables: WorldPackTable[] = ver ? ver.tables : rec.tables
-  const activeSubs = (ver ? ver.activeSubs : rec.activeSubs) ?? {}
-  const fingerprint = ver ? ver.fingerprint : rec.fingerprint
+/**
+ * 把某世界的某版本引入**指定项目**，并全程使用入口捕获的 store。
+ *
+ * 🔴 为什么必须带 projectId + owner：这是覆盖式长操作，期间作者可能切书或切存储空间。
+ *    旧实现一路用 `currentProjectId` 和全局 `ops`，切书后会把行写进新书、把溯源记到新书，
+ *    随后回读「不一致」再回滚原书，却把脏数据留在新书里。
+ */
+export async function importWorldIntoProject(
+  worldId: string,
+  version: number,
+  projectId: string,
+  owner?: OwnedOperation,
+  expectedFingerprint?: string,
+): Promise<WorldImportRecord | null> {
+  if (!projectId) return null
+  const run = async (): Promise<WorldImportRecord | null> => {
+    const rec = owner ? await owner.store.get<WorldStoredRecord>('worlds', worldId) : await db.getWorld(worldId)
+    if (!rec) return null
+    const versions = rec.versions ?? []
+    const ver = version > 0 ? versions.find(x => x.v === version) : undefined
+    if (version > 0 && !ver) return null
 
-  for (const t of tables) {
-    // ---- 表单型（世界设定 / 力量体系母级）----
-    if (t.kind === 'form') {
-      for (const row of t.rows) await db.saveFormData(t.tabId, { ...row.data })
-      continue
-    }
-    // ---- 表格型 ----
-    if (t.kind === 'table') {
-      /**
-       * 3.1.3（方案 §8.3）：随包带来的自定义字段定义**先并进本项目**，再写行。
-       * 🔴 不能直接沿用包里的字段 id：那是源项目的 id，撞上本项目已有 id 就会"两个字段共用一个键"
-       *    （数据串味且极难查）。所以：同名同类型复用本项目字段，其余重新发 id 并**重映射行数据键**。
-       */
-      const idMap = new Map<string, string>()
-      if (t.atlasFields?.length && isAtlasTab(t.tabId)) {
-        const pid = db.getCurrentProjectId()
-        const cur = (await loadAtlasSchema(pid, t.tabId)).config
-        const nextFields = [...cur.fields]
-        for (const f of t.atlasFields) {
-          // 🔴 3.1.3 · R08：完整定义一致才复用（同名异义不硬合并，与资料包同一口径）
-          const hit = cur.fields.find(e => sameAtlasFieldDefinition(e, f))
-          if (hit) { idMap.set(f.id, hit.id); continue }
-          const nid = newFieldId()
-          idMap.set(f.id, nid)
-          // 名字撞车就改个名（与资料包导入同一口径，见 `uniqueFieldLabel`）
-          nextFields.push({
-            ...f,
-            id: nid,
-            label: uniqueFieldLabel([...cur.fields.map(x => x.label), ...nextFields.map(x => x.label)], f.label),
-            archived: false,
-          })
-        }
-        if (nextFields.length > cur.fields.length) {
-          await saveAtlasSchema(pid, t.tabId, { ...cur, fields: nextFields })
-        }
+    const tables: WorldPackTable[] = ver ? ver.tables : rec.tables
+    const activeSubs = (ver ? ver.activeSubs : rec.activeSubs) ?? {}
+    const fingerprint = ver ? ver.fingerprint : rec.fingerprint
+    if (expectedFingerprint !== undefined && fingerprint !== expectedFingerprint) throw new WorldImportStaleError('世界包在引入前已变化，请重新预览。')
+    const store = owner?.store
+
+    for (const t of tables) {
+      owner?.assertCurrent()
+      // ---- 表单型（世界设定 / 力量体系母级）----
+      if (t.kind === 'form') {
+        for (const row of t.rows) await db.saveFormDataFor(projectId, t.tabId, { ...row.data }, owner)
+        continue
       }
-      for (const old of await db.getTableRows(t.tabId)) await db.deleteTableRow(old.id)
-      for (let i = 0; i < t.rows.length; i++) {
-        const src = t.rows[i]
-        const data: Record<string, string> = { ...src.data }
-        for (const [oldKey, newKey] of idMap) {
-          if (oldKey === newKey) continue
-          if (oldKey in data) { data[newKey] = data[oldKey]; delete data[oldKey] }
+      // ---- 表格型 ----
+      if (t.kind === 'table') {
+        /**
+         * 3.1.3（方案 §8.3）：随包带来的自定义字段定义**先并进本项目**，再写行。
+         * 🔴 不能直接沿用包里的字段 id：那是源项目的 id，撞上本项目已有 id 就会"两个字段共用一个键"
+         *    （数据串味且极难查）。所以：同名同类型复用本项目字段，其余重新发 id 并**重映射行数据键**。
+         */
+        const idMap = new Map<string, string>()
+        if (t.atlasFields?.length && isAtlasTab(t.tabId)) {
+          const loaded = await loadAtlasSchema(projectId, t.tabId, owner)
+          owner?.assertCurrent()
+          if (loaded.error || loaded.newerFormat) throw new Error(loaded.error || '字段配置由更新版本创建，不能导入。')
+          const cur = loaded.config
+          const nextFields = [...cur.fields]
+          for (const f of t.atlasFields) {
+            // 🔴 3.1.3 · R08：完整定义一致才复用（同名异义不硬合并，与资料包同一口径）
+            const hit = cur.fields.find(e => sameAtlasFieldDefinition(e, f))
+            if (hit) { idMap.set(f.id, hit.id); continue }
+            const nid = newFieldId()
+            idMap.set(f.id, nid)
+            // 名字撞车就改个名（与资料包导入同一口径，见 `uniqueFieldLabel`）
+            nextFields.push({
+              ...f,
+              id: nid,
+              label: uniqueFieldLabel([...cur.fields.map(x => x.label), ...nextFields.map(x => x.label)], f.label),
+              archived: false,
+            })
+          }
+          if (nextFields.length > cur.fields.length) {
+            await saveAtlasSchema(projectId, t.tabId, { ...cur, fields: nextFields }, owner)
+            owner?.assertCurrent()
+          }
         }
-        await db.saveTableRow({
-          id: uid(), projectId: '', tabId: t.tabId, data, order: i,
-          ...(src.atlasImage ? { atlasImage: src.atlasImage } : {}),
-        })
+        const oldRows = await db.getTableRowsFor(projectId, t.tabId, owner)
+        for (const old of oldRows) {
+          owner?.assertCurrent()
+          if (store) await store.del('tableRows', old.id)
+          else await db.deleteTableRow(old.id)
+        }
+        for (let i = 0; i < t.rows.length; i++) {
+          owner?.assertCurrent()
+          const src = t.rows[i]
+          const data: Record<string, string> = { ...src.data }
+          for (const [oldKey, newKey] of idMap) {
+            if (oldKey === newKey) continue
+            if (oldKey in data) { data[newKey] = data[oldKey]; delete data[oldKey] }
+          }
+          await db.saveTableRow({
+            id: uid(), projectId, tabId: t.tabId, data, order: i,
+            ...(src.atlasImage ? { atlasImage: src.atlasImage } : {}),
+          }, owner)
+        }
+        continue
       }
-      continue
-    }
-    // ---- 卡片型（其他设定）----
-    if (t.kind === 'card') {
-      for (const old of await db.getCardRecords(t.tabId)) await db.deleteCardRecord(old.id)
+      // ---- 卡片型（其他设定）----
+      if (t.kind === 'card') {
+        for (const old of await db.getCardRecordsFor(projectId, t.tabId, owner)) {
+          owner?.assertCurrent()
+          if (store) await store.del('cardRecords', old.id)
+          else await db.deleteCardRecord(old.id)
+        }
+        for (let i = 0; i < t.rows.length; i++) {
+          owner?.assertCurrent()
+          await db.saveCardRecord({
+            id: uid(), projectId, tabId: t.tabId,
+            name: t.rows[i].name ?? '', data: { ...t.rows[i].data }, order: i,
+          }, owner)
+        }
+        continue
+      }
+      // ---- 子项（世界设定 / 力量体系 / 制度四页签的「多套」结构）----
+      for (const old of await db.getSubSetsFor(projectId, t.tabId, owner)) {
+        owner?.assertCurrent()
+        await db.deleteSubSetFor(projectId, t.tabId, old.id, owner)
+      }
+      const newIds: string[] = []
       for (let i = 0; i < t.rows.length; i++) {
-        await db.saveCardRecord({
-          id: uid(), projectId: '', tabId: t.tabId,
+        owner?.assertCurrent()
+        const id = uid()
+        await db.saveSubSetFor(projectId, t.tabId, {
+          id, projectId, tabId: '',
           name: t.rows[i].name ?? '', data: { ...t.rows[i].data }, order: i,
-        })
+        }, owner)
+        newIds.push(id)
       }
-      continue
+      /**
+       * 活跃状态按**源行 id** 对上再映射到新 id。
+       * 🔴 引入会给每条重新发 id（避免与本地既有记录撞主键），所以不能直接搬活跃 id ——
+       *    那样 AI 侧会「整场不带任何子世界」而界面看起来一切正常（静默失忆）。
+       */
+      const wantOldIds = new Set(activeSubs[t.tabId] ?? [])
+      for (let i = 0; i < t.rows.length; i++) {
+        owner?.assertCurrent()
+        await db.setSubActiveFor(projectId, t.tabId, newIds[i], wantOldIds.has(t.rows[i].id), owner)
+      }
     }
-    // ---- 子项（世界设定 / 力量体系 / 制度四页签的「多套」结构）----
-    for (const old of await db.getSubSets(t.tabId)) await db.deleteSubSet(t.tabId, old.id)
-    const newIds: string[] = []
-    for (let i = 0; i < t.rows.length; i++) {
-      const id = uid()
-      await db.saveSubSet(t.tabId, {
-        id, projectId: '', tabId: '',
-        name: t.rows[i].name ?? '', data: { ...t.rows[i].data }, order: i,
-      })
-      newIds.push(id)
-    }
-    /**
-     * 活跃状态按**源行 id** 对上再映射到新 id。
-     * 🔴 引入会给每条重新发 id（避免与本地既有记录撞主键），所以不能直接搬活跃 id ——
-     *    那样 AI 侧会「整场不带任何子世界」而界面看起来一切正常（静默失忆）。
-     */
-    const wantOldIds = new Set(activeSubs[t.tabId] ?? [])
-    for (let i = 0; i < t.rows.length; i++) {
-      await db.setSubActive(t.tabId, newIds[i], wantOldIds.has(t.rows[i].id))
-    }
-  }
 
-  const record: WorldImportRecord = {
-    worldId,
-    worldName: rec.name,
-    version,
-    fingerprint,
-    at: Date.now(),
-    tabIds: tables.map(t => t.tabId),
+    const record: WorldImportRecord = {
+      worldId,
+      worldName: rec.name,
+      version,
+      fingerprint,
+      at: Date.now(),
+      tabIds: tables.map(t => t.tabId),
+    }
+    await db.setSettingFor(projectId, KEY, record, owner)
+    return record
   }
-  await db.setSetting(KEY, record)
-  return record
+  return run()
 }

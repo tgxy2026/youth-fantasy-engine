@@ -19,6 +19,7 @@ import {
 import { mergeHeaders } from '@/lib/aiCore/headers'
 import { mergeUsage, usageFromGemini, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 import {
   budgetExhaustedMessage, fetchWithWireDegrade, initialWireFlags,
   MAX_REQUESTS_PER_CALL, type WireFlags,
@@ -32,7 +33,7 @@ function geminiBaseOf(raw: string): string {
 }
 
 /** GET /v1beta/models：取支持 generateContent 的模型（去掉 `models/` 前缀） */
-export async function listGeminiModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+async function listGeminiModelsInner(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
   const base = geminiBaseOf(config.baseUrl || '')
   if (!base) throw new Error('未填写 API 接口地址（baseUrl）。Gemini 官方地址为 https://generativelanguage.googleapis.com。')
   if (!config.apiKey.trim()) throw new Error('未填写 Gemini API 密钥（x-goog-api-key）。')
@@ -60,6 +61,11 @@ export async function listGeminiModels(config: Pick<AIProvider, 'baseUrl' | 'api
       return name.startsWith('models/') ? name.slice('models/'.length) : name
     })
     .filter(Boolean)
+}
+
+/** 模型清单请求同样持有 API 租约（Agent 模式下直接拒绝）。 */
+export function listGeminiModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+  return withApiModeLease(() => listGeminiModelsInner(config))
 }
 
 interface GeminiPart { text?: unknown }

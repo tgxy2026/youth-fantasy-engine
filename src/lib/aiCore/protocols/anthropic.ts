@@ -24,6 +24,7 @@ import {
   MAX_REQUESTS_PER_CALL, type WireFlags,
 } from '@/lib/aiCore/protocols/shared'
 import { WEB } from '@/lib/app/platform'
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 
 /** Anthropic 的 API 版本头（官方 structured outputs 文档示例值） */
 export const ANTHROPIC_VERSION = '2026-10-21'
@@ -55,7 +56,7 @@ export function anthropicStreamParser(payload: string): SseLineOutcome | null {
 }
 
 /** GET /v1/models：取可用模型（过滤已退役 lifecycle=retired） */
-export async function listAnthropicModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+async function listAnthropicModelsInner(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
   const base = anthropicBaseOf(config.baseUrl || '')
   if (!base) throw new Error('未填写 API 接口地址（baseUrl）。Anthropic 官方地址为 https://api.anthropic.com。')
   if (!config.apiKey.trim()) throw new Error('未填写 Anthropic API 密钥（x-api-key）。')
@@ -79,6 +80,11 @@ export async function listAnthropicModels(config: Pick<AIProvider, 'baseUrl' | '
     .filter(r => r && typeof r === 'object' && r.lifecycle !== 'retired')
     .map(r => (typeof r.id === 'string' ? r.id.trim() : ''))
     .filter(Boolean)
+}
+
+/** 模型清单请求同样持有 API 租约（Agent 模式下直接拒绝）。 */
+export function listAnthropicModels(config: Pick<AIProvider, 'baseUrl' | 'apiKey' | 'headers'>): Promise<string[]> {
+  return withApiModeLease(() => listAnthropicModelsInner(config))
 }
 
 interface AnthropicChunk {

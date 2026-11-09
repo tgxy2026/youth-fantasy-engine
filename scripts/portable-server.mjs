@@ -35,14 +35,15 @@
 'use strict'
 
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync, createReadStream } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync, createReadStream, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomBytes, createHash } from 'node:crypto'
-// 3.4.3 · Agent 可写工具宿主：与桌面主进程**共用同一份核心**
-// （配置 / 幂等账本 / 本地端点）。页面通过本服务的 /api/agent/* 轮询任务并回传结果。
-import { createAgentHost, createPageQueue, sameOriginPage as isSameOriginAgentPage } from './agent-host/core.mjs'
+// 3.4.3 · 连接模式服务 + Agent 可写工具宿主：与桌面主进程**共用同一份实现**
+// （模式真源 / 独占所有权 / 配置 / 幂等账本 / 本地端点）。页面通过本服务的 /api/agent/* 轮询任务。
+import { createPageQueue, sameOriginPage as isSameOriginAgentPage } from './agent-host/core.mjs'
+import { createModeService, recoverConnectionFiles } from './agent-host/mode-service.mjs'
 
 // 【路径解析】直接用 import.meta.url 定位本脚本所在目录。
 //   （2026-10-14：Node SEA 单文件 exe 方案已放弃 —— 原因见 memory/2026-10-14.md。
@@ -98,6 +99,14 @@ const BLOB_DIR = path.join(DATA_DIR, 'blobs')
  * 故两边都按「登记过的名字 + 受限字符集」双重校验，非法一律拒绝。
  */
 const BLOB_STORES = new Set(['backupPayloads', 'vecRows', 'kbDocs', 'kbBodies'])
+/**
+ * 整表布局 store：客户端把整个 store 写成一个 `__all__` 文件。
+ * 🔴 这类写必然是「读整表 → 改内存 → 写整表」，若没有版本前置条件，
+ *    两个标签同时改不同行时后写的会静默覆盖先写的（丢向量 / 丢知识库正文）。
+ *    故这里的 PUT 强制带 `If-Match`（缺失 428、版本不符 409），与 /api/data 同口径。
+ *    per-id store（backupPayloads）各条独立、载荷写完不变，保持无条件写以兼容旧客户端。
+ */
+const BLOB_WHOLE_STORES = new Set(['vecRows', 'kbDocs', 'kbBodies'])
 /** id 字符集：真实主键是 uid（字母数字）或 whole 布局的固定键 `__all__` */
 const BLOB_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -128,6 +137,9 @@ if (!existsSync(DIST_DIR) || !existsSync(path.join(DIST_DIR, 'index.html'))) {
   )
 }
 mkdirSync(DATA_DIR, { recursive: true })
+const canonicalDataDir = realpathSync(DATA_DIR)
+const directoryIdentity = process.platform === 'win32' ? canonicalDataDir.toLowerCase() : canonicalDataDir
+const instanceIdentity = createHash('sha256').update(directoryIdentity).digest('hex')
 
 // ---------- 防多开：端口锁 ----------
 // 同一 U 盘被双击两次启动时，第二个实例若起在别的端口，两个客户端会各持一份内存 cache
@@ -138,10 +150,15 @@ async function probeExisting() {
     const p = Number(readFileSync(PORT_LOCK, 'utf8').trim())
     if (!p) return null
     // 能 ping 通 ⇒ 已有一个实例在跑，复用它的端口（别再起第二个，免得两份 cache 互相覆盖）
-    const ok = await fetch(`http://127.0.0.1:${p}/api/ping`, { signal: AbortSignal.timeout(800) })
-      .then(r => r.ok)
-      .catch(() => false)
-    return ok ? p : null
+    const result = await fetch(`http://127.0.0.1:${p}/api/ping`, { signal: AbortSignal.timeout(800) })
+      .then(async r => r.ok ? await r.json() : null)
+      .catch(() => null)
+    if (!result) return null
+    // 旧服务没有目录身份，不能证明其是否正在写同一目录。
+    if (result.app === 'youth-fantasy-engine' && !result.instanceIdentity) {
+      fail('检测到无法核实目录归属的旧便携服务，请先关闭旧服务后重试。')
+    }
+    return result.instanceIdentity === instanceIdentity ? p : null
   } catch { return null }
 }
 
@@ -224,7 +241,28 @@ function sendJson(res, code, obj) {
 // Agent 可写工具宿主：请求经页面轮询执行；服务进程本身**不直接写数据文件**。
 // 🔴 与桌面主进程同一条红线：数据真源在页面内存 store，绕过它写盘会与防抖 / 云同步互相覆盖。
 const agentQueue = createPageQueue()
-let agentHost = null
+let modeService = null
+let modeServiceStarting = null
+const modeSwitchControllers = new Map()
+const PORTABLE_LEASE_OWNER = 'engine-renderer'
+
+/** 服务进程是便携版的唯一可信宿主；页面不能自行创建模式真源。 */
+function ensureModeService() {
+  if (modeService) return Promise.resolve(modeService)
+  if (modeServiceStarting) return modeServiceStarting
+  modeServiceStarting = createModeService({
+    dataDir: DATA_DIR,
+    callPage: payload => agentQueue.push(payload),
+    clientCount: () => agentQueue.clients.size,
+  }).then(service => {
+    modeService = service
+    return service
+  }).catch(error => {
+    modeServiceStarting = null
+    throw error
+  })
+  return modeServiceStarting
+}
 
 /**
  * 读请求体。超限时不 `req.destroy()` —— 那样 socket 立刻关闭、413 根本发不出去，
@@ -323,6 +361,39 @@ function withWriteLock(action) {
 }
 
 /**
+ * 外置记录的版本（强 ETag），与整库 revision 同一算法、同一 owner。
+ *
+ * 🔴 版本必须包含 store / id：外置文件彼此独立，若只按正文算版本，
+ *    不同 store 里出现相同内容时版本会撞车（调试时极难分辨，且误判"没变"）。
+ *    文件不存在 = `missing` 版本（与 GET 404 的 ETag 同值），首次写入也能带前置条件。
+ */
+function blobRevision(store, id, text) {
+  const body = text === null ? 'missing' : 'text\0' + text
+  return '"yfe-' + createHash('sha256')
+    .update(PORTABLE_OWNER + '\0blob\0' + store + '\0' + id + '\0' + body)
+    .digest('hex') + '"'
+}
+
+/**
+ * 外置记录「比较 + 替换」的**按文件队列**（同进程内）。
+ *
+ * 🔴 为什么不能复用 `withWriteLock`：知识库/向量整表可能有几十 MB，
+ *    把外置写塞进整库队列会让作者保存正文时排在大文件后面；
+ *    但同一条记录的两个条件写必须串行 —— 否则两个请求都先看到同一版本，
+ *    然后都以为自己有权限落盘，条件写就形同虚设。
+ *    键 = store/id，完成后清掉尾部，避免长期运行后 Map 无限增长。
+ */
+const blobQueues = new Map()
+function withBlobLock(key, action) {
+  const prev = blobQueues.get(key) || Promise.resolve()
+  const run = prev.catch(() => {}).then(action)
+  const tail = run.catch(() => {})
+  blobQueues.set(key, tail)
+  void tail.finally(() => { if (blobQueues.get(key) === tail) blobQueues.delete(key) })
+  return run
+}
+
+/**
  * 外置记录的原子写。🔴 tmp 名必须**每次唯一**：与主 JSON 同一条教训
  * （main.cjs 里 `store:save` 与 `store:save-sync` 曾因共用 tmp 而互相写坏）。
  * 外置记录彼此独立，但仍可能有「连续两次写同一条」的并发，故加 pid + 递增序号。
@@ -340,6 +411,103 @@ function atomicWriteBlob(abs, text) {
   }
 }
 
+// ============ 知识库跨文件事务（kbDocs + kbBodies）============
+//
+// 【为什么需要】知识库删除/导入要同时改两个整表文件。两次独立条件写之间崩溃或写失败，
+// 会留下「元数据没了正文还在」或反过来的孤儿。这里用前滚日志（journal）收口：
+//   ① 同一把锁下核对两个文件的版本（任一不符 ⇒ 409，一个字都不写）；
+//   ② 先把目标状态写进 `.kb-txn.json`（原子写），再逐个替换数据文件，最后删日志；
+//   ③ 中断后（进程被杀 / 写失败）由启动或下一次知识库操作恢复：
+//      文件已是目标态 ⇒ 跳过；仍是事务前态 ⇒ 补写目标态；
+//      既不是前态也不是目标态 ⇒ 有人在恢复前改过 ⇒ **拒绝覆盖**，保留日志并阻断知识库写入。
+// 🔴 这不是跨设备锁：只协调本服务进程内的请求；外部直接改文件的并发以「拒绝覆盖」收场。
+const KB_TXN_STORES = ['kbBodies', 'kbDocs'] // 锁顺序与客户端 transactWhole 的排序一致
+const KB_TXN_SET = new Set(KB_TXN_STORES)
+const KB_JOURNAL = path.join(DATA_DIR, '.kb-txn.json')
+
+/** 知识库整表写必须同时持有两把文件锁（顺序固定），与单表条件写互斥 */
+function withKbLocks(action) {
+  return withBlobLock('kbBodies\0__all__', () => withBlobLock('kbDocs\0__all__', action))
+}
+
+function kbWholePath(store) { return resolveBlobPath(store, '__all__') }
+
+/** 读知识库整表当前文本与版本；读失败抛出（调用方回 500，不能当缺失） */
+function readKbCurrent(store) {
+  const abs = kbWholePath(store)
+  const text = existsSync(abs) ? readFileSync(abs, 'utf8') : null
+  return { text, revision: blobRevision(store, '__all__', text) }
+}
+
+function writeKbJournal(text) {
+  const tmp = `${KB_JOURNAL}.${process.pid}.tmp`
+  try {
+    writeFileSync(tmp, text, 'utf8')
+    renameWithRetry(tmp, KB_JOURNAL)
+  } catch (e) {
+    try { unlinkSync(tmp) } catch { /* 名字固定但只有持锁者会写，残留会被下次覆盖 */ }
+    throw new Error(`写入知识库事务日志失败：${e.message}`)
+  }
+}
+
+const KB_REVISION_RE = /^"yfe-[a-f0-9]{64}"$/
+
+/**
+ * 恢复中断的知识库事务。**必须在 withKbLocks 内调用**。
+ * 返回 { ok } / { ok:false, blocked:true }（发现并发修改或日志损坏，拒绝覆盖）/
+ * { ok:false }（暂时性读写失败，日志保留，下次重试）。
+ */
+function recoverKbJournalLocked() {
+  if (!existsSync(KB_JOURNAL)) return { ok: true }
+  let journal
+  try {
+    journal = JSON.parse(readFileSync(KB_JOURNAL, 'utf8'))
+  } catch {
+    return { ok: false, blocked: true, error: '知识库事务日志损坏，无法自动恢复；请人工核对 data/.kb-txn.json 后处理' }
+  }
+  const files = journal?.files
+  if (journal?.version !== 1 || !Array.isArray(files) || files.length < 1 || files.length > 2) {
+    return { ok: false, blocked: true, error: '知识库事务日志格式未知，无法自动恢复；请人工核对 data/.kb-txn.json 后处理' }
+  }
+  const seenStores = new Set()
+  for (const f of files) {
+    if (!KB_TXN_SET.has(f?.store) || seenStores.has(f.store) || typeof f.afterText !== 'string'
+      || typeof f.beforeRevision !== 'string' || !KB_REVISION_RE.test(f.beforeRevision)
+      || f.afterRevision !== blobRevision(f.store, '__all__', f.afterText)) {
+      return { ok: false, blocked: true, error: '知识库事务日志未通过完整性校验，拒绝按它改写数据；请人工核对 data/.kb-txn.json' }
+    }
+    seenStores.add(f.store)
+  }
+  const pending = []
+  for (const f of files) {
+    let current
+    try { current = readKbCurrent(f.store) } catch {
+      return { ok: false, error: '知识库文件读取失败，事务恢复暂缓（日志已保留）' }
+    }
+    if (current.revision === f.afterRevision) continue
+    if (current.revision !== f.beforeRevision) {
+      return { ok: false, blocked: true, error: `知识库文件「${f.store}」在事务中断后被其他操作修改，自动恢复会覆盖它；已保留日志并暂停知识库写入，请人工核对` }
+    }
+    pending.push(f)
+  }
+  try {
+    for (const f of pending) atomicWriteBlob(kbWholePath(f.store), f.afterText)
+  } catch (e) {
+    return { ok: false, error: `知识库事务恢复写入失败（日志保留，下次重试）：${e.message}` }
+  }
+  try { unlinkSync(KB_JOURNAL) } catch { /* 下次恢复看到全部目标态会再删 */ }
+  return { ok: true, recovered: files.length }
+}
+
+/** 恢复失败时给知识库写入的统一拒绝响应（失败关闭，不改数据） */
+function kbRecoveryRejection(res, rec) {
+  return sendJson(res, rec.blocked ? 409 : 503, {
+    ok: false,
+    code: rec.blocked ? 'KB_RECOVERY_BLOCKED' : 'KB_RECOVERY_PENDING',
+    error: rec.error ?? '知识库事务恢复未完成',
+  })
+}
+
 const server = createServer(async (req, res) => {
   const url = req.url || '/'
 
@@ -351,25 +519,108 @@ const server = createServer(async (req, res) => {
   // ---- API ----
   if (url.startsWith('/api/')) {
     try {
-      if (url === '/api/ping') return sendJson(res, 200, { ok: true, app: 'youth-fantasy-engine' })
+      if (url === '/api/ping') return sendJson(res, 200, { ok: true, app: 'youth-fantasy-engine', instanceIdentity })
+
+      // ---- 连接模式（3.4.3）----
+      // 🔴 页面端点只接受同源页面请求；模式真源在服务进程，页面 state 不能替代。
+      if (url.startsWith('/api/mode/')) {
+        const route = url.split('?')[0]
+        if (!isSameOriginAgentPage(req)) {
+          return sendJson(res, 403, { ok: false, error: 'forbidden: 连接模式端点只接受本页同源请求' })
+        }
+        const service = modeService
+        try {
+          if (route === '/api/mode/status' && req.method === 'GET') {
+            let current = service
+            if (!current) {
+              try { current = await ensureModeService() } catch { current = null }
+            }
+            if (!current) return sendJson(res, 200, { ok: true, phase: 'blocked', mode: null, reason: '连接模式服务尚未就绪', busy: false, active: { api: 0, agent: 0 }, canRecover: true })
+            return sendJson(res, 200, { ok: true, ...await current.status() })
+          }
+          if (!service) {
+            // 服务创建失败（遗留锁 / 配置不可读）：恢复入口仍需可用，先做文件级恢复再重建。
+            if (route === '/api/mode/recover' && req.method === 'POST') {
+              const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+              await recoverConnectionFiles({ dataDir: DATA_DIR, confirm: body.confirm === true, confirmPid: Number.isInteger(body.confirmPid) ? body.confirmPid : null })
+              const recreated = await ensureModeService()
+              return sendJson(res, 200, { ok: true, status: await recreated.status() })
+            }
+            return sendJson(res, 503, { ok: false, error: '连接模式服务尚未就绪，请稍后重试。' })
+          }
+          if (route === '/api/mode/lease' && req.method === 'POST') {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+            const leaseId = service.acquire(body.mode, PORTABLE_LEASE_OWNER)
+            return sendJson(res, 200, { ok: true, leaseId })
+          }
+          if (route === '/api/mode/release' && req.method === 'POST') {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+            const id = typeof body.leaseId === 'string' ? body.leaseId : ''
+            return sendJson(res, 200, { ok: service.release(id, PORTABLE_LEASE_OWNER) })
+          }
+          if (route === '/api/mode/switch' && req.method === 'POST') {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+            const transitionId = typeof body.transitionId === 'string' ? body.transitionId : ''
+            if (!transitionId) return sendJson(res, 400, { ok: false, error: '缺少切换标识' })
+            if (modeSwitchControllers.has(transitionId)) return sendJson(res, 200, { ok: false, error: '该切换标识正在使用' })
+            const controller = new AbortController()
+            modeSwitchControllers.set(transitionId, controller)
+            try {
+              return sendJson(res, 200, { ok: true, status: await service.switchTo(body.to, transitionId, controller.signal) })
+            } finally {
+              if (modeSwitchControllers.get(transitionId) === controller) modeSwitchControllers.delete(transitionId)
+            }
+          }
+          if (route === '/api/mode/cancel' && req.method === 'POST') {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+            const controller = modeSwitchControllers.get(body.transitionId)
+            if (controller) controller.abort()
+            return sendJson(res, 200, { ok: !!controller })
+          }
+          if (route === '/api/mode/recover' && req.method === 'POST') {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
+            const status = await service.recover({
+              confirm: body.confirm === true,
+              confirmPid: Number.isInteger(body.confirmPid) ? body.confirmPid : null,
+            })
+            return sendJson(res, 200, { ok: true, status })
+          }
+        } catch (error) {
+          return sendJson(res, 200, { ok: false, error: error?.message ?? String(error) })
+        }
+        return sendJson(res, 404, { ok: false, error: 'unknown mode api' })
+      }
 
       // ---- Agent 可写工具（3.4.3）----
       // 页面端点（status / config / next / result）只接受同源页面请求；
       // Agent 桥走的是 core 自己的随机端口，带 host 文件里的 Bearer token。
       if (url.startsWith('/api/agent/')) {
         const route = url.split('?')[0]
-        if (!agentHost) return sendJson(res, 503, { ok: false, error: 'Agent 宿主尚未就绪，请稍后重试。' })
+        if (!modeService) return sendJson(res, 503, { ok: false, error: 'Agent 宿主尚未就绪，请稍后重试。' })
         if (!isSameOriginAgentPage(req)) {
           return sendJson(res, 403, { ok: false, error: 'forbidden: Agent 页面端点只接受本页同源请求' })
         }
         if (route === '/api/agent/status' && req.method === 'GET') {
-          return sendJson(res, 200, { ok: true, ...agentHost.status() })
+          const status = modeService ? await modeService.status() : null
+          const agent = status?.agent ?? null
+          return sendJson(res, 200, {
+            ok: true,
+            running: !!agent?.running,
+            enabled: !!agent?.enabled,
+            port: agent?.port ?? null,
+            bridgeFile: agent?.bridgeFile ?? null,
+            scope: agent?.scope ?? { projects: [] },
+            clients: agentQueue.clients.size,
+            lastError: agent?.lastError ?? (status?.phase === 'blocked' ? status.reason : ''),
+            tokenConfigured: !!agent?.tokenConfigured,
+            connectionMode: status ? { phase: status.phase, mode: status.mode, busy: status.busy, reason: status.reason } : null,
+          })
         }
         if (route === '/api/agent/config' && req.method === 'POST') {
           const buf = await readBody(req)
           let body
           try { body = JSON.parse(buf.toString('utf8')) } catch { return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' }) }
-          return sendJson(res, 200, { ok: true, status: agentHost.setConfig(body) })
+          return sendJson(res, 200, { ok: true, status: modeService.setAgentConfig(body) })
         }
         if (route === '/api/agent/next' && req.method === 'GET') {
           const u = new URL(url, 'http://127.0.0.1')
@@ -465,6 +716,90 @@ const server = createServer(async (req, res) => {
         return sendJson(res, 405, { ok: false, error: 'method not allowed' })
       }
 
+      // ---- 知识库跨文件事务 ----
+      //   POST /api/kb-txn  { expect: {kbDocs,kbBodies}, next: {kbDocs,kbBodies} }
+      //   GET  /api/kb-txn  诊断 + 尝试恢复（返回日志状态）
+      if (url.split('?')[0] === '/api/kb-txn') {
+        if (req.method === 'GET') {
+          return withKbLocks(() => {
+            const rec = recoverKbJournalLocked()
+            return sendJson(res, 200, { ...rec, journalPresent: existsSync(KB_JOURNAL) })
+          })
+        }
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
+        const buf = await readBody(req).catch(e => {
+          if (e && e.code === 'BODY_TOO_LARGE') return null
+          throw e
+        })
+        if (buf === null) return sendJson(res, 413, { ok: false, error: `知识库事务超过 ${MAX_BODY >> 20} MiB 上限，未能提交。` })
+        let body
+        try { body = JSON.parse(buf.toString('utf8')) } catch {
+          return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' })
+        }
+        for (const store of KB_TXN_STORES) {
+          if (typeof body?.expect?.[store] !== 'string' || !KB_REVISION_RE.test(body.expect[store])
+            || !Array.isArray(body?.next?.[store])) {
+            return sendJson(res, 400, { ok: false, error: '知识库事务必须同时给出 kbDocs 与 kbBodies 的前置版本和新表' })
+          }
+        }
+        return withKbLocks(() => {
+          const rec = recoverKbJournalLocked()
+          if (!rec.ok) return kbRecoveryRejection(res, rec)
+          const current = {}
+          try {
+            for (const store of KB_TXN_STORES) current[store] = readKbCurrent(store)
+          } catch {
+            return sendJson(res, 500, { ok: false, error: '知识库文件读取失败，未改动原文件' })
+          }
+          for (const store of KB_TXN_STORES) {
+            if (body.expect[store] !== current[store].revision) {
+              return sendJson(res, 409, {
+                ok: false, code: 'DATA_CONFLICT',
+                error: '知识库已在另一个窗口更新；请重新读取并合并本次修改（未改动原文件）',
+                revisions: { kbDocs: current.kbDocs.revision, kbBodies: current.kbBodies.revision },
+              })
+            }
+          }
+          const changed = KB_TXN_STORES
+            .map(store => ({ store, text: JSON.stringify(body.next[store]) }))
+            .filter(f => f.text !== current[f.store].text)
+          if (!changed.length) {
+            return sendJson(res, 200, { ok: true, revisions: { kbDocs: current.kbDocs.revision, kbBodies: current.kbBodies.revision } })
+          }
+          const journal = {
+            version: 1,
+            createdAt: Date.now(),
+            files: changed.map(f => ({
+              store: f.store,
+              beforeRevision: current[f.store].revision,
+              afterRevision: blobRevision(f.store, '__all__', f.text),
+              afterText: f.text,
+            })),
+          }
+          try { writeKbJournal(JSON.stringify(journal)) } catch (e) {
+            // 日志写不进去 ⇒ 一个数据文件都不动（没有日志就没有可恢复性）
+            return sendJson(res, 500, { ok: false, code: 'WRITE_FAILED', error: String(e?.message ?? e) })
+          }
+          try {
+            for (const f of changed) atomicWriteBlob(kbWholePath(f.store), f.text)
+          } catch (e) {
+            // 部分文件可能已替换：日志保留，启动 / 下次知识库操作按前态→目标态收口
+            return sendJson(res, 500, {
+              ok: false, code: 'KB_TXN_PENDING',
+              error: `知识库跨文件提交中断，已保留恢复日志；下次操作或重启会自动完成或提示核对：${e?.message ?? e}`,
+            })
+          }
+          try { unlinkSync(KB_JOURNAL) } catch { /* 残留日志会在下次恢复时确认目标态后删除 */ }
+          return sendJson(res, 200, {
+            ok: true,
+            revisions: {
+              kbDocs: blobRevision('kbDocs', '__all__', JSON.stringify(body.next.kbDocs)),
+              kbBodies: blobRevision('kbBodies', '__all__', JSON.stringify(body.next.kbBodies)),
+            },
+          })
+        })
+      }
+
       // ---- 外置大块数据（sidecar）----
       // 备份载荷 / 向量 / 知识库各存独立文件，主 JSON 只留元数据。路由与 /api/data 同构：
       //   GET    /api/blob?store=&id=       读一条（404 = 还没有）
@@ -493,9 +828,23 @@ const server = createServer(async (req, res) => {
         if (!abs) return sendJson(res, 400, { ok: false, error: '外置记录的 store / id 不合法' })
 
         if (req.method === 'GET') {
-          if (!existsSync(abs)) return sendJson(res, 404, { missing: true })
+          if (!existsSync(abs)) {
+            // 404 也带版本：客户端首次写整表时才能带前置条件（与 /api/data 的 missing 版同口径）
+            const revision = blobRevision(store, id, null)
+            res.setHeader('ETag', revision)
+            return sendJson(res, 404, { missing: true, revision })
+          }
+          let text
           try {
-            return sendJson(res, 200, { value: JSON.parse(readFileSync(abs, 'utf8')) })
+            text = readFileSync(abs, 'utf8')
+          } catch {
+            // 🔴 读失败 ≠ 不存在：回 500 让调用方知道这一条读不出来，不能伪装成可覆盖的空记录
+            return sendJson(res, 500, { ok: false, error: '外置记录读取失败，未改动原文件' })
+          }
+          const revision = blobRevision(store, id, text)
+          res.setHeader('ETag', revision)
+          try {
+            return sendJson(res, 200, { value: JSON.parse(text), revision })
           } catch {
             // 🔴 单条损坏只该丢这一条：回 500 让调用方跳过它，不要让整块功能静默瘫痪
             return sendJson(res, 500, { ok: false, error: '外置记录已损坏（JSON 解析失败）' })
@@ -516,12 +865,105 @@ const server = createServer(async (req, res) => {
           try { JSON.parse(text) } catch {
             return sendJson(res, 400, { ok: false, error: '请求体不是有效 JSON' })
           }
-          atomicWriteBlob(abs, text)
-          return sendJson(res, 200, { ok: true })
+          const expected = req.headers['if-match']
+          /**
+           * 整表 store **强制**条件写；per-id store 只有客户端主动带 If-Match 时才校验。
+           * 这样旧版页面/旧备份脚本写 backupPayloads 的行为不变，
+           * 而向量 / 知识库这两类「读整表再写回」不会被并发标签静默覆盖。
+           */
+          if (!BLOB_WHOLE_STORES.has(store) && !expected) {
+            try { atomicWriteBlob(abs, text) } catch (e) {
+              return sendJson(res, 500, { ok: false, code: 'WRITE_FAILED', error: String(e?.message ?? e) })
+            }
+            return sendJson(res, 200, { ok: true, revision: blobRevision(store, id, text) })
+          }
+          const putLocked = () => {
+            let currentText
+            try {
+              currentText = existsSync(abs) ? readFileSync(abs, 'utf8') : null
+            } catch {
+              return sendJson(res, 500, { ok: false, error: '外置记录读取失败，未改动原文件' })
+            }
+            const current = blobRevision(store, id, currentText)
+            if (!expected) {
+              return sendJson(res, 428, {
+                ok: false, code: 'REVISION_REQUIRED',
+                error: '该外置整表要求带版本提交；请刷新页面后重试（未改动原文件）',
+                revision: current,
+              })
+            }
+            if (expected !== current) {
+              return sendJson(res, 409, {
+                ok: false, code: 'DATA_CONFLICT',
+                error: '该外置数据已在另一个窗口更新；请重新读取并合并本次修改（未改动原文件）',
+                revision: current,
+              })
+            }
+            try { atomicWriteBlob(abs, text) } catch (e) {
+              return sendJson(res, 500, { ok: false, code: 'WRITE_FAILED', error: String(e?.message ?? e) })
+            }
+            const revision = blobRevision(store, id, text)
+            res.setHeader('ETag', revision)
+            return sendJson(res, 200, { ok: true, revision })
+          }
+          // 知识库单表写也要先收口未决事务，并与跨表事务持同一组锁，防止绕过日志改半个知识库
+          if (KB_TXN_SET.has(store)) {
+            return withKbLocks(() => {
+              const rec = recoverKbJournalLocked()
+              if (!rec.ok) return kbRecoveryRejection(res, rec)
+              return putLocked()
+            })
+          }
+          return withBlobLock(store + '\0' + id, putLocked)
         }
         if (req.method === 'DELETE') {
-          try { unlinkSync(abs) } catch { /* 已不存在视为成功（删除是幂等的） */ }
-          return sendJson(res, 200, { ok: true })
+          const expected = req.headers['if-match']
+          if (!expected) {
+            // 整表删除同样必须带版本：否则「先 GET 整表、再删一条、写回」的客户端
+            // 可绕过条件写直接删整表（产品目前不用 DELETE 删 whole，但协议不能留后门）。
+            if (BLOB_WHOLE_STORES.has(store)) {
+              let text
+              try { text = existsSync(abs) ? readFileSync(abs, 'utf8') : null } catch {
+                return sendJson(res, 500, { ok: false, error: '外置记录读取失败，未删除原文件' })
+              }
+              return sendJson(res, 428, {
+                ok: false, code: 'REVISION_REQUIRED',
+                error: '该外置整表要求带版本删除；请刷新页面后重试（未删除原文件）',
+                revision: blobRevision(store, id, text),
+              })
+            }
+            try { unlinkSync(abs) } catch { /* 已不存在视为成功（删除是幂等的） */ }
+            return sendJson(res, 200, { ok: true, revision: blobRevision(store, id, null) })
+          }
+          const delLocked = () => {
+            if (!existsSync(abs)) {
+              return sendJson(res, 200, { ok: true, missing: true, revision: blobRevision(store, id, null) })
+            }
+            let currentText
+            try {
+              currentText = readFileSync(abs, 'utf8')
+            } catch {
+              return sendJson(res, 500, { ok: false, error: '外置记录读取失败，未删除原文件' })
+            }
+            const current = blobRevision(store, id, currentText)
+            if (expected !== current) {
+              return sendJson(res, 409, {
+                ok: false, code: 'DATA_CONFLICT',
+                error: '该外置数据已在另一个窗口更新；本次删除未执行',
+                revision: current,
+              })
+            }
+            try { unlinkSync(abs) } catch { /* 已不存在视为成功 */ }
+            return sendJson(res, 200, { ok: true, revision: blobRevision(store, id, null) })
+          }
+          if (KB_TXN_SET.has(store)) {
+            return withKbLocks(() => {
+              const rec = recoverKbJournalLocked()
+              if (!rec.ok) return kbRecoveryRejection(res, rec)
+              return delLocked()
+            })
+          }
+          return withBlobLock(store + '\0' + id, delLocked)
         }
         return sendJson(res, 405, { ok: false, error: 'method not allowed' })
       }
@@ -616,6 +1058,28 @@ async function main() {
     return
   }
 
+  // 用系统维护的本机监听端口持有目录独占权：即使进程异常退出，系统也会释放。
+  // 哈希碰撞或端口被其他程序占用时保守拒绝启动，不假定对方拥有同一目录。
+  const guardPort = 20000 + Buffer.from(instanceIdentity, 'hex').readUInt32BE(0) % 10000
+  const guard = createServer((_req, res) => { res.writeHead(404); res.end() })
+  try {
+    await new Promise((resolve, reject) => {
+      guard.once('error', reject)
+      guard.listen(guardPort, '127.0.0.1', resolve)
+    })
+  } catch {
+    fail('便携目录的本机独占端口已占用，已拒绝同时启动；请检查是否有其他实例。')
+  }
+
+  // 上次中断的知识库事务在这里收口；发现并发修改则保留日志并阻断知识库写入（其余功能不受影响）
+  try {
+    const rec = await withKbLocks(() => recoverKbJournalLocked())
+    if (rec.recovered) log(`已恢复上次中断的知识库事务（${rec.recovered} 个文件）`)
+    if (!rec.ok) console.error('[portable] ⚠️ 知识库事务恢复未完成：', rec.error ?? '', '（知识库写入将被拒绝，直到核对完成）')
+  } catch (e) {
+    console.error('[portable] ⚠️ 知识库事务恢复异常：', e?.message ?? e)
+  }
+
   PORT = await pickPort(ARGS.port)
   await new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -625,17 +1089,12 @@ async function main() {
   writeFileSync(PORT_LOCK, String(PORT), 'utf8')
   const url = `http://127.0.0.1:${PORT}`
 
-  // Agent 可写工具宿主：起独立随机端口（桥用 host 文件里的 port + token 连接）。
-  // 失败不阻断便携服务：只读 / 写作仍照常工作。
+  // 连接模式服务 + Agent 可写工具宿主：起独立随机端口（桥用 host 文件里的 port + token 连接）。
+  // 失败不阻断便携服务：只读 / 写作仍照常工作，模式面板会显示阻断原因与恢复入口。
   try {
-    agentHost = createAgentHost({
-      configFile: path.join(DATA_DIR, 'agent-host.json'),
-      callPage: payload => agentQueue.push(payload),
-      clientCount: () => agentQueue.clients.size,
-    })
-    await agentHost.start()
+    await ensureModeService()
   } catch (error) {
-    console.error('[portable] ⚠️ Agent 宿主启动失败（不影响正常写作）：', error?.message ?? error)
+    console.error('[portable] ⚠️ 连接模式服务启动失败（不影响正常写作）：', error?.message ?? error)
   }
 
   log('==================================================')
@@ -652,8 +1111,17 @@ async function main() {
 
   const shutdown = () => {
     try { if (existsSync(PORT_LOCK)) writeFileSync(PORT_LOCK, '', 'utf8') } catch { /* 忽略 */ }
-    try { void agentHost?.stop?.() } catch { /* 退出阶段不阻断 */ }
-    process.exit(0)
+    for (const controller of modeSwitchControllers.values()) {
+      try { controller.abort() } catch { /* 退出阶段不阻断 */ }
+    }
+    const done = () => process.exit(0)
+    if (!modeService) { done(); return }
+    // 先释放唯一宿主锁与监听器；关闭失败也要限时退出，遗留锁由下次启动的「安全恢复」处理。
+    const timer = setTimeout(done, 3000)
+    Promise.resolve(modeService.close()).catch(() => undefined).finally(() => {
+      clearTimeout(timer)
+      done()
+    })
   }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)

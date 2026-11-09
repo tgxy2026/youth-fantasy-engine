@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import * as db from '../src/lib/db'
 import {
-  setKbBackend, listDocs, getDocText, kbStats, importDoc, removeDoc,
+  setKbBackend, listDocs, getDocText, kbStats, importDoc, removeDoc, restoreDocsFromBundle,
   setDocEnabled, renameDoc, reindexAll, recallKnowledge, renderKbHits,
   clearProjectDocs,
   KB_TOP_K, KB_MAX_CHARS, KB_MAX_DOCS, KB_HIT_CHARS,
@@ -575,6 +575,61 @@ const multiPara = (n: number): string =>
     const hits = (src.match(/rebuildKbIndexAfterRestore\(/g) ?? []).length
     ok(`🔴 ${file}：${why} 都接上了自动重建`, hits === n, `实际 ${hits} / 期望 ${n}`)
   }
+}
+
+{
+  const kb = memKb()
+  kb.putBody = async () => { throw new Error('模拟正文写入失败') }
+  setKbBackend(kb)
+  const result = await importDoc({ projectId: 'fault-test', title: '故障测试', sourceType: 'paste', text: '正文' })
+  ok('正文写失败不创建无正文的元数据', !result.ok && kb.docs.length === 0)
+  const mismatch = memKb()
+  mismatch.getBody = async () => ''
+  setKbBackend(mismatch)
+  const result2 = await importDoc({ projectId: 'fault-test', title: '回读失败', sourceType: 'paste', text: '正文' })
+  ok('正文回读不一致不创建元数据', !result2.ok && mismatch.docs.length === 0)
+  const metaFailure = memKb()
+  metaFailure.put = async () => { throw new Error('模拟元数据写入失败') }
+  setKbBackend(metaFailure)
+  const result3 = await importDoc({ projectId: 'fault-test', title: '元数据失败', sourceType: 'paste', text: '待核对正文' })
+  ok('元数据失败返回失败并保留已写入正文供核对', !result3.ok && metaFailure.docs.length === 0 && [...metaFailure.bodies.values()].includes('待核对正文'))
+  const restoreBackend = memKb()
+  setKbBackend(restoreBackend)
+  const existing = await importDoc({ projectId: 'fault-test', title: '旧资料', sourceType: 'paste', text: '旧正文' })
+  if (!existing.ok || !existing.doc) throw new Error('知识库恢复测试预置失败')
+  const existingId = existing.doc.id
+  const originalPutBody = restoreBackend.putBody
+  restoreBackend.putBody = async (id, text) => { if (text === '新正文') throw new Error('注入正文写失败'); await originalPutBody(id, text) }
+  let rejected = false
+  try { await restoreDocsFromBundle('fault-test', [{ title: '新资料', sourceType: 'paste', chars: 3, importedAt: 1, enabled: false, text: '新正文' }]) } catch { rejected = true }
+  ok('恢复新正文失败保留旧资料和正文', rejected && restoreBackend.docs.some(d => d.id === existingId) && restoreBackend.bodies.get(existingId) === '旧正文')
+  const deleteBackend = memKb()
+  setKbBackend(deleteBackend)
+  const toDelete = await importDoc({ projectId: 'fault-test', title: '删除故障', sourceType: 'paste', text: '删除故障正文' })
+  if (!toDelete.ok || !toDelete.doc) throw new Error('知识库删除测试预置失败')
+  const deleteId = toDelete.doc.id
+  deleteBackend.delBody = async () => { throw new Error('注入正文删除失败') }
+  const deleteResult = await removeDoc('fault-test', deleteId)
+  ok('正文删除失败不报告删除成功且正文保留', !deleteResult && deleteBackend.bodies.get(deleteId) === '删除故障正文')
+  ok('当前非事务删除可能留下孤儿正文（待修复）', !deleteBackend.docs.some(d => d.id === deleteId) && deleteBackend.bodies.has(deleteId))
+  const atomicBackend = memKb()
+  setKbBackend(atomicBackend)
+  const atomicDoc = await importDoc({ projectId: 'fault-test', title: '事务删除', sourceType: 'paste', text: '保留正文' })
+  if (!atomicDoc.ok || !atomicDoc.doc) throw new Error('事务删除测试预置失败')
+  const atomicId = atomicDoc.doc.id
+  atomicBackend.deleteDocAndBody = async () => { throw new Error('事务失败') }
+  const atomicResult = await removeDoc('fault-test', atomicId)
+  ok('事务删除失败保留元数据及正文', !atomicResult && atomicBackend.docs.some(d => d.id === atomicId) && atomicBackend.bodies.get(atomicId) === '保留正文')
+  const racingBackend = memKb()
+  setKbBackend(racingBackend)
+  const racingDoc = await importDoc({ projectId: 'fault-test', title: '并发正文', sourceType: 'paste', text: '旧正文' })
+  if (!racingDoc.ok || !racingDoc.doc) throw new Error('并发测试预置失败')
+  let restored = false
+  racingBackend.restoreDocIfAbsent = async () => { restored = true }
+  racingBackend.delBody = async id => { racingBackend.bodies.set(id, '其他页面的新正文'); throw new Error('并发写入') }
+  const racingResult = await removeDoc('fault-test', racingDoc.doc.id)
+  ok('正文已被并发修改时不自动恢复旧元信息', !racingResult && !restored && racingBackend.bodies.get(racingDoc.doc.id) === '其他页面的新正文')
+  setKbBackend(null)
 }
 
 console.log(`\n—— knowledgeBase 用例结束：${pass} 通过 / ${fail} 失败`)

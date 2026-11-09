@@ -71,7 +71,7 @@ const lineAt = (text, idx) => { let ln = 1; for (let k = 0; k < idx; k++) if (te
 // 全部参与"被引用"统计的文件（含 tests / electron / scripts）
 function walkAny(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === 'dist-web' || e.name === 'release') continue
+    if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === 'dist-web' || e.name === 'release' || (e.isDirectory() && e.name.startsWith('dist_bak_'))) continue
     // 🔴 2026-09-19 加固：**生成物与工作区临时文件不算「使用」证据**。
     //    ① tests/.xxx.test.mjs —— build-test.mjs 用 esbuild 打包出的**整份源码副本**，
     //       会把被 import 模块的实现整段抄进去，于是「只在 bundle 里出现」的符号被误判成有人用；

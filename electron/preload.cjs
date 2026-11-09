@@ -54,6 +54,13 @@ contextBridge.exposeInMainWorld('electronAgentHost', {
   status: () => ipcRenderer.invoke('agent-host:status'),
   setConfig: patch => ipcRenderer.invoke('agent-host:set-config', patch),
   writeBridgeScriptPath: () => ipcRenderer.invoke('agent-host:write-bridge-script-path'),
+  // 连接模式（3.4.3）：真源在主进程同一服务；渲染层只申请租约 / 请求切换，不能自行判定模式。
+  modeStatus: () => ipcRenderer.invoke('agent-host:mode-status'),
+  modeAcquire: mode => ipcRenderer.invoke('agent-host:mode-lease', mode),
+  modeRelease: leaseId => ipcRenderer.invoke('agent-host:mode-release', leaseId),
+  modeSwitch: payload => ipcRenderer.invoke('agent-host:mode-switch', payload),
+  modeCancel: transitionId => ipcRenderer.invoke('agent-host:mode-cancel', transitionId),
+  modeRecover: payload => ipcRenderer.invoke('agent-host:mode-recover', payload),
   ready: () => ipcRenderer.send('agent-host:ready'),
   onCall: handler => {
     ipcRenderer.on('agent-host:request', (_event, msg) => {

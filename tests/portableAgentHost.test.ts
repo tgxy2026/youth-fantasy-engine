@@ -73,11 +73,49 @@ async function main() {
   const call = (requestId: string) => fetch(agentBase + '/api/agent/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${hostConfig.token}` },
-    body: JSON.stringify({ call: { sessionId: 'portable-test', requestId, tool: 'yfe_list_projects', args: {} } }),
-  }).then(r => r.json()) as Promise<{ ok: boolean; code?: string; result?: { ok: boolean; value?: unknown } }>
+    body: JSON.stringify({ call: { sessionId: 'portable-test', requestId, tool: 'yfe_create_chapter', args: {} } }),
+  }).then(r => r.json()) as Promise<{ ok: boolean; code?: string; replayed?: boolean; result?: { ok: boolean; value?: unknown } }>
 
   const disabled = await call('req-portable-01')
-  ok('未开启连接 → HOST_DISABLED', disabled.ok === false && disabled.code === 'HOST_DISABLED', JSON.stringify(disabled))
+  ok('API 模式下 Agent 调用被模式闸拒绝', disabled.ok === false && disabled.code === 'MODE_BLOCKED', JSON.stringify(disabled))
+
+  // 3.4.3 互斥：全新安装为 API 模式，先验证「API 模式禁止开启 Agent 连接」，再真实切换。
+  const modeStatus = await fetch(base + '/api/mode/status', { headers: pageHeader }).then(r => r.json()) as { phase?: string; mode?: string }
+  ok('便携服务如实返回 API 模式', modeStatus.phase === 'stable' && modeStatus.mode === 'api', JSON.stringify(modeStatus))
+  const blockedConfig = await fetch(base + '/api/agent/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
+    body: JSON.stringify({ enabled: true, scope: { projects: [] } }),
+  }).then(r => r.json()) as { ok: boolean; error?: string }
+  ok('API 模式下不能开启 Agent 连接', blockedConfig.ok === false, JSON.stringify(blockedConfig))
+  const lease = await fetch(base + '/api/mode/lease', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
+    body: JSON.stringify({ mode: 'api' }),
+  }).then(r => r.json()) as { ok: boolean; leaseId: string }
+  assert.ok(lease.ok && lease.leaseId)
+  const switching = fetch(base + '/api/mode/switch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
+    body: JSON.stringify({ to: 'agent', transitionId: 'portable-test-switch' }),
+  }).then(r => r.json()) as Promise<{ ok: boolean; status?: { phase?: string; mode?: string } }>
+  for (let i = 0; i < 50; i++) {
+    const current = await fetch(base + '/api/mode/status', { headers: pageHeader }).then(r => r.json()) as { phase?: string }
+    if (current.phase === 'switching') break
+    await sleep(20)
+  }
+  const duplicate = await fetch(base + '/api/mode/switch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
+    body: JSON.stringify({ to: 'agent', transitionId: 'portable-test-switch' }),
+  }).then(r => r.json()) as { ok: boolean; error?: string }
+  ok('重复切换标识被拒绝', duplicate.ok === false && !!duplicate.error)
+  const release = await fetch(base + '/api/mode/release', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
+    body: JSON.stringify({ leaseId: lease.leaseId }),
+  }).then(r => r.json()) as { ok: boolean }
+  assert.ok(release.ok)
+  const switched = await switching
+  ok('便携服务可真实切换到 Agent 模式', switched.ok === true && switched.status?.phase === 'stable' && switched.status?.mode === 'agent', JSON.stringify(switched))
+
+  const notEnabled = await call('req-portable-01b')
+  ok('Agent 模式下未开启连接 → HOST_DISABLED', notEnabled.ok === false && notEnabled.code === 'HOST_DISABLED', JSON.stringify(notEnabled))
 
   const configured = await fetch(base + '/api/agent/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader },
@@ -105,7 +143,7 @@ async function main() {
 
   // requestId 幂等（重放不再进队列）
   const replay = await call('req-portable-02')
-  ok('相同 requestId 重放不重复执行', replay.ok === true, JSON.stringify(replay))
+  ok('相同 requestId 重放不重复执行', replay.ok === true && replay.replayed === true, JSON.stringify(replay))
 
   console.log(`\nPORTABLE_AGENT_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)
   if (fail > 0) process.exitCode = 1

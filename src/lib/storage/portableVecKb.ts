@@ -31,6 +31,7 @@ import { chunkKey } from '@/lib/semantic/chunk'
 import type { KbBackend, KbDoc } from '@/lib/search/knowledgeBase'
 import { setKbBackend } from '@/lib/search/knowledgeBase'
 import { PORTABLE, portableStore } from '@/lib/storage/fileBackend'
+import { SidecarUnsupportedError } from '@/lib/storage/sidecar'
 
 /** 便携整库 JSON 里承载两库数据的三个 store 名（桌面端不存在这三个） */
 export const PORTABLE_VEC_STORE = 'vecRows'
@@ -156,32 +157,80 @@ export const portableVecBackend: VecBackend = {
 
 type StoredBody = { id: string; text: string }
 
+const rowId = (row: unknown): string => String((row as { id?: unknown })?.id ?? '')
+
+function upsertRow<T extends { id: string }>(rows: unknown[], rec: T): unknown[] {
+  const i = rows.findIndex(r => rowId(r) === rec.id)
+  const out = rows.slice()
+  if (i >= 0) out[i] = rec
+  else out.push(rec)
+  return out
+}
+
 /** 便携知识库后端（`export` 理由同上：供单测直接注入） */
 export const portableKbBackend: KbBackend = {
   async list(projectId: string): Promise<KbDoc[]> {
     return portableStore.getAllByIndex<KbDoc>(PORTABLE_KB_DOCS_STORE, 'projectId', projectId)
   },
   async put(doc: KbDoc): Promise<void> {
-    await portableStore.put(PORTABLE_KB_DOCS_STORE, doc)
+    await portableStore.putStrict(PORTABLE_KB_DOCS_STORE, doc)
   },
   async del(id: string): Promise<void> {
-    await portableStore.del(PORTABLE_KB_DOCS_STORE, id)
+    await portableStore.delStrict(PORTABLE_KB_DOCS_STORE, id)
   },
   async getBody(id: string): Promise<string> {
     const row = await portableStore.get<StoredBody>(PORTABLE_KB_BODIES_STORE, id)
     return row?.text ?? ''
   },
   async putBody(id: string, text: string): Promise<void> {
-    await portableStore.put(PORTABLE_KB_BODIES_STORE, { id, text })
+    await portableStore.putStrict(PORTABLE_KB_BODIES_STORE, { id, text })
   },
   async delBody(id: string): Promise<void> {
-    await portableStore.del(PORTABLE_KB_BODIES_STORE, id)
+    await portableStore.delStrict(PORTABLE_KB_BODIES_STORE, id)
+  },
+  async restoreDocIfAbsent(doc: KbDoc): Promise<void> {
+    await portableStore.putIfAbsentStrict(PORTABLE_KB_DOCS_STORE, doc)
+  },
+  async deleteDocAndBody(id: string): Promise<void> {
+    await portableStore.transactWhole(
+      [PORTABLE_KB_DOCS_STORE, PORTABLE_KB_BODIES_STORE],
+      rows => ({
+        [PORTABLE_KB_DOCS_STORE]: rows[PORTABLE_KB_DOCS_STORE].filter(r => rowId(r) !== id),
+        [PORTABLE_KB_BODIES_STORE]: rows[PORTABLE_KB_BODIES_STORE].filter(r => rowId(r) !== id),
+      }),
+      { [PORTABLE_KB_DOCS_STORE]: new Set([id]), [PORTABLE_KB_BODIES_STORE]: new Set([id]) },
+    )
+  },
+  async putDocAndBody(doc: KbDoc, text: string): Promise<void> {
+    await portableStore.transactWhole(
+      [PORTABLE_KB_DOCS_STORE, PORTABLE_KB_BODIES_STORE],
+      rows => ({
+        [PORTABLE_KB_DOCS_STORE]: upsertRow(rows[PORTABLE_KB_DOCS_STORE], doc),
+        [PORTABLE_KB_BODIES_STORE]: upsertRow(rows[PORTABLE_KB_BODIES_STORE], { id: doc.id, text }),
+      }),
+      { [PORTABLE_KB_DOCS_STORE]: new Set([doc.id]), [PORTABLE_KB_BODIES_STORE]: new Set([doc.id]) },
+    )
   },
   async clearProject(projectId: string): Promise<void> {
     const docs = await portableKbBackend.list(projectId)
-    for (const d of docs) {
-      await portableStore.del(PORTABLE_KB_DOCS_STORE, d.id)
-      await portableStore.del(PORTABLE_KB_BODIES_STORE, d.id)
+    if (!docs.length) return
+    const ids = new Set(docs.map(d => d.id))
+    try {
+      await portableStore.transactWhole(
+        [PORTABLE_KB_DOCS_STORE, PORTABLE_KB_BODIES_STORE],
+        rows => ({
+          [PORTABLE_KB_DOCS_STORE]: rows[PORTABLE_KB_DOCS_STORE].filter(r => !ids.has(rowId(r))),
+          [PORTABLE_KB_BODIES_STORE]: rows[PORTABLE_KB_BODIES_STORE].filter(r => !ids.has(rowId(r))),
+        }),
+        { [PORTABLE_KB_DOCS_STORE]: ids, [PORTABLE_KB_BODIES_STORE]: ids },
+      )
+    } catch (e) {
+      // 旧通道没有原子提交：保持逐条严格删除（失败抛出，不静默假装清完）
+      if (!(e instanceof SidecarUnsupportedError)) throw e
+      for (const d of docs) {
+        await portableStore.delStrict(PORTABLE_KB_DOCS_STORE, d.id)
+        await portableStore.delStrict(PORTABLE_KB_BODIES_STORE, d.id)
+      }
     }
   },
 }

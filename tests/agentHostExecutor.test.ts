@@ -15,6 +15,7 @@ import * as db from '@/lib/db'
 import { AGENT_ACTIONS, AGENT_TOOL_NAMES, agentErrorRetryable, type AgentAction } from '@/lib/agentHost/contract'
 import { createAgentExecutor, defaultExecutorDeps, appendText } from '@/lib/agentHost/executor'
 import { __resetMockStores, memoryOps } from './mock-memory'
+import { addItem as addLocalInspiration, INSPIRATION_MAX } from '@/lib/creative/inspirationBox'
 import { getTab } from '@/lib/schema'
 import { getActivePack, modulesFor } from '@/lib/schemaTemplates/index'
 import { acquireAgentForm, cardLeaseKey, registerFormEditor, tableLeaseKey, tryRegisterFormEditor, waitForAgentForm, withFormSave } from '@/lib/agentHost/formLease'
@@ -58,6 +59,37 @@ async function callWrite(tool: string, args: Record<string, unknown>, scope = fu
 }
 
 async function main() {
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '并发保护', content: '原文' })
+    const original = (await memoryOps.getAll<Chapter>('chapters'))[0]
+    const base = defaultExecutorDeps()
+    let dirty = false
+    const guarded = createAgentExecutor({ ...base, flush: async () => true, storageBlockReason: () => '', notify: () => {}, unsavedDraft: () => dirty,
+      createSnapshot: async (chapter, source, owner) => { const snapshot = await base.createSnapshot(chapter, source, owner); dirty = true; return snapshot },
+    })
+    const result = await guarded.call({ sessionId: 'test-session', requestId: 'req-snapshot-dirty', tool: AGENT_TOOL_NAMES.appendChapter,
+      args: { projectId, chapterId: original.id, content: '不应写入', expectedUpdatedAt: original.updatedAt } }, fullScope)
+    ok('快照期间出现草稿时拒绝正文写入', result.ok === false && result.code === 'DRAFT_DIRTY')
+    ok('快照期间出现草稿时正文不变', (await memoryOps.get<Chapter>('chapters', original.id))?.content === '原文')
+  }
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '版本保护', content: '原文' })
+    const original = (await memoryOps.getAll<Chapter>('chapters'))[0]
+    const base = defaultExecutorDeps()
+    const guarded = createAgentExecutor({ ...base, flush: async () => true, storageBlockReason: () => '', notify: () => {}, unsavedDraft: () => false,
+      createSnapshot: async (chapter, source, owner) => {
+        const snapshot = await base.createSnapshot(chapter, source, owner)
+        await memoryOps.put('chapters', { ...chapter, content: '作者新文', updatedAt: chapter.updatedAt + 1 })
+        return snapshot
+      },
+    })
+    const result = await guarded.call({ sessionId: 'test-session', requestId: 'req-snapshot-version', tool: AGENT_TOOL_NAMES.appendChapter,
+      args: { projectId, chapterId: original.id, content: '不应写入', expectedUpdatedAt: original.updatedAt } }, fullScope)
+    ok('快照期间章节被更新时报告冲突', result.ok === false && result.code === 'CONFLICT')
+    ok('快照期间作者更新未被覆盖', (await memoryOps.get<Chapter>('chapters', original.id))?.content === '作者新文')
+  }
   {
     await seed()
     const module = modulesFor('worldbase', getActivePack())?.[0]
@@ -412,7 +444,7 @@ async function main() {
     const vol = await memoryOps.get<Volume>('volumes', volumeId)
     const changed = await executor().call({
       sessionId: 'test-session', requestId: 'req-00000021', tool: AGENT_TOOL_NAMES.updateVolume,
-      args: { projectId, volumeId, expectedTitle: vol?.title ?? '', title: '第二卷', description: '新的描述' },
+      args: { projectId, volumeId, expectedTitle: vol?.title ?? '', expectedDescription: vol?.description ?? '', title: '第二卷', description: '新的描述' },
     }, fullScope)
     ok('修改分卷成功', changed.ok === true, JSON.stringify(changed))
     const saved = await memoryOps.get<Volume>('volumes', volumeId)
@@ -422,6 +454,21 @@ async function main() {
       args: { projectId, volumeId, expectedTitle: vol?.title ?? '', title: '第三卷' },
     }, fullScope)
     ok('旧标题版本条件不符 → CONFLICT', conflict.ok === false && conflict.code === 'CONFLICT', JSON.stringify(conflict))
+    const staleDescription = await executor().call({
+      sessionId: 'test-session', requestId: 'req-volume-description-conflict', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId, expectedTitle: '第二卷', expectedDescription: '', description: '不应覆盖' },
+    }, fullScope)
+    ok('分卷描述旧值不符时拒绝覆盖', staleDescription.ok === false && staleDescription.code === 'CONFLICT')
+    const missingDescription = await executor().call({
+      sessionId: 'test-session', requestId: 'req-volume-description-missing', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId, expectedTitle: '第二卷', description: '不应覆盖' },
+    }, fullScope)
+    ok('修改分卷描述必须提供旧值', missingDescription.ok === false && missingDescription.code === 'BAD_REQUEST')
+    const cleared = await executor().call({
+      sessionId: 'test-session', requestId: 'req-volume-description-clear', tool: AGENT_TOOL_NAMES.updateVolume,
+      args: { projectId, volumeId, expectedTitle: '第二卷', expectedDescription: '新的描述', description: '' },
+    }, fullScope)
+    ok('匹配旧值时可清空分卷描述', cleared.ok === true && (await memoryOps.get<Volume>('volumes', volumeId))?.description === '')
     await memoryOps.put('volumes', { id: 'free-vol', projectId, order: -999, title: '自由卷', description: '', isFree: true })
     const free = await executor().call({
       sessionId: 'test-session', requestId: 'req-00000023', tool: AGENT_TOOL_NAMES.updateVolume,
@@ -439,9 +486,39 @@ async function main() {
 
     const active = await executor({ activeChapterId: () => ch.id }).call({
       sessionId: 'test-session', requestId: 'req-00000024', tool: AGENT_TOOL_NAMES.deleteChapter,
-      args: { projectId, chapterId: ch.id },
+      args: { projectId, chapterId: ch.id, expectedUpdatedAt: ch.updatedAt },
     }, fullScope)
     ok('正在编辑的章拒绝删除', active.ok === false && active.code === 'DRAFT_DIRTY', JSON.stringify(active))
+    const blind = await executor().call({
+      sessionId: 'test-session', requestId: 'req-00000024a', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id },
+    }, fullScope)
+    ok('删除章节必须携带已读版本', blind.ok === false && blind.code === 'BAD_REQUEST')
+    let checks = 0
+    const openedDuringRead = await executor({ activeChapterId: () => ++checks === 1 ? null : ch.id }).call({
+      sessionId: 'test-session', requestId: 'req-delete-opened-during-read', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id, expectedUpdatedAt: ch.updatedAt },
+    }, fullScope)
+    ok('删除前读取期间打开章节会阻止删除', openedDuringRead.ok === false && openedDuringRead.code === 'DRAFT_DIRTY'
+      && !!(await memoryOps.get('chapters', ch.id)))
+    const base = defaultExecutorDeps()
+    const changing = createAgentExecutor({ ...base, flush: async () => true, storageBlockReason: () => '', notify: () => {}, unsavedDraft: () => false, activeChapterId: () => null,
+      captureOwner: pid => {
+        const owner = base.captureOwner(pid)
+        return { ...owner, store: new Proxy(owner.store, { get(target, key, receiver) {
+          if (key !== 'put') return Reflect.get(target, key, receiver)
+          return async (store: string, value: unknown) => {
+            await target.put(store, value)
+            if (store === 'trash') await memoryOps.put('chapters', { ...ch, content: '作者稍后输入', updatedAt: ch.updatedAt + 1 })
+          }
+        } }) }
+      },
+    })
+    const changedDuringTrash = await changing.call({ sessionId: 'test-session', requestId: 'req-delete-changed-during-trash', tool: AGENT_TOOL_NAMES.deleteChapter,
+      args: { projectId, chapterId: ch.id, expectedUpdatedAt: ch.updatedAt } }, fullScope)
+    ok('放入回收站期间章节变化时停止删除', changedDuringTrash.ok === false && changedDuringTrash.code === 'OUTCOME_UNKNOWN'
+      && (await memoryOps.get<Chapter>('chapters', ch.id))?.content === '作者稍后输入')
+    await memoryOps.put('chapters', ch)
 
     const conflict = await executor().call({
       sessionId: 'test-session', requestId: 'req-00000025', tool: AGENT_TOOL_NAMES.deleteChapter,
@@ -467,17 +544,74 @@ async function main() {
       args: { projectId, text: '一个突然想到的点子' },
     }, fullScope)
     ok('写入灵感成功', added.ok === true, JSON.stringify(added))
+    const invalid = await executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-invalid', tool: AGENT_TOOL_NAMES.addInspiration,
+      args: { projectId, text: '  ' } }, fullScope)
+    ok('灵感参数错误如实返回 BAD_REQUEST', invalid.ok === false && invalid.code === 'BAD_REQUEST')
     const listed = await executor().call({
       sessionId: 'test-session', requestId: 'req-00000028', tool: AGENT_TOOL_NAMES.listInspirations,
       args: { projectId },
     }, fullScope)
     const items = listed.ok ? (listed.value as { text: string }[]) : []
     ok('读取灵感夹可见新条目', items.some(item => item.text === '一个突然想到的点子'), JSON.stringify(listed))
+    const concurrent = await Promise.all([
+      addLocalInspiration('作者的灵感', undefined, projectId),
+      executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-parallel', tool: AGENT_TOOL_NAMES.addInspiration, args: { projectId, text: 'Agent 的灵感' } }, fullScope),
+    ])
+    const afterConcurrent = await db.getSettingFor<{ text: string }[]>(projectId, 'inspirationBox', [])
+    ok('作者和 Agent 并发添加灵感均保留', concurrent[1].ok === true && afterConcurrent.some(item => item.text === '作者的灵感') && afterConcurrent.some(item => item.text === 'Agent 的灵感'))
+    const duplicate = await executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-duplicate', tool: AGENT_TOOL_NAMES.addInspiration, args: { projectId, text: '作者的灵感' } }, fullScope)
+    ok('Agent 遵守灵感去重规则', duplicate.ok === false && duplicate.code === 'BAD_REQUEST')
+    await db.setSettingFor(projectId, 'inspirationBox', Array.from({ length: INSPIRATION_MAX }, (_, index) => ({ id: `full-${index}`, text: `合成灵感${index}`, createdAt: 1 })))
+    const full = await executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-full', tool: AGENT_TOOL_NAMES.addInspiration, args: { projectId, text: '超量灵感' } }, fullScope)
+    ok('Agent 遵守灵感夹容量上限', full.ok === false && full.code === 'BAD_REQUEST')
     const denied = await executor().call({
       sessionId: 'test-session', requestId: 'req-00000029', tool: AGENT_TOOL_NAMES.addInspiration,
       args: { projectId, text: '未授权' },
     }, { projects: [{ projectId, actions: ['chapter:create'] as AgentAction[] }] })
     ok('未授权灵感写入被拒绝', denied.ok === false && denied.code === 'SCOPE_DENIED', JSON.stringify(denied))
+    await db.setSettingFor(projectId, 'inspirationBox', { damaged: true })
+    const malformed = await executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-corrupt', tool: AGENT_TOOL_NAMES.listInspirations, args: { projectId } }, fullScope)
+    ok('异常灵感数据不会被报告为空列表', malformed.ok === false && malformed.code === 'INTERNAL')
+    await db.setSettingFor(projectId, 'inspirationBox', null)
+    const corruptWrite = await executor().call({ sessionId: 'test-session', requestId: 'req-inspiration-corrupt-write', tool: AGENT_TOOL_NAMES.addInspiration, args: { projectId, text: '不得覆盖' } }, fullScope)
+    const raw = await memoryOps.get<{ value: unknown }>('settingsKV', `${projectId}::inspirationBox`)
+    ok('损坏的灵感数据不会被新增操作覆盖', corruptWrite.ok === false && raw?.value === null)
+  }
+
+  // 已保存章节的只读词语检查复用内置和项目词库，不改变正文。
+  {
+    await seed()
+    await callWrite(AGENT_TOOL_NAMES.createChapter, { projectId, title: '词语检查', content: '合成文本含赌场与独有测试词，必竟是例句。' })
+    const chapter = (await memoryOps.getAll<Chapter>('chapters'))[0]
+    await db.setSettingFor(projectId, 'customSensitiveWords', ['独有测试词'])
+    const checked = await executor().call({ sessionId: 'test-session', requestId: 'read-check-001', tool: AGENT_TOOL_NAMES.checkChapterWords,
+      args: { projectId, chapterId: chapter.id } }, { projects: [] })
+    const value = checked.ok ? checked.value as { hits: { word: string }[]; updatedAt: number } : null
+    ok('词语检查复用内置及自定义词库且无需写授权', !!value && value.updatedAt === chapter.updatedAt && value.hits.some(hit => hit.word === '赌场') && value.hits.some(hit => hit.word === '独有测试词'), JSON.stringify(checked))
+    const after = await memoryOps.get<Chapter>('chapters', chapter.id)
+    ok('词语检查不修改正文', after?.content === chapter.content && after?.updatedAt === chapter.updatedAt)
+    const typos = await executor().call({ sessionId: 'test-session', requestId: 'read-check-typo', tool: AGENT_TOOL_NAMES.checkChapterTypos,
+      args: { projectId, chapterId: chapter.id } }, { projects: [] })
+    const typoValue = typos.ok ? typos.value as { hits: { word: string; suggest: string }[]; updatedAt: number } : null
+    ok('错字检查复用引擎词典并给出候选写法', !!typoValue && typoValue.updatedAt === chapter.updatedAt && typoValue.hits.some(hit => hit.word === '必竟' && hit.suggest === '毕竟'))
+    const missing = await executor().call({ sessionId: 'test-session', requestId: 'read-check-002', tool: AGENT_TOOL_NAMES.checkChapterWords,
+      args: { projectId, chapterId: 'missing' } }, fullScope)
+    ok('词语检查拒绝不存在的章节', !missing.ok && missing.code === 'NOT_FOUND')
+    await memoryOps.put('chapters', { ...chapter, id: 'foreign-chapter', projectId: 'other-project' })
+    const foreign = await executor().call({ sessionId: 'test-session', requestId: 'read-check-foreign', tool: AGENT_TOOL_NAMES.checkChapterWords,
+      args: { projectId, chapterId: 'foreign-chapter' } }, fullScope)
+    ok('词语检查拒绝其他项目的章节', !foreign.ok && foreign.code === 'NOT_FOUND')
+    const foreignTypos = await executor().call({ sessionId: 'test-session', requestId: 'read-check-typo-foreign', tool: AGENT_TOOL_NAMES.checkChapterTypos,
+      args: { projectId, chapterId: 'foreign-chapter' } }, fullScope)
+    ok('错字检查拒绝其他项目的章节', !foreignTypos.ok && foreignTypos.code === 'NOT_FOUND')
+    await db.setSettingFor(projectId, 'customSensitiveWords', { broken: true })
+    const corrupt = await executor().call({ sessionId: 'test-session', requestId: 'read-check-003', tool: AGENT_TOOL_NAMES.checkChapterWords,
+      args: { projectId, chapterId: chapter.id } }, fullScope)
+    ok('损坏的自定义词库不会被当作空词库', !corrupt.ok && corrupt.code === 'BAD_REQUEST')
+    await db.setSettingFor(projectId, 'customSensitiveWords', Array.from({ length: 5001 }, (_, i) => `词${i}`))
+    const oversized = await executor().call({ sessionId: 'test-session', requestId: 'read-check-004', tool: AGENT_TOOL_NAMES.checkChapterWords,
+      args: { projectId, chapterId: chapter.id } }, fullScope)
+    ok('过大词库被拒绝而不静默漏检', !oversized.ok && oversized.code === 'BAD_REQUEST')
   }
 
   console.log(`\nAGENT_EXECUTOR_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)

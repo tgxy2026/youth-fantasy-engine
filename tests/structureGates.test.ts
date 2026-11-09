@@ -540,7 +540,8 @@ if (!SRC) {
     const backupsSrc = fs.readFileSync(path.join(SRC, 'lib', 'db', 'backups.ts'), 'utf8')
     const autoBackupBody = /export async function createAutoBackup[\s\S]*?\n\}/.exec(backupsSrc)?.[0] ?? ''
     ok('⑪-b createAutoBackup 读项目失败必须留痕（静默会为示范项目白写一份全量备份）',
-      /getProject\(projectId\)\.catch\([\s\S]{0,260}?console\.warn/.test(autoBackupBody),
+      /getProject\(projectId\)|store\.get<Project>\('projects', projectId\)/.test(autoBackupBody)
+      && /\.catch\([\s\S]{0,260}?console\.warn/.test(autoBackupBody),
       autoBackupBody ? '（catch 里没有 console.warn）' : '（没抓到函数体，函数被改名了？请同步本闸）')
 
     // ---- ⑪-c 酒馆 lib 侧的消息过滤必须成对 ----

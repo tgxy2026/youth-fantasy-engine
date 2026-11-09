@@ -4,8 +4,9 @@
 import type { Project, FormData } from '@/lib/types'
 import { uid } from '@/lib/app/id'
 import { ops } from '@/lib/db/core'
+import type { StoreOps } from '@/lib/storage/storeOps'
 import { WEB } from '@/lib/app/platform'
-import { exportProject, remapSettingValue, remapChapterContextSetting, type ProjectBundle, getProject } from '@/lib/db/projects'
+import { exportProject, remapSettingValue, remapChapterContextSetting, type ProjectBundle } from '@/lib/db/projects'
 import { restoreDocsFromBundle, collectDocsForSafetyBackup, type KbBundleDoc } from '@/lib/search/knowledgeBase'
 import { flushCreativeCheckpoint } from '@/lib/creative/serialPersist'
 import { isDemoProjectName } from '@/lib/constants'
@@ -27,9 +28,9 @@ import {
  * 走 `putStrict`（外置层实现）；IDB / 内存后端没有这个能力，但它们的 `put` 本身就会抛，
  * 所以 `?? put` 不会放宽语义。
  */
-async function putPayloadStrict(payload: BackupPayload): Promise<void> {
-  if (ops.putStrict) { await ops.putStrict('backupPayloads', payload); return }
-  await ops.put('backupPayloads', payload)
+async function putPayloadStrict(payload: BackupPayload, store: StoreOps = ops): Promise<void> {
+  if (store.putStrict) { await store.putStrict('backupPayloads', payload); return }
+  await store.put('backupPayloads', payload)
 }
 
 // ============ 自动备份（v1.3 备份策略加固） ============
@@ -202,8 +203,9 @@ function withBytes(rec: BackupMeta | LegacyBackupRecord): BackupMeta {
  *    ⚠️ 复制示范项目出来的副本名字不同 ⇒ 按普通项目对待，会正常备份（这是对的）。
  * @returns 备份元信息；**示范项目返回 null**（什么也没写）。
  */
-export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string, opts?: { protectKnowledgeBase?: boolean }): Promise<BackupMeta | null> {
-  const proj = await getProject(projectId).catch((e) => {
+export async function createAutoBackup(projectId: string, kind: BackupKind, label?: string, opts?: { protectKnowledgeBase?: boolean; store?: StoreOps }): Promise<BackupMeta | null> {
+  const store = opts?.store ?? ops
+  const proj = await store.get<Project>('projects', projectId).catch((e) => {
     // 🔴 读失败**不能静默**（2026-10-12 全量审计 P2）：静默按「不是示范项目」继续，万一它
     //    正是示范项目，就会白写一份全量备份（还占掉一个淘汰名额）。口径同 kbInBackupOf。
     console.warn('[db] 判定是否示范项目时读项目失败，本次按普通项目备份：', e)
@@ -214,7 +216,7 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   //    快照随它走会把本地存储迅速撑大。要带走快照的是「手动导出备份」，那条路径走默认值。
   // 🔴 自动备份**也不带**参考资料（2.8.0 · #017）：同一条理由 —— 长文档单篇可达 40 万字，
   //    每 5 分钟重写一遍等于让数据文件持续膨胀。作者勾的「随包走」开关只作用于**手动导出**。
-  const bundle = await exportProject(projectId, { includeSnapshots: false, includeKnowledgeBase: false })
+  const bundle = await exportProject(projectId, { includeSnapshots: false, includeKnowledgeBase: false }, store)
   if (opts?.protectKnowledgeBase) bundle.knowledgeBase = await collectDocsForSafetyBackup(projectId)
   /**
    * 3.1.3 逻辑分片（主人 2026-10-18 拍板）：
@@ -266,21 +268,21 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   //    只加一个 await 或改注释都不解决问题：**登记方必须拿到可判断的成败**。
   await putPayloadStrict({
     id, projectId, kind: 'text', bundle: textBundle, mediaLinks,
-  } satisfies BackupPayload)
+  } satisfies BackupPayload, store)
   if (mediaId) {
     // 🔴 同一份图片集合已存在就**直接复用、不重写** —— 这是分片省空间的实际落点。
     //    复用判定只看 id（由内容哈希得出），不比对内容：同 id 即同图集。
     // 🔴 写进去的媒体片**不带** links（mediaShardForPayload）—— 共用片里存归属表就是 R01 的病根。
-    const existing = await ops.get<BackupPayload>('backupPayloads', mediaId)
+    const existing = await store.get<BackupPayload>('backupPayloads', mediaId)
     if (!existing) {
       await putPayloadStrict({
         id: mediaId, projectId, kind: 'media', media: mediaShardForPayload(shards.media.blobs),
-      } satisfies BackupPayload)
+      } satisfies BackupPayload, store)
     }
   }
-  await ops.put('backups', meta)
+  await store.put('backups', meta)
   if (opts?.protectKnowledgeBase) {
-    const verified = await getBackupPayload(id)
+    const verified = await getBackupPayload(id, store)
     if (!verified || JSON.stringify(verified.knowledgeBase) !== JSON.stringify(bundle.knowledgeBase)) {
       throw new Error('覆盖前参考资料备份回读不一致，已停止覆盖。')
     }
@@ -288,17 +290,17 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
   // 滚动淘汰：超过该类型上限则删除最早的（元数据与载荷一起删，避免留下孤儿载荷）。手动备份（limit=0）不淘汰。
   const limit = backupLimit(kind)
   if (limit > 0) {
-    const all = (await ops.getAll<BackupMeta>('backups'))
+    const all = (await store.getAll<BackupMeta>('backups'))
       .filter(b => b.projectId === projectId && b.kind === kind)
       .sort((a, b) => b.createdAt - a.createdAt)
-    for (const drop of all.slice(limit)) await deleteBackup(drop.id)
+    for (const drop of all.slice(limit)) await deleteBackup(drop.id, store)
   }
   return meta
 }
 
 /** 列出某项目的全部备份元数据（按时间倒序）—— **不读载荷** */
-export async function listBackups(projectId: string): Promise<BackupMeta[]> {
-  const all = await ops.getAll<BackupMeta | LegacyBackupRecord>('backups')
+export async function listBackups(projectId: string, store: StoreOps = ops): Promise<BackupMeta[]> {
+  const all = await store.getAll<BackupMeta | LegacyBackupRecord>('backups')
   return all
     .filter(b => b.projectId === projectId)
     .map(withBytes)
@@ -371,21 +373,21 @@ export async function listFrozenVersions(projectId: string): Promise<BackupMeta[
  * 3.1.3：这份函数是**唯一的读取入口** —— 文字片 + 媒体片在这里拼回完整 bundle，
  * 于是 `restoreBackup` / `buildBackupFile` / 备份文件解析全都不用改（旧整包也照样能读）。
  */
-export async function getBackupPayload(id: string): Promise<ProjectBundle | undefined> {
-  const meta = await ops.get<BackupMeta>('backups', id)
+export async function getBackupPayload(id: string, store: StoreOps = ops): Promise<ProjectBundle | undefined> {
+  const meta = await store.get<BackupMeta>('backups', id)
   const refs = meta?.shards
   const textId = refs?.textPayloadId ?? id
-  const p = await ops.get<BackupPayload>('backupPayloads', textId)
+  const p = await store.get<BackupPayload>('backupPayloads', textId)
   if (!p) {
     // 兼容：尚未迁移的老库里，bundle 仍躺在 backups 记录里
-    const legacy = await ops.get<LegacyBackupRecord>('backups', id)
+    const legacy = await store.get<LegacyBackupRecord>('backups', id)
     return legacy?.bundle
   }
   // 旧形态整包（kind 缺省或 'full'）
   if (p.kind !== 'text') return p.bundle
   if (!p.bundle) return undefined
   if (!refs?.mediaPayloadId) return p.bundle
-  const mediaRec = await ops.get<BackupPayload>('backupPayloads', refs.mediaPayloadId)
+  const mediaRec = await store.get<BackupPayload>('backupPayloads', refs.mediaPayloadId)
   // 媒体片丢了：**文字照常恢复**（图片缺省）—— 这比"整份备份都恢复不了"对作者更有用
   if (!mediaRec?.media) return p.bundle
   // 🔴 归属表优先取本份快照自带的；旧备份回退到媒体片 links（理由见 composeBackupMedia）
@@ -396,11 +398,11 @@ export async function getBackupPayload(id: string): Promise<ProjectBundle | unde
  * 媒体片的引用检查：没有别的备份还在用它，才可以删。
  * 低频操作（只在删备份 / 清理孤儿时跑），直接扫一遍元数据即可。
  */
-async function gcMediaPayload(mediaId: string): Promise<void> {
+async function gcMediaPayload(mediaId: string, store: StoreOps = ops): Promise<void> {
   try {
-    const metas = await ops.getAll<BackupMeta>('backups')
+    const metas = await store.getAll<BackupMeta>('backups')
     if (metas.some(m => m.shards?.mediaPayloadId === mediaId)) return
-    await ops.del('backupPayloads', mediaId)
+    await store.del('backupPayloads', mediaId)
   } catch (e) {
     // 清理失败不致命：只留下一个无人引用的媒体片，下次清理会再扫到
     console.warn('[db] 清理媒体片失败（不影响本次删除）：', e)
@@ -419,14 +421,14 @@ async function gcMediaPayload(mediaId: string): Promise<void> {
  *        ⇒ 静默占着空间，且没有任何入口能再找到它（真正的孤儿）。
  *    在载荷还是整库 JSON 里的一行时，这个差别无足轻重；挪成独立文件后就成了磁盘垃圾。
  */
-export async function deleteBackup(id: string) {
-  const meta = await ops.get<BackupMeta>('backups', id)
+export async function deleteBackup(id: string, store: StoreOps = ops) {
+  const meta = await store.get<BackupMeta>('backups', id)
   const textId = meta?.shards?.textPayloadId ?? id
   const mediaId = meta?.shards?.mediaPayloadId
-  await ops.del('backupPayloads', textId)
-  await ops.del('backups', id)
+  await store.del('backupPayloads', textId)
+  await store.del('backups', id)
   // 3.1.3：媒体片可能被其他备份共用 ⇒ 删完元数据后再确认一次"确实没人引用了"才删
-  if (mediaId) await gcMediaPayload(mediaId)
+  if (mediaId) await gcMediaPayload(mediaId, store)
 }
 
 /** 孤儿备份：备份记录存在但其项目已被删除（删除项目时按约定保留备份，导致此类记录积累） */
@@ -525,13 +527,14 @@ export interface RestoreOutcome {
  * 并将书名、封面、类型、简介同步为备份当时的快照。
  * 🔴 3.3.5 · D2：还原前强制执行自动「预备份」，杜绝破坏性覆盖；返回结构化结果。
  */
-export async function restoreBackup(id: string, opts?: RestoreOptions): Promise<RestoreOutcome> {
-  const rec = await ops.get<BackupMeta>('backups', id)
+export async function restoreBackup(id: string, opts?: RestoreOptions, ownerStore?: StoreOps): Promise<RestoreOutcome> {
+  const store = ownerStore ?? ops
+  const rec = await store.get<BackupMeta>('backups', id)
   if (!rec) throw new Error('备份不存在')
-  const bundle = await getBackupPayload(id)
+  const bundle = await getBackupPayload(id, store)
   // 元数据还在、载荷没了（被外部清理过 / 写到一半断电）：必须明确报错，不能"恢复成功"却什么都没恢复
   if (!bundle) throw new Error('这份备份的数据已经找不到了（元数据仍在，载荷缺失），无法恢复')
-  return await applyBundleToProject(rec.projectId, bundle, opts)
+  return await applyBundleToProject(rec.projectId, bundle, opts, store)
 }
 
 // ============ 备份外置（C2 · 2.4.2）============
@@ -583,26 +586,26 @@ export async function restoreBundleToProject(projectId: string, bundle: ProjectB
   return await applyBundleToProject(projectId, bundle, opts)
 }
 
-async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, opts?: RestoreOptions): Promise<RestoreOutcome> {
+async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, opts?: RestoreOptions, store: StoreOps = ops): Promise<RestoreOutcome> {
   // 0. 强制自动预备份（3.3.5 · D2 破坏性操作前强制执行预备份）
   // 🔴 无论通过什么入口恢复（备份列表恢复 / 外置文件导入覆盖），在动目标数据前必须先建好当前项目的快照，
   //    并且必须能够成功读回。若预备份失败，坚决拒绝覆盖。
   let preBackupMeta: BackupMeta | null = null
   let expectedKnowledgeBase = opts?.expectedKnowledgeBase
   if (!opts?.skipPreBackup) {
-    const proj = await getProject(targetPid)
+    const proj = await store.get<Project>('projects', targetPid)
     if (!proj) throw new Error('无法确认目标项目，已停止恢复。')
     if (isDemoProjectName(proj.name)) throw new Error('示范项目不支持备份，请先复制为普通项目再恢复。')
     {
       const stamp = new Date().toLocaleString('zh-CN')
       const label = opts?.preBackupLabel ?? `还原前安全备份 · ${stamp}`
-      preBackupMeta = await createAutoBackup(targetPid, 'manual', label, { protectKnowledgeBase: bundle.knowledgeBase !== undefined })
+      preBackupMeta = await createAutoBackup(targetPid, 'manual', label, { protectKnowledgeBase: bundle.knowledgeBase !== undefined, store })
       if (!preBackupMeta) {
         throw new Error('还原前安全预备份创建失败，为防止数据覆盖丢失，已终止还原操作。')
       }
-      const verified = await getBackupPayload(preBackupMeta.id)
+      const verified = await getBackupPayload(preBackupMeta.id, store)
       if (!verified || !verified.project) {
-        await deleteBackup(preBackupMeta.id).catch(() => {})
+        await deleteBackup(preBackupMeta.id, store).catch(() => {})
         throw new Error('还原前安全预备份校验失败（载荷无法读取），为保护当前数据未执行覆盖。')
       }
       if (bundle.knowledgeBase !== undefined && !Array.isArray(verified.knowledgeBase)) {
@@ -628,29 +631,29 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
    */
   const covered = ['volumes', 'chapters', 'tableRows', 'cardRecords'] as const
   for (const name of covered) {
-    const all = await ops.getAll<{ id: string; projectId?: string }>(name)
+    const all = await store.getAll<{ id: string; projectId?: string }>(name)
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys[name] = keys
   }
   if (bundle.tavernReports) {
-    const all = await ops.getAll<{ id: string; projectId?: string }>('tavernReports')
+    const all = await store.getAll<{ id: string; projectId?: string }>('tavernReports')
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys.tavernReports = keys
   }
   if (bundle.aiRuns) {
-    const all = await ops.getAll<{ id: string; projectId?: string }>('aiRuns')
+    const all = await store.getAll<{ id: string; projectId?: string }>('aiRuns')
     const keys = all.filter(r => r.projectId === targetPid).map(r => r.id)
     if (keys.length) delKeys.aiRuns = keys
   }
   const prefix = `${targetPid}::`
-  const forms = await ops.getAll<FormData>('formData')
+  const forms = await store.getAll<FormData>('formData')
   const formKeys = forms.filter(f => f.tabId.startsWith(prefix)).map(f => f.tabId)
   // 快照**不参与**恢复流程（见下方「不删快照」的说明）—— 此处刻意不收集 snapKeys
   const statKeys: string[] = []
   const setKeys: string[] = []
-  const daily = await ops.getAll<{ key: string }>('dailyStats')
+  const daily = await store.getAll<{ key: string }>('dailyStats')
   for (const r of daily) if (r.key.startsWith(prefix)) statKeys.push(r.key)
-  const settings = await ops.getAll<{ key: string }>('settingsKV')
+  const settings = await store.getAll<{ key: string }>('settingsKV')
   for (const r of settings) {
     if (r.key.startsWith(prefix)) setKeys.push(r.key)
     // 自定义下拉选项 key 形如 customOption::<pid>::…，需用专属前缀清理，否则恢复会残留旧项目选项
@@ -661,13 +664,13 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   for (const v of bundle.volumes) {
     const nid = uid()
     volMap.set(v.id, nid)
-    await ops.put('volumes', { ...v, id: nid, projectId: targetPid })
+    await store.put('volumes', { ...v, id: nid, projectId: targetPid })
   }
   const chMap = new Map<string, string>()
   for (const c of bundle.chapters) {
     const nid = uid()
     chMap.set(c.id, nid)
-    await ops.put('chapters', { ...c, id: nid, projectId: targetPid, volumeId: volMap.get(c.volumeId) ?? c.volumeId })
+    await store.put('chapters', { ...c, id: nid, projectId: targetPid, volumeId: volMap.get(c.volumeId) ?? c.volumeId })
   }
   /**
    * 🔴 3.2.2 · 审计 D3（P2）：**把既有章节快照重新指到新章 id 上**。
@@ -683,11 +686,11 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
    *     ⚠️ 绝不按章节标题去猜：同名章会串档，那是比"查不到"更糟的错。
    */
   {
-    const snaps = await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', targetPid)
+    const snaps = await store.getAllByIndex<Snapshot>('snapshots', 'projectId', targetPid)
     for (const s of snaps) {
       const nid = chMap.get(s.chapterId)
       if (!nid || nid === s.chapterId) continue
-      await ops.put('snapshots', { ...s, chapterId: nid })
+      await store.put('snapshots', { ...s, chapterId: nid })
     }
   }
   /**
@@ -704,11 +707,11 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
     for (const s of bundle.snapshots) {
       const ncid = chMap.get(s.chapterId)
       if (!ncid) continue
-      await ops.put('snapshots', { ...s, id: uid(), projectId: targetPid, chapterId: ncid })
+      await store.put('snapshots', { ...s, id: uid(), projectId: targetPid, chapterId: ncid })
     }
   }
   for (const f of bundle.formData) {
-    await ops.put('formData', { tabId: `${targetPid}::${f.tabId}`, data: f.data })
+    await store.put('formData', { tabId: `${targetPid}::${f.tabId}`, data: f.data })
   }
   const rowIdMap = new Map<string, string>()
   for (const r of bundle.tableRows) {
@@ -721,7 +724,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
     const tabId = rawTab.startsWith(VOL_LEDGER_PREFIX)
       ? `${VOL_LEDGER_PREFIX}${volMap.get(rawTab.slice(VOL_LEDGER_PREFIX.length)) ?? rawTab.slice(VOL_LEDGER_PREFIX.length)}`
       : r.tabId
-    await ops.put('tableRows', { ...r, id: nid, tabId, projectId: targetPid })
+    await store.put('tableRows', { ...r, id: nid, tabId, projectId: targetPid })
   }
   // 🔴 与 importProject 同：cardRecords 换 id 后，settingsKV 里的子项活跃态数组必须跟着重映射，
   //    否则恢复备份后所有多套条目集体退化为「已完结」、AI 一条都读不到（2026-10-02 六维审计 P0）。
@@ -729,11 +732,11 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   for (const r of bundle.cardRecords) {
     const nid = uid()
     cardIdMap.set(r.id, nid)
-    await ops.put('cardRecords', { ...r, id: nid, projectId: targetPid })
+    await store.put('cardRecords', { ...r, id: nid, projectId: targetPid })
   }
   if (bundle.dailyStats) {
     for (const s of bundle.dailyStats) {
-      await ops.put('dailyStats', { ...s, key: `${targetPid}::${s.date}`, projectId: targetPid })
+      await store.put('dailyStats', { ...s, key: `${targetPid}::${s.date}`, projectId: targetPid })
     }
   }
   if (bundle.settings) {
@@ -741,24 +744,24 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
       const sourceChapterId = s.key.startsWith('chapterContext32:') ? s.key.slice('chapterContext32:'.length) : ''
       const sourceOwner = bundle.chapters.find(c => c.id === sourceChapterId)?.projectId || bundle.project.id
       const context = remapChapterContextSetting(s.key, s.value, targetPid, sourceOwner, chMap, cardIdMap, rowIdMap, volMap)
-      await ops.put('settingsKV', { key: `${targetPid}::${context.key}`, value: remapSettingValue(context.key, context.value, cardIdMap, chMap) })
+      await store.put('settingsKV', { key: `${targetPid}::${context.key}`, value: remapSettingValue(context.key, context.value, cardIdMap, chMap) })
     }
   }
   if (bundle.customOptions) {
     for (const s of bundle.customOptions) {
-      await ops.put('settingsKV', { key: `customOption::${targetPid}::${s.key}`, value: s.value })
+      await store.put('settingsKV', { key: `customOption::${targetPid}::${s.key}`, value: s.value })
     }
   }
   // 酒馆模式报告：随备份一并恢复（换新 id；sessionId 不需重映射，理由同 importProject）
   if (bundle.tavernReports) {
     for (const r of bundle.tavernReports) {
-      await ops.put('tavernReports', { ...r, id: uid(), projectId: targetPid })
+      await store.put('tavernReports', { ...r, id: uid(), projectId: targetPid })
     }
   }
   // AI 运行账本：随备份一并恢复（换新 id；理由同 importProject）
   if (bundle.aiRuns) {
     for (const r of bundle.aiRuns) {
-      await ops.put('aiRuns', { ...r, id: uid(), projectId: targetPid })
+      await store.put('aiRuns', { ...r, id: uid(), projectId: targetPid })
     }
   }
 
@@ -771,9 +774,9 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
     ...(bundle.settings ?? []).map(s => `${targetPid}::${s.key}`),
     ...(bundle.customOptions ?? []).map(s => `customOption::${targetPid}::${s.key}`),
   ])
-  for (const [name, keys] of Object.entries(delKeys)) await ops.bulkDel(name, keys)
+  for (const [name, keys] of Object.entries(delKeys)) await store.bulkDel(name, keys)
   const staleForms = formKeys.filter(k => !newFormKeys.has(k))
-  if (staleForms.length) await ops.bulkDel('formData', staleForms)
+  if (staleForms.length) await store.bulkDel('formData', staleForms)
   // 🔴🔴 2026-09-22 六维审计 P1：**不删快照**（原来这里是 `if (snapKeys.length) bulkDel('snapshots', snapKeys)`）。
   //    三条事实叠起来就是"恢复一次备份 = 时光机被清空且永不复原"：
   //      ① 本函数上面的写入段只恢复 volumes/chapters/formData/tableRows/cardRecords，**没有任何快照写入**；
@@ -783,9 +786,9 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   //    「恢复备份」的语义是"把备份里的内容还原"，不是"把备份没覆盖的也一并清掉"。
   //    （手动导出包带快照时走 `importProject`，那条路会按新 chapterId 重映射写入，不受此处影响。）
   const staleStats = statKeys.filter(k => !newStatKeys.has(k))
-  if (staleStats.length) await ops.bulkDel('dailyStats', staleStats)
+  if (staleStats.length) await store.bulkDel('dailyStats', staleStats)
   const staleSets = setKeys.filter(k => !newSetKeys.has(k))
-  if (staleSets.length) await ops.bulkDel('settingsKV', staleSets)
+  if (staleSets.length) await store.bulkDel('settingsKV', staleSets)
 
   // 3.5 参考资料（2.8.0 · #017，可选字段）。
   // 🔴 **只在 bundle 真的带了资料时才动**：没开开关的备份里根本没有这个字段，
@@ -806,9 +809,9 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   }
 
   // 4. 同步项目元数据（成为该历史版本）
-  const old = await ops.get<Project>('projects', targetPid)
+  const old = await store.get<Project>('projects', targetPid)
   if (old) {
-    await ops.put('projects', {
+    await store.put('projects', {
       ...old,
       name: bundle.project.name,
       genre: bundle.project.genre ?? '',

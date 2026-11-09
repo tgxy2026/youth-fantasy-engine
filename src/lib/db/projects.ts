@@ -6,6 +6,7 @@ import { uid } from '@/lib/app/id'
 import type { TavernReport } from '@/lib/tavern/types'
 import type { AiRun } from '@/lib/ai/aiRunTypes'
 import { ops, currentProjectId } from '@/lib/db/core'
+import type { StoreOps } from '@/lib/storage/storeOps'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
 import { type Snapshot, isExportableSnapshot } from '@/lib/db/chapters'
 import type { DailyStat } from '@/lib/db/meta'
@@ -338,19 +339,21 @@ async function kbInBackupOf(projectId: string): Promise<boolean> {
 export async function exportProject(
   id: string,
   opts: { includeSnapshots?: boolean; includeKnowledgeBase?: boolean } = {},
+  ownerStore?: StoreOps,
 ): Promise<ProjectBundle> {
+  const store = ownerStore ?? ops
   const includeSnapshots = opts.includeSnapshots !== false
   const includeKb = opts.includeKnowledgeBase ?? await kbInBackupOf(id)
-  const project = await ops.get<Project>('projects', id)
+  const project = await store.get<Project>('projects', id)
   if (!project) throw new Error('项目不存在')
   const [volumes, chapters, formData, tableRows, cardRecords, dailyStats, settingsKV, tavernReports, aiRuns] = await Promise.all([
-    ops.getAll<Volume>('volumes'), ops.getAll<Chapter>('chapters'), ops.getAll<FormData>('formData'),
-    ops.getAll<TableRow>('tableRows'), ops.getAll<CardRecord>('cardRecords'),
-    ops.getAll<DailyStat>('dailyStats'), ops.getAll<{ key: string; value: unknown }>('settingsKV'),
-    ops.getAll<TavernReport>('tavernReports'), ops.getAll<AiRun>('aiRuns'),
+    store.getAll<Volume>('volumes'), store.getAll<Chapter>('chapters'), store.getAll<FormData>('formData'),
+    store.getAll<TableRow>('tableRows'), store.getAll<CardRecord>('cardRecords'),
+    store.getAll<DailyStat>('dailyStats'), store.getAll<{ key: string; value: unknown }>('settingsKV'),
+    store.getAll<TavernReport>('tavernReports'), store.getAll<AiRun>('aiRuns'),
   ])
   // 快照按 projectId 索引取（不扫全表）
-  const snapshots = includeSnapshots ? await ops.getAllByIndex<Snapshot>('snapshots', 'projectId', id) : []
+  const snapshots = includeSnapshots ? await store.getAllByIndex<Snapshot>('snapshots', 'projectId', id) : []
   // 参考资料（#017）：勾了开关才收集正文（`collectDocsForBundle` 会逐篇读正文，不勾就别读）
   const kb = includeKb ? await collectDocsForBundle(id) : []
   const prefix = `${id}::`

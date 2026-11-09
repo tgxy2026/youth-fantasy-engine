@@ -25,7 +25,7 @@ export interface InspirationItem {
   chapterId?: string
 }
 
-const INSPIRATION_BOX_KEY = 'inspirationBox'
+export const INSPIRATION_BOX_KEY = 'inspirationBox'
 export const INSPIRATION_MAX = 200
 const queues = new Map<string, Promise<unknown>>()
 
@@ -38,7 +38,8 @@ function enqueue<T>(projectId: string, operation: () => Promise<T>): Promise<T> 
 }
 
 async function readOwned(owner: OwnedOperation): Promise<InspirationItem[]> {
-  const items = await db.getSettingFor<InspirationItem[]>(owner.projectId, INSPIRATION_BOX_KEY, [], owner)
+  const record = await owner.store.get<{ value?: unknown }>('settingsKV', `${owner.projectId}::${INSPIRATION_BOX_KEY}`)
+  const items = record ? record.value : []
   if (!Array.isArray(items) || items.some(item => !item || typeof item.id !== 'string' || typeof item.text !== 'string')) throw new Error('灵感夹数据格式无效')
   return items
 }
@@ -64,6 +65,24 @@ export async function addItem(text: string, prev?: InspirationItem[], projectId 
     const next = [...items, { id: uid(), text: t, createdAt: Date.now(), ...(chapterId ? { chapterId } : {}) }]
     await db.setSettingFor(projectId, INSPIRATION_BOX_KEY, next, owner)
     return { items: next, added: true }
+  })
+}
+
+/** 修改一条灵感：要求提供读取时的旧文本作为版本条件；trim、去重、保留 id 与时间。 */
+export async function updateItem(id: string, text: string, expectedText: string, projectId = db.getCurrentProjectId()): Promise<{ items: InspirationItem[]; updated: boolean; reason?: string }> {
+  const t = text.trim()
+  if (!t) return { items: [], updated: false, reason: 'empty' }
+  const owner = captureOwnedOperation(projectId)
+  owner.assertCurrent()
+  return enqueue(projectId, async () => {
+    const items = await readOwned(owner)
+    const current = items.find(item => item.id === id)
+    if (!current) return { items, updated: false, reason: 'missing' }
+    if (current.text !== expectedText) return { items, updated: false, reason: 'conflict' }
+    if (items.some(item => item.id !== id && item.text === t)) return { items, updated: false, reason: 'dup' }
+    const next = items.map(item => item.id === id ? { ...item, text: t } : item)
+    await db.setSettingFor(projectId, INSPIRATION_BOX_KEY, next, owner)
+    return { items: next, updated: true }
   })
 }
 

@@ -27,6 +27,8 @@ import { capabilitiesOf } from '@/lib/ai/modelCapabilities'
 import { capabilityConfigFingerprint } from '@/lib/ai/capabilityProfile'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { uid } from '@/lib/app/id'
+// 3.4.3：API 与 Agent 互斥 —— 模型请求统一申请 API 模式租约
+import { withApiModeLease } from '@/lib/agentHost/modeBridge'
 // 3.2.0 · WQ4：请求预算（按**实际模型窗口**核对完整请求，放不下就明确申报）
 import { planRequestBudget, AIContextOverflowError } from '@/lib/ai/requestBudget'
 import { effectiveWindowOf, lookupWindow, MIN_SANE_WINDOW } from '@/lib/ai/modelCapacity'
@@ -161,7 +163,9 @@ async function chatRaw(config: AIProvider, messages: ChatMessage[], o: CallOpts)
   if (!driver) {
     throw new Error(`暂不支持该线协议（${protocol}）：请到「模型设置 → 模型配置」改选已支持的协议，或升级到包含该协议的新版本。`)
   }
-  return driver.chat(config, messages, o)
+  // 🔴 3.4.3 互斥：整段 driver 调用（含流式响应体）持有 API 租约；
+  //    Agent 模式下这里直接拒绝，不会发出任何模型请求。
+  return withApiModeLease(() => driver.chat(config, messages, o))
 }
 
 /**

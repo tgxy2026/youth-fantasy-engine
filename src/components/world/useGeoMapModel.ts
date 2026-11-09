@@ -9,6 +9,7 @@ import * as db from '@/lib/db'
 import type { CardRecord, TableRow } from '@/lib/types'
 import { TABS } from '@/lib/schema'
 import { uid } from '@/lib/app/id'
+import { tableLeaseKey, waitForAgentForm } from '@/lib/agentHost/formLease'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { CUSTOM_OPTIONS_EVENT, resolveOptions, type ResolvedOption } from '@/components/common/CustomSelect'
 import { BUILTIN_CATEGORIES, G, CELL_KM_STEPS, hashNum, locEquals, cardLocEquals, parseCells, serializeCells, shapeOf, aggregateCells, buildChildMap, subtreeIds } from '@/components/world/geoMapGeometry'
@@ -111,6 +112,9 @@ export function useGeoMapModel() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    // 打开地图页前先等正在执行的 Agent 写入结束（页面租约在 GeoMapEditor 挂载时登记）。
+    await waitForAgentForm(db.getCurrentProjectId(), tableLeaseKey('geography'))
+    await waitForAgentForm(db.getCurrentProjectId(), tableLeaseKey('geomaps'))
     // 🔴 2026-10-03 六维审计 P1：原先这里没有 try/catch/finally —— 任何一次读取 reject
     //    （IndexedDB 打不开 / 写盘锁 / 迁移异常）都会让下面的 setLoading(false) 永不执行，
     //    而 useEffect 里的 `void load()` 没人接 rejection ⇒ 地图页**永久停在加载态**。

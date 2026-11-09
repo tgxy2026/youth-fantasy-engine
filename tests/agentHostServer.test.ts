@@ -114,6 +114,22 @@ async function main() {
     const result = await pending as { ok: boolean; value?: string }
     ok('页面回传结果送达调用方', result.ok === true && result.value === 'done', JSON.stringify(result))
     ok('领取后队列为空', queue.next('client-1') === null)
+    const ownerQueue = createPageQueue({ timeoutMs: 500 })
+    const ownerPending = ownerQueue.push({ call: { tool: 'yfe_create_chapter' } })
+    const claimed = ownerQueue.next('owner')!
+    ok('未领取的页面不能回传他人任务', ownerQueue.settle(claimed.id, 'other', { ok: true }) === false)
+    ownerQueue.next('other')
+    ok('领取页面仍可回传', ownerQueue.settle(claimed.id, 'owner', { ok: true }) === true)
+    const uncertain = await ownerPending as { ok: boolean; code?: string }
+    ok('写入领取后出现其他页面报告结果不明', !uncertain.ok && uncertain.code === 'OUTCOME_UNKNOWN', JSON.stringify(uncertain))
+    const readerQueue = createPageQueue({ timeoutMs: 500 })
+    const readPending = readerQueue.push({ call: { tool: 'yfe_list_projects' } })
+    ok('空客户端标识不能领取请求', readerQueue.next('') === null)
+    const readClaim = readerQueue.next('reader')!
+    readerQueue.next('other')
+    readerQueue.settle(readClaim.id, 'reader', { ok: true, value: [] })
+    const readResult = await readPending as { ok: boolean }
+    ok('多个页面不改变只读请求结果', readResult.ok === true)
     const timeout = await queue.push({ never: true }) as { ok: boolean; code?: string }
     ok('页面超时 → OUTCOME_UNKNOWN', timeout.ok === false && timeout.code === 'OUTCOME_UNKNOWN', JSON.stringify(timeout))
     const multi = createPageQueue({ timeoutMs: 500 })
@@ -193,6 +209,37 @@ async function main() {
     await host.stop()
     const stopped = await fetch(`${base}/api/agent/status`, { headers: auth }).then(() => true).catch(() => false)
     ok('停止后端口不再接受连接', stopped === false)
+  }
+
+  // 独立宿主模拟配置更新中断，并检查重启不能沿用旧授权。
+  {
+    const faultDir = path.join(tmp, 'config-fault')
+    fs.mkdirSync(faultDir)
+    const file = path.join(faultDir, 'host.json')
+    const host = createAgentHost({ configFile: file, callPage: async () => ({}) })
+    const port = await host.start()
+    const token = loadConfig(file).token
+    host.setConfig({ enabled: true })
+    fs.renameSync(file, file + '.backup')
+    fs.mkdirSync(file)
+    let failed = false
+    try { host.setConfig({ enabled: false }) } catch { failed = true }
+    ok('撤权写入失败时当前宿主关闭连接', failed && !host.status().enabled)
+    const result = await fetch(`http://127.0.0.1:${port}/api/agent/call`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ call: { requestId: 'req-fault-01', tool: 'yfe_list_projects' } }),
+    }).then(r => r.json()) as { code?: string }
+    ok('写入失败后 HTTP 调用被拒绝', result.code === 'HOST_DISABLED')
+    fs.rmdirSync(file)
+    fs.renameSync(file + '.backup', file)
+    await host.stop()
+    ok('关闭时保留需要核对的旧配置', loadConfig(file).enabled === true)
+    let restartBlocked = false
+    try { createAgentHost({ configFile: file, callPage: async () => ({}) }) } catch { restartBlocked = true }
+    ok('更新中断标记阻止重启沿用旧授权', restartBlocked && fs.existsSync(file + '.pending'))
+    let retryBlocked = false
+    try { host.setConfig({ enabled: true }) } catch { retryBlocked = true }
+    ok('配置结果不明时禁止重新开启', retryBlocked)
   }
 
   console.log(`\nAGENT_HOST_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)

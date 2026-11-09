@@ -15,6 +15,7 @@ import { monoDashLookup, MONO_DASHES } from '@/lib/settings/monoMarks'
 import * as db from '@/lib/db'
 import { showToast } from '@/components/dialogs/dialogs'
 import { readMapImageFile, MAP_IMAGE_ACCEPT, MAP_IMAGE_HINT_SPEC } from '@/lib/media/mapImage'
+import { registerFormEditor, tableLeaseKey } from '@/lib/agentHost/formLease'
 
 export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   // 🔴 纯黑白（3.1.1）：图层语义色失效 ⇒ 改由**线型**承载（伏笔实线 / 角色虚线 / 时间脉络点线）；
@@ -22,6 +23,14 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   const mono = useMonoTheme()
   const monoInk = 'rgb(var(--ink-100))'
   const monoLayerDash = useMemo(() => monoDashLookup(['foreshadow', 'character', 'timeline']), [])
+  // 地图编辑页打开期间拒绝 Agent 改地图 / 地点 / 格子：页内保存与格集合都在本地状态里，
+  // Agent 写入若并发会互相覆盖。关闭页面后 Agent 才能写，重新打开会读到新数据。
+  useEffect(() => {
+    const pid = db.getCurrentProjectId()
+    const releaseMaps = registerFormEditor(pid, tableLeaseKey('geomaps'))
+    const releaseGeo = registerFormEditor(pid, tableLeaseKey('geography'))
+    return () => { releaseGeo(); releaseMaps() }
+  }, [])
   // 视图侧「同名解构」：JSX 一个字都没改 —— 拆分只把状态与交互挪进了 useGeoMapModel。
   const {
     curMapName, mapNote, rows, stepCellKm, wrapRef, svgRef,

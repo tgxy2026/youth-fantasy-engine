@@ -20,7 +20,7 @@ import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import { normalizePortableData, isPortableDataFile, describeFileVersionProblem } from '@/lib/storage/storeOps'
 // keyOfRecord / PORTABLE_KEY_FIELDS 的真源已上移到 storeOps（3.2.2 · D2），本文件下方 re-export
 import { keyOfRecord } from '@/lib/storage/storeOps'
-import type { SidecarApi, SidecarSpec, SidecarExportIssue } from '@/lib/storage/sidecar'
+import type { SidecarApi, SidecarSpec, SidecarExportIssue, SidecarStoreOps } from '@/lib/storage/sidecar'
 import { withSidecar, migrateSidecar, collectSidecarForExport, registerSidecarApi } from '@/lib/storage/sidecar'
 import { PORTABLE_FILE_VERSION, describeDataFileReject } from '@/lib/storage/storeOps'
 import { SAVE_DEBOUNCE_MS } from '@/lib/constants'
@@ -507,6 +507,43 @@ const httpSidecarApi: SidecarApi = {
       return false
     }
   },
+  /**
+   * 带版本读取：整表 store 的读改写必须先拿到内容版本。
+   * 🔴 404 也读 `revision`：首写（文件还不存在）同样要带前置条件，否则两个标签同时首写会互相覆盖。
+   * 🔴 200 但没有 revision（旧服务）返回 null，`withSidecar` 会退化为无条件写，不假装有保护。
+   */
+  async readVersioned(store, id) {
+    const res = await fetch(
+      `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+      { cache: 'no-store' },
+    )
+    const j = (await res.json().catch(() => ({}))) as { value?: unknown; revision?: string }
+    const revision = typeof j.revision === 'string' ? j.revision : null
+    if (res.status === 404) return { value: undefined, revision }
+    if (!res.ok) throw new Error(`外置载荷读取失败：HTTP ${res.status}`)
+    return { value: j.value, revision }
+  },
+  /**
+   * 条件写：带 If-Match。冲突（409/428）必须如实返回 `conflict`，不能当成功。
+   * 🔴 传输中断无法判断是否已落盘 ⇒ `unknown`，调用方不得盲目重试。
+   */
+  async writeConditional(store, id, value, expectedRevision) {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (expectedRevision) headers['If-Match'] = expectedRevision
+      const res = await fetch(
+        `${apiBase()}/api/blob?store=${encodeURIComponent(store)}&id=${encodeURIComponent(id)}`,
+        { method: 'PUT', headers, body: JSON.stringify(value) },
+      )
+      const j = (await res.json().catch(() => ({}))) as { revision?: string }
+      const revision = typeof j.revision === 'string' ? j.revision : null
+      if (res.status === 409 || res.status === 428) return { ok: false, conflict: true, revision }
+      if (!res.ok) return { ok: false, revision }
+      return { ok: true, revision }
+    } catch {
+      return { ok: false, unknown: true }
+    }
+  },
   async remove(store, id) {
     try {
       const res = await fetch(
@@ -527,6 +564,34 @@ const httpSidecarApi: SidecarApi = {
     const j = (await res.json()) as { ids?: string[] }
     if (!Array.isArray(j.ids)) throw new Error('外置载荷目录响应无效')
     return j.ids
+  },
+  /**
+   * 知识库两整表的原子提交（服务端 /api/kb-txn：同一把锁核对双版本 + 恢复日志）。
+   * 🔴 旧服务没有该端点（404）⇒ `unsupported`，业务层回退旧路径；不得拆成两次条件写冒充原子。
+   */
+  async commitWhole(entries) {
+    const stores = entries.map(e => e.store).sort()
+    if (stores.length !== 2 || stores[0] !== 'kbBodies' || stores[1] !== 'kbDocs') {
+      return { ok: false, unsupported: true }
+    }
+    const of = (store: string) => entries.find(e => e.store === store)!
+    try {
+      const res = await fetch(`${apiBase()}/api/kb-txn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expect: { kbDocs: of('kbDocs').expectedRevision, kbBodies: of('kbBodies').expectedRevision },
+          next: { kbDocs: of('kbDocs').value, kbBodies: of('kbBodies').value },
+        }),
+      })
+      if (res.status === 404) return { ok: false, unsupported: true }
+      const j = (await res.json().catch(() => ({}))) as { code?: string; revisions?: Record<string, string | null> }
+      if (res.status === 409 && j.code === 'DATA_CONFLICT') return { ok: false, conflict: true }
+      if (!res.ok) return { ok: false }
+      return { ok: true, revisions: j.revisions }
+    } catch {
+      return { ok: false, unknown: true }
+    }
   },
 }
 
@@ -554,6 +619,21 @@ const sidecarProxy: SidecarApi = {
   write: (s, i, v) => activeSidecarApi.write(s, i, v),
   remove: (s, i) => activeSidecarApi.remove(s, i),
   listIds: (s) => activeSidecarApi.listIds(s),
+  /**
+   * 🔴 必须转发可选的版本能力：`withSidecar` 在模块级只拿到这个代理，
+   *    若不转发，整表条件写永远退化为无条件写（而测试注入的内存实现却“通过”）。
+   *    旧注入实现没有版本能力时回落到普通读/写，并明确给 null（不伪造版本）。
+   */
+  readVersioned: (s, i) => activeSidecarApi.readVersioned
+    ? activeSidecarApi.readVersioned(s, i)
+    : activeSidecarApi.read(s, i).then(value => ({ value, revision: null })),
+  writeConditional: (s, i, v, expected) => activeSidecarApi.writeConditional
+    ? activeSidecarApi.writeConditional(s, i, v, expected)
+    : activeSidecarApi.write(s, i, v).then(ok => ({ ok })),
+  // 🔴 原子提交没有安全降级：注入实现缺失时如实回 unsupported，绝不能用两次独立写冒充。
+  commitWhole: (entries) => activeSidecarApi.commitWhole
+    ? activeSidecarApi.commitWhole(entries)
+    : Promise.resolve({ ok: false, unsupported: true }),
 }
 
 /** 原生的（未外置）便携 StoreOps：只管内存 cache + 防抖落盘 */
@@ -594,7 +674,7 @@ const basePortableStore: StoreOps = {
  * 🔴 外置写失败要**看得见**：静默失败会让「备份列表在、恢复时说载荷缺失」，
  *    作者无从判断是没存还是丢了 ⇒ 接到 lastError + emit，与写盘失败同一条反馈通道。
  */
-export const portableStore: StoreOps = withSidecar(
+export const portableStore: SidecarStoreOps = withSidecar(
   basePortableStore,
   sidecarProxy,
   PORTABLE_SIDECAR,
