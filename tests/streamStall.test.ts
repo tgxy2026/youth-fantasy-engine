@@ -141,7 +141,7 @@ async function main() {
       globalThis.fetch = (async () => stalledBody([oline('写了半截')])) as unknown as typeof fetch
       const cfg = { ...OPENAI, type: 'openai' } as const
       const { askSoft } = await import('@/lib/editor/wordRange')
-      await askSoft(cfg, 'sys', 'user', { signal: undefined as unknown as AbortSignal })
+      await askSoft(cfg, 'sys', 'user', { onToken: () => {}, idleTimeoutMs: 60 })
     } catch (e) { err = e } finally { globalThis.fetch = real }
     ok('🔴 ⑤b askSoft 不把停滞吞成空串（空串＝伪装成"模型没吐内容"）', isStreamStalled(err), String(err))
     ok('⑤b askSoft 上抛的停滞带片段', isStreamStalled(err) && (err as AIStreamStalledError).partialText === '写了半截',
@@ -151,9 +151,10 @@ async function main() {
   // ---------- 六、闸：生产路径必须真的传空闲超时 ----------
   {
     const { readFileSync } = await import('node:fs')
-    const src = readFileSync('src/lib/aiCore/chat.ts', 'utf8')
-    const hits = src.split('idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS').length - 1
-    ok('⑥ 两条通道都传了空闲超时（漏一条就等于那条会永久挂住）', hits === 2, String(hits))
+    const protocols = ['ollama', 'openaiChat', 'openaiResponses', 'anthropic', 'gemini']
+    const missing = protocols.filter(name => !readFileSync(`src/lib/aiCore/protocols/${name}.ts`, 'utf8')
+      .includes('idleTimeoutMs: o.idleTimeoutMs ?? STREAM_IDLE_TIMEOUT_MS'))
+    ok('⑥ 五个协议都传了空闲超时', missing.length === 0, missing.join(', '))
     // 🔴 断了「两处各写一个数字」的漂移：传输层只是给真源起个名字，真源在 `ai/streaming`
     const tp = readFileSync('src/lib/aiCore/transport.ts', 'utf8')
     const sm = readFileSync('src/lib/ai/streaming.ts', 'utf8')

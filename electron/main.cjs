@@ -1262,7 +1262,17 @@ ipcMain.handle('store:path', () => dataFile())
     return { ok: true }
   })
 
-  ipcMain.handle('net:fetch', async (_e, url, init) => {
+  // 请求身份按 renderer 隔离；取消不能影响其他窗口发起的请求。
+  const netRequests = new Map()
+  ipcMain.handle('net:cancel', (event, requestId) => {
+    if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(requestId)) return { ok: false }
+    const request = netRequests.get(`${event.sender.id}:${requestId}`)
+    if (!request) return { ok: false }
+    request.cancelled = true
+    request.ctrl.abort()
+    return { ok: true }
+  })
+  ipcMain.handle('net:fetch', async (event, url, init) => {
     const opts = init || {}
     /**
      * 🔴 3.2.2 · 审计 C6（P2）：**超时必须覆盖正文消费**。
@@ -1275,6 +1285,8 @@ ipcMain.handle('store:path', () => dataFile())
      * 未必是 AbortError）。
      */
     let netTimedOut = false
+    let netRequest = null
+    let requestKey = null
     try {
       const target = new URL(String(url))
       if (target.protocol !== 'http:' && target.protocol !== 'https:') {
@@ -1288,6 +1300,13 @@ ipcMain.handle('store:path', () => dataFile())
         headers[k] = String(v)
       }
       const ctrl = new AbortController()
+      if (opts.requestId !== undefined) {
+        if (typeof opts.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(opts.requestId)) return { ok: false, error: '请求标识无效' }
+        requestKey = `${event.sender.id}:${opts.requestId}`
+        if (netRequests.has(requestKey)) return { ok: false, error: '请求标识正在使用' }
+        netRequest = { ctrl, cancelled: false }
+        netRequests.set(requestKey, netRequest)
+      }
       const timer = setTimeout(() => { netTimedOut = true; ctrl.abort() }, NET_TIMEOUT_MS)
       // 🔴 定时器的 finally 包住**整个请求 + 读正文**（不是只包 fetch）
       try {
@@ -1330,9 +1349,10 @@ ipcMain.handle('store:path', () => dataFile())
         }
       } finally {
         clearTimeout(timer)
+        if (requestKey && netRequests.get(requestKey) === netRequest) netRequests.delete(requestKey)
       }
     } catch (err) {
-      const msg = (netTimedOut || (err && err.name === 'AbortError'))
+      const msg = netRequest?.cancelled ? '已取消' : (netTimedOut || (err && err.name === 'AbortError'))
         ? '请求超时（' + Math.round(NET_TIMEOUT_MS / 1000) + 's，含等待响应正文）'
         : String(err && err.message ? err.message : err)
       return { ok: false, error: msg }

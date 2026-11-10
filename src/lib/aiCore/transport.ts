@@ -186,8 +186,26 @@ export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs
   external?.addEventListener('abort', onAbort)
   try {
     const res = await fetch(url, { ...init, signal: ctrl.signal })
-    if (onResponse) onResponse(() => clearTimeout(timer))
-    else clearTimeout(timer)
+    if (onResponse && res.ok) {
+      // 成功流保持原始 body；首字之后由流解析器接管空闲超时和取消。
+      onResponse(() => clearTimeout(timer))
+      return res
+    }
+    // 非流式（以及流请求的错误响应）必须把响应体也纳入超时与取消范围。
+    // fetch 在收到响应头时就 resolve；若在这里提前清理，迟到的正文会绕过用户取消。
+    // 读完后重建响应，保留状态、头和 body，让现有解析及兼容重试逻辑继续使用。
+    if (typeof res.arrayBuffer === 'function') {
+      const body = await res.arrayBuffer()
+      if (external?.aborted) throw new AICancelled()
+      clearTimeout(timer)
+      return new Response([204, 205, 304].includes(res.status) ? null : body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      })
+    }
+    // 少数内存测试适配器仅实现必要方法，不是真正的 Fetch Response。
+    clearTimeout(timer)
     return res
   } catch (e) {
     clearTimeout(timer)

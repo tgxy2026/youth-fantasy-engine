@@ -1,21 +1,21 @@
 # 审计工具与历史入口
 
-## 当前状态（源码 3.4.1 · 2026-11-06）
+## 当前状态（源码 3.4.3 · 2026-11-10 复核）
 
 **唯一全量入口**：`node scripts/audit/run.mjs`。规则集中在 `scripts/audit/` —— 11 支旧扫描器在 `legacy/`，三端专项在 `platform/`，运行探针在 `probes/`。
 
 标准两步，顺序不能反（证据指纹含未提交改动）：
 
 ```bash
-# ① 真跑四个生产者，产出运行证据；打印 EVIDENCE <路径>
+# ① 真跑九个生产者，产出运行证据；打印 EVIDENCE <路径>
 node scripts/verify/contracts-evidence.mjs
 # ② 喂给审计；报告落在 .workbuddy/tmp/audit/<timestamp>/
 node scripts/audit/run.mjs --probes --evidence <上一步打印的 json 路径>
 ```
 
-- 六项必要运行契约在 `contracts.json`；缺证据一律 `unverified`，`--probes` 的离线头边界审计只覆盖 `headers.case / headers.syntax`。
+- 11 项必要运行契约在 `contracts.json`（2 项离线头边界 + 4 项通用运行契约 + 5 项 Agent 契约）；缺证据一律 `unverified`，`--probes` 的离线头边界审计只覆盖 `headers.case / headers.syntax`。
 - 退出码：`0` = complete（证据齐、候选已复核、诊断为空、11 支旧扫描器全 executed）；`1` = 已确认失败；`2` = 仍有未验证 / 受阻 / 待复核项。**单独跑出 `incomplete` 是常态，不是脚本故障**。
-- 静态扫描当前覆盖 `src/` 下 **852 个 ts/tsx**；`0 candidates` 只表示没有静态候选，不等于功能验收通过。
+- 静态扫描覆盖 `src/` 下的 ts/tsx（2026-11-10 实测 **886 个**，数量随源码变化，以当次报告为准）；`0 candidates` 只表示没有静态候选，不等于功能验收通过。
 - `report.json` 顶层含 `appVersion`、`toolFingerprint`、`sourceFingerprint`、`selfCheck`；`report.md` 的「本次扫描」段列出版本、工具指纹、扫描文件数、图表 / mono 清单与自检结果。
 - `sourceFingerprint` 仍只覆盖 `src/` + `electron/`（**口径未改**，既有证据链不受影响）；`toolFingerprint` 是新增的「审计工具自身」指纹，规则一改就变，用来区分旧工具跑出的报告。
 
@@ -121,7 +121,7 @@ node scripts/audit/run.mjs --probes
 - SVG线条不存在的填充、未渲染的defs、隐藏元素不冒充实际绘制样本。颜色合成按mono白底检查，不是像素级截图/图片分析；自定义滤镜、混合模式或复杂遮罩仍需人工核查。
 - 原 `verify-mono-charts.cjs` 路径保留，补绘图数据样本前提、严格扫描及HTML绘图检查；空情节画布会要求补数据，而非把“无彩色”当通过。
 - 原 `verify-custom-headers.cjs` 路径保留，仍测新增和编辑预设入口；UI证据不代替实际HTTP出口/鉴权证据。
-- 六项必需运行契约见 `contracts.json`。默认缺证据就显示unverified；没有运行桌面/双设备时不得冒充验收完成。
+- 11 项必需运行契约见 `contracts.json`。默认缺证据就显示unverified；没有运行桌面/双设备时不得冒充验收完成。
 
 ## 运行证据与销账
 

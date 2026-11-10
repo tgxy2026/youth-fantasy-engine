@@ -107,6 +107,22 @@ async function main() {
     const out2 = await webSearch('蒂法', base({ engine: 'custom', endpoint: 'https://api.x.dev/s' }), undefined, { transport: noBridge.transport })
     ok('自定义接口（POST 一路）照常走通', out2.used === true && noBridge.calls[0].req.method === 'POST')
 
+    const preAbort = new AbortController()
+    preAbort.abort()
+    const preTransport = stub({ ok: true, status: 200, text: searxngBody })
+    const preResult = await webSearch('蒂法', base(), preAbort.signal, { transport: preTransport.transport })
+    ok('已取消时不发起检索', preTransport.calls.length === 0 && !preResult.used && /取消/.test(preResult.error ?? ''))
+
+    const lateAbort = new AbortController()
+    let completeLate: ((result: TransportResult) => void) | undefined
+    const lateTransport = stub(() => new Promise<TransportResult>(resolve => { completeLate = resolve }))
+    const latePending = webSearch('蒂法', base(), lateAbort.signal, { transport: lateTransport.transport })
+    await Promise.resolve()
+    lateAbort.abort()
+    completeLate?.({ ok: true, status: 200, text: searxngBody })
+    const lateResult = await latePending
+    ok('取消后的迟到检索结果不作为成功采用', !lateResult.used && /取消/.test(lateResult.error ?? ''))
+
     const rendered = renderSearchResults(out)
     ok('渲染给模型的资料带编号与检索词',
       rendered.includes('〖联网检索结果〗') && rendered.includes('1. ') && rendered.includes('蒂法'))

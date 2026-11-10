@@ -82,6 +82,8 @@ const DATA_DIR = path.join(APP_ROOT, 'data')
 const DATA_FILE = path.join(DATA_DIR, 'youth-fantasy-engine-data.json')
 const TMP_FILE = path.join(DATA_DIR, '.data.json.tmp')
 const PORT_LOCK = path.join(DATA_DIR, '.port')
+// 与运行实例标记分开保存，退出后保留，用于尽量让已有浏览器页面在重启后重新连接。
+const LAST_PORT = path.join(DATA_DIR, '.last-port')
 /**
  * 外置大块数据（sidecar）目录：`data/blobs/<store>/<id>.json`。
  *
@@ -172,10 +174,17 @@ async function pickPort(preferred) {
   })
   if (preferred && await isFree(preferred)) return preferred
   // 默认从 8765 起试（避开 dev 常用的 3000/5173/5199）
-  for (let p = preferred || 8765; p < (preferred || 8765) + 50; p++) {
+  for (let p = preferred || 8765; p < Math.min((preferred || 8765) + 50, 65536); p++) {
     if (await isFree(p)) return p
   }
   throw new Error('在 127.0.0.1 上找不到可用端口')
+}
+
+function previousPort() {
+  try {
+    const port = Number(readFileSync(LAST_PORT, 'utf8').trim())
+    return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 0
+  } catch { return 0 }
 }
 
 // ---------- 静态托管 ----------
@@ -1080,13 +1089,17 @@ async function main() {
     console.error('[portable] ⚠️ 知识库事务恢复异常：', e?.message ?? e)
   }
 
-  PORT = await pickPort(ARGS.port)
+  // 显式参数优先；默认启动时优先使用上次成功的端口，避免空闲端口变化导致旧页面断连。
+  PORT = await pickPort(ARGS.port || previousPort())
   await new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(PORT, '127.0.0.1', resolve)
   })
 
   writeFileSync(PORT_LOCK, String(PORT), 'utf8')
+  try { writeFileSync(LAST_PORT, String(PORT), 'utf8') } catch (e) {
+    console.error('[portable] ⚠️ 无法记录上次端口，重启后可能需要重新打开页面：', e?.message ?? e)
+  }
   const url = `http://127.0.0.1:${PORT}`
 
   // 连接模式服务 + Agent 可写工具宿主：起独立随机端口（桥用 host 文件里的 port + token 连接）。

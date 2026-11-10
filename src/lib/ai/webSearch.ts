@@ -205,8 +205,9 @@ const NET_TIMEOUT_MS = 20000
  * 其余（便携版 / 纯浏览器 dev）直连，能被 CORS 放行的只有自带 ACAO 的接口。
  */
 const defaultTransport: SearchTransport = async (req, signal) => {
+  if (signal?.aborted) return { ok: false, error: '已取消' }
   if (HAS_NET_BRIDGE) {
-    const r = await netFetch(req.url, { method: req.method, headers: req.headers, body: req.body })
+    const r = await netFetch(req.url, { method: req.method, headers: req.headers, body: req.body }, signal)
     return r.ok ? { ok: true, status: r.status, text: r.text } : { ok: false, error: r.error }
   }
   const ctrl = new AbortController()
@@ -284,6 +285,7 @@ export async function webSearch(
   const q = String(query ?? '').trim()
   const base: SearchOutcome = { used: false, engine: settings.engine, query: q, results: [] }
   if (settings.mode !== 'api') return { ...base, error: '当前检索方式不是「搜索接口」' }
+  if (signal?.aborted) return { ...base, error: '检索已取消' }
 
   const built = buildSearchRequest(settings, q, settings.topK)
   if (!built.req) return { ...base, error: built.error || '请求没构造出来' }
@@ -291,7 +293,11 @@ export async function webSearch(
   const transport = deps.transport ?? defaultTransport
 
   try {
-    const r = await withApiModeLease(() => transport(req, signal))
+    const r = await withApiModeLease(() => signal?.aborted
+      ? Promise.resolve({ ok: false as const, error: '已取消' })
+      : transport(req, signal))
+    // 若旧版桥或自定义发送器不能主动中止，必须等实际返回才释放租约，且不采用迟到结果。
+    if (signal?.aborted) return { ...base, error: '检索已取消' }
     if (!r.ok) {
       const hint = /Failed to fetch|NetworkError|load failed|跨域/i.test(r.error) && !HAS_NET_BRIDGE
         ? '（多半是跨域被拦 —— 桌面版会由主进程代发、不受此限；便携版只能用自带跨域许可的接口）'

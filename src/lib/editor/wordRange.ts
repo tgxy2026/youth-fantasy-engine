@@ -34,6 +34,7 @@ export async function ask(
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
+    idleTimeoutMs?: number
     /** 旧口径（兼容包装）：等价于 `output:'json-object'` + `reasoning:'off'` */
     json?: boolean
     /**
@@ -59,6 +60,7 @@ export async function askSoft(
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
+    idleTimeoutMs?: number
     /** 旧口径（兼容包装）：等价于 `output:'json-object'` + `reasoning:'off'` */
     json?: boolean
     /**

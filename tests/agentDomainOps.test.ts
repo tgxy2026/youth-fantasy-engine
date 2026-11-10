@@ -16,6 +16,7 @@ import { canvasLeaseKey, registerFormEditor, tableLeaseKey } from '@/lib/agentHo
 import { cellsHash, parseCells } from '@/lib/agentHost/mapOps'
 import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { __resetMockStores, memoryOps } from './mock-memory'
+import { setKbBackend } from '@/lib/search/knowledgeBase'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -236,6 +237,44 @@ async function main() {
     ok('导入及回滚落盘未确认时报告结果不明', !result.ok && result.code === 'OUTCOME_UNKNOWN', JSON.stringify(result))
   }
 
+  // 回滚主数据成功但参考资料失败，不得报告完整回滚。
+  {
+    await seed()
+    const now = Date.now()
+    await memoryOps.put('worlds', {
+      id: 'w-rollback-kb', name: '回滚资料故障', origin: { projectId: otherProjectId, projectName: '来源', at: now },
+      tables: [{ tabId: 'nations', kind: 'table', rows: [{ id: 'r', data: { 名称: '测试' }, order: 0 }] }],
+      activeSubs: {}, fingerprint: 'fp-rollback-kb', versions: [], createdAt: now, updatedAt: now,
+    })
+    setKbBackend({
+      list: async () => [], put: async () => {}, del: async () => {},
+      getBody: async () => '', putBody: async () => {}, delBody: async () => {}, clearProject: async () => {},
+    })
+    try {
+      const pv = valueOf<{ requiredTabs: string[]; projectUpdatedAt: number; fingerprint: string }>(await call(AGENT_TOOL_NAMES.previewWorldImport, { projectId, worldId: 'w-rollback-kb' }))
+      let flushes = 0
+      const result = await call(AGENT_TOOL_NAMES.importWorldPack, {
+        projectId, worldId: 'w-rollback-kb', expectedTabs: pv.requiredTabs, expectedFingerprint: pv.fingerprint, expectedProjectUpdatedAt: pv.projectUpdatedAt, confirm: true,
+      }, fullScope, executor({ flush: async () => {
+        flushes++
+        if (flushes === 1) {
+          const backups = await memoryOps.getAll<{ id: string; shards?: { textPayloadId?: string } }>('backups')
+          const backup = backups[0]
+          if (!backup) throw new Error('预备份缺失')
+          const textId = backup.shards?.textPayloadId ?? backup.id
+          const payload = await memoryOps.get<{ id: string; bundle: Record<string, unknown> }>('backupPayloads', textId)
+          if (!payload?.bundle) throw new Error('预备份载荷缺失')
+          await memoryOps.put('backupPayloads', { ...payload, bundle: { ...payload.bundle, knowledgeBase: [
+            { title: '损坏资料', text: '', sourceType: 'paste', chars: 0, importedAt: 1, enabled: true },
+          ] } })
+        }
+        return flushes !== 2
+      } }))
+      ok('回滚参考资料失败时不得报告已完整回滚', !result.ok && result.code === 'OUTCOME_UNKNOWN' && result.error.includes('参考资料'), JSON.stringify(result))
+      ok('部分回滚结果返回安全备份编号', !result.ok && !!result.current?.preBackupId && result.current?.rolledBack === false, JSON.stringify(result))
+    } finally { setKbBackend(null) }
+  }
+
   {
     await seed()
     const now = Date.now()
@@ -413,6 +452,88 @@ async function main() {
       })
       ok('恢复后项目版本前置失效时拒绝', stale.ok === false && stale.code === 'CONFLICT', JSON.stringify(stale))
     }
+  }
+
+  // ⑦b-2 主数据恢复但参考资料失败：外部 Agent 不能收到完整成功回执。
+  {
+    await seed()
+    setKbBackend({
+      list: async () => [], put: async () => {}, del: async () => {},
+      getBody: async () => '', putBody: async () => {}, delBody: async () => {}, clearProject: async () => {},
+    })
+    try {
+      const backup = await db.createAutoBackup(projectId, 'manual', '资料损坏测试')
+      if (!backup) throw new Error('创建测试备份失败')
+      const meta = await memoryOps.get<{ shards?: { textPayloadId?: string } }>('backups', backup.id)
+      const textId = meta?.shards?.textPayloadId ?? backup.id
+      const payload = await memoryOps.get<{ id: string; bundle: Record<string, unknown> }>('backupPayloads', textId)
+      if (!payload?.bundle) throw new Error('测试备份载荷缺失')
+      await memoryOps.put('backupPayloads', { ...payload, bundle: { ...payload.bundle, knowledgeBase: [
+        { title: '损坏资料', text: '', sourceType: 'paste', chars: 0, importedAt: 1, enabled: true },
+      ] } })
+      const pv = valueOf<{ projectUpdatedAt: number }>(await call(AGENT_TOOL_NAMES.previewBackupRestore, { projectId, backupId: backup.id }))
+      const notices: unknown[] = []
+      const result = await call(AGENT_TOOL_NAMES.restoreProjectBackup, {
+        projectId, backupId: backup.id, expectedProjectUpdatedAt: pv.projectUpdatedAt, confirm: true,
+      }, fullScope, executor({ notices }))
+      ok('参考资料恢复失败时不得向 Agent 报告完整成功', !result.ok && result.code === 'SAVE_FAILED', JSON.stringify(result))
+      ok('部分恢复必须返回预备份和资料失败信息', !result.ok && !!result.current?.preBackupId && !!result.current?.knowledgeBase, JSON.stringify(result))
+      ok('主数据已恢复时仍通知页面刷新', notices.length > 0, JSON.stringify(notices))
+    } finally { setKbBackend(null) }
+  }
+
+  // 预备份期间产生草稿：首次覆盖前再次检查并保留当前作品。
+  {
+    await seed()
+    const backup = await db.createAutoBackup(projectId, 'manual', '延迟草稿测试')
+    if (!backup) throw new Error('测试备份缺失')
+    const pv = valueOf<{ projectUpdatedAt: number }>(await call(AGENT_TOOL_NAMES.previewBackupRestore, { projectId, backupId: backup.id }))
+    const beforeVolumes = await memoryOps.getAll<{ id: string }>('volumes')
+    const base = defaultExecutorDeps()
+    let checks = 0
+    const ex = createAgentExecutor({ ...base, flush: async () => true, activeChapterId: () => null,
+      storageBlockReason: () => '', unsavedDraft: () => ++checks >= 2 })
+    const result = await call(AGENT_TOOL_NAMES.restoreProjectBackup, {
+      projectId, backupId: backup.id, expectedProjectUpdatedAt: pv.projectUpdatedAt, confirm: true,
+    }, fullScope, ex)
+    const afterVolumes = await memoryOps.getAll<{ id: string }>('volumes')
+    ok('预备份期间出现草稿时恢复不报成功', !result.ok && result.code === 'OUTCOME_UNKNOWN', JSON.stringify(result))
+    ok('延迟草稿出现时未开始覆盖卷', JSON.stringify(beforeVolumes) === JSON.stringify(afterVolumes), JSON.stringify(afterVolumes))
+  }
+
+  // 首笔覆盖完成后出现草稿：停止后续写入和旧数据删除，不能报告成功。
+  {
+    await seed()
+    const now = Date.now()
+    await memoryOps.put('chapters', { id: 'ch-draft-guard', projectId, volumeId: 'v-domain', order: 0,
+      title: '现有章节', content: '保留正文', summary: '', status: '草稿', wordCount: 4, createdAt: now, updatedAt: now })
+    const backup = await db.createAutoBackup(projectId, 'manual', '中途草稿测试')
+    if (!backup) throw new Error('测试备份缺失')
+    const pv = valueOf<{ projectUpdatedAt: number }>(await call(AGENT_TOOL_NAMES.previewBackupRestore, { projectId, backupId: backup.id }))
+    const base = defaultExecutorDeps()
+    let draft = false, triggered = false
+    const ex = createAgentExecutor({ ...base, flush: async () => true, activeChapterId: () => null,
+      storageBlockReason: () => '', unsavedDraft: () => draft,
+      captureOwner: pid => {
+        const owner = base.captureOwner(pid)
+        const store = new Proxy(owner.store, { get(target, prop, receiver) {
+          if (prop === 'put') return async (name: string, value: unknown) => {
+            await target.put(name, value)
+            if (name === 'volumes' && !triggered) { triggered = true; draft = true }
+          }
+          const value = Reflect.get(target, prop, receiver)
+          return typeof value === 'function' ? value.bind(target) : value
+        } })
+        return { ...owner, store }
+      },
+    })
+    const result = await call(AGENT_TOOL_NAMES.restoreProjectBackup, {
+      projectId, backupId: backup.id, expectedProjectUpdatedAt: pv.projectUpdatedAt, confirm: true,
+    }, fullScope, ex)
+    const chapters = await memoryOps.getAll<{ id: string; content: string }>('chapters')
+    ok('覆盖中出现草稿时停止并报告结果不明', triggered && !result.ok && result.code === 'OUTCOME_UNKNOWN', JSON.stringify(result))
+    ok('覆盖中断后返回安全预备份编号', !result.ok && typeof result.current?.preBackupId === 'string', JSON.stringify(result))
+    ok('覆盖中出现草稿后旧章节未被删除且不继续写入章节', chapters.length === 1 && chapters[0].id === 'ch-draft-guard' && chapters[0].content === '保留正文', JSON.stringify(chapters))
   }
 
   // ⑦c 备份恢复期间切换存储空间：写入必须仍落在入口捕获的 store，不能漏到新空间

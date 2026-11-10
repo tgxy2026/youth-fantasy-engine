@@ -72,7 +72,9 @@ export interface ElectronNetAPI {
     method?: string
     headers?: Record<string, string>
     body?: string
+    requestId?: string
   }): Promise<NetFetchResult>
+  cancel?(requestId: string): Promise<{ ok: boolean }>
   /** 推送网络代理配置（2026-09-28 · 网络代理设置）：仅桌面版可用 */
   /** 用系统默认浏览器打开一个 http/https 链接（2.6.3 · 检查更新下载入口） */
   openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>
@@ -286,17 +288,32 @@ export function installFullscreenShortcuts(): () => void {
  * 由主进程代发一次请求。**永不抛** —— 不可用时返回 ok:false，让调用方把原因如实报给作者，
  * 而不是静默降级成「模型瞎编」（那种失败最难排查）。
  */
+let netRequestSequence = 0
 export async function netFetch(
   url: string,
   init?: { method?: string; headers?: Record<string, string>; body?: string },
+  signal?: AbortSignal,
 ): Promise<NetFetchResult> {
   if (!HAS_NET_BRIDGE) {
     return { ok: false, error: '当前版本没有「主进程代发请求」能力（便携版跑在浏览器里，只能用自带跨域许可的接口）' }
   }
+  if (signal?.aborted) return { ok: false, error: '已取消' }
+  const api = window.electronNet as ElectronNetAPI
+  const requestId = signal && typeof api.cancel === 'function'
+    ? `net-${Date.now().toString(36)}-${(++netRequestSequence).toString(36)}-${Math.random().toString(36).slice(2)}`
+    : undefined
+  const cancel = () => { if (requestId) void api.cancel?.(requestId).catch(() => undefined) }
   try {
-    return await (window.electronNet as ElectronNetAPI).fetch(url, init)
+    // 先发送请求再发送取消，保证同一 renderer 的 IPC 入队顺序。
+    const pending = api.fetch(url, requestId ? { ...init, requestId } : init)
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted) cancel()
+    const result = await pending
+    return signal?.aborted ? { ok: false, error: '已取消' } : result
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    return { ok: false, error: signal?.aborted ? '已取消' : e instanceof Error ? e.message : String(e) }
+  } finally {
+    signal?.removeEventListener('abort', cancel)
   }
 }
 

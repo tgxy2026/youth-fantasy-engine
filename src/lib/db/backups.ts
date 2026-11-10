@@ -504,6 +504,10 @@ export interface RestoreOptions {
   preBackupLabel?: string
   /** 跳过内部备份时，由调用者提供已回读的资料安全备份。 */
   expectedKnowledgeBase?: KbBundleDoc[]
+  /** 预备份和覆盖范围读取完成后、首次覆盖写入前检查调用方状态。 */
+  beforeApply?: (context: { preBackupId?: string }) => void | Promise<void>
+  /** 恢复独立参考资料时检查调用方上下文；失效时停止后续副作用。 */
+  assertDuringApply?: () => void
 }
 
 export interface RestoreOutcome {
@@ -660,6 +664,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
     else if (r.key.startsWith(`customOption::${targetPid}::`)) setKeys.push(r.key)
   }
   // 2. 写入备份包数据（内部 id 全部重生成，避免与残留/冲突）
+  await opts?.beforeApply?.({ preBackupId: preBackupMeta?.id })
   const volMap = new Map<string, string>()
   for (const v of bundle.volumes) {
     const nid = uid()
@@ -799,7 +804,7 @@ async function applyBundleToProject(targetPid: string, bundle: ProjectBundle, op
   let kbOutcome: RestoreOutcome['knowledgeBase'] = undefined
   if (bundle.knowledgeBase) {
     try {
-      const count = await restoreDocsFromBundle(targetPid, bundle.knowledgeBase, expectedKnowledgeBase)
+      const count = await restoreDocsFromBundle(targetPid, bundle.knowledgeBase, expectedKnowledgeBase, opts?.assertDuringApply)
       kbOutcome = { attempted: true, ok: true, count }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)

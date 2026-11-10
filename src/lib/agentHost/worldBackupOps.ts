@@ -203,7 +203,11 @@ export async function importWorldPack(args: Record<string, unknown>, scope: Agen
         if (deps.unsavedDraft() || keys.some(key => isFormLeaseBusy(projectId, key))) throw new Error('出现新的编辑或草稿，不能自动覆盖回滚')
         const restored = await db.restoreBackup(preBackupId, undefined, owner.store)
         owner.assertCurrent()
-        if (!restored?.ok || !await deps.flush()) throw new Error('回滚未确认落盘')
+        if (!restored?.ok) throw new Error('回滚未返回成功结果')
+        if (!await deps.flush()) throw new Error('回滚未确认落盘')
+        if (restored.knowledgeBase?.attempted && !restored.knowledgeBase.ok) {
+          throw new Error(`回滚时参考资料恢复未完成：${restored.knowledgeBase.error ?? '未知错误'}`)
+        }
         owner.assertCurrent()
         return fail('ROLLED_BACK', `世界包引入失败，已用操作前安全备份回滚：${message}`, { preBackupId, rolledBack: true })
       } catch (rollbackError) {
@@ -294,15 +298,55 @@ export async function restoreProjectBackup(args: Record<string, unknown>, scope:
   keys.push(canvasLeaseKey, tableLeaseKey('geomaps'), tableLeaseKey('geography'))
   const busy = [...new Set(keys)].find(key => isFormLeaseBusy(projectId, key))
   if (busy) return fail('DRAFT_DIRTY', `「${busy}」正在引擎中编辑或保存，请先离开所有编辑页面后重试。`)
+  let applying = false
+  const checkDuringApply = () => {
+    if (!applying) return
+    owner.assertCurrent()
+    if (deps.storageBlockReason() || deps.unsavedDraft() || deps.activeChapterId()
+      || [...new Set(keys)].some(key => isFormLeaseBusy(projectId, key))) {
+      throw new Error('恢复期间出现新的编辑或存储阻断，已停止后续覆盖。')
+    }
+  }
+  const mutations = new Set(['put', 'putStrict', 'del', 'bulkPut', 'bulkDel'])
+  const guardedStore = new Proxy(owner.store, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver)
+      if (typeof value !== 'function') return value
+      if (typeof property !== 'string' || !mutations.has(property)) return value.bind(target)
+      return async (...args: unknown[]) => {
+        checkDuringApply()
+        const result = await Reflect.apply(value, target, args)
+        checkDuringApply()
+        return result
+      }
+    },
+  })
+  let restorePreBackupId: string | undefined
   try {
     owner.assertCurrent()
-    const outcome = await db.restoreBackup(backupId, undefined, owner.store)
+    const outcome = await db.restoreBackup(backupId, { beforeApply: async context => {
+      restorePreBackupId = context.preBackupId
+      owner.assertCurrent()
+      if (deps.storageBlockReason() || deps.unsavedDraft() || deps.activeChapterId()
+        || [...new Set(keys)].some(key => isFormLeaseBusy(projectId, key))) {
+        throw new Error('预备份期间出现新的编辑或存储阻断，已停止覆盖。')
+      }
+      if (await currentProjectUpdatedAt(projectId, deps) !== expectedProjectUpdatedAt) {
+        throw new Error('预备份期间项目已更新，已停止覆盖。')
+      }
+      owner.assertCurrent()
+      if (deps.storageBlockReason() || deps.unsavedDraft() || deps.activeChapterId()
+        || [...new Set(keys)].some(key => isFormLeaseBusy(projectId, key))) {
+        throw new Error('版本检查期间出现新的编辑或存储阻断，已停止覆盖。')
+      }
+      applying = true
+    }, assertDuringApply: checkDuringApply }, guardedStore)
     if (!outcome?.ok) return fail('SAVE_FAILED', '恢复接口未返回成功结果。')
-    owner.assertCurrent()
+    checkDuringApply()
     // 项目时间戳是恢复前置条件：必须严格递增并等待写入，不能使用可能同毫秒且吞错的 touchProject。
     const project = await owner.store.get<Project>('projects', projectId)
     if (!project) throw new Error('恢复后无法读取目标项目版本')
-    await owner.store.put('projects', { ...project, updatedAt: Math.max(Date.now(), expectedProjectUpdatedAt + 1, (project.updatedAt ?? 0) + 1) })
+    await guardedStore.put('projects', { ...project, updatedAt: Math.max(Date.now(), expectedProjectUpdatedAt + 1, (project.updatedAt ?? 0) + 1) })
     let flushed = false
     try { flushed = await deps.flush() } catch { /* 下方按结果不明处理 */ }
     if (!flushed) return fail('OUTCOME_UNKNOWN', '恢复已执行但未确认落盘，请重新打开项目核对。', { reloadRequired: true })
@@ -315,6 +359,13 @@ export async function restoreProjectBackup(args: Record<string, unknown>, scope:
       return fail('OUTCOME_UNKNOWN', '恢复结果与回读的卷 / 章数量不一致，请重新打开项目核对。', { reloadRequired: true, preBackupId: outcome.preBackupId })
     }
     deps.notify({ projectId, kind: 'backup-restore' })
+    if (outcome.knowledgeBase?.attempted && !outcome.knowledgeBase.ok) {
+      return fail('SAVE_FAILED', `作品主数据已恢复，但参考资料恢复未完成：${outcome.knowledgeBase.error ?? '未知错误'}。请先核对操作前安全备份和当前内容，不要直接重试。`, {
+        projectId, backupId, preBackupId: outcome.preBackupId,
+        restoredVolumes: outcome.restoredVolumes, restoredChapters: outcome.restoredChapters,
+        knowledgeBase: outcome.knowledgeBase, mainDataSaved: true, reloadRequired: true,
+      })
+    }
     return {
       ok: true,
       value: {
@@ -324,6 +375,6 @@ export async function restoreProjectBackup(args: Record<string, unknown>, scope:
       },
     }
   } catch (error) {
-    return fail('OUTCOME_UNKNOWN', `备份恢复失败或结果不明：${error instanceof Error ? error.message : String(error)}`, { reloadRequired: true })
+    return fail('OUTCOME_UNKNOWN', `备份恢复失败或结果不明：${error instanceof Error ? error.message : String(error)}`, { reloadRequired: true, ...(restorePreBackupId ? { preBackupId: restorePreBackupId } : {}) })
   }
 }

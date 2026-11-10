@@ -629,6 +629,20 @@ const multiPara = (n: number): string =>
   racingBackend.delBody = async id => { racingBackend.bodies.set(id, '其他页面的新正文'); throw new Error('并发写入') }
   const racingResult = await removeDoc('fault-test', racingDoc.doc.id)
   ok('正文已被并发修改时不自动恢复旧元信息', !racingResult && !restored && racingBackend.bodies.get(racingDoc.doc.id) === '其他页面的新正文')
+  const guarded = memKb()
+  setKbBackend(guarded)
+  const oldGuarded = await importDoc({ projectId: 'guard-test', title: '旧资料', sourceType: 'paste', text: '旧正文' })
+  if (!oldGuarded.ok || !oldGuarded.doc) throw new Error('预置资料失败')
+  let current = true
+  const guardedPutBody = guarded.putBody.bind(guarded)
+  guarded.putBody = async (id, text) => { await guardedPutBody(id, text); current = false }
+  let guardRejected = false
+  try {
+    await restoreDocsFromBundle('guard-test', [{ title: '新资料', sourceType: 'paste', chars: 3, importedAt: 1, enabled: true, text: '新正文' }], undefined,
+      () => { if (!current) throw new Error('归属已变化') })
+  } catch { guardRejected = true }
+  ok('资料写入期间归属变化时停止恢复并保留旧资料', guardRejected && guarded.docs.some(d => d.id === oldGuarded.doc!.id) && guarded.bodies.get(oldGuarded.doc.id) === '旧正文')
+  ok('归属失效后不再清理暂存资料', guarded.docs.some(d => d.title === '新资料'))
   setKbBackend(null)
 }
 

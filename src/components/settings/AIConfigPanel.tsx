@@ -411,45 +411,72 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         </p>}
       </div>
 
-      <div className="flex gap-2 px-4 pt-3" role="group" aria-label="连接设置页面">
-        <Button
-          variant={connectionView === 'api' ? 'primary' : 'secondary'}
-          onClick={() => void requestMode('api')}
-          disabled={!!switchId || modeStatus?.phase === 'blocked'}
-          data-connection-mode-tab="api"
-        >API 模型</Button>
-        <Button
-          variant={connectionView === 'agent' ? 'primary' : 'secondary'}
-          onClick={() => void requestMode('agent')}
-          disabled={!!switchId || modeStatus?.phase === 'blocked' || WEB}
-          data-connection-mode-tab="agent"
-        >Agent 模式</Button>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3">
+        <span className="text-11 text-ink-500">运行模式</span>
+        <div role="tablist" aria-label="连接设置页面" className="inline-flex items-center gap-1.5">
+          <Button
+            variant="toggle"
+            size="sm"
+            selected={connectionView === 'api'}
+            role="tab"
+            aria-selected={connectionView === 'api'}
+            onClick={() => void requestMode('api')}
+            disabled={!!switchId || modeStatus?.phase === 'blocked'}
+            data-connection-mode-tab="api"
+          >API 模型</Button>
+          <Button
+            variant="toggle"
+            size="sm"
+            selected={connectionView === 'agent'}
+            role="tab"
+            aria-selected={connectionView === 'agent'}
+            onClick={() => void requestMode('agent')}
+            disabled={!!switchId || modeStatus?.phase === 'blocked' || WEB}
+            data-connection-mode-tab="agent"
+          >Agent 模式</Button>
+        </div>
+        {modeStatus && <span className={`ml-auto inline-flex items-center gap-1.5 text-11 ${modeStatus.phase === 'stable' ? 'text-ink-500' : 'text-amber'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.phase === 'switching' ? 'bg-amber animate-pulse' : modeStatus.phase === 'blocked' ? 'bg-amber' : 'bg-emerald-400'}`} />
+          {modeStatus.phase === 'switching' ? '切换中' : modeStatus.phase === 'blocked' ? '不可用' : '已生效'}
+        </span>}
       </div>
-      <div className="px-4 pt-3" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
+      <div className="px-4 pt-2.5" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
         {modeStatus === null ? <p className="text-11 text-ink-500">正在读取连接模式…</p> : modeStatus.phase === 'switching' ? (
-          <div className="rounded border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
-            <p>正在切换连接模式：等待在途任务结束（API 任务 {modeStatus.active.api} 个、Agent 任务 {modeStatus.active.agent} 个）。</p>
-            <Button variant="secondary" className="mt-2" onClick={() => void cancelSwitch()} disabled={!switchId}>取消等待</Button>
+          <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5">
+            <p className="flex items-center gap-2 text-12 text-amber">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />
+              正在切换到{connectionView === 'agent' ? 'Agent 模式' : 'API 模型模式'}
+            </p>
+            <p className="mt-1 text-11 text-ink-400 leading-relaxed">正在切换连接模式：等待在途任务结束（API 任务 {modeStatus.active.api} 个、Agent 任务 {modeStatus.active.agent} 个）。</p>
+            <Button size="sm" variant="secondary" className="mt-2" onClick={() => void cancelSwitch()} disabled={!switchId}>取消等待</Button>
           </div>
         ) : modeStatus.phase === 'blocked' ? (
-          <div className="rounded border border-amber/40 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
-            <p className="font-bold">连接模式不可用：{modeStatus.reason || '状态未确认'}</p>
-            {modeStatus.lock && <p>检测到宿主锁：PID {modeStatus.lock.pid ?? '未知（记录损坏）'}{modeStatus.lock.alive === true ? '（进程仍在运行）' : modeStatus.lock.alive === false ? '（进程已退出）' : ''}</p>}
-            <p>安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 模式；不会删除作品数据或 Agent 请求账本。</p>
-            <label className="mt-1 flex items-center gap-2">
-              <input type="checkbox" checked={recoverConfirmed} onChange={e => setRecoverConfirmed(e.target.checked)} />
-              我已确认没有其他引擎实例和未结束的任务在运行
-            </label>
-            <Button variant="secondary" className="mt-2" onClick={() => void recoverMode()} disabled={recovering || !recoverConfirmed}>
-              {recovering ? '恢复中…' : '安全恢复到 API 模式'}
-            </Button>
+          <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5 text-11 leading-relaxed">
+            <p className="text-12 font-medium text-amber">连接模式不可用：{modeStatus.reason || '状态未确认'}</p>
+            {modeStatus.lock && <p className="mt-1 text-ink-400">检测到宿主锁：PID {modeStatus.lock.pid ?? '未知（记录损坏）'}{modeStatus.lock.alive === true ? '（进程仍在运行）' : modeStatus.lock.alive === false ? '（进程已退出）' : ''}</p>}
+            {modeStatus.canRecover ? <>
+              <p className="mt-1 text-ink-400">安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 模式；不会删除作品数据或 Agent 请求账本。</p>
+              <label className="mt-2 flex items-center gap-2 text-ink-300">
+                <input type="checkbox" checked={recoverConfirmed} onChange={e => setRecoverConfirmed(e.target.checked)} />
+                我已确认没有其他引擎实例和未结束的任务在运行
+              </label>
+              <Button size="sm" variant="secondary" className="mt-2" onClick={() => void recoverMode()} disabled={recovering || !recoverConfirmed}>
+                {recovering ? '恢复中…' : '安全恢复到 API 模式'}
+              </Button>
+            </> : <p className="mt-1 text-ink-500">当前环境没有可恢复的本机模式服务。</p>}
           </div>
         ) : (
-          <p className="text-11 text-ink-500 leading-relaxed" data-connection-mode={modeStatus.mode ?? undefined}>
-            {modeStatus.mode === 'agent'
-              ? '当前为 Agent 模式：引擎内置的 API 模型调用已停用，只接受已授权的 Agent 工具调用。切换回 API 模式会先等待在途 Agent 任务结束。'
-              : '当前为 API 模型模式：Agent 工具调用会被拒绝。切换模式不会改动模型配置、密钥、项目授权或正文草稿。'}
-          </p>
+          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5" data-connection-mode={modeStatus.mode ?? undefined}>
+            <p className="flex items-center gap-2 text-12 text-ink-100">
+              <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.mode === 'agent' ? 'bg-amber' : 'bg-emerald-400'}`} />
+              {modeStatus.mode === 'agent' ? 'Agent 模式' : 'API 模型模式'}
+            </p>
+            <p className="mt-1 text-11 text-ink-400 leading-relaxed">
+              {modeStatus.mode === 'agent'
+                ? '引擎内置的 API 模型调用已停用，只接受已授权的 Agent 工具调用。切换回 API 模式会先等待在途 Agent 任务结束。'
+                : 'Agent 工具调用会被拒绝。切换模式不会改动模型配置、密钥、项目授权或正文草稿。'}
+            </p>
+          </div>
         )}
       </div>
       {connectionView === 'agent' ? <div className="p-4">

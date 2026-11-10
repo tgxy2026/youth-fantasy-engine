@@ -675,11 +675,14 @@ export async function collectDocsForSafetyBackup(projectId: string): Promise<KbB
  *    召回时混进上下文（且从界面上完全看不出原因）。
  * 先校验并写入新资料，全部读回成功后才删除旧资料；任何失败都不得报告完整成功。
  */
-export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[], expectedOld?: KbBundleDoc[]): Promise<number> {
+export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBundleDoc[], expectedOld?: KbBundleDoc[], assertCurrent?: () => void): Promise<number> {
+  assertCurrent?.()
   if (!projectId) return 0
   if (!Array.isArray(bundleDocs) || bundleDocs.length > KB_MAX_DOCS) throw new Error('参考资料格式无效或数量超限')
   const old = await listDocsStrict(projectId)
+  assertCurrent?.()
   const oldBodies = await Promise.all(old.map(d => getDocTextStrict(d.id)))
+  assertCurrent?.()
   if (expectedOld) {
     const actual = old.map((d, i) => ({ title: d.title, sourceType: d.sourceType, chars: d.chars, importedAt: d.importedAt, enabled: d.enabled, text: oldBodies[i] }))
     if (JSON.stringify(actual) !== JSON.stringify(expectedOld)) throw new Error('参考资料在安全备份后已变化，请重新确认恢复')
@@ -694,10 +697,14 @@ export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBun
   })
   try {
     for (const { doc, text } of staged) {
+      assertCurrent?.()
       await putDocWithBody(doc, text)
+      assertCurrent?.()
       if (await kbBackend.getBody(doc.id) !== text) throw new Error('参考资料正文回读不一致')
+      assertCurrent?.()
     }
     const saved = await listDocsStrict(projectId)
+    assertCurrent?.()
     for (const { doc } of staged) if (!saved.some(d => d.id === doc.id)) throw new Error('参考资料元数据回读失败')
     const currentOld = saved.filter(d => !staged.some(s => s.doc.id === d.id))
     if (currentOld.length !== old.length) throw new Error('参考资料已变化，请重新确认恢复')
@@ -706,16 +713,21 @@ export async function restoreDocsFromBundle(projectId: string, bundleDocs: KbBun
       if (!current || JSON.stringify(current) !== JSON.stringify(previous) || await getDocTextStrict(previous.id) !== oldBodies[i]) {
         throw new Error('参考资料已变化，请重新确认恢复')
       }
+      assertCurrent?.()
     }
   } catch (error) {
     for (const { doc } of staged) {
+      try { assertCurrent?.() } catch { break }
       await delDocWithBody(doc.id).catch(() => {})
     }
     throw error
   }
   for (const d of old) {
+    assertCurrent?.()
     await delDocWithBody(d.id)
+    assertCurrent?.()
     try { await removeByRef(projectId, d.id) } catch { /* 索引可重建 */ }
+    assertCurrent?.()
   }
   return staged.length
 }
