@@ -61,7 +61,8 @@ try {
       if (mode !== 'closed') {
         await page.getByRole('button', { name: '注册', exact: true }).click()
         check(prefix + ' registration reflows without clipping', await fits())
-        check(prefix + ' invite follows server registration policy', await page.locator('#invite').isVisible() === (mode === 'invite') && await page.locator('#invite').evaluate(input => input.required) === (mode === 'invite'))
+        check(prefix + ' invite follows server registration policy', await page.locator('#invite').isVisible() && await page.locator('#invite').evaluate(input => input.required) === (mode === 'invite'))
+        if (mode === 'open') check(prefix + ' optional invite explains sync eligibility', (await page.locator('#invite-note').innerText()).includes('没有邀请码也能注册'))
         check(prefix + ' password manager switches to new-password', await page.locator('#pwd').getAttribute('autocomplete') === 'new-password')
         if (mode === 'invite') {
           await page.evaluate(() => scrollTo(0,0)); await page.screenshot({ path: path.join(run, `register-${width}.png`), fullPage: true })

@@ -637,6 +637,11 @@
 :root { --ui-zoom: 1; }
 /* 项目内适配按 main 的实际宽度，而非整块屏幕宽度。侧栏和界面缩放都会占用布局空间。 */
 @container workspace (width < 64rem) {
+  /* 背景设定在窄工作区上下排列，让两个区域跟随页面滚动。 */
+  [data-tavern-world] { height: auto; min-height: 100%; overflow: visible; }
+  [data-tavern-world-layout] { flex-direction: column; }
+  [data-tavern-world-editor] { flex: none; overflow: visible; }
+  [data-tavern-world-tools] { width: 100%; overflow: visible; }
   .workspace-content header > .flex { flex-wrap: wrap; align-items: flex-start; }
   .workspace-content header > .flex > div:first-child { min-width: 0; flex: 1 1 100%; }
   .workspace-content header h1 { flex-shrink: 0; }

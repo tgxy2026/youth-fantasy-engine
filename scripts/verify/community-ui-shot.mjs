@@ -213,7 +213,11 @@ try {
     await page.close()
   }
 
-  await shot('feed-wide-1440', 1440, 900)
+  await shot('feed-wide-1440', 1440, 900, { steps: async (page) => {
+    await page.getByRole('button', { name: '投稿广场怎么用' }).click()
+    await page.getByText(/正文最多 10000 个字符/).waitFor()
+    await page.keyboard.press('Escape')
+  } })
   await shot('feed-wide-dark', 1440, 900, { theme: 'dark' })
   await shot('detail-wide-1440', 1440, 900, {
     steps: async (page) => {

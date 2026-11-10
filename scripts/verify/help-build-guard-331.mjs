@@ -227,6 +227,12 @@ try {
     await stale.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
     const laterStale = stale.getByRole('button', { name: '稍后再说', exact: true })
     if (await laterStale.isVisible().catch(() => false)) await laterStale.click()
+    const initialGuide = stale.locator('[data-guide-card]').first()
+    if (await initialGuide.waitFor({ timeout: 3000 }).then(() => true).catch(() => false)) {
+      await stale.getByRole('button', { name: '跳过本页' }).click()
+      await initialGuide.waitFor({ state: 'detached', timeout: 5000 })
+    }
+    await stale.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
     await stale.getByRole('navigation').getByText('使用指南', { exact: true }).first().click()
     const staleGuide = stale.locator('[data-guide-card]').first()
     if (await staleGuide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {

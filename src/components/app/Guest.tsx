@@ -58,7 +58,7 @@ export function GuestDataBar() {
           ? `\n\n（为防密钥外泄，已剔除 ${r.strippedSecrets.length} 项本机密钥设置；换设备后需重填模型配置）`
           : ''
         showToast(
-          `已导出本机全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n`
+          `已导出本机作品数据（浏览器下载）：\n${r.fileName ?? ''}\n\n`
           + `这份 JSON 是你的完整副件：换设备、换浏览器时用「导入」还原；`
           + (WEB_ACCOUNT_LOCAL ? `获得同步资格后，可切到云端并自行选择导入。` : `注册云端账号后也可以导入进去继续写。`)
           // 🔴 3.2.6：**如实说明范围**。语义向量与知识库在两个独立 IDB 里，按设计不进整库 JSON
@@ -114,7 +114,7 @@ export function GuestDataBar() {
           <span className="whitespace-nowrap">已存本机</span>
         </div>
         <Button variant="bare" onClick={doExport} disabled={!!busy}
-          title="导出全部数据：下载一个 JSON 文件，用于留档或换设备" className={iconBtn}>
+          title="导出作品数据：下载 JSON 文件；不含独立知识库和语义索引" className={iconBtn}>
           <HardDriveUpload size={14} className={busy === 'export' ? 'animate-pulse' : ''} />
         </Button>
         <Button variant="bare" onClick={doImport} disabled={!!busy}

@@ -117,6 +117,7 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     // P3：App 层托管页里手写引导用到的锚点
     'src/components/app/Dashboard.tsx': 'src/components/app/Dashboard.tsx',
     'src/components/app/GuidePage.tsx': 'src/components/app/GuidePage.tsx',
+    'src/components/community/CommunitySquare.tsx': 'src/components/community/CommunitySquare.tsx',
     'src/components/settings/ModelSettingsPanel.tsx': 'src/components/settings/ModelSettingsPanel.tsx',
   }
   const sources = Object.fromEntries(Object.keys(anchorsByFile).map(file => [file, read(file)]))

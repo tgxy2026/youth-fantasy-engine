@@ -213,7 +213,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
                 {openItem.advice.endpoint ? ` @ ${openItem.advice.endpoint}` : ''}
               </p>
             )}
-            <p className="text-11 text-ink-400">AI 只提供建议，最终是否发布由你决定；请结合文学语境判断。</p>
+            <p className="text-11 text-ink-400">AI 只提供建议，最终是否发布由你决定；网页版请直接人工审核，或到桌面版使用本地模型。</p>
           </div>
           {/* 处理条吸在卡片底部：长文滚到底时仍能看见「规则初筛 / 这是哪一版」的上下文由上方卡片标题保证 */}
           <div className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-1 flex flex-wrap items-center gap-2 border-t border-ink-700 bg-surface-app/95 px-3 py-2 backdrop-blur">

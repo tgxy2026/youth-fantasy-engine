@@ -68,7 +68,7 @@ export default function WorldLibraryPanel() {
     if (busy) return
     if (!await confirmDialog({
       title: '清除引入溯源',
-      message: '将清掉「本项目当前的世界引自 X」这条溯源说明。\n\n它**只影响这条说明** —— 已经引入的表格内容一个字节都不会动；清掉后随时可以再引入一次。',
+      message: '将清掉「本项目当前的世界引自 X」这条溯源说明。\n\n这只影响溯源说明，不会改动已经引入的表格内容；清掉后仍可再次引入。',
       confirmText: '清除',
     })) return
     setBusy(true)

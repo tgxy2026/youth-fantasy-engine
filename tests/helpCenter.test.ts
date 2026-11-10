@@ -67,6 +67,7 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
     { query: '创意写作会不会自己一直写', expect: 'tools-creative-writing', why: '分批与续跑' },
     { query: '世界设定和子世界怎么分工', expect: 'world-base-power', why: '母级与子世界' },
     { query: '字号', expect: 'faq-zoom', why: '同义词「字号」' },
+    { query: '投稿广场码字排行', expect: 'community-square', why: '投稿广场与排行' },
   ]
   const failures: string[] = []
   for (const item of cases) {
@@ -79,6 +80,13 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
   ok('无关问题不硬凑文章', unrelated.length === 0, unrelated.map(h => h.articleId).join('、'))
   ok('空查询不返回结果', searchHelp('   ').length === 0)
   ok('低命中给分类建议而不是假文章', suggestHelpGroups('第一次用这个软件', HELP_GROUPS).length > 0)
+}
+
+{
+  const article = getHelpArticle('community-square')
+  ok('投稿广场关联手册与页面', !!article && article.tabIds.includes('community') && helpArticlesForTab('community').some(item => item.id === article.id))
+  const text = article?.sections.flatMap(section => section.body).join('\n') ?? ''
+  ok('社区手册说明排行授权、匿名与便携版边界', text.includes('默认关闭') && text.includes('匿名用户') && text.includes('便携版暂不支持'))
 }
 
 // ---------- ④ 当前页签加权与结果形态 ----------

@@ -924,8 +924,7 @@ export default function CloudSyncPanel({
                     云端有新版本（第 {decision.toRevision} 版）
                   </p>
                   <p className="mt-1 text-11 leading-relaxed text-sky-200/80">
-                    本机没有未同步的改动。直接替换本机内容要等原地落地开放（下个版本），
-                    现在可以先把云端这一版下载为新书，或导出成文件。
+                    本机没有未同步的改动。可以下载为新书、用云端版本覆盖本机，或导出成文件；覆盖前会先备份。
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button variant="ghost" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>

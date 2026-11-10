@@ -138,7 +138,7 @@ export default function TavernWorld() {
   useSaveHotkey(() => void save(), dirty && !saving)
 
   return (
-    <div className="page-enter flex h-full flex-col overflow-hidden">
+    <div data-tavern-world className="page-enter flex h-full flex-col overflow-hidden">
       <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
         <div className="flex items-center gap-1.5">
 
@@ -174,9 +174,9 @@ export default function TavernWorld() {
       {!w ? (
         <div className="flex-1"><LoadingState text="读取背景设定…" /></div>
       ) : (
-        <div className="flex flex-1 min-h-0 gap-3 pt-3">
+        <div data-tavern-world-layout className="flex flex-1 min-h-0 gap-3 pt-3">
           {/* 左：编辑区 */}
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div data-tavern-world-editor className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <div className="rounded-lg border border-ink-700 bg-ink-850/30 p-3">
               <div className="text-12 text-ink-200">一句话总纲</div>
               <p className="mt-0.5 mb-2 text-11 text-ink-500 leading-relaxed">
@@ -350,7 +350,7 @@ export default function TavernWorld() {
           </div>
 
           {/* 右：一键录入 + 状态 */}
-          <aside className="w-72 shrink-0 space-y-3 overflow-y-auto">
+          <aside data-tavern-world-tools className="w-72 shrink-0 space-y-3 overflow-y-auto">
             <div className="rounded-lg border border-amber/25 bg-amber/5 p-3">
               <div className="text-12 text-amber">从项目资料提炼</div>
               <p className="mt-1 text-11 text-ink-400 leading-relaxed">

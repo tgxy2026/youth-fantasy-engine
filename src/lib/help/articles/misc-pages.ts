@@ -29,7 +29,7 @@ export const MISC_PAGE_ARTICLES: HelpArticle[] = [
         id: 'export',
         heading: '导出证据包',
         body: [
-          '可导出可打印的 HTML 证据包，以及机器可核验的 JSON；桌面版还能一键存 PDF（网页版只有 HTML / JSON）。',
+          '可导出可打印的 HTML 证据包和机器可核验的 JSON。桌面版可保存 PDF；网页版和便携版可打开打印页，在系统打印对话框中选择另存为 PDF。若弹窗被拦截，可下载 HTML 后自行打开打印。',
           '投稿时用它自证创作过程：什么时候写的、改了几稿、每章多少字，都有据可查。',
         ],
       },

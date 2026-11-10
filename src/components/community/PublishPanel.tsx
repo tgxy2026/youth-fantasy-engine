@@ -170,7 +170,7 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
       )}
       {editTarget && (
         <Notice kind="warn">
-          正在编辑已发布的投稿。提交后会生成一个新的待审版本；
+          正在编辑投稿。提交后会生成一个新的待审版本；
           {editTarget.hasPublishedVersion ? '审核通过前，读者仍会看到旧版本。' : '通过后才会公开。'}
           <button type="button" className="ml-2 underline" onClick={() => { onCancelEdit(); setTitle(''); setBody(''); setTags([]) }}>取消编辑</button>
         </Notice>
@@ -251,7 +251,7 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
         {!editTarget && (title || body) && (
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void clearAll()}>清空草稿</Button>
         )}
-        <span className="text-11 text-ink-400">审核流程：规则初筛 → 管理员本地 AI 建议 → 管理员确认发布。AI 只提供建议，不会自动发布。</span>
+        <span className="text-11 text-ink-400">审核流程：规则初筛 → 管理员确认。管理员可选择使用本地 AI 辅助，AI 不会自动发布。</span>
       </div>
     </div>
   )

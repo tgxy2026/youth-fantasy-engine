@@ -114,7 +114,7 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
       </ol>
 
       {compact && entries.length > shown.length && (
-        <p className="text-11 text-ink-400">仅显示前 {shown.length} 名；完整榜单随周期切换查看。</p>
+        <p className="text-11 text-ink-400">当前仅显示前 {shown.length} 名；可切换日、周、月查看。</p>
       )}
 
       <div className="space-y-1.5 border-t border-ink-700/70 pt-2">

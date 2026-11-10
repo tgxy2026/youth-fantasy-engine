@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 import { Z } from '@/lib/app/zLayer'
 import { WEB, WEB_CLOUD, WEB_GUEST, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { PORTABLE } from '@/lib/storage/fileBackend'
@@ -252,10 +253,13 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const shell = (
     <div ref={hostRef} className={shellClass}>
-      <header className="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-900/25 px-4 py-4 sm:px-6">
+      <header data-guide="page-header" className="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-900/25 px-4 py-4 sm:px-6">
         <div className="min-w-0 flex-1">
           <h2 className="flex items-center gap-2 text-18 font-semibold text-ink-100">
             投稿广场
+            <HelpPopover title="投稿广场怎么用" side="right" width="23rem" size={14}>
+              {'这里可以阅读和分享故事片段。登录账号后可投稿、点赞、点踩和评论；投稿需管理员审核后公开。\n\n· 在「投稿」填写纯文字，正文最多 10000 个字符（包含空格和换行）；在「我的」查看审核状态、撤回或管理投稿。\n· 在「设置」选择社区昵称或匿名展示，也可自愿开启码字排行。排行只上传含标点的正文净增量，不上传正文。\n· 社区账号不要求云同步资格；便携版暂不支持投稿广场。更详细的说明可在使用手册中搜索「投稿广场」。'}
+            </HelpPopover>
             {square && !square.open && <span className="rounded-full border border-amber/40 px-2 py-0.5 text-11 font-normal text-amber">暂停开放</span>}
           </h2>
           <p className="mt-1 text-12 text-ink-300">在这里分享故事，也读一读别人的世界。</p>
@@ -282,7 +286,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       </div>
 
       <footer className="border-t border-ink-700 px-3 py-2 text-11 text-ink-400 sm:px-4">
-        {WEB_ACCOUNT_LOCAL ? '网页账号 · 本地作品' : WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面版'} · 内容由管理员人工确认后发布；社区服务不可用不影响本地写作。
+        {WEB_ACCOUNT_LOCAL ? '网页账号 · 本地作品' : WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面版'} · 投稿经管理员审核；评论按规则处理。社区服务不可用不影响本地写作。
       </footer>
     </div>
   )

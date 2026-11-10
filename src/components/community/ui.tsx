@@ -7,11 +7,11 @@ import type { ReactNode } from 'react'
 
 export function Notice({ kind = 'info', children }: { kind?: 'info' | 'warn' | 'error' | 'ok'; children: ReactNode }) {
   const cls = kind === 'error'
-    ? 'border-red-500/40 bg-red-500/10 text-red-200'
+    ? 'border-red-500/40 bg-red-500/10 text-ink-100'
     : kind === 'warn'
       ? 'border-amber/40 bg-amber/10 text-amber'
       : kind === 'ok'
-        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+        ? 'border-emerald-500/40 bg-emerald-500/10 text-ink-100'
         : 'border-ink-700 bg-ink-900/70 text-ink-300'
   return <p role={kind === 'error' ? 'alert' : 'status'} className={`rounded-lg border px-3 py-2 text-12 leading-relaxed ${cls}`}>{children}</p>
 }
@@ -28,11 +28,11 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
 
 export function StatusPill({ tone = 'neutral', children }: { tone?: 'neutral' | 'ok' | 'warn' | 'bad'; children: ReactNode }) {
   const cls = tone === 'ok'
-    ? 'border-emerald-500/40 text-emerald-300'
+    ? 'border-emerald-500/40 text-success'
     : tone === 'warn'
       ? 'border-amber/40 text-amber'
       : tone === 'bad'
-        ? 'border-red-500/40 text-red-300'
+        ? 'border-red-500/40 text-danger'
         : 'border-ink-700 text-ink-300'
   return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-11 ${cls}`}>{children}</span>
 }

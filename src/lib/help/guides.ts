@@ -42,6 +42,14 @@ export interface PageGuide {
 /** 手写引导（有独有入口、或需要更具体说明的页签） */
 export const PAGE_GUIDES: PageGuide[] = [
   {
+    id: 'community-basics', revision: 1, tabId: 'community', articleId: 'community-square',
+    steps: [
+      { id: 'read', anchor: 'page-header', title: '阅读和分享故事', body: '在广场阅读公开投稿；登录后可以投稿、点赞、点踩和评论。投稿需管理员审核后发布。便携版暂不支持社区。' },
+      { id: 'write', title: '写一段投稿', body: '在「投稿」填写标题和最多 10000 个字符的纯文字正文，选择昵称或匿名，预览后提交；审核进度在「我的」查看。' },
+      { id: 'rank', title: '自愿参加码字排行', body: '在「设置」自愿开启排行；只上报含标点的正文净增量，不上传正文。关闭后会撤回已上传的排行数据。' },
+    ],
+  },
+  {
     id: 'positioning-basics',
     revision: 1,
     tabId: 'positioning',

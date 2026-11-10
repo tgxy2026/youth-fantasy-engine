@@ -162,11 +162,11 @@ export default function AboutPage() {
               {WEB ? (
                 <>
                   <p className="text-ink-400 text-xs leading-relaxed mb-3">
-                    网页版免安装，换台电脑登录就能接着写。若想要离线使用、导出 PDF、更换应用图标等桌面能力，
+                    网页版免安装；开通云端同步资格并完成同步后，可换台设备接着写。若想要离线使用、导出 PDF、更换应用图标等桌面能力，
                     可下载桌面版或便携版 —— 三者数据格式一致，可以互相搬。
                   </p>
                   <ul className="mb-4 space-y-1.5 text-11 text-ink-400 leading-relaxed">
-                    <li>· <span className="text-ink-200">桌面版</span>：Windows 安装包，功能最全，支持自动更新</li>
+                    <li>· <span className="text-ink-200">桌面版</span>：Windows 安装包，可检查更新并下载新安装包</li>
                     <li>· <span className="text-ink-200">便携版</span>：免安装压缩包，放 U 盘里带走，目录里的 data 就是全部数据</li>
                   </ul>
                   <a
@@ -178,16 +178,17 @@ export default function AboutPage() {
                     <Download size={13} /> 前往 Gitee 下载 <ExternalLink size={11} />
                   </a>
                   <p className="mt-3 text-10 leading-relaxed text-ink-500">
-                    换版本不会丢稿：先在左下角「云端存储」导出 JSON，再到桌面版「导入数据文件」即可。
+                    换设备前请先在左下角存储区导出 JSON 备份，再按目标版本的导入提示操作。
                   </p>
                 </>
               ) : (
                 <>
                   <p className="text-ink-400 text-xs leading-relaxed mb-3">
-                    不想安装、或者想换台设备直接用？网页版打开即用，界面与功能和桌面版一致。
+                    不想安装、或者想换台设备直接用？网页版打开即用；部分本机能力与桌面版不同。
                   </p>
                   <ul className="mb-4 space-y-1.5 text-11 text-ink-400 leading-relaxed">
-                    <li>· <span className="text-ink-200">注册账号</span>（打赏用户凭邀请码）：数据存云端，多设备可用</li>
+                    <li>· <span className="text-ink-200">注册账号</span>：无需邀请码即可参与社区；开通云同步资格后可使用云端作品功能</li>
+                    <li>· <span className="text-ink-200">本机作品</span>：未开通资格的账号将作品保存在当前浏览器，请定期导出备份</li>
                     <li>· <span className="text-ink-200">游客试用</span>：无需注册，数据只存本机浏览器，请自行导出备份</li>
                   </ul>
                   <a
@@ -222,7 +223,7 @@ export default function AboutPage() {
                   <p className="mt-4 text-11 text-ink-400 leading-relaxed">
                     网页版<strong className="text-ink-300">不需要更新</strong>：刷新页面即加载最新版本。
                     想离线使用、或需要导出 PDF / 更换应用图标等桌面能力，可到发布页下载桌面版 ——
-                    数据可以在「云端存储」里导出成 JSON，再导入桌面版，稿件不会丢。
+                    可先在网页存储区导出 JSON 备份，再按桌面版导入提示操作。
                   </p>
                 ) : PORTABLE ? (
                   <p className="mt-4 text-11 text-ink-400 leading-relaxed">

@@ -76,7 +76,7 @@ export const TRACKING_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'tracking-pacing',
-    revision: 1,
+    revision: 2,
     title: '爽点、进度与支线：连载的节奏感',
     summary: '爽点排期、每日字数、多线进度 —— 三张表回答「这一段读者会不会觉得闷」。',
     aliases: ['爽点', '节奏', '码字统计', '支线'],
@@ -98,7 +98,7 @@ export const TRACKING_ARTICLES: HelpArticle[] = [
         id: 'progress',
         heading: '写作进度',
         body: [
-          '每日字数流水账：无论写了多少都记，底部自动统计产量。写作面板的码字日历与今日字数用的是同一份数据。',
+          '这里是手工登记写作进度的表格，按日期、字数等字段记录，底部可查看统计。写作面板的今日字数与码字日历来自正文保存时的自动记录，不会自动读取这张手工表。',
         ],
       },
       {
@@ -111,8 +111,8 @@ export const TRACKING_ARTICLES: HelpArticle[] = [
     ],
     related: ['dashboard-overview'],
     actions: [{ label: '打开爽点节奏', tabId: 'hookpoints' }],
-    verifiedAgainst: '3.3.1',
-    reviewedAt: '2026-10-29',
+    verifiedAgainst: '3.5.0',
+    reviewedAt: '2026-11-10',
   },
   {
     id: 'tracking-changelog',

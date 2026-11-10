@@ -35,6 +35,17 @@ try {
       const g = await geometry()
       check(`${width}: ${name}各栏宽度可用且页面无横向溢出`, g.children.length >= 2 && g.children.every(c => c.width >= 150 && c.left >= -1 && c.right <= width + 1) && g.document <= width + 1, JSON.stringify(g))
     }
+    await go('背景设定')
+    await page.locator('[data-tavern-world-tools]').waitFor({ timeout: 15000 })
+    const worldLayout = await page.locator('[data-tavern-world-layout]').evaluate(el => {
+      const editor = el.querySelector('[data-tavern-world-editor]').getBoundingClientRect()
+      const tools = el.querySelector('[data-tavern-world-tools]').getBoundingClientRect()
+      const box = el.getBoundingClientRect()
+      return { direction: getComputedStyle(el).flexDirection, left: box.left, right: box.right, editor: { left: editor.left, right: editor.right, top: editor.top, bottom: editor.bottom, width: editor.width }, tools: { left: tools.left, right: tools.right, top: tools.top, width: tools.width } }
+    })
+    check(`${width}: 背景编辑区和工具区均在可用宽度内`, worldLayout.editor.width >= 150 && worldLayout.tools.width >= 150 && worldLayout.editor.left >= worldLayout.left - 1 && worldLayout.editor.right <= worldLayout.right + 1 && worldLayout.tools.left >= worldLayout.left - 1 && worldLayout.tools.right <= worldLayout.right + 1 && (worldLayout.direction !== 'column' || worldLayout.tools.top >= worldLayout.editor.bottom - 1), JSON.stringify(worldLayout))
+    await page.getByText('从项目资料提炼', { exact: true }).scrollIntoViewIfNeeded()
+    check(`${width}: 背景提炼工具可滚动到达`, await page.getByText('从项目资料提炼', { exact: true }).isVisible())
     await go('故事剧本'); await page.getByRole('button', { name: '＋ 新建故事', exact: true }).tap()
     const title = page.getByPlaceholder('例：云州江湖'); await title.waitFor(); await title.fill(`隔离故事${width}`)
     await layoutCheck('故事剧本')

@@ -76,7 +76,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
     const n = nickname.trim()
     if (!n) { setError('请填写昵称'); return }
     if (charCount(n) > COMMUNITY_LIMITS.nicknameMax) { setError(`昵称最多 ${COMMUNITY_LIMITS.nicknameMax} 个字符`); return }
-    await save({ nickname: n }, '昵称已更新（只影响之后选择「显示昵称」的内容）')
+    await save({ nickname: n }, '昵称已更新；已选择显示昵称的投稿、评论和排行也会显示新昵称。')
   }
 
   async function toggleRank(next: boolean) {
@@ -131,8 +131,9 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
       <section className="space-y-2">
         <h3 className="text-13 font-semibold text-ink-100">公开方式</h3>
         <Notice>
-          三个选择彼此独立，且**只影响之后的新提交**。已发布的旧内容要改，需要到「我的投稿」里编辑并重新提交。
-          匿名展示不会泄露登录账号，但正文内容、写作数量等信息仍可能让他人推测身份。
+          投稿和评论的默认展示方式影响之后的新提交；已发布投稿可在「我的」里直接切换展示方式。
+          排行展示方式会更新当前榜单；修改昵称也会影响已选择显示昵称的内容。
+          匿名展示不会公开登录账号，但正文内容、写作数量等信息仍可能让他人推测身份。
         </Notice>
         <div className="grid gap-2 sm:grid-cols-3">
           {([
@@ -160,7 +161,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
         </div>
         <Notice kind="warn">
           参与后只上传「日期 + 每个项目的含标点净增量」这类最小数据，不上传正文、标题或项目名称。
-          它是独立的社区统计能力：**不开通云端作品同步也能用**，开启排行也不会同步你的作品。
+          它是独立的社区统计能力：不开通云端作品同步也能用，开启排行也不会同步你的作品。
           关闭即撤回已上传数据；重新开启不会恢复旧排行。
         </Notice>
         <div className="flex flex-wrap items-center gap-2">

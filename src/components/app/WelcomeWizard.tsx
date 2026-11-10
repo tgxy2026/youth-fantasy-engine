@@ -145,7 +145,7 @@ export default function WelcomeWizard({ onDone }: Props) {
             {WEB && WEB_GUEST && (
               <p className="mb-4 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-11 leading-relaxed text-amber">
                 你正在以<b>游客</b>身份使用：作品保存在这个浏览器里，清除浏览数据或换设备后无法找回。
-                建议先用左下角「本地存储」导出一份备份；注册账号后可转为云端保存。
+                建议先用左下角「本地存储」导出一份备份；注册并开通云端同步资格后，可按提示选择云端存储。
               </p>
             )}
 
