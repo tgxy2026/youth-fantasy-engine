@@ -169,7 +169,13 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('换页签清空中断记忆', /interrupted\.current\.clear\(\)/.test(hook))
   ok('关掉自动引导时顺手记一次跳过', /setGuideAutoEnabled\(false\)[\s\S]{0,200}markGuideSkipped/.test(hook))
 
-  ok('🔴 网页云端没有稳定账号标识 ⇒ 只存会话内', /WEB_CLOUD \? 'session' : 'persistent'/.test(prefs))
+  ok('🔴 网页登录账号的记录持久保存并按账号隔离（3.5.0 反馈「网页版每次都要重新看教程」）',
+    /function scopedKey/.test(prefs) && /__YFE_USER__/.test(prefs) && /return `\$\{base\}@\$\{encodeURIComponent/.test(prefs))
+  ok('桌面 / 便携 / 游客沿用原键（既有「已看过」记录不作废）', /if \(!isWebAccount\(\)\) return base/.test(prefs))
+  ok('旧共享键记录一次性搬进账号命名空间（不让学生重看一遍）',
+    /guide-acct-migrated/.test(prefs) && /ensureAccountMigration/.test(prefs))
+  ok('拿不到账号标识才退回会话内记录（不落共享键）',
+    /return webAccountId\(\) \? 'persistent' : 'session'/.test(prefs))
   ok('写入前重新读取再合并（不覆盖别人的记录）', /const current = readSet\(kind\)/.test(prefs))
   ok('同窗口与跨窗口都能同步', /addEventListener\(PREF_EVENT/.test(prefs) && /addEventListener\('storage'/.test(prefs))
 

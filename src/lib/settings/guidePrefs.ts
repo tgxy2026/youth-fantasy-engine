@@ -6,11 +6,16 @@
 // 🔴 身份作用域（规划 §3.3 明确要求，不是可选项）：
 //   · 桌面 / 便携：本机 profile ⇒ localStorage 持久；
 //   · 网页游客：数据本来就在这台浏览器里 ⇒ localStorage（天然是独立空间）；
-//   · 网页云端：本仓库**没有**服务端下发的稳定账号标识（只有 `__YFE_WEB__` / `__YFE_GUEST__`
-//     两个平台标志，见 `lib/app/platform.ts`）。按规划「身份未就绪时只存会话内记录，
-//     不落到共享账号键」—— 这里落内存，同一浏览器换账号不会互相看到彼此的观看记录。
-//     等账号标识接入后再把 `guideStorageScope()` 改成返回 `persistent` 并带账号命名空间。
-import { WEB, WEB_CLOUD } from '@/lib/app/platform'
+//   · 网页登录账号（云端 / 账号本地两种模式）：服务端在入口 HTML 里注入
+//     `window.__YFE_USER__.id`（见 `server/index.mjs` 的 renderIndex），**模块求值前就已存在**，
+//     所以这里按账号给记录加命名空间后落 localStorage —— 同一浏览器换账号互不串，刷新后不再重弹。
+//
+// 🔴 2026-11-11 修正（3.5.0 用户反馈「网页版进去老是要重新看新手教程」）：
+//     原实现按「网页云端没有稳定账号标识」处理，把记录只留在内存（`session`），
+//     结果**凡是有云同步资格的网页账号，每刷新一次就把所有页签的引导重看一遍**。
+//     标识其实早就有（`__YFE_USER__.id` 自网页账号上线起就注入），故改为持久 + 按账号命名空间。
+//     只有「确实拿不到标识」时才退回会话内记录，避免落到共享键上串账号。
+import { WEB, WEB_ACCOUNT_LOCAL, WEB_CLOUD } from '@/lib/app/platform'
 import { PREF_EVENT, readBoolPref, readSetPref, writeBoolPref, writeSetPref } from '@/lib/settings/uiPrefs'
 
 export const GUIDE_AUTO_KEY = 'guide-auto'
@@ -19,13 +24,74 @@ export const GUIDE_SKIPPED_KEY = 'guide-skipped'
 
 export type GuideScope = 'persistent' | 'session'
 
-/** 记录能落在哪里；网页云端目前没有稳定账号标识 ⇒ 只存本次会话 */
-export function guideStorageScope(): GuideScope {
-  if (!WEB) return 'persistent'
-  return WEB_CLOUD ? 'session' : 'persistent'
+/** 服务端注入的登录账号标识（未登录 / 读不到 → 空串） */
+function webAccountId(): string {
+  try {
+    const w = (typeof window !== 'undefined' ? window : {}) as { __YFE_USER__?: { id?: string } }
+    const id = w.__YFE_USER__?.id
+    return id ? String(id) : ''
+  } catch {
+    return ''
+  }
 }
 
-/** 会话内记录（网页云端 / localStorage 不可用时的兜底，避免同一次打开反复弹卡片） */
+/** 是否「网页版的登录账号」（云端模式或账号本地模式，且确实拿到了账号标识） */
+function isWebAccount(): boolean {
+  if (!WEB) return false
+  if (!WEB_CLOUD && !WEB_ACCOUNT_LOCAL) return false
+  return webAccountId() !== ''
+}
+
+/** 记录能落在哪里；只有「网页登录但拿不到账号标识」才退化成本次会话 */
+export function guideStorageScope(): GuideScope {
+  if (!WEB) return 'persistent'
+  if (WEB_CLOUD || WEB_ACCOUNT_LOCAL) return webAccountId() ? 'persistent' : 'session'
+  return 'persistent'
+}
+
+/**
+ * 实际落盘用的键：网页登录账号追加账号命名空间，其余（桌面 / 便携 / 游客、以及拿不到标识的兜底）
+ * 沿用原键 —— 既有用户的「已看过」记录不作废。
+ */
+function scopedKey(base: string): string {
+  if (!isWebAccount()) return base
+  return `${base}@${encodeURIComponent(webAccountId())}`
+}
+
+/** 一次性迁移标记：把本次改法之前写在共享键里的记录搬进账号命名空间 */
+const ACCOUNT_MIGRATED_KEY = 'guide-acct-migrated'
+let migrationChecked = false
+
+/**
+ * 首次访问时把旧的无命名空间记录搬进当前账号的命名空间。
+ *
+ * 🔴 为什么需要：3.5.0 之前「网页账号本地模式」（未授予云同步资格的新账号）是直接写共享键的。
+ *    改按账号命名空间后，若不做这一步，这批用户会**把所有页签的引导再重看一遍** ——
+ *    正是本次要修的那个体感。只在目标命名空间**完全没有记录**时搬，搬完打标记，
+ *    不会把别的账号的记录一次次盖过来。
+ */
+function ensureAccountMigration(): void {
+  if (migrationChecked) return
+  migrationChecked = true
+  if (!isWebAccount()) return
+  const marker = scopedKey(ACCOUNT_MIGRATED_KEY)
+  if (readBoolPref(marker, false)) return
+  const pairs: [string, string][] = [
+    [GUIDE_DONE_KEY, GUIDE_DONE_KEY],
+    [GUIDE_SKIPPED_KEY, GUIDE_SKIPPED_KEY],
+  ]
+  for (const [legacy, base] of pairs) {
+    const legacyValue = readSetPref(legacy)
+    if (!legacyValue) continue
+    if (readSetPref(scopedKey(base))) continue
+    writeSetPref(scopedKey(base), legacyValue)
+  }
+  // 「上次把自动引导关掉了」也要跟着搬，否则搬完会突然又开始自动弹
+  if (!readBoolPref(GUIDE_AUTO_KEY, true)) writeBoolPref(scopedKey(GUIDE_AUTO_KEY), false)
+  writeBoolPref(marker, true)
+}
+
+/** 会话内记录（localStorage 不可用 / 拿不到账号标识时的兜底，避免同一次打开反复弹卡片） */
 const session = {
   autoOff: false,
   done: new Set<string>(),
@@ -44,22 +110,25 @@ export function subscribeGuidePrefs(listener: () => void): () => void {
 }
 
 export function isGuideAutoEnabled(): boolean {
+  ensureAccountMigration()
   if (guideStorageScope() === 'session') return !session.autoOff
-  return readBoolPref(GUIDE_AUTO_KEY, true)
+  return readBoolPref(scopedKey(GUIDE_AUTO_KEY), true)
 }
 
 export function setGuideAutoEnabled(enabled: boolean): void {
+  ensureAccountMigration()
   if (guideStorageScope() === 'session') {
     session.autoOff = !enabled
   } else {
-    writeBoolPref(GUIDE_AUTO_KEY, enabled)
+    writeBoolPref(scopedKey(GUIDE_AUTO_KEY), enabled)
   }
   notify()
 }
 
 function readSet(kind: 'done' | 'skipped'): Set<string> {
+  ensureAccountMigration()
   if (guideStorageScope() === 'session') return new Set(session[kind])
-  return new Set(readSetPref(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY) ?? [])
+  return new Set(readSetPref(scopedKey(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY)) ?? [])
 }
 
 /**
@@ -78,7 +147,7 @@ function addRecord(kind: 'done' | 'skipped', key: string): void {
   const current = readSet(kind)
   if (current.has(key)) return
   current.add(key)
-  writeSetPref(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY, current)
+  writeSetPref(scopedKey(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY), current)
   notify()
 }
 
@@ -90,7 +159,7 @@ function removeRecord(kind: 'done' | 'skipped', key: string): void {
   }
   const current = readSet(kind)
   if (!current.delete(key)) return
-  writeSetPref(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY, current)
+  writeSetPref(scopedKey(kind === 'done' ? GUIDE_DONE_KEY : GUIDE_SKIPPED_KEY), current)
   notify()
 }
 
@@ -123,8 +192,9 @@ export function resetAllGuides(): void {
     notify()
     return
   }
-  writeSetPref(GUIDE_DONE_KEY, [])
-  writeSetPref(GUIDE_SKIPPED_KEY, [])
+  ensureAccountMigration()
+  writeSetPref(scopedKey(GUIDE_DONE_KEY), [])
+  writeSetPref(scopedKey(GUIDE_SKIPPED_KEY), [])
   notify()
 }
 
