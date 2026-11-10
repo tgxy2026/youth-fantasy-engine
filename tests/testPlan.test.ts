@@ -16,12 +16,14 @@ function reset() {
   for (const name of ['one', 'two', 'three', 'four']) fs.writeFileSync(path.join(tests, name + '.test.ts'), '// fixture')
   fs.writeFileSync(path.join(tests, 'build-test.mjs'), 'if(process.argv[2]==="two"&&process.env.YFE_PLAN_NEGATIVE==="1")process.exit(9)')
   for (const file of ['seed-schema-check.mjs', 'feature-deps-check.mjs']) fs.writeFileSync(path.join(tests, file), '// standalone fixture')
+  fs.mkdirSync(path.join(root, 'scripts', 'verify'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'scripts', 'verify', 'agent-docs.mjs'), '// standalone fixture')
 }
 function rejects(name: string) { assert.throws(() => readTestPlan(root)); passed++; console.log('PASS ' + name) }
 try {
   reset()
   const all = readTestPlan(root)
-  check('全量使用唯一分批名单并包括两项独立闸', all.actualEntries === 4 && all.jobs.length === 6)
+  check('全量使用唯一分批名单并包括三项独立闸', all.actualEntries === 4 && all.jobs.length === 7)
   check('定向批次仅运行所选入口', readTestPlan(root, ['B']).jobs.length === 1 && readTestPlan(root, ['B']).jobs[0].id === 'two')
   assert.throws(() => readTestPlan(root, ['A', 'A'])); passed++
   assert.throws(() => readTestPlan(root, ['all', 'A'])); passed++
@@ -35,7 +37,7 @@ try {
   reset()
   const reportPath = path.join(root, 'report.json')
   const success = await runTests({ root, reportPath })
-  check('真实夹具子进程全部执行且机器报告匹配', success.ok && success.passed === 6 && JSON.parse(fs.readFileSync(reportPath, 'utf8')).planned === 6)
+  check('真实夹具子进程全部执行且机器报告匹配', success.ok && success.passed === 7 && JSON.parse(fs.readFileSync(reportPath, 'utf8')).planned === 7)
   process.env.YFE_PLAN_NEGATIVE = '1'
   try {
     const failed = await runTests({ root, batches: ['A', 'B'] })

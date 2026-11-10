@@ -6,7 +6,7 @@
 
 **把世界观、角色、大纲、正文串成一条线的长篇创作工作台**
 
-桌面版（Windows）｜ 便携版（U 盘即走）｜ **网页版**（浏览器直接用） ｜ 当前版本 `v3.4.3`
+桌面版（Windows）｜ 便携版（U 盘即走）｜ **网页版**（浏览器直接用） ｜ 当前开发版本 `v3.5.0`（最新发布 `v3.4.3`）
 
 📦 仓库：[Gitee](https://gitee.com/tgxy2026/youth-fantasy-engine)　｜　[GitHub](https://github.com/tgxy2026/youth-fantasy-engine)　｜　⬇️ 下载：[Releases](https://gitee.com/tgxy2026/youth-fantasy-engine/releases)
 
@@ -438,6 +438,10 @@ youth-fantasy-engine/
 如果这个工具帮到了你，软件内置了「关于打赏」入口。
 
 不打赏完全不影响任何功能 —— 用它写出好作品，就是最好的回报。
+
+## Agent 接入文档
+
+当前维护的 [MCP 第三方开发者适配规范](docs/agent/MCP第三方开发者适配规范.md) 与 [API 与 Agent 互斥模式设计](docs/agent/API与Agent互斥模式设计.md) 存放在固定路径。维护规则见 [文档维护说明](docs/agent/README.md)。
 
 ## 许可证
 

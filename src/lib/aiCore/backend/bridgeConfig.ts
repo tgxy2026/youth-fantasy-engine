@@ -66,7 +66,7 @@ export function makeAgentConnectionPrompt(nodeCommand: string, script: string, s
   const { node, args } = agentBridgeSpec(nodeCommand, script, source)
   const bridge = script.trim()
   const specPath = /scripts[\\/]mcp[\\/]yfe-agent\.mjs$/i.test(bridge)
-    ? bridge.replace(/scripts[\\/]mcp[\\/]yfe-agent\.mjs$/i, 'docs/3.4.3-MCP第三方开发者适配规范.md') : ''
+    ? bridge.replace(/scripts[\\/]mcp[\\/]yfe-agent\.mjs$/i, 'docs/agent/MCP第三方开发者适配规范.md') : ''
   return [
     '请将本机青春幻想引擎连接为 MCP 工具服务，并保留现有客户端配置。',
     '引擎需要保持运行，并在「模型设置 → Agent 连接设置」开启连接、按项目和动作授权。',

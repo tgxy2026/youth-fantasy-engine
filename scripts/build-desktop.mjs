@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
+import './verify/agent-docs.mjs'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 // 安装包文件名随 package.json 的 version 自动变化，避免版本升级后此处写死导致找不到文件

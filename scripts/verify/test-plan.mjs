@@ -29,6 +29,8 @@ export function readTestPlan(root, requested = ['all']) {
       if (!fs.existsSync(path.join(tests, file))) throw new Error(`Missing standalone gate ${file}`)
       jobs.push({ id: file.slice(0, -4), batch: 'standalone', file, args: [] })
     }
+    if (!fs.existsSync(path.join(root, 'scripts/verify/agent-docs.mjs'))) throw new Error('Missing standalone gate agent-docs.mjs')
+    jobs.push({ id: 'agent-docs', batch: 'standalone', file: '../scripts/verify/agent-docs.mjs', args: [] })
   }
   return { batchIds: ids, actualEntries: actual.length, jobs }
 }

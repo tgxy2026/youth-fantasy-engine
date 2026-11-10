@@ -1,0 +1,105 @@
+# 青春幻想引擎 MCP 第三方开发者适配规范
+
+维护入口：本文为固定路径的当前文档，历史版本快照见 `docs/归档/`；维护方式见 [说明](README.md)。下列验证状态是标明日期的历史记录，不等同于后续版本验收。
+
+状态：3.4.3 测试版接口快照，2026-11-10。本文描述当前实现及适配要求，不代表正式稳定 API、全部引擎功能或全部客户端兼容。正式参数以正在连接的桥返回的 `tools/list` 为准；版本或能力变化时客户端应重新发现，不要只依赖本文的列表。
+
+## 1. 定位与边界
+
+推荐直接复用应用随包提供的 `resources/scripts/mcp/yfe-agent.mjs`；无需为每个 Agent 客户端生成新的桥。客户端负责以子进程启动桥、完成 MCP 初始化、发现和调用工具；桥转发给正在运行的本机引擎宿主，写入由引擎执行。桥本身不直接改作品数据文件。项目还提供独立的 `yfe-readonly.mjs`，其数据来源和权限语义与本文的可写桥不同。
+
+本版可写桥为 **stdio JSON-RPC**，不是 Streamable HTTP MCP 服务；桥与引擎内部使用的本机 HTTP 端口属于内部实现，不是第三方稳定接口，不要扫描端口、直接调用内部端点或绕开引擎写作品库。当前声明的协议版本：`2024-11-05`、`2025-03-26`、`2025-06-18`；不认识请求版本时桥返回 `2025-06-18`，客户端应自行判断能否接受，不能据此宣称所有版本均兼容。桥版本 `0.1.2` 是当前代码声明，并非稳定兼容承诺；**版本号以 `initialize` 返回的 `serverInfo.version` 为准**，随包文档可能滞后，不要只按本文判断兼容性。
+
+参考：[MCP stdio 传输规范（2025-06-18）](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)、[MCP 工具规范（2025-06-18）](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)。本项目尚未完成全面规范一致性认证。
+
+## 2. 部署和配置
+
+桌面版需运行引擎、打开目标项目，先在「模型设置」切换到「Agent 模式」，再在「Agent 连接设置」开启连接并按项目/动作保存授权。API 模式与 Agent 模式互斥：引擎处于 API 模式时，宿主对全部工具调用返回 `MODE_BLOCKED`，不会进入页面或写入账本；处于 Agent 模式时，引擎自身不再发起模型请求。切换会等待在途任务结束，失败时显示阻断与安全恢复入口，详见 [模式设计](API与Agent互斥模式设计.md)。`yfe_host_info` 的 `available` / `enabled` 仅表示宿主进程可达与配置开关，**不代表当前运行模式允许调用**；模式是否允许以 `value.connectionMode`（`phase` / `mode` / `busy` / `reason`）与 `value.note` 为准，宿主不可达时 `available:false` 并附说明。收到 `MODE_BLOCKED` 时应提示用户在引擎切回 Agent 模式，不要盲目重试。安装或免安装目录中的桥路径由引擎界面提供；宿主配置文件 `agent-host.json` 由引擎管理，包含本机随机令牌，不能提交、公开或嵌入提示词。端口可能随重启变化，桥每次调用读取宿主配置；客户端不应把端口或令牌写死。Node.js 必须可执行；路径包含空格时应作为独立参数传递，禁止把参数拼成未经转义的 shell 命令。
+
+桌面版启动形式（占位符必须替换为实际路径，不要把令牌写进配置）：
+
+```text
+node <绝对路径>/resources/scripts/mcp/yfe-agent.mjs --host-file <本机绝对路径>/agent-host.json
+```
+
+便携版可以使用 `--portable-root <便携根目录>`，桥从其 `data/agent-host.json` 查找宿主；也支持 `--data-file <数据文件>` 从同目录定位宿主。桌面默认路径存在，但隔离实例、自定义数据位置可能不同，优先使用界面返回的 `--host-file`。网页版不提供此本机写入宿主。引擎设置可生成 TOML 格式或通用 JSON；配置应合并现有服务器，不能覆盖其他客户端设置。
+
+通用 JSON 示例（路径仅为占位，遵循目标客户端实际格式）：
+
+```json
+{"mcpServers":{"yfe-agent":{"command":"node","args":["<桥脚本绝对路径>","--host-file","<宿主配置绝对路径>"]}}}
+```
+
+客户端启动服务器后发送 `initialize`，接收版本与 capabilities，发送 `notifications/initialized`，再 `tools/list`；每条 JSON-RPC 消息 UTF-8 编码、单行，以换行分隔。stdout 只处理协议消息，诊断信息在 stderr；不能把日志混入 stdout。桥支持 `ping`、`tools/list` 和 `tools/call`；不要假定资源、提示模板、流式输出、服务端工具变更通知或取消功能已实现。工具列表的 `inputSchema` 是调用时权威；参数需满足 required 和 additionalProperties 等约束。
+
+## 3. 工具目录与权限
+
+`yfe_host_info` 返回宿主可达性、连接开关、当前运行模式（`connectionMode`）和作用域，不返回令牌；`yfe_list_projects` 列项目及授权。以下只读能力读取已保存数据，具体当前项目及参数限制以 schema 和工具结果为准：
+
+| 范围 | 工具 |
+| --- | --- |
+| 项目、卷、章节 | `yfe_get_project`、`yfe_list_chapters`、`yfe_read_chapter` |
+| 检查 | `yfe_check_chapter_words`、`yfe_check_chapter_typos`（辅助人工核对，并非平台规则保证） |
+| 设定 | `yfe_list_setting_tabs`、`yfe_list_setting_cards`、`yfe_read_setting_card`、`yfe_list_world_sets` |
+| 表单、表格 | `yfe_list_data_tabs`、`yfe_read_form`、`yfe_list_table_rows` |
+| 资料 | `yfe_list_tavern_reports`、`yfe_read_tavern_report`、`yfe_list_chapter_snapshots`、`yfe_read_chapter_snapshot`、`yfe_list_world_packs`、`yfe_read_world_pack_table`、`yfe_list_project_backups` |
+| 地图、画布、检索、灵感 | `yfe_list_maps`、`yfe_list_map_places`（含格子指纹）、`yfe_read_plot_canvas`（含指纹）、`yfe_search_project`、`yfe_list_inspirations` |
+| 检查报告 | `yfe_list_check_reports`、`yfe_read_check_report` |
+| 任务台账 | `yfe_list_agent_tasks`、`yfe_get_agent_task` |
+| 回收站、预览 | `yfe_list_chapter_trash`、`yfe_preview_world_import`、`yfe_preview_backup_restore` |
+| 状态 | `yfe_request_status`，按写入 requestId 查询账本状态 |
+
+写操作默认未授权，必须由用户在引擎对目标项目勾选下列动作；授权并不表示用户已要求执行每次具体写入。应用宿主未开启时拒绝经此桥的操作；独立只读桥另有自己的使用方式。
+
+| 动作 | 写入工具 |
+| --- | --- |
+| `setting:create` | `yfe_create_setting_card`、`yfe_create_world_set` |
+| `setting:write` | `yfe_update_setting_card`、`yfe_set_world_set_active` |
+| `form:write` | `yfe_update_form` |
+| `table:create` / `table:write` | `yfe_create_table_row` / `yfe_update_table_row` |
+| `volume:create` / `volume:write` | `yfe_create_volume` / `yfe_update_volume` |
+| `chapter:create` | `yfe_create_chapter` |
+| `chapter:write` | `yfe_append_chapter`、`yfe_replace_chapter`、`yfe_update_chapter_info` |
+| `chapter:delete` | `yfe_delete_chapter` |
+| `inspiration:write` | `yfe_add_inspiration`、`yfe_update_inspiration`、`yfe_delete_inspiration`（改/删需旧文本前置与 `confirm: true`） |
+| `chapter:restore` | `yfe_restore_chapter` |
+| `map:create` | `yfe_create_map`、`yfe_create_map_place` |
+| `map:write` | `yfe_update_map`、`yfe_update_map_place_cells` |
+| `map:delete` | `yfe_delete_map`（需 `confirm: true` + `expectedUpdatedAt`；有地点引用时拒绝） |
+| `canvas:write` | `yfe_create_plot_card`、`yfe_update_plot_card`、`yfe_delete_plot_card`、`yfe_update_plot_connections`（均需 `expectedFingerprint`） |
+| `world:read` / `world:write` | 跨项目来源需 `world:read`；引入用 `yfe_import_world_pack`（需预览结果 + `confirm: true`） |
+| `backup:restore` | `yfe_restore_project_backup`（需预览结果 + `confirm: true`） |
+| `report:write` | `yfe_save_check_report`（检查结果落库，作者可在「创作轨迹」回看） |
+| `task:write` | `yfe_start_agent_task`、`yfe_update_agent_task`、`yfe_finish_agent_task`、`yfe_cancel_agent_task` |
+
+世界包引入与备份恢复是破坏性覆盖：必须先调用对应 preview，把 `requiredTabs` / `projectUpdatedAt` 原样带回，再传 `confirm: true`；引擎会先创建并校验安全备份，世界包中途失败会尝试回滚，回滚不能确认时返回 `OUTCOME_UNKNOWN`。恢复备份后需要重新打开项目。如果作品主数据已恢复而参考资料恢复失败，返回 `SAVE_FAILED`，`current` 包含 `mainDataSaved`、`knowledgeBase`、`preBackupId` 和 `reloadRequired`，应先核对当前内容和安全备份，不能直接重试。地图删除会检查《地理风物》引用；底图图片修改仍不开放。打开地图编辑或情节画布页面时，对应领域写入会被拒绝。跨窗口 / 云同步仍只做保守拒绝，不宣称原子 CAS。表格读取不覆盖隐藏列和自定义列。删除章节进入回收站，同时清理该章的**章节快照与章节台账**（宿主的 `requestId` 幂等账本**不受影响**，同一 requestId 的幂等重放仍然安全）；覆盖正文也属于破坏性操作，应向用户清楚呈现。
+
+外部 Agent 任务台账用于跨多次 `tools/call` 的任务（全书审读、逐章改写等）：`yfe_start_agent_task` 返回 `taskId`，之后用 `expectedUpdatedAt` 做版本前置更新进度；断线重连后先 `yfe_list_agent_tasks` 找回任务，避免从头重做。`yfe_cancel_agent_task` 只是**协作式取消请求**：引擎无法终止外部 Agent 进程，Agent 必须在下一步读取任务状态并自行停止，再调用 `yfe_finish_agent_task` 置为 `cancelled`。任务台账只保存标题、进度、备注与总结，不保存正文或模型对话，最多保留 50 条、优先淘汰已结束的最旧任务。
+
+领域字段的几条约定，避免无效重试：
+
+- **设定表只读 / 自动字段**：`yfe_list_data_tabs` 的表格列带 `readOnly`（引擎维护、不可写入）与 `auto`（创建时引擎自动分配）标记，典型如「编号」。创建条目时**不要传「编号」**，引擎会自动分配；创建或修改时写入只读字段返回 `READ_ONLY_FIELD`（区别于未知字段的 `BAD_REQUEST`），应去掉该字段再试，而不是反复重发。
+- **情节画布章节引用**：`yfe_create_plot_card` / `yfe_update_plot_card` 的 `chapter` 接受**章节 ID 或唯一的章节标题**（可用 `yfe_list_chapters` 查询）；写入后画布按章节标题显示，与引擎界面一致。标题对应多个章节时拒绝并提示改用 ID；`yfe_update_plot_card` 传空字符串清除引用。`yfe_read_plot_canvas` 每张卡额外返回 `chapterId`（按 ID 或唯一标题解析，解析不了为 `null`）。
+- **检查报告章号**：`yfe_save_check_report` 传 `chapterId` 时，`chapterNo` 由引擎按 **（卷序, 章序）** 权威派生，不是「章节数 + 1」；自由卷 / 标记不计入序号的章返回 `0`（不占正文号）。无需也不应手填 `chapterNo` 去覆盖派生值。
+
+## 4. 调用结果、版本和重试
+
+`tools/call` 的 `result.content` 是文本内容数组；本桥在首个文本项中返回 JSON 对象，成功为 `{ "ok": true, "value": ... }`，失败为 `{ "ok": false, "code": ..., "error": ..., "current"?: ... }` 并设置 MCP `isError: true`。**全部工具（含 `yfe_host_info`、`yfe_request_status`）都符合该信封**：`yfe_host_info` 的连接状态在 `value`；`yfe_request_status` 的账本记录在 `value`（`request` 为兼容别名，两者同值）；重放结果额外带 `replayed: true` 与 `requestId`。客户端必须同时检查 MCP `isError`、JSON 中的 `ok` / `code`，以及 JSON-RPC 协议错误；不能仅凭收到 HTTP/JSON-RPC 响应或进程退出码判成功。
+
+失败分两层，`code` 均可直接用于分支：工具级失败（如 `CONFLICT`、`SCOPE_DENIED`、`NOT_FOUND`、`SAVE_FAILED`）由引擎给出；宿主级失败（桥自身连不上 / 配置不对 / 宿主拒绝）由桥给出 `HOST_CONFIG_MISSING`、`HOST_CONFIG_INCOMPLETE`、`HOST_UNREACHABLE`、`HOST_BAD_RESPONSE`、`HOST_UNAUTHORIZED`、`HOST_DISABLED`、`UNKNOWN_TOOL`、`INVALID_ARGUMENT`、`HOST_ERROR`。`HOST_*` 表示这次调用没有进入引擎业务校验，修正连接 / 授权后可以重新发起；`OUTCOME_UNKNOWN`、状态 `unknown`、`SAVE_FAILED` 与超时则必须先核对，不能当作「未执行」直接重试。工具结果及作品内容可能包含用户私人数据，避免不必要地记录或外传。
+
+每个新写请求须提供 8–64 位字母、数字、下划线或短横线组成的 `requestId`。完全相同的工具及参数使用相同 requestId 重试时，已成功请求会返回 `replayed: true`；不同内容复用会被拒绝。若超时、`SAVE_FAILED`、`OUTCOME_UNKNOWN` 或状态 `unknown`，先调用 `yfe_request_status` 并在引擎核对，不能盲目使用新 ID 重做。账本查询 `yfe_request_status` **刻意不受运行模式闸限制**：即使引擎已切回 API 模式、业务调用被 `MODE_BLOCKED` 拒绝，仍可凭 requestId 核对上一笔写入的结果，保证「结果不明 → 核对」的收尾链路可用。账本不自动淘汰，旧版本丢失的记录无法追溯；机制不等于跨窗口/云同步原子 CAS。
+
+修改章节前先 `yfe_read_chapter` 并提交其 `updatedAt` 为 `expectedUpdatedAt`；修改表单/表格/设定字段需提供读取时的预期旧值；修改分卷描述需带 `expectedDescription`。冲突时重新读取并征求用户意图，不能直接覆盖。草稿、在途保存、云同步或当前项目不匹配等拒绝须如实反馈。不要以 `retryable` 推测所有失败都可以安全重试。
+
+## 5. 最小验证与适配验收
+
+在独立数据目录和合成项目执行：
+
+1. 启动引擎及桥，检查初始化、版本协商、`tools/list`，调用 `yfe_host_info` 和 `yfe_list_projects`。
+2. 未开启、未授权、错误令牌及其他项目写入应拒绝；只对用户选定的合成项目授权。
+3. 创建章节并读回；同一请求重放不得重复创建；旧版本写入应冲突；检查保存后界面和重启后内容。
+4. 断连、请求结果不明、授权撤销、项目切换及用户草稿冲突均须验证，并记录客户端版本、操作系统、传输方式、结果和日志；不要输出宿主令牌或真实作品。桥级故障形态已有隔离回归（`tests/agentHostServer.test.ts`）：端口无人监听 → `HOST_UNREACHABLE`、宿主非 JSON 响应 → `HOST_BAD_RESPONSE`、写入结果不明 → `yfe_request_status` 报 `unknown` 并要求核对 → 复用同 `requestId` 被拒（不盲目重做）。真实网络抖动、宿主写入中途崩溃、跨设备竞态仍须真实客户端另行验证，隔离回归不能替代。
+5. 区分受控客户端与真实目标客户端，逐个验证；Codex CLI 已完成部分真实联调，不代表 Codex 桌面 UI、Antigravity 或其他客户端已验证。
+
+兼容性问题先核查 Node 路径、桥路径、宿主文件、引擎是否运行、项目是否打开、连接及权限、客户端是否重新加载配置。必须新开发适配器时，优先使用现有桥和标准 MCP 客户端库，保持上述工具语义、错误、权限和 requestId；禁止将内部宿主 HTTP 当作稳定公开接口。具体实现和可执行测试应以 `scripts/mcp/yfe-agent.mjs`、`scripts/agent-host/core.mjs`、`src/lib/agentHost/contract.ts`、`tests/agentHostEndToEnd.test.ts` 为准。

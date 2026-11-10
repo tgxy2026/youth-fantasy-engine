@@ -158,6 +158,7 @@ try {
   assert.throws(() => makeCodexAgentBridgeConfig('node', 'relative.mjs', { kind: 'hostFile', path: '/tmp/agent-host.json' }), /完整路径/)
   const prompt = makeAgentConnectionPrompt('C:\\node\\node.exe', agentScript, { kind: 'hostFile', path: 'C:\\Users\\作者\\agent-host.json' })
   assert.ok(prompt.includes(JSON.stringify(agentScript)))
+  assert.ok(prompt.includes('docs/agent/MCP第三方开发者适配规范.md'))
   assert.ok(prompt.includes(JSON.stringify('C:\\Users\\作者\\agent-host.json')))
   assert.ok(prompt.includes('yfe_host_info') && prompt.includes('yfe_list_projects'))
   assert.ok(prompt.includes('不要读取、输出或分享宿主配置中的令牌'))
