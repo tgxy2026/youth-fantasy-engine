@@ -6,8 +6,12 @@
 <title>投稿广场 · 视觉验收夹具</title>
 <!-- 🔴 必须在模块求值前注入形态标记：platform.ts 在模块加载时读取它们 -->
 <script>
-  window.__YFE_WEB__ = 1
-  window.__YFE_USER__ = { id: 'u_demo', name: 'demo', quotaBytes: 209715200, usedBytes: 0, role: 'admin' }
+  if (new URLSearchParams(location.search).get('portable') === '1') {
+    window.__YFE_PORTABLE__ = { apiBase: '' }
+  } else {
+    window.__YFE_WEB__ = 1
+    window.__YFE_USER__ = { id: 'u_demo', name: 'demo', quotaBytes: 209715200, usedBytes: 0, role: 'admin' }
+  }
 </script>
 <style>html, body, #root { height: 100%; margin: 0; }</style>
 </head>

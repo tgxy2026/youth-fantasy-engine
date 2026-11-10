@@ -7,11 +7,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/common/Button'
-import { fetchProfile, updateProfile } from '@/lib/community/api'
+import { activateSyncCode, fetchProfile, updateProfile } from '@/lib/community/api'
 import { getAllProjects } from '@/lib/db/projects'
 import { COMMUNITY_LIMITS, charCount } from '@/lib/community/limits'
 import { cnDateKey, pendingRankDeltaCount, readLedger, summarizeLedger } from '@/lib/community/rankLedger'
 import { uploadRank } from '@/lib/community/rankUpload'
+import { accountKeyOf } from '@/lib/community/draft'
 import type { CommunityProfile, DisplayMode } from '@/lib/community/types'
 import { Field, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
 
@@ -20,9 +21,10 @@ interface Props {
   onProfileChanged?: (profile: CommunityProfile) => void
 }
 
-export default function SettingsPanel({ onProfileChanged }: Props) {
+export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
   const [profile, setProfile] = useState<CommunityProfile | null>(null)
   const [nickname, setNickname] = useState('')
+  const [activationCode, setActivationCode] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,10 +86,11 @@ export default function SettingsPanel({ onProfileChanged }: Props) {
       setProfile(r.profile)
       onProfileChanged?.(r.profile)
       if (next) {
-        const up = await uploadRank({ force: true })
-setNotice(up.accepted > 0
+        const up = await uploadRank({ force: true, accountKey: accountKeyOf(accountId) })
+        if (up.error) { setError(up.error); return }
+        setNotice((up.accepted > 0
         ? `已开启排行同步，本次上传 ${up.accepted} 条记录（从开启后开始统计）${up.remaining > 0 ? `；还有 ${up.remaining} 条将在下一轮继续上传` : ''}。`
-        : '已开启排行同步，将从现在开始统计；历史数据不会上传。')
+        : '已开启排行同步，将从现在开始统计；历史数据不会上传。') + (up.incompleteFirstDay ? ' 开启当天的旧记录缺少精确时间，暂不计入排行。' : ''))
       } else {
         setNotice('已关闭排行同步，服务端已删除你上传的排行数据。')
       }
@@ -100,6 +103,18 @@ setNotice(up.accepted > 0
 
   return (
     <div className="space-y-5">
+      <section className="space-y-2">
+        <h3 className="text-13 font-semibold text-ink-100">云端同步资格</h3>
+        <p className="text-12 text-ink-300">已有邀请码可在这里开通同步资格。开通后作品不会自动上传或合并；网页版请重新打开应用后按提示选择存储位置。</p>
+        <div className="flex gap-2">
+          <input aria-label="云端同步邀请码" type="password" autoComplete="off" value={activationCode} onChange={(e) => setActivationCode(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 text-ink-100" />
+          <Button size="sm" disabled={busy || !activationCode.trim()} onClick={() => void (async () => {
+            setBusy(true); setError(''); setNotice('')
+            try { const r = await activateSyncCode(activationCode); setActivationCode(''); setNotice(r.alreadyActive ? '账号已有云端同步资格。' : '已开通云端同步资格。请重新打开应用；本机作品不会自动上传。') }
+            catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+          })()}>开通</Button>
+        </div>
+      </section>
       <section className="space-y-2">
         <h3 className="text-13 font-semibold text-ink-100">社区昵称</h3>
         <Field label="昵称" hint={`${charCount(nickname)} / ${COMMUNITY_LIMITS.nicknameMax} 个字符。昵称与登录名完全分离，匿名展示时不会输出登录名。`} htmlFor="community-nickname">
@@ -157,10 +172,11 @@ setNotice(up.accepted > 0
               void (async () => {
                 setBusy(true); setError(''); setNotice('')
                 try {
-                  const r = await uploadRank({ force: true })
+                  const r = await uploadRank({ force: true, accountKey: accountKeyOf(accountId) })
+                  if (r.error && r.skipped !== 'offline') { setError(r.error); return }
                   setNotice(r.skipped === 'offline'
                     ? `网络不可用，未完成上报${r.error ? `（${r.error}）` : ''}；记录仍保存在本机，稍后会自动重试。`
-                    : `本次上报 ${r.sent} 条，服务端接受 ${r.accepted} 条${r.rejected.length ? `，拒绝 ${r.rejected.length} 条` : ''}${r.remaining > 0 ? `，还有 ${r.remaining} 条待下一轮` : ''}。`)
+                    : `本次上报 ${r.sent} 条，服务端接受 ${r.accepted} 条${r.rejected.length ? `，拒绝 ${r.rejected.length} 条` : ''}${r.remaining > 0 ? `，还有 ${r.remaining} 条待下一轮` : ''}。${r.incompleteFirstDay ? '开启当天的旧记录缺少精确时间，暂不计入排行。' : ''}`)
                 } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
               })()
             }}>立即同步</Button>

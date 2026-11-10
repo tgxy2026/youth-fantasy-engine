@@ -96,6 +96,7 @@ function publicPost(store, post, { viewer = null, detail = false } = {}) {
     counts: { up: post.counts?.up || 0, down: post.counts?.down || 0, comments: post.counts?.comments || 0 },
     displayName: displayNameOf(store, post.uid, post.display || 'anonymous'),
     authorLabel: post.display === 'nickname' ? '' : '匿名投稿者',
+    ...(post.isExample === true ? { isExample: true } : {}),
   }
   if (detail) base.body = v.body
   else base.excerpt = excerptOf(v.body)

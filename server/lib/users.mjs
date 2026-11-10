@@ -484,6 +484,24 @@ export function claimInvite(code, uid, name) {
   return { ok: true }
 }
 
+/** Redeem a code and grant an existing account sync in one synchronous file write. */
+export function activateCloudSync(id, code) {
+  const db = loadUsers()
+  const user = db.users[id]
+  if (!user) return { ok: false, error: '账号不可用' }
+  if (user.cloudSync !== false) return { ok: true, alreadyActive: true }
+  const key = String(code || '').trim().toUpperCase()
+  const invite = db.invites[key]
+  if (!invite || invite.uses >= invite.maxUses) return { ok: false, error: '邀请码无效或已使用' }
+  invite.uses += 1
+  if (!Array.isArray(invite.usedBy)) invite.usedBy = []
+  invite.usedBy.push({ id, name: user.name, at: Date.now() })
+  if (!user.invite) user.invite = key
+  user.cloudSync = true
+  persist(db)
+  return { ok: true, alreadyActive: false }
+}
+
 /**
  * 登记「这张码已经发出去了」（发给了谁可写进备注）。
  *

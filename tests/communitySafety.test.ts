@@ -90,6 +90,34 @@ ok('账本同日增减相抵且 seq 递增', (() => {
   return a.net === 10000 && b.net === 5000 && b.seq === 2
 })())
 ok('账本保留负数（供周月抵扣）', applyLedgerDelta(null, -3000, '2026-11-10').net === -3000)
+ok('授权当天只上传开启后的有符号增量', await (async () => {
+  const start = Date.parse('2026-11-10T12:00:00+08:00')
+  const a = applyLedgerDelta(null, 10000, '2026-11-10', start - 1000)
+  const sameTime = applyLedgerDelta(a, 800, '2026-11-10', start)
+  const b = applyLedgerDelta(sameTime, 3000, '2026-11-10', start + 1000)
+  const c = applyLedgerDelta(b, -500, '2026-11-10', start + 2000)
+  const rows = await buildRankEntries({ projects: ['p1'], ledgerOf: async () => [c], fromDate: '2026-11-10', optInAt: start })
+  return rows.length === 1 && rows[0].netDelta === 2500
+})())
+ok('撤回后重开只统计新授权后的写作', await (async () => {
+  const start = Date.parse('2026-11-10T12:00:00+08:00')
+  const a = applyLedgerDelta(null, 400, '2026-11-10', start - 1000)
+  const b = applyLedgerDelta(a, 200, '2026-11-10', start + 1000)
+  const rows = await buildRankEntries({ projects: ['p1'], ledgerOf: async () => [b], fromDate: '2026-11-10', optInAt: start })
+  return rows.length === 1 && rows[0].netDelta === 200
+})())
+ok('历史账本缺少开启当天细节时不猜测上报', await (async () => {
+  const start = Date.parse('2026-11-10T12:00:00+08:00')
+  let incomplete = false
+  const rows = await buildRankEntries({ projects: ['p1'], ledgerOf: async () => [{ date: '2026-11-10', net: 900, seq: 1, updatedAt: start + 1 }], fromDate: '2026-11-10', optInAt: start, onIncomplete: () => { incomplete = true } })
+  return incomplete && rows.length === 0
+})())
+ok('延迟补记保留原始发生时间', (() => {
+  const start = Date.parse('2026-11-10T12:00:00+08:00')
+  const newer = applyLedgerDelta(null, 30, '2026-11-10', start + 2000)
+  const delayed = applyLedgerDelta(newer, 20, '2026-11-10', start - 1000)
+  return delayed.updatedAt === start + 2000 && !!delayed.events?.some((e) => e.at === start - 1000 && e.delta === 20)
+})())
 ok('含标点净增量复用既有口径', netDeltaOfTexts('字'.repeat(5000), '字'.repeat(10000) + '，') === 5001)
 ok('批次上限与服务器一致（400）', /const BATCH_SIZE = 400/.test(read('src/lib/community/rankUpload.ts'))
   && /entries.slice\(0, 400\)/.test(read('server/lib/communityApi.mjs')))

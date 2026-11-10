@@ -9,7 +9,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 const root = process.cwd()
-const outDir = path.join(root, '.workbuddy', 'tmp', 'community-ui')
+const outDir = path.join(root, '.workbuddy', 'tmp', process.env.YFE_UI_EVIDENCE_DIR || 'community-ui')
 await fs.mkdir(outDir, { recursive: true })
 
 const now = Date.now()
@@ -219,6 +219,18 @@ try {
     steps: async (page) => {
       await page.getByRole('button', { name: /雨落在旧城墙上的那一夜/ }).click()
       await page.getByRole('heading', { name: /评论/ }).waitFor({ timeout: 10000 })
+      const reading = page.locator('article').first()
+      const measure = await reading.evaluate((el) => {
+        const parent = el.parentElement
+        return { article: el.getBoundingClientRect().width, parent: parent?.getBoundingClientRect().width || 0 }
+      })
+      if (measure.article < measure.parent - 2) throw new Error('阅读正文未铺满可用宽度')
+      await page.getByRole('button', { name: '阅读字号 20' }).click()
+      if (await reading.locator('p.whitespace-pre-wrap').first().evaluate((el) => getComputedStyle(el).fontSize) !== '20px') throw new Error('阅读字号未生效')
+      await page.getByRole('button', { name: '返回列表' }).click()
+      await page.getByRole('button', { name: /雨落在旧城墙上的那一夜/ }).click()
+      if (await page.getByRole('button', { name: '阅读字号 20' }).getAttribute('aria-pressed') !== 'true') throw new Error('阅读字号未保留')
+      await page.getByRole('button', { name: '阅读字号 16' }).click()
     },
   })
   await shot('publish-wide-1440', 1440, 900, {

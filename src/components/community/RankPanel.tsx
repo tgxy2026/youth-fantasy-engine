@@ -48,6 +48,12 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    const retry = () => { void load() }
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [load])
+
   const entries = board?.entries ?? []
   const shown = compact ? entries.slice(0, Math.max(1, max)) : entries
 

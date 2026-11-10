@@ -10,6 +10,9 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { createCommunityStore } from '../../server/lib/communityStore.mjs'
+import { ensureCommunityExample, COMMUNITY_EXAMPLE_ID } from '../../server/lib/communityExample.mjs'
+import { runInNewContext } from 'node:vm'
 
 const PASSWORD = 'CommunityFlow123!'
 const root = await fs.mkdtemp(path.resolve('.workbuddy/tmp/community-flow-'))
@@ -70,6 +73,13 @@ async function patchUser(name, patch) {
 }
 
 try {
+  const exampleStore = createCommunityStore({ root: path.join(root, 'example-check') })
+  ensureCommunityExample(exampleStore)
+  const originalExample = exampleStore.getPost(COMMUNITY_EXAMPLE_ID)
+  originalExample.status = 'removed'
+  exampleStore.putPost(originalExample)
+  ensureCommunityExample(createCommunityStore({ root: path.join(root, 'example-check') }))
+  ok('示例重复初始化不会恢复下架内容', exampleStore.getPost(COMMUNITY_EXAMPLE_ID).status === 'removed' && exampleStore.listPosts().length === 1)
   server = spawn(process.execPath, ['server/index.mjs'], { cwd: process.cwd(), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   let log = ''
   server.stdout.on('data', (b) => { log += b }); server.stderr.on('data', (b) => { log += b })
@@ -78,6 +88,8 @@ try {
   const alice = await register('flow-alice')
   const bob = await register('flow-bob')
   const admin = await register('flow-admin')
+  // Same session through the server's two documented authentication paths.
+  const aliceBearer = { Authorization: `Bearer ${decodeURIComponent(alice.slice(alice.indexOf('=') + 1))}` }
   await patchUser('flow-admin', { role: 'admin' })
 
   // ---- 注册与资格分离 ----
@@ -85,8 +97,34 @@ try {
   ok('开放注册成功且默认无云同步资格', me.status === 200 && me.json.user.cloudSync === false)
   const denied = await call('/api/data', { cookie: alice })
   ok('未授予资格：/api/data 被服务端拒绝', denied.status === 403 && denied.json.code === 'SYNC_NOT_GRANTED')
+  const pageForUnactivated = await call('/', { cookie: alice })
+  const scripts = [...pageForUnactivated.text.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+  const boot = scripts.map((m) => m[1]).find((s) => s.includes('window.__YFE_USER__='))
+  const injected = {}
+  const fakeStorage = new Map()
+  if (boot) runInNewContext(boot, { window: injected, localStorage: { getItem: (k) => fakeStorage.get(k), setItem: (k, v) => fakeStorage.set(k, v) } })
+  ok('未激活网页账号使用独立本地存储标记', pageForUnactivated.status === 200 && injected.__YFE_ACCOUNT_LOCAL__ === true && !injected.__YFE_PORTABLE__)
+  const upgraded = {}
+  if (boot) runInNewContext(boot.replace('"cloudSync":false', '"cloudSync":true'), { window: upgraded, localStorage: { getItem: (k) => fakeStorage.get(k), setItem: (k, v) => fakeStorage.set(k, v) } })
+  ok('开通资格后仍保留本机视图直至用户主动切换', upgraded.__YFE_ACCOUNT_LOCAL__ === true && !upgraded.__YFE_PORTABLE__)
   const publicSquare = await call('/api/community/square')
   ok('未登录可读广场状态', publicSquare.status === 200 && publicSquare.json.open === true)
+  const exampleList = await call('/api/community/posts')
+  const example = exampleList.json.items.find((item) => item.isExample)
+  ok('内置示例可公开阅读', !!example && example.title === '给明天留一盏灯')
+  if (!example) throw new Error('missing community example')
+  const exampleVote = await call(`/api/community/posts/${example.id}/vote`, { method: 'POST', cookie: alice, body: { value: 1 } })
+  ok('内置示例可点赞', exampleVote.status === 200)
+  const exampleDown = await call(`/api/community/posts/${example.id}/vote`, { method: 'POST', cookie: alice, body: { value: -1 } })
+  const exampleDetail = await call(`/api/community/posts/${example.id}`)
+  ok('内置示例可切换点踩', exampleDown.status === 200 && exampleDetail.json.post.counts.down === 1 && exampleDetail.json.post.counts.up === 0)
+  const exampleComment = await call(`/api/community/posts/${example.id}/comments`, { method: 'POST', cookie: alice, body: { body: '喜欢这个故事。', display: 'anonymous' } })
+  ok('内置示例可评论', exampleComment.status === 200)
+  const exampleAcrossSession = await call(`/api/community/posts/${example.id}`, { headers: aliceBearer })
+  const commentsAcrossSession = await call(`/api/community/posts/${example.id}/comments`, { headers: aliceBearer })
+  ok('示例评价和评论从服务端向另一通道分发', exampleAcrossSession.json.post.counts.down === 1 && commentsAcrossSession.json.items.some((c) => c.body === '喜欢这个故事。'))
+  const freshStore = createCommunityStore({ root: path.join(data, 'community') })
+  ok('投稿、评价及评论已持久化在服务端独立存储', !!freshStore.getPost(example.id) && freshStore.recountVotes(example.id).down === 1 && freshStore.listCommentsOf(example.id).some((c) => c.body === '喜欢这个故事。'))
   const cannotPost = await call('/api/community/posts', { method: 'POST', body: { title: 'x', body: '内容内容内容' } })
   ok('未登录不能投稿', cannotPost.status === 401)
 
@@ -96,7 +134,7 @@ try {
   const pid = created.json.post.id
   const vid = created.json.post.pendingVersionId
   const listBefore = await call('/api/community/posts')
-  ok('待审内容不在公开列表', listBefore.json.items.length === 0)
+  ok('待审内容不在公开列表', !listBefore.json.items.some((item) => item.id === pid))
   const byBob = await call('/api/community/posts', { method: 'POST', cookie: bob, body: { title: 'bob', body: '内容' } })
   ok('普通用户可投稿', byBob.status === 200)
   const queue = await call('/api/community/admin/queue?type=post', { cookie: admin })
@@ -105,6 +143,8 @@ try {
   ok('管理员确认后才发布', approve.status === 200 && approve.json.status === 'published')
   const detail = await call(`/api/community/posts/${pid}`)
   ok('发布后公开可读且全文正确', detail.status === 200 && detail.json.post.body === '雨落在旧城墙上。')
+  const desktopDetail = await call(`/api/community/posts/${pid}`, { headers: aliceBearer })
+  ok('Cookie 投稿可由 Bearer 通道读取', desktopDetail.status === 200 && desktopDetail.json.post.body === detail.json.post.body && desktopDetail.json.post.myPost === true)
   ok('匿名公开响应不含账号名', !detail.text.includes('flow-alice') && detail.json.post.displayName === '匿名用户')
 
   // ---- 互动 ----
@@ -155,9 +195,27 @@ try {
   ok('开启后上报成功', rp.status === 200 && rp.json.accepted.length === 1)
   const board = await call('/api/community/rank?period=day')
   ok('日榜按净增量展示', board.json.entries.length === 1 && board.json.entries[0].value === 5000 && board.json.entries[0].displayName === '雨声')
+  const desktopBoard = await call('/api/community/rank?period=day', { headers: aliceBearer })
+  ok('Cookie 上报排行可由 Bearer 通道读取', desktopBoard.status === 200 && desktopBoard.json.entries[0]?.value === 5000)
   ok('榜单响应不含账号标识', !board.text.includes('flow-alice'))
   const revoke = await call('/api/community/profile', { method: 'PUT', cookie: alice, body: { rankOptIn: false } })
   ok('撤回授权立即清空', revoke.status === 200 && (await call('/api/community/rank?period=day')).json.entries.length === 0)
+  const reenable = await call('/api/community/profile', { method: 'PUT', cookie: alice, body: { rankOptIn: true } })
+  const oldRank = await call('/api/community/rank/report', { method: 'POST', cookie: alice, body: { deviceId: 'dev-flow-01', issuedAt: 0, entries: [] } })
+  ok('重新开启后拒绝旧授权上报', oldRank.status === 409)
+  const newRank = await call('/api/community/rank/report', { method: 'POST', cookie: alice, body: { deviceId: 'dev-flow-01', issuedAt: reenable.json.profile.rankOptInAt, entries: [{ projectId: 'p2', date: today, netDelta: 123, seq: 1, issuedAt: Date.now() }] } })
+  ok('重新开启后新授权可以上报', newRank.status === 200 && newRank.json.accepted.length === 1)
+
+  const userFile = path.join(data, 'users.json')
+  const userDb = JSON.parse(await fs.readFile(userFile, 'utf8'))
+  userDb.invites.FLOWACTIVATE = { createdAt: Date.now(), maxUses: 1, uses: 0, note: 'fixture', usedBy: [] }
+  await fs.writeFile(userFile, JSON.stringify(userDb, null, 2))
+  const activated = await call('/api/auth/activate', { method: 'POST', cookie: alice, body: { code: 'FLOWACTIVATE' } })
+  ok('注册后可兑换邀请码开通同步资格', activated.status === 200 && (await call('/api/auth/me', { cookie: alice })).json.user.cloudSync === true)
+  const repeatedActivation = await call('/api/auth/activate', { method: 'POST', cookie: alice, body: { code: 'FLOWACTIVATE' } })
+  ok('重复开通幂等', repeatedActivation.status === 200 && repeatedActivation.json.alreadyActive === true)
+  const takenCode = await call('/api/auth/activate', { method: 'POST', cookie: bob, body: { code: 'FLOWACTIVATE' } })
+  ok('已使用的邀请码不能授予其他账号', takenCode.status === 400 && (await call('/api/auth/me', { cookie: bob })).json.user.cloudSync === false)
 
   // ---- 昵称与展示 ----
   const badNick = await call('/api/community/profile', { method: 'PUT', cookie: alice, body: { nickname: '官方客服' } })

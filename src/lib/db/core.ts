@@ -6,6 +6,7 @@
 // ⚠️ `ops` 与 `currentProjectId` 是**可重新赋值**的模块级单例（桌面版启动后由 setStoreOps 换掉；切项目时由 setCurrentProject 写入）：
 //    **故它们必须 export** —— 兄弟业务域只读、不写（对 import 进来的绑定赋值是编译错误）；ESM 活绑定保证换值后各处都读到新值。
 import { openDB, type IDBPDatabase } from 'idb'
+import { accountLocalDatabaseName } from '@/lib/app/platform'
 import { invalidateStorageContext } from '@/lib/storage/contextEpoch'
 import type { Project } from '@/lib/types'
 import type { StoreOps } from '@/lib/storage/storeOps'
@@ -27,7 +28,7 @@ import {
   migrateV10toV11, migrateV11toV12, migrateV12toV13, migrateV13toV14, migrateV14toV15,
 } from '@/lib/db/idbMigrations'
 
-const DB_NAME = 'youth-fantasy-engine'
+const DB_NAME = accountLocalDatabaseName('youth-fantasy-engine')
 const DB_VERSION = 15
 
 let dbPromise: Promise<IDBPDatabase> | null = null

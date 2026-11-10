@@ -19,7 +19,7 @@ import { DesktopDataBar } from '@/components/app/Desktop'
 import { PortableDataBar } from '@/components/app/Portable'
 import { WebDataBar } from '@/components/app/Web'
 import { GuestDataBar } from '@/components/app/Guest'
-import { WEB } from '@/lib/app/platform'
+import { WEB, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { GUEST } from '@/lib/db/guestData'
 import CloudFileSyncBar from '@/components/app/CloudFileSyncBar'
 import BossKeySettings from '@/components/app/BossKeySettings'
@@ -453,7 +453,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         {/* 🔴 网页版必须**先判 WEB**：网页云端同时带 PORTABLE 标记（复用其 HTTP StoreOps），
             若只判 PORTABLE 会显示成「便携数据文件 ./data/…」这种云端不存在的路径。 */}
         {DESKTOP && <DesktopDataBar />}
-        {WEB ? (GUEST ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
+        {WEB ? (GUEST || WEB_ACCOUNT_LOCAL ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
         {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
         {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
         {/* 桌面版云端账号（3.3.2 · P5）：登录后才会出现「云端同步」入口 */}

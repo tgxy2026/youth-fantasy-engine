@@ -17,6 +17,7 @@ import { clearDraft, loadDraft, saveDraft } from '@/lib/community/draft'
 import { decideAfterSubmit } from '@/lib/community/publishOutcome'
 import type { DisplayMode } from '@/lib/community/types'
 import { Field, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
+import ReadingText from '@/components/community/ReadingText'
 
 export interface EditTarget {
   id: string
@@ -193,11 +194,9 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
             <span>·</span><span>审核通过后显示发布时间</span>
             {tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
           </p>
-          <div className="mt-4 whitespace-pre-wrap break-words text-15 leading-8 text-ink-200">
-            {body || '（正文还是空的）'}
-          </div>
+          <div className="mt-4"><ReadingText body={body || '（正文还是空的）'} fontSize={16} /></div>
           <p className="mt-6 text-12 leading-relaxed text-ink-400">
-            以上是读者将看到的样子。正文按原样显示纯文本，换行会保留；不支持富文本或图片。
+            以上是默认阅读样式。正文以纯文本显示，段落间空行会压缩；不支持富文本或图片。
           </p>
         </article>
       ) : (

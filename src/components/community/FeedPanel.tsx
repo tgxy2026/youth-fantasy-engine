@@ -16,6 +16,16 @@ import {
 } from '@/lib/community/api'
 import type { CommunityComment, CommunityPostDetail, CommunityPostSummary } from '@/lib/community/types'
 import { Empty, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
+import ReadingText from '@/components/community/ReadingText'
+
+const READING_SIZE_KEY = 'yfe:community:reading-size'
+const READING_SIZES = [14, 16, 18, 20]
+function initialReadingSize() {
+  try {
+    const size = Number(localStorage.getItem(READING_SIZE_KEY))
+    return READING_SIZES.includes(size) ? size : 16
+  } catch { return 16 }
+}
 
 interface Props {
   canWrite: boolean
@@ -35,6 +45,12 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [readingSize, setReadingSize] = useState(initialReadingSize)
+
+  function changeReadingSize(size: number) {
+    setReadingSize(size)
+    try { localStorage.setItem(READING_SIZE_KEY, String(size)) } catch { /* reading remains usable */ }
+  }
 
   const [openId, setOpenId] = useState('')
   const [detail, setDetail] = useState<CommunityPostDetail | null>(null)
@@ -141,14 +157,22 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
 
         {detail && (
           <div className="space-y-8">
-            <article className="mx-auto w-full max-w-2xl">
+            <article className="w-full min-w-0">
               <h2 className="text-22 font-semibold leading-snug tracking-tight text-ink-100 sm:text-24">{detail.title}</h2>
+              {detail.isExample && <div className="mt-2"><StatusPill>示例故事</StatusPill></div>}
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-12 text-ink-300">
                 <span className="text-ink-300">{detail.displayName}</span>
                 <span>·</span><span>{formatTime(detail.createdAt)}</span>
                 {detail.tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
               </div>
-              <div className="mt-5 whitespace-pre-wrap break-words text-15 leading-8 text-ink-200">{detail.body}</div>
+              <div className="mt-4 flex flex-wrap items-center gap-1.5" role="group" aria-label="阅读字号">
+                <span className="mr-1 text-12 text-ink-400">字号</span>
+                {READING_SIZES.map((size) => (
+                  <Button key={size} size="sm" variant="toggle" selected={readingSize === size} aria-pressed={readingSize === size}
+                    aria-label={`阅读字号 ${size}`} onClick={() => changeReadingSize(size)}>{size}</Button>
+                ))}
+              </div>
+              <div className="mt-4"><ReadingText body={detail.body} fontSize={readingSize} /></div>
 
               <div className="mt-7 flex flex-wrap items-center gap-2 border-t border-ink-700/70 pt-4">
                 <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === 1} onClick={() => void vote(1)}
@@ -184,7 +208,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
               )}
             </article>
 
-            <section aria-label="评论" className="mx-auto w-full max-w-2xl border-t border-ink-700/70 pt-6">
+            <section aria-label="评论" className="w-full min-w-0 border-t border-ink-700/70 pt-6">
               <h3 className="text-15 font-semibold text-ink-100">评论 {comments.length ? `(${comments.length})` : ''}</h3>
               {comments.length === 0 && <p className="mt-2 text-12 text-ink-400">还没有评论。写下第一条看法吧。</p>}
               <ul className="mt-3 space-y-3">
@@ -263,12 +287,13 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
         {items.map((p) => (
           <li key={p.id}>
             <button type="button" onClick={() => void openPost(p.id)}
-              className="group w-full rounded-2xl border border-ink-700 bg-ink-900/45 p-4 text-left transition-colors hover:border-amber/40 focus-visible:border-amber focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/40 sm:p-5">
+              className="group w-full rounded-2xl border border-ink-700 bg-surface-app p-5 text-left shadow-sm transition-colors hover:border-amber/40 focus-visible:border-amber focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/40 sm:px-6 sm:py-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-15 font-semibold text-ink-100 group-hover:text-amber sm:text-16">{p.title}</h3>
+                {p.isExample && <StatusPill>示例故事</StatusPill>}
                 {p.tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
               </div>
-              <p className="mt-2 line-clamp-2 text-13 leading-7 text-ink-300">{p.excerpt}</p>
+              <p className="mt-3 line-clamp-3 text-14 leading-7 text-ink-300">{p.excerpt}</p>
               <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-11 text-ink-300">
                 <span>{p.displayName}</span>
                 <span>{formatTime(p.createdAt)}</span>

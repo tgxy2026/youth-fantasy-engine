@@ -9,7 +9,7 @@
 // 🔴 网络失败与业务失败分开：前者可重试，后者要展示服务端给的 code/文案。
 // 🔴 所有写操作带 `clientToken` 的路径由调用方生成，保证重复点击/断网重试幂等。
 
-import { cloudBase, cloudFetch } from '@/lib/cloud/syncApi'
+import { cloudBase, cloudFetch, hasConfiguredCloudTransport } from '@/lib/cloud/syncApi'
 import { WEB } from '@/lib/app/platform'
 import type {
   AdminOverview, AdminPostItem, AdminQueueComment, AdminQueuePost, AdminQueueReport,
@@ -33,12 +33,12 @@ export class CommunityError extends Error {
 /** 桌面版没登录云端账号时，广场不可用（本地写作完全不受影响） */
 export function communityEndpointReady(): boolean {
   if (WEB) return true
-  return !!cloudBase()
+  return hasConfiguredCloudTransport()
 }
 
 async function request<T>(path: string, init: RequestInit & { body?: string } = {}): Promise<T> {
   if (!communityEndpointReady()) {
-    throw new CommunityError('桌面版需要先在「云端账号」里登录，才能使用投稿广场。本地写作不受影响。', 'NO_ENDPOINT', 0)
+    throw new CommunityError('社区服务不可用：请检查网络与账号连接。本地写作不受影响。', 'NO_ENDPOINT', 0)
   }
   const base = cloudBase()
   let res: Response
@@ -69,6 +69,21 @@ const qsOf = (params: Record<string, string | number | undefined>): string => {
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v))
   const s = q.toString()
   return s ? `?${s}` : ''
+}
+
+/** Redeem a sync code using the same authenticated account as the community. */
+export async function activateSyncCode(code: string): Promise<{ alreadyActive: boolean }> {
+  if (!communityEndpointReady()) throw new CommunityError('社区服务不可用', 'NO_ENDPOINT')
+  let res: Response
+  try {
+    res = await cloudFetch()(`${cloudBase()}/api/auth/activate`, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    })
+  } catch { throw new CommunityError('网络不通，请稍后重试。', 'NETWORK') }
+  const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; alreadyActive?: boolean } | null
+  if (!res.ok || !body?.ok) throw new CommunityError(body?.error || '激活失败，请稍后重试。', 'ACTIVATE_FAILED', res.status)
+  return { alreadyActive: !!body.alreadyActive }
 }
 
 // ---------------- 公共读 ----------------
@@ -187,7 +202,7 @@ export interface RankReportEntry {
   issuedAt: number
 }
 
-export function reportRank(input: { deviceId: string; entries: RankReportEntry[] }): Promise<{
+export function reportRank(input: { deviceId: string; issuedAt: number; entries: RankReportEntry[] }): Promise<{
   accepted: Array<{ projectId: string; date: string }>
   rejected: Array<{ projectId: string; date: string; code: string }>
   serverDate: string

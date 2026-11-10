@@ -29,6 +29,10 @@ export interface RankLedgerRow {
   /** 单调递增序号：服务端据此丢弃迟到/重放的旧值 */
   seq: number
   updatedAt: number
+  /** Timestamped changes allow the first authorised day to exclude earlier work. */
+  events?: Array<{ at: number; delta: number }>
+  /** Earlier events are unknown before this boundary. */
+  eventsFrom?: number
 }
 
 /** 北京时间自然日（排行榜固定口径；不受设备时区影响） */
@@ -44,11 +48,19 @@ export function netDeltaOfTexts(before: string | undefined, after: string | unde
 
 /** 纯函数：把一次增量合并进账本行（供单测直接验证，不经存储） */
 export function applyLedgerDelta(prev: RankLedgerRow | null | undefined, delta: number, date: string, now = Date.now()): RankLedgerRow {
+  const events = [...(prev?.events || []), { at: now, delta }].sort((a, b) => a.at - b.at)
+  let eventsFrom = prev?.eventsFrom ?? (prev ? prev.updatedAt + 1 : Date.parse(`${date}T00:00:00+08:00`))
+  if (events.length > 4096) {
+    const removed = events.splice(0, events.length - 4096)
+    eventsFrom = Math.max(eventsFrom, removed[removed.length - 1].at + 1)
+  }
   return {
     date,
     net: (prev?.net || 0) + delta,
     seq: (prev?.seq || 0) + 1,
-    updatedAt: now,
+    updatedAt: Math.max(prev?.updatedAt || 0, now),
+    events,
+    eventsFrom,
   }
 }
 
@@ -84,13 +96,16 @@ let chain: Promise<unknown> = Promise.resolve()
  * 下一次记账或每次排行上报前补记；补记仍失败就继续留队，不丢。
  * 🔴 队列只存 projectId + 增量，不含正文/标题；随本机数据走，不跨设备。
  */
-const PENDING_KEY = 'yfe.community.rankPending'
+function pendingKey(): string {
+  const id = typeof window === 'undefined' ? '' : (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id || ''
+  return `yfe.community.rankPending${id ? `:${encodeURIComponent(id)}` : ''}`
+}
 
 interface PendingDelta { projectId: string; delta: number; at: number }
 
 function readPending(): PendingDelta[] {
   try {
-    const raw = localStorage.getItem(PENDING_KEY)
+    const raw = localStorage.getItem(pendingKey())
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
@@ -100,17 +115,17 @@ function readPending(): PendingDelta[] {
 
 function writePending(list: PendingDelta[]): void {
   try {
-    if (!list.length) localStorage.removeItem(PENDING_KEY)
-    else localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-500)))
+    if (!list.length) localStorage.removeItem(pendingKey())
+    else localStorage.setItem(pendingKey(), JSON.stringify(list.slice(-500)))
   } catch { /* 忽略：配额满时退化为内存丢失，下次仍会尽力补 */ }
 }
 
-function enqueuePending(projectId: string, delta: number): void {
+function enqueuePending(projectId: string, delta: number, at: number): void {
   const list = readPending()
   // 同项目同日多次失败可合并，避免队列无限增长
   const last = list[list.length - 1]
-  if (last && last.projectId === projectId) last.delta += delta
-  else list.push({ projectId, delta, at: Date.now() })
+  if (last && last.projectId === projectId && last.at === at) last.delta += delta
+  else list.push({ projectId, delta, at })
   writePending(list)
 }
 
@@ -121,13 +136,19 @@ export function pendingRankDeltaCount(): number {
 
 /** 补记失败留下的增量；返回成功补记的条数 */
 export async function flushPendingRankDeltas(): Promise<number> {
+  const run = chain.then(() => flushPendingNow())
+  chain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+async function flushPendingNow(): Promise<number> {
   const list = readPending()
   if (!list.length) return 0
   const remain: PendingDelta[] = []
   let done = 0
   for (const item of list) {
     try {
-      await writeDelta(item.projectId, item.delta)
+      await writeDelta(item.projectId, item.delta, undefined, item.at)
       done++
     } catch {
       remain.push(item)
@@ -140,13 +161,14 @@ export async function flushPendingRankDeltas(): Promise<number> {
 export function recordRankDelta(projectId: string, delta: number, owner?: OwnedOperation): Promise<void> {
   if (!projectId || !delta) return Promise.resolve()
   if (rankSuppressed()) return Promise.resolve()
+  const at = Date.now()
   const run = chain.then(async () => {
     try {
-      await writeDelta(projectId, delta, owner)
-      // 顺手补记历史失败（不阻塞本次调用）
-      void flushPendingRankDeltas().catch(() => undefined)
+      await writeDelta(projectId, delta, owner, at)
+      // Both normal writes and compensation share the same queue.
+      await flushPendingNow()
     } catch (e) {
-      enqueuePending(projectId, delta)
+      enqueuePending(projectId, delta, at)
       throw e
     }
   })
@@ -154,11 +176,11 @@ export function recordRankDelta(projectId: string, delta: number, owner?: OwnedO
   return run
 }
 
-async function writeDelta(projectId: string, delta: number, owner?: OwnedOperation): Promise<void> {
-  const date = cnDateKey()
+async function writeDelta(projectId: string, delta: number, owner?: OwnedOperation, at = Date.now()): Promise<void> {
+  const date = cnDateKey(at)
   const key = RANK_LEDGER_PREFIX + date
   const prev = await getSettingFor<RankLedgerRow | null>(projectId, key, null, owner)
-  const next = applyLedgerDelta(prev, delta, date)
+  const next = applyLedgerDelta(prev, delta, date, at)
   await setSettingFor(projectId, key, next, owner)
 }
 
@@ -181,6 +203,8 @@ export async function readLedger(projectId: string): Promise<RankLedgerRow[]> {
       net: Number(row.net) || 0,
       seq: Number(row.seq) || 0,
       updatedAt: Number(row.updatedAt) || 0,
+      events: Array.isArray(row.events) ? row.events.filter((e) => Number.isFinite(e?.at) && Number.isFinite(e?.delta)) : undefined,
+      eventsFrom: typeof row.eventsFrom === 'number' ? row.eventsFrom : undefined,
     })
   }
   return out.sort((a, b) => a.date.localeCompare(b.date))

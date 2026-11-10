@@ -60,7 +60,9 @@ export const KB_MAX_CHARS = 400_000
 /** 单项目文档数上限（防呆；纯本地库，但列表全量渲染也得有个头） */
 export const KB_MAX_DOCS = 200
 
-const KB_DB_NAME = 'youth-fantasy-engine-kb'
+import { accountLocalDatabaseName } from '@/lib/app/platform'
+
+const KB_DB_NAME = accountLocalDatabaseName('youth-fantasy-engine-kb')
 const KB_DB_VERSION = 1
 const STORE_DOCS = 'docs'
 const STORE_BODIES = 'bodies'

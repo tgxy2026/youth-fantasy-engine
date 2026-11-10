@@ -32,7 +32,7 @@ import {
 import { GUEST_BANNER } from './lib/guestNotice.mjs'
 import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
-  claimInvite, createInvite, listInvites, newUserId,
+  claimInvite, activateCloudSync, createInvite, listInvites, newUserId,
   openSession, checkSession, revokeSessionById, revokeOtherSessions, listSessions,
   markIssued, resetPasswordByInvite, resetPasswordByRecoveryCode,
 } from './lib/users.mjs'
@@ -54,6 +54,7 @@ import { createScheduler, DEFAULT_INTERVAL_MS } from './lib/scheduler.mjs'
 // 3.5.0 · 投稿广场（社区数据与云同步数据分开存，备份仍是拷同一棵 data 目录）
 import { createCommunityStore } from './lib/communityStore.mjs'
 import { createCommunityApi } from './lib/communityApi.mjs'
+import { ensureCommunityExample } from './lib/communityExample.mjs'
 
 const PORT = Number(process.env.PORT || 80)
 // 3.5.0 项目级协议的根（按账号分目录）；门禁状态也在这棵树里
@@ -75,8 +76,10 @@ try {
   loadUsers() // 🔴 用户表损坏必须在这里就炸，不能带着空表继续跑
   SECRET = loadOrCreateSecret(SECRET_FILE)
   // 社区数据损坏同样必须启动即失败（否则会把公共投稿当空表写回）
+  const communityStore = createCommunityStore({ root: COMMUNITY_ROOT })
+  ensureCommunityExample(communityStore)
   communityApi = createCommunityApi({
-    store: createCommunityStore({ root: COMMUNITY_ROOT }),
+    store: communityStore,
     authCheck,
     rateLimit,
   })
@@ -469,10 +472,11 @@ function renderIndex(user) {
   //  · 已登录（云端存储）⇒ 注入 __YFE_PORTABLE__，前端走它已有的 HTTP StoreOps（接口即 /api/data）
   //  · 游客（本地存储）  ⇒ **绝不注入** __YFE_PORTABLE__，前端于是走 IndexedDB（DESKTOP/PORTABLE 皆 false）
   const script = user
-    ? `<script>window.__YFE_PORTABLE__={apiBase:""};window.__YFE_WEB__=1;`
+    ? `<script>window.__YFE_WEB__=1;`
       + `window.__YFE_USER__=${JSON.stringify({
-        id: user.id, name: user.name, quotaBytes: user.quotaBytes, usedBytes: user.usedBytes,
-      })};</script>`
+        id: user.id, name: user.name, quotaBytes: user.quotaBytes, usedBytes: user.usedBytes, cloudSync: cloudSyncAllowed(user),
+      })};`
+      + `try{var k='yfe:account-local:'+window.__YFE_USER__.id;var local=!window.__YFE_USER__.cloudSync||localStorage.getItem(k)==='1';if(!window.__YFE_USER__.cloudSync)localStorage.setItem(k,'1');window.__YFE_ACCOUNT_LOCAL__=local;}catch(_){window.__YFE_ACCOUNT_LOCAL__=!window.__YFE_USER__.cloudSync;}if(!window.__YFE_ACCOUNT_LOCAL__)window.__YFE_PORTABLE__={apiBase:""};</script>`
     // 🔴 游客也必须是「网页版」：`__YFE_WEB__` 决定前端是否把「便携版」字样换成「网页版」。
     //    漏注入的后果是游客看到「便携版不提供在线更新」「本机存储 ./data/…」——全是错的说法。
     : '<script>window.__YFE_GUEST__=1;window.__YFE_WEB__=1;</script>'
@@ -661,6 +665,19 @@ async function handleApi(req, res, url) {
     console.log(`[auth] 密码重置（凭${recovery ? '找回码' : '邀请码'}）：${r.value.name} from ${ip}`)
     recordStat('reset')
     return sendJSON(res, 200, { ok: true, name: r.value.name })
+  }
+
+  // ---- 已注册账号兑换云同步资格 ----
+  if (path === '/api/auth/activate' && req.method === 'POST') {
+    const checked = authCheck(req)
+    if (!checked.user) return sendJSON(res, 401, { ok: false, error: '请先登录' })
+    const rl = rateLimit(`activate:${checked.user.id}:${ip}`, 10, 60 * 60 * 1000)
+    if (!rl.ok) return sendJSON(res, 429, { ok: false, error: '尝试过于频繁，请稍后再试' })
+    const body = await readJSONBody(req, 8 * 1024).catch(() => null)
+    if (!body) return sendJSON(res, 400, { ok: false, error: '请求格式错误' })
+    const result = activateCloudSync(checked.user.id, body.code)
+    if (!result.ok) return sendJSON(res, 400, { ok: false, error: result.error })
+    return sendJSON(res, 200, { ok: true, alreadyActive: result.alreadyActive })
   }
 
   // ---- 当前用户 ----

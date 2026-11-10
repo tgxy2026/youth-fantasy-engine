@@ -11,6 +11,7 @@ import AccountExit from '@/components/app/AccountExit'
 import LoginDevices from '@/components/app/LoginDevices'
 import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { setSyncAccountId, startAutoSync } from '@/lib/app/syncBoot'
+import { switchAccountStorage } from '@/lib/app/accountLocalSwitch'
 
 /**
  * 网页版 · 云端账号数据条。
@@ -186,6 +187,9 @@ export function WebDataBar() {
         </span>
         {/* 云端同步（3.3.2）：先看同步状态，再看设备，最后是退出 */}
         <CloudSyncPanel />
+        <Button size="xs" variant="ghost" onClick={() => void (async () => {
+          if (await confirmDialog({ title: '查看本机作品', message: '将切换到本浏览器内此账号的作品。云端作品不会被删除，两个存储区不会自动合并。', confirmText: '切换' })) await switchAccountStorage(true)
+        })()}>本机作品</Button>
         {/* 登录设备（3.3.2）：与退出登录同一行，先看设备再决定退哪个 */}
         <LoginDevices />
         {/* 退出登录：并入这一行（原先在屏幕底部正中常驻，2026-10-19 按主人要求挪过来） */}

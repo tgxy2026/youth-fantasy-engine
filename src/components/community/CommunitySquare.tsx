@@ -3,7 +3,7 @@
 // 【同一个服务】网页云端账号走同源 Cookie，桌面版走已登录的云端通道；
 // 组件本身**不区分形态**，只依赖 `@/lib/community/api`（它已封好通道差异）。
 //
-// 【布局】宽屏：左侧投稿流为主、右侧固定「码字排行」竖栏（用户 2026-11-10 明确要求）；
+// 【布局】宽屏：左侧「码字排行」竖栏、右侧投稿流；
 //   窄屏：排行收成可展开区域，入口仍在顶部，功能不缺。
 // 🔴 页签模式不能给 fixed 定位：那会盖住侧栏，和「与正文编辑同级」相矛盾。
 // 🔴 社区服务故障不得影响本地写作：本组件是独立页面/浮层，任何异常都在内部显示。
@@ -12,8 +12,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
-import { WEB_CLOUD, WEB_GUEST } from '@/lib/app/platform'
-import { communityEndpointReady, adminOverview, fetchProfile, fetchSquare } from '@/lib/community/api'
+import { WEB, WEB_CLOUD, WEB_GUEST, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
+import { PORTABLE } from '@/lib/storage/fileBackend'
+import { communityEndpointReady, adminOverview, fetchProfile, fetchSquare, CommunityError } from '@/lib/community/api'
+import { DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLogin'
 import { accountKeyOf } from '@/lib/community/draft'
 import { uploadRank } from '@/lib/community/rankUpload'
 import type { CommunityProfile, CommunitySquareState, DisplayMode } from '@/lib/community/types'
@@ -61,12 +63,13 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const endpointReady = communityEndpointReady()
   const guest = WEB_GUEST
+  const portableUnavailable = PORTABLE && !WEB_CLOUD && !WEB_GUEST
 
   const [cloudAccountId, setCloudAccountId] = useState<string | undefined>(() => {
     try { return (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id } catch { return undefined }
   })
   useEffect(() => {
-    if (WEB_CLOUD) return
+    if (WEB) return
     let cancelled = false
     void (async () => {
       try {
@@ -92,6 +95,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
   }, [forceLayout])
 
   const loadHeader = useCallback(async () => {
+    if (portableUnavailable) return
     setError('')
     try {
       const s = await fetchSquare()
@@ -102,13 +106,26 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
     try {
       const p = (await fetchProfile()).profile
       setProfile(p); setSignedIn(true)
-    } catch {
-      setSignedIn(false)
+    } catch (e) {
+      setSignedIn(e instanceof CommunityError && e.status === 401 ? false : null)
       setProfile(null)
     }
-  }, [])
+  }, [portableUnavailable])
 
   useEffect(() => { void loadHeader() }, [loadHeader])
+
+  useEffect(() => {
+    const retry = () => {
+      if (!WEB) {
+        void import('@/lib/app/syncBoot').then((m) => setCloudAccountId(m.getSyncAccountId())).catch(() => setCloudAccountId(undefined))
+      }
+      void loadHeader()
+      setFeedKey((key) => key + 1)
+    }
+    window.addEventListener('online', retry)
+    window.addEventListener(DESKTOP_ACCOUNT_EVENT, retry)
+    return () => { window.removeEventListener('online', retry); window.removeEventListener(DESKTOP_ACCOUNT_EVENT, retry) }
+  }, [loadHeader])
 
   // 管理员入口：只有服务端确认过才显示（普通用户这里会 403，直接忽略）
   useEffect(() => {
@@ -135,6 +152,19 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
   const canWrite = signedIn === true && !guest
   const defaultDisplay: DisplayMode = profile?.postDisplay || 'anonymous'
 
+  if (portableUnavailable) {
+    return (
+      <div className={mode === 'overlay' ? 'fixed inset-0 flex items-center justify-center bg-black/60 p-6' : 'flex h-full w-full items-center justify-center p-6'}
+        style={mode === 'overlay' ? { zIndex: Z.modal } : undefined} role="status">
+        <div className="w-full max-w-md space-y-3 rounded-2xl border border-ink-700 bg-surface-app p-6">
+          <h2 className="text-18 font-semibold text-ink-100">投稿广场暂不可用</h2>
+          <p className="text-13 leading-7 text-ink-300">便携版暂不支持社区连接。可在桌面版或网页版使用投稿广场和码字排行，本地写作不受影响。</p>
+          {mode === 'overlay' && onClose && <Button variant="secondary" onClick={onClose}>关闭</Button>}
+        </div>
+      </div>
+    )
+  }
+
   function requireLogin() {
     setNotice(guest
       ? '游客数据只在本机，无法参与社区。注册后即可投稿、评论与参与排行（本地游客项目仍保留在此浏览器）。'
@@ -149,7 +179,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const openSettings = () => goTab('settings')
   const shellClass = mode === 'overlay'
-    ? 'flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-ink-700 bg-surface-app shadow-2xl'
+    ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-surface-app shadow-2xl'
     : 'flex h-full w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-surface-app'
 
   const nav = (
@@ -183,7 +213,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
     <>
       {!endpointReady && (
         <Notice kind="warn">
-          当前形态没有可用的云端连接：桌面版请先在「设置 → 云端账号」登录后再打开广场。本地写作与既有功能不受影响。
+          社区服务不可用。桌面版请检查网络并登录云端账号；本地写作与既有功能不受影响。
         </Notice>
       )}
       {error && <Notice kind="error">{error}</Notice>}
@@ -222,13 +252,13 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const shell = (
     <div ref={hostRef} className={shellClass}>
-      <header className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-3 py-2.5 sm:px-4">
+      <header className="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-900/25 px-4 py-4 sm:px-6">
         <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-2 text-16 font-semibold text-ink-100">
+          <h2 className="flex items-center gap-2 text-18 font-semibold text-ink-100">
             投稿广场
             {square && !square.open && <span className="rounded-full border border-amber/40 px-2 py-0.5 text-11 font-normal text-amber">暂停开放</span>}
           </h2>
-          <p className="mt-0.5 text-11 text-ink-400">分享你愿意公开的文字片段；默认匿名展示，审核通过后公开。</p>
+          <p className="mt-1 text-12 text-ink-300">在这里分享故事，也读一读别人的世界。</p>
         </div>
         {mode === 'overlay' && onClose && (
           <Button variant="ghost" iconOnly onClick={onClose} aria-label="关闭投稿广场"><X size={18} /></Button>
@@ -239,20 +269,20 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       {narrowRankBar}
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className={`mx-auto w-full px-3 py-4 sm:px-5 ${tab === 'feed' ? 'max-w-4xl' : 'max-w-3xl'} space-y-3`}>
-            {content}
-          </div>
-        </div>
         {wide && (
-          <aside className="w-72 shrink-0 overflow-y-auto border-l border-ink-700 bg-ink-900/30 px-3 py-4 xl:w-80">
+          <aside className="w-72 shrink-0 overflow-y-auto border-r border-ink-700 bg-ink-900/30 px-4 py-5 xl:w-80">
             <RankPanel compact onOpenSettings={openSettings} />
           </aside>
         )}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className={`mx-auto w-full px-3 py-4 sm:px-5 ${tab === 'feed' ? '' : 'max-w-3xl'} space-y-3`}>
+            {content}
+          </div>
+        </div>
       </div>
 
       <footer className="border-t border-ink-700 px-3 py-2 text-11 text-ink-400 sm:px-4">
-        {WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面 / 便携版'} · 内容由管理员人工确认后发布；社区服务不可用不影响本地写作。
+        {WEB_ACCOUNT_LOCAL ? '网页账号 · 本地作品' : WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面版'} · 内容由管理员人工确认后发布；社区服务不可用不影响本地写作。
       </footer>
     </div>
   )

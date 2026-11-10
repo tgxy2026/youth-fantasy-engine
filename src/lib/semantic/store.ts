@@ -126,7 +126,9 @@ export interface VecBackend {
 
 // ============ 默认后端 · 独立 IndexedDB ============
 
-const VEC_DB_NAME = 'youth-fantasy-engine-vec'
+import { accountLocalDatabaseName } from '@/lib/app/platform'
+
+const VEC_DB_NAME = accountLocalDatabaseName('youth-fantasy-engine-vec')
 const VEC_DB_VERSION = 1
 const VEC_STORE = 'embeddings'
 

@@ -14,7 +14,9 @@
 
 import { getAllProjects } from '@/lib/db/projects'
 import { fetchProfile, reportRank, type RankReportEntry } from '@/lib/community/api'
-import { cnDateKey, flushPendingRankDeltas, ledgerSince, readLedger } from '@/lib/community/rankLedger'
+import { cnDateKey, flushPendingRankDeltas, ledgerSince, readLedger, type RankLedgerRow } from '@/lib/community/rankLedger'
+import { storageWriteContext } from '@/lib/storage/writeOwner'
+import { accountKeyOf } from '@/lib/community/draft'
 
 const DEVICE_KEY = 'yfe.community.deviceId'
 const SYNC_KEY = 'yfe.community.rankSync'
@@ -39,6 +41,7 @@ export interface RankUploadResult {
   /** 本机记录的「已同步到哪天」 */
   syncedThrough: string
   error?: string
+  incompleteFirstDay?: boolean
 }
 
 interface SyncState {
@@ -94,14 +97,26 @@ export function shiftDateKey(dateKey: string, days: number): string {
 /** 按日期升序组装待上传条目（纯函数，便于单测核对「开启前不传」「积压不漏旧日期」）*/
 export async function buildRankEntries(input: {
   projects: string[]
-  ledgerOf: (projectId: string) => Promise<Array<{ date: string; net: number; seq: number; updatedAt: number }>>
+  ledgerOf: (projectId: string) => Promise<RankLedgerRow[]>
   fromDate: string
+  optInAt?: number
+  onIncomplete?: () => void
 }): Promise<RankReportEntry[]> {
   const out: RankReportEntry[] = []
   for (const pid of input.projects) {
     const rows = ledgerSince(await input.ledgerOf(pid), input.fromDate)
     for (const row of rows) {
-      out.push({ projectId: pid, date: row.date, netDelta: row.net, seq: row.seq, issuedAt: row.updatedAt })
+      let netDelta = row.net
+      if (input.optInAt && row.date === cnDateKey(input.optInAt)) {
+        if (row.updatedAt < input.optInAt) continue
+        if (!row.events || !row.eventsFrom || row.eventsFrom > input.optInAt) {
+          input.onIncomplete?.()
+          continue
+        }
+        // Equal timestamps cannot prove whether the edit preceded consent.
+        netDelta = row.events.filter((event) => event.at > input.optInAt!).reduce((sum, event) => sum + event.delta, 0)
+      }
+      out.push({ projectId: pid, date: row.date, netDelta, seq: row.seq, issuedAt: row.updatedAt })
     }
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
@@ -118,7 +133,15 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
   const now = Date.now()
   if (!opts.force && now - lastRunAt < THROTTLE_MS) return Promise.resolve({ ...empty, skipped: 'throttled' })
   lastRunAt = now
+  const ownerContext = storageWriteContext()
   running = (async () => {
+    const currentOwner = async () => {
+      if (ownerContext !== storageWriteContext()) return false
+      if (!opts.accountKey || ['local', 'guest', 'default'].includes(opts.accountKey)) return false
+      const m = await import('@/lib/app/syncBoot')
+      return ownerContext === storageWriteContext() && accountKeyOf(m.getSyncAccountId()) === opts.accountKey
+    }
+    if (!await currentOwner()) return { ...empty, error: '账号已变化，请重新同步。' }
     // 账本写入失败留下的增量先补记；失败不影响后面（会再次留队）
     await flushPendingRankDeltas()
 
@@ -128,6 +151,7 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
     } catch (e) {
       return { ...empty, skipped: 'offline' as const, error: e instanceof Error ? e.message : String(e) }
     }
+    if (!await currentOwner()) return { ...empty, error: '账号已变化，请重新同步。' }
     if (!profile.rankOptIn) {
       clearSyncState()
       return { ...empty, skipped: 'opt-out' as const }
@@ -150,10 +174,13 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
     } catch {
       return { ...empty, error: '读取项目列表失败' }
     }
-    const entries = await buildRankEntries({ projects, ledgerOf: readLedger, fromDate: from })
+    let incompleteFirstDay = false
+    const entries = await buildRankEntries({ projects, ledgerOf: readLedger, fromDate: from, optInAt: profile.rankOptInAt,
+      onIncomplete: () => { incompleteFirstDay = true } })
+    if (!await currentOwner()) return { ...empty, error: '账号已变化，请重新同步。' }
     if (!entries.length) {
       writeSyncState({ accountKey, syncedThrough: previous?.syncedThrough || optInDate, fullSyncAt: now })
-      return { ...empty, skipped: 'no-entries' as const, syncedThrough: previous?.syncedThrough || optInDate }
+      return { ...empty, skipped: 'no-entries' as const, syncedThrough: previous?.syncedThrough || optInDate, incompleteFirstDay }
     }
 
     const device = deviceId()
@@ -168,7 +195,9 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
       const chunk = entries.slice(offset, offset + BATCH_SIZE)
       batches++
       try {
-        const r = await reportRank({ deviceId: device, entries: chunk })
+        if (!await currentOwner()) return { sent, accepted, rejected, remaining: entries.length - offset, syncedThrough, incompleteFirstDay, error: '账号已变化，请重新同步。' }
+        const r = await reportRank({ deviceId: device, issuedAt: profile.rankOptInAt, entries: chunk })
+        if (!await currentOwner()) return { sent, accepted, rejected, remaining: entries.length - offset, syncedThrough, incompleteFirstDay, error: '账号已变化，请核对同步结果。' }
         sent += chunk.length
         accepted += r.accepted.length
         rejected.push(...r.rejected)
@@ -182,6 +211,7 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
           remaining: entries.length - offset,
           syncedThrough,
           skipped: 'offline' as const,
+          incompleteFirstDay,
           error: e instanceof Error ? e.message : String(e),
         }
       }
@@ -191,6 +221,7 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
       sent, accepted, rejected,
       remaining: Math.max(0, entries.length - offset),
       syncedThrough,
+      incompleteFirstDay,
     }
   })().finally(() => { running = null })
   return running

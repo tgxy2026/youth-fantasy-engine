@@ -34,7 +34,10 @@ import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/syn
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 // 3.3.2 · B1：桌面版登录后启动自动同步（见下方 effect 注释）
 import { desktopAuthStatus } from '@/lib/cloud/desktopLogin'
-import { startAutoSync } from '@/lib/app/syncBoot'
+import { startAutoSync, getSyncAccountId } from '@/lib/app/syncBoot'
+import { WEB, WEB_GUEST } from '@/lib/app/platform'
+import { accountKeyOf } from '@/lib/community/draft'
+import { uploadRank } from '@/lib/community/rankUpload'
 import { flushEditorDraftNow } from '@/lib/editor/draftFlush'
 import { leaveGuardDirty, runLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { useNavigationGate } from '@/lib/app/useNavigationGate'
@@ -194,6 +197,21 @@ export default function App() {
   // 本地数据文件加载完成状态（未加载完不出主界面，避免闪一下空库）
   // 🔴 便携模式同样要等（数据经本地服务装载，未就绪时内存是空库）—— 2026-10-10 便携版 WP-2b
   const [fileReady, setFileReady] = useState(!DESKTOP && !PORTABLE)
+
+  // Community rank is opt-in; uploadRank checks server consent before sending any statistics.
+  useEffect(() => {
+    if (!fileReady || (!DESKTOP && (!WEB || WEB_GUEST))) return
+    const tick = () => {
+      if (document.hidden) return
+      const id = DESKTOP ? getSyncAccountId() : (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id
+      if (id) void uploadRank({ accountKey: accountKeyOf(id) }).catch(() => undefined)
+    }
+    tick()
+    const timer = window.setInterval(tick, 60_000)
+    window.addEventListener('online', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => { window.clearInterval(timer); window.removeEventListener('online', tick); document.removeEventListener('visibilitychange', tick) }
+  }, [fileReady])
   /**
    * 当前页签的 ref 镜像（2.6.3 · 跨页签任务存活）：
    * `navigate` 里要判断「是不是真的换了页签」，但把 `activeTab` 放进 useCallback 依赖

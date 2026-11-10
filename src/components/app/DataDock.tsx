@@ -9,7 +9,7 @@ import { DESKTOP } from '@/lib/app/desktop'
 import { decideDataDockView } from '@/lib/app/dataDockView'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { GUEST } from '@/lib/db/guestData'
-import { WEB } from '@/lib/app/platform'
+import { WEB, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
 import { currentUiZoom, foldVh } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
@@ -77,7 +77,7 @@ export default function DataDock() {
   // 桌面版 / 便携版 / 网页云端 / 网页游客 / dev 预览五态判定（判定落在 lib/app/dataDockView，便于单测）
   // 🔴 网页版的云端模式同时带 PORTABLE 标记（复用它那套 HTTP StoreOps），
   //    所以必须把 `web` 传进去并**优先于便携判定** —— 否则会显示成便携版的「数据文件 ./data/xxx.json」。
-  const view = decideDataDockView({ desktop: DESKTOP, portable: PORTABLE, web: WEB, guest: GUEST, dev: DEV })
+  const view = decideDataDockView({ desktop: DESKTOP, portable: PORTABLE, web: WEB, guest: GUEST || WEB_ACCOUNT_LOCAL, dev: DEV })
 
   if (!view.render) return null
 

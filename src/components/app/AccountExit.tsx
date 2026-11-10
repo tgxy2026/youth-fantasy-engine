@@ -11,7 +11,7 @@
  *    `WEB_CLOUD` 为 false 时直接返回 null，不会凭空多出一个点了没反应的按钮。
  */
 import { LogOut } from 'lucide-react'
-import { WEB_CLOUD } from '@/lib/app/platform'
+import { WEB_CLOUD, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { navigateAuth } from '@/lib/app/authNavigation'
@@ -32,13 +32,13 @@ async function logout(): Promise<void> {
   const user = (window as unknown as { __YFE_USER__?: WebUser }).__YFE_USER__
   const ok = await confirmDialog({
     title: '退出登录',
-    message: `退出后需要重新登录才能继续用云端账号${user?.name ? `（当前账号：${user.name}）` : ''}。\n\n已保存的内容都在云端，不会丢；只是当前会话会结束。`,
+    message: WEB_ACCOUNT_LOCAL ? '退出后，本机作品仍保留在这个浏览器中。请定期导出备份；清除浏览器数据可能导致内容丢失。' : `退出后需要重新登录才能继续用云端账号${user?.name ? `（当前账号：${user.name}）` : ''}。\n\n已保存的内容都在云端，不会丢；只是当前会话会结束。`,
   })
   if (ok) await navigateAuth('/logout')
 }
 
 export default function AccountExit() {
-  if (!WEB_CLOUD) return null
+  if (!WEB_CLOUD && !WEB_ACCOUNT_LOCAL) return null
   return (
     <Button
       variant="icon-muted"

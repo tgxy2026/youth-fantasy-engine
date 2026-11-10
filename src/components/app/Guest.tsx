@@ -4,6 +4,9 @@ import { exportGuestData, importGuestData } from '@/lib/db/guestData'
 import { pickLocalFile } from '@/lib/storage/fileBackend'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
+import { WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
+import AccountExit from '@/components/app/AccountExit'
+import { switchAccountStorage } from '@/lib/app/accountLocalSwitch'
 
 /**
  * 游客模式数据管理栏（网页版 · 未注册用户）。
@@ -57,7 +60,7 @@ export function GuestDataBar() {
         showToast(
           `已导出本机全部数据（浏览器下载）：\n${r.fileName ?? ''}\n\n`
           + `这份 JSON 是你的完整副件：换设备、换浏览器时用「导入」还原；`
-          + `注册云端账号后也可以导入进去继续写。`
+          + (WEB_ACCOUNT_LOCAL ? `获得同步资格后，可切到云端并自行选择导入。` : `注册云端账号后也可以导入进去继续写。`)
           // 🔴 3.2.6：**如实说明范围**。语义向量与知识库在两个独立 IDB 里，按设计不进整库 JSON
           //    （见 lib/db/guestData.ts 顶部）—— 以前只说"全部数据"，作者换机后才发现语义检索是空的。
           //    这是"少说了"而不是"多做了"，属于必须改的准确性提示。
@@ -104,7 +107,7 @@ export function GuestDataBar() {
       <div className="flex items-center gap-1.5">
         <div
           className="flex h-8 items-center gap-2 rounded-full border border-ink-700 bg-ink-800/60 px-3 text-12 text-ink-300"
-          title="游客模式：数据保存在当前浏览器（IndexedDB）。换设备或清除浏览器数据后将无法找回，请定期导出备份。"
+          title={WEB_ACCOUNT_LOCAL ? '账号作品保存在当前浏览器。换设备或清除浏览器数据后将无法找回，请定期导出备份。' : '游客模式：数据保存在当前浏览器（IndexedDB）。换设备或清除浏览器数据后将无法找回，请定期导出备份。'}
         >
           <ShieldAlert size={12} className="text-amber/80" />
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -133,10 +136,14 @@ export function GuestDataBar() {
               : `已 ${daysSince} 天没有导出备份 —— 浏览器数据随时可能被系统清理。`}
           </p>
         )}
-        <a href="/login"
+        {WEB_ACCOUNT_LOCAL ? <><p className="text-11 text-ink-400">账号作品保存在本浏览器，不会自动上云；请定期导出备份。</p>
+          {(window as unknown as { __YFE_USER__?: { cloudSync?: boolean } }).__YFE_USER__?.cloudSync && <Button size="xs" variant="secondary" onClick={() => void (async () => {
+            if (await confirmDialog({ title: '切换到云端作品', message: '本浏览器的作品会保留，但不会自动上传或合并。切换后可从云端数据栏返回本机作品；请先导出备份。', confirmText: '切换' })) await switchAccountStorage(false)
+          })()}>查看云端作品</Button>}
+          <AccountExit /></> : <a href="/login"
           className="w-fit text-11 text-amber/90 underline-offset-2 transition-colors hover:text-amber hover:underline">
           注册账号 · 开启云端保存
-        </a>
+        </a>}
       </div>
     </div>
   )

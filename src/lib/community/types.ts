@@ -31,6 +31,7 @@ export interface CommunityPostSummary {
   counts: { up: number; down: number; comments: number }
   displayName: string
   authorLabel?: string
+  isExample?: boolean
   myVote?: number
   myPost?: boolean
 }

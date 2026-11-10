@@ -48,6 +48,11 @@ export function cloudBase(): string {
   return baseOf()
 }
 
+/** True only when an authenticated native cloud transport has been installed. */
+export function hasConfiguredCloudTransport(): boolean {
+  return !!activeBase && !!activeFetch
+}
+
 /** 云端这一版的摘要（章节数 / 创建时间）—— 覆盖前给用户看的依据，不是判定依据 */
 export interface CloudVersionSummary {
   createdAt: number
