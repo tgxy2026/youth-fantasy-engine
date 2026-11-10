@@ -211,8 +211,8 @@ const norm = s => s.replace(/\s+/g, '')
     }
   }
   long.sort((a, b) => b.n - a.n)
-  P(`\n── C6. 帮助/提示文案超长 TOP10（>80 字）──`)
-  P('  判读：HelpPopover 是纯文本渲染（不解析 markdown）。太长＝没人看；考虑拆条或用列表式短句。')
+  P(`\n── C6. 较长静态提示属性 TOP10（≥60 字）──`)
+  P('  判读：这里只统计静态字符串属性，不覆盖全部帮助正文。HelpPopover 字符串支持 **加粗**，请结合上下文判断是否需要拆分。')
   for (const l of (process.env.YFE_AUDIT_FULL === '1' ? long : long.slice(0, 10))) P(`  ▸ ${l.n} 字  ${l.f}:${l.i}  ${l.s}…`)
   if (!long.length) P('  ✅ 无超长帮助文案')
 }
