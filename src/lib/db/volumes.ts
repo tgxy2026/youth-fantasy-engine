@@ -3,6 +3,8 @@
 // ⚠️ `VOL_LEDGER_PREFIX`（卷台账表的 tabId 前缀）定义在本文件，projects / migrations / backups 都从这里取。
 import type { Volume, Chapter, TableRow } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
+import { countWordsWithPunct } from '@/lib/community/limits'
+import { recordRankDelta } from '@/lib/community/rankLedger'
 import type { Snapshot } from '@/lib/db/chapters'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
@@ -20,8 +22,10 @@ export async function deleteVolume(id: string) {
   const allCh = await ops.getAll<Chapter>('chapters')
   const now = Date.now()
   await ops.del('volumes', id)
+  let removedWords = 0
   for (const c of allCh) {
     if (c.projectId === currentProjectId && c.volumeId === id) {
+      removedWords += countWordsWithPunct(c.content || '')
       await ops.put('trash', { ...c, deletedAt: now, kind: 'chapter' })
       await ops.del('chapters', c.id)
       await ops.del('tableRows', `ch-${c.id}`)
@@ -30,6 +34,13 @@ export async function deleteVolume(id: string) {
       if (volSnaps.length) await ops.bulkDel('snapshots', volSnaps.map(s => s.id))
     }
   }
+  /**
+   * 3.5.0 · 删卷连带删章：排行榜账本要记负的正文净增量。
+   * 🔴 这里是**批量删除的第二个入口**（另一个是 `deleteChapter`），漏一处就会让
+   *    「删整卷」在排行里完全看不见减少。
+   * 🔴 合并成一次写入：一次删几百章不该产生几百次读改写。
+   */
+  if (removedWords) void recordRankDelta(currentProjectId, -removedWords).catch(() => undefined)
 }
 
 // ============ 卷台账（按卷建表） ============

@@ -8,6 +8,7 @@
 import type { AgentExecutorDeps } from '@/lib/agentHost/executor'
 import { agentActionAllowed, fail, MAX_CONTENT_CHARS, MAX_NAME_CHARS, type AgentScope, type AgentToolResult } from '@/lib/agentHost/contract'
 import { listTrash, restoreFromTrash, touchProject } from '@/lib/db'
+import { recordChapterDeleted } from '@/lib/community/rankLedger'
 import { getSettingFor } from '@/lib/db/meta'
 import type { Chapter, Volume } from '@/lib/types'
 import { addItem as addInspirationItem, INSPIRATION_BOX_KEY, INSPIRATION_MAX, removeItem as removeInspirationItem, updateItem as updateInspirationItem } from '@/lib/creative/inspirationBox'
@@ -116,6 +117,8 @@ export async function deleteChapter(args: Record<string, unknown>, scope: AgentS
   if (deps.unsavedDraft() || deps.activeChapterId() === chapterId) return fail('OUTCOME_UNKNOWN', '删除前章节被打开或出现草稿，未继续删除；请核对正文和回收站副本。')
   await owner.store.del('chapters', chapterId)
   await owner.store.del('tableRows', `ch-${chapterId}`)
+  // 3.5.0 · 排行榜账本：Agent 删章与手动删章走同一口径（按被删正文的含标点字数记负）
+  void recordChapterDeleted(projectId, chapter.content, owner).catch(() => undefined)
   const snapshots = await owner.store.getAllByIndex<{ id: string }>('snapshots', 'chapterId', chapterId)
   if (snapshots.length) await owner.store.bulkDel('snapshots', snapshots.map(snapshot => snapshot.id))
   void touchProject(projectId, owner.store)

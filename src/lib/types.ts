@@ -92,6 +92,7 @@ export type TabType =
   | 'model-settings' // 模型设置（模型配置 / 正文写作额度 / 联网检索 / AI 提示词）
   | 'guide'        // 使用说明
   | 'editor'       // 正文编辑
+  | 'community'    // 投稿广场（与正文编辑同级，正文写作组）
   | 'form'         // 表单型（单份）
   | 'table'        // 表格型（多行）
   | 'card'         // 卡片型（角色卡，多条记录）

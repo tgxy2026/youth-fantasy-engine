@@ -5,6 +5,8 @@ import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { addDailyWords } from '@/lib/db/meta'
+import { netDeltaOfTexts, recordChapterDeleted, recordRankDelta } from '@/lib/community/rankLedger'
+import { countWordsWithPunct } from '@/lib/community/limits'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 // ============ 章 ============
@@ -79,6 +81,19 @@ async function afterChapterWrite(old: Chapter | undefined, next: Chapter, owner?
   if (old && old.wordCount !== next.wordCount) {
     await addDailyWords(next.wordCount - old.wordCount, next.projectId || currentProjectId, store)
   }
+  /**
+   * 3.5.0 · 码字排行榜账本（**独立于上面的看板统计**）。
+   *
+   * 🔴 口径不同，不能合并：`dailyStats` 用不含标点的 `wordCount` 差量、且累计截到 0；
+   *    排行要求「含标点净增量」并保留负数（周月要靠它抵扣）。
+   * 🔴 只在**正文真的变了**时记账：标题/摘要改动不该产生字数变化。
+   * 🔴 记账失败不影响保存（`catch` 吞掉）：稿子落盘是第一优先级；
+   *    代价是那一天可能少记几字，服务端有 seq 可对账，不会虚增。
+   */
+  if (old && old.content !== next.content) {
+    const delta = netDeltaOfTexts(old.content, next.content)
+    if (delta) void recordRankDelta(next.projectId || currentProjectId, delta).catch(() => undefined)
+  }
   // 时光机：内容有变化时按策略快照（距上次快照 >5 分钟 或 字数差 >200）
   if (old && old.content !== next.content) {
     const snaps = await store.getAllByIndex<Snapshot>('snapshots', 'chapterId', next.id)
@@ -98,6 +113,13 @@ export async function deleteChapter(id: string) {
     await ops.put('trash', { ...ch, deletedAt: Date.now(), kind: 'chapter' })
   }
   await ops.del('chapters', id)
+  /**
+   * 3.5.0 · 删除章节要在排行账本里记「负的正文净增量」。
+   * 🔴 这条路径**不经过** `afterChapterWrite`（删表不是保存），所以必须单独记，
+   *    否则「删掉一章」在排行里永远看不到减少，周月会被虚增。
+   * 🔴 只记正文（含标点），与保存路径同口径；失败不阻断删除。
+   */
+  if (ch) void recordChapterDeleted(ch.projectId || currentProjectId, ch.content).catch(() => undefined)
   await ops.del('tableRows', `ch-${id}`)
   // 级联清理该章的「时光机」快照
   const chSnaps = await ops.getAllByIndex<Snapshot>('snapshots', 'chapterId', id)
@@ -242,6 +264,13 @@ export async function restoreFromTrash(id: string): Promise<Chapter | null> {
   const sib = (await ops.getAll<Chapter>('chapters')).filter(c => c.projectId === currentProjectId && c.volumeId === volumeId)
   const restored: Chapter = { ...ch, volumeId, order: sib.length, updatedAt: Date.now() }
   await ops.put('chapters', restored)
+  /**
+   * 3.5.0 · 恢复与删除**对冲**：删除时记了负增量，恢复必须记回正增量，
+   * 否则「删了又恢复」会在排行里净减一次（周月被低估）。
+   * 🔴 这条路径与导入不同：恢复的是**用户自己刚删的正文**，属于当日真实写作的往返。
+   */
+  const restoredWords = countWordsWithPunct(restored.content || '')
+  if (restoredWords) void recordRankDelta(currentProjectId, restoredWords).catch(() => undefined)
   // 删除章节时会一并删除「章节台账」中的 ch-<id> 联动行；恢复时必须重建到对应卷台账表，
   // 否则该章在台账中消失，直到再次编辑触发 syncChapterMaster 才回来。
   const masterRows = (await ops.getAll<TableRow>('tableRows')).filter(

@@ -96,7 +96,7 @@ export function newUserId() {
   return 'u_' + randomBytes(6).toString('hex')
 }
 
-export function createUser({ id, name, passwordHash, quotaBytes = DEFAULT_QUOTA, role = 'user', invite = '' }) {
+export function createUser({ id, name, passwordHash, quotaBytes = DEFAULT_QUOTA, role = 'user', invite = '', cloudSync }) {
   const db = loadUsers()
   const uid = id || newUserId()
   const user = {
@@ -107,6 +107,15 @@ export function createUser({ id, name, passwordHash, quotaBytes = DEFAULT_QUOTA,
     quotaBytes,
     usedBytes: 0,
     role,
+    /**
+     * 云同步资格（3.5.0）。
+     * 🔴 与「能否登录 / 能否参与社区」是两件事：
+     *    · 显式 `false` = 未获资格（新注册默认）：可登录、可投稿/评论/排行，但同步接口一律 403；
+     *    · 省略该字段 = 存量账号（升级前注册）：一律视为已授予，绝不静默降权。
+     * 用 `undefined` 而不是 `false` 作为默认值，是因为「存量账号没有这个字段」本身携带信息，
+     * 写死 false 会在升级瞬间把老用户锁在云端作品之外。
+     */
+    ...(cloudSync === undefined ? {} : { cloudSync: !!cloudSync }),
     // 来源邀请码 = 打赏凭证。双向可查：码能查出用过的人，人也能查出是哪张码进来的。
     invite: String(invite || ''),
     createdAt: Date.now(),
@@ -115,6 +124,24 @@ export function createUser({ id, name, passwordHash, quotaBytes = DEFAULT_QUOTA,
   db.users[uid] = user
   persist(db)
   return user
+}
+
+/**
+ * 调整账号资格/角色（运营命令用，不暴露给普通接口）。
+ * @param {'cloudSync'|'role'} field
+ */
+export function setUserFlag(id, field, value) {
+  const db = loadUsers()
+  const u = db.users[id]
+  if (!u) return { ok: false, error: '账号不存在' }
+  if (field === 'cloudSync') u.cloudSync = !!value
+  else if (field === 'role') {
+    const role = String(value || '')
+    if (!['user', 'moderator', 'admin'].includes(role)) return { ok: false, error: '角色只能是 user / moderator / admin' }
+    u.role = role
+  } else return { ok: false, error: '不支持的字段' }
+  persist(db)
+  return { ok: true, value: u }
 }
 
 export function touchLogin(id) {

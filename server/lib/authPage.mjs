@@ -149,6 +149,13 @@ a{overflow-wrap:anywhere}
 export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}) {
   const canRegister = mode !== 'closed'
   const needInvite = mode === 'invite'
+  /**
+   * 3.5.0：开放注册模式下邀请码是**可选**的云端同步资格凭证。
+   * 🔴 必须仍然把输入框留在页面上：老用户手里有码、想一步开通同步，
+   *    如果藏起来就等于逼他注册完再找运营；但绝不能设 required，
+   *    否则「无码也能注册」这句话就是假的。
+   */
+  const optionalInvite = mode === 'open'
   const msgClass = error ? 'err' : notice ? 'ok' : ''
   const msgText = escapeHtml(error || notice)
 
@@ -204,9 +211,9 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
         <p class="field-error" id="pwd-error" hidden></p>
 
         <div id="inviteBox" style="display:none">
-          <label for="invite">邀请码</label>
-          <input id="invite" name="invite" maxlength="32" autocapitalize="none" spellcheck="false" aria-describedby="invite-note invite-error" placeholder="输入站主发放的邀请码">
-          <p class="field-note" id="invite-note">邀请码也是找回密码的凭证，请妥善保管。</p>
+          <label for="invite">邀请码${optionalInvite ? '（可选）' : ''}</label>
+          <input id="invite" name="invite" maxlength="32" autocapitalize="none" spellcheck="false" aria-describedby="invite-note invite-error" placeholder="${optionalInvite ? '有邀请码可同时开通云端同步，没有可留空' : '输入站主发放的邀请码'}">
+          <p class="field-note" id="invite-note">${optionalInvite ? '没有邀请码也能注册并参与投稿广场；邀请码用于开通云端作品同步与找回密码，请妥善保管。' : '邀请码也是找回密码的凭证，请妥善保管。'}</p>
           <p class="field-error" id="invite-error" hidden></p>
         </div>
 
@@ -218,6 +225,7 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
       <div class="msg ${msgClass}" id="msg" tabindex="-1" role="${error ? 'alert' : 'status'}">${msgText}</div>
 
       ${canRegister && needInvite ? '<p class="invite-info">打赏支持后，可通过 QQ 群 1106815480 或联系开发者 QQ 1822304733 领取邀请码，注册账号即可使用默认 200 MB 云端空间并跨设备访问。邀请码也是找回密码的凭证，请妥善保管。</p>' : ''}
+      ${canRegister && optionalInvite ? '<p class="invite-info">注册只需自选用户名和密码，不需要邀请码；云同步资格由服务端单独开通，未开通也可投稿、评论和参与码字排行。</p>' : ''}
     </div>
     <div class="foot">
       <p class="cloud-note">${CLOUD} 账号数据云端保存，按账号隔离</p>
@@ -228,7 +236,7 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
   </section>
 </main>
 
-<script>(${authClient.toString()})({canRegister:${canRegister},needInvite:${needInvite}});</script>
+<script>(${authClient.toString()})({canRegister:${canRegister},needInvite:${needInvite},optionalInvite:${optionalInvite}});</script>
 </body>
 </html>`
 }

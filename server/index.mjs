@@ -51,18 +51,35 @@ import {
 import { SECRET_FILE } from './lib/config.mjs'
 // 3.3.2 · 维护定时任务（回收站到期清理 + 对象回收）；以前只能人工 admin.mjs gc
 import { createScheduler, DEFAULT_INTERVAL_MS } from './lib/scheduler.mjs'
+// 3.5.0 · 投稿广场（社区数据与云同步数据分开存，备份仍是拷同一棵 data 目录）
+import { createCommunityStore } from './lib/communityStore.mjs'
+import { createCommunityApi } from './lib/communityApi.mjs'
 
 const PORT = Number(process.env.PORT || 80)
-// 3.3.2 项目级协议的根（按账号分目录）；门禁状态也在这棵树里
+// 3.5.0 项目级协议的根（按账号分目录）；门禁状态也在这棵树里
 const V2_ROOT = join(DATA_DIR, 'v2')
 const HOST = process.env.HOST || '0.0.0.0'
 const APP = 'youth-fantasy-engine-web'
+
+/**
+ * 投稿广场的存储与接口。
+ * 🔴 社区数据独立于 `<DATA_DIR>/users/<uid>/`：社区内容是公共数据，
+ *    云同步是私有数据，两者授权与备份策略不同；但都在同一棵 data 目录下，备份仍然只拷一次。
+ */
+const COMMUNITY_ROOT = process.env.YFE_COMMUNITY_DIR || join(DATA_DIR, 'community')
+let communityApi = null
 
 // ---------- 启动初始化 ----------
 let SECRET
 try {
   loadUsers() // 🔴 用户表损坏必须在这里就炸，不能带着空表继续跑
   SECRET = loadOrCreateSecret(SECRET_FILE)
+  // 社区数据损坏同样必须启动即失败（否则会把公共投稿当空表写回）
+  communityApi = createCommunityApi({
+    store: createCommunityStore({ root: COMMUNITY_ROOT }),
+    authCheck,
+    rateLimit,
+  })
 } catch (e) {
   console.error('[boot] 启动失败：', e instanceof Error ? e.message : e)
   process.exit(1)
@@ -244,7 +261,31 @@ function publicUser(u) {
     quotaBytes: u.quotaBytes,
     usedBytes: u.usedBytes,
     createdAt: u.createdAt,
+    // 3.5.0 · 云同步资格与社区角色是两件事：注册即能参与社区，同步要单独授予
+    cloudSync: u.cloudSync !== false,
+    role: u.role || 'user',
   }
+}
+
+/**
+ * 云同步资格闸（3.5.0）。
+ *
+ * 🔴 为什么必须放在服务端：规划里「无激活码用户也能注册和参与社区」的前提，
+ *    是**明确区分**「能登录」与「能同步作品」。前端隐藏入口只是提示，
+ *    真正拦住未获资格账号的是这里；否则任何人都能直接 PUT /api/data 占用服务器配额。
+ * 🔴 存量账号没有该字段 ⇒ 视为已授予：迁移不得静默降权（老用户的作品数据在云端）。
+ *    新注册账号显式写 `cloudSync: false`，由运营按规则授予。
+ */
+function cloudSyncAllowed(u) {
+  return !!u && u.cloudSync !== false
+}
+
+function syncDenied(res) {
+  return sendJSON(res, 403, {
+    ok: false,
+    code: 'SYNC_NOT_GRANTED',
+    error: '该账号尚未开通云端作品同步；社区投稿、评论与排行不受影响。',
+  })
 }
 
 // ---------- 静态资源 ----------
@@ -517,6 +558,10 @@ async function handleApi(req, res, url) {
     if (REGISTER_MODE === 'invite') {
       inviteCode = String(body.invite || '').trim().toUpperCase()
       if (!inviteCode) return sendJSON(res, 400, { ok: false, error: '请填写邀请码' })
+    } else {
+      // 3.5.0 开放注册：邀请码可选，只用来「同时开通云端同步」。
+      // 🔴 填了就必须有效：静默忽略会让用户以为资格已开通，实际没有。
+      inviteCode = String(body.invite || '').trim().toUpperCase()
     }
 
     // 🔴 临界区（全同步，中间不得出现 await）：占码 → 建用户
@@ -524,7 +569,12 @@ async function handleApi(req, res, url) {
       const claim = claimInvite(inviteCode, uid, nv.value)
       if (!claim.ok) return sendJSON(res, 400, { ok: false, error: claim.error })
     }
-    const user = createUser({ id: uid, name: nv.value, passwordHash: pwdHash, invite: inviteCode })
+    const user = createUser({
+      id: uid, name: nv.value, passwordHash: pwdHash, invite: inviteCode,
+      // 3.5.0：邀请码/激活码 = 云端资格凭证（保持既有打赏用户的权益）；
+      // 开放注册（无码）= 可参与社区、暂不授予同步，由运营另行开通。
+      cloudSync: inviteCode ? true : false,
+    })
     ensureUserDir(user.id)
     touchLogin(user.id) // 注册即登录，最后登录时间此刻就是现在（否则界面显示「—」）
     // 🔴 临界区结束
@@ -665,11 +715,21 @@ async function handleApi(req, res, url) {
   const chk = authCheck(req)
   const user = chk.user
 
+  // ---- 投稿广场（3.5.0）----
+  // 🔴 必须先于「要求登录」的分支：广场浏览在未登录时也要能看（规划 §2.1）。
+  //    权限判定全部在 communityApi 内部按 route 各自做，这里只把会话结果交给它。
+  if (path === '/api/community' || path.startsWith('/api/community/')) {
+    if (!communityApi) return sendJSON(res, 503, { ok: false, code: 'UNAVAILABLE', error: '社区服务未就绪' })
+    return communityApi.handle({ req, res, path, qs, user, authReason: chk.reason, ip })
+  }
+
   // ---- 项目版本服务 v2（3.3.2 · P2）----
   // 🔴 先鉴权再过路由：未登录的请求一个字节都不该被写进磁盘。
   //    上传对象是流式的（req 直接交给 store），所以这层挡在读取请求体之前是必须的。
   if (path.startsWith('/api/v2/')) {
     if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    // 🔴 云同步资格：与「能否登录/能否参与社区」完全分离（规划 §3、§9.1）
+    if (!cloudSyncAllowed(user)) return syncDenied(res)
     const handled = await handleV2({ req, res, path, qs, user, v2Root: V2_ROOT })
     if (handled) return
   }
@@ -708,6 +768,7 @@ async function handleApi(req, res, url) {
   // ---- 整库读写（契约与便携版一致）----
   if (path === '/api/data') {
     if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    if (!cloudSyncAllowed(user)) return syncDenied(res)
 
     if (req.method === 'GET') {
       try {
@@ -784,6 +845,7 @@ async function handleApi(req, res, url) {
   // ---- 外置大块数据 ----
   if (path === '/api/blob' || path === '/api/blob/list') {
     if (!user) return sendJSON(res, 401, { ok: false, error: '未登录', code: sessionCode(chk.reason) })
+    if (!cloudSyncAllowed(user)) return syncDenied(res)
     const store = qs.get('store') || ''
 
     if (path === '/api/blob/list' && req.method === 'GET') {

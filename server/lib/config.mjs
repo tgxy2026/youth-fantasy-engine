@@ -39,11 +39,15 @@ export const GUEST_COOKIE_TTL_MS = 365 * 24 * 3600 * 1000
 
 /**
  * 注册开关。
- * · 'invite'  —— 需要邀请码（默认：防止被扫号批量注册占满磁盘）
- * · 'open'    —— 开放注册
+ * · 'open'    —— 开放注册（**3.5.0 起的默认**：无邀请码也能注册并参与投稿广场）
+ * · 'invite'  —— 需要邀请码（旧部署可继续用 `YFE_REGISTER=invite` 保持原行为）
  * · 'closed'  —— 只允许已有账号登录
+ *
+ * 🔴 3.5.0 的产品规则：注册只需要自选账号名 + 密码；邀请码只是**可选**的
+ *    云端同步资格凭证，不再是参与社区的前置条件。若部署方仍想收紧，
+ *    显式设置环境变量即可，代码里不把「打赏才能用」写死。
  */
-export const REGISTER_MODE = process.env.YFE_REGISTER || 'invite'
+export const REGISTER_MODE = process.env.YFE_REGISTER || 'open'
 
 /** 首次启动时自动建的管理员邀请码（打印到 journal，仅一次） */
 export const BOOTSTRAP_INVITE = process.env.YFE_BOOTSTRAP_INVITE || ''

@@ -34,10 +34,24 @@ async function stop() {
   server.kill(); await closed
 }
 const PASSWORD = 'ProbeCas123!temporary'
+/**
+ * 3.5.0：开放注册的账号默认**没有**云端作品同步资格（服务端 `/api/data` 会 403）。
+ * 这份用例测的是条件写协议，不是资格，所以注册后按「运营授予」的路径把该账号标为已授予。
+ * 🔴 直接在 users.json 上改，等价于 `admin.mjs sync <用户名> on`；users.mjs 按 mtime 失效，
+ *    运行中的服务下一次请求就能读到新值。**不要**为了测试去放宽服务端闸。
+ */
+async function grantSync(name: string) {
+  const file = path.join(data, 'users.json')
+  const db = JSON.parse(await fs.readFile(file, 'utf8')) as { users: Record<string, { name?: string; cloudSync?: boolean }> }
+  for (const u of Object.values(db.users)) if (u.name === name) u.cloudSync = true
+  await fs.writeFile(file, JSON.stringify(db, null, 2))
+}
 async function auth(name: string, action = 'register') {
   const response = await realFetch(origin + '/api/auth/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password: PASSWORD }) })
   assert.equal(response.status, 200, await response.text())
-  return response.headers.get('set-cookie')!.split(';')[0]
+  const cookie = response.headers.get('set-cookie')!.split(';')[0]
+  if (action === 'register') await grantSync(name)
+  return cookie
 }
 const read = (cookie: string) => realFetch(origin + '/api/data', { headers: { Cookie: cookie } })
 const document = (value: string) => JSON.stringify({ app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 2, savedAt: 1, stores: { meta: [{ key: 'draft', value }] } })
@@ -46,6 +60,16 @@ let relay: http.Server | undefined
 try {
   await start()
   const a = await auth('probe-cas-a'), b = await auth('probe-cas-b')
+  // 3.5.0 · 资格与社区分离：未授予同步的新账号被服务端拒绝，但仍能看广场
+  const ungranted = await realFetch(origin + '/api/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'probe-cas-nogrant', password: PASSWORD }),
+  })
+  const ungrantedCookie = ungranted.headers.get('set-cookie')!.split(';')[0]
+  const deniedRead = await realFetch(origin + '/api/data', { headers: { Cookie: ungrantedCookie } })
+  check('未授予同步资格：/api/data 返回 403 SYNC_NOT_GRANTED', deniedRead.status === 403 && (await deniedRead.json()).code === 'SYNC_NOT_GRANTED')
+  const square = await realFetch(origin + '/api/community/square')
+  check('社区公共读不要求同步资格', square.status === 200 && (await square.json()).ok === true)
   const emptyA = await read(a), emptyB = await read(b)
   const rev0 = emptyA.headers.get('etag')!
   check('首次空库也有版本且按账号绑定', emptyA.status === 404 && !!rev0 && rev0 !== emptyB.headers.get('etag'))

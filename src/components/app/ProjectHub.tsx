@@ -5,7 +5,7 @@ import type { Project } from '@/lib/types'
 import { createDemoProject } from '@/lib/app/seedData'
 import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
-  ChevronDown, BookOpen,
+  ChevronDown, BookOpen, MessagesSquare,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import HelpCenter from '@/components/help/HelpCenter'
@@ -13,6 +13,8 @@ import { Modal } from '@/components/dialogs/Modal'
 import SafeImage from '@/components/common/SafeImage'
 import Tooltip from '@/components/common/Tooltip'
 import { Z } from '@/lib/app/zLayer'
+// 3.5.0 · 投稿广场：项目中心入口（没有打开任何书时也能进广场）
+import { openCommunity } from '@/lib/community/entry'
 import { foldVh } from '@/lib/settings/theme'
 import BackupManager from '@/components/app/BackupManager'
 import FeatureSelectModal from '@/components/dialogs/FeatureSelectModal'
@@ -311,6 +313,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="transition-colors">
               <FileDown size={13} /> 导入已有项目
+            </Button>
+            {/* 3.5.0 · 投稿广场：不依赖打开任何一本书；未登录可浏览，登录后才能投稿 */}
+            <Button variant="secondary" onClick={openCommunity} title="打开投稿广场（可浏览、投稿、评论与排行）" className="transition-colors">
+              <MessagesSquare size={13} /> 投稿广场
             </Button>
             {/**
               * 3.3.2 · 换设备的第一步：**在没有本机作品时**把云端那本书取回来。

@@ -1,0 +1,141 @@
+// 投稿广场 · 我的投稿 / 评论 / 举报（3.5.0）
+//
+// 作者能在这里看到**状态与原因**：审核中、需修改、未通过、已撤回、已下架。
+// 🔴 页面只展示「自己的」内容，服务端按会话 uid 过滤；这里不拼任何账号参数。
+
+import { useCallback, useEffect, useState } from 'react'
+import { Button } from '@/components/common/Button'
+import {
+  deleteComment, deletePost, myComments, myPosts, myReports, submitPost, withdrawPost,
+} from '@/lib/community/api'
+import type { MyComment, MyPost } from '@/lib/community/types'
+import { COMMENT_STATUS_LABELS, POST_STATUS_LABELS, SCREENING_REASON_LABELS } from '@/lib/community/limits'
+import { Empty, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
+import type { EditTarget } from '@/components/community/PublishPanel'
+
+interface Props {
+  onEdit: (target: EditTarget) => void
+  onChanged: () => void
+}
+
+interface MyReportRow { id: string; targetType: string; targetId: string; status: string; createdAt: number; outcome: string }
+
+const statusTone = (s: string): 'neutral' | 'ok' | 'warn' | 'bad' =>
+  s === 'published' || s === 'visible' ? 'ok' : s === 'pending' ? 'warn' : s === 'rejected' || s === 'removed' ? 'bad' : 'neutral'
+
+export default function MyPanel({ onEdit, onChanged }: Props) {
+  const [posts, setPosts] = useState<MyPost[] | null>(null)
+  const [comments, setComments] = useState<MyComment[] | null>(null)
+  const [reports, setReports] = useState<MyReportRow[] | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState('')
+
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const [p, c, r] = await Promise.all([myPosts(), myComments(), myReports()])
+      setPosts(p.items); setComments(c.items); setReports(r.items)
+    } catch (e) { setError(errorText(e)) }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function act(key: string, fn: () => Promise<unknown>, message: string) {
+    setBusy(key); setNotice(''); setError('')
+    try {
+      await fn()
+      setNotice(message)
+      await load()
+      onChanged()
+    } catch (e) { setError(errorText(e)) } finally { setBusy('') }
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && <Notice kind="error">{error}</Notice>}
+      {notice && <Notice kind="ok">{notice}</Notice>}
+
+      <section aria-label="我的投稿" className="space-y-2">
+        <h3 className="text-13 font-semibold text-ink-100">我的投稿</h3>
+        {posts === null && <Notice>正在读取…</Notice>}
+        {posts?.length === 0 && <Empty title="还没有投稿" hint="在「投稿」页写一段愿意公开的文字试试。" />}
+        <ul className="space-y-2">
+          {(posts ?? []).map((p) => (
+            <li key={p.id} className="rounded-xl border border-ink-700 bg-ink-900/50 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-13 font-semibold text-ink-100">{p.title || '（未命名）'}</span>
+                <StatusPill tone={statusTone(p.status)}>{POST_STATUS_LABELS[p.status] || p.status}</StatusPill>
+                {p.display === 'anonymous' && <StatusPill>匿名展示</StatusPill>}
+                <span className="text-11 text-ink-400">更新于 {formatTime(p.updatedAt)}</span>
+              </div>
+              {p.lastDecision && p.lastDecision.reason && (
+                <p className="mt-1 text-11 text-ink-300">审核意见：{p.lastDecision.reason}</p>
+              )}
+              <p className="mt-1 text-11 text-ink-400">赞 {p.counts.up} / 踩 {p.counts.down} / 评论 {p.counts.comments}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {p.status === 'draft' && (
+                  <Button size="xs" disabled={busy === p.id} onClick={() => void act(p.id, () => submitPost(p.id), '已提交审核')}>提交审核</Button>
+                )}
+                {(p.status === 'pending' || p.status === 'changes_requested' || p.status === 'rejected' || p.status === 'draft' || p.status === 'published') && (
+                  <Button size="xs" variant="ghost" onClick={() => onEdit({
+                    id: p.id, title: p.title, body: p.body, tags: p.tags, display: p.display, hasPublishedVersion: p.hasPublishedVersion,
+                  })}>编辑</Button>
+                )}
+                {p.status !== 'withdrawn' && p.status !== 'removed' && (
+                  <Button size="xs" variant="ghost" disabled={busy === p.id}
+                    onClick={() => void act(p.id, () => withdrawPost(p.id), '已撤回，公开展示已停止')}>撤回</Button>
+                )}
+                <Button size="xs" variant="danger" disabled={busy === p.id}
+                  onClick={() => void act(p.id, () => deletePost(p.id), '已删除')}>删除</Button>
+              </div>
+              {(p.status === 'rejected' || p.status === 'changes_requested') && (
+                <p className="mt-1 text-11 text-ink-400">
+                  对结果有异议？可在「帮助 / 反馈」里提交申诉，附上投稿标题与提交时间；管理员会复核具体版本。
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-label="我的评论" className="space-y-2">
+        <h3 className="text-13 font-semibold text-ink-100">我的评论</h3>
+        {comments?.length === 0 && <p className="text-11 text-ink-400">还没有评论。</p>}
+        <ul className="space-y-2">
+          {(comments ?? []).map((c) => (
+            <li key={c.id} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={statusTone(c.status)}>{COMMENT_STATUS_LABELS[c.status] || c.status}</StatusPill>
+                <span className="text-11 text-ink-400">{formatTime(c.createdAt)}</span>
+              </div>
+              <p className="mt-1 break-words text-12 text-ink-200">{c.body}</p>
+              {c.screening.length > 0 && (
+                <p className="mt-1 text-11 text-amber">
+                  待审原因：{c.screening.map((r) => SCREENING_REASON_LABELS[r] || r).join('、')}
+                </p>
+              )}
+              {c.status !== 'removed' && (
+                <Button size="xs" variant="ghost" className="mt-1" disabled={busy === c.id}
+                  onClick={() => void act(c.id, () => deleteComment(c.id), '评论已删除')}>删除</Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-label="我的举报" className="space-y-2">
+        <h3 className="text-13 font-semibold text-ink-100">我的举报</h3>
+        {reports?.length === 0 && <p className="text-11 text-ink-400">还没有提交过举报。</p>}
+        <ul className="space-y-2">
+          {(reports ?? []).map((r) => (
+            <li key={r.id} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3 text-12 text-ink-200">
+              <span className="mr-2 text-11 text-ink-400">{formatTime(r.createdAt)}</span>
+              {r.targetType === 'post' ? '投稿' : '评论'} · {r.status === 'closed' ? `已处理：${r.outcome || '已关闭'}` : '处理中'}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}

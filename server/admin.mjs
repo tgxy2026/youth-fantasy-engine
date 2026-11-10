@@ -19,6 +19,7 @@ import { gcObjects, purgeDeletedProjects, listTrash } from './lib/objectGc.mjs'
 import { accountRoot } from './lib/v2Index.mjs'
 import {
   loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
+  setUserFlag,
 } from './lib/users.mjs'
 import { hashPassword, validatePassword } from './lib/auth.mjs'
 import { usageOf, userDir } from './lib/userdata.mjs'
@@ -252,6 +253,35 @@ function cmdGc(name) {
 }
 
 const [cmd, a1, a2] = process.argv.slice(2)
+
+/**
+ * 3.5.0 · 云同步资格与社区角色。
+ * 🔴 这是「注册与同步资格分离」的运营入口：账号能登录、能投稿是默认能力，
+ *    能不能同步作品由这里单独决定；角色决定能不能进审核工作台。
+ */
+function cmdSync(name, action) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到账号：${name}`)
+  const mode = String(action || '').toLowerCase()
+  if (!['on', 'off'].includes(mode)) return console.error('用法：node admin.mjs sync <用户名> on|off')
+  const r = setUserFlag(u.id, 'cloudSync', mode === 'on')
+  if (!r.ok) return console.error(r.error)
+  console.log(`已${mode === 'on' ? '开通' : '停用'} ${u.name} 的云端同步资格`)
+}
+
+function cmdRole(name, role) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到账号：${name}`)
+  if (!role) {
+    const db = loadUsers()
+    console.log(`${u.name} 当前角色：${db.users[u.id].role || 'user'}`)
+    return
+  }
+  const r = setUserFlag(u.id, 'role', role)
+  if (!r.ok) return console.error(r.error)
+  console.log(`已把 ${u.name} 的角色设为 ${role}（user / moderator / admin）`)
+}
+
 switch (cmd) {
   case 'list': loadUsers(); cmdList(); break
   case 'invites': cmdInvites(); break
@@ -265,6 +295,8 @@ switch (cmd) {
   case 'delete': cmdDelete(a1); break
   case 'gate': cmdGate(a1, a2, process.argv.slice(5).join(' ')); break
   case 'gc': cmdGc(a1); break
+  case 'sync': cmdSync(a1, a2); break
+  case 'role': cmdRole(a1, a2); break
   default:
     console.log(`用法：
   node admin.mjs list                    列出全部账号（含来源邀请码、配额占用）
@@ -278,5 +310,7 @@ switch (cmd) {
   node admin.mjs passwd <用户名> <新密码>  重置密码
   node admin.mjs delete <用户名>          删除账号（连带数据，不可恢复）
   node admin.mjs gate <用户名> [on|off] [备注]  旧路径门禁：迁移完成后停用旧版写入（不填动作=查状态）
+  node admin.mjs sync <用户名> on|off      开通/停用云端作品同步资格（与能否参与社区无关）
+  node admin.mjs role <用户名> [角色]      查看或设置社区角色（user / moderator / admin）
   node admin.mjs gc <用户名> [--apply] [--purge-trash]  回收无人引用的对象 / 清理过期回收站（默认预演）`)
 }

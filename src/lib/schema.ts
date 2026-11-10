@@ -22,7 +22,7 @@ export {
 }
 
 /** 全部页签。顺序即侧栏顺序；三段拼接次序不可调换。 */
-export const TABS: TabDef[] = [...TABS_PART1, ...TABS_PART2, ...TABS_PART3]
+// 3.5.0：TABS 需引用 COMMUNITY_TAB，故在声明处（下方）拼接
 
 
 // 编辑器页签（特殊，由 App 直接路由）
@@ -35,6 +35,20 @@ export const EDITOR_TAB: TabDef = {
   id: 'editor', name: '正文编辑', group: '正文写作', type: 'editor', description: '',
 }
 
+/**
+ * 3.5.0 · 投稿广场页签：与「正文编辑」同级，同在「正文写作」组。
+ *
+ * 🔴 为什么是页签而不是弹窗（主人 2026-11-10 定案）：写作时想看一眼广场或发一段练笔，
+ *    不该先关掉正文、也不该被浮层遮住编辑器；页签让它在主工作区内与正文并列切换。
+ * 🔴 它不属于任何数据表/表单，因此没有 columns/modules；渲染由 App 直接路由到社区组件。
+ * 🔴 社区是账号级能力，与项目数据无关：切项目不丢登录态，页签本身也不读写项目库。
+ */
+export const COMMUNITY_TAB: TabDef = {
+  id: 'community', name: '投稿广场', group: '正文写作', type: 'community', description: '',
+}
+
+
+export const TABS: TabDef[] = [...TABS_PART1, ...TABS_PART2, ...TABS_PART3, COMMUNITY_TAB]
 // 🔴 侧栏分组顺序＝本数组顺序。2026-10-02：把「酒馆模式」从「灵感工具」之后挪到
 //    「大纲规划」与「创作管理」之间 —— 酒馆模式是「拿已成型的设定与大纲去推演」，
 //    紧挨创作管理更符合使用动线（先定大纲 → 再推演/写作）。
@@ -155,6 +169,9 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   // 锁定项（必选，弹窗置灰不可取消）
   [EDITOR_ID]: 'locked',
   dashboard: 'locked',
+  // 3.5.0 · 投稿广场与正文编辑同级，属写作主流程：锁定可见，自定义项目也不允许关掉
+  // （社区不可用时页面内部会明确提示，而不是让入口凭空空消失）。
+  community: 'locked',
   // 模型设置（2026-09-19）：没有它连模型都接不上，与「使用指南」同级锁定
   'model-settings': 'locked',
   guide: 'locked',

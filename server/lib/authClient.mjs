@@ -1,5 +1,5 @@
 // Serialized into the independent identity pages. No app bundle, library reads or browser persistence.
-export function authClient({ reset = false, canRegister = false, needInvite = false }) {
+export function authClient({ reset = false, canRegister = false, needInvite = false, optionalInvite = false }) {
   const form = document.getElementById('form'), btn = document.getElementById('btn')
   const msg = document.getElementById('msg'), cancel = document.getElementById('cancel')
   const tabs = document.getElementById('tabs'), pwd = document.getElementById('pwd'), inviteBox = document.getElementById('inviteBox')
@@ -49,7 +49,8 @@ export function authClient({ reset = false, canRegister = false, needInvite = fa
       tab.className = selected ? 'on' : ''; tab.setAttribute('aria-pressed', String(selected))
     }
     const invite = document.getElementById('invite')
-    inviteBox.style.display = next === 'register' && needInvite ? 'block' : 'none'
+    inviteBox.style.display = next === 'register' && (needInvite || optionalInvite) ? 'block' : 'none'
+    // 🔴 只有 invite 模式才把邀请码设成必填；开放注册下留空是合法选择
     invite.required = next === 'register' && needInvite
     btn.textContent = title(); pwd.autocomplete = next === 'register' ? 'new-password' : 'current-password'
     if (clearMessage) { msg.className = 'msg'; msg.textContent = '' }

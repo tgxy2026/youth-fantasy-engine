@@ -82,6 +82,8 @@ import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { downloadBlob } from '@/lib/storage/zip'
 import workbenchBg from '@/assets/workbench-bg.png'
 import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/uiPrefs'
+// 3.5.0 · 投稿广场入口事件（项目中心按钮派发，App 只监听一处）
+import { OPEN_COMMUNITY_EVENT } from '@/lib/community/entry'
 
 // 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
 // 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
@@ -106,6 +108,8 @@ const TavernWorld = lazyPage(() => import('@/components/tavern/TavernWorld'), '�
 // 创作轨迹（创作管理组，2.4.0 A4）：含轨迹时间线与证据包导出，按需懒加载
 const TrajectoryPanel = lazyPage(() => import('@/components/audit/TrajectoryPanel'), '创作轨迹')
 const WorldLibraryPanel = lazyPage(() => import('@/components/world/WorldLibraryPanel'), '世界引擎')
+// 3.5.0 · 投稿广场：独立浮层，按需加载；社区服务故障不得影响本地写作
+const CommunitySquare = lazyPage(() => import('@/components/community/CommunitySquare'), '投稿广场')
 
 
 
@@ -118,6 +122,8 @@ export default function App() {
   const [visCtx, setVisCtx] = useState<VisCtx>({ type: 'full', features: [], pack: DEFAULT_PACK })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
+  // 3.5.0 · 投稿广场浮层（全局，项目内/项目外都能开）
+  const [communityOpen, setCommunityOpen] = useState(false)
   const [booted, setBooted] = useState(false)
   // 2.6.3 · 启动自动检查到的更新（有则弹一次说明）
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -388,6 +394,20 @@ export default function App() {
 
   const bossOverlay = bossCovered
     ? <BossOverlay accel={bossAccel} onRestore={restoreBoss} saveOk={bossSave?.ok} saveMessage={bossSave?.message} />
+    : null
+
+  // 3.5.0 · 投稿广场：项目中心与侧栏都通过事件打开，App 只保留一处状态
+  useEffect(() => {
+    const onOpen = () => setCommunityOpen(true)
+    window.addEventListener(OPEN_COMMUNITY_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_COMMUNITY_EVENT, onOpen)
+  }, [])
+  const communityOverlay = communityOpen
+    ? (
+      <Suspense fallback={<div className="fixed inset-0 bg-black/60" style={{ zIndex: Z.modal }} role="status" aria-label="正在打开投稿广场" />}>
+        <CommunitySquare onClose={() => setCommunityOpen(false)} />
+      </Suspense>
+    )
     : null
 
   // 磁盘写盘失败时把原本静默吞掉的错误暴露给用户，避免无提示丢稿
@@ -851,6 +871,7 @@ export default function App() {
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />
         {bossOverlay}
+        {communityOverlay}
       </>
     )
   }
@@ -865,6 +886,10 @@ export default function App() {
     }
     if (activeTab === 'editor') {
       return <NovelEditor onStatsChange={onStatsChange} onNavigate={navigate} onOpenSearch={() => setSearchOpen(true)} projectName={projectName} openChapterId={editorTarget} openRequestId={editorRequestId} openOffset={editorOffset} ctx={visCtx} />
+    }
+    // 3.5.0 · 投稿广场页签（正文写作组，与正文编辑同级）：占满内容区，不加遮罩
+    if (activeTab === 'community') {
+      return <CommunitySquare mode="page" />
     }
     if (activeTab === 'model-settings') {
       return <ModelSettingsPanel />

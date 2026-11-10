@@ -1,0 +1,155 @@
+// ============ 投稿广场 · 数据契约（3.5.0）============
+//
+// 这些类型只描述**对外可见**的字段。服务端永不下发 uid / 登录名 / 审核内部信息，
+// 所以这里也不存在这些字段 —— 如果有人为了「方便」加一个 authorId，就等于把匿名打穿。
+
+export type DisplayMode = 'nickname' | 'anonymous'
+export type RankPeriod = 'day' | 'week' | 'month'
+
+export interface CommunityLimitsDto {
+  titleMax: number
+  bodyMax: number
+  commentMax: number
+  tagMax: number
+}
+
+export interface CommunitySquareState {
+  open: boolean
+  postsOpen: boolean
+  commentsOpen: boolean
+  tags: string[]
+  limits: CommunityLimitsDto
+}
+
+export interface CommunityPostSummary {
+  id: string
+  title: string
+  excerpt: string
+  tags: string[]
+  createdAt: number
+  updatedAt: number
+  counts: { up: number; down: number; comments: number }
+  displayName: string
+  authorLabel?: string
+  myVote?: number
+  myPost?: boolean
+}
+
+export interface CommunityPostDetail extends Omit<CommunityPostSummary, 'excerpt'> {
+  body: string
+}
+
+export interface CommunityComment {
+  id: string
+  createdAt: number
+  body: string
+  displayName: string
+  byAuthor: boolean
+  myComment?: boolean
+}
+
+export interface MyPost {
+  id: string
+  status: string
+  display: DisplayMode
+  createdAt: number
+  updatedAt: number
+  title: string
+  /** 最新版本正文（仅作者本人可见，用于编辑；公开接口不返回） */
+  body: string
+  tags: string[]
+  counts: { up: number; down: number; comments: number }
+  pendingVersionId: string
+  publishedVersionId: string
+  lastDecision: { versionId: string; action: string; reason: string; at: number } | null
+  withdrawnAt: number
+  hasPublishedVersion: boolean
+}
+
+export interface MyComment {
+  id: string
+  postId: string
+  body: string
+  status: string
+  createdAt: number
+  screening: string[]
+}
+
+export interface CommunityProfile {
+  nickname: string
+  postDisplay: DisplayMode
+  commentDisplay: DisplayMode
+  rankDisplay: DisplayMode
+  rankOptIn: boolean
+  /** 开启时间：上报只从这一天起算（历史不自动上传） */
+  rankOptInAt: number
+  /** 撤回时间：早于它的迟到上报服务端一律拒绝 */
+  rankRevokedAt: number
+  updatedAt: number
+}
+
+export interface RankEntry {
+  rank: number
+  value: number
+  displayName: string
+}
+
+export interface RankBoard {
+  period: RankPeriod
+  range: { start: string; end: string } | null
+  entries: RankEntry[]
+}
+
+export interface AdminQueuePost {
+  id: string
+  versionId: string
+  title: string
+  excerpt: string
+  tags: string[]
+  createdAt: number
+  screening: { level: string; reasons: string[] } | null
+  advice: { suggestion: string; reasons: string[]; versionId: string; at: number; model?: string } | null
+  claimedBy: string
+  claimedAt: number
+}
+
+export interface AdminQueueComment {
+  id: string
+  postId: string
+  body: string
+  createdAt: number
+  screening: { level: string; reasons: string[] } | null
+  claimedBy: string
+  claimedAt: number
+}
+
+export interface AdminQueueReport {
+  id: string
+  targetType: 'post' | 'comment'
+  targetId: string
+  reason: string
+  detail: string
+  createdAt: number
+  status: string
+  claimedBy: string
+  claimedAt: number
+}
+
+export interface AdminOverview {
+  counts: { posts: number; comments: number; reports: number }
+  queue: { posts: number; comments: number; reports: number }
+  state: { squareOpen: boolean; postsOpen: boolean; commentsOpen: boolean; updatedAt: number }
+}
+
+export interface AdminPostItem {
+  id: string
+  status: string
+  versionId: string
+  title: string
+  body: string
+  tags: string[]
+  createdAt: number
+  screening: { level: string; reasons: string[] } | null
+  advice: { suggestion: string; reasons: string[]; versionId: string; at: number; model?: string } | null
+  versions: Array<{ vid: string; title: string; createdAt: number }>
+}
