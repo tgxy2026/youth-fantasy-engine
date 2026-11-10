@@ -291,7 +291,11 @@ export function renderResetPage({ error = '', name = '' } = {}) {
         <input id="name" name="name" required maxlength="24" autocomplete="username" placeholder="注册时填的用户名">
 
         <label for="invite">邀请码</label>
-        <input id="invite" name="invite" required maxlength="32" placeholder="注册时使用的那张 8 位邀请码"
+        <input id="invite" name="invite" maxlength="32" placeholder="注册时使用的那张 8 位邀请码（没有可留空）"
+               style="text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em">
+
+        <label for="recovery">找回码（无邀请码账号）</label>
+        <input id="recovery" name="recovery" maxlength="32" placeholder="站主人工核实后发放的一次性找回码"
                style="text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em">
 
         <label for="pwd">新密码</label>
@@ -303,9 +307,10 @@ export function renderResetPage({ error = '', name = '' } = {}) {
       </form>
       <div class="msg ${msgClass}" id="msg" tabindex="-1" role="alert">${msgText}</div>
       <div class="resetNote">
-        邀请码是注册账号时使用的那张（由站主发放）。<br>
-        重置成功后：其他设备的登录会全部退出，<strong style="color:#6b6459">全部作品与设定不受影响</strong>。<br>
-        若邀请码也忘了，请联系站主（QQ 交流群 / 公众号）人工核实后重置。
+        <strong>邀请码</strong>：注册账号时使用的那张（由站主发放）。<br>
+        <strong>找回码</strong>：开放注册、没有邀请码的账号，请联系站主（QQ 交流群 / 公众号）
+        说明账号与注册时间，人工核实后领取一次性找回码；找回码 24 小时内有效，只能使用一次。<br>
+        重置成功后：其他设备的登录会全部退出，<strong style="color:#6b6459">全部作品与设定不受影响</strong>。
       </div>
       `}
     </div>

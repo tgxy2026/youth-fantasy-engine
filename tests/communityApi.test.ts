@@ -199,6 +199,17 @@ try {
   ok('举报成立可下架投稿', closeRep.status === 200 && (await call(`/api/community/posts/${pid2}`)).json?.post === undefined)
   ok('下架后不再出现在列表', (await call('/api/community/posts')).json.items.every((p: any) => p.id !== pid2))
 
+  // 申诉重开不能复活被下架的旧版本（隔离流程里抓到的真实缺陷，这里钉住）
+  const appeal = await call('/api/community/appeals', {
+    method: 'POST', as: 'alice',
+    body: { postId: pid2, versionId: post2.json.post.pendingVersionId, reason: '请求复核' },
+  })
+  ok('作者可申诉并绑定版本', appeal.status === 200 && appeal.json.status === 'open')
+  const appealQueue = await call('/api/community/admin/queue?type=appeal', { as: 'mod' })
+  ok('申诉进入独立队列', appealQueue.json.items.some((x: any) => x.id === appeal.json.id))
+  const reopened = await call('/api/community/admin/report', { method: 'POST', as: 'mod', body: { id: appeal.json.id, action: 'reopen', outcome: '申诉成立' } })
+  ok('申诉重开后仍不公开（旧版本不复活）', reopened.status === 200 && (await call(`/api/community/posts/${pid2}`)).json?.post === undefined)
+
   // ---- 审核工作台 ----
   const q = await call('/api/community/admin/queue?type=post', { as: 'mod' })
   ok('待审队列按提交先后返回', q.status === 200 && Array.isArray(q.json.items))

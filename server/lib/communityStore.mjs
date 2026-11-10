@@ -226,10 +226,11 @@ export function createCommunityStore({ root } = {}) {
   function listReports() {
     return Object.values(load('reports').items)
   }
-  /** 同一用户对同一目标只保留一条待处理举报（重复点击不刷屏） */
-  function findOpenReport(uid, targetType, targetId) {
+  /** 同一用户对同一目标只保留一条待处理记录（重复点击不刷屏）；`kind` 区分举报与申诉 */
+  function findOpenReport(uid, targetType, targetId, kind = 'report') {
     for (const r of Object.values(load('reports').items)) {
       if (r.uid === uid && r.targetType === targetType && r.targetId === targetId
+        && (r.kind || 'report') === kind
         && (r.status === 'open' || r.status === 'claimed')) return r
     }
     return null

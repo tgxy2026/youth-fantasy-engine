@@ -11,7 +11,7 @@
 //
 // 🔴 全程同步读写：Node 单线程下同步操作不会被并发打断，等于天然互斥；用户表很小，代价可忽略。
 import { readFileSync, statSync } from 'node:fs'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { USERS_FILE, USERS_FILE_VERSION, DEFAULT_QUOTA } from './config.mjs'
 import { writeTextAtomicSync } from './atomic.mjs'
 import {
@@ -197,6 +197,56 @@ export function resetPasswordByInvite(name, invite, newPasswordHash) {
 export function listUsers() {
   const db = loadUsers()
   return Object.values(db.users).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+// ---------- 一次性找回码（3.5.0：开放注册的账号没有邀请码，需要一条不依赖实名/邮箱的找回路径） ----------
+//
+// 【定位】站主在**人工核实身份**后为某个账号签发一次性找回码，用户凭「用户名 + 找回码」重置密码。
+// 这条路径不收集手机号/邮箱/实名资料，但也不承诺「零人工」：它的安全性来自站主核对与码的一次性、
+// 短有效期。码本身只存 sha256，日志与用户表里都不出现明文（打印只在签发时一次）。
+// 🔴 与邀请码路径的错误文案必须完全一致，避免据此枚举账号是否存在。
+// 🔴 与邀请码找回一样：重置成功即撤销全部会话，数据零改动。
+
+const RECOVERY_TTL_MS = 24 * 3600 * 1000
+
+function hashRecoveryCode(code) {
+  return createHash('sha256').update(String(code || '').trim().toUpperCase()).digest('hex')
+}
+
+/** 为账号签发一次性找回码；返回明文（仅此一次） */
+export function issueRecoveryCode(id, now = Date.now()) {
+  const db = loadUsers()
+  const u = db.users[id]
+  if (!u) return { ok: false, error: '账号不存在' }
+  const code = `RC-${randomBytes(5).toString('hex').toUpperCase()}`
+  u.recovery = { hash: hashRecoveryCode(code), createdAt: now, expiresAt: now + RECOVERY_TTL_MS, usedAt: 0 }
+  persist(db)
+  return { ok: true, code, expiresAt: now + RECOVERY_TTL_MS }
+}
+
+/** 账号是否有未使用且未过期的找回码（运维盘点用，不输出码本身） */
+export function recoveryStatus(id, now = Date.now()) {
+  const u = findById(id)
+  if (!u || !u.recovery) return 'none'
+  if (u.recovery.usedAt) return 'used'
+  if (Number(u.recovery.expiresAt) <= now) return 'expired'
+  return 'active'
+}
+
+export function resetPasswordByRecoveryCode(name, code, newPasswordHash, now = Date.now()) {
+  const db = loadUsers()
+  const u = findByName(name)
+  const bad = { ok: false, error: '用户名或找回码不正确' }
+  if (!u || !u.recovery) return bad
+  if (u.recovery.usedAt || Number(u.recovery.expiresAt) <= now) return bad
+  if (u.recovery.hash !== hashRecoveryCode(code)) return bad
+  u.pwd = newPasswordHash
+  u.recovery.usedAt = now
+  const { list, user: cur } = readSessions(db, u.id, now)
+  cur.sessionList = revokeAll(list, now).list
+  delete cur.session
+  persist(db)
+  return { ok: true, value: cur }
 }
 
 /**

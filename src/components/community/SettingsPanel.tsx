@@ -10,7 +10,7 @@ import { Button } from '@/components/common/Button'
 import { fetchProfile, updateProfile } from '@/lib/community/api'
 import { getAllProjects } from '@/lib/db/projects'
 import { COMMUNITY_LIMITS, charCount } from '@/lib/community/limits'
-import { cnDateKey, readLedger, summarizeLedger } from '@/lib/community/rankLedger'
+import { cnDateKey, pendingRankDeltaCount, readLedger, summarizeLedger } from '@/lib/community/rankLedger'
 import { uploadRank } from '@/lib/community/rankUpload'
 import type { CommunityProfile, DisplayMode } from '@/lib/community/types'
 import { Field, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
@@ -85,9 +85,9 @@ export default function SettingsPanel({ onProfileChanged }: Props) {
       onProfileChanged?.(r.profile)
       if (next) {
         const up = await uploadRank({ force: true })
-        setNotice(up.accepted > 0
-          ? `已开启排行同步，本次上传 ${up.accepted} 条记录（从开启后开始统计）。`
-          : '已开启排行同步，将从现在开始统计；历史数据不会上传。')
+setNotice(up.accepted > 0
+        ? `已开启排行同步，本次上传 ${up.accepted} 条记录（从开启后开始统计）${up.remaining > 0 ? `；还有 ${up.remaining} 条将在下一轮继续上传` : ''}。`
+        : '已开启排行同步，将从现在开始统计；历史数据不会上传。')
       } else {
         setNotice('已关闭排行同步，服务端已删除你上传的排行数据。')
       }
@@ -158,13 +158,18 @@ export default function SettingsPanel({ onProfileChanged }: Props) {
                 setBusy(true); setError(''); setNotice('')
                 try {
                   const r = await uploadRank({ force: true })
-                  setNotice(`本次上报 ${r.sent} 条，服务端接受 ${r.accepted} 条${r.rejected.length ? `，拒绝 ${r.rejected.length} 条` : ''}。`)
+                  setNotice(r.skipped === 'offline'
+                    ? `网络不可用，未完成上报${r.error ? `（${r.error}）` : ''}；记录仍保存在本机，稍后会自动重试。`
+                    : `本次上报 ${r.sent} 条，服务端接受 ${r.accepted} 条${r.rejected.length ? `，拒绝 ${r.rejected.length} 条` : ''}${r.remaining > 0 ? `，还有 ${r.remaining} 条待下一轮` : ''}。`)
                 } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
               })()
             }}>立即同步</Button>
           )}
           {ledger && (
             <span className="text-11 text-ink-400">本机已记录 {ledger.days} 天 / 合计 {ledger.total.toLocaleString('zh-CN')} 字（含标点、仅正文）</span>
+          )}
+          {pendingRankDeltaCount() > 0 && (
+            <span className="text-11 text-amber">有 {pendingRankDeltaCount()} 条本机增量等待补记，下次保存或上报时会自动重试。</span>
           )}
         </div>
       </section>

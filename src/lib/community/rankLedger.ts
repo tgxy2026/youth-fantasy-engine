@@ -76,10 +76,80 @@ export function rankSuppressed(): boolean {
 //    各自读旧值再写回会互相覆盖（与 `addDailyWords` 同一类问题）。
 let chain: Promise<unknown> = Promise.resolve()
 
+/**
+ * 写账本失败时的补偿队列（本机 localStorage）。
+ *
+ * 【为什么必须有】正文落盘与账本写入是两笔独立写：正文成功、账本失败时若只吞掉异常，
+ * 那一段字数就**永久少计**，且用户与管理员都看不出来。这里把失败增量留队，
+ * 下一次记账或每次排行上报前补记；补记仍失败就继续留队，不丢。
+ * 🔴 队列只存 projectId + 增量，不含正文/标题；随本机数据走，不跨设备。
+ */
+const PENDING_KEY = 'yfe.community.rankPending'
+
+interface PendingDelta { projectId: string; delta: number; at: number }
+
+function readPending(): PendingDelta[] {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((x): x is PendingDelta => !!x && typeof x.projectId === 'string' && typeof x.delta === 'number')
+  } catch { return [] }
+}
+
+function writePending(list: PendingDelta[]): void {
+  try {
+    if (!list.length) localStorage.removeItem(PENDING_KEY)
+    else localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-500)))
+  } catch { /* 忽略：配额满时退化为内存丢失，下次仍会尽力补 */ }
+}
+
+function enqueuePending(projectId: string, delta: number): void {
+  const list = readPending()
+  // 同项目同日多次失败可合并，避免队列无限增长
+  const last = list[list.length - 1]
+  if (last && last.projectId === projectId) last.delta += delta
+  else list.push({ projectId, delta, at: Date.now() })
+  writePending(list)
+}
+
+/** 待补记的增量条数（设置页/诊断展示用） */
+export function pendingRankDeltaCount(): number {
+  return readPending().length
+}
+
+/** 补记失败留下的增量；返回成功补记的条数 */
+export async function flushPendingRankDeltas(): Promise<number> {
+  const list = readPending()
+  if (!list.length) return 0
+  const remain: PendingDelta[] = []
+  let done = 0
+  for (const item of list) {
+    try {
+      await writeDelta(item.projectId, item.delta)
+      done++
+    } catch {
+      remain.push(item)
+    }
+  }
+  writePending(remain)
+  return done
+}
+
 export function recordRankDelta(projectId: string, delta: number, owner?: OwnedOperation): Promise<void> {
   if (!projectId || !delta) return Promise.resolve()
   if (rankSuppressed()) return Promise.resolve()
-  const run = chain.then(() => writeDelta(projectId, delta, owner))
+  const run = chain.then(async () => {
+    try {
+      await writeDelta(projectId, delta, owner)
+      // 顺手补记历史失败（不阻塞本次调用）
+      void flushPendingRankDeltas().catch(() => undefined)
+    } catch (e) {
+      enqueuePending(projectId, delta)
+      throw e
+    }
+  })
   chain = run.then(() => undefined, () => undefined)
   return run
 }

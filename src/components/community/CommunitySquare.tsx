@@ -3,14 +3,13 @@
 // 【同一个服务】网页云端账号走同源 Cookie，桌面版走已登录的云端通道；
 // 组件本身**不区分形态**，只依赖 `@/lib/community/api`（它已封好通道差异）。
 //
-// 🔴 未登录也能浏览（规划 §2.1）：只有「投稿 / 我的 / 设置」需要登录，
-//    「排行」与「广场」是公共读。登录态判定用一次 `fetchProfile()`，
-//    失败不等于广场坏了 —— 分别提示「未登录」与「网络不可用」。
-// 🔴 社区服务故障不得影响本地写作：本组件是**独立浮层**，不挂在编辑器关键路径上，
-//    任何异常都在浮层内显示，不抛到 App 的错误边界。
+// 【布局】宽屏：左侧投稿流为主、右侧固定「码字排行」竖栏（用户 2026-11-10 明确要求）；
+//   窄屏：排行收成可展开区域，入口仍在顶部，功能不缺。
+// 🔴 页签模式不能给 fixed 定位：那会盖住侧栏，和「与正文编辑同级」相矛盾。
+// 🔴 社区服务故障不得影响本地写作：本组件是独立页面/浮层，任何异常都在内部显示。
 
-import { useCallback, useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 import { WEB_CLOUD, WEB_GUEST } from '@/lib/app/platform'
@@ -26,16 +25,26 @@ import SettingsPanel from '@/components/community/SettingsPanel'
 import AdminPanel from '@/components/community/AdminPanel'
 import { Notice } from '@/components/community/ui'
 
-type Tab = 'feed' | 'write' | 'mine' | 'rank' | 'settings' | 'admin'
+type Tab = 'feed' | 'write' | 'mine' | 'settings' | 'admin'
+type RankTab = 'rank'
 
 interface Props {
   /** 浮层模式（项目中心）传入关闭回调；页签模式不传 */
   onClose?: () => void
   /** 'overlay' = 全局浮层；'page' = 正文写作组页签（与正文编辑同级） */
   mode?: 'overlay' | 'page'
+  /** 测试/嵌入用：强制宽屏或窄屏布局 */
+  forceLayout?: 'wide' | 'narrow'
 }
 
-export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'feed', label: '广场' },
+  { id: 'write', label: '投稿' },
+  { id: 'mine', label: '我的' },
+  { id: 'settings', label: '设置' },
+]
+
+export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout }: Props) {
   const [tab, setTab] = useState<Tab>('feed')
   const [square, setSquare] = useState<CommunitySquareState | null>(null)
   const [profile, setProfile] = useState<CommunityProfile | null>(null)
@@ -46,14 +55,13 @@ export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
   const [notice, setNotice] = useState('')
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [feedKey, setFeedKey] = useState(0)
+  const [rankOpen, setRankOpen] = useState(false)
+  const [wide, setWide] = useState(forceLayout === 'wide')
+  const hostRef = useRef<HTMLDivElement | null>(null)
 
   const endpointReady = communityEndpointReady()
   const guest = WEB_GUEST
-  /**
-   * 草稿归属键：网页版由服务端注入账号 id；桌面版的账号 id 是运行时解析的
-   * （`syncBoot.getSyncAccountId`），这里异步取一次。
-   * 🔴 拿不到就退到 'local'：宁可「本机共用」，也不要去猜一个不存在的本地键。
-   */
+
   const [cloudAccountId, setCloudAccountId] = useState<string | undefined>(() => {
     try { return (window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id } catch { return undefined }
   })
@@ -70,6 +78,18 @@ export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
     return () => { cancelled = true }
   }, [])
   const accountKey = accountKeyOf(cloudAccountId)
+
+  // 布局宽度：用布局像素（÷ 界面缩放由 clientWidth 自动体现），≥ 900 视为宽屏
+  useEffect(() => {
+    if (forceLayout) { setWide(forceLayout === 'wide'); return }
+    const el = hostRef.current
+    if (!el) return
+    const measure = () => setWide(el.clientWidth >= 900)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [forceLayout])
 
   const loadHeader = useCallback(async () => {
     setError('')
@@ -97,7 +117,10 @@ export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
     void (async () => {
       try {
         const o = await adminOverview()
-        if (!cancelled) { setCanAdmin(true); setAdminCount(o.queue.posts + o.queue.comments + o.queue.reports) }
+        if (!cancelled) {
+          setCanAdmin(true)
+          setAdminCount(o.queue.posts + o.queue.comments + o.queue.reports + o.queue.appeals)
+        }
       } catch { if (!cancelled) setCanAdmin(false) }
     })()
     return () => { cancelled = true }
@@ -106,8 +129,8 @@ export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
   // 打开广场时顺带补一次排行上报（节流在 uploadRank 内；未开启会直接跳过）
   useEffect(() => {
     if (!signedIn) return
-    void uploadRank().catch(() => undefined)
-  }, [signedIn])
+    void uploadRank({ accountKey }).catch(() => undefined)
+  }, [signedIn, accountKey])
 
   const canWrite = signedIn === true && !guest
   const defaultDisplay: DisplayMode = profile?.postDisplay || 'anonymous'
@@ -124,84 +147,127 @@ export default function CommunitySquare({ onClose, mode = 'overlay' }: Props) {
     setTab(next)
   }
 
+  const openSettings = () => goTab('settings')
+  const shellClass = mode === 'overlay'
+    ? 'flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-ink-700 bg-surface-app shadow-2xl'
+    : 'flex h-full w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-surface-app'
+
+  const nav = (
+    <nav className="flex items-center gap-1 overflow-x-auto border-b border-ink-700 px-3 py-2 sm:px-4" aria-label="广场分区">
+      {TABS.map((t) => (
+        <Button key={t.id} size="sm" variant="toggle" selected={tab === t.id} onClick={() => goTab(t.id)}>{t.label}</Button>
+      ))}
+      {canAdmin && (
+        <Button size="sm" variant="toggle" selected={tab === 'admin'} onClick={() => goTab('admin')}>
+          审阅{adminCount ? ` (${adminCount})` : ''}
+        </Button>
+      )}
+    </nav>
+  )
+
   /**
-   * 两种形态共用同一套内容：
-   *  · `overlay`：项目中心打开，铺满屏、可关闭（没有工作区时也能进广场）
-   *  · `page`   ：正文写作组页签，占满工作区内容区，不额外加遮罩（侧栏仍可用）
-   * 🔴 页签模式不能给 fixed 定位：那会把侧栏与正文一起盖住，和「与正文编辑同级」相矛盾。
+   * 窄屏的排放入口**单独一行**，不塞进页签条：
+   * 🔴 页签条是 `overflow-x-auto`，把排行放在最右会在 390px 上被挤出可视区，
+   *    用户以为「窄屏没有排行」。单独一行也给了它 `aria-expanded` 与展开区域关联。
    */
-  const shell = (
-    <div className={mode === 'overlay'
-      ? 'flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-ink-700 bg-surface-app shadow-2xl'
-      : 'flex h-full w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-surface-app'}>
-      <header className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-15 font-semibold text-ink-100">投稿广场</h2>
-          <p className="text-11 text-ink-400">分享你愿意公开的文字片段；默认匿名展示。</p>
+  const narrowRankBar = !wide ? (
+    <div className="border-b border-ink-700 px-3 py-1.5 sm:px-4">
+      <Button size="sm" variant="toggle" selected={rankOpen} aria-expanded={rankOpen} aria-controls="community-rank-inline"
+        onClick={() => setRankOpen((v) => !v)}>
+        码字排行<ChevronDown size={12} className={`transition-transform ${rankOpen ? 'rotate-180' : ''}`} />
+      </Button>
+    </div>
+  ) : null
+
+  const content = (
+    <>
+      {!endpointReady && (
+        <Notice kind="warn">
+          当前形态没有可用的云端连接：桌面版请先在「设置 → 云端账号」登录后再打开广场。本地写作与既有功能不受影响。
+        </Notice>
+      )}
+      {error && <Notice kind="error">{error}</Notice>}
+      {notice && <Notice kind="warn">{notice}</Notice>}
+      {signedIn === false && tab === 'feed' && (
+        <Notice>你现在未登录：可以浏览广场，但不能投稿、评论或参与排行。</Notice>
+      )}
+
+      {!wide && rankOpen && (
+        <div id="community-rank-inline" className="rounded-xl border border-ink-700 bg-ink-900/40 p-3">
+          {/* 窄屏展开只给前 5 名并隐藏长篇说明：再多会把正文挤出首屏 */}
+          <RankPanel compact dense max={5} onOpenSettings={openSettings} />
         </div>
-        {square && !square.open && <Notice kind="warn">广场暂时关闭，仅管理员可处理待审内容。</Notice>}
+      )}
+
+      {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={defaultDisplay} onNeedLogin={requireLogin} key={feedKey} />}
+      {tab === 'write' && canWrite && (
+        <PublishPanel
+          accountKey={accountKey}
+          defaultDisplay={defaultDisplay}
+          editTarget={editTarget}
+          onCancelEdit={() => setEditTarget(null)}
+          onSubmitted={(message) => { setNotice(message); setEditTarget(null); setFeedKey((k) => k + 1); setTab('mine') }}
+        />
+      )}
+      {tab === 'mine' && canWrite && (
+        <MyPanel
+          onEdit={(t) => { setEditTarget(t); setTab('write') }}
+          onChanged={() => { void loadHeader(); setFeedKey((k) => k + 1) }}
+        />
+      )}
+      {tab === 'settings' && canWrite && <SettingsPanel accountId={cloudAccountId} onProfileChanged={setProfile} />}
+      {tab === 'admin' && canAdmin && <AdminPanel onTitle={setAdminCount} />}
+    </>
+  )
+
+  const shell = (
+    <div ref={hostRef} className={shellClass}>
+      <header className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-3 py-2.5 sm:px-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="flex items-center gap-2 text-16 font-semibold text-ink-100">
+            投稿广场
+            {square && !square.open && <span className="rounded-full border border-amber/40 px-2 py-0.5 text-11 font-normal text-amber">暂停开放</span>}
+          </h2>
+          <p className="mt-0.5 text-11 text-ink-400">分享你愿意公开的文字片段；默认匿名展示，审核通过后公开。</p>
+        </div>
         {mode === 'overlay' && onClose && (
           <Button variant="ghost" iconOnly onClick={onClose} aria-label="关闭投稿广场"><X size={18} /></Button>
         )}
       </header>
 
-        <nav className="flex flex-wrap gap-1 border-b border-ink-700 px-3 py-1.5" aria-label="广场分区">
-          <Button size="sm" variant="toggle" selected={tab === 'feed'} onClick={() => goTab('feed')}>广场</Button>
-          <Button size="sm" variant="toggle" selected={tab === 'write'} onClick={() => goTab('write')}>投稿</Button>
-          <Button size="sm" variant="toggle" selected={tab === 'mine'} onClick={() => goTab('mine')}>我的</Button>
-          <Button size="sm" variant="toggle" selected={tab === 'rank'} onClick={() => goTab('rank')}>排行</Button>
-          <Button size="sm" variant="toggle" selected={tab === 'settings'} onClick={() => goTab('settings')}>设置</Button>
-          {canAdmin && (
-            <Button size="sm" variant="toggle" selected={tab === 'admin'} onClick={() => goTab('admin')}>
-              审阅{adminCount ? ` (${adminCount})` : ''}
-            </Button>
-          )}
-        </nav>
+      {nav}
+      {narrowRankBar}
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          {!endpointReady && (
-            <Notice kind="warn">
-              当前形态没有可用的云端连接：桌面版请先在「设置 → 云端账号」登录后再打开广场。本地写作与既有功能不受影响。
-            </Notice>
-          )}
-          {error && <Notice kind="error">{error}</Notice>}
-          {notice && <Notice kind="warn">{notice}</Notice>}
-
-          {signedIn === false && (tab === 'feed' || tab === 'rank') && (
-            <Notice>你现在未登录：可以浏览，但不能投稿、评论或参与排行。</Notice>
-          )}
-
-          {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={defaultDisplay} onNeedLogin={requireLogin} key={feedKey} />}
-          {tab === 'write' && canWrite && (
-            <PublishPanel
-              accountKey={accountKey}
-              defaultDisplay={defaultDisplay}
-              editTarget={editTarget}
-              onCancelEdit={() => setEditTarget(null)}
-              onSubmitted={(message) => { setNotice(message); setEditTarget(null); setFeedKey((k) => k + 1); setTab('mine') }}
-            />
-          )}
-          {tab === 'mine' && canWrite && (
-            <MyPanel
-              onEdit={(t) => { setEditTarget(t); setTab('write') }}
-              onChanged={() => { void loadHeader(); setFeedKey((k) => k + 1) }}
-            />
-          )}
-          {tab === 'rank' && <RankPanel onOpenSettings={() => goTab('settings')} />}
-          {tab === 'settings' && canWrite && <SettingsPanel accountId={cloudAccountId} onProfileChanged={setProfile} />}
-          {tab === 'admin' && canAdmin && <AdminPanel onTitle={setAdminCount} />}
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className={`mx-auto w-full px-3 py-4 sm:px-5 ${tab === 'feed' ? 'max-w-4xl' : 'max-w-3xl'} space-y-3`}>
+            {content}
+          </div>
         </div>
+        {wide && (
+          <aside className="w-72 shrink-0 overflow-y-auto border-l border-ink-700 bg-ink-900/30 px-3 py-4 xl:w-80">
+            <RankPanel compact onOpenSettings={openSettings} />
+          </aside>
+        )}
+      </div>
 
-<footer className="border-t border-ink-700 px-3 py-2 text-11 text-ink-400">
-        {WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面 / 便携版'} · 内容审核由管理员人工确认；社区服务不可用时不会影响本地写作。
+      <footer className="border-t border-ink-700 px-3 py-2 text-11 text-ink-400 sm:px-4">
+        {WEB_CLOUD ? '网页云端账号' : guest ? '游客浏览' : '桌面 / 便携版'} · 内容由管理员人工确认后发布；社区服务不可用不影响本地写作。
       </footer>
     </div>
   )
 
-  if (mode === 'page') return shell
-  return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-2 sm:p-6" style={{ zIndex: Z.modal }} role="dialog" aria-modal="true" aria-label="投稿广场">
-      {shell}
-    </div>
-  )
+  // 浮层形态：铺满屏、可关闭；页签形态直接占满内容区（不能 fixed，否则盖住侧栏）
+  if (mode === 'overlay') {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-2 sm:p-6"
+        style={{ zIndex: Z.modal }} role="dialog" aria-modal="true" aria-label="投稿广场">
+        {shell}
+      </div>
+    )
+  }
+  return shell
 }
+
+/** 供测试引用：当前页签类型（避免测试与实现各写一套字符串） */
+export type CommunityTabId = Tab | RankTab

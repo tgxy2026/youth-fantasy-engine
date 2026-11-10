@@ -1,23 +1,35 @@
 // 投稿广场 · 码字排行榜（3.5.0）
 //
 // 🔴 口径（与规划一致）：**含标点的正文净增量**；周/月先把周期内各日增减相加再排名，
-//    展示值最低为 0，但负数仍参与抵扣。传统计口径写在页面顶部，不让人猜。
+//    展示值最低为 0，但负数仍参与抵扣。统计口径写在页面顶部，不让人猜。
 // 🔴 匿名条目只显示「匿名用户」，不给编号或稳定标识 —— 否则不同周期一比对就能跨内容关联。
+// 🔴 两种形态：`compact` = 宽屏广场右侧竖栏（只显示前十与口径摘要）；
+//    完整形态 = 窄屏展开区域/独立查看，含日期与完整说明。
 
 import { useCallback, useEffect, useState } from 'react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { fetchRank } from '@/lib/community/api'
 import { cnDateKey } from '@/lib/community/rankLedger'
 import type { RankBoard, RankPeriod } from '@/lib/community/types'
-import { Empty, Notice, StatusPill, errorText } from '@/components/community/ui'
+import { Empty, Notice, errorText } from '@/components/community/ui'
 
-const PERIODS: Array<{ id: RankPeriod; label: string }> = [
-  { id: 'day', label: '日榜' },
-  { id: 'week', label: '周榜' },
-  { id: 'month', label: '月榜' },
+const PERIODS: Array<{ id: RankPeriod; label: string; short: string }> = [
+  { id: 'day', label: '日榜', short: '日' },
+  { id: 'week', label: '周榜', short: '周' },
+  { id: 'month', label: '月榜', short: '月' },
 ]
 
-export default function RankPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
+interface Props {
+  compact?: boolean
+  /** 窄屏展开用：隐藏长篇说明，只留一句口径摘要（避免把正文挤出首屏） */
+  dense?: boolean
+  /** compact 下最多显示几名（窄屏展开时用更小的值，避免把正文挤出首屏） */
+  max?: number
+  onOpenSettings: () => void
+}
+
+export default function RankPanel({ compact = false, dense = false, max = 8, onOpenSettings }: Props) {
   const [period, setPeriod] = useState<RankPeriod>('day')
   const [date, setDate] = useState(() => cnDateKey())
   const [board, setBoard] = useState<RankBoard | null>(null)
@@ -36,53 +48,86 @@ export default function RankPanel({ onOpenSettings }: { onOpenSettings: () => vo
 
   useEffect(() => { void load() }, [load])
 
+  const entries = board?.entries ?? []
+  const shown = compact ? entries.slice(0, Math.max(1, max)) : entries
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <section aria-label="码字排行榜" className={compact ? 'space-y-3' : 'mx-auto w-full max-w-3xl space-y-4'}>
+      <header className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={`${compact ? 'text-13' : 'text-16'} font-semibold text-ink-100`}>码字排行</h3>
+          <Button size="sm" variant="ghost" iconOnly aria-label="刷新排行" title="刷新排行" disabled={loading} onClick={() => void load()}>
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          </Button>
+        </div>
+        {dense ? (
+          <p className="text-11 text-ink-400">按含标点净增量统计，默认关闭。</p>
+        ) : (
+          <p className="text-11 leading-relaxed text-ink-400">
+            按<b className="font-medium text-ink-300">含标点的正文净增量</b>统计：新增与删除相抵；
+            周/月先累加每天的有符号增减，展示最低为 0。只统计正文，不含标题与设定。
+          </p>
+        )}
+      </header>
+
+      <div className="flex items-center gap-1" role="group" aria-label="排行周期">
         {PERIODS.map((p) => (
-          <Button key={p.id} size="sm" variant="toggle" selected={period === p.id} onClick={() => setPeriod(p.id)}>{p.label}</Button>
+          <Button key={p.id} size="sm" variant="toggle" selected={period === p.id} onClick={() => setPeriod(p.id)}>
+            {compact ? p.short : p.label}
+          </Button>
         ))}
-        <label className="flex items-center gap-1 text-11 text-ink-300">
-          参考日期
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value || cnDateKey())}
-            className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100" />
-        </label>
-        <Button size="xs" variant="ghost" disabled={loading} onClick={() => void load()}>刷新</Button>
-        <Button size="xs" variant="ghost" onClick={onOpenSettings}>参与设置</Button>
+        {!compact && (
+          <label className="ml-auto flex items-center gap-1 text-11 text-ink-300">
+            参考日期
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value || cnDateKey())}
+              className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100" />
+          </label>
+        )}
       </div>
 
-      <Notice>
-        排行按<b>含标点的项目正文净增量</b>计算：新增与删除相抵；
-        周榜、月榜先把周期内每天的有符号增减相加再排名（每天不单独截到 0），展示值最低为 0。
-        只统计正文，不含标题、设定与其他资料；统计与云同步资格无关，默认关闭。
-      </Notice>
-
-      {error && <Notice kind="error">{error}</Notice>}
-      {closed && <Notice kind="warn">广场暂时关闭，排行暂不可见。</Notice>}
-      {loading && <Notice>正在读取排行…</Notice>}
-
-      {board && board.range && (
+      {board?.range && !compact && (
         <p className="text-11 text-ink-400">统计区间：{board.range.start} 至 {board.range.end}（北京时间）</p>
       )}
 
-      {board && board.entries.length === 0 && !loading && (
+      {error && <Notice kind="error">{error}</Notice>}
+      {closed && <Notice kind="warn">广场暂时关闭，排行暂不可见。</Notice>}
+      {loading && !board && <Notice>正在读取排行…</Notice>}
+      {!loading && board && entries.length === 0 && !closed && (
         <Empty title="这个周期还没有公开的排行数据" hint="只有主动开启排行同步的账号会出现在这里。" />
       )}
 
-      <ul className="space-y-1.5">
-        {(board?.entries ?? []).map((e, i) => (
-          <li key={`${e.rank}-${i}`} className="flex items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/50 px-3 py-2">
-            <span className="w-8 text-12 font-semibold text-amber">{e.rank}</span>
-            <span className="min-w-0 flex-1 truncate text-13 text-ink-100">{e.displayName}</span>
-            <StatusPill>{e.value.toLocaleString('zh-CN')} 字</StatusPill>
+      <ol className="space-y-1">
+        {shown.map((e, i) => (
+          <li key={`${e.rank}-${i}`}
+            className={`flex items-center gap-3 rounded-lg px-2.5 ${compact ? 'py-1.5' : 'py-2.5'} ${e.rank === 1 ? 'bg-amber/10' : 'bg-ink-900/40'}`}>
+            <span className={`w-6 shrink-0 text-center text-12 font-semibold ${e.rank <= 3 ? 'text-amber' : 'text-ink-400'}`}>{e.rank}</span>
+            <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{e.displayName}</span>
+            <span className="shrink-0 text-11 tabular-nums text-ink-300">{e.value.toLocaleString('zh-CN')}</span>
           </li>
         ))}
-      </ul>
+      </ol>
 
-      <p className="text-11 leading-relaxed text-ink-400">
-        排行数据来自各设备上报，服务端会按「账号 + 项目 + 日期」取最新一次上报，多设备尽量去重；
-        无法完全合并时可能略有偏差，我们不会把它当作精确账本。代码统计属于用户设备上报，不承诺防作弊。
-      </p>
-    </div>
+      {compact && entries.length > shown.length && (
+        <p className="text-11 text-ink-400">仅显示前 {shown.length} 名；完整榜单随周期切换查看。</p>
+      )}
+
+      <div className="space-y-1.5 border-t border-ink-700/70 pt-2">
+        {!dense && (
+          <p className="text-11 leading-relaxed text-ink-400">
+            排行默认关闭。参与只上传「日期 + 每个项目的净增量」，不上传正文、标题或项目名；
+            与云同步资格无关，关闭即撤回已上传数据。
+          </p>
+        )}
+        <Button size="sm" variant="ghost" onClick={onOpenSettings}>
+          参与与匿名设置<ChevronRight size={12} />
+        </Button>
+        {!compact && (
+          <p className="text-11 leading-relaxed text-ink-400">
+            数据来自各设备上报，服务端按「账号 + 项目 + 日期」取最新一次上报并尽力去重；
+            无法完全合并时可能略有偏差，我们不把它当精确账本，也不承诺防作弊。
+          </p>
+        )}
+      </div>
+    </section>
   )
 }

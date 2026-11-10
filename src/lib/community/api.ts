@@ -117,6 +117,11 @@ export function withdrawPost(id: string): Promise<{ changed: boolean }> {
   return request(`/posts/${encodeURIComponent(id)}/withdraw`, { method: 'POST', body: '{}' })
 }
 
+/** 只改展示方式（已发布内容也能立即改，不需要重新审核；不改正文） */
+export function setPostDisplay(id: string, display: 'nickname' | 'anonymous'): Promise<{ display: string; note: string }> {
+  return request(`/posts/${encodeURIComponent(id)}/display`, { method: 'POST', body: JSON.stringify({ display }) })
+}
+
 export function deletePost(id: string): Promise<{ changed: boolean }> {
   return request(`/posts/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
@@ -153,6 +158,15 @@ export function reportContent(input: { targetType: 'post' | 'comment'; targetId:
   return request('/reports', { method: 'POST', body: JSON.stringify(input) })
 }
 
+// 申诉：作者对审核结果申请复核（服务端绑定当时被审的版本）
+export function submitAppeal(input: { postId: string; versionId?: string; reason: string }): Promise<{ id: string; status: string; duplicate?: boolean }> {
+  return request('/appeals', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function myAppeals(): Promise<{ items: Array<{ id: string; postId: string; status: string; createdAt: number; outcome: string }> }> {
+  return request('/my/appeals')
+}
+
 // ---------------- 档案 ----------------
 
 export function fetchProfile(): Promise<{ profile: CommunityProfile }> {
@@ -187,7 +201,7 @@ export function adminOverview(): Promise<AdminOverview & { ok: true }> {
   return request('/admin/overview')
 }
 
-export function adminQueue(type: 'post' | 'comment' | 'report', opts: { cursor?: string; limit?: number } = {}): Promise<{
+export function adminQueue(type: 'post' | 'comment' | 'report' | 'appeal', opts: { cursor?: string; limit?: number } = {}): Promise<{
   items: Array<AdminQueuePost | AdminQueueComment | AdminQueueReport>
   nextCursor: string
 }> {
@@ -198,13 +212,15 @@ export function adminItem(type: 'post' | 'comment', id: string): Promise<{ item:
   return request(`/admin/item${qsOf({ type, id })}`)
 }
 
-export function adminClaim(type: 'post' | 'comment' | 'report', ids: string[]): Promise<{ claimed: string[] }> {
+export function adminClaim(type: 'post' | 'comment' | 'report' | 'appeal', ids: string[]): Promise<{ claimed: string[] }> {
   return request('/admin/claim', { method: 'POST', body: JSON.stringify({ type, ids }) })
 }
 
 export function adminAdvice(input: {
   targetType: 'post' | 'comment'; id: string; versionId?: string
   suggestion: 'approve' | 'review' | 'reject'; reasons: string[]; model?: string
+  endpoint?: string
+  coverage?: { truncated: boolean; shown: number; total: number }
 }): Promise<{ ok: true }> {
   return request('/admin/advice', { method: 'POST', body: JSON.stringify(input) })
 }
@@ -216,7 +232,7 @@ export function adminDecision(input: {
   return request('/admin/decision', { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function adminCloseReport(input: { id: string; action: 'none' | 'takedown' | 'warn'; outcome?: string }): Promise<{ changed: boolean }> {
+export function adminCloseReport(input: { id: string; action: 'none' | 'takedown' | 'warn' | 'reopen'; outcome?: string }): Promise<{ changed: boolean }> {
   return request('/admin/report', { method: 'POST', body: JSON.stringify(input) })
 }
 

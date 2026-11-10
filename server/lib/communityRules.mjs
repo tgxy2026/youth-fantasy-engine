@@ -126,6 +126,14 @@ export function validateNickname(raw) {
   }
   // 规避开「匿名用户」占位名，避免冒充匿名展示
   if (/^匿名用户$/.test(nickname)) return { ok: false, code: 'NICKNAME_RESERVED', error: '该名称不可用，请换一个' }
+  /**
+   * 3.5.0 · 冒名与官方身份：昵称会公开展示，且**不做人工预审**（首期没有昵称审核队列），
+   * 所以至少要在这里挡住「看起来像官方」的名字，否则任何人都能叫「官方客服」
+   * 去私信/引导读者。命中即拒绝，不进入待审 —— 这类名字没有「语境可解释」的空间。
+   */
+  if (/(官方|管理员|客服|站主|版主|审核员|系统消息|YFE\s*官方)/i.test(nickname)) {
+    return { ok: false, code: 'NICKNAME_IMPERSONATION', error: '昵称不能包含官方或管理身份字样，请换一个' }
+  }
   return { ok: true, value: nickname }
 }
 

@@ -46,6 +46,13 @@ function trimVersions(post, max = CAP.maxVersions) {
 export function postPubliclyVisible(post) {
   if (!post || !post.publishedVersionId) return false
   if (post.status === POST_STATUS.WITHDRAWN || post.status === POST_STATUS.REMOVED) return false
+  /**
+   * 🔴 撤回/下架之后再提交或申诉重开，**旧版本不能自动回到公开**。
+   *    `publishedVersionId` 还要留着供审核、申诉与争议追溯，所以可见性必须另有标记，
+   *    不能只看「有没有已发布版本」——否则一次 takedown 后只要状态变回 pending，
+   *    被下架的旧内容就复活了（隔离流程实测抓到的真实缺陷）。
+   */
+  if (post.withdrawnAt || post.removedAt) return false
   return true
 }
 
@@ -233,7 +240,7 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       })
     }
 
-    const postMatch = /^\/api\/community\/posts\/([^/]+)(\/comments|\/vote|\/submit|\/withdraw)?$/.exec(path)
+    const postMatch = /^\/api\/community\/posts\/([^/]+)(\/comments|\/vote|\/submit|\/withdraw|\/display)?$/.exec(path)
     if (postMatch) {
       const postId = decodeURIComponent(postMatch[1])
       const sub = postMatch[2] || ''
@@ -333,6 +340,27 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
         }
       }
 
+      if (sub === '/display' && method === 'POST') {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
+        if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该投稿的展示方式' })
+        if (post.status === POST_STATUS.REMOVED || post.status === POST_STATUS.WITHDRAWN) {
+          return sendJSON(res, 409, { ok: false, code: 'NOT_EDITABLE', error: '该投稿已不可修改' })
+        }
+        const body = await readJSONBody(req, 4 * 1024).catch(() => null)
+        if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+        const display = normalizeDisplayMode(body.display, post.display || 'anonymous')
+        /**
+         * 已发布内容改为匿名：**立即更新展示**，不需要重新审核（只换展示方式，不改正文）。
+         * 🔴 不能承诺「消除先前关联」：缓存、他人截图与已读记录不归我们控制，文案必须说明。
+         */
+        post.display = display
+        post.updatedAt = Date.now()
+        store.putPost(post)
+        audit(user, 'post.display', { type: 'post', id: post.id }, display)
+        return sendJSON(res, 200, { ok: true, display, note: '展示方式已更新；新打开页面会生效，已经被他人看到或保存的内容无法收回。' })
+      }
+
       if (sub === '/vote' && method === 'POST') {
         if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
         if (!state.squareOpen) return sendJSON(res, 503, { ok: false, code: 'SQUARE_CLOSED', error: '广场暂时关闭' })
@@ -380,6 +408,46 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       return sendJSON(res, 200, { ok: true, changed: true })
     }
 
+// 申诉（3.5.0）：作者对「未通过 / 需修改 / 被下架」提出复核请求。
+    // 🔴 与举报共用同一张表（`reports.json`）但 `kind='appeal'` 分开统计与展示；
+    //    申诉记录绑定**当时被审的版本**，管理员复核时看到的就是作者当初提交的那一版。
+    if (path === '/api/community/appeals' && method === 'POST') {
+      if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+      const rl = limit(`c:appeal:${user.id}`, 10, 24 * 3600 * 1000)
+      if (!rl.ok) return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: '今天提交的申诉太多了' })
+      const body = await readJSONBody(req, 8 * 1024).catch(() => null)
+      if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+      const post = store.getPost(String(body.postId || ''))
+      if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
+      if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '只能为自己的投稿申诉' })
+      const open = store.findOpenReport(user.id, 'post', post.id, 'appeal')
+      if (open) return sendJSON(res, 200, { ok: true, duplicate: true, id: open.id, status: open.status })
+      const versionId = String(body.versionId || post.lastDecision?.versionId || post.pendingVersionId || post.publishedVersionId || '')
+      const appeal = {
+        id: store.newId('a'),
+        kind: 'appeal',
+        uid: user.id,
+        targetType: 'post',
+        targetId: post.id,
+        versionId,
+        reason: String(body.reason || '').slice(0, 500),
+        status: 'open',
+        createdAt: Date.now(),
+      }
+      store.putReport(appeal)
+      return sendJSON(res, 200, { ok: true, id: appeal.id, status: appeal.status })
+    }
+
+    if (path === '/api/community/my/appeals' && method === 'GET') {
+      if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+      const items = store.listReports()
+        .filter((r) => (r.kind || 'report') === 'appeal' && r.uid === user.id)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 50)
+        .map((r) => ({ id: r.id, postId: r.targetId, status: r.status, createdAt: r.createdAt, outcome: r.outcome || '' }))
+      return sendJSON(res, 200, { ok: true, items })
+    }
+
     // 举报
     if (path === '/api/community/reports' && method === 'POST') {
       if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
@@ -399,8 +467,9 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       if (store.counts().reports >= CAP.maxReports) {
         return sendJSON(res, 503, { ok: false, code: 'CAPACITY_FULL', error: '举报队列已满，请稍后再试' })
       }
-      const report = {
+const report = {
         id: store.newId('r'),
+        kind: 'report',
         uid: user.id,
         targetType,
         targetId,
@@ -495,8 +564,8 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       post.status = POST_STATUS.PENDING
       post.pendingVersionId = latest.vid
       post.screening = screenContent(v.value.body, 'post')
-      post.updatedAt = Date.now()
-      post.withdrawnAt = 0
+post.updatedAt = Date.now()
+      // 🔴 不在这里清 withdrawnAt：作者撤回后再提交，旧版本要等审核通过才回到公开
       store.putPost(post)
       return sendJSON(res, 200, { ok: true, post: myPost(store, post) })
     }
@@ -738,15 +807,17 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
     const method = String(req.method || 'GET').toUpperCase()
 
     if (path === '/api/community/admin/overview' && method === 'GET') {
-      const posts = store.listPosts()
+const posts = store.listPosts()
       const pendingPosts = posts.filter((p) => p.status === POST_STATUS.PENDING).length
+      const openRecords = store.listReports().filter((r) => r.status === 'open' || r.status === 'claimed')
       return sendJSON(res, 200, {
         ok: true,
         counts: store.counts(),
         queue: {
           posts: pendingPosts,
           comments: countPendingComments(),
-          reports: store.listReports().filter((r) => r.status === 'open' || r.status === 'claimed').length,
+          reports: openRecords.filter((r) => (r.kind || 'report') === 'report').length,
+          appeals: openRecords.filter((r) => r.kind === 'appeal').length,
         },
         state: store.getState(),
       })
@@ -772,16 +843,19 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
           nextCursor: page.nextCursor,
         })
       }
-      if (type === 'report') {
+if (type === 'report' || type === 'appeal') {
+        const wantAppeal = type === 'appeal'
         const rows = store.listReports()
-          .filter((r) => r.status === 'open' || r.status === 'claimed')
+          .filter((r) => (r.status === 'open' || r.status === 'claimed')
+            && ((r.kind || 'report') === 'appeal') === wantAppeal)
           .map((r) => ({ id: r.id, ts: r.createdAt, r }))
           .sort((a, b) => (a.ts - b.ts) || (a.id < b.id ? -1 : 1))
         const page = pageRows(rows, { cursor, limit: size })
         return sendJSON(res, 200, {
           ok: true,
           items: page.items.map(({ r }) => ({
-            id: r.id, targetType: r.targetType, targetId: r.targetId, reason: r.reason,
+            id: r.id, kind: r.kind || 'report', targetType: r.targetType, targetId: r.targetId,
+            versionId: r.versionId || '', reason: r.reason,
             detail: r.detail || '', createdAt: r.createdAt, status: r.status,
             claimedBy: r.claimedBy || '', claimedAt: r.claimedAt || 0,
           })),
@@ -878,7 +952,17 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       const suggestion = ['approve', 'review', 'reject'].includes(body?.suggestion) ? body.suggestion : 'review'
       const reasons = Array.isArray(body?.reasons) ? body.reasons.slice(0, 10).map((r) => String(r).slice(0, 200)) : []
       if (!id) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '缺少对象' })
-      const advice = { suggestion, reasons, versionId, at: Date.now(), model: String(body?.model || '').slice(0, 80) }
+      const advice = {
+        suggestion, reasons, versionId, at: Date.now(),
+        model: String(body?.model || '').slice(0, 80),
+        // 管理员需要看到「建议是在哪个端点上生成的」，用来确认没有把待审正文发到公网
+        endpoint: String(body?.endpoint || '').slice(0, 120),
+        coverage: {
+          truncated: body?.coverage?.truncated === true,
+          shown: Math.max(0, Number(body?.coverage?.shown) || 0),
+          total: Math.max(0, Number(body?.coverage?.total) || 0),
+        },
+      }
       if (targetType === 'post') {
         const p = store.getPost(id)
         if (!p) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
@@ -933,10 +1017,13 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
 
       const now = Date.now()
       post.lastDecision = { versionId, action, reason, by: user.id, at: now }
-      if (action === 'approve') {
+if (action === 'approve') {
         post.publishedVersionId = versionId
         post.pendingVersionId = ''
         post.status = POST_STATUS.PUBLISHED
+        // 审核通过 = 恢复公开：清掉撤回/下架留下的可见性标记
+        post.withdrawnAt = 0
+        post.removedAt = 0
       } else if (action === 'reject') {
         post.pendingVersionId = ''
         // 已有发布版本时：旧版本继续展示（默认策略），不因一次修改被拒而整体下线
@@ -946,8 +1033,10 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
         post.status = post.publishedVersionId ? POST_STATUS.PUBLISHED : POST_STATUS.CHANGES_REQUESTED
       } else if (action === 'remove') {
         post.status = POST_STATUS.REMOVED
+        post.removedAt = now
       } else if (action === 'restore') {
         post.status = POST_STATUS.PUBLISHED
+        post.removedAt = 0
       }
       post.updatedAt = now
       store.putPost(post)
@@ -960,20 +1049,39 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       const id = String(body?.id || '')
       const outcome = String(body?.outcome || '').slice(0, 40)
       const action = String(body?.action || 'none')
-      const r = store.getReport(id)
-      if (!r) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '举报不存在' })
+const r = store.getReport(id)
+      if (!r) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '记录不存在' })
       if (r.status === 'closed') return sendJSON(res, 200, { ok: true, changed: false })
       r.status = 'closed'
       r.outcome = outcome || action
       r.closedBy = user.id
       r.closedAt = Date.now()
       store.putReport(r)
+      /**
+       * 申诉复核通过（`reopen`）：把**申诉指向的那个版本**重新放回待审队列。
+       * 🔴 不直接发布：申诉只推翻「上次处理」，不替代审核本身；管理员还要按正常流程看内容再决定。
+       * 🔴 版本必须仍存在（作者可能已删除/撤回），否则只关闭申诉并说明。
+       */
+      if (action === 'reopen' && r.kind === 'appeal') {
+        const p = store.getPost(r.targetId)
+        const versionId = String(r.versionId || '')
+        if (p && versionId && versionOf(p, versionId)) {
+          p.status = POST_STATUS.PENDING
+          p.pendingVersionId = versionId
+          p.updatedAt = Date.now()
+          store.putPost(p)
+          audit(user, 'appeal.reopen', { type: 'post', id: p.id, versionId }, '申诉复核通过，重新进入待审')
+        }
+      }
       // 可选：举报成立 → 直接下架/删除对应内容
       if (action === 'takedown') {
         if (r.targetType === 'post') {
-          const p = store.getPost(r.targetId)
+const p = store.getPost(r.targetId)
           if (p && p.publishedVersionId) {
             p.status = POST_STATUS.REMOVED
+            // 🔴 只改状态不够：申诉重开或作者再提交会把状态改回 pending，
+            //    必须留 `removedAt` 才能在 `postPubliclyVisible` 里继续压住旧版本。
+            p.removedAt = Date.now()
             p.updatedAt = Date.now()
             store.putPost(p)
             audit(user, 'post.remove', { type: 'post', id: p.id, versionId: p.publishedVersionId }, '举报成立下架')

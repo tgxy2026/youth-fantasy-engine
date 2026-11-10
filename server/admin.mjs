@@ -18,8 +18,8 @@ import { readLegacyGate, blockLegacyWrites, unblockLegacyWrites } from './lib/le
 import { gcObjects, purgeDeletedProjects, listTrash } from './lib/objectGc.mjs'
 import { accountRoot } from './lib/v2Index.mjs'
 import {
-  loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
-  setUserFlag,
+loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
+  setUserFlag, issueRecoveryCode, recoveryStatus,
 } from './lib/users.mjs'
 import { hashPassword, validatePassword } from './lib/auth.mjs'
 import { usageOf, userDir } from './lib/userdata.mjs'
@@ -269,6 +269,39 @@ function cmdSync(name, action) {
   console.log(`已${mode === 'on' ? '开通' : '停用'} ${u.name} 的云端同步资格`)
 }
 
+/**
+ * 资格盘点（只读）。
+ * 🔴 「缺字段 = 已授予」是迁移口径，不是数据现状：这里把三种来源分开数出来，
+ *    运营才能判断要不要收紧、以及收紧会影响多少人；不在命令里做任何写入。
+ */
+function cmdSyncAudit() {
+  const users = listUsers()
+  const legacy = users.filter((u) => u.cloudSync === undefined)
+  const granted = users.filter((u) => u.cloudSync === true)
+  const denied = users.filter((u) => u.cloudSync === false)
+  console.log(`账号总数 ${users.length}`)
+  console.log(`· 缺字段（升级前注册，按已授予处理）${legacy.length}`)
+  console.log(`· 显式授予 ${granted.length}`)
+  console.log(`· 显式未授予（新注册默认）${denied.length}`)
+  if (legacy.length) {
+    console.log('\n缺字段账号（前 50）：')
+    for (const u of legacy.slice(0, 50)) console.log(`  ${u.name}  ${u.id}  注册于 ${new Date(u.createdAt).toLocaleDateString()}`)
+  }
+  console.log('\n这只是盘点，不会修改任何账号；如需统一收紧，请逐个执行 sync <用户名> off。')
+}
+
+/** 签发一次性找回码（明文只打印一次；用户表只存哈希） */
+function cmdRecovery(name) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到账号：${name}`)
+  const r = issueRecoveryCode(u.id)
+  if (!r.ok) return console.error(r.error)
+  const status = recoveryStatus(u.id)
+  console.log(`账号 ${u.name}（${u.id}）找回码：${r.code}`)
+  console.log(`有效期至 ${new Date(r.expiresAt).toLocaleString()}（24 小时，只能使用一次，当前状态 ${status}）`)
+  console.log('⚠️ 该码只在这里显示一次；请通过可信渠道交给本人，不要写入群聊或日志。')
+}
+
 function cmdRole(name, role) {
   const u = findByName(name)
   if (!u) return console.error(`找不到账号：${name}`)
@@ -295,7 +328,9 @@ switch (cmd) {
   case 'delete': cmdDelete(a1); break
   case 'gate': cmdGate(a1, a2, process.argv.slice(5).join(' ')); break
   case 'gc': cmdGc(a1); break
-  case 'sync': cmdSync(a1, a2); break
+case 'sync': cmdSync(a1, a2); break
+  case 'sync-audit': cmdSyncAudit(); break
+  case 'recovery': cmdRecovery(a1); break
   case 'role': cmdRole(a1, a2); break
   default:
     console.log(`用法：
@@ -311,6 +346,8 @@ switch (cmd) {
   node admin.mjs delete <用户名>          删除账号（连带数据，不可恢复）
   node admin.mjs gate <用户名> [on|off] [备注]  旧路径门禁：迁移完成后停用旧版写入（不填动作=查状态）
   node admin.mjs sync <用户名> on|off      开通/停用云端作品同步资格（与能否参与社区无关）
+  node admin.mjs sync-audit               只读盘点同步资格来源（缺字段/已授予/未授予）
+  node admin.mjs recovery <用户名>         签发一次性找回码（人工核实后使用；明文只显示一次）
   node admin.mjs role <用户名> [角色]      查看或设置社区角色（user / moderator / admin）
   node admin.mjs gc <用户名> [--apply] [--purge-trash]  回收无人引用的对象 / 清理过期回收站（默认预演）`)
 }

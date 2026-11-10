@@ -100,6 +100,18 @@ export interface RankBoard {
   entries: RankEntry[]
 }
 
+export interface ReviewAdvice {
+  suggestion: string
+  reasons: string[]
+  versionId: string
+  at: number
+  model?: string
+  /** 生成建议的端点主机名（确认没有外发到公网） */
+  endpoint?: string
+  /** 覆盖范围：截断时工作台必须显著提示 */
+  coverage?: { truncated: boolean; shown: number; total: number }
+}
+
 export interface AdminQueuePost {
   id: string
   versionId: string
@@ -108,7 +120,7 @@ export interface AdminQueuePost {
   tags: string[]
   createdAt: number
   screening: { level: string; reasons: string[] } | null
-  advice: { suggestion: string; reasons: string[]; versionId: string; at: number; model?: string } | null
+  advice: ReviewAdvice | null
   claimedBy: string
   claimedAt: number
 }
@@ -125,8 +137,12 @@ export interface AdminQueueComment {
 
 export interface AdminQueueReport {
   id: string
+  /** 'report' = 举报；'appeal' = 作者申诉（同一队列结构，语义与处理动作不同） */
+  kind?: 'report' | 'appeal'
   targetType: 'post' | 'comment'
   targetId: string
+  /** 申诉绑定的版本（举报为空） */
+  versionId?: string
   reason: string
   detail: string
   createdAt: number
@@ -137,7 +153,7 @@ export interface AdminQueueReport {
 
 export interface AdminOverview {
   counts: { posts: number; comments: number; reports: number }
-  queue: { posts: number; comments: number; reports: number }
+  queue: { posts: number; comments: number; reports: number; appeals: number }
   state: { squareOpen: boolean; postsOpen: boolean; commentsOpen: boolean; updatedAt: number }
 }
 
@@ -150,6 +166,6 @@ export interface AdminPostItem {
   tags: string[]
   createdAt: number
   screening: { level: string; reasons: string[] } | null
-  advice: { suggestion: string; reasons: string[]; versionId: string; at: number; model?: string } | null
+  advice: ReviewAdvice | null
   versions: Array<{ vid: string; title: string; createdAt: number }>
 }

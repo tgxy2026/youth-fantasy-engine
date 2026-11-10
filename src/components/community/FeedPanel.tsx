@@ -2,6 +2,9 @@
 //
 // 未登录也能看（服务端允许公共读）；能写时才显示操作按钮 —— 按钮隐藏不是权限控制，
 // 服务端每个写接口都会再判一次，这里只是不给出「点了必失败」的入口。
+//
+// 【阅读优先】详情按「标题 → 作者/时间 → 正文 → 互动 → 评论」分区，正文限制在舒适行宽，
+// 评论区与正文之间有明确分隔；列表只给摘要，避免把长文塞进卡片。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react'
@@ -126,128 +129,164 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
 
   if (openId) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={() => { setOpenId(''); setDetail(null) }}>
             <ChevronLeft size={14} />返回列表
           </Button>
-          {detail && <StatusPill>发布于 {formatTime(detail.createdAt)}</StatusPill>}
         </div>
 
         {detailState === 'loading' && <Notice>正在读取…</Notice>}
         {detailState === 'gone' && <Notice kind="warn">这篇投稿已不可见（可能被撤回、下架或尚未通过审核）。</Notice>}
+
         {detail && (
-          <>
-            <article className="rounded-xl border border-ink-700 bg-ink-900/60 p-4">
-              <h2 className="text-16 font-semibold text-ink-100">{detail.title}</h2>
-              <p className="mt-1 text-11 text-ink-400">
-                {detail.displayName} · {formatTime(detail.createdAt)}
-                {detail.tags.length ? ` · ${detail.tags.join(' / ')}` : ''}
-              </p>
-              <div className="mt-3 whitespace-pre-wrap break-words text-13 leading-7 text-ink-200">{detail.body}</div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === 1} onClick={() => void vote(1)}>
+          <div className="space-y-8">
+            <article className="mx-auto w-full max-w-2xl">
+              <h2 className="text-22 font-semibold leading-snug tracking-tight text-ink-100 sm:text-24">{detail.title}</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-12 text-ink-300">
+                <span className="text-ink-300">{detail.displayName}</span>
+                <span>·</span><span>{formatTime(detail.createdAt)}</span>
+                {detail.tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
+              </div>
+              <div className="mt-5 whitespace-pre-wrap break-words text-15 leading-8 text-ink-200">{detail.body}</div>
+
+              <div className="mt-7 flex flex-wrap items-center gap-2 border-t border-ink-700/70 pt-4">
+                <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === 1} onClick={() => void vote(1)}
+                  aria-pressed={detail.myVote === 1} aria-label={`点赞，当前 ${detail.counts.up}`}>
                   <ThumbsUp size={14} />{detail.counts.up}
                 </Button>
-                <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === -1} onClick={() => void vote(-1)}>
+                <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === -1} onClick={() => void vote(-1)}
+                  aria-pressed={detail.myVote === -1} aria-label={`点踩，当前 ${detail.counts.down}`}>
                   <ThumbsDown size={14} />{detail.counts.down}
                 </Button>
-                <span className="text-11 text-ink-400"><MessageSquare size={12} className="inline" /> {detail.counts.comments} 条评论</span>
-                <Button size="sm" variant="ghost" onClick={() => (canWrite ? setReportOpen((v) => !v) : onNeedLogin())}>举报</Button>
+                <span className="inline-flex items-center gap-1 text-12 text-ink-400"><MessageSquare size={13} />{detail.counts.comments}</span>
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => (canWrite ? setReportOpen((v) => !v) : onNeedLogin())}>举报</Button>
               </div>
+
               {reportOpen && (
-                <div className="mt-3 space-y-2 rounded-lg border border-ink-700 bg-ink-900/70 p-3">
-                  <label className="block text-12 text-ink-200">举报原因
+                <div className="mt-3 space-y-3 rounded-xl border border-ink-700 bg-ink-900/60 p-4">
+                  <p className="text-13 font-medium text-ink-100">举报这篇投稿</p>
+                  <label className="block text-12 text-ink-300">原因
                     <select aria-label="举报原因" value={reportReason} onChange={(e) => setReportReason(e.target.value)}
-                      className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100">
+                      className="mt-1 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100">
                       {['广告或引流', '色情或低俗', '人身攻击', '疑似抄袭', '违法内容', '侵犯隐私', '其他'].map((r) => <option key={r}>{r}</option>)}
                     </select>
                   </label>
-                  <textarea aria-label="补充说明" rows={2} value={reportDetail} onChange={(e) => setReportDetail(e.target.value)}
+                  <textarea aria-label="补充说明" rows={3} value={reportDetail} onChange={(e) => setReportDetail(e.target.value)}
                     placeholder="补充说明（可选，最多 500 字）" maxLength={500}
-                    className="w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100" />
+                    className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100" />
                   <div className="flex gap-2">
                     <Button size="sm" disabled={busy} onClick={() => void submitReport()}>提交举报</Button>
                     <Button size="sm" variant="ghost" onClick={() => setReportOpen(false)}>取消</Button>
                   </div>
+                  <p className="text-11 text-ink-400">举报会进入管理员队列；处理结果可在「我的 → 我的举报」查看。</p>
                 </div>
               )}
             </article>
 
-            <section aria-label="评论" className="space-y-2">
-              <h3 className="text-13 font-semibold text-ink-100">评论</h3>
-              {comments.length === 0 && <p className="text-11 text-ink-400">还没有评论。</p>}
-              <ul className="space-y-2">
+            <section aria-label="评论" className="mx-auto w-full max-w-2xl border-t border-ink-700/70 pt-6">
+              <h3 className="text-15 font-semibold text-ink-100">评论 {comments.length ? `(${comments.length})` : ''}</h3>
+              {comments.length === 0 && <p className="mt-2 text-12 text-ink-400">还没有评论。写下第一条看法吧。</p>}
+              <ul className="mt-3 space-y-3">
                 {comments.map((c) => (
-                  <li key={c.id} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+                  <li key={c.id} className="rounded-xl border border-ink-700/70 bg-ink-900/40 p-3.5">
                     <p className="text-11 text-ink-400">
-                      {c.displayName}{c.byAuthor ? ' · 作者' : ''} · {formatTime(c.createdAt)}
+                      <span className="text-ink-300">{c.displayName}</span>
+                      {c.byAuthor ? ' · 作者' : ''} · {formatTime(c.createdAt)}
                     </p>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-12 leading-6 text-ink-200">{c.body}</p>
+                    <p className="mt-1.5 whitespace-pre-wrap break-words text-13 leading-7 text-ink-200">{c.body}</p>
                   </li>
                 ))}
               </ul>
+
               {canWrite ? (
-                <div className="space-y-2 rounded-lg border border-ink-700 bg-ink-900/60 p-3">
+                <div className="mt-4 space-y-2 rounded-xl border border-ink-700 bg-ink-900/60 p-4">
                   <textarea aria-label="写评论" rows={3} value={commentText} maxLength={COMMUNITY_LIMITS.commentMax}
                     onChange={(e) => setCommentText(e.target.value)} placeholder="写下你的看法（纯文字，最多 1000 字）"
-                    className="w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100" />
+                    className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 leading-6 text-ink-100 outline-none focus:border-amber/60" />
                   <div className="flex flex-wrap items-center gap-2">
                     <select aria-label="评论展示方式" value={commentDisplay} onChange={(e) => setCommentDisplay(e.target.value as 'nickname' | 'anonymous')}
-                      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100">
+                      className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-100">
                       <option value="anonymous">匿名用户</option>
                       <option value="nickname">显示我的昵称</option>
                     </select>
                     <span className="text-11 text-ink-400">{charCount(commentText)} / {COMMUNITY_LIMITS.commentMax}</span>
-                    <Button size="sm" disabled={busy || !commentText.trim()} onClick={() => void sendComment()}>发表评论</Button>
+                    <Button size="sm" className="ml-auto" disabled={busy || !commentText.trim()} onClick={() => void sendComment()}>发表评论</Button>
                   </div>
-                  <p className="text-11 text-ink-400">低风险评论会直接显示；命中规则或检查不确定的评论会进入待审，通过后其他读者才能看到。</p>
+                  <p className="text-11 leading-relaxed text-ink-400">
+                    低风险评论会直接显示；命中规则、检查不确定或检查失败时进入待审，通过后其他读者才能看到。
+                  </p>
                 </div>
               ) : (
-                <Button size="sm" onClick={onNeedLogin}>登录后参与评论</Button>
+                <div className="mt-4">
+                  <Button size="sm" onClick={onNeedLogin}>登录后参与评论</Button>
+                </div>
               )}
             </section>
-          </>
+          </div>
         )}
-        {(notice || error) && <Notice kind={error ? 'error' : 'info'}>{error || notice}</Notice>}
+
+        <div aria-live="polite">{(notice || error) && <Notice kind={error ? 'error' : 'info'}>{error || notice}</Notice>}</div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="xs" variant="toggle" selected={!tag} onClick={() => { setTag(''); tagRef.current = ''; void load({ tag: '' }) }}>全部</Button>
+        <Button size="sm" variant="toggle" selected={!tag} onClick={() => { setTag(''); tagRef.current = ''; void load({ tag: '' }) }}>全部</Button>
         {COMMUNITY_TAGS.map((t) => (
-          <Button key={t} size="xs" variant="toggle" selected={tag === t} onClick={() => { setTag(t); tagRef.current = t; void load({ tag: t }) }}>{t}</Button>
+          <Button key={t} size="sm" variant="toggle" selected={tag === t} onClick={() => { setTag(t); tagRef.current = t; void load({ tag: t }) }}>{t}</Button>
         ))}
+        <span className="ml-auto text-11 text-ink-400">按发布时间排序</span>
       </div>
 
-      {error && <Notice kind="error">{error}</Notice>}
-      {closed && <Notice kind="warn">广场暂时关闭，暂时无法浏览新内容。</Notice>}
-      {loading && items.length === 0 && <Notice>正在读取广场…</Notice>}
+      <div aria-live="polite" className="space-y-3">
+        {error && <Notice kind="error">{error}</Notice>}
+        {closed && <Notice kind="warn">广场暂时关闭，暂时无法浏览新内容。</Notice>}
+      </div>
+
+      {loading && items.length === 0 && (
+        <ul className="space-y-3" aria-label="正在加载投稿">
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="animate-pulse rounded-2xl border border-ink-700 bg-ink-900/40 p-4">
+              <div className="h-4 w-1/3 rounded bg-ink-800" />
+              <div className="mt-3 h-3 w-full rounded bg-ink-800/80" />
+              <div className="mt-2 h-3 w-2/3 rounded bg-ink-800/80" />
+            </li>
+          ))}
+        </ul>
+      )}
       {!loading && !closed && items.length === 0 && <Empty title="还没有已发布的投稿" hint="通过审核的投稿会出现在这里。" />}
 
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {items.map((p) => (
           <li key={p.id}>
             <button type="button" onClick={() => void openPost(p.id)}
-              className="w-full rounded-xl border border-ink-700 bg-ink-900/50 p-3 text-left transition-colors hover:border-amber/40">
-              <p className="flex flex-wrap items-center gap-2">
-                <span className="text-13 font-semibold text-ink-100">{p.title}</span>
+              className="group w-full rounded-2xl border border-ink-700 bg-ink-900/45 p-4 text-left transition-colors hover:border-amber/40 focus-visible:border-amber focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/40 sm:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-15 font-semibold text-ink-100 group-hover:text-amber sm:text-16">{p.title}</h3>
                 {p.tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
+              </div>
+              <p className="mt-2 line-clamp-2 text-13 leading-7 text-ink-300">{p.excerpt}</p>
+              <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-11 text-ink-300">
+                <span>{p.displayName}</span>
+                <span>{formatTime(p.createdAt)}</span>
+                <span className="inline-flex items-center gap-1"><ThumbsUp size={11} />{p.counts.up}</span>
+                <span className="inline-flex items-center gap-1"><ThumbsDown size={11} />{p.counts.down}</span>
+                <span className="inline-flex items-center gap-1"><MessageSquare size={11} />{p.counts.comments}</span>
               </p>
-              <p className="mt-1 line-clamp-2 text-12 leading-6 text-ink-300">{p.excerpt}</p>
-              <p className="mt-2 text-11 text-ink-400">{p.displayName} · {formatTime(p.createdAt)} · 赞 {p.counts.up} / 踩 {p.counts.down} · 评论 {p.counts.comments}</p>
             </button>
           </li>
         ))}
       </ul>
 
       {cursor && !closed && (
-        <Button size="sm" variant="ghost" disabled={loading} onClick={() => void load({ append: true })}>
-          {loading ? '读取中…' : '加载更多'}
-        </Button>
+        <div className="pt-1">
+          <Button size="sm" variant="secondary" disabled={loading} onClick={() => void load({ append: true })}>
+            {loading ? '读取中…' : '加载更多'}
+          </Button>
+        </div>
       )}
     </div>
   )

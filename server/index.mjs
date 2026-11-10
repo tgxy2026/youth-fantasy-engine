@@ -34,7 +34,7 @@ import {
   loadUsers, findByName, findById, createUser, touchLogin, setUsedBytes, listUsers,
   claimInvite, createInvite, listInvites, newUserId,
   openSession, checkSession, revokeSessionById, revokeOtherSessions, listSessions,
-  markIssued, resetPasswordByInvite,
+  markIssued, resetPasswordByInvite, resetPasswordByRecoveryCode,
 } from './lib/users.mjs'
 import {
   hashPassword, verifyPassword, loadOrCreateSecret, signSession, verifySessionToken, hashToken,
@@ -649,12 +649,16 @@ async function handleApi(req, res, url) {
     const pv = validatePassword(body.password)
     if (!pv.ok) return sendJSON(res, 400, { ok: false, error: pv.error })
     const invite = String(body.invite || '').trim().toUpperCase()
-    if (!invite) return sendJSON(res, 400, { ok: false, error: '请填写注册时使用的那张邀请码' })
+    // 3.5.0：开放注册的账号没有邀请码，改用站主人工核实后签发的一次性「找回码」。
+    const recovery = String(body.recovery || '').trim().toUpperCase()
+    if (!invite && !recovery) return sendJSON(res, 400, { ok: false, error: '请填写邀请码或找回码' })
 
-    const r = resetPasswordByInvite(nv.value, invite, hashPassword(pv.value))
+    const r = recovery
+      ? resetPasswordByRecoveryCode(nv.value, recovery, hashPassword(pv.value))
+      : resetPasswordByInvite(nv.value, invite, hashPassword(pv.value))
     if (!r.ok) return sendJSON(res, 400, { ok: false, error: r.error })
 
-    console.log(`[auth] 密码重置（凭邀请码）：${r.value.name} from ${ip}`)
+    console.log(`[auth] 密码重置（凭${recovery ? '找回码' : '邀请码'}）：${r.value.name} from ${ip}`)
     recordStat('reset')
     return sendJSON(res, 200, { ok: true, name: r.value.name })
   }

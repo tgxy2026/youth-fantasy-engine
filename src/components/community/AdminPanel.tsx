@@ -19,7 +19,7 @@ import type {
 } from '@/lib/community/types'
 import { Empty, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
 
-type QueueType = 'post' | 'comment' | 'report'
+type QueueType = 'post' | 'comment' | 'report' | 'appeal'
 
 export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void }) {
   const [tab, setTab] = useState<QueueType>('post')
@@ -39,7 +39,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
     try {
       const r = await adminOverview()
       setOverview(r)
-      onTitle?.(r.queue.posts + r.queue.comments + r.queue.reports)
+      onTitle?.(r.queue.posts + r.queue.comments + r.queue.reports + r.queue.appeals)
     } catch (e) { setError(errorText(e)) }
   }, [onTitle])
 
@@ -108,8 +108,15 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
         targetType: openItem.id.startsWith('c_') ? 'comment' : 'post',
         id: openItem.id, versionId: openItem.versionId,
         suggestion: a.suggestion, reasons: a.reasons, model: a.model,
+        endpoint: a.endpoint, coverage: a.coverage,
       })
-      setOpenItem({ ...openItem, advice: { suggestion: a.suggestion, reasons: a.reasons, versionId: openItem.versionId, at: Date.now(), model: a.model } })
+      setOpenItem({
+        ...openItem,
+        advice: {
+          suggestion: a.suggestion, reasons: a.reasons, versionId: openItem.versionId,
+          at: Date.now(), model: a.model, endpoint: a.endpoint, coverage: a.coverage,
+        },
+      })
       setNotice('已生成建议（仅作参考，不改变状态）。')
     } catch (e) { setError(errorText(e)) } finally { setAdviceBusy(false) }
   }
@@ -139,6 +146,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
         <Button size="sm" variant="toggle" selected={tab === 'post'} onClick={() => setTab('post')}>待审投稿 {overview ? `(${overview.queue.posts})` : ''}</Button>
         <Button size="sm" variant="toggle" selected={tab === 'comment'} onClick={() => setTab('comment')}>待审评论 {overview ? `(${overview.queue.comments})` : ''}</Button>
         <Button size="sm" variant="toggle" selected={tab === 'report'} onClick={() => setTab('report')}>举报处理 {overview ? `(${overview.queue.reports})` : ''}</Button>
+        <Button size="sm" variant="toggle" selected={tab === 'appeal'} onClick={() => setTab('appeal')}>申诉复核 {overview ? `(${overview.queue.appeals})` : ''}</Button>
         <Button size="xs" variant="ghost" onClick={() => { void loadOverview(); void loadQueue(tab) }}>刷新</Button>
         <Button size="xs" variant="ghost" onClick={() => { void (async () => {
           try { setAudit((await adminAudit(30)).items) } catch (e) { setError(errorText(e)) }
@@ -190,10 +198,25 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
                 </StatusPill>
               )}
             </div>
+            {/* 🔴 截断提示必须在理由**之前**：先看到「只读了 6000 字」，再看建议 */}
+            {openItem.advice?.coverage?.truncated && (
+              <div role="alert" className="rounded-lg border-2 border-amber bg-amber/15 px-3 py-2 text-12 font-semibold leading-6 text-amber">
+                本次建议只读了全文的前 {openItem.advice.coverage.shown.toLocaleString('zh-CN')} 个字符
+                （全文 {openItem.advice.coverage.total.toLocaleString('zh-CN')} 个字符），
+                「不代表全文结论」——通过前请通读下方全文。
+              </div>
+            )}
             {openItem.advice?.reasons.map((r, i) => <p key={i} className="text-11 text-ink-300">· {r}</p>)}
+            {(openItem.advice?.model || openItem.advice?.endpoint) && (
+              <p className="text-11 text-ink-400">
+                生成位置：{openItem.advice.model || '本机模型'}
+                {openItem.advice.endpoint ? ` @ ${openItem.advice.endpoint}` : ''}
+              </p>
+            )}
             <p className="text-11 text-ink-400">AI 只提供建议，最终是否发布由你决定；请结合文学语境判断。</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {/* 处理条吸在卡片底部：长文滚到底时仍能看见「规则初筛 / 这是哪一版」的上下文由上方卡片标题保证 */}
+          <div className="sticky bottom-0 z-10 -mx-3 -mb-3 mt-1 flex flex-wrap items-center gap-2 border-t border-ink-700 bg-surface-app/95 px-3 py-2 backdrop-blur">
             <input aria-label="处理原因" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={400}
               placeholder="处理原因（通过可留空；拒绝/要求修改请写清楚）"
               className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-12 text-ink-100" />
@@ -208,27 +231,42 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
 
       <ul className="space-y-2">
         {items.map((it) => {
-          if (tab === 'report') {
+          if (tab === 'report' || tab === 'appeal') {
             const r = it as AdminQueueReport
+            const isAppeal = r.kind === 'appeal'
             return (
               <li key={r.id} className="rounded-xl border border-ink-700 bg-ink-900/50 p-3">
                 <p className="text-12 text-ink-100">
-                  举报 {r.targetType === 'post' ? '投稿' : '评论'} · {r.reason} <StatusPill>{r.status === 'claimed' ? '已领取' : '待处理'}</StatusPill>
+                  {isAppeal ? '申诉' : '举报'} {r.targetType === 'post' ? '投稿' : '评论'} · {r.reason}
+                  <StatusPill>{r.status === 'claimed' ? '已领取' : '待处理'}</StatusPill>
                 </p>
+                {isAppeal && r.versionId && <p className="mt-1 text-11 text-ink-400">申诉版本 {r.versionId}（复核针对这一版内容）</p>}
                 {r.detail && <p className="mt-1 text-11 text-ink-300">补充：{r.detail}</p>}
                 <p className="mt-1 text-11 text-ink-400">{formatTime(r.createdAt)}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button size="xs" variant="ghost" disabled={busy === `claim-${r.id}`}
-                    onClick={() => void run(`claim-${r.id}`, () => adminClaim('report', [r.id]), '已领取举报')}>领取</Button>
+                    onClick={() => void run(`claim-${r.id}`, () => adminClaim(isAppeal ? 'appeal' : 'report', [r.id]), isAppeal ? '已领取申诉' : '已领取举报')}>领取</Button>
                   {r.targetType === 'post' && (
-                    <Button size="xs" variant="secondary" onClick={() => void openPost(r.targetId, '')}>查看内容</Button>
+                    <Button size="xs" variant="secondary" onClick={() => void openPost(r.targetId, r.versionId || '')}>查看内容</Button>
                   )}
-                  <Button size="xs" variant="danger" disabled={busy === `close-${r.id}`}
-                    onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'takedown', outcome: '举报成立，已下架' }), '已下架并关闭举报')}>举报成立并下架</Button>
-                  <Button size="xs" variant="ghost" disabled={busy === `close-${r.id}`}
-                    onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'none', outcome: '未发现违规' }), '已关闭举报')}>未违规并关闭</Button>
+                  {isAppeal ? (
+                    <>
+                      <Button size="xs" disabled={busy === `close-${r.id}`}
+                        onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'reopen', outcome: '申诉成立，重新进入待审' }), '已重新放回待审队列')}>申诉成立，重新待审</Button>
+                      <Button size="xs" variant="ghost" disabled={busy === `close-${r.id}`}
+                        onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'none', outcome: '维持原处理' }), '已驳回申诉')}>维持原处理</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="xs" variant="danger" disabled={busy === `close-${r.id}`}
+                        onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'takedown', outcome: '举报成立，已下架' }), '已下架并关闭举报')}>举报成立并下架</Button>
+                      <Button size="xs" variant="ghost" disabled={busy === `close-${r.id}`}
+                        onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'none', outcome: '未发现违规' }), '已关闭举报')}>未违规并关闭</Button>
+                    </>
+                  )}
                 </div>
-                {r.targetType === 'comment' && <Notice kind="warn">评论举报请在「待审评论」里处理；已显示的评论由举报成立动作直接下架。</Notice>}
+                {!isAppeal && r.targetType === 'comment' && <Notice kind="warn">评论举报请在「待审评论」里处理；已显示的评论由举报成立动作直接下架。</Notice>}
+                {isAppeal && <Notice>申诉成立只是把「那一版内容」放回待审；是否公开仍由你按正常审核流程决定。</Notice>}
               </li>
             )
           }

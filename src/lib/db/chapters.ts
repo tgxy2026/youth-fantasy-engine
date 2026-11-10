@@ -93,6 +93,14 @@ async function afterChapterWrite(old: Chapter | undefined, next: Chapter, owner?
   if (old && old.content !== next.content) {
     const delta = netDeltaOfTexts(old.content, next.content)
     if (delta) void recordRankDelta(next.projectId || currentProjectId, delta).catch(() => undefined)
+  } else if (!old && next.content) {
+    /**
+     * 新建章节时直接带正文（手动新建、AI 生成、Agent 写入都走这里）：
+     * 旧实现只在 `old` 存在时记账 ⇒ **新建即写入的正文永远不计入排行**。
+     * 按「从无到有」记正增量，与导入区分：导入/恢复走直接写表，不经过本函数。
+     */
+    const words = countWordsWithPunct(next.content)
+    if (words) void recordRankDelta(next.projectId || currentProjectId, words).catch(() => undefined)
   }
   // 时光机：内容有变化时按策略快照（距上次快照 >5 分钟 或 字数差 >200）
   if (old && old.content !== next.content) {

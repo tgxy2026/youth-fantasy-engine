@@ -12,11 +12,48 @@
 
 import { chat, requireProviderFor, composeSystemPrompt, CHAT_TIMEOUT_MS, blocksLocalModel } from '@/lib/ai'
 import { WEB } from '@/lib/app/platform'
+// 🔴 只认地址证据，不认 `local` 标记：把远程 URL 勾成「本地」是配置失误，不能成为外发通道。
+import { isLocalModelAddress } from '@/lib/aiCore/localModelPolicy'
+import { protocolOf } from '@/lib/aiCore/protocol'
+import type { AIProvider } from '@/lib/ai'
+
+/**
+ * 审核建议的模型目标判定（纯函数，可单测）。
+ *
+ * 【为什么必须比「网页版禁用本机模型」更严】`blocksLocalModel` 只拦「网页版 + 本机」，
+ * 桌面版配一个 OpenAI/DeepSeek 就会把**待审正文**直接发到公网 —— 那是把用户的未公开内容
+ * 交给第三方，超出「内容在本机模型处理」的承诺。这里反过来做白名单：
+ * 只有**地址能证明是本机/局域网**的端点才允许，其余一律拒绝（包括域名、公网 IP、无地址）。
+ *
+ * ⚠️ 残留风险：`chat()` 的 fetch 会跟随 HTTP 重定向，配置层无法证明本地端点不会 302 到公网。
+ *    因此建议记录里会同时保存实际端点主机名，管理员在工作台可见；部署时应把该端点限定在
+ *    本机并禁止出站重定向。此限制写在实施记录里，不当作已完全消除。
+ */
+export function classifyAdviceTarget(provider: Pick<AIProvider, 'type' | 'protocol' | 'local' | 'baseUrl'>): {
+  ok: boolean
+  host: string
+  reason: string
+} {
+  const base = String(provider.baseUrl || '').trim()
+  // Ollama 协议 + 留空 = 官方默认 127.0.0.1:11434（与 `isLocalModelProvider` 同口径）
+  if (protocolOf(provider) === 'ollama' && !base) return { ok: true, host: '127.0.0.1', reason: '' }
+  let host = ''
+  try { host = new URL(base).hostname.toLowerCase() } catch { host = '' }
+  if (isLocalModelAddress(base)) return { ok: true, host, reason: '' }
+  const reason = !base
+    ? '该模型没有填写接口地址，无法证明是本地端点。'
+    : '该模型的接口地址不是本机 / 局域网地址，属于远程目标。'
+  return { ok: false, host, reason }
+}
 
 export interface CommunityAdvice {
   suggestion: 'approve' | 'review' | 'reject'
   reasons: string[]
   model: string
+  /** 实际端点主机名（工作台展示，便于管理员确认没有外发） */
+  endpoint: string
+  /** 覆盖范围：是否截断、原文总字数 */
+  coverage: { truncated: boolean; shown: number; total: number }
 }
 
 const ADVISOR_PROMPT = `你是投稿广场的**辅助审核助手**，只输出 JSON，不聊天。
@@ -34,10 +71,10 @@ const ADVISOR_PROMPT = `你是投稿广场的**辅助审核助手**，只输出 
 
 输出 JSON：{"suggestion":"approve|review|reject","reasons":["…"]}`
 
-function clampMaterial(text: string, max = 6000): { text: string; truncated: boolean } {
+function clampMaterial(text: string, max = 6000): { text: string; truncated: boolean; shown: number; total: number } {
   const chars = Array.from(text || '')
-  if (chars.length <= max) return { text: chars.join(''), truncated: false }
-  return { text: chars.slice(0, max).join(''), truncated: true }
+  if (chars.length <= max) return { text: chars.join(''), truncated: false, shown: chars.length, total: chars.length }
+  return { text: chars.slice(0, max).join(''), truncated: true, shown: max, total: chars.length }
 }
 
 function parseAdvice(raw: string): { suggestion: CommunityAdvice['suggestion']; reasons: string[] } {
@@ -68,8 +105,13 @@ export async function suggestReview(input: {
   signal?: AbortSignal
 }): Promise<CommunityAdvice> {
   const cfg = await requireProviderFor('utility')
-  if (blocksLocalModel(WEB, cfg)) {
+  if (blocksLocalModel(WEB, cfg) || WEB) {
     throw new Error('网页版不能调用本机模型。审核建议请在桌面版或便携版生成；本页仍可人工决定。')
+  }
+  const target = classifyAdviceTarget(cfg)
+  if (!target.ok) {
+    throw new Error(`审核建议只允许在本机 / 局域网模型上运行，当前模型不满足：${target.reason}`
+      + '请在小范围审核前把「用途模型」指向本机 Ollama / LM Studio 端点，本页仍可人工决定。')
   }
   const material = clampMaterial(input.body || '')
   const header = input.kind === 'post'
@@ -89,5 +131,11 @@ ${material.text}
   const parsed = parseAdvice(raw)
   const reasons = [...parsed.reasons]
   if (material.truncated) reasons.push('正文过长，建议通读全文后再决定（本结论只看前 6000 字）')
-  return { suggestion: parsed.suggestion, reasons, model: String(cfg.model || '').slice(0, 60) }
+  return {
+    suggestion: parsed.suggestion,
+    reasons,
+    model: String(cfg.model || '').slice(0, 60),
+    endpoint: target.host,
+    coverage: { truncated: material.truncated, shown: material.shown, total: material.total },
+  }
 }

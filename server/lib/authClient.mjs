@@ -69,6 +69,11 @@ export function authClient({ reset = false, canRegister = false, needInvite = fa
     const payload = { name: document.getElementById('name').value.trim(), password: pwd.value }
     if (mode === 'register' || reset) payload.invite = reset
       ? document.getElementById('invite').value.trim().toUpperCase() : document.getElementById('invite').value.trim()
+    // 3.5.0：无邀请码账号改用一次性找回码（两个字段任一即可，服务端判定）
+    if (reset) {
+      const recovery = document.getElementById('recovery')
+      if (recovery) payload.recovery = recovery.value.trim().toUpperCase()
+    }
     const request = { controller: new AbortController(), timer: null, timedOut: false }
     active = request; busy(true); msg.className = 'msg'; msg.textContent = ''
     request.timer = setTimeout(() => { request.timedOut = true; request.controller.abort() }, 30000)
