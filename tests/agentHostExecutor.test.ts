@@ -135,6 +135,19 @@ async function main() {
     const timeline = await callWrite(AGENT_TOOL_NAMES.createTableRow, { projectId, tabId: 'timeline', fields: { 章节标题: '合成章', 发生时间: '1年2月1日' } })
     const savedTimeline = (await memoryOps.getAll<{ tabId: string; data: Record<string, string> }>('tableRows')).find(item => item.tabId === 'timeline')
     ok('时间线创建遵循结束时间自动跟随规则', timeline.ok === true && savedTimeline?.data['结束时间'] === '1年2月1日', JSON.stringify(timeline))
+
+    // ISSUE-03：引擎维护字段（编号）与未知字段分开报错，Agent 可据此停止无效重试。
+    const withCode = await callWrite(AGENT_TOOL_NAMES.createTableRow, { projectId, tabId: 'nations', fields: { 名称: '编号写入', 编号: 'N9999' } })
+    ok('创建时写编号按只读字段拒绝', withCode.ok === false && withCode.code === 'READ_ONLY_FIELD', JSON.stringify(withCode))
+    const unknownField = await callWrite(AGENT_TOOL_NAMES.createTableRow, { projectId, tabId: 'nations', fields: { 名称: '未知字段', 不存在字段: 'x' } })
+    ok('创建时未知字段仍是 BAD_REQUEST', unknownField.ok === false && unknownField.code === 'BAD_REQUEST', JSON.stringify(unknownField))
+    const editCode = await callWrite(AGENT_TOOL_NAMES.updateTableRow, { projectId, tabId: 'nations', rowId: row?.id, fields: { 编号: 'N9999' }, expectedFields: { 编号: 'N0001' } })
+    ok('修改编号按只读字段拒绝', editCode.ok === false && editCode.code === 'READ_ONLY_FIELD', JSON.stringify(editCode))
+    ok('只读字段错误允许重试（换个合法字段再来）', agentErrorRetryable('READ_ONLY_FIELD'))
+    const tabsResult = await callWrite(AGENT_TOOL_NAMES.listDataTabs, { projectId })
+    const tabsValue = tabsResult.ok ? tabsResult.value as { tabs: { tabId: string; columns?: { name: string; readOnly?: boolean; auto?: boolean }[] }[] } : { tabs: [] }
+    const codeColumn = tabsValue.tabs.find(tab => tab.tabId === 'nations')?.columns?.find(column => column.name === '编号')
+    ok('栏目清单标注编号为只读且自动分配', codeColumn?.readOnly === true && codeColumn?.auto === true, JSON.stringify(codeColumn))
   }
 
   // 先开发并登记用例，按要求在功能完成后统一执行。

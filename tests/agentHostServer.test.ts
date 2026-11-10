@@ -8,6 +8,7 @@
 //      页面端点只接受带页面头的同源请求；
 //   ⑤ 桥：host 文件读取、写工具 requestId 必填、状态查询、错误透传。
 import fs from 'node:fs'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { normalizeScope, createLedger, createPageQueue, createAgentHost, loadConfig } from '../scripts/agent-host/core.mjs'
@@ -191,9 +192,11 @@ async function main() {
 
     // ⑤ 桥：host 文件 / 工具表 / requestId 必填
     ok('桥工具表含全部读写工具', BRIDGE_TOOL_NAMES.includes('yfe_create_setting_card') && BRIDGE_TOOL_NAMES.includes('yfe_list_projects'), JSON.stringify(BRIDGE_TOOL_NAMES))
-    const info = await invoke('yfe_host_info', {}, configFile) as { available: boolean; enabled: boolean }
-    ok('桥能读取 host 状态且不回传 token', info.available === true && info.enabled === true && !JSON.stringify(info).includes(config.token), JSON.stringify(info))
+    const info = await invoke('yfe_host_info', {}, configFile) as { ok: boolean; value?: { available: boolean; enabled: boolean; connectionMode: unknown; note: string } }
+    ok('host_info 统一成功信封 {ok:true,value}', info.ok === true && info.value?.available === true && info.value?.enabled === true, JSON.stringify(info))
+    ok('桥能读取 host 状态且不回传 token', !JSON.stringify(info).includes(config.token), JSON.stringify(info))
     ok('桥不回传宿主文件系统路径', !JSON.stringify(info).includes('agent-host.json'), JSON.stringify(info))
+    ok('未注入模式闸时 connectionMode 为 null', info.value?.connectionMode === null, JSON.stringify(info.value))
     const list = await invoke('yfe_list_chapters', { projectId }, configFile) as { ok: boolean; value?: { echo?: string } }
     ok('只读工具经宿主执行', list.ok === true && list.value?.echo === 'yfe_list_chapters', JSON.stringify(list))
 
@@ -203,12 +206,78 @@ async function main() {
     } catch (error) { missingRequestId = error instanceof Error ? error.message : String(error) }
     ok('写工具缺 requestId 被桥拒绝', missingRequestId.includes('requestId'), missingRequestId)
 
-    const status = await invoke('yfe_request_status', { requestId: 'req-33333333' }, configFile) as { ok: boolean; request?: { state?: string } }
+    const status = await invoke('yfe_request_status', { requestId: 'req-33333333' }, configFile) as { ok: boolean; request?: { state?: string }; value?: { state?: string } }
     ok('桥可查询 requestId 状态', status.ok === true && status.request?.state === 'success', JSON.stringify(status))
+    ok('request_status 数据同时在 value（request 保留兼容）', status.value?.state === 'success' && status.value === status.request, JSON.stringify(status))
 
+    // ⑥ 信封契约（ISSUE-02）：全部工具的成功返回都是 {ok:true,value}，第三方按 value 解析不会取空。
+    let envelopeFail = ''
+    let envSeq = 0
+    for (const toolName of BRIDGE_TOOL_NAMES) {
+      envSeq++
+      const args: Record<string, unknown> = toolName === 'yfe_host_info' ? {}
+        : toolName === 'yfe_request_status' ? { requestId: 'req-33333333' }
+          : { projectId, requestId: `req-envelope-${String(envSeq).padStart(4, '0')}` }
+      const r = await invoke(toolName, args, configFile) as { ok?: boolean; value?: unknown } | null
+      if (!r || r.ok !== true || !('value' in r)) { envelopeFail = `${toolName} :: ${JSON.stringify(r)}`; break }
+    }
+    ok('68 个工具成功信封全部为 {ok:true,value}', BRIDGE_TOOL_NAMES.length === 68 && envelopeFail === '', envelopeFail || String(BRIDGE_TOOL_NAMES.length))
+
+    // stop() 会把 host 文件端口清零（桥报 HOST_CONFIG_INCOMPLETE）；
+    // 这里留一份停机前的有效配置，模拟「配置还在、宿主进程已退出」。
+    const offlineFile = path.join(tmp, 'agent-host-offline.json')
+    fs.copyFileSync(configFile, offlineFile)
     await host.stop()
     const stopped = await fetch(`${base}/api/agent/status`, { headers: auth }).then(() => true).catch(() => false)
     ok('停止后端口不再接受连接', stopped === false)
+    const offline = await invoke('yfe_host_info', {}, offlineFile) as { ok: boolean; value?: { available: boolean; note: string } }
+    ok('宿主不可达时 host_info 如实报 available:false 并说明', offline.ok === true && offline.value?.available === false && (offline.value?.note ?? '').length > 0, JSON.stringify(offline))
+  }
+
+  // ⑦ 模式切换回归（ISSUE-01）：host_info 与业务调用必须给出一致结论，切回后一起恢复。
+  {
+    const modeDir = path.join(tmp, 'mode-switch')
+    fs.mkdirSync(modeDir)
+    const file = path.join(modeDir, 'host.json')
+    let modeState: { phase: string; mode: string | null; busy: boolean; reason?: string } = { phase: 'stable', mode: 'agent', busy: false }
+    const gate = {
+      snapshot: () => ({ ...modeState, active: { api: 0, agent: 0 } }),
+      acquire: (mode: string) => {
+        if (modeState.phase !== 'stable' || modeState.mode !== mode || modeState.busy) throw new Error('当前模式不允许')
+        return 'lease-mode-1'
+      },
+      release: () => true,
+    }
+    const host = createAgentHost({ configFile: file, callPage: async () => ({ ok: true, value: { echo: true } }), clientCount: () => 1, modeGate: gate })
+    const port = await host.start()
+    host.setConfig({ enabled: true, scope: { projects: [{ projectId, actions: ['chapter:create'] }] } })
+    type HostInfo = { ok: boolean; value?: { available: boolean; enabled: boolean; connectionMode?: { phase?: string; mode?: string } | null; note?: string } }
+    ok('宿主 status() 带 connectionMode', (host.status().connectionMode as { mode?: string } | null)?.mode === 'agent', JSON.stringify(host.status()))
+    const httpStatus = await fetch(`http://127.0.0.1:${port}/api/agent/status`, { headers: { Authorization: `Bearer ${loadConfig(file).token}` } }).then(r => r.json()) as { connectionMode?: { mode?: string } }
+    ok('HTTP /api/agent/status 透传 connectionMode', httpStatus.connectionMode?.mode === 'agent', JSON.stringify(httpStatus))
+    const before = await invoke('yfe_host_info', {}, file) as HostInfo
+    ok('Agent 模式下 host_info 报模式且无警示', before.ok === true && before.value?.connectionMode?.mode === 'agent' && before.value?.note === '', JSON.stringify(before))
+    const callBefore = await invoke('yfe_list_projects', {}, file) as { ok: boolean }
+    ok('Agent 模式下业务调用成功', callBefore.ok === true, JSON.stringify(callBefore))
+    // ISSUE-11：先在 Agent 模式落一笔写账；切回 API 后业务被挡，但账本核对必须仍可用。
+    const ledgerReqId = 'req-mode-ledger-01'
+    const wrote = await invoke('yfe_create_chapter', { projectId, title: '模式账本章', content: '正文', requestId: ledgerReqId }, file) as { ok: boolean }
+    ok('Agent 模式写入落账成功', wrote.ok === true, JSON.stringify(wrote))
+
+    modeState = { phase: 'stable', mode: 'api', busy: false }
+    const after = await invoke('yfe_host_info', {}, file) as HostInfo
+    ok('切回 API 后 enabled 保留但 host_info 明示 MODE_BLOCKED', after.value?.enabled === true && after.value?.connectionMode?.mode === 'api' && (after.value?.note ?? '').includes('MODE_BLOCKED'), JSON.stringify(after))
+    let blockedCode = ''
+    try { await invoke('yfe_list_projects', {}, file) } catch (error) { blockedCode = (error as { failure?: { code?: string } }).failure?.code ?? '' }
+    ok('切回 API 后业务调用 MODE_BLOCKED，与 host_info 结论一致', blockedCode === 'MODE_BLOCKED', blockedCode)
+    const ledgerView = await invoke('yfe_request_status', { requestId: ledgerReqId }, file) as { ok: boolean; value?: { state?: string } | null }
+    ok('切回 API 后 request_status 仍可核对账本（刻意豁免模式闸）', ledgerView.ok === true && ledgerView.value?.state === 'success', JSON.stringify(ledgerView))
+
+    modeState = { phase: 'stable', mode: 'agent', busy: false }
+    const restored = await invoke('yfe_host_info', {}, file) as HostInfo
+    const callAfter = await invoke('yfe_list_projects', {}, file) as { ok: boolean }
+    ok('切回 Agent 后 host_info 与业务调用一起恢复', restored.value?.connectionMode?.mode === 'agent' && restored.value?.note === '' && callAfter.ok === true, JSON.stringify({ restored, callAfter }))
+    await host.stop()
   }
 
   // 独立宿主模拟配置更新中断，并检查重启不能沿用旧授权。
@@ -240,6 +309,54 @@ async function main() {
     let retryBlocked = false
     try { host.setConfig({ enabled: true }) } catch { retryBlocked = true }
     ok('配置结果不明时禁止重新开启', retryBlocked)
+  }
+
+  // ⑧ 故障注入矩阵（ISSUE-08）：端口无人监听 / 非 JSON 响应 / 结果不明核对链路。
+  {
+    const faultDir = path.join(tmp, 'fault-injection')
+    fs.mkdirSync(faultDir)
+    const token = 'fault-token-0123456789abcdef0123456789abcdef'
+    const codeOf = async (fn: () => Promise<unknown>) => {
+      try { await fn(); return '' } catch (error) { return (error as { failure?: { code?: string } }).failure?.code ?? '' }
+    }
+    const writeConfig = (file: string, port: number) => fs.writeFileSync(file, JSON.stringify({
+      enabled: true, port, token, scope: { projects: [{ projectId, actions: ['chapter:create'] }] },
+    }))
+
+    // 8a. 端口有效但无人监听 → HOST_UNREACHABLE（业务 / 账本查询 / host_info 三路一致）。
+    const probe = http.createServer()
+    await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve))
+    const deadPort = (probe.address() as { port: number }).port
+    await new Promise<void>(resolve => probe.close(() => resolve()))
+    const unreachableFile = path.join(faultDir, 'unreachable.json')
+    writeConfig(unreachableFile, deadPort)
+    ok('端口无人监听时业务调用 HOST_UNREACHABLE', await codeOf(() => invoke('yfe_create_chapter', { projectId, title: 'x', content: 'y', requestId: 'req-fault-unreach-01' }, unreachableFile)) === 'HOST_UNREACHABLE')
+    ok('端口无人监听时账本查询 HOST_UNREACHABLE', await codeOf(() => invoke('yfe_request_status', { requestId: 'req-fault-unreach-01' }, unreachableFile)) === 'HOST_UNREACHABLE')
+    const unreachableInfo = await invoke('yfe_host_info', {}, unreachableFile) as { ok: boolean; value?: { available: boolean } }
+    ok('端口无人监听时 host_info 报 available:false', unreachableInfo.ok === true && unreachableInfo.value?.available === false, JSON.stringify(unreachableInfo))
+
+    // 8b. 宿主返回非 JSON → HOST_BAD_RESPONSE。
+    const badServer = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('this is not json') })
+    await new Promise<void>(resolve => badServer.listen(0, '127.0.0.1', resolve))
+    const badPort = (badServer.address() as { port: number }).port
+    const badFile = path.join(faultDir, 'bad-response.json')
+    writeConfig(badFile, badPort)
+    ok('宿主非 JSON 响应时业务调用 HOST_BAD_RESPONSE', await codeOf(() => invoke('yfe_create_chapter', { projectId, title: 'x', content: 'y', requestId: 'req-fault-badresp-01' }, badFile)) === 'HOST_BAD_RESPONSE')
+    ok('宿主非 JSON 响应时账本查询 HOST_BAD_RESPONSE', await codeOf(() => invoke('yfe_request_status', { requestId: 'req-fault-badresp-01' }, badFile)) === 'HOST_BAD_RESPONSE')
+    await new Promise<void>(resolve => badServer.close(() => resolve()))
+
+    // 8c. 结果不明 → request_status 报 unknown 并要求核对 → 复用同 requestId 被拒绝（不盲目重做）。
+    const unknownFile = path.join(faultDir, 'unknown-host.json')
+    const unknownHost = createAgentHost({ configFile: unknownFile, callPage: async () => ({ ok: false, code: 'SAVE_FAILED', error: '落盘未确认' }), clientCount: () => 1 })
+    await unknownHost.start()
+    unknownHost.setConfig({ enabled: true, scope: { projects: [{ projectId, actions: ['chapter:create'] }] } })
+    const unknownReqId = 'req-fault-unknown-01'
+    const firstWrite = await invoke('yfe_create_chapter', { projectId, title: 'x', content: 'y', requestId: unknownReqId }, unknownFile) as { ok: boolean; code?: string }
+    ok('结果不明写入如实返回 SAVE_FAILED', firstWrite.ok === false && firstWrite.code === 'SAVE_FAILED', JSON.stringify(firstWrite))
+    const unknownQuery = await invoke('yfe_request_status', { requestId: unknownReqId }, unknownFile) as { ok: boolean; value?: { state?: string }; actionRequired?: string }
+    ok('结果不明后 request_status 报 unknown 并要求核对', unknownQuery.ok === true && unknownQuery.value?.state === 'unknown' && !!unknownQuery.actionRequired, JSON.stringify(unknownQuery))
+    ok('结果不明后复用同 requestId 被拒绝而非盲目重做', await codeOf(() => invoke('yfe_create_chapter', { projectId, title: 'x', content: 'y', requestId: unknownReqId }, unknownFile)) === 'OUTCOME_UNKNOWN')
+    await unknownHost.stop()
   }
 
   console.log(`\nAGENT_HOST_RESULTS {"planned":${pass + fail},"passed":${pass},"failed":${fail}}`)

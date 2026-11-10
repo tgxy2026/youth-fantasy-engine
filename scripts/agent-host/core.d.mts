@@ -54,6 +54,12 @@ export interface PageQueueLike {
 }
 export function createPageQueue(options?: { timeoutMs?: number }): PageQueueLike
 
+export interface ModeGateLike {
+  snapshot(): { phase: string; mode?: string | null; busy?: boolean; reason?: string }
+  acquire(mode: string, owner: string): unknown
+  release(lease: unknown, owner: string): boolean
+}
+
 export interface AgentHostLike {
   status(): Record<string, unknown>
   setConfig(patch: { enabled?: boolean; scope?: unknown }): Record<string, unknown>
@@ -66,6 +72,7 @@ export function createAgentHost(options: {
   configFile: string
   callPage: (payload: unknown) => Promise<unknown>
   clientCount?: () => number
+  modeGate?: ModeGateLike | null
 }): AgentHostLike
 
 export function isLocalHost(req: { headers: Record<string, string | string[] | undefined> }): boolean

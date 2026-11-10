@@ -65,7 +65,7 @@ const BLOCKED_STATUS: ConnectionModeStatus = {
   active: { api: 0, agent: 0 }, ownsLock: false, lock: null, canRecover: false,
 }
 
-const DENIED_IN_AGENT = '当前为 Agent 连接模式：引擎内置的 API 模型调用已停用。要使用 API 模型，请到「模型设置 → API 模型」切换并等待切换完成。'
+const DENIED_IN_AGENT = '当前为 Agent 连接模式：引擎内置的 API 调用已停用。要使用 API 调用，请到「模型设置 → API 调用」切换并等待切换完成。'
 const MODE_UNREADY = '无法从本机宿主确认连接模式，已拒绝模型请求。请到「模型设置」查看模式状态并按提示安全恢复。'
 
 function leaseFailure(message?: string): Error {

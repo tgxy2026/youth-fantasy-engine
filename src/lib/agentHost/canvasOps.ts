@@ -105,6 +105,17 @@ async function requireOpenProject(projectId: string, deps: AgentExecutorDeps): P
   return null
 }
 
+// ISSUE-04：画布 UI 存的是章节显示标题，Agent 侧两种引用都要接受；写入统一落标题，保证引擎画布直接可读。
+async function resolveChapterRef(ref: string, projectId: string, owner: OwnedOperation, deps: AgentExecutorDeps): Promise<{ id: string; title: string } | AgentToolResult> {
+  const chapters = (await deps.getChapters(owner)).filter(item => item.projectId === projectId)
+  const byId = chapters.find(item => item.id === ref)
+  if (byId) return { id: byId.id, title: byId.title }
+  const matches = chapters.filter(item => item.title === ref)
+  if (matches.length === 1) return { id: matches[0].id, title: matches[0].title }
+  if (matches.length > 1) return fail('BAD_REQUEST', `章节标题「${ref}」对应多个章节，请改用章节 ID。`)
+  return fail('BAD_REQUEST', `章节不存在：${ref}。请传章节 ID 或唯一的章节标题（可用 yfe_list_chapters 查询）。`)
+}
+
 async function writeCanvas(
   projectId: string,
   next: PlotCanvasLike,
@@ -154,15 +165,17 @@ export async function createPlotCard(args: Record<string, unknown>, scope: Agent
   try {
     const owner = deps.captureOwner(projectId)
     owner.assertCurrent()
+    let chapterTitle = ''
     if (chapter) {
-      const chapters = await deps.getChapters(owner)
-      if (!chapters.some(item => item.id === chapter && item.projectId === projectId)) return fail('BAD_REQUEST', `章节不存在：${chapter}`)
+      const resolved = await resolveChapterRef(chapter, projectId, owner, deps)
+      if ('ok' in resolved) return resolved
+      chapterTitle = resolved.title
     }
     const canvas = normalizePlotCanvas(await db.getSettingFor<unknown>(projectId, KEY, null, owner))
     if (plotCanvasFingerprint(canvas) !== expectedFingerprint) return fail('CONFLICT', '情节画布已变化，请重新读取。', { fingerprint: plotCanvasFingerprint(canvas) })
     const card: PlotCardLike = {
       id: deps.uid(),
-      ...(chapter ? { chapter } : {}),
+      ...(chapter ? { chapter: chapterTitle } : {}),
       type, text, x, y,
       ...(basedOn ? { basedOn } : {}),
     }
@@ -199,8 +212,9 @@ export async function updatePlotCard(args: Record<string, unknown>, scope: Agent
     const owner = deps.captureOwner(projectId)
     owner.assertCurrent()
     if (patch.chapter) {
-      const chapters = await deps.getChapters(owner)
-      if (!chapters.some(item => item.id === patch.chapter && item.projectId === projectId)) return fail('BAD_REQUEST', `章节不存在：${patch.chapter}`)
+      const resolved = await resolveChapterRef(patch.chapter, projectId, owner, deps)
+      if ('ok' in resolved) return resolved
+      patch.chapter = resolved.title
     }
     const canvas = normalizePlotCanvas(await db.getSettingFor<unknown>(projectId, KEY, null, owner))
     if (plotCanvasFingerprint(canvas) !== expectedFingerprint) return fail('CONFLICT', '情节画布已变化，请重新读取。', { fingerprint: plotCanvasFingerprint(canvas) })
@@ -306,10 +320,19 @@ export async function readPlotCanvas(args: Record<string, unknown>, deps: AgentE
   if (projectError) return projectError
   const owner = deps.captureOwner(projectId)
   const canvas = normalizePlotCanvas(await db.getSettingFor<unknown>(projectId, KEY, null, owner))
+  const chapters = (await deps.getChapters(owner)).filter(item => item.projectId === projectId)
+  // 画布卡片的 chapter 可能是标题（UI 生成）或旧版 Agent 写入的 ID；两种都解析出 chapterId，解析不了为 null。
+  const chapterIdOf = (ref: string | undefined): string | null => {
+    if (!ref) return null
+    const byId = chapters.find(item => item.id === ref)
+    if (byId) return byId.id
+    const matches = chapters.filter(item => item.title === ref)
+    return matches.length === 1 ? matches[0].id : null
+  }
   const ids = new Set(canvas.cards.slice(offset, offset + limit).map(card => card.id))
   const connections = canvas.conns.filter(conn => ids.has(conn[0]) || ids.has(conn[1]))
   owner.assertCurrent()
   return { ok: true, value: { projectId, total: canvas.cards.length, offset,
-    cards: canvas.cards.slice(offset, offset + limit).map(card => ({ id: card.id, chapter: card.chapter, type: card.type, text: card.text, x: card.x, y: card.y, basedOn: card.basedOn })),
+    cards: canvas.cards.slice(offset, offset + limit).map(card => ({ id: card.id, chapter: card.chapter, chapterId: chapterIdOf(card.chapter), type: card.type, text: card.text, x: card.x, y: card.y, basedOn: card.basedOn })),
     connections, selected: canvas.selected, fingerprint: plotCanvasFingerprint(canvas) } }
 }

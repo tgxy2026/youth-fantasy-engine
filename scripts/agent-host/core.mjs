@@ -329,6 +329,8 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0, m
   let configBlocked = false
 
   function status() {
+    // 运行模式真源摘要（ISSUE-01）：enabled 只表示配置开关，不代表当前模式允许调用。
+    const mode = modeGate ? modeGate.snapshot() : null
     return {
       running: !!server && port > 0,
       enabled: config.enabled === true,
@@ -338,6 +340,7 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0, m
       clients: clientCount(),
       lastError: configBlocked ? 'Agent 配置更新未确认，连接已停用；请先检查并恢复配置。' : '',
       tokenConfigured: !!config.token,
+      connectionMode: mode ? { phase: mode.phase, mode: mode.mode ?? null, busy: mode.busy === true, reason: typeof mode.reason === 'string' ? mode.reason : '' } : null,
     }
   }
 
@@ -456,6 +459,8 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0, m
         return sendJson(res, 200, await handleCall(body))
       }
 
+      // ISSUE-11：账本查询刻意不经 modeGate——切回 API 模式后业务调用会被 MODE_BLOCKED 拒绝，
+      // 但「结果不明 → yfe_request_status 核对」的收尾链路必须仍然可用（见适配规范 §4）。
       if (route.startsWith('/api/agent/request/') && req.method === 'GET') {
         if (!authorized(req) && !sameOriginPage(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' })
         const requestId = decodeURIComponent(route.slice('/api/agent/request/'.length))

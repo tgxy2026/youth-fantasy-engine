@@ -178,6 +178,45 @@ async function main() {
     ok('损坏画布拒绝读取和写入并保留原始内容', !read.ok && !write.ok && JSON.stringify(after) === JSON.stringify(damaged), JSON.stringify({ read, write }))
   }
 
+  // ⑤b ISSUE-04：画布章节引用兼容 ID / 唯一标题，写入落标题，读取补 chapterId
+  {
+    await seed()
+    const ch1 = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, title: '觉醒', content: '正文' }))
+    const ch2 = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, title: '出发', content: '正文' }))
+    const empty = valueOf<{ fingerprint: string }>(await call(AGENT_TOOL_NAMES.readPlotCanvas, { projectId }))
+    const byId = valueOf<{ cardId: string; fingerprint: string }>(await call(AGENT_TOOL_NAMES.createPlotCard, {
+      projectId, expectedFingerprint: empty.fingerprint, text: '按 ID 关联', chapter: ch1.chapterId, x: 0, y: 0,
+    }))
+    const byTitle = valueOf<{ cardId: string; fingerprint: string }>(await call(AGENT_TOOL_NAMES.createPlotCard, {
+      projectId, expectedFingerprint: byId.fingerprint, text: '按标题关联', chapter: '出发', x: 1, y: 1,
+    }))
+    type CardView = { id: string; chapter?: string; chapterId: string | null }
+    const view = valueOf<{ cards: CardView[] }>(await call(AGENT_TOOL_NAMES.readPlotCanvas, { projectId }))
+    const c1 = view.cards.find(item => item.id === byId.cardId)
+    const c2 = view.cards.find(item => item.id === byTitle.cardId)
+    ok('章节 ID 引用落标题且可反查 chapterId', c1?.chapter === '觉醒' && c1?.chapterId === ch1.chapterId, JSON.stringify(c1))
+    ok('唯一章节标题引用被接受', c2?.chapter === '出发' && c2?.chapterId === ch2.chapterId, JSON.stringify(c2))
+    const moved = valueOf<{ fingerprint: string }>(await call(AGENT_TOOL_NAMES.updatePlotCard, {
+      projectId, cardId: byId.cardId, expectedFingerprint: byTitle.fingerprint, chapter: '出发',
+    }))
+    const missing = await call(AGENT_TOOL_NAMES.createPlotCard, {
+      projectId, expectedFingerprint: moved.fingerprint, text: '悬空', chapter: '不存在的章', x: 2, y: 2,
+    })
+    ok('不存在的章节引用被拒绝', missing.ok === false && missing.code === 'BAD_REQUEST', JSON.stringify(missing))
+    await call(AGENT_TOOL_NAMES.createChapter, { projectId, title: '出发', content: '同名章' })
+    const ambiguous = await call(AGENT_TOOL_NAMES.createPlotCard, {
+      projectId, expectedFingerprint: moved.fingerprint, text: '歧义', chapter: '出发', x: 3, y: 3,
+    })
+    ok('歧义标题被拒绝并提示改用 ID', ambiguous.ok === false && ambiguous.code === 'BAD_REQUEST', JSON.stringify(ambiguous))
+    const afterDup = valueOf<{ cards: CardView[] }>(await call(AGENT_TOOL_NAMES.readPlotCanvas, { projectId }))
+    ok('歧义标题读取时 chapterId 回退 null', afterDup.cards.filter(item => item.chapter === '出发').every(item => item.chapterId === null), JSON.stringify(afterDup.cards))
+    const cleared = valueOf<{ fingerprint: string }>(await call(AGENT_TOOL_NAMES.updatePlotCard, {
+      projectId, cardId: byTitle.cardId, expectedFingerprint: moved.fingerprint, chapter: '',
+    }))
+    const clearedView = valueOf<{ cards: CardView[] }>(await call(AGENT_TOOL_NAMES.readPlotCanvas, { projectId }))
+    ok('空字符串清除章节引用', cleared.fingerprint !== moved.fingerprint && clearedView.cards.find(item => item.id === byTitle.cardId)?.chapterId === null, JSON.stringify(clearedView.cards))
+  }
+
   // ⑥ 世界包引入（预览 + 确认 + 跨项目授权）
   {
     await seed()
@@ -399,6 +438,28 @@ async function main() {
       projectId, checkId: 'flush-fault', findings: [{ level: '提示', title: '需核对', detail: '合成报告' }],
     }, fullScope, executor({ flush: async () => false }))
     ok('报告写入未确认落盘时明确结果不明', !unconfirmed.ok && unconfirmed.code === 'OUTCOME_UNKNOWN', JSON.stringify(unconfirmed))
+  }
+
+  // ⑥d ISSUE-05：检查报告 chapterNo 由（卷序, 章序）权威派生，不是「章节数 + 1」
+  {
+    await seed()
+    const now = Date.now()
+    await memoryOps.put('volumes', { id: 'v-free', projectId, order: -1, title: '自由章节', description: '', createdAt: now, isFree: true })
+    await memoryOps.put('volumes', { id: 'v-second', projectId, order: 1, title: '第二卷', description: '', createdAt: now })
+    const first = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, volumeId: 'v-domain', title: '第一章', content: '正文' }))
+    await call(AGENT_TOOL_NAMES.createChapter, { projectId, volumeId: 'v-domain', title: '第二章', content: '正文' })
+    const third = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, volumeId: 'v-second', title: '第三章', content: '正文' }))
+    const free = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, volumeId: 'v-free', title: '番外', content: '正文' }))
+    const findings = [{ level: '提示', title: '合成发现' }]
+    const noOf = async (chapterId: string, checkId: string) => {
+      const saved = valueOf<{ reportId: string }>(await call(AGENT_TOOL_NAMES.saveCheckReport, { projectId, checkId, chapterId, findings }))
+      return valueOf<{ chapterNo: number | null }>(await call(AGENT_TOOL_NAMES.readCheckReport, { projectId, reportId: saved.reportId })).chapterNo
+    }
+    ok('首章报告章号为 1', await noOf(first.chapterId, 'no-first') === 1)
+    ok('跨卷末章报告章号为 3', await noOf(third.chapterId, 'no-last') === 3)
+    ok('自由卷章节报告章号为 0（不占号）', await noOf(free.chapterId, 'no-free') === 0)
+    const fresh = valueOf<{ chapterId: string }>(await call(AGENT_TOOL_NAMES.createChapter, { projectId, volumeId: 'v-second', title: '第四章', content: '正文' }))
+    ok('新建章节报告章号为 4', await noOf(fresh.chapterId, 'no-fresh') === 4)
   }
 
   // ⑦ 备份恢复预览 / 确认 / 版本前置

@@ -24,7 +24,7 @@ import readline from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { randomBytes } from 'node:crypto'
 
-export const BRIDGE_VERSION = '0.1.1'
+export const BRIDGE_VERSION = '0.1.2'
 export const HOST_FILE_NAME = 'agent-host.json'
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18']
 // 未识别客户端版本时返回本服务支持的最新版本，由客户端决定是否接受。
@@ -135,6 +135,26 @@ async function requestStatus(host, requestId) {
   return body
 }
 
+/**
+ * 查询宿主实时状态（ISSUE-01）。host 文件只是配置快照：引擎切回 API 调用模式后
+ * enabled 仍为 true，必须问宿主才能知道当前模式是否允许 Agent 调用。
+ * 只返回状态字段，绝不回传 token / 文件路径。
+ */
+async function hostStatus(host) {
+  let res
+  try {
+    res = await fetch(`http://127.0.0.1:${host.port}/api/agent/status`, {
+      headers: { Authorization: `Bearer ${host.token}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch { return { kind: 'unreachable' } }
+  if (res.status === 401) return { kind: 'unauthorized' }
+  let body
+  try { body = await res.json() } catch { return { kind: 'unreachable' } }
+  if (!res.ok || !body || body.ok !== true) return { kind: 'unreachable' }
+  return { kind: 'live', body }
+}
+
 // ---------- 工具定义 ----------
 
 const REQUEST_ID_SCHEMA = {
@@ -159,14 +179,14 @@ const WRITE_TOOLS = [
   },
   {
     name: 'yfe_update_table_row',
-    description: '修改设定表中已有条目；先读取条目，逐字段提供读取时旧值。校验选项、引用和项目历法；表格正在编辑或保存时拒绝。',
+    description: '修改设定表中已有条目；先读取条目，逐字段提供读取时旧值。校验选项、引用和项目历法；「编号」等引擎维护字段不可写（返回 READ_ONLY_FIELD）。表格正在编辑或保存时拒绝。',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, rowId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, expectedFields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'rowId', 'fields', 'expectedFields', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'table:write',
   },
   {
     name: 'yfe_create_table_row',
-    description: '在当前项目的支持的设定表中创建一行；先查询栏目与字段，自动编号由引擎分配，引用须已存在。表格正在编辑或保存时拒绝。',
+    description: '在当前项目的支持的设定表中创建一行；先查询栏目与字段，自动编号由引擎分配，不要传入「编号」（返回 READ_ONLY_FIELD），引用须已存在。表格正在编辑或保存时拒绝。',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, fields: { type: 'object', additionalProperties: { type: 'string' } }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'tabId', 'fields', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'table:create',
@@ -201,7 +221,7 @@ const WRITE_TOOLS = [
   },
   {
     name: 'yfe_delete_chapter',
-    description: '把章节移入回收站（可恢复），同时清理该章快照与台账；正在编辑器中打开的章、或有未保存草稿时拒绝。',
+    description: '把章节移入回收站（可恢复），同时清理该章的章节快照与章节台账（requestId 幂等账本不受影响）；正在编辑器中打开的章、或有未保存草稿时拒绝。',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, chapterId: { type: 'string' }, expectedUpdatedAt: { type: 'integer', minimum: 0 }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'chapterId', 'expectedUpdatedAt', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     action: 'chapter:delete',
@@ -307,14 +327,14 @@ const WRITE_TOOLS = [
   {
     name: 'yfe_create_plot_card',
     description: '在情节画布创建一张卡；必须携带 yfe_read_plot_canvas 返回的 expectedFingerprint。需要「修改情节画布」授权。',
-    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'expectedFingerprint', 'text', 'x', 'y', 'requestId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string', description: '章节引用：章节 ID 或唯一的章节标题（yfe_list_chapters 可查）；写入后画布按章节标题显示。' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'expectedFingerprint', 'text', 'x', 'y', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'canvas:write',
   },
   {
     name: 'yfe_update_plot_card',
     description: '修改情节卡的文字 / 类型 / 章节引用 / 坐标；需 expectedFingerprint 与「修改情节画布」授权。',
-    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, cardId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'cardId', 'expectedFingerprint', 'requestId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, cardId: { type: 'string' }, expectedFingerprint: { type: 'string' }, text: { type: 'string' }, type: { type: 'string' }, chapter: { type: 'string', description: '章节引用：章节 ID 或唯一的章节标题；传空字符串清除引用。' }, basedOn: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, requestId: REQUEST_ID_SCHEMA }, required: ['projectId', 'cardId', 'expectedFingerprint', 'requestId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     action: 'canvas:write',
   },
@@ -431,7 +451,7 @@ const WRITE_TOOLS = [
 const READ_TOOLS = [
   {
     name: 'yfe_host_info',
-    description: '查看 Agent 连接是否开启、引擎宿主端口与当前授权的项目 / 动作（不含 token，也不返回本机文件路径）。',
+    description: '查看宿主是否可达、Agent 连接是否开启、当前运行模式（connectionMode）与授权的项目 / 动作（不含 token，也不返回本机文件路径）。available / enabled 只表示宿主进程与配置开关；当前模式是否允许调用以 connectionMode 与 note 为准。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
@@ -513,7 +533,7 @@ const READ_TOOLS = [
   },
   {
     name: 'yfe_list_data_tabs',
-    description: '列出作品表单与表格的基础栏目及字段；不含项目自定义模板字段。',
+    description: '列出作品表单与表格的基础栏目及字段；不含项目自定义模板字段。表格列含 readOnly（引擎维护、不可写入）与 auto（创建时引擎自动分配）标记，如「编号」。',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'], additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
@@ -651,7 +671,7 @@ const READ_TOOLS = [
   },
   {
     name: 'yfe_request_status',
-    description: '按 requestId 查询之前那次写入的状态（pending / success / failed / unknown）。unknown = 结果不明，必须在引擎中核对后才能继续。',
+    description: '按 requestId 查询之前那次写入的状态（pending / success / failed / unknown），记录在 value（request 为兼容别名）。unknown = 结果不明，必须在引擎中核对后才能继续。',
     inputSchema: {
       type: 'object',
       properties: { requestId: { type: 'string' } },
@@ -681,18 +701,48 @@ const replyError = (id, code, message) => send({ jsonrpc: '2.0', id, error: { co
 async function invoke(name, args, hostFile = HOST_FILE) {
   const host = loadHost(hostFile)
   if (name === 'yfe_host_info') {
+    const snapshotScope = host.scope ?? { projects: [] }
+    const live = await hostStatus(host)
+    if (live.kind !== 'live') {
+      return {
+        ok: true,
+        value: {
+          available: false,
+          port: host.port,
+          enabled: host.enabled === true,
+          scope: snapshotScope,
+          connectionMode: null,
+          note: live.kind === 'unauthorized'
+            ? '宿主拒绝了连接 token（引擎可能已重新生成配置）。请在引擎中重新开启 Agent 连接并更新配置。'
+            : '连不上引擎宿主（引擎可能未运行）。enabled / scope 只是本机配置快照，不代表当前状态；请启动引擎并在「模型设置 → Agent 连接」中开启连接。',
+        },
+      }
+    }
+    const enabled = live.body.enabled === true
+    const connectionMode = live.body.connectionMode ?? null
+    const modeBlocked = !!connectionMode && (connectionMode.phase !== 'stable' || connectionMode.mode !== 'agent')
+    let note = ''
+    if (!enabled) note = '引擎中尚未开启 Agent 写入连接（调用会被拒绝）。请在引擎「模型设置 → Agent 连接」中开启并授权项目。'
+    else if (modeBlocked) note = `当前运行模式不允许 Agent 调用（phase=${connectionMode.phase}，mode=${connectionMode.mode ?? '无'}${connectionMode.reason ? `，${connectionMode.reason}` : ''}）。业务调用会返回 MODE_BLOCKED；请在引擎「模型设置 → API 调用」中切回 Agent 模式并等待切换完成。`
     return {
-      available: true,
-      port: host.port,
-      enabled: host.enabled === true,
-      scope: host.scope ?? { projects: [] },
-      note: host.enabled === true ? '' : '引擎中尚未开启 Agent 写入连接（只读工具仍可调用，但写入会被拒绝）。',
+      ok: true,
+      value: {
+        available: true,
+        port: typeof live.body.port === 'number' ? live.body.port : host.port,
+        enabled,
+        scope: live.body.scope ?? snapshotScope,
+        connectionMode,
+        note,
+      },
     }
   }
   if (name === 'yfe_request_status') {
     const requestId = args?.requestId
     if (!REQUEST_ID_RE.test(String(requestId ?? ''))) throw hostFailure('INVALID_ARGUMENT', '参数 requestId 不合法（8~64 位字母 / 数字 / 下划线 / 短横线）')
-    return requestStatus(host, requestId)
+    const body = await requestStatus(host, requestId)
+    // 统一成功信封（ISSUE-02）：数据放 value；保留 request 别名兼容旧客户端。
+    if (body && body.ok === true) return { ...body, value: body.request ?? null }
+    return body
   }
   const tool = BRIDGE_TOOLS.find(t => t.name === name)
   if (!tool) throw hostFailure('UNKNOWN_TOOL', `未知工具：${name}`)

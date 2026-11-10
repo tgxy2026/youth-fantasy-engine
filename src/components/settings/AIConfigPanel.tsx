@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import EmphasisText from '@/components/common/EmphasisText'
 import AgentBridgeSetup from '@/components/settings/AgentBridgeSetup'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
 import ModelCapabilityPanel from '@/components/settings/ModelCapabilityPanel'
@@ -110,7 +111,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     const next = result.status ?? await connectionModeStatus()
     setModeStatus(next)
     if (!result.ok) showToast(result.error ?? '模式切换未完成', 'error')
-    else showToast(to === 'api' ? '已切换到 API 模型模式' : '已切换到 Agent 模式', 'success')
+    else showToast(to === 'api' ? '已切换到 API 调用模式' : '已切换到 Agent 模式', 'success')
   }
 
   const cancelSwitch = async () => {
@@ -131,7 +132,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       setModeStatus(result.status ?? await connectionModeStatus())
       setConnectionView('api')
       setRecoverConfirmed(false)
-      showToast('已恢复到 API 模式；Agent 连接保持停用', 'success')
+      showToast('已恢复到 API 调用模式；Agent 连接保持停用', 'success')
     } finally { setRecovering(false) }
   }
   const [providers, setProviders] = useState<AIProvider[]>([])
@@ -399,6 +400,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。
             </p>
             <p className="mt-1.5">
+              上方「运行模式」切到 <b>Agent 模式</b>后，这里配置的模型请求（对话、测试、嵌入、模型清单、联网检索）会被互斥闸拒绝；
+              切回 <b>API 调用</b>即恢复。切换不会改动模型配置与密钥。
+            </p>
+            <p className="mt-1.5">
               每条配置都要填「上下文窗口（tokens）」—— 酒馆的上下文预算、记忆档、正文写作额度都按它推算。
               <b>1K = 1024 tokens</b>：模型标称 128K 就填 131072、96K 填 98304。
               填错的后果不是报错，而是所有推荐值一起偏大或偏小，所以这一栏不让留空。
@@ -423,7 +428,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             onClick={() => void requestMode('api')}
             disabled={!!switchId || modeStatus?.phase === 'blocked'}
             data-connection-mode-tab="api"
-          >API 模型</Button>
+          >API 调用</Button>
           <Button
             variant="toggle"
             size="sm"
@@ -445,7 +450,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5">
             <p className="flex items-center gap-2 text-12 text-amber">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />
-              正在切换到{connectionView === 'agent' ? 'Agent 模式' : 'API 模型模式'}
+              正在切换到{connectionView === 'agent' ? 'Agent 模式' : 'API 调用模式'}
             </p>
             <p className="mt-1 text-11 text-ink-400 leading-relaxed">正在切换连接模式：等待在途任务结束（API 任务 {modeStatus.active.api} 个、Agent 任务 {modeStatus.active.agent} 个）。</p>
             <Button size="sm" variant="secondary" className="mt-2" onClick={() => void cancelSwitch()} disabled={!switchId}>取消等待</Button>
@@ -455,13 +460,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             <p className="text-12 font-medium text-amber">连接模式不可用：{modeStatus.reason || '状态未确认'}</p>
             {modeStatus.lock && <p className="mt-1 text-ink-400">检测到宿主锁：PID {modeStatus.lock.pid ?? '未知（记录损坏）'}{modeStatus.lock.alive === true ? '（进程仍在运行）' : modeStatus.lock.alive === false ? '（进程已退出）' : ''}</p>}
             {modeStatus.canRecover ? <>
-              <p className="mt-1 text-ink-400">安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 模式；不会删除作品数据或 Agent 请求账本。</p>
+              <p className="mt-1 text-ink-400">安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 调用模式；不会删除作品数据或 Agent 请求账本。</p>
               <label className="mt-2 flex items-center gap-2 text-ink-300">
                 <input type="checkbox" checked={recoverConfirmed} onChange={e => setRecoverConfirmed(e.target.checked)} />
                 我已确认没有其他引擎实例和未结束的任务在运行
               </label>
               <Button size="sm" variant="secondary" className="mt-2" onClick={() => void recoverMode()} disabled={recovering || !recoverConfirmed}>
-                {recovering ? '恢复中…' : '安全恢复到 API 模式'}
+                {recovering ? '恢复中…' : '安全恢复到 API 调用模式'}
               </Button>
             </> : <p className="mt-1 text-ink-500">当前环境没有可恢复的本机模式服务。</p>}
           </div>
@@ -469,12 +474,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5" data-connection-mode={modeStatus.mode ?? undefined}>
             <p className="flex items-center gap-2 text-12 text-ink-100">
               <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.mode === 'agent' ? 'bg-amber' : 'bg-emerald-400'}`} />
-              {modeStatus.mode === 'agent' ? 'Agent 模式' : 'API 模型模式'}
+              {modeStatus.mode === 'agent' ? 'Agent 模式' : 'API 调用模式'}
             </p>
             <p className="mt-1 text-11 text-ink-400 leading-relaxed">
-              {modeStatus.mode === 'agent'
-                ? '引擎内置的 API 模型调用已停用，只接受已授权的 Agent 工具调用。切换回 API 模式会先等待在途 Agent 任务结束。'
-                : 'Agent 工具调用会被拒绝。切换模式不会改动模型配置、密钥、项目授权或正文草稿。'}
+              <EmphasisText text={modeStatus.mode === 'agent'
+                ? '引擎内置的 **API 调用已停用**，只接受**已授权**的 Agent 工具调用。切换回 API 调用模式会**先等待在途 Agent 任务结束**。'
+                : '**Agent 工具调用会被拒绝**。切换模式**不会改动**模型配置、密钥、项目授权或正文草稿。'} />
             </p>
           </div>
         )}
@@ -694,7 +699,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   <h3 className="text-12 text-ink-200">请求超时</h3>
                   <HelpPopover title="请求超时怎么用" width="23rem" size={13}>
                     <p>单次 AI 请求最多等多久。超时就中断并报错（不会自动重试）。</p>
-                    <p className="mt-1.5"><b>长文生成不受它限制</b>：续写 / 校对 / 拆书这类走流式，模型一开始出字就一直等；这条管的是<b>结构化任务</b>（设定抽取、审核、汇总、取名这类要一次性拿到完整结果的）。</p>
+                    <p className="mt-1.5"><b>长文生成不按总时长一刀切</b>：续写 / 校对 / 拆书这类走流式，只要模型持续出字就继续等；但<b>长时间没有新内容会判「输出停滞」</b>并停止等待（已收到的片段会保留在错误信息里）。这条管的是<b>结构化任务</b>（设定抽取、审核、汇总、取名这类要一次性拿到完整结果的）。</p>
                     <p className="mt-1.5">本地大模型首次调用要加载进显存、慢机器跑长任务，都可能超过默认值 —— 报「请求超时」就把它调大。</p>
                     <p className="mt-1.5">酒馆模式有自己的「请求超时」（在酒馆控制面板里），两者互不影响。</p>
                   </HelpPopover>

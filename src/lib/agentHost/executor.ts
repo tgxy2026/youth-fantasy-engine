@@ -417,6 +417,7 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
         name: column.name, type: column.type ?? 'text', description: column.tip,
         options: column.options, fixedOptions: column.fixedOptions === true, calendar: column.calendar === true,
         refTab: column.refTab, refCol: column.refCol, multiValue: column.multiValue === true,
+        readOnly: column.name === '编号', auto: column.name === '编号' && AUTONUM_GROUPS.has(tab.group),
       })) : undefined,
     })) } }
   }
@@ -861,7 +862,8 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     let total = 0
     for (const [key, value] of Object.entries(args.fields as Record<string, unknown>)) {
       const column = columns.find(item => item.name === key)
-      if (!column || column.hidden || key === '编号') return fail('BAD_REQUEST', `不可写或未知的字段：${key}`)
+      if (!column) return fail('BAD_REQUEST', `未知的字段：${key}`)
+      if (column.hidden || key === '编号') return fail('READ_ONLY_FIELD', `字段 ${key} 由引擎维护，不可写入${key === '编号' ? '（编号在创建时自动分配）' : ''}。`)
       if (typeof value !== 'string' || value.length > MAX_FIELD_CHARS) return fail('BAD_REQUEST', `字段 ${key} 必须是长度合规的字符串。`)
       total += value.length
       if (total > MAX_CARD_TOTAL_CHARS) return fail('BAD_REQUEST', '字段内容总量超过上限。')
@@ -877,7 +879,7 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
       const existing = (await owner.store.getAllByIndex<TableRow>('tableRows', 'tabId', tabId)).filter(row => row.projectId === projectId)
       if (columns.some(column => column.name === '编号') && AUTONUM_GROUPS.has(tab.group)) data['编号'] = nextAutoCode(tabId, existing)
       const fieldError = await validateTableFields(owner, tab, args.fields as Record<string, string>)
-      if (fieldError) return fail('BAD_REQUEST', fieldError)
+      if (fieldError) return fail(fieldError.code, fieldError.message)
       if ((tabId === 'timeline' || tabId === 'history') && data['发生时间'] && !data['结束时间']) data['结束时间'] = data['发生时间']
       const check = validateImport([data], tab, { existing, refValues: new Map() })[0]
       if (check.missing.length || check.dupExisting || check.codeConflict || check.dangling.length) {

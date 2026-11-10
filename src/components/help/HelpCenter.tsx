@@ -259,7 +259,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
           ))}
         </div>
         {mode === 'manual' && !article && (
-          <div className="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 px-2 py-1">
+          <div className="flex h-8 items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 px-2">
             <Search size={12} className="text-ink-500" />
             <input
               aria-label="搜索使用手册"

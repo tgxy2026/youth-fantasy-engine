@@ -944,7 +944,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                   <summary className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 cursor-pointer text-12 font-semibold text-ink-100">
                     <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400">{group.fields.length} 项</span>
                   </summary>
-                  {/* Uploaded portraits retain the established right-side width; empty slots fold below fields. */}
+                  {/* 立绘始终占据基础信息右侧两格（含未上传空位）；仅窄宽度 flex-wrap 时换行。 */}
                   <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
                   <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-center' : ''}`}>
@@ -958,15 +958,15 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                           ? `${field.name}（存储键不变，AI 按当前名称理解）`
                           : undefined
                       return (
-                        <div key={key} data-card-field={key} className={`px-4 py-3 grid gap-3 hover:bg-ink-800/40 transition-colors ${
-                          isBasicMod ? 'grid-cols-1 @min-[28rem]/workspace:grid-cols-[104px_minmax(0,1fr)]' : 'grid-cols-1 @min-[40rem]/workspace:grid-cols-[140px_minmax(0,1fr)]'
-                        }`}>
+                        <div key={key} data-card-field={key} className="px-4 py-3 grid grid-cols-1 gap-1.5 hover:bg-ink-800/40 transition-colors">
                           <div>
-                            <div
-                              className="text-12 font-medium text-ink-100"
-                              title={labelTitle}
-                            >{field.label}</div>
-                            <FieldDescription label={field.label} description={field.desc} />
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <div
+                                className="text-12 font-medium text-ink-100"
+                                title={labelTitle}
+                              >{field.label}</div>
+                              <FieldDescription label={field.label} description={field.desc} />
+                            </div>
                             {cardPending.has(key) ? <p className="mt-1 text-11 text-amber">含义待确认：不供 AI 参考或填写</p>
                               : permissions && (!permissions.aiRead || !permissions.aiWrite) && <p className="mt-1 text-11 text-ink-300">
                                 {[!permissions.aiRead && '不供 AI 参考', !permissions.aiWrite && '不允许 AI 填写'].filter(Boolean).join(' · ')}

@@ -72,7 +72,7 @@ try{
     check(action+' keeps its original dialog and returns focus to tools',await tools.evaluate(el=>el===document.activeElement)&&!await options.isVisible())
   }
   const empty=page.locator('[data-character-portraits="empty"]')
-  check('empty portraits use a folded compact entry',await empty.count()===1&&!await empty.evaluate(el=>el.open)&&(await empty.boundingBox()).height<65)
+  check('empty portraits keep the right-side two-slot column',await empty.count()===1&&await empty.getByRole('button',{name:'上传立绘 1',exact:true}).count()===1&&await empty.getByRole('button',{name:'上传立绘 2',exact:true}).count()===1)
   const groups=page.locator('[data-card-group]')
   check('first/basic group opens while long groups start folded',await groups.first().evaluate(el=>el.open)&&await groups.evaluateAll(items=>items.slice(1).some(item=>!item.open)))
   await profile.getByRole('button',{name:'查看完整身份定位',exact:true}).click()
@@ -105,7 +105,6 @@ try{
   await page.keyboard.press('Control+s')
   await page.waitForFunction(async({key,value})=>(await(await import('/src/lib/db.ts')).getCardRecords('char-main')).find(rec=>rec.id==='ux05-a')?.data[key]===value,{key:seed.identity,value:edited})
   check('field editing and save keep the authoritative storage key',await profile.getByRole('button',{name:'查看完整身份定位',exact:true}).innerText().then(text=>text.includes(edited)))
-  await empty.locator('summary').click()
   await page.getByRole('button',{name:'上传立绘 1',exact:true}).focus()
   check('portrait upload has a named keyboard control',await page.getByRole('button',{name:'上传立绘 1',exact:true}).evaluate(el=>el===document.activeElement))
   // Hold an actual FileReader and verify that switching is blocked until processing finishes.

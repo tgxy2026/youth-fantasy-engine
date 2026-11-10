@@ -31,7 +31,8 @@ export async function updateTableRow(args: Record<string, unknown>, scope: Agent
   let total = 0
   for (const [key, value] of entries) {
     const column = tab.columns?.find(item => item.name === key)
-    if (!column || column.hidden || column.name === '编号') return fail('BAD_REQUEST', `不可写或未知的字段：${key}`)
+    if (!column) return fail('BAD_REQUEST', `未知的字段：${key}`)
+    if (column.hidden || column.name === '编号') return fail('READ_ONLY_FIELD', `字段 ${key} 由引擎维护，不可写入${column.name === '编号' ? '（编号由引擎自动分配）' : ''}。`)
     if (typeof value !== 'string' || value.length > MAX_FIELD_CHARS || typeof expectedValues[key] !== 'string' || (expectedValues[key] as string).length > MAX_FIELD_CHARS) return fail('BAD_REQUEST', `字段 ${key} 与预期旧值必须是长度合规的字符串。`)
     total += value.length
     if (total > MAX_CARD_TOTAL_CHARS) return fail('BAD_REQUEST', '字段内容总量超过上限。')
@@ -48,7 +49,7 @@ export async function updateTableRow(args: Record<string, unknown>, scope: Agent
     if (!old || old.projectId !== projectId || old.tabId !== tabId) return fail('NOT_FOUND', `表格条目不存在：${rowId}`)
     for (const [key] of entries) if ((old.data[key] ?? '') !== expectedValues[key]) return fail('CONFLICT', `字段已变化：${key}。请重新读取。`)
     const fieldError = await validateTableFields(owner, tab, fields as Record<string, string>)
-    if (fieldError) return fail('BAD_REQUEST', fieldError)
+    if (fieldError) return fail(fieldError.code, fieldError.message)
     const patchData: Record<string, string> = {}
     for (const [key, value] of entries) patchData[key] = value as string
     const next: TableRow = { ...old, data: { ...old.data, ...patchData }, updatedAt: Math.max(deps.now(), (old.updatedAt ?? 0) + 1) }

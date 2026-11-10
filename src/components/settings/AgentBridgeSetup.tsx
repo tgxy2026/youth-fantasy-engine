@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/common/Button'
-import { showToast } from '@/components/dialogs/dialogs'
+import EmphasisText from '@/components/common/EmphasisText'
+import { copyText, showToast } from '@/components/dialogs/dialogs'
 import { DESKTOP, agentBridgeDataPath, agentBridgeScriptPath } from '@/lib/app/desktop'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { makeAgentBridgeConfig, makeAgentConnectionPrompt, makeCodexAgentBridgeConfig, makeBridgeConfig, type BridgeDataSource } from '@/lib/aiCore/backend/bridgeConfig'
@@ -57,15 +58,14 @@ export default function AgentBridgeSetup() {
     }
   }
   async function copy() {
-    try { await navigator.clipboard.writeText(config); showToast('配置已复制', 'success') }
-    catch { showToast('复制失败，请手动选择并复制下方配置', 'error') }
+    await copyText(config, '配置已复制')
   }
   return <div className="mt-2 text-12 text-ink-300">
     <WriteConnection node={node} onNodeChange={setNode} />
     <details className="mt-4 border-t border-ink-700 pt-3">
     <summary className="cursor-pointer text-12 text-ink-200">只读桥配置（可选）</summary>
     <div className="mt-2 space-y-2">
-      <p className="text-11 text-ink-500">在 Antigravity 的「Customizations → Installed → MCP Servers」找到配置文件，将下方条目合并进去。桥可读取本机所有项目中的允许字段，请只连接可信客户端。读取的是已保存到磁盘的数据，请先在引擎中保存。配置前请先安装 Node.js。</p>
+      <p className="text-11 text-ink-500"><EmphasisText text="在你的 Agent 客户端的 **MCP 服务配置（mcpServers）**中找到配置文件，将下方条目**合并**进去。桥可读取本机所有项目中的允许字段，**请只连接可信客户端**。读取的是**已保存到磁盘**的数据，请先在引擎中保存。配置前请先安装 Node.js。" /></p>
       <label className="block">Node.js 命令或完整路径<input className={field} value={node} onChange={e => { setNode(e.target.value); setConfig('') }} /></label>
       <label className="block">只读桥脚本完整路径<input className={field} value={script} onChange={e => { setScript(e.target.value); setConfig('') }} placeholder="…/scripts/mcp/yfe-readonly.mjs" /></label>
       <label className="block">数据位置<select className={field} value={kind} onChange={e => { setKind(e.target.value as BridgeDataSource['kind']); setTarget(''); setConfig('') }}>
@@ -93,6 +93,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
   const [writeConfig, setWriteConfig] = useState('')
   const [clientFormat, setClientFormat] = useState<'json' | 'codex'>('json')
   const [tasks, setTasks] = useState<AgentTaskRecord[]>([])
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => db.getCurrentProjectId())
   // 轮询会用宿主真源覆盖表单；用户正在改（dirty）或正在保存（busy）时不得覆盖，
   // 否则程序化改配置 / 保存失败后，界面会悄悄丢掉用户刚勾的授权。
   const dirtyRef = useRef(false)
@@ -122,6 +123,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
     }
     loadTasks()
     const timer = setInterval(() => {
+      setCurrentProjectId(db.getCurrentProjectId())
       void agentHostStatus().then(st => {
         setStatus(st)
         if (!dirtyRef.current && !busyRef.current) {
@@ -135,13 +137,25 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
   }, [])
 
   const actionsOf = (projectId: string): AgentAction[] => scope.projects.find(p => p.projectId === projectId)?.actions ?? []
-  function toggle(projectId: string, action: AgentAction) {
+  /** 只改目标项目的授权条目；其它项目的既有授权原样保留（授权按项目隔离，数据不互相清除）。 */
+  function applyActions(projectId: string, nextActions: AgentAction[]) {
     dirtyRef.current = true
     setDirty(true)
-    const current = actionsOf(projectId)
-    const nextActions = current.includes(action) ? current.filter(a => a !== action) : [...current, action]
     const rest = scope.projects.filter(p => p.projectId !== projectId)
     setScope(normalizeAgentScope({ projects: nextActions.length ? [...rest, { projectId, actions: nextActions }] : rest }))
+  }
+  function toggle(projectId: string, action: AgentAction) {
+    const current = actionsOf(projectId)
+    applyActions(projectId, current.includes(action) ? current.filter(a => a !== action) : [...current, action])
+  }
+  function toggleAll(projectId: string) {
+    const current = actionsOf(projectId)
+    applyActions(projectId, current.length === AGENT_ACTIONS.length ? [] : [...AGENT_ACTIONS])
+  }
+  function toggleGroup(projectId: string, actions: AgentAction[]) {
+    const current = actionsOf(projectId)
+    const allOn = actions.every(a => current.includes(a))
+    applyActions(projectId, allOn ? current.filter(a => !actions.includes(a)) : [...new Set([...current, ...actions])])
   }
   async function save() {
     busyRef.current = true
@@ -175,30 +189,27 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
     }
   }
   async function copyWrite() {
-    try { await navigator.clipboard.writeText(writeConfig); showToast('配置已复制', 'success') }
-    catch { showToast('复制失败，请手动选择并复制下方配置', 'error') }
+    await copyText(writeConfig, '配置已复制')
   }
 
   const source = PORTABLE ? { kind: 'portable' as const, root: portableRoot } : { kind: 'hostFile' as const, path: status?.bridgeFile ?? '' }
   let connectionPrompt = ''
   try { connectionPrompt = makeAgentConnectionPrompt(node, writeScript, source) } catch { /* 路径尚未就绪 */ }
   async function copyPrompt() {
-    try { await navigator.clipboard.writeText(connectionPrompt); showToast('连接提示词已复制', 'success') }
-    catch { showToast('复制失败，请手动选择并复制提示词', 'error') }
+    await copyText(connectionPrompt, '连接提示词已复制')
   }
 
   const unavailable = status?.mode === 'web'
+  const currentProject = projects.find(p => p.id === currentProjectId) ?? null
   return <details open className="mt-2">
     <summary className="cursor-pointer text-13 font-medium text-ink-100">Agent 写入连接 <span className="ml-1 text-11 font-normal text-ink-500">可创建章节、设定与正文</span></summary>
     <div className="mt-2.5 space-y-4">
       <p className="max-w-3xl text-11 text-ink-400 leading-relaxed">
-        开启后，外部 Agent 可通过 MCP 工具直接创建设定卡、创建章节、追加 / 覆盖正文。
-        写入会进入正在运行的引擎（沿用它的保存、快照与索引），不会直接改数据文件。
-        默认只读；只有在这里勾选的项目与动作才会被接受。请只连接可信客户端。
+        <EmphasisText text="开启后，外部 Agent 可通过 MCP 工具直接创建设定卡、创建章节、追加 / 覆盖正文。写入会进入**正在运行的引擎**（沿用它的保存、快照与索引），**不会直接改数据文件**。默认只读；只有在这里**勾选的项目与动作**才会被接受。**请只连接可信客户端**。" />
       </p>
       {unavailable && <p className="text-11 text-amber">网页版没有本机宿主进程，无法使用 Agent 写入连接。</p>}
       {!unavailable && status?.connectionMode?.phase === 'stable' && status.connectionMode.mode !== 'agent' && (
-        <p className="text-11 text-amber">当前为 API 模型模式：开启 Agent 连接会被拒绝。请先在页签切换到「Agent 模式」。</p>
+        <p className="text-11 text-amber">当前为 API 调用模式：开启 Agent 连接会被拒绝。请先在页签切换到「Agent 模式」。</p>
       )}
       {!unavailable && status && !status.running && <p className="text-11 text-amber">{status.lastError || 'Agent 宿主尚未运行，请确认引擎已启动并稍候重试。'}</p>}
       {!unavailable && <div className="grid gap-2 sm:grid-cols-3">
@@ -227,33 +238,53 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
           <p className="text-12 text-ink-100">授权项目与动作</p>
           <span className="text-11 text-ink-500">未勾选 = 只读</span>
         </div>
+        <p className="text-11 text-ink-500"><EmphasisText text="授权**按项目隔离**：这里只显示**当前打开项目**的授权；其它项目的既有授权**保留不变**，切回对应项目后可见。" /></p>
         {projects.length === 0 && <p className="rounded-lg border border-dashed border-ink-700 px-3 py-3 text-11 text-ink-500">还没有项目。请先在引擎中新建 / 打开一个项目。</p>}
-        {projects.map(project => {
+        {projects.length > 0 && !currentProject && <p className="rounded-lg border border-dashed border-ink-700 px-3 py-3 text-11 text-ink-500">当前没有打开的项目。请先在引擎中打开一个项目，再为它设置授权。</p>}
+        {currentProject && (() => {
+          const project = currentProject
           const granted = actionsOf(project.id)
-          return <div key={project.id} className="rounded-lg border border-ink-700 bg-ink-900/30">
+          const allOn = granted.length === AGENT_ACTIONS.length
+          return <div className="rounded-lg border border-ink-700 bg-ink-900/30">
             <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-3 py-2">
               <div className="min-w-0">
-                <p className="truncate text-12 text-ink-100">{project.name}</p>
+                <p className="truncate text-12 text-ink-100">{project.name}<span className="ml-1.5 text-11 font-normal text-ink-500">当前项目</span></p>
                 <p className="mt-0.5 text-11 text-ink-500">{granted.length ? `已授权 ${granted.length} / ${AGENT_ACTIONS.length} 项` : '未授权 · 只读'}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-11 ${granted.length ? 'bg-amber/10 text-amber' : 'bg-ink-800 text-ink-400'}`}>{granted.length ? '可写入' : '只读'}</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <label className="flex items-center gap-1.5 text-11 text-ink-300">
+                  <input type="checkbox" checked={allOn} ref={el => { if (el) el.indeterminate = granted.length > 0 && !allOn }} onChange={() => toggleAll(project.id)} />
+                  全选以下所有内容
+                </label>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-11 ${granted.length ? 'bg-amber/10 text-amber' : 'bg-ink-800 text-ink-400'}`}>{granted.length ? '可写入' : '只读'}</span>
+              </div>
             </div>
             <div className="space-y-2.5 px-3 py-2.5">
-              {ACTION_GROUPS.map(group => <div key={group.label}>
-                <p className="text-11 text-ink-500">{group.label}</p>
-                <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
-                  {group.actions.map(action => {
-                    const on = granted.includes(action)
-                    return <label key={action} className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-11 leading-snug ${on ? 'bg-amber/10 text-amber' : 'text-ink-300 hover:bg-ink-800/60'}`}>
-                      <input type="checkbox" checked={on} onChange={() => toggle(project.id, action)} />
-                      {AGENT_ACTION_LABELS[action]}
+              {ACTION_GROUPS.map(group => {
+                const groupOn = group.actions.every(a => granted.includes(a))
+                const groupPartial = !groupOn && group.actions.some(a => granted.includes(a))
+                return <div key={group.label}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-11 text-ink-500">{group.label}</p>
+                    <label className="flex items-center gap-1.5 text-11 text-ink-400">
+                      <input type="checkbox" checked={groupOn} ref={el => { if (el) el.indeterminate = groupPartial }} onChange={() => toggleGroup(project.id, group.actions)} />
+                      全选本组
                     </label>
-                  })}
+                  </div>
+                  <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {group.actions.map(action => {
+                      const on = granted.includes(action)
+                      return <label key={action} className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-11 leading-snug ${on ? 'bg-amber/10 text-amber' : 'text-ink-300 hover:bg-ink-800/60'}`}>
+                        <input type="checkbox" checked={on} onChange={() => toggle(project.id, action)} />
+                        {AGENT_ACTION_LABELS[action]}
+                      </label>
+                    })}
+                  </div>
                 </div>
-              </div>)}
+              })}
             </div>
           </div>
-        })}
+        })()}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
           <Button size="sm" variant="secondary" onClick={() => void save()} disabled={busy || !dirty}>保存授权</Button>
           <span className={`text-11 ${dirty ? 'text-amber' : 'text-ink-500'}`}>{busy ? '正在保存…' : dirty ? '有未保存的修改' : '授权已与宿主同步'}</span>
@@ -266,7 +297,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-12 text-ink-100">外部 Agent 任务{tasks.length > 0 && <span className="ml-1.5 text-11 text-ink-500">{tasks.length}</span>}</p>
         </div>
-        <p className="max-w-3xl text-11 text-ink-500 leading-relaxed">Agent 可通过任务台账登记「全书审读 / 逐章改写」这类跨多次调用的进度；断线重连后可继续。引擎不能强制终止外部进程，「取消请求」只是协作式标记。</p>
+        <p className="max-w-3xl text-11 text-ink-500 leading-relaxed"><EmphasisText text="Agent 可通过任务台账登记「全书审读 / 逐章改写」这类跨多次调用的进度；**断线重连后可继续**。引擎不能强制终止外部进程，「取消请求」只是**协作式标记**。" /></p>
         {tasks.length === 0 && <p className="rounded-lg border border-dashed border-ink-700 px-3 py-3 text-11 text-ink-500">当前项目还没有 Agent 任务记录。</p>}
         {tasks.map(task => <div key={task.id} className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-2">
           <div className="flex items-center justify-between gap-3">
@@ -283,11 +314,11 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
       <div className="space-y-2 border-t border-ink-700 pt-3">
         <div>
           <p className="text-12 text-ink-100">客户端连接配置</p>
-          <p className="mt-0.5 text-11 text-ink-500">生成后粘贴到 MCP 客户端；已有服务只合并 yfe-agent 条目，不要整体覆盖。</p>
+          <p className="mt-0.5 text-11 text-ink-500"><EmphasisText text="生成后粘贴到 MCP 客户端；已有服务**只合并 yfe-agent 条目**，不要整体覆盖。" /></p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <label className={labelCls}>Node.js 命令或完整路径<input className={field} value={node} onChange={e => { onNodeChange(e.target.value); setWriteConfig('') }} /></label>
-          <label className={labelCls}>Agent 客户端配置格式<select className={field} value={clientFormat} onChange={e => { setClientFormat(e.target.value as 'json' | 'codex'); setWriteConfig('') }}><option value="json">通用 MCP JSON</option><option value="codex">Codex TOML</option></select></label>
+          <label className={labelCls}>Agent 客户端配置格式<select className={field} value={clientFormat} onChange={e => { setClientFormat(e.target.value as 'json' | 'codex'); setWriteConfig('') }}><option value="json">通用 MCP JSON</option><option value="codex">TOML 格式</option></select></label>
         </div>
         <label className={labelCls}>可写桥脚本完整路径<input className={field} value={writeScript} onChange={e => { setWriteScript(e.target.value); setWriteConfig('') }} placeholder="…/scripts/mcp/yfe-agent.mjs" /></label>
         {PORTABLE && <label className={labelCls}>便携版根目录<input className={field} value={portableRoot} onChange={e => { setPortableRoot(e.target.value); setWriteConfig('') }} /></label>}
@@ -296,13 +327,13 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
         {writeConfig && <>
           <textarea aria-label="可写桥连接配置" className={`${field} min-h-32 font-mono`} value={writeConfig} readOnly />
           <Button size="sm" variant="secondary" onClick={() => void copyWrite()}>复制可写配置</Button>
-          <p className="text-11 text-ink-500">{clientFormat === 'codex' ? '将 yfe_agent 表合并进 Codex 的 config.toml，保留已有设置；重启客户端后检查连接。' : '把 yfe-agent 条目合并进已有的 mcpServers，不要覆盖其它服务。'} 宿主配置含本机随机连接令牌，请勿分享。</p>
+          <p className="text-11 text-ink-500">{clientFormat === 'codex' ? '将 yfe_agent 表合并进 Agent 客户端的 TOML 配置文件（如 config.toml），保留已有设置；重启客户端后检查连接。' : '把 yfe-agent 条目合并进已有的 mcpServers，不要覆盖其它服务。'} 宿主配置含本机随机连接令牌，请勿分享。</p>
         </>}
       </div>
       <div className="space-y-2 border-t border-ink-700 pt-3">
         <div>
           <p className="text-12 text-ink-100">复制给 Agent 的连接提示词</p>
-          <p className="mt-0.5 text-11 text-ink-500">包含本机路径、不包含连接令牌；请只发送给可信 Agent。</p>
+          <p className="mt-0.5 text-11 text-ink-500"><EmphasisText text="包含本机路径、**不包含连接令牌**；请只发送给**可信 Agent**。" /></p>
         </div>
         {connectionPrompt ? <>
           <textarea aria-label="Agent 连接提示词" className={`${field} min-h-44 font-mono`} value={connectionPrompt} readOnly />

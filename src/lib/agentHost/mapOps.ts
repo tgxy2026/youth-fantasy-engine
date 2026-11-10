@@ -222,7 +222,7 @@ export async function createMap(args: Record<string, unknown>, scope: AgentScope
     data['底图'] = ''
     if (columns.some(column => column.name === '编号') && AUTONUM_GROUPS.has(tab.group)) data['编号'] = nextAutoCode(GEOMAP_TAB, existing)
     const fieldError = await validateTableFields(owner, tab, writableFields(tab, data))
-    if (fieldError) return fail('BAD_REQUEST', fieldError)
+    if (fieldError) return fail(fieldError.code, fieldError.message)
     const check = validateImport([data], tab, { existing, refValues: new Map() })[0]
     if (check.missing.length || check.dupExisting || check.codeConflict || check.dangling.length) {
       return fail('BAD_REQUEST', '地图缺少主字段、重复、编号冲突或存在无效引用。')
@@ -392,7 +392,7 @@ export async function createMapPlace(args: Record<string, unknown>, scope: Agent
     if (parent) data['层级归属'] = parent
     if (columns.some(column => column.name === '编号') && AUTONUM_GROUPS.has(tab.group)) data['编号'] = nextAutoCode(GEOGRAPHY_TAB, existing)
     const fieldError = await validateTableFields(owner, tab, writableFields(tab, data))
-    if (fieldError) return fail('BAD_REQUEST', fieldError)
+    if (fieldError) return fail(fieldError.code, fieldError.message)
     const check = validateImport([data], tab, { existing, refValues: new Map() })[0]
     if (check.missing.length || check.dupExisting || check.codeConflict || check.dangling.length) {
       return fail('BAD_REQUEST', '地点缺少主字段、重复、编号冲突或存在无效引用。')

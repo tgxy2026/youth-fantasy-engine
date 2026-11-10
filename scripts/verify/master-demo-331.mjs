@@ -29,7 +29,6 @@ try{
     if(await second.getAttribute('aria-pressed')!=='true'||!(await second.evaluate(e=>e===document.activeElement)))throw Error(`${label}: wrong selection or focus`)
     results.push({label,count,status:'下一条通过'})
     if(label==='主要角色'){
-      await page.getByText('人物立绘 · 尚未上传，点击添加').click()
       await page.evaluate(()=>{
         const read=FileReader.prototype.readAsDataURL
         FileReader.prototype.readAsDataURL=function(file){const reader=this;window.__releasePortrait=()=>{FileReader.prototype.readAsDataURL=read;read.call(reader,file)}}
