@@ -4,7 +4,7 @@ import type { ProjectBundle } from '@/lib/db'
 import type { Project } from '@/lib/types'
 import { createDemoProject } from '@/lib/app/seedData'
 import {
-  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
+  Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
   ChevronDown, BookOpen, MessagesSquare,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -18,7 +18,6 @@ import { openCommunity } from '@/lib/community/entry'
 import { foldVh } from '@/lib/settings/theme'
 import BackupManager from '@/components/app/BackupManager'
 import BackupReminder from '@/components/app/BackupReminder'
-import ProjectAutoCover from '@/components/app/ProjectAutoCover'
 import FeatureSelectModal from '@/components/dialogs/FeatureSelectModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import BrandMark from '@/components/common/BrandMark'
@@ -46,11 +45,7 @@ import AppIconDialog from '@/components/settings/AppIconDialog'
 import { appIconSupported } from '@/lib/app/desktop'
 
 interface Props {
-  /**
-   * 打开项目。`tab` 用于卡片上的「继续写作」直达正文编辑器（3.5.1 · A1）；
-   * 不传 = 落在工作面板首页（原有行为）。
-   */
-  onOpen: (projectId: string, tab?: string) => void
+  onOpen: (projectId: string) => void
   /**
    * 重新观看新手引导（A1 遗留补全）。
    * 向导本来只弹一次（写过 `welcomeDone` 就不再出现），这里给一条**重看的路子**；
@@ -61,17 +56,6 @@ interface Props {
 
 interface Row extends Project {
   stats?: { chapters: number; words: number; volumes: number }
-}
-
-/** 「最近活动」按天说人话：今天 / 昨天 / N 天前；超过一个月回落到日期（3.5.1 · A1 卡片增密） */
-function relDay(ts: string | number): string {
-  const t = new Date(ts).getTime()
-  if (!Number.isFinite(t)) return '—'
-  const days = Math.floor((Date.now() - t) / 86_400_000)
-  if (days <= 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 30) return `${days} 天前`
-  return new Date(ts).toLocaleDateString()
 }
 
 type CreateType = 'full' | 'custom'
@@ -115,8 +99,6 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   /** 顶部「外观」「帮助」两个合并入口的展开态（2026-10-31 F1） */
   const [appearanceMenuOpen, setAppearanceMenuOpen] = useState(false)
   const [helpMenuOpen, setHelpMenuOpen] = useState(false)
-  /** 3.5.1 · A1：低频入口收纳（创建示范项目 / 云端同步） */
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [mascotCustom, setMascotCustom] = useState<string | null>(() => readStringPref('home-mascot-custom'))
   const reloadMascotPrefs = () => {
     setMascotHiddenState(readBoolPref('home-mascot-hidden', false))
@@ -292,7 +274,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       {/* 右侧预留 gutter（sm+）：为右下角看板娘腾出空间，保证卡片不进入该区域，互不遮挡 */}
       {/*
         底部留白 = 左下角数据坞的实测高度（`--dock-height`，由 DataDock 按布局单位发布）。
-        🔴 3.3.1 · P5：手动 130% 缩放时那块浮层会把最后一行卡片的主入口按钮压在下面，
+        🔴 3.3.1 · P5：手动 130% 缩放时那块浮层会把最后一行卡片的「打开项目」按钮压在下面，
            鼠标点不到（探针实测 272×346）。留出空间让作者能把它滚上来 —— 不是把工具栏藏起来。
         上限 340px：窗口很矮时不至于多出一大片空白。
       */}
@@ -324,8 +306,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
           {/* 🔴 加了「云端同步」之后这排按钮更多了：允许换行（原先 shrink-0 不能换行，
               窄窗口会把整排挤出可视区）。换行不影响任何按钮的点击。 */}
           <div className="flex flex-wrap gap-2 items-stretch justify-end">
-            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 font-medium transition-colors">
-              <BookPlus size={14} /> 新建小说项目
+            <Button onClick={createDemo}
+              disabled={busy}
+
+              title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center">
+              <BookPlus size={13} /> 创建示范项目
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} className="transition-colors">
               <FileDown size={13} /> 导入已有项目
@@ -334,45 +319,16 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button variant="secondary" onClick={openCommunity} title="打开投稿广场（可浏览、投稿、评论与排行）" className="transition-colors">
               <MessagesSquare size={13} /> 投稿广场
             </Button>
-            {/* 低频操作收进「更多」（3.5.1 · A1）：把主按钮提到最前，创建示范 / 云端同步留在菜单里不丢功能。
-                补偿：空状态与帮助文案里都点名了这两个入口（见下方空态说明与「项目管理怎么用」）。 */}
-            <div className="relative">
-              <Button
-                variant="secondary"
-                onClick={() => setMoreMenuOpen(o => !o)}
-                title="更多：创建示范项目、云端同步"
-                aria-haspopup="menu"
-                aria-expanded={moreMenuOpen}
-                className="flex items-center gap-1.5"
-              >
-                更多
-                <ChevronDown size={11} className="opacity-70" />
-              </Button>
-              {moreMenuOpen && (
-                <>
-                  <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setMoreMenuOpen(false)} aria-hidden />
-                  <div
-                    className="absolute right-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
-                    style={{ zIndex: Z.pagePanelTop }}
-                    role="menu"
-                  >
-                    <Button variant="bare" role="menuitem"
-                      onClick={() => { setMoreMenuOpen(false); createDemo() }}
-                      disabled={busy}
-                      className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      title="一键创建含完整示例数据的测试项目"
-                    >
-                      <BookPlus size={11} className="text-amber" />
-                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">创建示范项目</span>
-                    </Button>
-                    {/* 换设备时把云端那本书取回来（3.3.2 · P1 的头号场景入口，不能因收纳而消失） */}
-                    <div className="px-2 pt-1">
-                      <CloudSyncPanel inline block showState={false} size="sm" onProjectsChanged={load} />
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            {/**
+              * 3.3.2 · 换设备的第一步：**在没有本机作品时**把云端那本书取回来。
+              *
+              * 🔴 面板原先只挂在「作品内部」（桌面在侧栏、网页在账号行），项目中心没有任何云端入口
+              *    ⇒ 新设备上（0 本书）既看不到云端作品，也点不到「下载为新书」，头号场景第一步被堵死
+              *    （2026-10-31 真机验收 L16）。
+              * 🔴 这里必须给**看得见文字**的按钮：网页版那个纯图标入口按文案找不到，用户也发现不了。
+              * `onProjectsChanged={load}`：下载出来的新书要立刻出现在下面的列表里。
+              */}
+            <CloudSyncPanel inline block={false} showState={false} size="md" onProjectsChanged={load} />
             <input
               ref={fileRef}
               type="file"
@@ -384,6 +340,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 e.target.value = ''
               }}
             />
+            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 font-medium transition-colors">
+              <BookPlus size={14} /> 新建小说项目
+            </Button>
             {/* 2.6.1 · R1：按钮升级为「看板娘设置」——开关与自定义图都进弹窗（原直接 toggle 行为收进弹窗内开关） */}
             {/* ============ 3.3.2 · 顶部按钮合组（2026-10-31 主人反馈 F1）============
                 原来这里是四个按钮（看板娘设置 / 应用图标 / 新手引导 / 使用手册），1280 宽就换两排。
@@ -615,9 +574,6 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
           </div>
         )}
 
-        {/* 导出备份提示（3.5.1 · U4）：原先每次启动弹全屏 Modal，现在改成列表上方的内联条。
-            🔴 不放左下角数据坞：那会把浮层撑高、盖住首个卡片的主入口（实测 1440×900）。
-            空库 / 只有示范项目时组件自己判定不显示。 */}
         <BackupReminder variant="hub" hasProject={false} />
 
         {/* 项目卡片 */}
@@ -626,7 +582,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <BookPlus size={28} className="mx-auto text-ink-600 mb-3" />
             <div className="text-13 text-ink-400">还没有作品，点击右上角「新建小说项目」开启第一本书</div>
             <div className="mt-1.5 text-11 text-ink-500">
-              第一次使用？到右上角「更多」里点「创建示范项目」，一键体验全部功能。
+              第一次使用？点上方「创建示范项目」，一键体验全部功能
             </div>
           </div>
         ) : (
@@ -643,10 +599,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     {g.label}
                     <span className="px-1.5 py-px text-10 rounded bg-ink-800 text-ink-400 border border-ink-700">{items.length}</span>
                   </h3>
-                  {/* 三列阈值提到 1800px：1536–1800 维持两列，卡片够宽，六个操作键单行不换行 */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 min-[1800px]:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                     {items.map(p => (
-              <div key={p.id} data-project-card={p.id} className="group w-full max-w-[640px] bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
+              <div key={p.id} data-project-card={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
                 {editingId === p.id ? (
                   /* 编辑模式：修改书名与封面 */
                   <div>
@@ -752,8 +707,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       {p.cover ? (
                         <SafeImage src={p.cover} alt={p.name} retry={false} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
                       ) : (
-                        /* 3.5.1 · A1：没上传封面时按书名 + 题材生成排版封面，不再是虚线空框 */
-                        <ProjectAutoCover name={p.name} genre={p.genre} className="w-128px" />
+                        <div className="w-128px rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
+                          <Feather size={22} className="text-ink-600" />
+                        </div>
                       )}
                       <div className="flex-1 min-w-[min(100%,12rem)] flex flex-col">
                         <div>
@@ -768,20 +724,17 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           </div>
                           {p.intro && <p className="mt-2 text-11 text-ink-400 line-clamp-2">{p.intro}</p>}
                           <div className="mt-2 text-10 text-ink-600">
-                            最近活动 {relDay(p.updatedAt)} · 创建于 {new Date(p.createdAt).toLocaleDateString()}
+                            创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>
-                        <div data-project-actions className="mt-auto flex w-full flex-wrap items-center gap-1.5 pt-3">
-                          {/* 3.5.1 · A1 主操作前置；2026-11-11 主人视觉复核：去掉「继续写作」文字改纯图标，
-                              六个操作键恢复单行（带文字时主键过宽，把图标键挤成两行）。primary 琥珀 tint 仍突出主操作，
-                              aria-label / title / Tooltip 保留可达与可发现性；0 章时为「开始写作」。 */}
-                          <Tooltip label={(p.stats?.chapters ?? 0) > 0 ? '继续写作' : '开始写作'}>
+                        <div data-project-actions className="mt-auto pt-3 grid w-full max-w-[236px] grid-cols-6 items-center gap-1.5 [&>span]:min-w-0 [&>span>button]:!w-full [&>span>button]:!min-w-0">
+                          <Tooltip label="打开项目">
                             <Button variant="primary" iconOnly size="sm"
-                              onClick={() => onOpen(p.id, 'editor')}
-                              title={(p.stats?.chapters ?? 0) > 0 ? '继续写作：打开项目并进入正文编辑器' : '开始写作：打开项目并进入正文编辑器'}
-                              aria-label={(p.stats?.chapters ?? 0) > 0 ? '继续写作' : '开始写作'}
+                              onClick={() => onOpen(p.id)}
+                              title="打开项目"
+                              aria-label="打开项目"
                             >
-                              <FolderOpen size={16} />
+                              <FolderOpen size={17} />
                             </Button>
                           </Tooltip>
                           <Tooltip label="导出 JSON 备份">

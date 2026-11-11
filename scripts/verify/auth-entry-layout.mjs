@@ -121,7 +121,23 @@ try {
   check('short dynamic viewport can scroll the focused password into view', await page.locator('#pwd').evaluate(el => { const r=el.getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight }))
   await page.setViewportSize({width:1366,height:768})
   await page.goto(origin + '/reset')
-  check('reset retains its independent original presentation', await page.locator('body').getAttribute('class') === null && await page.locator('#btn').innerText() === '重置密码')
+  // 3.5.1 · U5：重置页与登录页共用同一套 auth-entry 视觉（原独立金/米 + 深紫面板已删除）
+  const resetPresentation = await page.evaluate(() => {
+    const btn = document.querySelector('#btn')
+    return {
+      entry: document.body.classList.contains('auth-entry'),
+      accent: getComputedStyle(document.body).getPropertyValue('--accent').trim(),
+      btn: btn?.textContent.trim() ?? '',
+      btnPrimary: /linear-gradient/.test(btn ? getComputedStyle(btn).backgroundImage : ''),
+      note: !!document.querySelector('.resetNote'),
+    }
+  })
+  check('reset shares the unified auth presentation', resetPresentation.entry && resetPresentation.accent === '#44764e' && resetPresentation.btn === '重置密码' && resetPresentation.btnPrimary && resetPresentation.note, resetPresentation)
+  await page.setViewportSize({ width: 320, height: 568 })
+  check('reset fits the viewport width at 320', await fits())
+  await page.setViewportSize({ width: 1366, height: 768 })
+  await page.goto(origin + '/reset')
+  await page.screenshot({ path: path.join(run, 'reset-1366.png'), fullPage: true })
 
   const luminance = hex => {
     const c = hex.match(/\w\w/g).map(v => parseInt(v,16)/255).map(v => v<=.04045 ? v/12.92 : ((v+.055)/1.055)**2.4)

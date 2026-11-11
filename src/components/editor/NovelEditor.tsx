@@ -159,9 +159,9 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const [dirtySearch, setDirtySearch] = useState<'inline' | 'drawer' | null>(null)
   /**
    * 3.4.0 · B：宽窗「停靠」/ 窄窗「浮层」。
-   * 抽屉本身是 fixed 的 18rem；正文列按限宽居中，1440 视口下两者会叠出近百像素。
-   * 宽窗时给正文壳让出右侧 20rem（抽屉 18rem + 右侧 0.75rem + 间隙），正文与资料同时可读；
-   * 窄窗仍走浮层（正文让出 20rem 就没得写了），但可 Esc / × 收起，工具栏不被遮。
+   * 抽屉本身是 fixed 的 24rem；正文列按限宽居中，1440 视口下两者会叠出近百像素。
+   * 宽窗时给正文壳让出右侧 26rem（抽屉 24rem + 右侧 0.75rem + 间隙），正文与资料同时可读；
+   * 窄窗仍走浮层（正文让出 26rem 就没得写了），但可 Esc / × 收起，工具栏不被遮。
    */
   const refsDocked = wrapW >= 1120
   const searchDraftPending = (origin: 'inline' | 'drawer', pending: boolean) => {
@@ -665,7 +665,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 🔴 窗口「又窄又矮」（如 1000×640 + 160% 缩放）时工具栏会换行成三排，正文区会被压到
                 几十像素且外面 overflow-hidden ⇒ 作者连滚都滚不到。此时改成正文壳可纵向滚动 + 正文保底。 */}
             <div className={`flex-1 min-h-0 flex flex-col ${shortBody ? 'overflow-y-auto' : 'overflow-hidden'}`} ref={scrollRef} data-guide="body-editor"
-              style={showRefs && refsDocked ? { paddingRight: foldZoomLength('20rem') } : undefined}>
+              style={showRefs && refsDocked ? { paddingRight: foldZoomLength('26rem') } : undefined}>
               {/* 页宽：默认铺满窗口；关闭"铺满"时回到舒适阅读宽度（隐藏检索栏/专注模式下更宽） */}
               <div
                 className={`${pageWide ? 'w-full' : focusMode || !showSearch || showRefs ? 'max-w-5xl' : 'max-w-3xl'} w-full mx-auto px-6 md:px-8 pt-6 pb-3 relative ${shortBody ? 'shrink-0' : 'flex-1 min-h-0'} flex flex-col overflow-hidden transition-[max-width] duration-300`}

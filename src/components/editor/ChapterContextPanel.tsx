@@ -71,13 +71,13 @@ export default function ChapterContextPanel({
     <section
       aria-label="本章资料"
       data-docked={docked ? '1' : '0'}
-      className="fixed right-3 top-14 bottom-10 w-72 max-w-[calc(100%-1.5rem)] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col"
+      className="fixed right-3 top-14 bottom-10 w-96 max-w-[calc(100%-1.5rem)] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col"
       style={{
         zIndex: Z.pageBase,
         top: foldZoomLength('3.5rem'),
         right: foldZoomLength('0.75rem'),
         bottom: foldZoomLength('2.5rem'),
-        width: foldZoomLength('18rem'),
+        width: foldZoomLength('24rem'),
       }}
       ref={panelRef}
     >

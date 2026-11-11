@@ -182,7 +182,7 @@ function case6a() {
   ok('⑥⑫ 抽屉打开时检索列收起并恢复正文宽度',
     editor.includes('!focusMode && showSearch && !showRefs') && editor.includes('!showSearch || showRefs'))
   ok('⑥⑬ 抽屉固定于视口并按缩放折算尺寸',
-    panel.includes('className="fixed right-3') && panel.includes("foldZoomLength('3.5rem')") && panel.includes("foldZoomLength('18rem')"))
+    panel.includes('className="fixed right-3') && panel.includes("foldZoomLength('3.5rem')") && panel.includes("foldZoomLength('24rem')"))
   ok('⑥⑭ 细纲命中只作为手动固定建议，不改变 AI 输入',
     dataHook.includes('findOutlineReferenceSuggestions') && panel.includes('不会自动加入 AI 请求') && panel.includes('onClick={() => pin(candidate.ref)}'))
 }

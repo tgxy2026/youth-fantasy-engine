@@ -66,7 +66,11 @@ body.auth-entry{--page-bg:#e6f0e0;--surface:#e9f1e2;--text:#2b3a22;--secondary:#
 .auth-entry .orDivider::before,.auth-entry .orDivider::after{content:"";height:1px;flex:1;background:var(--line)}
 .auth-entry .guestBtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;margin-top:20px;padding:10px 8px;border:1px solid #315c3938;border-radius:14px;background:#44764e;color:#fff;font-weight:600;transition:background .18s,border-color .18s}
 .auth-entry .guestBtn:hover{background:#315c39;border-color:#315c39;color:#fff;text-decoration:none}
-.auth-entry .submit{background:transparent;color:var(--secondary);border-color:#44764e88}
+/* 账号表单的提交键是次要动线（首访主 CTA 是上面的游客入口）；重置页的提交键才是本页唯一动作。 */
+.auth-entry .submit.secondary{background:transparent;color:var(--secondary);border-color:#44764e88;font-weight:500}
+.auth-entry .submit.secondary:not(:disabled):hover{background:#44764e0d;box-shadow:none}
+.auth-entry .resetNote{margin-top:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#f6f9f2;color:var(--muted);font-size:12px;line-height:1.85}
+.auth-entry .resetNote strong{color:var(--secondary);font-weight:600}
 .auth-entry .invite-info{margin-top:16px;color:var(--muted);font-size:12px;line-height:1.8}
 .auth-entry .guestNote{margin-top:10px;text-align:center;font-size:12px;color:var(--muted);line-height:1.9}
 .auth-entry .guestNote b{font-weight:500;color:var(--secondary)}

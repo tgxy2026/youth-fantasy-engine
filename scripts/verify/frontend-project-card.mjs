@@ -38,8 +38,7 @@ try {
   await nav.waitFor(); if (await page.locator('[data-guide-card]').first().isVisible().catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click(); await page.getByRole('button', { name: '切换项目', exact: true }).click()
   const card = page.locator('[data-project-card]').first()
   await card.waitFor(); page.setDefaultTimeout(20000)
-  // 3.5.1 · A1：主操作改成带文字的续写入口（0 章为「开始写作」），其余五个图标键不变；
-  // 动作行 flex-wrap 允许窄屏/高缩放换行，契约守「全部在卡片内、互不重叠」，不再强制单行。
+  // 恢复 3.5.0 卡片后检查六个操作的可达性。
   const controls = ['主入口', '导出 JSON 备份', '导出设定集', '备份与恢复', '编辑项目', '删除项目']
   const group = page.getByRole('group', { name: '界面密度', exact: true })
   for (const density of ['舒适', '紧凑']) {
@@ -50,7 +49,7 @@ try {
         await page.evaluate(async value => (await import('/src/lib/settings/theme.ts')).applyZoom(value, { manual: true }), zoom)
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
         const result = await card.evaluate((el, labels) => {
-          const box = el.getBoundingClientRect(), buttons = labels.map(label => el.querySelector(label === '主入口' ? 'button[aria-label="继续写作"], button[aria-label="开始写作"]' : `button[aria-label="${label}"]`))
+          const box = el.getBoundingClientRect(), buttons = labels.map(label => el.querySelector(label === '主入口' ? 'button[aria-label="打开项目"]' : `button[aria-label="${label}"]`))
           const bounds = buttons.map(button => button?.getBoundingClientRect().toJSON() ?? null)
           const within = bounds.every(rect => rect && rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5 && rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5)
           const overlap = bounds.some((a, i) => bounds.some((b, j) => i < j && a && b && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1))
