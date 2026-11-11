@@ -136,7 +136,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   // 重载后可能在项目里，也可能回到项目列表：两种都接住
   if (!(await page.getByTitle('返回项目列表').waitFor({ timeout: 20000 }).then(() => true).catch(() => false))) {
-    await page.getByRole('button', { name: /打开项目/ }).first().click({ timeout: 60000 })
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click({ timeout: 60000 })
     await page.getByTitle('返回项目列表').waitFor({ timeout: 60000 })
   }
   const later = page.getByRole('button', { name: '稍后再说', exact: true })

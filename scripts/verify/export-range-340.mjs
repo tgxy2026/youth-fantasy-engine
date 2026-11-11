@@ -58,7 +58,7 @@ try {
   // ---- 重新加载，确保弹窗拿到新章 ----
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('[data-project-hub]').waitFor({ timeout: 60000 })
-  await page.locator('[data-project-card]').filter({ hasText: '吞天神脉' }).getByLabel('打开项目').click()
+  await page.locator('[data-project-card]').filter({ hasText: '吞天神脉' }).getByRole('button', { name: /继续写作|开始写作/ }).click()
   await page.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
   await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()
   await page.getByPlaceholder(/自动保存已开启/).waitFor({ timeout: 30000 })

@@ -15,8 +15,9 @@
 import NumberField from '@/components/common/NumberField'
 import { createContext, useContext } from 'react'
 import AutoTextarea from '@/components/common/AutoTextarea'
+import HelpPopover from '@/components/common/HelpPopover'
 import { Button } from '@/components/common/Button'
-import { bandOf, type ParamGuide } from '@/lib/tavern/paramGuide'
+import { bandOf, bandRepresentative, type ParamGuide } from '@/lib/tavern/paramGuide'
 
 /** 输入框外观（不含字号——字号由 AutoTextarea 的 textClass / input 自己带，避免两处各写一个 size 类打架） */
 export const BOX = 'bg-ink-900 border border-ink-700 rounded-md px-2 py-1.5 text-ink-100 outline-none focus:border-amber/50'
@@ -86,9 +87,8 @@ export function Field({ label, hint, footer, children }: {
  * 说明与输入框范围若各写一份，日子久了就会对不上，而**说明写错比没写更坏**（测试锁了分段完整性）。
  */
 // 2026-09-22 六维审计 F2：同上，仅本文件内 NumField 用
-function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
-  const show = useContext(ShowBands)
-  if (!show) return null
+/** 分段表本体（纯展示，不读 ShowBands）—— 档位化字段把它收进 ⓘ 气泡时也复用这一份 */
+function BandTable({ guide, value }: { guide: ParamGuide; value: number }) {
   const cur = bandOf(guide, value)
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-ink-700 bg-ink-900/40">
@@ -119,13 +119,20 @@ function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
   )
 }
 
+/** 常驻分段表：受页头总开关 ShowBands 控制（默认展开）。档位化字段不走这里，改收进 ⓘ 气泡 */
+function RangeGuide({ guide, value }: { guide: ParamGuide; value: number }) {
+  const show = useContext(ShowBands)
+  if (!show) return null
+  return <BandTable guide={guide} value={value} />
+}
+
 /**
  * 数值输入：本地留着正在输入的字，避免「打成 0.」时被立刻纠正。
  *
  * `guide` 同时给出 min / max / step / 单位与分段说明 —— **上界下界与说明同源**，
  * 不会出现「表里说 0~2、输入框只让填到 1」这种自相矛盾（见 paramGuide.ts 顶部注释）。
  */
-export function NumField({ label, hint, guide, value, onCommit, recommend }: {
+export function NumField({ label, hint, guide, value, onCommit, recommend, tiers = false }: {
   label: string; hint?: string; guide: ParamGuide
   value: number; onCommit: (v: number) => void
   /**
@@ -134,9 +141,18 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
    * 不传 = 这一项没有动态推荐，行为与改造前完全一致。
    */
   recommend?: number | null
+  /**
+   * 档位化（3.5.1 · U3，opt-in，默认 false → 其余 23 项零变化）。
+   * 开启后：① 输入框上方多一排可点的档位按钮（点哪档写入该档代表值，当前档高亮）；
+   *   ② 常驻一行「当前档说明」（band.effect）；③ 完整区间表收进 ⓘ 气泡（默认折叠，不再受页头总开关摊开）。
+   * 数值与档位**双向同步**：手输数值 → 高亮落到对应档；点档位 → 数值改为代表值。
+   * 目前只给语义最直观的温度 / 核采样用（见 TavernControlModes）。
+   */
+  tiers?: boolean
 }) {
   const band = bandOf(guide, value)
   const stale = typeof recommend === 'number' && recommend !== value
+  const rangeText = band.from === band.to ? `${band.from}` : `${band.from} ~ ${band.to}`
   return (
     <Field
       label={
@@ -158,8 +174,34 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
         </span>
       }
       hint={hint}
-      footer={<RangeGuide guide={guide} value={value} />}
+      footer={tiers ? (
+        <div className="mt-1.5">
+          <HelpPopover title={`${label} · 完整区间表`} triggerTitle={`查看${label}的完整取值区间表`}
+            trigger={<span className="text-10 underline decoration-dotted underline-offset-4">完整区间表</span>}
+            triggerClassName="min-h-6 px-1 text-ink-400 hover:text-amber" side="right" width="26rem" pin>
+            <BandTable guide={guide} value={value} />
+          </HelpPopover>
+        </div>
+      ) : <RangeGuide guide={guide} value={value} />}
     >
+      {tiers && (
+        <div className="mb-1.5 flex flex-wrap gap-1" role="group" aria-label={`${label}档位`}>
+          {guide.bands.map(b => {
+            const on = b.from === band.from && b.to === band.to
+            return (
+              <Button key={`${b.from}-${b.to}`} variant="bare" type="button"
+                onClick={() => onCommit(bandRepresentative(guide, b))}
+                aria-pressed={on}
+                className={`px-2 py-1 rounded-md border text-10 leading-none transition-colors ${
+                  on ? 'border-amber/60 bg-amber/15 text-amber' : 'border-ink-700 bg-ink-900 text-ink-400 hover:border-amber/40 hover:text-ink-200'
+                }`}
+                title={`${b.from === b.to ? b.from : `${b.from} ~ ${b.to}`}${guide.unit ? ' ' + guide.unit : ''} · ${b.effect}`}>
+                {b.name}{b.recommended ? ' · 默认' : ''}
+              </Button>
+            )
+          })}
+        </div>
+      )}
       {/* U-1 · 2.6.0：改走 NumberField —— 原 onChange 直接钳制正是 NumberField 注释点名的老毛病
           （打不出超范围值、边界输入被裁）；现在范围内即时同步、超范围提交时钳到边界。
           precision 从 step 推导（0.05→2 位）：🔴 不传默认按整数 round，温度 0.7 会被吃成 1（审计 P0） */}
@@ -175,8 +217,9 @@ export function NumField({ label, hint, guide, value, onCommit, recommend }: {
       {/* 这一行**常驻**（表格收起时它是唯一线索）：当前值 → 落在哪一段、那一段的范围 */}
       <div className="mt-1 text-10 text-ink-600">
         当前 {value} → <span className="text-amber">{band.name}</span>
-        <span className="tabular-nums">（{band.from === band.to ? band.from : `${band.from} ~ ${band.to}`}）</span>
+        <span className="tabular-nums">（{rangeText}）</span>
       </div>
+      {tiers && <p className="mt-1 text-10 text-ink-400 leading-relaxed">{band.effect}</p>}
     </Field>
   )
 }

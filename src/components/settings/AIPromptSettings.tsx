@@ -118,7 +118,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
 
   return (
     <Panel data-save-scope={saveScope}>
-      <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
+      <h2 className="text-14 font-semibold text-ink-100 mb-4 flex items-center gap-2">
         <MessageSquareCode size={14} className="text-amber" /> AI 提示词
         {changedCount > 0 && (
           <span className="rounded border border-amber/30 bg-amber/15 px-1.5 py-0.5 text-11 text-amber">

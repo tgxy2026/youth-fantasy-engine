@@ -96,7 +96,7 @@ export default function SearchSettingsPanel() {
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-13 text-amber">联网检索</h2>
+          <h2 className="text-14 font-semibold text-ink-100">联网检索</h2>
           <HelpPopover title="联网检索怎么用" width="24rem" size={14}>
             <p>起草 / 补全时用什么素材。三种方式：</p>
             <ul className="list-disc pl-4 space-y-1">

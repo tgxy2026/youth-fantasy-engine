@@ -31,9 +31,11 @@ interface Props {
   canWrite: boolean
   defaultDisplay: 'nickname' | 'anonymous'
   onNeedLogin: () => void
+  /** 3.5.1 · U1：外壳已独占连接/错误状态时，本面板不再重复出状态条/骨架/空态 */
+  shellOwnsStatus?: boolean
 }
 
-export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Props) {
+export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shellOwnsStatus = false }: Props) {
   const [items, setItems] = useState<CommunityPostSummary[]>([])
   const [cursor, setCursor] = useState('')
   const [tag, setTag] = useState('')
@@ -257,20 +259,24 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="toggle" selected={!tag} onClick={() => { setTag(''); tagRef.current = ''; void load({ tag: '' }) }}>全部</Button>
-        {COMMUNITY_TAGS.map((t) => (
-          <Button key={t} size="sm" variant="toggle" selected={tag === t} onClick={() => { setTag(t); tagRef.current = t; void load({ tag: t }) }}>{t}</Button>
-        ))}
-        <span className="ml-auto text-11 text-ink-400">按发布时间排序</span>
-      </div>
+      {!shellOwnsStatus && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="toggle" selected={!tag} onClick={() => { setTag(''); tagRef.current = ''; void load({ tag: '' }) }}>全部</Button>
+          {COMMUNITY_TAGS.map((t) => (
+            <Button key={t} size="sm" variant="toggle" selected={tag === t} onClick={() => { setTag(t); tagRef.current = t; void load({ tag: t }) }}>{t}</Button>
+          ))}
+          <span className="ml-auto text-11 text-ink-400">按发布时间排序</span>
+        </div>
+      )}
 
-      <div aria-live="polite" className="space-y-3">
-        {error && <Notice kind="error">{error}</Notice>}
-        {closed && <Notice kind="warn">广场暂时关闭，暂时无法浏览新内容。</Notice>}
-      </div>
+      {!shellOwnsStatus && (
+        <div aria-live="polite" className="space-y-3">
+          {error && <Notice kind="error">{error}</Notice>}
+          {/* 关闭态由外壳独占（square.open=false ⇒ shellOwnsStatus），这里不再叠第二条 warn */}
+        </div>
+      )}
 
-      {loading && items.length === 0 && (
+      {!shellOwnsStatus && loading && items.length === 0 && (
         <ul className="space-y-3" aria-label="正在加载投稿">
           {[0, 1, 2].map((i) => (
             <li key={i} className="animate-pulse rounded-2xl border border-ink-700 bg-ink-900/40 p-4">
@@ -281,7 +287,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin }: Pro
           ))}
         </ul>
       )}
-      {!loading && !closed && items.length === 0 && <Empty title="还没有已发布的投稿" hint="通过审核的投稿会出现在这里。" />}
+      {!shellOwnsStatus && !loading && !closed && items.length === 0 && <Empty title="还没有已发布的投稿" hint="通过审核的投稿会出现在这里。" />}
 
       <ul className="space-y-3">
         {items.map((p) => (

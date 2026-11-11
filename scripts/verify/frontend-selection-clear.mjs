@@ -108,7 +108,12 @@ try {
   // Fresh normal SPA, real CharacterSheet editor, explicit DB verification after save and reload.
   await page.setViewportSize({ width: 1366, height: 900 }); await page.goto(origin, { waitUntil: 'commit' }); page.setDefaultTimeout(120000)
   await page.getByRole('button', { name: /先看看示例/ }).click(); await page.getByRole('button', { name: '下一步', exact: true }).click()
-  await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click(); await page.getByRole('button', { name: '稍后再说', exact: true }).click()
+  await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click(); const backupLaterBtn = page.getByRole('button', { name: '稍后再说', exact: true }); if (await backupLaterBtn.isVisible().catch(() => false)) await backupLaterBtn.click()
+  // U4 去掉全屏备份 Modal 后不再被「稍后再说」挡一下：示范项目可能还没 openProject 完成，
+  // 此时 getCurrentProjectId() 为空 ⇒ 种子记录会落到空项目 id 上、列表里永远看不到。
+  // 先等项目真的打开（id 非空且能读到项目）再 seeding。
+  await page.getByRole('navigation').waitFor()
+  await page.waitForFunction(async () => { const db = await import('/src/lib/db.ts'); const pid = db.getCurrentProjectId(); return !!pid && !!(await db.getProject(pid)) })
   const seed = await page.evaluate(async () => {
     const db = await import('/src/lib/db.ts'), { TABS } = await import('/src/lib/schema.ts')
     const tab = TABS.find(t => t.id === 'char-main'), pid = db.getCurrentProjectId()
@@ -118,6 +123,10 @@ try {
     return { key, pid }
   })
   const nav = page.getByRole('navigation')
+  // U4 去掉全屏备份 Modal 后，脚本不再被「稍后再说」挡一下：侧栏分组可能还没挂上来。
+  // 先等分组头出现（默认展开，子项与头同帧渲染），再做「可见性 ⇒ 要不要点开」判断，
+  // 否则会把刚渲染出来的展开组误点成收起，主要角色永远等不到。
+  await nav.getByRole('button', { name: '角色管理', exact: true }).waitFor()
   if (!await nav.getByRole('button', { name: '主要角色', exact: true }).isVisible()) await nav.getByRole('button', { name: '角色管理', exact: true }).click()
   await nav.getByRole('button', { name: '主要角色', exact: true }).click(); await page.getByRole('button', { name: '选择角色：清除回归角色', exact: true }).click(); page.setDefaultTimeout(20000)
   const trigger = page.locator('[data-card-field]').getByRole('button', { name: '保留势力，手动旧势力', exact: true, includeHidden: true })
@@ -129,11 +138,13 @@ try {
   }, seed)
   check('real CharacterSheet save persists removal without changing source records or unrelated data', stored.row.data[seed.key] === '保留势力' && stored.row.data['fixture::保留'] === '不应改变' && stored.source.data.名称 === '保留势力')
   await page.reload({ waitUntil: 'commit' })
-  await page.getByRole('button', { name: '打开项目', exact: true }).click(); await nav.waitFor()
+  await page.getByRole('button', { name: /继续写作|开始写作/ }).click(); await nav.waitFor()
+  await nav.getByRole('button', { name: '角色管理', exact: true }).waitFor()
   if (!await nav.getByRole('button', { name: '主要角色', exact: true }).isVisible()) await nav.getByRole('button', { name: '角色管理', exact: true }).click()
   await nav.getByRole('button', { name: '主要角色', exact: true }).click(); await page.getByRole('button', { name: '选择角色：清除回归角色', exact: true }).click()
   const reloaded = page.locator('[data-card-field]').getByRole('button', { name: '保留势力', exact: true, includeHidden: true }); await reloaded.locator('xpath=ancestor::details[1]').evaluate(el => { el.open = true })
   check('saved removal survives a real page reload', await reloaded.isVisible())
+  await nav.getByRole('button', { name: '世界构建', exact: true }).waitFor()
   if (!await nav.getByRole('button', { name: '国家势力', exact: true }).isVisible()) await nav.getByRole('button', { name: '世界构建', exact: true }).click()
   await nav.getByRole('button', { name: '国家势力', exact: true }).click()
   await page.locator('main header').getByRole('button', { name: '表格', exact: true }).click()

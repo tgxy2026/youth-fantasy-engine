@@ -65,7 +65,7 @@ try {
   }
 
   /**
-   * 重载后不一定回到工作台：停在项目列表时**用鼠标**点第一张卡片的「打开项目」。
+   * 重载后不一定回到工作台：停在项目列表时**用鼠标**点第一张卡片的主入口（继续写作 / 开始写作）。
    *
    * 🔴 这里刻意用鼠标而不是键盘：3.3.1 之前 130% 缩放下这块按钮会被左下角数据坞压住、鼠标点不到，
    *    所以只能靠键盘绕。现在项目列表按数据坞实测高度留了底部空间（主人 2026-10-30 定「留底部空间」），
@@ -75,7 +75,7 @@ try {
     const back = page.getByTitle('返回项目列表')
     if (await back.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)) return
     await scrollHubToBottom(page)
-    await page.getByRole('button', { name: '打开项目' }).first().click()
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
     await back.waitFor({ timeout: 60000 })
     await dismissExtras(page)
   }
@@ -89,14 +89,14 @@ try {
   })
 
   /**
-   * 滚到内容底部后，量「左下角数据坞」是否还压着卡片的「打开项目」按钮。
+   * 滚到内容底部后，量「左下角数据坞」是否还压着卡片的主入口按钮。
    * 🔴 命中测试比几何相交更可信：它问的是「这个点到底点到谁」。
    */
   const dockOverlap = async (page) => {
     const scrolled = await scrollHubToBottom(page)
     await page.waitForTimeout(120)
     const probe = await page.evaluate(() => {
-      const open = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '打开项目')
+      const open = [...document.querySelectorAll('button')].find(b => /^(继续写作|开始写作)$/.test(b.getAttribute('aria-label') || ''))
       const dockHandle = document.querySelector('[aria-label="收起左下角工具栏"]')
       if (!open || !dockHandle) return { measured: false }
       const dock = dockHandle.closest('div').getBoundingClientRect()
@@ -197,9 +197,9 @@ try {
   await page.waitForTimeout(150)
   await page.reload({ waitUntil: 'domcontentloaded' })
   // 🔴 130% 缩放下「留底部空间」是否真的解决问题：滚到底后按钮中心必须点得到按钮自己
-  await page.getByRole('button', { name: '打开项目' }).first().waitFor({ timeout: 20000 }).catch(() => {})
+  await page.getByRole('button', { name: /继续写作|开始写作/ }).first().waitFor({ timeout: 20000 }).catch(() => {})
   const overlap = await dockOverlap(page)
-  check('🔴 130% 下滚到内容底部后，卡片「打开项目」不再被数据坞压住',
+  check('🔴 130% 下滚到内容底部后，卡片主入口不再被数据坞压住',
     !!overlap.measured && overlap.covered === false, JSON.stringify(overlap))
   check('底部留白确实来自数据坞实测高度（--dock-height 已发布）',
     (await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock-height')) || 0)) > 40,

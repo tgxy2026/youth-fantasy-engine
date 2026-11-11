@@ -27,7 +27,7 @@ try{
   page.on('console',message=>{if(message.type()==='error')report.consoleErrors.push(message.text().replace(/https?:\/\/[^\s)]+/g,'[url]').slice(0,400))})
   await page.goto(origin,{waitUntil:'commit'});await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click();await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
-  await page.getByRole('button',{name:'稍后再说',exact:true}).click();const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
+  const backupLaterBtn = page.getByRole('button',{name:'稍后再说',exact:true}); if (await backupLaterBtn.isVisible().catch(()=>false)) await backupLaterBtn.click();const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
   const guide=page.locator('[data-guide-card]').first()
   if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
   await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
@@ -150,6 +150,10 @@ try{
   check('failed table leave preserves the page draft DOM and persistent retry feedback',await input.inputValue()===failedDraft
     &&await input.getAttribute('data-table-owner-dom')==='same'&&await page.getByRole('heading',{name:'种族生物',exact:true}).isVisible())
   await page.getByRole('button',{name:'切换项目',exact:true}).click()
+  // 退出项目先走 bootSync 异步预检、再进离页屏障：必须等「还没退出项目」失败 toast 出现，
+  // 才证明这趟退出真被屏障拦下。否则恢复存储后这趟退出会补跑成功、直接跳去项目中心，
+  // 后面的「重试保存」与落库断言就量错了对象（探针时序问题，不是产品缺陷）。
+  await page.getByText(/还没退出项目/).waitFor()
   check('failed table project exit also retains its original project and editable draft',await input.inputValue()===failedDraft
     &&await page.evaluate(async pid=>(await import('/src/lib/db.ts')).getCurrentProjectId()===pid,fixture.projectId))
   await page.evaluate(()=>window.__restoreTableFailure())

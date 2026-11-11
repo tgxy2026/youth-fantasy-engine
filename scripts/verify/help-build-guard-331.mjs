@@ -104,7 +104,7 @@ try {
   await seedProvider(page)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByTitle('返回项目列表').waitFor({ timeout: 60000 }).catch(async () => {
-    await page.getByRole('button', { name: '打开项目' }).first().click()
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
     await page.getByTitle('返回项目列表').waitFor({ timeout: 60000 })
   })
   const laterAgain = page.getByRole('button', { name: '稍后再说', exact: true })
@@ -252,7 +252,7 @@ try {
     await seedProvider(stale)
     await stale.reload({ waitUntil: 'domcontentloaded' })
     await stale.getByTitle('返回项目列表').waitFor({ timeout: 90000 }).catch(async () => {
-      await stale.getByRole('button', { name: '打开项目' }).first().click()
+      await stale.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
       await stale.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
     })
     const laterStale2 = stale.getByRole('button', { name: '稍后再说', exact: true })

@@ -86,7 +86,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await sleep(3000)
   if (/我的作品/.test(await page.evaluate(() => document.body.innerText))) {
-    await page.getByRole('button', { name: '打开项目' }).first().click().catch(() => {})
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click().catch(() => {})
     await sleep(2500)
   }
   for (const label of ['稍后再说', '知道了']) {

@@ -606,7 +606,7 @@ function BookBreakWorkspace() {
           {/* 导入量 / 耗时建议：口径是「逐章抽取，导入量不撞窗口，受限的是调用次数与耗时」 */}
           {advice && (
             <div className={advice.level === 'ok' ? 'text-success' : 'text-amber'}>
-              {advice.level === 'ok' ? '✓ ' : '⚠️ '}{advice.note}
+              {advice.level === 'ok' ? '✓ ' : 'ⓘ '}{advice.note}
               <span className="text-ink-400"> 推荐单次导入不超过 {fmtNum(advice.recommendedChars)} 字（约 {advice.recommendedChapters} 章）。</span>
             </div>
           )}
@@ -619,7 +619,7 @@ function BookBreakWorkspace() {
           )}
           {preview.stats.truncated && (
             <div className="text-amber">
-              ⚠️ 超出处理上限，本轮只处理前 {preview.chapters.length} {preview.mode === 'chapters' ? '章' : '块'}。
+              ⓘ 超出处理上限，本轮只处理前 {preview.chapters.length} {preview.mode === 'chapters' ? '章' : '块'}。
             </div>
           )}
         </div>

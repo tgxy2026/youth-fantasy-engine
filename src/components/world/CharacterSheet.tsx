@@ -947,7 +947,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                   {/* 立绘始终占据基础信息右侧两格（含未上传空位）；仅窄宽度 flex-wrap 时换行。 */}
                   <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
-                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-center' : ''}`}>
+                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-start' : ''}`}>
                     {group.fields.map(field => {
                       const key = field.key
                       const permissions = fieldPermissions.get(key)
@@ -1033,6 +1033,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                                 onChange={v => updateField(key, v)}
                                 placeholder="点击填写…"
                                 minHeight={32}
+                                maxRows={3}
                                 maxHeight={UNBOUNDED_CARD_TABS.has(tab.id) ? 0 : undefined}
                               />
                             )}

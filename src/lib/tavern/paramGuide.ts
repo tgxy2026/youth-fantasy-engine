@@ -341,6 +341,19 @@ export function bandOf(g: ParamGuide, v: number): ParamBand {
   return g.bands.find(b => v <= b.to) ?? g.bands[g.bands.length - 1]
 }
 
+/**
+ * 档位按钮的「代表值」（3.5.1 · U3）：点某一档时写入的数值。
+ *
+ * 取该段中点、按 step 取整、夹进 [min,max]；单点段（from===to，如 topK 的「关闭」）直接取该点。
+ * 🔴 不变量：`bandOf(g, bandRepresentative(g, b)) === b` —— 中点必落在段内，
+ *    取整最多把它推到本段上界（bandOf 用 v<=to，边界仍归本段），故点击后高亮停在被点的那一档。
+ *    单测对静态表与动态五档逐项锁这条往返一致性。
+ */
+export function bandRepresentative(g: ParamGuide, b: ParamBand): number {
+  const mid = b.from === b.to ? b.from : (b.from + b.to) / 2
+  return Math.min(g.max, Math.max(g.min, snapTo(mid, g.step)))
+}
+
 // ============================================================
 // 动态五档（2.8.0）：档位围绕「当前模型的推荐值」生成
 // ============================================================

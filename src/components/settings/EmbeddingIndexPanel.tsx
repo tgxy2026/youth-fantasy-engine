@@ -142,7 +142,7 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
   return (
     <div className="mt-5 pt-4 border-t border-ink-700">
       <div className="flex items-center gap-1.5 mb-1">
-        <h3 className="text-12 text-ink-200">语义检索 · 嵌入模型（可选）</h3>
+        <h3 className="text-12 font-semibold text-ink-200">语义检索 · 嵌入模型（可选）</h3>
         <HelpPopover title="语义检索怎么用" width="24rem" size={13}>
           <p>配好嵌入模型并建立索引后，AI 在「看某一章」时，会按「意思相近」从全书里再捞几条历史片段与设定，补进上下文 —— 长篇里「写到第 300 章却只记得开头」的问题会明显缓解。</p>
           <p className="mt-1.5">它是<b>补一层</b>，不是替换：原有的结构化选材与关键词召回照常工作；不配它，一切与从前完全一样。</p>

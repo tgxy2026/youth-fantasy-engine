@@ -184,7 +184,7 @@ const createProject = async (name) => {
 const openProject = async () => {
   const card = page.locator('[data-project-card]').first()
   await card.waitFor({ timeout: 60000 })
-  await card.getByLabel('打开项目').click()
+  await card.getByRole('button', { name: /继续写作|开始写作/ }).click()
   await page.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
   await dismissGuide()
   const later = page.getByRole('button', { name: '稍后再说', exact: true })

@@ -28,7 +28,12 @@ try{
   await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click()
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
-  await page.getByRole('button',{name:'稍后再说',exact:true}).click()
+  const backupLaterBtn = page.getByRole('button',{name:'稍后再说',exact:true}); if (await backupLaterBtn.isVisible().catch(()=>false)) await backupLaterBtn.click()
+  // 引导体系（3.3.1）落地后本探针没跟上：编辑器引导会自动弹出，遮罩挡住「编辑工具」。
+  // 与其他探针同一口径：有引导卡就跳过，并关掉自动引导（持久化，后续页签不再弹）。
+  const guide=page.locator('[data-guide-card]').first()
+  if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
+  await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
   await page.getByRole('navigation').getByRole('button',{name:'正文编辑',exact:true}).click()
   const editor=page.locator('textarea.novel-textarea')
   await editor.waitFor();page.setDefaultTimeout(15000)

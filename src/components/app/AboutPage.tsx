@@ -1,16 +1,14 @@
-import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy, ArchiveRestore } from 'lucide-react'
+import { ExternalLink, Heart, BookOpen, Users, Globe, Download, Copy } from 'lucide-react'
 import payWechat from '@/assets/pay-wechat.png'
 import payAlipay from '@/assets/pay-alipay.jpg'
 import authorAvatar from '@/assets/author-avatar.png'
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { APP_VERSION_LABEL } from '@/lib/app/env'
-import { copyText, showToast } from '@/components/dialogs/dialogs'
+import { copyText } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import UpdateDialog from '@/components/app/UpdateDialog'
-import MigrationWizard from '@/components/app/MigrationWizard'
-import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN, GITEE_RELEASES_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
 import { PORTABLE } from '@/lib/storage/fileBackend'
@@ -66,18 +64,6 @@ export default function AboutPage() {
   const [autoCheck, setAuto] = usePersistedBool('update-auto-check', isAutoCheckOn())
   // 诊断信息（2026-10-06 补 · 可观测性）：反馈问题时一键复制环境与规模摘要
   const [diagBusy, setDiagBusy] = useState(false)
-  // 3.0 · W0-2：旧版数据迁移（首启向导之外的**手动入口**，幂等，可反复跑）
-  const [migProbe, setMigProbe] = useState<LegacyProbe | null>(null)
-  /** 探测旧版数据 → 有则弹迁移向导；没有则如实告知（不静默） */
-  const openLegacyImport = async () => {
-    const pr = await probeLegacy()
-    // 🔴 先报「探测失败」再报「没找到」—— 失败与没有是两回事（2026-10-12 全量审计 P2）
-    if (pr.error) { showToast(`探测旧版数据失败：${pr.error}`, 'error'); return }
-    if (!pr.exists) { showToast('未找到旧版（novel-studio）的数据目录', 'info'); return }
-    if (!pr.jsonExists && !pr.idbExists) { showToast('旧版目录存在，但没有可导入的数据', 'info'); return }
-    setMigProbe(pr)
-  }
-
   const runCheck = async () => {
     setChecking(true)
     try {
@@ -105,8 +91,6 @@ export default function AboutPage() {
   return (
     <div className="h-full overflow-y-auto">
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
-      {/* 3.0 · W0-2：旧版数据迁移向导（手动入口触发） */}
-      {migProbe && <MigrationWizard probe={migProbe} onClose={() => setMigProbe(null)} />}
       <div data-guide="page-header" className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
@@ -149,6 +133,31 @@ export default function AboutPage() {
                 >
                   <ExternalLink size={16} /> {BILI_NAME} 的 B 站主页
                 </a>
+              </div>
+            </section>
+
+            {/* 联系方式（flex-1 撑满左列剩余高度） */}
+            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+              <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
+              <ul className="space-y-3">
+                {CONTACT_LINKS.map(l => (
+                  <li key={l.label} className="flex flex-col">
+                    <span className="text-11 text-ink-500">{l.label}</span>
+                    <span className="text-sm text-ink-200">{l.value}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* 诊断信息（2026-10-06 补）：反馈问题时附上这段，省去来回问「什么系统 / 多少章 / 哪个版本」 */}
+              <div className="mt-4 pt-4 border-t border-ink-700">
+                <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void copyDiag()} className="gap-1.5">
+                  <Copy size={13} />
+                  {diagBusy ? '采集中…' : '复制诊断信息'}
+                </Button>
+                <p className="mt-2 text-10 leading-relaxed text-ink-500">
+                  反馈问题时附上这段：版本、系统、数据规模与 AI 配置概况。
+                  不含任何作品内容、密钥与文件路径，可放心粘贴。
+                </p>
               </div>
             </section>
 
@@ -304,41 +313,7 @@ export default function AboutPage() {
               </section>
             )}
 
-            {/* 3.0 · W0-2：旧版数据迁移（手动入口；首启向导之外，幂等可反复跑） */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
-              <SectionTitle icon={<ArchiveRestore size={15} className="text-amber" />}>旧版数据迁移</SectionTitle>
-              <p className="text-ink-400 text-xs leading-relaxed mb-4">
-                若你之前用过旧版（novel-studio），可在这里把旧版的书稿、向量索引与知识库一次性导入到本软件。
-              </p>
-              <Button variant="secondary" onClick={() => void openLegacyImport()} className="gap-1.5">
-                <ArchiveRestore size={14} /> 导入旧版数据
-              </Button>
-            </section>
 
-            {/* 联系方式（flex-1 撑满左列剩余高度） */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6 flex-1">
-              <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
-              <ul className="space-y-3">
-                {CONTACT_LINKS.map(l => (
-                  <li key={l.label} className="flex flex-col">
-                    <span className="text-11 text-ink-500">{l.label}</span>
-                    <span className="text-sm text-ink-200">{l.value}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* 诊断信息（2026-10-06 补）：反馈问题时附上这段，省去来回问「什么系统 / 多少章 / 哪个版本」 */}
-              <div className="mt-4 pt-4 border-t border-ink-700">
-                <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void copyDiag()} className="gap-1.5">
-                  <Copy size={13} />
-                  {diagBusy ? '采集中…' : '复制诊断信息'}
-                </Button>
-                <p className="mt-2 text-10 leading-relaxed text-ink-500">
-                  反馈问题时附上这段：版本、系统、数据规模与 AI 配置概况。
-                  不含任何作品内容、密钥与文件路径，可放心粘贴。
-                </p>
-              </div>
-            </section>
           </div>
 
           {/* 右列：打赏支持（上＝收款码，下＝致谢名单；名单下方留白，供以后加人）
@@ -400,3 +375,4 @@ export default function AboutPage() {
     </div>
   )
 }
+

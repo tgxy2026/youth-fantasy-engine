@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FileUp } from 'lucide-react'
-import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import * as db from '@/lib/db'
+import { isDemoProjectName } from '@/lib/constants'
 import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_AFTER_DAYS } from '@/lib/sync/backupReminder'
 
 // #031 导出备份提醒：定期提醒用户把数据导出成外部文件，别让稿子只剩「同一个容器里」的那一份。
@@ -12,131 +12,171 @@ import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_
 // 也就是说：清站点数据、数据文件损坏、U 盘丢失、系统重装时，30 份自动备份会跟着一起消失。
 // 自动备份只防「改坏了想回退」，防不了「整个容器没了」——这正是本提醒存在的理由。
 //
-// 触发条件（三条全满足才弹）：
-//   ① 距上次导出备份已超过 REMIND_AFTER_DAYS 天（从未导出过则首次即弹）
+// 触发条件（全部满足才出现）：
+//   ① 距上次导出备份已超过 REMIND_AFTER_DAYS 天（从未导出过则首次即出现）
 //   ② 「稍后再说」的短期静默期已过
-//   ③ 确有数据可丢（已打开项目，或项目列表非空）——新用户空库不打扰
+//   ③ 确有真实数据可丢（已打开非示范项目，或项目列表里有非示范项目）——空库 / 只有示范项目不打扰
+//
+// 🔴 3.5.1 · U4（2026-11-11）：从**全屏 Modal** 改成**非阻断的内联提示条**。
+//    原因：备份长期没做时，每次启动都弹一个盖住全屏的模态框，用户只能先关掉才能继续写 ——
+//    把一个「可以稍后处理」的建议做成了路障。现在它挂在侧栏底部 / 项目中心列表上方：
+//    想导就点按钮，不想导就照常干活，不会挡住任何操作。
+//    🔴 项目中心**不放左下角数据坞**：内联条会把数据坞撑高约 120px，实测 1440×900 下
+//       首个项目卡片的「打开项目」按钮正好被盖住（探针 elementFromPoint 命中数据坞把手）。
+//       放进内容流既不会被盖，也不需要滚动才能看到。
+//    说明性内容（自动备份为什么不顶用）收进「为什么？」展开区，不默认占屏。
 
-/** 数据存在哪（桌面版：用户目录下的 JSON 数据文件） */
-const STORAGE_DESC = '本机数据文件'
+/** 只数真实项目：示范项目不算「有数据可丢」 */
+function realProjectCount(list: { name?: string }[]): number {
+  return list.filter(p => !isDemoProjectName(p.name)).length
+}
 
-/** 最常见的「容器一起没了」场景 */
-const RISKS: string[] = ['数据文件被误删，或清理软件时一并清掉', '重装系统 / 更换电脑时未备份用户目录', '卸载软件时勾选了删除用户数据']
-
-export default function BackupReminder({ hasProject, onExport }: { hasProject: boolean; onExport?: () => void }) {
-  const [show, setShow] = useState(false)
+/**
+ * 备份到期的判定与动作（抽出来只为让组件本身保持「看到 due 就画」）。
+ *
+ * 🔴 `isDemo` 时**不读库、不提醒**：示范项目是软件自带的演示数据，丢了随时能重建，
+ *    拿它提醒用户「该备份了」既无意义也吓人（见 tests/backupReminder.test.ts ⑥）。
+ */
+export function useBackupDue({ hasProject, isDemo = false }: { hasProject: boolean; isDemo?: boolean }) {
+  const [due, setDue] = useState(false)
 
   useEffect(() => {
     let alive = true
     void (async () => {
+      if (isDemo) {
+        setDue(false)
+        return
+      }
       const exportOverdue = isExportOverdue()
       const dismissExpired = isDismissExpired()
       // ①② 不满足就不必去查项目列表（省一次库读）；判定本身在纯函数里（见 shouldRemind）
-      if (!exportOverdue || !dismissExpired) return
+      if (!exportOverdue || !dismissExpired) {
+        setDue(false)
+        return
+      }
       let projectCount = 0
       if (!hasProject) {
         const list = await db.getAllProjects().catch(() => [])
         if (!alive) return
-        projectCount = list.length
+        projectCount = realProjectCount(list)
       }
-      if (alive && shouldRemind({ exportOverdue, dismissExpired, hasProject, projectCount })) setShow(true)
+      if (alive) setDue(shouldRemind({ exportOverdue, dismissExpired, hasProject, projectCount, isDemo }))
     })()
     return () => {
       alive = false
     }
-  }, [hasProject])
+  }, [hasProject, isDemo])
 
-  const later = () => {
+  const dismiss = useCallback(() => {
     markDismissed()
-    setShow(false)
-  }
+    setDue(false)
+  }, [])
+  // 本会话内不再出现（不写存储）：导出成功后由 markExported 负责跨会话静默
+  const hide = useCallback(() => setDue(false), [])
 
-  // 真正的导出由调用方完成（App 的 exportCurrent 会在下载成功后记录导出时间），此处只负责关窗
-  const doExport = () => {
-    onExport?.()
-    setShow(false)
-  }
+  return { due, dismiss, hide }
+}
+
+function BackupNotice({
+  variant, hasProject, onExport, onDismiss,
+}: {
+  variant: 'sidebar' | 'hub'
+  hasProject: boolean
+  onExport?: () => void
+  onDismiss: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const hub = variant === 'hub'
+
+  const whyToggle = (
+    <Button
+      variant="bare"
+      size="xs"
+      className={`px-1 text-ink-400 hover:text-amber ${hub ? '' : 'shrink-0'}`}
+      onClick={() => setOpen(o => !o)}
+      aria-expanded={open}
+      title={open ? '收起说明' : '为什么自动备份不够？'}
+    >
+      {open ? '收起' : '为什么？'}
+    </Button>
+  )
 
   return (
-    <Modal
-      open={show}
-      onClose={later}
-      variant="plain"
-      accent="amber"
-      surface="900"
-      width="lg"
-      showCloseButton={false}
-      titleSlot={
-        <div className="flex items-center gap-2 text-amber">
-          <FileUp size={18} />
-          <span className="font-semibold">导出一份备份吧</span>
-        </div>
-      }
+    <div
+      role="status"
+      data-backup-notice={variant}
+      className={`rounded-lg border border-amber/40 bg-amber/10 leading-relaxed ${
+        hub ? 'mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-12' : 'p-2 text-11'
+      }`}
     >
-      <div className="space-y-4 text-sm text-ink-300 leading-relaxed">
-        <p>
-          距你上次<strong className="text-ink-100">导出备份</strong>已经超过 {REMIND_AFTER_DAYS} 天了。
-        </p>
-
-        <div className="rounded-lg bg-ink-850 border border-ink-700 p-3">
-          <p className="text-ink-200 font-medium mb-2">⚠️ 自动备份不等于备份</p>
-          <p className="text-ink-400">
-            软件每 5 分钟自动生成一份内部备份（最多保留 30 份），但它和你的数据一起存在
-            <strong className="text-ink-200">{STORAGE_DESC}</strong>里。
-            容器一旦没了，这 30 份会跟着一起消失。
-          </p>
-          <p className="text-ink-400 mt-2">
-            自动备份只防「<span className="text-ink-300">改坏了想回退</span>」，
-            防不了「<span className="text-amber">整个容器没了</span>」——后者只能靠导出到外部文件。
-          </p>
+      {/* 🔴 hub 必须是**单行**（2026-11-11 实测）：多行横幅把卡片整体下推约 100px，
+          1440×900 下首个卡片的「打开项目」正好落进固定数据坞（顶部 y≈606）里。
+          单行约 46px，卡片底部回到数据坞上方；展开「为什么？」是用户主动动作，可以下推。 */}
+      <div className={hub ? 'flex min-w-0 flex-1 items-center gap-1.5' : 'flex items-start gap-1.5'}>
+        <FileUp size={13} className={`shrink-0 text-amber ${hub ? '' : 'mt-0.5'}`} />
+        <div className="min-w-0 flex-1">
+          <span className="font-medium text-amber">该导出备份了</span>
+          <span className={`text-ink-300 ${hub ? 'ml-1.5' : 'mt-0.5 block'}`}>
+            距上次导出超过 {REMIND_AFTER_DAYS} 天。自动备份和数据存在同一处，容器没了会一起丢。
+          </span>
         </div>
-
-        <div>
-          <p className="text-ink-200 font-medium mb-2">下面这些情况，数据会连内部备份一起丢：</p>
-          <ul className="space-y-1.5 list-disc pl-5 text-ink-400">
-            {RISKS.map(r => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        </div>
-
-        <p>
-          导出得到的是一个标准 JSON 文件，<strong className="text-ink-100">存到 U 盘、网盘或另一台机器</strong>
-          ，任何时候都能用「导入备份」原样还原。
-        </p>
-
-        <div className="rounded-lg bg-ink-850 border border-ink-700 p-3">
-          <p className="text-ink-200 font-medium mb-2">怎么导出</p>
-          {hasProject ? (
-            <p className="text-ink-400">
-              点下方按钮即可导出当前项目；平时也可以点左侧栏底部的
-              <strong className="text-ink-200">「导出备份」</strong>。
-            </p>
-          ) : (
-            <p className="text-ink-400">
-              在项目卡片右上角的菜单里点<strong className="text-ink-200">「导出备份」</strong>
-              ，每个项目导出一个 JSON 文件。
-            </p>
-          )}
-        </div>
+        {/* 侧栏很窄：说明入口放右上角，否则会和下面两个按钮挤成三行、右侧空一截 */}
+        {!hub && whyToggle}
       </div>
 
-      <div className="flex gap-2 justify-end mt-5">
-        {hasProject ? (
-          <>
-            <Button variant="secondary" onClick={later}>
-              稍后再说
-            </Button>
-            <Button variant="primary" onClick={doExport}>
-              立即导出备份
-            </Button>
-          </>
-        ) : (
-          <Button variant="primary" onClick={later}>
-            知道了
+      <div className={hub ? 'flex flex-wrap items-center gap-1' : 'mt-1.5 flex flex-wrap items-center gap-1'}>
+        {hasProject && (
+          <Button variant="primary" size="xs" onClick={onExport}>
+            立即导出备份
           </Button>
         )}
+        <Button variant="secondary" size="xs" onClick={onDismiss}>
+          {hasProject ? '稍后再说' : '知道了'}
+        </Button>
+        {hub && whyToggle}
       </div>
-    </Modal>
+
+      {open && (
+        <div className={`basis-full space-y-1.5 border-t border-amber/20 pt-2 text-ink-400 ${hub ? 'mt-1.5 text-11' : 'mt-2 text-10'}`}>
+          <p>
+            <strong className="text-ink-200">自动备份 ≠ 备份。</strong>
+            软件会自动生成内部备份 —— 每 5 分钟一份、每天首次打开一份（各最多保留 30 份），但它和你的数据一起存在
+            <strong className="text-ink-200">同一处存储</strong>里。误删数据文件、重装系统、
+            卸载时勾选删除用户数据 —— 这 30 份会跟着一起消失。
+          </p>
+          <p>
+            自动备份只防「改坏了想回退」，防不了「整个容器没了」；后者只能靠导出到外部文件
+            （U 盘 / 网盘 / 另一台机器），得到一个可随时「导入备份」还原的 JSON。
+          </p>
+          {!hasProject && (
+            <p>在项目卡片右上角的菜单里点「导出备份」，每个项目导出一个 JSON 文件。</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function BackupReminder({
+  variant, hasProject, isDemo = false, onExport,
+}: {
+  /** sidebar：项目内侧栏底部；hub：项目中心「我的作品」上方 */
+  variant: 'sidebar' | 'hub'
+  hasProject: boolean
+  /** 当前打开的是示范项目 ⇒ 不提醒 */
+  isDemo?: boolean
+  onExport?: () => void
+}) {
+  const { due, dismiss, hide } = useBackupDue({ hasProject, isDemo })
+
+  if (!due) return null
+
+  return (
+    <BackupNotice
+      variant={variant}
+      hasProject={hasProject}
+      onExport={onExport ? () => { onExport(); hide() } : undefined}
+      onDismiss={dismiss}
+    />
   )
 }

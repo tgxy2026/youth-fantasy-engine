@@ -17,7 +17,7 @@ try {
     page.on('pageerror', e => report.errors.push(e.message))
     const open = async () => {
       await page.goto('http://127.0.0.1:5199/', { waitUntil: 'domcontentloaded' })
-      await page.getByTitle('打开项目').first().click()
+      await page.getByTitle(/打开项目并进入正文编辑器/).first().click()
       await page.getByRole('navigation').waitFor()
       const guide = page.locator('[data-guide-card]').first()
       if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()

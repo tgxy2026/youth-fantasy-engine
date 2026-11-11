@@ -126,6 +126,13 @@ function main() {
       !shouldRemind({ ...base, exportOverdue: false, dismissExpired: false, hasProject: true }))
     ok('6g projectCount 为负 / NaN 时按「没有」处理（不误提醒）',
       !shouldRemind({ ...base, projectCount: -1 }) && !shouldRemind({ ...base, projectCount: NaN }))
+    // 3.5.1 · U4：示范项目是软件自带演示数据，丢了随时能重建 ⇒ 不该拿它提醒「该备份了」
+    ok('🔴 6h 打开的正是示范项目 ⇒ 不提醒',
+      !shouldRemind({ ...base, hasProject: true, isDemo: true }))
+    ok('6i isDemo 优先于「有项目」（即使 hasProject，也返回 false）',
+      !shouldRemind({ ...base, hasProject: true, projectCount: 5, isDemo: true }))
+    ok('6j isDemo=false / 不传时行为不变（非示范项目照常提醒）',
+      shouldRemind({ ...base, hasProject: true, isDemo: false }) && shouldRemind({ ...base, hasProject: true }))
   }
 
   console.log(`\nbackupReminder: ${pass} passed, ${fail} failed`)

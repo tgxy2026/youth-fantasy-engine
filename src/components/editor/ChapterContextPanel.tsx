@@ -83,8 +83,8 @@ export default function ChapterContextPanel({
     >
       <header className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">
         <BookOpen size={14} className="text-amber" />
-        <span className="min-w-0 flex-1 text-12 font-semibold text-ink-200">本章资料</span>
-        <span className="text-10 text-ink-500 truncate max-w-28" title={chapterTitle}>
+        <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200">本章资料</span>
+        <span className="min-w-0 flex-1 text-10 text-ink-500 truncate" title={chapterTitle}>
           {chapterNo > 0 ? `第${chapterNo}章 · ` : ''}{chapterTitle}
         </span>
         <Button variant="icon-muted" onClick={onClose} className="p-1" title="收起"><X size={16} /></Button>

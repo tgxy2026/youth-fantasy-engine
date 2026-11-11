@@ -51,11 +51,9 @@ try {
   await page.getByRole('button', { name: /先看看示例/ }).click()
   await page.getByRole('button', { name: '下一步', exact: true }).click()
   await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-  // 🔴 进项目后真实备份提醒会盖住导航（截图确认过：failure.png「导出一份备份吧」）——
-  //    必须先关它再等 navigation，否则会白等满超时（与 frontend-editor 同口径）。
+  // 3.5.1 · U4 后备份提醒改内联且示范项目豁免：可能根本没有「稍后再说」，有则关、无则过。
   const later = page.getByRole('button', { name: '稍后再说', exact: true })
-  await later.waitFor({ timeout: 60000 })
-  await later.click()
+  if (await later.isVisible().catch(() => false)) await later.click()
   await page.getByRole('navigation').waitFor()
   const guide = page.locator('[data-guide-card]').first()
   if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) {

@@ -39,7 +39,7 @@ const dismissLater = async () => {
 const openSampleFromHub = async () => {
   const card = page.locator('[data-project-card]').filter({ hasText: '吞天神脉' })
   await card.waitFor({ timeout: 60000 })
-  await card.getByLabel('打开项目').click()
+  await card.getByRole('button', { name: /继续写作|开始写作/ }).click()
   await page.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
   await dismissLater()
 }

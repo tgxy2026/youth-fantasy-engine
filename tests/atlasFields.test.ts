@@ -725,9 +725,11 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   }
 
   // 「清空全部」已挪出菜单 ⇒ 菜单永远只有导入导出（所以按钮名可以统一叫「导入导出」）
+  // 3.5.1 · A4：裸图标补可见文字，清空键改为「🗑 清空」，常态中性、hover 才红。
   const sheetSrc = read('src/components/sheets/TableSheet.tsx')
-  ok('㉒ 菜单里不再有危险项（清空全部已独立成 icon-danger 图标键）',
-    !/key: 'clear'/.test(sheetSrc) && sheetSrc.includes('variant="icon-danger"') && sheetSrc.includes('canClear'))
+  ok('㉒ 菜单里不再有危险项（清空全部独立成「清空」文字键）',
+    !/key: 'clear'/.test(sheetSrc) && sheetSrc.includes('canClear') &&
+    sheetSrc.includes('<Trash2 size={13} /> 清空') && sheetSrc.includes('hover:text-danger'))
 
   // 「更多」按钮：没危险项就叫「导入导出」
   const more = read('src/components/sheets/TableMoreMenu.tsx')

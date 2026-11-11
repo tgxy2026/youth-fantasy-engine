@@ -93,12 +93,12 @@ export default function TavernControlModes({
           <NumField
             label="温度" guide={GUIDE_SAMPLING.temperature}
             hint="叙事推演要稳 —— 角色反应得站得住，所以默认比自由对话低（0.9）。"
-            value={plot.temperature} onCommit={v => setPlot('temperature', v)}
+            value={plot.temperature} onCommit={v => setPlot('temperature', v)} tiers
           />
           <NumField
             label="核采样阈值" guide={GUIDE_SAMPLING.topP}
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
-            value={plot.topP} onCommit={v => setPlot('topP', v)}
+            value={plot.topP} onCommit={v => setPlot('topP', v)} tiers
           />
           {ollamaNative ? (
             <NumField
@@ -180,12 +180,12 @@ export default function TavernControlModes({
           <NumField
             label="温度" guide={GUIDE_SAMPLING.temperature}
             hint="陪伴要松弛感，默认 0.95 —— 比剧情推演（0.9）更放得开。"
-            value={free.temperature} onCommit={v => setFree('temperature', v)}
+            value={free.temperature} onCommit={v => setFree('temperature', v)} tiers
           />
           <NumField
             label="核采样阈值" guide={GUIDE_SAMPLING.topP}
             hint="每一步只从「累积概率达到这个值」的候选词里挑。越低候选面越窄。"
-            value={free.topP} onCommit={v => setFree('topP', v)}
+            value={free.topP} onCommit={v => setFree('topP', v)} tiers
           />
           {ollamaNative ? (
             <NumField

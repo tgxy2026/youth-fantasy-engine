@@ -136,7 +136,7 @@ export default function NovelEditorChapterTree({
       >
         {/* 拖拽调整章节树宽度 */}
         <ResizeHandle pane={pane} label="章节栏宽度" layer={Z.pageHandle} />
-        <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 border-b border-ink-700 shrink-0" data-chapter-toolbar>
+        <div className="flex flex-wrap items-center gap-2 px-3.5 min-h-14 border-b border-ink-700 shrink-0" data-chapter-toolbar>
           <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200 flex items-center gap-1.5">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
@@ -445,7 +445,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                               e.preventDefault(); e.stopPropagation()
                               moveByKeyboard('ch', ch.id, e.key === 'ArrowUp' ? -1 : 1)
                             }}
-                            className="opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100"
+                            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing text-ink-500 hover:text-amber transition-opacity shrink-0 focus-visible:opacity-100"
                             title="拖动重排 / 移到其他卷；键盘：Alt+↑/↓"
                           >
                             <GripVertical size={12} />
@@ -458,30 +458,40 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                             >
                               {chapterSeqs.get(ch.id) || ''}
                             </span>
-                            <span className="text-12 truncate flex-1" onDoubleClick={() => setNamePrompt({ kind: 'renCh', title: '修改章名', def: ch.title, payload: ch })} title={`双击改章名 · 状态：${ch.status}`}>
+                            <span className="text-12 truncate flex-1" onDoubleClick={() => setNamePrompt({ kind: 'renCh', title: '修改章名', def: ch.title, payload: ch })} title={`双击改章名 · 状态：${ch.status}${ch.wordCount > 0 ? ` · ${ch.wordCount}字` : ''}`}>
                               {ch.title}
                             </span>
-                            <span className="text-9 text-ink-600 group-hover:hidden">{ch.wordCount > 0 ? `${ch.wordCount}字` : ''}</span>
-                            <Button variant="bare"
-                              onClick={e => { e.stopPropagation(); toggleExcludeNumbering(ch) }}
-                              className={`p-0.5 transition-colors ${
-                                ch.excludeFromNumbering
-                                  ? 'text-amber'
-                                  : 'hidden group-hover:block text-ink-500 hover:text-amber'
-                              }`}
-                              title={ch.excludeFromNumbering
-                                ? '已设为「不计入序号」（序章 / 番外 / 后记），点击恢复计号'
-                                : '设为「不计入序号」：序章 / 番外 / 后记不占正文号'}
-                            >
-                              <Hash size={12} />
-                            </Button>
-                            <Button variant="icon-danger"
-                              title="删除该章节"
-                              aria-label="删除该章节"
-                              onClick={e => { e.stopPropagation(); removeChapter(ch) }}
-                              className="hidden group-hover:block p-0.5">
-                              <Trash2 size={12} />
-                            </Button>
+                            {/* U2：把宽度还给章名。字数移入章名 tooltip；「＃/删除」收进悬停组，默认不占位。
+                                🔴 悬停组必须用普通 span 包裹再 hidden —— Button 基类是 inline-flex，
+                                直接给 Button 加 hidden 会被顶掉、永不隐藏（实测章名被挤成「第…」的根因）。
+                                「不计入序号」的琥珀＃是持久状态，单独常驻，不受悬停组隐藏影响。 */}
+                            {ch.excludeFromNumbering && (
+                              <Button variant="bare"
+                                onClick={e => { e.stopPropagation(); toggleExcludeNumbering(ch) }}
+                                className="p-0.5 shrink-0 text-amber transition-colors"
+                                title="已设为「不计入序号」（序章 / 番外 / 后记），点击恢复计号"
+                              >
+                                <Hash size={12} />
+                              </Button>
+                            )}
+                            <span className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                              {!ch.excludeFromNumbering && (
+                                <Button variant="bare"
+                                  onClick={e => { e.stopPropagation(); toggleExcludeNumbering(ch) }}
+                                  className="p-0.5 text-ink-500 hover:text-amber transition-colors"
+                                  title="设为「不计入序号」：序章 / 番外 / 后记不占正文号"
+                                >
+                                  <Hash size={12} />
+                                </Button>
+                              )}
+                              <Button variant="icon-danger"
+                                title="删除该章节"
+                                aria-label="删除该章节"
+                                onClick={e => { e.stopPropagation(); removeChapter(ch) }}
+                                className="p-0.5">
+                                <Trash2 size={12} />
+                              </Button>
+                            </span>
                         </div>
                       )
                     })}

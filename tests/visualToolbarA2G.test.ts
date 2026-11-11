@@ -112,6 +112,44 @@ const ok = (name: string, cond: boolean, extra = '') => {
   ok('G 编号列默认宽 110 → 130', model.includes("if (col.name === '编号' || col.name === '章节号') return 130"))
 }
 
+// ---------- A4 语义色归位 + 裸图标标签（3.5.1） ----------
+{
+  const bookbreak = read('src/components/bookbreak/BookBreakPanel.tsx')
+  ok('A4 导入建议用 ⓘ（信息提示不再借 ⚠️ 冒充危险）',
+    bookbreak.includes("advice.level === 'ok' ? '✓ ' : 'ⓘ '"))
+  ok('A4 截断提示用 ⓘ', bookbreak.includes('ⓘ 超出处理上限'))
+  ok('🔴 A4 负向：信息性提示不许退回 ⚠️',
+    !bookbreak.includes("'⚠️ '") && !bookbreak.includes('⚠️ 超出处理上限'))
+  ok('A4 真实失败 / 中止仍保留 danger（红色专款专用）',
+    bookbreak.includes('variant="danger"') && bookbreak.includes('text-danger'))
+
+  const part1 = read('src/lib/schemaTabs/part1.ts')
+  const part2 = read('src/lib/schemaTabs/part2.ts')
+  ok('A4 角色字段说明不再带 ⚠️',
+    !part1.includes('⚠️ 选多个势力') && !part1.includes('⚠️ 多个势力'))
+  ok('A4 设定页签 tips 不再带 ⚠️',
+    !part2.includes("'⚠️ 名字尽量") && !part2.includes("'⚠️ 会反复出现"))
+  ok('A4 信息性说明保留中性 ⓘ',
+    part1.includes('ⓘ 选多个势力时') && part2.includes('ⓘ 名字尽量起得具体'))
+
+  const cal = read('src/components/common/CalendarRuleModal.tsx')
+  ok('A4 历法规则说明用 ⓘ', cal.includes('ⓘ 改这项') && !cal.includes('⚠️ 改这项'))
+  const bookver = read('src/components/app/BookVersionPanel.tsx')
+  ok('A4 版本体检的提醒项用 ⓘ', bookver.includes('text-amber/90">ⓘ {w.title}'))
+
+  const sheet = read('src/components/sheets/TableSheet.tsx')
+  ok('🔴 A4 工具栏清空有可见文字（不再是裸 🗑）', /<Trash2 size=\{13\} \/> 清空/.test(sheet))
+  ok('A4 清空键带 aria-label + tooltip',
+    sheet.includes('aria-label={`清空「${tab.name}」中所有 ${rows.length} 条记录`}') &&
+    sheet.includes('title={`清空「${tab.name}」中所有 ${rows.length} 条记录（会先问你一次，删了不可恢复）`}'))
+  ok('A4 清空键常态中性、hover 才红（危险色不常驻）',
+    sheet.includes('text-ink-400 hover:text-danger hover:border-danger/40'))
+  ok('A4 关系行删除键有可读 aria-label',
+    read('src/components/sheets/TableRelationGroups.tsx').includes('aria-label="删除此条关系"'))
+  ok('A4 表格行删除键有可读 aria-label',
+    read('src/components/sheets/TableSheetRow.tsx').includes('aria-label="删除此行"'))
+}
+
 // ---------- H 平板与窄窗口 ----------
 {
   const app = read('src/App.tsx')

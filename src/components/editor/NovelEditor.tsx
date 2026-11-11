@@ -489,7 +489,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           <>
             {/* 标题/状态/保存常驻；次工具按用途收纳，行高随实际内容分配。 */}
             <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar data-guide="editor-toolbar">
-            <div className="flex flex-wrap items-center gap-2 px-4 py-2" data-editor-primary>
+            <div className="flex flex-wrap items-center gap-2 px-4 min-h-14" data-editor-primary>
               {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
                 title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
               <div className="flex items-center gap-1">

@@ -61,7 +61,6 @@ import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
 import { MigrationLockBanner } from '@/components/templates/MigrationLockBanner'
 import DataDock from '@/components/app/DataDock'
-import BackupReminder from '@/components/app/BackupReminder'
 import { markExported } from '@/lib/sync/backupReminder'
 import WelcomeWizard from '@/components/app/WelcomeWizard'
 import MigrationWizard from '@/components/app/MigrationWizard'
@@ -578,7 +577,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [visCtx])
 
-  const openProject = useCallback(async (id: string) => {
+  const openProject = useCallback(async (id: string, tab?: string) => {
     const p = await db.getProject(id)
     if (!p) return
     // 2.6.3 · 跨页签任务存活：换项目才清后台任务（同项目重开则保留 —— 被中止的任务可「继续」）
@@ -609,7 +608,10 @@ export default function App() {
     setProjectId(id)
     setProjectName(p.name)
     setVisCtx({ type: p.projectType ?? 'full', features: p.features ?? [], pack })
-    setActiveTab('dashboard')
+    // 3.5.1 · A1：卡片「继续写作」可直达正文。🔴 必须先清掉上一本书留下的章节定位，
+    // 否则 NovelEditor 会拿着别的项目的 chapterId 去开，落到「章节不存在」的空态。
+    if (tab) setEditorTarget(null)
+    setActiveTab(tab ?? 'dashboard')
     setRefreshKey(k => k + 1)
     // 备份策略加固：每天首次打开自动备一份；打开期间每 5 分钟滚动备一份
     void ensureDailyBackup(id)
@@ -1081,8 +1083,9 @@ export default function App() {
           ctx={visCtx}
         />
       )}
-      {/* #031 定期提醒把数据导出到外部文件。 */}
-      <BackupReminder hasProject={!!projectId} onExport={exportCurrent} />
+      {/* #031 定期提醒把数据导出到外部文件。
+          3.5.1 · U4：不再全局挂全屏 Modal —— 项目内挂 Sidebar 底部、项目中心挂 DataDock，
+          两处都是非阻断的内联条（同一个项目里可能同时存在侧栏与数据坞，所以不能在这里挂）。 */}
       {/* 3.3.1 · P3：非自管页签的引导（自管页在页面组件内部渲染，两者互斥） */}
       {appGuide.running && appGuide.guide && (
         <GuideOverlay

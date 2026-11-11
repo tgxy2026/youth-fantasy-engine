@@ -62,7 +62,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                       className="text-13 font-medium text-ink-100"
                       title={aliasLabels[key] === field.name ? undefined : `${field.name}（存储键不变，AI 按当前名称理解）`}
                     >{aliasLabels[key]}</div>
-                    <FieldDescription label={aliasLabels[key] ?? field.name} description={field.desc} />
+                    <FieldDescription label={aliasLabels[key] ?? field.name} description={field.desc} help={field.help} />
                   </div>
                   <div>
                     <AutoTextarea
@@ -72,6 +72,7 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                       placeholder="点击填写…"
                       textClass="text-13"
                       minHeight={36}
+                      maxRows={3}
                     />
                     {!val && field.example && (
                       <div className="field-example flex items-start gap-1 mt-1">

@@ -28,7 +28,7 @@ try{
   await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click()
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
-  await page.getByRole('button',{name:'稍后再说',exact:true}).click()
+  const backupLaterBtn = page.getByRole('button',{name:'稍后再说',exact:true}); if (await backupLaterBtn.isVisible().catch(()=>false)) await backupLaterBtn.click()
   await page.getByRole('navigation').waitFor();page.setDefaultTimeout(15000)
   const observations=await page.evaluate(async()=>{
     const runtime=await import('/src/lib/settings/workspaceRuntime.ts')

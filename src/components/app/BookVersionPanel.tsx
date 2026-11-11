@@ -214,7 +214,7 @@ export default function BookVersionPanel({
                 ))}
                 {gate.warnings.map(w => (
                   <div key={w.key} className="mb-1.5 last:mb-0">
-                    <div className="text-11 text-amber/90">⚠ {w.title}</div>
+                    <div className="text-11 text-amber/90">ⓘ {w.title}</div>
                     <div className="text-10 text-ink-400 leading-relaxed mt-0.5">{w.detail}</div>
                   </div>
                 ))}

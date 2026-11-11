@@ -32,7 +32,8 @@ try {
   const before = await sprite.evaluate(el => el.parentElement.style.top)
   const box = await sprite.boundingBox()
   const cdp = await context.newCDPSession(page)
-  const x = 365, y = box.y + box.height / 2
+  // A2：窄屏小圆钮让开右缘 10px，触摸点按热区实际右缘取
+  const x = Math.round(box.x + box.width - 6), y = box.y + box.height / 2
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - 60 }] })
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })

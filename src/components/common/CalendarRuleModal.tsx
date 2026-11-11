@@ -189,7 +189,7 @@ export default function CalendarRuleModal({ open, rule, calendars, onSave, onClo
           <b className="text-ink-100">{clean.daysPerMonth}</b> 天 ＝{' '}
           <b className="text-amber">{daysPerYear(clean)}</b> 天/年。
           <div className="mt-1 text-ink-400">
-            ⚠️ 改这项「不会改写已填的日期」：格子里的数字原样保留，只是月份 / 日期的候选范围变了。
+            ⓘ 改这项「不会改写已填的日期」：格子里的数字原样保留，只是月份 / 日期的候选范围变了。
             若某个已填日期超出了新范围（如原本填了「12月31日」而新规则每月只有 30 天），
             该格会显示旧值、重新选择时才会落到新范围内。
           </div>

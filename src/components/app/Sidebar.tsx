@@ -35,6 +35,8 @@ import CustomThemeDialog from '@/components/settings/CustomThemeDialog'
 import FontSettingsDialog from '@/components/settings/FontSettingsDialog'
 import DensityControl from '@/components/settings/DensityControl'
 import TaskIndicator from '@/components/common/TaskIndicator'
+import BackupReminder from '@/components/app/BackupReminder'
+import { isDemoProjectName } from '@/lib/constants'
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   '工作面板': <LayoutDashboard size={15} />,
@@ -333,6 +335,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         </button>
         {/* 保持组件挂载以订阅保存/后台任务状态；收起时不留下可被键盘聚焦的隐藏控件。 */}
         <div ref={toolsRef} data-sidebar-tools className={`min-h-0 space-y-2 px-3 pb-2 ${overlay ? '' : 'overflow-y-auto overscroll-contain'} ${footerCollapsed ? 'hidden' : ''}`}>
+        {/* 导出备份提示（3.5.1 · U4）：不再弹全屏 Modal，改成这块工具栏里的内联提示条。
+            只在「确实很久没导出 + 有真实作品」时出现；示范项目不提醒。 */}
+        <BackupReminder variant="sidebar" hasProject isDemo={isDemoProjectName(projectName)} onExport={onExport} />
         {/* 后台任务（2.6.3 · 跨页签任务存活）：有任务才渲染，无任务时整节不占位。
             🔴 内嵌进这块既有工具栏，**不新开浮层**（项目红线：左下角只准一个浮层）。 */}
         <TaskIndicator onNavigate={onNavigate} activeTab={activeTab} />

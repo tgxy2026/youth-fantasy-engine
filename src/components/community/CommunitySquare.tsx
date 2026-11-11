@@ -17,6 +17,7 @@ import { WEB, WEB_CLOUD, WEB_GUEST, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { communityEndpointReady, adminOverview, fetchProfile, fetchSquare, CommunityError } from '@/lib/community/api'
 import { DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLogin'
+import { navigateAuth } from '@/lib/app/authNavigation'
 import { accountKeyOf } from '@/lib/community/draft'
 import { uploadRank } from '@/lib/community/rankUpload'
 import type { CommunityProfile, CommunitySquareState, DisplayMode } from '@/lib/community/types'
@@ -153,6 +154,15 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
   const canWrite = signedIn === true && !guest
   const defaultDisplay: DisplayMode = profile?.postDisplay || 'anonymous'
 
+  // 3.5.1 · U1：连接/登录/关闭状态的**单一真相源**。
+  // 服务不可达时外壳只出一张引导卡（中性色 + 登录 CTA），子面板不再各自叠报错；
+  // 外壳已有真实错误时 likewise 由外壳独占状态条，避免「外壳 + Feed + Rank」三重横幅。
+  // 广场关闭（square.open=false）同样由外壳独占：/posts 与 /rank 的 closed 都源自同一个
+  // squareOpen，子面板再各出一条 warn 就会首屏双横幅（复核补齐）。
+  const connectionDown = !endpointReady
+  const squareClosed = !!square && !square.open
+  const shellOwnsStatus = connectionDown || !!error || squareClosed
+
   if (portableUnavailable) {
     return (
       <div className={mode === 'overlay' ? 'fixed inset-0 flex items-center justify-center bg-black/60 p-6' : 'flex h-full w-full items-center justify-center p-6'}
@@ -212,25 +222,43 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const content = (
     <>
-      {!endpointReady && (
-        <Notice kind="warn">
-          社区服务不可用。桌面版请检查网络并登录云端账号；本地写作与既有功能不受影响。
+      {/* 3.5.1 · U1：同一时刻最多一条状态。离线=引导卡（中性）；关闭=warn；真实错误=error；
+          操作反馈=warn；未登录浏览=info+登录 CTA。五者互斥，不再堆叠。 */}
+      {connectionDown ? (
+        <div className="rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-8 text-center" role="status">
+          <p className="text-15 font-semibold text-ink-100">连接云端后，读一读别人的世界</p>
+          <p className="mx-auto mt-2 max-w-md text-12 leading-relaxed text-ink-300">
+            广场需要连接云端账号。本地写作与草稿不受任何影响。
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" onClick={() => void navigateAuth('/login')}>登录云端账号</Button>
+            <HelpPopover title="投稿广场怎么用" width="23rem" size={13}>
+              <Button size="sm" variant="secondary">了解广场</Button>
+            </HelpPopover>
+          </div>
+          <p className="mt-3 text-11 text-ink-400">连接恢复后自动加载 · 不再重复提示</p>
+        </div>
+      ) : squareClosed ? (
+        <Notice kind="warn">广场暂时关闭，暂时无法浏览新内容。</Notice>
+      ) : error ? (
+        <Notice kind="error">{error}</Notice>
+      ) : notice ? (
+        <Notice kind="warn">{notice}</Notice>
+      ) : signedIn === false && tab === 'feed' ? (
+        <Notice>
+          你现在未登录：可以浏览广场，但不能投稿、评论或参与排行。
+          <Button size="sm" variant="ghost" className="ml-2" onClick={() => void navigateAuth('/login')}>登录</Button>
         </Notice>
-      )}
-      {error && <Notice kind="error">{error}</Notice>}
-      {notice && <Notice kind="warn">{notice}</Notice>}
-      {signedIn === false && tab === 'feed' && (
-        <Notice>你现在未登录：可以浏览广场，但不能投稿、评论或参与排行。</Notice>
-      )}
+      ) : null}
 
       {!wide && rankOpen && (
         <div id="community-rank-inline" className="rounded-xl border border-ink-700 bg-ink-900/40 p-3">
           {/* 窄屏展开只给前 5 名并隐藏长篇说明：再多会把正文挤出首屏 */}
-          <RankPanel compact dense max={5} onOpenSettings={openSettings} />
+          <RankPanel compact dense max={5} onOpenSettings={openSettings} shellOwnsStatus={shellOwnsStatus} />
         </div>
       )}
 
-      {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={defaultDisplay} onNeedLogin={requireLogin} key={feedKey} />}
+      {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={defaultDisplay} onNeedLogin={requireLogin} key={feedKey} shellOwnsStatus={shellOwnsStatus} />}
       {tab === 'write' && canWrite && (
         <PublishPanel
           accountKey={accountKey}
@@ -275,7 +303,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       <div className="flex min-h-0 flex-1">
         {wide && (
           <aside className="w-72 shrink-0 overflow-y-auto border-r border-ink-700 bg-ink-900/30 px-4 py-5 xl:w-80">
-            <RankPanel compact onOpenSettings={openSettings} />
+            <RankPanel compact onOpenSettings={openSettings} shellOwnsStatus={shellOwnsStatus} />
           </aside>
         )}
         <div className="min-w-0 flex-1 overflow-y-auto">

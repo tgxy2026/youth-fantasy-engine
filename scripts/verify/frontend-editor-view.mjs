@@ -48,7 +48,7 @@ try {
   await page.getByRole('button', { name: /先看看示例/ }).click()
   await page.getByRole('button', { name: '下一步', exact: true }).click()
   await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
-  await page.getByRole('button', { name: '稍后再说', exact: true }).click()
+  const backupLaterBtn = page.getByRole('button', { name: '稍后再说', exact: true }); if (await backupLaterBtn.isVisible().catch(() => false)) await backupLaterBtn.click()
   await page.getByRole('navigation').waitFor()
   const guide = page.locator('[data-guide-card]').first()
   if (await guide.waitFor({ timeout: 2500 }).then(() => true).catch(() => false)) await page.getByRole('button', { name: '跳过本页' }).click()
@@ -179,7 +179,7 @@ try {
   // 🔴 用 CSS 定位等 DOM：提醒挂着时 `<nav>` 在可访问性树里根本不存在，role 定位等不到 attached。
   const navAttached = await page.locator('nav').waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false)
   if (!navAttached) {
-    await page.getByRole('button', { name: '打开项目', exact: true }).first().click()
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
     await page.locator('nav').waitFor({ state: 'attached', timeout: 60000 })
   }
   await openEditor()

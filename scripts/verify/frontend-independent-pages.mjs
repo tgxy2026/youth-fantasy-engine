@@ -155,7 +155,9 @@ try {
   page = await context.newPage(); await page.setViewportSize({ width: 1560, height: 900 }); page.setDefaultTimeout(120000)
   observe(page); page.on('request', request => { if (new URL(request.url()).pathname === '/api/data') report.guestDataRequests.push(request.method()) })
   await page.goto(origin + '/guest-app', { waitUntil: 'commit' }); await page.getByRole('button', { name: /先看看示例/ }).click()
-  await page.getByRole('button', { name: '下一步', exact: true }).click(); await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click(); await page.getByRole('button', { name: '稍后再说', exact: true }).click()
+  await page.getByRole('button', { name: '下一步', exact: true }).click(); await page.getByRole('button', { name: /跳过，直接开始|开始写作/ }).click()
+  // 3.5.1 · U4：示范项目豁免备份提醒，且提醒已改为非阻断内联条 —— 不再需要关弹窗，也不应被它挡住
+  check('demo start is not interrupted by the backup reminder', !(await page.getByRole('button', { name: '稍后再说', exact: true }).isVisible().catch(() => false)))
   await page.getByRole('navigation').waitFor(); await page.waitForFunction(() => {
     const host = document.getElementById('yfe-external-notices').getBoundingClientRect(), app = document.querySelector('#root > .h-screen').getBoundingClientRect()
     return host.top >= -1 && app.top >= host.bottom - 1 && app.bottom <= innerHeight + 1 && Math.abs(scrollY) < 1

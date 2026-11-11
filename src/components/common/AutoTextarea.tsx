@@ -38,6 +38,7 @@ interface Props {
    * （「设定草稿箱」这类"想到多少写多少"的场合要的就是这个手感）。
    */
   maxHeight?: number
+  maxRows?: number
   /**
    * 字号类。默认 12px —— 需要别的字号时**从这里传**，别塞进 className：
    * Tailwind 同类工具类谁生效取决于生成顺序，两处各写一个字号就成了开盲盒。
@@ -66,7 +67,7 @@ interface Props {
  */
 export default function AutoTextarea({
   value, onChange, placeholder, className = '',
-  minRows, minHeight, maxHeight = 360, textClass = 'text-12',
+  minRows, minHeight, maxHeight = 360, maxRows, textClass = 'text-12',
   disabled, spellCheck, autoFocus, onKeyDown, title, ariaLabel, inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
@@ -82,9 +83,11 @@ export default function AutoTextarea({
       + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
     const min = minHeight ?? (minRows ? Math.round(lh * minRows + box) : 32)
     // maxHeight=0 ⇒ 不封顶（见 props 注释）
-    const cap = maxHeight > 0 ? maxHeight : Number.MAX_SAFE_INTEGER
-    ta.style.height = Math.max(min, Math.min(ta.scrollHeight, cap)) + 'px'
-  }, [minRows, minHeight, maxHeight])
+    const cap = maxHeight === 0 ? Number.MAX_SAFE_INTEGER : maxRows ? Math.min(maxHeight, Math.ceil(lh * maxRows + box)) : maxHeight
+    const required = ta.scrollHeight + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    ta.style.height = Math.max(min, Math.min(required, cap)) + 'px'
+    ta.style.overflowY = required > cap ? 'auto' : 'hidden'
+  }, [minRows, minHeight, maxHeight, maxRows])
 
   // 内容 / 字号档变化时重测
   useEffect(() => { measure() }, [measure, value, textClass])

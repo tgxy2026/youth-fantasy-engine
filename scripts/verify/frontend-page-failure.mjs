@@ -36,7 +36,7 @@ try{
   await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click()
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
-  await page.getByRole('button',{name:'稍后再说',exact:true}).click()
+  const backupLaterBtn = page.getByRole('button',{name:'稍后再说',exact:true}); if (await backupLaterBtn.isVisible().catch(()=>false)) await backupLaterBtn.click()
   const nav=page.getByRole('navigation');await nav.waitFor();page.setDefaultTimeout(20000)
   const guide=page.locator('[data-guide-card]').first()
   if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
@@ -80,13 +80,13 @@ try{
     report.blocked===blocked+1&&await notice.count()===1)
   block=false
   await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'重新加载工作台',exact:true}).click()])
-  await page.getByRole('button',{name:'打开项目',exact:true}).waitFor({timeout:120000})
+  await page.getByRole('button',{name:/继续写作|开始写作/}).waitFor({timeout:120000})
   page.setDefaultTimeout(20000)
   check('manual reload returns to the project entry and retains saved data',await page.evaluate(async({id,chapterId,latest})=>{
     const db=await import('/src/lib/db.ts'),{ops}=await import('/src/lib/db/core.ts')
     return !!await db.getProject(id)&&(await ops.get('chapters',chapterId))?.content===latest
   },{id:owner.id,chapterId:saved.id,latest}))
-  await page.getByRole('button',{name:'打开项目',exact:true}).click()
+  await page.getByRole('button',{name:/继续写作|开始写作/}).click()
   await nav.waitFor();await page.getByRole('button',{name:'稍后再说',exact:true}).click({timeout:1000}).catch(()=>{})
   await nav.getByRole('button',{name:'使用指南',exact:true}).click()
   await page.getByRole('heading',{name:'使用指南',exact:true}).waitFor()

@@ -85,9 +85,12 @@ export function shouldRemind(input: {
   dismissExpired: boolean
   /** 判据③-a：当前已打开项目 */
   hasProject: boolean
-  /** 判据③-b：项目列表条数（`hasProject` 为 false 时才需要真实值） */
+  /** 判据③-b：项目列表条数（`hasProject` 为 false 时才需要真实值；只数非示范项目） */
   projectCount: number
+  /** 判据③-c：当前打开的是示范项目（3.5.1 · U4）—— 示范数据丢了随时能重建，提醒它没有意义 */
+  isDemo?: boolean
 }): boolean {
+  if (input.isDemo) return false
   if (!input.exportOverdue || !input.dismissExpired) return false
   return input.hasProject || input.projectCount > 0
 }

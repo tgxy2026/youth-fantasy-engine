@@ -584,11 +584,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           {/* 3.1.2 B 条：低频 / 危险操作收进「更多」菜单（原「清空全部」是常驻红按钮 ——
               危险色常驻会压住整页的重点，且它与「导入 / 导出」一起把工具条挤到折行） */}
           <TableMoreMenu items={moreItems} />
-          {/* 清空全部：单独一个图标键，常态中性、hover 才红（危险色不常驻是本项目红线） */}
+          {/* A4：破坏性操作不留裸图标 —— 可见文字「清空」+ tooltip；常态中性、hover 才红（危险色不常驻） */}
           {canClear && (
-            <Button variant="icon-danger" size="sm" onClick={() => void clearAll()}
-              title={`清空「${tab.name}」中所有 ${rows.length} 条记录（会先问你一次，删了不可恢复）`}>
-              <Trash2 size={13} />
+            <Button variant="bare" onClick={() => void clearAll()}
+              aria-label={`清空「${tab.name}」中所有 ${rows.length} 条记录`}
+              title={`清空「${tab.name}」中所有 ${rows.length} 条记录（会先问你一次，删了不可恢复）`}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-12 border border-ink-700 text-ink-400 hover:text-danger hover:border-danger/40 hover:bg-danger/10 transition-colors">
+              <Trash2 size={13} /> 清空
             </Button>
           )}
           {/* 3.1.3：种族生物 / 物品资源的「表格 ⇄ 图鉴」（方案 §3.1；入口只开放 races / items） */}

@@ -123,7 +123,7 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
                           {!rOpen && status && <span className="text-11 text-ink-500 truncate">{status}</span>}
                           {dirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" title={UNSAVED_CHANGES_HINT} />}
                         </Button>
-                        <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" title="删除此条关系">
+                        <Button variant="icon-danger" onClick={() => removeRow(row.id)} className="opacity-40 group-hover:opacity-100 transition-all p-1 shrink-0" aria-label="删除此条关系" title="删除此条关系">
                           <Trash2 size={12} />
                         </Button>
                         {/* 资料提及（3.1 P1）：目标取**所在文件夹的人物** —— 文件夹视图里这行关系

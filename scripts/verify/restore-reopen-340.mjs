@@ -87,7 +87,7 @@ try {
   await page.waitForTimeout(2500)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('[data-project-hub]').waitFor({ timeout: 60000 })
-  await page.locator('[data-project-card]').filter({ hasText: '吞天神脉' }).getByLabel('打开项目').click()
+  await page.locator('[data-project-card]').filter({ hasText: '吞天神脉' }).getByRole('button', { name: /继续写作|开始写作/ }).click()
   await page.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
   const dbCheck = await page.evaluate(async title => {
     const db = await import('/src/lib/db.ts')

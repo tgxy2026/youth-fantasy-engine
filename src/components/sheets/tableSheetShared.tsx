@@ -109,7 +109,7 @@ export function CellTextarea({ value, onChange, invalid, title, nowrap }: {
       onChange={e => onChange(e.target.value)}
       rows={1}
       title={title ?? value}
-      className={`!py-1 text-12 w-full ${nowrap ? 'whitespace-pre' : 'whitespace-pre-wrap break-words'} resize-none overflow-hidden bg-transparent ${invalid ? '!border-danger/60 text-danger' : ''}`}
+      className={`!py-1 text-12 w-full block ${nowrap ? 'whitespace-pre' : 'whitespace-pre-wrap break-words'} resize-none overflow-hidden bg-transparent ${invalid ? '!border-danger/60 text-danger' : ''}`}
     />
   )
 }

@@ -71,7 +71,7 @@ export default function NetworkProxyPanel() {
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
           <Globe size={13} className="text-amber" />
-          <h2 className="text-13 text-amber">网络代理</h2>
+          <h2 className="text-14 font-semibold text-ink-100">网络代理</h2>
           <HelpPopover title="网络代理怎么用" width="24rem" size={14}>
             <p>软件默认跟随操作系统的网络设置。如果你的电脑需要经由指定的网络出口访问接口（例如公司内网的统一网关、自建的中转服务、本机运行的代理客户端），可以在这里填写出口地址，让 AI 请求经它发出。</p>
             <p className="mt-1.5">· 地址格式：http://127.0.0.1:7890（也支持 https / socks5）；</p>

@@ -29,7 +29,7 @@ export default function JieWenJi(props: Props) {
   const m = useJieWenJiModel(props)
   const { aiReady, spriteOn, toggleSprite, mode, setMode, onClose } = m
   return (
-    <div className="absolute right-3 top-14 bottom-10 w-[360px] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+    <div data-jiewenji-panel className="absolute right-3 top-14 bottom-10 w-[360px] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
 style={{ zIndex: Z.pagePanel }}>
       {/* 头部 */}
       <div className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">

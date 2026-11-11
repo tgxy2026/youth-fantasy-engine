@@ -7,8 +7,8 @@
 //   ③ 推荐段真的装着内置默认值（改了默认值却忘了改推荐段，说明就在说谎）。
 import { __resetMockStores } from './mock-memory'
 import {
-  PARAM_GUIDES, GUIDE_SAMPLING, bandOf,
-  type ParamGuide,
+  PARAM_GUIDES, GUIDE_SAMPLING, bandOf, bandRepresentative, dynamicGuide,
+  type ParamGuide, type DynamicGuideKey,
 } from '../src/lib/tavern/paramGuide'
 import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
 import { TAVERN_DEFAULTS } from '../src/lib/tavern/types'
@@ -124,6 +124,33 @@ async function main() {
     ok('采样参数里只有「惩罚射程」带单位（词元），其余都是无单位的比值',
       Object.entries(GUIDE_SAMPLING).every(([k, g]) => (k === 'repeatLastN' ? g.unit === '词元' : g.unit === undefined)),
       Object.entries(GUIDE_SAMPLING).map(([k, g]) => `${k}:${g.unit ?? '—'}`).join(' '))
+  }
+
+  // ---------- 5) 档位代表值往返一致（3.5.1 · U3 档位按钮） ----------
+  // 点某一档写入 bandRepresentative，高亮由 bandOf 决定 —— 二者必须往返一致，
+  // 否则「点了平衡却高亮活跃」这种错位会直接骗到作者。静态表 + 动态五档逐项锁。
+  {
+    const checkRoundTrip = (label: string, g: ParamGuide) => {
+      const bad: string[] = []
+      for (const b of g.bands) {
+        const rep = bandRepresentative(g, b)
+        if (rep < g.min || rep > g.max) bad.push(`「${b.name}」代表值 ${rep} 越界 [${g.min},${g.max}]`)
+        if (rep < b.from || rep > b.to) bad.push(`「${b.name}」代表值 ${rep} 不在本段 [${b.from},${b.to}]`)
+        const back = bandOf(g, rep)
+        if (back.from !== b.from || back.to !== b.to) bad.push(`「${b.name}」代表值 ${rep} 往返落到「${back.name}」`)
+      }
+      ok(`${label}：每档代表值往返一致（bandOf(rep)===本档）`, bad.length === 0, bad.join('；'))
+    }
+    for (const [key, g] of ALL) checkRoundTrip(key, g)
+
+    const dynKeys: DynamicGuideKey[] = ['contextBudget', 'numCtx', 'fixedOverheadChars', 'softLimit', 'hardLimit', 'longTermLimit', 'diaryKeep']
+    for (const key of dynKeys) {
+      const g0 = PARAM_GUIDES[key]
+      // rec 贴着 min / 居中 / 贴着 max 三种 —— 覆盖动态五档退化成三/四档的窄范围情形
+      for (const rec of [g0.min, Math.round((g0.min + g0.max) / 2), g0.max]) {
+        checkRoundTrip(`dynamic.${key}@${rec}`, dynamicGuide(key, rec))
+      }
+    }
   }
 
   console.log(`\nparamGuide: ${pass} passed, ${fail} failed`)

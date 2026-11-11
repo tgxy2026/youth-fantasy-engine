@@ -105,7 +105,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await sleep(3500)
   if (/我的作品/.test(await page.evaluate(() => document.body.innerText))) {
-    await page.getByRole('button', { name: '打开项目' }).first().click().catch(() => {})
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click().catch(() => {})
     await sleep(3000)
   }
   for (const label of ['稍后再说', '知道了']) {
@@ -139,7 +139,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await sleep(3000)
   if (/我的作品/.test(await page.evaluate(() => document.body.innerText))) {
-    await page.getByRole('button', { name: '打开项目' }).first().click().catch(() => {})
+    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click().catch(() => {})
     await sleep(2500)
   }
   await page.getByRole('navigation').getByRole('button', { name: '正文编辑', exact: true }).click()

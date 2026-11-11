@@ -28,7 +28,7 @@ try{
   await page.getByRole('button',{name:/先看看示例/}).click()
   await page.getByRole('button',{name:'下一步',exact:true}).click()
   await page.getByRole('button',{name:/跳过，直接开始|开始写作/}).click()
-  await page.getByRole('button',{name:'稍后再说',exact:true}).click()
+  const backupLaterBtn = page.getByRole('button',{name:'稍后再说',exact:true}); if (await backupLaterBtn.isVisible().catch(()=>false)) await backupLaterBtn.click()
   const guide=page.locator('[data-guide-card]').first()
   if(await guide.waitFor({timeout:2500}).then(()=>true).catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click()
   await page.evaluate(async()=>{(await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false)})
@@ -55,6 +55,9 @@ try{
   const tools=page.getByRole('button',{name:'档案工具',exact:true})
   const options=page.getByRole('group',{name:'档案工具选项',exact:true})
   await tools.focus();await tools.press('Enter');await options.waitFor()
+  // HelpPopover 的 focusOnOpen 在 requestAnimationFrame 里才落焦点：浮层挂上来≠焦点已到位，
+  // 先等首个动作真正成为 activeElement 再断言（与 frontend-editor 的工具浮层同一口径）。
+  await page.waitForFunction(()=>{const g=document.querySelector('[role="group"][aria-label="档案工具选项"]');return !!g&&g.querySelector('button')===document.activeElement})
   check('named tools open by keyboard and focus their first action',await options.getByRole('button').first().evaluate(el=>el===document.activeElement))
   check('primary actions stay direct while secondary actions are grouped',await page.locator('[data-character-workspace] > header').getByRole('button',{name:'新建角色',exact:true}).isVisible()&&await options.getByRole('button',{name:'移动到其他页签',exact:true}).isVisible())
   check('unconfigured AI explains its disabled state without sending requests',await options.getByRole('button',{name:'AI 新增角色',exact:true}).isDisabled()&&await options.getByRole('button',{name:'AI 补全当前档案',exact:true}).isDisabled())
@@ -91,8 +94,10 @@ try{
   const backgroundGroup=background.locator('xpath=ancestor::details[1]')
   await backgroundGroup.locator('summary').click()
   const longInput=page.getByRole('textbox',{name:'出身背景',exact:true})
-  await page.waitForFunction(()=>[...document.querySelectorAll('textarea')].find(el=>el.getAttribute('aria-label')==='出身背景')?.clientHeight>100)
-  check('opening a folded long field remeasures its real content',(await longInput.boundingBox()).height>100)
+  await page.waitForFunction(()=>{const el=[...document.querySelectorAll('textarea')].find(el=>el.getAttribute('aria-label')==='出身背景'); return el && getComputedStyle(el).overflowY==='auto' && el.scrollHeight>el.clientHeight})
+  check('long field scrolls after three lines',await longInput.evaluate(el=>el.scrollHeight>el.clientHeight && getComputedStyle(el).overflowY==='auto'))
+  await longInput.fill('单行')
+  check('single line field has no scrollbar',await longInput.evaluate(el=>getComputedStyle(el).overflowY==='hidden' && el.scrollHeight<=el.clientHeight))
   const identity=page.getByRole('textbox',{name:'身份定位',exact:true})
   const edited='作者修改的身份 0 false'
   await identity.fill(edited)
@@ -197,9 +202,11 @@ try{
     }
     check(`long name and original field remain reachable ${density}/${viewport.width}/${viewport.zoom}`,await profile.getByRole('button',{name:'修改名称：'+longName,exact:true}).isVisible()&&await page.getByRole('textbox',{name:'江湖职责',exact:true}).inputValue()===originalValue)
     await detail.evaluate(el=>el.scrollTop=el.scrollHeight)
-    await empty.locator('summary').scrollIntoViewIfNeeded()
-    if(viewport.flow)await empty.locator('summary').evaluate(el=>el.scrollIntoView({block:'end'}))
-    check(`last portrait entry is reachable ${density}/${viewport.width}/${viewport.zoom}`,await empty.locator('summary').isVisible())
+    // 3.4.3（aab0ccd）把空立绘从 <details><summary> 改成右侧常驻两格，最后一格＝「上传立绘 2」按钮。
+    const lastPortrait=empty.getByRole('button',{name:'上传立绘 2',exact:true})
+    await lastPortrait.scrollIntoViewIfNeeded()
+    if(viewport.flow)await lastPortrait.evaluate(el=>el.scrollIntoView({block:'end'}))
+    check(`last portrait entry is reachable ${density}/${viewport.width}/${viewport.zoom}`,await lastPortrait.isVisible())
     await detail.evaluate(el=>el.scrollTop=0)
   }
   await page.setViewportSize({width:1366,height:900});await page.evaluate(async()=>(await import('/src/lib/settings/theme.ts')).applyZoom(100))

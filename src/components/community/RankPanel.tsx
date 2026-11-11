@@ -27,9 +27,11 @@ interface Props {
   /** compact 下最多显示几名（窄屏展开时用更小的值，避免把正文挤出首屏） */
   max?: number
   onOpenSettings: () => void
+  /** 3.5.1 · U1：外壳已独占连接/错误状态时，本面板只留一句中性占位，不再叠报错 */
+  shellOwnsStatus?: boolean
 }
 
-export default function RankPanel({ compact = false, dense = false, max = 8, onOpenSettings }: Props) {
+export default function RankPanel({ compact = false, dense = false, max = 8, onOpenSettings, shellOwnsStatus = false }: Props) {
   const [period, setPeriod] = useState<RankPeriod>('day')
   const [date, setDate] = useState(() => cnDateKey())
   const [board, setBoard] = useState<RankBoard | null>(null)
@@ -53,6 +55,11 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
     window.addEventListener('online', retry)
     return () => window.removeEventListener('online', retry)
   }, [load])
+
+  // 3.5.1 · U1：连接/错误/关闭状态由外壳独占时，这里只给一句中性占位（非横幅），避免重复报错。
+  if (shellOwnsStatus) {
+    return <p className="text-11 text-ink-400">广场恢复后显示排行。</p>
+  }
 
   const entries = board?.entries ?? []
   const shown = compact ? entries.slice(0, Math.max(1, max)) : entries
@@ -96,8 +103,8 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
       )}
 
       {error && <Notice kind="error">{error}</Notice>}
-      {closed && <Notice kind="warn">广场暂时关闭，排行暂不可见。</Notice>}
-      {loading && !board && <Notice>正在读取排行…</Notice>}
+      {/* 关闭态由外壳独占（square.open=false ⇒ shellOwnsStatus）；加载中用中性文字，不算状态横幅 */}
+      {loading && !board && <p className="text-11 text-ink-400">正在读取排行…</p>}
       {!loading && board && entries.length === 0 && !closed && (
         <Empty title="这个周期还没有公开的排行数据" hint="只有主动开启排行同步的账号会出现在这里。" />
       )}

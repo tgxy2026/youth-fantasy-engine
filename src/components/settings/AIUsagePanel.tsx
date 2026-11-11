@@ -47,7 +47,7 @@ export default function AIUsagePanel() {
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 p-4">
       <div className="flex items-center gap-2 mb-3">
         <Activity size={14} className="text-amber" />
-        <span className="text-13 font-semibold text-ink-100">AI 消耗统计</span>
+        <h2 className="text-14 font-semibold text-ink-100">AI 消耗统计</h2>
         <span className="text-11 text-ink-500">本机记录 · 不联网</span>
         <div className="ml-auto">
           <Button variant="secondary" size="xs" onClick={() => void load()} className="gap-1">

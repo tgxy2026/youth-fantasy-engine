@@ -384,7 +384,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-13 text-amber">{connectionView === 'agent' ? 'Agent 连接' : '模型配置'}</h2>
+          <h2 className="text-14 font-semibold text-ink-100">{connectionView === 'agent' ? 'Agent 连接' : '模型配置'}</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
             <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
@@ -655,7 +655,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   双线叠在一起会显得脏；两栏并列时更需要「并列声明」而非「延续」的视觉。 */}
               <div>
                 <div className="flex items-center gap-1.5 mb-1">
-                  <h3 className="text-12 text-ink-200">AI 用途路由</h3>
+                  <h3 className="text-12 font-semibold text-ink-200">AI 用途路由</h3>
                   <HelpPopover title="AI 用途路由怎么用" width="23rem" size={13}>
                     <p>给不同用途的 AI 任务分别指定模型：<b>创作</b>写好正文、<b>审校</b>材料读得多、<b>整理</b>调用最频繁。</p>
                     <p className="mt-1.5">三格全部留空 ⇒ 所有功能都跟随上面的「当前模型」，与你从没设过它时完全一样。</p>
@@ -696,7 +696,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                   🔴 2026-10-12 与「AI 用途路由」同置右栏 —— 两者都是窄表单，左栏留给需宽度的列表。 */}
               <div className="mt-5 pt-4 border-t border-ink-700">
                 <div className="flex items-center gap-1.5 mb-1">
-                  <h3 className="text-12 text-ink-200">请求超时</h3>
+                  <h3 className="text-12 font-semibold text-ink-200">请求超时</h3>
                   <HelpPopover title="请求超时怎么用" width="23rem" size={13}>
                     <p>单次 AI 请求最多等多久。超时就中断并报错（不会自动重试）。</p>
                     <p className="mt-1.5"><b>长文生成不按总时长一刀切</b>：续写 / 校对 / 拆书这类走流式，只要模型持续出字就继续等；但<b>长时间没有新内容会判「输出停滞」</b>并停止等待（已收到的片段会保留在错误信息里）。这条管的是<b>结构化任务</b>（设定抽取、审核、汇总、取名这类要一次性拿到完整结果的）。</p>

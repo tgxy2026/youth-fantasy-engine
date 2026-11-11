@@ -108,7 +108,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
         <p className="text-12 text-ink-300">已有邀请码可在这里开通同步资格。开通后作品不会自动上传或合并；网页版请重新打开应用后按提示选择存储位置。</p>
         <div className="flex gap-2">
           <input aria-label="云端同步邀请码" type="password" autoComplete="off" value={activationCode} onChange={(e) => setActivationCode(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 text-ink-100" />
-          <Button size="sm" disabled={busy || !activationCode.trim()} onClick={() => void (async () => {
+          <Button size="sm" className="shrink-0 self-stretch !whitespace-nowrap" disabled={busy || !activationCode.trim()} onClick={() => void (async () => {
             setBusy(true); setError(''); setNotice('')
             try { const r = await activateSyncCode(activationCode); setActivationCode(''); setNotice(r.alreadyActive ? '账号已有云端同步资格。' : '已开通云端同步资格。请重新打开应用；本机作品不会自动上传。') }
             catch (e) { setError(errorText(e)) } finally { setBusy(false) }
@@ -121,8 +121,8 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
           <div className="flex gap-2">
             <input id="community-nickname" value={nickname} maxLength={COMMUNITY_LIMITS.nicknameMax * 2}
               onChange={(e) => setNickname(e.target.value)} placeholder="例如：雨夜写字的人"
-              className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 text-ink-100" />
-            <Button size="sm" disabled={busy} onClick={() => void saveNickname()}>保存</Button>
+              className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 text-ink-100" />
+            <Button size="sm" className="shrink-0 self-stretch !whitespace-nowrap" disabled={busy} onClick={() => void saveNickname()}>保存</Button>
           </div>
         </Field>
         {profile.nickname && <p className="text-11 text-ink-400">当前昵称：{profile.nickname}（更新于 {formatTime(profile.updatedAt)}）</p>}
@@ -206,3 +206,4 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
     </div>
   )
 }
+

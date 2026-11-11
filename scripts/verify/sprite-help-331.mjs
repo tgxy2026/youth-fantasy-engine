@@ -117,17 +117,20 @@ try {
   check('实际导航成功后弹窗收起并打开所请求文章', true)
   const beforeDrag = await sprite.evaluate(el => el.parentElement.style.top)
   const box = await sprite.boundingBox()
-  await page.mouse.move(1430, box.y + box.height / 2)
+  // A2：精灵整体让开右缘滚动条后不再贴到 1440 边缘，按热区实际右缘取点
+  const grabX = box.x + box.width - 4
+  await page.mouse.move(grabX, box.y + box.height / 2)
   await page.mouse.down()
-  await page.mouse.move(1430, box.y + box.height / 2 - 50, { steps: 5 })
+  await page.mouse.move(grabX, box.y + box.height / 2 - 50, { steps: 5 })
   await page.mouse.up()
   await page.waitForTimeout(400)
   check('拖动精灵改变位置且不误打开菜单', await sprite.evaluate((el, old) => el.parentElement.style.top !== old && el.getAttribute('aria-expanded') === 'false', beforeDrag))
-  const beforeTuck = await sprite.evaluate(el => el.style.transform)
+  const beforeTuck = await sprite.evaluate(el => el.getBoundingClientRect().width)
   const movedBox = await sprite.boundingBox()
-  await page.mouse.dblclick(1430, movedBox.y + movedBox.height / 2, { delay: 70 })
+  await page.mouse.dblclick(grabX, movedBox.y + movedBox.height / 2, { delay: 70 })
   await page.waitForTimeout(450)
-  check('双击收边不误打开菜单', await sprite.evaluate((el, old) => el.style.transform !== old && el.getAttribute('aria-expanded') === 'false', beforeTuck))
+  // A2：收边从「平移推出去」改为「热区缩到 20px」，断言可见宽度显著变窄
+  check('双击收边不误打开菜单', await sprite.evaluate((el, old) => el.getBoundingClientRect().width <= old - 30 && el.getAttribute('aria-expanded') === 'false', beforeTuck))
   check('无页面脚本错误', errors.length === 0, errors.join(' | '))
 } finally {
   const failed = records.filter(record => !record.pass).length

@@ -101,7 +101,7 @@ export default function AIWriterBudgetPanel({ refreshKey = 0 }: Props) {
     <section data-save-scope={saveScope} className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
       <div className="flex items-center gap-2">
         <Database size={14} className="shrink-0 text-amber" />
-        <h2 className="text-13 font-semibold text-ink-100">正文写作 AI 额度</h2>
+        <h2 className="text-14 font-semibold text-ink-100">正文写作 AI 额度</h2>
         <HelpPopover title="正文写作 AI 额度怎么用" width="23rem" size={12}>
           {`编辑器、颉文姬、检查工具、灵感工具这些「正文写作」的 AI 功能，以及设定表格的「AI 整理 / 批量导入」，会把项目里的设定资料一并发给模型做参照。
 这个「基准」就是它们带多少资料的「总闸门」 —— 各功能按自己的系数取用（点下面「看各功能实际取值」有明细）。

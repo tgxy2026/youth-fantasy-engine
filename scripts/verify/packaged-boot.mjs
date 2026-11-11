@@ -81,7 +81,7 @@ try {
   await page.waitForFunction(() => (document.querySelector('#root')?.childElementCount ?? 0) > 0, null, { timeout: 60_000 })
   await sleep(2500)
   // 🔴 重启后会先落到「我的作品」，还可能弹「备份提醒」—— 两处都得先过，否则导航栏根本不出现
-  for (const label of ['稍后再说', '知道了', '继续上次', '打开项目']) {
+  for (const label of ['稍后再说', '知道了', '继续上次', '继续写作', '开始写作']) {
     const button = page.getByRole('button', { name: label, exact: true }).first()
     if (await button.isVisible().catch(() => false)) { await button.click().catch(() => {}); await sleep(2500) }
   }

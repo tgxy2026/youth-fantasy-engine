@@ -14,7 +14,8 @@ import { getActivePack, institutionMeta, institutionModules } from '@/lib/schema
 
 // 工具函数：快速构造字段
 /** 🔴 本文件是字段构造器的**唯一定义处**（段文件与门面都从这里 import）—— 别在别处再抄一份 */
-export const f = (name: string, desc: string, example: string) => ({ name, desc, example })
+// help（3.5.1 · U3）：可选第 4 参，长口径收进 ⓘ 气泡，desc 只留一句首屏提示；不传则与原先一致。
+export const f = (name: string, desc: string, example: string, help?: string) => ({ name, desc, example, ...(help ? { help } : {}) })
 export const c = (name: string, opts?: string[], width?: string) => ({
   name,
   type: opts ? ('select' as const) : ('text' as const),
