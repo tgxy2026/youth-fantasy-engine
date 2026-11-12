@@ -72,8 +72,12 @@ export function createCommunityStore({
     catch { return new Set() }
   }
 
-  /** 把初始化标记改为指定状态；写失败不阻断主流程（comments 存在时下次启动会重建 true） */
-  function ensureMeta(commentsInitialized) {
+  /**
+   * 把初始化标记改为指定状态。
+   * strict=true：标记写入失败必须抛出，不能把“评论已写入但标记仍为 false”报告为成功；
+   * strict=false：首次使用的 false 标记写失败不阻断已有可读数据（无评论数据时安全）。
+   */
+  function ensureMeta(commentsInitialized, { strict = false } = {}) {
     try {
       const meta = readCommunityMeta(root, readText)
       if (meta && meta.commentsInitialized === commentsInitialized) return
@@ -81,7 +85,13 @@ export function createCommunityStore({
         commentsInitialized,
         createdAt: meta?.createdAt || Date.now(),
       }, writeText)
-    } catch { /* 标记写入失败不得让已有数据不可读 */ }
+    } catch (e) {
+      if (!strict) return
+      const err = new Error(`评论初始化标记写入失败，拒绝确认本次评论写入：${e instanceof Error ? e.message : String(e)}`)
+      err.code = 'COMMENTS_META_WRITE_FAILED'
+      err.cause = e
+      throw err
+    }
   }
 
   /**
@@ -90,6 +100,7 @@ export function createCommunityStore({
    *  - comments.json 缺失时不能只看公开计数：待审/被拒/已删除评论也在文件里。
    *    有初始化标记且为 true -> 视为丢失；标记缺失且帖子非空 -> 状态不可证明，拒绝启动并给出核对路径。
    */
+  let commentsObserved = false
   function assertCoreFiles() {
     const present = presentFiles()
     if (!present.has(FILES.posts) && present.size > 0) {
@@ -103,7 +114,11 @@ export function createCommunityStore({
       if (present.size === 0 && !meta) ensureMeta(false) // 首次使用：显式记录「从未写入评论」
       return
     }
-    if (present.has(FILES.comments)) { ensureMeta(true); return }
+    if (present.has(FILES.comments)) {
+      commentsObserved = true
+      ensureMeta(true, { strict: true })
+      return
+    }
 
     const r = readJSONOr(join(root, FILES.posts), readText)
     if (!r.ok) return // 损坏会由 load() 给出更明确的错误
@@ -123,12 +138,20 @@ export function createCommunityStore({
   function fileOf(key) {
     return join(root, FILES[key])
   }
+  function commentsError(code, message) {
+    const e = new Error(message)
+    e.code = code
+    return e
+  }
   function load(key) {
     const abs = fileOf(key)
     let mtime = 0
     try { mtime = statSync(abs).mtimeMs } catch { mtime = 0 }
     const hit = cache.get(key)
-    if (hit && hit.mtime === mtime && mtime !== 0) return hit.value
+    if (hit && hit.mtime === mtime && mtime !== 0) {
+      if (key === 'comments') commentsObserved = true
+      return hit.value
+    }
 
     const r = readJSONOr(abs, readText)
     if (r.ok) {
@@ -137,12 +160,26 @@ export function createCommunityStore({
         throw new Error(`社区数据文件结构无效：${FILES[key]}`)
       }
       cache.set(key, { mtime, value })
+      if (key === 'comments') commentsObserved = true
       return value
     }
     if (r.missing) {
       // 运行期间 posts.json 被误删：不能当成空社区继续写
       if (key === 'posts' && presentFiles().size > 0) {
         throw new Error('社区核心文件 posts.json 在运行期间缺失；请停写并从备份恢复')
+      }
+      if (key === 'comments') {
+        if (commentsObserved) {
+          throw commentsError('COMMUNITY_COMMENTS_LOST', '评论文件在运行期间缺失；本进程已读取过评论，禁止把缺失当成空表或写回覆盖')
+        }
+        const present = [...presentFiles()]
+        const posts = readJSONOr(join(root, FILES.posts), readText)
+        const verdict = commentsFileVerdict({
+          present,
+          postsItems: posts.ok ? (posts.value?.items || {}) : {},
+          meta: readCommunityMeta(root, readText),
+        })
+        if (!verdict.ok) throw commentsError(verdict.code || 'COMMENTS_FILE_UNVERIFIED', verdict.message)
       }
       const value = key === 'state' ? { ...DEFAULT_STATE, items: {} } : emptyMap()
       cache.set(key, { mtime: 0, value })
@@ -152,12 +189,16 @@ export function createCommunityStore({
     throw new Error(`社区数据文件损坏（${FILES[key]}）：${r.error}`)
   }
   function save(key, value) {
-    writeText(fileOf(key), JSON.stringify(value, null, 2))
+    try {
+      writeText(fileOf(key), JSON.stringify(value, null, 2))
+    } catch (e) {
+      if (key === 'comments' && e && typeof e === 'object' && !e.code) e.code = 'COMMUNITY_COMMENTS_WRITE_FAILED'
+      throw e
+    }
     let mtime = 0
     try { mtime = statSync(fileOf(key)).mtimeMs } catch { mtime = 0 }
     cache.set(key, { mtime, value })
-    // 评论文件一旦成功写入，持久标记为「已初始化」；之后缺失即视为丢失
-    if (key === 'comments') ensureMeta(true)
+    if (key === 'comments') commentsObserved = true
   }
 
   /**
@@ -172,6 +213,15 @@ export function createCommunityStore({
     }
     const db = load(key)
     try {
+      if (key === 'comments') {
+        // 🔴 先把标记持久化为 true，再创建/修改评论文件。
+        //    任一步中断后宁可启动失败关闭，也不能留下「评论已写入但标记为 false」的状态。
+        ensureMeta(true, { strict: true })
+        if (!existsSync(fileOf(key))) {
+          writeText(fileOf(key), JSON.stringify(db, null, 2))
+        }
+        commentsObserved = true
+      }
       const result = fn(db)
       save(key, db)
       return result

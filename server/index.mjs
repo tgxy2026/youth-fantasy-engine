@@ -741,7 +741,14 @@ async function handleApi(req, res, url) {
   //    权限判定全部在 communityApi 内部按 route 各自做，这里只把会话结果交给它。
   if (path === '/api/community' || path.startsWith('/api/community/')) {
     if (!communityApi) return sendJSON(res, 503, { ok: false, code: 'UNAVAILABLE', error: '社区服务未就绪' })
-    return communityApi.handle({ req, res, path, qs, user, authReason: chk.reason, ip })
+    try {
+      return await communityApi.handle({ req, res, path, qs, user, authReason: chk.reason, ip })
+    } catch (e) {
+      if (e && (e.code === 'COMMUNITY_COMMENTS_LOST' || e.code === 'COMMENTS_META_WRITE_FAILED' || e.code === 'COMMUNITY_COMMENTS_WRITE_FAILED')) {
+        if (!res.headersSent) return sendJSON(res, 503, { ok: false, code: e.code, error: e.message })
+      }
+      throw e
+    }
   }
 
   // ---- 项目版本服务 v2（3.3.2 · P2）----

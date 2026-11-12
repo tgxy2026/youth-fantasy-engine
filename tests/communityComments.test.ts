@@ -57,8 +57,13 @@ const server = createServer((req, res) => {
   }
   const who = String(req.headers['x-test-user'] || '')
   const user = USERS[who] ? byId.get(USERS[who].id)! : null
-  api.handle({ req, res, path: pathOnly, qs, user, authReason: user ? '' : 'NO_TOKEN', ip: '127.0.0.1' })
-    .catch((e) => { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: String(e) })) })
+  api.handle({ req, res, path: pathOnly, qs, user, authReason: user ? '' : 'NO_TOKEN', ip: '127.0.0.1' }).catch((e: any) => {
+    if (!res.headersSent) {
+      const code = e?.code === 'COMMUNITY_COMMENTS_LOST' || e?.code === 'COMMENTS_META_WRITE_FAILED' || e?.code === 'COMMUNITY_COMMENTS_WRITE_FAILED' ? 503 : 500
+      res.writeHead(code, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, code: e?.code || 'INTERNAL', error: e?.message || 'internal' }))
+    }
+  })
 })
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
 const addr = server.address()
@@ -319,6 +324,25 @@ try {
   await slowTask
   ok('等待正文期间帖子被下架 -> 404', slowRes.statusCode === 404, slowRes.body)
   ok('下架后迟到请求未写入评论', !store.listCommentsOf(pid).some((c) => c.clientToken === 'late-removed'))
+
+  // ---- R4：运行期评论文件丢失 -> HTTP 明确失败，不读空/不重建 ----
+  const lossPost: any = {
+    id: 'p_loss_api', uid: 'u_bob', status: 'published', display: 'anonymous',
+    createdAt: 1, updatedAt: 1,
+    versions: [{ vid: 'v_loss', title: '合成标题', body: '合成正文', tags: [], createdAt: 1 }],
+    pendingVersionId: '', publishedVersionId: 'v_loss',
+    counts: { up: 0, down: 0, comments: 0 },
+  }
+  store.putPost(lossPost)
+  store.putComment({ id: 'c_loss', postId: 'p_loss_api', uid: 'u_bob', body: '合成评论', display: 'anonymous', status: 'visible', createdAt: 1 })
+  await call(`/api/community/posts/p_loss_api/comments`)
+  fs.rmSync(path.join(root, 'comments.json'))
+  const lossRead = await call(`/api/community/posts/p_loss_api/comments`)
+  ok('R4 API 文件缺失 -> 读取 503 COMMUNITY_COMMENTS_LOST', lossRead.status === 503 && lossRead.json.code === 'COMMUNITY_COMMENTS_LOST', lossRead.raw)
+  const lossWrite = await call(`/api/community/posts/p_loss_api/comments`, {
+    method: 'POST', as: 'bob', body: { body: '不应写入的合成评论', display: 'anonymous', clientToken: 'loss-api' },
+  })
+  ok('R4 API 文件缺失 -> 写入 503 且不重建', lossWrite.status === 503 && lossWrite.json.code === 'COMMUNITY_COMMENTS_LOST' && !fs.existsSync(path.join(root, 'comments.json')), lossWrite.raw)
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()))
   const target = fs.realpathSync(root)

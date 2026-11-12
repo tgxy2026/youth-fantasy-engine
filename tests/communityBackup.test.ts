@@ -503,7 +503,102 @@ try {
   ok('R1 未确认采纳被拒', !adoptEmptyComments({ root: adoptDir, confirm: false }).ok)
   ok('R1 确认采纳后检查/启动允许', adoptEmptyComments({ root: adoptDir, confirm: true }).ok && inspectCommunity(adoptDir).ok && storeStart(adoptDir))
 
-  // ---- 17. P0-R2：同 ID 评论的状态/正文/展示差异 ----
+  // ---- 17. P0-R4：运行期评论文件缺失不能读空/写回 ----
+  const r4Dir = path.join(root, 'r4-runtime-loss')
+  fs.mkdirSync(r4Dir)
+  const r4Store = createCommunityStore({ root: r4Dir })
+  r4Store.putPost(r1Post)
+  r4Store.putComment({ id: 'c_r4', postId: 'p1', uid: 'u1', body: '合成待审评论', display: 'anonymous', status: 'pending', createdAt: 1 })
+  r4Store.listCommentsOf('p1') // 先命中缓存，再删除文件
+  fs.rmSync(path.join(r4Dir, 'comments.json'))
+  let r4ReadCode = ''
+  try { r4Store.listCommentsOf('p1') } catch (e: any) { r4ReadCode = e.code || '' }
+  ok('R4 缓存命中后文件缺失 -> 读取拒绝', r4ReadCode === 'COMMUNITY_COMMENTS_LOST')
+  let r4WriteCode = ''
+  try { r4Store.putComment({ id: 'c_r4_new', postId: 'p1', uid: 'u1', body: '新评论', display: 'anonymous', status: 'pending', createdAt: 1 }) } catch (e: any) { r4WriteCode = e.code || '' }
+  ok('R4 文件缺失 -> 写入拒绝且不报告成功', r4WriteCode === 'COMMUNITY_COMMENTS_LOST')
+  ok('R4 文件缺失 -> 不重建空 comments.json', !fs.existsSync(path.join(r4Dir, 'comments.json')))
+  ok('R4 文件缺失 -> 标记仍为 true', readCommunityMeta(r4Dir)?.commentsInitialized === true)
+  ok('R4 重启仍拒绝', !storeStart(r4Dir))
+
+  const r4First = path.join(root, 'r4-first-init')
+  fs.mkdirSync(r4First)
+  const r4FirstStore = createCommunityStore({ root: r4First })
+  ok('R4 真正首次初始化 -> 空评论合法', r4FirstStore.listCommentsOf('p1').length === 0)
+  r4FirstStore.putPost(r1Post)
+  r4FirstStore.putComment({ id: 'c_first', postId: 'p1', uid: 'u1', body: '首次合成评论', display: 'anonymous', status: 'pending', createdAt: 1 })
+  ok('R4 首次初始化 -> 可写入且标记 true', fs.existsSync(path.join(r4First, 'comments.json')) && readCommunityMeta(r4First)?.commentsInitialized === true)
+
+  const r4RestoreDir = path.join(root, 'r4-restore')
+  fs.mkdirSync(r4RestoreDir)
+  const r4RestoreStore = createCommunityStore({ root: r4RestoreDir })
+  r4RestoreStore.putPost(r1Post)
+  r4RestoreStore.putComment({ id: 'c_restore', postId: 'p1', uid: 'u1', body: '恢复合成评论', display: 'anonymous', status: 'visible', createdAt: 1 })
+  const r4Backup = path.join(root, 'r4-backup')
+  ok('R4 恢复路径：准备备份', createBackup({ root: r4RestoreDir, dest: r4Backup, stopConfirmed: true }).ok)
+  fs.rmSync(path.join(r4RestoreDir, 'comments.json'))
+  ok('R4 恢复路径：缺失时启动拒绝', !storeStart(r4RestoreDir))
+  const r4Restored = restoreBackup({ backupDir: r4Backup, root: r4RestoreDir, stopConfirmed: true, acceptVisibilityChanges: true })
+  ok('R4 恢复路径：合法恢复成功', r4Restored.ok && storeStart(r4RestoreDir) && createCommunityStore({ root: r4RestoreDir }).listCommentsOf('p1').length === 1)
+
+  // ---- 18. P0-R5：标记写失败/评论写失败不能确认成功或留下 false 状态 ----
+  const r5MetaDir = path.join(root, 'r5-meta-fail')
+  fs.mkdirSync(r5MetaDir)
+  const metaFailWrite = (p: string, t: string) => {
+    if (p.endsWith('.yfe-community-meta.json') && JSON.parse(t).commentsInitialized === true) throw new Error('synthetic meta failure')
+    writeTextAtomicSync(p, t)
+  }
+  const r5MetaStore = createCommunityStore({ root: r5MetaDir, writeText: metaFailWrite })
+  r5MetaStore.putPost(r1Post)
+  let r5MetaCode = ''
+  try { r5MetaStore.putComment({ id: 'c_meta', postId: 'p1', uid: 'u1', body: '标记失败合成评论', display: 'anonymous', status: 'pending', createdAt: 1 }) } catch (e: any) { r5MetaCode = e.code || '' }
+  ok('R5 标记写失败 -> 评论写入失败（不报告成功）', r5MetaCode === 'COMMENTS_META_WRITE_FAILED')
+  ok('R5 标记写失败 -> 未写入评论', !fs.existsSync(path.join(r5MetaDir, 'comments.json')) || !readJson(path.join(r5MetaDir, 'comments.json')).items.c_meta)
+  const r5MetaRecovered = createCommunityStore({ root: r5MetaDir })
+  r5MetaRecovered.putComment({ id: 'c_meta_retry', postId: 'p1', uid: 'u1', body: '标记恢复后的合成评论', display: 'anonymous', status: 'pending', createdAt: 2 })
+  ok('R5 标记写失败 -> 重启可重试并成功', readCommunityMeta(r5MetaDir)?.commentsInitialized === true && !!readJson(path.join(r5MetaDir, 'comments.json')).items.c_meta_retry)
+  fs.rmSync(path.join(r5MetaDir, 'comments.json'))
+  ok('R5 标记失败后丢失 -> 重启拒绝而不是误判从未写入', !storeStart(r5MetaDir))
+
+  const r5WriteDir = path.join(root, 'r5-comment-fail')
+  fs.mkdirSync(r5WriteDir)
+  writeJson(path.join(r5WriteDir, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(r5WriteDir, 'comments.json'), { version: 1, items: {} })
+  writeCommunityMeta(r5WriteDir, { commentsInitialized: true, createdAt: 1 }, (p, t) => fs.writeFileSync(p, t, 'utf8'))
+  const commentFailWrite = (p: string, t: string) => {
+    if (p.endsWith('comments.json')) throw new Error('synthetic comments failure')
+    writeTextAtomicSync(p, t)
+  }
+  const r5WriteStore = createCommunityStore({ root: r5WriteDir, writeText: commentFailWrite })
+  let r5WriteCode = ''
+  try { r5WriteStore.putComment({ id: 'c_fail', postId: 'p1', uid: 'u1', body: '评论写失败合成评论', display: 'anonymous', status: 'pending', createdAt: 1 }) } catch (e: any) { r5WriteCode = e.code || '' }
+  ok('R5 评论写失败 -> 返回失败', r5WriteCode === 'COMMUNITY_COMMENTS_WRITE_FAILED')
+  ok('R5 评论写失败 -> 标记仍为 true', readCommunityMeta(r5WriteDir)?.commentsInitialized === true)
+  ok('R5 评论写失败 -> 旧空表未写入新评论', !readJson(path.join(r5WriteDir, 'comments.json')).items.c_fail)
+  ok('R5 评论写失败 -> 重启仍允许读空表', storeStart(r5WriteDir))
+  fs.rmSync(path.join(r5WriteDir, 'comments.json'))
+  ok('R5 评论写失败后丢失 -> 重启拒绝', !storeStart(r5WriteDir))
+
+  const r5StartupDir = path.join(root, 'r5-startup-meta-fail')
+  fs.mkdirSync(r5StartupDir)
+  writeJson(path.join(r5StartupDir, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(r5StartupDir, 'comments.json'), { version: 1, items: { c1: { id: 'c1', postId: 'p1', uid: 'u1', body: '已有评论', display: 'anonymous', status: 'pending', createdAt: 1 } } })
+  writeCommunityMeta(r5StartupDir, { commentsInitialized: false, createdAt: 1 }, (p, t) => fs.writeFileSync(p, t, 'utf8'))
+  let r5StartupCode = ''
+  try { createCommunityStore({ root: r5StartupDir, writeText: metaFailWrite }) } catch (e: any) { r5StartupCode = e.code || '' }
+  ok('R5 已有评论但标记补写失败 -> 启动失败关闭', r5StartupCode === 'COMMENTS_META_WRITE_FAILED')
+  ok('R5 启动失败不丢已有评论', !!readJson(path.join(r5StartupDir, 'comments.json')).items.c1)
+
+  const r5Legacy = path.join(root, 'r5-legacy-comments')
+  fs.mkdirSync(r5Legacy)
+  writeJson(path.join(r5Legacy, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(r5Legacy, 'comments.json'), { version: 1, items: {} })
+  const r5LegacyStore = createCommunityStore({ root: r5Legacy })
+  ok('R5 历史空 comments 无标记 -> 启动补 true 且可读', readCommunityMeta(r5Legacy)?.commentsInitialized === true && r5LegacyStore.listCommentsOf('p1').length === 0)
+  fs.rmSync(path.join(r5Legacy, 'comments.json'))
+  ok('R5 历史空 comments 丢失 -> 重启拒绝', !storeStart(r5Legacy))
+
+  // ---- 19. P0-R2：同 ID 评论的状态/正文/展示差异 ----
   const r2Dir = path.join(root, 'r2-comments')
   fs.mkdirSync(r2Dir)
   const r2Post = { ...r1Post, counts: { up: 0, down: 0, comments: 2 } }
