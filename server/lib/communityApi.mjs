@@ -205,7 +205,7 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
   function profileView(p) {
     const now = Date.now()
     const hasTime = Object.hasOwn(p, 'nicknameChangedAt')
-    const validTime = !hasTime || (Number.isFinite(p.nicknameChangedAt) && p.nicknameChangedAt > 0 && p.nicknameChangedAt <= now)
+    const validTime = !hasTime || (Number.isSafeInteger(p.nicknameChangedAt) && p.nicknameChangedAt > 0 && p.nicknameChangedAt <= now)
     return {
       nickname: p.nickname || '', postDisplay: p.postDisplay || 'anonymous',
       commentDisplay: p.commentDisplay || 'anonymous', rankDisplay: p.rankDisplay || 'anonymous',

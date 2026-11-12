@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverEntry = path.resolve(here, '../../server/index.mjs')
@@ -24,6 +25,7 @@ const root = mkdtempSync(path.join(os.tmpdir(), 'yfe-restore-'))
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
+seedSyncInvite(dataDir)
 mkdirSync(wwwDir, { recursive: true })
 writeFileSync(path.join(wwwDir, 'index.html'), '<!doctype html><title>fixture</title>')
 
@@ -92,7 +94,7 @@ try {
   if (!(await waitReady())) throw new Error('服务未启动：\n' + log)
 
   const web = client()
-  const reg = await web.req('POST', '/api/auth/register', { name: '恢复用户', password: 'pass1234' })
+  const reg = await web.req('POST', '/api/auth/register', { name: '恢复用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   ok('注册并登录', reg.status === 200 && !!web.cookie, reg.status)
 
   const created = await web.req('POST', '/api/v2/projects', { name: '回收站样本' })
@@ -171,7 +173,7 @@ try {
 
   // 跨账号：连"恢复"入口都看不到该项目
   const other = client()
-  await other.req('POST', '/api/auth/register', { name: '另一个恢复用户', password: 'pass1234' })
+  await other.req('POST', '/api/auth/register', { name: '另一个恢复用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   const otherRestore = await other.req('POST', `/api/v2/projects/${pid}/restore?opId=op-other`)
   ok('他人无法恢复本项目', otherRestore.status === 404 || otherRestore.status === 403, otherRestore.status)
 } catch (e) {

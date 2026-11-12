@@ -14,6 +14,8 @@ import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import { Z } from '@/lib/app/zLayer'
 import { WEB, WEB_CLOUD, WEB_GUEST, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
+import { DESKTOP } from '@/lib/app/desktop'
+import DesktopCloudAccount from '@/components/app/DesktopCloudAccount'
 import { PORTABLE } from '@/lib/storage/fileBackend'
 import { communityEndpointReady, adminOverview, fetchProfile, fetchSquare, CommunityError } from '@/lib/community/api'
 import { DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLogin'
@@ -231,7 +233,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
             广场需要连接云端账号。本地写作与草稿不受任何影响。
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <Button size="sm" onClick={() => void navigateAuth('/login')}>登录云端账号</Button>
+            {DESKTOP ? <DesktopCloudAccount communityTrigger /> : <Button size="sm" onClick={() => void navigateAuth('/login')}>登录云端账号</Button>}
             <HelpPopover title="投稿广场怎么用" width="23rem" size={13}>
               <Button size="sm" variant="secondary">了解广场</Button>
             </HelpPopover>
@@ -247,7 +249,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       ) : signedIn === false && tab === 'feed' ? (
         <Notice>
           你现在未登录：可以浏览广场，但不能投稿、评论或参与排行。
-          <Button size="sm" variant="ghost" className="ml-2" onClick={() => void navigateAuth('/login')}>登录</Button>
+          {DESKTOP ? <DesktopCloudAccount communityTrigger /> : <Button size="sm" variant="ghost" className="ml-2" onClick={() => void navigateAuth('/login')}>登录</Button>}
         </Notice>
       ) : null}
 

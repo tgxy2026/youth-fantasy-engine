@@ -23,7 +23,7 @@ import {
 import { basename, dirname, join } from 'node:path'
 import { readCommunityMeta, writeCommunityMeta, commentsFileVerdict } from './communityFiles.mjs'
 import { acquireCommunityLock, releaseCommunityLock } from './communityLock.mjs'
-import { validAnonymousHandle, validAnonymousWeek, BEAST_DICTIONARY_SHA256 } from './communityAnon.mjs'
+import { anonymousWeekKey, anonymousRankWeeks, validAnonymousHandle, validAnonymousWeek, BEAST_DICTIONARY_SHA256 } from './communityAnon.mjs'
 
 export const COMMUNITY_FILES = Object.freeze([
   'posts.json', 'comments.json', 'votes.json', 'reports.json',
@@ -693,7 +693,7 @@ function copyDirFiles(from, to, io) {
  *   backupDir:string, root:string, now?:number,
  *   stopConfirmed:boolean, acceptVisibilityChanges?:boolean, io?:object,
  *   anonKeyId?:string
- * }} opts anonKeyId 传入时：备份内匿名映射的密钥/词表版本与之不符即拒绝，不做任何写入。
+ * }} opts 含映射的备份必须传 anonKeyId；传入时还须检查密钥、词表及全部历史引用，失败不写入。
  */
 export function restoreBackup(opts = {}) {
   if (!opts.root) return { ok: false, code: 'NO_ROOT', error: '缺少 root' }
@@ -733,7 +733,30 @@ function restoreBackupUnlocked({
         return { ok: false, code: 'ANON_DICT_MISMATCH', error: '备份内匿名代号词表版本与当前服务端不一致；请先核对词表版本' }
       }
     } else {
-      verified.warnings = [...(verified.warnings || []), '备份含匿名代号映射；未提供 --key-file，恢复后启动将校验密钥与词表版本，请事先核对']
+      return { ok: false, code: 'ANON_KEY_REQUIRED', error: '备份含匿名代号映射，恢复前必须提供独立密钥文件进行核对' }
+    }
+  }
+  // 使用匿名代号的服务恢复后会校验全部历史引用；在替换现有目录之前执行同样的检查。
+  // 未配置密钥且备份不含映射时保留旧版备份的恢复兼容性。
+  if (anonKeyId) {
+    if (!/^[a-f0-9]{64}$/.test(anonKeyId)) return { ok: false, code: 'ANON_KEY_INVALID', error: '匿名代号密钥标识无效' }
+    const profiles = backupData['profiles.json']?.items || {}
+    const hasMapping = (uid, week) => {
+      const p = profiles[uid]
+      return p?.anonKeyId === anonKeyId && p?.anonDict === BEAST_DICTIONARY_SHA256 && validAnonymousHandle(p?.anonHandles?.[week])
+    }
+    try {
+      for (const post of Object.values(backupData['posts.json']?.items || {})) {
+        if (!post.isExample && !hasMapping(post.uid, anonymousWeekKey(post.createdAt))) throw new Error('missing')
+      }
+      for (const comment of Object.values(backupData['comments.json']?.items || {})) {
+        if (!hasMapping(comment.uid, anonymousWeekKey(comment.createdAt))) throw new Error('missing')
+      }
+      for (const row of Object.values(backupData['rank.json']?.items || {})) {
+        for (const week of anonymousRankWeeks(row.date)) if (!hasMapping(row.uid, week)) throw new Error('missing')
+      }
+    } catch {
+      return { ok: false, code: 'ANON_MAPPING_INCOMPLETE', error: '备份中历史内容或排行的匿名代号映射缺失或日期无效；请先核对并完成迁移' }
     }
   }
   const current = io.exists(root) ? inspectCommunity(root, { io, includeData: true }) : null

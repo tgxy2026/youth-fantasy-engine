@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverEntry = path.resolve(here, '../../server/index.mjs')
@@ -17,6 +18,7 @@ console.log('隔离证据目录:', root)
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
+seedSyncInvite(dataDir)
 mkdirSync(wwwDir, { recursive: true })
 writeFileSync(path.join(wwwDir, 'index.html'), '<!doctype html><title>fixture</title>')
 
@@ -85,7 +87,7 @@ try {
   if (!(await waitReady())) throw new Error('服务未启动：\n' + log)
 
   const web = client()
-  const reg = await web.req('POST', '/api/auth/register', { name: 'v2用户', password: 'pass1234' })
+  const reg = await web.req('POST', '/api/auth/register', { name: 'v2用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   ok('注册并登录', reg.status === 200 && !!web.cookie, reg.status)
 
   // 未登录必须 401（且不能落任何字节）
@@ -182,7 +184,7 @@ try {
 
   // 13. 跨账号隔离：另一个账号既看不到该项目，也不能按哈希取对象
   const other = client()
-  await other.req('POST', '/api/auth/register', { name: '另一个用户', password: 'pass1234' })
+  await other.req('POST', '/api/auth/register', { name: '另一个用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   const otherList = await other.req('GET', '/api/v2/projects')
   const otherGet = await other.req('GET', `/api/v2/projects/${pid}/manifest`)
   const otherObj = await other.req('GET', `/api/v2/projects/${pid}/objects/${h1}`)

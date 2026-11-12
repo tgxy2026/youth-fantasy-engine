@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverEntry = path.resolve(here, '../../server/index.mjs')
@@ -23,6 +24,7 @@ const root = mkdtempSync(path.join(os.tmpdir(), 'yfe-purge-'))
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
+seedSyncInvite(dataDir)
 mkdirSync(wwwDir, { recursive: true })
 writeFileSync(path.join(wwwDir, 'index.html'), '<!doctype html><title>fixture</title>')
 
@@ -91,7 +93,7 @@ try {
   if (!(await waitReady())) throw new Error('服务未启动：\n' + log)
 
   const web = client()
-  const reg = await web.req('POST', '/api/auth/register', { name: '彻底删除用户', password: 'pass1234' })
+  const reg = await web.req('POST', '/api/auth/register', { name: '彻底删除用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   ok('注册并登录', reg.status === 200 && !!web.cookie, reg.status)
 
   const created = await web.req('POST', '/api/v2/projects', { name: '待彻底删除' })
@@ -134,7 +136,7 @@ try {
 
   // ⑤ 跨账号
   const other = client()
-  await other.req('POST', '/api/auth/register', { name: '另一个删除用户', password: 'pass1234' })
+  await other.req('POST', '/api/auth/register', { name: '另一个删除用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   const otherPurge = await other.req('DELETE', `/api/v2/projects/${pid2}?purge=1&opId=op-other`)
   ok('他人无法彻底删除本项目', otherPurge.status === 404 || otherPurge.status === 403, otherPurge.status)
 } catch (e) {

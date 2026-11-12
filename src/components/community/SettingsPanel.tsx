@@ -154,7 +154,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
         <Notice>
           投稿和评论的默认展示方式影响之后的新提交；已发布投稿可在「我的」里直接切换展示方式。
           排行展示方式会更新当前榜单；修改昵称也会影响已选择显示昵称的内容。
-          匿名展示不会公开登录账号；{profile.anonymousHandlesEnabled ? '同一周的匿名代号可被关联，跨周代号可能不同。' : '当前匿名展示为匿名用户。'}正文、作者标记和排行等信息仍可能让他人关联内容或推测身份。
+          匿名展示不会公开登录账号；{profile.anonymousHandlesEnabled ? '同一周的匿名代号可被关联，跨周代号可能不同；排行按各榜单统计区间开始周取代号，同一账号在日、周、月榜可能显示不同代号。' : '当前匿名展示为匿名用户。'}正文、作者标记和排行等信息仍可能让他人关联内容或推测身份。
         </Notice>
         <div className="grid gap-2 sm:grid-cols-3">
           {([

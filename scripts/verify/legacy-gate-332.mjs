@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
 import { blockLegacyWrites, unblockLegacyWrites, readLegacyGate } from '../../server/lib/legacyGate.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -18,6 +19,7 @@ const root = mkdtempSync(path.join(os.tmpdir(), 'yfe-gate-'))
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
+seedSyncInvite(dataDir)
 mkdirSync(wwwDir, { recursive: true })
 writeFileSync(path.join(wwwDir, 'index.html'), '<!doctype html><title>fixture</title>')
 const v2Root = path.join(dataDir, 'v2')
@@ -83,7 +85,7 @@ try {
   if (!(await waitReady())) throw new Error('服务未启动：\n' + log)
 
   const web = client()
-  const reg = await web.req('POST', '/api/auth/register', { name: '门禁用户', password: 'pass1234' })
+  const reg = await web.req('POST', '/api/auth/register', { name: '门禁用户', password: 'pass1234', invite: TEST_SYNC_INVITE })
   const uid = reg.json?.user?.id
   ok('注册并拿到账号', reg.status === 200 && !!uid, reg.json)
 

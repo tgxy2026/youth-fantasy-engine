@@ -252,7 +252,7 @@ try {
   ok('老账号修改后进入冷却', throwsCode(() => oldStore.putProfile('old', { nickname: '再新' }), 'NICKNAME_COOLDOWN'))
 
   // 损坏 / 未来时间 -> 失败关闭
-  for (const [label, bad] of [['字符串', 'bad'], ['负数', -1], ['未来', BASE_NOW + DAY]] as Array<[string, unknown]>) {
+  for (const [label, bad] of [['字符串', 'bad'], ['负数', -1], ['未来', BASE_NOW + DAY], ['小数', BASE_NOW - DAY + 0.5], ['NaN', NaN]] as Array<[string, unknown]>) {
     const r = mkRoot()
     seedCommunity(r, { t: { nickname: '名', nicknameChangedAt: bad, postDisplay: 'anonymous', commentDisplay: 'anonymous', rankDisplay: 'anonymous', rankOptIn: false, updatedAt: 1 } })
     const s = createCommunityStore({ root: r })
@@ -446,7 +446,36 @@ try {
   const correct = restoreBackup({ backupDir, root: restoreRoot(), stopConfirmed: true, acceptVisibilityChanges: true, anonKeyId: KEY_ID })
   ok('正确密钥恢复成功', correct.ok === true)
   const noKey = restoreBackup({ backupDir, root: restoreRoot(), stopConfirmed: true, acceptVisibilityChanges: true })
-  ok('未提供密钥给出警告而非静默', noKey.ok === true && (noKey.warnings || []).some((w: string) => /匿名代号映射/.test(w)))
+  ok('未提供密钥拒绝恢复', noKey.ok === false && noKey.code === 'ANON_KEY_REQUIRED')
+  const currentBefore = fs.readFileSync(path.join(live, 'profiles.json'), 'utf8')
+  const noKeyLive = restoreBackup({ backupDir, root: live, stopConfirmed: true, acceptVisibilityChanges: true })
+  ok('未提供密钥时现有数据不变', noKeyLive.code === 'ANON_KEY_REQUIRED' && fs.readFileSync(path.join(live, 'profiles.json'), 'utf8') === currentBefore)
+  const wrongKeyLive = restoreBackup({ backupDir, root: live, stopConfirmed: true, acceptVisibilityChanges: true, anonKeyId: sha256(OTHER_SECRET) })
+  ok('错误密钥时现有数据不变', wrongKeyLive.code === 'ANON_KEY_MISMATCH' && fs.readFileSync(path.join(live, 'profiles.json'), 'utf8') === currentBefore)
+
+  // 清单与文件哈希有效并不保证排行所需的各周映射完整。
+  const incomplete = mkRoot()
+  seedCommunity(incomplete, { u1: liveStore.getProfile('u1') }, { rank: { version: 1, items: { r1: { uid: 'u1', date: '2026-11-11', netDelta: 1 } } } })
+  const incompleteBackup = path.join(mkRoot(), 'backup-incomplete')
+  ok('准备缺少月榜所属周映射的备份', createBackup({ root: incomplete, dest: incompleteBackup, stopConfirmed: true }).ok)
+  const missing = restoreBackup({ backupDir: incompleteBackup, root: live, stopConfirmed: true, acceptVisibilityChanges: true, anonKeyId: KEY_ID })
+  ok('映射不完整拒绝恢复且现有数据不变', missing.code === 'ANON_MAPPING_INCOMPLETE' && fs.readFileSync(path.join(live, 'profiles.json'), 'utf8') === currentBefore)
+  const legacy = mkRoot()
+  seedCommunity(legacy, {}, { rank: { version: 1, items: { r1: { uid: 'u1', date: '2026-11-11', netDelta: 1 } } } })
+  const legacyBackup = path.join(mkRoot(), 'backup-legacy')
+  ok('准备未迁移旧版备份', createBackup({ root: legacy, dest: legacyBackup, stopConfirmed: true }).ok)
+  ok('启用匿名代号时拒绝未迁移备份', restoreBackup({ backupDir: legacyBackup, root: live, stopConfirmed: true, acceptVisibilityChanges: true, anonKeyId: KEY_ID }).code === 'ANON_MAPPING_INCOMPLETE')
+  ok('旧版无密钥恢复仍兼容', restoreBackup({ backupDir: legacyBackup, root: restoreRoot(), stopConfirmed: true, acceptVisibilityChanges: true }).ok === true)
+  for (const kind of ['post', 'comment', 'bad-date'] as const) {
+    const source = mkRoot()
+    const post = { id: 'p1', uid: 'u2', status: 'draft', versions: [], counts: {}, createdAt: kind === 'bad-date' ? 0 : BASE_NOW, isExample: kind === 'comment' }
+    const comment = { id: 'c1', postId: 'p1', uid: 'u2', status: 'pending', body: '测试', createdAt: BASE_NOW }
+    seedCommunity(source, { u1: liveStore.getProfile('u1') }, { posts: { version: 1, items: { p1: post } }, ...(kind === 'comment' ? { comments: { version: 1, items: { c1: comment } } } : {}) })
+    const dir = path.join(mkRoot(), 'backup')
+    const created = createBackup({ root: source, dest: dir, stopConfirmed: true })
+    const result = created.ok && restoreBackup({ backupDir: dir, root: live, stopConfirmed: true, acceptVisibilityChanges: true, anonKeyId: KEY_ID })
+    ok(`${kind} 历史引用缺失或时间无效拒绝覆盖`, !!result && result.code === 'ANON_MAPPING_INCOMPLETE' && fs.readFileSync(path.join(live, 'profiles.json'), 'utf8') === currentBefore)
+  }
 
   // 词表版本不符：改备份 profiles.anonDict 并重算清单哈希，使校验通过但版本不符
   const dictBackup = path.join(mkRoot(), 'backup-dict')

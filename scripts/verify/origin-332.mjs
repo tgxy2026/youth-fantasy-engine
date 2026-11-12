@@ -12,6 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverEntry = path.resolve(here, '../../server/index.mjs')
@@ -21,6 +22,7 @@ const root = mkdtempSync(path.join(os.tmpdir(), 'yfe-origin-'))
 const dataDir = path.join(root, 'data')
 const wwwDir = path.join(root, 'www')
 mkdirSync(dataDir, { recursive: true })
+seedSyncInvite(dataDir)
 mkdirSync(wwwDir, { recursive: true })
 writeFileSync(path.join(wwwDir, 'index.html'), '<!doctype html><title>fixture</title>')
 
@@ -66,7 +68,7 @@ try {
   const reg = await fetch(base + '/api/auth/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: '来源用户', password: 'pass1234' }),
+    body: JSON.stringify({ name: '来源用户', password: 'pass1234', invite: TEST_SYNC_INVITE }),
   })
   const cookie = (reg.headers.getSetCookie?.() || [])
     .map((c) => c.split(';')[0]).find((c) => c.startsWith('yfe_sid=')) || ''

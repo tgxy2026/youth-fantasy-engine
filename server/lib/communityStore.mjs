@@ -452,7 +452,7 @@ export function createCommunityStore({
       const nicknameChanged = Object.hasOwn(patch, 'nickname') && patch.nickname !== prev.nickname
       if (nicknameChanged && Object.hasOwn(prev, 'nicknameChangedAt')) {
         const last = prev.nicknameChangedAt
-        if (!Number.isFinite(last) || last <= 0 || last > now) {
+        if (!Number.isSafeInteger(last) || last <= 0 || last > now) {
           const e = new Error('昵称修改时间异常，请联系管理员核查')
           e.code = 'NICKNAME_TIME_INVALID'
           throw e

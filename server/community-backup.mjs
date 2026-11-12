@@ -6,6 +6,7 @@
 //   node server/community-backup.mjs backup  [--data <dir>] [--backup-root <dir>] [--out <dir>] [--keep 14] --confirm-stopped [--json]
 //   node server/community-backup.mjs verify  <backupDir> [--users <users.json>] [--json]
 //   node server/community-backup.mjs restore <backupDir> [--data <dir>] --confirm-stopped [--accept-visibility-changes] [--key-file <独立密钥文件>] [--json]
+//   含匿名代号映射的备份必须提供 --key-file；旧备份没有匿名映射时可省略。
 //   node server/community-backup.mjs adopt-empty-comments [--data <dir>] --confirm-adopt-empty [--json]
 //   node server/community-backup.mjs unlock [--data <dir>] --confirm-stale [--json]
 //

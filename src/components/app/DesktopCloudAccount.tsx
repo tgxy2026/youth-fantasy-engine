@@ -24,7 +24,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { desktopAuthStatus, desktopLoginPassword, desktopLogout, DESKTOP_ACCOUNT_EVENT } from '@/lib/cloud/desktopLogin'
 import { configureDesktopTransportIfSignedIn } from '@/lib/app/syncBoot'
 
-export default function DesktopCloudAccount() {
+export default function DesktopCloudAccount({ communityTrigger = false }: { communityTrigger?: boolean }) {
   const [open, setOpen] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const [encrypted, setEncrypted] = useState(false)
@@ -106,7 +106,9 @@ export default function DesktopCloudAccount() {
 
   return (
     <>
-      <Button
+      {communityTrigger ? (
+        <Button size="sm" onClick={() => setOpen(true)}>登录云端账号</Button>
+      ) : <Button
         variant="secondary"
         size="xs"
         className="w-full !justify-start gap-1.5"
@@ -117,7 +119,7 @@ export default function DesktopCloudAccount() {
         <span className={`ml-auto truncate ${!ready ? 'text-ink-600' : signedIn ? 'text-emerald-400' : 'text-ink-500'}`}>
           {!ready ? '…' : signedIn ? '已登录' : '未登录'}
         </span>
-      </Button>
+      </Button>}
 
       <Modal
         open={open}
