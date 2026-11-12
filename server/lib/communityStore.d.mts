@@ -68,12 +68,13 @@ export interface CommunityStore {
   listCommentsByUid(uid: string): CommunityComment[]
   getVote(postId: string, uid: string): { postId: string; uid: string; value: number; updatedAt: number } | null
   setVote(postId: string, uid: string, value: number, now?: number): unknown
+  recountComments(postId: string): number
   recountVotes(postId: string): { up: number; down: number }
   votesOfUser(uid: string): Array<{ postId: string; uid: string; value: number; updatedAt: number }>
   putReport(report: Record<string, unknown> & { id: string }): unknown
   getReport(id: string): Record<string, any> | null
   listReports(): Array<Record<string, any>>
-  findOpenReport(uid: string, targetType: string, targetId: string): Record<string, any> | null
+  findOpenReport(uid: string, targetType: string, targetId: string, kind?: string): Record<string, any> | null
   getProfile(uid: string): Record<string, any> | null
   putProfile(uid: string, patch: Record<string, unknown>): Record<string, any>
   deleteProfileRank(uid: string): number
@@ -85,4 +86,10 @@ export interface CommunityStore {
   listAudit(limit?: number): Array<Record<string, any>>
 }
 
-export function createCommunityStore(opts: { root: string }): CommunityStore
+export function createCommunityStore(opts: {
+  root: string
+  /** 故障注入用；生产默认使用原子写 */
+  writeText?: (abs: string, text: string) => void
+  /** 故障注入用；生产默认同步读取 */
+  readText?: (abs: string) => string
+}): CommunityStore

@@ -102,7 +102,8 @@ export async function getPost(id: string): Promise<{ post?: CommunityPostDetail;
   return request(`/posts/${encodeURIComponent(id)}`)
 }
 
-export async function listComments(postId: string, opts: { cursor?: string; limit?: number } = {}): Promise<{ items: CommunityComment[]; nextCursor: string }> {
+/** `total` = 服务端确认的公开可见评论总数（3.5.2 新增；旧服务端可能没有该字段） */
+export async function listComments(postId: string, opts: { cursor?: string; limit?: number } = {}): Promise<{ items: CommunityComment[]; nextCursor: string; total?: number }> {
   return request(`/posts/${encodeURIComponent(postId)}/comments${qsOf(opts)}`)
 }
 
@@ -161,7 +162,7 @@ export function votePost(id: string, value: 1 | -1 | 0): Promise<{ counts: { up:
 
 export function addComment(postId: string, input: {
   body: string; display: 'nickname' | 'anonymous'; clientToken: string
-}): Promise<{ comment: { id: string; status: string; createdAt: number }; duplicate?: boolean }> {
+}): Promise<{ comment: CommunityComment & { status: string }; duplicate?: boolean; total?: number }> {
   return request(`/posts/${encodeURIComponent(postId)}/comments`, { method: 'POST', body: JSON.stringify(input) })
 }
 

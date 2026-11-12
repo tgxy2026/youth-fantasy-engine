@@ -276,10 +276,22 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
             .map((c) => ({ id: c.id, ts: c.createdAt, c }))
             .sort((a, b) => (b.ts - a.ts) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
           const page = pageRows(rows, { cursor, limit: size })
+          const total = rows.length
+          // 🔴 3.5.2 · 计数漂移自愈：以公开可见评论为权威口径，只在真的不一致时写回
+          if ((post.counts?.comments || 0) !== total) {
+            post.counts = { ...(post.counts || {}), comments: total }
+            store.putPost(post)
+          }
+          /**
+           * 🔴 3.5.2 · 总数必须由服务端给：前端只加载第一页时，页长度不能当总数。
+           *    口径 = 当前公开可见评论（pending / rejected / removed 不计）。
+           *    `total` 是新增字段，旧客户端忽略它即可，不改变既有字段语义。
+           */
           return sendJSON(res, 200, {
             ok: true,
             items: page.items.map((it) => publicComment(store, it.c, { viewer: user, post })),
             nextCursor: page.nextCursor,
+            total,
           })
         }
 
@@ -291,26 +303,39 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
           if (!post || !postPubliclyVisible(post)) {
             return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在或已不可见' })
           }
-          const rl = limit(`c:comment:${user.id}`, COMMUNITY_LIMITS.commentDailyMax, 24 * 3600 * 1000)
-          if (!rl.ok) return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: `今天评论太频繁，请 ${rl.retryAfter} 秒后再试` })
-          if (countTodayComments(user.id) >= COMMUNITY_LIMITS.commentDailyMax) {
-            return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: '今天的评论已达上限' })
-          }
+          /**
+           * 🔴 3.5.2 · 先解析并校验正文，再查令牌去重，最后才计入限流：
+           *    - 重试必须复用同一令牌；内容一致直接返回已确认结果，不消耗配额、不被 429 误判；
+           *    - 同一令牌却换了内容时返回 409，**绝不静默返回旧评论**（否则用户以为新内容发出去了）；
+           *    - 去重查询已先验证登录、帖子存在且公开可见，不会借令牌泄漏他人记录。
+           */
           const body = await readJSONBody(req, 16 * 1024).catch(() => null)
           if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
           const v = validateCommentInput(body)
           if (!v.ok) return sendJSON(res, 400, { ok: false, code: v.code, error: v.error })
-
-          // 🔴 幂等：同一令牌重复提交返回同一条，不产生第二条评论
-          const token = String(body.clientToken || '')
+          const token = String(body.clientToken || '').slice(0, 64)
+          const display = normalizeDisplayMode(body.display, 'anonymous')
+          const totalVisible = () => store.listCommentsOf(post.id).filter((c) => c.status === COMMENT_STATUS.VISIBLE).length
           if (token) {
             const dup = store.listCommentsOf(post.id).find((c) => c.uid === user.id && c.clientToken === token)
             if (dup) {
+              if (dup.body !== v.value.body || (dup.display || 'anonymous') !== display) {
+                return sendJSON(res, 409, {
+                  ok: false, code: 'TOKEN_CONFLICT',
+                  error: '这次提交与此前未确认的内容不一致；请刷新后确认原评论是否已发表。',
+                })
+              }
               return sendJSON(res, 200, {
                 ok: true, duplicate: true,
-                comment: { id: dup.id, status: dup.status, createdAt: dup.createdAt },
+                comment: { ...publicComment(store, dup, { viewer: user, post }), status: dup.status },
+                total: totalVisible(),
               })
             }
+          }
+          const rl = limit(`c:comment:${user.id}`, COMMUNITY_LIMITS.commentDailyMax, 24 * 3600 * 1000)
+          if (!rl.ok) return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: `今天评论太频繁，请 ${rl.retryAfter} 秒后再试` })
+          if (countTodayComments(user.id) >= COMMUNITY_LIMITS.commentDailyMax) {
+            return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: '今天的评论已达上限' })
           }
           if (store.counts().comments >= CAP.maxComments) {
             return sendJSON(res, 503, { ok: false, code: 'CAPACITY_FULL', error: '评论容量已满，请稍后再试' })
@@ -323,7 +348,7 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
             postId: post.id,
             uid: user.id,
             body: v.value.body,
-            display: normalizeDisplayMode(body.display, 'anonymous'),
+            display,
             status: visible ? COMMENT_STATUS.VISIBLE : COMMENT_STATUS.PENDING,
             screening,
             clientToken: token,
@@ -336,7 +361,8 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
           }
           return sendJSON(res, 200, {
             ok: true,
-            comment: { id: comment.id, status: comment.status, createdAt: comment.createdAt },
+            comment: { ...publicComment(store, comment, { viewer: user, post }), status: comment.status },
+            total: totalVisible(),
           })
         }
       }

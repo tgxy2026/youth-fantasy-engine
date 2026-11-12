@@ -9,7 +9,7 @@
 // 🔴 可枚举性：公开接口永不返回 uid / 登录名。这里存 uid 是必要的内部关联，
 //    但任何 `toPublic*` 都在 api 层做，store 只负责原样存取。
 
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { writeTextAtomicSync, readJSONOr } from './atomic.mjs'
@@ -50,10 +50,47 @@ const DEFAULT_STATE = {
 }
 
 /**
- * @param {{root:string}} opts root 即 `<DATA_DIR>/community`
+ * @param {{
+ *   root:string,
+ *   writeText?: (abs:string, text:string)=>void,
+ *   readText?: (abs:string)=>string,
+ * }} opts root 即 `<DATA_DIR>/community`
+ *   注入 writeText/readText 仅用于故障注入测试（默认仍是原子写与同步读）。
  */
-export function createCommunityStore({ root } = {}) {
+export function createCommunityStore({
+  root,
+  writeText = writeTextAtomicSync,
+  readText = (abs) => readFileSync(abs, 'utf8'),
+} = {}) {
   if (!root) throw new Error('community store 需要 root 目录')
+
+  /** 目录中实际存在的社区数据文件（用于区分「首次使用」与「文件意外丢失」） */
+  function presentFiles() {
+    try { return new Set(readdirSync(root).filter((n) => Object.values(FILES).includes(n))) }
+    catch { return new Set() }
+  }
+
+  /**
+   * 启动期完整性检查：
+   *  - posts.json 丢失、但目录里还有其他社区文件 -> 拒绝启动。否则空表写回会让投稿整体蒸发。
+   *  - comments.json 丢失、但帖子计数显示存在评论 -> 拒绝启动，要求从备份恢复。
+   * 🔴 首次使用（目录为空）不触发；正常空社区也不会触发。
+   */
+  function assertCoreFiles() {
+    const present = presentFiles()
+    if (!present.has(FILES.posts) && present.size > 0) {
+      throw new Error('社区核心文件 posts.json 缺失（目录中仍有其他社区数据）；请停写并从备份恢复，禁止用空表继续写入')
+    }
+    if (!present.has(FILES.posts) || present.has(FILES.comments)) return
+    const r = readJSONOr(join(root, FILES.posts), readText)
+    if (!r.ok) return // 损坏会由 load() 给出更明确的错误
+    const commentRefs = Object.values(r.value?.items || {})
+      .reduce((n, p) => n + (Number(p?.counts?.comments) || 0), 0)
+    if (commentRefs > 0) {
+      throw new Error('社区评论文件 comments.json 缺失，但帖子记录显示存在评论；请停写并从备份恢复')
+    }
+  }
+  assertCoreFiles()
 
   // mtime 缓存：只对本进程读频繁的小文件生效；写后立即更新，避免读到旧内容
   const cache = new Map()
@@ -67,7 +104,7 @@ export function createCommunityStore({ root } = {}) {
     const hit = cache.get(key)
     if (hit && hit.mtime === mtime && mtime !== 0) return hit.value
 
-    const r = readJSONOr(abs, (p) => readFileSync(p, 'utf8'))
+    const r = readJSONOr(abs, readText)
     if (r.ok) {
       const value = r.value
       if (!value || typeof value !== 'object' || typeof value.items !== 'object' || !value.items) {
@@ -77,6 +114,10 @@ export function createCommunityStore({ root } = {}) {
       return value
     }
     if (r.missing) {
+      // 运行期间 posts.json 被误删：不能当成空社区继续写
+      if (key === 'posts' && presentFiles().size > 0) {
+        throw new Error('社区核心文件 posts.json 在运行期间缺失；请停写并从备份恢复')
+      }
       const value = key === 'state' ? { ...DEFAULT_STATE, items: {} } : emptyMap()
       cache.set(key, { mtime: 0, value })
       return value
@@ -85,17 +126,26 @@ export function createCommunityStore({ root } = {}) {
     throw new Error(`社区数据文件损坏（${FILES[key]}）：${r.error}`)
   }
   function save(key, value) {
-    writeTextAtomicSync(fileOf(key), JSON.stringify(value, null, 2))
+    writeText(fileOf(key), JSON.stringify(value, null, 2))
     let mtime = 0
     try { mtime = statSync(fileOf(key)).mtimeMs } catch { mtime = 0 }
     cache.set(key, { mtime, value })
   }
 
+  /**
+   * 🔴 写失败或 fn 抛错时必须丢弃缓存：fn 直接改了缓存对象，若写盘失败后继续命中缓存，
+   *    读接口会看到从未落盘的「幽灵数据」。丢缓存后下次从磁盘读回旧内容。
+   */
   function mutate(key, fn) {
     const db = load(key)
-    const result = fn(db)
-    save(key, db)
-    return result
+    try {
+      const result = fn(db)
+      save(key, db)
+      return result
+    } catch (e) {
+      cache.delete(key)
+      throw e
+    }
   }
 
   function newId(prefix) {
@@ -199,6 +249,14 @@ export function createCommunityStore({ root } = {}) {
       db.items[k] = row
       return row
     })
+  }
+  /** 从评论表重算公开可见数（权威口径；与 post.counts.comments 漂移时以此为准） */
+  function recountComments(postId) {
+    let total = 0
+    for (const c of Object.values(load('comments').items)) {
+      if (c.postId === postId && c.status === 'visible') total++
+    }
+    return total
   }
   /** 从投票表重算，避免自增计数在并发下漂移 */
   function recountVotes(postId) {
@@ -319,6 +377,7 @@ export function createCommunityStore({ root } = {}) {
     listCommentsByUid,
     getVote,
     setVote,
+    recountComments,
     recountVotes,
     votesOfUser,
     putReport,
