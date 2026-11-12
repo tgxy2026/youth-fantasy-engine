@@ -3,8 +3,8 @@
 //
 // 用法：
 //   node server/community-backup.mjs inspect [--data <dir>] [--json]
-//   node server/community-backup.mjs backup  [--data <dir>] [--backup-root <dir>] [--out <dir>] [--keep 14] [--json]
-//   node server/community-backup.mjs verify  <backupDir> [--json]
+//   node server/community-backup.mjs backup  [--data <dir>] [--backup-root <dir>] [--out <dir>] [--keep 14] --confirm-stopped [--json]
+//   node server/community-backup.mjs verify  <backupDir> [--users <users.json>] [--json]
 //   node server/community-backup.mjs restore <backupDir> [--data <dir>] --confirm-stopped [--accept-visibility-changes] [--json]
 //
 // 🔴 恢复前必须停掉社区写入（停服务）。工具无法验证进程是否真的停了，只认 `--confirm-stopped`。
@@ -57,9 +57,15 @@ function print(result, code = 0) {
     } else {
       console.error(`FAIL ${cmd}${result.code ? ` [${result.code}]` : ''}：${result.error || '未通过'}`)
       for (const p of (result.problems || []).slice(0, 20)) console.error(`   - ${p}`)
+      if (result.summary) console.error(`  影响统计：${JSON.stringify(result.summary)}`)
       if (result.changes?.length) {
-        console.error(`  可见性变化 ${result.changes.length} 项（只显示不透明 id 与状态）：`)
-        for (const c of result.changes.slice(0, 20)) console.error(`   - ${c.type} ${c.postId} ${c.currentStatus || ''} -> ${c.backupStatus || ''}`)
+        console.error(`  恢复影响 ${result.changes.length} 项（只显示不透明 id、状态或计数）：`)
+        for (const c of result.changes.slice(0, 20)) {
+          const id = c.postId ? ` ${c.postId}` : ''
+          const file = c.file ? ` ${c.file}` : ''
+          const count = c.count !== undefined ? ` x${c.count}` : ''
+          console.error(`   - ${c.type}${id}${file}${count} ${c.currentStatus || ''} -> ${c.backupStatus || ''}`)
+        }
         console.error('   核对后如确认接受，再加 --accept-visibility-changes 重新执行。')
       }
     }
@@ -77,13 +83,13 @@ try {
     const out = flag('out') ? resolve(flag('out')) : join(backupRoot, `community-${stamp()}`)
     if (!existsSync(dirname(out))) mkdirSync(dirname(out), { recursive: true })
     const keep = Number(flag('keep', '14'))
-    const r = createBackup({ root, dest: out, keep: Number.isFinite(keep) ? keep : 14 })
-    print(r, r.ok ? 0 : 1)
+    const r = createBackup({ root, dest: out, keep: Number.isFinite(keep) ? keep : 14, stopConfirmed: has('confirm-stopped') })
+    print(r, r.ok ? 0 : (r.code === 'STOP_REQUIRED' ? 2 : 1))
   } else if (cmd === 'verify') {
     const dir = argv[1] && !argv[1].startsWith('--') ? resolve(argv[1]) : ''
     if (!dir) { print({ ok: false, error: '缺少备份目录' }, 1) }
     else {
-      const r = verifyBackup(dir)
+      const r = verifyBackup(dir, { usersFile: flag('users') ? resolve(flag('users')) : '' })
       print(r, r.ok ? 0 : 1)
     }
   } else if (cmd === 'restore') {

@@ -34,6 +34,7 @@ export interface CommunityPost {
   lastDecision?: unknown
   advice?: unknown
   withdrawnAt?: number
+  removedAt?: number
 }
 
 export interface CommunityComment {

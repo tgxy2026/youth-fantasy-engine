@@ -12,6 +12,7 @@
 // ?? 本地 http + 内存限流；不等于部署环境（TLS / 反代 / 多进程 / 断电）。
 
 import { createServer } from 'node:http'
+import { Readable } from 'node:stream'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -258,6 +259,49 @@ try {
   ok('最终 total == 详情计数', finalTotal === finalDetail)
   ok('最终公开评论无重复 id', new Set(finalWalk.items.map((c) => c.id)).size === finalWalk.items.length)
   ok('最终遍历中不含待审/被拒评论', !finalWalk.items.some((c) => c.id === bad.json.comment.id))
+
+  // ---- Unicode 码点边界（emoji 按 1 个字符计） ----
+  const emoji999 = Array.from({ length: 999 }, (_, i) => String.fromCodePoint(0x1F600 + (i % 80))).join('')
+  const emoji1000 = Array.from({ length: 1000 }, (_, i) => String.fromCodePoint(0x1F600 + (i % 80))).join('')
+  const emojiOk = await call(`/api/community/posts/${pid}/comments`, {
+    method: 'POST', as: 'carol',
+    body: { body: emoji999 + '字', display: 'anonymous', clientToken: 'emoji-1000' },
+  })
+  ok('1000 个码点（含 emoji）可提交', emojiOk.status === 200 && emojiOk.json.comment?.status === 'visible', emojiOk.raw)
+  const emojiTooLong = await call(`/api/community/posts/${pid}/comments`, {
+    method: 'POST', as: 'carol',
+    body: { body: emoji1000 + '字', display: 'anonymous', clientToken: 'emoji-1001' },
+  })
+  ok('1001 个码点被服务端拒绝', emojiTooLong.status === 400 && emojiTooLong.json.code === 'COMMENT_TOO_LONG')
+
+  // ---- 读取正文期间帖子被下架：写前必须重新确认 ----
+  const slow = new Readable({ read() { /* push later */ } }) as Readable & { method: string }
+  slow.method = 'POST'
+  const slowRes = {
+    statusCode: 0,
+    body: '',
+    writeHead(status: number) { this.statusCode = status },
+    end(text: string) { this.body += String(text) },
+  }
+  const slowTask = api.handle({
+    req: slow,
+    res: slowRes,
+    path: `/api/community/posts/${pid}/comments`,
+    qs: new URLSearchParams(),
+    user: USERS.bob,
+    authReason: '',
+    ip: '127.0.0.1',
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const removed = store.getPost(pid)
+  removed!.status = 'removed'
+  removed!.removedAt = Date.now()
+  store.putPost(removed!)
+  slow.push(Buffer.from(JSON.stringify({ body: '迟到后不应写入的合成评论。', display: 'anonymous', clientToken: 'late-removed' })))
+  slow.push(null)
+  await slowTask
+  ok('等待正文期间帖子被下架 -> 404', slowRes.statusCode === 404, slowRes.body)
+  ok('下架后迟到请求未写入评论', !store.listCommentsOf(pid).some((c) => c.clientToken === 'late-removed'))
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()))
   const target = fs.realpathSync(root)

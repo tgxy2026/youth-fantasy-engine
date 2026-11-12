@@ -87,9 +87,25 @@ export function readCommunityData(root, io = defaultIO) {
   const data = emptyCommunityData()
   const present = []
   const problems = []
+  /**
+   * 🔴 跨文件快照边界：先统一记录全部文件的 stat，再读取，最后统一对比。
+   *    只在单文件读取前后对比，发现不了「读完 posts 后、读 comments 前」的交错写入。
+   *    这是检测层；备份入口还要求显式停写（stopConfirmed），两者一起构成边界。
+   */
+  const baseline = new Map()
   for (const file of COMMUNITY_FILES) {
     const abs = join(root, file)
     if (!io.exists(abs)) continue
+    try {
+      const st = io.stat(abs)
+      baseline.set(file, { mtimeMs: st.mtimeMs, size: st.size })
+    } catch {
+      problems.push(`${file}: 无法读取文件状态`)
+    }
+  }
+  for (const file of COMMUNITY_FILES) {
+    if (!baseline.has(file)) continue
+    const abs = join(root, file)
     try {
       const text = io.readText(abs)
       if (!text.trim()) throw new Error('文件内容为空')
@@ -99,7 +115,48 @@ export function readCommunityData(root, io = defaultIO) {
       problems.push(`${file}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
+  if (!problems.length) {
+    const final = new Map()
+    for (const file of COMMUNITY_FILES) {
+      const abs = join(root, file)
+      if (!io.exists(abs)) {
+        if (baseline.has(file)) problems.push(`${file} 在快照读取期间消失`)
+        continue
+      }
+      try {
+        const st = io.stat(abs)
+        final.set(file, { mtimeMs: st.mtimeMs, size: st.size })
+      } catch {
+        problems.push(`${file} 在快照读取期间无法读取`)
+      }
+    }
+    for (const [file, st] of baseline) {
+      const now = final.get(file)
+      if (!now) continue
+      if (now.mtimeMs !== st.mtimeMs || now.size !== st.size) {
+        problems.push(`${file} 在快照读取期间发生变化（可能有并发写入）`)
+      }
+    }
+    for (const file of final.keys()) {
+      if (!baseline.has(file)) problems.push(`${file} 在快照读取期间出现`)
+    }
+  }
   return { data, present, problems }
+}
+
+/** 核心文件存在性：区分「首次使用」与「既有社区文件意外缺失」 */
+function coreFileProblems(present, data) {
+  const problems = []
+  const set = new Set(present)
+  if (!set.has('posts.json') && set.size > 0) {
+    problems.push('社区核心文件 posts.json 缺失（目录中仍有其他社区数据），拒绝检查/备份')
+  }
+  if (set.has('posts.json') && !set.has('comments.json')) {
+    const posts = data?.['posts.json']?.items || {}
+    const refs = Object.values(posts).reduce((n, post) => n + (Number(post?.counts?.comments) || 0), 0)
+    if (refs > 0) problems.push('comments.json 缺失，但帖子计数显示存在评论；拒绝检查/备份')
+  }
+  return problems
 }
 
 function itemsOf(data, file, label) {
@@ -172,27 +229,33 @@ export function validateSnapshot(data) {
 
   const upByPost = new Map()
   const downByPost = new Map()
-  for (const [key, v] of Object.entries(votes)) {
-    if (!isPlainObject(v)) { problems.push(`投票 ${key} 不是对象`); continue }
-    if (typeof v.postId !== 'string' || !v.postId) problems.push(`投票 ${key} 缺少 postId`)
-    if (v.value !== 1 && v.value !== -1) problems.push(`投票 ${key} 的值必须是 1 或 -1`)
-    if (!posts[v.postId]) warnings.push(`投票 ${key} 指向不存在的帖子 ${String(v.postId)}（保留但不可达）`)
+  let voteSeq = 0
+  for (const [, v] of Object.entries(votes)) {
+    voteSeq++
+    if (!isPlainObject(v)) { problems.push(`投票记录 #${voteSeq} 不是对象`); continue }
+    if (typeof v.postId !== 'string' || !v.postId) problems.push(`投票记录 #${voteSeq} 缺少 postId`)
+    if (v.value !== 1 && v.value !== -1) problems.push(`投票记录 #${voteSeq} 的值必须是 1 或 -1`)
+    if (!posts[v.postId]) warnings.push(`投票记录指向不存在的帖子 ${String(v.postId)}（保留但不可达）`)
     if (v.value === 1) upByPost.set(v.postId, (upByPost.get(v.postId) || 0) + 1)
     if (v.value === -1) downByPost.set(v.postId, (downByPost.get(v.postId) || 0) + 1)
   }
 
-  for (const [key, p] of Object.entries(normalized['profiles.json'].items)) {
-    if (!isPlainObject(p)) { problems.push(`档案 ${key} 不是对象`); continue }
-    if (typeof p.nickname !== 'string') problems.push(`档案 ${key} 缺少昵称字段`)
+  let profileSeq = 0
+  for (const [, p] of Object.entries(normalized['profiles.json'].items)) {
+    profileSeq++
+    if (!isPlainObject(p)) { problems.push(`档案 #${profileSeq} 不是对象`); continue }
+    if (typeof p.nickname !== 'string') problems.push(`档案 #${profileSeq} 缺少昵称字段`)
     for (const field of ['postDisplay', 'commentDisplay', 'rankDisplay']) {
-      if (p[field] !== undefined && !DISPLAYS.has(p[field])) problems.push(`档案 ${key} 的 ${field} 非法`)
+      if (p[field] !== undefined && !DISPLAYS.has(p[field])) problems.push(`档案 #${profileSeq} 的 ${field} 非法`)
     }
   }
 
-  for (const [key, row] of Object.entries(normalized['rank.json'].items)) {
-    if (!isPlainObject(row)) { problems.push(`排行 ${key} 不是对象`); continue }
-    if (typeof row.uid !== 'string' || !row.uid) problems.push(`排行 ${key} 缺少 uid`)
-    if (!Number.isFinite(Number(row.netDelta))) problems.push(`排行 ${key} 的 netDelta 非数值`)
+  let rankSeq = 0
+  for (const [, row] of Object.entries(normalized['rank.json'].items)) {
+    rankSeq++
+    if (!isPlainObject(row)) { problems.push(`排行 #${rankSeq} 不是对象`); continue }
+    if (typeof row.uid !== 'string' || !row.uid) problems.push(`排行 #${rankSeq} 缺少 uid`)
+    if (!Number.isFinite(Number(row.netDelta))) problems.push(`排行 #${rankSeq} 的 netDelta 非数值`)
   }
 
   for (const [key, r] of Object.entries(normalized['reports.json'].items)) {
@@ -240,15 +303,31 @@ export function validateSnapshot(data) {
   return { ok: true, problems, warnings, repairs, counts, data, normalized }
 }
 
-/** 检查 live 目录（不写任何文件） */
-export function inspectCommunity(root, io = defaultIO) {
-  if (!io.exists(root)) return { ok: false, problems: ['社区目录不存在'], warnings: [], repairs: [], counts: {}, present: [], data: null, normalized: null }
+/**
+ * 检查 live 目录（不写任何文件）。
+ * 🔴 默认只返回对外诊断（统计/问题/警告），不返回 data / normalized；
+ *    需要内部快照的调用方（备份）必须显式传 includeData: true。
+ * @param {string} root
+ * @param {{io?:object, includeData?:boolean}|object} [options] 兼容旧签名（直接传 io）
+ */
+export function inspectCommunity(root, options = {}) {
+  const io = options.io || (typeof options.exists === 'function' ? options : defaultIO)
+  const includeData = options.includeData === true
+  if (!io.exists(root)) {
+    return { ok: false, problems: ['社区目录不存在'], warnings: [], repairs: [], counts: {}, present: [] }
+  }
   const read = readCommunityData(root, io)
-  if (read.problems.length) {
-    return { ok: false, problems: read.problems, warnings: [], repairs: [], counts: {}, present: read.present, data: read.data, normalized: null }
+  const coreProblems = coreFileProblems(read.present, read.data)
+  const problems = [...read.problems, ...coreProblems]
+  if (problems.length) {
+    const result = { ok: false, problems, warnings: [], repairs: [], counts: {}, present: read.present }
+    if (includeData) result.data = read.data
+    return result
   }
   const v = validateSnapshot(read.data)
-  return { ...v, present: read.present }
+  const result = { ...v, present: read.present }
+  if (!includeData) { delete result.data; delete result.normalized }
+  return result
 }
 
 function stampOf(now) {
@@ -262,14 +341,26 @@ function sha256Text(text) {
 
 /**
  * 创建一致性备份。
- * @param {{root:string, dest:string, now?:number, keep?:number, io?:object}} opts
+ * @param {{root:string, dest:string, now?:number, keep?:number, io?:object, stopConfirmed?:boolean}} opts
  *   dest 是最终备份目录（必须不存在）；调用方负责父目录存在。
+ *   stopConfirmed 必须为 true：备份是停写快照，不宣称可以热备。
  */
-export function createBackup({ root, dest, now = Date.now(), keep = 0, io = defaultIO } = {}) {
+export function createBackup({ root, dest, now = Date.now(), keep = 0, io = defaultIO, stopConfirmed = false } = {}) {
   if (!root || !dest) return { ok: false, error: '缺少 root / dest' }
+  if (!stopConfirmed) {
+    return { ok: false, code: 'STOP_REQUIRED', error: '备份前必须停止社区写入；停服务后加 --confirm-stopped 重新执行' }
+  }
   if (io.exists(dest)) return { ok: false, error: '目标备份目录已存在，拒绝覆盖' }
-  const inspect = inspectCommunity(root, io)
-  if (!inspect.ok) return { ok: false, error: '社区数据未通过完整性检查，拒绝备份', problems: inspect.problems }
+  const inspect = inspectCommunity(root, { io, includeData: true })
+  if (!inspect.ok) {
+    const concurrent = inspect.problems.some((p) => p.includes('并发写入') || p.includes('快照读取期间'))
+    return {
+      ok: false,
+      code: concurrent ? 'CONCURRENT_WRITE' : 'INVALID_DATA',
+      error: concurrent ? '备份读取期间检测到并发写入，拒绝把混合快照标成成功' : '社区数据未通过完整性检查，拒绝备份',
+      problems: inspect.problems,
+    }
+  }
 
   const staging = `${dest}.tmp-${process.pid}-${randomBytes(3).toString('hex')}`
   try {
@@ -286,7 +377,7 @@ export function createBackup({ root, dest, now = Date.now(), keep = 0, io = defa
       kind: 'community',
       createdAt: new Date(now).toISOString(),
       createdAtMs: now,
-      sourceName: basename(root),
+      sourceName: 'community',
       files,
       counts: inspect.counts,
       warnings: inspect.warnings,
@@ -326,7 +417,7 @@ export function pruneOldBackups(dest, keep, io = defaultIO) {
  * 校验备份目录：清单、文件集合、逐文件哈希、结构、关联、计数。
  * 备份内的计数必须是修复后的一致状态；发现漂移即失败（不能拿不一致快照恢复）。
  */
-export function verifyBackup(dir, { io = defaultIO } = {}) {
+export function verifyBackup(dir, { io = defaultIO, includeData = false, usersFile = '' } = {}) {
   const problems = []
   const warnings = []
   if (!io.exists(dir)) return { ok: false, problems: ['备份目录不存在'], warnings }
@@ -378,17 +469,57 @@ export function verifyBackup(dir, { io = defaultIO } = {}) {
     }
   }
   if (problems.length) return { ok: false, problems, warnings: v.warnings, manifest }
-  return { ok: true, problems: [], warnings: v.warnings, manifest, counts: v.counts, data: v.data }
+  warnings.push(...v.warnings)
+
+  /**
+   * 账号关联核对（可选）：社区与 users.json 分属不同文件，恢复顺序应先账号后社区。
+   * 只报告「多少个引用找不到账号」，不输出 uid/登录名；找不到账号的内容仍保留。
+   */
+  if (usersFile) {
+    try {
+      const db = JSON.parse(io.readText(usersFile))
+      const known = new Set(Object.keys(db?.users || {}))
+      const uids = new Set()
+      for (const post of Object.values(v.data['posts.json'].items || {})) if (post?.uid) uids.add(post.uid)
+      for (const c of Object.values(v.data['comments.json'].items || {})) if (c?.uid) uids.add(c.uid)
+      for (const uid of Object.keys(v.data['profiles.json'].items || {})) uids.add(uid)
+      for (const row of Object.values(v.data['rank.json'].items || {})) if (row?.uid) uids.add(row.uid)
+      let missing = 0
+      for (const uid of uids) if (!known.has(uid)) missing++
+      if (missing > 0) {
+        warnings.push(`社区记录引用 ${missing} 个当前用户表中不存在的账号（内容保留；昵称/作者功能可能不可用）`)
+      }
+    } catch {
+      warnings.push('用户表不可读；未核对账号关联')
+    }
+  }
+
+  const result = { ok: true, problems: [], warnings, manifest, counts: v.counts }
+  if (includeData) result.data = v.data
+  return result
 }
 
 /**
- * 可见性差异。恢复旧快照会改变内容可见性时，必须让操作者显式接受。
- * @returns {Array<{type:string, postId:string, currentStatus?:string, backupStatus?:string, backupVisible?:boolean}>}
+ * 恢复影响差异（双向）：
+ *   · 备份可见、当前不可见 -> would-republish（可能重新公开已下架内容）
+ *   · 备份不可见、当前可见 -> would-hide
+ *   · 当前有、备份没有     -> would-remove（恢复后当前新增内容会消失）
+ *   · 同 id 但版本/展示不同 -> content-changed（恢复会回退当前编辑）
+ *   · 评论/投票/举报/档案/排行当前独有 -> records-not-in-backup
+ * 🔴 只输出不透明 postId / 计数与状态，不输出正文、uid、昵称或登录名。
+ * @returns {{changes:Array<object>, summary:object}}
  */
 export function diffVisibility(currentData, backupData) {
   const current = currentData?.['posts.json']?.items || {}
   const backup = backupData?.['posts.json']?.items || {}
   const changes = []
+  const summary = { postsRemoved: 0, postsContentChanged: 0, comments: 0, votes: 0, reports: 0, profiles: 0, rank: 0 }
+  const contentFingerprint = (post) => JSON.stringify({
+    display: post?.display || '',
+    versions: Array.isArray(post?.versions)
+      ? post.versions.map((v) => [v?.vid, v?.title, v?.body, v?.tags])
+      : [],
+  })
   for (const [id, b] of Object.entries(backup)) {
     const c = current[id]
     const backupVisible = snapshotPostVisible(b)
@@ -401,9 +532,25 @@ export function diffVisibility(currentData, backupData) {
       changes.push({ type: 'would-republish', postId: id, currentStatus: c.status, backupStatus: b.status })
     } else if (!backupVisible && currentVisible) {
       changes.push({ type: 'would-hide', postId: id, currentStatus: c.status, backupStatus: b.status })
+    } else if (contentFingerprint(c) !== contentFingerprint(b)) {
+      changes.push({ type: 'content-changed', postId: id, currentStatus: c.status, backupStatus: b.status })
+      summary.postsContentChanged++
     }
   }
-  return changes
+  for (const [id, c] of Object.entries(current)) {
+    if (backup[id]) continue
+    changes.push({ type: 'would-remove', postId: id, currentStatus: c.status, currentVisible: snapshotPostVisible(c) })
+    summary.postsRemoved++
+  }
+  for (const file of ['comments.json', 'votes.json', 'reports.json', 'profiles.json', 'rank.json']) {
+    const cur = currentData?.[file]?.items || {}
+    const bak = backupData?.[file]?.items || {}
+    const count = Object.keys(cur).filter((key) => !bak[key]).length
+    const label = file.replace('.json', '')
+    summary[label] = count
+    if (count > 0) changes.push({ type: 'records-not-in-backup', file, count })
+  }
+  return { changes, summary }
 }
 
 function writeSnapshotFiles(data, dir, io) {
@@ -432,18 +579,21 @@ export function restoreBackup({
   if (!stopConfirmed) {
     return { ok: false, code: 'STOP_REQUIRED', error: '恢复前必须停止社区写入；请停服务后重新执行并确认' }
   }
-  const verified = verifyBackup(backupDir, { io })
+  const verified = verifyBackup(backupDir, { io, includeData: true })
   if (!verified.ok) {
     return { ok: false, code: 'BACKUP_INVALID', error: '备份未通过完整性校验，拒绝覆盖现有数据', problems: verified.problems }
   }
   const backupData = verified.data
-  const current = io.exists(root) ? inspectCommunity(root, io) : null
-  const changes = diffVisibility(current?.data, backupData)
-  if (changes.length && !acceptVisibilityChanges) {
+  const current = io.exists(root) ? inspectCommunity(root, { io, includeData: true }) : null
+  const diff = diffVisibility(current?.data, backupData)
+  const changes = diff.changes
+  const summary = diff.summary
+  const hasImpact = changes.length > 0 || Object.values(summary).some((n) => Number(n) > 0)
+  if (hasImpact && !acceptVisibilityChanges) {
     return {
       ok: false, code: 'VISIBILITY_CHANGES',
-      error: '恢复会改变内容可见性（可能重新公开已下架/删除内容）。核对清单后显式接受才能继续。',
-      changes, warnings: verified.warnings,
+      error: '恢复会移除/改变当前内容或改变可见性。核对清单后显式接受才能继续。',
+      changes, summary, warnings: verified.warnings,
     }
   }
 
@@ -453,6 +603,21 @@ export function restoreBackup({
   const replaced = `${root}.replaced-${ts}`
   let preRestoreCreated = false
   let movedOld = false
+  const liveStampOf = () => {
+    const out = {}
+    for (const file of COMMUNITY_FILES) {
+      const abs = join(root, file)
+      if (!io.exists(abs)) continue
+      try { const st = io.stat(abs); out[file] = `${st.mtimeMs}:${st.size}` } catch { out[file] = 'unreadable' }
+    }
+    return out
+  }
+  const stampsEqual = (a, b) => {
+    const ka = Object.keys(a)
+    if (ka.length !== Object.keys(b).length) return false
+    return ka.every((key) => a[key] === b[key])
+  }
+  const beforeStamps = io.exists(root) ? liveStampOf() : null
   try {
     if (io.exists(root)) {
       io.mkdir(preRestoreDir)
@@ -464,6 +629,10 @@ export function restoreBackup({
     const staged = validateSnapshot(readCommunityData(staging, io).data)
     if (!staged.ok || staged.repairs.length) throw new Error(`恢复副本自检失败：${[...staged.problems, ...(staged.repairs.length ? ['计数不一致'] : [])].join('；')}`)
 
+    // 停写确认仍可能被误用：切换前再检查 live 是否被写入
+    if (beforeStamps && !stampsEqual(beforeStamps, liveStampOf())) {
+      throw new Error('恢复准备期间检测到 live 数据变化（可能有并发写入）；已中止，未切换目录')
+    }
     if (io.exists(root)) { io.rename(root, replaced); movedOld = true }
     try {
       io.rename(staging, root)
@@ -475,7 +644,7 @@ export function restoreBackup({
     return {
       ok: true, restoredTo: root,
       preRestoreDir: preRestoreCreated ? preRestoreDir : '',
-      changes, warnings: verified.warnings,
+      changes, summary, warnings: verified.warnings,
     }
   } catch (e) {
     try { io.rm(staging) } catch { /* ignore */ }
@@ -483,7 +652,7 @@ export function restoreBackup({
       ok: false, code: 'RESTORE_FAILED',
       error: e instanceof Error ? e.message : String(e),
       preRestoreDir: preRestoreCreated ? preRestoreDir : '',
-      changes,
+      changes, summary,
     }
   }
 }

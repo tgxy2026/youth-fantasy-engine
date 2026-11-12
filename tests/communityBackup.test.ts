@@ -12,6 +12,7 @@
 //    atomic rename 只证明「单文件不撕裂」，不证明断电后一定落盘（未 fsync）。
 
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -42,6 +43,18 @@ function readJson(file: string) {
 }
 function readLivePosts() {
   return readJson(path.join(live, 'posts.json')).items
+}
+
+function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['server/community-backup.mjs', ...args], { cwd: process.cwd(), windowsHide: true })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (b) => { stdout += b })
+    child.stderr.on('data', (b) => { stderr += b })
+    child.once('error', () => resolve({ code: 1, stdout, stderr }))
+    child.once('exit', (code) => resolve({ code: code ?? 1, stdout, stderr }))
+  })
 }
 
 function syntheticData() {
@@ -129,7 +142,7 @@ try {
 
   // ---- 2. 备份：哈希、清单、正文不外泄 ----
   const b1 = path.join(backupRoot, 'community-20261112-000001')
-  const made = createBackup({ root: live, dest: b1 })
+  const made = createBackup({ root: live, dest: b1, stopConfirmed: true })
   ok('创建备份成功', made.ok, JSON.stringify(made))
   for (const file of COMMUNITY_FILES) ok(`备份包含 ${file}`, fs.existsSync(path.join(b1, file)))
   const manifestText = fs.readFileSync(path.join(b1, 'manifest.json'), 'utf8')
@@ -137,7 +150,7 @@ try {
   const manifest = JSON.parse(manifestText)
   ok('清单记录计数与重算', manifest.counts.posts === 3 && manifest.repairs.length === 1)
   ok('清单记录每个文件哈希', Object.values(manifest.files).every((m: any) => /^[0-9a-f]{64}$/.test(m.sha256)))
-  const v1 = verifyBackup(b1)
+  const v1 = verifyBackup(b1, { includeData: true })
   ok('备份自校验通过', v1.ok, JSON.stringify(v1.problems || []))
   ok('备份内计数已重算为一致', v1.data['posts.json'].items.p1.counts.comments === 2)
   ok('live 计数仍是修复前值（备份不改 live）', readLivePosts().p1.counts.comments === 3)
@@ -177,7 +190,7 @@ try {
       defaultIO.writeText(p, t)
     },
   }
-  const failed = createBackup({ root: live, dest: bFail, io: failIO })
+  const failed = createBackup({ root: live, dest: bFail, io: failIO, stopConfirmed: true })
   ok('模拟写盘失败 -> 备份失败', !failed.ok && String(failed.error).includes('ENOSPC'))
   ok('写失败不留下正式备份目录', !fs.existsSync(bFail))
   ok('写失败清理临时目录', fs.readdirSync(backupRoot).every((n) => !n.startsWith('community-20261112-000005.tmp-')))
@@ -193,7 +206,7 @@ try {
       defaultIO.writeText(p, t)
     },
   }
-  const crashed = createBackup({ root: live, dest: bCrash, io: crashIO })
+  const crashed = createBackup({ root: live, dest: bCrash, io: crashIO, stopConfirmed: true })
   ok('模拟进程中断 -> 备份失败且无正式目录', !crashed.ok && !fs.existsSync(bCrash))
   ok('中断后 live 仍完整可读', inspectCommunity(live).ok)
 
@@ -207,8 +220,11 @@ try {
   commentsNow.items.c6 = { id: 'c6', postId: 'p1', uid: 'u2', body: '恢复前新增评论', status: 'visible', createdAt: 30 }
   writeJson(path.join(live, 'comments.json'), commentsNow)
 
-  const diff = diffVisibility(inspectCommunity(live).data, verifyBackup(b1).data)
-  ok('差异报告识别「会重新公开已下架稿」', diff.some((c: any) => c.type === 'would-republish' && c.postId === 'p1'))
+  const diff = diffVisibility(
+    inspectCommunity(live, { includeData: true }).data,
+    verifyBackup(b1, { includeData: true }).data,
+  )
+  ok('差异报告识别「会重新公开已下架稿」', diff.changes.some((c: any) => c.type === 'would-republish' && c.postId === 'p1'))
 
   const refused = restoreBackup({ backupDir: b1, root: live, stopConfirmed: true })
   ok('未接受可见性变化 -> 拒绝恢复', !refused.ok && refused.code === 'VISIBILITY_CHANGES' && refused.changes.length > 0)
@@ -243,7 +259,7 @@ try {
 
   // ---- 8. 恢复切换中断：回滚 live，保留 pre-restore ----
   const b2 = path.join(backupRoot, 'community-20261112-000008')
-  ok('准备第二份备份', createBackup({ root: live, dest: b2 }).ok)
+  ok('准备第二份备份', createBackup({ root: live, dest: b2, stopConfirmed: true }).ok)
   const cur2 = readJson(path.join(live, 'posts.json'))
   cur2.items.p2.status = 'rejected'
   writeJson(path.join(live, 'posts.json'), cur2)
@@ -313,6 +329,122 @@ try {
   ok('原子写目标不可替换时抛错', atomicThrew)
   ok('原子写失败后目标目录仍在', fs.statSync(targetDir).isDirectory())
   ok('原子写失败后不残留 .tmp（本文件）', fs.readdirSync(atomicDir).every((n) => !n.startsWith('target.json.') || !n.endsWith('.tmp')))
+
+  // ---- 12. P0-1：核心文件缺失不得生成备份 ----
+  const onlyProfiles = path.join(root, 'p0-1-only-profiles')
+  fs.mkdirSync(onlyProfiles)
+  writeJson(path.join(onlyProfiles, 'profiles.json'), {
+    version: 1,
+    items: { u_secret: { nickname: '合成昵称P0', postDisplay: 'anonymous', commentDisplay: 'anonymous', rankDisplay: 'anonymous', updatedAt: 1 } },
+  })
+  const onlyProfilesInspect = inspectCommunity(onlyProfiles)
+  ok('P0-1 缺失 posts.json 时检查拒绝', !onlyProfilesInspect.ok && onlyProfilesInspect.problems.some((p: string) => p.includes('posts.json')))
+  const onlyProfilesBackup = createBackup({ root: onlyProfiles, dest: path.join(root, 'p0-1-only-profiles-backup'), stopConfirmed: true })
+  ok('P0-1 缺失 posts.json 时拒绝备份', !onlyProfilesBackup.ok && onlyProfilesBackup.code === 'INVALID_DATA')
+  ok('P0-1 拒绝时不产生正式备份目录', !fs.existsSync(path.join(root, 'p0-1-only-profiles-backup')))
+
+  const emptyDir = path.join(root, 'p0-1-empty')
+  fs.mkdirSync(emptyDir)
+  const emptyInspect = inspectCommunity(emptyDir)
+  ok('P0-1 真正空目录仍视为首次使用', emptyInspect.ok && emptyInspect.counts.posts === 0)
+  ok('P0-1 空目录允许生成空快照', createBackup({ root: emptyDir, dest: path.join(root, 'p0-1-empty-backup'), stopConfirmed: true }).ok)
+
+  const optionalDir = path.join(root, 'p0-1-optional')
+  fs.mkdirSync(optionalDir)
+  const baseForOptional = syntheticData()
+  writeJson(path.join(optionalDir, 'posts.json'), { version: 1, items: { p1: baseForOptional['posts.json'].items.p1 } })
+  writeJson(path.join(optionalDir, 'comments.json'), { version: 1, items: {} })
+  writeJson(path.join(optionalDir, 'state.json'), baseForOptional['state.json'])
+  const optionalInspect = inspectCommunity(optionalDir)
+  ok('P0-1 历史可选文件缺失仍可通过检查', optionalInspect.ok)
+  ok('P0-1 历史可选文件缺失仍可备份', createBackup({ root: optionalDir, dest: path.join(root, 'p0-1-optional-backup'), stopConfirmed: true }).ok)
+
+  const missingComments = path.join(root, 'p0-1-missing-comments')
+  fs.mkdirSync(missingComments)
+  writeJson(path.join(missingComments, 'posts.json'), {
+    version: 1,
+    items: { p1: { ...baseForOptional['posts.json'].items.p1, counts: { up: 0, down: 0, comments: 2 } } },
+  })
+  const missingCommentsInspect = inspectCommunity(missingComments)
+  ok('P0-1 评论文件缺失但计数存在时拒绝检查', !missingCommentsInspect.ok && missingCommentsInspect.problems.some((p: string) => p.includes('comments.json')))
+  ok('P0-1 评论文件缺失时拒绝备份', !createBackup({ root: missingComments, dest: path.join(root, 'p0-1-missing-comments-backup'), stopConfirmed: true }).ok)
+
+  const noStop = createBackup({ root: live, dest: path.join(root, 'p0-4-no-stop') })
+  ok('P0-4 未确认停写时拒绝备份', !noStop.ok && noStop.code === 'STOP_REQUIRED')
+
+  // ---- 13. P0-2：诊断输出不泄漏正文/昵称/账号标识 ----
+  const inspectText = JSON.stringify(inspectCommunity(live))
+  ok('P0-2 inspect 默认返回不含正文', !inspectText.includes('合成正文'))
+  ok('P0-2 inspect 默认返回不含昵称', !inspectText.includes('作者甲'))
+  ok('P0-2 inspect 默认返回不含账号 id', !inspectText.includes('u1'))
+  const verifyText = JSON.stringify(verifyBackup(b1))
+  ok('P0-2 verify 默认返回不含正文', !verifyText.includes('合成正文'))
+  ok('P0-2 verify 默认返回不含昵称/账号 id', !verifyText.includes('作者甲') && !verifyText.includes('u1'))
+  const inspectCli = await runCli(['inspect', '--data', live, '--json'])
+  ok('P0-2 CLI inspect 退出 0 且不含正文/昵称/账号 id',
+    inspectCli.code === 0 && !inspectCli.stdout.includes('合成正文') && !inspectCli.stdout.includes('作者甲') && !inspectCli.stdout.includes('u1'))
+  const badCli = await runCli(['inspect', '--data', onlyProfiles, '--json'])
+  ok('P0-2 CLI 失败输出也不含昵称', badCli.code === 1 && !badCli.stdout.includes('合成昵称P0'))
+  const verifyCli = await runCli(['verify', b1, '--json'])
+  ok('P0-2 CLI verify 不含正文/昵称/账号 id',
+    verifyCli.code === 0 && !verifyCli.stdout.includes('合成正文') && !verifyCli.stdout.includes('作者甲') && !verifyCli.stdout.includes('u1'))
+
+  // ---- 13b. 账号关联：只报数量，不输出 uid ----
+  const usersFile = path.join(root, 'users.json')
+  writeJson(usersFile, { version: 1, users: { u1: { id: 'u1', name: 'u1' } }, invites: {} })
+  const withUsers = verifyBackup(b1, { usersFile })
+  ok('账号关联检查报告孤儿引用数量', withUsers.ok && withUsers.warnings.some((w: string) => w.includes('用户表') && w.includes('不存在')))
+  ok('账号关联警告不输出 uid', !JSON.stringify(withUsers).includes('u2') && !JSON.stringify(withUsers).includes('u3'))
+
+  // ---- 14. P0-3：恢复差异必须包含当前新增内容 ----
+  const currentPosts = readJson(path.join(live, 'posts.json'))
+  currentPosts.items.p_new = {
+    id: 'p_new', uid: 'u1', status: 'published', display: 'anonymous',
+    publishedVersionId: 'v_p_new', pendingVersionId: '',
+    versions: [{ vid: 'v_p_new', title: '新增合成稿', body: '新增合成正文', tags: [], createdAt: 2 }],
+    counts: { up: 0, down: 0, comments: 0 }, createdAt: 2, updatedAt: 2,
+  }
+  writeJson(path.join(live, 'posts.json'), currentPosts)
+  const currentComments = readJson(path.join(live, 'comments.json'))
+  currentComments.items.c_new = { id: 'c_new', postId: 'p_new', uid: 'u1', body: '新增合成评论', display: 'anonymous', status: 'visible', createdAt: 2 }
+  writeJson(path.join(live, 'comments.json'), currentComments)
+  const diffNow = diffVisibility(
+    inspectCommunity(live, { includeData: true }).data,
+    verifyBackup(b1, { includeData: true }).data,
+  )
+  ok('P0-3 差异包含当前新增公开帖子', diffNow.changes.some((c: any) => c.type === 'would-remove' && c.postId === 'p_new'))
+  ok('P0-3 差异包含当前新增评论计数', diffNow.summary.comments >= 1)
+  const refusedNew = restoreBackup({ backupDir: b1, root: live, stopConfirmed: true })
+  ok('P0-3 未确认时拒绝覆盖新增内容', !refusedNew.ok && refusedNew.code === 'VISIBILITY_CHANGES' && refusedNew.summary.postsRemoved >= 1)
+  ok('P0-3 拒绝后新增帖子仍在', !!readJson(path.join(live, 'posts.json')).items.p_new)
+  const acceptedNew = restoreBackup({ backupDir: b1, root: live, stopConfirmed: true, acceptVisibilityChanges: true })
+  ok('P0-3 显式接受后按预览移除新增内容',
+    acceptedNew.ok && !readJson(path.join(live, 'posts.json')).items.p_new && !readJson(path.join(live, 'comments.json')).items.c_new)
+  ok('P0-3 恢复结果摘要与预览一致', acceptedNew.summary.postsRemoved === 1 && acceptedNew.summary.comments === 1)
+
+  // ---- 15. P0-4：读取期间交错写入必须拒绝 ----
+  const interleaveDir = path.join(root, 'p0-4-interleave')
+  fs.mkdirSync(interleaveDir)
+  writeJson(path.join(interleaveDir, 'posts.json'), { version: 1, items: { p1: baseForOptional['posts.json'].items.p1 } })
+  writeJson(path.join(interleaveDir, 'comments.json'), { version: 1, items: {} })
+  writeJson(path.join(interleaveDir, 'state.json'), baseForOptional['state.json'])
+  let interleaved = false
+  const interleaveIO = {
+    ...defaultIO,
+    readText: (p: string) => {
+      const text = defaultIO.readText(p)
+      if (!interleaved && p.endsWith('posts.json')) {
+        interleaved = true
+        const c = readJson(path.join(interleaveDir, 'comments.json'))
+        c.items.c_interleaved = { id: 'c_interleaved', postId: 'p1', uid: 'u1', body: '交错合成评论', display: 'anonymous', status: 'visible', createdAt: 2 }
+        defaultIO.writeText(path.join(interleaveDir, 'comments.json'), JSON.stringify(c, null, 2))
+      }
+      return text
+    },
+  }
+  const interleaveBackup = createBackup({ root: interleaveDir, dest: path.join(root, 'p0-4-interleave-backup'), io: interleaveIO, stopConfirmed: true })
+  ok('P0-4 交错写入被识别并拒绝备份', !interleaveBackup.ok && interleaveBackup.code === 'CONCURRENT_WRITE')
+  ok('P0-4 交错写入不产生正式备份目录', !fs.existsSync(path.join(root, 'p0-4-interleave-backup')))
 
   console.log(`communityBackup: ${pass} passed, 0 failed`)
 } finally {

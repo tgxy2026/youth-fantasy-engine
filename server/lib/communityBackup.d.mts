@@ -29,16 +29,23 @@ export function createBackup(opts: {
   now?: number
   keep?: number
   io?: Record<string, any>
+  stopConfirmed?: boolean
 }): any
 export function pruneOldBackups(dest: string, keep: number, io?: Record<string, any>): string[]
-export function verifyBackup(dir: string, opts?: { io?: Record<string, any> }): any
-export function diffVisibility(currentData: any, backupData: any): Array<{
-  type: string
-  postId: string
-  currentStatus?: string
-  backupStatus?: string
-  backupVisible?: boolean
-}>
+export function verifyBackup(dir: string, opts?: { io?: Record<string, any>; includeData?: boolean; usersFile?: string }): any
+export function diffVisibility(currentData: any, backupData: any): {
+  changes: Array<{
+    type: string
+    postId?: string
+    file?: string
+    count?: number
+    currentStatus?: string
+    backupStatus?: string
+    backupVisible?: boolean
+    currentVisible?: boolean
+  }>
+  summary: Record<string, number>
+}
 export function restoreBackup(opts: {
   backupDir: string
   root: string

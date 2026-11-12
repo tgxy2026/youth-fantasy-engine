@@ -245,7 +245,7 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
     if (postMatch) {
       const postId = decodeURIComponent(postMatch[1])
       const sub = postMatch[2] || ''
-      const post = store.getPost(postId)
+      let post = store.getPost(postId)
 
       if (!sub && method === 'GET') {
         if (!post || (!postPubliclyVisible(post) && !(user && (user.id === post.uid || isAdminRole(user))))) {
@@ -309,8 +309,14 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
            *    - 同一令牌却换了内容时返回 409，**绝不静默返回旧评论**（否则用户以为新内容发出去了）；
            *    - 去重查询已先验证登录、帖子存在且公开可见，不会借令牌泄漏他人记录。
            */
+          const targetId = post.id
           const body = await readJSONBody(req, 16 * 1024).catch(() => null)
           if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+          // 🔴 等待正文期间帖子可能被撤回/下架/删除：写前重新确认目标
+          post = store.getPost(targetId)
+          if (!post || !postPubliclyVisible(post)) {
+            return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在或已不可见' })
+          }
           const v = validateCommentInput(body)
           if (!v.ok) return sendJSON(res, 400, { ok: false, code: v.code, error: v.error })
           const token = String(body.clientToken || '').slice(0, 64)
@@ -374,8 +380,15 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
         if (post.status === POST_STATUS.REMOVED || post.status === POST_STATUS.WITHDRAWN) {
           return sendJSON(res, 409, { ok: false, code: 'NOT_EDITABLE', error: '该投稿已不可修改' })
         }
+        const targetId = post.id
         const body = await readJSONBody(req, 4 * 1024).catch(() => null)
         if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+        post = store.getPost(targetId)
+        if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
+        if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该投稿的展示方式' })
+        if (post.status === POST_STATUS.REMOVED || post.status === POST_STATUS.WITHDRAWN) {
+          return sendJSON(res, 409, { ok: false, code: 'NOT_EDITABLE', error: '该投稿已不可修改' })
+        }
         const display = normalizeDisplayMode(body.display, post.display || 'anonymous')
         /**
          * 已发布内容改为匿名：**立即更新展示**，不需要重新审核（只换展示方式，不改正文）。
@@ -399,7 +412,15 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
         }
         const rl = limit(`c:vote:${user.id}`, 120, 3600 * 1000)
         if (!rl.ok) return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: '操作太频繁' })
+        const targetId = post.id
         const body = await readJSONBody(req, 4 * 1024).catch(() => null)
+        post = store.getPost(targetId)
+        if (!post || !postPubliclyVisible(post)) {
+          return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在或已不可见' })
+        }
+        if (post.uid === user.id) {
+          return sendJSON(res, 400, { ok: false, code: 'SELF_VOTE', error: '不能给自己的投稿投票' })
+        }
         const raw = Number(body?.value)
         const value = raw === 1 ? 1 : raw === -1 ? -1 : raw === 0 ? 0 : NaN
         if (!Number.isFinite(value)) return sendJSON(res, 400, { ok: false, code: 'BAD_VALUE', error: '无效的投票值' })
@@ -600,7 +621,7 @@ post.updatedAt = Date.now()
     const editMatch = /^\/api\/community\/posts\/([^/]+)$/.exec(path)
     if (editMatch && method === 'PUT') {
       if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
-      const post = store.getPost(decodeURIComponent(editMatch[1]))
+      let post = store.getPost(decodeURIComponent(editMatch[1]))
       if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
       if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权操作该投稿' })
       if (post.status === POST_STATUS.REMOVED || post.status === POST_STATUS.WITHDRAWN) {
@@ -609,8 +630,16 @@ post.updatedAt = Date.now()
       if (!state.postsOpen || !state.squareOpen) {
         return sendJSON(res, 503, { ok: false, code: 'POSTS_CLOSED', error: '投稿暂时关闭，改动未提交' })
       }
+      const targetId = post.id
       const body = await readJSONBody(req, 64 * 1024).catch(() => null)
       if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+      // 🔴 等待正文期间投稿可能被撤回/下架/删除：写前重新确认权限与状态
+      post = store.getPost(targetId)
+      if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
+      if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权操作该投稿' })
+      if (post.status === POST_STATUS.REMOVED || post.status === POST_STATUS.WITHDRAWN) {
+        return sendJSON(res, 409, { ok: false, code: 'NOT_EDITABLE', error: '该投稿已不可编辑' })
+      }
       const v = validatePostInput(body)
       if (!v.ok) return sendJSON(res, 400, { ok: false, code: v.code, error: v.error })
       const now = Date.now()
