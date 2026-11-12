@@ -35,6 +35,7 @@ export interface CommunityPost {
   advice?: unknown
   withdrawnAt?: number
   removedAt?: number
+  isExample?: boolean
 }
 
 export interface CommunityComment {
@@ -77,6 +78,10 @@ export interface CommunityStore {
   listReports(): Array<Record<string, any>>
   findOpenReport(uid: string, targetType: string, targetId: string, kind?: string): Record<string, any> | null
   getProfile(uid: string): Record<string, any> | null
+  anonymousEnabled(): boolean
+  getAnonymousHandle(uid: string, weekKey: string): string
+  ensureAnonymousHandle(uid: string, weekKey: string): string
+  assertAnonymousMappings(): void
   putProfile(uid: string, patch: Record<string, unknown>): Record<string, any>
   deleteProfileRank(uid: string): number
   getRankRow(uid: string, deviceId: string, projectId: string, date: string): Record<string, any> | null
@@ -94,4 +99,6 @@ export function createCommunityStore(opts: {
   writeText?: (abs: string, text: string) => void
   /** 故障注入用；生产默认同步读取 */
   readText?: (abs: string) => string
+  /** 匿名代号密钥（≥32 字节）；缺省时保持旧「匿名用户」模式 */
+  anonSecret?: Buffer | null
 }): CommunityStore

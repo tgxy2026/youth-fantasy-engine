@@ -76,7 +76,15 @@ try {
   loadUsers() // 🔴 用户表损坏必须在这里就炸，不能带着空表继续跑
   SECRET = loadOrCreateSecret(SECRET_FILE)
   // 社区数据损坏同样必须启动即失败（否则会把公共投稿当空表写回）
-  const communityStore = createCommunityStore({ root: COMMUNITY_ROOT })
+  const anonKeyPath = process.env.YFE_COMMUNITY_ANON_KEY_FILE
+  let anonSecret = null
+  if (anonKeyPath) {
+    try { anonSecret = readFileSync(anonKeyPath) } catch { throw new Error(`匿名代号密钥文件无法读取：${anonKeyPath}`) }
+    if (anonSecret.length < 32) throw new Error('匿名代号密钥至少需要 32 字节')
+  }
+  const communityStore = createCommunityStore({ root: COMMUNITY_ROOT, anonSecret })
+  // 🔴 映射校验必须先于示例帖写入：校验失败时不得留下任何新写入的数据
+  communityStore.assertAnonymousMappings()
   ensureCommunityExample(communityStore)
   communityApi = createCommunityApi({
     store: communityStore,
@@ -754,7 +762,7 @@ async function handleApi(req, res, url) {
     try {
       return await communityApi.handle({ req, res, path, qs, user, authReason: chk.reason, ip })
     } catch (e) {
-      if (e && (e.code === 'COMMUNITY_COMMENTS_LOST' || e.code === 'COMMENTS_META_WRITE_FAILED' || e.code === 'COMMUNITY_COMMENTS_WRITE_FAILED')) {
+      if (e && (e.code === 'COMMUNITY_COMMENTS_LOST' || e.code === 'COMMENTS_META_WRITE_FAILED' || e.code === 'COMMUNITY_COMMENTS_WRITE_FAILED' || e.code === 'COMMUNITY_ANON_UNAVAILABLE')) {
         if (!res.headersSent) return sendJSON(res, 503, { ok: false, code: e.code, error: e.message })
       }
       throw e

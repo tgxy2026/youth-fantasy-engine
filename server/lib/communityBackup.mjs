@@ -23,6 +23,7 @@ import {
 import { basename, dirname, join } from 'node:path'
 import { readCommunityMeta, writeCommunityMeta, commentsFileVerdict } from './communityFiles.mjs'
 import { acquireCommunityLock, releaseCommunityLock } from './communityLock.mjs'
+import { validAnonymousHandle, validAnonymousWeek, BEAST_DICTIONARY_SHA256 } from './communityAnon.mjs'
 
 export const COMMUNITY_FILES = Object.freeze([
   'posts.json', 'comments.json', 'votes.json', 'reports.json',
@@ -245,10 +246,20 @@ export function validateSnapshot(data) {
   }
 
   let profileSeq = 0
+  const anonymousAssignments = new Set()
   for (const [, p] of Object.entries(normalized['profiles.json'].items)) {
     profileSeq++
     if (!isPlainObject(p)) { problems.push(`档案 #${profileSeq} 不是对象`); continue }
     if (typeof p.nickname !== 'string') problems.push(`档案 #${profileSeq} 缺少昵称字段`)
+    if (p.nicknameChangedAt !== undefined && (!Number.isSafeInteger(p.nicknameChangedAt) || p.nicknameChangedAt <= 0 || p.nicknameChangedAt > Date.now())) problems.push(`档案 #${profileSeq} 的昵称修改时间无效`)
+    if (p.anonHandles !== undefined) {
+      if (!isPlainObject(p.anonHandles) || !/^[a-f0-9]{64}$/.test(p.anonKeyId || '') || !/^[a-f0-9]{64}$/.test(p.anonDict || '')) problems.push(`档案 #${profileSeq} 的匿名代号映射格式无效`)
+      else for (const [week, handle] of Object.entries(p.anonHandles)) {
+        const unique = `${week}\0${handle}`
+        if (!validAnonymousWeek(week) || !validAnonymousHandle(handle) || anonymousAssignments.has(unique)) problems.push(`档案 #${profileSeq} 的匿名代号映射无效或冲突`)
+        anonymousAssignments.add(unique)
+      }
+    }
     for (const field of ['postDisplay', 'commentDisplay', 'rankDisplay']) {
       if (p[field] !== undefined && !DISPLAYS.has(p[field])) problems.push(`档案 #${profileSeq} 的 ${field} 非法`)
     }
@@ -559,7 +570,7 @@ export function diffVisibility(currentData, backupData) {
     commentStatusChanges: 0, commentContentChanges: 0, commentDisplayChanges: 0,
     commentRestored: 0, commentRemoved: 0,
     votes: 0, reports: 0, profiles: 0, rank: 0, auditRemoved: 0,
-    reportsChanged: 0, profilesChanged: 0, rankChanged: 0, votesChanged: 0,
+    reportsChanged: 0, profilesChanged: 0, rankChanged: 0, votesChanged: 0, anonRestoredProfiles: 0,
   }
   const contentFingerprint = (post) => JSON.stringify({
     status: post?.status || '',
@@ -635,12 +646,13 @@ export function diffVisibility(currentData, backupData) {
     if (c && reportFingerprint(c) !== reportFingerprint(b)) summary.reportsChanged++
   }
   const profileFingerprint = (p) => JSON.stringify({
-    nickname: p?.nickname || '', postDisplay: p?.postDisplay || '', commentDisplay: p?.commentDisplay || '',
+    nickname: p?.nickname || '', nicknameChangedAt: p?.nicknameChangedAt ?? null, anonKeyId: p?.anonKeyId || '', anonDict: p?.anonDict || '', anonHandles: Object.fromEntries(Object.entries(p?.anonHandles || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))), postDisplay: p?.postDisplay || '', commentDisplay: p?.commentDisplay || '',
     rankDisplay: p?.rankDisplay || '', rankOptIn: !!p?.rankOptIn,
   })
   for (const [id, b] of Object.entries(backupData?.['profiles.json']?.items || {})) {
     const c = currentData?.['profiles.json']?.items?.[id]
     if (c && profileFingerprint(c) !== profileFingerprint(b)) summary.profilesChanged++
+    if (!c && b?.anonHandles && Object.keys(b.anonHandles).length) summary.anonRestoredProfiles++
   }
   for (const [key, b] of Object.entries(backupData?.['rank.json']?.items || {})) {
     const c = currentData?.['rank.json']?.items?.[key]
@@ -655,6 +667,7 @@ export function diffVisibility(currentData, backupData) {
   summary.auditRemoved = currentAudit.filter((e) => !backupAuditIds.has(e?.id)).length
   if (summary.reportsChanged) changes.push({ type: 'reports-changed', count: summary.reportsChanged })
   if (summary.profilesChanged) changes.push({ type: 'profiles-changed', count: summary.profilesChanged })
+  if (summary.anonRestoredProfiles) changes.push({ type: 'anonymous-profiles-restored', count: summary.anonRestoredProfiles })
   if (summary.rankChanged) changes.push({ type: 'rank-changed', count: summary.rankChanged })
   if (summary.votesChanged) changes.push({ type: 'votes-changed', count: summary.votesChanged })
   if (summary.auditRemoved) changes.push({ type: 'audit-not-in-backup', count: summary.auditRemoved })
@@ -678,8 +691,9 @@ function copyDirFiles(from, to, io) {
  * 恢复备份（必须停写）。
  * @param {{
  *   backupDir:string, root:string, now?:number,
- *   stopConfirmed:boolean, acceptVisibilityChanges?:boolean, io?:object
- * }} opts
+ *   stopConfirmed:boolean, acceptVisibilityChanges?:boolean, io?:object,
+ *   anonKeyId?:string
+ * }} opts anonKeyId 传入时：备份内匿名映射的密钥/词表版本与之不符即拒绝，不做任何写入。
  */
 export function restoreBackup(opts = {}) {
   if (!opts.root) return { ok: false, code: 'NO_ROOT', error: '缺少 root' }
@@ -697,7 +711,7 @@ export function restoreBackup(opts = {}) {
 }
 
 function restoreBackupUnlocked({
-  backupDir, root, now = Date.now(), stopConfirmed = false, acceptVisibilityChanges = false, io = defaultIO,
+  backupDir, root, now = Date.now(), stopConfirmed = false, acceptVisibilityChanges = false, io = defaultIO, anonKeyId = '',
 } = {}) {
   if (!stopConfirmed) {
     return { ok: false, code: 'STOP_REQUIRED', error: '恢复前必须停止社区写入；请停服务后重新执行并确认' }
@@ -707,6 +721,21 @@ function restoreBackupUnlocked({
     return { ok: false, code: 'BACKUP_INVALID', error: '备份未通过完整性校验，拒绝覆盖现有数据', problems: verified.problems }
   }
   const backupData = verified.data
+  // 🔴 匿名映射与密钥/词表版本绑定：不匹配时拒绝恢复，避免恢复后服务无法启动或代号被悄然重分配
+  const mappedProfiles = Object.values(backupData['profiles.json']?.items || {}).filter((p) => p?.anonHandles && Object.keys(p.anonHandles).length)
+  if (mappedProfiles.length) {
+    if (anonKeyId) {
+      if (!/^[a-f0-9]{64}$/.test(anonKeyId)) return { ok: false, code: 'ANON_KEY_INVALID', error: '匿名代号密钥标识无效' }
+      if (mappedProfiles.some((p) => p.anonKeyId !== anonKeyId)) {
+        return { ok: false, code: 'ANON_KEY_MISMATCH', error: '备份内匿名代号映射与当前密钥不匹配；请核对密钥文件，不得自动重新分配' }
+      }
+      if (mappedProfiles.some((p) => p.anonDict !== BEAST_DICTIONARY_SHA256)) {
+        return { ok: false, code: 'ANON_DICT_MISMATCH', error: '备份内匿名代号词表版本与当前服务端不一致；请先核对词表版本' }
+      }
+    } else {
+      verified.warnings = [...(verified.warnings || []), '备份含匿名代号映射；未提供 --key-file，恢复后启动将校验密钥与词表版本，请事先核对']
+    }
+  }
   const current = io.exists(root) ? inspectCommunity(root, { io, includeData: true }) : null
   const diff = diffVisibility(current?.data, backupData)
   const changes = diff.changes

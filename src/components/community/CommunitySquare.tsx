@@ -258,7 +258,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
         </div>
       )}
 
-      {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={defaultDisplay} onNeedLogin={requireLogin} key={feedKey} shellOwnsStatus={shellOwnsStatus} />}
+      {tab === 'feed' && <FeedPanel canWrite={canWrite} defaultDisplay={profile?.commentDisplay || 'anonymous'} onNeedLogin={requireLogin} key={feedKey} shellOwnsStatus={shellOwnsStatus} />}
       {tab === 'write' && canWrite && (
         <PublishPanel
           accountKey={accountKey}

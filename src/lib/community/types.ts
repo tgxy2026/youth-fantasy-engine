@@ -1,7 +1,7 @@
 // ============ 投稿广场 · 数据契约（3.5.0）============
 //
-// 这些类型只描述**对外可见**的字段。服务端永不下发 uid / 登录名 / 审核内部信息，
-// 所以这里也不存在这些字段 —— 如果有人为了「方便」加一个 authorId，就等于把匿名打穿。
+// 公开字段不包含 uid / 登录名 / 审核内部信息；启用后的匿名代号在所属周可关联，
+// 跨周更换也不能保证无法关联，不能增加 authorId 暴露账号身份。
 
 export type DisplayMode = 'nickname' | 'anonymous'
 export type RankPeriod = 'day' | 'week' | 'month'
@@ -53,6 +53,7 @@ export interface MyPost {
   id: string
   status: string
   display: DisplayMode
+  displayName?: string
   createdAt: number
   updatedAt: number
   title: string
@@ -86,6 +87,10 @@ export interface CommunityProfile {
   rankOptInAt: number
   /** 撤回时间：早于它的迟到上报服务端一律拒绝 */
   rankRevokedAt: number
+  serverNow?: number
+  nicknameNextChangeAt?: number
+  nicknameTimeInvalid?: boolean
+  anonymousHandlesEnabled?: boolean
   updatedAt: number
 }
 

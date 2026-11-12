@@ -73,6 +73,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
   const [commentsError, setCommentsError] = useState('')
   const [commentText, setCommentText] = useState('')
   const [commentDisplay, setCommentDisplay] = useState<'nickname' | 'anonymous'>(defaultDisplay)
+  useEffect(() => { setCommentDisplay(defaultDisplay) }, [defaultDisplay])
   const [busy, setBusy] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [reportReason, setReportReason] = useState('广告或引流')

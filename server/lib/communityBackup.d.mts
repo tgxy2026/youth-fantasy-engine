@@ -54,4 +54,6 @@ export function restoreBackup(opts: {
   stopConfirmed?: boolean
   acceptVisibilityChanges?: boolean
   io?: Record<string, any>
+  /** 传入时校验备份内匿名映射的密钥/词表版本，不符即拒绝恢复 */
+  anonKeyId?: string
 }): any

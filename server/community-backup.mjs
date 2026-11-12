@@ -5,14 +5,15 @@
 //   node server/community-backup.mjs inspect [--data <dir>] [--json]
 //   node server/community-backup.mjs backup  [--data <dir>] [--backup-root <dir>] [--out <dir>] [--keep 14] --confirm-stopped [--json]
 //   node server/community-backup.mjs verify  <backupDir> [--users <users.json>] [--json]
-//   node server/community-backup.mjs restore <backupDir> [--data <dir>] --confirm-stopped [--accept-visibility-changes] [--json]
+//   node server/community-backup.mjs restore <backupDir> [--data <dir>] --confirm-stopped [--accept-visibility-changes] [--key-file <独立密钥文件>] [--json]
 //   node server/community-backup.mjs adopt-empty-comments [--data <dir>] --confirm-adopt-empty [--json]
 //   node server/community-backup.mjs unlock [--data <dir>] --confirm-stale [--json]
 //
 // 🔴 恢复前必须停掉社区写入（停服务）。工具无法验证进程是否真的停了，只认 `--confirm-stopped`。
 // 🔴 输出只含文件、统计、哈希与不透明 id；不打印正文、账号 id、登录名或凭据。
 // 🔴 生产备份目录、定时任务、异地副本与告警需另行授权；本命令只在被调用时执行一次。
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { DATA_DIR } from './lib/config.mjs'
 import {
@@ -99,11 +100,18 @@ try {
     const dir = argv[1] && !argv[1].startsWith('--') ? resolve(argv[1]) : ''
     if (!dir) print({ ok: false, error: '缺少备份目录' }, 1)
     else {
+      let anonKeyId = ''
+      if (flag('key-file')) {
+        const secret = readFileSync(resolve(flag('key-file')))
+        if (secret.length < 32) throw new Error('匿名代号密钥至少需要 32 字节')
+        anonKeyId = createHash('sha256').update(secret).digest('hex')
+      }
       const r = restoreBackup({
         backupDir: dir,
         root: communityRoot(),
         stopConfirmed: has('confirm-stopped'),
         acceptVisibilityChanges: has('accept-visibility-changes'),
+        anonKeyId,
       })
       const code = r.ok ? 0 : (r.code === 'VISIBILITY_CHANGES' || r.code === 'STOP_REQUIRED' ? 2 : 1)
       print(r, code)

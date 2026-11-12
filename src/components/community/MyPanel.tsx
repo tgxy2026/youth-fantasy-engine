@@ -97,6 +97,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                 <span className="text-15 font-semibold text-ink-100">{p.title || '（未命名）'}</span>
                 <StatusPill tone={statusTone(p.status)}>{POST_STATUS_LABELS[p.status] || p.status}</StatusPill>
                 <StatusPill>{p.display === 'anonymous' ? '匿名展示' : '显示昵称'}</StatusPill>
+                {p.displayName && <span className="text-11 text-ink-400">展示名：{p.displayName}</span>}
                 <span className="ml-auto text-11 text-ink-400">更新于 {formatTime(p.updatedAt)}</span>
               </div>
               {p.lastDecision?.reason && (

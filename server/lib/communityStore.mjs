@@ -11,11 +11,12 @@
 
 import { existsSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { writeTextAtomicSync, readJSONOr } from './atomic.mjs'
 import { readCommunityMeta, writeCommunityMeta, commentsFileVerdict } from './communityFiles.mjs'
 import { assertServiceStartable, isCommunityLocked } from './communityLock.mjs'
 import { readFileSync } from 'node:fs'
+import { allocateAnonymousHandle, anonymousWeekKey, anonymousRankWeeks, validAnonymousWeek, validAnonymousHandle, BEAST_DICTIONARY_SHA256 } from './communityAnon.mjs'
 
 export const COMMUNITY_CAPACITY = {
   /** 池上限：超过后新投稿/评论进入 503「容量已满」，不删旧内容 */
@@ -63,6 +64,7 @@ export function createCommunityStore({
   root,
   writeText = writeTextAtomicSync,
   readText = (abs) => readFileSync(abs, 'utf8'),
+  anonSecret = null,
 } = {}) {
   if (!root) throw new Error('community store 需要 root 目录')
 
@@ -382,6 +384,60 @@ export function createCommunityStore({
   function getProfile(uid) {
     return load('profiles').items[uid] || null
   }
+  const anonKeyId = Buffer.isBuffer(anonSecret) && anonSecret.length >= 32
+    ? createHash('sha256').update(anonSecret).digest('hex') : ''
+  function anonymousError(message) { const e = new Error(message); e.code = 'COMMUNITY_ANON_UNAVAILABLE'; return e }
+  function anonymousEnabled() { return !!anonKeyId }
+  function getAnonymousHandle(uid, weekKey) {
+    if (!anonKeyId) throw anonymousError('匿名代号密钥未配置')
+    const p = getProfile(uid)
+    if (p?.anonKeyId !== anonKeyId || p?.anonDict !== BEAST_DICTIONARY_SHA256 || !validAnonymousWeek(weekKey) || !validAnonymousHandle(p?.anonHandles?.[weekKey])) {
+      throw anonymousError('匿名代号映射缺失或版本不匹配；请停写并核对迁移与备份')
+    }
+    return p.anonHandles[weekKey]
+  }
+  function ensureAnonymousHandle(uid, weekKey) {
+    if (!anonKeyId) throw anonymousError('匿名代号密钥未配置')
+    const existing = getProfile(uid)
+    if (existing?.anonHandles?.[weekKey]) return getAnonymousHandle(uid, weekKey)
+    return mutate('profiles', (db) => {
+      const prev = db.items[uid] || { nickname: '', postDisplay: 'anonymous', commentDisplay: 'anonymous', rankDisplay: 'anonymous', rankOptIn: false, updatedAt: 0 }
+      if ((prev.anonKeyId && prev.anonKeyId !== anonKeyId) || (prev.anonDict && prev.anonDict !== BEAST_DICTIONARY_SHA256)) throw anonymousError('匿名代号密钥或词表版本不匹配')
+      const mapping = { [weekKey]: {} }
+      const occupied = new Set()
+      for (const [otherId, profile] of Object.entries(db.items)) {
+        const handle = profile?.anonHandles?.[weekKey]
+        if (handle !== undefined) {
+          if (profile.anonKeyId !== anonKeyId || profile.anonDict !== BEAST_DICTIONARY_SHA256 || !validAnonymousHandle(handle) || occupied.has(handle)) throw anonymousError('匿名代号映射损坏或版本不匹配')
+          occupied.add(handle)
+          mapping[weekKey][otherId] = handle
+        }
+      }
+      const allocated = allocateAnonymousHandle(mapping, uid, weekKey, anonSecret)
+      db.items[uid] = { ...prev, anonKeyId, anonDict: BEAST_DICTIONARY_SHA256, anonHandles: { ...prev.anonHandles, [weekKey]: allocated.handle } }
+      return allocated.handle
+    })
+  }
+  function assertAnonymousMappings() {
+    const profiles = load('profiles').items
+    if (!anonKeyId) {
+      if (Object.values(profiles).some((p) => p?.anonHandles && Object.keys(p.anonHandles).length)) throw new Error('已有匿名代号映射，但密钥未配置；拒绝以旧模式启动')
+      return
+    }
+    const occupied = new Set()
+    for (const p of Object.values(profiles)) {
+      if (!p?.anonHandles) continue
+      if (p.anonKeyId !== anonKeyId || p.anonDict !== BEAST_DICTIONARY_SHA256 || typeof p.anonHandles !== 'object' || Array.isArray(p.anonHandles)) throw new Error('匿名代号映射损坏或版本不匹配')
+      for (const [week, handle] of Object.entries(p.anonHandles)) {
+        const key = `${week}\0${handle}`
+        if (!validAnonymousWeek(week) || !validAnonymousHandle(handle) || occupied.has(key)) throw new Error('匿名代号映射损坏或存在冲突')
+        occupied.add(key)
+      }
+    }
+    for (const post of listPosts()) if (!post.isExample) getAnonymousHandle(post.uid, anonymousWeekKey(post.createdAt))
+    for (const comment of Object.values(load('comments').items)) getAnonymousHandle(comment.uid, anonymousWeekKey(comment.createdAt))
+    for (const row of listAllRankRows()) for (const week of anonymousRankWeeks(row.date)) getAnonymousHandle(row.uid, week)
+  }
   function putProfile(uid, patch) {
     return mutate('profiles', (db) => {
       const prev = db.items[uid] || {
@@ -392,7 +448,25 @@ export function createCommunityStore({
         rankOptIn: false,
         updatedAt: 0,
       }
-      const next = { ...prev, ...patch, updatedAt: Date.now() }
+      const now = Date.now()
+      const nicknameChanged = Object.hasOwn(patch, 'nickname') && patch.nickname !== prev.nickname
+      if (nicknameChanged && Object.hasOwn(prev, 'nicknameChangedAt')) {
+        const last = prev.nicknameChangedAt
+        if (!Number.isFinite(last) || last <= 0 || last > now) {
+          const e = new Error('昵称修改时间异常，请联系管理员核查')
+          e.code = 'NICKNAME_TIME_INVALID'
+          throw e
+        }
+        const remaining = last + 7 * 24 * 60 * 60 * 1000 - now
+        if (remaining > 0) {
+          const e = new Error('昵称修改后 7 天内不能再次修改')
+          e.code = 'NICKNAME_COOLDOWN'
+          e.retryAfter = Math.ceil(remaining / 1000)
+          throw e
+        }
+      }
+      if (!nicknameChanged && Object.keys(patch).length === 1 && Object.hasOwn(patch, 'nickname')) return prev
+      const next = { ...prev, ...patch, ...(nicknameChanged ? { nicknameChangedAt: now } : {}), updatedAt: now }
       db.items[uid] = next
       return next
     })
@@ -468,6 +542,10 @@ export function createCommunityStore({
     listReports,
     findOpenReport,
     getProfile,
+    anonymousEnabled,
+    getAnonymousHandle,
+    ensureAnonymousHandle,
+    assertAnonymousMappings,
     putProfile,
     deleteProfileRank,
     getRankRow,

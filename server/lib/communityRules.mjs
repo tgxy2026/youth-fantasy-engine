@@ -125,7 +125,8 @@ export function validateNickname(raw) {
     return { ok: false, code: 'NICKNAME_TOO_LONG', error: `昵称最多 ${COMMUNITY_LIMITS.nicknameMax} 个字符` }
   }
   // 规避开「匿名用户」占位名，避免冒充匿名展示
-  if (/^匿名用户$/.test(nickname)) return { ok: false, code: 'NICKNAME_RESERVED', error: '该名称不可用，请换一个' }
+  const reservedForm = nickname.normalize('NFKC').replace(/[\s\u200b-\u200d\ufeff]/g, '')
+  if (reservedForm === '匿名用户' || /\(匿名用户\)$/.test(reservedForm)) return { ok: false, code: 'NICKNAME_RESERVED', error: '该名称不可用，请换一个' }
   /**
    * 3.5.0 · 冒名与官方身份：昵称会公开展示，且**不做人工预审**（首期没有昵称审核队列），
    * 所以至少要在这里挡住「看起来像官方」的名字，否则任何人都能叫「官方客服」

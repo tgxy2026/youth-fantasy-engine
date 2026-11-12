@@ -3,8 +3,8 @@
 // 【契约】全部在 `/api/community/**`；网页版用 Cookie、桌面版用 Bearer，
 // 会话校验**复用** index.mjs 的 authCheck（单一真源），这里只接收它的结果。
 //
-// 🔴 公开接口只返回展示所需字段：没有 uid、没有登录名、没有昵称以外的稳定标识、
-//    没有审核内部理由码给非作者。匿名展示在任何路径上都不回落成昵称。
+// 🔴 公开接口不返回 uid、登录名或审核内部理由码。启用时匿名代号在所属周可关联；
+//    匿名展示在任何路径上都不回落成昵称，跨周也不能承诺无法关联。
 // 🔴 所有写操作都要么幂等（带 clientToken / 重算计数），要么明确失败返回可理解的 code。
 // 🔴 服务端是唯一裁判：前端隐藏按钮不构成权限控制，每个接口都自己校验。
 
@@ -19,6 +19,7 @@ import {
 } from './communityRules.mjs'
 import { sendJSON, readJSONBody } from './http.mjs'
 import { COMMUNITY_CAPACITY as CAP } from './communityStore.mjs'
+import { anonymousWeekKey, anonymousRankWeeks } from './communityAnon.mjs'
 
 const ANON_LABEL = '匿名用户'
 const NICK_FALLBACK = '社区作者'
@@ -76,11 +77,20 @@ function excerptOf(body, max = 140) {
  * 🔴 display === 'anonymous' 时**永远**返回匿名标签，即使 profile 里存了昵称。
  *    「昵称可能让不同内容互相关联」这件事在设置页明确告知，但不能靠后端猜。
  */
-function displayNameOf(store, uid, mode) {
-  if (mode !== 'nickname') return ANON_LABEL
+function displayNameOf(store, uid, mode, weekKey = '', isExample = false) {
+  if (mode !== 'nickname') {
+    if (!store.anonymousEnabled()) return ANON_LABEL
+    if (isExample) return '示例投稿'
+    return `${store.getAnonymousHandle(uid, weekKey)}（匿名用户）`
+  }
   const p = store.getProfile(uid)
   const nick = p && typeof p.nickname === 'string' ? p.nickname.trim() : ''
   return nick || NICK_FALLBACK
+}
+
+// 只有匿名展示才需要派生归属周；昵称模式内容即使时间损坏也不应因此读不出
+function anonWeekFor(store, display, createdAt) {
+  return store.anonymousEnabled() && (display || 'anonymous') !== 'nickname' ? anonymousWeekKey(createdAt) : ''
 }
 
 function publicPost(store, post, { viewer = null, detail = false } = {}) {
@@ -94,7 +104,7 @@ function publicPost(store, post, { viewer = null, detail = false } = {}) {
     createdAt: v.createdAt,
     updatedAt: post.updatedAt,
     counts: { up: post.counts?.up || 0, down: post.counts?.down || 0, comments: post.counts?.comments || 0 },
-    displayName: displayNameOf(store, post.uid, post.display || 'anonymous'),
+    displayName: displayNameOf(store, post.uid, post.display || 'anonymous', post.isExample === true ? '' : anonWeekFor(store, post.display, post.createdAt), post.isExample === true),
     authorLabel: post.display === 'nickname' ? '' : '匿名投稿者',
     ...(post.isExample === true ? { isExample: true } : {}),
   }
@@ -115,7 +125,7 @@ function publicComment(store, comment, { viewer = null, post = null } = {}) {
     id: comment.id,
     createdAt: comment.createdAt,
     body: comment.body,
-    displayName: displayNameOf(store, comment.uid, comment.display || 'anonymous'),
+    displayName: displayNameOf(store, comment.uid, comment.display || 'anonymous', anonWeekFor(store, comment.display, comment.createdAt)),
     byAuthor: !!post && post.uid === comment.uid,
   }
   if (viewer && viewer.id === comment.uid) out.myComment = true
@@ -130,6 +140,7 @@ function myPost(store, post) {
     id: post.id,
     status: post.status,
     display: post.display || 'anonymous',
+    ...(store.anonymousEnabled() ? { displayName: displayNameOf(store, post.uid, post.display || 'anonymous', anonWeekFor(store, post.display, post.createdAt)) } : {}),
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
     title: latest?.title || published?.title || '',
@@ -189,6 +200,20 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
     const p = store.getProfile(uid)
     if (p) return p
     return store.putProfile(uid, {})
+  }
+
+  function profileView(p) {
+    const now = Date.now()
+    const hasTime = Object.hasOwn(p, 'nicknameChangedAt')
+    const validTime = !hasTime || (Number.isFinite(p.nicknameChangedAt) && p.nicknameChangedAt > 0 && p.nicknameChangedAt <= now)
+    return {
+      nickname: p.nickname || '', postDisplay: p.postDisplay || 'anonymous',
+      commentDisplay: p.commentDisplay || 'anonymous', rankDisplay: p.rankDisplay || 'anonymous',
+      rankOptIn: !!p.rankOptIn, rankOptInAt: Number(p.rankOptInAt) || 0,
+      rankRevokedAt: Number(p.rankRevokedAt) || 0, updatedAt: p.updatedAt || 0,
+      serverNow: now, nicknameNextChangeAt: validTime && hasTime ? p.nicknameChangedAt + 7 * 86400000 : 0,
+      nicknameTimeInvalid: !validTime, anonymousHandlesEnabled: store.anonymousEnabled(),
+    }
   }
 
   /**
@@ -352,6 +377,7 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
           const screening = screenContent(v.value.body, 'comment')
           const visible = commentAutoVisible(screening)
           const now = Date.now()
+          if (store.anonymousEnabled()) store.ensureAnonymousHandle(user.id, anonymousWeekKey(now))
           const comment = {
             id: store.newId('c'),
             postId: post.id,
@@ -580,6 +606,7 @@ const report = {
         return sendJSON(res, 503, { ok: false, code: 'CAPACITY_FULL', error: '投稿容量已满，请稍后再试' })
       }
       const now = Date.now()
+      if (store.anonymousEnabled()) store.ensureAnonymousHandle(user.id, anonymousWeekKey(now))
       const draft = body.draft === true
       const vid = store.newId('v')
       const post = {
@@ -697,16 +724,7 @@ post.updatedAt = Date.now()
       const p = ensureNickname(user.id)
       return sendJSON(res, 200, {
         ok: true,
-        profile: {
-          nickname: p.nickname || '',
-          postDisplay: p.postDisplay || 'anonymous',
-          commentDisplay: p.commentDisplay || 'anonymous',
-          rankDisplay: p.rankDisplay || 'anonymous',
-          rankOptIn: !!p.rankOptIn,
-          rankOptInAt: Number(p.rankOptInAt) || 0,
-          rankRevokedAt: Number(p.rankRevokedAt) || 0,
-          updatedAt: p.updatedAt || 0,
-        },
+        profile: profileView(p),
       })
     }
 
@@ -725,33 +743,35 @@ post.updatedAt = Date.now()
       if (body.rankDisplay !== undefined) patch.rankDisplay = normalizeDisplayMode(body.rankDisplay, 'anonymous')
       if (body.rankOptIn !== undefined) {
         const next = !!body.rankOptIn
+        const prev = store.getProfile(user.id)
+        const resetRank = !next || !prev?.rankOptIn
+        const hasRankRows = resetRank && store.listAllRankRows().some((row) => row.uid === user.id)
+        if (body.nickname !== undefined && hasRankRows) {
+          return sendJSON(res, 400, { ok: false, code: 'PROFILE_FIELDS_CONFLICT', error: '请分别保存昵称和排行设置' })
+        }
         // 🔴 关闭参与即撤回：立即清空已上传数据，并让旧队列在服务端失效
         if (!next) {
-          store.deleteProfileRank(user.id)
+          if (hasRankRows) store.deleteProfileRank(user.id)
           patch.rankOptIn = false
           patch.rankRevokedAt = Date.now()
         } else {
-          const prev = store.getProfile(user.id)
           // 重新开启不自动恢复旧数据：清一次，保证「开启前的历史」不会出现
-          if (!prev?.rankOptIn) store.deleteProfileRank(user.id)
+          if (hasRankRows) store.deleteProfileRank(user.id)
           patch.rankOptIn = true
           patch.rankOptInAt = Date.now()
         }
       }
-      const p = store.putProfile(user.id, patch)
+      let p
+      try { p = store.putProfile(user.id, patch) } catch (e) {
+        if (e?.code === 'NICKNAME_COOLDOWN' || e?.code === 'NICKNAME_TIME_INVALID') {
+          return sendJSON(res, 409, { ok: false, code: e.code, error: e.message, retryAfter: e.retryAfter || 0 })
+        }
+        throw e
+      }
       audit(user, 'profile.update', { type: 'profile', id: user.id }, Object.keys(patch).join(','))
       return sendJSON(res, 200, {
         ok: true,
-        profile: {
-          nickname: p.nickname || '',
-          postDisplay: p.postDisplay || 'anonymous',
-          commentDisplay: p.commentDisplay || 'anonymous',
-          rankDisplay: p.rankDisplay || 'anonymous',
-          rankOptIn: !!p.rankOptIn,
-          rankOptInAt: Number(p.rankOptInAt) || 0,
-          rankRevokedAt: Number(p.rankRevokedAt) || 0,
-          updatedAt: p.updatedAt || 0,
-        },
+        profile: profileView(p),
       })
     }
 
@@ -809,7 +829,10 @@ post.updatedAt = Date.now()
           rejected.push({ projectId, date, code: 'STALE_SEQ' })
           continue
         }
-        if (!existing || Number(existing.seq) !== seq || Number(existing.netDelta) !== netDelta) store.putRankRow(r.row)
+        if (!existing || Number(existing.seq) !== seq || Number(existing.netDelta) !== netDelta) {
+          if (store.anonymousEnabled()) for (const week of anonymousRankWeeks(date)) store.ensureAnonymousHandle(user.id, week)
+          store.putRankRow(r.row)
+        }
         accepted.push({ projectId, date })
       }
       return sendJSON(res, 200, { ok: true, accepted, rejected, serverDate: todayKeyCn(now) })
@@ -846,7 +869,7 @@ post.updatedAt = Date.now()
         .map((r) => ({
           rank: r.rank,
           value: r.value,
-          displayName: displayNameOf(store, r.id, opted.get(r.id).rankDisplay || 'anonymous'),
+          displayName: displayNameOf(store, r.id, opted.get(r.id).rankDisplay || 'anonymous', store.anonymousEnabled() ? periodRange('week', range.start).start : ''),
         }))
         .filter((r) => r.value > 0)
       return sendJSON(res, 200, { ok: true, closed: false, period, range, entries })
