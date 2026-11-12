@@ -85,6 +85,7 @@ export interface CommunityStore {
   listAllRankRows(): Array<Record<string, any>>
   appendAudit(entry: Record<string, unknown>): Record<string, unknown>
   listAudit(limit?: number): Array<Record<string, any>>
+  isLocked(): boolean
 }
 
 export function createCommunityStore(opts: {

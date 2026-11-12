@@ -46,6 +46,7 @@ export function diffVisibility(currentData: any, backupData: any): {
   }>
   summary: Record<string, number>
 }
+export function adoptEmptyComments(opts: { root: string; now?: number; confirm?: boolean; io?: Record<string, any> }): any
 export function restoreBackup(opts: {
   backupDir: string
   root: string

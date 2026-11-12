@@ -199,6 +199,9 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
     const { req, res, qs } = ctx
     const path = ctx.path
     const method = String(req.method || 'GET').toUpperCase()
+    if (method !== 'GET' && typeof store.isLocked === 'function' && store.isLocked()) {
+      return sendJSON(res, 503, { ok: false, code: 'BACKUP_IN_PROGRESS', error: '社区备份/恢复进行中，请稍后再试' })
+    }
     const user = ctx.user || null
 
     const state = store.getState()
@@ -861,6 +864,9 @@ post.updatedAt = Date.now()
 
   async function handleAdmin({ req, res, path, qs, user }) {
     const method = String(req.method || 'GET').toUpperCase()
+    if (method !== 'GET' && typeof store.isLocked === 'function' && store.isLocked()) {
+      return sendJSON(res, 503, { ok: false, code: 'BACKUP_IN_PROGRESS', error: '社区备份/恢复进行中，请稍后再试' })
+    }
 
     if (path === '/api/community/admin/overview' && method === 'GET') {
 const posts = store.listPosts()

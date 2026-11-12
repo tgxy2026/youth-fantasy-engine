@@ -21,6 +21,8 @@ import {
   existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, statSync, copyFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { readCommunityMeta, writeCommunityMeta, commentsFileVerdict } from './communityFiles.mjs'
+import { acquireCommunityLock, releaseCommunityLock } from './communityLock.mjs'
 
 export const COMMUNITY_FILES = Object.freeze([
   'posts.json', 'comments.json', 'votes.json', 'reports.json',
@@ -144,18 +146,20 @@ export function readCommunityData(root, io = defaultIO) {
   return { data, present, problems }
 }
 
-/** 核心文件存在性：区分「首次使用」与「既有社区文件意外缺失」 */
-function coreFileProblems(present, data) {
+/** 核心文件存在性：区分「首次使用」「历史从未评论」与「无法证明安全」 */
+function coreFileProblems(root, present, data) {
   const problems = []
-  const set = new Set(present)
-  if (!set.has('posts.json') && set.size > 0) {
+  if (!present.includes('posts.json') && present.length > 0) {
     problems.push('社区核心文件 posts.json 缺失（目录中仍有其他社区数据），拒绝检查/备份')
+    return problems
   }
-  if (set.has('posts.json') && !set.has('comments.json')) {
-    const posts = data?.['posts.json']?.items || {}
-    const refs = Object.values(posts).reduce((n, post) => n + (Number(post?.counts?.comments) || 0), 0)
-    if (refs > 0) problems.push('comments.json 缺失，但帖子计数显示存在评论；拒绝检查/备份')
-  }
+  if (present.includes('comments.json')) return problems
+  const verdict = commentsFileVerdict({
+    present,
+    postsItems: data?.['posts.json']?.items || {},
+    meta: readCommunityMeta(root),
+  })
+  if (!verdict.ok) problems.push(verdict.message)
   return problems
 }
 
@@ -317,7 +321,7 @@ export function inspectCommunity(root, options = {}) {
     return { ok: false, problems: ['社区目录不存在'], warnings: [], repairs: [], counts: {}, present: [] }
   }
   const read = readCommunityData(root, io)
-  const coreProblems = coreFileProblems(read.present, read.data)
+  const coreProblems = coreFileProblems(root, read.present, read.data)
   const problems = [...read.problems, ...coreProblems]
   if (problems.length) {
     const result = { ok: false, problems, warnings: [], repairs: [], counts: {}, present: read.present }
@@ -345,7 +349,22 @@ function sha256Text(text) {
  *   dest 是最终备份目录（必须不存在）；调用方负责父目录存在。
  *   stopConfirmed 必须为 true：备份是停写快照，不宣称可以热备。
  */
-export function createBackup({ root, dest, now = Date.now(), keep = 0, io = defaultIO, stopConfirmed = false } = {}) {
+export function createBackup(opts = {}) {
+  if (!opts.root) return { ok: false, error: '缺少 root / dest' }
+  const lock = acquireCommunityLock(opts.root, { tool: 'backup' })
+  if (!lock.ok) {
+    return {
+      ok: false, code: lock.code,
+      error: lock.code === 'STALE_LOCK'
+        ? '存在疑似残留的备份锁；核对进程后使用 unlock --confirm-stale，不自动删除'
+        : '社区备份/恢复锁已被占用，拒绝并发备份',
+      lock: lock.lock,
+    }
+  }
+  try { return createBackupUnlocked(opts) } finally { releaseCommunityLock(opts.root) }
+}
+
+function createBackupUnlocked({ root, dest, now = Date.now(), keep = 0, io = defaultIO, stopConfirmed = false } = {}) {
   if (!root || !dest) return { ok: false, error: '缺少 root / dest' }
   if (!stopConfirmed) {
     return { ok: false, code: 'STOP_REQUIRED', error: '备份前必须停止社区写入；停服务后加 --confirm-stopped 重新执行' }
@@ -393,6 +412,26 @@ export function createBackup({ root, dest, now = Date.now(), keep = 0, io = defa
     try { io.rm(staging) } catch { /* 残留 tmp 不覆盖正式目录 */ }
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/**
+ * 采纳「历史社区从未写入过评论」：只在操作人明确确认后补空 comments.json + 标记。
+ * 🔴 标记为 true（评论曾初始化）时拒绝；已有 comments.json 时拒绝。
+ * 这不是自动修复，也不代表能证明数据没丢；只是把人工核对结果持久化。
+ */
+export function adoptEmptyComments({ root, now = Date.now(), confirm = false, io = defaultIO } = {}) {
+  if (!root) return { ok: false, error: '缺少 root' }
+  if (!confirm) return { ok: false, code: 'CONFIRM_REQUIRED', error: '必须显式确认该社区从未写入过评论，才能补空 comments.json' }
+  const commentsPath = join(root, 'comments.json')
+  if (io.exists(commentsPath)) return { ok: false, code: 'COMMENTS_EXISTS', error: 'comments.json 已存在，不需要采纳空评论' }
+  const meta = readCommunityMeta(root)
+  if (meta && meta.commentsInitialized === true) {
+    return { ok: false, code: 'COMMENTS_WERE_INITIALIZED', error: '该社区的评论文件曾初始化；当前缺失应视为丢失，请从备份恢复，禁止补空' }
+  }
+  if (!io.exists(join(root, 'posts.json'))) return { ok: false, code: 'POSTS_MISSING', error: 'posts.json 不存在；首次初始化不应使用采纳命令' }
+  io.writeText(commentsPath, JSON.stringify({ version: 1, items: {} }, null, 2))
+  writeCommunityMeta(root, { commentsInitialized: false, createdAt: now, adoptedAt: now }, io.writeText)
+  return { ok: true, adopted: true, note: '已补空 comments.json；该社区被标记为从未写入评论，请保留本次人工核对记录' }
 }
 
 /** 只清理由本工具生成、同父目录、名称以 community- 开头的旧备份 */
@@ -512,8 +551,16 @@ export function verifyBackup(dir, { io = defaultIO, includeData = false, usersFi
 export function diffVisibility(currentData, backupData) {
   const current = currentData?.['posts.json']?.items || {}
   const backup = backupData?.['posts.json']?.items || {}
+  const currentComments = currentData?.['comments.json']?.items || {}
+  const backupComments = backupData?.['comments.json']?.items || {}
   const changes = []
-  const summary = { postsRemoved: 0, postsContentChanged: 0, comments: 0, votes: 0, reports: 0, profiles: 0, rank: 0 }
+  const summary = {
+    postsRemoved: 0, postsContentChanged: 0, comments: 0,
+    commentStatusChanges: 0, commentContentChanges: 0, commentDisplayChanges: 0,
+    commentRestored: 0, commentRemoved: 0,
+    votes: 0, reports: 0, profiles: 0, rank: 0, auditRemoved: 0,
+    reportsChanged: 0, profilesChanged: 0, rankChanged: 0, votesChanged: 0,
+  }
   const contentFingerprint = (post) => JSON.stringify({
     display: post?.display || '',
     versions: Array.isArray(post?.versions)
@@ -542,14 +589,72 @@ export function diffVisibility(currentData, backupData) {
     changes.push({ type: 'would-remove', postId: id, currentStatus: c.status, currentVisible: snapshotPostVisible(c) })
     summary.postsRemoved++
   }
-  for (const file of ['comments.json', 'votes.json', 'reports.json', 'profiles.json', 'rank.json']) {
+
+  // 评论：同 ID 的状态/正文/展示方式变化，以及当前/备份独有的评论
+  for (const [id, b] of Object.entries(backupComments)) {
+    const c = currentComments[id]
+    if (!c) {
+      changes.push({ type: 'comment-restored-absent', commentId: id, backupStatus: b.status })
+      summary.commentRestored++
+      continue
+    }
+    if (String(c.status || '') !== String(b.status || '')) {
+      changes.push({ type: 'comment-status-changed', commentId: id, currentStatus: c.status, backupStatus: b.status })
+      summary.commentStatusChanges++
+    }
+    if (String(c.body || '') !== String(b.body || '')) {
+      changes.push({ type: 'comment-content-changed', commentId: id })
+      summary.commentContentChanges++
+    }
+    if ((c.display || 'anonymous') !== (b.display || 'anonymous')) {
+      changes.push({ type: 'comment-display-changed', commentId: id })
+      summary.commentDisplayChanges++
+    }
+  }
+  for (const [id, c] of Object.entries(currentComments)) {
+    if (backupComments[id]) continue
+    changes.push({ type: 'comment-would-remove', commentId: id, currentStatus: c.status })
+    summary.commentRemoved++
+    summary.comments++
+  }
+
+  // 关联记录：当前独有数量（原口径）+ 同 ID 状态/内容变化的计数（不输出 uid/正文）
+  for (const file of ['votes.json', 'reports.json', 'profiles.json', 'rank.json']) {
     const cur = currentData?.[file]?.items || {}
     const bak = backupData?.[file]?.items || {}
     const count = Object.keys(cur).filter((key) => !bak[key]).length
-    const label = file.replace('.json', '')
-    summary[label] = count
+    summary[file.replace('.json', '')] = count
     if (count > 0) changes.push({ type: 'records-not-in-backup', file, count })
   }
+  const reportFingerprint = (r) => JSON.stringify({ status: r?.status || '', kind: r?.kind || '' })
+  for (const [id, b] of Object.entries(backupData?.['reports.json']?.items || {})) {
+    const c = currentData?.['reports.json']?.items?.[id]
+    if (c && reportFingerprint(c) !== reportFingerprint(b)) summary.reportsChanged++
+  }
+  const profileFingerprint = (p) => JSON.stringify({
+    nickname: p?.nickname || '', postDisplay: p?.postDisplay || '', commentDisplay: p?.commentDisplay || '',
+    rankDisplay: p?.rankDisplay || '', rankOptIn: !!p?.rankOptIn,
+  })
+  for (const [id, b] of Object.entries(backupData?.['profiles.json']?.items || {})) {
+    const c = currentData?.['profiles.json']?.items?.[id]
+    if (c && profileFingerprint(c) !== profileFingerprint(b)) summary.profilesChanged++
+  }
+  for (const [key, b] of Object.entries(backupData?.['rank.json']?.items || {})) {
+    const c = currentData?.['rank.json']?.items?.[key]
+    if (c && Number(c.netDelta) !== Number(b.netDelta)) summary.rankChanged++
+  }
+  for (const [key, b] of Object.entries(backupData?.['votes.json']?.items || {})) {
+    const c = currentData?.['votes.json']?.items?.[key]
+    if (c && Number(c.value) !== Number(b.value)) summary.votesChanged++
+  }
+  const currentAudit = currentData?.['audit.json']?.items?.list || []
+  const backupAuditIds = new Set((backupData?.['audit.json']?.items?.list || []).map((e) => e?.id))
+  summary.auditRemoved = currentAudit.filter((e) => !backupAuditIds.has(e?.id)).length
+  if (summary.reportsChanged) changes.push({ type: 'reports-changed', count: summary.reportsChanged })
+  if (summary.profilesChanged) changes.push({ type: 'profiles-changed', count: summary.profilesChanged })
+  if (summary.rankChanged) changes.push({ type: 'rank-changed', count: summary.rankChanged })
+  if (summary.votesChanged) changes.push({ type: 'votes-changed', count: summary.votesChanged })
+  if (summary.auditRemoved) changes.push({ type: 'audit-not-in-backup', count: summary.auditRemoved })
   return { changes, summary }
 }
 
@@ -573,7 +678,22 @@ function copyDirFiles(from, to, io) {
  *   stopConfirmed:boolean, acceptVisibilityChanges?:boolean, io?:object
  * }} opts
  */
-export function restoreBackup({
+export function restoreBackup(opts = {}) {
+  if (!opts.root) return { ok: false, code: 'NO_ROOT', error: '缺少 root' }
+  const lock = acquireCommunityLock(opts.root, { tool: 'restore' })
+  if (!lock.ok) {
+    return {
+      ok: false, code: lock.code,
+      error: lock.code === 'STALE_LOCK'
+        ? '存在疑似残留的备份锁；核对进程后使用 unlock --confirm-stale，不自动删除'
+        : '社区备份/恢复锁已被占用，拒绝并发恢复',
+      lock: lock.lock,
+    }
+  }
+  try { return restoreBackupUnlocked(opts) } finally { releaseCommunityLock(opts.root) }
+}
+
+function restoreBackupUnlocked({
   backupDir, root, now = Date.now(), stopConfirmed = false, acceptVisibilityChanges = false, io = defaultIO,
 } = {}) {
   if (!stopConfirmed) {

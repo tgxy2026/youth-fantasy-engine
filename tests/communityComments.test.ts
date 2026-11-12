@@ -19,6 +19,7 @@ import path from 'node:path'
 import { createCommunityStore } from '../server/lib/communityStore.mjs'
 import { createCommunityApi } from '../server/lib/communityApi.mjs'
 import { rateLimit } from '../server/lib/ratelimit.mjs'
+import { acquireCommunityLock, releaseCommunityLock } from '../server/lib/communityLock.mjs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -273,6 +274,22 @@ try {
     body: { body: emoji1000 + '字', display: 'anonymous', clientToken: 'emoji-1001' },
   })
   ok('1001 个码点被服务端拒绝', emojiTooLong.status === 400 && emojiTooLong.json.code === 'COMMENT_TOO_LONG')
+
+  // ---- 锁存在时 API 写入 503，读取仍可用 ----
+  const apiLock = acquireCommunityLock(root, { tool: 'api-test' })
+  const blockedWrite = await call(`/api/community/posts/${pid}/comments`, {
+    method: 'POST', as: 'bob',
+    body: { body: '锁定时不应写入的合成评论。', display: 'anonymous', clientToken: 'locked-api' },
+  })
+  ok('R3 锁存在时 API 写入返回 503', blockedWrite.status === 503 && blockedWrite.json.code === 'BACKUP_IN_PROGRESS')
+  ok('R3 锁存在时读取仍可用', (await call(`/api/community/posts/${pid}/comments?limit=20`)).status === 200)
+  ok('R3 锁未写入评论', !store.listCommentsOf(pid).some((c) => c.clientToken === 'locked-api'))
+  const apiLockRelease = releaseCommunityLock(root)
+  ok('R3 释放锁后可写入', (await call(`/api/community/posts/${pid}/comments`, {
+    method: 'POST', as: 'bob',
+    body: { body: '锁释放后的合成评论。', display: 'anonymous', clientToken: 'after-lock' },
+  })).status === 200)
+  ok('R3 锁清理成功', apiLock.ok && apiLockRelease.released === true)
 
   // ---- 读取正文期间帖子被下架：写前必须重新确认 ----
   const slow = new Readable({ read() { /* push later */ } }) as Readable & { method: string }

@@ -17,10 +17,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  COMMUNITY_FILES, createBackup, defaultIO, diffVisibility, inspectCommunity, restoreBackup, verifyBackup,
+  COMMUNITY_FILES, adoptEmptyComments, createBackup, defaultIO, diffVisibility, inspectCommunity, restoreBackup, verifyBackup,
 } from '../server/lib/communityBackup.mjs'
+import { readCommunityMeta, writeCommunityMeta } from '../server/lib/communityFiles.mjs'
+import {
+  acquireCommunityLock, communityLockPath, readCommunityLock, releaseCommunityLock, unlockStaleCommunityLock,
+} from '../server/lib/communityLock.mjs'
 import { writeTextAtomicSync } from '../server/lib/atomic.mjs'
-import { createCommunityStore } from '../server/lib/communityStore.mjs'
+import { createCommunityStore, type CommunityPost } from '../server/lib/communityStore.mjs'
 
 let pass = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -445,6 +449,166 @@ try {
   const interleaveBackup = createBackup({ root: interleaveDir, dest: path.join(root, 'p0-4-interleave-backup'), io: interleaveIO, stopConfirmed: true })
   ok('P0-4 交错写入被识别并拒绝备份', !interleaveBackup.ok && interleaveBackup.code === 'CONCURRENT_WRITE')
   ok('P0-4 交错写入不产生正式备份目录', !fs.existsSync(path.join(root, 'p0-4-interleave-backup')))
+
+  // ---- 16. P0-R1：评论文件缺失的可证明性 ----
+  const r1Post: CommunityPost = {
+    ...syntheticData()['posts.json'].items.p1,
+    display: 'anonymous',
+    counts: { up: 0, down: 0, comments: 0 },
+  }
+  const storeStart = (dir: string) => {
+    try { createCommunityStore({ root: dir }); return true } catch { return false }
+  }
+  const unverified = path.join(root, 'r1-unverified')
+  fs.mkdirSync(unverified)
+  writeJson(path.join(unverified, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(unverified, 'state.json'), syntheticData()['state.json'])
+  ok('R1 缺评论且无标记 -> inspect 拒绝', !inspectCommunity(unverified).ok)
+  ok('R1 缺评论且无标记 -> 备份拒绝', !createBackup({ root: unverified, dest: path.join(root, 'r1-unverified-backup'), stopConfirmed: true }).ok)
+  ok('R1 缺评论且无标记 -> 服务启动拒绝', !storeStart(unverified))
+
+  const never = path.join(root, 'r1-never')
+  fs.mkdirSync(never)
+  writeJson(path.join(never, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(never, 'state.json'), syntheticData()['state.json'])
+  writeCommunityMeta(never, { commentsInitialized: false, createdAt: 1 }, (p, t) => fs.writeFileSync(p, t, 'utf8'))
+  ok('R1 标记从未初始化 -> inspect/启动允许', inspectCommunity(never).ok && storeStart(never))
+
+  const was = path.join(root, 'r1-was')
+  fs.mkdirSync(was)
+  writeJson(path.join(was, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(was, 'state.json'), syntheticData()['state.json'])
+  writeCommunityMeta(was, { commentsInitialized: true, createdAt: 1 }, (p, t) => fs.writeFileSync(p, t, 'utf8'))
+  ok('R1 标记曾初始化但文件缺失 -> inspect/启动拒绝', !inspectCommunity(was).ok && !storeStart(was))
+
+  const wiped = path.join(root, 'r1-wiped')
+  fs.mkdirSync(wiped)
+  writeCommunityMeta(wiped, { commentsInitialized: true, createdAt: 1 }, (p, t) => fs.writeFileSync(p, t, 'utf8'))
+  ok('R1 仅剩曾初始化标记 -> inspect/备份/启动拒绝', !inspectCommunity(wiped).ok && !createBackup({ root: wiped, dest: path.join(root, 'r1-wiped-backup'), stopConfirmed: true }).ok && !storeStart(wiped))
+  ok('R1 仅剩曾初始化标记 -> 不被降级为首次使用', readCommunityMeta(wiped)?.commentsInitialized === true)
+
+  const pendingLost = path.join(root, 'r1-pending-lost')
+  fs.mkdirSync(pendingLost)
+  const pendingStore = createCommunityStore({ root: pendingLost })
+  pendingStore.putPost(r1Post)
+  pendingStore.putComment({ id: 'c_pending', postId: 'p1', uid: 'u1', body: '待审合成评论', display: 'anonymous', status: 'pending', createdAt: 1 })
+  ok('R1 待审评论写入后标记为 true', readCommunityMeta(pendingLost)?.commentsInitialized === true)
+  fs.rmSync(path.join(pendingLost, 'comments.json'))
+  ok('R1 只有待审评论后文件丢失 -> inspect/启动拒绝', !inspectCommunity(pendingLost).ok && !storeStart(pendingLost))
+
+  const adoptDir = path.join(root, 'r1-adopt')
+  fs.mkdirSync(adoptDir)
+  writeJson(path.join(adoptDir, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(adoptDir, 'state.json'), syntheticData()['state.json'])
+  ok('R1 未确认采纳被拒', !adoptEmptyComments({ root: adoptDir, confirm: false }).ok)
+  ok('R1 确认采纳后检查/启动允许', adoptEmptyComments({ root: adoptDir, confirm: true }).ok && inspectCommunity(adoptDir).ok && storeStart(adoptDir))
+
+  // ---- 17. P0-R2：同 ID 评论的状态/正文/展示差异 ----
+  const r2Dir = path.join(root, 'r2-comments')
+  fs.mkdirSync(r2Dir)
+  const r2Post = { ...r1Post, counts: { up: 0, down: 0, comments: 2 } }
+  writeJson(path.join(r2Dir, 'posts.json'), { version: 1, items: { p1: r2Post } })
+  writeJson(path.join(r2Dir, 'comments.json'), {
+    version: 1,
+    items: {
+      c1: { id: 'c1', postId: 'p1', uid: 'u2', body: '备份正文一', display: 'anonymous', status: 'visible', createdAt: 1 },
+      c2: { id: 'c2', postId: 'p1', uid: 'u2', body: '备份正文二', display: 'anonymous', status: 'visible', createdAt: 2 },
+    },
+  })
+  writeJson(path.join(r2Dir, 'reports.json'), { version: 1, items: { r1: { id: 'r1', kind: 'report', targetType: 'post', targetId: 'p1', status: 'open', createdAt: 1 } } })
+  writeJson(path.join(r2Dir, 'profiles.json'), { version: 1, items: { u1: { nickname: '备份昵称', postDisplay: 'anonymous', commentDisplay: 'anonymous', rankDisplay: 'anonymous', updatedAt: 1 } } })
+  writeJson(path.join(r2Dir, 'audit.json'), { version: 1, items: { list: [{ id: 'a1', action: 'backup' }] } })
+  writeJson(path.join(r2Dir, 'state.json'), syntheticData()['state.json'])
+  const r2Backup = path.join(root, 'r2-backup')
+  ok('R2 准备备份', createBackup({ root: r2Dir, dest: r2Backup, stopConfirmed: true }).ok)
+
+  const r2Comments = readJson(path.join(r2Dir, 'comments.json'))
+  r2Comments.items.c1.status = 'removed'
+  r2Comments.items.c1.body = '当前改成的新正文'
+  r2Comments.items.c1.display = 'nickname'
+  delete r2Comments.items.c2
+  writeJson(path.join(r2Dir, 'comments.json'), r2Comments)
+  const r2Reports = readJson(path.join(r2Dir, 'reports.json'))
+  r2Reports.items.r1.status = 'closed'
+  writeJson(path.join(r2Dir, 'reports.json'), r2Reports)
+  const r2Profiles = readJson(path.join(r2Dir, 'profiles.json'))
+  r2Profiles.items.u1.nickname = '当前昵称'
+  writeJson(path.join(r2Dir, 'profiles.json'), r2Profiles)
+  const r2Audit = readJson(path.join(r2Dir, 'audit.json'))
+  r2Audit.items.list.push({ id: 'a2', action: 'current' })
+  writeJson(path.join(r2Dir, 'audit.json'), r2Audit)
+
+  const r2Diff = diffVisibility(
+    inspectCommunity(r2Dir, { includeData: true }).data,
+    verifyBackup(r2Backup, { includeData: true }).data,
+  )
+  ok('R2 识别评论状态变化', r2Diff.changes.some((c: any) => c.type === 'comment-status-changed' && c.commentId === 'c1'))
+  ok('R2 识别评论正文变化', r2Diff.changes.some((c: any) => c.type === 'comment-content-changed' && c.commentId === 'c1'))
+  ok('R2 识别评论展示方式变化', r2Diff.changes.some((c: any) => c.type === 'comment-display-changed' && c.commentId === 'c1'))
+  ok('R2 识别当前已删除但备份存在的评论', r2Diff.changes.some((c: any) => c.type === 'comment-restored-absent' && c.commentId === 'c2'))
+  ok('R2 识别举报状态变化', r2Diff.summary.reportsChanged === 1)
+  ok('R2 识别档案变化', r2Diff.summary.profilesChanged === 1)
+  ok('R2 识别审计当前独有记录', r2Diff.summary.auditRemoved === 1)
+  ok('R2 差异不输出正文/uid/昵称', !JSON.stringify(r2Diff).includes('当前改成的新正文') && !JSON.stringify(r2Diff).includes('u2') && !JSON.stringify(r2Diff).includes('备份昵称'))
+
+  const r2Refused = restoreBackup({ backupDir: r2Backup, root: r2Dir, stopConfirmed: true })
+  ok('R2 未确认时拒绝恢复', !r2Refused.ok && r2Refused.code === 'VISIBILITY_CHANGES')
+  const r2Before = readJson(path.join(r2Dir, 'comments.json'))
+  ok('R2 拒绝后当前删除状态/正文保持不变', r2Before.items.c1.status === 'removed' && !r2Before.items.c2)
+  const r2Accepted = restoreBackup({ backupDir: r2Backup, root: r2Dir, stopConfirmed: true, acceptVisibilityChanges: true })
+  const r2After = readJson(path.join(r2Dir, 'comments.json'))
+  ok('R2 显式接受后恢复备份评论状态/正文',
+    r2Accepted.ok && r2After.items.c1.status === 'visible' && r2After.items.c1.body === '备份正文一' && !!r2After.items.c2)
+
+  // ---- 18. P0-R3：协作式停写锁（不是 OS 级互斥） ----
+  const r3Dir = path.join(root, 'r3-lock')
+  fs.mkdirSync(r3Dir)
+  writeJson(path.join(r3Dir, 'posts.json'), { version: 1, items: { p1: r1Post } })
+  writeJson(path.join(r3Dir, 'comments.json'), { version: 1, items: {} })
+  writeJson(path.join(r3Dir, 'state.json'), syntheticData()['state.json'])
+  const r3Store = createCommunityStore({ root: r3Dir })
+  const held = acquireCommunityLock(r3Dir, { tool: 'test' })
+  ok('R3 可获取独占锁', held.ok)
+  const second = acquireCommunityLock(r3Dir, { tool: 'test-2' })
+  ok('R3 第二个获取者被拒绝', !second.ok && second.code === 'LOCKED')
+  let lockWriteThrew = false
+  try { r3Store.putPost({ ...r1Post, id: 'p_lock' }) } catch { lockWriteThrew = true }
+  ok('R3 锁存在时 store 写入被拒绝', lockWriteThrew)
+  const lockBackup = createBackup({ root: r3Dir, dest: path.join(root, 'r3-locked-backup'), stopConfirmed: true })
+  ok('R3 锁存在时备份被拒绝', !lockBackup.ok && lockBackup.code === 'LOCKED')
+  ok('R3 锁冲突不产生备份目录', !fs.existsSync(path.join(root, 'r3-locked-backup')))
+  const lockRestore = restoreBackup({ backupDir: path.join(root, 'r2-backup'), root: r3Dir, stopConfirmed: true, acceptVisibilityChanges: true })
+  ok('R3 锁存在时恢复被拒绝', !lockRestore.ok && lockRestore.code === 'LOCKED')
+  ok('R3 锁不存在时不能谎报释放', releaseCommunityLock(r3Dir).released === true)
+  ok('R3 释放后可再次获取', acquireCommunityLock(r3Dir, { tool: 'again' }).ok)
+  releaseCommunityLock(r3Dir)
+
+  ok('R3 服务启动时锁存在 -> 拒绝', (() => {
+    acquireCommunityLock(r3Dir, { tool: 'startup' })
+    const r = storeStart(r3Dir)
+    releaseCommunityLock(r3Dir)
+    return r
+  })() === false)
+
+  // 未确认停写也不会留下锁
+  ok('R3 stop 未确认返回 STOP_REQUIRED', (() => {
+    const r = createBackup({ root: r3Dir, dest: path.join(root, 'r3-no-stop') })
+    return !r.ok && r.code === 'STOP_REQUIRED' && !readCommunityLock(r3Dir)
+  })())
+
+  // 崩溃残留锁：不自动删除，显式 unlock 后才允许
+  writeJson(communityLockPath(r3Dir), { pid: 999999, at: Date.now(), tool: 'crashed' })
+  const staleBackup = createBackup({ root: r3Dir, dest: path.join(root, 'r3-stale-backup'), stopConfirmed: true })
+  ok('R3 残留锁 -> STALE_LOCK', !staleBackup.ok && staleBackup.code === 'STALE_LOCK')
+  ok('R3 未确认时不清理残留锁', !unlockStaleCommunityLock(r3Dir, { confirm: false }).ok && !!readCommunityLock(r3Dir))
+  ok('R3 确认后清理残留锁', unlockStaleCommunityLock(r3Dir, { confirm: true }).released === true)
+  ok('R3 清理后可正常备份', createBackup({ root: r3Dir, dest: path.join(root, 'r3-after-unlock'), stopConfirmed: true }).ok)
+
+  // 锁文件无法创建（路径是目录）：失败关闭
+  fs.mkdirSync(communityLockPath(r3Dir))
+  const badLock = acquireCommunityLock(r3Dir, { tool: 'bad' })
+  ok('R3 锁路径不可写时失败关闭', !badLock.ok && badLock.code === 'LOCK_FAILED')
+  fs.rmdirSync(communityLockPath(r3Dir))
 
   console.log(`communityBackup: ${pass} passed, 0 failed`)
 } finally {

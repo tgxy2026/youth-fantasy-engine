@@ -13,6 +13,8 @@ import { existsSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { writeTextAtomicSync, readJSONOr } from './atomic.mjs'
+import { readCommunityMeta, writeCommunityMeta, commentsFileVerdict } from './communityFiles.mjs'
+import { assertServiceStartable, isCommunityLocked } from './communityLock.mjs'
 import { readFileSync } from 'node:fs'
 
 export const COMMUNITY_CAPACITY = {
@@ -70,26 +72,50 @@ export function createCommunityStore({
     catch { return new Set() }
   }
 
+  /** 把初始化标记改为指定状态；写失败不阻断主流程（comments 存在时下次启动会重建 true） */
+  function ensureMeta(commentsInitialized) {
+    try {
+      const meta = readCommunityMeta(root, readText)
+      if (meta && meta.commentsInitialized === commentsInitialized) return
+      writeCommunityMeta(root, {
+        commentsInitialized,
+        createdAt: meta?.createdAt || Date.now(),
+      }, writeText)
+    } catch { /* 标记写入失败不得让已有数据不可读 */ }
+  }
+
   /**
    * 启动期完整性检查：
-   *  - posts.json 丢失、但目录里还有其他社区文件 -> 拒绝启动。否则空表写回会让投稿整体蒸发。
-   *  - comments.json 丢失、但帖子计数显示存在评论 -> 拒绝启动，要求从备份恢复。
-   * 🔴 首次使用（目录为空）不触发；正常空社区也不会触发。
+   *  - posts.json 丢失、但目录里还有其他社区文件 -> 拒绝启动；
+   *  - comments.json 缺失时不能只看公开计数：待审/被拒/已删除评论也在文件里。
+   *    有初始化标记且为 true -> 视为丢失；标记缺失且帖子非空 -> 状态不可证明，拒绝启动并给出核对路径。
    */
   function assertCoreFiles() {
     const present = presentFiles()
     if (!present.has(FILES.posts) && present.size > 0) {
       throw new Error('社区核心文件 posts.json 缺失（目录中仍有其他社区数据）；请停写并从备份恢复，禁止用空表继续写入')
     }
-    if (!present.has(FILES.posts) || present.has(FILES.comments)) return
+    if (!present.has(FILES.posts)) {
+      const meta = readCommunityMeta(root, readText)
+      if (meta?.commentsInitialized === true) {
+        throw new Error('comments.json 曾初始化但当前社区核心文件缺失，视为评论数据丢失；请停写并从备份恢复，禁止按首次使用补空')
+      }
+      if (present.size === 0 && !meta) ensureMeta(false) // 首次使用：显式记录「从未写入评论」
+      return
+    }
+    if (present.has(FILES.comments)) { ensureMeta(true); return }
+
     const r = readJSONOr(join(root, FILES.posts), readText)
     if (!r.ok) return // 损坏会由 load() 给出更明确的错误
-    const commentRefs = Object.values(r.value?.items || {})
-      .reduce((n, p) => n + (Number(p?.counts?.comments) || 0), 0)
-    if (commentRefs > 0) {
-      throw new Error('社区评论文件 comments.json 缺失，但帖子记录显示存在评论；请停写并从备份恢复')
-    }
+    const verdict = commentsFileVerdict({
+      present: [...present],
+      postsItems: r.value?.items || {},
+      meta: readCommunityMeta(root, readText),
+    })
+    if (!verdict.ok) throw new Error(verdict.message)
+    ensureMeta(false)
   }
+  assertServiceStartable(root)
   assertCoreFiles()
 
   // mtime 缓存：只对本进程读频繁的小文件生效；写后立即更新，避免读到旧内容
@@ -130,6 +156,8 @@ export function createCommunityStore({
     let mtime = 0
     try { mtime = statSync(fileOf(key)).mtimeMs } catch { mtime = 0 }
     cache.set(key, { mtime, value })
+    // 评论文件一旦成功写入，持久标记为「已初始化」；之后缺失即视为丢失
+    if (key === 'comments') ensureMeta(true)
   }
 
   /**
@@ -137,6 +165,11 @@ export function createCommunityStore({
    *    读接口会看到从未落盘的「幽灵数据」。丢缓存后下次从磁盘读回旧内容。
    */
   function mutate(key, fn) {
+    if (isCommunityLocked(root)) {
+      const e = new Error('社区备份/恢复进行中，写入已暂停；请稍后重试')
+      e.code = 'COMMUNITY_BACKUP_LOCKED'
+      throw e
+    }
     const db = load(key)
     try {
       const result = fn(db)
@@ -393,6 +426,7 @@ export function createCommunityStore({
     listAllRankRows,
     appendAudit,
     listAudit,
+    isLocked: () => isCommunityLocked(root),
     _files: FILES,
     _exists: () => existsSync(root),
   }

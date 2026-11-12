@@ -6,6 +6,8 @@
 //   node server/community-backup.mjs backup  [--data <dir>] [--backup-root <dir>] [--out <dir>] [--keep 14] --confirm-stopped [--json]
 //   node server/community-backup.mjs verify  <backupDir> [--users <users.json>] [--json]
 //   node server/community-backup.mjs restore <backupDir> [--data <dir>] --confirm-stopped [--accept-visibility-changes] [--json]
+//   node server/community-backup.mjs adopt-empty-comments [--data <dir>] --confirm-adopt-empty [--json]
+//   node server/community-backup.mjs unlock [--data <dir>] --confirm-stale [--json]
 //
 // 🔴 恢复前必须停掉社区写入（停服务）。工具无法验证进程是否真的停了，只认 `--confirm-stopped`。
 // 🔴 输出只含文件、统计、哈希与不透明 id；不打印正文、账号 id、登录名或凭据。
@@ -14,8 +16,9 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { DATA_DIR } from './lib/config.mjs'
 import {
-  createBackup, inspectCommunity, restoreBackup, verifyBackup,
+  adoptEmptyComments, createBackup, inspectCommunity, restoreBackup, verifyBackup,
 } from './lib/communityBackup.mjs'
+import { readCommunityLock, unlockStaleCommunityLock } from './lib/communityLock.mjs'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -105,8 +108,17 @@ try {
       const code = r.ok ? 0 : (r.code === 'VISIBILITY_CHANGES' || r.code === 'STOP_REQUIRED' ? 2 : 1)
       print(r, code)
     }
+  } else if (cmd === 'adopt-empty-comments') {
+    const r = adoptEmptyComments({ root: communityRoot(), confirm: has('confirm-adopt-empty') })
+    print(r, r.ok ? 0 : (r.code === 'CONFIRM_REQUIRED' ? 2 : 1))
+  } else if (cmd === 'unlock') {
+    const root = communityRoot()
+    const lock = readCommunityLock(root)
+    const r = unlockStaleCommunityLock(root, { confirm: has('confirm-stale') })
+    if (r.ok && !lock) print({ ok: true, released: false, note: '当前没有备份锁' }, 0)
+    else print(r, r.ok ? 0 : (r.code === 'CONFIRM_REQUIRED' ? 2 : 1))
   } else {
-    console.log('用法：node server/community-backup.mjs <inspect|backup|verify|restore> ...（见文件头注释）')
+    console.log('用法：node server/community-backup.mjs <inspect|backup|verify|restore|adopt-empty-comments|unlock> ...（见文件头注释）')
     process.exitCode = 2
   }
 } catch (e) {
