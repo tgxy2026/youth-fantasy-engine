@@ -58,8 +58,11 @@ const ORGANIZE_TAB_IDS = new Set([
  * 明确不接 AI 的个别页签（即使所属分组允许）：
  * - progress 写作进度：纯码字统计流水（日期 / 实际字数 / 存稿缓冲），
  *   由作者与系统统计填写，AI 既无从抽取也无从补全，接上只会误导。
+ * - about 关于打赏（2026-11-12 由「运营维护」移到「工作面板」）：作者页是纯静态展示，
+ *   🔴 原先靠「运营维护」整组排除，移组后必须按 id 显式兜住，
+ *   否则 `aiCapabilityOf(about)` 会从 none 悄悄变成 fill（位置调整不该改变 AI 能力）。
  */
-const NO_AI_TAB_IDS = new Set(['progress'])
+const NO_AI_TAB_IDS = new Set(['progress', 'about'])
 
 export function aiCapabilityOf(tab: TabDef): AICapability {
   if (NO_AI_TAB_IDS.has(tab.id)) return 'none'

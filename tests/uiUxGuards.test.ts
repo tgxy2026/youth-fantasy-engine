@@ -108,10 +108,18 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('🔴 ProjectHub 的必选说明与 FEATURE_TIER 一致（拆书 / 创意写作可取消）',
     /拆书与创意写作默认不勾选/.test(read('src/components/app/ProjectHub.tsx')))
 
-  // 2.8.0：「关于打赏」由 default 升 locked —— 两处必选说明都要跟上（防「改了档位忘改文案」）
-  ok('🔴 ProjectHub 的两处必选说明都覆盖「关于打赏」',
-    /以及运营维护里的「关于打赏」为必选/.test(read('src/components/app/ProjectHub.tsx'))
-    && /以及运营维护下的关于打赏）与依赖/.test(read('src/components/app/ProjectHub.tsx')))
+  // 2.8.0：「关于打赏」由 default 升 locked；2026-11-12 又从「运营维护」移到「工作面板」——
+  // 两处必选说明都要跟上（防「改了档位 / 分组却忘改说明文案」）
+  ok('🔴 ProjectHub 的两处必选说明都把「关于打赏」写在工作面板组下',
+    /工作面板里的「写作面板 \/ 模型设置 \/ 使用指南 \/ 关于打赏」/.test(read('src/components/app/ProjectHub.tsx'))
+    && /工作面板里的写作面板 \/ 模型设置 \/ 使用指南 \/ 关于打赏/.test(read('src/components/app/ProjectHub.tsx')))
+
+  // 2026-11-12：主人要求移动分组后仍是「默认锁定、无法取消、强制显示」
+  ok('🔴 关于打赏属工作面板组且仍为 locked（自定义项目不可取消）',
+    /id: 'about', name: '关于打赏', group: '工作面板'/.test(read('src/lib/schemaTabs/part3.ts'))
+    && /about: 'locked'/.test(read('src/lib/schema.ts')))
+  ok('🔴 锁定项在自定义项目里恒可见（老项目也不会凭空少页签）',
+    /if \(LOCKED_IDS\.includes\(tabId\)\) return true/.test(read('src/lib/schema.ts')))
 
   // 接线闸：迁移若不挂在启动期，老项目永远补不上（静默失效，界面上一辈子看不到那个页签）
   ok('🔴 「必选模块同步」确实挂在 App 启动期（否则老项目永远补不上）',

@@ -180,6 +180,9 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   'check-tools': 'locked',
   // 关于打赏（2026-10-04 · 2.8.0）：由 default **升为 locked**（必选、不可取消）——
   // 打赏页是支持作者的入口，不再允许在「自定义项目」里取消。
+  // 2026-11-12：主人要求把该页从「运营维护」组移到「工作面板」组（第 4 个页签），
+  // 🔴 **档位不变，仍是 locked**：功能模块弹窗置灰不可取消、老项目由 migrateLockedFeatures 补齐、
+  //    tabVisible 对锁定项直接放行 —— 三重保证「强制显示在项目内」。分组只影响侧栏与弹窗归类。
   // 🔴 老项目（当初取消过本页的）由 `db.migrateLockedFeatures()` 在下次启动
   //    （含覆盖安装后首次启动）补齐；`tabVisible()` 另对锁定项直接放行，双重保证可见。
   about: 'locked',
