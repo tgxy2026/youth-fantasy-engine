@@ -184,14 +184,19 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
   async function vote(value: 1 | -1) {
     if (!detail) return
     if (!canWrite) { onNeedLogin(); return }
+    const postId = detail.id
+    const seq = commentSeqRef.current
     setBusy(true)
     try {
       const next = detail.myVote === value ? 0 : value
-      const r = await votePost(detail.id, next as 1 | -1 | 0)
-      setDetail({ ...detail, counts: r.counts, myVote: r.myVote })
-      setItems((prev) => prev.map((p) => (p.id === detail.id ? { ...p, counts: r.counts, myVote: r.myVote } : p)))
+      const r = await votePost(postId, next as 1 | -1 | 0)
+      if (seq !== commentSeqRef.current || detailIdRef.current !== postId) return
+      setDetail((current) => current?.id === postId ? { ...current, counts: r.counts, myVote: r.myVote } : current)
+      setItems((prev) => prev.map((p) => (p.id === postId ? { ...p, counts: r.counts, myVote: r.myVote } : p)))
       setNotice(next === 0 ? '已取消评价' : next === 1 ? '已点赞' : '已点踩')
-    } catch (e) { setNotice(errorText(e)) } finally { setBusy(false) }
+    } catch (e) {
+      if (seq === commentSeqRef.current && detailIdRef.current === postId) setNotice(errorText(e))
+    } finally { setBusy(false) }
   }
 
   async function sendComment() {
@@ -235,12 +240,17 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
   async function submitReport() {
     if (!detail) return
     if (!canWrite) { onNeedLogin(); return }
+    const postId = detail.id
+    const seq = commentSeqRef.current
     setBusy(true)
     try {
-      const r = await reportContent({ targetType: 'post', targetId: detail.id, reason: reportReason, detail: reportDetail })
+      const r = await reportContent({ targetType: 'post', targetId: postId, reason: reportReason, detail: reportDetail })
+      if (seq !== commentSeqRef.current || detailIdRef.current !== postId) return
       setReportOpen(false); setReportDetail('')
       setNotice(r.duplicate ? '你此前已举报过这篇，处理中。' : '举报已提交，管理员会尽快处理。')
-    } catch (e) { setNotice(errorText(e)) } finally { setBusy(false) }
+    } catch (e) {
+      if (seq === commentSeqRef.current && detailIdRef.current === postId) setNotice(errorText(e))
+    } finally { setBusy(false) }
   }
 
   if (openId) {

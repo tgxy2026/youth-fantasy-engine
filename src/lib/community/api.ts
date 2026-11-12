@@ -10,12 +10,18 @@
 // 🔴 所有写操作带 `clientToken` 的路径由调用方生成，保证重复点击/断网重试幂等。
 
 import { cloudBase, cloudFetch, hasConfiguredCloudTransport } from '@/lib/cloud/syncApi'
-import { WEB } from '@/lib/app/platform'
+import { WEB, WEB_GUEST } from '@/lib/app/platform'
 import type {
   AdminOverview, AdminPostItem, AdminQueueComment, AdminQueuePost, AdminQueueReport,
   CommunityComment, CommunityPostDetail, CommunityPostSummary, CommunityProfile,
   CommunitySquareState, MyComment, MyPost, RankBoard, RankPeriod,
 } from '@/lib/community/types'
+
+// 网页标签页的账号在启动时固定；同浏览器其他标签页更换 Cookie 后，
+// 服务端必须拒绝旧页面的请求，不能把旧页面操作归到新账号。
+const pageAccount = WEB && typeof window !== 'undefined'
+  ? ((window as unknown as { __YFE_USER__?: { id?: string } }).__YFE_USER__?.id || (WEB_GUEST ? 'guest' : ''))
+  : ''
 
 export class CommunityError extends Error {
   code: string
@@ -47,7 +53,7 @@ async function request<T>(path: string, init: RequestInit & { body?: string } = 
       ...init,
       credentials: 'same-origin',
       cache: 'no-store',
-      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+      headers: { 'Content-Type': 'application/json', ...(pageAccount ? { 'X-YFE-Account-Context': pageAccount } : {}), ...(init.headers || {}) },
     })
   } catch {
     throw new CommunityError('网络不通，广场暂时无法访问。你的本地写作与草稿不受影响。', 'NETWORK', 0)
@@ -78,7 +84,7 @@ export async function activateSyncCode(code: string): Promise<{ alreadyActive: b
   try {
     res = await cloudFetch()(`${cloudBase()}/api/auth/activate`, {
       method: 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+      headers: { 'Content-Type': 'application/json', ...(pageAccount ? { 'X-YFE-Account-Context': pageAccount } : {}) }, body: JSON.stringify({ code }),
     })
   } catch { throw new CommunityError('网络不通，请稍后重试。', 'NETWORK') }
   const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; alreadyActive?: boolean } | null

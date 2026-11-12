@@ -671,6 +671,10 @@ async function handleApi(req, res, url) {
   if (path === '/api/auth/activate' && req.method === 'POST') {
     const checked = authCheck(req)
     if (!checked.user) return sendJSON(res, 401, { ok: false, error: '请先登录' })
+    const expectedAccount = req.headers['x-yfe-account-context']
+    if (typeof expectedAccount === 'string' && expectedAccount !== checked.user.id) {
+      return sendJSON(res, 409, { ok: false, code: 'ACCOUNT_CONTEXT_CHANGED', error: '账号已在其他页面切换，请刷新页面后重试；邀请码未使用。' })
+    }
     const rl = rateLimit(`activate:${checked.user.id}:${ip}`, 10, 60 * 60 * 1000)
     if (!rl.ok) return sendJSON(res, 429, { ok: false, error: '尝试过于频繁，请稍后再试' })
     const body = await readJSONBody(req, 8 * 1024).catch(() => null)
@@ -741,6 +745,12 @@ async function handleApi(req, res, url) {
   //    权限判定全部在 communityApi 内部按 route 各自做，这里只把会话结果交给它。
   if (path === '/api/community' || path.startsWith('/api/community/')) {
     if (!communityApi) return sendJSON(res, 503, { ok: false, code: 'UNAVAILABLE', error: '社区服务未就绪' })
+    // 可选上下文只用于阻止旧页面与共享 Cookie 所代表的账号不一致；
+    // 它不是鉴权凭据，权限仍以服务端校验的会话为准，旧客户端可不发送。
+    const expectedAccount = req.headers['x-yfe-account-context']
+    if (typeof expectedAccount === 'string' && expectedAccount !== (user?.id || 'guest')) {
+      return sendJSON(res, 409, { ok: false, code: 'ACCOUNT_CONTEXT_CHANGED', error: '账号已在其他页面切换，请刷新页面后重试；当前输入不会提交。' })
+    }
     try {
       return await communityApi.handle({ req, res, path, qs, user, authReason: chk.reason, ip })
     } catch (e) {

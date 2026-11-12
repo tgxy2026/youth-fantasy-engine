@@ -562,7 +562,10 @@ export function diffVisibility(currentData, backupData) {
     reportsChanged: 0, profilesChanged: 0, rankChanged: 0, votesChanged: 0,
   }
   const contentFingerprint = (post) => JSON.stringify({
+    status: post?.status || '',
     display: post?.display || '',
+    publishedVersionId: post?.publishedVersionId || '',
+    pendingVersionId: post?.pendingVersionId || '',
     versions: Array.isArray(post?.versions)
       ? post.versions.map((v) => [v?.vid, v?.title, v?.body, v?.tags])
       : [],

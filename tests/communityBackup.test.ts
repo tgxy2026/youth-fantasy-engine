@@ -705,6 +705,23 @@ try {
   ok('R3 锁路径不可写时失败关闭', !badLock.ok && badLock.code === 'LOCK_FAILED')
   fs.rmdirSync(communityLockPath(r3Dir))
 
+  // 相同版本集合、仅公开版本指针变化，也必须阻止静默回退。
+  const pointerDir = path.join(root, 'pointer-live')
+  const pointerBackup = path.join(root, 'pointer-backup')
+  fs.mkdirSync(pointerDir)
+  const pointerData = syntheticData()
+  pointerData['posts.json'].items.p1.versions.push({ vid: 'v-new', title: '新版', body: '新版正文', tags: ['短篇'], createdAt: 21 })
+  for (const file of COMMUNITY_FILES) writeJson(path.join(pointerDir, file), pointerData[file as keyof typeof pointerData])
+  ok('版本指针测试备份成功', createBackup({ root: pointerDir, dest: pointerBackup, stopConfirmed: true }).ok)
+  pointerData['posts.json'].items.p1.publishedVersionId = 'v-new'
+  writeJson(path.join(pointerDir, 'posts.json'), pointerData['posts.json'])
+  const pointerRefused = restoreBackup({ backupDir: pointerBackup, root: pointerDir, stopConfirmed: true })
+  ok('仅发布版本指针改变时默认拒绝恢复', !pointerRefused.ok && pointerRefused.code === 'VISIBILITY_CHANGES' && pointerRefused.changes.some((c: any) => c.type === 'content-changed' && c.postId === 'p1'))
+  ok('拒绝后保留当前公开版本', readJson(path.join(pointerDir, 'posts.json')).items.p1.publishedVersionId === 'v-new')
+  const pendingData = structuredClone(pointerData)
+  pendingData['posts.json'].items.p1.pendingVersionId = 'v1'
+  ok('待审版本指针改变也列入差异', diffVisibility(pointerData, pendingData).changes.some((c: any) => c.type === 'content-changed' && c.postId === 'p1'))
+
   console.log(`communityBackup: ${pass} passed, 0 failed`)
 } finally {
   const target = fs.realpathSync(root)
