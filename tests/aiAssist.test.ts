@@ -188,7 +188,7 @@ console.log('\n▶ aiAssist')
 
   // 🔴 编辑器两条路径（B3 补做 · 2.4.1）：采纳那一刻挂账，落库时合并进该章。
   {
-    const model = readFileSync('src/components/editor/useNovelEditorModel.ts', 'utf8')
+    const model = readFileSync('src/components/editor/useNovelEditorModel.ts', 'utf8').replaceAll('\r\n', '\n')
     const ghost = readFileSync('src/components/editor/useNovelEditorGhost.ts', 'utf8')
     ok('🔴 编辑器：有挂账函数 noteAiAssist', /noteAiAssist\s*=/.test(model))
     ok('🔴 编辑器：落库统一走 saveChapterWithAi', /const saveChapterWithAi\s*=/.test(model))

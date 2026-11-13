@@ -17,7 +17,7 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 const ROOT = process.cwd()
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8')
+const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8').replaceAll('\r\n', '\n')
 
 console.log('—— tavernRunEmptyState：跑团互动空态等高闸（3.1.2）——')
 

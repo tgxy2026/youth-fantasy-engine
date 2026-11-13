@@ -11,7 +11,7 @@ import { FACTS_MAX_LINES } from '../src/lib/tavern/types'
 const ROOT = process.cwd()
 const read = (rel: string) => {
   const p = path.join(ROOT, rel)
-  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replaceAll('\r\n', '\n') : ''
 }
 
 let pass = 0, fail = 0
