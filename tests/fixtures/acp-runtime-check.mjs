@@ -6,11 +6,20 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createModeService } from '../../scripts/agent-host/mode-service.mjs'
 import { createAcpRuntime } from '../../scripts/agent-host/acp-runtime.mjs'
+import { parseAuthUrl } from '../../scripts/agent-host/acp-auth-line.mjs'
 import { openOwnedModeManager } from '../../scripts/agent-host/mode-manager.mjs'
 import { createModeFilePersistence } from '../../scripts/agent-host/mode-file.mjs'
 import { applySessionOptions } from '../../scripts/agent-host/acp-options.mjs'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-354-acp-'))
+// 登录地址识别：BROWSER 代理（YFE_ACP_AUTH）与组件自身提示两种形态都要认。
+const auth = 'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&state=x'
+assert.equal(parseAuthUrl(`YFE_ACP_AUTH:${JSON.stringify(auth)}`), auth)
+assert.equal(parseAuthUrl(`Open the following link to authenticate the ACP server: ${auth}`), auth)
+assert.equal(parseAuthUrl(`I1113 log prefix Open the following link to authenticate the ACP server: ${auth}`), auth)
+assert.equal(parseAuthUrl('https://accounts.google.com/o/oauth2/v2/auth?state=x'), null, '裸地址不视为登录提示')
+assert.equal(parseAuthUrl('YFE_ACP_AUTH:"https://evil.example/o/oauth2/v2/auth?state=x"'), null, '非 Google 域拒绝')
+assert.equal(parseAuthUrl('YFE_ACP_AUTH:"https://accounts.google.com/not-oauth?state=x"'), null, '非 OAuth 路径拒绝')
 const executable = fileURLToPath(new URL('./fake-acp-agent.mjs', import.meta.url))
 const profiles = new Map()
 let launches = 0

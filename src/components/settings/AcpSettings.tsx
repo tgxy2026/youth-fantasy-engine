@@ -95,7 +95,10 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
       <Button size="sm" variant="secondary" disabled={disabled || busy || !!installId}
         onClick={() => api && void run(id => api.selectBinary(id))}>选择已有官方组件</Button>
     </div>}
-    {installId && <Button size="sm" variant="secondary" onClick={() => void api?.cancel(installId)}>取消 ACP 操作</Button>}
+    {installId && <div className="flex items-center gap-2 text-12 text-ink-500">
+      <span>正在等待 ACP 组件响应，首次启动约需 20–30 秒…</span>
+      <Button size="sm" variant="secondary" onClick={() => void api?.cancel(installId)}>取消 ACP 操作</Button>
+    </div>}
     {selected?.available && status.config?.binary && <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Button size="sm" variant="secondary" disabled={disabled || busy || !!installId} onClick={() => api && void run(id => api.connect(id, false))}>连接并刷新选项</Button>

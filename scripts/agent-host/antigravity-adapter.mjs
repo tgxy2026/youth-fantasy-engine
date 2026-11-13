@@ -5,6 +5,7 @@ import { createAntigravityComponent } from './antigravity-component.mjs'
 import { launchWindowsAcpJob, verifyWindowsJobGone } from './acp-job.mjs'
 import { applySessionOptions } from './acp-options.mjs'
 import { createModeFilePersistence } from './mode-file.mjs'
+import { parseAuthUrl } from './acp-auth-line.mjs'
 
 // Pin the component independently of the ACP wire protocol. Release enablement depends
 // on validating the official OAuth flow and the Windows file-access boundary.
@@ -59,14 +60,11 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
           const lines = line.split('\n')
           line = lines.pop()
           for (const entry of lines) {
-            if (oauth.opened || !entry.startsWith('YFE_ACP_AUTH:')) continue
-            try {
-              const url = new URL(JSON.parse(entry.slice(13)))
-              if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' ||
-                  url.username || url.password || url.hash) continue
-              oauth.opened = true
-              void Promise.resolve(openExternal(url.href)).catch(() => {})
-            } catch { /* Leave invalid or unrecognized login URLs unopened. */ }
+            if (oauth.opened) break
+            const href = parseAuthUrl(entry)
+            if (!href) continue
+            oauth.opened = true
+            void Promise.resolve(openExternal(href)).catch(() => {})
           }
         },
       })
