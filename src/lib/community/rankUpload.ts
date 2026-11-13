@@ -5,8 +5,8 @@
 // 下次成功后自然覆盖。这样少一处状态机，也少一处「队列与账本不一致」的 bug。
 //
 // 🔴 批次与积压：服务端单次最多 400 条，原先只取「最近 400 条」⇒ 积压时**旧日期永远传不上去**。
-//    现在按日期升序分批、每轮最多 5 批，并把「已同步到哪一天」记在本机（按账号），
-//    下一轮从该日往前回退 2 天接着传（重叠部分由服务端 seq 幂等覆盖）。
+//    同时按条数与请求体字节分批。每轮最多 5 批，未传完时按日期和项目续传，
+//    完整跑完后从已同步日回退 2 天重叠同步（由服务端 seq 幂等覆盖）。
 // 🔴 撤回授权后**不得**再上传：每次上报前先查服务端档案（唯一真相），
 //    本地不缓存「已开启」状态，避免另一台设备撤回后本机继续硬传。
 // 🔴 只上传日期与数量：不含正文、标题、项目名。projectId 是不透明本地 id。
@@ -23,6 +23,8 @@ const SYNC_KEY = 'yfe.community.rankSync'
 const THROTTLE_MS = 60_000
 /** 与服务器单次上限一致：超过会被服务端截断，且难以判断「哪些没发」 */
 const BATCH_SIZE = 400
+/** 与服务端 readJSONBody 的请求体字节上限一致。 */
+const MAX_REPORT_BYTES = 32 * 1024
 /** 单轮最多发的批次数：保证一次上报不会拖住界面太久，下一轮会接着往下传 */
 const MAX_BATCHES = 5
 /** 「已同步日」回退天数：让最近几天的新增减量仍然会被重新上报覆盖 */
@@ -46,8 +48,10 @@ export interface RankUploadResult {
 
 interface SyncState {
   accountKey: string
+  optInAt: number
   syncedThrough: string
   fullSyncAt: number
+  cursor?: { from: string; date: string; projectId: string }
 }
 
 function deviceId(): string {
@@ -71,8 +75,11 @@ function readSyncState(): SyncState | null {
     if (!parsed || typeof parsed.accountKey !== 'string') return null
     return {
       accountKey: parsed.accountKey,
+      optInAt: Number(parsed.optInAt) || 0,
       syncedThrough: typeof parsed.syncedThrough === 'string' ? parsed.syncedThrough : '',
       fullSyncAt: Number(parsed.fullSyncAt) || 0,
+      cursor: parsed.cursor && typeof parsed.cursor.from === 'string' && typeof parsed.cursor.date === 'string'
+        && typeof parsed.cursor.projectId === 'string' ? parsed.cursor : undefined,
     }
   } catch { return null }
 }
@@ -119,7 +126,26 @@ export async function buildRankEntries(input: {
       out.push({ projectId: pid, date: row.date, netDelta, seq: row.seq, issuedAt: row.updatedAt })
     }
   }
-  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  return out.sort(compareRankPosition)
+}
+
+function compareRankPosition(a: Pick<RankReportEntry, 'date' | 'projectId'>, b: Pick<RankReportEntry, 'date' | 'projectId'>): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1
+  return a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0
+}
+
+/** 分批前计算 UTF-8 字节数，包含 JSON 外层、各条记录及分隔逗号。 */
+export function rankReportBatch(entries: RankReportEntry[], offset: number, deviceId: string, issuedAt: number): RankReportEntry[] {
+  const encoder = new TextEncoder()
+  let bytes = encoder.encode(JSON.stringify({ deviceId, issuedAt, entries: [] })).length
+  const batch: RankReportEntry[] = []
+  for (const entry of entries.slice(offset, offset + BATCH_SIZE)) {
+    const entryBytes = encoder.encode(JSON.stringify(entry)).length + (batch.length ? 1 : 0)
+    if (bytes + entryBytes > MAX_REPORT_BYTES) break
+    bytes += entryBytes
+    batch.push(entry)
+  }
+  return batch
 }
 
 /**
@@ -159,14 +185,15 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
 
     const optInDate = cnDateKey(Number(profile.rankOptInAt) || Date.now())
     const accountKey = opts.accountKey || 'default'
-    const previous = readSyncState()
-    const sameAccount = previous?.accountKey === accountKey
-    const staleFullSync = !sameAccount || now - (previous?.fullSyncAt || 0) > 12 * 3600 * 1000
-    // 同账号且 12 小时内同步过：从「已同步日 − 2 天」接着传；否则从授权开启日全量补齐
-    const resumeFrom = sameAccount && previous?.syncedThrough && !staleFullSync
+    const stored = readSyncState()
+    const optInAt = profile.rankOptInAt
+    const previous = stored?.accountKey === accountKey && stored.optInAt === optInAt ? stored : null
+    const staleFullSync = !previous?.fullSyncAt || now - previous.fullSyncAt > 12 * 3600 * 1000
+    // 每轮优先完成已有积压；新一轮按上次完整全量同步时间决定扫描范围。
+    const resumeFrom = previous?.cursor?.from ?? (previous?.syncedThrough && !staleFullSync
       ? shiftDateKey(previous.syncedThrough, -OVERLAP_DAYS)
-      : optInDate
-    const from = [optInDate, resumeFrom].sort()[1] // 取较晚者，但不早于授权日
+      : optInDate)
+    const from = resumeFrom > optInDate ? resumeFrom : optInDate
 
     let projects: string[] = []
     try {
@@ -175,12 +202,16 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
       return { ...empty, error: '读取项目列表失败' }
     }
     let incompleteFirstDay = false
-    const entries = await buildRankEntries({ projects, ledgerOf: readLedger, fromDate: from, optInAt: profile.rankOptInAt,
+    const allEntries = await buildRankEntries({ projects, ledgerOf: readLedger, fromDate: from, optInAt,
       onIncomplete: () => { incompleteFirstDay = true } })
     if (!await currentOwner()) return { ...empty, error: '账号已变化，请重新同步。' }
+    const cursor = previous?.cursor
+    const entries = cursor ? allEntries.filter(entry => compareRankPosition(entry, cursor) > 0) : allEntries
+    const fullSyncAt = from === optInDate ? now : previous?.fullSyncAt || 0
     if (!entries.length) {
-      writeSyncState({ accountKey, syncedThrough: previous?.syncedThrough || optInDate, fullSyncAt: now })
-      return { ...empty, skipped: 'no-entries' as const, syncedThrough: previous?.syncedThrough || optInDate, incompleteFirstDay }
+      const syncedThrough = previous?.syncedThrough || optInDate
+      writeSyncState({ accountKey, optInAt, syncedThrough, fullSyncAt })
+      return { ...empty, skipped: 'no-entries' as const, syncedThrough, incompleteFirstDay }
     }
 
     const device = deviceId()
@@ -189,22 +220,27 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
     const rejected: RankUploadResult['rejected'] = []
     let offset = 0
     let batches = 0
-    let syncedThrough = previous && sameAccount ? previous.syncedThrough : ''
+    let syncedThrough = previous?.syncedThrough || ''
 
     while (offset < entries.length && batches < MAX_BATCHES) {
-      const chunk = entries.slice(offset, offset + BATCH_SIZE)
+      const chunk = rankReportBatch(entries, offset, device, optInAt)
+      if (!chunk.length) return { sent, accepted, rejected, remaining: entries.length - offset, syncedThrough, incompleteFirstDay, error: '排行记录过大，无法同步。' }
       batches++
       try {
         if (!await currentOwner()) return { sent, accepted, rejected, remaining: entries.length - offset, syncedThrough, incompleteFirstDay, error: '账号已变化，请重新同步。' }
-        const r = await reportRank({ deviceId: device, issuedAt: profile.rankOptInAt, entries: chunk })
+        const r = await reportRank({ deviceId: device, issuedAt: optInAt, entries: chunk })
         if (!await currentOwner()) return { sent, accepted, rejected, remaining: entries.length - offset, syncedThrough, incompleteFirstDay, error: '账号已变化，请核对同步结果。' }
         sent += chunk.length
         accepted += r.accepted.length
         rejected.push(...r.rejected)
         offset += chunk.length
-        const lastDate = chunk[chunk.length - 1]?.date || ''
-        if (lastDate && lastDate > syncedThrough) syncedThrough = lastDate
-        writeSyncState({ accountKey, syncedThrough, fullSyncAt: now })
+        const last = chunk[chunk.length - 1]
+        if (last.date > syncedThrough) syncedThrough = last.date
+        writeSyncState({
+          accountKey, optInAt, syncedThrough,
+          fullSyncAt: offset < entries.length ? previous?.fullSyncAt || 0 : fullSyncAt,
+          cursor: offset < entries.length ? { from, date: last.date, projectId: last.projectId } : undefined,
+        })
       } catch (e) {
         return {
           sent, accepted, rejected,

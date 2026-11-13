@@ -15,6 +15,7 @@ import { WEB } from '@/lib/app/platform'
 // 🔴 只认地址证据，不认 `local` 标记：把远程 URL 勾成「本地」是配置失误，不能成为外发通道。
 import { isLocalModelAddress } from '@/lib/aiCore/localModelPolicy'
 import { protocolOf } from '@/lib/aiCore/protocol'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { AIProvider } from '@/lib/ai'
 
 /**
@@ -114,13 +115,14 @@ export async function suggestReview(input: {
       + '请在小范围审核前把「用途模型」指向本机 Ollama / LM Studio 端点，本页仍可人工决定。')
   }
   const material = clampMaterial(input.body || '')
+  const fence = newAuthorFence()
   const header = input.kind === 'post'
-    ? `【待审投稿】标题：${(input.title || '').slice(0, 120)}`
+    ? `【待审投稿标题】\n${authorBlock(fence, (input.title || '').slice(0, 120))}`
     : '【待审评论】'
   const user = `${header}
 ${material.truncated ? '（正文过长，已截断到前 6000 个字符；以下结论不代表全文）' : ''}
 【待审正文】
-${material.text}
+${authorBlock(fence, material.text)}
 
 请按约定输出 JSON。`
   const raw = await chat(

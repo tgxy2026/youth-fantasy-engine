@@ -11,8 +11,10 @@ import {
   classifyAdviceTarget,
 } from '../src/lib/community/advice'
 import { decideAfterSubmit } from '../src/lib/community/publishOutcome'
-import { buildRankEntries, shiftDateKey } from '../src/lib/community/rankUpload'
-import { applyLedgerDelta, netDeltaOfTexts } from '../src/lib/community/rankLedger'
+import { buildRankEntries, rankReportBatch, shiftDateKey, uploadRank } from '../src/lib/community/rankUpload'
+import { applyLedgerDelta, cnDateKey, netDeltaOfTexts, RANK_LEDGER_PREFIX } from '../src/lib/community/rankLedger'
+import { ops, setStoreOps } from '../src/lib/db/core'
+import { configureCloudTransport } from '../src/lib/cloud/syncApi'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -44,6 +46,10 @@ ok('拒绝理由可展示且不含密钥', (() => {
   return !r.ok && r.reason.length > 4 && !/sk-|secret|token/i.test(r.reason)
 })())
 ok('建议结果记录实际端点（源码接线）', /endpoint: target\.host/.test(read('src/lib/community/advice.ts')))
+ok('待审标题和正文各自通过原文边界进入模型', (() => {
+  const source = read('src/lib/community/advice.ts')
+  return /authorBlock\(fence, \(input\.title/.test(source) && /authorBlock\(fence, material\.text\)/.test(source)
+})())
 ok('建议记录写入 endpoint / coverage（服务端）', /endpoint: String\(body\?\.endpoint/.test(read('server/lib/communityApi.mjs')))
 
 // ---- ② 提交回执 ----
@@ -72,6 +78,26 @@ ok('积压不再被 400 条截断（450 条全部进入批次）', await (async 
   })
   const rows = await buildRankEntries({ projects: ['p1'], ledgerOf: async () => many, fromDate: '2025-01-01' })
   return rows.length === 450
+})())
+ok('同日账本按项目 ID 稳定排序，项目列表重排后仍可续传', await (async () => {
+  const row = { date: '2026-11-10', net: 10, seq: 1, updatedAt: 1 }
+  const entries = await buildRankEntries({ projects: ['c', 'a', 'b'], ledgerOf: async () => [row], fromDate: row.date })
+  return entries.map(entry => entry.projectId).join(',') === 'a,b,c'
+})())
+ok('排行积压按 UTF-8 字节数分批，保留全部项目和原顺序', (() => {
+  const deviceId = 'dev_12345678'
+  const issuedAt = 1794300000000
+  const entries = Array.from({ length: 450 }, (_, i) => ({
+    projectId: '章'.repeat(110) + i, date: '2026-11-10', netDelta: i - 200, seq: 1, issuedAt,
+  }))
+  let offset = 0
+  while (offset < entries.length) {
+    const batch = rankReportBatch(entries, offset, deviceId, issuedAt)
+    const size = new TextEncoder().encode(JSON.stringify({ deviceId, issuedAt, entries: batch })).length
+    if (!batch.length || batch.length >= 400 || size > 32 * 1024 || batch.some((entry, i) => entry !== entries[offset + i])) return false
+    offset += batch.length
+  }
+  return offset === entries.length
 })())
 ok('早于授权日的记录不上传', await (async () => {
   const rows = await buildRankEntries({
@@ -121,7 +147,73 @@ ok('延迟补记保留原始发生时间', (() => {
 ok('含标点净增量复用既有口径', netDeltaOfTexts('字'.repeat(5000), '字'.repeat(10000) + '，') === 5001)
 ok('批次上限与服务器一致（400）', /const BATCH_SIZE = 400/.test(read('src/lib/community/rankUpload.ts'))
   && /entries.slice\(0, 400\)/.test(read('server/lib/communityApi.mjs')))
+ok('请求体字节上限与服务器一致（32 KiB）', /MAX_REPORT_BYTES = 32 \* 1024/.test(read('src/lib/community/rankUpload.ts'))
+  && /readJSONBody\(req, 32 \* 1024\)/.test(read('server/lib/communityApi.mjs')))
 ok('上报前先补记失败增量', /flushPendingRankDeltas\(\)/.test(read('src/lib/community/rankUpload.ts')))
+
+// Drive the upload entry point through its actual store and transport interfaces.
+const accountKey = 'rank-audit-account'
+const before = ops
+const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+const memory = new Map<string, string>()
+Object.defineProperty(globalThis, 'window', { configurable: true, value: { __YFE_USER__: { id: accountKey } } })
+Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+  getItem: (key: string) => memory.get(key) ?? null,
+  setItem: (key: string, value: string) => memory.set(key, value),
+  removeItem: (key: string) => memory.delete(key),
+} })
+try {
+  const date = '2026-11-10'
+  const earlier = '2026-11-09'
+  const optInAt = Date.parse('2026-11-08T12:00:00+08:00')
+  const ids = Array.from({ length: 650 }, (_, i) => '章'.repeat(110) + String(i).padStart(3, '0'))
+  let rows = ids.map(projectId => ({
+    key: projectId + '::' + RANK_LEDGER_PREFIX + date,
+    value: applyLedgerDelta(null, 7, date, Date.parse(date + 'T12:00:00+08:00')),
+  }))
+  setStoreOps({
+    ...before,
+    getAll: async <T>(store: string) => (store === 'projects'
+      ? ids.map(id => ({ id, projectType: 'full', updatedAt: 1 }))
+      : store === 'settingsKV' ? rows : []) as T[],
+  })
+  const accepted: Array<{ projectId: string; date: string }> = []
+  configureCloudTransport({
+    base: 'http://rank-test.invalid',
+    fetch: async (url, init) => {
+      if (String(url).endsWith('/profile')) return Response.json({ ok: true, profile: { rankOptIn: true, rankOptInAt: optInAt } })
+      const body = String(init?.body)
+      if (new TextEncoder().encode(body).length > 32 * 1024) return Response.json({ ok: false }, { status: 400 })
+      const entries = (JSON.parse(body) as { entries: typeof accepted }).entries
+      accepted.push(...entries)
+      return Response.json({ ok: true, accepted: entries, rejected: [] })
+    },
+  })
+  const first = await uploadRank({ force: true, accountKey })
+  const second = await uploadRank({ force: true, accountKey })
+  ok('同一天积压超过五批时续传到末尾', first.remaining > 0 && second.remaining === 0
+    && accepted.map(entry => entry.projectId).join(',') === ids.join(','))
+
+  memory.set('yfe.community.rankSync', JSON.stringify({
+    accountKey, optInAt: optInAt - 1, syncedThrough: '2026-11-13', fullSyncAt: Date.now(),
+    cursor: { from: '2026-11-13', date: '2026-11-13', projectId: ids[0] },
+  }))
+  rows = [{
+    key: ids[0] + '::' + RANK_LEDGER_PREFIX + earlier,
+    value: applyLedgerDelta(null, 7, earlier, Date.parse(earlier + 'T12:00:00+08:00')),
+  }]
+  const reopened = await uploadRank({ force: true, accountKey })
+  ok('同账号重新授权时废弃旧游标，从新授权日起补传', reopened.accepted === 1
+    && accepted.at(-1)?.date === earlier && cnDateKey(optInAt) === '2026-11-08')
+} finally {
+  configureCloudTransport(null)
+  setStoreOps(before)
+  if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor)
+  else Reflect.deleteProperty(globalThis, 'window')
+  if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor)
+  else Reflect.deleteProperty(globalThis, 'localStorage')
+}
 
 // ---- 账本覆盖：新增章节、删除、恢复、导入排除 ----
 const chapters = read('src/lib/db/chapters.ts')
