@@ -7,7 +7,21 @@ import { randomBytes } from 'node:crypto'
 export function createModeFilePersistence(file) {
   if (!path.isAbsolute(file)) throw new Error('模式状态文件必须使用绝对路径')
   const target = path.resolve(file)
+  const pending = `${target}.pending`
   return {
+    async hasPending() {
+      try { await fs.lstat(pending); return true }
+      catch (error) { if (error?.code === 'ENOENT') return false; throw error }
+    },
+    async markPending(value) {
+      const handle = await fs.open(pending, 'wx', 0o600)
+      try {
+        await handle.writeFile(JSON.stringify(value) + '\n')
+        await handle.sync()
+      } finally { await handle.close() }
+    },
+    async readPending() { return JSON.parse(await fs.readFile(pending, 'utf8')) },
+    async clearPending() { await fs.unlink(pending) },
     async read() {
       // ENOENT 与 JSON 损坏均向上抛出，不伪装成默认 API 模式。
       const text = await fs.readFile(target, 'utf8')
@@ -15,7 +29,7 @@ export function createModeFilePersistence(file) {
     },
     /** 仅在文件从未存在时初始化；绝不覆盖损坏或中断的记录。 */
     async initialize(mode) {
-      if (mode !== 'api' && mode !== 'agent') throw new Error('初始模式无效')
+      if (mode !== 'api' && mode !== 'agent' && mode !== 'acp') throw new Error('初始模式无效')
       await fs.mkdir(path.dirname(target), { recursive: true })
       const handle = await fs.open(target, 'wx', 0o600)
       try {

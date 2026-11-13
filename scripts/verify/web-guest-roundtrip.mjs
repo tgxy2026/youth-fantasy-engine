@@ -135,7 +135,12 @@ async function main() {
       viewport: { width: 1440, height: 1000 }, args: ['--no-proxy-server'],
     })
     ctx.setDefaultTimeout(25000)
-    await ctx.addInitScript(() => { try { localStorage.setItem('yfe-guest-tip-off', '1') } catch { /* origin 还没就绪 */ } })
+    await ctx.addInitScript(() => {
+      try {
+        localStorage.setItem('yfe-guest-tip-off', '1')
+        localStorage.setItem('yfe-ui:guide-auto', '0')
+      } catch { /* origin 还没就绪 */ }
+    })
     ctx.on('page', (p) => p.on('pageerror', (e) => pageErrors.push(String(e.message))))
     const page = ctx.pages()[0] ?? await ctx.newPage()
     page.on('pageerror', (e) => pageErrors.push(String(e.message)))

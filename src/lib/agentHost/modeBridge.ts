@@ -17,7 +17,8 @@ export interface ConnectionModeStatus {
   mode: ConnectionMode | null
   reason: string
   busy: boolean
-  active: { api: number; agent: number }
+  active: Record<ConnectionMode, number>
+  supportedModes?: ConnectionMode[]
   ownsLock: boolean
   lock: { pid: number | null; corrupt: boolean; alive: boolean | null } | null
   canRecover: boolean
@@ -62,15 +63,15 @@ export function hasLocalModeHost(): boolean {
 
 const BLOCKED_STATUS: ConnectionModeStatus = {
   phase: 'blocked', mode: null, reason: '网页版没有本机连接模式服务', busy: false,
-  active: { api: 0, agent: 0 }, ownsLock: false, lock: null, canRecover: false,
+  active: { api: 0, agent: 0, acp: 0 }, ownsLock: false, lock: null, canRecover: false,
 }
 
-const DENIED_IN_AGENT = '当前为 Agent 连接模式：引擎内置的 API 调用已停用。要使用 API 调用，请到「模型设置 → API 调用」切换并等待切换完成。'
+const API_MODE_REQUIRED = '当前连接模式不允许模型 API 请求。请在「模型设置」切换到 API 模式并等待切换完成。'
 const MODE_UNREADY = '无法从本机宿主确认连接模式，已拒绝模型请求。请到「模型设置」查看模式状态并按提示安全恢复。'
 
 function leaseFailure(message?: string): Error {
-  if (!message) return new Error(DENIED_IN_AGENT)
-  if (/不允许/.test(message)) return new Error(`${DENIED_IN_AGENT}（${message}）`)
+  if (!message) return new Error(API_MODE_REQUIRED)
+  if (/不允许/.test(message)) return new Error(`${API_MODE_REQUIRED}（${message}）`)
   return new Error(`${MODE_UNREADY}（${message}）`)
 }
 
@@ -116,7 +117,7 @@ function portablePost(path: string, body: unknown): Promise<Record<string, unkno
 
 /** 请求切换；调用方必须自己生成并保留 transitionId，取消时用它。 */
 export async function switchConnectionMode(to: ConnectionMode, transitionId: string): Promise<ModeMutation> {
-  if (!hasLocalModeHost()) return { ok: false, error: '网页版没有本机连接模式服务，不能切换 API / Agent 模式。' }
+  if (!hasLocalModeHost()) return { ok: false, error: '网页版没有本机连接模式服务，无法切换本机连接模式。' }
   if (DESKTOP) {
     const api = desktopApi()
     if (!api || typeof api.modeSwitch !== 'function') return { ok: false, error: '当前安装包不支持连接模式互斥。' }

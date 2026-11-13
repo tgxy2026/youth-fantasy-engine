@@ -30,7 +30,7 @@ import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
 export const CONTENT_VERSION = 11
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.5.3'
+export const SUPPORTED_APP_VERSION = '3.5.4'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [

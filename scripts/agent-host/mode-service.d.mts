@@ -1,5 +1,5 @@
 // scripts/agent-host/mode-service.mjs 的类型声明（只覆盖测试 / 宿主接线用到的面）。
-export type ConnectionModeName = 'api' | 'agent'
+export type ConnectionModeName = 'api' | 'agent' | 'acp'
 
 export interface ModeFileRecoveryOptions {
   dataDir: string
@@ -19,7 +19,8 @@ export interface ModeStatusLike {
   mode: ConnectionModeName | null
   reason: string
   busy: boolean
-  active: { api: number; agent: number }
+  active: Record<ConnectionModeName, number>
+  supportedModes: ConnectionModeName[]
   ownsLock: boolean
   lock: { pid: number | null; corrupt: boolean; alive: boolean | null } | null
   canRecover: boolean
@@ -32,6 +33,8 @@ export interface ModeServiceLike {
   release(id: string, owner: string): boolean
   setAgentConfig(patch: { enabled?: boolean; scope?: unknown }): Record<string, unknown>
   switchTo(to: ConnectionModeName, transitionId: string, signal?: AbortSignal): Promise<ModeStatusLike>
+  canCancelSwitch(id: string): boolean
+  switchAcpAgent(id: string, prepare: () => Promise<() => Promise<void>>, signal?: AbortSignal): Promise<ModeStatusLike>
   recover(options?: { confirm?: boolean; confirmPid?: number | null }): Promise<ModeStatusLike>
   close(): Promise<void>
 }
@@ -40,4 +43,6 @@ export function createModeService(options: {
   dataDir: string
   callPage: (payload: unknown) => Promise<unknown>
   clientCount?: () => number
+  acp?: { stop(): Promise<void>; verifyQuiescent(): Promise<void> }
+  callReadonly?: (body: unknown, scope: { projects: { projectId: string }[] }) => unknown
 }): Promise<ModeServiceLike>

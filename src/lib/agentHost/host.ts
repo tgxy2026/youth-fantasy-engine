@@ -18,6 +18,7 @@ import {
   type AgentScope, type AgentToolCall, type AgentToolResult,
 } from '@/lib/agentHost/contract'
 import { createAgentExecutor, defaultExecutorDeps } from '@/lib/agentHost/executor'
+import type { ConnectionMode } from './modeTransition'
 
 export type AgentHostMode = 'desktop' | 'portable' | 'web'
 
@@ -38,7 +39,7 @@ export interface AgentHostStatus {
   /** 宿主是否配置了连接令牌（只返回布尔，不返回令牌本身） */
   tokenConfigured?: boolean
   /** 3.4.3：连接模式真源摘要（页面只读，不可由此推断权限） */
-  connectionMode?: { phase: 'stable' | 'switching' | 'blocked'; mode: 'api' | 'agent' | null; busy: boolean; reason: string } | null
+  connectionMode?: { phase: 'stable' | 'switching' | 'blocked'; mode: ConnectionMode | null; busy: boolean; reason: string } | null
 }
 
 const EMPTY_STATUS: AgentHostStatus = {

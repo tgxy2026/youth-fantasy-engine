@@ -78,6 +78,24 @@ contextBridge.exposeInMainWorld('electronAgentHost', {
 
 // 联网检索：由主进程代发请求。搜索接口大多不带 CORS 头，渲染进程直连会被同源策略拦掉，
 // 而桌面版唯一的「后端」就是这个主进程。（便携版是单文件 HTML、跑在浏览器里，没有这一层。）
+contextBridge.exposeInMainWorld('electronAcp', {
+  status: () => ipcRenderer.invoke('acp:status'),
+  select: id => ipcRenderer.invoke('acp:select', id),
+  install: id => ipcRenderer.invoke('acp:install', id),
+  selectBinary: id => ipcRenderer.invoke('acp:select-binary', id),
+  connect: (id, login) => ipcRenderer.invoke('acp:connect', id, login),
+  disconnect: id => ipcRenderer.invoke('acp:disconnect', id),
+  logout: id => ipcRenderer.invoke('acp:logout', id),
+  configure: (id, patch) => ipcRenderer.invoke('acp:configure', id, patch),
+  cancel: id => ipcRenderer.invoke('acp:cancel', id),
+  generate: request => ipcRenderer.invoke('acp:generate', request),
+  onChunk: callback => {
+    const listener = (_event, chunk) => callback(chunk)
+    ipcRenderer.on('acp:chunk', listener)
+    return () => ipcRenderer.removeListener('acp:chunk', listener)
+  },
+})
+
 contextBridge.exposeInMainWorld('electronNet', {
   /**
    * 代发一次 HTTP 请求。

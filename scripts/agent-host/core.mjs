@@ -24,6 +24,7 @@ export const PAGE_HEADER = 'x-yfe-agent-page'
 const CALL_TIMEOUT_MS = 45_000
 // 只读请求不需要幂等账本，也不能把作品正文或设定保存在账本中。
 const READ_TOOLS = new Set(['yfe_list_projects', 'yfe_get_project', 'yfe_list_chapters', 'yfe_read_chapter', 'yfe_check_chapter_words', 'yfe_check_chapter_typos', 'yfe_list_setting_tabs', 'yfe_list_setting_cards', 'yfe_read_setting_card', 'yfe_list_data_tabs', 'yfe_read_form', 'yfe_list_table_rows', 'yfe_list_tavern_reports', 'yfe_read_tavern_report', 'yfe_list_chapter_snapshots', 'yfe_read_chapter_snapshot', 'yfe_list_world_sets', 'yfe_list_world_packs', 'yfe_read_world_pack_table', 'yfe_list_project_backups', 'yfe_list_maps', 'yfe_list_map_places', 'yfe_search_project', 'yfe_read_plot_canvas', 'yfe_preview_world_import', 'yfe_preview_backup_restore', 'yfe_list_chapter_trash', 'yfe_list_check_reports', 'yfe_read_check_report', 'yfe_list_agent_tasks', 'yfe_get_agent_task'])
+READ_TOOLS.add('yfe_list_inspirations')
 
 export const ACTIONS = ['setting:create', 'setting:write', 'form:write', 'table:create', 'table:write', 'volume:create', 'volume:write', 'chapter:create', 'chapter:write', 'chapter:delete', 'inspiration:write', 'map:create', 'map:write', 'map:delete', 'canvas:write', 'world:read', 'world:write', 'backup:restore', 'chapter:restore', 'report:write', 'task:write']
 const MAX_GRANTED_PROJECTS = 200
@@ -313,7 +314,7 @@ function sendJson(res, code, obj, extra = {}) {
  * @param {(payload:object)=>Promise<object>} opts.callPage  把调用交给页面执行
  * @param {()=>number} [opts.clientCount]
  */
-export function createAgentHost({ configFile, callPage, clientCount = () => 0, modeGate = null }) {
+export function createAgentHost({ configFile, callPage, clientCount = () => 0, modeGate = null, callReadonly }) {
   const configPending = `${configFile}.pending`
   try {
     fs.lstatSync(configPending)
@@ -432,7 +433,7 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0, m
     const owner = 'agent-host'
     let lease
     try { lease = modeGate.acquire('agent', owner) }
-    catch { return { ok: false, code: 'MODE_BLOCKED', error: '当前模式不允许 Agent 调用。' } }
+    catch { return { ok: false, code: 'MODE_BLOCKED', error: '请切换到 MCP 模式后再调用工具。' } }
     // 超时、异常可能仍有页面写入在途，保留租约使模式切换失败关闭；
     // 不凭超时自动释放，直至将来由可信宿主确认任务终止并人工恢复。
     const result = await handleCallInner(body)
@@ -457,6 +458,22 @@ export function createAgentHost({ configFile, callPage, clientCount = () => 0, m
         let body
         try { body = JSON.parse(await readBody(req)) } catch { return sendJson(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求体不是有效 JSON' }) }
         return sendJson(res, 200, await handleCall(body))
+      }
+
+      if (route === '/api/agent/readonly' && req.method === 'POST' && callReadonly && modeGate) {
+        if (!authorized(req)) return sendJson(res, 401, { ok: false, code: 'UNAUTHORIZED' })
+        const body = JSON.parse(await readBody(req))
+        const owner = 'agent-host-readonly'
+        let lease
+        try { lease = modeGate.acquire('agent', owner) }
+        catch { return sendJson(res, 409, { ok: false, code: 'MODE_BLOCKED', error: '请切换到 MCP 模式后再读取作品。' }) }
+        try {
+          if (!config.enabled) return sendJson(res, 403, { ok: false, code: 'HOST_DISABLED', error: '请开启 MCP 连接并授权项目。' })
+          const value = await callReadonly(body, normalizeScope(config.scope))
+          return sendJson(res, 200, { ok: true, value })
+        } finally {
+          modeGate.release(lease, owner)
+        }
       }
 
       // ISSUE-11：账本查询刻意不经 modeGate——切回 API 模式后业务调用会被 MODE_BLOCKED 拒绝，

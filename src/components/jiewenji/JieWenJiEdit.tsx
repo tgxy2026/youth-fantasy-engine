@@ -19,7 +19,7 @@ import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
   const {
-    aiReady, selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords,
+    writingReady, acpWriting, selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords,
     rewrite, runRewrite, applyAdvice, aiBtnCls, onClearAdvice,
     contOpen, setContOpen, contWords, setContWords, contPlot, setContPlot, contPicks, toggleContPick,
     contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount,
@@ -104,9 +104,9 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => void runRewrite()}
-              disabled={!aiReady || !selText || rewrite.loading}
+              disabled={!writingReady || !selText || rewrite.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : undefined}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined}
             >
               {rewrite.loading ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
               {/* ⚠️ 不能写成 `让颉文姬${instruction}选区` —— 动作改名为「语气 / 视角」后会变成
@@ -286,9 +286,9 @@ export default function JieWenJiEdit({ m }: { m: JieWenJiModel }) {
 
                   <Button variant="bare"
                     onClick={() => void runContinuation()}
-                    disabled={!aiReady || cont.loading || contPreview.loading || contOver}
+                    disabled={!writingReady || cont.loading || contPreview.loading || contOver}
                     className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-                    title={!aiReady ? AI_DISABLED_HINT : undefined}
+                    title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined}
                   >
                     {cont.loading ? <Loader2 size={12} className="animate-spin" /> : <Feather size={12} />}
                     {cont.loading ? '续写中…' : '让颉文姬续写'}

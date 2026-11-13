@@ -4,9 +4,9 @@ import { randomBytes } from 'node:crypto'
 import { createModeFilePersistence } from './mode-file.mjs'
 import { acquireModeOwnerLock } from './mode-owner-lock.mjs'
 
-function decode(raw) {
+function decode(raw, supportedModes) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1) return { phase: 'blocked', reason: '模式状态缺失或版本未知' }
-  if (raw.phase === 'stable' && (raw.mode === 'api' || raw.mode === 'agent')) return { phase: 'stable', mode: raw.mode }
+  if (raw.phase === 'stable' && supportedModes.includes(raw.mode)) return { phase: 'stable', mode: raw.mode }
   return { phase: 'blocked', reason: '模式状态无效或上次切换未完成' }
 }
 
@@ -15,24 +15,32 @@ function decode(raw) {
  * @param {'api'|'agent'|undefined} initialMode 仅在记录文件**从未存在**且调用方已核对旧配置后给出；
  *   缺失的原因不明（损坏、中断、权限）时不要给出，保持 blocked。
  */
-async function createModeManager(file, initialMode) {
-  const store = createModeFilePersistence(file)
+async function createModeManager(store, initialMode, supportedModes, verifyQuiescent) {
+  const readMode = async () => decode(await store.read(), supportedModes)
   let state
   let missing = false
   try {
-    state = decode(await store.read())
+    state = await store.hasPending()
+      ? { phase: 'blocked', reason: '上次模式切换未确认' }
+      : await readMode()
+    await verifyQuiescent()
   } catch (error) {
-    missing = error?.code === 'ENOENT'
-    state = { phase: 'blocked', reason: missing ? '模式记录尚未建立' : '无法读取模式状态' }
+    missing = error?.code === 'ENOENT' && state === undefined
+    state = { phase: 'blocked', reason: missing ? '模式记录尚未建立' : state ? error.message : '无法读取模式状态' }
   }
-  if (missing && (initialMode === 'api' || initialMode === 'agent')) {
+  if (missing && supportedModes.includes(initialMode)) {
     try {
+      await verifyQuiescent()
       await store.initialize(initialMode)
-      state = decode(await store.read())
+      state = await readMode()
     } catch (error) {
       if (error?.code === 'EEXIST') {
         // 另一个写者在我们持有锁期间创建了记录：只接受能严格解析的稳定状态。
-        try { state = decode(await store.read()) } catch { state = { phase: 'blocked', reason: '模式初始化发生竞争' } }
+        try {
+          if (await store.hasPending()) throw new Error('模式切换未确认')
+          await verifyQuiescent()
+          state = await readMode()
+        } catch { state = { phase: 'blocked', reason: '模式初始化发生竞争' } }
       } else {
         state = { phase: 'blocked', reason: '模式记录初始化失败' }
       }
@@ -41,13 +49,22 @@ async function createModeManager(file, initialMode) {
   const leases = new Map()
   const waiters = new Set()
   let busy = false
-  const snapshot = () => ({ ...state, busy, active: { api: [...leases.values()].filter(x => x.mode === 'api').length, agent: [...leases.values()].filter(x => x.mode === 'agent').length } })
+  let committing = false
+  const snapshot = () => {
+    const active = { api: 0, agent: 0, acp: 0 }
+    for (const lease of leases.values()) active[lease.mode]++
+    return { ...state, busy, active }
+  }
   const drain = signal => {
     if (signal?.aborted) return Promise.reject(new Error('等待任务结束已取消'))
     if (!leases.size) return Promise.resolve()
     return new Promise((resolve, reject) => {
       const cleanup = () => { waiters.delete(done); signal?.removeEventListener('abort', abort) }
-      const done = () => { cleanup(); resolve() }
+      const done = () => {
+        cleanup()
+        if (state.phase === 'blocked') reject(new Error(state.reason))
+        else resolve()
+      }
       const abort = () => { cleanup(); reject(new Error('等待任务结束已取消')) }
       waiters.add(done)
       signal?.addEventListener('abort', abort, { once: true })
@@ -63,7 +80,7 @@ async function createModeManager(file, initialMode) {
       try {
         if (!await confirmPreviousStopped()) throw new Error('旧 Agent 宿主未确认关闭，不能初始化')
         await store.initialize(mode)
-        const confirmed = decode(await store.read())
+        const confirmed = await readMode()
         if (confirmed.phase !== 'stable' || confirmed.mode !== mode) throw new Error('初始模式回读失败')
         state = confirmed
         return snapshot()
@@ -85,7 +102,7 @@ async function createModeManager(file, initialMode) {
       try {
         if (!await confirmQuiescent()) throw new Error('未确认旧宿主和任务均已停止')
         await store.write({ version: 1, phase: 'stable', mode })
-        const confirmed = decode(await store.read())
+        const confirmed = await readMode()
         if (confirmed.phase !== 'stable' || confirmed.mode !== mode) throw new Error('恢复模式回读失败')
         state = confirmed
         return snapshot()
@@ -98,7 +115,7 @@ async function createModeManager(file, initialMode) {
       return this.recover('api', confirmQuiescent)
     },
     acquire(mode, owner) {
-      if ((mode !== 'api' && mode !== 'agent') || typeof owner !== 'string' || !owner || owner.length > 200) throw new Error('任务租约参数无效')
+      if (!supportedModes.includes(mode) || typeof owner !== 'string' || !owner || owner.length > 200) throw new Error('任务租约参数无效或当前平台不支持该模式')
       if (state.phase !== 'stable' || state.mode !== mode) throw new Error('当前连接模式不允许启动该任务')
       const id = randomBytes(24).toString('hex')
       leases.set(id, { mode, owner })
@@ -111,40 +128,57 @@ async function createModeManager(file, initialMode) {
       if (!leases.size) for (const wake of [...waiters]) wake()
       return true
     },
-    async switchTo(to, id, prepare, signal) {
+    canCancel(id) {
+      return state.phase === 'switching' && state.transitionId === id && !committing
+    },
+    block(reason) {
+      state = { phase: 'blocked', reason }
+      for (const wake of [...waiters]) wake()
+    },
+    async switchTo(to, id, prepare, signal, reconfigure = false) {
       if (busy) throw new Error('模式切换正在进行')
       if (state.phase !== 'stable') throw new Error('模式不可用，需要恢复')
-      if ((to !== 'api' && to !== 'agent') || typeof id !== 'string' || !id.trim() || id.length > 200 || typeof prepare !== 'function') throw new Error('模式切换参数无效')
-      if (state.mode === to) return snapshot()
+      if (!supportedModes.includes(to) || typeof id !== 'string' || !id.trim() || id.length > 200 || typeof prepare !== 'function') throw new Error('模式切换参数无效或当前平台不支持该模式')
+      if (reconfigure && (state.mode !== 'acp' || to !== 'acp')) throw new Error('仅 ACP 模式允许切换 ACP Agent')
+      if (state.mode === to && !reconfigure) return snapshot()
+      if (signal?.aborted) throw new Error('切换已取消')
       busy = true
       const from = state.mode
       state = { phase: 'switching', from, to, transitionId: id }
       try {
-        await store.write({ version: 1, ...state })
+        const record = { version: 1, ...state }
+        await store.markPending(record)
+        await store.write(record)
         const written = await store.read()
         if (written?.version !== 1 || written?.phase !== 'switching' || written?.from !== from || written?.to !== to || written?.transitionId !== id) throw new Error('切换记录回读失败')
         await drain(signal)
         if (signal?.aborted) throw new Error('切换已取消')
-        if (!await prepare()) throw new Error('目标模式未就绪')
+        const commit = await prepare(from)
         if (signal?.aborted) throw new Error('切换已取消')
+        committing = true
+        if (typeof commit === 'function') await commit()
         await store.write({ version: 1, phase: 'stable', mode: to })
-        const confirmed = decode(await store.read())
+        const confirmed = await readMode()
         if (confirmed.phase !== 'stable' || confirmed.mode !== to) throw new Error('模式回读失败')
+        await store.clearPending()
         state = confirmed
-        return snapshot()
       } catch (error) {
         state = { phase: 'blocked', reason: '切换结果未确认' }
         throw error
-      } finally { busy = false }
+      } finally { busy = false; committing = false }
+      return snapshot()
     },
   }
 }
 
 /** 获取本机排他锁后创建宿主；不自动清理遗留锁或损坏状态，恢复须用户明确确认。 */
-export async function openOwnedModeManager(file, lockFile, { initialMode } = {}) {
+export async function openOwnedModeManager(file, lockFile, {
+  initialMode, supportedModes = ['api', 'agent'], verifyQuiescent = async () => {},
+  store = createModeFilePersistence(file),
+} = {}) {
   const lock = await acquireModeOwnerLock(lockFile)
   let manager
-  try { manager = await createModeManager(file, initialMode) }
+  try { manager = await createModeManager(store, initialMode, supportedModes, verifyQuiescent) }
   catch (error) { await lock.release(); throw error }
   let closing = false
   return {
@@ -162,15 +196,17 @@ export async function openOwnedModeManager(file, lockFile, { initialMode } = {})
       return manager.acquire(mode, owner)
     },
     release: (id, owner) => manager.release(id, owner),
-    switchTo(to, id, prepare, signal) {
+    canCancel: id => manager.canCancel(id),
+    block: reason => manager.block(reason),
+    switchTo(to, id, prepare, signal, reconfigure) {
       if (closing) throw new Error('模式宿主正在关闭')
-      return manager.switchTo(to, id, prepare, signal)
+      return manager.switchTo(to, id, prepare, signal, reconfigure)
     },
     beginClose() {
       if (closing) throw new Error('模式宿主正在关闭')
       closing = true
       const current = manager.snapshot()
-      if (current.busy || current.phase === 'switching' || current.active.api || current.active.agent) {
+      if (current.busy || Object.values(current.active).some(Boolean)) {
         closing = false
         throw new Error('仍有模式切换或在途任务，不能释放宿主锁')
       }

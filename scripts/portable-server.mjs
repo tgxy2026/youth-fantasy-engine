@@ -559,7 +559,8 @@ const server = createServer(async (req, res) => {
           }
           if (route === '/api/mode/lease' && req.method === 'POST') {
             const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
-            const leaseId = service.acquire(body.mode, PORTABLE_LEASE_OWNER)
+            if (body.mode !== 'api') return sendJson(res, 400, { ok: false, error: '页面仅可申请 API 模式租约。' })
+            const leaseId = service.acquire('api', PORTABLE_LEASE_OWNER)
             return sendJson(res, 200, { ok: true, leaseId })
           }
           if (route === '/api/mode/release' && req.method === 'POST') {
@@ -583,8 +584,9 @@ const server = createServer(async (req, res) => {
           if (route === '/api/mode/cancel' && req.method === 'POST') {
             const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')
             const controller = modeSwitchControllers.get(body.transitionId)
-            if (controller) controller.abort()
-            return sendJson(res, 200, { ok: !!controller })
+            const accepted = !!controller && service.canCancelSwitch(body.transitionId)
+            if (accepted) controller.abort()
+            return sendJson(res, 200, { ok: accepted })
           }
           if (route === '/api/mode/recover' && req.method === 'POST') {
             const body = JSON.parse((await readBody(req)).toString('utf8') || '{}')

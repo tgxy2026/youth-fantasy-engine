@@ -136,7 +136,7 @@ async function requestStatus(host, requestId) {
 }
 
 /**
- * 查询宿主实时状态（ISSUE-01）。host 文件只是配置快照：引擎切回 API 调用模式后
+ * 查询宿主实时状态（ISSUE-01）。host 文件只是配置快照：引擎切回 API 模式后
  * enabled 仍为 true，必须问宿主才能知道当前模式是否允许 Agent 调用。
  * 只返回状态字段，绝不回传 token / 文件路径。
  */
@@ -723,7 +723,7 @@ async function invoke(name, args, hostFile = HOST_FILE) {
     const modeBlocked = !!connectionMode && (connectionMode.phase !== 'stable' || connectionMode.mode !== 'agent')
     let note = ''
     if (!enabled) note = '引擎中尚未开启 Agent 写入连接（调用会被拒绝）。请在引擎「模型设置 → Agent 连接」中开启并授权项目。'
-    else if (modeBlocked) note = `当前运行模式不允许 Agent 调用（phase=${connectionMode.phase}，mode=${connectionMode.mode ?? '无'}${connectionMode.reason ? `，${connectionMode.reason}` : ''}）。业务调用会返回 MODE_BLOCKED；请在引擎「模型设置 → API 调用」中切回 Agent 模式并等待切换完成。`
+    else if (modeBlocked) note = `当前运行模式不允许 Agent 调用（phase=${connectionMode.phase}，mode=${connectionMode.mode ?? '无'}${connectionMode.reason ? `，${connectionMode.reason}` : ''}）。业务调用会返回 MODE_BLOCKED；请在引擎「模型设置 → API 调用」中切回 MCP 模式并等待切换完成。`
     return {
       ok: true,
       value: {

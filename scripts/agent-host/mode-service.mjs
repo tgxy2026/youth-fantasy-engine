@@ -82,7 +82,7 @@ async function inspectLegacyAgentConfig(configFile, pendingFile) {
     return { mode: undefined, reason: '旧 Agent 配置无效，无法确认关闭状态' }
   }
   // 🔴 迁移一律落在 API 模式：旧版「已开启连接」不等于用户同意在互斥语义下停用引擎 API。
-  //    原授权与项目范围保留在配置里，用户可在设置页显式切换回 Agent 模式。
+  //    原授权与项目范围保留在配置里，用户可在设置页显式切换回 MCP 模式。
   return { mode: 'api', legacyEnabled: parsed.enabled }
 }
 
@@ -91,7 +91,7 @@ async function inspectLegacyAgentConfig(configFile, pendingFile) {
  * 把不可信的模式记录留档并写入 API 稳定状态。
  * 🔴 不在本函数内启动运行时，也不删除请求账本；调用方随后必须重新创建服务并回读状态。
  */
-export async function recoverConnectionFiles({ dataDir, confirm = false, confirmPid = null } = {}) {
+export async function recoverConnectionFiles({ dataDir, confirm = false, confirmPid = null, verifyQuiescent = async () => {} } = {}) {
   if (!path.isAbsolute(dataDir)) throw new Error('模式数据目录必须为绝对路径')
   if (confirm !== true) throw new Error('恢复连接模式需要用户明确确认')
   const root = path.resolve(dataDir)
@@ -101,9 +101,11 @@ export async function recoverConnectionFiles({ dataDir, confirm = false, confirm
   // 若其他宿主抢先取得锁，恢复直接失败，不触碰它的数据。
   const recoveryLock = await acquireModeOwnerLock(lockFile)
   try {
+  await verifyQuiescent()
   await repairAgentConfigAt(root)
 
   const store = createModeFilePersistence(modeFile)
+  const pending = await store.hasPending()
   let raw
   let readable = true
   try { raw = await store.read() } catch (error) {
@@ -111,7 +113,7 @@ export async function recoverConnectionFiles({ dataDir, confirm = false, confirm
   }
   const trusted = readable && raw && typeof raw === 'object' && raw.version === 1
     && raw.phase === 'stable' && raw.mode === 'api'
-  if (!trusted) {
+  if (!trusted || pending) {
     // 缺失记录交给服务按旧配置迁移；损坏 / 中断记录先留档再写 API，避免把不明状态当作已完成。
     if (raw !== undefined || !readable) {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -126,6 +128,10 @@ export async function recoverConnectionFiles({ dataDir, confirm = false, confirm
       throw new Error('恢复后的模式记录回读失败')
     }
   }
+  if (pending) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    await fs.rename(`${modeFile}.pending`, `${modeFile}.pending.stale-${stamp}`)
+  }
   return { modeFile, lockFile }
   } finally {
     await recoveryLock.release()
@@ -138,7 +144,7 @@ export async function recoverConnectionFiles({ dataDir, confirm = false, confirm
  * @param {(payload:object)=>Promise<object>} opts.callPage 把 Agent 调用交给页面
  * @param {()=>number} [opts.clientCount]
  */
-export async function createModeService({ dataDir, callPage, clientCount = () => 0 }) {
+export async function createModeService({ dataDir, callPage, clientCount = () => 0, acp = null, callReadonly }) {
   if (!path.isAbsolute(dataDir)) throw new Error('模式数据目录必须为绝对路径')
   if (typeof callPage !== 'function') throw new Error('缺少页面调用依赖')
   const root = path.resolve(dataDir)
@@ -146,11 +152,14 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
   const lockFile = path.join(root, LOCK_FILE)
   const configFile = path.join(root, 'agent-host.json')
   const pendingFile = `${configFile}.pending`
+  const supportedModes = acp ? ['api', 'agent', 'acp'] : ['api', 'agent']
+  const verifyQuiescent = async () => { await acp?.verifyQuiescent() }
 
   let gate = null
   let host = null
   let startupError = ''
   let preconditionNote = ''
+  let closingGate = null
 
   /** 打开所有权锁 + 模式记录 + Agent 宿主；宿主失败时保留模式闸以便界面读取状态与恢复。 */
   async function open({ initialModeOverride } = {}) {
@@ -158,7 +167,7 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
     const initialMode = initialModeOverride ?? legacy.mode
     let nextGate
     try {
-      nextGate = await openOwnedModeManager(modeFile, lockFile, initialMode ? { initialMode } : {})
+      nextGate = await openOwnedModeManager(modeFile, lockFile, { initialMode, supportedModes, verifyQuiescent })
     } catch (error) {
       startupError = `无法取得连接模式所有权：${messageOf(error)}`
       return false
@@ -171,7 +180,7 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
       return true
     }
     try {
-      const nextHost = createAgentHost({ configFile, callPage, clientCount, modeGate: gate })
+      const nextHost = createAgentHost({ configFile, callPage, clientCount, modeGate: gate, callReadonly })
       await nextHost.start()
       host = nextHost
       startupError = ''
@@ -192,7 +201,7 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
     }
     const snapshot = gate
       ? gate.snapshot()
-      : { phase: 'blocked', reason: startupError || '连接模式服务尚未就绪', busy: false, active: { api: 0, agent: 0 } }
+      : { phase: 'blocked', reason: startupError || '连接模式服务尚未就绪', busy: false }
     const blockedReason = snapshot.phase === 'blocked' || preconditionNote
       ? (preconditionNote || startupError || snapshot.reason || '连接模式不可用')
       : ''
@@ -208,7 +217,8 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
       mode: preconditionNote ? null : (snapshot.mode ?? null),
       reason: blockedReason,
       busy: snapshot.busy === true,
-      active: snapshot.active ?? { api: 0, agent: 0 },
+      active: snapshot.active ?? { api: 0, agent: 0, acp: 0 },
+      supportedModes,
       ownsLock: !!gate,
       lock: lockInfo,
       agent: host ? host.status() : null,
@@ -219,15 +229,20 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
 
   async function closeRuntime() {
     // 仍有未知在途任务时拒绝关闭，避免把不明结果当作已完成。
-    if (gate) gate.beginClose()
+    if (gate && closingGate !== gate) {
+      gate.beginClose()
+      closingGate = gate
+    }
+    await acp?.stop()
+    await verifyQuiescent()
     if (host) {
-      // 监听器未确认关闭就释放所有权锁，会让第二个宿主并行启动 ⇒ 停止失败时保留现场。
       await host.stop()
       host = null
     }
     if (gate) {
       await gate.finishClose()
       gate = null
+      closingGate = null
     }
   }
 
@@ -262,17 +277,44 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
       if (preconditionNote) throw new Error(preconditionNote)
       // 🔴 目标就绪在进入切换前核对：准备失败若发生在切换中，会按设计失败关闭并要求人工恢复。
       if (to === 'agent' && (!host || !host.status().running)) {
-        throw new Error(`Agent 宿主未就绪，不能切换到 Agent 模式：${startupError || '宿主未运行'}`)
+        throw new Error(`Agent 宿主未就绪，不能切换到 MCP 模式：${startupError || '宿主未运行'}`)
       }
-      return gate.switchTo(to, transitionId, async () => true, signal)
+      await gate.switchTo(to, transitionId, async from => {
+        if (from === 'acp') {
+          await acp.stop()
+          await verifyQuiescent()
+          acp.invalidateResults?.()
+        }
+      }, signal)
+      return status()
+    },
+
+    canCancelSwitch(id) { return gate?.canCancel(id) === true },
+    blockAcpRuntime() { gate?.block('ACP 进程退出未确认，请核对运行现场。') },
+
+    async switchAcpAgent(transitionId, prepare, signal) {
+      if (!acp || !gate || preconditionNote) throw new Error('ACP 模式服务未就绪')
+      await gate.switchTo('acp', transitionId, async () => {
+        await acp.stop()
+        await verifyQuiescent()
+        return prepare()
+      }, signal, true)
+      return status()
     },
 
     /** 用户确认后的恢复：固定回到 API 模式，Agent 连接保持停用。 */
     async recover({ confirm = false, confirmPid = null } = {}) {
       if (confirm !== true) throw new Error('恢复连接模式需要用户明确确认')
       // 关闭当前运行时；仍有在途租约时 closeRuntime 会抛错并保持阻断。
+      if (gate && gate.snapshot().phase === 'blocked') await acp?.recover?.()
       await closeRuntime()
-      await recoverConnectionFiles({ dataDir: root, confirm: true, confirmPid })
+      await recoverConnectionFiles({
+        dataDir: root, confirm: true, confirmPid,
+        verifyQuiescent: async () => {
+          await acp?.recover?.()
+          await verifyQuiescent()
+        },
+      })
       startupError = ''
       const opened = await open()
       if (!opened) throw new Error(startupError || '无法重新取得连接模式所有权')

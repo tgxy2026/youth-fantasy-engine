@@ -11,7 +11,7 @@ const path = require('path')
 const fs = require('fs')
 const fsp = require('fs/promises')
 const net = require('net')
-const { createHash } = require('crypto')
+const { createHash, randomUUID } = require('crypto')
 const { pathToFileURL } = require('url')
 // 2.9.0 · 应用内下载安装包的内核（只允许 http/https、先写 .part、下完比对大小）
 const { downloadInstaller, cancelActiveDownload } = require('./updateDownload.cjs')
@@ -727,7 +727,7 @@ app.whenReady().then(async () => {
 ipcMain.handle('store:path', () => dataFile())
   ipcMain.handle('agent:bridge-script-path', () => {
     const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
-    const script = path.join(root, 'scripts', 'mcp', 'yfe-readonly.mjs')
+    const script = path.join(root, 'scripts', 'mcp', app.isPackaged ? 'yfe-readonly.mjs' : 'yfe-readonly-desktop.mjs')
     return fs.existsSync(script) ? script : ''
   })
   // ---- 连接模式服务 + Agent 可写工具宿主（3.4.3）----
@@ -737,13 +737,32 @@ ipcMain.handle('store:path', () => dataFile())
   let modeServiceStarting = null
   let modeClosing = false
   let modeClosed = false
+  let acpRuntime = null
+  let pageGeneration = 0
+  const supportsAcp = process.platform === 'win32' && process.arch === 'x64'
   const modeSwitchControllers = new Map()
   let agentBridgeReady = false
   let agentCallSeq = 0
   const agentCalls = new Map()
   const AGENT_PAGE_TIMEOUT_MS = 40_000
   /** 页面租约的归属由主进程固定，不接受模型 / 外部客户端自报。 */
-  const RENDERER_LEASE_OWNER = 'engine-renderer'
+  const rendererLeaseOwner = event => `engine-renderer:${event.sender.id}:${event.senderFrame.processId}:${event.senderFrame.routingId}:${pageGeneration}`
+
+  function isEngineFrame(event, requireLocalFile = false) {
+    const frame = event.senderFrame
+    if (!win || win.isDestroyed() || !frame || event.sender !== win.webContents || frame !== event.sender.mainFrame) return false
+    const expected = !requireLocalFile && !app.isPackaged && process.env.ELECTRON_START_URL
+      ? new URL(process.env.ELECTRON_START_URL)
+      : pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
+    const actual = new URL(frame.url)
+    return actual.origin === expected.origin && actual.pathname === expected.pathname && actual.protocol === expected.protocol
+  }
+
+  function invalidateEnginePage(contents) {
+    acpRuntime?.cancelPage(contents.id, pageGeneration)
+    pageGeneration++
+    agentBridgeReady = false
+  }
 
   function callAgentPage(payload) {
     return new Promise(resolve => {
@@ -761,9 +780,9 @@ ipcMain.handle('store:path', () => dataFile())
     })
   }
 
-  ipcMain.on('agent-host:ready', () => { agentBridgeReady = true })
-  ipcMain.on('agent-host:result', (_e, msg) => {
-    if (!msg || typeof msg.id !== 'string') return
+  ipcMain.on('agent-host:ready', e => { if (isEngineFrame(e)) agentBridgeReady = true })
+  ipcMain.on('agent-host:result', (e, msg) => {
+    if (!isEngineFrame(e) || !msg || typeof msg.id !== 'string') return
     const pending = agentCalls.get(msg.id)
     if (!pending) return
     clearTimeout(pending.timer)
@@ -782,10 +801,34 @@ ipcMain.handle('store:path', () => dataFile())
     if (!fs.existsSync(modulePath)) return null
     modeServiceStarting = (async () => {
       const module = await import(pathToFileURL(modulePath).href)
+      const readonlyModule = path.join(path.dirname(modulePath), 'readonly-tools.mjs')
+      const { createReadonlyTools } = await import(pathToFileURL(readonlyModule).href)
+      if (supportsAcp && !acpRuntime) {
+        const { createAcpRuntime } = await import(pathToFileURL(path.join(path.dirname(modulePath), 'acp-runtime.mjs')).href)
+        const { createAntigravityAdapter } = await import(pathToFileURL(path.join(path.dirname(modulePath), 'antigravity-adapter.mjs')).href)
+        const root = path.join(app.getPath('userData'), 'acp')
+        const validationEnabled = !app.isPackaged && process.argv.includes('--yfe-acp-validation')
+          && process.argv.includes(`--user-data-dir=${app.getPath('userData')}`)
+        acpRuntime = createAcpRuntime({
+          root,
+          adapters: [createAntigravityAdapter({ root, validationEnabled, openExternal: url => shell.openExternal(url) })],
+        })
+      }
       const service = await module.createModeService({
         dataDir: app.getPath('userData'),
         callPage: payload => callAgentPage(payload),
         clientCount: () => (agentBridgeReady ? 1 : 0),
+        acp: acpRuntime,
+        async callReadonly(body, scope) {
+          const live = dataFile()
+          if (body?.dataFile != null) {
+            const selected = await fsp.realpath(body.dataFile)
+            const current = await fsp.realpath(live)
+            if (selected !== current) throw new Error('指定路径与当前桌面实时库不一致。请更新 MCP 配置。')
+          }
+          return createReadonlyTools(live, scope.projects.map(project => project.projectId))
+            .invoke(body?.tool, body?.parameters)
+        },
       })
       modeService = service
       return service
@@ -799,7 +842,7 @@ ipcMain.handle('store:path', () => dataFile())
   function blockedModeStatus(reason, canRecover) {
     return {
       phase: 'blocked', mode: null, reason, busy: false,
-      active: { api: 0, agent: 0 }, ownsLock: false, lock: null, agent: null, canRecover,
+      active: { api: 0, agent: 0, acp: 0 }, ownsLock: false, lock: null, agent: null, canRecover,
     }
   }
 
@@ -833,33 +876,127 @@ ipcMain.handle('store:path', () => dataFile())
     return agentStatusFromMode(status)
   })
 
-  ipcMain.handle('agent-host:mode-status', () => currentModeStatus())
+  ipcMain.handle('agent-host:mode-status', async e => {
+    const status = await currentModeStatus()
+    if (!isEngineFrame(e, true) && status.supportedModes) {
+      return { ...status, supportedModes: status.supportedModes.filter(mode => mode !== 'acp') }
+    }
+    return status
+  })
+
+  ipcMain.handle('acp:status', async e => {
+    if (!isEngineFrame(e, true)) return null
+    const owner = rendererLeaseOwner(e)
+    await startModeService()
+    if (!isEngineFrame(e, true) || rendererLeaseOwner(e) !== owner) return null
+    return acpRuntime?.status() ?? null
+  })
+
+  ipcMain.handle('acp:select', async (e, id) => {
+    try {
+      if (!isEngineFrame(e, true) || typeof id !== 'string') throw new Error('ACP Agent 选择请求无效。')
+      const owner = rendererLeaseOwner(e)
+      const service = await startModeService()
+      if (!isEngineFrame(e, true) || rendererLeaseOwner(e) !== owner || !service || !acpRuntime) throw new Error('ACP 页面已失效。')
+      const current = await acpRuntime.status()
+      if (!current.adapters.some(adapter => adapter.id === id)) throw new Error('未知 ACP Agent。')
+      if (!isEngineFrame(e, true) || rendererLeaseOwner(e) !== owner) throw new Error('ACP 页面已失效。')
+      if (current.selected !== id) await service.switchAcpAgent(randomUUID(), () => acpRuntime.prepareSelection(id))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  })
+
+  async function withAcpOperation(e, id, perform) {
+    try {
+      if (modeClosing || !isEngineFrame(e, true) || typeof id !== 'string' || !/^[\w-]{1,100}$/.test(id)) throw new Error('ACP 操作请求无效。')
+      const owner = rendererLeaseOwner(e)
+      const service = await startModeService()
+      if (!isEngineFrame(e, true) || rendererLeaseOwner(e) !== owner || !service || !acpRuntime) throw new Error('ACP 页面已失效。')
+      await perform({ service, owner, id })
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  }
+
+  ipcMain.handle('acp:install', (e, id) => withAcpOperation(e, id, request => acpRuntime.install(request)))
+  ipcMain.handle('acp:select-binary', (e, id) => withAcpOperation(e, id, request => acpRuntime.selectBinary(request, async () => {
+    const selected = await dialog.showOpenDialog(win, {
+      title: '选择官方 Antigravity ACP 主程序',
+      properties: ['openFile'],
+      filters: [{ name: 'Windows 可执行文件', extensions: ['exe'] }],
+    })
+    return selected.canceled ? null : selected.filePaths[0]
+  })))
+  ipcMain.handle('acp:connect', (e, id, login) => withAcpOperation(e, id, request => acpRuntime.connect(request, login === true)))
+  ipcMain.handle('acp:disconnect', (e, id) => withAcpOperation(e, id, ({ service }) => acpRuntime.disconnect(service)))
+  ipcMain.handle('acp:logout', (e, id) => withAcpOperation(e, id, request => acpRuntime.logout(request)))
+  ipcMain.handle('acp:configure', (e, id, patch) => withAcpOperation(e, id, async ({ service }) => {
+    if (!patch || !['model', 'thinking'].includes(patch.key) || typeof patch.value !== 'string' || patch.value.length > 256) {
+      throw new Error('ACP 模型选项无效。')
+    }
+    const { options } = await acpRuntime.status()
+    if (!options || (patch.value && !options[patch.key]?.values.some(item => item.value === patch.value))) throw new Error('请选择会话中可用的 ACP 选项。')
+    await acpRuntime.configure(service, { [patch.key]: patch.value })
+  }))
+
+  ipcMain.handle('acp:cancel', (e, id) => {
+    return isEngineFrame(e, true) && acpRuntime?.cancel(rendererLeaseOwner(e), id) === true
+  })
+
+  ipcMain.handle('acp:generate', async (e, request) => {
+    try {
+      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite'].includes(request.task) ||
+          typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id)) throw new Error('ACP 写作请求无效。')
+      const owner = rendererLeaseOwner(e)
+      const service = await startModeService()
+      const isCurrent = () => isEngineFrame(e, true) && rendererLeaseOwner(e) === owner
+      if (!isCurrent() || !service || !acpRuntime) throw new Error('ACP 页面已失效。')
+      const text = await acpRuntime.generate({
+        service, owner, id: request.id, text: request.text, expectedGeneration: request.generation,
+        onChunk: delta => {
+          if (isCurrent()) e.sender.send('acp:chunk', { id: request.id, delta })
+        },
+      })
+      if (!isCurrent()) throw new Error('ACP 页面已失效。')
+      return { ok: true, text }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
+  })
 
   // 页面把**整段任务**包在租约里（流式响应体消费完毕才释放）。拒绝时明确告知切换模式。
-  ipcMain.handle('agent-host:mode-lease', async (_e, mode) => {
+  ipcMain.handle('agent-host:mode-lease', async (e, mode) => {
     try {
+      if (modeClosing || !isEngineFrame(e) || mode !== 'api') return { ok: false, error: '此入口仅接受引擎页面的 API 模式租约。' }
+      const owner = rendererLeaseOwner(e)
       const service = await startModeService()
       if (!service) return { ok: false, error: '连接模式服务不可用（脚本缺失）。' }
-      return { ok: true, leaseId: service.acquire(mode, RENDERER_LEASE_OWNER) }
+      if (!isEngineFrame(e) || rendererLeaseOwner(e) !== owner) return { ok: false, error: '引擎页面已更换。' }
+      return { ok: true, leaseId: service.acquire('api', owner) }
     } catch (error) {
       return { ok: false, error: error && error.message ? error.message : String(error) }
     }
   })
 
-  ipcMain.handle('agent-host:mode-release', async (_e, leaseId) => {
+  ipcMain.handle('agent-host:mode-release', async (e, leaseId) => {
     try {
-      if (!modeService || typeof leaseId !== 'string' || !leaseId) return { ok: false }
-      return { ok: modeService.release(leaseId, RENDERER_LEASE_OWNER) }
+      if (!isEngineFrame(e) || !modeService || typeof leaseId !== 'string' || !leaseId) return { ok: false }
+      return { ok: modeService.release(leaseId, rendererLeaseOwner(e)) }
     } catch {
       return { ok: false }
     }
   })
 
-  ipcMain.handle('agent-host:mode-switch', async (_e, payload) => {
+  ipcMain.handle('agent-host:mode-switch', async (e, payload) => {
     const to = payload && payload.to
     const transitionId = payload && payload.transitionId
     let controller
     try {
+      if (!isEngineFrame(e)) return { ok: false, error: '无法确认引擎页面。' }
+      if (to === 'acp' && !isEngineFrame(e, true)) return { ok: false, error: '请从桌面本地页面切换到 ACP 模式。' }
       const service = await startModeService()
       if (!service) return { ok: false, error: '连接模式服务不可用（脚本缺失）。' }
       controller = new AbortController()
@@ -875,17 +1012,18 @@ ipcMain.handle('store:path', () => dataFile())
     }
   })
 
-  ipcMain.handle('agent-host:mode-cancel', (_e, transitionId) => {
+  ipcMain.handle('agent-host:mode-cancel', (e, transitionId) => {
     const controller = modeSwitchControllers.get(transitionId)
-    if (!controller) return { ok: false }
+    if (!isEngineFrame(e) || !controller || !modeService?.canCancelSwitch(transitionId)) return { ok: false }
     controller.abort()
     return { ok: true }
   })
 
-  ipcMain.handle('agent-host:mode-recover', async (_e, payload) => {
+  ipcMain.handle('agent-host:mode-recover', async (e, payload) => {
     const confirm = payload && payload.confirm === true
     const confirmPid = payload && Number.isInteger(payload.confirmPid) ? payload.confirmPid : null
     try {
+      if (!isEngineFrame(e)) return { ok: false, error: '无法确认引擎页面。' }
       let service = modeService
       if (!service) {
         try { service = await startModeService() } catch { service = null }
@@ -895,7 +1033,13 @@ ipcMain.handle('store:path', () => dataFile())
       const modulePath = path.join(agentHostRoot(), 'scripts', 'agent-host', 'mode-service.mjs')
       if (!fs.existsSync(modulePath)) return { ok: false, error: '当前安装包缺少连接模式服务脚本。' }
       const module = await import(pathToFileURL(modulePath).href)
-      await module.recoverConnectionFiles({ dataDir: app.getPath('userData'), confirm, confirmPid })
+      await module.recoverConnectionFiles({
+        dataDir: app.getPath('userData'), confirm, confirmPid,
+        verifyQuiescent: async () => {
+          await acpRuntime?.recover()
+          await acpRuntime?.verifyQuiescent()
+        },
+      })
       modeServiceStarting = null
       service = await startModeService()
       return { ok: true, status: await service.status() }
@@ -904,8 +1048,9 @@ ipcMain.handle('store:path', () => dataFile())
     }
   })
 
-  ipcMain.handle('agent-host:set-config', async (_e, patch) => {
+  ipcMain.handle('agent-host:set-config', async (e, patch) => {
     try {
+      if (!isEngineFrame(e)) return { ok: false, error: '无法确认引擎页面。' }
       const service = await startModeService()
       if (!service) return { ok: false, error: '连接模式服务缺失，无法保存配置。' }
       const safe = patch && typeof patch === 'object' ? patch : {}
@@ -940,7 +1085,7 @@ ipcMain.handle('store:path', () => dataFile())
     event.preventDefault()
     const finish = () => { modeClosed = true; app.quit() }
     const timer = setTimeout(finish, 5000)
-    Promise.resolve(modeService.close()).catch(() => undefined).finally(() => {
+    Promise.resolve(acpRuntime?.stop()).then(() => modeService.close()).catch(() => undefined).finally(() => {
       clearTimeout(timer)
       finish()
     })
@@ -1593,6 +1738,11 @@ ipcMain.handle('store:path', () => dataFile())
 
   // 连接模式服务 + Agent 可写工具宿主：随应用启动（用户不开也不影响任何现有功能）。
   // 失败只记日志：版本差异 / 只读安装目录等情况不应阻断正常写作。
+  win.webContents.on('did-start-navigation', (_event, _url, isSameDocument, isMainFrame) => {
+    if (isMainFrame && !isSameDocument) invalidateEnginePage(win.webContents)
+  })
+  win.webContents.on('render-process-gone', () => invalidateEnginePage(win.webContents))
+  win.on('close', () => invalidateEnginePage(win.webContents))
   void startModeService().catch(error => {
     console.warn('[connection-mode] 启动失败：' + (error && error.message ? error.message : String(error)))
   })

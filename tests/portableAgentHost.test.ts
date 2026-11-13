@@ -57,6 +57,15 @@ async function waitHostFile(): Promise<{ port: number; token: number | string }>
 
 async function main() {
   const base = await waitPort()
+  for (const [route, payload] of [
+    ['switch', { to: 'acp', transitionId: 'portable-acp' }],
+    ['lease', { mode: 'acp' }],
+  ] as const) {
+    const denied = await fetch(base + '/api/mode/' + route, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...pageHeader }, body: JSON.stringify(payload),
+    }).then(response => response.json()) as { ok: boolean }
+    ok(`便携宿主拒绝直接请求 ACP ${route}`, denied.ok === false)
+  }
   const hostConfig = await waitHostFile() as { port: number; token: string }
 
   const ping = await fetch(base + '/api/ping')

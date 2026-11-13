@@ -30,7 +30,8 @@ import { readImpact, clearImpact, type ImpactMark } from '@/lib/outline/futureIm
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { acpWrite, acpWritingContext, assertAcpWritingCurrent } from '@/lib/agentHost/acpBridge'
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import type { Props } from '@/components/jiewenji/jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from '@/components/jiewenji/jieWenJiParts'
@@ -57,6 +58,20 @@ const CONT_DEFAULT_PICKS = CONTINUE_PICKS.filter(p => p.def).map(p => p.key)
 export function useJieWenJiModel(props: Props) {
   const { content, openingText, getSelectionText, getSelectionRange, onApplyAdvice, onApplyContent, summary, chapterTitle, onLedgerCommitted, focusChapterId } = props
   const { ready: aiReady } = useAIReady()
+  const [acpWriting, setAcpWriting] = useState<Awaited<ReturnType<typeof acpWritingContext>>>(null)
+  useEffect(() => {
+    let active = true
+    const refresh = () => void acpWritingContext().then(value => {
+      if (active) setAcpWriting(value)
+    }).catch(() => {
+      if (active) setAcpWriting(null)
+    })
+    refresh()
+    const timer = setInterval(refresh, 2000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+  const writingReady = acpWriting ? acpWriting.ready : aiReady
+  const acpGeneration = acpWriting?.generation
   /**
    * 🔴🔴 章节归属键（2026-10-01 六维审计 P1）：`useTaskRunner` 按 (ownerTab, kind) 取**最近一条**任务
    *    （任务中心不支持按业务键取历史）—— 于是 A 章跑完诊断再切到 B 章，B 章面板会把 A 章的报告
@@ -391,34 +406,75 @@ export function useJieWenJiModel(props: Props) {
   const [detail, setDetail] = useState('')
   const [targetWords, setTargetWords] = useState<number | undefined>(undefined)
   // 结果连同**选区快照**一起存（写入前要比对，避免 AI 请求期间正文已改、建议段插错位置）
-  const rewriteT = useTaskRunner<ChOwned<{ data: RewriteResult; selText: string | null }>, ChProgress>({
+  const rewriteT = useTaskRunner<ChOwned<{ data: RewriteResult; selText: string }>, ChProgress>({
     ownerTab: 'editor', kind: 'jiewenji-rewrite', title: '颉文姬 · 选区改稿',
     writes: ['chapters'], // 建议段最终会写进正文
   })
   const rewriteView = chapterOwned(rewriteT, ch)
+  const rewriteOwner = useRef<{ result: RewriteResult; validate: () => void; generation?: string } | null>(null)
+  const rewriteLive = useRef({ ch, content })
+  rewriteLive.current = { ch, content }
   const rewrite: { loading: boolean; data?: RewriteResult; error?: string; selText?: string | null } = {
     loading: rewriteView.loading, data: rewriteView.data?.data, error: rewriteView.error, selText: rewriteView.data?.selText,
   }
 
   const runRewrite = () => {
-    if (!aiReady || !selText || rewriteT.running) return
-    const snapSel = selText
+    if (!writingReady || !selText || rewriteT.running) return
+    const snapSel = getSelectionText?.()
+    const range = getSelectionRange?.()
+    if (!snapSel || !range || range.start >= range.end || content.slice(range.start, range.end) !== snapSel) {
+      showToast('请在当前正文中重新选择要修改的文字', 'info')
+      return
+    }
+    const start = range.start
+    const end = range.end
+    const owner = captureOwnedOperation(db.getCurrentProjectId())
+    const validate = () => {
+      owner.assertCurrent()
+      const nowRange = getSelectionRange?.()
+      if (rewriteLive.current.ch !== ch || rewriteLive.current.content !== content ||
+          nowRange?.start !== start || nowRange.end !== end || getSelectionText?.() !== snapSel) {
+        throw new Error('章节、草稿或选区已变化，请重新选择后生成。')
+      }
+    }
     // 🔴 要求也在发起时**快照**：任务跑在 store 里，跑的过程中作者可能已经改了额外要求
     const snapAsk = { instruction, detail, targetWords }
     rewriteT.run(async job => {
       job.progress({ ch })
+      validate()
+      if (acpGeneration) {
+        const confirmed = await confirmDialog({
+          title: '发送选区至 ACP Agent',
+          message: `接收方为 ${acpWriting?.name}。本次发送选中文字、修改要求和当前写作规范。`,
+          confirmText: '确认发送',
+        })
+        if (!confirmed) throw new Error('已取消发送。')
+        await assertAcpWritingCurrent(acpGeneration)
+      }
       const styleCtx = await styleContextForAI()
-      const data = await aiRewritePassage(snapSel, snapAsk, styleCtx, { signal: job.signal })
+      validate()
+      const data = await aiRewritePassage(snapSel, snapAsk, styleCtx, {
+        signal: job.signal,
+        acpText: acpGeneration ? text => acpWrite('rewrite', acpGeneration, text, { signal: job.signal }) : undefined,
+      })
+      job.signal.throwIfAborted()
+      validate()
+      rewriteOwner.current = { result: data, validate, generation: acpGeneration }
       return { ch, v: { data, selText: snapSel } }
     })
   }
 
-  const applyAdvice = () => {
+  const applyAdvice = async () => {
     if (!rewrite.data?.rewritten) { showToast('暂无有效建议可写入，请重新生成', 'info'); return }
     // 选区过期校验：AI 请求期间正文可能已改，写入前比对快照，避免建议段插错位置
-    const nowSel = getSelectionText?.() ?? null
-    if (rewrite.selText != null && nowSel !== rewrite.selText) {
-      showToast('选区内容已变化，请重新选择后再写入', 'info')
+    try {
+      if (rewriteOwner.current?.result !== rewrite.data) throw new Error('选区快照已失效，请重新生成。')
+      const generation = rewriteOwner.current.generation
+      if (generation) await assertAcpWritingCurrent(generation)
+      if (rewriteOwner.current?.result !== rewrite.data) throw new Error('选区快照已失效，请重新生成。')
+      rewriteOwner.current.validate()
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '选区已失效，请重新生成。', 'info')
       return
     }
     onApplyAdvice?.(rewrite.data.rewritten, getSelectionRange?.() ?? null)
@@ -501,6 +557,7 @@ export function useJieWenJiModel(props: Props) {
             picks: contPicks,
             summaryCount: contSummaryCount,
             prevTextCount: contPrevTextCount,
+            acpGeneration,
           })
           if (cancelled) return
           setContSnapshot(snap)
@@ -531,7 +588,7 @@ export function useJieWenJiModel(props: Props) {
       })()
     }, 350)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [contPicks, contSummaryCount, contPrevTextCount, focusChapterId, contPlot, contWords, content, chapterTitle])
+  }, [contPicks, contSummaryCount, contPrevTextCount, focusChapterId, contPlot, contWords, content, chapterTitle, acpGeneration])
 
   const contT = useTaskRunner<ChOwned<{ text: string; dropped: string[]; snapshot: ContinuationSnapshot }>, ChProgress & { text?: string }>({
     ownerTab: 'editor', kind: 'jiewenji-continue', title: '颉文姬 · 续写',
@@ -550,7 +607,7 @@ export function useJieWenJiModel(props: Props) {
   }
 
   const runContinuation = () => {
-    if (!aiReady || contT.running) return
+    if (!writingReady || contT.running) return
     const curPid = db.getCurrentProjectId()
     // 3.3.5 · B3 发送前核对冻结快照：若自预估后正文、章节或勾选项被篡改，拒绝盲目发送旧清单
     const validation = validateContinuationSnapshot(contSnapshot, {
@@ -569,16 +626,30 @@ export function useJieWenJiModel(props: Props) {
     }
 
     const snap = contSnapshot
+    if (snap.acpGeneration !== acpGeneration) {
+      showToast('模型或 ACP Agent 已变化，请重新核对资料清单。', 'info')
+      return
+    }
     const owner = captureOwnedOperation(curPid)
     continuationOwner.current = { snapshotId: snap.id, assertCurrent: owner.assertCurrent }
     showToast('颉文姬续写已启动，会接在本章末尾往下写；篇幅较大时耗时较久，并非卡死', 'info')
     contT.run(async job => {
       job.progress({ ch, text: '' })
+      if (snap.acpGeneration) {
+        const confirmed = await confirmDialog({
+          title: '发送续写资料至 ACP Agent',
+          message: `接收方为 ${acpWriting?.name}。本次发送章节标题、正文末尾、续写要求和清单中实际带入的资料。`,
+          confirmText: '确认发送',
+        })
+        if (!confirmed) throw new Error('已取消发送。')
+        await assertAcpWritingCurrent(snap.acpGeneration)
+      }
       owner.assertCurrent()
       const refreshed = await buildContinuationPlan({
         projectId: snap.projectId, chapterId: snap.chapterId, chapterTitle: snap.chapterTitle,
         currentContent: content, plot: snap.inputs.plot, targetWords: snap.inputs.targetWords,
         picks: new Set(snap.inputs.picks), summaryCount: snap.inputs.summaryCount, prevTextCount: snap.inputs.prevTextCount,
+        acpGeneration: snap.acpGeneration,
       })
       owner.assertCurrent()
       const live = continuationLive.current
@@ -630,25 +701,28 @@ export function useJieWenJiModel(props: Props) {
     })
   }
 
-  const applyContinuation = () => {
+  const applyContinuation = async () => {
     if (!cont.text.trim()) { showToast('暂无可写入的续写内容，请先让颉文姬续写', 'info'); return }
     const resultSnapshot = contDone ? contTask?.result?.v.snapshot : undefined
     if (resultSnapshot) {
       try {
+        if (continuationOwner.current?.snapshotId !== resultSnapshot.id) throw new Error('续写上下文已失效')
+        if (resultSnapshot.acpGeneration) await assertAcpWritingCurrent(resultSnapshot.acpGeneration)
         if (continuationOwner.current?.snapshotId !== resultSnapshot.id) throw new Error('续写上下文已失效')
         continuationOwner.current.assertCurrent()
       } catch {
         showToast('项目或存储空间已变化，请复制内容并重新核对。', 'error')
         return
       }
-      if (db.getCurrentProjectId() !== resultSnapshot.projectId || (focusChapterId ?? '') !== resultSnapshot.chapterId) {
+      const live = continuationLive.current
+      if (db.getCurrentProjectId() !== resultSnapshot.projectId || (live.focusChapterId ?? '') !== resultSnapshot.chapterId) {
         showToast('项目或章节已切换，请回到原章节核对续写。', 'error')
         return
       }
       void verifyAndApplyContinuation({
         snapshot: resultSnapshot,
         generatedText: cont.text,
-        currentContent: content,
+        currentContent: live.content,
         onApplyAdvice: (txt, sel) => onApplyAdvice?.(txt, sel),
       }).then(res => {
         if (res.conflict) {
@@ -743,7 +817,7 @@ export function useJieWenJiModel(props: Props) {
 
   return {
     ...props,
-    aiReady, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
+    aiReady, writingReady, acpWriting, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
     proofs, propsRunning, runProofread, stopProofread, replaceOne,
     ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry,
     post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, loadImpacts,

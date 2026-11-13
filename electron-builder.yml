@@ -17,7 +17,7 @@ files:
   - package.json
 
 extraResources:
-  - from: scripts/mcp/yfe-readonly.mjs
+  - from: scripts/mcp/yfe-readonly-desktop.mjs
     to: scripts/mcp/yfe-readonly.mjs
   # 3.4.3：可写工具桥 + 宿主核心（桌面主进程动态 import）随包分发
   - from: scripts/mcp/yfe-agent.mjs

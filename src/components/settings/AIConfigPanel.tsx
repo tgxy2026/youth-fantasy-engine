@@ -20,7 +20,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
-import EmphasisText from '@/components/common/EmphasisText'
 import AgentBridgeSetup from '@/components/settings/AgentBridgeSetup'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
 import ModelCapabilityPanel from '@/components/settings/ModelCapabilityPanel'
@@ -28,6 +27,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
 import { SELECT_PLACEHOLDER } from '@/lib/constants'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/ai/modelSampling'
+import AcpSettings from './AcpSettings'
 import { filterModels } from '@/lib/ai/modelFilter'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
 import CustomHeadersEditor from '@/components/settings/CustomHeadersEditor'
@@ -71,9 +71,11 @@ const BODY = 'max-w-3xl'
 
 /** 列表态两栏：左「列表/添加」（自适应，minmax(0,1fr) 防长模型名撑破）｜右「路由/超时」（定宽 20rem） */
 const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-x-6 gap-y-5 items-start'
+const MODE_LABELS = { api: 'API 模式', agent: 'MCP 模式', acp: 'ACP 模式' } as const
+type Mode = keyof typeof MODE_LABELS
 
 export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
-  const [connectionView, setConnectionView] = useState<'api' | 'agent'>('api')
+  const [connectionView, setConnectionView] = useState<Mode>('api')
   /** 3.4.3：模式真源来自宿主；页签只是它的显示，不再用页面 state 冒充模式。 */
   const [modeStatus, setModeStatus] = useState<ConnectionModeStatus | null>(null)
   const [switchId, setSwitchId] = useState<string | null>(null)
@@ -95,7 +97,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     if (modeStatus?.phase === 'stable' && modeStatus.mode) setConnectionView(modeStatus.mode)
   }, [modeStatus?.phase, modeStatus?.mode])
 
-  const requestMode = async (to: 'api' | 'agent') => {
+  const requestMode = async (to: Mode) => {
     if (!modeStatus) return
     if (modeStatus.phase === 'blocked') {
       showToast(modeStatus.reason || '连接模式不可用，请先按提示安全恢复', 'error')
@@ -111,13 +113,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     const next = result.status ?? await connectionModeStatus()
     setModeStatus(next)
     if (!result.ok) showToast(result.error ?? '模式切换未完成', 'error')
-    else showToast(to === 'api' ? '已切换到 API 调用模式' : '已切换到 Agent 模式', 'success')
+    else showToast(`已切换到 ${MODE_LABELS[to]}`, 'success')
   }
 
   const cancelSwitch = async () => {
     if (!switchId) return
-    await cancelConnectionModeSwitch(switchId)
-    showToast('已请求取消；未确认结束的任务不会被当作已完成', 'info')
+    const accepted = await cancelConnectionModeSwitch(switchId)
+    showToast(accepted ? '已请求取消切换' : '切换正在提交或已结束，请查看当前状态', 'info')
   }
 
   const recoverMode = async () => {
@@ -132,7 +134,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       setModeStatus(result.status ?? await connectionModeStatus())
       setConnectionView('api')
       setRecoverConfirmed(false)
-      showToast('已恢复到 API 调用模式；Agent 连接保持停用', 'success')
+      showToast('已恢复到 API 模式；Agent 连接保持停用', 'success')
     } finally { setRecovering(false) }
   }
   const [providers, setProviders] = useState<AIProvider[]>([])
@@ -400,8 +402,8 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。
             </p>
             <p className="mt-1.5">
-              上方「运行模式」切到 <b>Agent 模式</b>后，这里配置的模型请求（对话、测试、嵌入、模型清单、联网检索）会被互斥闸拒绝；
-              切回 <b>API 调用</b>即恢复。切换不会改动模型配置与密钥。
+              上方「运行模式」切到 <b>MCP 模式</b>后，这里配置的模型请求（对话、测试、嵌入、模型清单、联网检索）会被互斥闸拒绝；
+              切回 <b>API 模式</b>即恢复。切换不会改动模型配置与密钥。
             </p>
             <p className="mt-1.5">
               每条配置都要填「上下文窗口（tokens）」—— 酒馆的上下文预算、记忆档、正文写作额度都按它推算。
@@ -418,27 +420,19 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3">
         <span className="text-11 text-ink-500">运行模式</span>
-        <div role="tablist" aria-label="连接设置页面" className="inline-flex items-center gap-1.5">
+        <div role="radiogroup" aria-label="运行模式" className="inline-flex items-center gap-1.5">
+          {(modeStatus?.supportedModes ?? (WEB ? ['api'] : ['api', 'agent']) as Mode[]).map(mode =>
           <Button
+            key={mode}
             variant="toggle"
             size="sm"
-            selected={connectionView === 'api'}
-            role="tab"
-            aria-selected={connectionView === 'api'}
-            onClick={() => void requestMode('api')}
-            disabled={!!switchId || modeStatus?.phase === 'blocked'}
-            data-connection-mode-tab="api"
-          >API 调用</Button>
-          <Button
-            variant="toggle"
-            size="sm"
-            selected={connectionView === 'agent'}
-            role="tab"
-            aria-selected={connectionView === 'agent'}
-            onClick={() => void requestMode('agent')}
-            disabled={!!switchId || modeStatus?.phase === 'blocked' || WEB}
-            data-connection-mode-tab="agent"
-          >Agent 模式</Button>
+            selected={connectionView === mode}
+            role="radio"
+            aria-checked={connectionView === mode}
+            onClick={() => void requestMode(mode)}
+            disabled={!!switchId || modeStatus?.phase !== 'stable'}
+            data-connection-mode-tab={mode}
+          >{MODE_LABELS[mode]}</Button>)}
         </div>
         {modeStatus && <span className={`ml-auto inline-flex items-center gap-1.5 text-11 ${modeStatus.phase === 'stable' ? 'text-ink-500' : 'text-amber'}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.phase === 'switching' ? 'bg-amber animate-pulse' : modeStatus.phase === 'blocked' ? 'bg-amber' : 'bg-emerald-400'}`} />
@@ -450,9 +444,9 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5">
             <p className="flex items-center gap-2 text-12 text-amber">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />
-              正在切换到{connectionView === 'agent' ? 'Agent 模式' : 'API 调用模式'}
+              正在切换到 {MODE_LABELS[connectionView]}
             </p>
-            <p className="mt-1 text-11 text-ink-400 leading-relaxed">正在切换连接模式：等待在途任务结束（API 任务 {modeStatus.active.api} 个、Agent 任务 {modeStatus.active.agent} 个）。</p>
+            <p className="mt-1 text-11 text-ink-400 leading-relaxed">等待在途任务结束（API {modeStatus.active.api}、MCP {modeStatus.active.agent}{modeStatus.supportedModes?.includes('acp') ? `、ACP ${modeStatus.active.acp}` : ''}）。</p>
             <Button size="sm" variant="secondary" className="mt-2" onClick={() => void cancelSwitch()} disabled={!switchId}>取消等待</Button>
           </div>
         ) : modeStatus.phase === 'blocked' ? (
@@ -460,13 +454,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             <p className="text-12 font-medium text-amber">连接模式不可用：{modeStatus.reason || '状态未确认'}</p>
             {modeStatus.lock && <p className="mt-1 text-ink-400">检测到宿主锁：PID {modeStatus.lock.pid ?? '未知（记录损坏）'}{modeStatus.lock.alive === true ? '（进程仍在运行）' : modeStatus.lock.alive === false ? '（进程已退出）' : ''}</p>}
             {modeStatus.canRecover ? <>
-              <p className="mt-1 text-ink-400">安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 调用模式；不会删除作品数据或 Agent 请求账本。</p>
+              <p className="mt-1 text-ink-400">安全恢复会释放遗留锁、停用未确认的 Agent 连接、把不可信模式记录留档，并固定回到 API 模式；不会删除作品数据或 Agent 请求账本。</p>
               <label className="mt-2 flex items-center gap-2 text-ink-300">
                 <input type="checkbox" checked={recoverConfirmed} onChange={e => setRecoverConfirmed(e.target.checked)} />
                 我已确认没有其他引擎实例和未结束的任务在运行
               </label>
               <Button size="sm" variant="secondary" className="mt-2" onClick={() => void recoverMode()} disabled={recovering || !recoverConfirmed}>
-                {recovering ? '恢复中…' : '安全恢复到 API 调用模式'}
+                {recovering ? '恢复中…' : '安全恢复到 API 模式'}
               </Button>
             </> : <p className="mt-1 text-ink-500">当前环境没有可恢复的本机模式服务。</p>}
           </div>
@@ -474,18 +468,20 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5" data-connection-mode={modeStatus.mode ?? undefined}>
             <p className="flex items-center gap-2 text-12 text-ink-100">
               <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.mode === 'agent' ? 'bg-amber' : 'bg-emerald-400'}`} />
-              {modeStatus.mode === 'agent' ? 'Agent 模式' : 'API 调用模式'}
+              {modeStatus.mode && MODE_LABELS[modeStatus.mode]}
             </p>
             <p className="mt-1 text-11 text-ink-400 leading-relaxed">
-              <EmphasisText text={modeStatus.mode === 'agent'
-                ? '引擎内置的 **API 调用已停用**，只接受**已授权**的 Agent 工具调用。切换回 API 调用模式会**先等待在途 Agent 任务结束**。'
-                : '**Agent 工具调用会被拒绝**。切换模式**不会改动**模型配置、密钥、项目授权或正文草稿。'} />
+              {modeStatus.mode === 'agent' ? '仅允许已授权的 MCP 工具调用。'
+                : modeStatus.mode === 'acp' ? '仅允许当前 ACP Agent 的操作。'
+                  : '允许引擎内置模型的 API 请求。'}
             </p>
           </div>
         )}
       </div>
       {connectionView === 'agent' ? <div className="p-4">
         {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机 Agent 桥。</p> : <AgentBridgeSetup />}
+      </div> : connectionView === 'acp' ? <div className="p-4">
+        <AcpSettings disabled={modeStatus?.phase !== 'stable' || modeStatus.mode !== 'acp' || !!switchId} />
       </div> : <div className="p-4">
         {/* 🔴 列表态**不套 BODY**：`max-w-3xl`(≈768px) 会把两栏一起卡在左半边，
             右侧仍是死区（实测两栏总宽只有 794px，section 有 1289px）。

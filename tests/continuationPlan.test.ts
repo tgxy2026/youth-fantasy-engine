@@ -8,6 +8,7 @@ import {
 } from '../src/lib/creative/continuationPlan'
 import { loadCandidate } from '../src/lib/revision/candidateStore'
 import { createServer } from 'node:http'
+import { aiRewritePassage } from '../src/lib/aiTasks/jieWenJi'
 
 let pass = 0, fail = 0
 const ok = (n: string, c: boolean, e = '') => {
@@ -270,7 +271,7 @@ async function run() {
   ok('模型变化后拒绝旧快照且不发请求', changedProviderRejected && fake.calls.length === 0)
   const runResult = await executeContinuationWithSnapshot(freshSnapshot)
   ok('假模型端到端续写成功', runResult.text.includes('白额猛虎'))
-  ok('返回估算词元数与耗时', runResult.tokens > 0 && runResult.durationMs >= 0)
+  ok('返回估算词元数与耗时', runResult.tokens !== null && runResult.tokens > 0 && runResult.durationMs >= 0)
 
   // 检验拦截到的假模型请求提示词中包含作者隔离栅栏 (authorBlock)
   const reqs = fake.calls
@@ -294,6 +295,47 @@ async function run() {
   try { await executeContinuationWithSnapshot(errorSnapshot) } catch { rejected400 = true }
   ok('HTTP 400 不自动重试', rejected400 && calls400 === 1, `requests=${calls400}`)
   await new Promise<void>(resolve => errorServer.close(() => resolve()))
+  await db.setMeta('aiProviders', [])
+  const generation = 'fake-acp-generation'
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  let captured = ''
+  let activeGeneration = generation
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      electronAgentHost: { modeStatus: async () => ({ phase: 'stable', mode: 'acp' }) },
+      electronAcp: {
+        status: async () => ({ generation: activeGeneration, selected: 'fake', adapters: [{ id: 'fake', name: 'Fake', available: true }] }),
+        generate: async (request: { text: string }) => {
+          captured = request.text
+          return { ok: true, text: '合成测试续写。' }
+        },
+        onChunk: () => () => {},
+      },
+    },
+  })
+  try {
+    const acpSnapshot = await buildContinuationPlan({
+      projectId: pid, chapterId: 'ch1', chapterTitle: '第一章 启程', currentContent: baseContent,
+      plot: '继续前进', picks: new Set(), summaryCount: 0, prevTextCount: 0, acpGeneration: generation,
+    })
+    const acp = await executeContinuationWithSnapshot(acpSnapshot)
+    ok('无 API 模型时 ACP 续写使用同一快照与未知用量', acp.text === '合成测试续写。' && acp.tokens === null && captured.includes('继续前进'))
+    activeGeneration = 'changed'
+    let rejectedStale = false
+    try { await executeContinuationWithSnapshot(acpSnapshot) } catch { rejectedStale = true }
+    ok('ACP 代次变化拒绝晚到续写', rejectedStale)
+    const rewritten = await aiRewritePassage('原选区', { instruction: '润色' }, '使用短句', {
+      acpText: async prompt => {
+        ok('ACP 润色只拼装选区、要求和规范', prompt.includes('原选区') && prompt.includes('润色') && prompt.includes('使用短句'))
+        return '改写后的选区。'
+      },
+    })
+    ok('无 API 模型时 ACP 纯文本润色映射建议段', rewritten.rewritten === '改写后的选区。' && rewritten.notes === '')
+  } finally {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
   db.setCurrentProject('')
 
   console.log(`\ncontinuationPlan: ${pass} passed, ${fail} failed`)

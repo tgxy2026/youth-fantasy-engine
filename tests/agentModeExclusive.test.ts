@@ -10,6 +10,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createModeService, recoverConnectionFiles } from '../scripts/agent-host/mode-service.mjs'
 import { runWithModeLease } from '../src/lib/agentHost/modeClient'
 import { withApiModeLease } from '../src/lib/agentHost/modeBridge'
@@ -49,6 +51,49 @@ async function agentCall(port: number, token: string) {
 }
 
 async function main() {
+  const acp = await promisify(execFile)(process.execPath, ['tests/fixtures/acp-runtime-check.mjs'], { timeout: 20_000 })
+  ok('假 ACP Agent 进程与提交故障专项', acp.stdout.includes('PASS ACP'))
+  if (process.platform === 'win32' && process.arch === 'x64') {
+    const job = await promisify(execFile)(process.execPath, ['tests/fixtures/acp-windows-job-check.mjs'], { timeout: 25_000 })
+    ok('Windows 宿主被强退后清理 ACP 后代进程', job.stdout.includes('PASS Windows Job'))
+  }
+  {
+    const dataDir = dirOf('three-modes')
+    let acpStops = 0
+    let readonlyCalls = 0
+    const service = await createModeService({
+      dataDir, callPage,
+      acp: { async stop() { acpStops++ }, async verifyQuiescent() {} },
+      callReadonly() { readonlyCalls++; return ['synthetic'] },
+    })
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(dataDir, 'agent-host.json'), 'utf8'))
+      const readonly = () => fetch(`http://127.0.0.1:${cfg.port}/api/agent/readonly`, {
+        method: 'POST', headers: { Authorization: `Bearer ${cfg.token}` }, body: '{}',
+      }).then(response => response.json())
+      const modes = ['api', 'agent', 'acp'] as const
+      const targets = ['agent', 'acp', 'api', 'acp', 'agent', 'api'] as const
+      let from: typeof modes[number] = 'api'
+      for (const [i, to] of targets.entries()) {
+        for (const mode of modes.filter(mode => mode !== from)) assert.throws(() => service.acquire(mode, 'matrix'))
+        const lease = service.acquire(from, 'matrix')
+        const switching = service.switchTo(to, `matrix-${i}`)
+        for (const mode of modes) assert.throws(() => service.acquire(mode, 'matrix'))
+        assert.equal((await service.status()).active[from], 1)
+        assert.equal(service.release(lease, 'other'), false)
+        assert.equal(service.release(lease, 'matrix'), true)
+        const done = await switching
+        ok(`实际模式服务 ${from} → ${to} 排空并提交`, done.mode === to && done.phase === 'stable' && !done.busy)
+        if (to === 'agent') service.setAgentConfig({ enabled: true })
+        const read = await readonly()
+        ok(`只读宿主在 ${to} 遵守模式租约`, to === 'agent' ? read.ok === true : read.code === 'MODE_BLOCKED')
+        from = to
+      }
+      ok('仅 MCP 模式读作品，退出 ACP 两次均等待清理', readonlyCalls === 2 && acpStops === 2)
+    } finally {
+      await service.close()
+    }
+  }
   // ① 全新安装：缺失记录只在旧配置可核对时初始化为 API。
   {
     const dir = dirOf('fresh')

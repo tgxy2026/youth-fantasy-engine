@@ -32,7 +32,7 @@ const ACTION_GROUPS: { label: string; actions: AgentAction[] }[] = [
 export default function AgentBridgeSetup() {
   const [node, setNode] = useState('node')
   const [script, setScript] = useState('')
-  const [kind, setKind] = useState<BridgeDataSource['kind']>('desktop')
+  const [kind, setKind] = useState<BridgeDataSource['kind']>(DESKTOP ? 'desktop' : 'portable')
   const [target, setTarget] = useState('')
   const [config, setConfig] = useState('')
   const [desktopData, setDesktopData] = useState('')
@@ -49,7 +49,8 @@ export default function AgentBridgeSetup() {
   }, [])
   function generate() {
     try {
-      if (kind === 'desktop' && DESKTOP && !desktopData) throw new Error('无法取得桌面数据路径，请选择指定数据文件')
+      if (DESKTOP && kind !== 'desktop') throw new Error('桌面只读桥仅连接当前实时库。')
+      if (DESKTOP && !desktopData) throw new Error('无法取得桌面数据路径。')
       const source: BridgeDataSource = kind === 'desktop' ? { kind, ...(desktopData ? { dataFile: desktopData } : {}) } : kind === 'portable' ? { kind, root: target } : { kind, path: target }
       setConfig(makeBridgeConfig(node, script, source))
     } catch (error) {
@@ -65,14 +66,17 @@ export default function AgentBridgeSetup() {
     <details className="mt-4 border-t border-ink-700 pt-3">
     <summary className="cursor-pointer text-12 text-ink-200">只读桥配置（可选）</summary>
     <div className="mt-2 space-y-2">
-      <p className="text-11 text-ink-500"><EmphasisText text="在你的 Agent 客户端的 **MCP 服务配置（mcpServers）**中找到配置文件，将下方条目**合并**进去。桥可读取本机所有项目中的允许字段，**请只连接可信客户端**。读取的是**已保存到磁盘**的数据，请先在引擎中保存。配置前请先安装 Node.js。" /></p>
+      <p className="text-11 text-ink-500">{DESKTOP
+        ? '在 MCP 模式开启连接并授权项目。只读桥读取已保存的授权项目。升级后请重新生成配置，替换旧脚本路径。MCP 客户端运行此桥需要 Node.js。'
+        : <EmphasisText text="将下方条目合并到客户端的 **MCP 服务配置（mcpServers）**中。读取的是**已保存到磁盘**的数据。配置前请先安装 Node.js。" />}</p>
       <label className="block">Node.js 命令或完整路径<input className={field} value={node} onChange={e => { setNode(e.target.value); setConfig('') }} /></label>
       <label className="block">只读桥脚本完整路径<input className={field} value={script} onChange={e => { setScript(e.target.value); setConfig('') }} placeholder="…/scripts/mcp/yfe-readonly.mjs" /></label>
       <label className="block">数据位置<select className={field} value={kind} onChange={e => { setKind(e.target.value as BridgeDataSource['kind']); setTarget(''); setConfig('') }}>
-        <option value="desktop">桌面版默认或自定义数据位置</option><option value="portable">便携版根目录</option><option value="file">指定数据文件</option>
+        {DESKTOP && <option value="desktop">当前桌面实时库</option>}
+        {!DESKTOP && <><option value="portable">便携版根目录</option><option value="file">指定数据文件</option></>}
       </select></label>
       {kind !== 'desktop' && <label className="block">{kind === 'portable' ? '便携版根目录' : '数据文件完整路径'}<input className={field} value={target} onChange={e => { setTarget(e.target.value); setConfig('') }} /></label>}
-      {kind === 'desktop' && DESKTOP && !loadingPaths && !desktopData && <p className="text-11 text-amber">无法取得桌面数据路径，请选择「指定数据文件」。</p>}
+      {kind === 'desktop' && DESKTOP && !loadingPaths && !desktopData && <p className="text-11 text-amber">无法取得桌面数据路径。</p>}
       <Button variant="secondary" onClick={generate} disabled={loadingPaths}>生成配置</Button>
       {config && <><textarea aria-label="只读桥连接配置" className={`${field} min-h-32 font-mono`} value={config} readOnly /><Button variant="secondary" onClick={() => void copy()}>复制配置</Button><p className="text-11 text-ink-500">若已有其他 MCP 服务，只将 yfe-readonly 条目合并进已有的 mcpServers，避免覆盖原配置。</p></>}
     </div>
@@ -209,7 +213,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
       </p>
       {unavailable && <p className="text-11 text-amber">网页版没有本机宿主进程，无法使用 Agent 写入连接。</p>}
       {!unavailable && status?.connectionMode?.phase === 'stable' && status.connectionMode.mode !== 'agent' && (
-        <p className="text-11 text-amber">当前为 API 调用模式：开启 Agent 连接会被拒绝。请先在页签切换到「Agent 模式」。</p>
+        <p className="text-11 text-amber">当前为 API 模式：开启 Agent 连接会被拒绝。请先在页签切换到「MCP 模式」。</p>
       )}
       {!unavailable && status && !status.running && <p className="text-11 text-amber">{status.lastError || 'Agent 宿主尚未运行，请确认引擎已启动并稍候重试。'}</p>}
       {!unavailable && <div className="grid gap-2 sm:grid-cols-3">

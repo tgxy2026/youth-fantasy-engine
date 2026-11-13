@@ -42,6 +42,7 @@ import type { RevisionCandidate } from '@/lib/revision/revisionCandidate'
 import { CONTINUE_PICKS } from '@/lib/editor/continuationPick'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { continuationPromptText } from '@/lib/aiTasks/jieWenJi'
+import { acpWrite } from '@/lib/agentHost/acpBridge'
 
 export const CHAT_TIMEOUT_MS = 180_000
 export const CONT_BODY_TAIL_CHARS = 3000
@@ -92,6 +93,7 @@ export interface ContinuationSnapshot {
   warnings: string[]
   frozenAt: number
   providerIdentity?: string
+  acpGeneration?: string
 }
 
 function providerIdentity(provider: Awaited<ReturnType<typeof requireProviderFor>> | null): string {
@@ -198,10 +200,11 @@ export async function buildContinuationPlan(args: {
   picks: Set<string>
   summaryCount: number
   prevTextCount: number
+  acpGeneration?: string
 }): Promise<ContinuationSnapshot> {
   const { projectId, chapterId, chapterTitle, currentContent, plot, targetWords, picks, summaryCount, prevTextCount } = args
   const budgetChars = await writerBudgetFor('jiewenji-continue')
-  const provider = await requireProviderFor('create').catch(() => null)
+  const provider = args.acpGeneration ? null : await requireProviderFor('create').catch(() => null)
   const windowTokens = effectiveWindowOf(provider)
 
   const wantSummaries = picks.has('summaries')
@@ -447,7 +450,8 @@ export async function buildContinuationPlan(args: {
 
   const totalInputChars = budget.estimates.input.chars
   const totalInputTokens = budget.estimates.input.tokens
-  const fits = budget.fits && totalInputChars <= budgetChars * 1.5
+  const acpFits = !args.acpGeneration || new TextEncoder().encode(messages.map(message => message.content).join('\n\n')).length <= 256 * 1024
+  const fits = budget.fits && totalInputChars <= budgetChars * 1.5 && acpFits
 
   const warnings: string[] = [...budget.warnings]
   if (!src.found) {
@@ -490,8 +494,9 @@ export async function buildContinuationPlan(args: {
     warnings,
     frozenAt: Date.now(),
     providerIdentity: providerIdentity(provider),
+    acpGeneration: args.acpGeneration,
   }
-  providerSnapshots.set(snapshot, JSON.stringify(provider))
+  providerSnapshots.set(snapshot, args.acpGeneration ?? JSON.stringify(provider))
   return snapshot
 }
 
@@ -550,13 +555,18 @@ export function validateContinuationSnapshot(
 export async function executeContinuationWithSnapshot(
   snapshot: ContinuationSnapshot,
   opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
-): Promise<{ text: string; tokens: number; durationMs: number }> {
-  const cfg = await requireProviderFor('create')
+): Promise<{ text: string; tokens: number | null; durationMs: number }> {
   if (!snapshot.fits) throw new Error('资料超出预算，请重新确认')
+  const startTime = Date.now()
+  if (snapshot.acpGeneration) {
+    const prompt = snapshot.messages.map(message => message.content).join('\n\n')
+    const text = cleanChapterOutput(await acpWrite('continuation', snapshot.acpGeneration, prompt, opts))
+    if (!text.trim()) throw new Error('ACP 没有返回可用续写正文。')
+    return { text, tokens: null, durationMs: Date.now() - startTime }
+  }
+  const cfg = await requireProviderFor('create')
   if (!providerSnapshots.has(snapshot) || JSON.stringify(cfg) !== providerSnapshots.get(snapshot)) throw new Error('模型配置已变化，请重新确认资料清单')
   const messages = snapshot.messages
-
-  const startTime = Date.now()
 
   // 超时后服务端可能仍在处理，避免自动重复请求及重复计费；由作者决定是否重试。
   if (opts?.signal?.aborted) throw new Error('用户已主动取消任务')
