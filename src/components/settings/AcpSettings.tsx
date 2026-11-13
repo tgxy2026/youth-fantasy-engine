@@ -73,10 +73,11 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
   if (!status) return <p className="text-12 text-ink-500">正在读取 ACP 设置…</p>
   const selected = status.adapters.find(adapter => adapter.id === status.selected)
   return <div className="space-y-2">
-    <label className="block text-12 text-ink-300">
-      ACP Agent
+    <div className="flex flex-wrap items-center gap-2 text-12 text-ink-300">
+      <label htmlFor="acp-agent-select">ACP Agent</label>
       <select
-        className="ml-2 rounded border border-ink-700 bg-ink-900 px-2 py-1"
+        id="acp-agent-select"
+        className="rounded border border-ink-700 bg-ink-900 px-2 py-1"
         value={selected?.id ?? ''}
         disabled={disabled || busy || !!installId}
         onChange={event => void select(event.target.value)}
@@ -84,7 +85,9 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
         {!selected && <option value="" disabled>请选择 ACP Agent</option>}
         {status.adapters.map(adapter => <option key={adapter.id} value={adapter.id}>{adapter.name}</option>)}
       </select>
-    </label>
+      {installId && <Button size="sm" variant="secondary" onClick={() => void api?.cancel(installId)}>取消 ACP 操作</Button>}
+      {installId && <span className="text-ink-500">正在等待 ACP 组件响应，首次启动约需 20–30 秒…</span>}
+    </div>
     {busy && <p className="text-12 text-ink-500">正在等待当前 ACP 任务结束…</p>}
     {selected?.componentVersion && <div className="flex items-center gap-2 text-12 text-ink-500">
       <span>官方组件 {selected.componentVersion}{status.config?.binary ? ' · 已配置' : ''}</span>
@@ -94,10 +97,6 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
       </Button>
       <Button size="sm" variant="secondary" disabled={disabled || busy || !!installId}
         onClick={() => api && void run(id => api.selectBinary(id))}>选择已有官方组件</Button>
-    </div>}
-    {installId && <div className="flex items-center gap-2 text-12 text-ink-500">
-      <span>正在等待 ACP 组件响应，首次启动约需 20–30 秒…</span>
-      <Button size="sm" variant="secondary" onClick={() => void api?.cancel(installId)}>取消 ACP 操作</Button>
     </div>}
     {selected?.available && status.config?.binary && <div className="space-y-2">
       <div className="flex items-center gap-2">
