@@ -26,6 +26,13 @@ try {
   const acquired = acquireAccountWriteLock(root, 'a')
   assert.ok(acquired)
   acquired.release()
+  const interrupted = spawn(process.execPath, ['--input-type=module', '-e', program, root], { stdio: ['pipe', 'pipe', 'inherit'] })
+  const [ready] = await once(interrupted.stdout, 'data')
+  assert.match(ready.toString(), /ready/)
+  const stopped = once(interrupted, 'exit')
+  interrupted.kill('SIGKILL')
+  await stopped
+  assert.equal(acquireAccountWriteLock(root, 'a'), null, '进程中断后的残留锁必须阻止写入')
   console.log('PASS 两进程同账号互斥，不同账号独立，释放后可重试')
 } finally {
   if (child.exitCode === null) child.kill()
