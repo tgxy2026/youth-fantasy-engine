@@ -64,6 +64,10 @@ try {
   const manifest = { protocol: 1, objects: [], assets: [], tombstones: [] }
   assert.equal(commitProjectSnapshot({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'commit', baseRevision: 0, manifest }).ok, true)
   assert.equal(deleteProject({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'delete' }).ok, true)
+  const beforePurge = fs.readFileSync(path.join(epochRoot, 'projects', 'p', 'state.json'), 'utf8')
+  assert.throws(() => purgeProject({ root: epochRoot, pid: 'p', accountId: 'a', updateIndex: () => { throw new Error('injected index failure') } }), /injected index failure/)
+  assert.equal(fs.readFileSync(path.join(epochRoot, 'projects', 'p', 'state.json'), 'utf8'), beforePurge)
+  assert.equal(fs.existsSync(path.join(epochRoot, 'purge-pending', 'p')), false)
   bumpEpoch(epochRoot, 'test')
   const deletedState = fs.readFileSync(path.join(epochRoot, 'projects', 'p', 'state.json'), 'utf8')
   assert.equal(restoreProject({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'restore' }).code, 'EPOCH_STALE')

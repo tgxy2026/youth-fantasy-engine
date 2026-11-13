@@ -255,7 +255,10 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
 
     // ?purge=1：彻底删除（只允许回收站里的作品）。不删共享对象库，对象交给 GC。
     if (qs.get('purge') === '1') {
-      const r = purgeProject({ root: storeRoot, pid, accountId })
+      const r = purgeProject({ root: storeRoot, pid, accountId, updateIndex: () => {
+        delete idx.projects[pid]
+        writeIndex(v2Root, accountId, idx)
+      } })
       if (!r.ok) {
         const status = r.code === 'FORBIDDEN' ? 403 : r.code === 'NOT_DELETED' ? 409 : 500
         return sendJSON(res, status, {
@@ -263,8 +266,6 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
           error: r.code === 'NOT_DELETED' ? '只有回收站里的作品才能彻底删除（请先删除它）' : codeText(r.code),
         }), true
       }
-      delete idx.projects[pid]
-      writeIndex(v2Root, accountId, idx)
       return sendJSON(res, 200, { ok: true, purged: true, removedBytes: r.removedBytes }), true
     }
 

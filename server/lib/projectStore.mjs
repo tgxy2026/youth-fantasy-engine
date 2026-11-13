@@ -467,19 +467,30 @@ function dirBytes(dir) {
  * 🔴 删除后索引条目一并移除（由路由层做，因为索引不在本模块）。配额随之释放，
  *    但磁盘空间要等 GC；界面文案必须说清这两件事不是同一时刻。
  */
-export function purgeProject({ root, pid, accountId }) {
+export function purgeProject({ root, pid, accountId, updateIndex }) {
   if (!pid || !accountId) return { ok: false, code: 'BAD_REQUEST' }
   const lock = acquireProjectLock(root, pid)
   try {
     const st = readState(root, pid, accountId)
     if (st.accountId && st.accountId !== accountId) return { ok: false, code: 'FORBIDDEN' }
     if (!st.deletedAt) return { ok: false, code: 'NOT_DELETED' }
+    if (typeof updateIndex !== 'function') return { ok: false, code: 'INDEX_UPDATE_REQUIRED' }
     const dir = p.project(root, pid)
     const removedBytes = dirBytes(dir)
-    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (e) {
+    const pendingRoot = path.join(root, 'purge-pending')
+    const pending = path.join(pendingRoot, pid)
+    fs.mkdirSync(pendingRoot, { recursive: true })
+    if (fs.existsSync(pending)) throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+    try { fs.renameSync(dir, pending) } catch (e) {
       return { ok: false, code: 'DELETE_FAILED', error: e && e.message ? String(e.message) : '删除失败' }
     }
-    try { fs.unlinkSync(p.lock(root, pid)) } catch { /* 锁文件可能已被 release */ }
+    try { updateIndex() } catch (error) {
+      try { fs.renameSync(pending, dir) } catch {
+        throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+      }
+      throw error
+    }
+    try { fs.rmSync(pending, { recursive: true, force: true }) } catch { /* 保留隔离目录供核对 */ }
     return { ok: true, removedBytes }
   } finally {
     lock.release()
