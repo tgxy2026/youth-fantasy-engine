@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, unlinkSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { seedSyncInvite, TEST_SYNC_INVITE } from './cloud-fixture.mjs'
@@ -199,12 +200,25 @@ try {
   const stateFile = path.join(owner, 'projects', pid, 'state.json')
   const indexFile = path.join(owner, 'index.json')
   const originalState = readFileSync(stateFile, 'utf8')
-  const originalIndex = readFileSync(indexFile, 'utf8')
+  let originalIndex = readFileSync(indexFile, 'utf8')
   const accountLockFile = path.join(owner, '.account-write.lock')
   writeFileSync(accountLockFile, 'isolated-competitor')
   const busy = await web.req('POST', '/api/v2/projects', { name: 'contended' })
   ok('账号锁竞争时拒绝写入且保留索引', busy.status === 503 && busy.json?.code === 'PROJECT_ACCOUNT_BUSY' && readFileSync(indexFile, 'utf8') === originalIndex, busy.json)
   unlinkSync(accountLockFile)
+  const slow = http.request(`${base}/api/v2/projects`, { method: 'POST', headers: { cookie: web.cookie, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } })
+  const slowResult = new Promise((resolve, reject) => {
+    slow.on('response', res => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
+    slow.on('error', reject)
+  })
+  slow.write('{')
+  for (let i = 0; i < 100 && !existsSync(accountLockFile); i++) await new Promise(r => setTimeout(r, 10))
+  const competing = await web.req('POST', '/api/v2/projects', { name: '并发作品' })
+  slow.end('"name":"慢请求"}')
+  const slowStatus = await slowResult
+  const afterConcurrent = await web.req('GET', '/api/v2/projects')
+  ok('真实并发请求竞争时拒绝后到写入，首个写入完整', slowStatus === 200 && competing.status === 503 && competing.json?.code === 'PROJECT_ACCOUNT_BUSY' && afterConcurrent.status === 200 && (afterConcurrent.json?.projects || []).some(x => x.name === '慢请求'), { slowStatus, competing: competing.json })
+  originalIndex = readFileSync(indexFile, 'utf8')
   writeFileSync(stateFile, '{private-marker')
   const broken = await web.req('GET', `/api/v2/projects/${pid}`)
   const brokenWrite = await web.req('DELETE', `/api/v2/projects/${pid}?opId=broken`)
