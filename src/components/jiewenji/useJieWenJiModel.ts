@@ -31,7 +31,9 @@ import { useAIReady } from '@/lib/ai/useAIReady'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
-import { acpWrite, acpWritingContext, assertAcpWritingCurrent } from '@/lib/agentHost/acpBridge'
+import { acpWrite, assertAcpWritingCurrent } from '@/lib/agentHost/acpBridge'
+import { acpReportText } from '@/lib/agentHost/acpReport'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import type { Props } from '@/components/jiewenji/jieWenJiParts'
 import { Mode, ProofScope, PROOF_ORDER, PROOF_META, ProofState, blankProof, CONTINUE_PICKS } from '@/components/jiewenji/jieWenJiParts'
@@ -58,18 +60,7 @@ const CONT_DEFAULT_PICKS = CONTINUE_PICKS.filter(p => p.def).map(p => p.key)
 export function useJieWenJiModel(props: Props) {
   const { content, openingText, getSelectionText, getSelectionRange, onApplyAdvice, onApplyContent, summary, chapterTitle, onLedgerCommitted, focusChapterId } = props
   const { ready: aiReady } = useAIReady()
-  const [acpWriting, setAcpWriting] = useState<Awaited<ReturnType<typeof acpWritingContext>>>(null)
-  useEffect(() => {
-    let active = true
-    const refresh = () => void acpWritingContext().then(value => {
-      if (active) setAcpWriting(value)
-    }).catch(() => {
-      if (active) setAcpWriting(null)
-    })
-    refresh()
-    const timer = setInterval(refresh, 2000)
-    return () => { active = false; clearInterval(timer) }
-  }, [])
+  const acpWriting = useAcpWriting()
   const writingReady = acpWriting ? acpWriting.ready : aiReady
   const acpGeneration = acpWriting?.generation
   /**
@@ -100,7 +91,7 @@ export function useJieWenJiModel(props: Props) {
   const diag: { loading: boolean; data?: EditorDiagnosis; error?: string } = chapterOwned(diagT, ch)
 
   const runDiag = () => {
-    if (!aiReady || diagT.running) return
+    if (!writingReady || diagT.running) return
     const useBrief = diagMode === 'brief'
     const diagText = useBrief ? (summary?.trim() || '') : content
     let brief = useBrief
@@ -112,10 +103,19 @@ export function useJieWenJiModel(props: Props) {
     showToast('AI 综合诊断已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     const text = brief ? diagText : content
     const textKind: 'summary' | 'full' = brief ? 'summary' : 'full'
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     diagT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpReportText({ task: 'diagnosis', generation, agentName, brief, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-diagnosis'), focusChapterId })
-      return { ch, v: await aiEditorDiagnosis(ctx.text, text, { signal: job.signal, textKind }) }
+      owner.assertCurrent()
+      const v = await aiEditorDiagnosis(ctx.text, text, { signal: job.signal, textKind, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
 
@@ -783,19 +783,37 @@ export function useJieWenJiModel(props: Props) {
     })
   }
   const runPleasure = () => {
-    if (!aiReady || pleaT.running) return
+    if (!writingReady || pleaT.running) return
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     pleaT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpReportText({ task: 'pleasure', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-pleasure'), focusChapterId })
-      return { ch, v: await aiPleasureCheck(ctx.text, content, { signal: job.signal }) }
+      owner.assertCurrent()
+      const v = await aiPleasureCheck(ctx.text, content, { signal: job.signal, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
   const runOpening = () => {
-    if (!aiReady || openT.running) return
+    if (!writingReady || openT.running) return
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     openT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpReportText({ task: 'opening', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-opening'), focusChapterId })
-      return { ch, v: await aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal }) }
+      owner.assertCurrent()
+      const v = await aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
 
@@ -803,12 +821,21 @@ export function useJieWenJiModel(props: Props) {
   const briefT = useTaskRunner<ChOwned<BriefingReport>, ChProgress>({ ownerTab: 'editor', kind: 'jiewenji-brief', title: '颉文姬 · 本章写作简报' })
   const brief: { loading: boolean; data?: BriefingReport; error?: string } = chapterOwned(briefT, ch)
   const runBrief = () => {
-    if (!aiReady || briefT.running) return
+    if (!writingReady || briefT.running) return
     showToast('AI 简报已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     briefT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpReportText({ task: 'briefing', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-brief'), focusChapterId })
-      return { ch, v: await aiBriefing(ctx.text, content, { signal: job.signal }) }
+      owner.assertCurrent()
+      const v = await aiBriefing(ctx.text, content, { signal: job.signal, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
 

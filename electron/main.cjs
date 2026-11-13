@@ -948,7 +948,7 @@ ipcMain.handle('store:path', () => dataFile())
 
   ipcMain.handle('acp:generate', async (e, request) => {
     try {
-      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite'].includes(request.task) ||
+      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary'].includes(request.task) ||
           typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id)) throw new Error('ACP 写作请求无效。')
       const owner = rendererLeaseOwner(e)
       const service = await startModeService()

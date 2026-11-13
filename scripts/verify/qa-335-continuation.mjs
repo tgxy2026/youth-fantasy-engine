@@ -76,6 +76,9 @@ async function bootstrap(timeout = 120000) {
     }
     const open = page.getByRole('button', { name: '打开项目', exact: true }).first()
     if (await open.isVisible().catch(() => false)) { await open.click().catch(() => {}); await page.waitForTimeout(1200) }
+    // 3.5.x 起「创建示范项目」先弹二次确认；探针只负责确认，数据集仍是隔离临时根。
+    const confirmCreate = page.getByRole('button', { name: '确定', exact: true }).first()
+    if (await confirmCreate.isVisible().catch(() => false)) { await confirmCreate.click().catch(() => {}); await page.waitForTimeout(1500) }
     await dismissAll()
     await page.waitForTimeout(700)
   }

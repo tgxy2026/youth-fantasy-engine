@@ -10,7 +10,7 @@ import { renderReport, SevBadge } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
-  const { aiReady, rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening, aiBtnCls, scoreCls } = m
+  const { aiReady, writingReady, acpWriting, rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening, aiBtnCls, scoreCls } = m
   return (
           <>
             <Button variant="bare"
@@ -139,9 +139,9 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => void runPleasure()}
-              disabled={!aiReady || plea.loading}
+              disabled={!writingReady || plea.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : '爽点供给 / 毒点预警 / 代入感与金手指 / 期待感'}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : '爽点供给 / 毒点预警 / 代入感与金手指 / 期待感'}
             >
               {plea.loading ? <Loader2 size={12} className="animate-spin" /> : <Flame size={12} />}
               {plea.loading ? '检查中…' : '爽点 / 毒点检查（YY·代入感·金手指）'}
@@ -156,9 +156,9 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => void runOpening()}
-              disabled={!aiReady || open.loading}
+              disabled={!writingReady || open.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : '按「黄金三章」标准检查作品开头'}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : '按「黄金三章」标准检查作品开头'}
             >
               {open.loading ? <Loader2 size={12} className="animate-spin" /> : <BookOpenCheck size={12} />}
               {open.loading ? '检查中…' : '黄金三章检查（开篇定生死）'}
@@ -171,7 +171,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               </div>
             )}
 
-            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
+            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{acpWriting ? '章节编辑意见 / OOC / 续写方向仍需配置 API 模型；本页爽点毒点与黄金三章已可用 ACP。' : AI_DISABLED_HINT}</div>}
           </>
   )
 }

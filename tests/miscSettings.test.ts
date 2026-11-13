@@ -68,6 +68,16 @@ const tab = getTab(MIS)
     (tab?.tips ?? []).some(t => t.includes('优先放进对应的专表')))
 }
 
+// ---------- ①b 纯设定页不出现人物立绘入口（2026-11-13 主人反馈） ----------
+{
+  const sheet = read('src/components/world/CharacterSheet.tsx')
+  ok('立绘回退只对角色卡开放（其他设定 / 分卷大纲 / 章节细纲不渲染上传区）',
+    sheet.includes('isCharacterCardTab(tab.id) && !cardGroups.some(group => group.isBasic)'),
+    'CharacterSheet 的 CharacterPortraitPanel 回退缺少角色卡判据')
+  ok('非角色卡不把历史 portrait 数据当头像显示（纯文本页不出现图片）',
+    sheet.includes('portrait={isCharacterCardTab(tab.id) ? (draft.portrait || draft.portrait2) : undefined}'))
+}
+
 // ---------- ② 🔴 默认不勾选 ----------
 {
   ok('🔴 FEATURE_TIER 里显式标 optional（写出来而不是省略，让读的人知道这是有意的）',

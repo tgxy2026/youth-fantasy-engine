@@ -932,7 +932,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
           {draft ? (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
-                <CharacterProfileHeader name={draft.name} portrait={draft.portrait || draft.portrait2}
+                <CharacterProfileHeader name={draft.name} portrait={isCharacterCardTab(tab.id) ? (draft.portrait || draft.portrait2) : undefined}
                   facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
               </div>
               {cardGroups.map(group => {
@@ -1056,7 +1056,9 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                 </details>
                 )
               })}
-              {!cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
+              {/* 立绘只属于角色卡：「其他设定」「分卷大纲」「章节细纲」等纯文本卡片不提供图片入口
+                  （2026-11-13 主人反馈：兜底设定页不应出现人物立绘上传）。 */}
+              {isCharacterCardTab(tab.id) && !cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
                       name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
                       onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
             </div>

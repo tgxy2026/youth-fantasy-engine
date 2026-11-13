@@ -191,9 +191,14 @@ export interface EditorDiagnosis {
 export async function aiEditorDiagnosis(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; textKind?: 'full' | 'summary' },
+  opts?: {
+    signal?: AbortSignal
+    onToken?: (delta: string) => void
+    textKind?: 'full' | 'summary'
+    /** ACP 纯文本分支：给了就只走 Agent，不要求 API 模型配置 */
+    acpText?: (prompt: string) => Promise<string>
+  },
 ): Promise<EditorDiagnosis> {
-  const cfg = await requireProviderFor('review')
   // 🔴 正文与设定资料都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()
   // 简略模式喂的是压缩摘要而非全文——必须如实告知，否则模型会按全文标准评价文笔细节
@@ -208,6 +213,12 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 请输出综合诊断报告。`
+  if (opts?.acpText) {
+    const report = (await opts.acpText(`${sys}\n\n${user}`)).trim()
+    if (!hasSubstance(report)) throw new Error('ACP 没有返回可用诊断报告。')
+    return { report }
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -507,9 +518,8 @@ export interface PleasureReport {
 export async function aiPleasureCheck(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<PleasureReport> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_pleasure_check
   const user = `【设定资料（摘要）】
@@ -519,6 +529,12 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请按爽感管理视角输出报告。`
+  if (opts?.acpText) {
+    const report = (await opts.acpText(`${sys}\n\n${user}`)).trim()
+    if (!hasSubstance(report)) throw new Error('ACP 没有返回可用爽点毒点报告。')
+    return { report }
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -539,9 +555,8 @@ export interface OpeningReport {
 export async function aiOpeningCheck(
   projectContext: string,
   openingText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<OpeningReport> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_opening_check
   const user = `【设定资料（摘要）】
@@ -551,6 +566,12 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${openingText.trim() ? authorBlock(fence, openingText.trim()) : '（作者尚未提供开头文本）'}
 
 请按黄金三章标准检查。`
+  if (opts?.acpText) {
+    const report = (await opts.acpText(`${sys}\n\n${user}`)).trim()
+    if (!hasSubstance(report)) throw new Error('ACP 没有返回可用黄金三章报告。')
+    return { report }
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -569,9 +590,8 @@ export interface BriefingReport {
 export async function aiBriefing(
   projectContext: string,
   chapterContext: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<BriefingReport> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_writing_briefing
   const user = `【设定资料（摘要）】
@@ -581,6 +601,12 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${chapterContext.trim() ? authorBlock(fence, chapterContext.trim()) : '（无）'}
 
 请输出本章写作简报。`
+  if (opts?.acpText) {
+    const report = (await opts.acpText(`${sys}\n\n${user}`)).trim()
+    if (!hasSubstance(report)) throw new Error('ACP 没有返回可用写作简报。')
+    return { report }
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -593,9 +619,8 @@ ${chapterContext.trim() ? authorBlock(fence, chapterContext.trim()) : '（无）
  * 比例说明：1/10 能在大头压缩的同时保住绝大多数信息（避免一句话摘要把 80% 内容丢掉）；字数向上取整到百字（如 3700 字→400 字、4400 字→500 字），下限自然为 100 字（ceil 到百），上限 1200 字防止超长章摘要失控。 */
 export async function aiChapterSummary(
   text: string,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; acpText?: (prompt: string) => Promise<string> },
 ): Promise<string> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const chars = text.replace(/\s/g, '').length
   const target = Math.min(1200, Math.max(100, Math.ceil((chars * 0.1) / 100) * 100))
@@ -605,6 +630,13 @@ export async function aiChapterSummary(
     + `· 用若干自然段或分点呈现，不要只写一句话，但也不要复述无关细节；\n`
     + `· 直接输出摘要正文，不要解释、不要标题、不要引号、不要序号。`
   const user = `【本章正文】\n${text.trim() ? authorBlock(fence, text.trim()) : '（空白）'}`
+  if (opts?.acpText) {
+    const out = await opts.acpText(`${sys}\n\n${user}`)
+    const summary = (humanText(out) || out.trim()).replace(/\n{3,}/g, '\n\n').trim().slice(0, 1600)
+    if (!hasSubstance(summary)) throw new Error('ACP 没有返回可用章节摘要。')
+    return summary
+  }
+  const cfg = await requireProviderFor('review')
   const out = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],

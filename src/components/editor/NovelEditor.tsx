@@ -108,7 +108,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
+    summarizing, genSummary, stopSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     wrapRef, wrapW, searchPaneW, showPageWide, chapterCompact, searchFits, shortBody, BODY_MIN_H,
@@ -123,7 +123,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
-    aiReady, runExport,
+    aiReady, writingReady, acpWriting, runExport,
   } = model
 
   // UX06 · 正文工作现场：离页/切章时同步捕获，进章后按「内容摘要是否一致」决定要不要恢复光标与位置
@@ -604,10 +604,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 rows={1}
                 className="!bg-transparent !border-transparent !px-0 py-1 text-11 leading-relaxed text-ink-300 hover:!border-ink-600 focus:!border-amber/50 flex-1 min-w-0 resize-none overflow-hidden box-border appearance-none"
               />
-              <Button onClick={genSummary}
-                disabled={!aiReady || summarizing || !active}
-                title={!aiReady ? '未配置 AI 模型' : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
-                {summarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              <Button onClick={() => (summarizing ? stopSummary() : void genSummary())}
+                disabled={!summarizing && (!writingReady || !active)}
+                title={summarizing ? '中止摘要生成（已生成的结果不写入）' : !writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
+                {summarizing ? <Square size={12} /> : <Sparkles size={12} />}
               </Button>
               {/* 🔴 UX13：长等待必须能叫停。跑起来后这个键变「中止」（同一位置、同一尺寸），
                   已更新的章节保持已更新（中止不是回滚），未处理的章节仍是旧摘要。 */}

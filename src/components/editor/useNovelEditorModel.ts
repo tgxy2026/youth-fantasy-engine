@@ -63,6 +63,8 @@ import { runRegenSummaries, regenSummaryText, type RegenOutcome } from '@/compon
 import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardReorder'
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { useManualSummary } from '@/components/editor/useManualSummary'
 
 type Args = {
   /** 项目名（导出文件名 / 提示词里用） */
@@ -423,12 +425,14 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
 
   const active = useMemo(() => chapters.find(c => c.id === activeId) ?? null, [chapters, activeId])
   const { ready: aiReady } = useAIReady()
+  // 3.5.4：手动「AI 生成摘要」可按当前模式走 ACP；批量重算仍走 API。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting ? acpWriting.ready : aiReady
   // P0-2：用 ref 镜像最新 state，供卸载/切章冲刷（useEffect 闭包拿不到最新 state）
   const chaptersRef = useRef(chapters); chaptersRef.current = chapters
   const activeRef = useRef<Chapter | null>(null); activeRef.current = active
   const onStatsChangeRef = useRef(onStatsChange); onStatsChangeRef.current = onStatsChange
   const prevActiveIdRef = useRef<string | null>(null)
-  const [summarizing, setSummarizing] = useState(false)
 
   /** 计算章节的全局序号与所属卷名（用于总表同步） */
   /** 章节 id → 全局派生序号（0 = 不计入序号）。侧栏显示与保存同步共用同一份，避免各自算一套。 */
@@ -812,20 +816,23 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     }, 600)
   }
 
-  /** AI 一键生成「章节压缩摘要」：基于正文按 ~1/10 压缩回填到 active.summary（自动同步章节总表） */
-  const genSummary = async () => {
-    if (!aiReady || !active || summarizing) return
-    setSummarizing(true)
-    try {
-      const s = await aiChapterSummary(draftContent)
-      updateMeta({ summary: s })
-      showToast('已用 AI 生成章节压缩摘要', 'success')
-    } catch (e) {
-      showToast('摘要生成失败：' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      setSummarizing(false)
-    }
-  }
+  /**
+   * 手动「AI 生成章节压缩摘要」：ACP 模式走 Agent、API 模式走原调用；
+   * 归属、取消与迟到结果校验收在 `useManualSummary`（见该文件头）。
+   */
+  const { summarizing, genSummary, stopSummary } = useManualSummary({
+    ready: writingReady,
+    projectId: db.getCurrentProjectId(),
+    chapterId: active?.id ?? null,
+    text: draftContent,
+    acp: acpWriting ? { generation: acpWriting.generation, name: acpWriting.name } : null,
+    apply: summary => updateMeta({ summary }),
+    live: () => ({
+      projectId: db.getCurrentProjectId(),
+      chapterId: activeRef.current?.id ?? null,
+      text: draftRef.current,
+    }),
+  })
 
   /**
    * 批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要），用于把旧的一句式摘要刷新为内容摘要。
@@ -1158,7 +1165,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // AI 伴写（ghost 叠层 / 钢笔设置 / 采纳）
     companion, setCompanion, companionLen, setCompanionLen, companionDeAi, setCompanionDeAi, companionStyleNote, setCompanionStyleNote, companionStyleDims, setCompanionStyleDims, companionStyleSpec, setCompanionStyleSpec, ghost, ghostBusy, dismissGhost, onEditorKeyDown, insertAdvice, clearAdvice, openingText,
     // 摘要（本章摘要 / 批量重算）
-    summarizing, genSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
+    summarizing, genSummary, stopSummary, regenAllSummaries, regenAll, stopRegenAll, regenFailures, summaryRef,
     // 面板与尺寸（专注 / 检索栏 / 字号 / 页宽 / 打字机）
     focusMode, setFocusMode, showSearch, setShowSearch, fontSize, changeFontSize, typewriter, setTypewriter, pageWide, setPageWide, chapterPane, searchPane,
     // 三栏容器 ref + 正文列保底后的检索栏实际宽度 + 「铺满/限宽」开关显示与否
@@ -1176,6 +1183,6 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     // 编辑器缩进（2.4.0 · A5）：单位是偏好，缩进动作本身在 NovelEditor 的键盘处理里
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
-    aiReady, runExport,
+    aiReady, writingReady, acpWriting, runExport,
   }
 }

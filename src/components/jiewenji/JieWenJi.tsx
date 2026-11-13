@@ -27,7 +27,7 @@ import type { Props, Mode } from '@/components/jiewenji/jieWenJiParts'
 export { ADVICE_START, ADVICE_END } from '@/components/jiewenji/jieWenJiParts'
 export default function JieWenJi(props: Props) {
   const m = useJieWenJiModel(props)
-  const { aiReady, spriteOn, toggleSprite, mode, setMode, onClose } = m
+  const { aiReady, acpWriting, spriteOn, toggleSprite, mode, setMode, onClose } = m
   return (
     <div data-jiewenji-panel className="absolute right-3 top-14 bottom-10 w-[360px] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
 style={{ zIndex: Z.pagePanel }}>
@@ -86,8 +86,10 @@ style={{ zIndex: Z.pagePanel }}>
       </div>
       {/* 底部状态 */}
       <div className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 flex items-center justify-between gap-2 shrink-0">
-        <span>诊室两个入口均需配置模型 · 未配置时按钮禁用</span>
-        {!aiReady && <span className="text-amber/70">未配置模型</span>}
+        <span>综合诊断 / 简报 / 爽点毒点 / 黄金三章支持已连接的 ACP Agent，其余入口仍需配置模型</span>
+        {acpWriting
+          ? <span className="text-success/80">ACP · {acpWriting.name}</span>
+          : !aiReady && <span className="text-amber/70">未配置模型</span>}
       </div>
     </div>
   )

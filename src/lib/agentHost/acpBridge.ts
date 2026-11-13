@@ -8,9 +8,16 @@ export interface AcpStatus {
   ready?: boolean
 }
 
+/**
+ * 3.5.4 纯文本任务标识：主进程 `acp:generate` 按此白名单放行。
+ * `continuation` / `rewrite` 写正文或建议段；`diagnosis` / `pleasure` / `opening` /
+ * `briefing` / `summary` 只返回文本报告（摘要回填摘要框），不直接改正文。
+ */
+export type AcpTask = 'continuation' | 'rewrite' | 'diagnosis' | 'pleasure' | 'opening' | 'briefing' | 'summary'
+
 interface AcpBridge {
   status(): Promise<AcpStatus | null>
-  generate(request: { id: string; task: 'continuation' | 'rewrite'; generation: string; text: string }): Promise<{ ok: boolean; text?: string; error?: string }>
+  generate(request: { id: string; task: AcpTask; generation: string; text: string }): Promise<{ ok: boolean; text?: string; error?: string }>
   cancel(id: string): Promise<boolean>
   onChunk(handler: (chunk: { id: string; delta: string }) => void): () => void
 }
@@ -38,7 +45,7 @@ export async function assertAcpWritingCurrent(generation: string) {
   if (current?.generation !== generation) throw new Error('ACP 模式或 Agent 设置已变化，请重新生成。')
 }
 
-export async function acpWrite(task: 'continuation' | 'rewrite', generation: string, text: string, opts?: {
+export async function acpWrite(task: AcpTask, generation: string, text: string, opts?: {
   signal?: AbortSignal
   onToken?: (delta: string) => void
 }): Promise<string> {

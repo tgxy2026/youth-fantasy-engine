@@ -46,6 +46,16 @@ try {
   const chunks = []
   assert.equal(await generate('write', text => chunks.push(text)), '合成作品')
   assert.deepEqual(chunks, ['合成', '作品'])
+  // 3.5.4 纯文本入口的提示词形态（报告 / 摘要）都走同一 ACP 流式会话
+  for (const prompt of [
+    '【本章正文】合成正文，请输出综合诊断报告。',
+    '【本章正文】合成正文，请按爽感管理视角输出报告。',
+    '【作品开头（前三章或已有章节）】合成开头，请按黄金三章标准检查。',
+    '【当前章节 / 进度】合成进度，请输出本章写作简报。',
+    '【本章正文】合成正文，请压缩为约 200 字摘要。',
+  ]) {
+    assert.equal(await generate(prompt), '合成作品')
+  }
   await assert.rejects(generate('tool'), /协议异常/)
   await assert.rejects(generate('invalid'), /协议异常/)
   const late = []

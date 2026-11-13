@@ -15,7 +15,7 @@ import { PROOF_ORDER, PROOF_META, renderReport } from '@/components/jiewenji/jie
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
-  const { aiReady, diagMode, setDiagMode, diag, runDiag, proofs, propsRunning, runProofread, stopProofread, replaceOne, aiBtnCls } = m
+  const { aiReady, writingReady, acpWriting, diagMode, setDiagMode, diag, runDiag, proofs, propsRunning, runProofread, stopProofread, replaceOne, aiBtnCls } = m
   /** 3.3.1 · P7：诊室里的结果也要能跳回正文（面板不收起 —— 结果就地还在，见下方注释） */
   const chapterId = m.focusChapterId ?? ''
   const bodyText = m.content
@@ -179,14 +179,15 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
             </div>
             <Button variant="bare"
               onClick={() => void runDiag()}
-              disabled={!aiReady || diag.loading}
+              disabled={!writingReady || diag.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : '主编视角：优先级 / 隐藏风险 / 批量建议'}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : '主编视角：优先级 / 隐藏风险 / 批量建议'}
             >
               {diag.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {diag.loading ? '诊断中…' : 'AI 综合诊断（优先级 / 隐藏风险 / 批量建议）'}
             </Button>
-            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{AI_DISABLED_HINT}</div>}
+            {!writingReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</div>}
+            {!aiReady && acpWriting && <div className="text-10 text-ink-500 leading-relaxed px-1">文字 / 逻辑校对仍需配置 API 模型；综合诊断已可用 ACP。</div>}
 
             {diag.error && <div className="text-11 text-danger px-1">{diag.error}</div>}
             {diag.data && (
