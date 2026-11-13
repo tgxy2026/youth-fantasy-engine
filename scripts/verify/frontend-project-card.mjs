@@ -35,7 +35,12 @@ try {
     if (await nav.isVisible()) break
     await page.waitForTimeout(100)
   }
-  await nav.waitFor(); if (await page.locator('[data-guide-card]').first().isVisible().catch(()=>false)) await page.getByRole('button',{name:'跳过本页'}).click(); await page.getByRole('button', { name: '切换项目', exact: true }).click()
+  await nav.waitFor()
+  await page.evaluate(async () => { (await import('/src/lib/settings/guidePrefs.ts')).setGuideAutoEnabled(false) })
+  const guide = page.locator('[data-guide-card]').first()
+  if (await guide.isVisible()) await page.getByRole('button', { name: '跳过本页' }).click()
+  await page.locator('[data-guide-overlay]').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: '切换项目', exact: true }).click()
   const card = page.locator('[data-project-card]').first()
   await card.waitFor(); page.setDefaultTimeout(20000)
   // 恢复 3.5.0 卡片后检查六个操作的可达性。

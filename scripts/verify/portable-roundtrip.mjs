@@ -249,6 +249,9 @@ async function main() {
     await editorBox.waitFor()
     const original = await editorBox.inputValue()
     if (!original.trim()) throw new Error('示范项目正文为空，无法验证往返')
+    await page.getByTitle(/点击立即保存|保存出错，点击重试/).click()
+    for (let i = 0; i < 80 && !await diskText(); i++) await sleep(250)
+    if (!await diskText()) throw new Error('示范项目未保存到便携数据文件')
 
     // ---------- ① 播种：密钥 + 侧车（都走真实 HTTP，不碰产品开关）----------
     //
@@ -280,9 +283,13 @@ async function main() {
         body: JSON.stringify(file),
       })
       if (!put.ok) throw new Error('播种密钥失败 HTTP ' + put.status)
-      const blob = await fetch(BASE + '/api/blob?store=vecRows&id=__all__', {
+      const blobUrl = BASE + '/api/blob?store=vecRows&id=__all__'
+      const blobBase = await fetch(blobUrl, { cache: 'no-store' })
+      const blobRevision = blobBase.headers.get('etag')
+      if ((!blobBase.ok && blobBase.status !== 404) || !blobRevision) throw new Error('无法取得侧车写入版本')
+      const blob = await fetch(blobUrl, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'If-Match': blobRevision },
         body: JSON.stringify([{ id: VEC_ID, projectId: 'probe', dim: 3, vector: [0.1, 0.2, 0.3], updatedAt: 1 }]),
       })
       if (!blob.ok) throw new Error('播种侧车失败 HTTP ' + blob.status)

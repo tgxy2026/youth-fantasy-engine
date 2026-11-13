@@ -7,21 +7,12 @@ import { lazyPage } from '@/components/common/LazyPage'
 import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
 import { Z } from '@/lib/app/zLayer'
 import WorkspaceSidebar from '@/components/app/WorkspaceSidebar'
-import Dashboard from '@/components/app/Dashboard'
-import NovelEditor from '@/components/editor/NovelEditor'
-import FormSheet from '@/components/sheets/FormSheet'
-import WorldSetSheet from '@/components/sheets/WorldSetSheet'
-import ParallelSetSheet from '@/components/sheets/ParallelSetSheet'
-import TableSheet from '@/components/sheets/TableSheet'
 import ChangelogHealthNote from '@/components/app/ChangelogHealthNote'
-import CharacterSheet from '@/components/world/CharacterSheet'
-import OutlineSheet from '@/components/outline/OutlineSheet'
 import ProjectHub from '@/components/app/ProjectHub'
 // 3.3.1 · P3：App 层统一托管的页签引导（非自管页），页面只标 data-guide 锚点
 import { useAppLevelGuide } from '@/components/help/usePageGuideHost'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { peekHelpRequest, subscribeHelpRequests } from '@/lib/help/helpNav'
-import AboutPage from '@/components/app/AboutPage'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
 import { abortRunIfProjectChanged } from '@/lib/creative/creativeSession'
@@ -65,13 +56,9 @@ import { markExported } from '@/lib/sync/backupReminder'
 import WelcomeWizard from '@/components/app/WelcomeWizard'
 import MigrationWizard from '@/components/app/MigrationWizard'
 import { probeLegacy, type LegacyProbe } from '@/lib/storage/legacyMigration'
-import FullTextSearch from '@/components/editor/FullTextSearch'
 import JieWenJiSprite from '@/components/jiewenji/JieWenJiSprite'
-import HelpCenter from '@/components/help/HelpCenter'
 import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
-import GeoMapEditor from '@/components/world/GeoMapEditor'
-import PlotCanvas from '@/components/outline/PlotCanvas'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
@@ -87,11 +74,23 @@ import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/u
 // 3.5.0 · 投稿广场入口事件（项目中心按钮派发，App 只监听一处）
 import { OPEN_COMMUNITY_EVENT } from '@/lib/community/entry'
 
-// 次级页签按需懒加载：把向导页 / 灵感启发·检查工具（含 AI 组件与大量交互）从首屏主包拆出去，
-// 仅在用户切到对应页签时才加载对应 chunk。Sidebar/仪表盘/编辑器保持常驻以保证首屏速度。
+// 工作台页面在打开时加载，项目中心与导航外壳可以先呈现。
 // 🔴 一律走 `lazyPage`（UX13）：裸 `lazy()` 会把加载失败永久缓存住，「重试」只能整页刷新；
 //    这里每个页面失败后都能换新实例真重发请求，且只在这一页内报错、不动导航。
 const GuidePage = lazyPage(() => import('@/components/app/GuidePage'), '使用指南')
+const Dashboard = lazyPage(() => import('@/components/app/Dashboard'), '仪表盘')
+const NovelEditor = lazyPage(() => import('@/components/editor/NovelEditor'), '正文编辑')
+const FormSheet = lazyPage(() => import('@/components/sheets/FormSheet'), '表单')
+const WorldSetSheet = lazyPage(() => import('@/components/sheets/WorldSetSheet'), '世界设定')
+const ParallelSetSheet = lazyPage(() => import('@/components/sheets/ParallelSetSheet'), '平行设定')
+const TableSheet = lazyPage(() => import('@/components/sheets/TableSheet'), '表格')
+const CharacterSheet = lazyPage(() => import('@/components/world/CharacterSheet'), '角色卡')
+const OutlineSheet = lazyPage(() => import('@/components/outline/OutlineSheet'), '大纲')
+const AboutPage = lazyPage(() => import('@/components/app/AboutPage'), '关于')
+const FullTextSearch = lazyPage(() => import('@/components/editor/FullTextSearch'), '全文搜索')
+const HelpCenter = lazyPage(() => import('@/components/help/HelpCenter'), '帮助中心')
+const GeoMapEditor = lazyPage(() => import('@/components/world/GeoMapEditor'), '地图')
+const PlotCanvas = lazyPage(() => import('@/components/outline/PlotCanvas'), '剧情画布')
 const InspireTools = lazyPage(() => import('@/components/creative/InspireTools'), '灵感启发')
 const ModelSettingsPanel = lazyPage(() => import('@/components/settings/ModelSettingsPanel'), '模型设置')
 const CheckTools = lazyPage(() => import('@/components/audit/CheckTools'), '检查工具')

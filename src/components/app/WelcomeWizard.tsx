@@ -24,7 +24,6 @@ import { WEB, WEB_GUEST } from '@/lib/app/platform'
 import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { ProjectBundle } from '@/lib/db'
-import { createDemoProject } from '@/lib/app/seedData'
 import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import BrandMark from '@/components/common/BrandMark'
@@ -86,7 +85,7 @@ export default function WelcomeWizard({ onDone }: Props) {
     setBusy(true)
     try {
       const id = choice === 'demo'
-        ? await createDemoProject()
+        ? await (await import('@/lib/app/seedData')).createDemoProject()
         : (await db.createProject(bookName.trim() || '未命名作品', genre)).id
       await finish(id)
     } catch (e) {

@@ -2,13 +2,12 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import * as db from '@/lib/db'
 import type { ProjectBundle } from '@/lib/db'
 import type { Project } from '@/lib/types'
-import { createDemoProject } from '@/lib/app/seedData'
 import {
   Sparkles, BookPlus, FolderOpen, Trash2, Upload, FileDown, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Eye, EyeOff, Compass,
   ChevronDown, BookOpen, MessagesSquare,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
-import HelpCenter from '@/components/help/HelpCenter'
+import { lazyPage } from '@/components/common/LazyPage'
 import { Modal } from '@/components/dialogs/Modal'
 import SafeImage from '@/components/common/SafeImage'
 import Tooltip from '@/components/common/Tooltip'
@@ -16,9 +15,7 @@ import { Z } from '@/lib/app/zLayer'
 // 3.5.0 · 投稿广场：项目中心入口（没有打开任何书时也能进广场）
 import { openCommunity } from '@/lib/community/entry'
 import { foldVh } from '@/lib/settings/theme'
-import BackupManager from '@/components/app/BackupManager'
 import BackupReminder from '@/components/app/BackupReminder'
-import FeatureSelectModal from '@/components/dialogs/FeatureSelectModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import BrandMark from '@/components/common/BrandMark'
 import { downloadBlob } from '@/lib/storage/zip'
@@ -40,9 +37,13 @@ import jiewenjiGufeng from '@/assets/jiewenji-gufeng.webp'
 import { Button } from '@/components/common/Button'
 import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
-import MascotSettingsDialog from '@/components/settings/MascotSettingsDialog'
-import AppIconDialog from '@/components/settings/AppIconDialog'
 import { appIconSupported } from '@/lib/app/desktop'
+
+const HelpCenter = lazyPage(() => import('@/components/help/HelpCenter'), '帮助中心')
+const BackupManager = lazyPage(() => import('@/components/app/BackupManager'), '备份管理')
+const FeatureSelectModal = lazyPage(() => import('@/components/dialogs/FeatureSelectModal'), '功能选择')
+const MascotSettingsDialog = lazyPage(() => import('@/components/settings/MascotSettingsDialog'), '助手设置')
+const AppIconDialog = lazyPage(() => import('@/components/settings/AppIconDialog'), '应用图标')
 
 interface Props {
   onOpen: (projectId: string) => void
@@ -217,6 +218,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     })) return
     setBusy(true)
     try {
+      const { createDemoProject } = await import('@/lib/app/seedData')
       const id = await createDemoProject()
       setBusy(false)
       onOpen(id)

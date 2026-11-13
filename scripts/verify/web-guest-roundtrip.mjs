@@ -32,7 +32,7 @@ const EDITOR = '落笔即入江湖……（自动保存已开启 · Ctrl+S 立�
 const SECRET = 'sk-probe-guest-secret-do-not-export'
 /** 矩阵要的运行时证据落点 */
 const resultFile = (() => { const i = process.argv.indexOf('--result-file'); return i >= 0 ? process.argv[i + 1] : '' })()
-const EXPORT_TITLE = '导出全部数据：下载一个 JSON 文件，用于留档或换设备'
+const EXPORT_TITLE = '导出作品数据：下载 JSON 文件；不含独立知识库和语义索引'
 const IMPORT_TITLE = '导入数据文件：选择之前导出的 JSON，替换当前浏览器里的全部数据'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -210,9 +210,10 @@ async function main() {
     step('editor-open', `正文 ${original.length} 字`)
 
     // ---------- ① 导出：游客走浏览器真实下载 ----------
-    const downloadPromise = page.waitForEvent('download', { timeout: 40000 })
-    await page.getByTitle(EXPORT_TITLE, { exact: true }).click()
-    await (await downloadPromise).saveAs(exported)
+    const exportButton = page.getByTitle(EXPORT_TITLE, { exact: true })
+    await exportButton.waitFor()
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 40000 }), exportButton.click()])
+    await download.saveAs(exported)
     const exportedText = await fs.readFile(exported, 'utf8')
     const exportedJson = JSON.parse(exportedText)
     // 🔴 不能拿原始 JSON 文本 includes（换行在 JSON 里是 `\n` 两字符），必须解析后比字段
