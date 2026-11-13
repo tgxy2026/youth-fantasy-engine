@@ -54,11 +54,24 @@ export async function handleV2(ctx) {
   try {
     const modifiesIndex = ctx.path.startsWith('/api/v2/projects') &&
       (ctx.req.method === 'POST' || ctx.req.method === 'DELETE') && !/\/objects\//.test(ctx.path)
+    // 🔴 先读请求体、再拿账号锁：慢客户端逐字节发体时不能占着账号锁，否则同账号其他项目的
+    //    写入会被一个慢请求阻塞。读体不依赖锁；锁只保护其后的索引读改写（均为同步快操作）。
+    //    仅新建与提交带 JSON 体；恢复/删除的参数在 query，无体。
+    let preBody
+    if (modifiesIndex && ctx.req.method === 'POST') {
+      const isCommit = /\/commit$/.test(ctx.path)
+      const hasBody = ctx.path === '/api/v2/projects' || isCommit
+      if (hasBody) {
+        try { preBody = await readJSONBody(ctx.req, isCommit ? 512 * 1024 : 8 * 1024) } catch {
+          return sendJSON(ctx.res, 400, { ok: false, error: '请求格式错误' }), true
+        }
+      }
+    }
     if (modifiesIndex) {
       lock = acquireAccountWriteLock(ctx.v2Root, ctx.user.id)
       if (!lock) return sendJSON(ctx.res, 503, { ok: false, code: 'PROJECT_ACCOUNT_BUSY', error: '云端项目正在处理，请稍后重试。' }), true
     }
-    return await handleV2Request(ctx)
+    return await handleV2Request(ctx, preBody)
   } catch (error) {
     if (!['PROJECT_DATA_INVALID', 'PROJECT_DATA_READ_FAILED', 'PROJECT_DATA_MISSING', 'PROJECT_DATA_RECOVERY_REQUIRED'].includes(error?.code)) throw error
     if (ctx.res.headersSent) throw error
@@ -68,7 +81,7 @@ export async function handleV2(ctx) {
   }
 }
 
-async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
+async function handleV2Request({ req, res, path: p, qs, user, v2Root }, preBody) {
   if (!p.startsWith('/api/v2/')) return false
 
   const accountId = user.id
@@ -93,8 +106,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
 
   // ---- POST /api/v2/projects：新建云端作品 ----
   if (seg.length === 1 && seg[0] === 'projects' && req.method === 'POST') {
-    let body
-    try { body = await readJSONBody(req, 8 * 1024) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }), true }
+    const body = preBody
     const name = String(body?.name || '').slice(0, 80)
     const cloudProjectId = `prj_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     if (!PID_RE.test(cloudProjectId)) return sendJSON(res, 500, { ok: false, error: '内部 id 生成异常' }), true
@@ -179,8 +191,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
 
   // ---- POST /api/v2/projects/:pid/commit —— 条件提交 ----
   if (seg.length === 3 && seg[2] === 'commit' && req.method === 'POST') {
-    let body
-    try { body = await readJSONBody(req, 512 * 1024) } catch { return sendJSON(res, 400, { ok: false, error: '请求格式错误' }), true }
+    const body = preBody
     const manifest = body?.manifest
     const opId = String(body?.opId || '')
     const baseRevision = Number(body?.baseRevision ?? 0)

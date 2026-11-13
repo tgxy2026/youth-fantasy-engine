@@ -12,6 +12,7 @@
  */
 import type { Volume, Chapter } from '@/lib/types'
 import type { RecordRef } from '@/lib/revision/revisionTypes'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { chapterSeqMap, flattenChapters, flattenAll } from '@/lib/outline/chapterSeq'
 import { syncChapterMaster } from '@/lib/outline/chapterMaster'
 
@@ -146,11 +147,11 @@ export function moveChapterToVolume(ch: Chapter, targetVolId: string, targetChs:
  * 序号由 (卷序, 章序) 派生，与章节标题无关；标了「不计入序号」的章不占号。
  * 各章仍分别 resync 到自己所在卷的 chapter-vol-<vid> 台账表。
  */
-export async function resyncChapterMasterNumbers(vols: Volume[], chs: Chapter[]) {
+export async function resyncChapterMasterNumbers(vols: Volume[], chs: Chapter[], owner?: OwnedOperation) {
   const seqs = chapterSeqMap(vols, chs)
   const tasks: Promise<void>[] = []
   flattenChapters(vols, chs).forEach((c, i) => {
-    tasks.push(syncChapterMaster(c, seqs.get(c.id) ?? 0, i))
+    tasks.push(syncChapterMaster(c, seqs.get(c.id) ?? 0, i, owner))
   })
   await Promise.all(tasks)
 }

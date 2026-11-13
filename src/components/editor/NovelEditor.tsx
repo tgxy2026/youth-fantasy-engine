@@ -100,7 +100,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 章节树交互（改名 / 增删 / 拖拽重排）
     expanded, setExpanded, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态）
-    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
+    draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load, storageOwner,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
     highlightHTML, referenced, highlightRef, scheduleHighlightSync,
     // 编辑区 refs 与光标同步
@@ -912,6 +912,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           onOpenChapter={id => openChapter(id)}
           onReplaced={applyChapterContent}
           onClose={() => setModal(null)}
+          owner={storageOwner}
         />
       )}
       {modal === 'lock' && active && (

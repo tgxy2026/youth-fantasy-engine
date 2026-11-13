@@ -760,9 +760,11 @@ function row(input: {
 {
   const hook = read('src/components/editor/useNovelEditorModel.ts')
   ok('保存路径已接自动索引', hook.includes('autoIndexChapter(chapter.id)'))
+  // P1-A：saveChapter 现带挂载归属参数（chapter, storageOwner），原「索引挂钩在落库之后」的保证不变，
+  // 故按调用前缀匹配而非整行字面量；归属隔离的行为验证见 frontend-async-chapter-owner 专项。
   ok('🔴 挂钩在 `db.saveChapter` 之后（否则会读到改动前的旧正文）',
-    hook.indexOf('const p = db.saveChapter(chapter)') >= 0 &&
-    hook.indexOf('const p = db.saveChapter(chapter)') < hook.indexOf('autoIndexChapter(chapter.id)'))
+    hook.indexOf('const p = db.saveChapter(chapter') >= 0 &&
+    hook.indexOf('const p = db.saveChapter(chapter') < hook.indexOf('autoIndexChapter(chapter.id)'))
   ok('🔴 自动索引 fire-and-forget（不 await 落库）', /void\s+p\.then\(\(\)\s*=>\s*autoIndexChapter/.test(hook))
   ok('保存路径按指纹挡重复触发（省一次查库）', hook.includes('chapterFingerprint'))
 

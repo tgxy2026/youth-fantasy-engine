@@ -149,8 +149,11 @@ async function main() {
     await fs.access(path.join(buildDir, 'index.html'))
 
     // 🔴 库名从源码读，别写死（改名时会静默读错库）
+    // 3.5.0 起是 `accountLocalDatabaseName('<base>')`：游客构建无 WEB 账号本地旗标，
+    // 该函数原样返回 base，故两种形态都取字面量 base。
     const dbSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
     databaseName = /const DB_NAME = '([^']+)'/.exec(dbSource)?.[1]
+      ?? /const DB_NAME = accountLocalDatabaseName\('([^']+)'\)/.exec(dbSource)?.[1]
     if (!databaseName) throw new Error('无法从 src/lib/db/core.ts 读出数据库名')
 
     const port = await new Promise((resolve, reject) => {

@@ -10,6 +10,7 @@
  *    「同页切回原章的位置复原」会稳定变红（editor-view ④）。这里只返回一个普通函数，零 hook。
  */
 import type { Chapter, Volume } from '@/lib/types'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import * as db from '@/lib/db'
 import { reorderChapters, reorderVolumes, resyncChapterMasterNumbers } from '@/components/editor/novelEditorHelpers'
 import { isFreeVolume, realVolumes } from '@/lib/outline/freeVolume'
@@ -23,6 +24,8 @@ export interface KeyboardReorderArgs {
   setChapters: (next: Chapter[]) => void
   /** 与拖拽、正文保存同一条落库路径（内部会做 AI 索引/字数统计等副作用） */
   saveChapter: (ch: Chapter) => Promise<void>
+  /** 挂载捕获的存储归属：卷/章重排落库不得写进切换后的账号或存储空间 */
+  owner: OwnedOperation
 }
 
 export function createEditorKeyboardReorder(args: KeyboardReorderArgs) {
@@ -38,8 +41,8 @@ export function createEditorKeyboardReorder(args: KeyboardReorderArgs) {
         const dirty = next.some(v => v.order !== (volumes.find(x => x.id === v.id)?.order ?? -1))
         args.setVolumes(next)
         if (dirty) {
-          await Promise.all(next.map(v => db.saveVolume(v)))
-          await resyncChapterMasterNumbers(next, chapters)
+          await Promise.all(next.map(v => db.saveVolume(v, args.owner)))
+          await resyncChapterMasterNumbers(next, chapters, args.owner)
         }
       } else {
         const ch = chapters.find(c => c.id === id)
@@ -56,7 +59,7 @@ export function createEditorKeyboardReorder(args: KeyboardReorderArgs) {
         args.setChapters(next)
         if (changed.length) {
           await Promise.all(changed.map(c => args.saveChapter(c)))
-          await resyncChapterMasterNumbers(volumes, next)
+          await resyncChapterMasterNumbers(volumes, next, args.owner)
         }
       }
       showToast('排序已保存', 'success')

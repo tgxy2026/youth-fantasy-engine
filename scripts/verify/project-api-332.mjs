@@ -212,12 +212,14 @@ try {
     slow.on('error', reject)
   })
   slow.write('{')
-  for (let i = 0; i < 100 && !existsSync(accountLockFile); i++) await new Promise(r => setTimeout(r, 10))
+  // 读体阶段不应持有账号锁：慢客户端逐字节发体时，同账号其他写入不能被阻塞。
+  await new Promise(r => setTimeout(r, 150))
+  const lockHeldDuringBody = existsSync(accountLockFile)
   const competing = await web.req('POST', '/api/v2/projects', { name: '并发作品' })
   slow.end('"name":"慢请求"}')
   const slowStatus = await slowResult
   const afterConcurrent = await web.req('GET', '/api/v2/projects')
-  ok('真实并发请求竞争时拒绝后到写入，首个写入完整', slowStatus === 200 && competing.status === 503 && competing.json?.code === 'PROJECT_ACCOUNT_BUSY' && afterConcurrent.status === 200 && (afterConcurrent.json?.projects || []).some(x => x.name === '慢请求'), { slowStatus, competing: competing.json })
+  ok('慢请求读体期间不占账号锁，并发写入不被阻塞', !lockHeldDuringBody && slowStatus === 200 && competing.status === 200 && afterConcurrent.status === 200 && (afterConcurrent.json?.projects || []).some(x => x.name === '慢请求') && (afterConcurrent.json?.projects || []).some(x => x.name === '并发作品'), { lockHeldDuringBody, slowStatus, competing: competing.status })
   originalIndex = readFileSync(indexFile, 'utf8')
   const staleIndex = JSON.parse(originalIndex)
   staleIndex.projects[pid].revision = 1

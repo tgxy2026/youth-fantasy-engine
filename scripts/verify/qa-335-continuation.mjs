@@ -205,8 +205,12 @@ function requestText(body) {
     return (json.messages || []).map(m => String(m.content || '')).join('\n\n')
   } catch { return String(body) }
 }
-/** 真实数据库名只在 `db/core.ts` 里（未导出）—— 从源码读，别猜 */
-const DB_NAME = /const DB_NAME = '([^']+)'/.exec(await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8'))?.[1]
+/** 真实数据库名只在 `db/core.ts` 里（未导出）—— 从源码读，别猜。
+ *  3.5.0 起是 `accountLocalDatabaseName('<base>')`：本探针跑 dev vite（无 WEB 账号本地旗标），
+ *  该函数原样返回 base，故两种形态都取字面量 base。 */
+const dbCoreSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
+const DB_NAME = /const DB_NAME = '([^']+)'/.exec(dbCoreSource)?.[1]
+  ?? /const DB_NAME = accountLocalDatabaseName\('([^']+)'\)/.exec(dbCoreSource)?.[1]
 if (!DB_NAME) throw new Error('无法从 src/lib/db/core.ts 读取 DB_NAME')
 async function readCandidates() {
   return page.evaluate(async (name) => {

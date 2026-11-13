@@ -13,7 +13,9 @@
 //      locks/          项目锁
 //      legacy-gate.json 旧路径门禁
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 
 export const V2_INDEX_FILE = 'index.json'
 
@@ -30,13 +32,39 @@ export function acquireAccountWriteLock(v2Root, accountId) {
     if (error?.code === 'EEXIST') return null
     throw error
   }
-  try { fs.writeFileSync(fd, `${process.pid}\n`) } catch (error) {
+  try {
+    // 锁内容仅供审计：持有进程、主机、时间与随机标识。判断残留锁能否清除时，
+    // 跨主机或无法解析的内容一律拒绝自动清除（见 projectRecovery）。
+    fs.writeFileSync(fd, JSON.stringify({
+      pid: process.pid, host: os.hostname(), at: Date.now(), token: crypto.randomBytes(8).toString('hex'),
+    }))
+  } catch (error) {
     fs.closeSync(fd)
     try { fs.unlinkSync(file) } catch { /* 保留残留锁 */ }
     throw error
   }
   fs.closeSync(fd)
   return { release() { fs.unlinkSync(file) } }
+}
+
+/** 读取账号锁内容用于审计；不存在返回 null，内容无法解析时返回 raw。 */
+export function readAccountLockInfo(v2Root, accountId) {
+  const file = path.join(accountRoot(v2Root, accountId), '.account-write.lock')
+  let text
+  try { text = fs.readFileSync(file, 'utf8') } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
+  let mtimeMs = 0
+  try { mtimeMs = fs.statSync(file).mtimeMs } catch { /* 刚被清掉 */ }
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && Number.isSafeInteger(parsed.pid)) {
+      return { pid: parsed.pid, host: typeof parsed.host === 'string' ? parsed.host : '', at: Number(parsed.at) || 0, token: String(parsed.token || ''), mtimeMs, raw: text }
+    }
+  } catch { /* 旧格式或外部写入 */ }
+  const pidMatch = /^(\d+)/.exec(text.trim())
+  return { pid: pidMatch ? Number(pidMatch[1]) : null, host: '', at: 0, token: '', mtimeMs, raw: text }
 }
 
 /** 仅不存在时使用空索引；损坏和读取失败不能被当作空账号覆盖。 */

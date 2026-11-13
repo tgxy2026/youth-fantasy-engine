@@ -200,6 +200,69 @@ async function main() {
     ok('补传只做一次（不会无限循环）', commitCount === 2, String(commitCount))
   }
 
+  // ========== 3.5.3 · P0-4 失败分类：五类可区分、数据异常绝不重试 ==========
+
+  // ⑨ 数据异常即使回 503 也绝不重试（不是"稍后会自己好"，要人工核对云端）
+  {
+    let commits = 0
+    const { t } = makeTransport({ commit: () => { commits++; return { ok: false, status: 503, code: 'PROJECT_DATA_RECOVERY_REQUIRED' } } })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 1, opId: 'op', transport: t, retries: 3, sleep: async () => {} })
+    const m = !r.ok && r.status === 'error' ? r.message : ''
+    ok('数据异常 503 不重试（只提交一次）且不可重试', !r.ok && r.status === 'error' && r.code === 'PROJECT_DATA_RECOVERY_REQUIRED' && r.retryable === false && commits === 1, JSON.stringify({ r, commits }))
+    ok('数据异常文案点明本机稿件保留', /本机|保留/.test(m), m)
+  }
+
+  // ⑩ 世代失效（EPOCH_STALE，409）≠ 基线冲突：要重新拉取，不可重试
+  {
+    let commits = 0
+    const { t } = makeTransport({ commit: () => { commits++; return { ok: false, status: 409, code: 'EPOCH_STALE' } } })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 1, opId: 'op', transport: t, retries: 3, sleep: async () => {} })
+    const m = !r.ok && r.status === 'error' ? r.message : ''
+    ok('EPOCH_STALE 归 error 而非 conflict', !r.ok && r.status === 'error' && r.code === 'EPOCH_STALE', JSON.stringify(r))
+    ok('EPOCH_STALE 不可重试且只提交一次', !r.ok && r.status === 'error' && r.retryable === false && commits === 1, JSON.stringify({ r, commits }))
+    ok('EPOCH_STALE 文案提示重新拉取', /重新拉取/.test(m), m)
+  }
+
+  // ⑪ 旧服务器（404/405 且无业务码）→ SERVER_TOO_OLD，不可重试
+  {
+    const { t } = makeTransport({ commit: () => ({ ok: false, status: 404 }) })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 0, opId: 'op', transport: t, retries: 2, sleep: async () => {} })
+    ok('404 无业务码 → SERVER_TOO_OLD 且不可重试', !r.ok && r.status === 'error' && r.code === 'SERVER_TOO_OLD' && r.retryable === false, JSON.stringify(r))
+  }
+
+  // ⑫ 旧写入停用（LEGACY_WRITE_BLOCKED）→ 保留码、不可重试
+  {
+    const { t } = makeTransport({ commit: () => ({ ok: false, status: 409, code: 'LEGACY_WRITE_BLOCKED' }) })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 1, opId: 'op', transport: t, retries: 2, sleep: async () => {} })
+    ok('LEGACY_WRITE_BLOCKED 保留码且不可重试', !r.ok && r.status === 'error' && r.code === 'LEGACY_WRITE_BLOCKED' && r.retryable === false, JSON.stringify(r))
+  }
+
+  // ⑬ 账号忙（503）→ 保留码、文案可区分（瞬时可重试，与数据异常不同）
+  {
+    const { t } = makeTransport({ commit: () => ({ ok: false, status: 503, code: 'PROJECT_ACCOUNT_BUSY' }) })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 1, opId: 'op', transport: t, retries: 0, sleep: async () => {} })
+    const m = !r.ok && r.status === 'error' ? r.message : ''
+    ok('账号忙保留 PROJECT_ACCOUNT_BUSY 码（不塌成数据异常）', !r.ok && r.status === 'error' && r.code === 'PROJECT_ACCOUNT_BUSY', JSON.stringify(r))
+    ok('账号忙文案提示稍后重试', /稍后重试/.test(m), m)
+  }
+
+  // ⑭ 负面对照：普通 503（无业务码）仍可重试 —— 证明 ⑨ 不是"一律不重试 503"
+  {
+    let commits = 0
+    const { t } = makeTransport({ commit: () => { commits++; return { ok: false, status: 503 } } })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 0, opId: 'op', transport: t, retries: 1, sleep: async () => {} })
+    ok('普通 503 仍重试一次（共提交两次）且可重试', !r.ok && r.status === 'error' && r.retryable === true && commits === 2, JSON.stringify({ r, commits }))
+  }
+
+  // ⑮ 上传阶段的数据异常同样不重试、不提交
+  {
+    let puts = 0
+    const { t, calls } = makeTransport({ put: () => { puts++; return { ok: false, code: 'PROJECT_DATA_INVALID' } } })
+    const r = await uploadSnapshot({ cloudProjectId: 'p', built: makeBuilt(), baseRevision: 0, opId: 'op', transport: t, retries: 3, sleep: async () => {} })
+    ok('上传阶段数据异常不重试（只 PUT 一次）', !r.ok && r.status === 'error' && r.code === 'PROJECT_DATA_INVALID' && r.retryable === false && puts === 1, JSON.stringify({ r, puts }))
+    ok('上传阶段数据异常不提交', !calls.some((c) => c.op === 'commit'), JSON.stringify(calls))
+  }
+
   console.log(`\n▶ projectUploader: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }

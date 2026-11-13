@@ -10,7 +10,7 @@ import { chromium } from 'playwright'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const run = await fs.mkdtemp(path.join(root, '.workbuddy/tmp/auth-entry-integration-'))
-const files = ['server/lib/authPage.mjs','server/lib/authClient.mjs','server/lib/authStyle.mjs','server/index.mjs','server/lib/auth.mjs','scripts/verify/auth-entry-integration.mjs']
+const files = ['server/lib/authPage.mjs','server/lib/authClient.mjs','server/lib/authStyle.mjs','server/index.mjs','server/lib/authApi.mjs','server/lib/auth.mjs','scripts/verify/auth-entry-integration.mjs']
 const fingerprint = async () => {
   const hash = createHash('sha256')
   for (const file of files) hash.update(file).update(await fs.readFile(path.join(root,file)))

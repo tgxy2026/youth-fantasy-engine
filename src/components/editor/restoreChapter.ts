@@ -17,7 +17,7 @@ import * as db from '@/lib/db'
 import { countWords } from '@/lib/editor/textStats'
 import type { Chapter } from '@/lib/types'
 import { checkRestoreTarget, restoreFailureMessage } from '@/lib/editor/snapshotRestore'
-import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
 import { persistAfterRestore } from '@/lib/db/core'
 
 const defaultDependencies = {
@@ -41,7 +41,7 @@ export interface RestoreChapterHooks {
   /** 同章串行保存队列 */
   enqueueSave: <T>(id: string, fn: () => Promise<T>) => Promise<T>
   locate: (ch: Chapter) => { volTitle: string; no: number }
-  syncChapterMaster: (ch: Chapter, no: number) => Promise<unknown>
+  syncChapterMaster: (ch: Chapter, no: number, owner?: OwnedOperation) => Promise<unknown>
   /** 落库成功后才调用：把回执写回界面与草稿 */
   applySaved: (row: Chapter, text: string) => void
   setSaving: (v: boolean) => void
@@ -106,7 +106,7 @@ export async function restoreChapter(
       if (!await deps.persist([{ store: 'chapters', value: row }])) throw new Error('正文未确认写入本机')
       owner.assertCurrent()
       const { no } = hooks.locate(row)
-      await hooks.syncChapterMaster(row, no)
+      await hooks.syncChapterMaster(row, no, owner)
       return row
     })
 

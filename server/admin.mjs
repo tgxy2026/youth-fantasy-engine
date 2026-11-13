@@ -17,6 +17,7 @@ import { DATA_DIR } from './lib/config.mjs'
 import { readLegacyGate, blockLegacyWrites, unblockLegacyWrites } from './lib/legacyGate.mjs'
 import { gcObjects, purgeDeletedProjects, listTrash } from './lib/objectGc.mjs'
 import { accountRoot, acquireAccountWriteLock } from './lib/v2Index.mjs'
+import { auditAccount, recoverAccount } from './lib/projectRecovery.mjs'
 import {
 loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
   setUserFlag, issueRecoveryCode, recoveryStatus,
@@ -260,6 +261,68 @@ function cmdGc(name) {
 const [cmd, a1, a2] = process.argv.slice(2)
 
 /**
+ * 3.5.3 · P0 数据审计（只读）。报告索引/状态/隔离区/账号锁的不一致，不写任何文件。
+ */
+function cmdAudit(name) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到账号：${name}`)
+  const v2Root = join(DATA_DIR, 'v2')
+  const root = accountRoot(v2Root, u.id)
+  if (!existsSync(root)) return console.log(`${u.name} 还没有 v2 数据目录`)
+  const report = auditAccount(v2Root, u.id)
+  console.log(`\n=== ${u.name}（${u.id}）数据审计（只读）===`)
+  console.log(`索引：${report.index.status}${report.index.blockedByPending ? '（被 purge-pending 阻断）' : ''}`)
+  console.log(`世代：${report.epoch.present ? `存在（${report.epoch.value}）` : '缺失（按历史初始世代 1）'}`)
+  console.log(`账号锁：${report.accountLock.present ? `残留 pid=${report.accountLock.pid ?? '?'} host=${report.accountLock.host || '?'} 存活=${report.accountLock.holderAlive}` : '无'}`)
+  console.log(`隔离区：${report.purgePending.length} 项；项目：${report.projects.length} 个`)
+  if (!report.findings.length) { console.log('未发现不一致。'); return }
+  console.log(`\n发现 ${report.findings.length} 项：`)
+  for (const f of report.findings) {
+    console.log(`  [${f.severity}] ${f.kind}${f.pid ? ` pid=${f.pid}` : ''}：${f.detail}`)
+  }
+  const plan = report.findings.filter((f) => f.recoverable)
+  if (plan.length) {
+    console.log('\n可恢复动作（recover 命令预览/执行）：')
+    for (const f of plan) console.log(`  ${f.recoverable}${f.pid ? `:${f.pid}` : ''}`)
+  }
+  console.log('\n这只是只读审计，不会修改任何数据。')
+}
+
+/**
+ * 3.5.3 · P0 受控恢复。默认只预览；--apply 执行安全动作；破坏性/重建动作须 --action 显式选择。
+ *   node admin.mjs recover <用户名>                       预览
+ *   node admin.mjs recover <用户名> --apply               执行安全动作（修复落后条目、移回隔离目录）
+ *   node admin.mjs recover <用户名> --apply --action remove-pending:<pid>   显式执行破坏性动作
+ */
+function cmdRecover(name) {
+  const u = findByName(name)
+  if (!u) return console.error(`找不到账号：${name}`)
+  const v2Root = join(DATA_DIR, 'v2')
+  const root = accountRoot(v2Root, u.id)
+  if (!existsSync(root)) return console.log(`${u.name} 还没有 v2 数据目录`)
+  const apply = process.argv.includes('--apply')
+  const actions = []
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === '--action' && process.argv[i + 1]) {
+      const [kind, pid] = process.argv[i + 1].split(':')
+      actions.push({ kind, pid: pid || undefined })
+    }
+  }
+  const r = recoverAccount({ v2Root, accountId: u.id, apply, actions })
+  console.log(`\n=== ${u.name}（${u.id}）受控恢复${apply ? '' : '（预览，未写入）'} ===`)
+  if (!r.plan.length) { console.log('没有可恢复的动作。'); return }
+  console.log('计划动作：')
+  for (const a of r.plan) console.log(`  ${a.kind}${a.pid ? `:${a.pid}` : ''}${a.safe ? '（安全）' : '（需显式 --action）'}`)
+  if (!apply) {
+    console.log('\n这只是预览。加 --apply 执行安全动作；破坏性/重建动作另加 --action <种类>[:<pid>]。')
+    return
+  }
+  console.log('\n执行结果：')
+  for (const res of r.results) console.log(`  ${res.ok ? '✓' : '✗'} ${res.kind}${res.pid ? `:${res.pid}` : ''}：${res.detail}`)
+  if (r.journalFile) console.log(`\n留痕：${r.journalFile}（改索引前已备份到 recovery-backups/）`)
+}
+
+/**
  * 3.5.0 · 云同步资格与社区角色。
  * 🔴 这是「注册与同步资格分离」的运营入口：账号能登录、能投稿是默认能力，
  *    能不能同步作品由这里单独决定；角色决定能不能进审核工作台。
@@ -333,6 +396,8 @@ switch (cmd) {
   case 'delete': cmdDelete(a1); break
   case 'gate': cmdGate(a1, a2, process.argv.slice(5).join(' ')); break
   case 'gc': cmdGc(a1); break
+  case 'audit': cmdAudit(a1); break
+  case 'recover': cmdRecover(a1); break
 case 'sync': cmdSync(a1, a2); break
   case 'sync-audit': cmdSyncAudit(); break
   case 'recovery': cmdRecovery(a1); break
@@ -354,5 +419,7 @@ case 'sync': cmdSync(a1, a2); break
   node admin.mjs sync-audit               只读盘点同步资格来源（缺字段/已授予/未授予）
   node admin.mjs recovery <用户名>         签发一次性找回码（人工核实后使用；明文只显示一次）
   node admin.mjs role <用户名> [角色]      查看或设置社区角色（user / moderator / admin）
-  node admin.mjs gc <用户名> [--apply] [--purge-trash]  回收无人引用的对象 / 清理过期回收站（默认预演）`)
+  node admin.mjs gc <用户名> [--apply] [--purge-trash]  回收无人引用的对象 / 清理过期回收站（默认预演）
+  node admin.mjs audit <用户名>           只读审计索引/状态/隔离区/账号锁的不一致（不写数据）
+  node admin.mjs recover <用户名> [--apply] [--action <种类>[:<pid>]]  受控恢复（默认预览；破坏性动作须显式 --action）`)
 }

@@ -15,6 +15,7 @@
 import { useCallback } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { Chapter, Volume } from '@/lib/types'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { showToast } from '@/components/dialogs/dialogs'
@@ -28,6 +29,8 @@ export interface ChapterCrudDeps {
   chapters: Chapter[]
   /** 带 AI 记账的章节保存（模型层持有） */
   saveChapterWithAi: (ch: Chapter) => Promise<void>
+  /** 挂载即捕获的存储归属：新建章与改名落库不得写进切换后的账号或存储空间 */
+  owner: OwnedOperation
   /** 展开状态持久化 setter（展开新建章所在卷，否则树上找不到新章） */
   setExpandedPersist: (action: Set<string> | ((prev: Set<string>) => Set<string>)) => void
   setChapters: Dispatch<SetStateAction<Chapter[]>>
@@ -39,7 +42,7 @@ export interface ChapterCrudDeps {
 
 export function useChapterCrud(deps: ChapterCrudDeps) {
   const {
-    volumes, chapters, saveChapterWithAi, setExpandedPersist, setChapters, setActiveId, load, locate,
+    volumes, chapters, saveChapterWithAi, owner, setExpandedPersist, setChapters, setActiveId, load, locate,
   } = deps
 
   const doAddVolume = useCallback(async (title: string) => {
@@ -49,10 +52,10 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       id: uid(), projectId: db.getCurrentProjectId(), order: nextVolumeOrder(volumes),
       title, description: '', createdAt: Date.now(),
     }
-    await db.saveVolume(vol)
+    await db.saveVolume(vol, owner)
     await load()
     window.dispatchEvent(new Event('yfe:volumes-changed')) // 通知章节总表侧栏同步新增
-  }, [volumes, load])
+  }, [volumes, load, owner])
 
   const doAddChapter = useCallback(async (volumeId: string, title: string) => {
     if (!title) return
@@ -63,7 +66,8 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       order: nextOrderInVolume(chapters, volumeId), title, content: '', summary: '',
       status: '构思', wordCount: 0, createdAt: Date.now(), updatedAt: Date.now(),
     }
-    await saveChapterWithAi(ch)
+    // 新建章走创建归属：saveChapter 的 owner 守卫要求原章已存在，不适用于从无到有。
+    await db.createChapterForOwner(ch, owner)
     // 目标卷可能是折叠状态下点的「新建章」：展开它，否则 load 后树上找不到新章高亮
     setExpandedPersist(prev => new Set(prev).add(volumeId))
     await load()
@@ -72,8 +76,8 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
     // ⚠️ 这里必须现读库：上方 load/setChapters 是异步的，闭包里的 chapters 还不含新章，
     // 用旧 state 算出的序号恒为 0，台账会被误标「不计入序号」（章节号留空、行序错乱）。
     const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-    await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
-  }, [chapters, saveChapterWithAi, setExpandedPersist, load, setActiveId])
+    await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id), undefined, owner)
+  }, [chapters, owner, setExpandedPersist, load, setActiveId])
 
   /** 新建「自由章节」：托管卷不存在时自动建（lazy，不预建空卷），随后复用完整链路 */
   const doAddFreeChapter = useCallback(async (title: string) => {
@@ -103,18 +107,20 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
 
   const doRenameVolume = useCallback(async (vol: Volume, title: string) => {
     if (!title || title === vol.title) return
-    await db.saveVolume({ ...vol, title })
+    await db.saveVolume({ ...vol, title }, owner)
     await load()
     window.dispatchEvent(new Event('yfe:volumes-changed')) // 通知章节总表侧栏同步改名
-  }, [load])
+  }, [load, owner])
 
   const doRenameChapter = useCallback(async (ch: Chapter, title: string) => {
     if (!title || title === ch.title) return
     const next = { ...ch, title }
-    setChapters(prev => prev.map(x => (x.id === ch.id ? next : x)))
     const { no } = locate(next)
-    await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
-  }, [setChapters, locate, saveChapterWithAi])
+    // 🔴 先落库再回写界面：归属切换或落库失败时不改 chapters state，避免界面显示已改名而库里没写
+    //    （与全书替换、其余卷章 CRUD 同口径）。失败由 submitNamePrompt 兜住弹 toast。
+    await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no, undefined, owner)])
+    setChapters(prev => prev.map(x => (x.id === ch.id ? next : x)))
+  }, [setChapters, locate, saveChapterWithAi, owner])
 
   return {
     doAddVolume, doAddChapter, doAddFreeChapter, doAddLatestChapter, doRenameVolume, doRenameChapter,

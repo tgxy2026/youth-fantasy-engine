@@ -45,6 +45,8 @@ import { describePullPhase } from '@/lib/sync/pullTarget'
 import { cloudCopyFileName, loadCloudCopy } from '@/lib/sync/projectPullBundle'
 import { downloadBlob } from '@/lib/storage/zip'
 import type { SyncState } from '@/lib/sync/syncMachine'
+import { syncPrompt } from '@/lib/sync/syncPrompt'
+import type { UploadOutcome } from '@/lib/sync/projectUploader'
 
 const STATE_TEXT: Record<SyncState, { label: string; cls: string }> = {
   idle: { label: '未同步', cls: 'text-ink-400' },
@@ -122,6 +124,10 @@ export default function CloudSyncPanel({
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** 最近一次推送结局的用户文案（区分数据异常/账号忙/世代/断网/旧服务器；成功为空） */
+  const [syncIssue, setSyncIssue] = useState('')
+  /** 最近一次推送结局。用 ref：异步 handler 里要读到最新值，state 的旧闭包不可靠 */
+  const lastOutcome = useRef<UploadOutcome | null>(null)
   /** 桌面端：是否已登录云端账号（未登录时不显示入口） */
   const [desktopSignedIn, setDesktopSignedIn] = useState(false)
 
@@ -283,8 +289,12 @@ export default function CloudSyncPanel({
     if (!open) return
     let off: (() => void) | null = null
     void bootSync().then((ctl) => {
-      off = ctl.subscribe((pid, s) => {
-        if (pid === getCurrentProjectId()) setState(s)
+      off = ctl.subscribe((pid, s, detail) => {
+        if (pid !== getCurrentProjectId()) return
+        setState(s)
+        const o = detail?.outcome ?? null
+        lastOutcome.current = o
+        setSyncIssue(o && !o.ok ? syncPrompt(o) : '')
       })
     })
     return () => { off?.() }
@@ -325,7 +335,11 @@ export default function CloudSyncPanel({
       const ctl = await bootSync()
       await ctl.requestPush({ projectId: pid, cloudProjectId: created.cloudProjectId, baseRevision: 0 })
       await startAutoSync()
-      showToast('已上传到云端，之后每次保存会自动同步', 'success')
+      // 🔴 不能无条件报"已上传"：requestPush 失败时不抛异常（结局落进队列），
+      //    必须看真实结局，否则数据异常/账号忙/断网都会被伪装成成功（P0-4）。
+      const o = lastOutcome.current
+      if (o && !o.ok) showToast(syncPrompt(o), 'error', 6000)
+      else showToast('已上传到云端，之后每次保存会自动同步', 'success')
       await load()
     } catch (e) {
       showToast(e instanceof Error ? e.message : '上传失败', 'error')
@@ -349,6 +363,9 @@ export default function CloudSyncPanel({
           : binding.baseRevision
         : (cloudRevision ?? binding.baseRevision)
       await ctl.requestPush({ projectId: pid, cloudProjectId: binding.cloudProjectId, baseRevision: base })
+      // 失败要露出可区分的文案（数据异常/账号忙/世代/断网/旧服务器），不能点了像没反应
+      const o = lastOutcome.current
+      if (o && !o.ok) showToast(syncPrompt(o), 'error', 6000)
       /**
        * 🔴 基线的**唯一真源是提交成功回调**（`onCommitted` → `nextBindingAfterCommit`，写的是
        *    服务端确认的新 revision）。原先这里还手工写了一次 `baseRevision: base`，
@@ -793,6 +810,12 @@ export default function CloudSyncPanel({
           {error && (
             <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-12 text-amber-200">
               {error}
+            </p>
+          )}
+
+          {syncIssue && (
+            <p role="alert" className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-12 text-rose-200">
+              {syncIssue}
             </p>
           )}
 

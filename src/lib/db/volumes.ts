@@ -14,9 +14,12 @@ export async function getAllVolumes(owner?: OwnedOperation): Promise<Volume[]> {
   const all = await (owner?.store ?? ops).getAll<Volume>('volumes')
   return all.filter(v => v.projectId === pid).sort((a, b) => a.order - b.order)
 }
-export async function saveVolume(v: Volume) {
-  await ops.put('volumes', { ...v, projectId: v.projectId || currentProjectId })
-  touchProject(currentProjectId)
+export async function saveVolume(v: Volume, owner?: OwnedOperation) {
+  const store = owner?.store ?? ops, pid = v.projectId || currentProjectId
+  owner?.assertCurrent()
+  if (owner && pid !== owner.projectId) throw new Error('卷不属于当前操作项目。')
+  await store.put('volumes', { ...v, projectId: pid })
+  void touchProject(owner ? pid : currentProjectId, store)
 }
 export async function deleteVolume(id: string) {
   const allCh = await ops.getAll<Chapter>('chapters')

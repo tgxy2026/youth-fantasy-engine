@@ -48,6 +48,7 @@ import {
   colWidthsKey, migrateColWidths, sortRows, TABLE_VIEW_MODES, type TableViewMode,
 } from '@/components/sheets/tableSheetOrder'
 import { revertDraftCells } from '@/components/sheets/tableSheetDraftOps'
+import { computeCodeDuplicates } from '@/components/sheets/tableSheetCodeValidation'
 import { useTableRecordWorkspace } from './useTableRecordWorkspace'
 import { createTableImageWriter } from '@/lib/atlas/writeImage'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
@@ -559,18 +560,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
    * 返回错误信息（null 表示通过）
    */
   const validateCodes = useCallback((): string | null => {
-    if (!codeCol) return null
-    const owner = new Map<string, number>()
-    for (const r of rows) {
-      const code = ((drafts[r.id]?.[codeCol] ?? r.data[codeCol] ?? '') as string).trim()
-      if (!code) continue
-      owner.set(code, (owner.get(code) ?? 0) + 1)
-    }
-    const errs: string[] = []
-    for (const [code, count] of owner) {
-      if (count > 1) errs.push(`「${code}」被 ${count} 行重复使用`)
-    }
-    return errs.length > 0 ? errs.join('；') : null
+    return computeCodeDuplicates(codeCol, rows, drafts)
   }, [codeCol, rows, drafts])
 
   validateBeforeSave.current = validateCodes

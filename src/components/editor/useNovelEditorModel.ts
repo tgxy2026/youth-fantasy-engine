@@ -37,7 +37,7 @@ import { foldPendingAi, type AiSourceKind, type PendingAiNote } from '@/lib/ai/a
 
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 
-import { ADVICE_START, ADVICE_END } from '@/components/jiewenji/JieWenJi'
+import { computeAdviceInsert, computeAdviceClear } from '@/components/editor/adviceBlock'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { type VisCtx, refreshVolumeTabs } from '@/lib/schema'
 import { chapterSeqOf, chapterSeqMap, flattenAll } from '@/lib/outline/chapterSeq'
@@ -49,6 +49,7 @@ import { aiChapterSummary } from '@/lib/ai/aiTasks'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { DESKTOP, getDesktopState, subscribeDesktop } from '@/lib/app/desktop'
 import { getPortableState, subscribePortable } from '@/lib/storage/fileBackend'
+import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { autoIndexChapter, chapterFingerprint } from '@/lib/semantic/indexer'
 import {
   reorderVolumes, reorderChapters, moveChapterToVolume, resyncChapterMasterNumbers,
@@ -94,6 +95,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   const seenVolIdsRef = useRef<Set<string> | null>(null)
   // 挂载即锁定项目 id（App.tsx 以 key={proj-${projectId}} 挂整树，切项目必重挂 ⇒ 键不会串项目）
   const projectId = db.getCurrentProjectId()
+  // 挂载即捕获存储归属：迟到的正文/元信息落库不得写进切换后的账号或存储空间（与角色卡、表格同口径）。
+  const [storageOwner] = useState(() => captureOwnedOperation(projectId))
   const collapsedPrefKey = `editor-vol-collapsed:${projectId}`
   const lastChapterPrefKey = `editor-last-chapter:${projectId}`
   /** 把最终展开态写回持久化（写的是补集＝已折叠集合，死卷 id 顺手清掉） */
@@ -475,11 +478,11 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
    *    不会出现"新增一条路忘了记"的静默漏账。
    * 2.8.0 起还在这里顺带触发「保存后自动更新本章索引」（默认关，见 `autoIndexChapter`）。
    */
-  const saveChapterWithAi = (ch: Chapter): Promise<void> => {
+  const saveChapterWithAi = useCallback((ch: Chapter): Promise<void> => {
     const { chapter, rest } = foldPendingAi(aiPendingRef.current, ch)
     // 只在真的消费掉了记账时才换数组（没消费就保持原引用，省一次分配）
     if (rest.length !== aiPendingRef.current.length) aiPendingRef.current = rest
-    const p = db.saveChapter(chapter)
+    const p = db.saveChapter(chapter, storageOwner)
 
     // 自动索引：先记指纹再发起（同一份内容只在第一次发起，防抖窗口内的重复保存不重复触发）。
     // 🔴 必须挂在 `db.saveChapter` **之后** —— `autoIndexChapter` 是从库里回读这一章的，
@@ -492,7 +495,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       void p.then(() => autoIndexChapter(chapter.id)).catch(() => { /* 存稿失败由调用方提示，这里不重复报 */ })
     }
     return p
-  }
+  }, [storageOwner])
 
   /**
    * 🔴 章保存串行队列（2026-10-17 全量审计 P1/P2）：
@@ -525,7 +528,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     setChapters(nextChs)
     await saveChapterWithAi(next)
     // 一章进出计数会牵动其后所有章的号，故全量重排
-    await resyncChapterMasterNumbers(volumes, nextChs)
+    await resyncChapterMasterNumbers(volumes, nextChs, storageOwner)
     showToast(
       next.excludeFromNumbering
         ? `「${ch.title}」已设为不计入序号，后续章节号已重排`
@@ -570,7 +573,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       // 上一章正文，视觉上就是「切换/加载缓慢且内容显示异常」。这里直接同帧对齐。
       setDeferredContent(ch.content ?? '')
     }
-  }, [activeId, setDeferredContent, enqueueSave])
+  }, [activeId, setDeferredContent, enqueueSave, saveChapterWithAi])
 
   // 外部 Agent 写入正文后原地刷新当前章（内部再判草稿是否干净；见 useAgentWriteSync 头注释）
   useAgentWriteSync({ activeId, activeRef, draftRef, setChapters, setVolumes, setDraftContent, setDeferredContent, onStatsChangeRef })
@@ -601,7 +604,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [enqueueSave])
+  }, [enqueueSave, saveChapterWithAi])
 
   // 卸载时清理全部定时器，防止组件卸载后仍触发 setState（内存泄漏）
   useEffect(() => () => {
@@ -623,7 +626,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
         return next
       }).catch(() => showToast('自动保存失败：' + '离开编辑器时仍有未落库的正文，请回到该章确认', 'error'))
     }
-  }, [enqueueSave])
+  }, [enqueueSave, saveChapterWithAi])
 
   // Ctrl/Cmd+S 保存（2.7.3：收敛到 useSaveHotkey）
   useSaveHotkey(
@@ -651,7 +654,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
         const cur = chaptersRef.current.find(c => c.id === base.id) ?? base
         const next: Chapter = { ...cur, content: text, wordCount: countWords(text), updatedAt: Date.now() }
         const { no } = locate(next)
-        await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no)])
+        await Promise.all([saveChapterWithAi(next), syncChapterMaster(next, no, undefined, storageOwner)])
         return next
       })
       // 字段级合并回状态：只覆盖正文相关字段，**绝不**把旧标题/状态/摘要写回界面
@@ -763,10 +766,10 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     setDraftContent(content)
     void enqueueSave(base.id, async () => {
       const cur = chaptersRef.current.find(c => c.id === base.id) ?? base
-      const merged = await db.patchChapter(base.id, { content, wordCount: wc })
+      const merged = await db.patchChapter(base.id, { content, wordCount: wc }, storageOwner)
       const row = merged ?? { ...cur, content, wordCount: wc, updatedAt: Date.now() }
       const { no } = locate(row)
-      await syncChapterMaster(row, no)
+      await syncChapterMaster(row, no, undefined, storageOwner)
       return row
     })
       .then(() => {
@@ -791,9 +794,9 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     setChapters(prev => prev.map(c => (c.id === next.id ? next : c)))
     const { no } = locate(next)
     const run = () => enqueueSave(base.id, async () => {
-      const merged = await db.patchChapter(base.id, { ...patch, updatedAt: next.updatedAt })
+      const merged = await db.patchChapter(base.id, { ...patch, updatedAt: next.updatedAt }, storageOwner)
       const row = merged ?? next
-      await syncChapterMaster(row, no)
+      await syncChapterMaster(row, no, undefined, storageOwner)
       onStatsChange?.()
       return row
     }).then(() => { /* metaFlush 只关心完成，不关心返回值 */ })
@@ -860,7 +863,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
         summarize: (text, opts) => aiChapterSummary(text, opts),
         // 两步分开传：写章节与同步总表**各自**记账（摘要落库了但总表没跟上，也得如实说）
         save: async next => { await saveChapterWithAi(next) },
-        syncMaster: async next => { await syncChapterMaster(next, chapterSeqOf(vols, all, next.id)) },
+        syncMaster: async next => { await syncChapterMaster(next, chapterSeqOf(vols, all, next.id), undefined, storageOwner) },
         onProgress: (attempted, total) => ctx.progress({ attempted, total }),
         onBatch: (attempted, total) => showToast(`已重生成摘要 ${attempted}/${total}`, 'info'),
       })
@@ -935,42 +938,32 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     prevChapterTail,
   })
 
-  /** 建议段模式：AI 改稿以标记块写入原文下方，绝不动原文；作者自行取舍 */
+  /** 建议段模式：AI 改稿以标记块写入原文下方，绝不动原文；作者自行取舍。
+   *  纯内容计算外抽到 adviceBlock.ts（可独立验证）；这里只保留状态 / UI 接线。 */
   const insertAdvice = (rewritten: string, sel: { start: number; end: number } | null) => {
-    const base = draftContent
-    const rng = sel && sel.start >= 0 && sel.end >= sel.start ? sel : null
-    let insertAt = base.length
-    if (rng) {
-      // 定位选区所在段落的末尾（段落 = 以空行分隔的块）
-      const paraEnd = base.indexOf('\n\n', rng.end)
-      insertAt = paraEnd === -1 ? base.length : paraEnd
-    }
-    // 防重复：同一位置紧邻已有建议段则提示（避免同一改稿连点两次插两份）
-    const near = base.slice(Math.max(0, insertAt - 3), insertAt + ADVICE_START.length + 3)
-    if (near.includes(ADVICE_START)) {
+    const r = computeAdviceInsert(draftContent, sel, rewritten)
+    if (!r.ok) {
       showToast('该位置已有建议段，请先处理或清除后再写入', 'info')
       return
     }
-    const block = `\n\n${ADVICE_START}\n${rewritten.trim()}\n${ADVICE_END}`
-    const next = base.slice(0, insertAt) + block + base.slice(insertAt)
-    updateContent(next)
+    updateContent(r.next)
     // 🔴 B3 补做：选区改稿的产出也计入 —— 算**建议段正文**的字数（不含两端标记行）。
     //    这段是 AI 生成的，作者采不采用由他定，但"产出过"这件事要如实记（口径同其它来源）。
-    noteAiAssist('polished', rewritten.trim().length)
+    noteAiAssist('polished', r.polishedChars)
     showToast('已写入建议段：请自行取舍，可用面板「清除全部建议段」一键清理', 'success')
   }
   const clearAdvice = () => {
-    // 标记不成对时拒绝清除（避免孤立「开始」标记跨正文误删到下一个「结束」）
-    const starts = (draftContent.match(/【颉文姬建议·开始】/g) ?? []).length
-    const ends = (draftContent.match(/【颉文姬建议·结束】/g) ?? []).length
-    if (starts !== ends) {
-      showToast(`建议段标记不配对（开始 ${starts} / 结束 ${ends}），请先手动修复异常标记`, 'error')
+    const r = computeAdviceClear(draftContent)
+    if (!r.ok) {
+      // 标记不成对时拒绝清除（避免孤立「开始」标记跨正文误删到下一个「结束」）
+      if (r.reason === 'unpaired') {
+        showToast(`建议段标记不配对（开始 ${r.starts} / 结束 ${r.ends}），请先手动修复异常标记`, 'error')
+      } else {
+        showToast('未找到建议段', 'info')
+      }
       return
     }
-    const re = /\n{0,2}【颉文姬建议·开始】[\s\S]*?【颉文姬建议·结束】\n{0,2}/g
-    const next = draftContent.replace(re, '')
-    if (next === draftContent) { showToast('未找到建议段', 'info'); return }
-    updateContent(next)
+    updateContent(r.next)
     showToast('已清除全部建议段', 'success')
   }
   // 作品开头（前 3 章）正文，供「黄金三章检查」使用
@@ -985,19 +978,25 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   const {
     doAddVolume, doAddChapter, doAddFreeChapter, doAddLatestChapter, doRenameVolume, doRenameChapter,
   } = useChapterCrud({
-    volumes, chapters, saveChapterWithAi, setExpandedPersist, setChapters, setActiveId, load, locate,
+    volumes, chapters, saveChapterWithAi, owner: storageOwner, setExpandedPersist, setChapters, setActiveId, load, locate,
   })
 
   const submitNamePrompt = async (v: string) => {
     const p = namePrompt
     setNamePrompt(null)
     if (!v || !p) return
-    if (p.kind === 'addVol') await doAddVolume(v)
-    else if (p.kind === 'addCh') await doAddChapter(p.payload as string, v)
-    else if (p.kind === 'addFreeCh') await doAddFreeChapter(v)
-    else if (p.kind === 'addLastCh') await doAddLatestChapter(v)
-    else if (p.kind === 'renVol') await doRenameVolume(p.payload as Volume, v)
-    else if (p.kind === 'renCh') await doRenameChapter(p.payload as Chapter, v)
+    // 🔴 PromptModal.onSubmit 不 await 本函数，归属切换/落库失败若直接抛出会变成未捕获 rejection 且无提示。
+    //    卷章 CRUD 已接归属，这里兜住并按现有失败口径弹 toast（与 commitContent 一致）。
+    try {
+      if (p.kind === 'addVol') await doAddVolume(v)
+      else if (p.kind === 'addCh') await doAddChapter(p.payload as string, v)
+      else if (p.kind === 'addFreeCh') await doAddFreeChapter(v)
+      else if (p.kind === 'addLastCh') await doAddLatestChapter(v)
+      else if (p.kind === 'renVol') await doRenameVolume(p.payload as Volume, v)
+      else if (p.kind === 'renCh') await doRenameChapter(p.payload as Chapter, v)
+    } catch (e) {
+      showToast(saveFailureMessage('保存失败：', e), 'error')
+    }
   }
 
   const removeVolume = async (vol: Volume) => {
@@ -1038,7 +1037,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     autosaveTimer,
     enqueueSave,
     locate,
-    syncChapterMaster,
+    syncChapterMaster: (ch, no, owner) => syncChapterMaster(ch, no, undefined, owner),
     setSaving,
     applySaved: (written, text) => {
       setChapters(prev => prev.map(c => (c.id === written.id
@@ -1070,7 +1069,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       setDeferredContent(content)
     }
     const { no } = locate(next)
-    syncChapterMaster(next, no)
+    syncChapterMaster(next, no, undefined, storageOwner)
     onStatsChange?.()
   }
 
@@ -1092,8 +1091,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
         dirty = next.some(v => v.order !== (volumes.find(x => x.id === v.id)?.order ?? -1))
         setVolumes(next)
         if (dirty) {
-          await Promise.all(next.map(v => db.saveVolume(v)))
-          await resyncChapterMasterNumbers(next, chapters)
+          await Promise.all(next.map(v => db.saveVolume(v, storageOwner)))
+          await resyncChapterMasterNumbers(next, chapters, storageOwner)
         }
       } else if (dragKind === 'ch') {
         const ch = chapters.find(c => c.id === dragId)
@@ -1125,7 +1124,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
         dirty = changed.length > 0
         if (dirty) {
           await Promise.all(changed.map(c => saveChapterWithAi(c)))
-          await resyncChapterMasterNumbers(volumes, nextChapters)
+          await resyncChapterMasterNumbers(volumes, nextChapters, storageOwner)
         }
       }
       if (dirty) showToast('排序已保存', 'success')
@@ -1137,7 +1136,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   }
 
   // UX12 键盘替代入口：Alt+↑/↓ 在同卷内移动章节、在真卷之间移动分卷（拖拽仍保留）
-  const { moveByKeyboard } = createEditorKeyboardReorder({ volumes, chapters, setVolumes, setChapters, saveChapter: saveChapterWithAi })
+  const { moveByKeyboard } = createEditorKeyboardReorder({ volumes, chapters, setVolumes, setChapters, saveChapter: saveChapterWithAi, owner: storageOwner })
 
   // 相邻章导航（全书叙事序：卷序 → 章序 → 孤儿章垫底，唯一真源）
   const flat = flattenAll(volumes, chapters)
@@ -1150,6 +1149,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     expanded, setExpanded: setExpandedPersist, dragKind, setDragKind, setDragId, overKey, setOverKey, openChapter, submitNamePrompt, removeVolume, removeChapter, restoreSnapshot, applyChapterContent, resetDrag, handleDrop, toggleExcludeNumbering, moveByKeyboard,
     // 正文与保存（diskError/diskPending = 真实落盘状态，见 savedFlash 附近的说明）
     draftContent, commitContent, onContentChange, updateContent, updateMeta, saving, savedFlash, diskError, diskPending, todayWords, load,
+    // 挂载捕获的存储归属：全文替换等编辑器内手动落库共用，迟到回执不得写进切换后的账号/存储
+    storageOwner,
     // 引用名高亮叠层（只走 scanRefHighlight，盒模型与 textarea 对齐）
     highlightHTML, referenced, highlightRef, scheduleHighlightSync,
     // 编辑区 refs 与光标同步

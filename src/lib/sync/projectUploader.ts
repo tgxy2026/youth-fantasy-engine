@@ -94,15 +94,50 @@ function dataUrlBytes(dataUrl: string): Uint8Array | null {
   }
 }
 
-/** 一个结果是否需要重试：网络异常 / 5xx / 限流 */
+/**
+ * 服务端「数据异常」类 code：云端索引/状态/清单损坏或缺失。
+ * 🔴 这类即使回 503 也**绝不能重试**——它不是"稍后会自己好"，而是要人工核对云端数据。
+ *    当成普通 5xx 重试只会让客户端拿着同一份基线反复撞墙，还把"需要管理员介入"伪装成"网络抖动"。
+ */
+const DATA_ANOMALY_CODES = new Set([
+  'PROJECT_DATA_INVALID', 'PROJECT_DATA_READ_FAILED', 'PROJECT_DATA_MISSING', 'PROJECT_DATA_RECOVERY_REQUIRED',
+])
+
+/** 一个结果是否需要重试：网络异常 / 5xx / 限流（数据异常除外） */
 function isRetryable(r: { ok: boolean; status?: number; code?: string }): boolean {
   if (r.ok) return false
+  if (r.code && DATA_ANOMALY_CODES.has(r.code)) return false
   const s = r.status ?? 0
   if (s >= 500 || s === 429) return true
   // 🔴 只有明确的网络类 code 才算可重试。不能把「status 缺失」一律当成可重试：
   //    哈希不符、格式非法这类 4xx 也常常没有 status，重试一万次也不会好，
   //    只会把用户的电量和服务器连接数耗光（这条是单测第 7 条抓出来的）。
   return r.code === 'NETWORK' || r.code === 'TIMEOUT' || r.code === 'ECONNRESET'
+}
+
+/**
+ * 把提交失败翻译成「用户看得懂、且能区分五类」的结局码与文案。
+ * 五类：数据异常 / 账号忙 / 世代冲突 / 旧服务器 / 其它。网络类在状态机里单独走 offline。
+ * 🔴 文案一律点明「本机稿件不受影响」：同步失败最忌讳让用户以为稿子丢了。
+ */
+function describeCommitFailure(r: { status?: number; code?: string; message?: string }): { code: string; message: string } {
+  if (r.code && DATA_ANOMALY_CODES.has(r.code)) {
+    return { code: r.code, message: r.message || '云端数据异常，本次未上传；本机稿件已保留，请联系管理员检查云端数据' }
+  }
+  if (r.code === 'EPOCH_STALE') {
+    return { code: 'EPOCH_STALE', message: r.message || '云端数据已迁移或恢复，旧基线失效；请重新拉取云端全部内容后再同步（本机稿件不受影响）' }
+  }
+  if (r.code === 'PROJECT_ACCOUNT_BUSY') {
+    return { code: 'PROJECT_ACCOUNT_BUSY', message: r.message || '云端正在处理该账号的其他写入，请稍后重试（本机稿件已保留）' }
+  }
+  if (r.code === 'LEGACY_WRITE_BLOCKED') {
+    return { code: 'LEGACY_WRITE_BLOCKED', message: r.message || '云端已升级到项目级同步，旧版写入已停用；请升级客户端（本机稿件不受影响）' }
+  }
+  // 旧服务器没有 /api/v2 路由：404/405 且没有可识别的业务码（有业务码的 404 是"作品不存在"，另当别论）
+  if ((r.status === 404 || r.status === 405) && !r.code) {
+    return { code: 'SERVER_TOO_OLD', message: r.message || '服务器不支持项目级同步（版本过旧或地址有误）；请升级服务器，本机稿件不受影响' }
+  }
+  return { code: r.code || 'COMMIT_FAILED', message: r.message || '提交失败' }
 }
 
 /**
@@ -161,9 +196,13 @@ async function runUpload(opts: UploadOptions, knownHashes: ReadonlySet<string>):
         return null
       }
       if (!isRetryable({ ok: r.ok, code: r.code }) || attempt >= retries) {
+        const anomaly = !!r.code && DATA_ANOMALY_CODES.has(r.code)
         return {
           ok: false, status: 'error', code: r.code || 'UPLOAD_FAILED',
-          message: `${label}上传失败${r.code ? `（${r.code}）` : ''}`, retryable: isRetryable({ ok: r.ok, code: r.code }),
+          message: anomaly
+            ? '云端数据异常，本次未上传；本机稿件已保留，请联系管理员检查云端数据'
+            : `${label}上传失败${r.code ? `（${r.code}）` : ''}`,
+          retryable: isRetryable({ ok: r.ok, code: r.code }),
         }
       }
       attempt++
@@ -212,9 +251,10 @@ async function runUpload(opts: UploadOptions, knownHashes: ReadonlySet<string>):
       return { ok: false, status: 'quota', usedBytes: r.usedBytes, quotaBytes: r.quotaBytes }
     }
     if (!isRetryable(r) || attempt >= retries) {
+      const d = describeCommitFailure(r)
       return {
-        ok: false, status: 'error', code: r.code || 'COMMIT_FAILED',
-        message: r.message || '提交失败', retryable: isRetryable(r),
+        ok: false, status: 'error', code: d.code,
+        message: d.message, retryable: isRetryable(r),
       }
     }
     attempt++

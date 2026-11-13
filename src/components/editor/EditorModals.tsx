@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import * as db from '@/lib/db'
 import { countWords } from '@/lib/editor/textStats'
 import type { Chapter, Volume } from '@/lib/types'
+import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { scanText, replaceHits } from '@/lib/editor/sensitiveWords'
 import { contextSnippet } from '@/lib/ai/contextSnippet'
 import { diffLines, diffStats } from '@/lib/editor/textDiff'
@@ -15,6 +16,7 @@ import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib
 import { useTaskRunner, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { saveFailureMessage } from '@/lib/app/saveFailureHint'
 import { CopyProofText, proofIssueKey } from '@/components/editor/CopyProofText'
 import { locateFailureText, locateProofIssue } from '@/lib/editor/proofLocate'
 import type { ProofLocateTarget } from '@/components/editor/proofLocateChannel'
@@ -833,11 +835,13 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
 }
 
 // ============ 全文搜索替换 ============
-export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
+export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose, owner }: {
   chapters: Chapter[]
   onOpenChapter: (id: string) => void
   onReplaced: (id: string, content: string) => void
   onClose: () => void
+  /** 编辑器挂载捕获的存储归属：全书替换落库不得写进切换后的账号或存储空间 */
+  owner: OwnedOperation
 }) {
   const [q, setQ] = useState('')
   const [replacement, setReplacement] = useState('')
@@ -869,13 +873,18 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose }: {
     if (!q.trim() || results.length === 0) return
     const total = results.reduce((s, r) => s + r.count, 0)
     if (!await confirmDialog({ title: '全书替换', message: `全书将「${q}」替换为「${replacement}」，共 ${total} 处（${results.length} 章）。确认执行？` })) return
-    for (const r of results) {
-      const next = r.ch.content.split(q).join(replacement)
-      onReplaced(r.ch.id, next)
-      // 🔴 只写正文相关字段（字段级 patch），不用 `saveChapter({ ...r.ch, ... })`：
-      //    r.ch 是**搜索那一刻**的快照，整章写回会把作者期间改过的标题/状态覆盖掉，
-      //    也会把旧快照的正文盖掉自动保存刚落库的新稿（2026-10-17 全量审计 P2）。
-      await db.patchChapter(r.ch.id, { content: next, wordCount: countWords(next) })
+    try {
+      for (const r of results) {
+        const next = r.ch.content.split(q).join(replacement)
+        // 🔴 只写正文相关字段（字段级 patch），不用 `saveChapter({ ...r.ch, ... })`：
+        //    r.ch 是**搜索那一刻**的快照，整章写回会把作者期间改过的标题/状态覆盖掉，
+        //    也会把旧快照的正文盖掉自动保存刚落库的新稿（2026-10-17 全量审计 P2）。
+        // 🔴 先落库再回写界面：归属切换或落库失败时不改内存态，避免界面显示已替换而库里没写。
+        await db.patchChapter(r.ch.id, { content: next, wordCount: countWords(next) }, owner)
+        onReplaced(r.ch.id, next)
+      }
+    } catch (e) {
+      showToast(saveFailureMessage('全书替换失败：', e), 'error')
     }
     doSearch()
   }

@@ -12,13 +12,23 @@
 //    接线点是 `src/lib/app/useSaveHotkey.ts` 与自动保存那一侧，
 //    需要一次真机回归（保存 → 队列 → 上传 → 徽标变化）才能算验收。
 import type { ProjectBundle } from '@/lib/db/projects'
-import type { UploadTransport } from '@/lib/sync/projectUploader'
+import type { UploadOutcome, UploadTransport } from '@/lib/sync/projectUploader'
 import type { QueueStore, SyncJob } from '@/lib/sync/syncQueue'
 import { deriveStateFromJobs, enqueuePush, pendingJobsOf } from '@/lib/sync/syncQueue'
 import type { SyncState } from '@/lib/sync/syncMachine'
 import { drainQueue, prepareQueue, type RunOneResult, type SyncRunnerDeps } from '@/lib/sync/syncRunner'
 import type { TombstoneStore } from '@/lib/sync/projectTombstone'
 import { clearSubmittedTombstones, tombstonesToSubmit } from '@/lib/sync/projectTombstone'
+
+/**
+ * 状态广播附带的细节。
+ * 🔴 界面要据此把「云端数据异常 / 账号忙 / 基线失效 / 断网 / 服务器过旧」分别说清楚
+ *    （`syncPrompt`），而不是统一一句"同步失败"。只读，不影响队列落库。
+ */
+export interface SyncStateDetail {
+  job?: SyncJob
+  outcome?: UploadOutcome
+}
 
 export interface SyncControllerDeps {
   store: QueueStore
@@ -39,8 +49,8 @@ export interface SyncControllerDeps {
    * 🔴 不给这个回调，界面会永远停在「本机基于第 0 版」，并在下一轮 tick 判成假冲突。
    */
   onCommitted?: (info: { projectId: string; cloudProjectId: string; revision: number }) => Promise<void> | void
-  /** 状态变化广播（界面订阅它刷新徽标） */
-  onState?: (projectId: string, state: SyncState) => void
+  /** 状态变化广播（界面订阅它刷新徽标；detail 携带结局供分类提示） */
+  onState?: (projectId: string, state: SyncState, detail?: SyncStateDetail) => void
 }
 
 export interface SyncController {
@@ -55,7 +65,7 @@ export interface SyncController {
   /** 某项目当前状态 */
   stateOf(projectId: string): Promise<SyncState>
   /** 订阅状态变化；返回退订函数 */
-  subscribe(fn: (projectId: string, state: SyncState) => void): () => void
+  subscribe(fn: (projectId: string, state: SyncState, detail?: SyncStateDetail) => void): () => void
   /** 是否有正在跑的一轮（防重入） */
   isRunning(): boolean
 }
@@ -72,7 +82,7 @@ export function createSyncController(deps: SyncControllerDeps): SyncController {
   const now = deps.now ?? Date.now
   let initialized: Promise<number> | null = null
   let running = false
-  const listeners = new Set<(projectId: string, state: SyncState) => void>()
+  const listeners = new Set<(projectId: string, state: SyncState, detail?: SyncStateDetail) => void>()
   // 🔴 `deps.onState` 必须登记进监听器集合：第一版只在 runner 里遍历 listeners，
   //    结果调用方传进来的 onState 从来没被调过 —— 界面永远收不到状态变化，
   //    而单测断言"顺序"时拿到的是空数组（这条是单测抓出来的）。
@@ -97,9 +107,9 @@ export function createSyncController(deps: SyncControllerDeps): SyncController {
       }
       await deps.onCommitted?.({ projectId: job.projectId, cloudProjectId: job.cloudProjectId, revision })
     },
-    onState: (pid, state) => {
+    onState: (pid, state, detail) => {
       for (const fn of listeners) {
-        try { fn(pid, state) } catch { /* 订阅方自己的异常不该影响同步 */ }
+        try { fn(pid, state, detail) } catch { /* 订阅方自己的异常不该影响同步 */ }
       }
     },
   }

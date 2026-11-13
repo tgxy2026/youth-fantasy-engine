@@ -233,6 +233,58 @@ async function main() {
     ok('重置后取不到', getSyncController() === null)
   }
 
+  // ---------- 7. 状态广播携带结局细节（界面据此分类提示，P0-4）----------
+  {
+    const store = createMemoryQueueStore()
+    const seen: { s: SyncState; code?: string; ok?: boolean }[] = []
+    const ctl = createSyncController({
+      store,
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: false, status: 503, code: 'PROJECT_DATA_RECOVERY_REQUIRED' } } },
+      loadBundle: async () => bundle(),
+      now: () => T0,
+    })
+    ctl.subscribe((_pid, s, detail) => {
+      const o = detail?.outcome
+      seen.push({ s, code: o && !o.ok && o.status === 'error' ? o.code : undefined, ok: o?.ok })
+    })
+    await ctl.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    const terminal = seen[seen.length - 1]
+    ok('失败终态把 outcome 细节传给订阅方', terminal.code === 'PROJECT_DATA_RECOVERY_REQUIRED', JSON.stringify(seen))
+    ok('数据异常 → blocked（不可重试，不自动重撞）', terminal.s === 'blocked', terminal.s)
+  }
+  {
+    const store = createMemoryQueueStore()
+    const synced: { ok?: boolean; revision?: number }[] = []
+    const ctl = createSyncController({
+      store,
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: true, status: 200, revision: 5, snapshotId: 's5' } } },
+      loadBundle: async () => bundle(),
+      now: () => T0,
+    })
+    ctl.subscribe((_pid, s, detail) => {
+      if (s === 'synced') { const o = detail?.outcome; synced.push({ ok: o?.ok, revision: o && o.ok ? o.revision : undefined }) }
+    })
+    await ctl.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    ok('成功终态也带 outcome（ok=true 且 revision=5）', synced.length === 1 && synced[0].ok === true && synced[0].revision === 5, JSON.stringify(synced))
+  }
+
+  // ---------- 8. 提交失败不丢草稿/墓碑、不推进基线、不谎报成功（P0-4）----------
+  {
+    const store = createMemoryQueueStore()
+    const tombs = createMemoryTombstoneStore()
+    await noteDeletes(tombs, 'p1', [{ kind: 'chapters', id: 'gone' }], T0 - 1000)
+    let committed = 0
+    const ctl = createSyncController({
+      store, tombstones: tombs, loadBundle: async () => bundle(), now: () => T0,
+      transport: { async putObject() { return { ok: true } }, async commit() { return { ok: false, status: 503, code: 'PROJECT_DATA_INVALID' } } },
+      onCommitted: () => { committed++ },
+    })
+    await ctl.requestPush({ projectId: 'p1', cloudProjectId: 'c1', baseRevision: 0 })
+    ok('提交失败时墓碑不被清掉（删除记录留待下次带走）', (await tombs.list('p1')).length === 1, JSON.stringify(await tombs.list('p1')))
+    ok('提交失败不回调 onCommitted（基线不推进）', committed === 0, String(committed))
+    ok('提交失败后项目状态不是 synced（不谎报成功）', (await ctl.stateOf('p1')) !== 'synced', await ctl.stateOf('p1'))
+  }
+
   console.log(`\n▶ syncController: ${pass} passed, ${fail} failed`)
   if (fail) process.exit(1)
 }
