@@ -37,7 +37,17 @@ const HASH_RE = /^[0-9a-f]{64}$/
  * @param {{ id: string, name: string, quotaBytes: number }} ctx.user 已鉴权用户
  * @param {string} ctx.v2Root
  */
-export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
+export async function handleV2(ctx) {
+  try {
+    return await handleV2Request(ctx)
+  } catch (error) {
+    if (!['PROJECT_DATA_INVALID', 'PROJECT_DATA_READ_FAILED', 'PROJECT_DATA_MISSING', 'PROJECT_DATA_RECOVERY_REQUIRED'].includes(error?.code)) throw error
+    if (ctx.res.headersSent) throw error
+    return sendJSON(ctx.res, 503, { ok: false, code: error.code, error: '云端项目数据暂不可用，请保留本地数据并联系管理员检查。' }), true
+  }
+}
+
+async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
   if (!p.startsWith('/api/v2/')) return false
 
   const accountId = user.id
@@ -80,6 +90,13 @@ export async function handleV2({ req, res, path: p, qs, user, v2Root }) {
 
   const idx = readIndex(v2Root, accountId)
   if (!idx.projects?.[pid]) return sendJSON(res, 404, { ok: false, error: '云端作品不存在' }), true
+  // 索引已记录版本时，缺失 state 不能当作首次初始化。
+  if (Number(idx.projects[pid].revision) > 0) {
+    try { fs.statSync(path.join(storeRoot, 'projects', pid, 'state.json')) } catch (error) {
+      const code = error?.code === 'ENOENT' ? 'PROJECT_DATA_MISSING' : 'PROJECT_DATA_READ_FAILED'
+      throw Object.assign(new Error(code), { code })
+    }
+  }
 
   // ---- GET /api/v2/projects/:pid —— 状态（含墓碑数量） ----
   if (seg.length === 2 && req.method === 'GET') {

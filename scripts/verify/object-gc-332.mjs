@@ -38,6 +38,7 @@ function fresh() {
   const root = path.join(v2, 'accounts', 'acc')
   fs.mkdirSync(path.join(root, 'objects'), { recursive: true })
   fs.mkdirSync(path.join(root, 'projects'), { recursive: true })
+  writeIndex(v2, 'acc', { projects: {} })
   return { v2, root }
 }
 
@@ -58,6 +59,13 @@ function putManifest(root, pid, rev, hashes, extra = {}) {
     protocol: 1, createdAt: T0, project: { name: pid }, counts: {},
     objects: hashes.map((h) => ({ kind: 'chapters', hash: h, bytes: 100, records: 1 })),
     assets: [], tombstones: [], ...extra,
+  }))
+}
+
+function putDeletedState(root, pid, deletedAt) {
+  putManifest(root, pid, 1, [], { deleted: true, revision: 1, snapshotId: 'deleted-snapshot' })
+  fs.writeFileSync(path.join(root, 'projects', pid, 'state.json'), JSON.stringify({
+    protocol: 1, revision: 1, epoch: 1, snapshotId: 'deleted-snapshot', deletedAt, tombs: [], ops: {},
   }))
 }
 
@@ -102,6 +110,32 @@ function main() {
   // ---------- 4. dryRun ----------
   {
     const { root } = fresh()
+    putManifest(root, 'p1', 1, [H('protected')])
+    const manifest = path.join(root, 'projects', 'p1', 'manifests', '1.json')
+    const object = putObject(root, H('protected'), 50, T0 - GC_GRACE_MS * 2)
+    for (const malformed of ['{', '{"objects":[{}]}']) {
+      fs.writeFileSync(manifest, malformed)
+      let blocked = false
+      try { gcObjects(root, { now: T0 }) } catch (e) { blocked = e.code === 'PROJECT_DATA_INVALID' }
+      ok('损坏版本阻止整轮回收并保留对象', blocked && fs.existsSync(object))
+    }
+    fs.unlinkSync(path.join(root, 'index.json'))
+    let missingBlocked = false
+    try { gcObjects(root, { now: T0 }) } catch (e) { missingBlocked = e.code === 'PROJECT_DATA_MISSING' }
+    ok('项目存在而索引丢失时停止回收', missingBlocked && fs.existsSync(object))
+  }
+  {
+    const { root } = fresh()
+    const object = putObject(root, H('lost-project'), 50, T0 - GC_GRACE_MS * 2)
+    fs.unlinkSync(path.join(root, 'index.json'))
+    let blocked = false
+    try { gcObjects(root, { now: T0 }) } catch (e) { blocked = e.code === 'PROJECT_DATA_MISSING' }
+    ok('仅剩对象但索引丢失时停止回收', blocked && fs.existsSync(object))
+  }
+
+  // ---------- 4. dryRun ----------
+  {
+    const { root } = fresh()
     putObject(root, H('x'), 400, T0 - GC_GRACE_MS * 2)
     const r = gcObjects(root, { now: T0, dryRun: true })
     ok('dryRun 报告会删多少但不真删', r.removed === 1 && r.freedBytes === 400
@@ -111,7 +145,7 @@ function main() {
   // ---------- 5. 回收站清理 ----------
   {
     const { v2, root } = fresh()
-    putManifest(root, 'dead', 1, [H('d')])
+    putDeletedState(root, 'dead', T0 - TRASH_TTL_MS - 1)
     putObject(root, H('d'), 100, T0 - TRASH_TTL_MS * 2)
     writeIndex(v2, 'acc', {
       projects: {
@@ -136,11 +170,50 @@ function main() {
   // ---------- 6. 回收站 dryRun ----------
   {
     const { v2, root } = fresh()
+    putDeletedState(root, 'dead', T0 - TRASH_TTL_MS - 1)
+    writeIndex(v2, 'acc', { projects: { dead: { revision: 1, deletedAt: T0 - TRASH_TTL_MS - 1 } } })
+    const originalRename = fs.renameSync
+    let failed = false
+    try {
+      fs.renameSync = (from, to) => {
+        if (String(to) === path.join(root, 'index.json')) throw new Error('injected index failure')
+        return originalRename(from, to)
+      }
+      try { purgeDeletedProjects(root, { now: T0 }) } catch { failed = true }
+    } finally { fs.renameSync = originalRename }
+    ok('索引写失败时项目目录及索引均保留', failed && fs.existsSync(path.join(root, 'projects', 'dead', 'state.json')) && !!readIndex(v2, 'acc').projects.dead)
+  }
+  {
+    const { v2, root } = fresh()
+    const pending = path.join(root, 'purge-pending', 'dead')
+    fs.mkdirSync(pending, { recursive: true })
+    let blocked = false
+    try { readIndex(v2, 'acc') } catch (e) { blocked = e.code === 'PROJECT_DATA_RECOVERY_REQUIRED' }
+    ok('清理中断留下隔离目录时拒绝后续索引操作', blocked && fs.existsSync(pending))
+  }
+
+  // ---------- 6. 回收站 dryRun ----------
+  {
+    const { v2, root } = fresh()
+    putDeletedState(root, 'dead', T0 - TRASH_TTL_MS - 1)
     writeIndex(v2, 'acc', {
-      projects: { dead: { deletedAt: T0 - TRASH_TTL_MS - 1, objects: [] } },
+      projects: { dead: { revision: 1, deletedAt: T0 - TRASH_TTL_MS - 1, objects: [] } },
     })
     const r = purgeDeletedProjects(root, { now: T0, dryRun: true })
     ok('dryRun 只报告不删', r.purged.length === 1 && readIndex(v2, 'acc').projects.dead !== undefined)
+  }
+
+  {
+    const { v2, root } = fresh()
+    putDeletedState(root, 'dead', T0 - TRASH_TTL_MS - 1)
+    const state = path.join(root, 'projects', 'dead', 'state.json')
+    const live = JSON.parse(fs.readFileSync(state, 'utf8'))
+    live.deletedAt = 0
+    fs.writeFileSync(state, JSON.stringify(live))
+    writeIndex(v2, 'acc', { projects: { dead: { revision: 1, deletedAt: T0 - TRASH_TTL_MS - 1 } } })
+    let refused = false
+    try { purgeDeletedProjects(root, { now: T0 }) } catch (e) { refused = e.code === 'PROJECT_DATA_INVALID' }
+    ok('旧删除索引不能清理已恢复项目', refused && fs.existsSync(state) && !!readIndex(v2, 'acc').projects.dead)
   }
 
   // ---------- 7. 配额：跨项目共享对象只算一次 ----------

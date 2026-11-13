@@ -206,9 +206,16 @@ export async function listCloudProjects(base = baseOf()): Promise<CloudProjectLi
   try {
     const res = await f()(`${base}/api/v2/projects`, { credentials: 'same-origin', cache: 'no-store' })
     if (!res.ok) {
+      let dataUnavailable = false
+      if (res.status === 503) {
+        try {
+          const body = await res.json() as { code?: unknown }
+          dataUnavailable = ['PROJECT_DATA_INVALID', 'PROJECT_DATA_MISSING', 'PROJECT_DATA_READ_FAILED', 'PROJECT_DATA_RECOVERY_REQUIRED'].includes(String(body?.code))
+        } catch { /* 普通服务故障仍显示状态码 */ }
+      }
       return {
         projects: [], usedBytes: 0, quotaBytes: 0, ok: false,
-        error: res.status === 401 || res.status === 403
+        error: dataUnavailable ? '云端项目数据暂不可用，请保留本地数据并联系管理员检查。' : res.status === 401 || res.status === 403
           ? '登录状态已失效，请重新登录后再看云端作品'
           : `读取云端作品失败（HTTP ${res.status}）`,
       }

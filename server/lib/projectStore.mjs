@@ -71,7 +71,22 @@ function writeAtomic(file, data) {
 }
 
 function readJSON(file, def) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return def }
+  let text
+  try { text = fs.readFileSync(file, 'utf8') } catch (error) {
+    if (error?.code === 'ENOENT') return def
+    const failure = new Error('PROJECT_DATA_READ_FAILED')
+    failure.code = 'PROJECT_DATA_READ_FAILED'
+    throw failure
+  }
+  try {
+    const value = JSON.parse(text)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid object')
+    return value
+  } catch {
+    const failure = new Error('PROJECT_DATA_INVALID')
+    failure.code = 'PROJECT_DATA_INVALID'
+    throw failure
+  }
 }
 
 // ---------- 锁 ----------
@@ -103,7 +118,9 @@ export function acquireProjectLock(root, pid) {
 
 // ---------- 世代 ----------
 export function readEpoch(root) {
-  return readJSON(p.epoch(root), { epoch: 1 }).epoch ?? 1
+  const value = readJSON(p.epoch(root), { epoch: 1 }).epoch
+  if (!Number.isSafeInteger(value) || value < 1) throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+  return value
 }
 
 /** 提升数据世代（迁移/恢复用）：旧基线在新世代全部失效，客户端必须全量重建 */
@@ -177,7 +194,32 @@ export function hasObject(root, hash) {
 // ---------- 状态 ----------
 function readState(root, pid, accountId) {
   const st = readJSON(p.state(root, pid), null)
-  if (st) return st
+  if (st) {
+    if (!Number.isSafeInteger(st.revision) || st.revision < 0 || !Number.isSafeInteger(st.epoch) || st.epoch < 1 ||
+      (st.accountId != null && typeof st.accountId !== 'string') ||
+      (st.tombs != null && !Array.isArray(st.tombs)) ||
+      (st.ops != null && (typeof st.ops !== 'object' || Array.isArray(st.ops)))) {
+      throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+    }
+    if (st.revision > 0) {
+      const current = readManifest(root, pid, st.revision)
+      if (!current) throw Object.assign(new Error('PROJECT_DATA_MISSING'), { code: 'PROJECT_DATA_MISSING' })
+      if (current.protocol !== PROTOCOL_VERSION || current.revision !== st.revision ||
+        typeof st.snapshotId !== 'string' || !st.snapshotId || current.snapshotId !== st.snapshotId ||
+        Boolean(current.deleted) !== Boolean(st.deletedAt)) {
+        throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+      }
+    }
+    return st
+  }
+  let names
+  try { names = fs.readdirSync(p.manifests(root, pid)) } catch (error) {
+    if (error?.code !== 'ENOENT') throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+    names = []
+  }
+  if (names.some(name => /^\d+\.json$/.test(name))) {
+    throw Object.assign(new Error('PROJECT_DATA_MISSING'), { code: 'PROJECT_DATA_MISSING' })
+  }
   return { protocol: PROTOCOL_VERSION, accountId, revision: 0, snapshotId: '', epoch: readEpoch(root), tombs: [], ops: {} }
 }
 
@@ -197,7 +239,14 @@ export function getProjectState(root, pid, accountId) {
 
 export function readManifest(root, pid, rev) {
   const file = path.join(p.manifests(root, pid), `${rev}.json`)
-  return readJSON(file, null)
+  const manifest = readJSON(file, null)
+  if (manifest && (manifest.protocol !== PROTOCOL_VERSION || manifest.revision !== rev ||
+    typeof manifest.snapshotId !== 'string' || !manifest.snapshotId ||
+    (manifest.objects != null && !Array.isArray(manifest.objects)) ||
+    (manifest.assets != null && !Array.isArray(manifest.assets)))) {
+    throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+  }
+  return manifest
 }
 
 /** 当前有效墓碑（已按 TTL 清理） */
@@ -311,6 +360,7 @@ export function deleteProject({ root, pid, accountId, opId, now = Date.now(), to
     if (st.accountId && st.accountId !== accountId) return { ok: false, code: 'FORBIDDEN' }
     const seen = st.ops?.[opId]
     if (seen) return { ok: true, revision: seen.revision, snapshotId: seen.snapshotId, replayed: true }
+    const epoch = readEpoch(root)
     const nextRev = st.revision + 1
     const snapshotId = sha256(Buffer.from(`deleted:${pid}:${nextRev}`, 'utf8'))
     writeAtomic(path.join(p.manifests(root, pid), `${nextRev}.json`), JSON.stringify({
@@ -321,7 +371,7 @@ export function deleteProject({ root, pid, accountId, opId, now = Date.now(), to
     const tombs = mergeTombstones(st.tombs || [], tombKinds.map((kind) => ({ kind, id: pid, deletedAt: now })), now)
     writeAtomic(p.state(root, pid), JSON.stringify({
       protocol: PROTOCOL_VERSION, accountId, revision: nextRev, snapshotId,
-      epoch: readEpoch(root), tombs, ops, deletedAt: now,
+      epoch, tombs, ops, deletedAt: now,
     }))
     return { ok: true, revision: nextRev, snapshotId }
   } finally {
@@ -365,6 +415,7 @@ export function restoreProject({ root, pid, accountId, opId, now = Date.now() })
     }
     if (!content) return { ok: false, code: 'NO_CONTENT_TO_RESTORE', revision: st.revision }
 
+    const epoch = readEpoch(root)
     const nextRev = st.revision + 1
     const snapshotId = sha256(Buffer.from(`restored:${pid}:${nextRev}:${contentRev}`, 'utf8'))
     writeAtomic(path.join(p.manifests(root, pid), `${nextRev}.json`), JSON.stringify({
@@ -382,7 +433,7 @@ export function restoreProject({ root, pid, accountId, opId, now = Date.now() })
     writeAtomic(p.state(root, pid), JSON.stringify({
       protocol: PROTOCOL_VERSION, accountId,
       revision: nextRev, snapshotId,
-      epoch: readEpoch(root), tombs, ops, deletedAt: 0,
+      epoch, tombs, ops, deletedAt: 0,
     }))
     return { ok: true, revision: nextRev, snapshotId, restoredFrom: contentRev }
   } finally {

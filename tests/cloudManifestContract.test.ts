@@ -7,7 +7,7 @@
 //
 // 这类 bug 的共性：**两端各自都对，中间的"接线"错了**。只能靠"用真实响应形状断言"来钉住。
 // 所以这里的 fetch 桩返回的是**服务端真实返回的那一层**，不是理想化的清单。
-import { fetchManifest, probeCloudProject, createCloudProject } from '@/lib/cloud/syncApi'
+import { fetchManifest, probeCloudProject, createCloudProject, listCloudProjects } from '@/lib/cloud/syncApi'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -87,6 +87,13 @@ async function main() {
     const r = await createCloudProject({ name: 'x' })
     s.restore()
     ok('新建解出 cloudProjectId', r.ok && r.cloudProjectId === 'prj_new', JSON.stringify(r))
+  }
+
+  {
+    const s = stubFetch({ ok: false, code: 'PROJECT_DATA_INVALID', error: 'private-data' }, 503)
+    const result = await listCloudProjects()
+    s.restore()
+    ok('数据异常提示保留本地数据且不显示服务端内容', !result.ok && !!result.error?.includes('保留本地数据') && !result.error?.includes('private-data'))
   }
 
   console.log(`\n▶ cloudManifestContract: ${pass} passed, ${fail} failed`)

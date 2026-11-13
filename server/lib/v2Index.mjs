@@ -20,14 +20,52 @@ export const V2_INDEX_FILE = 'index.json'
 export const accountRoot = (v2Root, accountId) => path.join(v2Root, 'accounts', accountId)
 export const indexFile = (v2Root, accountId) => path.join(accountRoot(v2Root, accountId), V2_INDEX_FILE)
 
-/** 读索引；不存在/损坏都返回空索引（损坏不该让列表页 500，调用方会重新写） */
+/** 仅不存在时使用空索引；损坏和读取失败不能被当作空账号覆盖。 */
 export function readIndex(v2Root, accountId) {
   try {
-    const raw = JSON.parse(fs.readFileSync(indexFile(v2Root, accountId), 'utf8'))
-    if (!raw || typeof raw !== 'object' || typeof raw.projects !== 'object') return { projects: {} }
+    if (fs.readdirSync(path.join(accountRoot(v2Root, accountId), 'purge-pending')).length) {
+      throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      if (error?.code === 'PROJECT_DATA_RECOVERY_REQUIRED') throw error
+      throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+    }
+  }
+  let text
+  try {
+    text = fs.readFileSync(indexFile(v2Root, accountId), 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      for (const dir of ['projects', 'objects']) {
+        let entries
+        try { entries = fs.readdirSync(path.join(accountRoot(v2Root, accountId), dir)) } catch (e) {
+          if (e?.code !== 'ENOENT') throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+          entries = []
+        }
+        if (entries.length) throw Object.assign(new Error('PROJECT_DATA_MISSING'), { code: 'PROJECT_DATA_MISSING' })
+      }
+      return { projects: {} }
+    }
+    throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+  }
+  try {
+    const raw = JSON.parse(text)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.projects || typeof raw.projects !== 'object' || Array.isArray(raw.projects)) throw new Error('invalid index')
     return raw
   } catch {
-    return { projects: {} }
+    throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+  }
+}
+
+/** 初始化迁移目标索引，必须在写入项目数据前执行；绝不覆盖已有索引。 */
+export function initializeIndex(v2Root, accountId) {
+  readIndex(v2Root, accountId)
+  const file = indexFile(v2Root, accountId)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  try { fs.writeFileSync(file, JSON.stringify({ projects: {} }), { flag: 'wx' }) } catch (error) {
+    if (error?.code !== 'EEXIST') throw error
+    readIndex(v2Root, accountId)
   }
 }
 

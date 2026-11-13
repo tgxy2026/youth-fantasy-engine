@@ -49,15 +49,30 @@ function putManifest(root, pid, rev, hashes) {
   const dir = path.join(root, 'projects', pid, 'manifests')
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, `${rev}.json`), JSON.stringify({
-    protocol: 2, revision: rev,
+    protocol: 1, revision: rev, snapshotId: `snapshot-${pid}-${rev}`,
     objects: hashes.map((h) => ({ kind: 'text', hash: h, bytes: 64 })),
     assets: [],
+  }))
+  fs.writeFileSync(path.join(root, 'projects', pid, 'state.json'), JSON.stringify({
+    protocol: 1, revision: rev, epoch: 1, snapshotId: `snapshot-${pid}-${rev}`, tombs: [], ops: {},
   }))
 }
 
 /** 写索引（deletedAt 用相对 NOW 的偏移） */
 function putIndex(root, projects) {
   fs.writeFileSync(path.join(root, 'index.json'), JSON.stringify({ version: 1, projects }))
+  for (const [pid, value] of Object.entries(projects)) {
+    const stateFile = path.join(root, 'projects', pid, 'state.json')
+    if (value.deletedAt && fs.existsSync(stateFile)) {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
+      state.deletedAt = value.deletedAt
+      fs.writeFileSync(stateFile, JSON.stringify(state))
+      const manifestFile = path.join(root, 'projects', pid, 'manifests', `${state.revision}.json`)
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
+      manifest.deleted = true
+      fs.writeFileSync(manifestFile, JSON.stringify(manifest))
+    }
+  }
 }
 
 function readIndexRaw(root) {
@@ -91,7 +106,8 @@ putIndex(A, {
 // B 的对象：一个没人引用的老对象 —— 必须按 B 自己的 manifest 判活（B 没有 manifest）
 const hB = H('B-orphan-old')
 putObject(B, hB, 3 * DAY)
-// B 故意不放 index.json：清理回收站那步要能安静跳过，且**不影响**对象回收
+// B 没有项目但有对象；空索引证明这是已初始化账号。
+putIndex(B, {})
 
 // ---------------- ① 空目录 / 无账号 ----------------
 const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'maint332-empty-'))
@@ -133,7 +149,7 @@ ok('④ 统计里的回收数量与释放字节对得上（2 个 × 64B）',
   r.objectsRemoved === 2 && r.freedBytes === 128,
   `removed=${r.objectsRemoved} freed=${r.freedBytes}`)
 
-ok('⑤ B 账号没有 index.json 也不报错，对象按 B 自己的 manifest 判活（无引用 ⇒ 回收）',
+ok('⑤ B 账号有空索引，对象按 B 自己的 manifest 判活（无引用 ⇒ 回收）',
   r.errors.length === 0 && !fs.existsSync(path.join(B, 'objects', hB)),
   JSON.stringify(r.errors))
 
@@ -144,11 +160,12 @@ const hC = H('C-orphan-old')
 putObject(C, hC, 2 * DAY)
 // 再造一个健康账号 D，确认它照样被清理
 const D = makeAccount(v2, 'u_testd')
+putIndex(D, {})
 const hD = H('D-orphan-old')
 putObject(D, hD, 2 * DAY)
 const r2 = runMaintenanceOnce({ v2Root: v2, now: NOW })
 ok('⑥ 坏账号不拖垮整轮：健康账号的对象照样回收',
-  !fs.existsSync(path.join(D, 'objects', hD)), 'D 的对象没被回收')
+  !fs.existsSync(path.join(D, 'objects', hD)) && fs.existsSync(path.join(C, 'objects', hC)) && r2.errors.some(e => e.account === 'u_testc'), 'D 的对象没被回收或 C 的对象未保护')
 
 // ---------------- ⑦ 调度器：首轮延迟 / 不重入 / stop ----------------
 const logs = []

@@ -18,6 +18,8 @@
 //    跨账号扫会把别人的对象算成"没人引用"。
 import fs from 'node:fs'
 import path from 'node:path'
+import { readIndex, writeIndex } from './v2Index.mjs'
+import { acquireProjectLock, getProjectState } from './projectStore.mjs'
 
 /** 对象的宽限期：必须远大于"上传完但还没提交"的窗口 */
 export const GC_GRACE_MS = 24 * 60 * 60 * 1000
@@ -46,18 +48,29 @@ export function collectReferenced(accountRoot) {
   const refs = new Set()
   const root = projectsDir(accountRoot)
   let pids = []
-  try { pids = fs.readdirSync(root) } catch { return refs }
+  try { pids = fs.readdirSync(root) } catch (error) {
+    if (error?.code === 'ENOENT') return refs
+    throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+  }
   for (const pid of pids) {
     const mdir = path.join(root, pid, 'manifests')
     let files = []
-    try { files = fs.readdirSync(mdir) } catch { continue }
+    try { files = fs.readdirSync(mdir) } catch {
+      throw Object.assign(new Error('PROJECT_DATA_READ_FAILED'), { code: 'PROJECT_DATA_READ_FAILED' })
+    }
     for (const f of files) {
       if (!/^\d+\.json$/.test(f)) continue
       try {
         const m = JSON.parse(fs.readFileSync(path.join(mdir, f), 'utf8'))
+        if (!m || typeof m !== 'object' || Array.isArray(m) ||
+          (m.objects != null && !Array.isArray(m.objects)) || (m.assets != null && !Array.isArray(m.assets))) throw new Error('invalid manifest')
+        if ([...(m.objects || []), ...(m.assets || [])].some(o => !o || typeof o.hash !== 'string' || !/^[0-9a-f]{64}$/.test(o.hash))) throw new Error('invalid reference')
         for (const o of m.objects || []) if (o && typeof o.hash === 'string') refs.add(o.hash)
         for (const a of m.assets || []) if (a && typeof a.hash === 'string') refs.add(a.hash)
-      } catch { /* 半写的 manifest 跳过；它引用的对象这轮不保护，但还有宽限期兜底 */ }
+      } catch {
+        // 不能证明引用完整时整轮停止；宽限期不能保护已存在很久的对象。
+        throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+      }
     }
   }
   return refs
@@ -75,6 +88,14 @@ export function gcObjects(accountRoot, opts = {}) {
   const graceMs = opts.graceMs ?? GC_GRACE_MS
   const dryRun = !!opts.dryRun
 
+  // 索引或当前版本缺失时无法证明引用集合完整，不做任何删除。
+  const index = readIndex(path.dirname(path.dirname(accountRoot)), path.basename(accountRoot))
+  for (const [pid, entry] of Object.entries(index.projects)) {
+    if (Number(entry?.revision) > 0) {
+      const state = getProjectState(accountRoot, pid, path.basename(accountRoot))
+      if (state.revision < 1) throw Object.assign(new Error('PROJECT_DATA_MISSING'), { code: 'PROJECT_DATA_MISSING' })
+    }
+  }
   const refs = collectReferenced(accountRoot)
   const files = listObjectFiles(accountRoot)
   const dir = objectsDir(accountRoot)
@@ -108,9 +129,9 @@ export function purgeDeletedProjects(accountRoot, opts = {}) {
   const now = opts.now ?? Date.now()
   const ttlMs = opts.ttlMs ?? TRASH_TTL_MS
   const dryRun = !!opts.dryRun
-  const idxFile = path.join(accountRoot, 'index.json')
-  let idx
-  try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')) } catch { return { purged: [], kept: 0, dryRun } }
+  const v2Root = path.dirname(path.dirname(accountRoot))
+  const accountId = path.basename(accountRoot)
+  const idx = readIndex(v2Root, accountId)
   const projects = idx.projects || {}
   const purged = []
   let kept = 0
@@ -118,21 +139,40 @@ export function purgeDeletedProjects(accountRoot, opts = {}) {
     const deletedAt = Number(p?.deletedAt) || 0
     if (!deletedAt) continue
     if (now - deletedAt < ttlMs) { kept++; continue }
-    purged.push(pid)
-    if (dryRun) continue
-    // 删项目目录（state + manifests + locks），失败就留着下次再清
+    if (!/^[A-Za-z0-9_-]+$/.test(pid)) throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+    const lock = acquireProjectLock(accountRoot, pid)
     try {
-      fs.rmSync(path.join(projectsDir(accountRoot), pid), { recursive: true, force: true })
-      delete projects[pid]
-    } catch { purged.pop() }
-  }
-  if (!dryRun && purged.length) {
-    idx.projects = projects
-    const tmp = `${idxFile}.tmp-${process.pid}-${Date.now()}`
-    try {
-      fs.writeFileSync(tmp, JSON.stringify(idx))
-      fs.renameSync(tmp, idxFile)
-    } catch { try { fs.unlinkSync(tmp) } catch { /* ignore */ } }
+      // 重新读取索引和状态，恢复或更新后的作品不能被旧列表删除。
+      const latest = readIndex(v2Root, accountId)
+      const entry = latest.projects[pid]
+      const state = getProjectState(accountRoot, pid, accountId)
+      if (!entry || !state.deleted || !state.deletedAt || now - state.deletedAt < ttlMs ||
+          Number(entry.revision) !== state.revision || !entry.deletedAt || now - Number(entry.deletedAt) < ttlMs ||
+          (entry.snapshotId && entry.snapshotId !== state.snapshotId)) {
+        throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+      }
+      if (!dryRun) {
+        // 先移到同账号隔离区；索引写失败时恢复目录，避免先删数据再丢失索引。
+        const source = path.join(projectsDir(accountRoot), pid)
+        const pendingRoot = path.join(accountRoot, 'purge-pending')
+        const pending = path.join(pendingRoot, pid)
+        fs.mkdirSync(pendingRoot, { recursive: true })
+        if (fs.existsSync(pending)) throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+        fs.renameSync(source, pending)
+        try {
+          delete latest.projects[pid]
+          writeIndex(v2Root, accountId, latest)
+        } catch (error) {
+          try { fs.renameSync(pending, source) } catch {
+            throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+          }
+          throw error
+        }
+        // 清理失败保留隔离目录，供人工检查；索引已提交，不应误报回收未发生。
+        try { fs.rmSync(pending, { recursive: true, force: true }) } catch { /* 保留证据 */ }
+      }
+      purged.push(pid)
+    } finally { lock.release() }
   }
   return { purged, kept, dryRun }
 }

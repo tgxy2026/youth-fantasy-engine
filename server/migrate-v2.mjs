@@ -26,7 +26,7 @@ import { DATA_DIR } from './lib/config.mjs'
 import { findByName, listUsers } from './lib/users.mjs'
 import { readUserData } from './lib/userdata.mjs'
 import { stageObject, commitProjectSnapshot, PROTOCOL_VERSION } from './lib/projectStore.mjs'
-import { readIndex, setProjectMeta } from './lib/v2Index.mjs'
+import { readIndex, setProjectMeta, initializeIndex } from './lib/v2Index.mjs'
 import { blockLegacyWrites } from './lib/legacyGate.mjs'
 
 const V2_ROOT = join(DATA_DIR, 'v2')
@@ -190,6 +190,7 @@ async function migrateUser(user, { dryRun }) {
 
   const { projects, out } = splitByProject(stores)
   const idx = readIndex(V2_ROOT, user.id)
+  if (!dryRun && projects.length) initializeIndex(V2_ROOT, user.id)
   const results = []
   let failed = 0
 

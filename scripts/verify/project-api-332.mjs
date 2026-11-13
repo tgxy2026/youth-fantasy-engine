@@ -1,7 +1,7 @@
 // P2-1 · 项目版本服务 HTTP 端到端自检（真服务 + 临时数据目录，不碰真实账号）
 // 用法：node scripts/verify/project-api-332.mjs
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, unlinkSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -191,6 +191,39 @@ try {
   ok('他人列表看不到本项目', otherList.status === 200 && !(otherList.json.projects || []).some((x) => x.cloudProjectId === pid), otherList.json)
   ok('他人访问本项目被 404', otherGet.status === 404, otherGet.status)
   ok('他人无法按哈希取本项目对象', otherObj.status === 404, otherObj.status)
+
+  // 故障注入仅修改上面的隔离夹具，验证 HTTP 失败关闭和索引不被覆盖。
+  const accounts = path.join(dataDir, 'v2', 'accounts')
+  const owner = readdirSync(accounts).map(id => path.join(accounts, id)).find(dir => existsSync(path.join(dir, 'projects', pid, 'state.json')))
+  if (!owner) throw new Error('未找到隔离项目')
+  const stateFile = path.join(owner, 'projects', pid, 'state.json')
+  const indexFile = path.join(owner, 'index.json')
+  const originalState = readFileSync(stateFile, 'utf8')
+  const originalIndex = readFileSync(indexFile, 'utf8')
+  writeFileSync(stateFile, '{private-marker')
+  const broken = await web.req('GET', `/api/v2/projects/${pid}`)
+  const brokenWrite = await web.req('DELETE', `/api/v2/projects/${pid}?opId=broken`)
+  ok('损坏状态的读取和写入返回安全错误并保留数据', broken.status === 503 && broken.json?.code === 'PROJECT_DATA_INVALID' && brokenWrite.status === 503 && readFileSync(stateFile, 'utf8') === '{private-marker' && readFileSync(indexFile, 'utf8') === originalIndex && !JSON.stringify(broken.json).includes('private-marker'), broken.json)
+  unlinkSync(stateFile)
+  const missingState = await web.req('GET', `/api/v2/projects/${pid}`)
+  ok('索引已有版本但状态缺失时拒绝', missingState.status === 503 && missingState.json?.code === 'PROJECT_DATA_MISSING', missingState.json)
+  writeFileSync(stateFile, originalState)
+  writeFileSync(indexFile, '{private-index')
+  const badIndex = await web.req('POST', '/api/v2/projects', { name: 'new' })
+  ok('损坏索引不被新建项目覆盖', badIndex.status === 503 && badIndex.json?.code === 'PROJECT_DATA_INVALID' && readFileSync(indexFile, 'utf8') === '{private-index' && !JSON.stringify(badIndex.json).includes('private-index'), badIndex.json)
+  writeFileSync(indexFile, originalIndex)
+  const recovered = await web.req('GET', `/api/v2/projects/${pid}`)
+  ok('隔离文件恢复后可重新读取', recovered.status === 200 && recovered.json?.revision === 2, recovered.json)
+  unlinkSync(indexFile)
+  const missingIndex = await web.req('POST', '/api/v2/projects', { name: 'new' })
+  ok('已有项目时缺失索引不会重建空索引', missingIndex.status === 503 && missingIndex.json?.code === 'PROJECT_DATA_MISSING' && !existsSync(indexFile), missingIndex.json)
+  writeFileSync(indexFile, originalIndex)
+  const currentManifest = path.join(owner, 'projects', pid, 'manifests', '2.json')
+  const manifestBefore = readFileSync(currentManifest, 'utf8')
+  unlinkSync(currentManifest)
+  const missingCurrent = await web.req('POST', `/api/v2/projects/${pid}/restore?opId=missing-current`)
+  ok('当前版本文件缺失时恢复被拒且状态不变', missingCurrent.status === 503 && missingCurrent.json?.code === 'PROJECT_DATA_MISSING' && readFileSync(stateFile, 'utf8') === originalState, missingCurrent.json)
+  writeFileSync(currentManifest, manifestBefore)
 } catch (e) {
   fails.push({ name: '未预期异常', extra: e instanceof Error ? e.message : String(e) })
   console.log('FAIL 未预期异常 — ' + (e instanceof Error ? e.message : String(e)))
