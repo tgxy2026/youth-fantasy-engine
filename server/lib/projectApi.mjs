@@ -25,6 +25,18 @@ import {
 const PID_RE = /^[A-Za-z0-9_-]{6,40}$/
 const HASH_RE = /^[0-9a-f]{64}$/
 
+function assertIndexState(root, pid, accountId, entry) {
+  if (!PID_RE.test(pid) || !entry || typeof entry !== 'object' || Array.isArray(entry) ||
+      !Number.isSafeInteger(entry.revision) || entry.revision < 0) {
+    throw Object.assign(new Error('PROJECT_DATA_INVALID'), { code: 'PROJECT_DATA_INVALID' })
+  }
+  const state = getProjectState(root, pid, accountId)
+  if (state.revision !== entry.revision || state.deleted !== Boolean(entry.deletedAt) ||
+      (!state.deleted && state.revision > 0 && entry.snapshotId && entry.snapshotId !== state.snapshotId)) {
+    throw Object.assign(new Error('PROJECT_DATA_RECOVERY_REQUIRED'), { code: 'PROJECT_DATA_RECOVERY_REQUIRED' })
+  }
+}
+
 
 /**
  * 处理 `/api/v2/*`。返回 true 表示已处理；false 表示不是本层的路由。
@@ -66,6 +78,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
   // ---- GET /api/v2/projects：列出该账号的云端作品 ----
   if (seg.length === 1 && seg[0] === 'projects' && req.method === 'GET') {
     const idx = readIndex(v2Root, accountId)
+    for (const [pid, entry] of Object.entries(idx.projects)) assertIndexState(storeRoot, pid, accountId, entry)
     const list = Object.entries(idx.projects || {}).map(([pid, v]) => ({
       cloudProjectId: pid, name: v.name || '', revision: v.revision || 0,
       snapshotId: v.snapshotId || '', updatedAt: v.updatedAt || 0, objectBytes: v.objectBytes || 0,
@@ -106,6 +119,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
       throw Object.assign(new Error(code), { code })
     }
   }
+  assertIndexState(storeRoot, pid, accountId, idx.projects[pid])
 
   // ---- GET /api/v2/projects/:pid —— 状态（含墓碑数量） ----
   if (seg.length === 2 && req.method === 'GET') {

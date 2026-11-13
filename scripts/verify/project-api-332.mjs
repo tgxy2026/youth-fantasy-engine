@@ -219,6 +219,13 @@ try {
   const afterConcurrent = await web.req('GET', '/api/v2/projects')
   ok('真实并发请求竞争时拒绝后到写入，首个写入完整', slowStatus === 200 && competing.status === 503 && competing.json?.code === 'PROJECT_ACCOUNT_BUSY' && afterConcurrent.status === 200 && (afterConcurrent.json?.projects || []).some(x => x.name === '慢请求'), { slowStatus, competing: competing.json })
   originalIndex = readFileSync(indexFile, 'utf8')
+  const staleIndex = JSON.parse(originalIndex)
+  staleIndex.projects[pid].revision = 1
+  writeFileSync(indexFile, JSON.stringify(staleIndex))
+  const inconsistentList = await web.req('GET', '/api/v2/projects')
+  const inconsistentWrite = await web.req('POST', `/api/v2/projects/${pid}/restore?opId=stale-index`)
+  ok('索引落后时列表和写入都拒绝且不修改项目', inconsistentList.status === 503 && inconsistentList.json?.code === 'PROJECT_DATA_RECOVERY_REQUIRED' && inconsistentWrite.status === 503 && readFileSync(stateFile, 'utf8') === originalState, inconsistentList.json)
+  writeFileSync(indexFile, originalIndex)
   writeFileSync(stateFile, '{private-marker')
   const broken = await web.req('GET', `/api/v2/projects/${pid}`)
   const brokenWrite = await web.req('DELETE', `/api/v2/projects/${pid}?opId=broken`)
