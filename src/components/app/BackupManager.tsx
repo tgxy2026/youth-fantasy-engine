@@ -4,7 +4,7 @@ import { encryptJSON, decryptJSON, isEncrypted } from '@/lib/storage/crypto'
 import { Trash2, RotateCcw, Clock, CalendarDays, ShieldCheck, Upload, FileDown, Lock, AlertTriangle, ChevronDown, BookMarked } from 'lucide-react'
 import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
-import { WEB } from '@/lib/app/platform'
+import { WEB, WEB_CLOUD } from '@/lib/app/platform'
 import { downloadBlob } from '@/lib/storage/zip'
 import { markExported } from '@/lib/sync/backupReminder'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -430,7 +430,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
       >
         <div className="space-y-5">
           <div className="text-11 text-ink-400 leading-relaxed bg-ink-850 border border-ink-700 rounded-lg px-3 py-2">
-            {WEB ? (
+            {WEB_CLOUD ? (
               <>
                 {/* WEB-12：网页版的备份在云端，**计入账号配额** —— 原文案说「只存在这台电脑」
                     在网页版是错的，且用户往往因此不知道配额是被备份吃掉的。 */}
@@ -444,10 +444,10 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
               </>
             ) : (
               <>
-                打开项目时每 5 分钟自动滚动备份（最多 {db.maxAutoBackups()} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.maxDailyBackups()} 份）；
+                打开项目时每 {WEB ? 15 : 5} 分钟自动滚动备份（最多 {db.maxAutoBackups()} 份）；每天首次打开额外生成 1 份每日备份（最多 {db.maxDailyBackups()} 份）；
                 <span className="text-ink-200">手动「立即备份」不设上限，不会被自动删除</span>。删除项目不会删除这些备份。
                 <br />
-                这些备份都只存在这台电脑的软件数据文件里。想多一层保险，可用每行的 <span className="text-ink-200">↑ 导出</span> 把某一份存成独立文件，放进云盘或移动硬盘。
+                {WEB ? '备份保存在当前浏览器的作品存储区。' : '备份保存在当前设备的软件数据中。'} 可用每行的 <span className="text-ink-200">↑ 导出</span> 将所选版本存为独立文件。
               </>
             )}
           </div>

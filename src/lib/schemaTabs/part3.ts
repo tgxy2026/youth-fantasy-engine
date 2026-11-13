@@ -190,7 +190,7 @@ export const TABS_PART3: TabDef[] = [
   // 而模型配置、额度、联网检索是**配一次就不动的全局设置** —— 两种东西混在一页，两边都不好找。
   // 位置：工作面板组内、写作面板之下、使用指南之上（与数组顺序一致，Sidebar 按序渲染）。
   id: 'model-settings', name: '模型设置', group: '工作面板', type: 'model-settings',
-  description: '模型配置、正文写作 AI 额度、联网检索，以及全部 AI 提示词的前台设置。',
+  description: '选择当前运行模式，管理模型、用途路由、正文资料额度、联网检索及可编辑的 AI 提示词。',
   modules: [], columns: [],
 },
 
@@ -215,7 +215,7 @@ export const TABS_PART3: TabDef[] = [
   },
   {
     id: 'bookbreak', name: '一键拆书', group: '灵感工具', type: 'bookbreak',
-    description: '粘贴或导入整本小说原文，AI 逐章抽出人物 / 势力 / 地点 / 种族 / 物品 / 术语，整理成草稿供你勾选后写入项目设定表。原文只发给你当前选定的模型：本地模型不出本机，云端会上传到该服务商。',
+    description: '粘贴或导入小说原文，AI 逐章抽出人物、势力、地点等设定。确认草稿后写入项目设定表。原文会发送到所选模型的接口地址。',
   },
   {
     id: 'creative-writing', name: '创意写作', group: '灵感工具', type: 'creative-writing',

@@ -3,6 +3,7 @@ import { FileUp } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import * as db from '@/lib/db'
 import { isDemoProjectName } from '@/lib/constants'
+import { WEB } from '@/lib/app/platform'
 import { isExportOverdue, isDismissExpired, markDismissed, shouldRemind, REMIND_AFTER_DAYS } from '@/lib/sync/backupReminder'
 
 // #031 导出备份提醒：定期提醒用户把数据导出成外部文件，别让稿子只剩「同一个容器里」的那一份。
@@ -140,9 +141,8 @@ function BackupNotice({
         <div className={`basis-full space-y-1.5 border-t border-amber/20 pt-2 text-ink-400 ${hub ? 'mt-1.5 text-11' : 'mt-2 text-10'}`}>
           <p>
             <strong className="text-ink-200">自动备份 ≠ 备份。</strong>
-            软件会自动生成内部备份 —— 每 5 分钟一份、每天首次打开一份（各最多保留 30 份），但它和你的数据一起存在
-            <strong className="text-ink-200">同一处存储</strong>里。误删数据文件、重装系统、
-            卸载时勾选删除用户数据 —— 这 30 份会跟着一起消失。
+            打开项目后每 {WEB ? 15 : 5} 分钟生成滚动备份（最多 {db.maxAutoBackups()} 份），每天首次打开还会生成每日备份（最多 {db.maxDailyBackups()} 份）。
+            这些备份与作品共用存储区；存储区丢失时，内部备份也可能无法取回。
           </p>
           <p>
             自动备份只防「改坏了想回退」，防不了「整个容器没了」；后者只能靠导出到外部文件

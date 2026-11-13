@@ -175,6 +175,18 @@ async function run() {
   console.log('--- 6. 切换归属与代次 ---')
   reset()
   let current = true
+  await assert.rejects(
+    aiChapterSummary(body, { acpText: acpReportText({
+      task: 'summary', generation: 'gen-1', agentName: '假 Agent',
+      assertCurrent: () => { if (!current) throw new Error('草稿已变化') },
+      ask: async () => { current = false; return true },
+    }) }),
+    /草稿已变化/,
+  )
+  ok('确认弹窗期间草稿变化后拒绝发送', requests.length === 0)
+
+  reset()
+  current = true
   generateImpl = async () => { current = false; return { ok: true, text: report } }
   await assert.rejects(
     aiChapterSummary(body, { acpText: acpReportText({ task: 'summary', generation: 'gen-1', agentName: '假 Agent', assertCurrent: () => { if (!current) throw new Error('项目或存储空间已切换') }, ask: allow }) }),

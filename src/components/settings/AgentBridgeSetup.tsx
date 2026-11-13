@@ -209,11 +209,11 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
     <summary className="cursor-pointer text-13 font-medium text-ink-100">Agent 写入连接 <span className="ml-1 text-11 font-normal text-ink-500">可创建章节、设定与正文</span></summary>
     <div className="mt-2.5 space-y-4">
       <p className="max-w-3xl text-11 text-ink-400 leading-relaxed">
-        <EmphasisText text="开启后，外部 Agent 可通过 MCP 工具直接创建设定卡、创建章节、追加 / 覆盖正文。写入会进入**正在运行的引擎**（沿用它的保存、快照与索引），**不会直接改数据文件**。默认只读；只有在这里**勾选的项目与动作**才会被接受。**请只连接可信客户端**。" />
+        <EmphasisText text="开启后，外部 Agent 可通过 MCP 工具直接创建设定卡、创建章节、追加 / 覆盖正文。写入会进入**正在运行的引擎**（沿用它的保存、快照与索引），**不会直接改数据文件**。引擎只接受这里**勾选并保存的项目与动作**。**请只连接可信客户端**。" />
       </p>
       {unavailable && <p className="text-11 text-amber">网页版没有本机宿主进程，无法使用 Agent 写入连接。</p>}
       {!unavailable && status?.connectionMode?.phase === 'stable' && status.connectionMode.mode !== 'agent' && (
-        <p className="text-11 text-amber">当前为 API 模式：开启 Agent 连接会被拒绝。请先在页签切换到「MCP 模式」。</p>
+        <p className="text-11 text-amber">请先切换到 MCP 模式，再开启 Agent 写入连接。</p>
       )}
       {!unavailable && status && !status.running && <p className="text-11 text-amber">{status.lastError || 'Agent 宿主尚未运行，请确认引擎已启动并稍候重试。'}</p>}
       {!unavailable && <div className="grid gap-2 sm:grid-cols-3">
@@ -233,14 +233,14 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
       <label className="flex items-start justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
         <span>
           <span className="block text-12 text-ink-100">开启 Agent 写入连接</span>
-          <span className="mt-0.5 block text-11 text-ink-500">关闭后此连接不可用；如需只读访问，可另行配置只读桥。</span>
+          <span className="mt-0.5 block text-11 text-ink-500">{DESKTOP ? '桌面实时只读桥也依赖此开关和项目授权。' : '可在「只读桥配置」中单独配置便携文件读取。'}</span>
         </span>
         <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={enabled} onChange={e => { dirtyRef.current = true; setDirty(true); setEnabled(e.target.checked) }} />
       </label>
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-12 text-ink-100">授权项目与动作</p>
-          <span className="text-11 text-ink-500">未勾选 = 只读</span>
+          <span className="text-11 text-ink-500">勾选所需动作后保存</span>
         </div>
         <p className="text-11 text-ink-500"><EmphasisText text="授权**按项目隔离**：这里只显示**当前打开项目**的授权；其它项目的既有授权**保留不变**，切回对应项目后可见。" /></p>
         {projects.length === 0 && <p className="rounded-lg border border-dashed border-ink-700 px-3 py-3 text-11 text-ink-500">还没有项目。请先在引擎中新建 / 打开一个项目。</p>}
@@ -253,14 +253,13 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
             <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-3 py-2">
               <div className="min-w-0">
                 <p className="truncate text-12 text-ink-100">{project.name}<span className="ml-1.5 text-11 font-normal text-ink-500">当前项目</span></p>
-                <p className="mt-0.5 text-11 text-ink-500">{granted.length ? `已授权 ${granted.length} / ${AGENT_ACTIONS.length} 项` : '未授权 · 只读'}</p>
+                <p className="mt-0.5 text-11 text-ink-500">{granted.length ? `已授权 ${granted.length} / ${AGENT_ACTIONS.length} 项` : '尚未授权动作'}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <label className="flex items-center gap-1.5 text-11 text-ink-300">
                   <input type="checkbox" checked={allOn} ref={el => { if (el) el.indeterminate = granted.length > 0 && !allOn }} onChange={() => toggleAll(project.id)} />
                   全选以下所有内容
                 </label>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-11 ${granted.length ? 'bg-amber/10 text-amber' : 'bg-ink-800 text-ink-400'}`}>{granted.length ? '可写入' : '只读'}</span>
               </div>
             </div>
             <div className="space-y-2.5 px-3 py-2.5">

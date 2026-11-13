@@ -65,7 +65,9 @@ try {
   ]) {
     assert.equal(await generate(prompt), '合成作品')
   }
-  await assert.rejects(generate('tool'), /协议异常/)
+  for (const request of ['tool', 'terminal', 'mcp', 'permission', 'tool-update']) {
+    await assert.rejects(generate(request), /协议异常/)
+  }
   await assert.rejects(generate('invalid'), /协议异常/)
   const late = []
   let arrived
@@ -116,8 +118,12 @@ try {
   await service.close()
 
   let canConfirmExit = false
+  let cleaned = false
   const failingAdapter = {
     ...adapters[0],
+    async prepareLaunch() {
+      return { async cleanup() { cleaned = true } }
+    },
     async launch(context) {
       const launched = await adapters[0].launch(context)
       return { ...launched, async stop() {
@@ -133,8 +139,10 @@ try {
   assert.equal((await service.status()).phase, 'blocked')
   assert.equal((await service.status()).active.acp, 1)
   await assert.rejects(service.recover({ confirm: true }), /exit unconfirmed/)
+  assert.equal(cleaned, false)
   canConfirmExit = true
   assert.equal((await service.recover({ confirm: true })).mode, 'api')
+  assert.equal(cleaned, true)
   await service.close()
 
   const faultFile = path.join(root, 'fault.json')

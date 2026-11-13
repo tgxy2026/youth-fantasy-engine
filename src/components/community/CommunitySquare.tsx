@@ -288,7 +288,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
           <h2 className="flex items-center gap-2 text-18 font-semibold text-ink-100">
             投稿广场
             <HelpPopover title="投稿广场怎么用" side="right" width="23rem" size={14}>
-              {'这里可以阅读和分享故事片段。登录账号后可投稿、点赞、点踩和评论；投稿需管理员审核后公开。\n\n· 在「投稿」填写纯文字，正文最多 10000 个字符（包含空格和换行）；在「我的」查看审核状态、撤回或管理投稿。\n· 在「设置」选择社区昵称或匿名展示，也可自愿开启码字排行。排行只上传含标点的正文净增量，不上传正文。\n· 社区账号不要求云同步资格；便携版暂不支持投稿广场。更详细的说明可在使用手册中搜索「投稿广场」。'}
+              {'这里可以阅读和分享故事片段。登录账号后可投稿、点赞、点踩和评论；投稿需管理员审核后公开。\n\n· 在「投稿」填写纯文字，正文最多 10000 个字符（包含空格和换行）；在「我的」查看审核状态、撤回或管理投稿。\n· 在「设置」填写社区昵称，分别选择投稿、评论和排行的展示方式。排行自愿开启，只上传含标点的正文净增量；周榜和月榜累计已结束日期的正净增量。\n· 社区账号不要求云同步资格；便携版暂不支持投稿广场。更详细的说明可在使用手册中搜索「投稿广场」。'}
             </HelpPopover>
             {square && !square.open && <span className="rounded-full border border-amber/40 px-2 py-0.5 text-11 font-normal text-amber">暂停开放</span>}
           </h2>

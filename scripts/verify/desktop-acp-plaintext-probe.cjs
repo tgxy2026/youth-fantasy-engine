@@ -4,7 +4,7 @@
 // scripts/agent-host/antigravity-adapter.mjs 换成启动合成 Agent 的适配器；
 // 通过 Playwright 启动真实 Electron，经 preload 暴露的 electronAgentHost /
 // electronAcp 调用主进程，验证：
-//   · 五个新增纯文本任务标识被 acp:generate 白名单接受并完成流式返回；
+//   · 七个纯文本任务标识被 acp:generate 白名单接受并完成流式返回；
 //   · 未知任务标识被拒绝；
 //   · 取消能命中 acp:cancel，取消结果不可用。
 // 不打开真实 ACP 连接、不写主人书库、不发网络模型请求。
@@ -16,7 +16,7 @@ const { _electron } = require('playwright')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const FAKE_AGENT = path.join(ROOT, 'tests', 'fixtures', 'fake-acp-agent.mjs')
-const TASKS = ['diagnosis', 'pleasure', 'opening', 'briefing', 'summary']
+const TASKS = ['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary']
 let pass = 0, fail = 0
 const ok = (name, condition, detail = '') => {
   if (condition) { pass++; console.log('PASS', name) }

@@ -29,7 +29,7 @@ export default function JieWenJiBrief({ m }: { m: JieWenJiModel }) {
 
             {brief.error && <div className="text-11 text-danger px-1">{brief.error}</div>}
             {brief.data && (
-              <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
+              <div data-jiewenji-report="briefing" className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(brief.data.report)}
               </div>
             )}

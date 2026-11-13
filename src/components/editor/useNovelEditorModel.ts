@@ -831,6 +831,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
       projectId: db.getCurrentProjectId(),
       chapterId: activeRef.current?.id ?? null,
       text: draftRef.current,
+      summary: activeRef.current?.summary,
     }),
   })
 

@@ -149,7 +149,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             {plea.error && <div className="text-11 text-danger px-1">{plea.error}</div>}
             {plea.data && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
+              <div data-jiewenji-report="pleasure" className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(plea.data.report)}
               </div>
             )}
@@ -166,7 +166,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             {open.error && <div className="text-11 text-danger px-1">{open.error}</div>}
             {open.data && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
+              <div data-jiewenji-report="opening" className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5">
                 {renderReport(open.data.report)}
               </div>
             )}

@@ -71,6 +71,15 @@ export function useJieWenJiModel(props: Props) {
    *    ⚠️ 中途上报进度必须带上 `ch`，否则会把章节戳冲掉（见 aiTaskCenter 的「章节归属」段）。
    */
   const ch = focusChapterId ?? ''
+  const reportDraft = { ch, content, openingText, summary }
+  const reportDraftRef = useRef(reportDraft)
+  reportDraftRef.current = reportDraft
+  const assertReportDraft = (source: 'content' | 'openingText' | 'summary') => {
+    const live = reportDraftRef.current
+    if (live.ch !== ch || (live[source] ?? live.content) !== (reportDraft[source] ?? content)) {
+      throw new Error('章节或生成所用资料已变化，请重新发起。')
+    }
+  }
   // 右侧 Q 版精灵开关（全局，localStorage 持久化 + 事件通知 App）
   const [spriteOn, setSpriteOn] = useState(() => localStorage.getItem(LS_SPRITE_ENABLED) !== '0')
   const toggleSprite = () => {
@@ -109,7 +118,10 @@ export function useJieWenJiModel(props: Props) {
       job.progress({ ch })
       const owner = captureOwnedOperation(db.getCurrentProjectId())
       const acpText = generation
-        ? acpReportText({ task: 'diagnosis', generation, agentName, brief, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        ? acpReportText({ task: 'diagnosis', generation, agentName, brief, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft(brief ? 'summary' : 'content')
+        }, ask: confirmDialog })
         : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-diagnosis'), focusChapterId })
       owner.assertCurrent()
@@ -790,7 +802,10 @@ export function useJieWenJiModel(props: Props) {
       job.progress({ ch })
       const owner = captureOwnedOperation(db.getCurrentProjectId())
       const acpText = generation
-        ? acpReportText({ task: 'pleasure', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        ? acpReportText({ task: 'pleasure', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
         : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-pleasure'), focusChapterId })
       owner.assertCurrent()
@@ -807,7 +822,10 @@ export function useJieWenJiModel(props: Props) {
       job.progress({ ch })
       const owner = captureOwnedOperation(db.getCurrentProjectId())
       const acpText = generation
-        ? acpReportText({ task: 'opening', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        ? acpReportText({ task: 'opening', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('openingText')
+        }, ask: confirmDialog })
         : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-opening'), focusChapterId })
       owner.assertCurrent()
@@ -829,7 +847,10 @@ export function useJieWenJiModel(props: Props) {
       job.progress({ ch })
       const owner = captureOwnedOperation(db.getCurrentProjectId())
       const acpText = generation
-        ? acpReportText({ task: 'briefing', generation, agentName, signal: job.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog })
+        ? acpReportText({ task: 'briefing', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
         : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-brief'), focusChapterId })
       owner.assertCurrent()

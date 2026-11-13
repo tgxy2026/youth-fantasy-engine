@@ -15,6 +15,7 @@
 import { Info } from 'lucide-react'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DEPENDENT_GROUPS } from '@/lib/ai/aiScope'
+import { LOCAL_MODEL_DISABLED } from '@/lib/aiCore/localModelAccess'
 
 export default function AIDisabledNotice() {
   const { ready } = useAIReady()
@@ -24,11 +25,11 @@ export default function AIDisabledNotice() {
     <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-4">
       <div className="flex items-center gap-1.5">
         <Info size={13} className="text-ink-400" />
-        <h2 className="text-12 font-medium text-ink-200">当前还没有可用的 AI 模型</h2>
+        <h2 className="text-12 font-medium text-ink-200">当前没有可用的 API 模型</h2>
       </div>
       <p className="mt-1.5 text-11 text-ink-400 leading-relaxed">
-        在下方配好一个模型（本地或联网都行），下面这些入口就会自动亮起来 ——
-        <span className="text-ink-300">其余功能一律不受影响，正文、设定、大纲、角色卡都照常手动写</span>。
+        使用下列 API 功能时，请先在「模型设置」选择 API 模式并配置{LOCAL_MODEL_DISABLED ? '联网模型' : '本地或联网模型'}。
+        <span className="text-ink-300">正文、设定、大纲和角色卡可照常手动编辑。</span>
       </p>
       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
         {AI_DEPENDENT_GROUPS.map(g => (

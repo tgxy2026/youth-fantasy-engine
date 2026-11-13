@@ -95,9 +95,9 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'jiewenji-modes',
-    revision: 1,
+    revision: 2,
     title: '颉文姬：六个模式分别干什么',
-    summary: '诊室、编辑、审读、简报、补登、整理 —— 各管一段，别指望一个按钮全包。',
+    summary: '查看六个面板的用途、运行条件和结果去向。',
     aliases: ['AI 编辑', '颉文姬', '诊室', '补登', '审读'],
     keywords: ['颉文姬', '诊室', '编辑', '审读', '简报', '补登', '整理', 'AI'],
     group: '工作面板与正文',
@@ -105,14 +105,14 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
     featureIds: ['clinic', 'edit', 'review', 'brief', 'ledger', 'post'],
     availability: 'all',
     aiRequirement: 'model',
-    prerequisites: ['已配置可用模型'],
+    prerequisites: ['API 模式下配置可用模型，或在支持的桌面构建中连接 ACP Agent'],
     sections: [
       {
         id: 'modes',
         heading: '六个模式',
         body: [
           '· 诊室：AI 校对（文字层 / 逻辑层）与综合诊断。校对结果可定位原文、替换或复制。',
-          '· 编辑：选中一段正文，让 AI 按指令改稿并生成建议，采纳后才写进正文。',
+          '· 编辑：选区润色或从章末续写。确认采纳后写入带标记的建议段。续写期间若正文变化，结果可转入候选审阅。',
           '· 审读：章节编辑意见、OOC 人设检查、续写方向、爽点毒点、黄金三章。',
           '· 简报：开写前的本章写作简报，把设定与上一章结尾串成提示。',
           '· 补登：抽出本章新出现的设定实体，与已有设定比对后勾选登记。',
@@ -123,14 +123,22 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
         id: 'how-to-open',
         heading: '怎么打开',
         body: [
-          '编辑器工具栏的魔杖图标（颉文姬）打开 / 收起右侧面板；屏保右下角的 Q 版精灵也能唤起。',
+          '在正文工具栏点击「颉文姬」打开或收起面板。启用 Q 版精灵时，也可从屏幕右侧唤起。',
           '面板只影响显示，不影响正在运行的 AI 任务：收起面板不会取消任务，也不会重复发请求。',
         ],
       },
+      {
+        id: 'connection-modes',
+        heading: 'API 和 ACP 的可用入口',
+        body: [
+          '在 API 模式配置模型后，可使用颉文姬的 AI 工具。已连接的桌面 ACP 可用选区润色、手动续写、综合诊断、爽点毒点、黄金三章和本章写作简报。正文页的手动单章摘要也支持 ACP，生成后回填摘要框。',
+          'ACP 会在发送前确认接收方和资料范围。简略诊断使用本章压缩摘要；若本章没有摘要，面板会改用完整正文，并在确认时显示范围。校对、结构化审读、补登、整理、批量摘要和后台伴写需要 API 模式。',
+        ],
+      },
     ],
-    related: ['editor-tools', 'faq-proofread-actions'],
+    related: ['editor-tools', 'faq-proofread-actions', 'agent-backend'],
     actions: [{ label: '去正文编辑', tabId: 'editor' }],
-    verifiedAgainst: '3.3.1',
-    reviewedAt: '2026-10-29',
+    verifiedAgainst: '3.5.4',
+    reviewedAt: '2026-11-14',
   },
 ]

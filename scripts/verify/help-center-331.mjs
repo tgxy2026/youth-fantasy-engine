@@ -95,6 +95,18 @@ try {
   await page.screenshot({ path: path.join(run, 'emphasis.png') })
   await page.getByRole('button', { name: /返回/ }).first().click()
 
+  await search.fill('Antigravity')
+  await page.getByRole('button', { name: /外部 Agent 协作/ }).first().click()
+  const modeHelp = await page.locator('[data-help-article]').innerText()
+  check('ACP 能被搜索到，手册说明当前构建限制与纯文本入口',
+    ['当前构建尚未启用', '手动单章摘要', 'MCP 模式', '便携版'].every(text => modeHelp.includes(text)))
+  await page.getByRole('button', { name: '打开模型设置' }).click()
+  await page.getByRole('button', { name: '模型设置怎么用', exact: true }).click()
+  check('模型设置问号说明三种模式及适用平台',
+    await page.getByText(/先在「运行模式」选择调用方式。.*便携版提供 API 和 MCP/).isVisible())
+  await page.keyboard.press('Escape')
+  await page.getByRole('navigation').getByText('使用指南', { exact: true }).first().click()
+
   // ⑤ 按功能查阅 + 覆盖度缺口
   await search.fill('')
   await page.getByRole('button', { name: /按功能查阅/ }).click()

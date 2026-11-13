@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAntigravityComponent } from './antigravity-component.mjs'
@@ -22,10 +23,9 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
     requiresConnection: true,
     async prepareLaunch({ config, profile, cwd, purpose }) {
       const binary = await component.resolve(config.binary)
-      const temp = path.join(cwd, 'tmp')
       const roaming = path.join(profile, 'AppData', 'Roaming')
       const local = path.join(profile, 'AppData', 'Local')
-      for (const directory of [temp, roaming, local]) await fs.mkdir(directory, { recursive: true })
+      for (const directory of [roaming, local]) await fs.mkdir(directory, { recursive: true })
       const authSettings = createModeFilePersistence(path.join(profile, 'antigravity-acp', 'settings.json'))
       if (purpose === 'login') await authSettings.write({ auth: { type: 'oauth-personal' } })
       const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
@@ -33,7 +33,7 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
         SystemRoot: systemRoot, WINDIR: systemRoot,
         PATH: path.join(systemRoot, 'System32'),
         USERPROFILE: profile, HOME: profile, APPDATA: roaming, LOCALAPPDATA: local,
-        TEMP: temp, TMP: temp, GEMINI_HOME: profile, AGY_ACP_FORCE_FILE_STORAGE: '1',
+        GEMINI_HOME: profile, AGY_ACP_FORCE_FILE_STORAGE: '1',
         ANTIGRAVITY_HARNESS_PATH: path.join(path.dirname(binary), 'localharness_external.exe'),
         PYTHONUNBUFFERED: '1',
       }
@@ -44,7 +44,14 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
           .map(value => "'" + value.replaceAll('\\', '/').replaceAll("'", "'\"'\"'") + "'").join(' ')
         if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
       }
-      return { binary, env, oauth }
+      // The vendor executable unpacks long internal names under TEMP during startup.
+      const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-acp-'))
+      env.TEMP = temp
+      env.TMP = temp
+      return {
+        binary, env, oauth,
+        cleanup: () => fs.rm(temp, { recursive: true, force: true, maxRetries: 3 }),
+      }
     },
     launch({ runId, cwd, prepared, signal }) {
       // The official executable controls its native OAuth flow. Any brokered URL

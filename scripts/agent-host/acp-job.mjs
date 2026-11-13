@@ -31,10 +31,13 @@ export async function verifyWindowsJobGone(runId) {
   throw new Error('无法确认 ACP Windows 进程树已退出。')
 }
 
-export function launchWindowsAcpJob({ runId, binary, cwd, env, childArguments = '', onStderr }) {
+export function launchWindowsAcpJob({ runId, binary, cwd, env, childArguments = '', sandbox, onStderr }) {
   const name = windowsJobName(runId)
+  const identity = sandbox ? [
+    '-SandboxUser', sandbox.user, '-SandboxSid', sandbox.sid, '-SandboxCredentialFile', sandbox.credentialFile,
+  ] : []
   const child = spawn(shell(), [...args(name), '-HostPid', String(process.pid), '-HostStarted', String(parentStarted),
-    '-Binary', binary, '-WorkingDirectory', cwd, ...(childArguments ? ['-ChildArguments', childArguments] : [])], {
+    '-Binary', binary, '-WorkingDirectory', cwd, ...(childArguments ? ['-ChildArguments', childArguments] : []), ...identity], {
     cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
   })
   child.stderr.on('data', chunk => onStderr?.(chunk))

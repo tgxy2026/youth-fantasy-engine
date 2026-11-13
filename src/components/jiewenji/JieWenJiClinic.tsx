@@ -191,7 +191,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
 
             {diag.error && <div className="text-11 text-danger px-1">{diag.error}</div>}
             {diag.data && (
-              <div className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
+              <div data-jiewenji-report="diagnosis" className="rounded-lg border border-amber/25 bg-amber/5 px-3 py-2.5">
                 {renderReport(diag.data.report)}
               </div>
             )}

@@ -1,23 +1,24 @@
 import type { HelpArticle } from '@/lib/help/types'
 
 export const AGENT_BACKEND_ARTICLES: HelpArticle[] = [{
-  id: 'agent-backend', revision: 7,
+  id: 'agent-backend', revision: 8,
   title: '外部 Agent 协作：只读数据桥与写入工具',
-  summary: '让外部 MCP 客户端读取本机作品；开启并授权后，也可创建设定与录入正文。桌面支持互斥的 API、MCP 和 ACP 模式。',
+  summary: '配置外部 MCP 客户端的只读与写入连接，了解 API、MCP 和桌面 ACP 的使用范围。',
   aliases: ['Agent 后端', '只读数据桥', 'MCP', 'Agent 写作', '创建设定', '录入正文', '互斥模式'],
-  keywords: ['Agent', 'MCP', '只读', '写入', '授权', '桌面版', '便携版', '数据桥', '互斥', 'API 调用', '检查报告', '任务台账'],
+  keywords: ['Agent', 'MCP', 'ACP', 'Antigravity', '只读', '写入', '授权', '桌面版', '便携版', '数据桥', '互斥', 'API 模式', '检查报告', '任务台账'],
   group: '模型与 AI', tabIds: ['model-settings'], availability: 'all', aiRequirement: 'none',
   sections: [
     { id: 'status', heading: '当前可用范围', body: [
-      '「模型设置」里的「**API 模式** / **MCP 模式**」是真实的运行模式，不只是切换页面：API 模式下外部 Agent 调用会被拒绝；MCP 模式下引擎自带的模型请求（对话、酒馆、嵌入、模型测试与清单、联网检索）会被拒绝。切换会**先等待在途任务结束**，失败时保持阻断并给出「安全恢复」入口。',
+      '「模型设置 → 运行模式」一次只使用一种模式。API 模式使用引擎配置的模型；MCP 模式面向外部客户端。Windows x64 桌面本地页面可显示 ACP 模式，便携版显示 API 和 MCP，网页版使用联网 API 模型。',
+      '切换时先等待在途任务结束，再启用目标模式。连接模式显示「不可用」时，按界面提示确认没有其他引擎实例和未结束的任务，再使用「安全恢复到 API 模式」。',
       '外部 Agent 软件可以通过只读数据桥获取引擎中已保存的作品资料。桌面版与便携版还可以开启「Agent 写入连接」：授权后，外部 Agent 能创建设定卡与分卷、修改设定卡 / 表单 / 普通设定表 / 多套世界设定、创建与修改章节正文、删除章节到回收站、写入 / 修改 / 删除灵感、把检查结果落库到「创作轨迹 → 检查报告」，并在任务台账登记跨多次调用的进度。写入默认关闭；未在引擎里勾选的项目与动作一律拒绝。网页版没有本机宿主进程，只能使用原有模型接口。',
     ] },
     { id: 'connect', heading: '连接本机数据（只读）', body: [
       '需要本机 Node.js 和支持 stdio 的 MCP 客户端。在客户端添加服务，命令设为 node，参数使用桥脚本的绝对路径。桌面安装版脚本位于安装目录下 resources/scripts/mcp/yfe-readonly.mjs；便携版位于 scripts/mcp/yfe-readonly.mjs。',
-      '桌面实时读取需进入 MCP 模式并开启连接、授权项目。默认连接当前实时库，旧配置可保留指向同一实时库的 --data-file 参数。升级后请从模型设置重新生成配置，替换独立复制的旧脚本。便携文件桥支持 --portable-root 或 --data-file。',
+      '桌面实时读取需进入 MCP 模式并开启连接、授权已打开的项目。在「Agent 连接」展开「只读桥配置（可选）」生成配置。旧配置可保留指向当前实时库的 --data-file 参数；升级后请重新生成配置并替换独立复制的旧脚本。便携只读文件桥支持 --portable-root 或 --data-file。',
     ] },
     { id: 'write', heading: '开启写入连接', body: [
-      '在「模型设置」先切换到「MCP 模式」，再进入「Agent 连接设置 → Agent 写入连接」勾选「开启 Agent 写入连接」，按项目勾选需要的动作并保存。API 模式下不能开启连接。授权**按项目隔离**：界面只显示当前打开项目的授权卡，其它项目的既有授权保留不变；项目标题处可**全选所有动作**，每个分类标题处可**全选本组**。通用客户端可选择 MCP JSON 格式；使用 TOML 配置的客户端可选择 TOML 格式，把生成的 yfe_agent 表合并进客户端的 TOML 配置文件（如 config.toml），并按客户端提示重新加载。',
+      '在「模型设置」切到「MCP 模式」，展开「Agent 写入连接」，勾选「开启 Agent 写入连接」及当前项目所需的动作，再点「保存授权」。每个项目分别授权。通用客户端可选 MCP JSON；使用 TOML 的客户端可将生成的 yfe_agent 表合并进自己的配置文件，并按客户端提示重新加载。',
       '写入必须进入正在运行的引擎：桌面版由应用主进程转发，便携版由本地服务转发给当前页面。请保持引擎运行并打开要写入的作品；外部进程不会、也不能直接改数据文件。',
       '可写桥脚本位于 resources/scripts/mcp/yfe-agent.mjs（桌面安装版）或 scripts/mcp/yfe-agent.mjs（便携版）。桌面版配置用 --host-file 指向「模型设置」显示的宿主配置文件；便携版用 --portable-root 指向便携版根目录。',
     ] },
@@ -30,9 +31,14 @@ export const AGENT_BACKEND_ARTICLES: HelpArticle[] = [{
     { id: 'limits', heading: '数据范围与限制', body: [
       '只读桥只读取已保存到数据文件的项目、章节、设定和灵感等白名单数据；请先在引擎中保存。它不暴露模型密钥、备份或快照。请只连接你信任的客户端。',
       '写入连接按界面中选择的项目和动作授权。不同工具支持的功能范围可由客户端查询；读取的是已保存内容。不开放通用脚本执行或任意数据库读写；跨窗口 / 云同步只做保守拒绝，不宣称原子 CAS。项目包导入仍会创建新项目，不会覆盖原项目。',
-      '宿主配置文件包含本机随机连接令牌，请勿分享或提交到仓库。网页版、未开启连接、未授权的项目与动作都会被失败关闭。',
+      '宿主配置文件包含本机随机连接令牌，请勿分享或提交到仓库。网页版、实时连接需开启并按项目授权。',
+    ] },
+    { id: 'acp', heading: '桌面 ACP：纯文本写作', body: [
+      'ACP 模式由引擎连接「ACP Agent」列表中的 Antigravity。显示「当前构建尚未启用」时，请切回 API 模式。显示账号与连接操作时，可按界面安装或选择官方组件、登录 Google、连接并刷新会话可用的模型与推理档位。',
+      '连接后可用手动续写、选区润色、综合诊断（完整和简略）、爽点毒点、黄金三章、本章写作简报与手动单章摘要。发送前会列出接收方和资料范围。润色与续写由作者确认采纳，手动摘要生成后回填摘要框。',
+      'AI 校对、结构化审读与整理、嵌入、后台伴写、批量摘要和酒馆使用配置好的 API 模型；需要这些功能时切回 API 模式。',
     ] },
   ],
-  related: ['faq-multi-protocol'], actions: [{ label: '打开模型设置', tabId: 'model-settings' }],
-  verifiedAgainst: '3.4.3', reviewedAt: '2026-11-10',
+  related: ['faq-multi-protocol', 'jiewenji-modes'], actions: [{ label: '打开模型设置', tabId: 'model-settings' }],
+  verifiedAgainst: '3.5.4', reviewedAt: '2026-11-14',
 }]

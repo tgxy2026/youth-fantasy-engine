@@ -23,7 +23,7 @@ export interface ManualSummaryArgs {
   /** 结果回填（写摘要框，沿用既有保存链） */
   apply: (summary: string) => void
   /** 结果落地前读取最新归属（防止闭包里的旧值） */
-  live: () => { projectId: string; chapterId: string | null; text: string }
+  live: () => { projectId: string; chapterId: string | null; text: string; summary: string | undefined }
 }
 
 export function useManualSummary(args: ManualSummaryArgs) {
@@ -35,8 +35,19 @@ export function useManualSummary(args: ManualSummaryArgs) {
 
   const genSummary = async () => {
     const a = latest.current
-    if (!a.ready || !a.chapterId || summarizing) return
+    if (!a.ready || !a.chapterId || abort.current) return
     const owner = captureOwnedOperation(a.projectId)
+    const initialSummary = a.live().summary
+    const assertCurrent = () => {
+      owner.assertCurrent()
+      const now = latest.current.live()
+      if (now.projectId !== a.projectId || now.chapterId !== a.chapterId || now.text !== a.text) {
+        throw new Error('章节或草稿已变化，请在新正文上重新生成摘要。')
+      }
+      if (a.acp && now.summary !== initialSummary) {
+        throw new Error('摘要已修改，请确认当前内容后重新生成。')
+      }
+    }
     const controller = new AbortController()
     abort.current = controller
     setSummarizing(true)
@@ -44,15 +55,11 @@ export function useManualSummary(args: ManualSummaryArgs) {
       const acpText = a.acp
         ? acpReportText({
           task: 'summary', generation: a.acp.generation, agentName: a.acp.name,
-          signal: controller.signal, assertCurrent: owner.assertCurrent, ask: confirmDialog,
+          signal: controller.signal, assertCurrent, ask: confirmDialog,
         })
         : undefined
       const summary = await aiChapterSummary(a.text, { signal: controller.signal, acpText })
-      owner.assertCurrent()
-      const now = latest.current.live()
-      if (now.projectId !== a.projectId || now.chapterId !== a.chapterId || now.text !== a.text) {
-        throw new Error('章节或草稿已变化，请在新正文上重新生成摘要。')
-      }
+      assertCurrent()
       a.apply(summary)
       showToast('已用 AI 生成章节压缩摘要', 'success')
     } catch (error) {

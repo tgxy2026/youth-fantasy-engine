@@ -33,3 +33,19 @@ try {
 }
 assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
 console.log('PASS Windows Job removes grandchild after host termination')
+
+const invalidRun = randomBytes(16).toString('hex')
+const output = []
+const rejected = launchWindowsAcpJob({
+  runId: invalidRun, binary: process.execPath, cwd: process.cwd(), env: process.env,
+  childArguments: '-e "console.log(1)"',
+  sandbox: { user: 'invalid-user', sid: 'invalid-sid', credentialFile: 'invalid-path' },
+})
+rejected.output.on('data', chunk => output.push(chunk))
+rejected.input.on('error', () => {})
+const rejectedResult = await rejected.exited
+assert.equal(rejectedResult.code, 1)
+assert.equal(rejectedResult.failure, null)
+assert.deepEqual(output, [], 'An invalid sandbox identity must not launch under the host account')
+await verifyWindowsJobGone(invalidRun)
+console.log('PASS Invalid sandbox configuration cannot start a same-user process')

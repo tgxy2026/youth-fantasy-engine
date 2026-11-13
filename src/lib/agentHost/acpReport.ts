@@ -63,8 +63,8 @@ export function acpReportText(input: AcpReportSendInput): (prompt: string) => Pr
     await assertAcpWritingCurrent(input.generation)
     input.assertCurrent?.()
     const text = await acpWrite(input.task, input.generation, prompt, { signal: input.signal })
-    input.assertCurrent?.()
     await assertAcpWritingCurrent(input.generation)
+    input.assertCurrent?.()
     return text
   }
 }

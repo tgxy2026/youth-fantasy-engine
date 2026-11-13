@@ -386,7 +386,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-14 font-semibold text-ink-100">{connectionView === 'agent' ? 'Agent 连接' : '模型配置'}</h2>
+          <h2 className="text-14 font-semibold text-ink-100">{connectionView === 'agent' ? 'Agent 连接' : connectionView === 'acp' ? 'ACP 连接' : '模型配置'}</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
             <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
             <p className="mt-1.5">两类平台：</p>
@@ -399,10 +399,10 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               等几十秒是正常的）。密钥只存在本机数据文件里、不随云盘同步；发起请求时会随该请求发给对应的模型服务商。
             </p>
             <p className="mt-1.5">
-              没配模型也不影响任何手动填写功能 —— 只是各处 AI 按钮会禁用并给出提示。
+              手动写作、填写设定和整理大纲无需配置模型。
             </p>
             <p className="mt-1.5">
-              上方「运行模式」切到 <b>MCP 模式</b>后，这里配置的模型请求（对话、测试、嵌入、模型清单、联网检索）会被互斥闸拒绝；
+              切到 <b>MCP 模式</b>或 <b>ACP 模式</b>后，引擎配置的 API 请求会暂停（含模型测试、嵌入、模型清单和联网检索）；
               切回 <b>API 模式</b>即恢复。切换不会改动模型配置与密钥。
             </p>
             <p className="mt-1.5">
@@ -413,7 +413,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           </HelpPopover>
         </div>
         {connectionView === 'api' && <p className="mt-0.5 text-11 text-ink-500 leading-relaxed">
-          全局设置：全应用的 AI 功能都按这里选中的「当前」模型执行。改完即存，不需要另找保存按钮。
+          「当前」模型是 API 模式的默认模型，按用途指定的模型优先。新增或编辑模型时请在表单中保存。
           每条配置必填「上下文窗口（tokens）」（1K = 1024）—— 额度与记忆档都按它推算。
         </p>}
       </div>
@@ -472,7 +472,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </p>
             <p className="mt-1 text-11 text-ink-400 leading-relaxed">
               {modeStatus.mode === 'agent' ? '仅允许已授权的 MCP 工具调用。'
-                : modeStatus.mode === 'acp' ? '仅允许当前 ACP Agent 的操作。'
+                : modeStatus.mode === 'acp' ? '已切换运行模式。请在下方查看 ACP Agent 的连接状态。'
                   : '允许引擎内置模型的 API 请求。'}
             </p>
           </div>

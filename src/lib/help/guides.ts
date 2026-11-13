@@ -46,7 +46,7 @@ export const PAGE_GUIDES: PageGuide[] = [
     steps: [
       { id: 'read', anchor: 'page-header', title: '阅读和分享故事', body: '在广场阅读公开投稿；登录后可以投稿、点赞、点踩和评论。投稿需管理员审核后发布。评论以服务端确认的总数为准，可分页继续加载。网络中断后再点一次「发表评论」会复用同一提交，不会重复发表；刷新页面后的去重不保证。便携版暂不支持社区。' },
       { id: 'write', title: '写一段投稿', body: '在「投稿」填写标题和最多 10000 个字符的纯文字正文，选择昵称或匿名，预览后提交；审核进度在「我的」查看。' },
-      { id: 'rank', title: '自愿参加码字排行', body: '在「设置」自愿开启排行；只上报含标点的正文净增量，不上传正文。关闭后会撤回已上传的排行数据。' },
+      { id: 'rank', title: '自愿参加码字排行', body: '在「设置」自愿开启排行；只上报含标点的正文净增量。删减只抵扣当天，周榜和月榜累计已结束日期的正净增量；关闭后撤回已上传的排行数据。' },
     ],
   },
   {
@@ -103,7 +103,7 @@ export const PAGE_GUIDES: PageGuide[] = [
         id: 'jiewenji',
         anchor: 'jiewenji-entry',
         title: '需要 AI 时找颉文姬',
-        body: '这个按钮打开右侧的 AI 助手：校对、改稿、审读、简报、补登都在里面。没配模型时它照常显示，但 AI 按钮会禁用。',
+        body: '这个按钮打开右侧的颉文姬。API 模式需配置可用模型；桌面 ACP 已连接时，可使用部分纯文本按钮。每个按钮会显示自己的可用状态，具体范围见使用手册。',
       },
     ],
   },
@@ -123,7 +123,7 @@ export const PAGE_GUIDES: PageGuide[] = [
         id: 'stats',
         anchor: 'dashboard-stats',
         title: '统计与日历',
-        body: '往下是码字统计（按天累计、固定「只算汉字」口径）。想换字数口径去设置里切，历史增量不会被重算。',
+        body: '往下是码字统计和日历，按固定口径记录。可在写作面板切换正文的实时字数口径，历史码字量保留原记录。',
       },
     ],
   },
@@ -151,16 +151,16 @@ export const PAGE_GUIDES: PageGuide[] = [
     id: 'model-settings-basics',
     revision: 1,
     tabId: 'model-settings',
-    articleId: 'start-without-ai',
+    articleId: 'agent-backend',
     steps: [
       {
         id: 'models',
         anchor: 'settings-models',
-        title: '先配一个模型',
+        title: '先选运行模式',
         // 🔴 3.3.1 · P9：网页版不能用本机模型 —— 引导不能说「本地 Ollama」把作者往死路上引
         body: LOCAL_MODEL_DISABLED
-          ? 'AI 增强功能都要先有可用模型：网页版请添加「联网模型」（硅基流动 / DeepSeek / 通义 等）。本机 Ollama 只能在桌面版或便携版里用。没配也能写作，只是 AI 按钮会禁用。'
-          : 'AI 增强功能都要先有可用模型：本地 Ollama 或任一 OpenAI 兼容服务。没配也能写作，只是 AI 按钮会禁用。',
+          ? '网页版使用 API 模式。要用 AI，请添加联网模型；本机和局域网模型可在桌面版或便携版配置。'
+          : 'API 模式使用配置好的模型。需要外部客户端时选 MCP 模式。若桌面本地页面显示 ACP 模式，可查看当前构建是否支持连接所选 Agent。',
       },
       {
         id: 'rest',

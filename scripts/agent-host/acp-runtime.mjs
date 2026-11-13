@@ -22,6 +22,7 @@ export function createAcpRuntime({ root, adapters }) {
   let unconfirmed = false
   let heldLease = null
   let unconfirmedLaunch = null
+  let unconfirmedCleanup = null
 
   async function readSettings() {
     let saved
@@ -76,10 +77,15 @@ export function createAcpRuntime({ root, adapters }) {
     const cwd = await fs.mkdtemp(path.join(workRoot, 'work-'))
     const runId = randomBytes(16).toString('hex')
     let launch
+    let prepared
+    const cleanup = async () => {
+      await prepared?.cleanup?.().catch(() => {})
+      await fs.rm(cwd, { recursive: true, force: true, maxRetries: 3 }).catch(() => {})
+    }
     let marked = false
     let launchAttempted = false
     try {
-      const prepared = await adapter.prepareLaunch?.({ config, profile, cwd, signal, purpose })
+      prepared = await adapter.prepareLaunch?.({ config, profile, cwd, signal, purpose })
       signal.throwIfAborted()
       await runFile.markPending({ version: 1, runId, adapter: selected }).catch(async error => {
         unconfirmed = await runFile.hasPending().catch(() => true)
@@ -107,8 +113,9 @@ export function createAcpRuntime({ root, adapters }) {
         if (marked) {
           unconfirmed = true
           unconfirmedLaunch = launch
+          unconfirmedCleanup = cleanup
         }
-        else await fs.rm(cwd, { recursive: true, force: true, maxRetries: 3 }).catch(() => {})
+        else await cleanup()
       }
     }
   }
@@ -149,6 +156,8 @@ export function createAcpRuntime({ root, adapters }) {
       heldLease = null
       unconfirmed = false
       unconfirmedLaunch = null
+      await unconfirmedCleanup?.()
+      unconfirmedCleanup = null
       invalidateResults()
     },
     cancel(owner, id) {

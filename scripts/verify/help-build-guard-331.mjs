@@ -103,10 +103,14 @@ try {
   }, `${fakeOrigin}/v1`)
   await seedProvider(page)
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByTitle('返回项目列表').waitFor({ timeout: 60000 }).catch(async () => {
-    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
-    await page.getByTitle('返回项目列表').waitFor({ timeout: 60000 })
-  })
+  const enterProject = async target => {
+    const inside = target.getByTitle('返回项目列表')
+    const opener = target.getByRole('button', { name: '打开项目', exact: true }).first()
+    await inside.or(opener).first().waitFor({ timeout: 60000 })
+    if (!await inside.isVisible()) await opener.click()
+    await inside.waitFor({ timeout: 60000 })
+  }
+  await enterProject(page)
   const laterAgain = page.getByRole('button', { name: '稍后再说', exact: true })
   if (await laterAgain.isVisible().catch(() => false)) await laterAgain.click()
 
@@ -251,10 +255,7 @@ try {
 
     await seedProvider(stale)
     await stale.reload({ waitUntil: 'domcontentloaded' })
-    await stale.getByTitle('返回项目列表').waitFor({ timeout: 90000 }).catch(async () => {
-      await stale.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
-      await stale.getByTitle('返回项目列表').waitFor({ timeout: 90000 })
-    })
+    await enterProject(stale)
     const laterStale2 = stale.getByRole('button', { name: '稍后再说', exact: true })
     if (await laterStale2.isVisible().catch(() => false)) await laterStale2.click()
     await stale.getByRole('navigation').getByText('使用指南', { exact: true }).first().click()

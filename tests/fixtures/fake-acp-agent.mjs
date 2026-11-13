@@ -41,6 +41,14 @@ rl.on('line', line => {
         process.stdout.write('invalid json\n')
       } else if (text === 'tool') {
         send({ id: 'tool-1', method: 'fs/read_text_file', params: { sessionId, path: 'synthetic-secret' } })
+      } else if (text === 'terminal') {
+        send({ id: 'tool-1', method: 'terminal/create', params: { sessionId, command: 'synthetic-command' } })
+      } else if (text === 'mcp') {
+        send({ id: 'tool-1', method: 'mcp/tools/call', params: { sessionId, name: 'synthetic-tool' } })
+      } else if (text === 'permission') {
+        send({ id: 'tool-1', method: 'session/request_permission', params: { sessionId } })
+      } else if (text === 'tool-update') {
+        send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'tool_call' } } })
       } else if (text === 'model-and-thinking') {
         chunk(sessionId, model + '/' + thinking)
         result({ stopReason: 'end_turn' })
