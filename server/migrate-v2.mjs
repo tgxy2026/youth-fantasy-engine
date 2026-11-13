@@ -26,7 +26,7 @@ import { DATA_DIR } from './lib/config.mjs'
 import { findByName, listUsers } from './lib/users.mjs'
 import { readUserData } from './lib/userdata.mjs'
 import { stageObject, commitProjectSnapshot, PROTOCOL_VERSION } from './lib/projectStore.mjs'
-import { readIndex, setProjectMeta, initializeIndex } from './lib/v2Index.mjs'
+import { readIndex, setProjectMeta, initializeIndex, acquireAccountWriteLock } from './lib/v2Index.mjs'
 import { blockLegacyWrites } from './lib/legacyGate.mjs'
 
 const V2_ROOT = join(DATA_DIR, 'v2')
@@ -241,7 +241,10 @@ if (!targets.length) {
 let exitCode = 0
 for (const u of targets) {
   console.log(`\n=== ${u.name}（${u.id}）${dryRun ? ' [dry-run]' : ''} ===`)
-  const r = await migrateUser(u, { dryRun })
+  const accountLock = dryRun ? null : acquireAccountWriteLock(V2_ROOT, u.id)
+  if (!dryRun && !accountLock) { console.error('  ✗ 账号正在处理，未迁移'); exitCode = 1; continue }
+  let r
+  try { r = await migrateUser(u, { dryRun }) } finally { if (accountLock) accountLock.release() }
   if (r.error) { console.error(`  ✗ ${r.error}`); exitCode = 1; continue }
   if (r.skipped) { console.log(`  · ${r.skipped}`); continue }
   for (const p of r.results) {

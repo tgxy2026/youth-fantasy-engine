@@ -15,7 +15,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { sendJSON, readJSONBody } from './http.mjs'
 import {
-  accountRoot, readIndex, writeIndex, accountUsedBytes, projectedUsedBytes, setProjectMeta,
+  accountRoot, readIndex, writeIndex, accountUsedBytes, projectedUsedBytes, setProjectMeta, acquireAccountWriteLock,
 } from './v2Index.mjs'
 import {
   stageObject, commitProjectSnapshot, readManifest, getProjectState, effectiveTombstones,
@@ -38,12 +38,21 @@ const HASH_RE = /^[0-9a-f]{64}$/
  * @param {string} ctx.v2Root
  */
 export async function handleV2(ctx) {
+  let lock = null
   try {
+    const modifiesIndex = ctx.path.startsWith('/api/v2/projects') &&
+      (ctx.req.method === 'POST' || ctx.req.method === 'DELETE') && !/\/objects\//.test(ctx.path)
+    if (modifiesIndex) {
+      lock = acquireAccountWriteLock(ctx.v2Root, ctx.user.id)
+      if (!lock) return sendJSON(ctx.res, 503, { ok: false, code: 'PROJECT_ACCOUNT_BUSY', error: '云端项目正在处理，请稍后重试。' }), true
+    }
     return await handleV2Request(ctx)
   } catch (error) {
     if (!['PROJECT_DATA_INVALID', 'PROJECT_DATA_READ_FAILED', 'PROJECT_DATA_MISSING', 'PROJECT_DATA_RECOVERY_REQUIRED'].includes(error?.code)) throw error
     if (ctx.res.headersSent) throw error
     return sendJSON(ctx.res, 503, { ok: false, code: error.code, error: '云端项目数据暂不可用，请保留本地数据并联系管理员检查。' }), true
+  } finally {
+    if (lock) lock.release()
   }
 }
 

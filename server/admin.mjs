@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { DATA_DIR } from './lib/config.mjs'
 import { readLegacyGate, blockLegacyWrites, unblockLegacyWrites } from './lib/legacyGate.mjs'
 import { gcObjects, purgeDeletedProjects, listTrash } from './lib/objectGc.mjs'
-import { accountRoot } from './lib/v2Index.mjs'
+import { accountRoot, acquireAccountWriteLock } from './lib/v2Index.mjs'
 import {
 loadUsers, listUsers, findByName, createInvite, listInvites, deleteUser, saveUsers, markIssued,
   setUserFlag, issueRecoveryCode, recoveryStatus,
@@ -229,6 +229,10 @@ function cmdGc(name) {
   const root = accountRoot(join(DATA_DIR, 'v2'), u.id)
   if (!existsSync(root)) return console.log(`${u.name} 还没有 v2 数据目录`)
 
+  const accountLock = acquireAccountWriteLock(join(DATA_DIR, 'v2'), u.id)
+  if (!accountLock) return console.error('账号正在处理，请稍后重试')
+  try {
+
   const r = gcObjects(root, { dryRun: !apply })
   console.log(`对象回收${apply ? '' : '（预演）'}：扫描 ${r.scanned} 个，被引用 ${r.referenced} 个，`
     + `可回收 ${r.removed} 个 / ${(r.freedBytes / 1048576).toFixed(2)} MiB，`
@@ -250,6 +254,7 @@ function cmdGc(name) {
     console.log(`回收站清理${apply ? '' : '（预演）'}：清掉 ${p.purged.length} 项，保留 ${p.kept} 项未到期`)
   }
   if (!apply) console.log('\n这只是预演。确认无误后加 --apply 真正执行。')
+  } finally { accountLock.release() }
 }
 
 const [cmd, a1, a2] = process.argv.slice(2)

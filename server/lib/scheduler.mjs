@@ -20,7 +20,7 @@
 //    （便携版 / 测试脚本会 import 到本模块）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { accountRoot } from './v2Index.mjs'
+import { accountRoot, acquireAccountWriteLock } from './v2Index.mjs'
 import { gcObjects, purgeDeletedProjects } from './objectGc.mjs'
 
 /** 默认 6 小时一轮：清理不是时效性任务，跑太勤只是白扫盘 */
@@ -66,6 +66,13 @@ export function runMaintenanceOnce(o) {
 
   for (const accountId of accounts) {
     const root = accountRoot(v2Root, accountId)
+    let accountLock
+    try { accountLock = acquireAccountWriteLock(v2Root, accountId) } catch (e) {
+      errors.push({ account: accountId, error: e && e.message ? String(e.message) : String(e) })
+      continue
+    }
+    if (!accountLock) { errors.push({ account: accountId, error: 'PROJECT_ACCOUNT_BUSY' }); continue }
+    try {
     // ① 回收站到期清理（只清"标了 deletedAt 且超过 30 天"的，见 objectGc 注释）
     try {
       const p = purgeDeletedProjects(root, { now, dryRun })
@@ -83,6 +90,7 @@ export function runMaintenanceOnce(o) {
     } catch (e) {
       errors.push({ account: accountId, error: e && e.message ? String(e.message) : String(e) })
     }
+    } finally { accountLock.release() }
   }
 
   return { accounts: accounts.length, purged, objectsRemoved, freedBytes, errors }

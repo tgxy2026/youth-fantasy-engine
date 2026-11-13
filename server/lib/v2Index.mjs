@@ -20,6 +20,25 @@ export const V2_INDEX_FILE = 'index.json'
 export const accountRoot = (v2Root, accountId) => path.join(v2Root, 'accounts', accountId)
 export const indexFile = (v2Root, accountId) => path.join(accountRoot(v2Root, accountId), V2_INDEX_FILE)
 
+/** 协作式账号写锁；冲突立即失败，不在事件循环里自旋。残留锁须人工核对。 */
+export function acquireAccountWriteLock(v2Root, accountId) {
+  const dir = accountRoot(v2Root, accountId)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, '.account-write.lock')
+  let fd
+  try { fd = fs.openSync(file, 'wx', 0o600) } catch (error) {
+    if (error?.code === 'EEXIST') return null
+    throw error
+  }
+  try { fs.writeFileSync(fd, `${process.pid}\n`) } catch (error) {
+    fs.closeSync(fd)
+    try { fs.unlinkSync(file) } catch { /* 保留残留锁 */ }
+    throw error
+  }
+  fs.closeSync(fd)
+  return { release() { fs.unlinkSync(file) } }
+}
+
 /** 仅不存在时使用空索引；损坏和读取失败不能被当作空账号覆盖。 */
 export function readIndex(v2Root, accountId) {
   try {

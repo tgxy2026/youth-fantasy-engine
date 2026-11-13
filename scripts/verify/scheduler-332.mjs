@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { runMaintenanceOnce, createScheduler, listAccounts } from '../../server/lib/scheduler.mjs'
+import { acquireAccountWriteLock } from '../../server/lib/v2Index.mjs'
 
 let pass = 0, fail = 0
 function ok(name, cond, extra = '') {
@@ -154,6 +155,10 @@ ok('⑤ B 账号有空索引，对象按 B 自己的 manifest 判活（无引用
   JSON.stringify(r.errors))
 
 // ---------------- ⑥ 一个账号坏掉不影响其他账号 ----------------
+const held = acquireAccountWriteLock(v2, 'u_testa')
+const heldRun = runMaintenanceOnce({ v2Root: v2, now: NOW })
+ok('维护遇账号锁时跳过该账号', !!held && heldRun.errors.some(e => e.account === 'u_testa' && e.error === 'PROJECT_ACCOUNT_BUSY'))
+held?.release()
 const C = makeAccount(v2, 'u_testc')
 fs.writeFileSync(path.join(C, 'index.json'), '{ 这不是 JSON')
 const hC = H('C-orphan-old')
