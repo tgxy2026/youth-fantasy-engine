@@ -807,11 +807,11 @@ ipcMain.handle('store:path', () => dataFile())
         const { createAcpRuntime } = await import(pathToFileURL(path.join(path.dirname(modulePath), 'acp-runtime.mjs')).href)
         const { createAntigravityAdapter } = await import(pathToFileURL(path.join(path.dirname(modulePath), 'antigravity-adapter.mjs')).href)
         const root = path.join(app.getPath('userData'), 'acp')
-        const validationEnabled = !app.isPackaged && process.argv.includes('--yfe-acp-validation')
+        const connectionEnabled = app.isPackaged || process.argv.includes('--yfe-acp-validation')
           && process.argv.includes(`--user-data-dir=${app.getPath('userData')}`)
         acpRuntime = createAcpRuntime({
           root,
-          adapters: [createAntigravityAdapter({ root, validationEnabled, openExternal: url => shell.openExternal(url) })],
+          adapters: [createAntigravityAdapter({ root, validationEnabled: connectionEnabled, openExternal: url => shell.openExternal(url) })],
         })
       }
       const service = await module.createModeService({
