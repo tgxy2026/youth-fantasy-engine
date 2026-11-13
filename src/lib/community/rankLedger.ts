@@ -2,8 +2,7 @@
 //
 // 【为什么不能用 dailyStats】现有 `dailyStats` 有两个致命差异：
 //   ① 口径是**不含标点**的 `wordCount` 差量，而排行榜要求含标点净增量；
-//   ② `addDailyWords` 把每日累计**截到 0**（`Math.max(0, …)`），负数凭空消失 ——
-//      用它算周月排行会把「昨天删了 5000 字」当成没发生。
+//   ② `addDailyWords` 把每日累计截到 0，先删除后新增时会丢失应在当天抵扣的删减量。
 // 所以本模块另建一本账：**保留正负**、**只记正文**、**按日期分键**。
 //
 // 【存在哪】`settingsKV` 的 `<pid>::communityRankLedger::<YYYY-MM-DD>`。
@@ -14,7 +13,7 @@
 // 🔴 只统计「用户自己的真实写作」：导入备份、恢复、云拉取、示范项目都走**直接 put**，
 //    不经过 `afterChapterWrite`，因此天然不计入；`withRankSuppressed` 是给
 //    将来可能新增的「批量写入也要走保存函数」的路径留的闸。
-// 🔴 周、月排行先把每日有符号增减相加再比较，展示值最低为 0，但负数仍参与抵扣。
+// 服务器按账号汇总当天各项目的增减，周/月榜只累计已结束日期的正净增量。
 
 import { getSettingFor, getSettingsByPrefix, setSettingFor } from '@/lib/db/meta'
 import { countWordsWithPunct } from '@/lib/community/limits'

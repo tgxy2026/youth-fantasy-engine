@@ -70,7 +70,7 @@ export function periodRange(period: 'day' | 'week' | 'month', dateKey: string): 
 
 export function aggregateRank(
   rows: Array<{ id: string; date: string; netDelta: number }>,
-  opts: { period?: 'day' | 'week' | 'month'; date?: string },
+  opts: { period?: 'day' | 'week' | 'month'; date?: string; today?: string },
 ): Array<{ id: string; raw: number; value: number; rank: number }>
 
 export function applyRankReport(

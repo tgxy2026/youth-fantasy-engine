@@ -89,7 +89,7 @@ ok('账本同日增减相抵且 seq 递增', (() => {
   const b = applyLedgerDelta(a, -5000, '2026-11-10', 2)
   return a.net === 10000 && b.net === 5000 && b.seq === 2
 })())
-ok('账本保留负数（供周月抵扣）', applyLedgerDelta(null, -3000, '2026-11-10').net === -3000)
+ok('账本保留负数以便抵扣当天的新增', applyLedgerDelta(null, -3000, '2026-11-10').net === -3000)
 ok('授权当天只上传开启后的有符号增量', await (async () => {
   const start = Date.parse('2026-11-10T12:00:00+08:00')
   const a = applyLedgerDelta(null, 10000, '2026-11-10', start - 1000)

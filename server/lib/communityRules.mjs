@@ -355,30 +355,31 @@ export function periodRange(period, dateKey) {
 /**
  * 排行聚合。
  *
- * 🔴 口径：**含标点的净增量**。周/月先把周期内各日的有符号增减相加，再排名；
- *    绝不把每天先截到 0 —— 那会把「周一 +10000、周二 −5000」算成 +10000。
- * 🔴 展示值最低为 0，但负数仍参与周期抵扣；并列同名次，次序稳定。
+ * 日榜汇总同账号当天各项目的有符号净增量。周/月榜累加已结束日期的正净增量。
+ * 日期按北京时间计算。并列同名次，次序稳定。
  *
  * @param {Array<{id:string, date:string, netDelta:number}>} rows 已按 (uid, date, project) 归一后的行
- * @param {{period:'day'|'week'|'month', date:string}} opts
- * @returns {Array<{id:string, value:number, raw:number, rank:number}>} value 为展示值（≥0）
+ * @param {{period:'day'|'week'|'month', date:string, today?:string}} opts
+ * @returns {Array<{id:string, value:number, raw:number, rank:number}>} raw 为日净增量或周期有效累计
  */
-export function aggregateRank(rows, { period = 'day', date } = {}) {
+export function aggregateRank(rows, { period = 'day', date, today = todayKeyCn() } = {}) {
   const range = periodRange(period, date)
   if (!range) return []
-  const sums = new Map()
+  const daysByAuthor = new Map()
   for (const r of rows) {
     if (!r || typeof r.date !== 'string') continue
     if (r.date < range.start || r.date > range.end) continue
+    if (period !== 'day' && r.date >= today) continue
     const delta = Number(r.netDelta)
     if (!Number.isFinite(delta)) continue
-    sums.set(r.id, (sums.get(r.id) || 0) + delta)
+    if (!daysByAuthor.has(r.id)) daysByAuthor.set(r.id, new Map())
+    const days = daysByAuthor.get(r.id)
+    days.set(r.date, (days.get(r.date) || 0) + delta)
   }
-  const list = [...sums.entries()].map(([id, raw]) => ({
-    id,
-    raw,
-    value: Math.max(0, raw),
-  }))
+  const list = [...daysByAuthor.entries()].map(([id, days]) => {
+    const raw = period === 'day' ? days.get(date) : [...days.values()].reduce((sum, delta) => sum + Math.max(0, delta), 0)
+    return { id, raw, value: Math.max(0, raw) }
+  })
   // 稳定次序：数值降序 → id 升序（id 是不透明句柄，不含账号信息）
   list.sort((a, b) => (b.value - a.value) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   let rank = 1

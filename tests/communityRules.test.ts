@@ -172,10 +172,16 @@ ok('同日新增 10000 删除 5000 = 净增 5000', (() => {
   const r = aggregateRank(rowsOf([['u1', '2026-11-10', 10000], ['u1', '2026-11-10', -5000]]), { period: 'day', date: '2026-11-10' })
   return r.length === 1 && r[0].value === 5000
 })())
-ok('跨日负数在周里抵扣（周一 +10000 周二 −5000 = 周 5000）', (() => {
-  const r = aggregateRank(rowsOf([['u1', '2026-11-09', 10000], ['u1', '2026-11-10', -5000]]), { period: 'week', date: '2026-11-10' })
-  return r.length === 1 && r[0].value === 5000 && r[0].raw === 5000
-})())
+for (const period of ['week', 'month'] as const) {
+  const rows = rowsOf([
+    ['u1', '2026-11-09', 3000], ['u1', '2026-11-09', -1000],
+    ['u1', '2026-11-10', 500], ['u1', '2026-11-10', -800],
+    ['u1', '2026-11-11', 700],
+  ])
+  const ongoing = aggregateRank(rows, { period, date: '2026-11-11', today: '2026-11-11' })
+  const settled = aggregateRank(rows, { period, date: '2026-11-12', today: '2026-11-12' })
+  ok(`${period} 同日先抵扣，负数不跨日，今天结束后才计入`, ongoing[0]?.value === 2000 && settled[0]?.value === 2700)
+}
 ok('单日净减不显示负名次值，但 raw 保留负数', (() => {
   const r = aggregateRank(rowsOf([['u1', '2026-11-10', -3000]]), { period: 'day', date: '2026-11-10' })
   return r.length === 1 && r[0].value === 0 && r[0].raw === -3000

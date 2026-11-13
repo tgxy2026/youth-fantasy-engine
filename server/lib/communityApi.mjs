@@ -843,7 +843,8 @@ post.updatedAt = Date.now()
         return sendJSON(res, 200, { ok: true, closed: true, entries: [], period: 'day', range: null })
       }
       const period = ['day', 'week', 'month'].includes(String(qs.get('period'))) ? String(qs.get('period')) : 'day'
-      const date = String(qs.get('date') || '') || todayKeyCn()
+      const today = todayKeyCn()
+      const date = String(qs.get('date') || '') || today
       const range = periodRange(period, date)
       if (!range) return sendJSON(res, 400, { ok: false, code: 'BAD_DATE', error: '日期无效' })
       // 只取「已开启排行」的账号；撤回的已在 profile 里关掉，且数据已删
@@ -862,7 +863,7 @@ post.updatedAt = Date.now()
         if (!prev || row.reportedAt > prev.reportedAt || (row.reportedAt === prev.reportedAt && row.seq > prev.seq)) latest.set(k, row)
       }
       const rows = [...latest.values()].map((r) => ({ id: r.uid, date: r.date, netDelta: r.netDelta }))
-      const ranked = aggregateRank(rows, { period, date })
+      const ranked = aggregateRank(rows, { period, date, today })
       // 只保留能展示的账号（匿名或昵称），并且绝不输出 uid
       const entries = ranked
         .filter((r) => opted.has(r.id))
