@@ -66,6 +66,10 @@ const tab = getTab(MIS)
     (tab?.tips ?? []).some(t => t.includes('名字尽量起得具体')))
   ok('tips 提醒"能进专表的优先进专表"（本页是兜底不是首选）',
     (tab?.tips ?? []).some(t => t.includes('优先放进对应的专表')))
+  ok('tips 不带与界面 Info 图标重复的 ⓘ 前缀',
+    (tab?.tips ?? []).every(t => !t.startsWith('ⓘ')))
+  ok('命名具体与优先专表合并为一条提示（不再拆两句）',
+    (tab?.tips ?? []).some(t => t.includes('名字尽量起得具体') && t.includes('优先放进对应的专表')))
 }
 
 // ---------- ①b 纯设定页不出现人物立绘入口（2026-11-13 主人反馈） ----------

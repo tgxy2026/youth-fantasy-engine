@@ -127,10 +127,11 @@ const ok = (name: string, cond: boolean, extra = '') => {
   const part2 = read('src/lib/schemaTabs/part2.ts')
   ok('A4 角色字段说明不再带 ⚠️',
     !part1.includes('⚠️ 选多个势力') && !part1.includes('⚠️ 多个势力'))
-  ok('A4 设定页签 tips 不再带 ⚠️',
-    !part2.includes("'⚠️ 名字尽量") && !part2.includes("'⚠️ 会反复出现"))
-  ok('A4 信息性说明保留中性 ⓘ',
-    part1.includes('ⓘ 选多个势力时') && part2.includes('ⓘ 名字尽量起得具体'))
+  ok('A4 设定页签 tips 不再带与界面重复的 ⓘ / ⚠️ 字形',
+    !/'ⓘ /.test(part2) && !/'⚠️ /.test(part2))
+  ok('A4 信息性说明保留中性图标（字段说明用 ⓘ，tips 由界面渲染 Info）',
+    part1.includes('ⓘ 选多个势力时') &&
+    read('src/components/world/CharacterSheet.tsx').includes('<Info size={12}'))
 
   const cal = read('src/components/common/CalendarRuleModal.tsx')
   ok('A4 历法规则说明用 ⓘ', cal.includes('ⓘ 改这项') && !cal.includes('⚠️ 改这项'))
