@@ -361,6 +361,7 @@ export function deleteProject({ root, pid, accountId, opId, now = Date.now(), to
     const seen = st.ops?.[opId]
     if (seen) return { ok: true, revision: seen.revision, snapshotId: seen.snapshotId, replayed: true }
     const epoch = readEpoch(root)
+    if (st.epoch !== epoch) return { ok: false, code: 'EPOCH_STALE', revision: st.revision }
     const nextRev = st.revision + 1
     const snapshotId = sha256(Buffer.from(`deleted:${pid}:${nextRev}`, 'utf8'))
     writeAtomic(path.join(p.manifests(root, pid), `${nextRev}.json`), JSON.stringify({
@@ -406,6 +407,9 @@ export function restoreProject({ root, pid, accountId, opId, now = Date.now() })
 
     if (!st.deletedAt) return { ok: false, code: 'NOT_DELETED' }
 
+    const epoch = readEpoch(root)
+    if (st.epoch !== epoch) return { ok: false, code: 'EPOCH_STALE', revision: st.revision }
+
     // 删除版是当前 revision；往下找第一个内容版本
     let content = null
     let contentRev = 0
@@ -415,7 +419,6 @@ export function restoreProject({ root, pid, accountId, opId, now = Date.now() })
     }
     if (!content) return { ok: false, code: 'NO_CONTENT_TO_RESTORE', revision: st.revision }
 
-    const epoch = readEpoch(root)
     const nextRev = st.revision + 1
     const snapshotId = sha256(Buffer.from(`restored:${pid}:${nextRev}:${contentRev}`, 'utf8'))
     writeAtomic(path.join(p.manifests(root, pid), `${nextRev}.json`), JSON.stringify({

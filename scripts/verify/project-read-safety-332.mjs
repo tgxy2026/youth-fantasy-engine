@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { commitProjectSnapshot, deleteProject, restoreProject, purgeProject, getProjectState, readEpoch, readManifest } from '../../server/lib/projectStore.mjs'
+import { commitProjectSnapshot, deleteProject, restoreProject, purgeProject, getProjectState, readEpoch, readManifest, bumpEpoch } from '../../server/lib/projectStore.mjs'
 import { readIndex, indexFile } from '../../server/lib/v2Index.mjs'
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yfe-read-safety-'))
@@ -59,6 +59,22 @@ try {
   fs.unlinkSync(index)
   fs.mkdirSync(path.join(root, 'accounts', 'a', 'projects', 'existing'), { recursive: true })
   assert.throws(() => readIndex(root, 'a'), { code: 'PROJECT_DATA_MISSING' })
+  const epochRoot = path.join(root, 'epoch-fixture')
+  fs.mkdirSync(epochRoot, { recursive: true })
+  const manifest = { protocol: 1, objects: [], assets: [], tombstones: [] }
+  assert.equal(commitProjectSnapshot({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'commit', baseRevision: 0, manifest }).ok, true)
+  assert.equal(deleteProject({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'delete' }).ok, true)
+  bumpEpoch(epochRoot, 'test')
+  const deletedState = fs.readFileSync(path.join(epochRoot, 'projects', 'p', 'state.json'), 'utf8')
+  assert.equal(restoreProject({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'restore' }).code, 'EPOCH_STALE')
+  assert.equal(deleteProject({ root: epochRoot, pid: 'p', accountId: 'a', opId: 'delete-again' }).code, 'EPOCH_STALE')
+  assert.equal(fs.readFileSync(path.join(epochRoot, 'projects', 'p', 'state.json'), 'utf8'), deletedState)
+  const missingEpochRoot = path.join(root, 'missing-epoch-fixture')
+  fs.mkdirSync(missingEpochRoot, { recursive: true })
+  bumpEpoch(missingEpochRoot, 'test')
+  assert.equal(commitProjectSnapshot({ root: missingEpochRoot, pid: 'p', accountId: 'a', opId: 'commit', baseRevision: 0, manifest }).ok, true)
+  fs.unlinkSync(path.join(missingEpochRoot, 'epoch.json'))
+  assert.equal(deleteProject({ root: missingEpochRoot, pid: 'p', accountId: 'a', opId: 'delete' }).code, 'EPOCH_STALE')
   console.log('PASS corrupt state, epoch and manifest fail closed; missing manifest remains optional')
 } finally {
   fs.rmSync(root, { recursive: true, force: true })

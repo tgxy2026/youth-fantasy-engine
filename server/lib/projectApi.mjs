@@ -233,7 +233,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
     const r = restoreProject({ root: storeRoot, pid, accountId, opId })
     if (!r.ok) {
       const status = r.code === 'FORBIDDEN' ? 403
-        : r.code === 'NOT_DELETED' ? 409
+        : r.code === 'NOT_DELETED' || r.code === 'EPOCH_STALE' ? 409
           : r.code === 'NO_CONTENT_TO_RESTORE' ? 410 : 400
       return sendJSON(res, status, { ok: false, code: r.code, error: codeText(r.code), revision: r.revision }), true
     }
@@ -269,7 +269,7 @@ async function handleV2Request({ req, res, path: p, qs, user, v2Root }) {
     }
 
     const r = deleteProject({ root: storeRoot, pid, accountId, opId })
-    if (!r.ok) return sendJSON(res, r.code === 'FORBIDDEN' ? 403 : 400, { ok: false, code: r.code, error: codeText(r.code) }), true
+    if (!r.ok) return sendJSON(res, r.code === 'FORBIDDEN' ? 403 : r.code === 'EPOCH_STALE' ? 409 : 400, { ok: false, code: r.code, error: codeText(r.code) }), true
     idx.projects[pid] = { ...idx.projects[pid], revision: r.revision, snapshotId: r.snapshotId, deletedAt: Date.now() }
     writeIndex(v2Root, accountId, idx)
     return sendJSON(res, 200, { ok: true, revision: r.revision }), true
