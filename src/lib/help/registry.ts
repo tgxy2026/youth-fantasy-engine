@@ -27,10 +27,10 @@ import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-export const CONTENT_VERSION = 10
+export const CONTENT_VERSION = 11
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.5.2'
+export const SUPPORTED_APP_VERSION = '3.5.3'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [

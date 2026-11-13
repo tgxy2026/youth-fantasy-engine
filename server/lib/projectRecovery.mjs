@@ -127,7 +127,10 @@ export function auditAccount(v2Root, accountId, { now = Date.now() } = {}) {
     const st = readJsonSafe(path.join(pendingDir(root), pid, 'state.json'))
     const references = !!entry
     let classification, recoverable
-    if (!references) {
+    if (!indexProjects || !PID_RE.test(pid)) {
+      classification = 'ambiguous'
+      add('purge-pending-ambiguous', 'error', '隔离项目无法与有效索引核对，需人工确认。', { pid })
+    } else if (!references) {
       classification = 'leftover' // 索引已移除＝永久删除已提交，隔离目录只是未清掉的证据
       recoverable = 'remove-pending'
       add('purge-pending-leftover', 'warn', `隔离目录 ${pid}：索引已不含该项目（永久删除已提交），目录为待核对残留。`, { pid, recoverable })
@@ -291,6 +294,9 @@ export function recoverAccount({ v2Root, accountId, apply = false, actions = [],
     if (!SAFE_ACTIONS.has(s.kind) && !RISKY_ACTIONS.has(s.kind)) {
       throw Object.assign(new Error(`未知恢复动作：${s.kind}`), { code: 'BAD_RECOVERY_ACTION' })
     }
+    if (!['clear-lock', 'rebuild-index'].includes(s.kind) && !PID_RE.test(s.pid || '')) {
+      throw Object.assign(new Error('恢复动作需要有效项目 ID'), { code: 'BAD_RECOVERY_ACTION' })
+    }
   }
   const selected = explicit
     ? actions.map((s) => ({ kind: s.kind, pid: s.pid || null, safe: SAFE_ACTIONS.has(s.kind), requiresConfirm: !SAFE_ACTIONS.has(s.kind) }))
@@ -333,7 +339,7 @@ export function recoverAccount({ v2Root, accountId, apply = false, actions = [],
   const ensureBackup = () => { if (!backedUp) { backupIndex(root, accountId, now); backedUp = true } }
   const readIdx = () => {
     const r = readJsonSafe(indexFile(v2Root, accountId))
-    if (r.status !== 'ok' || !r.value.projects) return null
+    if (r.status !== 'ok' || !r.value.projects || typeof r.value.projects !== 'object' || Array.isArray(r.value.projects)) return null
     return r.value
   }
   const writeIdx = (idx) => { ensureBackup(); writeIndex(v2Root, accountId, idx) }
@@ -360,6 +366,12 @@ export function recoverAccount({ v2Root, accountId, apply = false, actions = [],
           const target = path.join(projectsDir(root), pid)
           const idx = readIdx()
           if (!idx || !idx.projects[pid]) { results.push({ kind: action.kind, pid, ok: false, detail: '索引已不含该项目，不能移回（改用 remove-pending 核对）。' }); continue }
+          const entry = idx.projects[pid]
+          const state = readJsonSafe(path.join(pending, 'state.json'))
+          if (state.status !== 'ok' || Number(entry.revision) !== state.value.revision ||
+              Boolean(entry.deletedAt) !== Boolean(state.value.deletedAt)) {
+            results.push({ kind: action.kind, pid, ok: false, detail: '隔离状态与索引不一致，拒绝移回。' }); continue
+          }
           if (fs.existsSync(target)) { results.push({ kind: action.kind, pid, ok: false, detail: '项目目录已存在，拒绝覆盖。' }); continue }
           fs.renameSync(pending, target)
           executed.push(action)
@@ -368,7 +380,7 @@ export function recoverAccount({ v2Root, accountId, apply = false, actions = [],
         } else if (action.kind === 'remove-pending') {
           const pending = path.join(pendingDir(root), pid)
           const idx = readIdx()
-          if (idx && idx.projects[pid]) { results.push({ kind: action.kind, pid, ok: false, detail: '索引仍引用该项目，拒绝删除隔离目录（应先 rollback-pending）。' }); continue }
+          if (!idx || idx.projects[pid]) { results.push({ kind: action.kind, pid, ok: false, detail: '索引不可读或仍引用该项目，拒绝删除隔离目录。' }); continue }
           fs.rmSync(pending, { recursive: true, force: true })
           executed.push(action)
           results.push({ kind: action.kind, pid, ok: true, detail: '已删除永久删除残留的隔离目录（索引此前已提交移除）。' })
@@ -385,7 +397,12 @@ export function recoverAccount({ v2Root, accountId, apply = false, actions = [],
           journal(root, { at: now, action: action.kind, pid, before })
         } else if (action.kind === 'rebuild-index') {
           // 仅当所有磁盘项目状态都可读时才重建；否则拒绝（不凭不完整数据重建）。
-          const diskPids = listDirSafe(projectsDir(root)).filter((n) => PID_RE.test(n))
+          const diskPids = listDirSafe(projectsDir(root))
+          if (listDirSafe(pendingDir(root)).length || diskPids.some(p => !PID_RE.test(p)) ||
+              (!diskPids.length && listDirSafe(path.join(root, 'objects')).length)) {
+            results.push({ kind: action.kind, ok: false, detail: '项目目录不完整或有隔离项目，拒绝重建索引。' })
+            continue
+          }
           const rebuilt = { projects: {} }
           let incomplete = false
           for (const p of diskPids) {

@@ -8,7 +8,7 @@
 //
 // ?? 本地通过 ≠ 部署验收：这里没有 TLS、没有真实部署反代、没有多进程竞争。
 
-import { createServer } from 'node:http'
+import { createServer, request } from 'node:http'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -33,6 +33,7 @@ const USERS: Record<string, { id: string; name: string; role?: string }> = {
   admin: { id: 'u_admin', name: 'admin', role: 'admin' },
 }
 const byId = new Map(Object.values(USERS).map((u) => [u.id, u]))
+let onRankRequest: (() => void) | undefined
 const api = createCommunityApi({
   store,
   authCheck: (req: any) => {
@@ -40,7 +41,10 @@ const api = createCommunityApi({
     const u = USERS[who]
     return { user: u || null, reason: u ? '' : 'NO_TOKEN' }
   },
-  rateLimit,
+  rateLimit: (...args: Parameters<typeof rateLimit>) => {
+    if (String(args[0]).startsWith('c:rank:')) onRankRequest?.()
+    return rateLimit(...args)
+  },
 })
 
 const server = createServer((req, res) => {
@@ -249,8 +253,37 @@ try {
   ok('撤回授权立即清空排行', revoked.status === 200 && (await call('/api/community/rank?period=day')).json.entries.length === 0)
   const late = await call('/api/community/rank/report', { method: 'POST', as: 'bob', body: { deviceId: 'dev-bob-01', issuedAt: 1, entries: [{ projectId: 'p1', date: today, netDelta: 100, seq: 9 }] } })
   ok('撤回后迟到的上报被拒', late.status === 403 || late.status === 409)
-  await call('/api/community/profile', { method: 'PUT', as: 'bob', body: { rankOptIn: true } })
+  const rankReopened = await call('/api/community/profile', { method: 'PUT', as: 'bob', body: { rankOptIn: true } })
+  const optInAt = rankReopened.json.profile.rankOptInAt
   ok('重新开启不恢复旧数据', (await call('/api/community/rank?period=day')).json.entries.length === 0)
+  const replay = await call('/api/community/rank/report', { method: 'POST', as: 'bob', body: {
+    deviceId: 'dev-bob-01', issuedAt: optInAt - 1, entries: [{ projectId: 'p1', date: today, netDelta: 8000, seq: 3 }],
+  } })
+  ok('重开后拒绝旧授权的请求', replay.status === 409 && replay.json.code === 'RANK_REVOKED')
+  const fresh = await call('/api/community/rank/report', { method: 'POST', as: 'bob', body: {
+    deviceId: 'dev-bob-01', issuedAt: optInAt, entries: [
+      { projectId: 'old', date: today, netDelta: 2000, seq: 1, issuedAt: optInAt - 1 },
+      { projectId: 'p1', date: today, netDelta: 500, seq: 1, issuedAt: optInAt + 1 },
+    ],
+  } })
+  ok('重新授权后只计入新纪录', fresh.json.accepted.length === 1 && fresh.json.rejected[0]?.code === 'RANK_REVOKED' &&
+    (await call('/api/community/rank?period=day')).json.entries[0]?.value === 500)
+  const repeatedOptIn = await call('/api/community/profile', { method: 'PUT', as: 'bob', body: { rankOptIn: true } })
+  ok('重复开启不重置授权时间', repeatedOptIn.json.profile.rankOptInAt === optInAt)
+  const started = new Promise<void>(resolve => { onRankRequest = resolve })
+  const delayed = request(`${base}/api/community/rank/report`, { method: 'POST', headers: { 'x-test-user': 'bob' } })
+  const delayedStatus = new Promise<number>((resolve, reject) => {
+    delayed.on('response', res => { res.resume(); res.on('end', () => resolve(res.statusCode || 0)) })
+    delayed.on('error', reject)
+  })
+  delayed.write('{')
+  await started
+  onRankRequest = undefined
+  await call('/api/community/profile', { method: 'PUT', as: 'bob', body: { rankOptIn: false } })
+  await call('/api/community/profile', { method: 'PUT', as: 'bob', body: { rankOptIn: true } })
+  delayed.end(`"issuedAt":${optInAt},"deviceId":"dev-bob-01","entries":[{"projectId":"p1","date":"${today}","netDelta":500,"seq":1,"issuedAt":${optInAt + 1}}]}`)
+  ok('撤回并重开后，读取中的旧请求不能恢复旧成绩', await delayedStatus === 409 &&
+    (await call('/api/community/rank?period=day')).json.entries.length === 0)
 
   // ---- 限流 / 容量 ----
   const limitedUser = 'dave'

@@ -758,7 +758,7 @@ post.updatedAt = Date.now()
           // 重新开启不自动恢复旧数据：清一次，保证「开启前的历史」不会出现
           if (hasRankRows) store.deleteProfileRank(user.id)
           patch.rankOptIn = true
-          patch.rankOptInAt = Date.now()
+          if (!prev?.rankOptIn) patch.rankOptInAt = Math.max(Date.now(), (Number(prev?.rankOptInAt) || 0) + 1)
         }
       }
       let p
@@ -778,16 +778,18 @@ post.updatedAt = Date.now()
     // ---------- 排行上报与展示 ----------
     if (path === '/api/community/rank/report' && method === 'POST') {
       if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
-      const p = store.getProfile(user.id)
-      if (!p || !p.rankOptIn) {
+      if (!store.getProfile(user.id)?.rankOptIn) {
         return sendJSON(res, 403, { ok: false, code: 'RANK_NOT_ENABLED', error: '尚未开启排行同步' })
       }
       const rl = limit(`c:rank:${user.id}`, 120, 3600 * 1000)
       if (!rl.ok) return sendJSON(res, 429, { ok: false, code: 'RATE_LIMITED', error: '上报过于频繁' })
       const body = await readJSONBody(req, 32 * 1024).catch(() => null)
       if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
-      // 🔴 撤回授权后，旧队列的迟到上报一律拒绝：不能因为客户端还没清队列就让旧数据复活
-      if (p.rankRevokedAt && Number(body.issuedAt || 0) < Number(p.rankRevokedAt)) {
+      // 读取请求体期间可能撤回或重新开启，写入前重新核对当前授权。
+      const p = store.getProfile(user.id)
+      if (!p?.rankOptIn) return sendJSON(res, 403, { ok: false, code: 'RANK_NOT_ENABLED', error: '尚未开启排行同步' })
+      const optInAt = Number(p.rankOptInAt) || 0
+      if (p.rankRevokedAt && Number(body.issuedAt) !== optInAt) {
         return sendJSON(res, 409, { ok: false, code: 'RANK_REVOKED', error: '排行授权已撤回' })
       }
       const deviceId = String(body.deviceId || '').slice(0, 64)
@@ -817,9 +819,8 @@ post.updatedAt = Date.now()
           continue
         }
         const existing = store.getRankRow(user.id, deviceId, projectId, date)
-        // 🔴 逐条校验「这条记录是在撤回之后产生的吗」：只看请求级 issuedAt 不够，
-        //    重新开启后旧账本行（updatedAt 早于撤回）仍可能被一起打包上来。
-        if (p.rankRevokedAt && Number(e.issuedAt || 0) < p.rankRevokedAt) {
+        // 重开后的上报必须属于本轮授权，逐条排除撤回期间的账本行。
+        if (p.rankRevokedAt && (date < todayKeyCn(optInAt) || !(Number(e.issuedAt) > optInAt))) {
           rejected.push({ projectId, date, code: 'RANK_REVOKED' })
           continue
         }

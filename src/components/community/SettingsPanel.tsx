@@ -183,7 +183,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
         <Notice kind="warn">
           参与后只上传「日期 + 每个项目的含标点净增量」这类最小数据，不上传正文、标题或项目名称。
           它是独立的社区统计能力：不开通云端作品同步也能用，开启排行也不会同步你的作品。
-          关闭即撤回已上传数据；重新开启不会恢复旧排行。
+          关闭会撤回日榜、周榜和月榜上的成绩。重新开启后从零开始，只统计再次授权后产生的净增量。
         </Notice>
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" disabled={busy} onClick={() => void toggleRank(!profile.rankOptIn)}>
@@ -204,7 +204,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
             }}>立即同步</Button>
           )}
           {ledger && (
-            <span className="text-11 text-ink-400">本机已记录 {ledger.days} 天 / 合计 {ledger.total.toLocaleString('zh-CN')} 字（含标点、仅正文）</span>
+            <span className="text-11 text-ink-400">本机账本（含授权当天的本地记录）{ledger.days} 天 / 合计 {ledger.total.toLocaleString('zh-CN')} 字</span>
           )}
           {pendingRankDeltaCount() > 0 && (
             <span className="text-11 text-amber">有 {pendingRankDeltaCount()} 条本机增量等待补记，下次保存或上报时会自动重试。</span>

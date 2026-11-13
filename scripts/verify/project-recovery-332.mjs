@@ -240,6 +240,22 @@ try {
 
   // ---- 14. 停写：账号锁被占用时恢复拒绝执行 ----
   {
+    const acc = 'u_unreadable_pending'
+    const pid = 'prj_pending001'
+    const root = seedProject(acc, pid)
+    const pending = path.join(root, 'purge-pending', pid)
+    fs.mkdirSync(path.dirname(pending), { recursive: true })
+    fs.renameSync(path.join(root, 'projects', pid), pending)
+    fs.writeFileSync(indexFile(v2Root, acc), '{corrupt-index')
+    const result = recoverAccount({ v2Root, accountId: acc, apply: true, actions: [{ kind: 'remove-pending', pid }, { kind: 'rebuild-index' }] })
+    ok('索引损坏时保留隔离目录和原索引', !result.plan.some(a => a.kind === 'remove-pending') && result.results.length === 2 && result.results.every(r => !r.ok) &&
+      fs.existsSync(path.join(pending, 'state.json')) && fs.readFileSync(indexFile(v2Root, acc), 'utf8') === '{corrupt-index')
+    assert.throws(() => recoverAccount({ v2Root, accountId: acc, apply: true, actions: [{ kind: 'remove-pending', pid: '..' }] }), { code: 'BAD_RECOVERY_ACTION' })
+    writeIdx(acc, { projects: { [pid]: { revision: 999, deletedAt: 0 } } })
+    const rollback = recoverAccount({ v2Root, accountId: acc, apply: true, actions: [{ kind: 'rollback-pending', pid }] })
+    ok('显式回滚也须核对隔离状态与索引', rollback.results.some(r => !r.ok) && fs.existsSync(path.join(pending, 'state.json')))
+  }
+  {
     const acc = 'u_busy'
     seedProject(acc, 'prj_busy0001')
     const idx = idxOf(acc); idx.projects.prj_busy0001.revision = 0; writeIdx(acc, idx) // 制造落后以便有安全动作
