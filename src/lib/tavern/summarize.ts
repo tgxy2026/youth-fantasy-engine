@@ -19,7 +19,7 @@ import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from '@/lib
 import { formatDate } from '@/lib/app/date'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from '@/lib/tavern/types'
 import { buildVarExtractSystem, buildVarExtractUser, parseVarsFromText, applyVarOps, parseVarNotes } from '@/lib/tavern/vars'
@@ -184,10 +184,10 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
   const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits, onDegraded } = args
   if (messages.length === 0) return { memory: prev ?? emptyMemory(charId), journal: '' }
 
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-summary', '本轮对话记录', '生成本轮摘要'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildRoundEndSystem(charName, now, limits) },
@@ -267,10 +267,10 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
   const { charId, charName, prev, messages, charContext, providerId, chatFn, signal, now = Date.now(), limits, onDegraded } = args
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-summary', '本轮对话与既有记忆', '更新角色记忆'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildSummarySystem(charName, now, limits) },
@@ -350,10 +350,10 @@ export type ColdStartArgs = {
  */
 export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> {
   const { charId, charName, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-summary', '开场设定与首轮对话', '初始化角色记忆'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildColdStartSystem(charName, now, limits) },
@@ -456,10 +456,10 @@ export type ExtractVarsArgs = {
 export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ values: VarValues; changes: VarChange[]; notes?: Partial<Record<VarKey, string>> }> {
   const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned, notes } = args
   if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-vars', '本轮两条对话与数值项', '结算本场数值'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildVarExtractSystem(keys, { maxStep }) },
     {

@@ -16,6 +16,12 @@ import {
   __resetTavernAcpSnapshot,
 } from '../src/lib/tavern/acpChat'
 import { checkTavernReady } from '../src/lib/tavern/provider'
+import { runFreeTurn, runPlotTurn } from '../src/lib/tavern/engine'
+import { generateReport } from '../src/lib/tavern/report'
+import { DEFAULT_TAVERN_SETTINGS } from '../src/lib/tavern/settings'
+import { saveProviders } from '../src/lib/ai'
+import { __resetMockStores } from './mock-memory'
+import type { FreeSession, TavernSession } from '../src/lib/tavern/types'
 import { ACP_TAVERN_SYSTEM_HEADER, ACP_TAVERN_CURRENT_HEADER } from '../src/lib/tavern/acpChat'
 import type { AIProvider } from '../src/lib/ai'
 
@@ -378,6 +384,39 @@ async function run() {
     // 恢复假桥，后面的用例不受影响
     fakeBridge.status = origStatus
     __resetTavernAcpSnapshot()
+  }
+
+  console.log('--- 10. 零 API 配置从实际酒馆入口发送 ---')
+  {
+    __resetMockStores()
+    reset()
+    setTavernAcpAsk(allow)
+    const common = { id: 'scene', title: '合成', messages: [], params: {}, createdAt: 1, updatedAt: 1 }
+    const plot: TavernSession = {
+      ...common, model: { providerId: 'missing' }, mode: 'director',
+      anchorChapterId: '', anchorChapterLabel: '合成章',
+      cast: [], scene: { place: '塔', time: '', description: '', present: [] },
+    }
+    const free: FreeSession = { ...common, charIds: [], model: { providerId: 'missing' }, lastActiveAt: 1 }
+    generateImpl = async request => ({
+      ok: true,
+      text: request.task === 'tavern-summary' ? '{"overview":"合成概览","findings":[]}' : '合成回复',
+    })
+    const sendPlot = () => runPlotTurn(plot, '合成指令', {}, { settings: DEFAULT_TAVERN_SETTINGS })
+    const plotTurn = await sendPlot()
+    ok('无 API 模型时剧情推演真实入口发到假 Agent', plotTurn.reply === '合成回复' && plotTurn.modelName === '假 Agent')
+    const freeTurn = await runFreeTurn(free, [], '合成指令', {}, { settings: DEFAULT_TAVERN_SETTINGS, chatFn: makeTavernAcpChat({
+      generation, agentName: '假 Agent', task: 'tavern-reply', scopeText: '合成资料', purpose: '测试', ask: allow,
+    }) })
+    ok('无 API 模型时自由对话保留注入的跨请求通道', freeTurn.reply === '合成回复' && !freeTurn.fellBack)
+    const report = await generateReport(plotTurn.session)
+    ok('无 API 模型时报告入口能解析假 Agent 的结果', report.overview === '合成概览')
+    ok('三次均走 ACP 任务标识', requests.map(r => r.task).join(',') === 'tavern-reply,tavern-reply,tavern-summary')
+    const before = requests[0].text
+    plot.model = { providerId: fakeProvider.id }
+    await saveProviders([{ ...fakeProvider, contextWindow: 128 * 1024, systemPrompt: '只属于 API 的提示' }])
+    await sendPlot()
+    ok('旧 API 窗口和系统提示词均不进入 ACP 推演装配', requests[3].text === before)
   }
 
   console.log(`\n=== tavernAcpChat：${pass} passed, ${fail} failed ===`)

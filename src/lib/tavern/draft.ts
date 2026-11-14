@@ -25,7 +25,7 @@ import { parsePlainObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import type { SearchSettings, webSearch } from '@/lib/ai/webSearch'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/editor/draftMaterial'
@@ -180,10 +180,10 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
   const material = await prepareDraftMaterial({
     idea, refs: a.refs, existing: a.existing, settings: a.settings, signal: a.signal, searchFn: a.searchFn,
   })
-  const { provider } = await resolveTavernProvider(a.providerId ? { providerId: a.providerId } : undefined)
   const runChat = withIndependentAttribution(
     a.chatFn ?? await pickTavernChat('tavern-aux', '角色设定草稿与要求', '起草角色卡内容'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, a.providerId ? { providerId: a.providerId } : undefined)
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildCardDraftSystem() },
     { role: 'user', content: buildCardDraftUser({ idea, material: material.blocks }) },

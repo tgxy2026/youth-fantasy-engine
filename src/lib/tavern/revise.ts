@@ -22,7 +22,7 @@ import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { parseObjectArray, parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { uid } from '@/lib/app/id'
 import { CARD_FIELDS, isCardField, readCardField, fieldLabel } from '@/lib/tavern/types'
@@ -199,10 +199,10 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
   const transcript = recentTranscript(messages, maxChars, speakerName)
   if (!transcript.trim()) return []
 
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-aux', '角色卡现状与修订要求', '提出修订建议'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   // 现有设定：**空字段也要列**（对话里新长出来的信息正是要补进去的）
   const current = CARD_FIELDS

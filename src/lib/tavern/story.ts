@@ -24,7 +24,7 @@ import { parsePlainObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件，绕 engine 会形成循环依赖
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { prepareDraftMaterial, type DraftSource } from '@/lib/tavern/draft'
 import { webSearch, type SearchSettings } from '@/lib/ai/webSearch'
@@ -306,10 +306,10 @@ export async function draftStory(args: StoryDraftArgs): Promise<{ fields: StoryD
     searchFn: args.searchFn,
   })
 
-  const { provider } = await resolveTavernProvider(args.providerId ? { providerId: args.providerId } : undefined)
   const runChat = withIndependentAttribution(
     args.chatFn ?? await pickTavernChat('tavern-aux', '故事要求与既有设定', '起草故事'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, args.providerId ? { providerId: args.providerId } : undefined)
 
   const fence = newAuthorFence()
   const msgs: ChatMessage[] = [

@@ -18,7 +18,7 @@
  */
 import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { emptyFreeCharacter, type FreeCharacter } from '@/lib/tavern/types'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
@@ -257,10 +257,10 @@ export type ConvertArgs = {
  */
 export async function convertNovelChar(args: ConvertArgs): Promise<{ draft: CardDraft; gaps: string[] }> {
   const { name, data, source, providerId, chatFn, signal } = args
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-aux', '小说原文片段', '转换成角色卡字段'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildImportSystem() },

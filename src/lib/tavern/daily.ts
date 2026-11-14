@@ -23,7 +23,7 @@
  */
 import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { memoryToText, emptyMemory } from '@/lib/tavern/memory'
 import type { ChatFn } from '@/lib/tavern/provider'
@@ -201,10 +201,10 @@ export function parseDailyReply(text: string, logKeep = DAILY_LOG_KEEP): DailyPa
  */
 export async function advanceDaily(args: AdvanceArgs): Promise<AdvanceResult> {
   const { char, prev, memory, providerId, chatFn, signal, now = Date.now(), logKeep = DAILY_LOG_KEEP } = args
-  const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
   const runChat = withIndependentAttribution(
     chatFn ?? await pickTavernChat('tavern-summary', '当日对话记录', '生成角色日记'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
 
   const base = prev ?? emptyDaily(char.id, now)
   const days = daysSince(base.lastActiveAt, now)

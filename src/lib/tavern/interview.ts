@@ -13,7 +13,7 @@
  */
 import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import {
   emptyInterview as emptyInterviewCore,
@@ -174,7 +174,7 @@ export function tavernCallChat(
     const runChat = withIndependentAttribution(
       chatFn ?? cached ?? (cached = await pickTavernChat('tavern-aux', '访谈问答与角色资料', '生成访谈提问')),
     )
-    const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
+    const { provider } = await resolveTavernChatProvider(runChat, providerId ? { providerId } : undefined)
     return runChat(provider, msgs, {
       timeoutMs: timeoutMsOf(await getTavernSettings()),
       signal: opts.signal,

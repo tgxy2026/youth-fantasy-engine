@@ -14,7 +14,7 @@
  */
 import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { uid } from '@/lib/app/id'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -332,7 +332,7 @@ export async function runPlotTurn(
     deps.chatFn ?? await pickTavernChat('tavern-reply', '本场剧情对话与角色设定', '生成剧情回复'),
   )
   const st = deps.settings ?? await getTavernSettings()
-  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
+  const { provider, modelName, fellBack } = await resolveTavernChatProvider(runChat, session.model, st.common.defaultProviderId)
   const p = resolveParamsOf('plot', st, session.params)
   /** temperature 单独拎出来（chat 的唯一真源），其余整体透传 */
   const { temperature, ...extraOptions } = toOllamaOptions(p)
@@ -353,7 +353,7 @@ export async function runPlotTurn(
   // 🔴 组装 system 放在这里（2026-09-23 六维审计）：它内部按「最近 6 条消息」抽背景设定的**注入关键词**，
   //    原先在本轮输入并进历史**之前**调用 ⇒ 关键词漏掉本轮 user 输入，一个新关键词要等下一轮才生效。
   //    把 withUser 交给它即可，无需改签名（内部仍是 session.messages.slice(-6)）。
-  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st, provider.contextWindow)
+  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st, provider?.contextWindow)
 
   // 🔴 记忆**已经拼在 system 里**了（buildSystemPrompt 干的）—— 所以这里**没有也不该有**
   //    「记忆长度」参数：historyBudget 早把那形参删了（2026-10-02 六维审计待办），
@@ -418,7 +418,7 @@ export async function runPlotTurn(
     directorNote,
   }, replacedId)
 
-  return { session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, postApplied, postErrors }
+  return { session: next, reply: reply.trim(), cancelled, modelName, fellBack, postApplied, postErrors }
 }
 
 
@@ -779,10 +779,10 @@ export async function runFreeTurn(
   deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<FreeTurnResult> {
   const st = deps.settings ?? await getTavernSettings()
-  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = withIndependentAttribution(
     deps.chatFn ?? await pickTavernChat('tavern-reply', '本场对话历史与角色设定', '生成本轮剧情回复'),
   )
+  const { provider, modelName, fellBack } = await resolveTavernChatProvider(runChat, session.model, st.common.defaultProviderId)
   // 与剧情模式同一条约定：null = 重说（不追加用户消息、先丢掉末尾那条 AI 回复）
   const baseMsgs = userText === null ? dropTrailingAssistant(session.messages) : session.messages
   // 与剧情模式同一契约：null = 重说，必须有可重说的回复（UI 也会先判一次）
@@ -796,7 +796,7 @@ export async function runFreeTurn(
   // 🔴 组装 system 要传 withUser（2026-10-10 六维审计）：它内部按「最近 6 条消息」抽世界书 /
   //    背景设定的**注入关键词**。用原始 session 会让本轮刚提到的关键词这一轮不生效、要等下一轮 ——
   //    剧情模式 2026-09-23 已修过同一处（上面的 buildPlotSystem 有同款注释），自由模式当时漏了 ⇒ 两模式行为分叉。
-  const { system } = await buildFreeSystem({ ...session, messages: withUser }, chars, st, { windowTokens: provider.contextWindow })
+  const { system } = await buildFreeSystem({ ...session, messages: withUser }, chars, st, { windowTokens: provider?.contextWindow })
 
   const p = resolveParamsOf('free', st, session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
@@ -858,7 +858,7 @@ export async function runFreeTurn(
   }
 
   return {
-    session: next, reply: reply.trim(), cancelled, modelName: provider.model, fellBack, speakerId,
+    session: next, reply: reply.trim(), cancelled, modelName, fellBack, speakerId,
     postApplied, postErrors,
   }
 }
@@ -913,11 +913,11 @@ export async function runFreeAssist(
   deps: { chatFn?: ChatFn; settings?: TavernSettings } = {},
 ): Promise<{ text: string; modelName: string; fellBack: boolean }> {
   const st = deps.settings ?? await getTavernSettings()
-  const { provider, fellBack } = await resolveTavernProvider(session.model, st.common.defaultProviderId)
   const runChat = withIndependentAttribution(
     deps.chatFn ?? await pickTavernChat('tavern-aux', '本场对话与助手指令', '生成助手的润色或建议'),
   )
-  const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider.contextWindow })
+  const { provider, modelName, fellBack } = await resolveTavernChatProvider(runChat, session.model, st.common.defaultProviderId)
+  const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider?.contextWindow })
 
   // 参数解析先做（下面算历史额度要用到 contextBudget）—— 与 runFreeTurn 同口径：
   // 会话级覆盖优先，否则回落面板默认。此前这里直接读 st.common.contextBudget，一旦启用会话级
@@ -956,7 +956,7 @@ export async function runFreeAssist(
     const post = applyPostRules(text, st.postRules ?? [])
     text = post.text
   }
-  return { text: text.trim(), modelName: provider.model, fellBack }
+  return { text: text.trim(), modelName, fellBack }
 }
 
 function totalBudget(v: number | undefined): number {

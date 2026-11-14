@@ -13,7 +13,23 @@ import { tavernAcpSnapshot } from '@/lib/tavern/acpChat'
 import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 
 /** 「调一次模型」的函数类型 —— 测试注入桩模型用的口子 */
-export type ChatFn = typeof chat
+export type ChatFn = typeof chat & {
+  acp?: {
+    agentName: string
+    send: (messages: Parameters<typeof chat>[1], options?: Parameters<typeof chat>[2]) => ReturnType<typeof chat>
+  }
+}
+
+/** ACP uses its own channel without borrowing API configuration or capacity. */
+export async function resolveTavernChatProvider(
+  channel: Pick<ChatFn, 'acp'>,
+  ref?: { providerId?: string },
+  fallbackProviderId?: string,
+): Promise<{ provider: AIProvider | null; modelName: string; fellBack: boolean }> {
+  if (channel.acp) return { provider: null, modelName: channel.acp.agentName, fellBack: false }
+  const result = await resolveTavernProvider(ref, fallbackProviderId)
+  return { ...result, modelName: result.provider.model }
+}
 
 /**
  * 解析本轮要用的模型。

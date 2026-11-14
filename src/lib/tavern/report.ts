@@ -18,7 +18,7 @@ import { TABS } from '@/lib/schema'
 import { parsePlainObject, parseObjectArray, asText } from '@/lib/ai/aiParse'
 import { uid } from '@/lib/app/id'
 import { pickTavernChat } from '@/lib/tavern/acpChat'
-import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
+import { resolveTavernChatProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { TavernSession, TavernReport, TavernFinding, TavernFindingLevel } from '@/lib/tavern/types'
@@ -185,7 +185,6 @@ export async function normalizeFindings(
  * 生成推演报告。**不落库**（调用方决定保存时机）。
  */
 export async function generateReport(session: TavernSession, opts: ReportOptions = {}): Promise<TavernReport> {
-  const { provider } = await resolveTavernProvider(session.model)
   const cap = opts.maxTranscriptChars ?? 12000
 
   // 场景 + 对话正文（超出上限时保留最近的）
@@ -224,6 +223,7 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
   const runChat = withIndependentAttribution(
     opts.chatFn ?? await pickTavernChat('tavern-summary', '本场对话记录', '生成推演报告'),
   )
+  const { provider } = await resolveTavernChatProvider(runChat, session.model)
   opts.onPhase?.('分析推演记录')
   const reply = await runChat(
     provider,

@@ -19,8 +19,7 @@
 //
 // 🔴 **不要承诺打字效果**（2026-11-14 真机实测更正）：
 //    宿主侧确实会把每段 `agent_message_chunk` 转给 `onToken`，但当前 Antigravity
-//    （组件 1.5.0 / gemini-3.8-flash）**只在全部生成完后推一段**。
-//    实测两次生成均为 1 段、首段 35~37 秒 ⇒ 界面表现是「长时间无输出，然后整段出现」。
+//    （组件 1.5.0 / gemini-3.8-flash）实测短回复通常只有一到两段。
 //    这是 Agent 侧行为，宿主改不了；文案与界面都不能说「逐字显示」。
 import { chat } from '@/lib/ai'
 import type { ChatFn } from '@/lib/tavern/provider'
@@ -242,8 +241,7 @@ export function makeTavernAcpChat(o: TavernAcpOptions): ChatFn {
     ask: o.ask,
   })
 
-  const fn = async (
-    _config: Parameters<ChatFn>[0],
+  const sendPrompt = async (
     messages: ChatMessage[],
     opts?: Parameters<ChatFn>[2],
   ): Promise<string> => {
@@ -261,5 +259,7 @@ export function makeTavernAcpChat(o: TavernAcpOptions): ChatFn {
 
   // 🔴 签名必须与 `ChatFn`（即 `chat`）一致：酒馆 15 处都按 `runChat(provider, msgs, opts)` 调，
   //    少一个参数就会在某一处静默传错位。
-  return fn as unknown as ChatFn
+  const chatFn: ChatFn = (_provider, messages, options) => sendPrompt(messages, options)
+  chatFn.acp = { agentName: o.agentName, send: sendPrompt }
+  return chatFn
 }

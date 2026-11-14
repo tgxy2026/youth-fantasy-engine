@@ -25,13 +25,19 @@ export const TAVERN_INDEPENDENT_REQUEST = { scope: 'independent' } as const
  *  · 调用方**没给** `request` ⇒ 补 `{ scope:'independent' }`；
  *  · 调用方**给了** ⇒ 原样尊重（万一将来酒馆要挂到某个任务上，不用改这里）。
  */
-export function withIndependentAttribution(fn: ChatFn): ChatFn {
-  const wrapped = (async (...args: Parameters<ChatFn>) => {
-    const [cfg, msgs, opts] = args
-    return fn(cfg, msgs, {
+export function withIndependentAttribution(fn: ChatFn) {
+  const wrapped = async (
+    cfg: Parameters<ChatFn>[0] | null,
+    msgs: Parameters<ChatFn>[1],
+    opts?: Parameters<ChatFn>[2],
+  ) => {
+    const options = {
       ...(opts ?? {}),
       request: opts?.request ?? TAVERN_INDEPENDENT_REQUEST,
-    })
-  }) as ChatFn
-  return wrapped
+    }
+    if (fn.acp) return fn.acp.send(msgs, options)
+    if (!cfg) throw new Error('尚未配置可用的酒馆 API 模型。')
+    return fn(cfg, msgs, options)
+  }
+  return Object.assign(wrapped, { acp: fn.acp })
 }
