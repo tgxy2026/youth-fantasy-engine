@@ -199,6 +199,7 @@ export function useNovelEditorGhost({
           generation: acp.generation,
           title: '发送光标前正文至 ACP Agent',
           message: `接收方为 ${acp.name}。本次发送光标前正文与设定摘要，只用于生成一句续写建议（不会改动正文）。`,
+          agentName: acp.name,
           signal: ac.signal,
           assertCurrent: () => { if (ac.signal.aborted) throw new Error('已取消。') },
           ask: options => {

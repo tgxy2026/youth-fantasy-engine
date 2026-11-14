@@ -66,6 +66,7 @@ export function acpStructuredText(input: AcpStructuredSendInput): (prompt: strin
     generation: input.generation,
     title: scope.title,
     message: acpGateMessage(input.agentName, input.scopeText ?? scope.full, scope.purpose),
+    agentName: input.agentName,
     signal: input.signal,
     assertCurrent: input.assertCurrent,
     ask: input.ask,

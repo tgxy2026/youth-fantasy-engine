@@ -8,6 +8,7 @@
  * 🔴 本文件属 lib 层：确认弹窗由调用方注入，不反向依赖 components/。
  */
 import { acpWrite, assertAcpWritingCurrent, type AcpTask } from './acpBridge'
+import { hasAcpConsent } from './acpConsent'
 
 /** 与界面确认弹窗同形的最小契约（由调用方传 confirmDialog）。 */
 export interface AcpGateConfirmOptions {
@@ -36,6 +37,12 @@ export interface AcpGateInput {
    * 取消后后续各块直接抛「已取消发送」。单次调用的任务开不开都一样。
    */
   askOnce?: boolean
+  /**
+   * 接收方名称（如 `Antigravity`）。给了就按「本进程内是否已告知该 Agent」决定要不要弹窗：
+   * 连接成功后由界面记一次，之后同一进程内所有功能不再逐次打扰。
+   * 不传则保持旧行为（每次都问）——避免漏接的调用点静默变成「永不确认」。
+   */
+  agentName?: string
 }
 
 /**
@@ -53,8 +60,13 @@ export function acpGatedText(
 ): (prompt: string, call?: { signal?: AbortSignal; onToken?: (delta: string) => void }) => Promise<string> {
   let consented: Promise<boolean> | null = null
   return async (prompt, call) => {
+    // 🔴 2026-11-14：连接成功后已在界面上告知过一次「资料会发给这个 Agent」，
+    //    同一进程内不再逐次弹（原先每调一次弹一次，作者反馈很烦）。
+    //    重启应用 / 停用连接 / 换 Agent 都会让账本失效，从而重新提示一次。
     const options: AcpGateConfirmOptions = { title: input.title, message: input.message, confirmText: '确认发送' }
-    const ok = await (input.askOnce ? (consented ??= input.ask(options)) : input.ask(options))
+    const ok = hasAcpConsent(input.agentName)
+      ? true
+      : await (input.askOnce ? (consented ??= input.ask(options)) : input.ask(options))
     if (!ok) throw new Error('已取消发送。')
     const signal = call?.signal ?? input.signal
     await assertAcpWritingCurrent(input.generation)

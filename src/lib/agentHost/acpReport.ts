@@ -55,6 +55,7 @@ export function acpReportText(input: AcpReportSendInput): (prompt: string) => Pr
     generation: input.generation,
     title: REPORT_SCOPE[input.task].title,
     message: acpReportMessage(input.task, input.agentName, input.brief === true),
+    agentName: input.agentName,
     signal: input.signal,
     assertCurrent: input.assertCurrent,
     ask: input.ask,

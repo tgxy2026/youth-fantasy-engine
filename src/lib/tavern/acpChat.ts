@@ -236,6 +236,8 @@ export function makeTavernAcpChat(o: TavernAcpOptions): ChatFn {
     generation: o.generation,
     title: '发送酒馆资料至 ACP Agent',
     message: `接收方为 ${o.agentName}。本次发送${o.scopeText}，只用于${o.purpose}。`,
+    // 连接成功时已告知过一次，同一进程内不再逐次弹（酒馆一轮会连发多次）。
+    agentName: o.agentName,
     ...(o.assertCurrent ? { assertCurrent: o.assertCurrent } : {}),
     ...(o.askOnce ? { askOnce: o.askOnce } : {}),
     ask: o.ask,
