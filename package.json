@@ -22,7 +22,10 @@
     "lint": "eslint src tests --max-warnings 0",
     "verify": "npm run typecheck && npm run lint && npm test",
     "verify:reliability": "node scripts/verify/reliability.mjs --profile local",
-    "cleanup": "node scripts/cleanup-residual.mjs"
+    "cleanup": "node scripts/cleanup-residual.mjs",
+    "cleanup:stale": "node scripts/maintenance/collect-stale.mjs",
+    "cleanup:stale:apply": "node scripts/maintenance/collect-stale.mjs --apply",
+    "cleanup:stale:restore": "node scripts/maintenance/collect-stale.mjs --restore"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

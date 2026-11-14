@@ -1,0 +1,77 @@
+# 工作区过时测试／脚本／临时文件清理流程
+
+> 2026-11-14 首次执行并固化。目标：定期把「不适配当前版本、无法复用」的历史脚本隔离出来，
+> **由人确认后再删除**，避免 `2026-11-03` 那次误删 `tests/` 又恢复的事故重演。
+
+## 核心原则
+
+| 原则 | 说明 |
+|---|---|
+| 只移动，不删除 | 工具只把候选移进隔离目录；删除动作永远由人执行 |
+| 不做副本备份 | 移动本身可逆，`manifest.json` 提供一键还原索引 |
+| 先扫描后隔离 | 默认 `scan` 只读；`--apply` 才动文件，且移动前做安全校验 |
+| 判据要确定 | 用「明确的命名规则 + 保护名单」，不用「零引用」这类静态推断（动态拼接的入口会被误判） |
+| 保留在役脚本 | `tests/*.test.ts` 是 `npm test` 与 `reliability source.tests` 的入口，**一律不动** |
+
+## 三阶段
+
+```bash
+# ① 盘点（只读，可直接定时跑）
+npm run cleanup:stale
+npm run cleanup:stale -- --json        # 机器可读，供自动化解析
+
+# ② 隔离（确认清单后）
+npm run cleanup:stale:apply            # → _待清理确认-YYYYMMDD/
+
+# ③ 人确认后删除隔离目录；或撤销
+npm run cleanup:stale:restore          # 按 manifest 一键还原
+```
+
+隔离目录内保持原相对路径结构，附 `manifest.json`（完整路径映射 + 判定规则 + 保护跳过项）和
+`.gitignore`（`*`，不污染 `git status`）。**确认删除时直接删掉整个隔离目录即可。**
+
+## 三组判定规则
+
+规则集中在 `collect-stale.mjs` 的 `CONFIG`，新增版本后缀或保护项改那里。
+
+| 组 | 来源 | 规则 | 为什么算「不可复用」 |
+|---|---|---|---|
+| A | `tests/` 顶层隐藏 `.*.mjs` | 且必须能对应到同名 `*.test.ts/tsx` 源码 | esbuild 打包运行包，`.gitignore` 已标注「非源码」；由 `build-test.mjs` 每次重建，移走零损失 |
+| B | `scripts/verify/` | 文件名带 `-331/-334/-335/-340` 等旧版本后缀，且不命中活跃入口关键词 | 3.3.x／3.4.0 时代一次性验收探针，只被 `docs/归档/` 历史文档提及，不属于任何当前门禁 |
+| C | `.workbuddy/tools/` | 前缀为 `patch-`／`commit-msg-`／`verify-3.1`／`verify-3.2.0`／`verify-opt-`／`verify-web-` | 2026-10 月一次性补丁器与旧版验证脚本，本就被 gitignore 忽略 |
+
+### 保护范围（绝不扫描／移动）
+
+- 路径黑名单：`docs/`、`.workbuddy/memory/`、`.workbuddy/tmp/`（恢复证据）、`release/`（含 `eb-cache`）、
+  `dist/`、`data/`（用户数据）、`src/`、`server/`、`electron/`、`tests/browser/`、`tests/fixtures/`
+- `tests/` 全部受控测试与运行器、`*-332.*` 服务端自检（`npm run test:server` 动态扫描执行）
+- 活跃入口：`reliability` / `audit` / `release-check` / `table-performance` / `check-doc-refs` /
+  `render-readme-art` / `test-plan`
+- `scripts/agent-host/*`（ACP 核心）、`scripts/audit/legacy/*`、`scripts/mcp/*`、构建钩子
+- `.workbuddy/tools/` 里 `TESTING-GUIDE` 点名的 `verify-mono-charts.cjs`、`verify-custom-headers.cjs`、
+  `audit-platform.mjs`，以及 `shots-tw*`（与本项目无关）与基准／代理类工具
+
+### 未纳入、需人工判断的第二批
+
+`scripts/verify/frontend-*.mjs`（历史前端探针）、`live-332-api.mjs`、`scripts/bench/`。
+它们可能有手工复现价值，工具默认不碰；要纳入请先人工核对再改规则。
+
+## 清理后的门禁
+
+移动完成后按 `TESTING-GUIDE.md` 做最小验证，确认引用链没断：
+
+```bash
+npm run typecheck
+npm run lint
+node tests/build-test.mjs versionCheck      # 同时验证 A 组产物可自动重建
+```
+
+如需更强证据再跑 `npm test` 全量。注意 `npm test` 会重新生成 A 组隐藏产物，属正常现象，
+不是「清理没生效」。B 组若含 git 受控文件，`git status` 会出现 `D`，**确认删除后再提交**，
+不要把这些 `D` 当成既定删除提前 commit。
+
+## 红线
+
+- 不删 `.workbuddy/tmp` 恢复包与 `release/eb-cache`；不做 `git stash`、手工 `gc`、`git add -A`。
+- 隔离目录在人工确认前不得删除；`--apply` 遇到同名隔离目录会直接中止，避免覆盖上一批。
+- 提交／封装／推送／发布均须主人明确授权，本流程不触发其中任何一项。

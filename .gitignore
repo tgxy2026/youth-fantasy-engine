@@ -34,6 +34,8 @@ Desktop.ini
 .workbuddy/tmp/
 #   一次性临时目录（如跑团验证用的浏览器 userdata：tmp-w42/ —— 含上千缓存文件，绝不入库）
 .workbuddy/tmp-*/
+#   定期清理的待确认隔离目录（scripts/maintenance/collect-stale.mjs 生成，只移动、由人确认后删除）
+_待清理确认-*/
 #   审计报告草稿与 HTML（过程产物，非产品源码）
 .workbuddy/audit-*/
 #   便携版免安装改造的过程产物：方案评估 / 实施记录 / 构建原型与验证脚本
