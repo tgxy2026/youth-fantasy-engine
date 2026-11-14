@@ -2,10 +2,11 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
-using Microsoft.Win32.SafeHandles;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,13 +26,6 @@ public static class YfeAcpJob {
         public uint ProcessId, ThreadId;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct SecurityAttributes {
-        public int Size;
-        public IntPtr Descriptor;
-        public int Inherit;
-    }
-
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern bool CreateProcessWithLogonW(string user, string domain, IntPtr password, uint logonFlags,
         string binary, StringBuilder commandLine, uint flags, IntPtr environment, string cwd,
@@ -40,10 +34,6 @@ public static class YfeAcpJob {
     static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
     [DllImport("advapi32.dll", SetLastError = true)]
     static extern bool GetTokenInformation(IntPtr token, int informationClass, out int value, int length, out int written);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool CreatePipe(out SafeFileHandle read, out SafeFileHandle write, ref SecurityAttributes attributes, int size);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool SetHandleInformation(SafeFileHandle handle, int mask, int flags);
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -78,6 +68,8 @@ public static class YfeAcpJob {
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
     [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+    [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool CloseHandle(IntPtr handle);
 
     public static bool IsGone(string name) {
@@ -92,7 +84,7 @@ public static class YfeAcpJob {
     }
 
     public static int Run(string name, int parentId, long parentStarted, string binary, string cwd, string arguments,
-        string sandboxUser, string sandboxSid, System.Security.SecureString sandboxPassword) {
+        string sandboxUser, string sandboxSid, System.Security.SecureString sandboxPassword, string isolatedChild) {
         IntPtr job = CreateJobObject(IntPtr.Zero, name);
         if (job == IntPtr.Zero) throw new Win32Exception();
         if (Marshal.GetLastWin32Error() == 183) {
@@ -111,9 +103,9 @@ public static class YfeAcpJob {
                 long actualStarted = (long)(parent.StartTime.ToUniversalTime() - new DateTime(1970, 1, 1)).TotalMilliseconds;
                 if (Math.Abs(actualStarted - parentStarted) > 3000 || parent.HasExited)
                     throw new InvalidOperationException("Host identity changed");
-                if (!AssignProcessToJobObject(job, self.Handle)) throw new Win32Exception();
                 if (sandboxPassword != null)
-                    return RunIsolated(job, parent, binary, cwd, arguments, sandboxUser, sandboxSid, sandboxPassword);
+                    return RunIsolated(job, parent, binary, cwd, arguments, sandboxUser, sandboxSid, sandboxPassword, isolatedChild);
+                if (!AssignProcessToJobObject(job, self.Handle)) throw new Win32Exception();
                 var start = new ProcessStartInfo(binary, arguments);
                 start.WorkingDirectory = cwd;
                 start.UseShellExecute = false;
@@ -156,25 +148,6 @@ public static class YfeAcpJob {
         };
     }
 
-    sealed class RedirectPipe : IDisposable {
-        public readonly SafeFileHandle Child, Host;
-
-        public RedirectPipe(bool input) {
-            var attributes = new SecurityAttributes { Size = Marshal.SizeOf(typeof(SecurityAttributes)), Inherit = 1 };
-            SafeFileHandle read, write;
-            if (!CreatePipe(out read, out write, ref attributes, 0)) throw new Win32Exception();
-            Child = input ? read : write;
-            Host = input ? write : read;
-            if (!SetHandleInformation(Host, 1, 0)) {
-                var error = new Win32Exception();
-                Dispose();
-                throw error;
-            }
-        }
-
-        public void Dispose() { Child.Dispose(); Host.Dispose(); }
-    }
-
     static void VerifyIsolatedIdentity(IntPtr process, string expectedSid) {
         IntPtr token;
         if (!OpenProcessToken(process, 8, out token)) throw new Win32Exception(); // TOKEN_QUERY
@@ -184,33 +157,45 @@ public static class YfeAcpJob {
                 int elevation, written;
                 if (!GetTokenInformation(token, 18, out elevation, sizeof(int), out written))
                     throw new Win32Exception(); // TokenElevationType
-                var principal = new WindowsPrincipal(actual);
+                var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+                bool administrator = false;
+                foreach (IdentityReference group in actual.Groups) administrator |= administrators.Equals(group);
                 if (actual.User.Value != expectedSid || actual.User.Equals(host.User) || elevation != 1 ||
-                    principal.IsInRole(WindowsBuiltInRole.Administrator))
+                    administrator)
                     throw new InvalidOperationException("Unexpected ACP sandbox identity");
             }
         } finally { CloseHandle(token); }
     }
 
     static int RunIsolated(IntPtr job, Process parent, string binary, string cwd, string arguments,
-        string user, string sid, System.Security.SecureString password) {
-        using (var input = new RedirectPipe(true))
-        using (var output = new RedirectPipe(false))
-        using (var error = new RedirectPipe(false)) {
-            var startup = new StartupInfo {
-                Size = Marshal.SizeOf(typeof(StartupInfo)),
-                Flags = 0x100, // STARTF_USESTDHANDLES
-                Input = input.Child.DangerousGetHandle(),
-                Output = output.Child.DangerousGetHandle(),
-                Error = error.Child.DangerousGetHandle()
-            };
-            var command = new StringBuilder("\"" + binary + "\" " + arguments);
+        string user, string sid, System.Security.SecureString password, string isolatedChild) {
+        string pipeName = "YFE-ACP-stdio-" + Guid.NewGuid().ToString("N");
+        var acl = new PipeSecurity();
+        using (var identity = WindowsIdentity.GetCurrent())
+            acl.AddAccessRule(new PipeAccessRule(identity.User, PipeAccessRights.FullControl, AccessControlType.Allow));
+        acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(sid), PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        using (var input = new NamedPipeServerStream(pipeName + "-in", PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, acl))
+        using (var output = new NamedPipeServerStream(pipeName + "-out", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, acl))
+        using (var error = new NamedPipeServerStream(pipeName + "-err", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, acl)) {
+            var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)) };
+            var shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+            // CreateProcessWithLogonW limits the command line to 1024 characters.
+            var relay = Path.Combine(cwd, "yfe-acp-relay-" + Guid.NewGuid().ToString("N") + ".ps1");
+            using (var file = new FileStream(relay, FileMode.CreateNew))
+            using (var writer = new StreamWriter(file, new UTF8Encoding(true)))
+                writer.Write(isolatedChild);
+            var command = new StringBuilder("\"" + shell + "\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + relay + "\"");
             ProcessInfo process;
             IntPtr secret = Marshal.SecureStringToGlobalAllocUnicode(password);
             try {
                 // The supervisor receives only the configured child environment.
                 // Pass it explicitly so Windows does not substitute the account's environment.
                 var variables = Environment.GetEnvironmentVariables();
+                if (String.IsNullOrEmpty(variables["TEMP"] as string)) variables["TEMP"] = cwd;
+                if (String.IsNullOrEmpty(variables["TMP"] as string)) variables["TMP"] = variables["TEMP"];
+                variables["YFE_RELAY_PIPE"] = pipeName;
+                variables["YFE_RELAY_BINARY"] = binary;
+                variables["YFE_RELAY_ARGUMENTS"] = arguments;
                 var names = new string[variables.Count];
                 variables.Keys.CopyTo(names, 0);
                 Array.Sort(names, StringComparer.OrdinalIgnoreCase);
@@ -220,34 +205,47 @@ public static class YfeAcpJob {
                 IntPtr environment = Marshal.StringToHGlobalUni(block.ToString());
                 try {
                     const uint suspendedUnicodeNoWindow = 0x08000404;
-                    if (!CreateProcessWithLogonW(user, ".", secret, 1, binary, command,
-                        suspendedUnicodeNoWindow, environment, cwd, ref startup, out process))
+                    if (!CreateProcessWithLogonW(user, ".", secret, 1, shell, command,
+                        suspendedUnicodeNoWindow, environment, cwd, ref startup, out process)) {
                         throw new Win32Exception();
+                    }
                 } finally { Marshal.FreeHGlobal(environment); }
             } finally { Marshal.ZeroFreeGlobalAllocUnicode(secret); }
             try {
-                input.Child.Dispose();
-                output.Child.Dispose();
-                error.Child.Dispose();
                 VerifyIsolatedIdentity(process.Process, sid);
-                // Secondary Logon creates this process on our behalf. Assign its
-                // actual handle explicitly while the primary thread is suspended.
-                if (!AssignProcessToJobObject(job, process.Process)) throw new Win32Exception();
+                // Secondary Logon creates this process on our behalf. No Agent
+                // starts before the relay identity and job membership are verified.
+                if (!AssignProcessToJobObject(job, process.Process)) {
+                    int assignmentError = Marshal.GetLastWin32Error();
+                    bool alreadyInJob;
+                    if (!IsProcessInJob(process.Process, job, out alreadyInJob) || !alreadyInJob)
+                        throw new Win32Exception(assignmentError);
+                }
                 if (parent.HasExited) return 1;
                 if (ResumeThread(process.Thread) == uint.MaxValue) throw new Win32Exception();
-                using (var stdin = new FileStream(input.Host, FileAccess.Write))
-                using (var stdout = new FileStream(output.Host, FileAccess.Read))
-                using (var stderr = new FileStream(error.Host, FileAccess.Read)) {
-                    var tasks = Relay(stdin, stdout, stderr);
-                    uint status;
-                    while ((status = WaitForSingleObject(process.Process, 100)) == 258 && !parent.HasExited) { }
-                    if (status == 258) return 1;
-                    if (status != 0) throw new Win32Exception();
-                    Task.WaitAll(tasks, 500);
-                    uint code;
-                    if (!GetExitCodeProcess(process.Process, out code)) throw new Win32Exception();
-                    return unchecked((int)code);
+                var connections = new[] { input, output, error };
+                var accepting = Task.WhenAll(Array.ConvertAll(connections, pipe => pipe.WaitForConnectionAsync()));
+                var timeout = Stopwatch.StartNew();
+                while (!accepting.IsCompleted && WaitForSingleObject(process.Process, 100) == 258 && !parent.HasExited) {
+                    if (timeout.ElapsedMilliseconds > 9000) throw new TimeoutException("ACP stdio relay connection");
                 }
+                if (!accepting.IsCompleted || parent.HasExited) {
+                    uint relayExit;
+                    if (GetExitCodeProcess(process.Process, out relayExit))
+                        Console.Error.WriteLine("ACP isolated relay ended before connecting (" + relayExit + ").");
+                    return 1;
+                }
+                accepting.GetAwaiter().GetResult();
+                // The pipe ACL permits only the verified host and dedicated account.
+                var tasks = Relay(input, output, error);
+                uint status;
+                while ((status = WaitForSingleObject(process.Process, 100)) == 258 && !parent.HasExited) { }
+                if (status == 258) return 1;
+                if (status != 0) throw new Win32Exception();
+                Task.WaitAll(tasks, 500);
+                uint code;
+                if (!GetExitCodeProcess(process.Process, out code)) throw new Win32Exception();
+                return unchecked((int)code);
             } finally {
                 // Also covers errors before the process was assigned to the job.
                 TerminateProcess(process.Process, 1);

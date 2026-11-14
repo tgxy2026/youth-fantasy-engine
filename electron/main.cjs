@@ -922,6 +922,7 @@ ipcMain.handle('store:path', () => dataFile())
   }
 
   ipcMain.handle('acp:install', (e, id) => withAcpOperation(e, id, request => acpRuntime.install(request)))
+  ipcMain.handle('acp:setup-isolation', (e, id) => withAcpOperation(e, id, request => acpRuntime.setupIsolation(request)))
   ipcMain.handle('acp:select-binary', (e, id) => withAcpOperation(e, id, request => acpRuntime.selectBinary(request, async () => {
     const selected = await dialog.showOpenDialog(win, {
       title: '选择官方 Antigravity ACP 主程序',

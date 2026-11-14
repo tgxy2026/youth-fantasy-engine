@@ -121,16 +121,20 @@ export function createAcpRuntime({ root, adapters }) {
     }
   }
 
-  // Keep one bounded retry for session/new. Internal errors alone do not identify the cause.
-  const isTransientSessionError = error => {
-    if (error?.acpCode === -32603) return true
-    return /会话未建立/.test(String(error?.message ?? ''))
-  }
+  // Retry only a transient setup error, before any prompt or project material is sent.
+  const isTransientSessionError = error => error?.sessionFailure === 'network'
   const readableSessionError = error => {
-    if (!isTransientSessionError(error)) return error
+    if (error?.acpCode !== -32603) return error
+    const messages = {
+      network: 'ACP 建立会话时网络连接失败。请检查网络连接后重试，本次未发送创作资料。',
+      auth: 'ACP 建立会话时账号验证失败。请在 ACP 连接中重新登录。',
+      quota: 'ACP Agent 暂时无法分配会话。请检查账号额度，稍后重试。',
+      unknown: 'ACP Agent 建立会话失败（-32603）。请重试连接，本次未发送创作资料。',
+    }
+    const message = messages[error.sessionFailure] ?? messages.unknown
     return Object.assign(
-      new Error('ACP 暂时无法建立新会话：Agent 可能正忙，或对连续请求做了限流。请等 15~30 秒再试一次；若一直失败，可到 Antigravity 里关掉闲置会话后重新连接。'),
-      { acpCode: error?.acpCode ?? null, cause: error },
+      new Error(message),
+      { acpCode: error.acpCode, sessionFailure: error.sessionFailure },
     )
   }
   async function openSession({ client, cwd, signal }) {
@@ -139,16 +143,12 @@ export function createAcpRuntime({ root, adapters }) {
       if (typeof session?.sessionId !== 'string' || !session.sessionId || session.sessionId.length > 512) throw new Error('ACP 会话未建立。')
       return session
     }
-    try {
-      return await attempt()
-    } catch (error) {
-      if (signal?.aborted || !isTransientSessionError(error)) throw readableSessionError(error)
-      try { await delay(4000, undefined, { signal }) }
-      catch (abortError) { throw signal.reason ?? abortError }
-      try {
-        return await attempt()
-      } catch (second) {
-        throw readableSessionError(second)
+    for (const backoff of [2500, 5000, 0]) {
+      try { return await attempt() }
+      catch (error) {
+        if (signal.aborted || !backoff || !isTransientSessionError(error)) throw readableSessionError(error)
+        try { await delay(backoff, undefined, { signal }) }
+        catch (abortError) { throw signal.reason ?? abortError }
       }
     }
   }
@@ -227,6 +227,7 @@ export function createAcpRuntime({ root, adapters }) {
         })),
         selected, generation, busy: !!operation, options: sessionOptions, ready: sessionReady,
         requiresConnection: adapter?.requiresConnection === true,
+        isolation: adapter?.isolationConfigured ? (await adapter.isolationConfigured() ? 'configured' : 'required') : null,
         config: adapter
           ? Object.fromEntries(fields.map(field => [field, typeof configs[selected]?.[field] === 'string' ? configs[selected][field] : '']))
           : null,
@@ -262,6 +263,15 @@ export function createAcpRuntime({ root, adapters }) {
     },
     async disconnect(service) {
       return service.switchAcpAgent(randomUUID(), async () => async () => { invalidateResults() })
+    },
+    async setupIsolation(request) {
+      return runOperation(request, async signal => {
+        const { selected } = await readSettings()
+        const adapter = registry.get(selected)
+        if (!adapter?.setupIsolation) throw new Error('所选 ACP Agent 无需开通 Windows 隔离。')
+        await adapter.setupIsolation(signal)
+        invalidateResults()
+      })
     },
     async install(request) {
       return runOperation(request, async signal => {

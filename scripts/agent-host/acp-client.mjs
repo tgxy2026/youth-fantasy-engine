@@ -3,6 +3,17 @@ const MAX_FRAME = 1024 * 1024
 const MAX_TEXT = 512 * 1024
 const REQUEST_TIMEOUT = 30_000
 
+function sessionFailureKind(method, error) {
+  if (method !== 'session/new' || error.code !== -32603) return undefined
+  // Classify within the host. Vendor error data can contain account data or URLs.
+  const text = [error.message, typeof error.data === 'string' ? error.data : JSON.stringify(error.data)]
+    .filter(value => typeof value === 'string').map(value => value.slice(0, 4096)).join(' ')
+  if (/\b(?:401|403)\b|unauthori[sz]ed|permission denied|invalid credentials/i.test(text)) return 'auth'
+  if (/\b429\b|resource.exhausted|rate.limit|quota/i.test(text)) return 'quota'
+  if (/\b(?:502|503|504)\b|network|connection (?:reset|refused|aborted|error)|econnreset|service unavailable|timed out|deadline exceeded|temporar(?:y|ily)/i.test(text)) return 'network'
+  return 'unknown'
+}
+
 export function createAcpClient({ input, output, exited }) {
   const requests = new Map()
   let nextId = 0
@@ -57,7 +68,9 @@ export function createAcpClient({ input, output, exited }) {
     requests.delete(msg.id)
     if (msg.error) {
       const code = Number.isInteger(msg.error.code) ? msg.error.code : null
-      pending.reject(Object.assign(new Error(`ACP ${pending.method} 失败（${code ?? '未知错误'}）。`), { acpCode: code }))
+      pending.reject(Object.assign(new Error(`ACP ${pending.method} 失败（${code ?? '未知错误'}）。`), {
+        acpCode: code, sessionFailure: sessionFailureKind(pending.method, msg.error),
+      }))
     }
     else if (Object.hasOwn(msg, 'result')) pending.resolve(msg.result)
     else pending.reject(new Error('ACP 响应缺少结果。'))

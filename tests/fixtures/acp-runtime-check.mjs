@@ -27,6 +27,7 @@ let stops = 0
 const trace = path.join(root, 'acp-transcript')
 let advertiseClose = false
 let rejectClose = false
+let networkFailures = 0
 const adapters = ['fake-a', 'fake-b'].map(id => ({
   id, name: id,
   async launch({ cwd, profile }) {
@@ -37,6 +38,7 @@ const adapters = ['fake-a', 'fake-b'].map(id => ({
       env: {
         ...process.env, YFE_FIXTURE_ACP_TRACE: trace, YFE_FIXTURE_ACP_CLOSE: advertiseClose ? '1' : '0',
         YFE_FIXTURE_ACP_FAIL_CLOSE: rejectClose ? '1' : '0',
+        YFE_FIXTURE_ACP_NETWORK_FAILURES: String(networkFailures),
       },
     })
     child.on('error', () => {})
@@ -137,6 +139,18 @@ try {
   assert.equal(launches, stops, '关闭 RPC 被拒仍须确认进程退出')
   assert.equal((await service.status()).active.acp, 0)
   rejectClose = false
+  networkFailures = 1
+  assert.equal(await generate('model-and-thinking'), 'second-model/high')
+  assert.deepEqual((await methods()).slice(-6), [
+    'session/new', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt', 'session/close',
+  ])
+  const retrying = generate('model-and-thinking')
+  const rejectedRetry = assert.rejects(retrying, /取消/)
+  while ((await methods()).at(-1) !== 'session/new') await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(runtime.cancel('fixture', 'run'), true)
+  await rejectedRetry
+  assert.equal((await methods()).at(-1), 'session/new', '取消建会话重试后不发送提示词')
+  networkFailures = 0
   await runtime.configure(service, { model: 'invalid-model' })
   await assert.rejects(generate('model-and-thinking'), /核对模型选项/)
   await service.close()

@@ -2,7 +2,7 @@
 // standard account. Pass paths to synthetic fixtures and a DPAPI credential file.
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchWindowsAcpJob } from '../agent-host/acp-job.mjs'
@@ -21,6 +21,8 @@ const workFile = path.join(workDirectory, 'synthetic-' + randomBytes(8).toString
 const fixture = workFile + '.cjs'
 const system = process.env.SystemRoot ?? 'C:\\Windows'
 const sample = randomBytes(12).toString('hex')
+const temp = path.join(workDirectory, 'temp-' + sample)
+await mkdir(temp)
 const checkFiles = `
   const fs = require('node:fs')
   function denied(action) {
@@ -40,7 +42,7 @@ const payload = checkFiles + `
   if (process.argv[2] === 'descendant') {
     console.log(JSON.stringify(checks))
   } else {
-    const child = require('node:child_process').spawnSync(process.execPath, [__filename, 'descendant'], { encoding: 'utf8' })
+    const child = require('node:child_process').spawnSync(process.execPath, ['--preserve-symlinks-main', __filename, 'descendant'], { encoding: 'utf8' })
     const input = fs.readFileSync(0, 'utf8')
     fs.writeFileSync(process.env.YFE_WORK_CANARY, input, { flag: 'wx' })
     console.error('synthetic-stderr')
@@ -52,10 +54,10 @@ const output = []
 await writeFile(fixture, payload, { flag: 'wx' })
 const job = launchWindowsAcpJob({
   runId: randomBytes(16).toString('hex'), binary: nodeExe, cwd: workDirectory,
-  childArguments: `"${fixture}"`,
+  childArguments: `--preserve-symlinks-main "${fixture}"`,
   sandbox: { user, sid, credentialFile },
   env: {
-    SystemRoot: system, WINDIR: system, PATH: path.join(system, 'System32'),
+    SystemRoot: system, WINDIR: system, PATH: path.join(system, 'System32'), TEMP: temp, TMP: temp,
     YFE_PRIVATE_CANARY: privateCanary, YFE_COMPONENT_CANARY: componentCanary,
     YFE_WORK_CANARY: workFile,
   },

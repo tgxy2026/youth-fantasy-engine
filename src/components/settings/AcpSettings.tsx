@@ -11,12 +11,14 @@ interface AcpSettingsStatus {
   config: { binary: string; model: string; thinking: string } | null
   options?: Partial<Record<'model' | 'thinking', { current?: string; values: { value: string; name: string }[] }>> | null
   ready?: boolean
+  isolation?: 'required' | 'configured' | null
 }
 
 interface AcpDesktopSettings {
   status(): Promise<AcpSettingsStatus | null>
   select(id: string): Promise<{ ok: boolean; error?: string }>
   install(id: string): Promise<{ ok: boolean; error?: string }>
+  setupIsolation(id: string): Promise<{ ok: boolean; error?: string }>
   selectBinary(id: string): Promise<{ ok: boolean; error?: string }>
   connect(id: string, login: boolean): Promise<{ ok: boolean; error?: string }>
   disconnect(id: string): Promise<{ ok: boolean; error?: string }>
@@ -112,7 +114,12 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
           onClick={() => api && void run('正在选择官方组件…', id => api.selectBinary(id))}>选择已有官方组件</Button>
       </div>
     </details>}
-    {selected?.available && configured && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    {status.isolation === 'required' && <section className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+      <p className="text-12 text-ink-300">首次使用需开通 Windows 隔离。Windows 会请求管理员批准，然后创建专用标准账户。开通后请在隔离环境中登录 Google。</p>
+      <Button size="sm" variant="primary" className="mt-2" disabled={controlsDisabled}
+        onClick={() => api && void run('等待 Windows 管理员确认…', id => api.setupIsolation(id), 'Windows ACP 隔离已开通')}>开通 Windows 隔离</Button>
+    </section>}
+    {selected?.available && configured && status.isolation !== 'required' && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 id="acp-connection-heading" className="text-12 font-medium text-ink-200">账号与连接</h3>
         <span className="inline-flex items-center gap-1.5 text-12 text-ink-400">

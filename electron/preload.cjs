@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('electronAcp', {
   configure: (id, patch) => ipcRenderer.invoke('acp:configure', id, patch),
   cancel: id => ipcRenderer.invoke('acp:cancel', id),
   generate: request => ipcRenderer.invoke('acp:generate', request),
+  setupIsolation: id => ipcRenderer.invoke('acp:setup-isolation', id),
   onChunk: callback => {
     const listener = (_event, chunk) => callback(chunk)
     ipcRenderer.on('acp:chunk', listener)

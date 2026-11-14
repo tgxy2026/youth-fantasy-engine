@@ -8,7 +8,8 @@ param(
     [string]$ChildArguments = '',
     [string]$SandboxUser,
     [string]$SandboxSid,
-    [string]$SandboxCredentialFile
+    [string]$SandboxCredentialFile,
+    [string]$SandboxIdentityFile
 )
 $ErrorActionPreference = 'Stop'
 if ($JobName -cnotmatch '^Global\\YFE-ACP-[a-f0-9]{32}$') { throw 'Invalid job name' }
@@ -21,10 +22,11 @@ $password = $null
 try {
     if ($PSBoundParameters.ContainsKey('SandboxUser') -or
         $PSBoundParameters.ContainsKey('SandboxSid') -or
-        $PSBoundParameters.ContainsKey('SandboxCredentialFile')) {
+        $PSBoundParameters.ContainsKey('SandboxCredentialFile') -or $PSBoundParameters.ContainsKey('SandboxIdentityFile')) {
+        $credentialPath = if ($SandboxIdentityFile) { $SandboxIdentityFile } else { $SandboxCredentialFile }
         if ($SandboxUser -cnotmatch '^YFEACP-[a-f0-9]{10}$' -or
             $SandboxSid -notmatch '^S-1-5-21-\d+-\d+-\d+-\d+$' -or
-            -not [IO.Path]::IsPathRooted($SandboxCredentialFile)) {
+            -not [IO.Path]::IsPathRooted($credentialPath)) {
             throw 'Invalid ACP sandbox identity configuration'
         }
         $account = [Security.Principal.NTAccount]::new([Environment]::MachineName, $SandboxUser)
@@ -35,10 +37,22 @@ try {
                 throw 'ACP sandbox account changed'
             }
         } finally { $current.Dispose() }
-        $password = ConvertTo-SecureString -String ([IO.File]::ReadAllText($SandboxCredentialFile))
+        $item = Get-Item -LiteralPath $credentialPath -Force
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Invalid ACP credential file' }
+        $encrypted = [IO.File]::ReadAllText($credentialPath)
+        if ($SandboxIdentityFile) {
+            $identity = $encrypted | ConvertFrom-Json
+            if ($identity.version -ne 1 -or $identity.user -cne $SandboxUser -or $identity.sid -ne $SandboxSid) {
+                throw 'ACP sandbox credential identity changed'
+            }
+            $encrypted = $identity.password
+        }
+        $password = ConvertTo-SecureString -String $encrypted
     }
-    exit [YfeAcpJob]::Run($JobName, $HostPid, $HostStarted, $Binary, $WorkingDirectory,
-        $ChildArguments, $SandboxUser, $SandboxSid, $password)
+    $isolatedChild = if ($null -ne $password) { [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'acp-isolated-child.ps1')) } else { '' }
+    $exitCode = [YfeAcpJob]::Run($JobName, $HostPid, $HostStarted, $Binary, $WorkingDirectory,
+        $ChildArguments, $SandboxUser, $SandboxSid, $password, $isolatedChild)
+    exit $exitCode
 } catch {
     # Report only the Windows error number or exception type. PowerShell's full
     # error formatting may include the input to ConvertTo-SecureString.

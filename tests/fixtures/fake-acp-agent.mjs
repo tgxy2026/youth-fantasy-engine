@@ -8,6 +8,7 @@ let model = 'default-model'
 let thinking = 'low'
 const trace = process.env.YFE_FIXTURE_ACP_TRACE
 const advertiseClose = process.env.YFE_FIXTURE_ACP_CLOSE === '1'
+let sessionFailures = Number(process.env.YFE_FIXTURE_ACP_NETWORK_FAILURES || 0)
 const options = () => [
   { id: 'model', category: 'model', currentValue: model, options: [{ value: 'default-model', name: '默认' }, { value: 'second-model', name: '第二个' }] },
   { id: 'thought_level', category: 'thought_level', currentValue: thinking, options: [{ value: 'low', name: '低' }, { value: 'high', name: '高' }] },
@@ -35,6 +36,11 @@ rl.on('line', line => {
       break
     case 'session/new':
       if (msg.params.cwd !== process.cwd() || msg.params.mcpServers.length) throw Error('Unexpected context')
+      if (sessionFailures > 0) {
+        sessionFailures--
+        send({ id: msg.id, error: { code: -32603, message: 'network connection reset', data: 'synthetic private detail' } })
+        break
+      }
       result({ sessionId, configOptions: options() })
       break
     case 'session/set_config_option':

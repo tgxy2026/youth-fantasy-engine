@@ -7,11 +7,13 @@ import { launchWindowsAcpJob, verifyWindowsJobGone } from './acp-job.mjs'
 import { applySessionOptions } from './acp-options.mjs'
 import { createModeFilePersistence } from './mode-file.mjs'
 import { parseAuthUrl } from './acp-auth-line.mjs'
+import { createAcpSandbox } from './acp-sandbox.mjs'
 
 // Pin the component independently of the ACP wire protocol. Release enablement depends
 // on validating the official OAuth flow and the Windows file-access boundary.
 export function createAntigravityAdapter({ root, validationEnabled = false, openExternal }) {
   const component = createAntigravityComponent(path.join(root, 'components', 'antigravity'))
+  const sandbox = createAcpSandbox(root)
   const adapter = {
     id: 'antigravity', name: 'Antigravity', component,
     verifyRun: verifyWindowsJobGone,
@@ -21,25 +23,46 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
   return {
     ...adapter,
     requiresConnection: true,
+    isolationConfigured: sandbox.configured,
+    setupIsolation: sandbox.setup,
     // The hash-pinned 1.5.0 ACP executable acknowledges session/close but omits
     // the capability. Require both the pinned release and its verified wire identity.
     supportsSessionClose({ agentInfo }) {
       return component.version === '1.5.0' && agentInfo?.name === 'antigravity-acp' && agentInfo.version === component.version
     },
-    async prepareLaunch({ config, profile, cwd, purpose }) {
-      const binary = await component.resolve(config.binary)
+    async prepareLaunch({ config, cwd, purpose, signal }) {
+      if (!(await sandbox.configured())) throw new Error('请先在「ACP 连接」开通 Windows 隔离，再连接 Agent。')
+      const source = await component.resolve(config.binary)
+      const staging = path.join(root, 'isolated-components', 'antigravity-' + component.version)
+      const profile = path.join(root, 'isolated-profiles', 'antigravity')
+      const realRoot = await fs.realpath(root)
+      for (const directory of [staging, profile]) {
+        await fs.mkdir(directory, { recursive: true })
+        const expected = path.join(realRoot, path.relative(root, directory)).toLowerCase()
+        if (path.resolve(await fs.realpath(directory)).toLowerCase() !== expected) {
+          throw new Error('ACP 隔离目录不能使用链接或目录重定向。')
+        }
+      }
+      const binary = path.join(staging, 'agy_acp_server.exe')
+      for (const name of ['localharness_external.exe', 'agy_acp_server.exe']) {
+        const target = path.join(staging, name)
+        try { await fs.copyFile(path.join(path.dirname(source), name), target, fs.constants.COPYFILE_EXCL) }
+        catch (error) { if (error.code !== 'EEXIST') throw error }
+      }
+      await component.resolve(binary)
+      const executable = await fs.realpath(binary)
+      const work = await fs.realpath(cwd)
+      const home = await fs.realpath(profile)
       const roaming = path.join(profile, 'AppData', 'Roaming')
       const local = path.join(profile, 'AppData', 'Local')
       for (const directory of [roaming, local]) await fs.mkdir(directory, { recursive: true })
-      const authSettings = createModeFilePersistence(path.join(profile, 'antigravity-acp', 'settings.json'))
-      if (purpose === 'login') await authSettings.write({ auth: { type: 'oauth-personal' } })
       const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
       const env = {
         SystemRoot: systemRoot, WINDIR: systemRoot,
         PATH: path.join(systemRoot, 'System32'),
-        USERPROFILE: profile, HOME: profile, APPDATA: roaming, LOCALAPPDATA: local,
-        GEMINI_HOME: profile, AGY_ACP_FORCE_FILE_STORAGE: '1',
-        ANTIGRAVITY_HARNESS_PATH: path.join(path.dirname(binary), 'localharness_external.exe'),
+        USERPROFILE: home, HOME: home, APPDATA: await fs.realpath(roaming), LOCALAPPDATA: await fs.realpath(local),
+        GEMINI_HOME: home, AGY_ACP_FORCE_FILE_STORAGE: '1',
+        ANTIGRAVITY_HARNESS_PATH: path.join(path.dirname(executable), 'localharness_external.exe'),
         PYTHONUNBUFFERED: '1',
       }
       const oauth = purpose === 'login' && typeof openExternal === 'function' ? { active: true, opened: false } : null
@@ -51,11 +74,22 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
       }
       // The vendor executable unpacks long internal names under TEMP during startup.
       const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-acp-'))
-      env.TEMP = temp
-      env.TMP = temp
-      return {
-        binary, env, oauth,
-        cleanup: () => fs.rm(temp, { recursive: true, force: true, maxRetries: 3 }),
+      env.TEMP = await fs.realpath(temp)
+      env.TMP = env.TEMP
+      const cleanup = () => fs.rm(temp, { recursive: true, force: true, maxRetries: 3 })
+      try {
+        const identity = await sandbox.prepare({ profile, cwd, temp, component: staging, signal })
+        if (purpose === 'login') {
+          const settingsDir = path.join(profile, 'antigravity-acp')
+          await fs.mkdir(settingsDir, { recursive: true })
+          const expected = path.join(realRoot, path.relative(root, settingsDir)).toLowerCase()
+          if (path.resolve(await fs.realpath(settingsDir)).toLowerCase() !== expected) throw new Error('ACP 登录配置目录不能使用链接。')
+          await createModeFilePersistence(path.join(settingsDir, 'settings.json')).write({ auth: { type: 'oauth-personal' } })
+        }
+        return { binary: executable, cwd: work, env, oauth, sandbox: identity, cleanup }
+      } catch (error) {
+        await cleanup().catch(() => {})
+        throw error
       }
     },
     launch({ runId, cwd, prepared, signal }) {

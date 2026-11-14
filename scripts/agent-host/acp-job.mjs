@@ -34,20 +34,27 @@ export async function verifyWindowsJobGone(runId) {
 export function launchWindowsAcpJob({ runId, binary, cwd, env, childArguments = '', sandbox, onStderr }) {
   const name = windowsJobName(runId)
   const identity = sandbox ? [
-    '-SandboxUser', sandbox.user, '-SandboxSid', sandbox.sid, '-SandboxCredentialFile', sandbox.credentialFile,
+    '-SandboxUser', sandbox.user, '-SandboxSid', sandbox.sid,
+    ...(sandbox.identityFile ? ['-SandboxIdentityFile', sandbox.identityFile] : ['-SandboxCredentialFile', sandbox.credentialFile]),
   ] : []
   const child = spawn(shell(), [...args(name), '-HostPid', String(process.pid), '-HostStarted', String(parentStarted),
     '-Binary', binary, '-WorkingDirectory', cwd, ...(childArguments ? ['-ChildArguments', childArguments] : []), ...identity], {
     cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
   })
+  child.stdin.on('error', () => {})
   child.stderr.on('data', chunk => onStderr?.(chunk))
   const exited = exitOf(child)
   return {
     input: child.stdin, output: child.stdout, exited,
     async stop() {
-      child.kill()
       let timer
       try {
+        if (sandbox) {
+          child.stdin.end()
+          // Give the supervisor a chance to reap an isolated child during logon.
+          await Promise.race([exited, delay(300, undefined, { ref: false })])
+        }
+        child.kill()
         await Promise.race([exited, new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error('ACP Windows 启动器退出超时。')), 4000)
         })])
