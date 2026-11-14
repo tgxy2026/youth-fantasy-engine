@@ -51,8 +51,41 @@ export function createAcpRuntime({ root, adapters }) {
     generation = randomUUID()
   }
 
+  /**
+   * 上次运行未正常结束（`runtime.json.pending` 残留）时的**自愈核对**。
+   *
+   * 🔴 2026-11-15 根治「ACP 进程退出未确认」永久卡死：
+   *   以前 pending 一存在就一律抛错，只能靠用户点安全恢复；而恢复路径本身也可能被这同一处挡住
+   *   （服务启动阶段拿锁失败时 gate 为 null），于是应用彻底卡在「连接模式不可用」，只能手改文件。
+   *   现在把「核对」变成常态动作：只有 **Windows Job 确认该 run 的进程树确实已退出** 才归档 pending；
+   *   核对不了（记录损坏 / 适配器没有 verifyRun / Job 仍在）一律保持阻断并保留现场。
+   *   调用点：verifyQuiescent（首次连接、停止、切换）与 recover（安全恢复）。
+   *
+   * @returns {Promise<'none'|'recovered'>}
+   */
+  async function reconcilePendingRun() {
+    if (!(await runFile.hasPending())) return 'none'
+    const record = await runFile.readPending()
+    const adapter = registry.get(record?.adapter)
+    if (record?.version !== 1 || !adapter?.verifyRun || !/^[a-f0-9]{32}$/.test(record?.runId ?? '')) {
+      throw new Error('ACP 运行标记无法核对，请保留故障现场。')
+    }
+    await adapter.verifyRun(record.runId)
+    await fs.rename(
+      path.join(root, 'runtime.json.pending'),
+      path.join(root, 'runtime-' + record.runId + '.recovered.json'),
+    )
+    return 'recovered'
+  }
+
   async function verifyQuiescent() {
-    if (await runFile.hasPending()) throw new Error('ACP 进程退出未确认，请保留现场并核对进程。')
+    try {
+      await reconcilePendingRun()
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      // 保留原口径文案（既有断言与手册都认它），后面附上具体原因便于定位。
+      throw new Error(`ACP 进程退出未确认，请保留现场并核对进程。（${detail}）`)
+    }
   }
 
   function runOperation({ service, owner, id }, work) {
@@ -196,16 +229,9 @@ export function createAcpRuntime({ root, adapters }) {
     },
     async recover() {
       if (operation) throw new Error('请先等待 ACP 操作结束。')
-      if (await runFile.hasPending()) {
-        const record = await runFile.readPending()
-        const adapter = registry.get(record?.adapter)
-        if (record?.version !== 1 || !adapter?.verifyRun || !/^[a-f0-9]{32}$/.test(record.runId)) {
-          throw new Error('ACP 运行标记无法核对，请保留故障现场。')
-        }
-        await unconfirmedLaunch?.stop()
-        await adapter.verifyRun(record.runId)
-        await fs.rename(path.join(root, 'runtime.json.pending'), path.join(root, 'runtime-' + record.runId + '.recovered.json'))
-      }
+      // 与 verifyQuiescent 共用同一套核对：能证明进程树已退出就归档，证明不了就保留现场。
+      await unconfirmedLaunch?.stop()
+      await reconcilePendingRun()
       if (heldLease) heldLease.service.release(heldLease.lease, heldLease.owner)
       heldLease = null
       unconfirmed = false

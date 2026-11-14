@@ -137,7 +137,16 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     setRecovering(true)
     try {
       const result = await recoverConnectionMode(modeStatus?.lock?.pid ?? null)
-      if (!result.ok) { showToast(result.error ?? '安全恢复失败', 'error'); return }
+      if (!result.ok) {
+        // 🔴 2026-11-15：恢复失败不能只丢一句原始报错 —— 用户会反复点同一个按钮。
+        //   进程/运行标记相关的失败给「先确认没有残留 Agent 进程」，其余给「完全退出重开」。
+        const msg = result.error ?? '安全恢复失败'
+        const hint = /进程|运行标记|pending/i.test(msg)
+          ? '　请确认没有残留的 Agent 进程后再试，或完全退出应用后重新打开。'
+          : '　可完全退出应用后重新打开再试。'
+        showToast(msg + hint, 'error')
+        return
+      }
       setModeStatus(result.status ?? await connectionModeStatus())
       setConnectionView('api')
       setRecoverConfirmed(false)

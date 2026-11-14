@@ -7,6 +7,7 @@
 // 🔴 这里**不建真实会话、不发网络请求**：只用合成正文与内存假桥。
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { aiChapterReview, aiContinuationAdvice, aiOocCheckWithStatus } from '../src/lib/aiTasks/jieWenJi'
@@ -714,6 +715,53 @@ async function run() {
   ok('结构化模块不借容错解析器', !structured.includes("from '@/lib/ai/aiParse'"))
   ok('括号未闭合判为截断', structured.includes("'truncated', 'JSON 没有闭合"))
   ok('形状必须显式声明（防嵌套数组被当结果行）', structured.includes("shape: 'object' | 'array'"))
+
+  console.log('--- 16. ACP 运行标记自愈（pending 不再永久卡死）---')
+  {
+    // @ts-expect-error 主进程脚本是纯 ESM，不提供类型声明；这里只验行为
+    const { createAcpRuntime } = await import('../scripts/agent-host/acp-runtime.mjs')
+    const runId = 'a'.repeat(32)
+    const mkRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), 'yfe-pending-'))
+    const writePending = (root: string) => {
+      fs.writeFileSync(path.join(root, 'runtime.json.pending'), JSON.stringify({ version: 1, runId, adapter: 'fake' }), 'utf8')
+    }
+    const makeAdapter = (verifyRun: () => Promise<void>) => ({ id: 'fake', name: 'Fake Agent', verifyRun, launch: async () => ({}) })
+
+    // ① 进程树确认已退出 → 自动归档，不再要求用户点安全恢复
+    const rootA = mkRoot()
+    writePending(rootA)
+    let verifyCalls = 0
+    const rtA = createAcpRuntime({ root: rootA, adapters: [makeAdapter(async () => { verifyCalls++ })] })
+    let threwA = ''
+    try { await rtA.verifyQuiescent() } catch (error) { threwA = String((error as Error).message) }
+    ok('🔴 进程已退出时 pending 自动归档，不再永久阻断',
+      !threwA && fs.existsSync(path.join(rootA, `runtime-${runId}.recovered.json`))
+      && !fs.existsSync(path.join(rootA, 'runtime.json.pending')), `threw=${threwA} verifyCalls=${verifyCalls}`)
+    ok('自愈前确实用 verifyRun 核对过进程树', verifyCalls === 1)
+
+    // ② 进程树仍在（核对抛错）→ 保持阻断并保留现场
+    const rootB = mkRoot()
+    writePending(rootB)
+    const rtB = createAcpRuntime({ root: rootB, adapters: [makeAdapter(async () => { throw new Error('无法确认 ACP Windows 进程树已退出。') })] })
+    let threwB = ''
+    try { await rtB.verifyQuiescent() } catch (error) { threwB = String((error as Error).message) }
+    ok('🔴 核对不通过时仍然阻断，pending 现场保留',
+      /ACP 进程退出未确认/.test(threwB) && fs.existsSync(path.join(rootB, 'runtime.json.pending')), threwB.slice(0, 60))
+
+    // ③ 记录本身损坏 → 阻断，不猜
+    const rootC = mkRoot()
+    fs.writeFileSync(path.join(rootC, 'runtime.json.pending'), '{"version":1,"runId":"bad"}', 'utf8')
+    const rtC = createAcpRuntime({ root: rootC, adapters: [makeAdapter(async () => {})] })
+    let threwC = ''
+    try { await rtC.verifyQuiescent() } catch (error) { threwC = String((error as Error).message) }
+    ok('运行标记无法核对时阻断，并在提示里带上原因',
+      /ACP 进程退出未确认/.test(threwC) && /无法核对/.test(threwC), threwC.slice(0, 60))
+
+    // ④ 关闭失败也要释放宿主锁（防止下次启动永久 blocked）
+    const svcSrc = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/mode-service.mjs'), 'utf8')
+    ok('🔴 closeRuntime 用 finally 保证释放锁',
+      /finally \{[\s\S]{0,400}finishClose\(\)\.catch\(\(\) => undefined\)/.test(svcSrc))
+  }
 }
 
 try {

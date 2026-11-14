@@ -249,16 +249,22 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
       gate.beginClose()
       closingGate = gate
     }
-    await acp?.stop()
-    await verifyQuiescent()
-    if (host) {
-      await host.stop()
-      host = null
-    }
-    if (gate) {
-      await gate.finishClose()
-      gate = null
-      closingGate = null
+    try {
+      await acp?.stop()
+      await verifyQuiescent()
+      if (host) {
+        await host.stop()
+        host = null
+      }
+    } finally {
+      // 🔴 2026-11-15：停止或核对失败时**也必须尝试释放宿主锁**。
+      //   否则每次异常退出都留锁，下次启动直接「连接模式不可用」，而安全恢复又可能被同一处挡住，
+      //   用户就彻底卡死。未进入 closing 状态时 finishClose 会抛「尚未进入关闭状态」，锁保持不动（安全）。
+      if (gate) {
+        await gate.finishClose().catch(() => undefined)
+        gate = null
+        closingGate = null
+      }
     }
   }
 
