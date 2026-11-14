@@ -28,6 +28,14 @@ export interface AcpGateInput {
   assertCurrent?: () => void
   /** 应用内确认弹窗（生产传 confirmDialog；测试可注入假确认） */
   ask: (options: AcpGateConfirmOptions) => Promise<boolean>
+  /**
+   * 同一个 `acpText` 被多次调用时只确认一次。
+   *
+   * 校对按块发送（一章可能 8 块），逐块弹确认等于逼作者连点八次同意 ——
+   * 多点到手滑就会批准本来不想发的那一块。这里缓存**这一次任务**的答复，
+   * 取消后后续各块直接抛「已取消发送」。单次调用的任务开不开都一样。
+   */
+  askOnce?: boolean
 }
 
 /**
@@ -35,8 +43,10 @@ export interface AcpGateInput {
  * 取消时抛「已取消发送。」；调用方的任务中心据此显示取消而不是失败。
  */
 export function acpGatedText(input: AcpGateInput): (prompt: string) => Promise<string> {
+  let consented: Promise<boolean> | null = null
   return async prompt => {
-    const ok = await input.ask({ title: input.title, message: input.message, confirmText: '确认发送' })
+    const options: AcpGateConfirmOptions = { title: input.title, message: input.message, confirmText: '确认发送' }
+    const ok = await (input.askOnce ? (consented ??= input.ask(options)) : input.ask(options))
     if (!ok) throw new Error('已取消发送。')
     await assertAcpWritingCurrent(input.generation)
     input.assertCurrent?.()
@@ -50,4 +60,17 @@ export function acpGatedText(input: AcpGateInput): (prompt: string) => Promise<s
 /** 外发确认正文的统一句式：接收方 + 本次发送范围 + 只用于什么。 */
 export function acpGateMessage(agentName: string, scopeText: string, purpose: string): string {
   return `接收方为 ${agentName}。本次发送${scopeText}，只用于${purpose}。`
+}
+
+/**
+ * 这次失败是不是「作者主动取消」。
+ *
+ * 为什么要单独一个判定：`isCancelled` 只认 `AICancelled`（API 传输层），
+ * 而 ACP 路径取消有两条来源 —— 确认弹窗点了取消（抛「已取消发送。」）
+ * 与 abort 信号（抛 `AbortError`）。不认这两条，取消会被记成失败，
+ * 界面就会拿「校对失败」去盖住作者自己按的取消。
+ */
+export function isAcpCancelled(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.name === 'AbortError' || error.message === '已取消发送。'
 }

@@ -9,6 +9,8 @@ import { KIND_MAP } from '@/lib/flow/fieldMap'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import type { StepExecutionResult, StepResultState, TaskResult } from '@/lib/revision/revisionTypes'
+import { AcpStructuredError, acpField, acpJsonInstruction, decodeAcpRows } from '@/lib/agentHost/acpStructured'
+import { isAcpCancelled } from '@/lib/agentHost/acpGate'
 
 // ---------- 颉文姬⑤：本章设定补登（实体抽取） ----------
 //
@@ -181,6 +183,8 @@ type ExtractionAiOpts = {
   signal?: AbortSignal
   onToken?: (delta: string) => void
   request?: CallRequestContext
+  /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export async function aiExtractSettingEntities(
@@ -205,7 +209,6 @@ export async function aiExtractSettingEntitiesWithStatus(
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ExtractedEntity[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
   try {
-    const cfg = await requireProviderFor('utility')
     // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
     const fence = newAuthorFence()
     const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}
@@ -214,6 +217,29 @@ export async function aiExtractSettingEntitiesWithStatus(
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
 
 请抽取本章出现的设定实体。`
+    // 3.5.5 · ACP 分支：只抽候选，落库仍走 settingLedger 的确定性比对。
+    // 严格判据放在**信封与枚举**上：每条必须有名称、类型必须在允许集合内 ——
+    // 少一条就整份拒收，否则「少写一个实体」看起来和「本章没有这个实体」一模一样。
+    if (opts?.acpText) {
+      const prompt = `${extractSysFull()}\n\n${user}\n\n${acpJsonInstruction('设定实体抽取', `[{"name":"实体名","type":"${ENTITY_TYPES.join(' / ')}","tier":"主要 / 次要 / NPC（仅人物）","aliases":["别称"],"evidence":"原文原句","fields":{"字段":"值"}}]（本章没有新设定就返回 []）`)}`
+      const rows = decodeAcpRows(await opts.acpText(prompt), { shape: 'array', min: 0, max: 60 })
+      rows.forEach((row, index) => {
+        acpField(row, ['name', '名称'], '实体名', { max: 80 })
+        const type = acpField(row, ['type', '类型'], '实体类型', { max: 20 })
+        if (!(ENTITY_TYPES as string[]).includes(type)) {
+          throw new AcpStructuredError('bad-field', `第 ${index + 1} 个实体的类型不在允许范围：${type}`)
+        }
+      })
+      const r = parseExtractedEntitiesDetailed(JSON.stringify(rows))
+      if (r.outcome === 'invalid') return one('failed', 'acp-invalid')
+      return {
+        state: 'completed',
+        result: r,
+        coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+        sourceId: 'extract-entities',
+      }
+    }
+    const cfg = await requireProviderFor('utility')
     const text = await chat(
       cfg,
       [{ role: 'system', content: composeSystemPrompt(extractSysFull(), cfg) }, { role: 'user', content: user }],
@@ -233,7 +259,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空白）'}
       sourceId: 'extract-entities',
     }
   } catch (e) {
-    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    if (isCancelled(e) || isAcpCancelled(e)) return one('cancelled', 'cancelled')
     return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
   }
 }

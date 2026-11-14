@@ -12,7 +12,7 @@ import { LEDGER_TYPES, STATUS_META } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
-  const { aiReady, ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry, content } = m
+  const { writingReady, acpWriting, ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry, content } = m
   return (
           <div className="space-y-2.5">
             <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
@@ -22,13 +22,13 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
                   <span className="text-ink-500">「是否已登记」由程序按名称与别称精确比对，AI 只负责抽取，不会凭空编造。</span>
                 </div>
                 <Button onClick={runLedger}
-                  disabled={!aiReady || ledger.loading || !content.trim()}
-                  title={!aiReady ? AI_DISABLED_HINT : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded">
+                  disabled={!writingReady || ledger.loading || !content.trim()}
+                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : ledger.scannedAt ? '重新扫描本章正文' : '扫描本章正文'} variant="primary" size="md" className="shrink-0 flex items-center rounded">
                   {ledger.loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                   {ledger.loading ? '扫描中' : ledger.scannedAt ? '重新扫描' : '扫描本章'}
                 </Button>
               </div>
-              {!aiReady && <div className="mt-1.5 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
+              {!writingReady && <div className="mt-1.5 text-10 text-ink-500">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</div>}
             </div>
 
             {ledger.error && <div className="text-11 text-danger px-1">{ledger.error}</div>}

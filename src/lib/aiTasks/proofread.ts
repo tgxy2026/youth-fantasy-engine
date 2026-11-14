@@ -19,6 +19,8 @@ import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { stripEmphasis } from '@/lib/storage/mdLite'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import { acpJsonInstruction, decodeAcpIssues } from '@/lib/agentHost/acpStructured'
+import { isAcpCancelled } from '@/lib/agentHost/acpGate'
 
 // ---------- 校对 · 文字层（错别字 / 语病 / 标点） ----------
 
@@ -220,7 +222,11 @@ export function parseProofreadReply(raw: string): ProofreadParseOutcome {
     if (!items.length) items = null
   }
   if (!items) return { issues: [], unparsed: true, protocolIssues: [] }
+  return mapProofreadItems(items)
+}
 
+/** 逐条把对象映射成问题（两种外壳共用同一套条目语义）。 */
+function mapProofreadItems(items: Record<string, unknown>[]): ProofreadParseOutcome {
   const issues: ProofreadIssue[] = []
   const protocolIssues: string[] = []
   for (const item of items) {
@@ -230,6 +236,31 @@ export function parseProofreadReply(raw: string): ProofreadParseOutcome {
     else if (invalid) protocolIssues.push(invalid)
   }
   return { issues, unparsed: false, protocolIssues: protocolIssues.slice(0, PROTOCOL_SAMPLE_LIMIT) }
+}
+
+/** 单块最多认多少条问题（一块正文 2200~3500 字，超过这个量基本是 Agent 在瞎报）。 */
+const ACP_ISSUE_LIMIT = 60
+
+/**
+ * 3.5.5 · ACP 单块校对回复的**严格**解析。
+ *
+ * 与 API 侧 `parseProofreadReply` 的差别只在「外壳」：
+ *   · 结构不合格（截断、散文、条目不是对象、条目超量）⇒ 整块记 `unparsed`，
+ *     界面会显示「第 N 块没读懂」，**不会**当成「这块没问题」；
+ *   · 条目字段语义（kind / quote / replacement 的降级规则）仍交给 `mapProofreadItems`，
+ *     保证同一条结果在 API 与 ACP 下展示一致。
+ */
+function parseAcpProofreadChunk(raw: string, sink: string[]): ProofreadParseOutcome {
+  try {
+    const rows = decodeAcpIssues(raw, ACP_ISSUE_LIMIT)
+    const mapped = mapProofreadItems(rows)
+    if (mapped.protocolIssues.length) sink.push(...mapped.protocolIssues)
+    return mapped
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '未知原因'
+    sink.push(`本块结果不合格：${reason}`)
+    return { issues: [], unparsed: true, protocolIssues: [] }
+  }
 }
 
 /**
@@ -277,6 +308,11 @@ export interface ProofreadOptions {
   maxChunks?: number
   /** 流式回调：提供时逐块可见模型原始输出 */
   onToken?: (delta: string) => void
+  /**
+   * 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置。
+   * 🔴 每个分块各调用一次（一次 Agent 回合一块），调用方负责确认与外发范围文案。
+   */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export interface ProofreadResult {
@@ -327,7 +363,8 @@ async function runProofread(
   withContext: boolean,
   chunkTarget: number,
 ): Promise<ProofreadResult> {
-  const cfg = await requireProviderFor('review')
+  // ACP 分支不要求 API 模型配置 —— 只有走 chat 时才需要 provider
+  const cfg = opts.acpText ? null : await requireProviderFor('review')
   const all = chunkText(text, chunkTarget)
   const maxChunks = opts.maxChunks ?? 8
   const chunks = all.slice(0, maxChunks)
@@ -365,16 +402,23 @@ async function runProofread(
 
     let reply = ''
     try {
-      reply = await chat(
-        cfg,
-        [
-          { role: 'system', content: composeSystemPrompt(sys, cfg) },
-          { role: 'user', content: user },
-        ],
-        { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
-      )
+      if (opts.acpText) {
+        // ACP 没有 response_format：把协议写进提示词，再在下面严格核验。
+        // quote 必须逐字可定位这条约束**必须重复强调** —— 它是整条校对链能落地的前提。
+        const acpPrompt = `${sys}\n\n${user}\n\n${acpJsonInstruction('校对问题清单', '[{"kind":"replacement 或 suggestion","type":"错别字 / 语病 / 标点 / 逻辑 / 设定","quote":"从本段正文逐字照抄的片段（不得改写、不得加省略号）","why":"问题原因","replacement":"kind=replacement 时的改后文本，其余留空"}]（本段没有问题就返回 []）')}`
+        reply = await opts.acpText(acpPrompt)
+      } else {
+        reply = await chat(
+          cfg!,
+          [
+            { role: 'system', content: composeSystemPrompt(sys, cfg!) },
+            { role: 'user', content: user },
+          ],
+          { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
+        )
+      }
     } catch (e) {
-      if (isCancelled(e)) { cancelled = true; break }
+      if (isCancelled(e) || isAcpCancelled(e)) { cancelled = true; break }
       // 单块失败不整轮报废，继续下一块 —— 但**必须记账**，否则"全部失败"会被上层当成"无问题"
       failedChunks++
       console.warn(`[proofread] 第 ${i + 1}/${chunks.length} 块校对失败（已跳过，稍后在结果里如实告知作者）：`, e)
@@ -383,7 +427,7 @@ async function runProofread(
     }
 
     scanned += chunk.length
-    const parsed = parseProofreadReply(reply)
+    const parsed = opts.acpText ? parseAcpProofreadChunk(reply, protocolIssues) : parseProofreadReply(reply)
     if (parsed.unparsed) {
       // 🔴 3.2.3 · R1：解析不了**不等于**没有发现问题。旧实现把它当空数组 ⇒ 界面亮绿「未发现 ✓」。
       unparsedChunks++

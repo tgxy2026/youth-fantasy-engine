@@ -16,6 +16,8 @@ import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import type { StepExecutionResult, StepResultState, TaskResult } from '@/lib/revision/revisionTypes'
+import { AcpStructuredError, acpField, acpJsonInstruction, decodeAcpRows } from '@/lib/agentHost/acpStructured'
+import { isAcpCancelled } from '@/lib/agentHost/acpGate'
 
 let POST_PROCESS_SYS = `你是长篇小说「章后整理」助理。作者刚写完本章，请从本章正文中抽取**本章带来的变化**，供作者核对登记。
 
@@ -83,7 +85,12 @@ const EMPTY_CHANGES: ChapterChanges = { foreshadows: [], relations: [], statuses
 export async function aiExtractChapterChangesWithStatus(
   chapterText: string,
   chapterTitle: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: {
+    signal?: AbortSignal
+    onToken?: (delta: string) => void
+    /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+    acpText?: (prompt: string) => Promise<string>
+  },
 ): Promise<StepExecutionResult<ChapterChanges>> {
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ChapterChanges> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
@@ -91,7 +98,6 @@ export async function aiExtractChapterChangesWithStatus(
   if (!body) return one('completed')
   try {
   // #014 用途路由：从正文抽取属「整理」
-  const cfg = await requireProviderFor('utility')
   // 🔴 章题与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()
   const user = `【章节】${chapterTitle.trim() ? authorBlock(fence, chapterTitle.trim()) : '（未命名章节）'}
@@ -100,6 +106,37 @@ export async function aiExtractChapterChangesWithStatus(
 ${authorBlock(fence, body)}
 
 请抽取本章带来的伏笔 / 关系 / 状态变化。`
+  // 3.5.5 · ACP 分支：只出变化候选，是否真的变了仍由 chapterPostProcess 做确定性比对。
+  if (opts?.acpText) {
+    const prompt = `${POST_PROCESS_SYS}\n\n${user}\n\n${acpJsonInstruction('章后整理变化候选', '[{"kind":"伏笔","action":"埋设 或 回收","code":"F0001（没有就空串）","content":"一句话概括"},{"kind":"关系","a":"甲","b":"乙","type":"关系类型（可空）","change":"怎么变的"},{"kind":"状态","name":"人物","state":"当前状态","evidence":"原文原句"}]（本章没有变化就返回 []）')}`
+    const rows = decodeAcpRows(await opts.acpText(prompt), { shape: 'array', min: 0, max: 60 })
+    rows.forEach((row, index) => {
+      const kind = acpField(row, ['kind', '类型', '类别'], '类别', { max: 20 })
+      const at = `第 ${index + 1} 条`
+      if (kind === '伏笔') {
+        const action = acpField(row, ['action', '动作'], '伏笔动作', { max: 10 })
+        if (!['埋设', '回收'].includes(action)) throw new AcpStructuredError('bad-field', `${at}的伏笔动作不是「埋设/回收」：${action}`)
+        acpField(row, ['content', '伏笔内容', '内容'], '伏笔内容', { max: 400 })
+      } else if (kind === '关系') {
+        acpField(row, ['a', '人物A', '甲'], '关系甲方', { max: 60 })
+        acpField(row, ['b', '人物B', '乙'], '关系乙方', { max: 60 })
+      } else if (kind === '状态') {
+        acpField(row, ['name', '姓名', '人物'], '人物名', { max: 60 })
+        acpField(row, ['state', '状态'], '当前状态', { max: 200 })
+      } else {
+        throw new AcpStructuredError('bad-field', `${at}的类别不认识：${kind}`)
+      }
+    })
+    const r = parseChapterChangesDetailed(JSON.stringify(rows))
+    if (r.outcome === 'invalid') return one('failed', 'acp-invalid')
+    return {
+      state: 'completed',
+      result: r,
+      coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+      sourceId: 'chapter-changes',
+    }
+  }
+  const cfg = await requireProviderFor('utility')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(POST_PROCESS_SYS, cfg) }, { role: 'user', content: user }],
@@ -115,7 +152,7 @@ ${authorBlock(fence, body)}
       sourceId: 'chapter-changes',
     }
   } catch (e) {
-    if (isCancelled(e)) return one('cancelled', 'cancelled')
+    if (isCancelled(e) || isAcpCancelled(e)) return one('cancelled', 'cancelled')
     return one('failed', e instanceof Error ? e.message.slice(0, 80) : 'unknown')
   }
 }

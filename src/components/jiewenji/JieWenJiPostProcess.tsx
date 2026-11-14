@@ -16,7 +16,7 @@ import { POST_KINDS, POST_STATUS_META } from '@/components/jiewenji/jieWenJiPart
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
-  const { aiReady, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, content } = m
+  const { writingReady, acpWriting, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, content } = m
   return (
     <div className="space-y-2.5">
       <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
@@ -26,13 +26,13 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
             <span className="text-ink-500">AI 只负责抽取，「是否已登记、是否真变了」由程序精确比对；没登记过的一律只提示、不凭空建，采纳前都要你勾选。</span>
           </div>
           <Button onClick={runPost}
-            disabled={!aiReady || post.loading || !content.trim()}
-            title={!aiReady ? AI_DISABLED_HINT : post.scannedAt ? '重新整理本章' : '整理本章'} variant="primary" size="md" className="shrink-0 flex items-center rounded">
+            disabled={!writingReady || post.loading || !content.trim()}
+            title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : post.scannedAt ? '重新整理本章' : '整理本章'} variant="primary" size="md" className="shrink-0 flex items-center rounded">
             {post.loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
             {post.loading ? '整理中' : post.scannedAt ? '重新整理' : '整理本章'}
           </Button>
         </div>
-        {!aiReady && <div className="mt-1.5 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
+        {!writingReady && <div className="mt-1.5 text-10 text-ink-500">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</div>}
       </div>
 
       {/* 未来影响：章纲里「本章之后」的计划被上游变化波及（只提示，不自动改章纲） */}

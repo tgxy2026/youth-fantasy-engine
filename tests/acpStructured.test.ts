@@ -10,6 +10,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { aiChapterReview, aiContinuationAdvice, aiOocCheckWithStatus } from '../src/lib/aiTasks/jieWenJi'
+import { aiProofreadLogic, aiProofreadText } from '../src/lib/aiTasks/proofread'
+import { aiExtractSettingEntitiesWithStatus } from '../src/lib/aiTasks/extract'
+import { aiExtractChapterChangesWithStatus } from '../src/lib/aiTasks/postProcess'
 import {
   AcpStructuredError,
   acpStructuredMessage,
@@ -212,11 +215,185 @@ async function run() {
   await assert.rejects(lateChange, /已切换章节/)
   ok('落地前归属变化丢弃结果', requests.length === 1 && calls === 2)
 
-  console.log('--- 8. 主进程白名单与源码契约 ---')
+  console.log('--- 8. 校对（文字层 / 逻辑层）---')
+  const shortBody = '林昭握紧剑柄，雨点砸在铁上发出闷响。'
+  const proofText = (opts?: { ask?: () => Promise<boolean>; askOnce?: boolean; body?: string }) =>
+    aiProofreadText(opts?.body ?? shortBody, {
+      acpText: acpStructuredText({
+        task: 'proofread', generation, agentName: '假 Agent',
+        scopeText: '本章正文', askOnce: opts?.askOnce,
+        assertCurrent: () => {}, ask: opts?.ask ?? allow,
+      }),
+    })
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify([{ kind: 'replacement', type: '错别字', quote: '雨点砸在铁上', why: '用词不当', replacement: '雨点敲在剑上' }]) })
+  const pr = await proofText()
+  ok('校对问题落地', pr.issues.length === 1 && pr.issues[0].kind === 'replacement')
+  ok('引文在原文里定位到（at 有值）', typeof pr.issues[0].at === 'number' && pr.issues[0].at! >= 0)
+  ok('已校对字数按块记', pr.scanned === shortBody.length)
+  ok('任务标识为 proofread', requests[0].task === 'proofread')
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify({ issues: [{ kind: 'suggestion', quote: '雨点砸在铁上', why: '可更书面' }] }) })
+  const prEnv = await proofText()
+  ok('对象外壳 {issues:[…]} 也接受', prEnv.issues.length === 1 && prEnv.unparsedChunks === 0)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"suggestion","quote":"雨点砸在铁上"' })
+  const prCut = await proofText()
+  ok('截断的块记为未读懂（不是 0 问题）', prCut.unparsedChunks === 1 && prCut.issues.length === 0)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '这一段写得还行，我没发现问题。' })
+  const prProse = await proofText()
+  ok('散文回复记为未读懂', prProse.unparsedChunks === 1)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"quote":"雨点砸在铁上"}, "字符串条目"]' })
+  const prBadItem = await proofText()
+  ok('条目不是对象 ⇒ 整块未读懂（不静默过滤）', prBadItem.unparsedChunks === 1)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"suggestion","quote":"这句话正文里根本没有"}]' })
+  const prMiss = await proofText()
+  ok('引文定位不到 ⇒ 计入 unlocated 且不进 issues', prMiss.unlocated === 1 && prMiss.issues.length === 0)
+
+  reset()
+  generateImpl = async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }) }
+  const prCancel = await proofText()
+  ok('取消记为 cancelled（不是失败）', prCancel.cancelled === true && prCancel.failedChunks === 0)
+
+  console.log('--- 9. 校对的分块、范围与确认次数 ---')
+  const p1 = '甲段起点' + '甲'.repeat(1196)
+  const p2 = '乙段起点' + '乙'.repeat(1196)
+  const longBody = `${p1}\n\n${p2}`
+  reset()
+  let asks = 0
+  generateImpl = async request => ({
+    ok: true,
+    text: JSON.stringify([{ kind: 'suggestion', quote: request.text.includes('甲段起点') ? '甲段起点' : '乙段起点', why: '合成' }]),
+  })
+  const prLong = await aiProofreadText(longBody, {
+    acpText: acpStructuredText({
+      task: 'proofread', generation, agentName: '假 Agent', scopeText: '本章正文', askOnce: true,
+      assertCurrent: () => {}, ask: async () => { asks++; return true },
+    }),
+  })
+  ok('长文本切成多块分别发送', requests.length >= 2 && prLong.totalChunks >= 2, `${requests.length}/${prLong.totalChunks}`)
+  ok('每块结果都定位到原文', prLong.issues.length >= 2 && prLong.unlocated === 0)
+  ok('askOnce：整章只确认一次', asks === 1, String(asks))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[]' })
+  await aiProofreadText(shortBody, {
+    acpText: acpStructuredText({ task: 'proofread', generation, agentName: '假 Agent', scopeText: '本章正文', askOnce: true, assertCurrent: () => {}, ask: allow }),
+  })
+  ok('文字层提示词不带设定资料', !requests[0].text.includes('【设定资料】'))
+  ok('文字层提示词要求逐字照抄引文', requests[0].text.includes('逐字照抄'))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[]' })
+  await aiProofreadLogic(shortBody, {
+    context: '设定：青岚宗',
+    acpText: acpStructuredText({ task: 'proofread', generation, agentName: '假 Agent', scopeText: '本章正文与设定资料', askOnce: true, assertCurrent: () => {}, ask: allow }),
+  })
+  ok('逻辑层提示词带设定资料', requests[0].text.includes('【设定资料】'))
+  ok('逻辑层确认文案如实写范围', acpStructuredMessage('proofread', '假 Agent', '本章正文与设定资料').includes('本章正文与设定资料'))
+
+  console.log('--- 10. 设定实体抽取（补登候选）---')
+  const extract = () => aiExtractSettingEntitiesWithStatus(body, '第一章 雨夜', {
+    acpText: acpStructuredText({ task: 'extract', generation, agentName: '假 Agent', assertCurrent: () => {}, ask: allow }),
+  })
+
+  reset()
+  generateImpl = async () => ({
+    ok: true,
+    text: JSON.stringify([
+      { name: '林昭', type: '人物', tier: '主要', aliases: ['阿昭'], evidence: '林昭握紧剑柄', fields: { identity: '青岚宗弟子' } },
+      { name: '青岚宗', type: '势力', evidence: '青岚宗' },
+    ]),
+  })
+  const ex = await extract()
+  ok('抽取状态为已完成', ex.state === 'completed')
+  ok('两个实体都落地', ex.result?.data.length === 2, String(ex.result?.data.length))
+  ok('人物类型与别称解析正确', ex.result?.data[0].type === '人物' && ex.result?.data[0].aliases?.includes('阿昭') === true)
+  ok('任务标识为 extract', requests[0].task === 'extract')
+  ok('提示词写明类型枚举', requests[0].text.includes('人物') && requests[0].text.includes('术语'))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[]' })
+  const exEmpty = await extract()
+  ok('本章没有新设定 ⇒ 合法空结果', exEmpty.state === 'completed' && exEmpty.result?.data.length === 0)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"name":"林昭","type":"人物"' })
+  const exCut = await extract()
+  ok('截断判为失败而不是「没有新设定」', exCut.state === 'failed' && String(exCut.errorCode).includes('JSON 没有闭合'), String(exCut.errorCode))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"name":"林昭","type":"角色"}]' })
+  const exBadType = await extract()
+  ok('类型不在枚举内判为失败', exBadType.state === 'failed' && String(exBadType.errorCode).includes('bad-field'), String(exBadType.errorCode))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"type":"人物"}]' })
+  const exNoName = await extract()
+  ok('缺实体名判为失败', exNoName.state === 'failed' && String(exNoName.errorCode).includes('missing-field'), String(exNoName.errorCode))
+
+  ok('确认文案说明只出候选', acpStructuredMessage('extract', '假 Agent').includes('不会自动写入设定表'))
+
+  console.log('--- 11. 章后整理（伏笔 / 关系 / 状态）---')
+  const changes = () => aiExtractChapterChangesWithStatus(body, '第一章 雨夜', {
+    acpText: acpStructuredText({ task: 'changes', generation, agentName: '假 Agent', assertCurrent: () => {}, ask: allow }),
+  })
+
+  reset()
+  generateImpl = async () => ({
+    ok: true,
+    text: JSON.stringify([
+      { kind: '伏笔', action: '埋设', code: 'F0007', content: '林昭袖中藏着的半截玉牌' },
+      { kind: '关系', a: '林昭', b: '青岚宗', type: '敌对', change: '被逐出师门' },
+      { kind: '状态', name: '林昭', state: '重伤昏迷', evidence: '他倒在雨里，剑还握在手上' },
+    ]),
+  })
+  const chg = await changes()
+  ok('三类变化都落地', chg.state === 'completed' && chg.result?.data.foreshadows.length === 1 && chg.result?.data.relations.length === 1 && chg.result?.data.statuses.length === 1)
+  ok('伏笔动作与编号保留', chg.result?.data.foreshadows[0].action === '埋设' && chg.result?.data.foreshadows[0].code === 'F0007')
+  ok('任务标识为 changes', requests[0].task === 'changes')
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[]' })
+  const chgEmpty = await changes()
+  ok('本章没有变化 ⇒ 合法空结果', chgEmpty.state === 'completed' && chgEmpty.result?.data.statuses.length === 0)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"伏笔","action":"埋设","content":"x"},{"kind":"天气"}]' })
+  const chgKind = await changes()
+  ok('类别不认识判为失败（不静默跳过）', chgKind.state === 'failed' && String(chgKind.errorCode).includes('类别不认识'), String(chgKind.errorCode))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"伏笔","content":"没有动作"}]' })
+  const chgAction = await changes()
+  ok('伏笔缺动作判为失败', chgAction.state === 'failed' && String(chgAction.errorCode).includes('missing-field'), String(chgAction.errorCode))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"伏笔","action":"埋设","content":"x"},{"kind":"关系","a":"林昭"}]' })
+  const chgRel = await changes()
+  ok('关系缺乙方判为失败', chgRel.state === 'failed' && String(chgRel.errorCode).includes('missing-field'), String(chgRel.errorCode))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"kind":"状态","name":"林昭"}]' })
+  const chgState = await changes()
+  ok('状态缺当前状态判为失败', chgState.state === 'failed' && String(chgState.errorCode).includes('missing-field'), String(chgState.errorCode))
+
+  ok('确认文案说明写入前仍要核对', acpStructuredMessage('changes', '假 Agent').includes('写入前仍要你核对'))
+
+  console.log('--- 12. 主进程白名单与源码契约 ---')
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const main = fs.readFileSync(path.join(root, 'electron/main.cjs'), 'utf8')
   const whitelist = main.split(/\r?\n/).find(line => line.includes('request.task') && line.includes('includes')) ?? ''
-  for (const task of ['review', 'ooc', 'advice']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
+  for (const task of ['review', 'ooc', 'advice', 'proofread', 'extract', 'changes']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   for (const task of ['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary']) {
     ok(`3.5.4 任务仍放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   }

@@ -223,6 +223,11 @@ export async function collectPostProcess(
      *    否则它会被算到「当时恰好有唯一在跑任务」的账上（统计与重试次数都会虚高）。
      */
     request?: CallRequestContext
+    /**
+     * 3.5.5 · ACP 分支：本次整理会连做两次 AI 调用（变化候选 + 设定实体），
+     * 两者共用同一个 `acpText`（作者只需授权一次）。
+     */
+    acpText?: (prompt: string) => Promise<string>
   },
 ): Promise<PostProcessReport> {
   const chapterTitle = input.chapterTitle ?? ''
@@ -248,7 +253,7 @@ export async function collectPostProcess(
   // 一次 AI 调用覆盖三类（伏笔 / 关系 / 状态）
   // WQ1-4：走带状态版本 —— 请求失败与**解析失败**都写 notes，
   // 不再把「JSON 坏了」假装成「本章没有需要整理的条目」（假绿）。
-  const chRun = await aiExtractChapterChangesWithStatus(body, chapterTitle, { signal: opts?.signal })
+  const chRun = await aiExtractChapterChangesWithStatus(body, chapterTitle, { signal: opts?.signal, acpText: opts?.acpText })
   const changes = chRun.result?.data ?? { foreshadows: [], relations: [], statuses: [] }
   if (chRun.state === 'cancelled') notes.push('AI 抽取已取消，以下仅为已完成的比对。')
   else if (chRun.state !== 'completed') {
@@ -260,6 +265,7 @@ export async function collectPostProcess(
     const entRun = await aiExtractSettingEntitiesWithStatus(body, chapterTitle, {
     signal: opts?.signal,
     ...(opts?.request ? { request: opts.request } : {}),
+    ...(opts?.acpText ? { acpText: opts.acpText } : {}),
   })
     if (entRun.state === 'completed') {
       items.push(...entityItems(entRun.result?.data ?? [], reg))

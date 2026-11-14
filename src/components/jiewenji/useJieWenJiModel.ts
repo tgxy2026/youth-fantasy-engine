@@ -207,26 +207,46 @@ export function useJieWenJiModel(props: Props) {
   }
 
   const runProofread = (scope: ProofScope) => {
-    if (!aiReady || propsRunning) return
+    if (!writingReady || propsRunning) return
     // 只校对完整正文。曾经提供过「喂压缩摘要」的简略模式，但校对结果要按 quote
     // 在正文里定位替换，摘要文字在正文里定位不到、还会误替换无辜同文——已移除。
     const text = content
     showToast(`AI 校对已启动（${PROOF_META[scope].label}），篇幅较大时耗时数十秒属正常，并非卡死，请耐心等待`, 'info')
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     const tk = scope === 'text' ? textProofT : logicProofT
     tk.run(async job => {
       job.progress({ ch, done: 0, total: 0 }) // 🔴 章节戳第一行盖（失败/中止时没有 result 可查）
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpStructuredText({
+          task: 'proofread', generation, agentName, signal: job.signal,
+          // 🔴 逻辑层会带设定资料，必须如实写进确认文案；文字层只发正文
+          scopeText: scope === 'logic' ? '本章正文与设定资料' : '本章正文',
+          // 校对按块多次发送：整章只确认一次，逐块弹窗等于逼作者连点同意
+          askOnce: true,
+          assertCurrent: () => {
+            owner.assertCurrent()
+            assertReportDraft('content')
+          },
+          ask: confirmDialog,
+        })
+        : undefined
       // 🔴 逻辑层才读设定资料；文字层不读 —— 少注入几千字，出结果更快，
       //    也避免模型"拿设定去猜人名是不是写错"这类误报。
       let ctxText = ''
       if (scope === 'logic') {
         try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('jiewenji-proofread'), focusChapterId })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       }
+      owner.assertCurrent()
       const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
       const res = await run(text, {
         context: ctxText,
         signal: job.signal,
         onProgress: (d, t) => job.progress({ ch, done: d, total: t }), // ⚠️ 带 ch，别把章节戳冲掉
+        acpText,
       })
+      owner.assertCurrent()
       return { ch, v: res }
     })
   }
@@ -271,12 +291,24 @@ export function useJieWenJiModel(props: Props) {
   }, [ledgerT.task, ch])
 
   const runLedger = () => {
-    if (!aiReady || ledgerT.running) return
+    if (!writingReady || ledgerT.running) return
     if (!content.trim()) { showToast('本章正文还是空的，没有可抽取的内容', 'info'); return }
     const title = chapterTitle ?? ''
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     ledgerT.run(async job => {
       job.progress({ ch })
-      const entities = await aiExtractSettingEntities(content, title, { signal: job.signal })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      // ACP 只负责「抽出候选」，是否已登记仍由 settingLedger 做确定性比对 ——
+      // 所以这里不需要在发送时就声明会写库，落库仍是作者逐条勾选后的事。
+      const acpText = generation
+        ? acpStructuredText({ task: 'extract', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
+        : undefined
+      const entities = await aiExtractSettingEntities(content, title, { signal: job.signal, acpText })
+      owner.assertCurrent()
       const reg = await loadRegistry()
       return { ch, v: classify(entities, reg) }
     })
@@ -358,12 +390,27 @@ export function useJieWenJiModel(props: Props) {
   }, [postT.task, ch])
 
   const runPost = () => {
-    if (!aiReady || postT.running) return
+    if (!writingReady || postT.running) return
     if (!content.trim()) { showToast('本章正文还是空的，没有可整理的内容', 'info'); return }
     if (!ch) { showToast('没有定位到当前章节，请重新打开这一章', 'info'); return }
     const title = chapterTitle ?? ''
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     postT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      // 一次整理会连做两次 AI 调用（变化候选 + 设定实体）：共用同一个 acpText，
+      // askOnce 保证作者只授权一次；写入仍要逐条勾选后由 applyPostProcess 执行。
+      const acpText = generation
+        ? acpStructuredText({
+          task: 'changes', generation, agentName, signal: job.signal, askOnce: true,
+          assertCurrent: () => {
+            owner.assertCurrent()
+            assertReportDraft('content')
+          },
+          ask: confirmDialog,
+        })
+        : undefined
       // 🔴 用**编辑器里的最新正文**（作者可能还没保存），不读库里的滞后版本
       const report = await collectPostProcess(
         { chapterId: ch, content, chapterTitle: title },
@@ -372,8 +419,10 @@ export function useJieWenJiModel(props: Props) {
           // 3.2.0 · WQ7：编辑器助手的后处理**没有父任务**，如实标成独立调用 ——
           // 否则它会被算到「当时恰好有唯一在跑任务」的账上（统计与重试次数都会虚高）。
           request: { scope: 'independent' },
+          ...(acpText ? { acpText } : {}),
         },
       )
+      owner.assertCurrent()
       return { ch, v: report.items }
     })
   }
