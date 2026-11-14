@@ -3,7 +3,7 @@
  *
  * 两个纯展示件，props 名与原局部变量**同名** ⇒ 内部 JSX 一个字未改（缩进也保留原样）。
  *
- * 【为什么左栏的筛选词搬进来】`pickQuery` / `sessionRows` / `fmtDay` 只服务这一块，
+ * 【为什么左栏的筛选词搬进来】`pickQuery` / `sessionRows` 只服务这一块，
  *   原先挂在主组件上，等于让主文件替子区域保管私有状态。搬进来后主文件只交出 4 个 props。
  *
  * ⚠️ 本场信息栏里的「本场记忆 / 检查点」两块是**只读展示 + 触发**：
@@ -50,12 +50,6 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
   /** 展示行：平铺 = 保持原顺序；树形 = 每个根场次**紧跟**它自己的分支（缩进一级）。 */
   const rows = useMemo(() => groupSessionsByBranch(sessionRows, treeMode), [sessionRows, treeMode])
 
-  /** 列表里的日期小字（只到「几月几日」，同年不写年） */
-  const fmtDay = (ts: number) => {
-    const d = new Date(ts)
-    return `${d.getMonth() + 1}/${d.getDate()}`
-  }
-
   return (
         <aside className="flex w-56 shrink-0 flex-col gap-2 rounded-lg border border-ink-700 bg-ink-850/40 p-3">
           <Button variant="primary" size="md" className="w-full" onClick={() => setSetupOpen(true)}>＋ 新建推演</Button>
@@ -67,7 +61,7 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
               onChange={e => setPickQuery(e.target.value)}
             />
           )}
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto">
             {rows.map(({ s, depth, missingParent }) => {
               const active = s.id === activeId
               return (
@@ -77,22 +71,15 @@ export function PlotSessionList({ list, activeId, setActiveId, setSetupOpen }: {
                     selected={active}
                     variant="outline"
                     onClick={() => setActiveId(s.id)}
-                    className={`rounded-md px-2 py-1.5 ${depth ? 'ml-3' : ''}`}
+                    className={`min-w-0 items-center gap-1 rounded-md py-1.5 pr-2 text-12 ${depth ? 'pl-5' : 'pl-2'} ${active ? 'text-amber' : 'text-ink-200'}`}
+                    title={s.title}
                   >
-                    <div className={`flex items-center gap-1 text-12 ${active ? 'text-amber' : 'text-ink-200'}`}>
-                      {depth ? (
-                        <span className="shrink-0 text-ink-600"
-                          title={missingParent ? '它的父场次不在当前列表里' : '分支'}>{'└'}</span>
-                      ) : null}
-                      <span className="truncate">{s.title}</span>
-                    </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-10 text-ink-500">
-                      {s.mode === 'immersive' ? '沉浸' : '导演'} · {s.castBrief || '未分配角色'}
-                    </span>
-                    <span className="shrink-0 text-10 text-ink-600">{fmtDay(s.updatedAt)}</span>
-                  </div>
-                </SelectRow>
+                    {depth ? (
+                      <span aria-hidden="true" className="shrink-0 text-ink-600"
+                        title={missingParent ? '它的父场次不在当前列表里' : '分支'}>└</span>
+                    ) : null}
+                    <span className="min-w-0 truncate">{s.title}</span>
+                  </SelectRow>
               )
             })}
             {rows.length === 0 && (
@@ -136,6 +123,10 @@ export function PlotInfoPanel({
 }) {
   return (
             <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-ink-700 bg-ink-850/40 p-3 space-y-3">
+              <div>
+                <div className="text-12 font-medium text-ink-200 break-words">{session.title}</div>
+                <div className="mt-0.5 text-11 text-ink-500">最近更新 {new Date(session.updatedAt).toLocaleDateString()}</div>
+              </div>
               <div>
                 <div className="text-11 text-ink-500">叙事锚点</div>
                 <div className="text-12 text-ink-200 mt-0.5">{session.anchorChapterLabel || '（未标注）'}</div>
