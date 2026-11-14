@@ -41,7 +41,7 @@ export function PortableDataBar() {
         const missing = r.missingSidecar ?? []
         if (missing.length) {
           showToast(
-            `已导出可读取的内容（浏览器下载）：\n${r.fileName ?? ''}\n\n⚠️ 有 ${missing.length} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。${tip}${taskTip}`,
+            `已导出可读取的内容（浏览器下载）：\n${r.fileName ?? ''}\n\n注意：有 ${missing.length} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。${tip}${taskTip}`,
             'error', 12000,
           )
         } else {
@@ -65,7 +65,7 @@ export function PortableDataBar() {
       if (t === null) { setBusy(null); return } // 用户取消
       const r = await importPortableData(t)
       if (r.ok) {
-        showToast('导入成功，即将重新加载应用。')
+        showToast('导入成功，即将重新加载应用')
         location.reload()
       } else {
         showToast('导入失败：' + (r.error ?? '未知错误'), 'error')

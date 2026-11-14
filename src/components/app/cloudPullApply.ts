@@ -79,7 +79,7 @@ export async function runCloudPull(deps: CloudPullDeps): Promise<void> {
     title: '用云端新版更新本机',
     message: `会把本机这本替换为云端第 ${pinned} 版。\n\n`
       + (deps.localDirty
-        ? '⚠️ 本机还有未同步的改动，这些改动会被丢弃。\n\n'
+        ? '注意：本机还有未同步的改动，这些改动会被丢弃。\n\n'
         : '本机没有未同步的改动。\n\n')
       + '确认后会先创建一份备份，备份成功才开始写入。\n\n'
       + '写入前还会再核对一次云端版本与本机内容；期间任何一边变了都会中止，让你重新确认。\n\n'
@@ -235,7 +235,7 @@ export async function acceptCloudPullCurrent(deps: {
   const ok = await confirmDialog({
     title: '核对通过，继续使用当前内容',
     message: `会把同步基线认到云端第 ${pullOp.confirmedRevision} 版，并恢复这本的自动同步。\n\n`
-      + (risky ? '⚠️ 上次是在写入过程中中断的，本机内容可能只更新了一部分。请先在正文里逐章核对，再确认这一步。\n\n' : '')
+      + (risky ? '注意：上次是在写入过程中中断的，本机内容可能只更新了一部分。请先在正文里逐章核对，再确认这一步。\n\n' : '')
       + '这一步不会改动本机内容，只改同步基线。',
     confirmText: '已核对，继续', danger: risky,
   })

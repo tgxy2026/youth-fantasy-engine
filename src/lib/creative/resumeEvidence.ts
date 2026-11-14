@@ -210,7 +210,7 @@ export function classifyResumeState(
     return {
       state: 'review-needed',
       headline: '旧版断点缺少校验信息',
-      detail: '这份记录来自旧版本，没有可供核验的章节指纹。您可以选择从最近安全记录点继续，或从头重新开始。',
+      detail: '这份记录来自旧版本，没有可供核验的章节指纹。你可以选择从最近安全记录点继续，或从头重新开始。',
       canResumeDirectly: false,
       canResumeFromSafeCheckpoint: true,
       canRestartFromScratch: true,
@@ -220,7 +220,7 @@ export function classifyResumeState(
     return {
       state: 'review-needed',
       headline: '断点之后存在新章节',
-      detail: `检测到断点记录之后书库中已存在 ${verdict.trailing.length} 个后续章节。您可以选择从最近安全断点（已完成 ${resume.doneChapters} 章）继续，或从头重新开始。`,
+      detail: `检测到断点记录之后书库中已存在 ${verdict.trailing.length} 个后续章节。你可以选择从最近安全断点（已完成 ${resume.doneChapters} 章）继续，或从头重新开始。`,
       canResumeDirectly: false,
       canResumeFromSafeCheckpoint: true,
       canRestartFromScratch: true,

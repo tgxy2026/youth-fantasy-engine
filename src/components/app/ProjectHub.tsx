@@ -548,7 +548,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                         + '📌 它「不影响页签数量」 —— 完整项目的《开书定位》六个页签全部显示；'
                         + '自定义项目则按你在「功能模块」里勾的来。\n'
                         + '📌 选错了不要紧：回项目管理页「编辑项目」能改，填过的内容不会丢（换题材只换示例，不动字段名）。\n\n'
-                        + '🔴 它「默认不会告诉 AI」 —— 题材不进模型看到的资料，AI 不会因为看到「类型：都市异能」'
+                        + '它「默认不会告诉 AI」 —— 题材不进模型看到的资料，AI 不会因为看到「类型：都市异能」'
                         + '就照题材套路发挥。想让它知道：回「编辑项目」打开「把作品题材告诉 AI」，'
                         + '或直接填《作品信息》页的「类型赛道」字段（当任务带入作品信息时，可按资料范围发送你填的描述）。'}
                     </HelpPopover>
@@ -804,7 +804,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             projectId={backupPid}
             projectName={backupName}
             onClose={() => setBackupPid(null)}
-            onRestored={() => { setBackupPid(null); showToast('已恢复到所选历史版本，重新打开项目即可看到。') }}
+            onRestored={() => { setBackupPid(null); showToast('已恢复到所选历史版本，重新打开项目即可看到') }}
             onImported={onOpen}
           />
         )}

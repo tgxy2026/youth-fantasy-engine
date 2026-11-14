@@ -650,7 +650,7 @@ export function VersionHistory({ projectId, chapterId, current, onRestore, onClo
       setPreview(next.find(item => item.id === created.id) ?? null)
       setSnapshotLabel('')
       setSnapshotNote('')
-      showToast('命名快照已保存。', 'success')
+      showToast('命名快照已保存', 'success')
     } catch (error) {
       setRestoreError(`快照未能确认：${error instanceof Error ? error.message : String(error)}。可能已创建，请重新打开列表核对。`)
     } finally { createBusy.current = false; setCreatingSnapshot(false) }

@@ -561,12 +561,12 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
   const selectCard = async (id: string, valid?: () => boolean) => {
     const request = ++selectionRequest.current, owner = captureCandidateOwner()
     if (id === draftRef.current?.id) return true
-    if (portraitBusy) { showToast('正在处理立绘，请完成后再切换。', 'info'); return false }
+    if (portraitBusy) { showToast('正在处理立绘，请完成后再切换', 'info'); return false }
     const imageVersion = portraitRequest.current.version
     if (!await flushCurrentDraft()) return false
     if (!owner.current() || request !== selectionRequest.current) return false
     if (valid && !valid()) return false
-    if (imageVersion !== portraitRequest.current.version) { showToast('切换期间立绘发生变化，请核对后再切换。', 'info'); return false }
+    if (imageVersion !== portraitRequest.current.version) { showToast('切换期间立绘发生变化，请核对后再切换', 'info'); return false }
     setActiveId(id)
     return true
   }
@@ -745,7 +745,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
    */
   const exportCsv = () => {
     if (records.length === 0) {
-      showToast(`还没有${nounCard}可导出 —— 可先用「导入」批量录入，或点「新建${noun}」逐张录入。`, 'info')
+      showToast(`还没有${nounCard}可导出 —— 可先用「导入」批量录入，或点「新建${noun}」逐张录入`, 'info')
       return
     }
     downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, recordsWithDraft)], { type: 'text/csv;charset=utf-8' }))

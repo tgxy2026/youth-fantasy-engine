@@ -789,7 +789,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
             </div>
             <div className="mt-0.5 text-10 text-ink-500">
               历史最长 {review.longestStreak} 天
-              {review.longestStreakRange ? `（${review.longestStreakRange.from.slice(5)} ~ ${review.longestStreakRange.to.slice(5)}）` : ''}
+              {review.longestStreakRange ? `（${review.longestStreakRange.from.slice(5)}–${review.longestStreakRange.to.slice(5)}）` : ''}
             </div>
           </div>
 

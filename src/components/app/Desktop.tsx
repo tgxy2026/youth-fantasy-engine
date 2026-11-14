@@ -53,7 +53,7 @@ export function DesktopDataBar() {
         if (missing.length) {
           const n = missing.length
           showToast(
-            `已导出可读取的内容到：\n${r.path}\n\n⚠️ 有 ${n} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。\n可以继续用它救急，但别把旧的那份覆盖掉。${tip}${taskTip}`,
+            `已导出可读取的内容到：\n${r.path}\n\n有 ${n} 份历史备份读取失败，没有被带进这份文件 —— 这不是完整备份。\n可以继续用它救急，但别把旧的那份覆盖掉。${tip}${taskTip}`,
             'error', 12000,
           )
         } else {
@@ -86,7 +86,7 @@ export function DesktopDataBar() {
     try {
       const r = await importDesktopData()
       if (r.ok) {
-        showToast('导入成功，即将重新加载应用。')
+        showToast('导入成功，即将重新加载应用')
         location.reload()
       } else if (!r.cancelled) {
         showToast('导入失败：' + (r.error ?? '未知错误'), 'error')
@@ -114,7 +114,7 @@ export function DesktopDataBar() {
         '· 若该位置已有数据文件（例如另一台设备同步过来的），将改用那份数据，\n' +
         '  本机已有的历史备份不会混进去；\n' +
         '· 本机当前的数据文件不会被删除，仍留在原处。\n\n' +
-        '⚠️ 放进云盘同步目录可实现跨设备同步，但云盘是「文件级」同步：\n' +
+        '注意：放进云盘同步目录可实现跨设备同步，但云盘是「文件级」同步：\n' +
         '· 不要在多台设备上同时打开本软件编辑，冲突会导致整库覆盖；\n' +
         '· 换设备前请先关闭软件，等云盘同步完成后再打开。\n\n' +
         '确定继续？切换后应用会重新加载。',
@@ -214,7 +214,7 @@ export function DesktopDataBar() {
           title={state.dataPath
             // 🔴 2026-10-13：这条路径是「手动复制数据文件当备份」的入口 —— 该文件是**明文**整库
             //    （含 AI 密钥），必须就地提醒，否则用户拷走它等于把密钥一起备份出去。
-            ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹\n\n⚠️ 该文件是明文整库（含 AI 密钥等本机设置），请勿直接当备份外传。要留档请用「导出数据文件」——它会剔除密钥。`
+            ? `数据文件：${state.dataPath}\n点击在资源管理器中打开该文件夹\n\n该文件是明文整库（含 AI 密钥等本机设置），请勿直接当备份外传。要留档请用「导出数据文件」——它会剔除密钥。`
             : '点击打开数据文件夹'}
           className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-full border border-ink-700 bg-ink-800/60 px-2.5 text-11 text-ink-400 transition-colors hover:border-amber/50 hover:text-ink-200"
         >

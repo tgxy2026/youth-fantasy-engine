@@ -85,7 +85,7 @@ export function GuestDataBar() {
       if (t === null) { setBusy(null); return }
       const r = await importGuestData(t)
       if (r.ok) {
-        showToast('导入成功，即将重新加载应用。')
+        showToast('导入成功，即将重新加载应用')
         location.reload()
       } else {
         showToast('导入失败：' + (r.error ?? '未知错误'), 'error')

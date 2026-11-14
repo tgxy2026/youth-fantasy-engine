@@ -218,7 +218,7 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     try {
       const newPid = await db.importProject(bundle)
       void rebuildKbIndexAfterRestore(newPid)
-      showToast('导入成功！即将打开该项目。')
+      showToast('导入成功！即将打开该项目')
       onImported?.(newPid)
       onClose()
     } catch (err) {

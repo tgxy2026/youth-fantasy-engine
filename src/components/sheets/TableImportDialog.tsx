@@ -233,7 +233,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
     try {
       setRaw(await f.text())
     } catch {
-      showToast('文件读取失败，可改用粘贴方式。', 'error')
+      showToast('文件读取失败，可改用粘贴方式', 'error')
     }
   }
 
@@ -251,7 +251,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
 
   /** 方式③：用已接入的模型把粘贴内容解析成多条（长文自动分批 → 突破一次十几条的限制） */
   const runAi = () => {
-    if (!raw.trim()) { showToast('请先粘贴要解析的内容。', 'info'); return }
+    if (!raw.trim()) { showToast('请先粘贴要解析的内容', 'info'); return }
     const src = raw
     t.run(job => tableImportSplit(tab, {
       sourceText: src,

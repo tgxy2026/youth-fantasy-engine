@@ -120,7 +120,7 @@ export default function FieldAliasDialog({
       <div className="space-y-3">
         <p className="text-12 text-ink-400 leading-relaxed">
           {intro}
-          <span className="text-ink-200">名称会同步给 AI 读取这一项时使用，不动您已经填好的内容与存储键</span>—— 留空即用原名。
+          <span className="text-ink-200">名称会同步给 AI 读取这一项时使用，不动你已经填好的内容与存储键</span>—— 留空即用原名。
         </p>
 
         {/* 🔴 硬提醒：现在 AI 按新名称理解，但「含义变没变」只有作者知道 */}
@@ -259,7 +259,7 @@ export default function FieldAliasDialog({
         <div className="flex items-center justify-between gap-2">
           <span className="text-11 text-ink-500 flex items-center gap-1.5">
             <HelpPopover title="显示名的三条规矩" width="20rem" size={13}>
-              {`· 影响「您看到的字」和 AI 理解这一项时用的名字；已填数据与存储键一个字节都不会动。
+              {`· 影响「你看到的字」和 AI 理解这一项时用的名字；已填数据与存储键一个字节都不会动。
 · 含义没变选「含义不变」；含义变了必须写明新含义，否则 AI 会按旧含义解释新名称。
 · 不能和同页其它字段重名，也不能超过 ${MAX_ALIAS_LEN} 个字 —— 重名会让人分不清是哪一项，会自动退回原名。`}
             </HelpPopover>

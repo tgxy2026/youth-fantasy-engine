@@ -82,7 +82,7 @@ export default function AtlasFieldManager({
   dirtyRef.current = hasUnsavedChanges
   const ensureClean = () => {
     if (!dirtyRef.current) return true
-    showToast('本页还有未保存的修改，请先保存后再操作字段。', 'error')
+    showToast('本页还有未保存的修改，请先保存后再操作字段', 'error')
     return false
   }
   const [convertTarget, setConvertTarget] = useState<CustomFieldType | ''>('')
@@ -129,7 +129,7 @@ export default function AtlasFieldManager({
     setBusy(true)
     try {
       await discardIntactFieldPurge(pid, p)
-      showToast('已移除记录，字段和数据保留。', 'success')
+      showToast('已移除记录，字段和数据保留', 'success')
       await reloadPending()
     } catch (e) {
       showToast(e instanceof Error ? e.message : '无法移除记录，请先核对字段。', 'error')
@@ -178,7 +178,7 @@ export default function AtlasFieldManager({
         || configRef.current.revision !== basis.revision || !sameFieldRows(current.rows, basis.rows)
         || !planFieldConversion(field, current.rows, plan.target).ok) {
         setConvertPlan(null)
-        showToast('字段数据已变化，请重新预览后再转换。', 'error')
+        showToast('字段数据已变化，请重新预览后再转换', 'error')
         return
       }
       const next: AtlasSchemaConfig = {
@@ -220,7 +220,7 @@ export default function AtlasFieldManager({
       if (!ensureClean() || !owner.current() || !current || current.pid !== loaded.pid
         || configRef.current.revision !== config.revision
         || !sameFieldRows(current.rows, loaded.rows)) {
-        showToast('字段数据已变化，请重新预览后再删除。', 'error')
+        showToast('字段数据已变化，请重新预览后再删除', 'error')
         return
       }
       // 写下并持久化恢复意图后才允许删除定义；异常退出时记录仍可发现。

@@ -257,7 +257,7 @@ export function useFreeRoundEnd({
         const spend = r.budget ? `（模型调用 ${r.budget.used}/${r.budget.max} 次）` : ''
         return {
           text: `本轮已结束 —— ${r.memories.length} 位角色的记忆已更新${n ? `，写了 ${n} 条日记` : ''}${spend}`
-            + (r.warnings.length ? `\n⚠️ ${r.warnings.join('\n⚠️ ')}` : ''),
+            + (r.warnings.length ? `\n注意：${r.warnings.join('\n')}` : ''),
           kind: (r.warnings.length ? 'info' : 'success') as 'info' | 'success',
         }
       },

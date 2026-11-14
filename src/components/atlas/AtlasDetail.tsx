@@ -183,12 +183,12 @@ export default function AtlasDetail({
     setFinishingEdit(true)
     try {
       if (dirty && (!onSave || !await onSave())) {
-        showToast('尚有修改未提交，请核对当前草稿后重试保存。', 'error')
+        showToast('尚有修改未提交，请核对当前草稿后重试保存', 'error')
         return
       }
       activity.current.editing = false; setEditing(false)
     } catch {
-      showToast('保存失败，请保留当前草稿并重试。', 'error')
+      showToast('保存失败，请保留当前草稿并重试', 'error')
     } finally {
       finishing.current = false
       setFinishingEdit(false)
@@ -324,7 +324,7 @@ export default function AtlasDetail({
             if (!direction) return
             event.preventDefault()
             if (editing || dirty || saving || busy || choosingImage || finishing.current) {
-              showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目。', 'info')
+              showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目', 'info')
               return
             }
             navigation.move(direction)

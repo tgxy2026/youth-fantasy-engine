@@ -163,7 +163,7 @@ export default function AboutPage() {
             </section>
 
             {/* 跨版本指引（2026-10-18）：网页版 ⇄ 桌面版 / 便携版互导。
-                三端是同一款软件的不同用法，用户往往先接触网页版再想装到电脑上（或反过来），
+                三端是同一款软件的不同用法，人往往先接触网页版再想装到电脑上（或反过来），
                 这里给一条明确的往返路径，并说明「换版本不会丢稿」——那句最能打消顾虑。 */}
             <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>
@@ -353,7 +353,7 @@ export default function AboutPage() {
                 <Users size={14} className="text-amber" /> 致谢名单
               </h3>
               <p className="text-ink-500 text-11 mb-3">
-                致谢名单按照打赏时间排序，您的支持是我持续更新和维护项目的最大动力！
+                致谢名单按照打赏时间排序，你的支持是我持续更新和维护项目的最大动力！
               </p>
               <div className="flex flex-wrap gap-2 content-start">
                 {THANKS.map(name => (

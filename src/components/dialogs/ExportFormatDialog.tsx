@@ -179,7 +179,7 @@ export default function ExportFormatDialog({
     void loadSchemes(currentPid).then(value => {
       if (alive) { setSchemes(value); setSchemesReady(true) }
     }).catch(() => {
-      if (alive) showToast('导出方案读取失败，请重新打开后重试；未修改已有方案。', 'error')
+      if (alive) showToast('导出方案读取失败，请重新打开后重试；未修改已有方案', 'error')
     })
     return () => { alive = false }
   }, [open, currentPid])
@@ -287,7 +287,7 @@ export default function ExportFormatDialog({
   // 保存当前为方案
   const handleSaveScheme = async () => {
     if (schemeBusy.current) return
-    if (!schemesReady) { showToast('导出方案尚未成功读取，无法保存。', 'error'); return }
+    if (!schemesReady) { showToast('导出方案尚未成功读取，无法保存', 'error'); return }
     const check = validateSchemeName(newSchemeName)
     if (!check.ok) {
       showToast(check.reason, 'info')
@@ -317,12 +317,12 @@ export default function ExportFormatDialog({
     const allIds = new Set(chapters.map(c => c.id))
     const { valid, invalid } = resolveSchemeChapters(s, allIds)
     if (invalid.length > 0) {
-      showToast(`方案中有 ${invalid.length} 个章节不可用，未应用；请检查方案。`, 'error')
+      showToast(`方案中有 ${invalid.length} 个章节不可用，未应用；请检查方案`, 'error')
       return
     }
     const savedPrefs = schemePrefs(s.layoutHint?.prefs)
     if (!savedPrefs || savedPrefs.tab !== s.format) {
-      showToast('此方案缺少完整排版设置，请重新保存方案。', 'error')
+      showToast('此方案缺少完整排版设置，请重新保存方案', 'error')
       return
     }
     patch(savedPrefs)
@@ -339,7 +339,7 @@ export default function ExportFormatDialog({
   // 删除方案
   const handleDeleteScheme = async (id: string, name: string) => {
     if (schemeBusy.current) return
-    if (!schemesReady) { showToast('导出方案尚未成功读取，无法删除。', 'error'); return }
+    if (!schemesReady) { showToast('导出方案尚未成功读取，无法删除', 'error'); return }
     schemeBusy.current = true
     const generation = schemeScope.current.generation
     setSavingScheme(true)
@@ -367,13 +367,13 @@ export default function ExportFormatDialog({
     schemeBusy.current = false
     setSavingScheme(false)
     if (generation !== schemeScope.current.generation) return
-    if (result.ok) { setSchemes(next); showToast('已从方案中移除不可用章节。', 'success') }
+    if (result.ok) { setSchemes(next); showToast('已从方案中移除不可用章节', 'success') }
     else showToast(`保存方案失败：${result.error || '未知错误'}`, 'error')
   }
 
   const doExport = async () => {
     if (busy || !mod) return
-    if (invalidChapterIds.length) { showToast('选定章节有不可用项，请重新选择后导出。', 'error'); return }
+    if (invalidChapterIds.length) { showToast('选定章节有不可用项，请重新选择后导出', 'error'); return }
     setBusy(true)
     try {
       if (prefs.tab === 'platform') {

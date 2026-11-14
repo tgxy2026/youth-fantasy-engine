@@ -126,7 +126,7 @@ export default function AtlasView({
   const restoreFocus = useAtlasDetailFocus(narrow, selectedId, listRef, detailRef)
   const select = (id: string | null, focusDetail = false) => {
     if (selectedId && id !== selectedId && (navigationGuard.current?.() || saving || dirtyOf?.(selectedId))) {
-      showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目。', 'info')
+      showToast('请先结束编辑并保存草稿，或等待图片处理完成，再切换条目', 'info')
       return false
     }
     setFocusNavId(focusDetail ? id : null)

@@ -403,7 +403,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
           <span className="flex shrink-0 items-center gap-1">界面缩放
             <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
-              {'调整整个软件的字号与元素大小（80% ~ 160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
+              {'调整整个软件的字号与元素大小（80%–160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
             </HelpPopover>
           </span>
           </div>
@@ -439,7 +439,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                 min={80}
                 max={160}
                 ariaLabel="界面缩放百分比"
-                title="手动输入缩放比例（80% ~ 160%），回车或失焦生效"
+                title="手动输入缩放比例（80%–160%），回车或失焦生效"
                 className="h-6 w-9 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <span className="text-ink-400 text-11">%</span>

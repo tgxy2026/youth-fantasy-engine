@@ -170,7 +170,7 @@ export default function EvidenceExportDialog({ open, onClose, pack, bookPack }: 
         <div className="text-12 text-ink-100">{view.title()}</div>
         <div className="mt-1 text-11 text-ink-400 leading-relaxed">
           {view.summary()}
-          {range ? `　·　写作日期 ${range.from} ~ ${range.to}` : ''}
+          {range ? `　·　写作日期 ${range.from}–${range.to}` : ''}
         </div>
       </div>
 

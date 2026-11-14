@@ -131,7 +131,7 @@ export async function countCodeRefs(
 /** 把引用结果拼成删除确认弹窗里的提示文案（无引用且扫描完整则返回空串） */
 export function codeRefWarning(code: string, r: CodeRefResult): string {
   if (r.incomplete) {
-    return `\n\n⚠️ 引用检查未完整执行（部分数据读取失败），无法确认「${code}」是否被引用 —— 请自行在相关表格与正文中核对后再删除。`
+    return `\n\n引用检查未完整执行（部分数据读取失败），无法确认「${code}」是否被引用 —— 请自行在相关表格与正文中核对后再删除。`
   }
   if (!r.total) return ''
   const where = r.hints.length ? `（如 ${r.hints.join('、')}）` : ''

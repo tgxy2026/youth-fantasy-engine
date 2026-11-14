@@ -82,7 +82,7 @@ export default function InspirationBox() {
     const projectId = db.getCurrentProjectId()
     let next: InspirationItem[]
     try { next = await removeItem(id, items) }
-    catch { showToast('灵感删除失败，请检查存储后重试。', 'error'); return }
+    catch { showToast('灵感删除失败，请检查存储后重试', 'error'); return }
     if (db.getCurrentProjectId() !== projectId) return
     setItems(next)
     setChecked(prev => { const n = new Set(prev); n.delete(id); return n })

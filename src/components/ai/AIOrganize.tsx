@@ -108,10 +108,10 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   const run = () => {
     // 前置校验放在**起任务之前** —— 「没勾章节」这类问题当场提示即可，不该起一个必然失败的任务
     if (mode === 'chapters' && picked.size === 0) {
-      showToast('请至少勾选一章正文，或切换到「仅依据已有设定」/「手动粘贴」。', 'info')
+      showToast('请至少勾选一章正文，或切换到「仅依据已有设定」/「手动粘贴」', 'info')
       return
     }
-    if (mode === 'paste' && !paste.trim()) { showToast('请先粘贴要整理的文本。', 'info'); return }
+    if (mode === 'paste' && !paste.trim()) { showToast('请先粘贴要整理的文本', 'info'); return }
     setApplyErr(null)
     setChecked(new Set())
     // 输入在**发起时快照进闭包**：任务在 store 里跑，用户切走 / 关弹窗后不应再受界面影响
@@ -270,7 +270,7 @@ style={{ maxHeight: foldVh('26vh') }}>
                   ))}
                 </div>
                 <div className="px-3 py-1.5 border-t border-ink-700 text-11 text-ink-500">
-                  选太多章会超出模型上下文，超出部分自动截断；建议一次 1~3 章，整理更准。
+                  选太多章会超出模型上下文，超出部分自动截断；建议一次 1–3 章，整理更准。
                 </div>
               </div>
             )}

@@ -682,7 +682,7 @@ export function useGeoMapModel() {
     const ok = await confirmDialog({
       title: `删除地点「${nm}」？`,
       message:
-        '⚠️ 这是「连库删除」：\n'
+        '注意：这是「连库删除」：\n'
         + `《地理风物》里的「${nm}」整条档案（范围与面积、相对地理位置、行程时间等全部字段）会一起消失，且无法撤销。\n\n`
         + '如果只是想擦掉它画好的格子、但保留档案 —— 请改用「清空绘制」。',
       confirmText: '确认两边一起删除',

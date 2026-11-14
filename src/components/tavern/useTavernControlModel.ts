@@ -342,7 +342,7 @@ export function useTavernControlModel() {
     const okGo = await confirmDialog({
       title: '要编辑扮演协议吗？',
       message: [
-        '⚠️ 协议是剧情推演与自由对话共用的格式契约，改坏了两种模式的输出格式会一起乱。',
+        '注意：协议是剧情推演与自由对话共用的格式契约，改坏了两种模式的输出格式会一起乱。',
         '',
         '建议：',
         '· 只想调风格/语气 → 用上面的「补充要求」，不必动协议；',

@@ -64,7 +64,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
               <div className="mt-2 border-t border-ink-700/60 pt-2">
                 <ToggleField
                   label="额度跟随模型自动调整"
-                  hint="换模型后自动把这批数值套用成新模型的推荐值。⚠️ 只在你「换模型」时生效 —— 同一个模型下你手调的值不会被改回去（想完全手工就关掉它，面板上仍可点「采用推荐值」）。"
+                  hint="换模型后自动把这批数值套用成新模型的推荐值。只在你「换模型」时生效 —— 同一个模型下你手调的值不会被改回去（想完全手工就关掉它，面板上仍可点「采用推荐值」）。"
                   value={c.autoTuneByModel !== false}
                   onChange={v => setCommon('autoTuneByModel', v)}
                 />
@@ -105,7 +105,7 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
                   guide={gNumCtx}
                   value={cap.windowTokens}
                   onCommit={setLocalWindow}
-                  hint="本地 Ollama 的 num_ctx，也是显存安全阀：调大它能装下更多内容，代价是显存占用同步上升 —— 模型加载不起来就把它调小。⚠️ 这里填的值会写进「工作面板 → 模型设置 → 模型配置 → 上下文窗口」，两处始终是同一个数；上面的「上下文预算」与记忆档也都按它缩放。"
+                  hint="本地 Ollama 的 num_ctx，也是显存安全阀：调大它能装下更多内容，代价是显存占用同步上升 —— 模型加载不起来就把它调小。这里填的值会写进「工作面板 → 模型设置 → 模型配置 → 上下文窗口」，两处始终是同一个数；上面的「上下文预算」与记忆档也都按它缩放。"
                 />
               ) : (
                 <Field

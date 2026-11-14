@@ -117,7 +117,7 @@ export default function DraftReviewPanel({
         ? '已有条目不会被修改（当前策略：保留已有）。'
         : conflict === 'fill-empty'
           ? '已有条目只补空字段，非空字段一律不动。'
-          : '⚠️ 当前策略会用新值覆盖已有条目的字段。'
+          : '注意：当前策略会用新值覆盖已有条目的字段。'
       const okGo = await confirmDialog({
         title: '写入项目设定',
         message: [
@@ -278,8 +278,8 @@ export default function DraftReviewPanel({
                               //    写成不勾是误导（2026-09-18 实机验收时发现文案照搬了上面那套）
                               <div key={i} className="mt-1 text-10 leading-relaxed text-amber">
                                 {c.field === '实体类型'
-                                  ? `⚠️ ${c.field}不一致：这条按「${c.incoming}」抽出，但同名实体已按「${c.existing}」抽出过。默认不勾选 —— 请确认它们是不是同一个对象，再二选一。`
-                                  : `⚠️ ${c.field}前后不一致：一处写「${c.existing}」、一处写「${c.incoming}」。本行暂取更完整的那份，写入前请确认哪个对。`}
+                                  ? `注意：${c.field}不一致：这条按「${c.incoming}」抽出，但同名实体已按「${c.existing}」抽出过。默认不勾选 —— 请确认它们是不是同一个对象，再二选一。`
+                                  : `注意：${c.field}前后不一致：一处写「${c.existing}」、一处写「${c.incoming}」。本行暂取更完整的那份，写入前请确认哪个对。`}
                               </div>
                             ))}
                           </div>

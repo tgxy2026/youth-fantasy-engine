@@ -455,14 +455,14 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
     return { ok: false, scope: 'record', error: '设定修改尚未确认提交，请保留输入并重试。' }
   }
   const openField = async (doc: Doc, field: DocField) => {
-    if (indexStale.current) { showToast('设定正在刷新，请稍后再编辑。', 'info'); return }
+    if (indexStale.current) { showToast('设定正在刷新，请稍后再编辑', 'info'); return }
     const request = ++fieldSwitch.current
     if (fieldDirty() && !(await flushField.current()).ok) return
     if (!current() || request !== fieldSwitch.current) return
     releaseEditLease()
     const leaseKey = doc.kind === 'card' ? cardLeaseKey(doc.tabId) : tableLeaseKey(doc.tabId)
     const lease = tryRegisterFormEditor(projectId, leaseKey)
-    if (!lease) { showToast('Agent 正在修改该栏目，请稍后再编辑。', 'info'); return }
+    if (!lease) { showToast('Agent 正在修改该栏目，请稍后再编辑', 'info'); return }
     editLease.current = lease
     editEpoch.current++; editTarget.current = { doc, field }
     setEditing({ key: doc.key, dataKey: field.dataKey }); setDraft(field.value); setFieldError('')

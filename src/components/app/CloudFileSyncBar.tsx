@@ -503,7 +503,7 @@ function TrustSelfSignedToggle({ checked, onChange, tip }: { checked: boolean; o
       </label>
       <p className={checked ? 'text-11 leading-snug text-amber/90' : 'text-11 leading-snug text-ink-600'}>
         {checked
-          ? '⚠️ 已开启：将放行「证书链不受信（自签）」的连接。仅对本同步通道生效，AI / 检索等其他流量不受影响；主机名不符、证书过期或已吊销仍会被拒绝。若同步地址是公网服务器，请勿勾选。'
+          ? '注意：已开启：将放行「证书链不受信（自签）」的连接。仅对本同步通道生效，AI / 检索等其他流量不受影响；主机名不符、证书过期或已吊销仍会被拒绝。若同步地址是公网服务器，请勿勾选。'
           : tip}
       </p>
     </div>
