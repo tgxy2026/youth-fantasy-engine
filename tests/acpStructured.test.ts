@@ -537,16 +537,15 @@ async function run() {
   }
 
   // ---------------------------------------------------------------- 14.5 会话建立的重试与可读错误
-  console.log('--- 14.5 会话建立：瞬时错误重试一次，内部错误码翻译 ---')
+  console.log('--- 14.5 会话建立：按错误类别提示与重试 ---')
   {
     const rt = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/acp-runtime.mjs'), 'utf8')
-    ok('🔴 session/new 失败会重试（Agent 对连续建会话限流）', /const attempt = async \(\) =>/.test(rt) && /return await attempt\(\)/.test(rt))
-    ok('只对瞬时类错误重试（-32603 / 会话未建立）', /isTransientSessionError/.test(rt) && /acpCode === -32603/.test(rt))
-    ok('🔴 取消后不重试（signal.aborted 直接抛）', /signal\?\.aborted \|\| !isTransientSessionError/.test(rt))
-    ok('内部错误码翻译成可操作提示（不把 -32603 甩给作者）',
-      /ACP 暂时无法建立新会话/.test(rt) && /15~30 秒再试/.test(rt))
-    ok('非瞬时错误原样抛出（不改写鉴权/协议错误）', /if \(!isTransientSessionError\(error\)\) return error/.test(rt))
-    ok('重试次数为一次（不无限重试放大限流）', (rt.match(/return await attempt\(\)/g) ?? []).length === 2, '定义 1 次 + 重试 1 次')
+    ok('重试范围是 session/new，不含发送提示词', /const attempt = async \(\) =>/.test(rt) && /client.request\('session\/new'/.test(rt))
+    ok('只对标记为瞬时网络故障的错误重试', /isTransientSessionError = error => error\?\.sessionFailure === 'network'/.test(rt))
+    ok('取消既终止等待也禁止重试', /signal\.aborted \|\| !backoff \|\| !isTransientSessionError/.test(rt) && /delay\(backoff, undefined, \{ signal \}\)/.test(rt))
+    ok('账号、额度、网络和未知错误分别提示', /network:.*网络/.test(rt) && /auth:.*重新登录/.test(rt) && /quota:.*额度/.test(rt) && /unknown:.*-32603/.test(rt))
+    ok('其他错误码原样上抛', /if \(error\?\.acpCode !== -32603\) return error/.test(rt))
+    ok('最多两次重试，最后一个失败直接退出', /for \(const backoff of \[2500, 5000, 0\]\)/.test(rt) && /!backoff \|\|/.test(rt))
   }
 
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')
