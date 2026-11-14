@@ -108,6 +108,8 @@ export function useNovelEditorGhost({
   const ghostCache = useRef(new Map<string, string>())
   /** 连续失败计数：满 GHOST_MAX_FAILS 次自动静默禁用（避免每次停笔都白等一轮超时） */
   const ghostFail = useRef(0)
+  /** 最近一次失败原因：熔断时一并告诉作者，别再只丢一句「连续失败」 */
+  const ghostLastError = useRef('')
   /**
    * ACP 伴写的授权缓存：**每个 ACP 代次只确认一次**。
    *
@@ -243,8 +245,20 @@ export function useNovelEditorGhost({
         return
       }
       ghostFail.current += 1
+      ghostLastError.current = e instanceof Error ? e.message : String(e)
+      // 🔴 2026-11-15：「已有 ACP 操作在途」是**并发冲突**，不是这条建议生成失败。
+      //   上一个请求刚被 abort、主进程还在收尾时必然撞到它；把它计入熔断，
+      //   等于用三次时序抖动把伴写永久关掉（作者看到的就是「启用不起来」）。
+      if (/操作在途/.test(ghostLastError.current)) {
+        ghostFail.current = Math.max(0, ghostFail.current - 1)
+        return
+      }
       if (ghostFail.current >= GHOST_MAX_FAILS) {
-        showToast(`AI 伴写已连续失败 ${GHOST_MAX_FAILS} 次，已自动停用（点工具栏钢笔键，在弹窗里重新开启）`, 'error')
+        // 文案 2026-11-15 更新：入口已从「工具 → 辅助创作」移到工具栏「AI 伴写」，并把真实原因带出来
+        showToast(
+          `AI 伴写连续 ${GHOST_MAX_FAILS} 次没生成成功，已自动停用（点工具栏「AI 伴写」可重新开启）。最后一次原因：${ghostLastError.current}`,
+          'error', 12000,
+        )
       }
     } finally {
       // 复位条件是「当前请求的所有权」：被新请求顶掉时不抢（新请求的 finally 会复位）；
@@ -260,6 +274,11 @@ export function useNovelEditorGhost({
    */
   useEffect(() => {
     if (!companion || !ready || !activeId) { setGhost(null); return }
+    // 🔴 2026-11-15：ACP 模式下单句生成要 30~40 秒，而伴写是「停笔即触发」。
+    //   不挡在途请求的话，作者每敲几个字就会再发一次，第二次必然撞上主进程的
+    //   「已有 ACP 操作在途」→ 连续三次就熔断，表现就是作者看到的「伴写启用不起来」。
+    //   这里一次只允许一个请求在跑；它回来后 effect 会因 ghostBusy 变化重跑，自然补发。
+    if (ghostBusy) return
     if (ghostFail.current >= GHOST_MAX_FAILS) { setGhost(null); return }
     // 光标位置必须夹到当前正文长度内：切章后旧光标值可能越界，不夹会算出"指向章外"的建议
     const at = Math.min(caret, draftContent.length)
@@ -290,7 +309,7 @@ export function useNovelEditorGhost({
     }
     // deps 里用 activeId 而不是 active：active 是 chapters.find(...) 的产物，自动保存一提交就换新对象，
     // 会让本 effect 白跑一轮并弹回刚被丢弃的建议（依赖 activeId 就不会因无关的列表更新而重跑）
-  }, [companion, companionLen, companionDeAi, companionStyleNote, ready, activeId, draftContent, caret, ghostBefore, ghostDismissed, selRef, fireGhost, ghostKey])
+  }, [companion, companionLen, companionDeAi, companionStyleNote, ready, ghostBusy, activeId, draftContent, caret, ghostBefore, ghostDismissed, selRef, fireGhost, ghostKey])
 
   /**
    * 切章 / 卸载时必须清干净：ghost 是「针对某一章某个位置」算出来的，

@@ -335,17 +335,30 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           setImportOpen={setImportOpen}
         />
   )
+  /**
+   * 🔴 2026-11-15：伴写从「工具 → 辅助创作」拆成**工具栏独立按钮**，位置在颉文姬右侧。
+   *   原因：作者反馈它藏在两层下拉里找不到；且「工具」里的分组也随之只剩
+   *   整理与检查 / 版本与检索 / 写作视图 三项。
+   *   能力不变：点开仍是 建议长度 / 去 AI 味 / 参考写作规范 / 文风补充 / 总开关。
+   */
   const companionTools = (
-    <details data-editor-companion className="group space-y-1">
-      {/* 🔴 配色必须与 Button variant=ghost + size=sm 逐字一致（主人 2026-10-29：'为什么它是白的'）：
-            原来 text-ink-200 + hover:bg-ink-700 ⇒ 比别的二级功能更亮、像标题。
-            ghost 真值：text-ink-400 / hover:text-ink-100 / hover:bg-ink-800/60 / border-transparent。 */}
-      <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded border border-transparent px-3 text-12 text-ink-400 hover:bg-ink-800/60 hover:text-ink-100 [&::-webkit-details-marker]:hidden">
-        {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
-        AI 伴写 <span className="ml-auto text-10 text-ink-500">{!writingReady ? (acpWriting ? 'ACP 未连接' : '未配置模型') : companion ? '已开启' : '已关闭'}</span>
-        <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="whitespace-pre-wrap px-3 pb-2 text-11 leading-relaxed text-ink-200">
+    <HelpPopover
+      title="AI 伴写"
+      width="22rem"
+      triggerVariant="secondary"
+      triggerClassName="shrink-0"
+      triggerDisabled={!writingReady}
+      triggerTitle={!writingReady
+        ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型')
+        : companion ? 'AI 伴写已开启（默认关闭），点击调整或关闭' : '点击开启 AI 伴写'}
+      trigger={<>
+        {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />} AI 伴写
+        <span className="text-10 text-ink-500">{!writingReady ? (acpWriting ? '未连接' : '未配置') : companion ? '已开启' : '已关闭'}</span>
+        <ChevronDown size={12} />
+      </>}
+    >
+      {() => (
+      <div data-editor-companion className="whitespace-pre-wrap text-11 leading-relaxed text-ink-200">
         <div className="mt-1.5 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-ink-400 shrink-0">建议长度</span>
@@ -417,7 +430,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
         </details>
 
       </div>
-    </details>
+      )}
+    </HelpPopover>
   )
   const secondaryTools = (
     <HelpPopover title="编辑工具" triggerTitle="编辑工具" triggerVariant="secondary" triggerClassName="shrink-0 aria-expanded:border-amber/50"
@@ -433,10 +447,6 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('continuity') }}><Link2 size={14} /> 连续性校验</Button>
             <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('style') }}><Feather size={14} /> 文风体检（本章）</Button>
           </>}
-        </div>
-        <div className="space-y-1 border-t border-ink-700 pt-2">
-          <h3 className="text-12 font-semibold text-ink-100">辅助创作</h3>
-          {companionTools}
         </div>
         <div className="space-y-1 border-t border-ink-700 pt-2">
           <h3 className="text-12 font-semibold text-ink-100">版本与检索</h3>
@@ -570,7 +580,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               >
                 <Wand2 size={14} /> 颉文姬
               </Button>
-              {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
+              {companionTools}
               <div className="w-px h-4 bg-ink-700" />
               <Button variant="secondary" size="sm" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
@@ -586,6 +596,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} 设定检索
               </Button>
+              {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
               <Button variant="secondary" size="sm" aria-pressed={focusMode}
                 onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
                 className="p-1 shrink-0"
@@ -594,7 +605,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、本章资料、设定检索与专注；AI 伴写收在「工具」内。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· AI 伴写（位于「工具」中，默认关闭）：展开后可调整建议长度 / 去 AI 味 / 文风补充及总开关。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、AI 伴写、本章资料、设定检索、本页指引与专注。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· AI 伴写（工具栏独立按钮，在颉文姬右侧，默认关闭）：点开后调整建议长度 / 去 AI 味 / 参考写作规范 / 文风补充，最下方是总开关。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：全书搜索替换；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
             </div>

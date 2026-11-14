@@ -354,6 +354,25 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /foldPx\(/.test(dp) && /currentUiZoom\(\)/.test(dp))
   ok('  · 守卫自检：不折算的旧写法会被判定为坏形态',
     !/foldPx\(/.test('const left0 = r.left\nconst top0 = r.top'))
+
+  // 🔴 2026-11-15 工具栏改版（作者口径）：
+  //    伴写从「工具 → 辅助创作」拆成颉文姬右侧的独立按钮；「本页指引」移到设定检索与专注之间；
+  //    「工具」下拉只剩 整理与检查 / 版本与检索 / 写作视图 三组。
+  const editor = read('src/components/editor/NovelEditor.tsx')
+  const posOf = (needle: string) => editor.indexOf(needle)
+  ok('🔴 「工具」下拉里不再有「辅助创作」分组', !/<h3[^>]*>辅助创作<\/h3>/.test(editor))
+  ok('🔴 工具下拉只剩三组：整理与检查 / 版本与检索 / 写作视图',
+    ['整理与检查', '版本与检索', '写作视图'].every(name => editor.includes(name)))
+  ok('🔴 AI 伴写按钮排在颉文姬之后、本章资料之前',
+    posOf('{companionTools}') > posOf('/> 颉文姬')
+    && posOf('{companionTools}') < posOf('/> 本章资料'))
+  ok('🔴 「本页指引」排在设定检索之后、专注之前',
+    posOf('{pageGuide.guide && <PageGuideButton') > posOf('} 设定检索')
+    && posOf('{pageGuide.guide && <PageGuideButton') < posOf('aria-pressed={focusMode}'))
+  ok('工具栏速查文案已同步新顺序',
+    editor.includes('颉文姬、AI 伴写、本章资料、设定检索、本页指引与专注'))
+  ok('🔴 伴写在上一句没回来时不再重复发（避免撞「操作在途」被熔断）',
+    /if \(ghostBusy\) return/.test(read('src/components/editor/useNovelEditorGhost.ts')))
 }
 
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
