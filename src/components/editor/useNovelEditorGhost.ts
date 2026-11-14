@@ -21,7 +21,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type RefObject, type SetStateAction } from 'react'
 import * as db from '@/lib/db'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { acpGatedText } from '@/lib/agentHost/acpGate'
 import { aiInlineSuggest, type InlineSuggestLength } from '@/lib/ai/aiTasks'
 import { buildInlineBriefing } from '@/lib/ai/aiContext'
 import { buildStyleNote, loadStyleDims, saveStyleDims } from '@/lib/tavern/companionStyle'
@@ -36,6 +37,11 @@ type GhostArgs = {
   /** 当前章正文（未保存草稿的最新值由 draftRef 提供，避免闭包读到旧值） */
   draftContent: string
   aiReady: boolean
+  /**
+   * 3.5.5 · ACP 伴写：桌面 ACP 已连接时，即使没配 API 模型也能出建议。
+   * 传 `null` / 不传 ⇒ 行为与 3.5.4 完全一致（只看 aiReady）。
+   */
+  acp?: { generation: string; name: string; ready: boolean } | null
   caret: number
   setCaret: Dispatch<SetStateAction<number>>
   /** 选区缓存（textarea 的 onSelect/onKeyUp 时同步，面板聚焦后仍可读取） */
@@ -63,8 +69,11 @@ type GhostArgs = {
 }
 
 export function useNovelEditorGhost({
-  activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange, onAiAssist, prevChapterTail = '',
+  activeId, draftContent, aiReady, acp = null, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange, onAiAssist, prevChapterTail = '',
 }: GhostArgs) {
+  /** 伴写就绪：API 模型已配置，或桌面 ACP 已连接 */
+  const ready = aiReady || acp?.ready === true
+
   // ---- 2.2.0 AI 伴写（ghost 逐句续写）----
   // 默认关闭：写作者主导权优先。开启后停笔自动在光标后透出一句浅灰建议；Ctrl+Enter 采纳才落进正文，继续打字即丢弃。
   const [companion, setCompanion] = useState(() => localStorage.getItem('novel-companion') === '1')
@@ -99,6 +108,14 @@ export function useNovelEditorGhost({
   const ghostCache = useRef(new Map<string, string>())
   /** 连续失败计数：满 GHOST_MAX_FAILS 次自动静默禁用（避免每次停笔都白等一轮超时） */
   const ghostFail = useRef(0)
+  /**
+   * ACP 伴写的授权缓存：**每个 ACP 代次只确认一次**。
+   *
+   * 🔴 伴写是停笔即触发的（每几十秒一次），逐次弹确认等于毁掉这个功能；
+   *    也不能干脆不问 —— 它会持续把光标前正文发出去。折中：作者改动 ACP 设置
+   *    或换 Agent（代次变化）后重新确认一次，关掉伴写即停止发送。
+   */
+  const ghostConsent = useRef<{ gen: string; answer: Promise<boolean> } | null>(null)
 
   /** 设定资料 + 《写作规范》缓存（按章节失效）：ghost 请求要低延迟，不能每次重读全库 */
   // styleSpecOn 一并入缓存键：开关一翻，旧缓存里那份 styleSpec 就不能再用了
@@ -176,6 +193,23 @@ export function useNovelEditorGhost({
     try {
       const ctx = await loadGhostContext(activeId ?? '')
       if (ac.signal.aborted) return
+      const acpText = acp?.generation
+        ? acpGatedText({
+          task: 'companion',
+          generation: acp.generation,
+          title: '发送光标前正文至 ACP Agent',
+          message: `接收方为 ${acp.name}。本次发送光标前正文与设定摘要，只用于生成一句续写建议（不会改动正文）。`,
+          signal: ac.signal,
+          assertCurrent: () => { if (ac.signal.aborted) throw new Error('已取消。') },
+          ask: options => {
+            const gen = acp.generation
+            if (!ghostConsent.current || ghostConsent.current.gen !== gen) {
+              ghostConsent.current = { gen, answer: confirmDialog(options) }
+            }
+            return ghostConsent.current.answer
+          },
+        })
+        : undefined
       const text = await aiInlineSuggest(before, {
         projectContext: ctx.projectContext,
         styleSpec: ctx.styleSpec,       // ② 《写作规范》负面清单（可关时上面已置空）
@@ -186,6 +220,7 @@ export function useNovelEditorGhost({
         // 「换一句」才传：把上一句喂回去要求换个写法（不传＝首次建议）
         ...(avoid.trim() ? { avoid } : {}),
         signal: ac.signal,
+        ...(acpText ? { acpText } : {}),
       })
       if (ac.signal.aborted) return
       ghostFail.current = 0
@@ -216,14 +251,14 @@ export function useNovelEditorGhost({
       // 否则 busy 永久卡 true、钢笔键一直转圈（审计 2026-09-28 抓出）。
       if (!ac.signal.aborted || ghostAbort.current === ac) setGhostBusy(false)
     }
-  }, [activeId, companionLen, companionDeAi, companionStyleNote, companionStyleDims, loadGhostContext])
+  }, [activeId, companionLen, companionDeAi, companionStyleNote, companionStyleDims, loadGhostContext, acp])
 
   /**
    * 伴写主循环：光标 / 正文变化 → 800ms 防抖 → 请求 → 透出 ghost。
    * 前置条件全部满足才发请求：已开启 · 模型就绪 · 无选区 · 光标后无正文 · 前文够长 · 未熔断。
    */
   useEffect(() => {
-    if (!companion || !aiReady || !activeId) { setGhost(null); return }
+    if (!companion || !ready || !activeId) { setGhost(null); return }
     if (ghostFail.current >= GHOST_MAX_FAILS) { setGhost(null); return }
     // 光标位置必须夹到当前正文长度内：切章后旧光标值可能越界，不夹会算出"指向章外"的建议
     const at = Math.min(caret, draftContent.length)
@@ -254,7 +289,7 @@ export function useNovelEditorGhost({
     }
     // deps 里用 activeId 而不是 active：active 是 chapters.find(...) 的产物，自动保存一提交就换新对象，
     // 会让本 effect 白跑一轮并弹回刚被丢弃的建议（依赖 activeId 就不会因无关的列表更新而重跑）
-  }, [companion, companionLen, companionDeAi, companionStyleNote, aiReady, activeId, draftContent, caret, ghostBefore, ghostDismissed, selRef, fireGhost, ghostKey])
+  }, [companion, companionLen, companionDeAi, companionStyleNote, ready, activeId, draftContent, caret, ghostBefore, ghostDismissed, selRef, fireGhost, ghostKey])
 
   /**
    * 切章 / 卸载时必须清干净：ghost 是「针对某一章某个位置」算出来的，
@@ -334,13 +369,13 @@ export function useNovelEditorGhost({
       e.preventDefault()
       if (e.nativeEvent.isComposing) return      // 输入法选字期间不抢键
       if (ghost && acceptGhost()) return         // 有建议 → 采纳
-      if (companion && aiReady) refreshGhost()   // 没建议 → 主动要一句（与 Alt+\ 同款手感）
+      if (companion && ready) refreshGhost()   // 没建议 → 主动要一句（与 Alt+\ 同款手感）
       return
     }
     // Alt+/ 换一句（原 Ctrl+Enter 让位给「采纳」；用 e.code 判键，避免不同键盘布局下 e.key 不一致）
     // 与 Ctrl+Enter / Alt+\ 同口径：输入法选字期间不抢键；未开启伴写/模型未就绪时不发请求
     if (e.altKey && (e.key === '/' || e.code === 'Slash')) {
-      if (e.nativeEvent.isComposing || !companion || !aiReady) return
+      if (e.nativeEvent.isComposing || !companion || !ready) return
       e.preventDefault()
       refreshGhost()
       return
@@ -355,7 +390,7 @@ export function useNovelEditorGhost({
     // 手动触发 Alt+\（复刻 WPS 的手动伴写键）：重置熔断并立即请求，不等防抖
     if (e.altKey && (e.key === '\\' || e.code === 'Backslash')) {
       // 与 Ctrl+Enter 同口径：输入法选字期间不抢键；未开启伴写时不发请求
-      if (e.nativeEvent.isComposing || !companion || !aiReady) return
+      if (e.nativeEvent.isComposing || !companion || !ready) return
       e.preventDefault()
       ghostFail.current = 0
       const at = taRef.current?.selectionStart ?? caret

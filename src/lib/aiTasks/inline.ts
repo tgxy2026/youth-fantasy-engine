@@ -107,6 +107,8 @@ export function trimInlineSuggestion(raw: string, maxChars: number): string {
 }
 
 export interface InlineSuggestOptions {
+  /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
   /** 设定资料摘要（可空）。只用于核对专名 / 身份 / 称谓，不要求模型照抄内容 */
   projectContext?: string
   /** 《写作规范》摘录（已知坏习惯清单 / 标点规范 / 视角切换规则）；关闭该层时传空串 */
@@ -137,7 +139,8 @@ export interface InlineSuggestOptions {
 export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggestOptions = {}): Promise<string> {
   const body = (contextBefore ?? '').trim()
   if (body.length < 8) return ''            // 前文太短（还没起句），无从"接着写"
-  const cfg = await requireProviderFor('create')
+  // ACP 分支不需要 API 模型配置
+  const cfg = opts.acpText ? null : await requireProviderFor('create')
   const limit = INLINE_SUGGEST_LIMITS[opts.length ?? 'sentence']
   const goal = opts.length === 'short' ? '一个短句' : opts.length === 'two' ? '一到两句' : '一句话'
 
@@ -168,9 +171,15 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
   if (opts.deAiFlavor !== false) layers.push(DEAI_INLINE_RULE)
 
   const user = `【光标之前的正文】\n${authorBlock(newAuthorFence(), body)}\n\n请接着往下写。`
+  // 3.5.5 · ACP 分支：伴写是**纯文本**任务（不是 JSON），所以不做结构化校验，
+  // 只沿用同一套句末截断。空串＝没有合适建议，与 API 路径一样静默不显示。
+  if (opts.acpText) {
+    const raw = await opts.acpText(`${layers.join('\n\n')}\n\n${user}`)
+    return trimInlineSuggestion(raw, limit.chars)
+  }
   const text = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(layers.join('\n\n'), cfg) }, { role: 'user', content: user }],
+    cfg!,
+    [{ role: 'system', content: composeSystemPrompt(layers.join('\n\n'), cfg!) }, { role: 'user', content: user }],
     {
       // 这是创作任务，走全局创意档（默认 0.85），不手填温度——温度唯一真源在 ai.ts（项目铁律）
       timeoutMs: CHAT_TIMEOUT_MS,

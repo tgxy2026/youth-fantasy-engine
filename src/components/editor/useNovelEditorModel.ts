@@ -940,6 +940,8 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     styleNotePrompt, setStyleNotePrompt, ghost, ghostBusy, dismissGhost, onEditorKeyDown,
   } = useNovelEditorGhost({
     activeId, draftContent, aiReady, caret, setCaret, selRef, taRef, ghostRef, ghostDismissed, draftRef, onContentChange,
+    // 3.5.5 · ACP 伴写：桌面 ACP 已连接时不必再配 API 模型
+    acp: acpWriting ? { generation: acpWriting.generation, name: acpWriting.name, ready: acpWriting.ready } : null,
     // B3 补做：采纳即挂账一笔「续写」产出，随本章下次落库写进 aiAssist
     onAiAssist: (chars: number) => noteAiAssist('continued', chars),
     // 章首语境：当前章前文不足 2000 字时，伴写拿上一章末尾补齐

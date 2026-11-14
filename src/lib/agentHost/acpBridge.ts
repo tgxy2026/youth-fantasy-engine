@@ -14,13 +14,14 @@ export interface AcpStatus {
  * 3.5.4 纯文本：`continuation` / `rewrite` 写正文或建议段；`diagnosis` / `pleasure` /
  * `opening` / `briefing` / `summary` 只返回文本报告（摘要回填摘要框），不直接改正文。
  * 3.5.5 结构化：`review`（章节编辑意见） / `ooc`（人设偏离） / `advice`（续写方向） /
- * `proofread`（逐块校对，文字层与逻辑层共用，范围由调用方如实标注） / `extract`（设定实体抽取，只出候选） / `changes`（章后整理变化候选） / `organize`（设定表 AI 整理，只出候选行） / `fill`（设定模板补全与对话式填写）
+ * `proofread`（逐块校对，文字层与逻辑层共用，范围由调用方如实标注） / `extract`（设定实体抽取，只出候选） / `changes`（章后整理变化候选） / `organize`（设定表 AI 整理，只出候选行） / `fill`（设定模板补全与对话式填写） / `companion`（编辑器伴写，纯文本）
  * 由宿主严格解析校验，同样不直接写作品。
  */
 export type AcpTask =
   | 'continuation' | 'rewrite'
   | 'diagnosis' | 'pleasure' | 'opening' | 'briefing' | 'summary'
   | 'review' | 'ooc' | 'advice' | 'proofread' | 'extract' | 'changes' | 'organize' | 'fill'
+  | 'companion'
 
 interface AcpBridge {
   status(): Promise<AcpStatus | null>

@@ -15,6 +15,8 @@ import { aiExtractSettingEntitiesWithStatus } from '../src/lib/aiTasks/extract'
 import { aiExtractChapterChangesWithStatus } from '../src/lib/aiTasks/postProcess'
 import { aiOrganizeRows } from '../src/lib/aiTasks/organize'
 import { aiCompleteTemplate } from '../src/lib/aiCore/template'
+import { aiInlineSuggest } from '../src/lib/aiTasks/inline'
+import { acpGatedText } from '../src/lib/agentHost/acpGate'
 import {
   AcpStructuredError,
   acpStructuredMessage,
@@ -486,11 +488,48 @@ async function run() {
 
   ok('确认文案说明点应用才写入', acpStructuredMessage('fill', '假 Agent').includes('仍要点应用才写入'))
 
-  console.log('--- 14. 主进程白名单与源码契约 ---')
+  console.log('--- 14. 编辑器伴写（纯文本）---')
+  const companion = (opts?: { length?: 'short' | 'sentence' | 'two' }) => aiInlineSuggest('林昭握紧剑柄，雨点砸在铁上发出闷响，他抬头看向山门。', {
+    projectContext: '设定：青岚宗。',
+    ...(opts?.length ? { length: opts.length } : {}),
+    // 伴写是纯文本任务：走通用闸门，不走结构化那条（没有 JSON 契约）
+    acpText: acpGatedText({
+      task: 'companion', generation,
+      title: '发送光标前正文至 ACP Agent',
+      message: '接收方为 假 Agent。本次发送光标前正文与设定摘要，只用于生成一句续写建议（不会改动正文）。',
+      assertCurrent: () => {}, ask: allow,
+    }),
+  })
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '他把剑收回鞘中，转身走进雨里。' })
+  const ghost = await companion()
+  ok('伴写建议原样落地', ghost === '他把剑收回鞘中，转身走进雨里。', ghost)
+  ok('任务标识为 companion', requests[0].task === 'companion')
+  ok('提示词带光标前正文块', requests[0].text.includes('【光标之前的正文】'))
+  ok('提示词不做 JSON 约束（纯文本任务）', !requests[0].text.includes('只输出一个 JSON 对象'))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '他把剑收回鞘中。' + '又往前走了一步。'.repeat(30) })
+  const ghostLong = await companion({ length: 'short' })
+  ok('超长建议被截到档位上限', ghostLong.length <= 30 && ghostLong.length > 0, String(ghostLong.length))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '   ' })
+  const ghostEmpty = await companion()
+  ok('空建议返回空串（界面静默不显示）', ghostEmpty === '', JSON.stringify(ghostEmpty))
+
+  reset()
+  generateImpl = async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }) }
+  let ghostCancel = ''
+  try { await companion() } catch (error) { ghostCancel = String((error as Error).name) }
+  ok('取消向上抛出 AbortError（不吞成空建议）', ghostCancel === 'AbortError', ghostCancel)
+
+  console.log('--- 15. 主进程白名单与源码契约 ---')
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const main = fs.readFileSync(path.join(root, 'electron/main.cjs'), 'utf8')
   const whitelist = main.split(/\r?\n/).find(line => line.includes('request.task') && line.includes('includes')) ?? ''
-  for (const task of ['review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
+  for (const task of ['review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   for (const task of ['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary']) {
     ok(`3.5.4 任务仍放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   }

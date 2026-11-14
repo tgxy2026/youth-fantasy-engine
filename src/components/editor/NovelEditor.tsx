@@ -342,7 +342,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             ghost 真值：text-ink-400 / hover:text-ink-100 / hover:bg-ink-800/60 / border-transparent。 */}
       <summary className="flex h-8 min-h-[var(--ui-control-sm,2rem)] w-full cursor-pointer list-none items-center gap-2 rounded border border-transparent px-3 text-12 text-ink-400 hover:bg-ink-800/60 hover:text-ink-100 [&::-webkit-details-marker]:hidden">
         {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />}
-        AI 伴写 <span className="ml-auto text-10 text-ink-500">{!aiReady ? '未配置模型' : companion ? '已开启' : '已关闭'}</span>
+        AI 伴写 <span className="ml-auto text-10 text-ink-500">{!writingReady ? (acpWriting ? 'ACP 未连接' : '未配置模型') : companion ? '已开启' : '已关闭'}</span>
         <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
       </summary>
       <div className="whitespace-pre-wrap px-3 pb-2 text-11 leading-relaxed text-ink-200">
@@ -391,12 +391,12 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           {/* 总开关：按老大要求放在设置下面，并掉与它重复的那个独立开关图标 */}
           <div className="flex items-center gap-2 mt-1 pt-2 border-t border-ink-700">
             <span className="text-ink-200 shrink-0">总开关</span>
-            <Button variant="toggle" size="xs" selected={companion} aria-pressed={companion} disabled={!aiReady}
+            <Button variant="toggle" size="xs" selected={companion} aria-pressed={companion} disabled={!writingReady}
               onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
-              title={!aiReady ? '未配置 AI 模型' : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
               {companion ? '已开启' : '已关闭'}
             </Button>
-            <span className="text-ink-500 text-10">{!aiReady ? '需先接入 AI 模型' : companion ? '停笔即续写一句话' : '默认关闭'}</span>
+            <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? 'ACP 未连接' : '需先接入 AI 模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
           </div>
           <div className="text-ink-500 text-10 leading-relaxed">
             全部为本机记忆，换章不重置。伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。
