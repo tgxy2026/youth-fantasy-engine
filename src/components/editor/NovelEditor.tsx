@@ -399,7 +399,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? 'ACP 未连接' : '需先接入 AI 模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
           </div>
           <div className="text-ink-500 text-10 leading-relaxed">
-            全部为本机记忆，换章不重置。伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。
+            全部为本机记忆，换章不重置。
+            {/* 🔴 3.5.5：ACP 模式下正文的接收方**不是**「当前选定的模型」，而是 Agent。
+                2026-11-14 真机看面板时发现的破绽 —— 这句是作者唯一能看到「正文发给谁」的地方，
+                说错了等于外发告知失效。 */}
+            {acpWriting
+              ? `伴写正文会发给当前连接的 ACP Agent（${acpWriting.name}），由它转交给该 Agent 登录的账号；首次触发时会说明接收方与范围，随时可关掉本开关。`
+              : '伴写正文只发给你当前选定的模型：本地不出本机，云端会上传到该服务商。'}
           </div>
         </div>
         <AIDataSourceNote feature="inline-suggest" />
