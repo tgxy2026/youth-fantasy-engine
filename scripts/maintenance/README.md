@@ -70,6 +70,45 @@ node tests/build-test.mjs versionCheck      # 同时验证 A 组产物可自动�
 不是「清理没生效」。B 组若含 git 受控文件，`git status` 会出现 `D`，**确认删除后再提交**，
 不要把这些 `D` 当成既定删除提前 commit。
 
+## .workbuddy/tmp 定期治理（防膨胀）
+
+> 目标不是「一次删空」，而是让这个目录**稳定在一个上限内**：新证据持续写入，超期内容按周搬出。
+> 2026-11-15 盘点：顶层 2827 个条目（1782 目录 + 1045 文件）、顶层文件 216.3 MB，
+> 且 2826 项都是当月半个月内产生的 —— 靠「删旧文件」一次解决不了，必须有定期窗口。
+
+```bash
+npm run cleanup:tmp              # ① 只读盘点
+npm run cleanup:tmp -- --json    #    机器可读，供定时任务
+npm run cleanup:tmp -- --days 21 #    覆盖日志类保留期（正整数）
+npm run cleanup:tmp:apply        # ② 隔离超期条目（只移动，不删除）
+npm run cleanup:tmp:restore      # ③ 撤销：按 manifest 一键还原
+```
+
+隔离目录为 `_待清理确认-tmp-YYYYMMDD/`（与 `collect-stale.mjs` 的隔离目录分开，互不覆盖），
+同样附 `manifest.json` 与 `.gitignore`。**确认后直接删掉整个隔离目录才真正释放空间。**
+
+### 判定规则（`collect-tmp-stale.mjs` 的 `CONFIG`）
+
+| 类别 | 保留期 | 例 |
+|---|---|---|
+| **永久保护** | ∞ | `repo-backup-*.bundle`（项目唯一 Git 恢复手段）、`gitee-releases-backup.json`、`pkg-backup/`、`audit/`（51 个审计报告，绑定当时源码指纹）、`*ledger*`、`*recovery*` / `*restore*` / `*backup*`、`*.patch` 基线、`*.bundle`、`edge-history-copy` 等故障现场 |
+| 可再生产物 | **7 天** | `card-io-bundle-*.mjs`、带 6 位随机后缀的一次性探针目录（`frontend-xxx-A1b2C3`） |
+| 日志／报告 | **30 天** | `*.log`、其它顶层条目 |
+
+- 只处理 `.workbuddy/tmp` 的**顶层条目**，不递归挑子文件，避免误伤目录内的恢复证据。
+- 保护名单命中即跳过并记录；`--apply` 前做校验，隔离目录已存在则中止，避免覆盖上一批。
+- 报告里的体积只统计**顶层文件**，目录体积未递归（F 盘 SMR 上全量递归会卡顿）。
+
+### 为什么不能「全删后重跑测试重建」
+
+重跑测试只能产生**当前代码**的新结果，不能复现带历史时间戳、源码指纹、失败现场（「不得误记通过」的样本）的原始证据。历史事故：2026-10-12 `rm -rf .workbuddy/tmp` 删掉 5 个 `repo-backup-*.bundle`，2026-11-03 被外部清理后专门重建 47 MB 恢复包。另：清理证据会让历史日志／HANDOFF 的引用变死链（2026-11-15 清 45 项即新增 12 处）。
+
+### 局限（如实说明）
+
+- 工具**只移动不删除**：tmp 不再膨胀，但磁盘空间真正释放仍需主人定期清空隔离目录。
+- 隔离目录会逐周累积，建议每月确认清空一次；若要「自动删除纯运行产物」须主人另行明确授权。
+- 超期日志被移走后，历史文档里的路径会失效；按「日志 append-only、归档原文保留」规则不改历史记录，只在当日日志注明为有意失效。
+
 ## 红线
 
 - 不删 `.workbuddy/tmp` 恢复包与 `release/eb-cache`；不做 `git stash`、手工 `gc`、`git add -A`。
