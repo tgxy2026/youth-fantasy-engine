@@ -525,6 +525,30 @@ async function run() {
   try { await companion() } catch (error) { ghostCancel = String((error as Error).name) }
   ok('取消向上抛出 AbortError（不吞成空建议）', ghostCancel === 'AbortError', ghostCancel)
 
+  // 🔴 2026-11-14 真机看伴写面板发现的告知缺口：那句「伴写正文只发给你当前选定的模型」
+  //    在 ACP 模式下是假的（正文发给 Agent，再由 Agent 转给它登录的账号）。
+  //    这是作者唯一能看到「正文发给谁」的地方，说错等于外发告知失效。
+  {
+    const editorSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/editor/NovelEditor.tsx'), 'utf8')
+    ok('🔴 伴写面板的「发给谁」按模式分支（不再一律说发给选定模型）',
+      /acpWriting\s*\n?\s*\?/.test(editorSrc) || /\{acpWriting[\s\S]{0,80}ACP Agent/.test(editorSrc))
+    ok('ACP 分支写明接收方取自当前 Agent 名称', /\$\{acpWriting\.name\}/.test(editorSrc))
+    ok('ACP 分支仍提示首次触发会说明范围（与闸门一致）', /首次触发时会说明接收方与范围/.test(editorSrc))
+  }
+
+  // ---------------------------------------------------------------- 14.5 会话建立的重试与可读错误
+  console.log('--- 14.5 会话建立：瞬时错误重试一次，内部错误码翻译 ---')
+  {
+    const rt = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/acp-runtime.mjs'), 'utf8')
+    ok('🔴 session/new 失败会重试（Agent 对连续建会话限流）', /const attempt = async \(\) =>/.test(rt) && /return await attempt\(\)/.test(rt))
+    ok('只对瞬时类错误重试（-32603 / 会话未建立）', /isTransientSessionError/.test(rt) && /acpCode === -32603/.test(rt))
+    ok('🔴 取消后不重试（signal.aborted 直接抛）', /signal\?\.aborted \|\| !isTransientSessionError/.test(rt))
+    ok('内部错误码翻译成可操作提示（不把 -32603 甩给作者）',
+      /ACP 暂时无法建立新会话/.test(rt) && /15~30 秒再试/.test(rt))
+    ok('非瞬时错误原样抛出（不改写鉴权/协议错误）', /if \(!isTransientSessionError\(error\)\) return error/.test(rt))
+    ok('重试次数为一次（不无限重试放大限流）', (rt.match(/return await attempt\(\)/g) ?? []).length === 2, '定义 1 次 + 重试 1 次')
+  }
+
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')
   {
     const { ask, askSoft, enforceWordRange } = await import('../src/lib/editor/wordRange')

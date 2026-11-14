@@ -120,10 +120,50 @@ export function createAcpRuntime({ root, adapters }) {
     }
   }
 
+  /**
+   * 建会话。
+   *
+   * 🔴 2026-11-14 真机踩到：Antigravity 对 `session/new` 有**频率限制**。
+   *    实测「连接后立刻生成」几乎必失败 —— 因为 `connect` 为了读选项已经开过一个会话
+   *    （见上方 `readSessionOptions(await openSession(...))`），紧接着 `generate` 又开一个，
+   *    两次相隔不到 1 秒 ⇒ 返回 `-32603`（JSON-RPC internal error），
+   *    界面显示成「生成报告失败：ACP session/new 失败（-32603）」，作者完全看不懂。
+   *
+   *    根因是**每次生成都新开会话、且从不关闭**（ACP 协议里没有 session/close），
+   *    会话在 Agent 侧累积（实测一小时累积 17 个 db）。真正修法是复用会话，但那要重验
+   *    上下文隔离与取消语义，不能顺手改。这里先做两件低风险的事：
+   *      ① 只对「瞬时」类错误重试一次（间隔 4 秒）；取消/鉴权/协议错误一律直抛。
+   *      ② 把内部错误码翻译成作者能照做的提示，别把 -32603 甩到脸上。
+   */
+  const isTransientSessionError = error => {
+    if (error?.acpCode === -32603) return true
+    return /会话未建立/.test(String(error?.message ?? ''))
+  }
+  const readableSessionError = error => {
+    if (!isTransientSessionError(error)) return error
+    return Object.assign(
+      new Error('ACP 暂时无法建立新会话：Agent 可能正忙，或对连续请求做了限流。请等 15~30 秒再试一次；若一直失败，可到 Antigravity 里关掉闲置会话后重新连接。'),
+      { acpCode: error?.acpCode ?? null, cause: error },
+    )
+  }
   async function openSession({ client, cwd, signal }) {
-    const session = await client.request('session/new', { cwd, mcpServers: [] }, undefined, signal)
-    if (typeof session?.sessionId !== 'string' || !session.sessionId || session.sessionId.length > 512) throw new Error('ACP 会话未建立。')
-    return session
+    const attempt = async () => {
+      const session = await client.request('session/new', { cwd, mcpServers: [] }, undefined, signal)
+      if (typeof session?.sessionId !== 'string' || !session.sessionId || session.sessionId.length > 512) throw new Error('ACP 会话未建立。')
+      return session
+    }
+    try {
+      return await attempt()
+    } catch (error) {
+      if (signal?.aborted || !isTransientSessionError(error)) throw readableSessionError(error)
+      await new Promise(resolve => setTimeout(resolve, 4000))
+      if (signal?.aborted) throw readableSessionError(error)
+      try {
+        return await attempt()
+      } catch (second) {
+        throw readableSessionError(second)
+      }
+    }
   }
 
   function invalidateResults() {
