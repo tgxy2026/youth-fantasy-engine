@@ -36,6 +36,9 @@ import { DEFAULT_TAVERN_SETTINGS, type TavernSettings } from '@/lib/tavern/setti
 import type { PostApplied } from '@/lib/tavern/postRules'
 import type { FreeCharacter, FreeSession, CharVars } from '@/lib/tavern/types'
 import { useTavernReady } from '@/components/tavern/useTavernReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { makeTavernAcpChat, createTavernConsent } from '@/lib/tavern/acpChat'
+import { confirmDialog } from '@/components/dialogs/dialogs'
 
 /** 入参一律来自 `useTavernFreeModel` 的同一次渲染作用域（状态值 + setter / useCallback） */
 type FreeTurnDeps = {
@@ -71,6 +74,36 @@ export function useFreeTurn({
   const tavernReady = useTavernReady(session?.model?.providerId, tavernSettings?.common.defaultProviderId)
   // 提成标量再进依赖数组：直接写 `tavernReady.ready` 会被 exhaustive-deps 判成缺依赖
   const aiReadyNow = tavernReady.ready
+  /**
+   * 3.5.5 · ACP：桌面 ACP 已连接时不必再配 API 模型。
+   *
+   * 🔴 就绪判据必须与「真实会走哪条通道」一致。只加 ACP 判定而不把 chatFn 换掉，
+   *    会让作者在没配 API 模型的情况下点得动发送键、然后走 `chat` 抛错 —— 比禁掉更糟。
+   *    两者在本文件里必须同进同退（见 `buildChat`）。
+   */
+  const acp = useAcpWriting()
+  const acpReady = acp?.ready === true
+  const readyNow = aiReadyNow || acpReady
+  /**
+   * 构造本轮通道。**每轮新建**：`consent` 是一次性的，跨轮复用等于「问过一次永久免确认」。
+   * 主回复与紧随其后的数值结算共用同一个 consent ⇒ 一轮只问一次。
+   */
+  const buildChat = useCallback(() => {
+    if (!acp || !acp.ready) return undefined
+    const consent = createTavernConsent(confirmDialog)
+    const reply = makeTavernAcpChat({
+      generation: acp.generation, agentName: acp.name, task: 'tavern-reply',
+      scopeText: '本场对话历史与角色设定', purpose: '生成本轮剧情回复',
+      ask: consent, assertCurrent: () => {},
+    })
+    const vars = makeTavernAcpChat({
+      generation: acp.generation, agentName: acp.name, task: 'tavern-vars',
+      scopeText: '本轮两条对话与数值项', purpose: '结算本场数值',
+      ask: consent, assertCurrent: () => {},
+    })
+    // 主回复是流式的；数值抽取是一次性结构化产出，两者共用同一份 consent。
+    return { reply, vars }
+  }, [acp])
   const [streaming, setStreaming] = useState(false)
   /** 润色/自动回复生成中（与 streaming 互斥但同属「正在生成」，期间禁用快捷条与发送） */
   const [assistBusy, setAssistBusy] = useState(false)
@@ -136,8 +169,8 @@ export function useFreeTurn({
     //    沿用上面「生成中」那条的范式（toast 明说原因，而不是静默失败）。
     //    酒馆自由对话原先整条链路都没有就绪守卫，未配模型时点发送会走到 provider 里抛错，
     //    报错还可能被流式状态机吞掉 —— 作者只会觉得"这个功能坏了"。
-    if (!aiReadyNow) {
-      showToast('还没配置可用的模型 —— 请先到「模型设置」里配好，再来聊', 'info')
+    if (!readyNow) {
+      showToast(acp ? 'ACP 未连接 —— 请先到「模型设置」里连接 Agent，再来聊' : '还没配置可用的模型 —— 请先到「模型设置」里配好，再来聊', 'info')
       return
     }
     if (!preset) {
@@ -165,12 +198,13 @@ export function useFreeTurn({
     let shownReply: FreeSession | null = null
     try {
       const cast = castCards.length ? castCards : [charCard]
+      const ch = buildChat()
       const res = await runFreeTurn(session, cast, text, {
         onToken: d => setStreamText(prev => prev + d),
         onPhase: p => setPhase(p),
         signal: ctrl.signal,
         speakerId: speakNext || undefined,
-      })
+      }, ch?.reply ? { chatFn: ch.reply } : {})
       // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
       //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
       //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
@@ -195,6 +229,7 @@ export function useFreeTurn({
         // 反馈 #4：抽取时把主角色卡当前备注当上下文；新值＋新备注由下面「会话落库之后」回写卡
         primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
+        ...(ch?.vars ? { chatFn: ch.vars } : {}),
       })
       const saved = await store.saveFreeSession(withVars)
       // 🔴 卡在会话**落库成功之后**才写（2026-10-10 六维审计）：否则中途失败会让卡先推进、
@@ -242,7 +277,7 @@ export function useFreeTurn({
         streamingHintRef.current = false
       }
     }
-  }, [input, session, charCard, streaming, aiReadyNow, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars, setSession, setInput, setSpeakNext, setPostNotice, setGreeting])
+  }, [input, session, charCard, streaming, readyNow, acp, buildChat, refreshSessions, castCards, speakNext, varKeys, tavernSettings, summaryProviderId, nameOf, persistCharVars, setSession, setInput, setSpeakNext, setPostNotice, setGreeting])
   const lastAiId = useMemo(() => store.lastAssistantId(session?.messages ?? []), [session])
   /**
    * 重说：多角色同场时**保持原来的说话人** —— 同一轮换个人接话，观感很怪。
@@ -266,12 +301,13 @@ export function useFreeTurn({
     let shownReply: FreeSession | null = null   // 同上：结算期停止时按它决定是否照常落库
     try {
       const cast = (castCards.length ? castCards : (charCard ? [charCard] : [])) as FreeCharacter[]
+      const ch = buildChat()
       const res = await runFreeTurn(session, cast, null, {
         onToken: d => setStreamText(prev => prev + d),
         onPhase: p => setPhase(p),
         signal: ctrl.signal,
         speakerId: target.speakerId,
-      })
+      }, ch?.reply ? { chatFn: ch.reply } : {})
       // 🔴 审计 2026-09-18（P1-2）：生成期间切了会话 / 按了停止 → **不回灌界面**。
       //    否则 setSession(res.session) 会把界面拽回旧会话，而左栏高亮按 session?.id 判定，
       //    高亮与正文就此不一致。用 ctrl 当「代次令牌」：openSession / stop 会换掉或清空 abortRef。
@@ -292,6 +328,7 @@ export function useFreeTurn({
         // 反馈 #4：抽取时把主角色卡当前备注当上下文；新值＋新备注由下面「会话落库之后」回写卡
         primaryCharId: primaryAiCharId(res.session),
         charVars: charCard?.vars,
+        ...(ch?.vars ? { chatFn: ch.vars } : {}),
       })
       const saved = await store.saveFreeSession(withVars)
       // 🔴 卡在会话落库成功之后才写（同 send 路径）

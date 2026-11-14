@@ -41,16 +41,27 @@ export interface AcpGateInput {
 /**
  * 生成传给 `ai*` 任务的 `acpText`：确认 → 代次/归属校验 → 发送 → 落地前再校验。
  * 取消时抛「已取消发送。」；调用方的任务中心据此显示取消而不是失败。
+ *
+ * @param call.signal 单次调用的取消信号。**会覆盖**构造时的 `input.signal`。
+ *   酒馆这类"同一个 chatFn 被多次调用、每次带不同 signal"的场景必须走它 ——
+ *   只认构造时的那个，作者点停止时正在跑的那次收不到取消。
+ * @param call.onToken 单次调用的流式回调（酒馆主回复的打字效果靠它）。
  */
-export function acpGatedText(input: AcpGateInput): (prompt: string) => Promise<string> {
+export function acpGatedText(
+  input: AcpGateInput,
+): (prompt: string, call?: { signal?: AbortSignal; onToken?: (delta: string) => void }) => Promise<string> {
   let consented: Promise<boolean> | null = null
-  return async prompt => {
+  return async (prompt, call) => {
     const options: AcpGateConfirmOptions = { title: input.title, message: input.message, confirmText: '确认发送' }
     const ok = await (input.askOnce ? (consented ??= input.ask(options)) : input.ask(options))
     if (!ok) throw new Error('已取消发送。')
+    const signal = call?.signal ?? input.signal
     await assertAcpWritingCurrent(input.generation)
     input.assertCurrent?.()
-    const text = await acpWrite(input.task, input.generation, prompt, { signal: input.signal })
+    const text = await acpWrite(input.task, input.generation, prompt, {
+      ...(signal ? { signal } : {}),
+      ...(call?.onToken ? { onToken: call.onToken } : {}),
+    })
     await assertAcpWritingCurrent(input.generation)
     input.assertCurrent?.()
     return text
