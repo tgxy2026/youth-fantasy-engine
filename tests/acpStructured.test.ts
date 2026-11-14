@@ -548,6 +548,33 @@ async function run() {
     ok('最多两次重试，最后一个失败直接退出', /for \(const backoff of \[2500, 5000, 0\]\)/.test(rt) && /!backoff \|\|/.test(rt))
   }
 
+  // ---------------------------------------------------------------- 14.6 R4 运行方式可选
+  console.log('--- 14.6 运行方式可选（默认当前 Windows 用户）---')
+  {
+    const adapterSrc = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/antigravity-adapter.mjs'), 'utf8')
+    const rtSrc = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/acp-runtime.mjs'), 'utf8')
+    const mainSrc = fs.readFileSync(path.join(process.cwd(), 'electron/main.cjs'), 'utf8')
+    const uiSrc = fs.readFileSync(path.join(process.cwd(), 'src/components/settings/AcpSettings.tsx'), 'utf8')
+
+    ok('🔴 当前用户分支在「要求开通隔离」之前返回（未开通也能连）',
+      adapterSrc.indexOf("if (config.runAs !== 'isolated') {") < adapterSrc.indexOf('sandbox.configured()'))
+    ok('当前用户路径沿用传入 profile（既有登录资料）', /const profile = baseProfile/.test(adapterSrc))
+    ok('隔离路径仍用自己的 profile 目录（两侧不互串）', /isolated-profiles/.test(adapterSrc))
+    ok('两条路径都保留 Job Object 启动（sandbox 传 null 时仍套回收）',
+      /sandbox: null/.test(adapterSrc) && /sandbox: identity/.test(adapterSrc))
+
+    ok('运行方式持久化字段与默认值', /const RUN_AS = new Set\(\['current-user', 'isolated'\]\)/.test(rtSrc) && /: 'current-user'\)/.test(rtSrc))
+    ok('状态里单独暴露 runAs（不混进会话 config）', /runAs: adapter \? runAsOf\(configs\[selected\]\) : null/.test(rtSrc))
+    ok('切换运行方式作废旧会话与模型选项', /\(settings\.configs\[settings\.selected\]\) !== runAsOf\(config\)/.test(rtSrc) && /sessionReady = false/.test(rtSrc))
+    ok('运行层自己拦非法枚举（不只靠 IPC）', /!RUN_AS\.has\(patch\.runAs\)/.test(rtSrc))
+
+    ok('IPC 接受 runAs 且不复用「必须对上会话选项」的校验', /patch\.key === 'runAs'/.test(mainSrc))
+    ok('界面给出两个明确选项', /以当前 Windows 用户运行/.test(uiSrc) && /使用 Windows 隔离/.test(uiSrc))
+    ok('🔴 界面默认值与运行时同口径', /status\.runAs === 'isolated' \? 'isolated' : 'current-user'/.test(uiSrc))
+    ok('隔离未开通时挡住连接并就地给开通入口', /isolationBlocked/.test(uiSrc) && /开通 Windows 隔离/.test(uiSrc))
+    ok('界面写明当前用户方式下的文件权限', /拥有当前 Windows 用户的文件权限/.test(uiSrc))
+  }
+
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')
   {
     const { ask, askSoft, enforceWordRange } = await import('../src/lib/editor/wordRange')

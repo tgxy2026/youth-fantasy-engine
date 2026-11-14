@@ -153,6 +153,40 @@ try {
   networkFailures = 0
   await runtime.configure(service, { model: 'invalid-model' })
   await assert.rejects(generate('model-and-thinking'), /核对模型选项/)
+
+  // ---------------------------------------------------------------- R4：运行方式可选
+  // 默认必须是「当前 Windows 用户」——R3 曾强制隔离，未开通专用账户就完全无法连接。
+  assert.equal((await runtime.status()).runAs, 'current-user', '未设置 runAs 时默认当前 Windows 用户')
+  await runtime.configure(service, { runAs: 'isolated' })
+  assert.equal((await runtime.status()).runAs, 'isolated', '切换后持久化')
+  assert.equal((await runtime.status()).ready, false, '切换运行方式后旧会话与模型选项作废')
+  await assert.rejects(runtime.configure(service, { runAs: 'sandbox' }), /运行方式无效/, '只接受两种运行方式')
+  await runtime.configure(service, { runAs: 'current-user' })
+  assert.equal((await runtime.status()).runAs, 'current-user', '可切回当前用户')
+  await service.close()
+
+  // 重启恢复：设置落盘后新实例读回同一运行方式。
+  runtime = createAcpRuntime({ root: optionsRoot, adapters: [optionsAdapter] })
+  service = await createModeService({ dataDir: root, acp: runtime, callPage: async () => ({}) })
+  assert.equal((await runtime.status()).runAs, 'current-user', '重启后运行方式保持')
+  await runtime.configure(service, { runAs: 'isolated' })
+  await service.close()
+  runtime = createAcpRuntime({ root: optionsRoot, adapters: [optionsAdapter] })
+  service = await createModeService({ dataDir: root, acp: runtime, callPage: async () => ({}) })
+  assert.equal((await runtime.status()).runAs, 'isolated', '隔离选择同样跨重启保持')
+  await runtime.configure(service, { runAs: 'current-user' })
+  await service.close()
+
+  // R3 旧配置（没有 runAs 字段）升级后必须是当前用户，而不是被当成隔离。
+  const legacyRoot = path.join(root, 'legacy-settings')
+  await fs.mkdir(legacyRoot, { recursive: true })
+  await fs.writeFile(path.join(legacyRoot, 'settings.json'), JSON.stringify({
+    selected: 'fake-a',
+    configs: { 'fake-a': { binary: 'a-component', model: 'a-model', thinking: 'a-thinking' } },
+  }), 'utf8')
+  runtime = createAcpRuntime({ root: legacyRoot, adapters: [adapters[0]] })
+  service = await createModeService({ dataDir: root, acp: runtime, callPage: async () => ({}) })
+  assert.equal((await runtime.status()).runAs, 'current-user', 'R3 旧配置升级为当前用户')
   await service.close()
 
   let canConfirmExit = false
@@ -178,6 +212,9 @@ try {
   assert.equal((await service.status()).active.acp, 1)
   await assert.rejects(service.recover({ confirm: true }), /exit unconfirmed/)
   assert.equal(cleaned, false)
+  // 退出未确认时必须挡住运行方式切换：`switchAcpAgent` 在写设置前就要过 `verifyQuiescent`，
+  // 这里直接断言那道前置闸门（不去真的调 configure —— 那会动到阻塞态，影响后面的恢复用例）。
+  await assert.rejects(runtime.verifyQuiescent(), /退出未确认/, '退出未确认时切换前校验必须失败')
   canConfirmExit = true
   assert.equal((await service.recover({ confirm: true })).mode, 'api')
   assert.equal(cleaned, true)
