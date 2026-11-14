@@ -78,6 +78,19 @@ const RECALL_PER_REF_CAP = 2
 const RECALL_PREFILTER_AT = 1200
 
 /**
+ * 关键词降级召回的词面覆盖率阈值。
+ *
+ * 🔴 **不能沿用余弦的 0.35** —— 两者量纲不同。查询是「本意标题 + 摘要 + 前 900 字正文」，
+ *    去重后通常有数百个二元 token，其中大量是本章独有的专名，别处根本不会出现；
+ *    一个片段能覆盖 10% 已经算高度相关。用 0.35 会让降级模式几乎永远返回空，
+ *    那就等于「静默失效」，比不做降级更糟。
+ */
+const KEYWORD_MIN_COVERAGE = 0.1
+
+/** 只命中单字不算命中：中文单字噪声太大（「的」「了」「他」满篇都是） */
+const KEYWORD_MIN_BIGRAM_HITS = 2
+
+/**
  * 余弦相似度。
  * 边界：任一侧为零向量 ⇒ 返回 0（**不是 NaN** —— NaN 会在排序里变成"随机位置"，
  * 那种 bug 极难发现；长度不等时按较短的一侧算，不崩）。
@@ -134,6 +147,28 @@ function prefilter(rows: VecRow[], query: string, keep: number): VecRow[] {
 }
 
 /**
+ * 候选过滤（**语义路径与关键词降级共用的唯一一份**）。
+ *
+ * 🔴 不抽出来的话，两条路径各写一份过滤条件，迟早漂移成
+ *    「语义模式不召回 S 级，降级模式却召回」—— 那是绕过权限的漏洞，不是显示问题。
+ */
+/** 过滤只用到这几个字段（语义路径与降级路径都能满足，与 `cfg` 无关）。 */
+type FilterOpts = Pick<RecallOptions, 'allowRefIds' | 'excludeRefIds' | 'hideSecretRows' | 'allowChapterIds'>
+
+function passesFilters(r: VecRow, opts: FilterOpts, allowKinds: Set<VecKind> | null): boolean {
+  if (allowKinds && !allowKinds.has(r.kind)) return false
+  // 🔴 来源白名单（`excludeRefIds` 的对称能力，2026-10-05 T2 加）：
+  //    自由对话要**只召回本场**的消息，而它和别的会话共用一个全局分区 ——
+  //    没有这道闸就会把别场戏的内容召回进来（跨世界观串味）。
+  if (opts.allowRefIds && !opts.allowRefIds.has(r.refId)) return false
+  if (opts.excludeRefIds?.has(r.refId)) return false
+  if (opts.hideSecretRows && r.secret) return false
+  // 锚点白名单只裁章节（设定条目没有"发生在哪一章"这个维度）
+  if (r.kind === 'chapter' && opts.allowChapterIds && !opts.allowChapterIds.has(r.refId)) return false
+  return true
+}
+
+/**
  * 召回与 `query` 语义最接近的片段。
  *
  * 任一步失败都返回 `[]`（不抛、不报错）—— 调用方只需判断"有没有拿到东西"。
@@ -178,18 +213,7 @@ export async function recallRelevant(query: string, opts: RecallOptions): Promis
   if (!checkIndexFreshness(rows, opts.cfg).fresh) return []
 
   const allowKinds = opts.kinds && opts.kinds.length > 0 ? new Set<VecKind>(opts.kinds) : null
-  const candidates = rows.filter(r => {
-    if (allowKinds && !allowKinds.has(r.kind)) return false
-    // 🔴 来源白名单（`excludeRefIds` 的对称能力，2026-10-05 T2 加）：
-    //    自由对话要**只召回本场**的消息，而它和别的会话共用一个全局分区 ——
-    //    没有这道闸就会把别场戏的内容召回进来（跨世界观串味）。
-    if (opts.allowRefIds && !opts.allowRefIds.has(r.refId)) return false
-    if (opts.excludeRefIds?.has(r.refId)) return false
-    if (opts.hideSecretRows && r.secret) return false
-    // 锚点白名单只裁章节（设定条目没有"发生在哪一章"这个维度）
-    if (r.kind === 'chapter' && opts.allowChapterIds && !opts.allowChapterIds.has(r.refId)) return false
-    return r.dim === queryVec!.length
-  })
+  const candidates = rows.filter(r => r.dim === queryVec!.length && passesFilters(r, opts, allowKinds))
   if (candidates.length === 0) return []
 
   const narrowed = prefilter(candidates, q, prefilterAt)
@@ -212,8 +236,11 @@ export async function recallRelevant(query: string, opts: RecallOptions): Promis
   }
 
   scored.sort((a, b) => b.score - a.score || a.refId.localeCompare(b.refId) || a.chunkIdx - b.chunkIdx)
+  return takeByRefCap(scored, topK, perRefCap)
+}
 
-  // 同一来源限流：按 refId 计数，超出的丢掉（本章/本条目已有块入选，让位给别的来源）
+/** 同一来源限流：按 refId 计数，超出的丢掉（本章/本条目已有块入选，让位给别的来源）。 */
+function takeByRefCap(scored: RecallHit[], topK: number, perRefCap: number): RecallHit[] {
   const used = new Map<string, number>()
   const out: RecallHit[] = []
   for (const h of scored) {
@@ -224,4 +251,113 @@ export async function recallRelevant(query: string, opts: RecallOptions): Promis
     if (out.length >= topK) break
   }
   return out
+}
+
+// ============ 关键词降级召回（嵌入不可用时）============
+//
+// 为什么需要它（3.5.5）：ACP 模式下所有模型请求都经 Agent，引擎**发不出** `/embeddings`
+// 请求（`withApiModeLease` 直接拒绝）。若这里什么都不做，`recallRelevant` 会一路返回 `[]`，
+// 表现成「语义检索开着，但注入里永远没有召回段」—— 作者完全看不出是降级了还是库里没内容。
+//
+// 🔴 降级只换「怎么打分」，**不换**「允不允许」。过滤条件走 `passesFilters`（与语义路径同一份），
+//    权限闸 `filterRecallHitsByPermission` 仍由调用方在注入前跑一遍。
+// 🔴 打分是**纯本地计算**，不发请求、不读模型 —— 所以它不需要 `cfg`，也不会因为网络抖动失败。
+
+export interface KeywordRecallOptions extends Omit<RecallOptions, 'cfg' | 'minScore' | 'embedFn'> {
+  /** 词面覆盖率阈值，默认 `KEYWORD_MIN_COVERAGE` */
+  minCoverage?: number
+}
+
+/** query token 权重：二元算 1，单字算 0.3（单字召回率高但几乎不含信息） */
+function tokenWeight(t: string): number {
+  return t.length >= 2 ? 1 : 0.3
+}
+
+/**
+ * 用本地词面匹配从索引里捞片段。**永不抛**，拿不到就返回 `[]`。
+ *
+ * 与 `recallRelevant` 的差别只有打分：
+ *   · 语义：查询先嵌入成向量，与库中向量算余弦（能命中"换了说法"的近义内容）；
+ *   · 关键词：直接比 token 覆盖率（只能命中"用词相同"的内容）。
+ * 所以降级后**召回率会下降**，但不会归零，也不会把不相关内容塞进上下文。
+ */
+export async function keywordRecallRelevant(
+  query: string,
+  opts: KeywordRecallOptions,
+): Promise<RecallHit[]> {
+  const q = (query ?? '').trim()
+  if (!q || !opts.projectId) return []
+
+  const topK = Math.max(1, opts.topK ?? RECALL_TOP_K)
+  const minCoverage = opts.minCoverage ?? KEYWORD_MIN_COVERAGE
+  const perRefCap = Math.max(1, opts.perRefCap ?? RECALL_PER_REF_CAP)
+  const prefilterAt = Math.max(topK, opts.prefilterAt ?? RECALL_PREFILTER_AT)
+
+  const doLoad = opts.loadFn ?? loadVectors
+  const doIndex = opts.indexFn ?? vectorIndex
+
+  // 与语义路径同序：先确认索引非空，再读全量行（空库上这一步几乎免费）
+  const idx = await doIndex(opts.projectId).catch((): VecIndex => ({ hashes: new Map(), refs: new Set() }))
+  if (idx.refs.size === 0) return []
+
+  let rows: VecRow[] = []
+  try {
+    rows = await doLoad(opts.projectId)
+  } catch {
+    return []
+  }
+  if (rows.length === 0) return []
+
+  const allowKinds = opts.kinds && opts.kinds.length > 0 ? new Set<VecKind>(opts.kinds) : null
+  // 关键词路径**不看 `r.dim`**：降级时不用向量，维度不一致的旧块照样能被词面命中。
+  const candidates = rows.filter(r => passesFilters(r, opts, allowKinds))
+  if (candidates.length === 0) return []
+
+  const qTokens = [...new Set(tokenize(q))]
+  if (qTokens.length === 0) return []
+  const totalWeight = qTokens.reduce((s, t) => s + tokenWeight(t), 0)
+  if (totalWeight <= 0) return []
+
+  const narrowed = prefilter(candidates, q, prefilterAt)
+
+  // 一次遍历：既算命中集合，也顺便统计 df（供 IDF 抑制「满篇都是」的词）
+  const hitsOf: { row: VecRow; hit: string[]; bigrams: number }[] = []
+  const df = new Map<string, number>()
+  for (const r of narrowed) {
+    if (opts.signal?.aborted) return []
+    const tokens = new Set(tokenize(r.text))
+    const hit: string[] = []
+    let bigrams = 0
+    for (const t of qTokens) {
+      if (!tokens.has(t)) continue
+      hit.push(t)
+      if (t.length >= 2) bigrams++
+    }
+    if (hit.length === 0 || bigrams < KEYWORD_MIN_BIGRAM_HITS) continue
+    for (const t of hit) df.set(t, (df.get(t) ?? 0) + 1)
+    hitsOf.push({ row: r, hit, bigrams })
+  }
+  if (hitsOf.length === 0) return []
+
+  const N = narrowed.length
+  const scored: RecallHit[] = []
+  for (const { row, hit } of hitsOf) {
+    let got = 0
+    for (const t of hit) {
+      // 弱 IDF：铺满整个候选集的词（「的」「了」）权重趋近 0，专名权重接近 1
+      const idf = Math.log(1 + N / (1 + (df.get(t) ?? 1)))
+      got += tokenWeight(t) * idf
+    }
+    const score = got / totalWeight
+    if (score < minCoverage) continue
+    scored.push({
+      kind: row.kind, refId: row.refId, chunkIdx: row.chunkIdx,
+      text: row.text, title: row.title ?? '', score: Math.min(1, score), secret: row.secret,
+      ...(row.basis ? { basis: row.basis } : {}),
+    })
+  }
+  if (scored.length === 0) return []
+
+  scored.sort((a, b) => b.score - a.score || a.refId.localeCompare(b.refId) || a.chunkIdx - b.chunkIdx)
+  return takeByRefCap(scored, topK, perRefCap)
 }

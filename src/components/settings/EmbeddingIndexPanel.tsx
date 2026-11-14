@@ -30,6 +30,7 @@ import {
 } from '@/lib/semantic/settings'
 import { rebuildIndex, indexStatus, type IndexProgress, type IndexStatus } from '@/lib/semantic/indexer'
 import { clearProjectVectors } from '@/lib/semantic/store'
+import { semanticCapability, type SemanticCapability } from '@/lib/semantic/capability'
 
 interface Props {
   /** 已配好的模型列表（与上面的「模型配置」同一份） */
@@ -50,6 +51,11 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
   const [model, setModel] = useState('')
   const [status, setStatus] = useState<IndexStatus | null>(null)
   const [hint, setHint] = useState('')
+  /**
+   * 3.5.5：当前能用到哪一档语义检索。
+   * 🔴 ACP 模式下引擎发不出嵌入请求 —— 此时按钮必须置灰，否则作者点下去只会等到一串失败。
+   */
+  const [cap, setCap] = useState<SemanticCapability | null>(null)
   /** 自增：触发重新读数（写盘之后才动它，见文件头纪律） */
   const [ver, setVer] = useState(0)
 
@@ -66,10 +72,12 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
     setSettings(s)
     setModel(s.model)
     // 两件事互不依赖，并行取；都取完再一起 setState（避免中间态闪一下）
-    const [cfg, st] = await Promise.all([
+    const [cfg, st, capability] = await Promise.all([
       resolveEmbedConfig(s, providers),
       embeddingStatus(s, providers),
+      semanticCapability(),
     ])
+    setCap(capability)
     // ⚠️ 项目 id 也要现取：面板可能跨项目存活着
     const idx = await indexStatus(db.getCurrentProjectId(), cfg)
     setStatus(idx)
@@ -137,7 +145,9 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
   const stats = status?.stats ?? null
   const running = runner.running
   const prog = runner.task?.progress ?? null
-  const canBuild = !running && !!settings.providerId && providers.length > 0
+  // ACP 模式下建索引必然失败（嵌入请求发不出去），所以连同按钮一起收起来
+  const embedBlocked = cap != null && cap.mode !== 'semantic'
+  const canBuild = !running && !embedBlocked && !!settings.providerId && providers.length > 0
 
   return (
     <div className="mt-5 pt-4 border-t border-ink-700">
@@ -230,6 +240,19 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
           {!settings.providerId && <span className="text-ink-500">· {hint || '未选择嵌入模型'}</span>}
         </div>
 
+        {/* 3.5.5：降级说明。不写这一行，作者会以为「索引建好了却召回不到」是 bug */}
+        {embedBlocked && cap && (
+          <div className="flex items-start gap-1.5 text-11 text-amber">
+            <AlertCircle size={11} className="mt-0.5 shrink-0" />
+            <span className="leading-relaxed">
+              {cap.label}：{cap.reason}
+              <span className="text-ink-500">
+                {' '}已有的索引仍会被本地关键词匹配使用（召回率低于语义检索），重建索引需要先切回 API 模式。
+              </span>
+            </span>
+          </div>
+        )}
+
         {running && prog && (
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-11 text-ink-400">
@@ -260,7 +283,7 @@ export default function EmbeddingIndexPanel({ providers }: Props) {
             size="sm"
             disabled={!canBuild}
             onClick={() => void doRebuild(false)}
-            title={!settings.providerId ? '先选择嵌入模型' : '只重新嵌入内容变过的章节与条目（已建索引时很快）'}
+            title={embedBlocked ? '当前模式发不出嵌入请求，请先切回 API 模式' : !settings.providerId ? '先选择嵌入模型' : '只重新嵌入内容变过的章节与条目（已建索引时很快）'}
           >
             <RefreshCw size={12} /> {stats && stats.chunks > 0 ? '更新索引' : '建立索引'}
           </Button>

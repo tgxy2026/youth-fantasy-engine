@@ -1024,8 +1024,9 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
 
   // #013 语义召回：把「当前章写到什么」用嵌入向量去全书捞意思相近的片段。
   // 定位是**补一层**，不是替换 —— 上面的结构化选材与关键词召回仍是主干。
-  // 🔴 只在有焦点章时生效；`buildSemanticRecallBlock` 自身永不抛，且未配嵌入模型时零开销早退
-  //    （它先问 `aiEmbedding` 有没有配，没配就直接返回空串，连库都不读）。
+  // 🔴 只在有焦点章时生效；`buildSemanticRecallBlock` 自身永不抛，没索引时零开销早退。
+  // 🔴 3.5.5：ACP 模式下嵌入发不出去，该函数会**自动降级**为本地关键词匹配
+  //    （不再要求配嵌入模型，也不再静默返回空）；降级段的表头与分数名会标明这一点。
   // 🔴 角色视角下 S 级来源被剔除（`hideSecretRows`）；D 级在索引阶段就根本不存在了。
   if (opts.semantic !== false && opts.focusChapterId && !opts.skeletonOnly) {
     const semanticBlock = await buildSemanticRecallBlock({

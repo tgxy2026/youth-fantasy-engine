@@ -22,9 +22,11 @@
 
 import { indexOneDoc, type IndexDoc } from '@/lib/semantic/indexDoc'
 import { removeByRef } from '@/lib/semantic/store'
-import { recallRelevant } from '@/lib/semantic/recall'
+import { keywordRecallRelevant, recallRelevant } from '@/lib/semantic/recall'
 import { renderRecallHits } from '@/lib/semantic/inject'
 import { resolveEmbedConfig } from '@/lib/semantic/settings'
+import { semanticCapability, type SemanticCapability } from '@/lib/semantic/capability'
+import type { VecKind } from '@/lib/semantic/store'
 import { isUsableMessage, keywordHaystackMessages } from '@/lib/tavern/world'
 import { getTavernSettings } from '@/lib/tavern/settings'
 import type { FreeSession, TavernMessage } from '@/lib/tavern/types'
@@ -155,14 +157,21 @@ export interface FreeRecallOptions {
   signal?: AbortSignal
   /** 单测注入点（生产不传） */
   deps?: {
+    /** 3.5.5：能力探测（ACP 模式下走关键词降级） */
+    capability?: () => Promise<SemanticCapability>
     resolveConfig?: typeof resolveEmbedConfig
     recall?: typeof recallRelevant
+    keywordRecall?: typeof keywordRecallRelevant
   }
 }
 
 /** 自由对话召回段的自述句（与全书召回那句区分开：这里是"本场早先说过的话"） */
 const FREE_RECALL_HEADER =
   '（下面是从**本场早先的对话**里按语义捞出的片段 —— 它可能已经被预算裁掉，但确实发生过。用它保持前后一致，不要当作新发生的事。）'
+
+/** 关键词降级时替换表头：不能再用「按语义捞出」这种说法，那是虚假的置信提示 */
+const FREE_RECALL_KEYWORD_HEADER =
+  '（下面是从**本场早先的对话**里按**字面用词**匹配到的片段 —— 当前是本地关键词降级，换种说法就匹配不到。它可能已经被预算裁掉，但确实发生过。用它保持前后一致，不要当作新发生的事。）'
 
 /**
  * 构造〖相关对话召回〗段。**永不抛**、拿不到东西返回空串 —— 调用方只管"空就不 push"。
@@ -176,24 +185,34 @@ export async function buildFreeRecallBlock(opts: FreeRecallOptions): Promise<str
     const s = opts.session
     if (!s?.id) return ''
 
-    const cfg = await (opts.deps?.resolveConfig ?? resolveEmbedConfig)().catch(() => null)
-    if (!cfg) return ''
+    // 3.5.5：ACP 模式下嵌入发不出去，改走本地词面匹配（否则本段会静默消失）
+    const cap = await (opts.deps?.capability ?? semanticCapability)()
+    if (cap.mode === 'off') return ''
+    const byKeyword = cap.mode === 'keyword'
+
+    let cfg = null as Awaited<ReturnType<typeof resolveEmbedConfig>>
+    if (!byKeyword) {
+      cfg = await (opts.deps?.resolveConfig ?? resolveEmbedConfig)().catch(() => null)
+      if (!cfg) return ''
+    }
 
     const query = freeRecallQuery(s.messages)
     if (!query) return ''
 
-    const hits = await (opts.deps?.recall ?? recallRelevant)(query, {
+    const shared = {
       projectId: TAVERN_VEC_PROJECT,
-      cfg,
       // 只看自由对话这一类（同一分区里只有它，但写明意图更清楚）
-      kinds: ['tavern'],
+      kinds: ['tavern'] as VecKind[],
       topK: opts.limit ?? 5,
       // 角色视角：与剧情模式一致（S 级整条剔除；自由消息恒非 S，留着这道闸不影响行为）
       hideSecretRows: true,
       // 🔴 只召回本场 —— 所有会话共用一个分区，不设白名单会跨场串味
       allowRefIds: new Set([s.id]),
       signal: opts.signal,
-    })
+    }
+    const hits = byKeyword
+      ? await (opts.deps?.keywordRecall ?? keywordRecallRelevant)(query, { ...shared })
+      : await (opts.deps?.recall ?? recallRelevant)(query, { ...shared, cfg: cfg! })
     if (hits.length === 0) return ''
 
     // 🔴 剔掉「召回回来了、但其实还在上下文里」的命中：最近这些条本来就在提示中，
@@ -205,7 +224,9 @@ export async function buildFreeRecallBlock(opts: FreeRecallOptions): Promise<str
     })
     if (fresh.length === 0) return ''
 
-    return renderRecallHits(fresh, FREE_RECALL_HEADER)
+    return byKeyword
+      ? renderRecallHits(fresh, FREE_RECALL_KEYWORD_HEADER, '匹配度')
+      : renderRecallHits(fresh, FREE_RECALL_HEADER)
   } catch {
     return ''
   }

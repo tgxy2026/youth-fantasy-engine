@@ -39,6 +39,7 @@ import { loadEmbeddingSettings, resolveEmbedConfig } from '@/lib/semantic/settin
 // 好让知识库（#017）在不 import db 的前提下复用它（否则 deleteProject → knowledgeBase → db 成环）。
 // 这里**原样再导出**，既有的 `from './indexer'` 调用点一个都不用改。
 import { indexOneDoc, type IndexDoc } from '@/lib/semantic/indexDoc'
+import { semanticCapability } from '@/lib/semantic/capability'
 export { indexOneDoc }
 export type { IndexDoc }
 
@@ -625,6 +626,8 @@ export interface AutoIndexDeps {
   indexOne?: typeof indexOneDoc
   /** 当前项目 id（默认读库；单测注入，否则 Node 环境拿不到项目会直接早退） */
   projectId?: () => string
+  /** 3.5.5：能力探测（ACP 模式下嵌入发不出去，自动索引直接跳过） */
+  capability?: () => Promise<{ mode: 'semantic' | 'keyword' | 'off' }>
 }
 
 // 同一章的自动索引**串行跑**，在飞期间的重复请求合并成「跑完再补一次」。
@@ -672,6 +675,11 @@ async function autoIndexChapterOnce(chapterId: string, deps?: AutoIndexDeps): Pr
     if (rebuildRunning) return
     const s = await (deps?.loadSettings ?? loadEmbeddingSettings)()
     if (!s.autoIndexOnSave) return
+    // 🔴 3.5.5：ACP 模式下嵌入请求发不出去。不在这里早退的话，**每次保存**都会走一遍
+    //    「切块 → 尝试嵌入 → 被模式租约拒绝 → 吞掉异常」的完整流程 —— 结果永远一样，
+    //    纯粹白费读库与切块，还会在控制台刷一串 warn 把真正的问题埋掉。
+    const cap = await (deps?.capability ?? semanticCapability)()
+    if (cap.mode !== 'semantic') return
     const cfg = await (deps?.resolveConfig ?? resolveEmbedConfig)(s)
     if (!cfg) return
     const projectId = (deps?.projectId ?? db.getCurrentProjectId)()
