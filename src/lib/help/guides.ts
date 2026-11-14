@@ -77,7 +77,7 @@ export const PAGE_GUIDES: PageGuide[] = [
   },
   {
     id: 'editor-basics',
-    revision: 1,
+    revision: 2,
     tabId: 'editor',
     articleId: 'editor-tools',
     steps: [
@@ -97,7 +97,7 @@ export const PAGE_GUIDES: PageGuide[] = [
         id: 'tools',
         anchor: 'editor-toolbar',
         title: '工具都在这一行',
-        body: '排版与缩进、敏感词检测、校对（本章）、时光机（版本历史）、回收站、全文检索都从这里进。不确定哪个是哪个，鼠标停上去有说明。',
+        body: '这些都收在「工具」下拉里：整理与检查（排版、敏感词、校对、伏笔闭环、连续性、文风体检）、版本与检索（时光机、回收站、全文检索、全书搜索替换）、写作视图。同一行「颉文姬」右侧的「AI 伴写」是独立按钮，不是下拉项。不确定哪个是哪个，鼠标停上去有说明。',
       },
       {
         id: 'jiewenji',

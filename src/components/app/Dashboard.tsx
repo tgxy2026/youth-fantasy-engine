@@ -27,7 +27,7 @@ import { countWords } from '@/lib/editor/textStats'
 import { buildWritingReview } from '@/lib/outline/writingReview'
 // 3.4.0 · A.3：规划板卡片上的「细纲绑定 / 固定资料」只读摘要（来源：chapterContext32:<章>）
 import { buildChapterContextIndex, type ChapterContextBrief } from '@/lib/app/chapterBoardContext'
-// 2.9.1 · E 档：把「检查工具 → 结构配比对照」的结论接到主面板（模板来源与创意写作共用同一份会话输入）
+// 2.9.1 · E 档：把「检查工具 → 全书结构配比」的结论接到主面板（模板来源与创意写作共用同一份会话输入）
 import { hydrateCreativeSession, useCreativeSession } from '@/lib/creative/creativeSession'
 import { getStoryTemplate } from '@/lib/outline/storyStructures'
 import { buildChapterShares, alignBeats, PACE_MIN_CHAPTERS } from '@/lib/outline/structurePace'
@@ -78,7 +78,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
   /**
    * 结构配比预警（2.9.1 · E 档打通）。
    *
-   * 为什么搬到主面板：这条结论本来只在「检查工具 → 结构配比对照」里 —— 那是要作者**专门去开**的页面，
+   * 为什么搬到主面板：这条结论本来只在「检查工具 → 全书结构配比」里 —— 那是要作者**专门去开**的页面，
    * 而结构跑偏（如中段塌陷、开局占比过大）属于「越写越看不出来」的问题，等想起来去查时往往已写了十几万字。
    * 🔴 这里只做一件事：明显偏移（引擎口径 |Δ| > 15 个百分点）时在健康提醒里加一行；
    *    逐拍明细仍在原面板看。用的是**同一套引擎、同一个模板来源**，不另算一套。
@@ -503,7 +503,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
             {structureWarn && (
               <div className="flex items-start gap-2 text-amber">
                 <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber shrink-0" />
-                <span>结构配比有 {structureWarn.length} 个拍节明显偏移（{structureWarn.map(a => a.name).join('、')}）——到「检查工具 → 结构配比对照」看逐拍明细</span>
+                <span>结构配比有 {structureWarn.length} 个拍节明显偏移（{structureWarn.map(a => a.name).join('、')}）——到「检查工具 → 全书结构配比」看逐拍明细</span>
               </div>
             )}
             {autoWeekTotal === 0 && (
