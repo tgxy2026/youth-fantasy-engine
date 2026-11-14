@@ -1087,14 +1087,19 @@ ipcMain.handle('store:path', () => dataFile())
   })
 
   // 退出前先释放模式锁与监听器；关闭失败也要在限时后退出，遗留锁由下次启动的「安全恢复」处理。
+  // 🔴 2026-11-15：这里**不再自己先 stop ACP** —— `modeService.close()` 内部本来就是
+  //   「停 ACP → 核对进程静默 → 停宿主 → 释放模式锁」，外面再 stop 一遍等于串行跑两轮。
+  //   ACP 还连着时（会话 + 进程树要退）两轮 5 秒根本不够，超时兜底会先 app.quit()，
+  //   模式锁来不及释放 ⇒ 下次启动直接「连接模式不可用」，用户每次都得点安全恢复。
+  //   改为只调 close()，并把兜底放宽到 15 秒。
   app.on('before-quit', event => {
     if (modeClosed || !modeService) return
     if (modeClosing) { event.preventDefault(); return }
     modeClosing = true
     event.preventDefault()
     const finish = () => { modeClosed = true; app.quit() }
-    const timer = setTimeout(finish, 5000)
-    Promise.resolve(acpRuntime?.stop()).then(() => modeService.close()).catch(() => undefined).finally(() => {
+    const timer = setTimeout(finish, 15000)
+    Promise.resolve(modeService.close()).catch(() => undefined).finally(() => {
       clearTimeout(timer)
       finish()
     })

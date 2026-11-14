@@ -95,9 +95,14 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   }, [])
 
   // 只在稳定状态同步页签：切换中保留用户选择的目标页，避免界面来回跳。
+  // 🔴 2026-11-15：不可用（blocked）时也要落回**上次用的那个模式**的页面。
+  //   典型场景 = ACP 未断开就退出应用，下次启动被遗留锁挡成 blocked：
+  //   以前会静默显示 API 页，用户看不到 ACP 区与安全恢复入口，误以为模式被重置。
+  //   `lastMode` 只用于落位，不代表模式可用（此时 `mode` 仍为 null，控件全部禁用）。
   useEffect(() => {
     if (modeStatus?.phase === 'stable' && modeStatus.mode) setConnectionView(modeStatus.mode)
-  }, [modeStatus?.phase, modeStatus?.mode])
+    else if (modeStatus?.phase === 'blocked' && modeStatus.lastMode) setConnectionView(modeStatus.lastMode)
+  }, [modeStatus?.phase, modeStatus?.mode, modeStatus?.lastMode])
 
   const requestMode = async (to: Mode) => {
     if (!modeStatus) return

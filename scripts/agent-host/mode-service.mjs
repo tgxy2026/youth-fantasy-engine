@@ -33,6 +33,21 @@ function modePaths(root) {
   }
 }
 
+/**
+ * 读模式记录文件里**最后一次确认**的模式。
+ *
+ * 🔴 2026-11-15：只给界面落位用 —— ACP 未断开就退出、下次启动被遗留锁挡成 blocked 时，
+ * 用户应当仍在「ACP 页」看到不可用原因与安全恢复入口，而不是被静默甩到 API 页。
+ * 它**不代表**任何模式可用：status 的 `mode` 在 blocked 时仍必须是 null。
+ */
+async function readRecordedMode(file) {
+  try {
+    const raw = JSON.parse(await fs.readFile(file, 'utf8'))
+    if (raw && raw.version === 1 && raw.phase === 'stable' && ['api', 'agent', 'acp'].includes(raw.mode)) return raw.mode
+  } catch { /* 读不到或损坏就不给，界面按默认落位 */ }
+  return null
+}
+
 /** 停用未确认的 Agent 配置并保留原文件作为证据；不删除请求账本或作品数据。 */
 async function repairAgentConfigAt(root) {
   const { configFile, pendingFile } = modePaths(root)
@@ -215,6 +230,7 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
     return {
       phase: preconditionNote ? 'blocked' : snapshot.phase,
       mode: preconditionNote ? null : (snapshot.mode ?? null),
+      lastMode: snapshot.mode ?? await readRecordedMode(modeFile),
       reason: blockedReason,
       busy: snapshot.busy === true,
       active: snapshot.active ?? { api: 0, agent: 0, acp: 0 },

@@ -15,6 +15,13 @@ import { runWithModeLease, type ModeLeaseTransport } from '@/lib/agentHost/modeC
 export interface ConnectionModeStatus {
   phase: 'stable' | 'switching' | 'blocked'
   mode: ConnectionMode | null
+  /**
+   * 🔴 2026-11-15：模式记录文件里最后一次确认的模式。
+   * 不可用（blocked）时 `mode` 必须为 null（不能谎称某种模式生效），但界面仍要回到
+   * 「上次用的那个模式」的页面 —— 否则 ACP 未断开就退出的用户会被直接甩到 API 页，
+   * 看不到 ACP 区与安全恢复入口。仅用于界面落位，不代表模式可用。
+   */
+  lastMode?: ConnectionMode | null
   reason: string
   busy: boolean
   active: Record<ConnectionMode, number>
@@ -62,7 +69,7 @@ export function hasLocalModeHost(): boolean {
 }
 
 const BLOCKED_STATUS: ConnectionModeStatus = {
-  phase: 'blocked', mode: null, reason: '网页版没有本机连接模式服务', busy: false,
+  phase: 'blocked', mode: null, lastMode: null, reason: '网页版没有本机连接模式服务', busy: false,
   active: { api: 0, agent: 0, acp: 0 }, ownsLock: false, lock: null, canRecover: false,
 }
 

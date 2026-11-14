@@ -639,6 +639,23 @@ async function run() {
     ok('🔴 状态条在账号与连接之后（连接状态属于结果，不压在最上）',
       ui.indexOf('acp-summary-heading') > ui.indexOf('账号与连接'))
     ok('状态条含接收方/运行方式/模型', /接收方/.test(ui) && /运行方式/.test(ui) && /模型/.test(ui))
+
+    // 2026-11-15：ACP 未断开就退出应用 → 下次启动被遗留锁挡成 blocked 时，
+    // 界面必须回到「上次用的那个模式」的页面，而不是默认甩到 API 页。
+    const panel = fs.readFileSync(path.join(process.cwd(), 'src/components/settings/AIConfigPanel.tsx'), 'utf8')
+    const svc = fs.readFileSync(path.join(process.cwd(), 'scripts/agent-host/mode-service.mjs'), 'utf8')
+    const bridge = fs.readFileSync(path.join(process.cwd(), 'src/lib/agentHost/modeBridge.ts'), 'utf8')
+    const mainSrcForQuit = fs.readFileSync(path.join(process.cwd(), 'electron/main.cjs'), 'utf8')
+    ok('模式服务暴露 lastMode（只读记录文件，供界面落位）',
+      /readRecordedMode\(/.test(svc) && /lastMode: snapshot\.mode \?\? await readRecordedMode/.test(svc))
+    ok('🔴 blocked 时 mode 必须仍为 null，lastMode 不冒充「已生效」',
+      /mode: preconditionNote \? null : \(snapshot\.mode \?\? null\)/.test(svc))
+    ok('🔴 不可用时界面落回上次模式页面，而不是默认 API 页',
+      /phase === 'blocked' && modeStatus\.lastMode/.test(panel))
+    ok('状态类型声明 lastMode 仅用于落位', /lastMode\?: ConnectionMode \| null/.test(bridge))
+    ok('退出时不重复 stop ACP，兜底 15s 让模式锁有时间释放',
+      !/acpRuntime\?\.stop\(\)\)\.then\(\(\) => modeService\.close\(\)\)/.test(mainSrcForQuit)
+      && /setTimeout\(finish, 15000\)/.test(mainSrcForQuit))
   }
 
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')
