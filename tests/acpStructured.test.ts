@@ -572,7 +572,73 @@ async function run() {
     ok('界面给出两个明确选项', /以当前 Windows 用户运行/.test(uiSrc) && /使用 Windows 隔离/.test(uiSrc))
     ok('🔴 界面默认值与运行时同口径', /status\.runAs === 'isolated' \? 'isolated' : 'current-user'/.test(uiSrc))
     ok('隔离未开通时挡住连接并就地给开通入口', /isolationBlocked/.test(uiSrc) && /开通 Windows 隔离/.test(uiSrc))
-    ok('界面写明当前用户方式下的文件权限', /拥有当前 Windows 用户的文件权限/.test(uiSrc))
+    ok('界面写明当前用户方式下的文件权限', /拥有当前(?: Windows)?用户的文件权限/.test(uiSrc))
+  }
+
+  // ---------------------------------------------------------------- 14.7 外发确认：连接后只提示一次
+  console.log('--- 14.7 外发确认按「已告知的 Agent」免逐次弹窗 ---')
+  {
+    const { grantAcpConsent, hasAcpConsent, revokeAcpConsent, currentAcpConsentForTest } =
+      await import('../src/lib/agentHost/acpConsent')
+
+    revokeAcpConsent()
+    ok('初始无授权', hasAcpConsent('Antigravity') === false && currentAcpConsentForTest() === null)
+    grantAcpConsent('Antigravity')
+    ok('连接后记为已告知', hasAcpConsent('Antigravity') === true)
+    ok('换一个 Agent 不算已告知', hasAcpConsent('OtherAgent') === false)
+    ok('空名称不算已告知（避免漏传参数时静默免确认）', hasAcpConsent('') === false && hasAcpConsent(null) === false)
+    revokeAcpConsent()
+    ok('停用连接后失效（下次连接要重新提示）', hasAcpConsent('Antigravity') === false)
+
+    // 闸门行为：已告知 ⇒ 不调用 ask；未告知 ⇒ 调用
+    reset()
+    generateImpl = async () => ({ ok: true, text: 'ok' })
+    let asked = 0
+    const gate = (name?: string) => acpGatedText({
+      task: 'companion', generation,
+      title: '发送光标前正文至 ACP Agent',
+      message: '接收方为 假 Agent。本次发送正文。',
+      ...(name ? { agentName: name } : {}),
+      assertCurrent: () => {},
+      ask: async () => { asked++; return true },
+    })
+
+    revokeAcpConsent()
+    await gate('假 Agent')('一次')
+    ok('未告知时首次调用会弹确认', asked === 1, `asked=${asked}`)
+
+    grantAcpConsent('假 Agent')
+    asked = 0
+    await gate('假 Agent')('二次')
+    await gate('假 Agent')('三次')
+    ok('🔴 已告知后同进程内不再逐次弹（连调两次都跳过）', asked === 0, `asked=${asked}`)
+
+    revokeAcpConsent()
+    asked = 0
+    await gate('假 Agent')('四次')
+    ok('停用连接后再用会重新弹一次', asked === 1, `asked=${asked}`)
+
+    {
+      // 不传 agentName 的调用点保持旧行为（每次都问），防止漏接静默变成永不确认
+      revokeAcpConsent()
+      asked = 0
+      await gate(undefined)('五次')
+      await gate(undefined)('六次')
+      ok('未传 agentName 时仍逐次确认（漏接不会被静默放行）', asked === 2, `asked=${asked}`)
+    }
+    revokeAcpConsent()
+
+    // 界面契约
+    const ui = fs.readFileSync(path.join(process.cwd(), 'src/components/settings/AcpSettings.tsx'), 'utf8')
+    ok('🔴 连接成功后写入一次性授权并提示一次', /grantAcpConsent\(/.test(ui) && /已连接 \$\{name\}/.test(ui))
+    ok('提示里写明每次连接只出现一次', /每次连接只出现一次/.test(ui))
+    ok('停用连接 / 退出账号会清掉授权', (ui.match(/revokeAcpConsent\(\)/g) ?? []).length >= 3)
+    // 2026-11-14 主人两次否掉版式后定的口径：铺满、状态条置底。
+    ok('🔴 铺满父容器（不再限宽居中留白）', !/max-w-3xl|max-w-4xl|mx-auto/.test(ui))
+    ok('运行方式两项并排填充', /md:grid-cols-2/.test(ui))
+    ok('🔴 状态条在账号与连接之后（连接状态属于结果，不压在最上）',
+      ui.indexOf('acp-summary-heading') > ui.indexOf('账号与连接'))
+    ok('状态条含接收方/运行方式/模型', /接收方/.test(ui) && /运行方式/.test(ui) && /模型/.test(ui))
   }
 
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')

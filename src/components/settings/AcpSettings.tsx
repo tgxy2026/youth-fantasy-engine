@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { ChevronDown } from 'lucide-react'
+import { grantAcpConsent, revokeAcpConsent } from '@/lib/agentHost/acpConsent'
 
 const selectClass = 'min-w-0 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100 disabled:opacity-50'
 
@@ -51,6 +52,8 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
     try {
       const result = await api.select(id)
       if (!result.ok) throw new Error(result.error || 'ACP Agent 切换失败。')
+      // 换 Agent 就是换了接收方，旧的一次性授权不能顺延。
+      revokeAcpConsent()
       setStatus(await api.status())
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'ACP Agent 切换失败。', 'error')
@@ -59,21 +62,55 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
     }
   }
 
-  async function run(label: string, action: (id: string) => Promise<{ ok: boolean; error?: string }>, success?: string) {
+  async function run(
+    label: string,
+    action: (id: string) => Promise<{ ok: boolean; error?: string }>,
+    success?: string,
+    /** 成功并刷新状态后执行（用来做「连上之后提示一次」这类收尾） */
+    after?: (next: AcpSettingsStatus) => Promise<void>,
+  ) {
     if (!api || operation || disabled || busy) return
     const id = crypto.randomUUID()
     setOperation({ id, label })
     try {
       const result = await action(id)
       if (!result.ok) throw new Error(result.error || 'ACP 操作失败。')
-      setStatus(await api.status())
+      const next = await api.status()
+      setStatus(next)
       if (success) showToast(success, 'success')
+      if (next && after) await after(next)
     } catch (error) {
       setStatus(await api.status().catch(() => null))
       showToast(error instanceof Error ? error.message : 'ACP 操作失败。', 'error')
     } finally {
       setOperation(null)
     }
+  }
+
+  /**
+   * 连接（登录或重连）。
+   *
+   * 🔴 2026-11-14 主人要求：外发确认从「每调一次弹一次」改成「连接成功后提示一次」。
+   *    这里连上之后主动说明一次「资料会发给谁」，并把该 Agent 记进一次性账本；
+   *    之后同进程内所有 AI 功能不再逐次弹（闸门读同一个账本）。
+   */
+  async function connectFlow(login: boolean) {
+    if (!api) return
+    await run(
+      login ? '等待 Google 登录，首次启动约需 20–30 秒…' : '正在连接并读取模型选项…',
+      id => api.connect(id, login),
+      undefined,
+      async next => {
+        if (!next.ready) return
+        const name = next.adapters.find(a => a.id === next.selected)?.name ?? 'ACP Agent'
+        grantAcpConsent(name)
+        await confirmDialog({
+          title: `已连接 ${name}`,
+          message: `接下来使用 AI 功能时，引擎会把当前功能需要的正文、草稿与设定资料发送给 ${name}，由它转交给该 Agent 登录的账号。\n\n不同功能读取的范围不同，界面上的「本次会读」会逐项列出。\n\n本提示每次连接只出现一次；重启应用、停用连接或更换 Agent 会重新提示。随时可以点「停用连接」或切回 API 模式。`,
+          confirmText: '知道了',
+        })
+      },
+    )
   }
 
   async function setRunAs(next: 'current-user' | 'isolated') {
@@ -98,9 +135,19 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
   const connectionLabel = connected ? '会话已验证' : status.options ? '模型选项待核对' : '等待验证会话'
   const optionKeys = (['model', 'thinking'] as const).filter(key => status.options?.[key])
 
-  return <div className="max-w-3xl space-y-3" data-acp-settings>
-    <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label className="grid w-56 max-w-full gap-1 text-12 font-medium text-ink-200">
+  /** 模型/档位的显示名（会话没连时退回保存值或「Agent 默认」）。 */
+  const labelOf = (key: 'model' | 'thinking') => {
+    const current = status.config?.[key] ?? ''
+    if (!current) return 'Agent 默认'
+    return status.options?.[key]?.values.find(v => v.value === current)?.name ?? current
+  }
+
+  // 🔴 2026-11-14：试过「右窄状态卡」与「居中限宽」，都被否掉。最终：**铺满父容器、不留左右留白**；
+  //    「运行方式」两项并排、模型/档位两列撑开，避免宽屏显空。
+  //    状态条放在**最底部**（主人的口径：它表达的是「连接状态」，属于结果，不该压在最上面）。
+  return <div className="space-y-3" data-acp-settings>
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <label className="grid w-72 max-w-full gap-1 text-12 font-medium text-ink-200">
         ACP Agent
       <select
         id="acp-agent-select"
@@ -136,23 +183,27 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
       <p className="mt-1 text-11 leading-relaxed text-ink-500">
         切换会先停掉当前 ACP 任务并重建进程；两种方式各自使用自己的登录资料，互不覆盖、互不清理。
       </p>
-      <div className="mt-2 space-y-2">
-        <label className="flex items-start gap-2 text-12">
-          <input type="radio" name="acp-runas" className="mt-0.5" checked={runAs === 'current-user'} disabled={controlsDisabled}
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-12 transition-colors ${
+          runAs === 'current-user' ? 'border-amber/40 bg-ink-800/60' : 'border-ink-700 bg-ink-900/40 hover:border-ink-600'
+        }`}>
+          <input type="radio" name="acp-runas" className="mt-0.5 shrink-0" checked={runAs === 'current-user'} disabled={controlsDisabled}
             onChange={() => void setRunAs('current-user')} />
           <span className="min-w-0">
             <span className={runAs === 'current-user' ? 'text-ink-100' : 'text-ink-300'}>以当前 Windows 用户运行</span>
-            <span className="block text-11 leading-relaxed text-ink-500">
-              不需要创建账户或管理员批准，直接复用已有登录。Agent 及其子进程拥有当前 Windows 用户的文件权限，只连可信的 Agent。
+            <span className="mt-0.5 block text-11 leading-relaxed text-ink-500">
+              不需要创建账户或管理员批准，直接复用已有登录。Agent 及其子进程拥有当前用户的文件权限，只连可信的 Agent。
             </span>
           </span>
         </label>
-        <label className="flex items-start gap-2 text-12">
-          <input type="radio" name="acp-runas" className="mt-0.5" checked={runAs === 'isolated'} disabled={controlsDisabled}
+        <label className={`flex items-start gap-2 rounded-lg border p-2.5 text-12 transition-colors ${
+          runAs === 'isolated' ? 'border-amber/40 bg-ink-800/60' : 'border-ink-700 bg-ink-900/40 hover:border-ink-600'
+        }`}>
+          <input type="radio" name="acp-runas" className="mt-0.5 shrink-0" checked={runAs === 'isolated'} disabled={controlsDisabled}
             onChange={() => void setRunAs('isolated')} />
           <span className="min-w-0">
             <span className={runAs === 'isolated' ? 'text-ink-100' : 'text-ink-300'}>使用 Windows 隔离</span>
-            <span className="block text-11 leading-relaxed text-ink-500">
+            <span className="mt-0.5 block text-11 leading-relaxed text-ink-500">
               在专用标准账户中运行，需要一次性管理员批准创建账户，并在隔离环境中单独登录 Google。
             </span>
           </span>
@@ -186,13 +237,15 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {!connected && <Button size="sm" variant="primary" disabled={controlsDisabled || isolationBlocked}
           title={isolationBlocked ? '请先开通 Windows 隔离' : undefined}
-          onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>登录 Google 账号</Button>}
+          onClick={() => void connectFlow(true)}>登录 Google 账号</Button>}
         <Button size="sm" variant="secondary" disabled={controlsDisabled || isolationBlocked}
           title={isolationBlocked ? '请先开通 Windows 隔离' : undefined}
-          onClick={() => api && void run('正在连接并读取模型选项…', id => api.connect(id, false))}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
-        {status.options && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在停用连接…', id => api.disconnect(id))}>停用连接</Button>}
-        {connected && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>重新登录 Google</Button>}
-        <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在退出 ACP 账号…', id => api.logout(id), 'ACP 账号已退出')}>退出 ACP 账号</Button>
+          onClick={() => void connectFlow(false)}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
+        {status.options && <Button size="sm" variant="secondary" disabled={controlsDisabled}
+          onClick={() => api && void run('正在停用连接…', id => api.disconnect(id)).then(() => revokeAcpConsent())}>停用连接</Button>}
+        {connected && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => void connectFlow(true)}>重新登录 Google</Button>}
+        <Button size="sm" variant="secondary" disabled={controlsDisabled}
+          onClick={() => api && void run('正在退出 ACP 账号…', id => api.logout(id), 'ACP 账号已退出').then(() => revokeAcpConsent())}>退出 ACP 账号</Button>
       </div>
       {optionKeys.length > 0 && <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3 border-t border-ink-700 pt-3">
       {optionKeys.map(key => {
@@ -217,5 +270,37 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
       </div>}
     </section>}
     {selected && !selected.available && <p className="text-12 text-ink-500">当前构建尚未启用此 Agent 的连接功能。需要使用引擎模型时，请切回 API 模式。</p>}
+    <section aria-labelledby="acp-summary-heading" className="rounded-lg border border-ink-700 bg-ink-900/40">
+      <h3 id="acp-summary-heading" className="sr-only">ACP 连接概览</h3>
+      <dl className="grid grid-cols-2 divide-ink-700 sm:grid-cols-4 sm:divide-x">
+        <div className="px-3 py-2.5">
+          <dt className="text-11 text-ink-500">连接</dt>
+          <dd className={`mt-0.5 flex items-center gap-1.5 text-12 ${connected ? 'text-emerald-400' : 'text-ink-300'}`}>
+            <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-emerald-400' : 'bg-ink-500'}`} />
+            <span className="truncate">{connectionLabel}</span>
+          </dd>
+        </div>
+        <div className="px-3 py-2.5">
+          <dt className="text-11 text-ink-500">接收方</dt>
+          <dd className="mt-0.5 truncate text-12 text-ink-200" title={selected?.name}>
+            {selected?.name ?? '—'}{selected?.componentVersion ? ` · ${selected.componentVersion}` : ''}
+          </dd>
+        </div>
+        <div className="px-3 py-2.5">
+          <dt className="text-11 text-ink-500">运行方式</dt>
+          <dd className="mt-0.5 truncate text-12 text-ink-200">{runAs === 'isolated' ? 'Windows 隔离' : '当前 Windows 用户'}</dd>
+        </div>
+        <div className="px-3 py-2.5">
+          <dt className="text-11 text-ink-500">{optionKeys.includes('thinking') ? '模型 / 档位' : '模型'}</dt>
+          <dd className="mt-0.5 truncate text-12 text-ink-200" title={`${labelOf('model')}${optionKeys.includes('thinking') ? ` · ${labelOf('thinking')}` : ''}`}>
+            {labelOf('model')}{optionKeys.includes('thinking') ? ` · ${labelOf('thinking')}` : ''}
+          </dd>
+        </div>
+      </dl>
+      <p className="border-t border-ink-700 px-3 py-2 text-11 leading-relaxed text-ink-500">
+        连接成功时提示一次「资料会发给谁」，之后不再逐次打扰；各功能读取范围见该功能的「本次会读」。
+        {runAs === 'isolated' ? '隔离方式下 Agent 只能访问专用账户授权的目录。' : '当前用户方式下 Agent 及其子进程拥有你的文件权限，只连可信的 Agent。'}
+      </p>
+    </section>
   </div>
 }
