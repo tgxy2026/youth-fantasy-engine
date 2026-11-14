@@ -29,6 +29,7 @@ import { syncTuningWithModel } from '@/lib/tavern/settings'
 import { SELECT_PLACEHOLDER } from '@/lib/constants'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/ai/modelSampling'
 import AcpSettings from './AcpSettings'
+import AIDisabledNotice from '@/components/ai/AIDisabledNotice'
 import { filterModels } from '@/lib/ai/modelFilter'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
 import CustomHeadersEditor from '@/components/settings/CustomHeadersEditor'
@@ -383,7 +384,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         : ONLINE_PRESETS
       : LOCAL_PRESETS
 
-  return (
+  const configurationPanel = (
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
@@ -1012,5 +1013,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         </div>
       </div>}
     </section>
+  )
+  const showApiNotice = WEB || (!switchId && !recovering && modeStatus?.phase === 'stable' && modeStatus.mode === 'api')
+  return (
+    <>
+      <AIDisabledNotice apiMode={showApiNotice} />
+      {configurationPanel}
+    </>
   )
 }

@@ -13,16 +13,34 @@
  *    AI 只做辅助（见 `lib/aiScope.ts` 顶部）。清单本身也来自那里，两处不各写一套。
  */
 import { Info } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { AI_DEPENDENT_GROUPS } from '@/lib/ai/aiScope'
 import { LOCAL_MODEL_DISABLED } from '@/lib/aiCore/localModelAccess'
+import { WEB } from '@/lib/app/platform'
+import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 
-export default function AIDisabledNotice() {
+export default function AIDisabledNotice({ apiMode }: { apiMode?: boolean }) {
   const { ready } = useAIReady()
-  if (ready) return null
+  const [confirmedApiMode, setConfirmedApiMode] = useState(false)
+
+  // 首启向导没有模式页签，从宿主确认后再显示。模型设置复用页签的实时状态。
+  useEffect(() => {
+    if (apiMode !== undefined || WEB) return
+    let active = true
+    const refresh = async () => {
+      const status = await connectionModeStatus().catch(() => null)
+      if (active) setConfirmedApiMode(status?.phase === 'stable' && status.mode === 'api')
+    }
+    void refresh()
+    const timer = setInterval(() => void refresh(), 3000)
+    return () => { active = false; clearInterval(timer) }
+  }, [apiMode])
+
+  if (!(apiMode ?? (WEB || confirmedApiMode)) || ready) return null
 
   return (
-    <section className="rounded-lg border border-ink-700 bg-ink-850/40 p-4">
+    <section data-api-model-missing className="rounded-lg border border-ink-700 bg-ink-850/40 p-4">
       <div className="flex items-center gap-1.5">
         <Info size={13} className="text-ink-400" />
         <h2 className="text-12 font-medium text-ink-200">当前没有可用的 API 模型</h2>
