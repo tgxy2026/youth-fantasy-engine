@@ -30,7 +30,7 @@ interface AcpDesktopSettings {
   cancel(id: string): Promise<boolean>
 }
 
-export default function AcpSettings({ disabled }: { disabled: boolean }) {
+export default function AcpSettings({ disabled, showActiveMode }: { disabled: boolean; showActiveMode: boolean }) {
   const api = (window as Window & { electronAcp?: AcpDesktopSettings }).electronAcp
   const [status, setStatus] = useState<AcpSettingsStatus | null>(null)
   const [busy, setBusy] = useState(false)
@@ -122,8 +122,29 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
     )
   }
 
-  if (error) return <p className="text-12 text-amber">{error}</p>
-  if (!status) return <p className="text-12 text-ink-500">正在读取 ACP 设置…</p>
+  const modeSummary = showActiveMode && (
+    <div className="min-w-0" data-connection-mode-state="stable" data-connection-mode="acp">
+      <p className="flex items-center gap-2 text-12 font-medium text-ink-100">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+        ACP 模式
+      </p>
+      <p className="mt-1 text-11 leading-relaxed text-ink-400">写作请求由所选 ACP Agent 处理。</p>
+    </div>
+  )
+  const headerClass = 'grid grid-cols-1 gap-3 rounded-lg border border-ink-700 bg-ink-900/40 p-3 @min-[36rem]/acp-settings:grid-cols-2 @min-[36rem]/acp-settings:items-center @min-[36rem]/acp-settings:gap-4'
+  const agentClass = showActiveMode
+    ? 'min-w-0 border-t border-ink-700 pt-3 @min-[36rem]/acp-settings:border-l @min-[36rem]/acp-settings:border-t-0 @min-[36rem]/acp-settings:pl-4 @min-[36rem]/acp-settings:pt-0'
+    : 'min-w-0'
+  if (error || !status) return (
+    <div className="@container/acp-settings">
+      <div className={headerClass}>
+        {modeSummary}
+        <p role="status" className={`${agentClass} text-12 ${error ? 'text-amber' : 'text-ink-500'}`}>
+          {error || '正在读取 ACP 设置…'}
+        </p>
+      </div>
+    </div>
+  )
   const selected = status.adapters.find(adapter => adapter.id === status.selected)
   const configured = !!status.config?.binary
   const connected = !!status.ready
@@ -145,24 +166,29 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
   // 🔴 2026-11-14：试过「右窄状态卡」与「居中限宽」，都被否掉。最终：**铺满父容器、不留左右留白**；
   //    「运行方式」两项并排、模型/档位两列撑开，避免宽屏显空。
   //    状态条放在**最底部**（主人的口径：它表达的是「连接状态」，属于结果，不该压在最上面）。
-  return <div className="space-y-3" data-acp-settings>
-    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-      <label className="grid w-72 max-w-full gap-1 text-12 font-medium text-ink-200">
-        ACP Agent
-      <select
-        id="acp-agent-select"
-        className={selectClass}
-        value={selected?.id ?? ''}
-        disabled={controlsDisabled}
-        onChange={event => void select(event.target.value)}
-      >
-        {!selected && <option value="" disabled>请选择 ACP Agent</option>}
-        {status.adapters.map(adapter => <option key={adapter.id} value={adapter.id}>{adapter.name}</option>)}
-      </select>
-      </label>
-      {operation && <Button size="sm" variant="secondary" onClick={() => void api?.cancel(operation.id)}>取消 ACP 操作</Button>}
+  return <div className="@container/acp-settings space-y-3" data-acp-settings>
+    <div className={headerClass}>
+      {modeSummary}
+      <div className={agentClass}>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid w-72 max-w-full gap-1 text-12 font-medium text-ink-200">
+            ACP Agent
+            <select
+              id="acp-agent-select"
+              className={selectClass}
+              value={selected?.id ?? ''}
+              disabled={controlsDisabled}
+              onChange={event => void select(event.target.value)}
+            >
+              {!selected && <option value="" disabled>请选择 ACP Agent</option>}
+              {status.adapters.map(adapter => <option key={adapter.id} value={adapter.id}>{adapter.name}</option>)}
+            </select>
+          </label>
+          {operation && <Button size="sm" variant="secondary" onClick={() => void api?.cancel(operation.id)}>取消 ACP 操作</Button>}
+        </div>
+        {(operation || busy) && <p role="status" className="mt-2 text-11 text-ink-400">{operation?.label ?? '正在等待当前 ACP 任务结束…'}</p>}
+      </div>
     </div>
-    {(operation || busy) && <p role="status" className="text-12 text-ink-400">{operation?.label ?? '正在等待当前 ACP 任务结束…'}</p>}
     {selected?.componentVersion && <details className="group rounded-lg border border-ink-700 bg-ink-900/40" open={!configured || undefined}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-12 [&::-webkit-details-marker]:hidden">
         <ChevronDown size={14} aria-hidden="true" className="shrink-0 -rotate-90 group-open:rotate-0" />

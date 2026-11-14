@@ -441,7 +441,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           {modeStatus.phase === 'switching' ? '切换中' : modeStatus.phase === 'blocked' ? '不可用' : '已生效'}
         </span>}
       </div>
-      <div className="px-4 pt-2.5" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
+      {!(connectionView === 'acp' && modeStatus?.phase === 'stable' && modeStatus.mode === 'acp') && <div className="px-4 pt-2.5" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
         {modeStatus === null ? <p className="text-11 text-ink-500">正在读取连接模式…</p> : modeStatus.phase === 'switching' ? (
           <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5">
             <p className="flex items-center gap-2 text-12 text-amber">
@@ -474,16 +474,19 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </p>
             <p className="mt-1 text-11 text-ink-400 leading-relaxed">
               {modeStatus.mode === 'agent' ? '仅允许已授权的 MCP 工具调用。'
-                : modeStatus.mode === 'acp' ? '已切换运行模式。请在下方查看 ACP Agent 的连接状态。'
+                : modeStatus.mode === 'acp' ? '写作请求由所选 ACP Agent 处理。'
                   : '允许引擎内置模型的 API 请求。'}
             </p>
           </div>
         )}
-      </div>
+      </div>}
       {connectionView === 'agent' ? <div className="p-4">
         {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机 Agent 桥。</p> : <AgentBridgeSetup />}
       </div> : connectionView === 'acp' ? <div className="p-4 space-y-3">
-        <AcpSettings disabled={modeStatus?.phase !== 'stable' || modeStatus.mode !== 'acp' || !!switchId} />
+        <AcpSettings
+          showActiveMode={modeStatus?.phase === 'stable' && modeStatus.mode === 'acp'}
+          disabled={modeStatus?.phase !== 'stable' || modeStatus.mode !== 'acp' || !!switchId}
+        />
         {/* 🔴 3.5.5：ACP 模式下「模型配置」整块（含语义检索面板）不渲染，
             所以降级提示必须单独挂在这里 —— 否则它只存在于一个用户永远看不到的位置。 */}
         <AcpSemanticNotice />
