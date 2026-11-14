@@ -24,12 +24,21 @@ const executable = fileURLToPath(new URL('./fake-acp-agent.mjs', import.meta.url
 const profiles = new Map()
 let launches = 0
 let stops = 0
+const trace = path.join(root, 'acp-transcript')
+let advertiseClose = false
+let rejectClose = false
 const adapters = ['fake-a', 'fake-b'].map(id => ({
   id, name: id,
   async launch({ cwd, profile }) {
     profiles.set(id, profile)
     launches++
-    const child = spawn(process.execPath, [executable], { cwd, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
+    const child = spawn(process.execPath, [executable], {
+      cwd, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
+      env: {
+        ...process.env, YFE_FIXTURE_ACP_TRACE: trace, YFE_FIXTURE_ACP_CLOSE: advertiseClose ? '1' : '0',
+        YFE_FIXTURE_ACP_FAIL_CLOSE: rejectClose ? '1' : '0',
+      },
+    })
     child.on('error', () => {})
     const exited = new Promise(resolve => child.once('close', resolve))
     return {
@@ -102,6 +111,9 @@ try {
   await service.close()
 
   const optionsRoot = path.join(root, 'options')
+  const methods = async () => (await fs.readFile(trace, 'utf8')).trim().split('\n')
+  assert.ok(!(await methods()).includes('session/close'), '不向未协商关闭的通用 Agent 发送关闭')
+  advertiseClose = true
   const optionsAdapter = {
     ...adapters[0], requiresConnection: true,
     authenticate: ({ client, signal }) => client.request('authenticate', { methodId: 'oauth-personal' }, undefined, signal),
@@ -110,9 +122,21 @@ try {
   runtime = createAcpRuntime({ root: optionsRoot, adapters: [optionsAdapter] })
   service = await createModeService({ dataDir: root, acp: runtime, callPage: async () => ({}) })
   await runtime.connect({ service, owner: 'fixture', id: 'login' }, true)
+  assert.deepEqual((await methods()).slice(-2), ['session/new', 'session/close'])
   assert.equal((await runtime.status()).options.model.current, 'default-model')
   await runtime.configure(service, { model: 'second-model', thinking: 'high' })
   assert.equal(await generate('model-and-thinking'), 'second-model/high')
+  assert.deepEqual((await methods()).slice(-2), ['session/prompt', 'session/close'])
+  const aborted = generate('cancel', () => runtime.cancel('fixture', 'run'))
+  await assert.rejects(aborted, /取消/)
+  assert.deepEqual((await methods()).slice(-3), ['session/prompt', 'session/cancel', 'session/close'])
+  assert.equal((await service.status()).active.acp, 0)
+  assert.equal(await generate('model-and-thinking'), 'second-model/high')
+  rejectClose = true
+  assert.equal(await generate('model-and-thinking'), 'second-model/high')
+  assert.equal(launches, stops, '关闭 RPC 被拒仍须确认进程退出')
+  assert.equal((await service.status()).active.acp, 0)
+  rejectClose = false
   await runtime.configure(service, { model: 'invalid-model' })
   await assert.rejects(generate('model-and-thinking'), /核对模型选项/)
   await service.close()

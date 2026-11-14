@@ -21,6 +21,11 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
   return {
     ...adapter,
     requiresConnection: true,
+    // The hash-pinned 1.5.0 ACP executable acknowledges session/close but omits
+    // the capability. Require both the pinned release and its verified wire identity.
+    supportsSessionClose({ agentInfo }) {
+      return component.version === '1.5.0' && agentInfo?.name === 'antigravity-acp' && agentInfo.version === component.version
+    },
     async prepareLaunch({ config, profile, cwd, purpose }) {
       const binary = await component.resolve(config.binary)
       const roaming = path.join(profile, 'AppData', 'Roaming')

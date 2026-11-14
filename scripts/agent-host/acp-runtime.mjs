@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createModeFilePersistence } from './mode-file.mjs'
 import { createAcpClient } from './acp-client.mjs'
 import { readSessionOptions } from './acp-options.mjs'
@@ -120,21 +121,7 @@ export function createAcpRuntime({ root, adapters }) {
     }
   }
 
-  /**
-   * 建会话。
-   *
-   * 🔴 2026-11-14 真机踩到：Antigravity 对 `session/new` 有**频率限制**。
-   *    实测「连接后立刻生成」几乎必失败 —— 因为 `connect` 为了读选项已经开过一个会话
-   *    （见上方 `readSessionOptions(await openSession(...))`），紧接着 `generate` 又开一个，
-   *    两次相隔不到 1 秒 ⇒ 返回 `-32603`（JSON-RPC internal error），
-   *    界面显示成「生成报告失败：ACP session/new 失败（-32603）」，作者完全看不懂。
-   *
-   *    根因是**每次生成都新开会话、且从不关闭**（ACP 协议里没有 session/close），
-   *    会话在 Agent 侧累积（实测一小时累积 17 个 db）。真正修法是复用会话，但那要重验
-   *    上下文隔离与取消语义，不能顺手改。这里先做两件低风险的事：
-   *      ① 只对「瞬时」类错误重试一次（间隔 4 秒）；取消/鉴权/协议错误一律直抛。
-   *      ② 把内部错误码翻译成作者能照做的提示，别把 -32603 甩到脸上。
-   */
+  // Keep one bounded retry for session/new. Internal errors alone do not identify the cause.
   const isTransientSessionError = error => {
     if (error?.acpCode === -32603) return true
     return /会话未建立/.test(String(error?.message ?? ''))
@@ -156,12 +143,32 @@ export function createAcpRuntime({ root, adapters }) {
       return await attempt()
     } catch (error) {
       if (signal?.aborted || !isTransientSessionError(error)) throw readableSessionError(error)
-      await new Promise(resolve => setTimeout(resolve, 4000))
-      if (signal?.aborted) throw readableSessionError(error)
+      try { await delay(4000, undefined, { signal }) }
+      catch (abortError) { throw signal.reason ?? abortError }
       try {
         return await attempt()
       } catch (second) {
         throw readableSessionError(second)
+      }
+    }
+  }
+
+  async function withSession(context, work) {
+    const { adapter, client, initialized, signal } = context
+    const session = await openSession(context)
+    try {
+      signal.throwIfAborted()
+      return await work(session)
+    } finally {
+      const advertised = initialized.agentCapabilities?.sessionCapabilities?.close
+      if ((advertised && typeof advertised === 'object' && !Array.isArray(advertised)) ||
+          adapter.supportsSessionClose?.(initialized)) {
+        try {
+          // Cleanup must also run after a cancelled turn. withAgent still verifies process exit.
+          await client.request('session/close', { sessionId: session.sessionId }, 2000)
+        } catch {
+          // Unsupported, disconnected or stalled transports fall back to verified process shutdown.
+        }
       }
     }
   }
@@ -296,7 +303,7 @@ export function createAcpRuntime({ root, adapters }) {
             await context.adapter.authenticate(context)
           }
           try {
-            const options = readSessionOptions(await openSession(context))
+            const options = await withSession(context, session => readSessionOptions(session))
             const ready = ['model', 'thinking'].every(key =>
               !context.config[key] || options[key]?.values.some(item => item.value === context.config[key]),
             )
@@ -324,13 +331,18 @@ export function createAcpRuntime({ root, adapters }) {
     async generate({ service, owner, id, text, expectedGeneration, onChunk }) {
       if (expectedGeneration !== generation) throw new Error('ACP 设置已变更。')
       if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 256 * 1024) throw new Error('ACP 请求文本无效。')
-      return runOperation({ service, owner, id }, signal => withAgent(signal, async context => {
-        const { adapter, client } = context
-        if (adapter.requiresConnection && !sessionReady) throw new Error('请先连接 ACP Agent 并核对模型选项。')
-        const session = await openSession(context)
-        await adapter.configureSession?.({ ...context, session })
-        return client.prompt({ sessionId: session.sessionId, text, signal, onChunk })
-      }))
+      return runOperation({ service, owner, id }, async signal => {
+        const textResult = await withAgent(signal, async context => {
+          const { adapter, client } = context
+          if (adapter.requiresConnection && !sessionReady) throw new Error('请先连接 ACP Agent 并核对模型选项。')
+          return withSession(context, async session => {
+            await adapter.configureSession?.({ ...context, session })
+            return client.prompt({ sessionId: session.sessionId, text, signal, onChunk })
+          })
+        })
+        signal.throwIfAborted()
+        return textResult
+      })
     },
   }
 }

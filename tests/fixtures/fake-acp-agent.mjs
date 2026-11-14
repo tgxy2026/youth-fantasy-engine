@@ -1,10 +1,13 @@
 import readline from 'node:readline'
+import fs from 'node:fs'
 
 const send = value => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...value }) + '\n')
 const sessionId = 'synthetic-session'
 let pending
 let model = 'default-model'
 let thinking = 'low'
+const trace = process.env.YFE_FIXTURE_ACP_TRACE
+const advertiseClose = process.env.YFE_FIXTURE_ACP_CLOSE === '1'
 const options = () => [
   { id: 'model', category: 'model', currentValue: model, options: [{ value: 'default-model', name: '默认' }, { value: 'second-model', name: '第二个' }] },
   { id: 'thought_level', category: 'thought_level', currentValue: thinking, options: [{ value: 'low', name: '低' }, { value: 'high', name: '高' }] },
@@ -12,6 +15,7 @@ const options = () => [
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', line => {
   const msg = JSON.parse(line)
+  if (trace) fs.appendFileSync(trace, msg.method + '\n')
   const result = value => send({ id: msg.id, result: value })
   const chunk = (id, text) => send({
     method: 'session/update',
@@ -19,7 +23,11 @@ rl.on('line', line => {
   })
   switch (msg.method) {
     case 'initialize':
-      result({ protocolVersion: 1, agentCapabilities: {}, authMethods: [{ id: 'oauth-personal', name: '假登录' }] })
+      result({
+        protocolVersion: 1,
+        agentCapabilities: advertiseClose ? { sessionCapabilities: { close: {} } } : {},
+        authMethods: [{ id: 'oauth-personal', name: '假登录' }],
+      })
       break
     case 'authenticate':
       if (msg.params.methodId !== 'oauth-personal') throw Error('Unexpected auth method')
@@ -63,6 +71,12 @@ rl.on('line', line => {
     case 'session/cancel':
       chunk(sessionId, '取消后片段')
       send({ id: pending, result: { stopReason: 'cancelled' } })
+      break
+    case 'session/close':
+      if (!advertiseClose || msg.params.sessionId !== sessionId) throw Error('Unexpected session close')
+      if (process.env.YFE_FIXTURE_ACP_FAIL_CLOSE === '1') {
+        send({ id: msg.id, error: { code: -32601, message: 'Fixture does not close' } })
+      } else result({})
       break
   }
 })
