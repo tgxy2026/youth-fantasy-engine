@@ -124,15 +124,8 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
         {!connected && <Button size="sm" variant="primary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>登录 Google 账号</Button>}
         <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在连接并读取模型选项…', id => api.connect(id, false))}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
         {status.options && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在停用连接…', id => api.disconnect(id))}>停用连接</Button>}
-        <details className="group">
-          <summary className="cursor-pointer list-none rounded-md px-2 py-1.5 text-12 text-ink-300 hover:bg-ink-800 [&::-webkit-details-marker]:hidden">
-            <span className="inline-flex items-center gap-1">账号操作 <ChevronDown size={13} aria-hidden="true" className="group-open:rotate-180" /></span>
-          </summary>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {connected && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>重新登录 Google</Button>}
-            <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在退出 ACP 账号…', id => api.logout(id), 'ACP 账号已退出')}>退出 ACP 账号</Button>
-          </div>
-        </details>
+        {connected && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>重新登录 Google</Button>}
+        <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在退出 ACP 账号…', id => api.logout(id), 'ACP 账号已退出')}>退出 ACP 账号</Button>
       </div>
       {optionKeys.length > 0 && <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3 border-t border-ink-700 pt-3">
       {optionKeys.map(key => {
