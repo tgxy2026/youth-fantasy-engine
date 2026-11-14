@@ -935,7 +935,15 @@ ipcMain.handle('store:path', () => dataFile())
   ipcMain.handle('acp:disconnect', (e, id) => withAcpOperation(e, id, ({ service }) => acpRuntime.disconnect(service)))
   ipcMain.handle('acp:logout', (e, id) => withAcpOperation(e, id, request => acpRuntime.logout(request)))
   ipcMain.handle('acp:configure', (e, id, patch) => withAcpOperation(e, id, async ({ service }) => {
-    if (!patch || !['model', 'thinking'].includes(patch.key) || typeof patch.value !== 'string' || patch.value.length > 256) {
+    if (!patch || typeof patch.value !== 'string') throw new Error('ACP 配置无效。')
+    // 运行方式不是会话选项：切换后会话本就要重建，此时 `options` 可能为空，
+    // 不能套用下面「必须能对上会话里的值」的校验。
+    if (patch.key === 'runAs') {
+      if (!['current-user', 'isolated'].includes(patch.value)) throw new Error('ACP 运行方式无效。')
+      await acpRuntime.configure(service, { runAs: patch.value })
+      return
+    }
+    if (!['model', 'thinking'].includes(patch.key) || patch.value.length > 256) {
       throw new Error('ACP 模型选项无效。')
     }
     const { options } = await acpRuntime.status()

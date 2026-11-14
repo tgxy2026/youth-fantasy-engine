@@ -11,6 +11,8 @@ interface AcpSettingsStatus {
   config: { binary: string; model: string; thinking: string } | null
   options?: Partial<Record<'model' | 'thinking', { current?: string; values: { value: string; name: string }[] }>> | null
   ready?: boolean
+  /** 运行方式：默认当前 Windows 用户；隔离需作者主动选择并开通。 */
+  runAs?: 'current-user' | 'isolated' | null
   isolation?: 'required' | 'configured' | null
 }
 
@@ -23,7 +25,7 @@ interface AcpDesktopSettings {
   connect(id: string, login: boolean): Promise<{ ok: boolean; error?: string }>
   disconnect(id: string): Promise<{ ok: boolean; error?: string }>
   logout(id: string): Promise<{ ok: boolean; error?: string }>
-  configure(id: string, patch: { key: 'model' | 'thinking'; value: string }): Promise<{ ok: boolean; error?: string }>
+  configure(id: string, patch: { key: 'model' | 'thinking' | 'runAs'; value: string }): Promise<{ ok: boolean; error?: string }>
   cancel(id: string): Promise<boolean>
 }
 
@@ -74,12 +76,25 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
     }
   }
 
+  async function setRunAs(next: 'current-user' | 'isolated') {
+    if (!api || !selected || controlsDisabled || runAs === next) return
+    await run(
+      next === 'isolated' ? '正在切换到 Windows 隔离…' : '正在切换到当前 Windows 用户…',
+      id => api.configure(id, { key: 'runAs', value: next }),
+      next === 'isolated' ? '已切换到 Windows 隔离，请在隔离环境中登录 Google' : '已切换到当前 Windows 用户',
+    )
+  }
+
   if (error) return <p className="text-12 text-amber">{error}</p>
   if (!status) return <p className="text-12 text-ink-500">正在读取 ACP 设置…</p>
   const selected = status.adapters.find(adapter => adapter.id === status.selected)
   const configured = !!status.config?.binary
   const connected = !!status.ready
   const controlsDisabled = disabled || busy || !!operation
+  // 未设置一律按当前 Windows 用户 —— 与运行时 `runAsOf` 同口径，界面不能自己另立默认值。
+  const runAs: 'current-user' | 'isolated' = status.runAs === 'isolated' ? 'isolated' : 'current-user'
+  /** 选了隔离但专用账户还没开通：连接按钮要挡住，并就地给出开通入口。 */
+  const isolationBlocked = runAs === 'isolated' && status.isolation === 'required'
   const connectionLabel = connected ? '会话已验证' : status.options ? '模型选项待核对' : '等待验证会话'
   const optionKeys = (['model', 'thinking'] as const).filter(key => status.options?.[key])
 
@@ -114,12 +129,44 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
           onClick={() => api && void run('正在选择官方组件…', id => api.selectBinary(id))}>选择已有官方组件</Button>
       </div>
     </details>}
-    {status.isolation === 'required' && <section className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
-      <p className="text-12 text-ink-300">首次使用需开通 Windows 隔离。Windows 会请求管理员批准，然后创建专用标准账户。开通后请在隔离环境中登录 Google。</p>
-      <Button size="sm" variant="primary" className="mt-2" disabled={controlsDisabled}
-        onClick={() => api && void run('等待 Windows 管理员确认…', id => api.setupIsolation(id), 'Windows ACP 隔离已开通')}>开通 Windows 隔离</Button>
+    {/* 🔴 2026-11-14 R4：运行方式可选。R3 强制隔离，未开通专用账户就看不到下面的「账号与连接」，
+        等于把「先能用起来」堵死了；现在默认当前 Windows 用户，隔离是作者主动选择的一项能力。 */}
+    {selected?.available && <section aria-labelledby="acp-runas-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+      <h3 id="acp-runas-heading" className="text-12 font-medium text-ink-200">运行方式</h3>
+      <p className="mt-1 text-11 leading-relaxed text-ink-500">
+        切换会先停掉当前 ACP 任务并重建进程；两种方式各自使用自己的登录资料，互不覆盖、互不清理。
+      </p>
+      <div className="mt-2 space-y-2">
+        <label className="flex items-start gap-2 text-12">
+          <input type="radio" name="acp-runas" className="mt-0.5" checked={runAs === 'current-user'} disabled={controlsDisabled}
+            onChange={() => void setRunAs('current-user')} />
+          <span className="min-w-0">
+            <span className={runAs === 'current-user' ? 'text-ink-100' : 'text-ink-300'}>以当前 Windows 用户运行</span>
+            <span className="block text-11 leading-relaxed text-ink-500">
+              不需要创建账户或管理员批准，直接复用已有登录。Agent 及其子进程拥有当前 Windows 用户的文件权限，只连可信的 Agent。
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-12">
+          <input type="radio" name="acp-runas" className="mt-0.5" checked={runAs === 'isolated'} disabled={controlsDisabled}
+            onChange={() => void setRunAs('isolated')} />
+          <span className="min-w-0">
+            <span className={runAs === 'isolated' ? 'text-ink-100' : 'text-ink-300'}>使用 Windows 隔离</span>
+            <span className="block text-11 leading-relaxed text-ink-500">
+              在专用标准账户中运行，需要一次性管理员批准创建账户，并在隔离环境中单独登录 Google。
+            </span>
+          </span>
+        </label>
+      </div>
+      {isolationBlocked && (
+        <div className="mt-2 rounded border border-ink-700 bg-ink-900/60 p-2">
+          <p className="text-11 leading-relaxed text-ink-400">还差一步：开通专用标准账户后才能用隔离方式连接。Windows 会请求管理员批准。</p>
+          <Button size="sm" variant="primary" className="mt-1.5" disabled={controlsDisabled}
+            onClick={() => api && void run('等待 Windows 管理员确认…', id => api.setupIsolation(id), 'Windows ACP 隔离已开通')}>开通 Windows 隔离</Button>
+        </div>
+      )}
     </section>}
-    {selected?.available && configured && status.isolation !== 'required' && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    {selected?.available && configured && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 id="acp-connection-heading" className="text-12 font-medium text-ink-200">账号与连接</h3>
         <span className="inline-flex items-center gap-1.5 text-12 text-ink-400">
@@ -137,8 +184,12 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
         </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {!connected && <Button size="sm" variant="primary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>登录 Google 账号</Button>}
-        <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在连接并读取模型选项…', id => api.connect(id, false))}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
+        {!connected && <Button size="sm" variant="primary" disabled={controlsDisabled || isolationBlocked}
+          title={isolationBlocked ? '请先开通 Windows 隔离' : undefined}
+          onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>登录 Google 账号</Button>}
+        <Button size="sm" variant="secondary" disabled={controlsDisabled || isolationBlocked}
+          title={isolationBlocked ? '请先开通 Windows 隔离' : undefined}
+          onClick={() => api && void run('正在连接并读取模型选项…', id => api.connect(id, false))}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
         {status.options && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在停用连接…', id => api.disconnect(id))}>停用连接</Button>}
         {connected && <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>重新登录 Google</Button>}
         <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在退出 ACP 账号…', id => api.logout(id), 'ACP 账号已退出')}>退出 ACP 账号</Button>

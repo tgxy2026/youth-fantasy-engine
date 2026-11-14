@@ -6,7 +6,14 @@ import { createModeFilePersistence } from './mode-file.mjs'
 import { createAcpClient } from './acp-client.mjs'
 import { readSessionOptions } from './acp-options.mjs'
 
-const fields = ['binary', 'authMethod', 'model', 'thinking']
+// `runAs` 与其它字段一样按字符串持久化与校验，但**不进 `status.config`**：
+// `config` 是「会话选项类配置」的投影（binary/model/thinking/authMethod），
+// 运行方式换的是整套进程与登录资料，混在一起会让界面拿着旧档位去连另一套账户。
+const fields = ['binary', 'authMethod', 'model', 'thinking', 'runAs']
+const CONFIG_FIELDS = ['binary', 'authMethod', 'model', 'thinking']
+const RUN_AS = new Set(['current-user', 'isolated'])
+/** 未设置或值不认识时一律按当前 Windows 用户运行 —— R4 的默认运行方式。 */
+const runAsOf = config => (RUN_AS.has(config?.runAs) ? config.runAs : 'current-user')
 
 export function createAcpRuntime({ root, adapters }) {
   const registry = new Map()
@@ -227,9 +234,11 @@ export function createAcpRuntime({ root, adapters }) {
         })),
         selected, generation, busy: !!operation, options: sessionOptions, ready: sessionReady,
         requiresConnection: adapter?.requiresConnection === true,
+        // 运行方式与隔离账户状态分开暴露：默认 current-user 时即使没开通隔离也照常可连。
+        runAs: adapter ? runAsOf(configs[selected]) : null,
         isolation: adapter?.isolationConfigured ? (await adapter.isolationConfigured() ? 'configured' : 'required') : null,
         config: adapter
-          ? Object.fromEntries(fields.map(field => [field, typeof configs[selected]?.[field] === 'string' ? configs[selected][field] : '']))
+          ? Object.fromEntries(CONFIG_FIELDS.map(field => [field, typeof configs[selected]?.[field] === 'string' ? configs[selected][field] : '']))
           : null,
       }
     },
@@ -246,6 +255,9 @@ export function createAcpRuntime({ root, adapters }) {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.entries(patch).some(
         ([key, value]) => !fields.includes(key) || typeof value !== 'string' || value.length > 4096,
       )) throw new Error('ACP 配置无效。')
+      // 枚举也要在这里挡一次：IPC 层已经校验，但运行层是被直接调用的公共入口
+      //（测试、命令行探针），不能指望上层一定先拦过。
+      if ('runAs' in patch && !RUN_AS.has(patch.runAs)) throw new Error('ACP 运行方式无效。')
       if (operation) throw new Error('请等待 ACP 任务结束。')
       return service.switchAcpAgent(randomUUID(), async () => {
         const settings = await readSettings()
@@ -255,6 +267,13 @@ export function createAcpRuntime({ root, adapters }) {
             ...settings, configs: { ...settings.configs, [settings.selected]: { ...settings.configs[settings.selected], ...patch } },
           })
           const config = { ...settings.configs[settings.selected], ...patch }
+          // 切换运行方式意味着换一套进程与登录资料：旧会话、旧模型选项一律作废，
+          // 否则界面会拿着「当前用户」读到的模型档位去连「隔离」账户，看起来能用其实连不上。
+          if ('runAs' in patch && runAsOf(settings.configs[settings.selected]) !== runAsOf(config)) {
+            sessionOptions = null
+            sessionReady = false
+            return
+          }
           sessionReady = !!sessionOptions && ['model', 'thinking'].every(key =>
             !config[key] || sessionOptions[key]?.values.some(item => item.value === config[key]),
           )

@@ -30,7 +30,58 @@ export function createAntigravityAdapter({ root, validationEnabled = false, open
     supportsSessionClose({ agentInfo }) {
       return component.version === '1.5.0' && agentInfo?.name === 'antigravity-acp' && agentInfo.version === component.version
     },
-    async prepareLaunch({ config, cwd, purpose, signal }) {
+    /**
+     * 运行方式：`isolated` 走专用 Windows 标准账户；**其它值（含未设置）一律按当前 Windows 用户运行**。
+     *
+     * 🔴 2026-11-14 R4：隔离改为**可选**。R3 曾强制隔离，未开通专用账户就完全无法连接，
+     *    而开通要 UAC + 新账户 + 重新登录 Google，把「先用起来」这条路堵死了。
+     *    现在默认沿用 R3 之前的当前用户路径，与既有 ACP 登录资料兼容。
+     *
+     * 两条路径**各用自己的 profile 目录**，切换时不复制、不覆盖、不清理另一侧的登录资料：
+     *   · current-user → `<root>/profiles/<id>`（R3 之前的位置，既有登录态在这里）
+     *   · isolated     → `<root>/isolated-profiles/<id>`
+     * 两条路径都保留官方组件校验、Job Object 回收、外发确认与三模式互斥。
+     */
+    async prepareLaunch({ config, profile: baseProfile, cwd, purpose, signal }) {
+      if (config.runAs !== 'isolated') {
+        // ── 当前 Windows 用户：官方组件原位启动，Agent 及其子进程拥有当前用户的文件权限。
+        const binary = await fs.realpath(await component.resolve(config.binary))
+        const profile = baseProfile
+        await fs.mkdir(profile, { recursive: true })
+        const work = await fs.realpath(cwd)
+        const home = await fs.realpath(profile)
+        const roaming = path.join(profile, 'AppData', 'Roaming')
+        const local = path.join(profile, 'AppData', 'Local')
+        for (const directory of [roaming, local]) await fs.mkdir(directory, { recursive: true })
+        const systemRoot = process.env.SystemRoot ?? 'C://Windows'
+        const env = {
+          SystemRoot: systemRoot, WINDIR: systemRoot,
+          PATH: path.join(systemRoot, 'System32'),
+          USERPROFILE: home, HOME: home, APPDATA: roaming, LOCALAPPDATA: local,
+          GEMINI_HOME: home, AGY_ACP_FORCE_FILE_STORAGE: '1',
+          ANTIGRAVITY_HARNESS_PATH: path.join(path.dirname(binary), 'localharness_external.exe'),
+          PYTHONUNBUFFERED: '1',
+        }
+        const oauth = purpose === 'login' && typeof openExternal === 'function' ? { active: true, opened: false } : null
+        if (oauth) {
+          const browser = fileURLToPath(new URL('./acp-browser.cjs', import.meta.url))
+          env.BROWSER = [process.execPath, browser, '%s']
+            .map(value => "'" + value.replaceAll('\\', '/').replaceAll("'", "'\"'\"'") + "'").join(' ')
+          if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
+        }
+        const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'yfe-acp-'))
+        env.TEMP = temp
+        env.TMP = temp
+        const cleanup = () => fs.rm(temp, { recursive: true, force: true, maxRetries: 3 })
+        if (purpose === 'login') {
+          const settingsDir = path.join(profile, 'antigravity-acp')
+          await fs.mkdir(settingsDir, { recursive: true })
+          await createModeFilePersistence(path.join(settingsDir, 'settings.json')).write({ auth: { type: 'oauth-personal' } })
+        }
+        // `sandbox: null` ⇒ 启动器以当前用户拉起进程，仍套 Job Object 回收与退出核对。
+        return { binary, cwd: work, env, oauth, sandbox: null, cleanup }
+      }
+
       if (!(await sandbox.configured())) throw new Error('请先在「ACP 连接」开通 Windows 隔离，再连接 Agent。')
       const source = await component.resolve(config.binary)
       const staging = path.join(root, 'isolated-components', 'antigravity-' + component.version)
