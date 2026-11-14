@@ -18,9 +18,10 @@
  *
  * 🔴 本模块**不落库、不改卡**：只产出建议。采纳由调用方执行（`store.applyCardRevision`）。
  */
-import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { parseObjectArray, parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { uid } from '@/lib/app/id'
@@ -199,7 +200,9 @@ export async function proposeCardRevisions(args: ReviseArgs): Promise<CardRevisi
   if (!transcript.trim()) return []
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-aux', '角色卡现状与修订要求', '提出修订建议'),
+  )
 
   // 现有设定：**空字段也要列**（对话里新长出来的信息正是要补进去的）
   const current = CARD_FIELDS

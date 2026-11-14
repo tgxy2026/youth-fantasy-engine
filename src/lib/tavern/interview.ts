@@ -11,7 +11,8 @@
  * 🔴 别把机制再抄一遍来这里：2026-09-15 起「对话引导」要在全局所有 AI 补全入口复用，
  *    两份实现必然漂移（一边改了白名单另一边没改，表现是「界面显示记下了、草稿里却没有」）。
  */
-import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { isCancelled, type ChatMessage } from '@/lib/ai'
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import {
@@ -163,8 +164,16 @@ export function tavernCallChat(
   providerId?: string,
   chatFn?: ChatFn,
 ): (msgs: ChatMessage[], opts: { signal?: AbortSignal }) => Promise<string> {
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  /**
+   * 通道**首次调用时**才解析：本函数是同步的（返回闭包），而解析 ACP 状态是异步的。
+   * 🔴 解析一次后缓存 —— 访谈是一串问答，每次重新构造会让作者每问一句就挨一次确认弹窗；
+   *    代次若变了，`acpGatedText` 内部会自己抛「ACP 设置已变化」，不会静默沿用旧授权。
+   */
+  let cached: ChatFn | null = null
   return async (msgs, opts) => {
+    const runChat = withIndependentAttribution(
+      chatFn ?? cached ?? (cached = await pickTavernChat('tavern-aux', '访谈问答与角色资料', '生成访谈提问')),
+    )
     const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
     return runChat(provider, msgs, {
       timeoutMs: timeoutMsOf(await getTavernSettings()),

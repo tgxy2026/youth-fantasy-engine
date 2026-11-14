@@ -12,11 +12,12 @@
  *
  * 只诊断、不写回任何项目表（作者已定）。
  */
-import { chat, isCancelled } from '@/lib/ai'
+import { isCancelled } from '@/lib/ai'
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { parsePlainObject, parseObjectArray, asText } from '@/lib/ai/aiParse'
 import { uid } from '@/lib/app/id'
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
@@ -220,7 +221,9 @@ export async function generateReport(session: TavernSession, opts: ReportOptions
     '请输出 JSON：{"overview": "三五句话评价这场戏成不成立", "findings": [ ... ]}',
   ].filter(Boolean).join('\n')
 
-  const runChat = withIndependentAttribution(opts.chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    opts.chatFn ?? await pickTavernChat('tavern-summary', '本场对话记录', '生成推演报告'),
+  )
   opts.onPhase?.('分析推演记录')
   const reply = await runChat(
     provider,

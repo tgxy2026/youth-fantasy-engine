@@ -18,8 +18,16 @@
 //      模型与档位决定，这里传什么都不生效。**不要**在这里假装遵守。
 //
 // 🔴 流式是支持的（`acpWrite` 有 onToken），所以主回复的打字效果可以保留。
+import { chat } from '@/lib/ai'
 import type { ChatFn } from '@/lib/tavern/provider'
-import type { AcpTask } from '@/lib/agentHost/acpBridge'
+import { acpWritingContext, type AcpTask } from '@/lib/agentHost/acpBridge'
+
+/**
+ * 酒馆可用的四个任务标识。
+ * 收窄成子集而不是直接用 `AcpTask`：拿错成 `review` 这类正文任务，
+ * 记账会归到颉文姬头上，作者复盘时看不到「这句是谁发的」。
+ */
+export type TavernTask = Extract<AcpTask, 'tavern-reply' | 'tavern-vars' | 'tavern-summary' | 'tavern-aux'>
 import { acpGatedText, type AcpGateConfirmOptions } from '@/lib/agentHost/acpGate'
 import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import type { ChatMessage } from '@/lib/ai'
@@ -34,7 +42,7 @@ export interface TavernAcpOptions {
    * 所以按调用性质分开：`tavern-reply`（主回复）/ `tavern-vars`（数值）/
    * `tavern-summary`（摘要）/ `tavern-aux`（起草、导入、访谈等辅助产出）。
    */
-  task: AcpTask
+  task: TavernTask
   /** 本次发送范围（如「本场对话与角色设定」） */
   scopeText: string
   /** 本次要产出什么（如「生成本轮剧情回复」） */
@@ -106,6 +114,93 @@ export function createTavernConsent(
 ): (options: AcpGateConfirmOptions) => Promise<boolean> {
   let answer: Promise<boolean> | null = null
   return options => (answer ??= ask(options))
+}
+
+/** 单次调用的取消信号与流式回调（`ChatOptions` 里对应的两个字段） */
+export type AcpCallOptions = { signal?: AbortSignal; onToken?: (delta: string) => void }
+
+/**
+ * 确认弹窗实现。**由界面注入**（`setTavernAcpAsk`），本文件不 import `components` ——
+ * 那是反向依赖（lib → components），会把这个纯逻辑模块拖进 React 世界。
+ */
+type AskFn = (options: AcpGateConfirmOptions) => Promise<boolean>
+
+let askImpl: AskFn | null = null
+
+/**
+ * 注入确认弹窗（酒馆根组件挂载时调一次）。
+ *
+ * 🔴 为什么需要它：16 处注入点都在 lib 里，拿不到 `confirmDialog`；
+ *    而 ACP 外发必须让作者知道「发给了谁、发了什么」，这一步不能省。
+ *    写成模块级注入是为了**一处设置、16 处生效**，不是图省事。
+ */
+export function setTavernAcpAsk(fn: AskFn | null): void {
+  askImpl = fn
+}
+
+/** 当前注入的确认器（测试断言用） */
+export function tavernAcpAsk(): AskFn | null {
+  return askImpl
+}
+
+/**
+ * ACP 快照的短 TTL 缓存。
+ *
+ * `acpWritingContext()` 每次要走一次「模式查询 + 状态查询」（桌面是 IPC，便携版是 HTTP）。
+ * 16 处注入点 + 一轮多次调用会让它变成高频路径，所以缓存一会儿。
+ * 1.5 秒足够覆盖同一次操作里的重复询问，又短到「切成 API 后下一次操作就会回退」。
+ */
+const SNAPSHOT_TTL_MS = 1500
+let snapshot: { at: number; value: { generation: string; name: string } | null } | null = null
+
+/** 清缓存（单测用，避免用例之间互相污染） */
+export function __resetTavernAcpSnapshot(): void {
+  snapshot = null
+  askImpl = null
+}
+
+/**
+ * 当前是否可用于酒馆（ACP 模式稳定 + Agent 可用）。
+ *
+ * **永不抛**：读不到就返回 null（调用方回退 `chat`）。与 `semanticCapability` 同一口径 ——
+ * 探测失败不应该把整条对话链路打断。
+ */
+export async function tavernAcpSnapshot(): Promise<{ generation: string; name: string } | null> {
+  const now = Date.now()
+  if (snapshot && now - snapshot.at < SNAPSHOT_TTL_MS) return snapshot.value
+  const value = await acpWritingContext()
+    .then(ctx => (ctx && ctx.ready ? { generation: ctx.generation, name: ctx.name } : null))
+    .catch(() => null)
+  snapshot = { at: now, value }
+  return value
+}
+
+/**
+ * 挑通道：ACP 可用就返回 ACP 版 `ChatFn`，否则返回原生 `chat`。
+ *
+ * 16 处注入点统一写成 `deps.chatFn ?? await pickTavernChat(...)`：
+ *  · `deps.chatFn` 优先（测试注入、自由对话的共享授权通道都靠它）；
+ *  · ACP 可用 ⇒ 走 Agent，不需要 API 模型配置；
+ *  · 否则回退 `chat` —— 这是**没有** ACP 时的正常路径，不是静默降级。
+ *
+ * 🔴 ACP 可用但确认器没注入时**抛错**，不回落 `chat`：
+ *    那种情况说明接线漏了，静默走 API 会让「ACP 模式下没配模型也能用」这句承诺失效，
+ *    而且作者不知道自己刚才那句话其实发给了另一家服务商。宁可当场报错。
+ */
+export async function pickTavernChat(
+  task: TavernTask,
+  scopeText: string,
+  purpose: string,
+): Promise<ChatFn> {
+  const ctx = await tavernAcpSnapshot()
+  if (!ctx) return chat
+  if (!askImpl) {
+    throw new Error('酒馆的 ACP 外发确认尚未初始化（缺少界面注入），已中止本次请求以免在未告知的情况下发出资料。')
+  }
+  const ask = askImpl
+  return makeTavernAcpChat({
+    generation: ctx.generation, agentName: ctx.name, task, scopeText, purpose, ask,
+  })
 }
 
 /**

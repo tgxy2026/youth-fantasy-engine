@@ -14,12 +14,11 @@
  * 本文件只负责「调模型 + 解析」；触发时机（阈值 / 补算 / 三层防重）在 memory.ts，
  * 读写落库在 store.ts。
  */
-import {
-  chat, JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage,
-} from '@/lib/ai'
+import { JSON_TASK_TEMPERATURE, isCancelled, type ChatMessage } from '@/lib/ai'
 import { parseMemoryText, memoryToText, emptyMemory, isMemoryEmpty } from '@/lib/tavern/memory'
 import { formatDate } from '@/lib/app/date'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { FACTS_MAX_LINES, MEMORY_LONGTERM_LIMIT, MEMORY_DIARY_DAYS, type FreeMemory, type TavernMessage, type FreeCharacter, type VarKey, type VarValues, type VarChange } from '@/lib/tavern/types'
@@ -186,7 +185,9 @@ export async function summarizeRound(args: SummarizeArgs): Promise<RoundSummaryR
   if (messages.length === 0) return { memory: prev ?? emptyMemory(charId), journal: '' }
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-summary', '本轮对话记录', '生成本轮摘要'),
+  )
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildRoundEndSystem(charName, now, limits) },
@@ -267,7 +268,9 @@ export async function summarizeMemory(args: SummarizeArgs): Promise<FreeMemory> 
   if (messages.length === 0) return prev ?? emptyMemory(charId)
 
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-summary', '本轮对话与既有记忆', '更新角色记忆'),
+  )
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildSummarySystem(charName, now, limits) },
@@ -348,7 +351,9 @@ export type ColdStartArgs = {
 export async function coldStartMemory(args: ColdStartArgs): Promise<FreeMemory> {
   const { charId, charName, charContext, providerId, chatFn, signal, now = Date.now(), limits } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-summary', '开场设定与首轮对话', '初始化角色记忆'),
+  )
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildColdStartSystem(charName, now, limits) },
@@ -452,7 +457,9 @@ export async function extractSessionVars(args: ExtractVarsArgs): Promise<{ value
   const { keys, values, messages, nameOf, goal, providerId, chatFn, signal, maxStep = 5, pinned, notes } = args
   if (keys.length === 0 || messages.length === 0) return { values: values ?? {}, changes: [] }
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-vars', '本轮两条对话与数值项', '结算本场数值'),
+  )
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildVarExtractSystem(keys, { maxStep }) },
     {

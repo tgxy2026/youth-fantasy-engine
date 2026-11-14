@@ -9,6 +9,7 @@
  */
 import { chat, isProviderUsable, typeLabel, loadProviders, requireActiveProvider, type AIProvider } from '@/lib/ai'
 import { getTavernSettings } from '@/lib/tavern/settings'
+import { tavernAcpSnapshot } from '@/lib/tavern/acpChat'
 
 /** 「调一次模型」的函数类型 —— 测试注入桩模型用的口子 */
 export type ChatFn = typeof chat
@@ -95,6 +96,16 @@ export type TavernReadyInfo = {
  * 未配置时**不要**抛 —— 调用方是渲染期的守卫，抛会炸掉整个组件。
  */
 export async function checkTavernReady(ref?: { providerId?: string }): Promise<TavernReadyInfo> {
+  /**
+   * 3.5.5：ACP 可用时不需要 API 模型。
+   *
+   * 🔴 判据必须与 `pickTavernChat` **同源**（同一个 `tavernAcpSnapshot`）。
+   *    这里若只看 API 模型，ACP 用户打开酒馆会看到「未就绪」→ 发送键全灰，
+   *    而实际链路是通的 —— 与 2026-09-22 六维审计 F1 同一个坑（当时是只看全局活动模型）。
+   *    但也不能只放行不换通道：那条在 `pickTavernChat` 里保证。
+   */
+  const acp = await tavernAcpSnapshot()
+  if (acp) return { ready: true, label: `ACP · ${acp.name}`, fellBack: false }
   try {
     const { provider, fellBack } = await resolveTavernProvider(ref)
     return {

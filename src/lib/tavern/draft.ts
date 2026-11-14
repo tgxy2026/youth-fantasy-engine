@@ -20,10 +20,11 @@
  * 靠「标签：内容」的行格式往返。所以起草时就得按这个格式输出 —— 否则模型给的散文进到界面里
  * 会整段掉进「其他」那一格，作者看不到分好的条目。
  */
-import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { isCancelled, type ChatMessage } from '@/lib/ai'
 import { parsePlainObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 // 🔴 从 provider 取、**别从 engine 取**：engine 反向 import 本文件（经 script/world），会形成循环依赖
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import type { SearchSettings, webSearch } from '@/lib/ai/webSearch'
@@ -180,7 +181,9 @@ export async function draftCard(a: CardDraftArgs): Promise<{ fields: CardDraft; 
     idea, refs: a.refs, existing: a.existing, settings: a.settings, signal: a.signal, searchFn: a.searchFn,
   })
   const { provider } = await resolveTavernProvider(a.providerId ? { providerId: a.providerId } : undefined)
-  const runChat = withIndependentAttribution(a.chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    a.chatFn ?? await pickTavernChat('tavern-aux', '角色设定草稿与要求', '起草角色卡内容'),
+  )
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildCardDraftSystem() },
     { role: 'user', content: buildCardDraftUser({ idea, material: material.blocks }) },

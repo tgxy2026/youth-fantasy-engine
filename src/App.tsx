@@ -60,6 +60,7 @@ import JieWenJiSprite from '@/components/jiewenji/JieWenJiSprite'
 import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { setTavernAcpAsk } from '@/lib/tavern/acpChat'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
@@ -174,6 +175,17 @@ export default function App() {
   const [assistantDock, setAssistantDock] = useState(false)
   const assistantOpenTab = useRef(activeTab)
   const assistantOpenProject = useRef(projectId)
+  /**
+   * 酒馆 ACP 外发确认的**唯一注入点**。
+   *
+   * 酒馆的 16 处注入点都在 lib 里，拿不到 `confirmDialog`；而 ACP 外发必须让作者
+   * 知道「发给了谁、发了什么」。在这里挂一次，16 处全部生效。
+   * 🔴 漏挂的后果是 `pickTavernChat` 直接抛错（宁可当场失败，也不能静默改走 API）。
+   */
+  useEffect(() => {
+    setTavernAcpAsk(confirmDialog)
+    return () => setTavernAcpAsk(null)
+  }, [])
   // 跳转真正完成后让出目标页面；保存屏障拒绝时保留当前帮助现场。
   useEffect(() => {
     if (assistantHelpOpen && (assistantOpenTab.current !== activeTab || assistantOpenProject.current !== projectId)) {

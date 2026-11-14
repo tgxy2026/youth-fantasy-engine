@@ -10,7 +10,12 @@
 //   ④ 一轮多次调用共用一次授权（`createTavernConsent`），跨轮必须重新问。
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeTavernAcpChat, renderTavernPrompt, createTavernConsent } from '../src/lib/tavern/acpChat'
+import {
+  makeTavernAcpChat, renderTavernPrompt, createTavernConsent,
+  pickTavernChat, tavernAcpSnapshot, setTavernAcpAsk, tavernAcpAsk,
+  __resetTavernAcpSnapshot,
+} from '../src/lib/tavern/acpChat'
+import { checkTavernReady } from '../src/lib/tavern/provider'
 import { ACP_TAVERN_SYSTEM_HEADER, ACP_TAVERN_CURRENT_HEADER } from '../src/lib/tavern/acpChat'
 import type { AIProvider } from '../src/lib/ai'
 
@@ -261,6 +266,91 @@ async function run() {
     ok('数值结算也走同一通道', hook.includes('chatFn: ch.vars'))
     ok('每轮新建 consent（不跨轮复用）', hook.includes('createTavernConsent(confirmDialog)'))
     ok('门禁提示区分 ACP 与未配模型', hook.includes('ACP 未连接'))
+  }
+
+  // ---------------------------------------------------------------- 7. 通道挑选（16 处注入点的默认值）
+  console.log('--- 7. pickTavernChat：ACP 可用走 Agent，否则回退 chat ---')
+  {
+    __resetTavernAcpSnapshot()
+    reset()
+    generateImpl = async () => ({ ok: true, text: 'agent' })
+
+    // ACP 可用但确认器没注入 ⇒ 必须抛错，绝不静默改走 API
+    const noAsk = await tavernAcpSnapshot()
+    ok('ACP 可用时快照非空', noAsk !== null && noAsk.name === '假 Agent')
+    let threw = ''
+    try { await pickTavernChat('tavern-summary', '本场对话记录', '生成推演报告') } catch (e) { threw = (e as Error).message }
+    ok('🔴 确认器未注入 ⇒ 抛错（不静默改走 API）', threw.includes('外发确认尚未初始化'), threw)
+
+    setTavernAcpAsk(allow)
+    const picked = await pickTavernChat('tavern-summary', '本场对话记录', '生成推演报告')
+    const out = await picked(fakeProvider, [{ role: 'user', content: '总结一下' }])
+    ok('注入确认器后可正常走 ACP', out === 'agent')
+    ok('任务标识原样带到请求上', requests.length === 1 && requests[0].task === 'tavern-summary')
+    ok('外发文案含接收方与本次范围', requests.length === 1 && requests[0].text.includes('总结一下'))
+
+    // ACP 不可用（模式非 ACP）⇒ 返回原生 chat（这是正常路径，不是降级）
+    __resetTavernAcpSnapshot()
+    ;(g.window as Record<string, unknown>).electronAgentHost = {
+      modeStatus: async () => ({
+        phase: 'stable', mode: 'api', reason: '', busy: false, active: { api: 1, agent: 0, acp: 0 },
+        ownsLock: false, lock: null, canRecover: false,
+      }),
+    }
+    const fallback = await pickTavernChat('tavern-aux', '角色设定草稿与要求', '起草角色卡内容')
+    ok('🔴 ACP 不可用 ⇒ 返回原生 chat（不是抛错）', typeof fallback === 'function')
+    // 恢复假桥，后面的用例还要用
+    ;(g.window as Record<string, unknown>).electronAgentHost = {
+      modeStatus: async () => ({
+        phase: 'stable', mode: 'acp', reason: '', busy: false, active: { api: 0, agent: 0, acp: 0 },
+        ownsLock: false, lock: null, canRecover: false,
+      }),
+    }
+    __resetTavernAcpSnapshot()
+
+    // 缓存：同一时刻连问两次只查一次状态
+    const s1 = await tavernAcpSnapshot()
+    const s2 = await tavernAcpSnapshot()
+    ok('🔴 快照有短 TTL 缓存（同一轮不重复打模式接口）', s1 === s2)
+    __resetTavernAcpSnapshot()
+    ok('清缓存后确认器也一起清掉', tavernAcpAsk() === null)
+  }
+
+  // ---------------------------------------------------------------- 8. 就绪判定与 16 处接线
+  console.log('--- 8. 就绪判定与全量接线 ---')
+  {
+    __resetTavernAcpSnapshot()
+    const ready = await checkTavernReady()
+    ok('🔴 ACP 可用 ⇒ 酒馆就绪（否则按钮全灰，比不加判定更糟）', ready.ready === true)
+    ok('就绪标签标明走的是 ACP', ready.label.includes('ACP') && ready.label.includes('假 Agent'), ready.label)
+    __resetTavernAcpSnapshot()
+
+    // 16 处注入点全部改成 pickTavernChat，且 task 分类正确
+    const EXPECT: Record<string, number> = {
+      engine: 3, summarize: 4, report: 1, daily: 1, draft: 1, script: 1,
+      story: 1, interview: 1, import: 1, revise: 1, world: 1,
+    }
+    let total = 0
+    let badTask = ''
+    for (const [f, n] of Object.entries(EXPECT)) {
+      const src = read(`src/lib/tavern/${f}.ts`)
+      const hits = (src.match(/pickTavernChat\('/g) ?? []).length
+      total += hits
+      ok(`${f}.ts 接入 ${n} 处（实测 ${hits}）`, hits === n)
+      for (const m of src.matchAll(/pickTavernChat\('([a-z-]+)'/g)) {
+        if (!/^tavern-(reply|vars|summary|aux)$/.test(m[1])) badTask = `${f}: ${m[1]}`
+      }
+    }
+    ok('🔴 16 处注入点全部接入', total === 16, String(total))
+    ok('任务标识都在酒馆四类内（不会记到颉文姬账上）', badTask === '', badTask)
+
+    // 注入点仍保留 withIndependentAttribution（归属不会被绕过）
+    const attribution = read('tests/tavernAttribution.test.ts')
+    ok('归属守卫用例仍在（本轮未放宽）', attribution.includes('每个注入点都套了归属包装'))
+
+    const app = read('src/App.tsx')
+    ok('🔴 确认器在 App 挂载时注入一次', app.includes('setTavernAcpAsk(confirmDialog)'))
+    ok('卸载时清掉（不留下指向已卸载组件的闭包）', app.includes('setTavernAcpAsk(null)'))
   }
 
   console.log(`\n=== tavernAcpChat：${pass} passed, ${fail} failed ===`)

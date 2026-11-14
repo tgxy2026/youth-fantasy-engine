@@ -16,7 +16,8 @@
  * 本文件是纯逻辑 + 提示词；提示词与解析都按「段落标记」而不是 JSON ——
  * 四章带嵌套，让模型输出深层 JSON 很容易在转义/层级上出错，段落标记则天然抗噪。
  */
-import { chat, isCancelled, type ChatMessage } from '@/lib/ai'
+import { isCancelled, type ChatMessage } from '@/lib/ai'
+import { pickTavernChat } from '@/lib/tavern/acpChat'
 import { resolveTavernProvider, type ChatFn } from '@/lib/tavern/provider'
 import { getTavernSettings, timeoutMsOf } from '@/lib/tavern/settings'
 import { emptyFreeCharacter, type FreeCharacter } from '@/lib/tavern/types'
@@ -257,7 +258,9 @@ export type ConvertArgs = {
 export async function convertNovelChar(args: ConvertArgs): Promise<{ draft: CardDraft; gaps: string[] }> {
   const { name, data, source, providerId, chatFn, signal } = args
   const { provider } = await resolveTavernProvider(providerId ? { providerId } : undefined)
-  const runChat = withIndependentAttribution(chatFn ?? chat)
+  const runChat = withIndependentAttribution(
+    chatFn ?? await pickTavernChat('tavern-aux', '小说原文片段', '转换成角色卡字段'),
+  )
 
   const msgs: ChatMessage[] = [
     { role: 'system', content: buildImportSystem() },

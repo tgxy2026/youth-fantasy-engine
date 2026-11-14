@@ -64,10 +64,18 @@ async function main() {
     const files = readdirSync(path.resolve(dir)).filter(f => f.endsWith('.ts'))
     const unwrapped: string[] = []
     let sites = 0
+    /**
+     * 🔴 2026-11-14：判据从「只认 `const runChat = `」放宽到**任意赋值形态**
+     *    （`const` / `let` / `var` / `runChat ??=`）。
+     *    起因：ACP 接入时访谈那处因为要缓存通道改成了 `let` + 赋值，
+     *    守卫当它不存在（实测从 16 掉到 15），差点被当成「本来就只有 15 处」放过去。
+     *    换个写法就能绕过守卫，等于守卫形同虚设。
+     */
+    const ASSIGN = /^\s*(?:(?:const|let|var)\s+runChat\b[^=]*=|runChat\s*\?\?=)/
     for (const f of files) {
       const src = readFileSync(path.resolve(dir, f), 'utf8')
       for (const line of src.split('\n')) {
-        if (!/^\s*const runChat = /.test(line)) continue
+        if (!ASSIGN.test(line)) continue
         sites++
         if (!line.includes('withIndependentAttribution(')) unwrapped.push(`${f}: ${line.trim()}`)
       }
@@ -75,6 +83,21 @@ async function main() {
     ok('🔴 ② 每个注入点都套了归属包装（漏一个就有一整条链串账）',
       unwrapped.length === 0, unwrapped.join(' | '))
     ok(`② 覆盖 16 处注入点（实测 ${sites}）`, sites === 16, String(sites))
+
+    /**
+     * 🔴 3.5.5：注入点不允许再直接 `?? chat` —— 必须经 `pickTavernChat`。
+     *    直接 `?? chat` 等于「ACP 模式下这条链偷偷走 API」：
+     *    作者没配 API 模型时它抛错，配了就静默把资料发给另一家服务商。
+     */
+    const bypass: string[] = []
+    for (const f of files) {
+      const src = readFileSync(path.resolve(dir, f), 'utf8')
+      for (const line of src.split('\n')) {
+        if (ASSIGN.test(line) && /\?\?\s*chat\b/.test(line)) bypass.push(`${f}: ${line.trim()}`)
+      }
+    }
+    ok('🔴 ② 注入点不再直接回退 `chat`（一律经 pickTavernChat 选通道）',
+      bypass.length === 0, bypass.join(' | '))
     ok('② 包装只有一个真源（各文件都从 attribution 导入）',
       files.filter(f => f !== 'attribution.ts'
         && readFileSync(path.resolve(dir, f), 'utf8').includes('const runChat = '))
