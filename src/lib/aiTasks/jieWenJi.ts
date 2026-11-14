@@ -17,6 +17,7 @@ import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import { cleanChapterOutput } from '@/lib/aiTasks/rewrite'
 import { deAiGenerateRule } from '@/lib/ai/deAiStyle'
+import { AcpStructuredError, acpField, acpJsonInstruction, acpList, acpNumber, decodeAcpRows } from '@/lib/agentHost/acpStructured'
 
 /** 「写作简报」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_writing_briefing = `你是网文资深编辑兼创作助手。作者马上要动笔写下一章，请基于提供的设定资料与当前进度，生成一份「本章写作简报」，帮作者不丢线、不卡文、不 OOC。
@@ -249,9 +250,8 @@ export interface ChapterReview {
 export async function aiChapterReview(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<ChapterReview> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_chapter_review
   const user = `【本章正文】
@@ -261,6 +261,14 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）'}
 
 请按网文编辑视角审读。`
+  // 3.5.5 · ACP 分支：宿主严格校验。ACP 没有 response_format，只能靠提示词钉死字段，
+  // 再在下面按契约逐项核验；不合格直接抛错交给任务中心，不静默转 API。
+  if (opts?.acpText) {
+    const prompt = `${sys}\n\n${user}\n\n${acpJsonInstruction('章节编辑意见（六维打分）', '{"score":0~100 的总分,"verdict":"一句话总评","dimensions":[{"name":"维度名","score":0~10,"comment":"该维度点评"}],"highlights":["亮点"],"warnings":["问题"]}')}`
+    const row = decodeAcpRows(await opts.acpText(prompt), { shape: 'object', min: 1, max: 1 })[0]
+    return decodeReviewRow(row)
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -284,6 +292,39 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
     dimensions: dims,
     highlights,
     warnings,
+  }
+}
+
+/**
+ * 3.5.5 · 章节编辑意见的严格解码。
+ *
+ * 为什么这些字段「必须」而 highlight/warning「可选」：
+ *   · 六维评分是本功能的存在理由 —— 没有分数或没有维度，结果对作者毫无用处；
+ *   · 亮点/问题清单天然可能为空（一章写得好就可能没有明显问题），强行要求会逼模型编造。
+ */
+function decodeReviewRow(row: Record<string, unknown>): ChapterReview {
+  const score = acpNumber(row, ['score', '评分', '总分'], '总体评分', { min: 0, max: 100 })
+  const verdict = acpField(row, ['verdict', '总评', '结论'], '总评', { max: 300 })
+  const rawDims = row.dimensions ?? row['维度'] ?? row['六维']
+  if (!Array.isArray(rawDims) || rawDims.length === 0) throw new AcpStructuredError('missing-field', '缺少「维度评分」')
+  if (rawDims.length > 8) throw new AcpStructuredError('bad-field', `维度过多（${rawDims.length} > 8）`)
+  const dimensions: ReviewDimension[] = rawDims.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new AcpStructuredError('bad-field', `第 ${index + 1} 个维度不是对象`)
+    }
+    const dim = item as Record<string, unknown>
+    return {
+      name: acpField(dim, ['name', '维度', '名称'], '维度名', { max: 40 }),
+      score: acpNumber(dim, ['score', '评分', '分数'], '维度评分', { min: 0, max: 10 }),
+      comment: acpField(dim, ['comment', '点评', '说明'], '维度点评', { required: false, max: 400 }),
+    }
+  })
+  return {
+    score,
+    verdict,
+    dimensions,
+    highlights: acpList(row, ['highlights', '亮点'], '亮点', { max: 4, required: false }),
+    warnings: acpList(row, ['warnings', '问题', '警告'], '问题', { max: 5, required: false }),
   }
 }
 
@@ -315,12 +356,11 @@ export async function aiOocCheck(
 export async function aiOocCheckWithStatus(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<StepExecutionResult<OocFinding[]>> {
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<OocFinding[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
   try {
-    const cfg = await requireProviderFor('review')
     const fence = newAuthorFence()
     const sys = P_ooc_check
     const user = `【设定资料】
@@ -330,6 +370,34 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请检查角色言行是否符合人设。`
+    // 3.5.5 · ACP 分支：结构与「OOC 有/没有」的语义都要保住 ——
+    // 合法空数组 = 查过且没发现问题（completed）；解析不出来 = failed，不能当成没 OOC。
+    if (opts?.acpText) {
+      const prompt = `${sys}\n\n${user}\n\n${acpJsonInstruction('人设偏离（OOC）检查', '[{"character":"角色名","evidence":"引用该角色言行原文","issue":"哪里偏离人设","suggestion":"如何圆回或修改","level":"严重|中等|提示"}]（没有发现问题时返回 []）')}`
+      const rows = decodeAcpRows(await opts.acpText(prompt), { shape: 'array', min: 0, max: 10 })
+      const data: OocFinding[] = rows.map((row, index) => {
+        const character = acpField(row, ['character', '角色'], '角色名', { max: 60 })
+        const issue = acpField(row, ['issue', '问题'], '偏离说明', { max: 600 })
+        const level = acpField(row, ['level', '级别'], '级别', { required: false, max: 10 }) || '提示'
+        if (!['严重', '中等', '提示'].includes(level)) {
+          throw new AcpStructuredError('bad-field', `第 ${index + 1} 条的级别不是「严重/中等/提示」：${level}`)
+        }
+        return {
+          character,
+          evidence: acpField(row, ['evidence', '原文', '依据'], '原文依据', { required: false, max: 1000 }),
+          issue,
+          suggestion: acpField(row, ['suggestion', '建议'], '修改建议', { required: false, max: 600 }),
+          level,
+        }
+      })
+      return {
+        state: 'completed',
+        result: { outcome: 'valid', data, diagnostics: [], truncated: false },
+        coverage: { requested: 1, completed: 1, failed: 0, skipped: 0 },
+        sourceId: 'ooc',
+      }
+    }
+    const cfg = await requireProviderFor('review')
     const text = await chat(
       cfg,
       [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],
@@ -436,9 +504,8 @@ export interface ContinuationAdvice {
 export async function aiContinuationAdvice(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void; acpText?: (prompt: string) => Promise<string> },
 ): Promise<ContinuationAdvice> {
-  const cfg = await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_continuation_advice
   const user = `【设定资料（摘要）】
@@ -448,6 +515,18 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请给续写方向建议。`
+  // 3.5.5 · ACP 分支：direction 是这条建议的正文，缺了就等于没给建议 ⇒ 必须字段。
+  if (opts?.acpText) {
+    const prompt = `${sys}\n\n${user}\n\n${acpJsonInstruction('续写方向建议', '{"direction":"下一段最值得推进的方向（2~4 句）","hooks":["章末钩子"],"pitfalls":["容易踩的坑"],"foreshadow":"建议埋或收的伏笔"}')}`
+    const row = decodeAcpRows(await opts.acpText(prompt), { shape: 'object', min: 1, max: 1 })[0]
+    return {
+      direction: acpField(row, ['direction', '方向'], '续写方向', { max: 1200 }),
+      hooks: acpList(row, ['hooks', '钩子'], '章末钩子', { max: 4, required: false }),
+      pitfalls: acpList(row, ['pitfalls', '坑'], '容易踩的坑', { max: 3, required: false }),
+      foreshadow: acpField(row, ['foreshadow', '伏笔'], '伏笔建议', { required: false, max: 800 }),
+    }
+  }
+  const cfg = await requireProviderFor('review')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }],

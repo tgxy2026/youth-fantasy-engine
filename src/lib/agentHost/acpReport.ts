@@ -9,17 +9,14 @@
  * 报告类任务只返回正文，不写作品；摘要由调用方回填现有摘要框。
  * 🔴 本文件属 lib 层：确认弹窗由调用方注入，不反向依赖 components/。
  */
-import { acpWrite, assertAcpWritingCurrent, type AcpTask } from './acpBridge'
+import type { AcpTask } from './acpBridge'
+import { acpGateMessage, acpGatedText, type AcpGateConfirmOptions } from './acpGate'
 
 /** 3.5.4 纳入的纯文本报告任务（不含写正文的 continuation / rewrite）。 */
 export type AcpReportTask = Extract<AcpTask, 'diagnosis' | 'pleasure' | 'opening' | 'briefing' | 'summary'>
 
 /** 与界面确认弹窗同形的最小契约（由调用方传 confirmDialog）。 */
-export interface AcpReportConfirmOptions {
-  title: string
-  message: string
-  confirmText: string
-}
+export type AcpReportConfirmOptions = AcpGateConfirmOptions
 
 const REPORT_SCOPE: Record<AcpReportTask, { title: string; full: string }> = {
   diagnosis: { title: '发送章节资料至 ACP Agent', full: '本章正文与设定资料' },
@@ -35,7 +32,7 @@ const REPORT_SCOPE: Record<AcpReportTask, { title: string; full: string }> = {
  */
 export function acpReportMessage(task: AcpReportTask, agentName: string, brief = false): string {
   const scope = task === 'diagnosis' && brief ? '本章压缩摘要与设定资料' : REPORT_SCOPE[task].full
-  return `接收方为 ${agentName}。本次发送${scope}，只用于生成文本报告。`
+  return acpGateMessage(agentName, scope, '生成文本报告')
 }
 
 export interface AcpReportSendInput {
@@ -53,18 +50,13 @@ export interface AcpReportSendInput {
 
 /** 生成传给 `ai*` 任务的 `acpText`：确认 → 代次/归属校验 → 发送 → 落地前再校验。 */
 export function acpReportText(input: AcpReportSendInput): (prompt: string) => Promise<string> {
-  return async prompt => {
-    const ok = await input.ask({
-      title: REPORT_SCOPE[input.task].title,
-      message: acpReportMessage(input.task, input.agentName, input.brief === true),
-      confirmText: '确认发送',
-    })
-    if (!ok) throw new Error('已取消发送。')
-    await assertAcpWritingCurrent(input.generation)
-    input.assertCurrent?.()
-    const text = await acpWrite(input.task, input.generation, prompt, { signal: input.signal })
-    await assertAcpWritingCurrent(input.generation)
-    input.assertCurrent?.()
-    return text
-  }
+  return acpGatedText({
+    task: input.task,
+    generation: input.generation,
+    title: REPORT_SCOPE[input.task].title,
+    message: acpReportMessage(input.task, input.agentName, input.brief === true),
+    signal: input.signal,
+    assertCurrent: input.assertCurrent,
+    ask: input.ask,
+  })
 }

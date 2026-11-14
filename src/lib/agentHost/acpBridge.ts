@@ -9,11 +9,17 @@ export interface AcpStatus {
 }
 
 /**
- * 3.5.4 纯文本任务标识：主进程 `acp:generate` 按此白名单放行。
- * `continuation` / `rewrite` 写正文或建议段；`diagnosis` / `pleasure` / `opening` /
- * `briefing` / `summary` 只返回文本报告（摘要回填摘要框），不直接改正文。
+ * ACP 任务标识：主进程 `acp:generate` 按此白名单放行。
+ *
+ * 3.5.4 纯文本：`continuation` / `rewrite` 写正文或建议段；`diagnosis` / `pleasure` /
+ * `opening` / `briefing` / `summary` 只返回文本报告（摘要回填摘要框），不直接改正文。
+ * 3.5.5 结构化：`review`（章节编辑意见） / `ooc`（人设偏离） / `advice`（续写方向）
+ * 由宿主严格解析校验，同样不直接写作品。
  */
-export type AcpTask = 'continuation' | 'rewrite' | 'diagnosis' | 'pleasure' | 'opening' | 'briefing' | 'summary'
+export type AcpTask =
+  | 'continuation' | 'rewrite'
+  | 'diagnosis' | 'pleasure' | 'opening' | 'briefing' | 'summary'
+  | 'review' | 'ooc' | 'advice'
 
 interface AcpBridge {
   status(): Promise<AcpStatus | null>

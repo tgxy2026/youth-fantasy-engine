@@ -36,9 +36,10 @@ export const AGENT_BACKEND_ARTICLES: HelpArticle[] = [{
     { id: 'acp', heading: '桌面 ACP：纯文本写作', body: [
       'ACP 模式由引擎连接「ACP Agent」列表中的 Antigravity。显示「当前构建尚未启用」时，请切回 API 模式。显示账号与连接操作时，可按界面安装或选择官方组件、登录 Google、连接并刷新会话可用的模型与推理档位。',
       '连接后可用手动续写、选区润色、综合诊断（完整和简略）、爽点毒点、黄金三章、本章写作简报与手动单章摘要。发送前会列出接收方和资料范围。润色与续写由作者确认采纳，手动摘要生成后回填摘要框。',
-      'AI 校对、结构化审读与整理、嵌入、后台伴写、批量摘要和酒馆使用配置好的 API 模型；需要这些功能时切回 API 模式。',
+      '3.5.5 起，章节编辑意见（六维打分）、OOC 人设偏离检查与续写方向也可以走 ACP。这三项要求 Agent 返回结构化结果，由引擎逐项核对总分、维度、角色与级别；不合格（截断、缺字段、越界）会直接报错，不会把半份结果显示成完整结果，也不会悄悄改用 API 模型。',
+      'AI 校对、设定写入与整理、嵌入、后台伴写、批量摘要和酒馆使用配置好的 API 模型；需要这些功能时切回 API 模式。',
     ] },
   ],
   related: ['faq-multi-protocol', 'jiewenji-modes'], actions: [{ label: '打开模型设置', tabId: 'model-settings' }],
-  verifiedAgainst: '3.5.4', reviewedAt: '2026-11-14',
+  verifiedAgainst: '3.5.5', reviewedAt: '2026-11-14',
 }]

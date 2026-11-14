@@ -33,6 +33,7 @@ import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { acpWrite, assertAcpWritingCurrent } from '@/lib/agentHost/acpBridge'
 import { acpReportText } from '@/lib/agentHost/acpReport'
+import { acpStructuredText } from '@/lib/agentHost/acpStructured'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
 import type { Props } from '@/components/jiewenji/jieWenJiParts'
@@ -763,22 +764,45 @@ export function useJieWenJiModel(props: Props) {
   const open: { loading: boolean; data?: OpeningReport; error?: string } = chapterOwned(openT, ch)
 
   const runReview = () => {
-    if (!aiReady || revT.running) return
+    if (!writingReady || revT.running) return
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     showToast('AI 审读已启动，耗时 30–90 秒属正常，并非卡死，请耐心等待', 'info')
     revT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpStructuredText({ task: 'review', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-review'), focusChapterId })
-      return { ch, v: await aiChapterReview(ctx.text, content, { signal: job.signal }) }
+      owner.assertCurrent()
+      const v = await aiChapterReview(ctx.text, content, { signal: job.signal, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
   const runOoc = () => {
-    if (!aiReady || oocT.running) return
+    if (!writingReady || oocT.running) return
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     oocT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpStructuredText({ task: 'ooc', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-ooc'), focusChapterId })
+      owner.assertCurrent()
       // WQ1-3：未完整完成（解析失败/截断/取消）一律抛出，让任务中心显示原因；
       // 不再把失败假装成"没人 OOC"（空数组曾是三种语义混一起）
-      const r = await aiOocCheckWithStatus(ctx.text, content, { signal: job.signal })
+      const r = await aiOocCheckWithStatus(ctx.text, content, { signal: job.signal, acpText })
+      owner.assertCurrent()
       if (r.state !== 'completed') {
         const n = r.result?.data?.length ?? 0
         throw new Error(`OOC 检查未完整完成（${r.errorCode ?? r.state}）${n ? `，已收到 ${n} 处仅供参考` : ''}，请重试或更换模型`)
@@ -787,11 +811,23 @@ export function useJieWenJiModel(props: Props) {
     })
   }
   const runAdvice = () => {
-    if (!aiReady || advT.running) return
+    if (!writingReady || advT.running) return
+    const generation = acpGeneration
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     advT.run(async job => {
       job.progress({ ch })
+      const owner = captureOwnedOperation(db.getCurrentProjectId())
+      const acpText = generation
+        ? acpStructuredText({ task: 'advice', generation, agentName, signal: job.signal, assertCurrent: () => {
+          owner.assertCurrent()
+          assertReportDraft('content')
+        }, ask: confirmDialog })
+        : undefined
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('jiewenji-advice'), focusChapterId })
-      return { ch, v: await aiContinuationAdvice(ctx.text, content, { signal: job.signal }) }
+      owner.assertCurrent()
+      const v = await aiContinuationAdvice(ctx.text, content, { signal: job.signal, acpText })
+      owner.assertCurrent()
+      return { ch, v }
     })
   }
   const runPleasure = () => {

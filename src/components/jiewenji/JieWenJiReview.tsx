@@ -10,14 +10,14 @@ import { renderReport, SevBadge } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
-  const { aiReady, writingReady, acpWriting, rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening, aiBtnCls, scoreCls } = m
+  const { writingReady, acpWriting, rev, ooc, adv, plea, open, runReview, runOoc, runAdvice, runPleasure, runOpening, aiBtnCls, scoreCls } = m
   return (
           <>
             <Button variant="bare"
               onClick={() => void runReview()}
-              disabled={!aiReady || rev.loading}
+              disabled={!writingReady || rev.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : undefined}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined}
             >
               {rev.loading ? <Loader2 size={12} className="animate-spin" /> : <BookOpen size={12} />}
               {rev.loading ? '审读中…' : '章节编辑意见（节奏 / 钩子 / 水文 / 对话）'}
@@ -64,9 +64,9 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => void runOoc()}
-              disabled={!aiReady || ooc.loading}
+              disabled={!writingReady || ooc.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : undefined}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined}
             >
               {ooc.loading ? <Loader2 size={12} className="animate-spin" /> : <AlertTriangle size={12} />}
               {ooc.loading ? '检查中…' : 'OOC 人设偏离检查'}
@@ -97,9 +97,9 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
 
             <Button variant="bare"
               onClick={() => void runAdvice()}
-              disabled={!aiReady || adv.loading}
+              disabled={!writingReady || adv.loading}
               className={`${aiBtnCls} bg-amber/15 border-amber/30 text-amber hover:bg-amber/25`}
-              title={!aiReady ? AI_DISABLED_HINT : undefined}
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined}
             >
               {adv.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {adv.loading ? '思考中…' : '续写方向（只给思路，不生成正文）'}
@@ -171,7 +171,7 @@ export default function JieWenJiReview({ m }: { m: JieWenJiModel }) {
               </div>
             )}
 
-            {!aiReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{acpWriting ? '章节编辑意见 / OOC / 续写方向仍需配置 API 模型；本页爽点毒点与黄金三章已可用 ACP。' : AI_DISABLED_HINT}</div>}
+            {!writingReady && <div className="text-10 text-ink-500 leading-relaxed px-1">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</div>}
           </>
   )
 }
