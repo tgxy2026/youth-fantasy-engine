@@ -17,10 +17,15 @@
 //   3. **不认温度与推理档位**：`temperature` / `think` / `timeoutMs` 由 ACP 会话侧的
 //      模型与档位决定，这里传什么都不生效。**不要**在这里假装遵守。
 //
-// 🔴 流式是支持的（`acpWrite` 有 onToken），所以主回复的打字效果可以保留。
+// 🔴 **不要承诺打字效果**（2026-11-14 真机实测更正）：
+//    宿主侧确实会把每段 `agent_message_chunk` 转给 `onToken`，但当前 Antigravity
+//    （组件 1.5.0 / gemini-3.8-flash）**只在全部生成完后推一段**。
+//    实测两次生成均为 1 段、首段 35~37 秒 ⇒ 界面表现是「长时间无输出，然后整段出现」。
+//    这是 Agent 侧行为，宿主改不了；文案与界面都不能说「逐字显示」。
 import { chat } from '@/lib/ai'
 import type { ChatFn } from '@/lib/tavern/provider'
 import { acpWritingContext, type AcpTask } from '@/lib/agentHost/acpBridge'
+import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 
 /**
  * 酒馆可用的四个任务标识。
@@ -180,20 +185,33 @@ export async function tavernAcpSnapshot(): Promise<{ generation: string; name: s
  *
  * 16 处注入点统一写成 `deps.chatFn ?? await pickTavernChat(...)`：
  *  · `deps.chatFn` 优先（测试注入、自由对话的共享授权通道都靠它）；
- *  · ACP 可用 ⇒ 走 Agent，不需要 API 模型配置；
- *  · 否则回退 `chat` —— 这是**没有** ACP 时的正常路径，不是静默降级。
+ *  · ACP 模式且会话已就绪 ⇒ 走 Agent，不需要 API 模型配置；
+ *  · **不是 ACP 模式** ⇒ 回退 `chat`，这是正常路径，不是降级。
  *
- * 🔴 ACP 可用但确认器没注入时**抛错**，不回落 `chat`：
- *    那种情况说明接线漏了，静默走 API 会让「ACP 模式下没配模型也能用」这句承诺失效，
- *    而且作者不知道自己刚才那句话其实发给了另一家服务商。宁可当场报错。
+ * 🔴🔴 两条「必须当场报错、绝不回落 chat」的硬约束（2026-11-14 真机踩出来的）：
+ *
+ *  1. **ACP 模式但会话未就绪**。重启应用后 `sessionReady` 是进程内状态，默认 false
+ *     （界面显示「等待验证会话」，要作者点一次「连接已有会话」）。此时若回落到 `chat`，
+ *     请求会被模式租约拒绝，作者看到的是「当前连接模式不允许模型 API 请求」——
+ *     一个完全误导的提示：他明明在 ACP 模式、Agent 也装好了，问题只是没点连接。
+ *     实测就是这么踩的：`app` 重启后直接发消息，错误信息把人引向「切回 API 模式」。
+ *  2. **ACP 可用但确认器没注入**。那是接线漏了，回落等于绕过外发告知。
  */
 export async function pickTavernChat(
   task: TavernTask,
   scopeText: string,
   purpose: string,
 ): Promise<ChatFn> {
+  // 先看模式：只有「稳定 ACP」才可能走 Agent；读不到模式时保守按非 ACP 处理（走 chat，
+  // 让模式租约去给出它自己的报错，而不是我们瞎判）。
+  const mode = await connectionModeStatus().catch(() => null)
+  const inAcp = mode?.phase === 'stable' && mode.mode === 'acp'
+  if (!inAcp) return chat
+
   const ctx = await tavernAcpSnapshot()
-  if (!ctx) return chat
+  if (!ctx) {
+    throw new Error('ACP 会话尚未就绪 —— 请到「模型设置 → ACP 连接」点一次「连接已有会话」，再重试本次操作。')
+  }
   if (!askImpl) {
     throw new Error('酒馆的 ACP 外发确认尚未初始化（缺少界面注入），已中止本次请求以免在未告知的情况下发出资料。')
   }

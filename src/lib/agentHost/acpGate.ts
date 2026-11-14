@@ -45,7 +45,8 @@ export interface AcpGateInput {
  * @param call.signal 单次调用的取消信号。**会覆盖**构造时的 `input.signal`。
  *   酒馆这类"同一个 chatFn 被多次调用、每次带不同 signal"的场景必须走它 ——
  *   只认构造时的那个，作者点停止时正在跑的那次收不到取消。
- * @param call.onToken 单次调用的流式回调（酒馆主回复的打字效果靠它）。
+ * @param call.onToken 单次调用的流式回调。⚠️ 转发链路是通的，但当前 Antigravity
+ *   实测只推一段（生成完才发），所以界面拿不到真正的逐字效果 —— 别据此承诺打字机。
  */
 export function acpGatedText(
   input: AcpGateInput,

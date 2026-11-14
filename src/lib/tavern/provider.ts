@@ -10,6 +10,7 @@
 import { chat, isProviderUsable, typeLabel, loadProviders, requireActiveProvider, type AIProvider } from '@/lib/ai'
 import { getTavernSettings } from '@/lib/tavern/settings'
 import { tavernAcpSnapshot } from '@/lib/tavern/acpChat'
+import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 
 /** 「调一次模型」的函数类型 —— 测试注入桩模型用的口子 */
 export type ChatFn = typeof chat
@@ -104,8 +105,13 @@ export async function checkTavernReady(ref?: { providerId?: string }): Promise<T
    *    而实际链路是通的 —— 与 2026-09-22 六维审计 F1 同一个坑（当时是只看全局活动模型）。
    *    但也不能只放行不换通道：那条在 `pickTavernChat` 里保证。
    */
+  // 🔴 必须看模式，不只看「ACP 是否可用」：ACP 模式下即便配了 API 模型也不能算就绪
+  //    （租约会拒绝 API 请求），此时未连接就应置灰并把作者引向「连接已有会话」。
+  const mode = await connectionModeStatus().catch(() => null)
+  const inAcp = mode?.phase === 'stable' && mode.mode === 'acp'
   const acp = await tavernAcpSnapshot()
   if (acp) return { ready: true, label: `ACP · ${acp.name}`, fellBack: false }
+  if (inAcp) return { ready: false, label: '', fellBack: false }
   try {
     const { provider, fellBack } = await resolveTavernProvider(ref)
     return {

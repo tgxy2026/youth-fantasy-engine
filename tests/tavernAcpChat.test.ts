@@ -353,6 +353,33 @@ async function run() {
     ok('卸载时清掉（不留下指向已卸载组件的闭包）', app.includes('setTavernAcpAsk(null)'))
   }
 
+  // ---------------------------------------------------------------- 9. ACP 模式但会话未就绪
+  console.log('--- 9. ACP 模式但未连接：必须报明确的错，不许回落 API ---')
+  {
+    __resetTavernAcpSnapshot()
+    // 假桥改成「ACP 模式 + 会话未就绪」（等价于应用重启后还没点「连接已有会话」）
+    const origStatus = fakeBridge.status
+    fakeBridge.status = async () => ({
+      generation: 'gen-1', selected: 'fake-agent',
+      adapters: [{ id: 'fake-agent', name: '假 Agent', available: true }],
+      ready: false, requiresConnection: true,
+    })
+    setTavernAcpAsk(allow)
+
+    let msg = ''
+    try { await pickTavernChat('tavern-reply', '本场对话', '生成回复') } catch (e) { msg = (e as Error).message }
+    ok('🔴 未就绪 ⇒ 报「ACP 会话尚未就绪」并指向连接按钮',
+      msg.includes('ACP 会话尚未就绪') && msg.includes('连接已有会话'), msg)
+    ok('🔴 错误信息不再把人引向「切回 API 模式」', !/切回 API 模式/.test(msg), msg)
+
+    const notReady = await checkTavernReady()
+    ok('🔴 ACP 模式下未连接 ⇒ 酒馆就绪为 false（按钮该置灰）', notReady.ready === false)
+
+    // 恢复假桥，后面的用例不受影响
+    fakeBridge.status = origStatus
+    __resetTavernAcpSnapshot()
+  }
+
   console.log(`\n=== tavernAcpChat：${pass} passed, ${fail} failed ===`)
   if (fail > 0) process.exit(1)
 }
