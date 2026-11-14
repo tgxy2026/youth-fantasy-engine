@@ -1,5 +1,6 @@
-// 3.4.0 · 重绘 README 的两张设计图（封面 + 版本演进脉络）
-// 用法：node scripts/verify/render-readme-art-340.mjs
+// README 两张设计图（封面 + 版本演进脉络）的唯一渲染入口
+// 用法：node scripts/verify/render-readme-art.mjs
+// 发版后改这里的 rows / 标题 / 页脚，再跑一次即可保持图与 README 文字一致。
 import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -47,7 +48,14 @@ const rows = [
   ['3.3.3', '创意连写中断续写 + 图鉴字段永久删除 + 拆书只重试失败项'],
   ['3.3.4', '跨端可用（55 页签响应式 + 44px 触控盒 + 打印 / PDF）'],
   ['3.3.5', '作品安全：发送清单 + 防篡改候选 + 恢复三态 + 还原前备份'],
-  ['3.4.0', '创作工作流闭环：规划板往返 + 资料绑定 + 时光机事务 + 收藏 / 导出 / 灵感 ◀ 当前', 'now'],
+  ['3.4.0', '创作工作流闭环：规划板往返 + 资料绑定 + 时光机事务 + 收藏 / 导出 / 灵感'],
+  ['3.4.1', 'AI 提示词精修 + 审计工具防静默失明自检'],
+  ['3.4.2', '三家官方协议直连（Anthropic / Gemini / OpenAI Responses）'],
+  ['3.5.0', '投稿广场 + 自愿码字排行', 'hi'],
+  ['3.5.1', '网页版引导持久化 + 前端体验打磨'],
+  ['3.5.2', '评论分页去重 + 社区备份恢复 + 昵称冷却 + 匿名周代号'],
+  ['3.5.3', '排行日结口径修正 + 云端项目异常保护'],
+  ['3.5.4', '桌面接入外部 Agent（ACP）：三模式互斥 + 七个纯文本入口 ◀ 当前', 'now'],
 ]
 
 const timelineHtml = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
@@ -60,9 +68,9 @@ tr.now td{background:rgba(244,185,66,.13);color:#fff;font-weight:600}
 tr.now td.v{color:#ffd166}
 .foot{margin-top:26px;padding-top:16px;border-top:1px solid #33363c;color:#7b828c;font-size:12px;line-height:1.7}
 </style></head><body>
-<h1>版本演进 · 1.0.0 → 3.4.0</h1>
+<h1>版本演进 · 1.0.0 → 3.5.4</h1>
 <table>${rows.map(([v, t, cls]) => `<tr class="${cls || ''}"><td class="v">${v}</td><td>${t}</td></tr>`).join('')}</table>
-<div class="foot">从 29 个页签起步，到 10 大板块 55 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.4.0：进章再回来，还在原来那一屏。</div>
+<div class="foot">从 29 个页签起步，到 10 大板块 56 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.5.4：桌面版可接外部 Agent（ACP），API / MCP / ACP 三选一。</div>
 </body></html>`
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
@@ -79,7 +87,8 @@ try {
   const p2 = await browser.newPage({ viewport: { width: 570, height: 1400 }, deviceScaleFactor: 1 })
   await p2.setContent(timelineHtml)
   const h = await p2.evaluate(() => document.body.scrollHeight)
-  await p2.setViewportSize({ width: 570, height: Math.min(h + 4, 1600) })
+  // 高度按实际内容算：版本行还会继续加，不能写死上限，否则图会被截断
+  await p2.setViewportSize({ width: 570, height: h + 4 })
   await p2.screenshot({ path: path.join(outDir, 'changelog-timeline.png'), fullPage: true })
   await p2.close()
   console.log('SHOT changelog-timeline.png', 'height=' + h)
