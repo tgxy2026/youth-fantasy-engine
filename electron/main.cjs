@@ -811,6 +811,8 @@ ipcMain.handle('store:path', () => dataFile())
           && process.argv.includes(`--user-data-dir=${app.getPath('userData')}`)
         acpRuntime = createAcpRuntime({
           root,
+          // ACP 握手时上报的客户端版本：从 app 读，别再写死（3.5.4 那句曾在 3.5.5 包上报错版本）
+          appVersion: app.getVersion(),
           adapters: [createAntigravityAdapter({ root, validationEnabled: connectionEnabled, openExternal: url => shell.openExternal(url) })],
         })
       }

@@ -14,7 +14,7 @@ function sessionFailureKind(method, error) {
   return 'unknown'
 }
 
-export function createAcpClient({ input, output, exited }) {
+export function createAcpClient({ input, output, exited, clientVersion }) {
   const requests = new Map()
   let nextId = 0
   let failure = null
@@ -131,7 +131,7 @@ export function createAcpClient({ input, output, exited }) {
     request,
     async initialize(signal) {
       const result = await request('initialize', {
-        protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'Youth Fantasy Engine', version: '3.5.4' },
+        protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'Youth Fantasy Engine', version: clientVersion || '0.0.0' },
       }, undefined, signal)
       if (result?.protocolVersion !== 1) throw new Error('ACP 协议版本不兼容。')
       return result

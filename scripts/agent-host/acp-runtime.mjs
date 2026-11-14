@@ -15,7 +15,7 @@ const RUN_AS = new Set(['current-user', 'isolated'])
 /** 未设置或值不认识时一律按当前 Windows 用户运行 —— R4 的默认运行方式。 */
 const runAsOf = config => (RUN_AS.has(config?.runAs) ? config.runAs : 'current-user')
 
-export function createAcpRuntime({ root, adapters }) {
+export function createAcpRuntime({ root, adapters, appVersion = '' }) {
   const registry = new Map()
   for (const adapter of adapters) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter.id) || registry.has(adapter.id)) throw new Error('ACP 适配器标识无效或重复。')
@@ -136,7 +136,7 @@ export function createAcpRuntime({ root, adapters }) {
       signal.throwIfAborted()
       launchAttempted = true
       launch = await adapter.launch({ runId, config, profile, cwd, prepared, signal })
-      const client = createAcpClient(launch)
+      const client = createAcpClient({ ...launch, clientVersion: appVersion })
       const initialized = await client.initialize(signal)
       return await work({ client, initialized, adapter, config, cwd, signal })
     } finally {
