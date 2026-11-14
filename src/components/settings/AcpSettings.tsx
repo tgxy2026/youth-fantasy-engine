@@ -4,7 +4,10 @@ import { Button } from '@/components/common/Button'
 import { ChevronDown } from 'lucide-react'
 import { grantAcpConsent, revokeAcpConsent } from '@/lib/agentHost/acpConsent'
 
-const selectClass = 'min-w-0 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100 disabled:opacity-50'
+// 🔴 2026-11-15：统一 h-8(32px) 并去掉 py-2 —— 原生 select 的 py-2 会把高度撑到 ~38px，
+//   而 Button size=sm 是 h-8，并排时一高一矮、底边还错位（Agent 下拉与「取消 ACP 操作」）。
+//   Agent / 模型 / 推理档位三处共用同一串，高度因此天然一致。
+const selectClass = 'min-w-0 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 h-8 py-0 text-12 text-ink-100 disabled:opacity-50'
 
 interface AcpSettingsStatus {
   adapters: { id: string; name: string; available: boolean; componentVersion: string | null }[]
@@ -171,6 +174,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
       {modeSummary}
       <div className={agentClass}>
         <div className="flex flex-wrap items-end gap-2">
+          {/* select 的高度已由 selectClass 统一为 h-8；这里只保证按钮不被压缩。 */}
           <label className="grid w-72 max-w-full gap-1 text-12 font-medium text-ink-200">
             ACP Agent
             <select
@@ -184,7 +188,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
               {status.adapters.map(adapter => <option key={adapter.id} value={adapter.id}>{adapter.name}</option>)}
             </select>
           </label>
-          {operation && <Button size="sm" variant="secondary" onClick={() => void api?.cancel(operation.id)}>取消 ACP 操作</Button>}
+          {operation && <Button size="sm" variant="secondary" className="shrink-0" onClick={() => void api?.cancel(operation.id)}>取消 ACP 操作</Button>}
         </div>
         {(operation || busy) && <p role="status" className="mt-2 text-11 text-ink-400">{operation?.label ?? '正在等待当前 ACP 任务结束…'}</p>}
       </div>
