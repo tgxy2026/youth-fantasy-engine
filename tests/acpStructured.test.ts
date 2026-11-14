@@ -656,6 +656,12 @@ async function run() {
     ok('退出时不重复 stop ACP，兜底 15s 让模式锁有时间释放',
       !/acpRuntime\?\.stop\(\)\)\.then\(\(\) => modeService\.close\(\)\)/.test(mainSrcForQuit)
       && /setTimeout\(finish, 15000\)/.test(mainSrcForQuit))
+    // 2026-11-15：安全恢复曾被 runtime.json.pending 永久卡死 —— gate 为 null（启动拿锁就失败）时
+    // 旧条件不清理运行标记，closeRuntime 的 verifyQuiescent 直接抛「ACP 进程退出未确认」。
+    ok('🔴 安全恢复先无条件清 ACP 运行标记，再关运行时',
+      !/if \(gate && gate\.snapshot\(\)\.phase === 'blocked'\) await acp\?\.recover/.test(svc)
+      && svc.indexOf('await acp?.recover?.()') > -1
+      && svc.indexOf('await acp?.recover?.()') < svc.indexOf('await closeRuntime()'))
   }
 
   console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')

@@ -321,8 +321,13 @@ export async function createModeService({ dataDir, callPage, clientCount = () =>
     /** 用户确认后的恢复：固定回到 API 模式，Agent 连接保持停用。 */
     async recover({ confirm = false, confirmPid = null } = {}) {
       if (confirm !== true) throw new Error('恢复连接模式需要用户明确确认')
+      // 🔴 2026-11-15：先无条件清 ACP 运行标记，再关运行时。
+      //   以前写成「gate 存在且为 blocked 才清」，而启动阶段**拿锁就失败**时 gate 恰好是 null，
+      //   于是 closeRuntime 里的 verifyQuiescent 撞上 runtime.json.pending 抛
+      //   「ACP 进程退出未确认」⇒ 安全恢复永远走不通，用户只能看着提示干着急。
+      //   acp.recover() 本身幂等：没有 pending 就什么都不做。
+      await acp?.recover?.()
       // 关闭当前运行时；仍有在途租约时 closeRuntime 会抛错并保持阻断。
-      if (gate && gate.snapshot().phase === 'blocked') await acp?.recover?.()
       await closeRuntime()
       await recoverConnectionFiles({
         dataDir: root, confirm: true, confirmPid,
