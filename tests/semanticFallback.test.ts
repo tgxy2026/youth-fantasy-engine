@@ -286,6 +286,21 @@ async function main() {
     ok('自动索引早退发生在读嵌入配置之前（省掉一次无用的配置解析）',
       src.indexOf("cap.mode !== 'semantic'") < src.indexOf('resolveConfig ?? resolveEmbedConfig'))
 
+    /**
+     * 🔴 2026-11-14 真机发现的告知缺口：`AIConfigPanel` 是**按模式切换整块内容**的，
+     *    ACP 模式下「模型配置」（含 EmbeddingIndexPanel）整个不渲染 ——
+     *    降级提示原本只写在那块里，等于**作者永远看不到**，而降级恰恰只发生在 ACP。
+     *    所以 ACP 分支必须单独挂一个提示块。
+     */
+    const cfgPanel = read('src/components/settings/AIConfigPanel.tsx')
+    ok('🔴 ACP 分支单独挂了语义降级提示（否则提示落在永不渲染的区块里）',
+      cfgPanel.includes('AcpSemanticNotice'))
+    const notice = read('src/components/settings/AcpSemanticNotice.tsx')
+    ok('🔴 提示块只在 keyword（降级）时渲染，其余模式不打扰',
+      notice.includes("cap.mode !== 'keyword'") && notice.includes('return null'))
+    ok('提示块写明可恢复方式（切回 API 模式重建索引）', notice.includes('切回 API 模式重建一次索引'))
+    ok('提示块说明分数名会变成「匹配度」（与注入段一致）', notice.includes('匹配度'))
+
     const panel = read('src/components/settings/EmbeddingIndexPanel.tsx')
     ok('设置面板读取能力探测', panel.includes('semanticCapability'))
     ok('🔴 降级时建索引按钮置灰（不让作者点了才发现不能跑）', panel.includes('const embedBlocked = cap != null && cap.mode !== \'semantic\''))

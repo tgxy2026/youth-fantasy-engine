@@ -22,6 +22,7 @@ import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import AgentBridgeSetup from '@/components/settings/AgentBridgeSetup'
 import EmbeddingIndexPanel from '@/components/settings/EmbeddingIndexPanel'
+import AcpSemanticNotice from '@/components/settings/AcpSemanticNotice'
 import ModelCapabilityPanel from '@/components/settings/ModelCapabilityPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { syncTuningWithModel } from '@/lib/tavern/settings'
@@ -480,8 +481,11 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       </div>
       {connectionView === 'agent' ? <div className="p-4">
         {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机 Agent 桥。</p> : <AgentBridgeSetup />}
-      </div> : connectionView === 'acp' ? <div className="p-4">
+      </div> : connectionView === 'acp' ? <div className="p-4 space-y-3">
         <AcpSettings disabled={modeStatus?.phase !== 'stable' || modeStatus.mode !== 'acp' || !!switchId} />
+        {/* 🔴 3.5.5：ACP 模式下「模型配置」整块（含语义检索面板）不渲染，
+            所以降级提示必须单独挂在这里 —— 否则它只存在于一个用户永远看不到的位置。 */}
+        <AcpSemanticNotice />
       </div> : <div className="p-4">
         {/* 🔴 列表态**不套 BODY**：`max-w-3xl`(≈768px) 会把两栏一起卡在左半边，
             右侧仍是死区（实测两栏总宽只有 794px，section 有 1289px）。
