@@ -120,6 +120,15 @@ export default function AcpSettings({ disabled }: { disabled: boolean }) {
           {connectionLabel}
         </span>
       </div>
+      {/* 🔴 3.5.5：作者最容易困惑的一点 —— 明明昨天能用，今天开机却是「等待验证会话」。
+          会话状态是进程内的（`runtime.sessionReady`），不跨进程保存；Google 登录态才是持久化的。
+          不写明这一点，作者会以为 ACP 坏了，然后跑去切 API 模式（而那个选择又会掩盖真问题）。 */}
+      {!connected && (
+        <p className="mt-1.5 text-11 leading-relaxed text-ink-500">
+          会话状态不跨进程保存：<span className="text-ink-300">每次重启应用后都要点一次「连接已有会话」</span>
+          （Google 登录态会保留，不用重新登录）。没连接时各 AI 功能会直接提示你先连接，不会悄悄改走 API 模式。
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {!connected && <Button size="sm" variant="primary" disabled={controlsDisabled} onClick={() => api && void run('等待 Google 登录，首次启动约需 20–30 秒…', id => api.connect(id, true))}>登录 Google 账号</Button>}
         <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => api && void run('正在连接并读取模型选项…', id => api.connect(id, false))}>{connected ? '刷新模型选项' : '连接已有会话'}</Button>
