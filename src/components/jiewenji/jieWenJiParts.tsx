@@ -68,6 +68,8 @@ export interface ProofState {
   issues: ProofreadIssue[]
   scanned: number
   skipped: number
+  failedChunks: number
+  totalChunks: number
   progress: { done: number; total: number }
   done: boolean
   error: string
@@ -78,7 +80,7 @@ export interface ProofState {
   unlocated: number
 }
 export const blankProof = (): ProofState => ({
-  loading: false, issues: [], scanned: 0, skipped: 0,
+  loading: false, issues: [], scanned: 0, skipped: 0, failedChunks: 0, totalChunks: 0,
   progress: { done: 0, total: 0 }, done: false, error: '', cancelled: false,
   unparsedChunks: 0, protocolIssues: [], unlocated: 0,
 })

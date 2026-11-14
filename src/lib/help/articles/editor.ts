@@ -131,14 +131,14 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
         id: 'connection-modes',
         heading: 'API 和 ACP 的可用入口',
         body: [
-          '在 API 模式配置模型后，可使用颉文姬的 AI 工具。已连接的桌面 ACP 可用选区润色、手动续写、综合诊断、爽点毒点、黄金三章和本章写作简报。正文页的手动单章摘要也支持 ACP，生成后回填摘要框。',
-          'ACP 会在发送前确认接收方和资料范围。简略诊断使用本章压缩摘要；若本章没有摘要，面板会改用完整正文，并在确认时显示范围。校对、结构化审读、补登、整理、批量摘要和后台伴写需要 API 模式。',
+          '配置 API 模型或连接桌面 ACP 后，均可使用颉文姬的诊室、编辑、审读、简报、补登和整理。正文页的手动单章摘要和编辑器伴写也支持 ACP。批量摘要需要切回 API 模式。',
+          '连接 ACP 时会提示资料接收方，各功能的「本次会读」列出实际资料范围。简略诊断优先使用本章摘要，缺少摘要时会改用完整正文。',
         ],
       },
     ],
     related: ['editor-tools', 'faq-proofread-actions', 'agent-backend'],
     actions: [{ label: '去正文编辑', tabId: 'editor' }],
-    verifiedAgainst: '3.5.4',
+    verifiedAgainst: '3.5.5',
     reviewedAt: '2026-11-14',
   },
 ]

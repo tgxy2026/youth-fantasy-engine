@@ -167,6 +167,7 @@ export function useJieWenJiModel(props: Props) {
         const r = task.result?.v
         patches[scope] = {
           ...blankProof(), done: true, issues: r?.issues ?? [], scanned: r?.scanned ?? 0, skipped: r?.skipped ?? 0,
+          failedChunks: r?.failedChunks ?? 0, totalChunks: r?.totalChunks ?? 0,
           // 3.2.3 · R1：协议层记账同样要同步，否则诊室这边仍会把"没读懂"显示成"没问题"
           unparsedChunks: r?.unparsedChunks ?? 0, protocolIssues: r?.protocolIssues ?? [], unlocated: r?.unlocated ?? 0,
         }

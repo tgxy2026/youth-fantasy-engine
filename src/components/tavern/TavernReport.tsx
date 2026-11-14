@@ -141,18 +141,23 @@ export default function TavernReport() {
                     selected={active}
                     variant="outline"
                     onClick={() => setActiveId(it.id)}
-                    className="rounded-md px-2 py-1.5"
+                    className="min-w-0 flex-col gap-1 rounded-md px-2 py-2"
+                    title={reportName(it.sessionTitle)}
                   >
-                    <div className={`truncate text-12 ${active ? 'text-amber' : 'text-ink-100'}`}>
+                    <div className={`line-clamp-2 w-full break-words text-12 font-medium ${active ? 'text-amber' : 'text-ink-100'}`}>
                       {reportName(it.sessionTitle)}
                     </div>
-                    <div className="mt-0.5 truncate text-10 text-ink-500">{it.anchorChapterLabel || '（无锚点）'}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-10">
-                      {it.counts['矛盾'] > 0 && <span className="text-danger">矛盾 {it.counts['矛盾']}</span>}
-                      {it.counts['漏洞'] > 0 && <span className="text-amber">漏洞 {it.counts['漏洞']}</span>}
-                      {it.counts['存疑'] > 0 && <span className="text-ink-400">存疑 {it.counts['存疑']}</span>}
-                      {total === 0 && <span className="text-ink-500">未发现问题</span>}
-                      <span className="ml-auto shrink-0 text-ink-600">{new Date(it.createdAt).toLocaleDateString()}</span>
+                    <div className="w-full truncate text-11 text-ink-400" title={it.anchorChapterLabel}>
+                      {it.anchorChapterLabel || '（无锚点）'}
+                    </div>
+                    <div className="flex w-full flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-11">
+                      <div className="flex flex-wrap gap-x-2 gap-y-1">
+                        {it.counts['矛盾'] > 0 && <span className="whitespace-nowrap text-danger">矛盾 {it.counts['矛盾']}</span>}
+                        {it.counts['漏洞'] > 0 && <span className="whitespace-nowrap text-amber">漏洞 {it.counts['漏洞']}</span>}
+                        {it.counts['存疑'] > 0 && <span className="whitespace-nowrap text-ink-400">存疑 {it.counts['存疑']}</span>}
+                        {total === 0 && <span className="whitespace-nowrap text-ink-400">未发现问题</span>}
+                      </div>
+                      <span className="whitespace-nowrap text-ink-500">{new Date(it.createdAt).toLocaleDateString()}</span>
                     </div>
                   </SelectRow>
                 )

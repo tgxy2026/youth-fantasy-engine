@@ -65,6 +65,9 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
               const st = proofs[scope]
               const meta = PROOF_META[scope]
               if (!st.loading && !st.done) return null
+              const completed = st.done && !st.error && !st.cancelled
+              const fullyChecked = st.scanned > 0 && st.skipped === 0 && st.failedChunks === 0
+                && st.unparsedChunks === 0 && st.protocolIssues.length === 0 && st.unlocated === 0
               return (
                 <div key={scope} className="space-y-1.5">
                   <div className="text-10 font-medium text-ink-300">{meta.label}</div>
@@ -77,9 +80,16 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                   {st.done && st.cancelled && (
                     <div className="text-11 text-ink-300 px-1">已停止（保留已查出的 {st.issues.length} 处）</div>
                   )}
-                  {st.done && !st.cancelled && (
+                  {completed && (
                     <div className="text-10 text-ink-500">
                       共校对 {st.scanned} 字{st.skipped > 0 ? `，跳过 ${st.skipped} 字` : ''}，发现 {st.issues.length} 处
+                    </div>
+                  )}
+                  {completed && st.failedChunks > 0 && (
+                    <div className="text-10 text-amber">
+                      {st.failedChunks >= st.totalChunks
+                        ? '本次未完成校对，所有分段都未返回结果。'
+                        : `本次有 ${st.failedChunks}/${st.totalChunks} 段校对失败，建议重试。`}
                     </div>
                   )}
                   {st.issues.length > 0 && (
@@ -98,17 +108,17 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                           <div key={issueKey} className="rounded bg-ink-850 border border-ink-700/70 px-2 py-1.5" data-proof-issue={issueKey}>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="inline-block px-1.5 py-px rounded text-9 border bg-ink-700 text-ink-300 border-ink-600">{iss.type}</span>
-                              <span className="text-11 text-danger line-through">{iss.quote}</span>
+                              <span className="min-w-0 max-w-full break-words text-11 text-danger line-through">{iss.quote}</span>
                               <span className="text-10 text-ink-500">{repl ? '→' : '建议'}</span>
-                              <span className={`text-11 ${repl ? 'text-success' : 'text-ink-200'}`}>{repl ? iss.fix : (iss.suggestion || '（无具体建议）')}</span>
+                              <span className={`min-w-0 max-w-full break-words text-11 ${repl ? 'text-success' : 'text-ink-200'}`}>{repl ? iss.fix : (iss.suggestion || '（无具体建议）')}</span>
                             </div>
                             {iss.why && <div className="text-10 text-ink-400 mt-0.5">{iss.why}</div>}
                             {iss.stale && <div className="text-10 text-amber/80 mt-0.5">正文已改动，这条的位置失效了</div>}
                             {!located.ok && !iss.stale && (
                               <div className="text-10 text-amber/80 mt-0.5">{locateHint}</div>
                             )}
-                            <div className="flex flex-wrap items-center gap-1">
-                              <Button variant="bare"
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Button variant="secondary" size="xs"
                                 disabled={!canLocate}
                                 title={locateHint}
                                 onClick={() => {
@@ -126,33 +136,33 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                                   })
                                   if (!handled) showToast('当前不在正文页，无法定位原文', 'info')
                                 }}
-                                className="mt-1 px-2 py-0.5 rounded-md text-10 bg-ink-700 text-ink-200 border border-ink-600 hover:bg-ink-600 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                                className="shrink-0"
                               >
                                 定位原文
                               </Button>
                               {repl && !iss.stale && (
-                                <Button variant="bare"
+                                <Button variant="success" size="xs"
                                   onClick={() => replaceOne(scope, iss)}
-                                  className="mt-1 px-2 py-0.5 rounded-md text-10 bg-success/10 text-success border border-success/25 hover:bg-success/20 transition-colors"
+                                  className="shrink-0"
                                 >
                                   替换此条
                                 </Button>
                               )}
+                              <CopyProofText text={repl ? iss.fix : iss.suggestion} replacement={repl} inline />
                             </div>
-                            <CopyProofText text={repl ? iss.fix : iss.suggestion} replacement={repl} />
                           </div>
                         )
                       })}
                     </div>
                   )}
-                  {st.done && !st.cancelled && (st.unparsedChunks > 0 || st.protocolIssues.length > 0 || st.unlocated > 0) && (
+                  {completed && (st.unparsedChunks > 0 || st.protocolIssues.length > 0 || st.unlocated > 0) && (
                     <div className="text-10 text-amber px-1">
                       {st.unparsedChunks > 0 && <div>有 {st.unparsedChunks} 段返回无法解析，不能当作"没有问题"。</div>}
                       {st.protocolIssues.length > 0 && <div>有 {st.protocolIssues.length} 条结果格式不合法已忽略：{st.protocolIssues.join('；')}</div>}
                       {st.unlocated > 0 && <div>有 {st.unlocated} 条引文定位不到，已忽略。</div>}
                     </div>
                   )}
-                  {st.done && !st.cancelled && st.issues.length === 0 && st.unparsedChunks === 0 && st.protocolIssues.length === 0 && (
+                  {completed && fullyChecked && st.issues.length === 0 && (
                     <div className="text-center text-11 text-success py-1">
                       <CheckCircle2 size={13} className="inline mr-1" /> 未发现问题
                     </div>
