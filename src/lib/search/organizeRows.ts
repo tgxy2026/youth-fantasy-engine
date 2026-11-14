@@ -42,6 +42,8 @@ export interface OrganizeRunOptions {
   onToken?: (delta: string) => void
   /** 界面阶段提示（「正在读取下拉选项…」这类）。后台流水线里通常不传。 */
   onPhase?: (text: string) => void
+  /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
   /** 角色可见性上下文（决定 NPC 页签的姓名是否纳入候选值） */
   ctx?: VisCtx
   /** 日历定义（日期型列的候选取日历名） */
@@ -190,5 +192,6 @@ export async function organizeRows(tab: TabDef, o: OrganizeRunOptions): Promise<
     ...(o.evidenceField ? { evidenceField: o.evidenceField } : {}),
     ...(o.signal ? { signal: o.signal } : {}),
     ...(o.onToken ? { onToken: o.onToken } : {}),
+    ...(o.acpText ? { acpText: o.acpText } : {}),
   })
 }

@@ -40,6 +40,9 @@ import InterviewChat from '@/components/creative/InterviewChat'
 import InterviewContextPicker, { type ContextChoice } from '@/components/creative/InterviewContextPicker'
 import { Button } from '@/components/common/Button'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpStructuredText } from '@/lib/agentHost/acpStructured'
+import { confirmDialog } from '@/components/dialogs/dialogs'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { applyFieldLabels } from '@/lib/templates/labels'
 import { useFieldGating } from '@/lib/templates/useFieldLabels'
@@ -122,6 +125,9 @@ export default function AITemplateFill({
   //    ⚠️ 别拿它去守卫「对话引导」那条路 —— 那个走 InterviewChat 的 callChat（调用方给的模型），
   //    判据不同，会误禁（见下条注释）。
   const { ready: aiReady } = useAIReady()
+  // 3.5.5 · ACP：桌面 ACP 已连接时不必再配 API 模型
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting ? acpWriting.ready : aiReady
   const [mode, setMode] = useState<Mode>('fill')
   const [sketch, setSketch] = useState(initialSketch ?? '')
   const [refs, setRefs] = useState('')
@@ -304,10 +310,20 @@ export default function AITemplateFill({
       })
       if (!current()) return
       setSource(material.source)
+      const generation = acpWriting?.generation
+      const acpText = generation
+        ? acpStructuredText({
+          task: 'fill', generation, agentName: acpWriting?.name ?? 'ACP Agent',
+          // 结果只填进预览框，作者点「应用」才会写进表单 —— 文案要说清这一点
+          assertCurrent: () => { if (!current()) throw new Error('页面已离开，已丢弃本次补全结果。') },
+          ask: confirmDialog,
+        })
+        : undefined
       const r = await aiCompleteTemplate(sendFields, sketch, {
         worldContext: ctx,
         material: material.blocks,
         context,
+        ...(acpText ? { acpText } : {}),
       })
       if (!current()) return
       setResult(r.values)
@@ -478,7 +494,7 @@ export default function AITemplateFill({
 
             {!result && (
               <Button onClick={run}
-                disabled={loading || adoption.pending || adoption.blocked || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
+                disabled={loading || adoption.pending || adoption.blocked || !writingReady} title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined} variant="primary" size="md" className="flex items-center">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? '正在生成补全…' : '生成补全'}
               </Button>

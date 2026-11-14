@@ -40,8 +40,16 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     const s = read(file)
     ok(`🔴 ${label}：未配置模型时预先禁用（useAIReady）`,
       /const \{ ready: aiReady \} = useAIReady\(\)/.test(s), file)
-    ok(`  · ${label}：禁用条件里带 !aiReady`,
-      /disabled=\{[^}]*!aiReady[^}]*\}/.test(s), file)
+    // 3.5.5：ACP 也是合法运行模式，就绪判据允许从 !aiReady 换成 !writingReady。
+    // 🔴 但换成 writingReady 就必须真从 useAcpWriting 推导 —— 否则只是改个变量名，
+    //    守卫放过去、机器上按钮又能点了，正是这条断言当初要防的事。
+    const viaWriting = /disabled=\{[^}]*!writingReady[^}]*\}/.test(s)
+    ok(`  · ${label}：禁用条件里带就绪判据（!aiReady 或 !writingReady）`,
+      /disabled=\{[^}]*!(?:aiReady|writingReady)[^}]*\}/.test(s), file)
+    if (viaWriting) {
+      ok(`  · ${label}：writingReady 由 useAcpWriting 推导`,
+        /const acpWriting = useAcpWriting\(\)/.test(s) && /const writingReady = acpWriting \? acpWriting\.ready : aiReady/.test(s), file)
+    }
     ok(`  · ${label}：禁用时给出统一提示（AI_DISABLED_HINT）`,
       /AI_DISABLED_HINT/.test(s), file)
   }

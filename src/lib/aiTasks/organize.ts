@@ -5,6 +5,7 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
+import { acpJsonInstruction, decodeAcpRows } from '@/lib/agentHost/acpStructured'
 
 // ---------- AI 整理（从已有资料 / 正文中抽取结构化条目） ----------
 
@@ -54,6 +55,8 @@ export interface OrganizeRequest {
   evidenceField?: string
   /** 流式回调：提供时整理过程逐块可见 */
   onToken?: (delta: string) => void
+  /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export interface OrganizeResult {
@@ -138,7 +141,6 @@ let ORGANIZE_SYS = `你是「青春幻想引擎」的小说资料整理助手。
  */
 export async function aiOrganizeRows(req: OrganizeRequest): Promise<OrganizeResult> {
   // #014 用途路由：批量补条目属「整理」—— 建议指向便宜 / 快的模型
-  const cfg = await requireProviderFor('utility')
   const max = req.maxRows ?? 12
 
   const colList = req.columns
@@ -182,20 +184,33 @@ ${req.sourceText.trim() ? authorBlock(newAuthorFence(), req.sourceText.trim()) :
 请返回最多 ${max} 条新条目的 JSON 数组，优先返回最重要、最确定的。${req.evidenceField ? `
 每条还必须带一个「${req.evidenceField}」字段：从【待整理文本】里「逐字」摘一句能证明这条的原文（40 字以内，不要改写、不要拼接）。摘不出原文的条目「一律不要输出」 —— 宁可少给，也不要编。` : ''}`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(ORGANIZE_SYS, cfg) },
-      { role: 'user', content: user },
-    ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
-  )
-
   // 🔴 用 detailed 版本：把「合法空数组」「元素被丢光」「根本解析不出来」三者区分开
-  const parsed = parseObjectArrayDetailed(text)
-  const arr = parsed.data
-  const parseOutcome = parsed.outcome
-  const parseNotes = parsed.diagnostics.slice(0, 3).map(d => d.detail)
+  let arr: Record<string, unknown>[]
+  let parseOutcome: 'valid' | 'repaired' | 'invalid'
+  let parseNotes: string[]
+  if (req.acpText) {
+    // 3.5.5 · ACP 分支：结构交给宿主严格校验（截断/散文/条目非对象直接抛错），
+    // 判重与关键列规则仍走下面同一段 —— 两条路径入表口径必须一致。
+    const schema = `[{"${req.columns[0]?.name ?? '列名'}":"值", …}]（最多 ${max} 条；只输出【已登记条目】里没有的新条目${req.evidenceField ? `；每条必须带「${req.evidenceField}」逐字原文` : ''}）`
+    const prompt = `${ORGANIZE_SYS}\n\n${user}\n\n${acpJsonInstruction(`整理「${req.tableName}」表格条目`, schema)}`
+    arr = decodeAcpRows(await req.acpText(prompt), { shape: 'array', min: 0, max: 60 })
+    parseOutcome = 'valid'
+    parseNotes = []
+  } else {
+    const cfg = await requireProviderFor('utility')
+    const text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(ORGANIZE_SYS, cfg) },
+        { role: 'user', content: user },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
+    )
+    const parsed = parseObjectArrayDetailed(text)
+    arr = parsed.data
+    parseOutcome = parsed.outcome
+    parseNotes = parsed.diagnostics.slice(0, 3).map(d => d.detail)
+  }
   const colNames = req.columns.map(c => c.name)
   // 表列 + 额外校验字段（依据）：一起从返回对象里取值，后者不进表、只用于本地核对
   const fieldNames = req.evidenceField ? [...colNames, req.evidenceField] : colNames

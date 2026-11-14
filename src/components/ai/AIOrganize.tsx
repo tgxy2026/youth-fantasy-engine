@@ -12,6 +12,9 @@ import { flattenChapters } from '@/lib/outline/chapterSeq'
 import { organizeEmptyKind, organizeEmptyMessage, type OrganizeResult } from '@/lib/ai/aiTasks'
 import type { VisCtx } from '@/lib/schema'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpStructuredText } from '@/lib/agentHost/acpStructured'
+import { confirmDialog } from '@/components/dialogs/dialogs'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { showToast } from '@/components/dialogs/dialogs'
 import { organizeHint, AI_DISABLED_HINT, isDirectedPairTab } from '@/lib/ai/aiScope'
@@ -45,6 +48,9 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
   //    原先只按 `loading` 禁用 ⇒ 没配模型的机器上按钮是可点的，点下去要等一整轮请求失败
   //    才弹 toast，用户只会以为「点了没反应」。判据与真实调用一致：整理链路走 requireActiveProvider。
   const { ready: aiReady } = useAIReady()
+  // 3.5.5 · ACP：桌面 ACP 已连接时不必再配 API 模型；两条路径共用同一个「就绪」判据。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting ? acpWriting.ready : aiReady
   const [mode, setMode] = useState<SourceMode>('chapters')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -112,7 +118,14 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
     const srcMode = mode, srcPicked = [...picked], srcPaste = paste, srcUseCtx = useCtx
     // ⚠️ 闭包参数**不能叫 `ctx`** —— 会遮蔽组件的 `props.ctx`（VisCtx），
     //    传进 organizeRows 的就不是项目可见性上下文了（tsc 当场抓到过）。
+    const generation = acpWriting?.generation
+    const agentName = acpWriting?.name ?? 'ACP Agent'
     t.run(async job => {
+      // 只要结果不回写：整理出来的只是候选行，作者勾选后才由 onAdd 写入表格，
+      // 所以确认文案要说清「只出候选」，别让人以为点一下表就变了。
+      const acpText = generation
+        ? acpStructuredText({ task: 'organize', generation, agentName, signal: job.signal, ask: confirmDialog })
+        : undefined
       let src = ''
       if (srcMode === 'chapters') {
         job.progress('正在读取章节正文…')
@@ -134,6 +147,7 @@ export default function AIOrganize({ tab, existing, calendars = [], ctx = { type
         ctx,
         calendars,
         onPhase: job.progress,
+        ...(acpText ? { acpText } : {}),
       })
     }, info => {
       // 🔴 通知也必须按**真实结果**说话：解析不出条目时若还弹「已完成 —— 结果保存在该页签」，
@@ -287,7 +301,7 @@ style={{ maxHeight: foldVh('26vh') }}>
           {!result && (
             <div className="flex items-center gap-2">
               <Button onClick={run}
-                disabled={loading || !aiReady} title={!aiReady ? AI_DISABLED_HINT : undefined} variant="primary" size="md" className="flex items-center">
+                disabled={loading || !writingReady} title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : undefined} variant="primary" size="md" className="flex items-center">
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {loading ? (phase || '正在整理…') : '开始整理'}
               </Button>

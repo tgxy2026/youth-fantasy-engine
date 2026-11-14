@@ -5,6 +5,7 @@
  * 以及供交互式补全（对话引导）用的结构化轮次（`aiChatJson`）。
  */
 
+import { AcpStructuredError, acpJsonInstruction, decodeAcpRows } from '@/lib/agentHost/acpStructured'
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { resolveTemplateCached } from '@/lib/templates/cache'
@@ -178,9 +179,12 @@ export async function aiCompleteTemplate(
     /** 补全语境（决定发哪条系统提示词；缺省 `'template'` ＝ 通用设定补全） */
     context?: FillContext
     onToken?: (delta: string) => void
+    /** 3.5.5 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+    acpText?: (prompt: string) => Promise<string>
   } = {},
 ): Promise<TemplateFillResult> {
-  const cfg = await requireProviderFor('create')
+  // ACP 分支不需要 API 模型配置
+  const cfg = opts.acpText ? null : await requireProviderFor('create')
   const send = fields.filter(f => !f.locked)
 
   const fieldList = send
@@ -209,19 +213,39 @@ ${sketch && sketch.trim() ? sketch.trim() : '（作者未提供草图，请基�
 
 请返回补全后的 JSON（只输出这一个对象，不要解释、不要 Markdown 代码块标记）。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    // 🔴 这是结构化任务（下面走 parseTemplateJSON）—— 必须传 `json: true`，
-    //    否则按创意档 0.85 采样，模型会自由发挥、JSON 更容易跑偏/夹带解释。
-    //    历史（2026-09-14 审计）已犯过一次同类"漏传低温"，别复发。
-    { timeoutMs: CHAT_TIMEOUT_MS, onToken: opts.onToken, output: 'json-object', reasoning: 'off' },
-  )
-
-  const parsed = parseTemplateJSON(text, send)
+  let parsed: string[]
+  if (opts.acpText) {
+    // 3.5.5 · ACP 分支：只认「键名＝字段序号」的对象，键值必须是字符串/数字。
+    // 缺键按空处理（模型确实可能填不出某一项，这与 API 路径口径一致）；
+    // 但**一个字段都没填出来**算失败 —— 那说明这次调用没有产出，不能报成「补全完成」。
+    const prompt = `${sys}\n\n${user}\n\n${acpJsonInstruction('设定模板补全', `{"1":"第 1 个字段的值","2":"第 2 个字段的值",…} 共 ${send.length} 个键，键名就是字段序号`)}`
+    const row = decodeAcpRows(await opts.acpText(prompt), { shape: 'object', min: 1, max: 1 })[0]
+    parsed = []
+    for (let i = 0; i < send.length; i++) {
+      const raw = row[String(i + 1)] ?? row[i + 1]
+      if (raw === undefined || raw === null) { parsed.push(''); continue }
+      if (typeof raw !== 'string' && typeof raw !== 'number') {
+        throw new AcpStructuredError('bad-field', `第 ${i + 1} 个字段的值不是文本`)
+      }
+      const value = String(raw).trim()
+      if (value.length > 2000) throw new AcpStructuredError('bad-field', `第 ${i + 1} 个字段的值过长（${value.length} > 2000）`)
+      parsed.push(value)
+    }
+    if (!parsed.some(v => v)) throw new AcpStructuredError('empty', '没有返回任何字段内容')
+  } else {
+    const text = await chat(
+      cfg!,
+      [
+        { role: 'system', content: composeSystemPrompt(sys, cfg!) },
+        { role: 'user', content: user },
+      ],
+      // 🔴 这是结构化任务（下面走 parseTemplateJSON）—— 必须传 `json: true`，
+      //    否则按创意档 0.85 采样，模型会自由发挥、JSON 更容易跑偏/夹带解释。
+      //    历史（2026-09-14 审计）已犯过一次同类"漏传低温"，别复发。
+      { timeoutMs: CHAT_TIMEOUT_MS, onToken: opts.onToken, output: 'json-object', reasoning: 'off' },
+    )
+    parsed = parseTemplateJSON(text, send)
+  }
   const values: Record<string, string> = {}
   const aiFilled: string[] = []
   parsed.forEach((val, i) => {

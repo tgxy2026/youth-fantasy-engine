@@ -17,7 +17,7 @@ import type { AcpTask } from './acpBridge'
 import { acpGateMessage, acpGatedText, type AcpGateConfirmOptions } from './acpGate'
 
 /** 3.5.5 结构化任务。校对因涉及原文位置校验，单独在 proofread.ts 里接。 */
-export type AcpStructuredTask = Extract<AcpTask, 'review' | 'ooc' | 'advice' | 'proofread' | 'extract' | 'changes'>
+export type AcpStructuredTask = Extract<AcpTask, 'review' | 'ooc' | 'advice' | 'proofread' | 'extract' | 'changes' | 'organize' | 'fill'>
 
 export type AcpStructuredFailure = 'empty' | 'invalid-json' | 'truncated' | 'missing-field' | 'bad-field' | 'bad-reference'
 
@@ -38,6 +38,8 @@ const STRUCTURED_SCOPE: Record<AcpStructuredTask, { title: string; full: string;
   proofread: { title: '发送本章正文至 ACP Agent', full: '本章正文', purpose: '校对错别字、语病与标点（结构化问题清单）' },
   extract: { title: '发送本章正文至 ACP Agent', full: '本章正文', purpose: '抽取可补登的设定实体（只出候选，不会自动写入设定表）' },
   changes: { title: '发送本章正文至 ACP Agent', full: '本章正文', purpose: '抽取章后整理的变化候选（伏笔 / 关系 / 状态，写入前仍要你核对）' },
+  organize: { title: '发送整理材料至 ACP Agent', full: '所选章节正文与项目资料', purpose: '整理成表格候选条目（勾选后才会写入表格）' },
+  fill: { title: '发送设定资料至 ACP Agent', full: '字段清单、项目资料与你填的草图', purpose: '补全设定模板（填好后仍要点应用才写入）' },
 }
 
 export interface AcpStructuredSendInput {

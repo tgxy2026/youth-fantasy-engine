@@ -13,6 +13,8 @@ import { aiChapterReview, aiContinuationAdvice, aiOocCheckWithStatus } from '../
 import { aiProofreadLogic, aiProofreadText } from '../src/lib/aiTasks/proofread'
 import { aiExtractSettingEntitiesWithStatus } from '../src/lib/aiTasks/extract'
 import { aiExtractChapterChangesWithStatus } from '../src/lib/aiTasks/postProcess'
+import { aiOrganizeRows } from '../src/lib/aiTasks/organize'
+import { aiCompleteTemplate } from '../src/lib/aiCore/template'
 import {
   AcpStructuredError,
   acpStructuredMessage,
@@ -389,11 +391,106 @@ async function run() {
 
   ok('确认文案说明写入前仍要核对', acpStructuredMessage('changes', '假 Agent').includes('写入前仍要你核对'))
 
-  console.log('--- 12. 主进程白名单与源码契约 ---')
+  console.log('--- 12. 设定表 AI 整理 ---')
+  const organize = () => aiOrganizeRows({
+    tableName: '人物关系',
+    purpose: '整理人物之间的关系变化',
+    columns: [{ name: '人物A' }, { name: '人物B' }, { name: '关系类型', allowed: ['师徒', '敌对'] }],
+    existingKeys: ['林昭 ｜ 青岚宗'],
+    keyColumns: ['人物A', '人物B'],
+    unorderedPair: false,
+    sourceText: '林昭与青岚宗决裂。',
+    projectContext: '设定：青岚宗。',
+    maxRows: 5,
+    acpText: acpStructuredText({ task: 'organize', generation, agentName: '假 Agent', assertCurrent: () => {}, ask: allow }),
+  })
+
+  reset()
+  generateImpl = async () => ({
+    ok: true,
+    text: JSON.stringify([{ 人物A: '林昭', 人物B: '沈砚', 关系类型: '师徒' }]),
+  })
+  const org = await organize()
+  ok('整理出一条新条目', org.rows.length === 1 && org.rows[0]['人物B'] === '沈砚')
+  ok('解析口径为 valid', org.parseOutcome === 'valid')
+  ok('任务标识为 organize', requests[0].task === 'organize')
+  ok('提示词带上已登记条目', requests[0].text.includes('【已登记条目'))
+
+  reset()
+  generateImpl = async () => ({
+    ok: true,
+    text: JSON.stringify([{ 人物A: '林昭', 人物B: '青岚宗', 关系类型: '敌对' }, { 人物A: '林昭', 人物B: '沈砚' }]),
+  })
+  const orgDup = await organize()
+  ok('与已登记条目重复的被本地判重丢弃', orgDup.rows.length === 1 && orgDup.dupSkipped === 1, `${orgDup.rows.length}/${orgDup.dupSkipped}`)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify([{ 人物A: '林昭' }]) })
+  const orgBad = await organize()
+  ok('缺关键列的条目被丢弃并计数', orgBad.rows.length === 0 && orgBad.invalidSkipped === 1)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[]' })
+  const orgEmpty = await organize()
+  ok('没有可整理内容 ⇒ 合法空结果', orgEmpty.rows.length === 0 && orgEmpty.parseOutcome === 'valid')
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '[{"人物A":"林昭","人物B":"沈砚"' })
+  let orgThrew = ''
+  try { await organize() } catch (error) { orgThrew = String((error as Error).message) }
+  ok('截断直接报错，不返回半份候选', orgThrew.includes('JSON 没有闭合'), orgThrew)
+
+  ok('确认文案说明只出候选', acpStructuredMessage('organize', '假 Agent').includes('勾选后才会写入表格'))
+
+  console.log('--- 13. 设定模板补全（表单 / 大纲 AI 新增）---')
+  const fields = [
+    { key: 'positioning::书名', label: '书名' },
+    { key: 'positioning::卖点', label: '核心卖点' },
+    { key: 'positioning::锁定项', label: '自动编号', locked: true },
+  ]
+  const fill = (opts?: { sketch?: string }) => aiCompleteTemplate(fields, opts?.sketch ?? '少年在雨夜捡到半截玉牌', {
+    worldContext: '设定：青岚宗。',
+    acpText: acpStructuredText({ task: 'fill', generation, agentName: '假 Agent', assertCurrent: () => {}, ask: allow }),
+  })
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify({ 1: '雨夜玉牌', 2: '开局即悬念' }) })
+  const filled = await fill()
+  ok('两个未锁定字段被补全', filled.aiFilled.length === 2 && filled.values['positioning::书名'] === '雨夜玉牌')
+  ok('锁定字段不写回', !('positioning::锁定项' in filled.values))
+  ok('任务标识为 fill', requests[0].task === 'fill')
+  ok('提示词带字段清单', requests[0].text.includes('【字段清单】') && requests[0].text.includes('[书名]'))
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify({ 1: '雨夜玉牌' }) })
+  const partial = await fill()
+  ok('缺键按空处理，其余照常', partial.aiFilled.length === 1 && partial.values['positioning::书名'] === '雨夜玉牌')
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify({ 1: '', 2: '   ' }) })
+  let emptyMsg = ''
+  try { await fill() } catch (error) { emptyMsg = String((error as Error).message) }
+  ok('一个字段都没填出来判为失败', emptyMsg.includes('没有返回任何字段内容'), emptyMsg)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: JSON.stringify({ 1: { 嵌套: '对象' } }) })
+  let badVal = ''
+  try { await fill() } catch (error) { badVal = String((error as Error).message) }
+  ok('字段值不是文本判为失败', badVal.includes('不是文本'), badVal)
+
+  reset()
+  generateImpl = async () => ({ ok: true, text: '{"1":"雨夜玉牌"' })
+  let fillCut = ''
+  try { await fill() } catch (error) { fillCut = String((error as Error).message) }
+  ok('截断判为失败', fillCut.includes('JSON 没有闭合'), fillCut)
+
+  ok('确认文案说明点应用才写入', acpStructuredMessage('fill', '假 Agent').includes('仍要点应用才写入'))
+
+  console.log('--- 14. 主进程白名单与源码契约 ---')
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const main = fs.readFileSync(path.join(root, 'electron/main.cjs'), 'utf8')
   const whitelist = main.split(/\r?\n/).find(line => line.includes('request.task') && line.includes('includes')) ?? ''
-  for (const task of ['review', 'ooc', 'advice', 'proofread', 'extract', 'changes']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
+  for (const task of ['review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill']) ok(`主进程放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   for (const task of ['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary']) {
     ok(`3.5.4 任务仍放行 ${task}`, whitelist.includes(`'${task}'`), whitelist)
   }
