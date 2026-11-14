@@ -218,8 +218,10 @@ async function main() {
     ok('⑦ 手动改写入口：各自一份改写预算 + 一次性设定同步预算',
       /max: REWRITE_ATTEMPT_BUDGET/.test(creativeSrc)
       && /label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET/.test(creativeSrc))
+    // 3.5.5：ACP 生成通道以**末位可选参数**追加在 budget 之后（budget 位置不变），
+    // 所以这里允许 `budget` 后面再跟 `, opts.acpText` —— 判据仍是「预算从本章扣、逐次记账」。
     ok('⑦ 连写侧：设定整理改为按实际调用逐次记账',
-      /cb\.signal, cb\.request, budget\)/.test(autoSrc)
+      /cb\.signal, cb\.request, budget(?:, opts\.acpText)?\)/.test(autoSrc)
       && /budget\?\.consume\(1\)[\s\S]{0,120}aiExtractSettingEntitiesWithStatus/.test(autoSrc))
   }
 

@@ -525,7 +525,44 @@ async function run() {
   try { await companion() } catch (error) { ghostCancel = String((error as Error).name) }
   ok('取消向上抛出 AbortError（不吞成空建议）', ghostCancel === 'AbortError', ghostCancel)
 
-  console.log('--- 15. 主进程白名单与源码契约 ---')
+  console.log('--- 15. 字数校准的生成通道（连写/改写共用）---')
+  {
+    const { ask, askSoft, enforceWordRange } = await import('../src/lib/editor/wordRange')
+    reset()
+    const viaAcp = await ask(null, '你是助手。', '请回答。', {
+      acpText: async prompt => `【收到】${prompt.includes('请回答') ? '是' : '否'}`,
+    })
+    ok('ask 走 ACP 通道并剥空白', viaAcp.startsWith('【收到】是'), viaAcp.slice(0, 20))
+
+    let noChannel = ''
+    try { await ask(null, 'sys', 'user') } catch (error) { noChannel = String((error as Error).message) }
+    ok('既无 API 配置也无 ACP 通道 ⇒ 明确报错', noChannel.includes('缺少模型配置'), noChannel)
+
+    reset()
+    const longBody = '林昭握紧剑柄。'.repeat(6)   // 约 42 汉字，远低于下限
+    const filled = await enforceWordRange({
+      cfg: null,
+      body: longBody,
+      target: 500,
+      maxExpand: 2,
+      acpText: async () => '雨水顺着剑脊往下淌，他一步一步走进山门，背影被灯影拉得很长。'.repeat(12),
+    })
+    const filledWords = filled.replace(/\s/g, '').length
+    ok('enforceWordRange 无 API 配置也能补写', filled.length > longBody.length, `${longBody.length} → ${filled.length}`)
+    ok('补写后仍保留原文开头', filled.startsWith('林昭握紧剑柄'))
+    ok('补写结果不是空串', filledWords > 50, String(filledWords))
+    void askSoft
+  }
+
+  console.log('--- 16. 连写链路的源码契约（入口未接线，属 3.5.6）---')
+  const autoContinueSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/outline/autoContinue.ts'), 'utf8')
+  ok('连写入口在走 ACP 时不再强制要求 API 配置',
+    autoContinueSrc.includes("if (!opts.acpText) await requireProviderFor('create')"), '')
+  ok('七处子调用都带 acpText 透传',
+    (autoContinueSrc.match(/acpText: opts\.acpText/g) ?? []).length >= 5,
+    String((autoContinueSrc.match(/acpText: opts\.acpText/g) ?? []).length))
+
+  console.log('--- 17. 主进程白名单与源码契约 ---')
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const main = fs.readFileSync(path.join(root, 'electron/main.cjs'), 'utf8')
   const whitelist = main.split(/\r?\n/).find(line => line.includes('request.task') && line.includes('includes')) ?? ''

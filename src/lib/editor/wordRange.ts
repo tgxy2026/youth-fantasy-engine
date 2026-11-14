@@ -30,7 +30,7 @@ export type Cfg = Awaited<ReturnType<typeof requireActiveProvider>>
 // ============ 单次问答（剥思维链只作用于本次返回，绝不重复剥累加体） ============
 
 export async function ask(
-  cfg: Cfg, sys: string, user: string,
+  cfg: Cfg | null, sys: string, user: string,
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
@@ -45,8 +45,15 @@ export async function ask(
     reasoning?: ReasoningNeed
     /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
     request?: CallRequestContext
+    /**
+     * 3.5.5 · ACP 生成通道：给了就走 Agent，不再需要 `cfg`。
+     * 🔴 这是「补字/压缩」与「ACP」之间的唯一接缝 —— 不给就完全走原来的 chat 路径。
+     */
+    acpText?: (prompt: string) => Promise<string>
   } = {},
 ): Promise<string> {
+  if (opts.acpText) return stripThink(await opts.acpText(`${sys}\n\n${user}`)).trim()
+  if (!cfg) throw new Error('字数校准缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
   const raw = await chat(cfg, [
     { role: 'system', content: sys },
     { role: 'user', content: user },
@@ -56,7 +63,7 @@ export async function ask(
 
 /** 非致命问答：取消向上抛，其它异常吞成空串由调用方按字数判定 */
 export async function askSoft(
-  cfg: Cfg, sys: string, user: string,
+  cfg: Cfg | null, sys: string, user: string,
   opts: {
     signal?: AbortSignal
     onToken?: (d: string) => void
@@ -71,6 +78,8 @@ export async function askSoft(
     reasoning?: ReasoningNeed
     /** 请求归属（3.2.0 · WQ7）：补写/压缩是每章量最大的调用，必须能记到具体任务账上 */
     request?: CallRequestContext
+    /** 3.5.5 · ACP 生成通道（与 `ask` 同义，见那里的说明） */
+    acpText?: (prompt: string) => Promise<string>
   } = {},
 ): Promise<string> {
   try {
@@ -102,7 +111,10 @@ const DEFAULT_FILL_SYS = [
 ].join('\n')
 
 export async function enforceWordRange(o: {
-  cfg: Cfg
+  /** API 模型配置；走 ACP 时传 null（此时必须给 `acpText`） */
+  cfg?: Cfg | null
+  /** 3.5.5 · ACP 生成通道：给了就整段补写/压缩都走 Agent */
+  acpText?: (prompt: string) => Promise<string>
   body: string
   target: number
   /**
@@ -190,7 +202,7 @@ export async function enforceWordRange(o: {
     const fillGoal = o.invariants?.trim()
       ? '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；**只在本章已有内容范围内补足细节**（动作、感官、对话、心理），不新增剧情事件、不新造人物/地点/器物名称；只输出新增的正文片段。'
       : '要求：不要重复或重述已写内容、不要重新开头、不要用形容词与心理独白注水；情节要实质推进；若剧情已近章末，则收束到章末钩子。只输出新增的正文片段。'
-    const add = await askSoft(o.cfg, fillSys, [
+    const add = await askSoft(o.cfg ?? null, fillSys, [
       '【本章已写部分】',
       authorBlock(fence, body),
       '',
@@ -211,6 +223,7 @@ export async function enforceWordRange(o: {
     ].join('\n'), {
       signal: o.signal, onToken: o.onToken,
       ...(o.request ? { request: o.request } : {}),
+      ...(o.acpText ? { acpText: o.acpText } : {}),
     })
     // 一次补写 = 一次逻辑调用（它内部最多还会再打 3 次实际请求，由 `MAX_REQUESTS_PER_CALL` 兜）
     o.budget?.consume(1)
@@ -232,7 +245,7 @@ export async function enforceWordRange(o: {
       break
     }
     o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 汉字）`)
-    const out = await askSoft(o.cfg,
+    const out = await askSoft(o.cfg ?? null,
       '你是资深网文编辑，擅长在不损失任何情节的前提下做「轻度」精简。只输出精简后的正文本身。',
       [
         // 🔴 给**具体删减量**而不是"压到 X 字"：只说目标时模型常按"精简"的字面理解大删
@@ -266,6 +279,7 @@ export async function enforceWordRange(o: {
         signal: o.signal,
         ...(o.onToken ? { onToken: o.onToken } : {}),
         ...(o.request ? { request: o.request } : {}),
+        ...(o.acpText ? { acpText: o.acpText } : {}),
       })
     o.budget?.consume(1)
     const ow = countWords(out)

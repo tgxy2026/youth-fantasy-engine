@@ -200,7 +200,9 @@ const DEAI_SYS = [
 ].join('\n')
 
 async function deAiFlavor(o: {
-  cfg: Cfg
+  cfg: Cfg | null
+  /** 3.5.5 · ACP 通道（给了就不需要 cfg） */
+  acpText?: (prompt: string) => Promise<string>
   body: string
   instruction: string
   signal?: AbortSignal
@@ -208,12 +210,13 @@ async function deAiFlavor(o: {
   onBodyReplace?: (s: string) => void
   request?: CallRequestContext
 }): Promise<string> {
-  return askSoft(o.cfg,
+  return askSoft(o.cfg ?? null,
     `${DEAI_SYS}\n\n【本次润色侧重点】\n${o.instruction}`,
     ['【待润色正文】', authorBlock(newAuthorFence(), o.body)].join('\n'),
     {
       signal: o.signal, onToken: o.onToken,
       ...(o.request ? { request: o.request } : {}),
+      ...(o.acpText ? { acpText: o.acpText } : {}),
     })
 }
 
@@ -236,8 +239,10 @@ async function generateOneChapter(opts: {
   onPhase?: (p: string) => void
   onBodyReplace?: (s: string) => void
   onLog?: (s: string) => void
+  /** 3.5.5 · ACP 通道：给了就整章生成与字数校准都走 Agent */
+  acpText?: (prompt: string) => Promise<string>
 }): Promise<string> {
-  const cfg = await requireProviderFor('create')
+  const cfg = opts.acpText ? null : await requireProviderFor('create')
   const sys = buildSysPrompt(opts.targetWords, opts.chapterNo, await activeFingerprintNote())
   const lo = opts.targetWords - WORD_TOLERANCE
   const hi = opts.targetWords + WORD_TOLERANCE
@@ -265,6 +270,7 @@ async function generateOneChapter(opts: {
   let body = await ask(cfg, sys, user, {
     signal: opts.signal, onToken: opts.onToken,
     ...(opts.request ? { request: opts.request } : {}),
+    ...(opts.acpText ? { acpText: opts.acpText } : {}),
   })
   opts.budget?.consume(1)
 
@@ -274,6 +280,7 @@ async function generateOneChapter(opts: {
     opts.onBodyReplace?.('')
     body = await askSoft(cfg, sys, user, {
       signal: opts.signal, ...(opts.request ? { request: opts.request } : {}),
+      ...(opts.acpText ? { acpText: opts.acpText } : {}),
     })
     opts.budget?.consume(1)
     opts.onBodyReplace?.(body)
@@ -283,6 +290,7 @@ async function generateOneChapter(opts: {
     cfg, body, target: opts.targetWords, sys, chapterNo: opts.chapterNo,
     signal: opts.signal, onToken: opts.onToken,
     ...(opts.request ? { request: opts.request } : {}),
+    ...(opts.acpText ? { acpText: opts.acpText } : {}),
     onPhase: opts.onPhase, onBodyReplace: opts.onBodyReplace,
   })).trim()
 }
@@ -342,6 +350,8 @@ async function selfRefine(
    * 🔴 用章号而不是章 id：自检发生在 `createChapterAfter` **之前**，那时新章还没有 id。
    */
   chapterNo?: number,
+  /** 3.5.5 · ACP 通道：自检后的单轮改写走 Agent */
+  acpText?: (prompt: string) => Promise<string>,
 ): Promise<SelfRefineResult> {
   if (!ctx.text.trim() || countWords(body) < 200) {
     return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
@@ -389,20 +399,23 @@ async function selfRefine(
   onPhase?.(`根据 ${findings.length} 条审读问题改写修正`)
   const instr = findings.map(f => `- ${(f as { title?: string }).title || '问题'}：${(f as { detail?: string }).detail || ''}`).join('\n')
   // 2.9.2 · ②：`aiRewritePassage` 收 `RewriteAsk` 对象（编辑区传 5 个动作词，这里传自由文本）
-  const res = await aiRewritePassage(body, { instruction: `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}` }, '', { signal }).catch(() => null)
+  const res = await aiRewritePassage(body, { instruction: `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}` }, '', {
+    signal, ...(acpText ? { acpText } : {}),
+  }).catch(() => null)
   const rw = res?.rewritten ? stripThink(res.rewritten).trim() : ''
   // 安全阀：改写结果显著缩水（不足原文 60%）视为模型偷懒或被截断，保留原文
   if (!rw || countWords(rw) < countWords(body) * 0.6) return { body, selfCheck }
   return { body: rw, selfCheck }
 }
 
-async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRequestContext): Promise<string> {
-  const cfg = await requireProviderFor('create').catch(() => null)
-  if (!cfg) return '未命名章节'
+async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRequestContext, acpText?: (prompt: string) => Promise<string>): Promise<string> {
+  const cfg = acpText ? null : await requireProviderFor('create').catch(() => null)
+  if (!cfg && !acpText) return '未命名章节'
   const snippet = body.slice(0, 1500)
   const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个汉字，只输出标题本身，不要标点、不要引号、不要解释。'
   const t = await askSoft(cfg, sys, `【本章正文（节选）】\n${snippet}`, {
     signal, ...(request ? { request } : {}),
+    ...(acpText ? { acpText } : {}),
   })
   const clean = t.replace(/[「」"'》>、。！？\s]/g, '').slice(0, 15)
   return clean || '未命名章节'
@@ -465,6 +478,8 @@ export async function extractAndCommitSettings(
    *    不嵌套追加；不传 ⇒ 与改造前逐字一致。
    */
   budget?: AttemptBudget,
+  /** 3.5.5 · ACP 通道：实体抽取与变化检测走 Agent（老调用不传，行为零变化） */
+  acpText?: (prompt: string) => Promise<string>,
 ): Promise<{ created: number; failed: string[]; errors?: string[] }> {
   if (budget?.exhausted) {
     return {
@@ -475,7 +490,9 @@ export async function extractAndCommitSettings(
   // WQ1-4：解析失败/请求失败与"本章无新实体"分开 —— 失败要经 errors 上报，
   // 不再静默 return { created: 0 } 让 UI 显示"新增 0 条"像正常一样
   budget?.consume(1)
-  const entRun = await aiExtractSettingEntitiesWithStatus(body, title, { signal, ...(request ? { request } : {}) })
+  const entRun = await aiExtractSettingEntitiesWithStatus(body, title, {
+    signal, ...(request ? { request } : {}), ...(acpText ? { acpText } : {}),
+  })
   if (entRun.state !== 'completed') {
     return { created: 0, failed: [], errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'] }
   }
@@ -512,7 +529,7 @@ export async function extractAndCommitSettings(
       skippedByBudget = true
     } else {
       budget?.consume(1)
-      w = await applySettingUpdates(body, title, signal, request)
+      w = await applySettingUpdates(body, title, signal, request, acpText)
     }
     const errs = [
       ...(r.failed.length ? [] : []),
@@ -539,11 +556,12 @@ export async function extractAndCommitSettings(
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============
 
-async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal, request?: CallRequestContext): Promise<{ updates: SettingUpdate[]; state: StepResultState }> {
-  const cfg = await requireProviderFor('create')
+async function extractSettingUpdates(body: string, title: string, signal?: AbortSignal, request?: CallRequestContext, acpText?: (prompt: string) => Promise<string>): Promise<{ updates: SettingUpdate[]; state: StepResultState }> {
+  const cfg = acpText ? null : await requireProviderFor('create')
   const sys = P_setting_update_detect
   const text = await askSoft(cfg, sys, `【章节】${title || '（未命名章节）'}\n【本章正文】\n${body.trim() || '（空白）'}`, {
     signal, output: 'json-object', reasoning: 'off', ...(request ? { request } : {}),
+    ...(acpText ? { acpText } : {}),
   })
   // 统一走 aiParse：旧实现是裸 JSON.parse——不剥代码块、不切最外层，
   // 模型只要在 JSON 外套一句解释或 ```json 围栏，整条更新就被静默丢弃。
@@ -601,11 +619,12 @@ function findRegistered(reg: Awaited<ReturnType<typeof loadRegistry>>, name: str
 
 async function applySettingUpdates(
   body: string, title: string, signal?: AbortSignal, request?: CallRequestContext,
+  acpText?: (prompt: string) => Promise<string>,
 ): Promise<{ applied: number; state: StepResultState }> {
   // WQ1-4：解析失败（JSON 坏）不再静默 return —— 调用方（auto-update 分支）记录到日志
   let run: { updates: SettingUpdate[]; state: StepResultState }
   try {
-    run = await extractSettingUpdates(body, title, signal, request)
+    run = await extractSettingUpdates(body, title, signal, request, acpText)
   } catch {
     return { applied: 0, state: 'failed' }
   }
@@ -685,10 +704,17 @@ export async function runAutoContinue(
       /** 补写轮数上限（默认 6）—— 每轮都是**增量拼接**，不重写已有内容 */
       maxExpand?: number
     }
+    /**
+     * 3.5.5 · ACP 通道：给了就整条连写链（初稿 / 去 AI 味 / 补字压缩 / 自检改写 /
+     * 摘要 / 标题 / 设定同步）都走 Agent，不再要求 API 模型配置。
+     * 🔴 一次连写只授权一次（调用方传 askOnce），否则每章每步都弹窗。
+     */
+    acpText?: (prompt: string) => Promise<string>
   },
   cb: ContinueCallbacks = {},
 ): Promise<{ created: { id: string; title: string; no: number }[] }> {
-  await requireProviderFor('create') // 提前校验，无模型直接抛中文提示
+  // 提前校验：走 ACP 时不需要 API 模型
+  if (!opts.acpText) await requireProviderFor('create')
   const vols = await db.getAllVolumes()
   const ordered = sortChapters(vols, await db.getAllChapters())
   const last = ordered.length ? ordered[ordered.length - 1] : null
@@ -725,7 +751,8 @@ export async function runAutoContinue(
       cb.onPhase?.(`补齐最后一章（${w0} → ${opts.targetWords} 汉字）…`)
       try {
         const filled = cleanChapterOutput(await enforceWordRange({
-          cfg: await requireProviderFor('create'),
+          cfg: opts.acpText ? null : await requireProviderFor('create'),
+          ...(opts.acpText ? { acpText: opts.acpText } : {}),
           body: last.content || '',
           target: opts.targetWords,
           sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()),
@@ -817,6 +844,7 @@ export async function runAutoContinue(
           onPhase: p => cb.onPhase?.(`${tag}：${p}`),
           onBodyReplace: cb.onBodyReplace,
           onLog: cb.onLog,
+          ...(opts.acpText ? { acpText: opts.acpText } : {}),
         })
         // 🔴 剥掉正文里的 markdown 标记（`**粗体**` / 行首 `#` / 整行 `---`）——
         //    模型偶尔把正文当文档写，落库后作者在「正文编辑」里看到的是星号而不是强调
@@ -841,7 +869,8 @@ export async function runAutoContinue(
           cb.onBodyReplace?.('')
           // 去 AI 味儿也是模型产出，同样可能带回 markdown 标记 —— 一并净化后再量字数
           const def = cleanChapterOutput(await deAiFlavor({
-            cfg: await requireProviderFor('create'), body, instruction: opts.deAi.prompt,
+            cfg: opts.acpText ? null : await requireProviderFor('create'),
+            ...(opts.acpText ? { acpText: opts.acpText } : {}), body, instruction: opts.deAi.prompt,
             signal: cb.signal, ...(cb.request ? { request: cb.request } : {}), onToken: cb.onBodyToken, onBodyReplace: cb.onBodyReplace,
           }).catch(() => ''))
           budget.consume(1)
@@ -876,7 +905,7 @@ export async function runAutoContinue(
       // ---- 采纳后：编辑自检 → 修正 → 二次字数校准 ----
       // WQ1-2：自检三项是必选项 —— 失败/取消/未完成都暂停连写，本章不落库，
       // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
-      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget, ordered.length + i + 1)
+      const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget, ordered.length + i + 1, opts.acpText)
       body = refined.body
       if (refined.selfCheck.state !== 'completed') {
         const sc = refined.selfCheck
@@ -889,7 +918,8 @@ export async function runAutoContinue(
         break
       }
       body = await enforceWordRange({
-        cfg: await requireProviderFor('create'), body, target: opts.targetWords,
+        cfg: opts.acpText ? null : await requireProviderFor('create'),
+        ...(opts.acpText ? { acpText: opts.acpText } : {}), body, target: opts.targetWords,
         sys: buildSysPrompt(opts.targetWords, undefined, await activeFingerprintNote()), signal: cb.signal,
         ...(cb.request ? { request: cb.request } : {}),
         onPhase: p => cb.onPhase?.(`${tag}：${p}`), onBodyReplace: cb.onBodyReplace,
@@ -913,11 +943,11 @@ export async function runAutoContinue(
       // 🔴 预算到顶就跳过（标题退回占位、摘要留空），**不追加**请求。
       let title = '未命名章节'
       if (!budget.exhausted) {
-        title = await suggestTitle(body, cb.signal, cb.request)
+        title = await suggestTitle(body, cb.signal, cb.request, opts.acpText)
         budget.consume(1)
       }
       // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
-      const sum = budget.exhausted ? '' : await aiChapterSummary(body, { signal: cb.signal }).catch(() => '')
+      const sum = budget.exhausted ? '' : await aiChapterSummary(body, { signal: cb.signal, ...(opts.acpText ? { acpText: opts.acpText } : {}) }).catch(() => '')
       if (!budget.exhausted) budget.consume(1)
       // 🔴 本章的**计划章号** ＝ 库里已有章数 + 本轮第几章（与上面取细纲的 `ordered.length + i + 1` 同一个数）。
       //    按它问调用方"这一章该落进哪一卷" —— 长篇跨卷时第 21 章要进卷二，而不是留在锚点所在的卷一。
@@ -939,7 +969,7 @@ export async function runAutoContinue(
       cb.onPhase?.(`${tag}：抽取并补登设定`)
       // 设定整理计入本章预算：由 `extractAndCommitSettings` 按**实际逻辑调用**逐次记账
       //（抽取 1 次；auto-update 再 +1 次变化检测），不再在这里笼统扣 1 次
-      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request, budget)
+      const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request, budget, opts.acpText)
       const dev = finalWords - opts.targetWords
       cb.onLog?.(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`
