@@ -164,9 +164,16 @@ async function main() {
   const { hashPaths } = await import(pathToFileURL(path.join(ROOT, 'scripts/verify/evidence.mjs')).href)
   const sourceFingerprint = snapshot(ROOT).fingerprint
   const buildManifest = await hashPaths(build, ['.'])
-  const dbSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
-  const databaseName = /const DB_NAME = '([^']+)'/.exec(dbSource)?.[1]
-  if (!databaseName) throw new Error('Cannot determine actual database name')
+  /**
+   * 🔴 2026-11-15：DB_NAME 已是 `accountLocalDatabaseName('youth-fantasy-engine')`（多账号改造），
+   *   不再是字符串字面量；旧正则必然失配。改成运行时枚举，不依赖源码写法。
+   */
+  let databaseName = null
+  const resolveDatabaseName = page => page.evaluate(async () => {
+    const list = await indexedDB.databases()
+    const names = list.map(item => item.name).filter(Boolean)
+    return names.find(name => name.startsWith('youth-fantasy-engine')) ?? null
+  })
 
   const port = await new Promise((resolve, reject) => {
     const listener = net.createServer()
@@ -329,6 +336,8 @@ process.on('message',async message=>{
     // ---------- ②-b backend-selection：主库来自服务端，不是浏览器本地 IndexedDB ----------
     {
       const fetchedFromServer = A.requests.some(r => r.method === 'GET' && r.pathname === '/api/data')
+      // 云端模式的预期正是「本地没有这个库」：解析不到就按基础名比对（结果同样为 false）。
+      if (!databaseName) databaseName = (await resolveDatabaseName(A.page)) || 'youth-fantasy-engine'
       const localDb = await A.page.evaluate(name => indexedDB.databases().then(list => list.some(d => d.name === name)), databaseName)
       check('backend-selection', fetchedFromServer && !localDb, JSON.stringify({ fetchedFromServer, localDb, databaseName }))
     }
