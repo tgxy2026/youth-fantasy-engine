@@ -8,7 +8,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { useAIReady } from '@/lib/ai/useAIReady'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { AI_DISABLED_HINT, blockedHintFor } from '@/lib/ai/aiScope'
 import { getAllChapters } from '@/lib/db'
 import {
   extractFingerprint, loadFingerprints, loadActiveFingerprintId,
@@ -228,7 +228,7 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
               className="flex-1 bg-ink-800 border border-ink-700 rounded px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/40 placeholder:text-ink-600"
             />
             <Button variant="primary" size="sm" onClick={runExtract} disabled={t.running || !sample.trim() || !writingReady}
-              title={!writingReady ? AI_DISABLED_HINT : '本地统计 + AI 归纳一次；不会自动重试'}>
+              title={!writingReady ? blockedHintFor(!!acpWriting) : '本地统计 + AI 归纳一次；不会自动重试'}>
               {t.running ? '提炼中…' : '提炼'}
             </Button>
             {t.running && <Button variant="secondary" size="sm" onClick={t.stop}>中止</Button>}

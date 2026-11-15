@@ -251,7 +251,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
             ['ask', '问 AI', MessageCircleQuestion],
           ] as [AssistMode, string, typeof BookOpen][]).map(([key, label, Icon]) => (
             <Button key={key} variant="toggle" size="sm" selected={mode === key}
-              title={key === 'ask' ? '按内置手册回答你的问题；未配置模型时只给手册片段' : '直接翻内置手册，不联网、不用模型'}
+              title={key === 'ask' ? '按内置手册回答你的问题；未接入模型或 ACP 时只给手册片段' : '直接翻内置手册，不联网、不用模型'}
               onClick={() => { setMode(key); if (key === 'ask') { setAskOpened(true); setOpenId(null); setAnchor(null) } }}
               className="text-11">
               <Icon size={12} /> {label}

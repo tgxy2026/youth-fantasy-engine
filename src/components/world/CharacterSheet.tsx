@@ -34,7 +34,7 @@ import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { useFieldGating } from '@/lib/templates/useFieldLabels'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
 import { useMasterRecordNavigation } from '@/components/common/useMasterRecordNavigation'
-import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
+import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { Button } from '@/components/common/Button'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -423,7 +423,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
-  const { ready: writingReady } = useWritingReady()
+  const { ready: writingReady, blockedHint } = useWritingReady()
 
   // 定位到指定记录（报告跳转）：records 到位后选中它，并回报"已消费"。
   // 不写进加载流程里，是因为 focusRowId 可能在组件已经挂载后才变化（同一页签二次跳转）。
@@ -856,7 +856,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
               : '套用模板：固定当前结构，或从空白开始设计字段') : undefined}
             alias={!templateDef && <FieldAliasButton tabId={tab.id} tabName={tab.name} size="sm" variant="bare"
               intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。" targets={aliasTargets} />}
-            aiEnabled={aiCap !== 'none'} aiDisabledHint={!writingReady ? AI_DISABLED_HINT : undefined}
+            aiEnabled={aiCap !== 'none'} aiDisabledHint={!writingReady ? blockedHint : undefined}
             hasSelection={!!draft} canMove={moveTargets.length > 0}
             onTemplate={() => setShowTemplate(true)} onImport={() => setShowImport(true)} onExport={exportCsv}
             onCreateAI={() => setShowFill(true)} onFillAI={() => setShowFillExisting(true)} onMove={() => setMoveOpen(true)} />

@@ -31,7 +31,7 @@ function main() {
     cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)/.test(cs) && cs.includes('out[k] = v'))
   ok('🔴 AI 补全：弹窗标题带当前卡名', cs.includes('AI 补全 · ${draft.name}'))
   // 3.5.6：判据可以是 API 就绪或写作就绪（ACP），但必须真的从对应 hook 推导
-  ok('🔴 AI 补全：模型未就绪或未选卡时禁用', /aiDisabledHint=\{!(?:aiReady|writingReady) \? AI_DISABLED_HINT : undefined\}/.test(cs)
+  ok('🔴 AI 补全：模型未就绪或未选卡时禁用', /aiDisabledHint=\{!(?:aiReady|writingReady) \? (?:AI_DISABLED_HINT|blockedHint) : undefined\}/.test(cs)
     && cs.includes('hasSelection={!!draft}') && tools.includes('disabled={!!props.aiDisabledHint || !props.hasSelection}'))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet 同口径）',
     /const accepted = acceptAiValues\(values\)/.test(cs)

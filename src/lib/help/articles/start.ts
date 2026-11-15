@@ -80,7 +80,7 @@ export const START_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'start-without-ai',
-    revision: 2,
+    revision: 3,
     title: '不配模型也能用哪些功能',
     summary: '本地功能与 AI 增强的界线；哪些按钮在没配置模型时会变灰。',
     aliases: ['没模型能用吗', '不充值能用', '离线可用'],
@@ -103,8 +103,8 @@ export const START_ARTICLES: HelpArticle[] = [
         id: 'needs-model',
         heading: '需要模型的部分',
         body: [
-          '大多数 AI 任务需要在「模型设置」选择 API 模式并添加可用模型。网页版请添加联网模型。',
-          '支持 ACP 连接的桌面构建可使用 Antigravity 完成部分纯文本写作，具体入口见「外部 Agent 协作」。一键拆书、创意写作和酒馆等仍走 API 模式。',
+          'API 模式下需要先在「模型设置」选择可用模型；网页版请添加联网模型。桌面安装版也可以改为连接 ACP Agent，两条通道任一就绪即可使用（投稿审核例外：它只在本机 / 局域网模型上运行）。',
+          '支持 ACP 连接的桌面构建可使用 Antigravity 完成写作、审读与工具分析，具体入口见「外部 Agent 协作」；一键拆书、创意写作、情节画布与酒馆在 3.5.6 起也可走 ACP。',
         ],
       },
     ],

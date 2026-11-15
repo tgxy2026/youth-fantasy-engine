@@ -28,7 +28,7 @@ import { openExternalUrl } from '@/lib/app/desktop'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { AI_DISABLED_HINT, blockedHintFor } from '@/lib/ai/aiScope'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import {
   runMarketRadar, RADAR_DISCLAIMER, RADAR_MAX_QUERIES,
@@ -171,7 +171,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
             task: 'market-radar',
             generation: acp.generation,
             title: '发送检索结果至 ACP Agent',
-            message: acpGateMessage(acp.name, `检索词「${[input.genre, input.platform, ...input.tags, ...input.keywords].filter(Boolean).slice(0, RADAR_MAX_QUERIES).join('、')}」的公开检索结果`, '归纳趋势与机会点'),
+            message: acpGateMessage(acp.name, `检索词「${[input.genre, input.platform, ...input.tags, ...input.keywords].filter(Boolean).slice(0, RADAR_MAX_QUERIES).join('、')}」得到的公开结果`, '归纳趋势与机会点'),
             agentName: acp.name,
             ask: confirmDialog,
             signal: ctx.signal,
@@ -272,7 +272,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button variant="primary" size="sm" disabled={!canRun || !writingReady} onClick={start}
-            title={!writingReady ? AI_DISABLED_HINT : `最多发出 ${RADAR_MAX_QUERIES} 条检索词，再交给模型归纳一次`}>
+            title={!writingReady ? blockedHintFor(!!acpWriting) : `最多发出 ${RADAR_MAX_QUERIES} 条检索词，再交给模型或 Agent 归纳一次`}>
             {running ? <><Loader2 size={12} className="animate-spin" /> 检索归纳中…</> : <><Sparkles size={12} /> 开始检索</>}
           </Button>
           <span className="text-10 text-ink-500">
@@ -294,7 +294,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
           <div className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2.5 text-11 leading-relaxed text-danger">
             没跑成：{failure}
             <div className="mt-1 text-10 text-ink-500">
-              市场雷达走「搜索接口」这一档（要把检索结果交给模型，模型自带联网那档拿不到来源）—— 到「模型设置 → 联网检索」里配好后重试。
+              市场雷达走「搜索接口」这一档（要把检索结果交给模型或 Agent 归纳，模型自带联网那档拿不到来源）—— 到「模型设置 → 联网检索」里配好后重试。
             </div>
           </div>
         )}

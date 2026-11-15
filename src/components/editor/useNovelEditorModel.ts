@@ -426,7 +426,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
 
   const active = useMemo(() => chapters.find(c => c.id === activeId) ?? null, [chapters, activeId])
   const { ready: aiReady } = useAIReady()
-  // 3.5.4：手动「AI 生成摘要」可按当前模式走 ACP；批量重算仍走 API。
+  // 3.5.4：手动「AI 生成摘要」可按当前模式走 ACP；3.5.6 起批量重算也走 ACP（regenAcp）。
   const acpWriting = useAcpWriting()
   const writingReady = acpWriting ? acpWriting.ready : aiReady
   // P0-2：用 ref 镜像最新 state，供卸载/切章冲刷（useEffect 闭包拿不到最新 state）

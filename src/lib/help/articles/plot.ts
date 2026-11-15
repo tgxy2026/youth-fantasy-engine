@@ -8,7 +8,7 @@ import type { HelpArticle } from '@/lib/help/types'
 export const PLOT_ARTICLES: HelpArticle[] = [
   {
     id: 'page-plot-canvas',
-    revision: 1,
+    revision: 2,
     title: '情节推演：把一章的写作要点摆成一张图',
     summary: '多选章节 → 生成推演卡片（待办伏笔 / 钩子爽点 / 角色状态 / 下一章衔接）→ 拖动排布、连成推演链。',
     aliases: ['推演', '卡片推演', '推演链', '情节演示', '节拍铺节点'],
@@ -23,7 +23,7 @@ export const PLOT_ARTICLES: HelpArticle[] = [
         heading: '它是什么',
         body: [
           '情节推演是「本章写作简报」的可视化版本：同样是让 AI 读章节内容，出一张结构化卡片 —— 待办伏笔 / 钩子与爽点 / 角色状态 / 下一章衔接，只是结果以卡片形式摆在画布上，可以拖着排、可以连成链。',
-          '画布生成结构化卡片，需要 API 模式。颉文姬的手动简报提供文本报告，可在支持的桌面构建中走已连接的 ACP。',
+          '画布生成结构化卡片同样支持桌面 ACP：引擎复用「本章写作简报」同一条管线，由 Agent 返回报告后本地解析成卡片；API 模式仍可照旧使用。',
         ],
       },
       {

@@ -328,7 +328,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             <Button size="sm" variant="secondary" onClick={clearCreativeSession}>清空本次记录</Button>
           )}
           {s.running && <span className="text-11 text-ink-400">{s.progress?.message ?? ''}</span>}
-          {!writingReady && <span className="text-11 text-amber">{acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : AI_DISABLED_HINT}</span>}
+          {!writingReady && <span className="text-11 text-amber">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</span>}
         </div>
 
         {!s.running && (s.resume || s.resumeBlockedReason) && (

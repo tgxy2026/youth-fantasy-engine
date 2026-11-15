@@ -20,7 +20,7 @@ import { downloadText } from '@/lib/storage/zip'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { AI_DISABLED_HINT, blockedHintFor } from '@/lib/ai/aiScope'
 import { aiInferStyle, STYLE_INFER_MATERIAL_LIMIT } from '@/lib/aiTasks/styleInfer'
 import type { StyleSuggestion } from '@/lib/aiTasks/styleInfer'
 import {
@@ -324,7 +324,7 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
               {material ? `本章 ${material.length} 字${truncated ? `（只送前 ${STYLE_INFER_MATERIAL_LIMIT} 字）` : ''}` : '还没有正文'}
             </span>
             <Button variant="secondary" onClick={() => void runInfer()} disabled={loading || !writingReady || !material}
-              title={!writingReady ? AI_DISABLED_HINT : '只发一次请求；不会自动重试、不会换模型'}
+              title={!writingReady ? blockedHintFor(!!acpWriting) : '只发一次请求；不会自动重试、不会换模型或 Agent'}
               className="flex items-center gap-1.5">
               {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {loading ? '反推中…' : '开始反推'}

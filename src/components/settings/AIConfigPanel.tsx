@@ -404,7 +404,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
         <div className="flex items-center gap-1.5">
           <h2 className="text-14 font-semibold text-ink-100">{connectionView === 'agent' ? 'Agent 连接' : connectionView === 'acp' ? 'ACP 连接' : '模型配置'}</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
-            <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。</p>
+            <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。桌面安装版切到 ACP 模式后，这些入口改由「ACP 连接」里的 Agent 处理，本节配置不参与。</p>
             <p className="mt-1.5">两类平台：</p>
             <ul className="list-disc pl-4 space-y-1">
               <li><b>本地模型</b>：Ollama / LM Studio 等，跑在你自己机器（或局域网内你自己的机器）上，一般免密钥、不需要联网；请求只发给这个地址，不经过任何第三方。</li>

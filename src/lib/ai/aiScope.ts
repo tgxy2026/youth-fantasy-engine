@@ -9,6 +9,7 @@
 import type { TabDef } from '@/lib/types'
 import { isVolumeLedgerTab } from '@/lib/schema'
 import { WEB } from '@/lib/app/platform'
+import { DESKTOP } from '@/lib/app/desktop'
 
 export type AICapability =
   /** AI 补全 / AI 新增：把作者的粗略草图整理并补全成完整设定（已有条目补其空白，或凭空建档） */
@@ -85,8 +86,27 @@ export const AI_DISABLED_HINT = WEB
    */
   ? '需先接入 AI 模型：网页版请到「模型设置 → 模型配置」添加联网模型（网页版不支持连接本机模型）。' +
     '（未接入不影响本页任何手动填写功能）'
-  : '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
-    '（未接入不影响本页任何手动填写功能）'
+  /**
+   * 3.5.6：桌面安装版另有 ACP 通道（Windows x64）。只说「去配 API 模型」会让
+   * 零 API 配置、已经连上 Agent 的作者以为按钮坏了 —— 提示必须把两条路都写出来。
+   * 便携版没有 ACP，保持原文案不变。
+   */
+  : DESKTOP
+    ? '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型，或在「模型设置 → ACP 连接」连接桌面 Agent 即可启用。' +
+      '（未接入不影响本页任何手动填写功能）'
+    : '需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。' +
+      '（未接入不影响本页任何手动填写功能）'
+
+/**
+ * ACP 已配置但未连接时的统一提示（与各入口按钮 title 一字不差）。
+ * 与 `AI_DISABLED_HINT` 分开：这时候去「配模型」是错的方向，该去连 Agent。
+ */
+export const ACP_NOT_CONNECTED_HINT = '请先在模型设置中连接 ACP Agent'
+
+/** 不可点时的统一提示：ACP 已配置 → 提示去连；否则给未接入模型的说明。 */
+export function blockedHintFor(acpConfigured: boolean): string {
+  return acpConfigured ? ACP_NOT_CONNECTED_HINT : AI_DISABLED_HINT
+}
 
 /**
  * 「未接入模型时，哪些入口会禁用」的集中清单（2.4.0 · A1 首启闭环）。
@@ -109,6 +129,7 @@ export const AI_DEPENDENT_GROUPS: AIDependentGroup[] = [
     title: '正文写作',
     items: [
       'AI 续写 / 整章改写 / 润色',
+      '优化工单：按章合并改写与最新章设定整理',
       '颉文姬：校对（文字层 / 逻辑层）、文风体检、深度审计、本章写作简报、设定补登',
       '编辑器伴写建议',
     ],
@@ -126,12 +147,22 @@ export const AI_DEPENDENT_GROUPS: AIDependentGroup[] = [
     items: [
       'AI 助手对话（辅助规划 / 随机取名 / 创意脑暴）',
       '联网检索（起草与补全时找外部素材）',
+      '市场雷达（选题趋势参考，需「联网检索」选搜索接口）',
+      '情节推演画布的「生成推演」',
+    ],
+  },
+  {
+    title: '检查与工具',
+    items: [
+      '数据看板 · AI 诊断',
+      '节奏与章末钩子、读者视角审问、敏感词复核',
+      '本章变化清单、正文与细纲对照',
+      '文风档提炼（从参考文本归纳）',
     ],
   },
   {
     title: '全局工具',
     items: [
-      '数据看板 · AI 诊断',
       '一键拆书（抽取全程依赖模型）',
       '创意写作（新建卷章与整套设定由模型生成）',
       '读者反馈 AI 分析、术语 AI 查重',

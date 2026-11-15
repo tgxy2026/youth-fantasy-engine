@@ -47,7 +47,8 @@ ok('只有 ACP 就绪才注入（否则保持 API 路径）', /acpWriting\?\.rea
 ok('逐章计账执行体未被改写（仍用 runRegenSummaries）', model.includes('runRegenSummaries(all'))
 const editor = read('src/components/editor/NovelEditor.tsx')
 ok('按钮按写作就绪判断', /disabled=\{!writingReady \|\| !active\}/.test(editor))
-ok('未连接时提示 ACP 未连接', editor.includes("acpWriting ? 'ACP 未连接'"))
+// 3.5.6 复核：提示语统一成可操作的一句（见 aiScope.ACP_NOT_CONNECTED_HINT）
+ok('未连接时提示去连 Agent', /acpWriting \? '请先在模型设置中连接 ACP Agent'/.test(editor))
 ok('文案不再写「批量重生成使用 API 模式」', !editor.includes('批量重生成使用 API 模式'))
 const bridge = read('src/lib/agentHost/acpBridge.ts')
 ok('任务标识登记 batch-summary', bridge.includes("'batch-summary'"))

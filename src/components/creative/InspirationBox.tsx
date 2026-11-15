@@ -220,7 +220,7 @@ export default function InspirationBox() {
               {fusing ? <><Loader2 size={12} className="animate-spin" /> 融合中…</> : <><Sparkles size={12} /> 融合为情节卡</>}
             </Button>
           ) : (
-            <Button variant="secondary" size="sm" className="ml-auto" disabled title={acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT}>
+            <Button variant="secondary" size="sm" className="ml-auto" disabled title={acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}>
               <Sparkles size={12} /> 融合为情节卡
             </Button>
           )}

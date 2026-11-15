@@ -13,6 +13,7 @@
  */
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { blockedHintFor } from '@/lib/ai/aiScope'
 
 export interface WritingReady {
   /** 任一通道就绪即可点 */
@@ -26,16 +27,27 @@ export interface WritingReady {
    * 🔴 闸门（`acpGatedText`）必须带真实代次 —— 传空串会在发送前被 `assertAcpWritingCurrent` 拒掉。
    */
   generation: string | null
+  /** 桌面版是否配置了 ACP（未连接也算）—— 用来分辨「该去连 Agent」还是「该去配模型」 */
+  acpConfigured: boolean
+  /**
+   * 不可点时的**统一**提示语（按钮 title 直接用它）。
+   * 🔴 与既有入口（AIOrganize / AITemplateFill / NovelEditor / 颉文姬）一字不差，
+   *    避免同一个应用里一会儿说「未配置模型」、一会儿说「ACP 未连接」。
+   */
+  blockedHint: string
 }
 
 export function useWritingReady(): WritingReady {
   const { ready: aiReady } = useAIReady()
   const acp = useAcpWriting()
   const viaAcp = !!acp?.ready
+  const acpConfigured = acp !== null
   return {
     ready: aiReady || viaAcp,
     viaAcp,
     agentName: viaAcp && acp ? acp.name : null,
     generation: viaAcp && acp ? acp.generation : null,
+    acpConfigured,
+    blockedHint: blockedHintFor(acpConfigured),
   }
 }

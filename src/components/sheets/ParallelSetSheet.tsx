@@ -72,7 +72,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   // 🔴 useAIReady() 返回的是 `{ ready, label }` **对象**，不是布尔 ——
   //    写成 `const aiReady = useAIReady()` 会让 `disabled={!aiReady}` 恒为 false（对象恒真值），
   //    没配模型也能点开弹窗、走进内部才炸。全仓 27 处调用点都是解构写法，别写回。
-  const { ready: writingReady } = useWritingReady()
+  const { ready: writingReady, blockedHint } = useWritingReady()
 
   /** 条目总称（政治页→「政权」、经济→「行业」…）—— 用于列表标题、AI 段标题、帮助文案 */
   const subLabel = subItemLabel(tab.id, pack)
@@ -412,7 +412,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
             </Button>
             <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!writingReady || !selSub}
               className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium disabled:opacity-40"
-              title={!selSub ? '先从左列选一条来编辑' : writingReady ? '提供粗略设定，让 AI 补全当前这一条未填的字段' : '还没接入模型'}
+              title={!selSub ? '先从左列选一条来编辑' : writingReady ? '提供粗略设定，让 AI 补全当前这一条未填的字段' : blockedHint}
             >
               <Sparkles size={12} /> AI 补全
             </Button>

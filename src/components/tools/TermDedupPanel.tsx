@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, Layers } from 'lucide-react'
 import { useWritingReady } from '@/lib/agentHost/useWritingReady'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiDedupTerms } from '@/lib/ai/aiTasks'
 import { ToolModal } from '@/components/editor/EditorModals'
 import { Button } from '@/components/common/Button'
@@ -21,7 +20,7 @@ interface Props {
  */
 export default function TermDedupPanel({ rows, onClose }: Props) {
   // 3.5.6：术语去重经 acpRegistry 走 ACP，判据合流为写作就绪（此前按 API 模型禁用）
-  const { ready: writingReady } = useWritingReady()
+  const { ready: writingReady, blockedHint } = useWritingReady()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [groups, setGroups] = useState<{ terms: string[]; reason: string; suggestion: string }[]>([])
@@ -68,7 +67,7 @@ export default function TermDedupPanel({ rows, onClose }: Props) {
         <Button onClick={run}
           disabled={!writingReady || loading}
           
-          title={!writingReady ? AI_DISABLED_HINT : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center">
+          title={!writingReady ? blockedHint : '基于已登记的术语做 AI 查重'} variant="primary" size="md" className="flex items-center">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '查重中…' : `开始查重（${terms.length} 个术语）`}
         </Button>

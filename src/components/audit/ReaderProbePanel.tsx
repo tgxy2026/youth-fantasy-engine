@@ -185,7 +185,7 @@ export default function ReaderProbePanel() {
         <span className="text-ink-400">
           本章 <b className="text-ink-200 tabular-nums">{words}</b> 字
         </span>
-        {!writingReady && <span className="text-10 text-ink-500">{acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT}</span>}
+        {!writingReady && <span className="text-10 text-ink-500">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</span>}
       </div>
 
       <div className="px-4 py-3">

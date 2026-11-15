@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Database, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { sourcesOf, summarizeSources, AI_PRUNE_NOTE, AI_BUDGET_BASE_NOTE, AI_WORLD_SET_NOTE, AI_OVERVIEW_NOTE, mentionsWorldSet, hasOverview } from '@/lib/ai/aiDataSources'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 
 interface Props {
   /** `AI_DATA_SOURCES` 里的功能 id */
@@ -28,6 +29,8 @@ interface Props {
  */
 export default function AIDataSourceNote({ feature, compact = false, className = '' }: Props) {
   const [open, setOpen] = useState(false)
+  // 3.5.6：ACP 模式下接收方是 Agent，而下面的分项说明沿用了「送模型」的旧措辞 —— 在标题处点明，避免读者以为说错
+  const acpWriting = useAcpWriting()
   const f = sourcesOf(feature)
   if (!f) return null // 未登记的功能不显示，避免文案与实现各说各话
 
@@ -39,7 +42,7 @@ export default function AIDataSourceNote({ feature, compact = false, className =
     <div className={`${compact ? '' : 'mt-2 border-t border-ink-700/70 pt-2'} ${className}`}>
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <Database size={11} className="shrink-0 text-ink-500" />
-        <span className="text-ink-400">本次会读：</span>
+        <span className="text-ink-400">{acpWriting?.ready ? `本次会读（由 ACP Agent「${acpWriting.name}」处理）：` : '本次会读：'}</span>
         <span className="text-ink-200">{summarizeSources(f)}</span>
         <Button variant="bare" type="button" size="xs"
           onClick={e => { e.stopPropagation(); setOpen(o => !o) }}

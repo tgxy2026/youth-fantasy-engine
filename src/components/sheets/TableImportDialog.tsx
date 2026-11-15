@@ -342,7 +342,7 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
         <div className="flex items-center gap-2 flex-wrap">
           <Button onClick={runAi}
             disabled={t.running || !writingReady || !raw.trim()}
-            title={!writingReady ? (acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT) : (!raw.trim() ? '先粘贴要解析的内容' : '把粘贴的内容拆成多条记录')}
+            title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : (!raw.trim() ? '先粘贴要解析的内容' : '把粘贴的内容拆成多条记录')}
             variant="secondary" size="md" className="flex items-center gap-1.5">
             {t.running ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             {t.running ? (t.task?.progress || 'AI 正在解析…') : 'AI 智能拆分'}

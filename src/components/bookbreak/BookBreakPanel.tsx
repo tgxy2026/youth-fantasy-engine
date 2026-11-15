@@ -47,7 +47,7 @@ import { getTavernSettings } from '@/lib/tavern/settings'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { blockedHintFor } from '@/lib/ai/aiScope'
 import { abortTask, dismissTask, markTaskSeen, startTask, useAiTask } from '@/lib/ai/aiTaskCenter'
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -649,7 +649,7 @@ function BookBreakWorkspace() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !writingReady || (!!ledgerCounts && ledgerRemaining === 0)} title={!writingReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
+        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !writingReady || (!!ledgerCounts && ledgerRemaining === 0)} title={!writingReady ? blockedHintFor(!!acpWriting) : undefined} onClick={() => start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
           {running ? '抽取中…' : ledgerHasProgress ? (ledgerRemaining > 0 ? `继续抽取（只补剩余 ${ledgerRemaining}）` : ledgerFailed > 0 ? '没有待补单元' : '已完成（可从头重跑）') : resume ? '继续抽取' : '开始抽取'}
         </Button>

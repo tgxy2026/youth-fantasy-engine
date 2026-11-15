@@ -97,7 +97,7 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'jiewenji-modes',
-    revision: 2,
+    revision: 3,
     title: '颉文姬：六个模式分别干什么',
     summary: '查看六个面板的用途、运行条件和结果去向。',
     aliases: ['AI 编辑', '颉文姬', '诊室', '补登', '审读'],
@@ -133,7 +133,7 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
         id: 'connection-modes',
         heading: 'API 和 ACP 的可用入口',
         body: [
-          '配置 API 模型或连接桌面 ACP 后，均可使用颉文姬的诊室、编辑、审读、简报、补登和整理。正文页的手动单章摘要和编辑器伴写也支持 ACP。批量摘要需要切回 API 模式。',
+          '配置 API 模型或连接桌面 ACP 后，均可使用颉文姬的诊室、编辑、审读、简报、补登和整理。正文页的手动单章摘要、编辑器伴写与批量章节摘要也都支持 ACP。',
           '连接 ACP 时会提示资料接收方，各功能的「本次会读」列出实际资料范围。简略诊断优先使用本章摘要，缺少摘要时会改用完整正文。',
         ],
       },

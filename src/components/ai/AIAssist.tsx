@@ -163,7 +163,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
           task: 'ai-assist',
           generation: acpWriting.generation,
           title: '发送辅助规划对话至 ACP Agent',
-          message: acpGateMessage(acpWriting.name, '本次对话历史与可选的项目设定资料', '给出剧情、人物或世界观建议'),
+          message: acpGateMessage(acpWriting.name, '对话历史与可选的项目设定资料', '给出剧情、人物或世界观建议'),
           agentName: acpWriting.name,
           ask: confirmDialog,
           askOnce: true,
@@ -258,7 +258,7 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         <Sparkles size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">AI 辅助规划</h2>
         <HelpPopover title="AI 辅助规划怎么用" width="23rem" className="ml-0.5">
-          {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到「工作面板 → 模型设置」添加并选择模型，未接入时对话按钮禁用。'}
+          {'多轮对话式辅助：左侧可新建 / 切换 / 重命名 / 删除多个规划会话；右侧与模型连续对话。\n\n· 勾选「带入项目资料」可让模型参考你的世界观与角色设定，给出的建议更贴设定；\n· 灵感激发 / 剧情人物世界观规划 / 一致性自查（不生成正文）；\n· 首次使用先到「工作面板 → 模型设置」添加并选择模型；桌面安装版也可以改用「ACP 连接」里的 Agent，两者任一就绪即可对话。'}
           <AIDataSourceNote feature="ai-assist" />
         </HelpPopover>
       </div>
@@ -273,9 +273,18 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
           <span className="text-ink-500">·</span>
           <span className="text-ink-300 font-mono">{active.model || '（未选模型）'}</span>
         </div>
+      ) : acpWriting?.ready ? (
+        // 3.5.6：桌面 ACP 模式下没有 API 活动模型，但对话照样能跑 —— 不能显示「尚未配置模型」。
+        // 🔴 结构与上面那张模型卡**逐类对齐**（标签 + 名称 + 分隔点 + 说明），否则两条状态条一高一矮。
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-ink-800/70 border border-ink-700/70 text-12">
+          <span className="px-1.5 py-0.5 rounded text-10 bg-success/15 text-success">ACP</span>
+          <span className="text-ink-200">{acpWriting.name}</span>
+          <span className="text-ink-500">·</span>
+          <span className="text-ink-300">勾选的资料与对话内容会发送给它</span>
+        </div>
       ) : (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber/10 border border-amber/25 text-12 text-amber">
-          <AlertCircle size={13} /> 尚未配置模型：请先到「工作面板 → 模型设置」里添加本地或联网模型。
+          <AlertCircle size={13} /> {AI_DISABLED_HINT}
         </div>
       )}
 
@@ -364,7 +373,7 @@ style={{ height: foldVh('60vh') }}>
               <AutoTextarea
                 value={prompt}
                 onChange={setPrompt}
-                placeholder={writingReady ? '描述你的主题、要求或要自查的设定……' : (acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : '未接入模型，请先到「工作面板 → 模型设置」添加')}
+                placeholder={writingReady ? '描述你的主题、要求或要自查的设定……' : (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未接入模型，请先到「工作面板 → 模型设置」添加')}
                 minHeight={40}
                 maxHeight={160}
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
@@ -374,7 +383,7 @@ style={{ height: foldVh('60vh') }}>
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <Button variant="primary" onClick={() => void send()} disabled={!writingReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!writingReady ? (acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT) : '发送'}>
+                <Button variant="primary" onClick={() => void send()} disabled={!writingReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT) : '发送'}>
                   <Send size={13} /> 发送
                 </Button>
               )}

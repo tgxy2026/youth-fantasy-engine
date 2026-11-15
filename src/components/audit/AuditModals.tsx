@@ -15,7 +15,7 @@ import { auditStyle, styleContextForAI } from '@/lib/ai/styleAudit'
 import type { AuditIssue } from '@/lib/audit/audit'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import { blockedHintFor } from '@/lib/ai/aiScope'
 import { useTaskRunner, chapterOwned, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
 
 /** AI 深度分析返回的条目形状（伏笔 / 连续性两个弹窗共用） */
@@ -136,7 +136,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
               <Button onClick={runAiReview}
                 disabled={!writingReady || aiLoading}
                 
-                title={!writingReady ? AI_DISABLED_HINT : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
+                title={!writingReady ? blockedHintFor(!!acpWriting) : '让 AI 从伏笔追踪 + 章节总表审视伏笔闭环健康度（跨度/悬空/失衡）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
                 {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 AI 深度分析
               </Button>
@@ -249,7 +249,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             <Button onClick={runAiAudit}
               disabled={!writingReady || aiLoading}
               
-              title={!writingReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
+              title={!writingReady ? blockedHintFor(!!acpWriting) : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 深度审计
             </Button>
@@ -353,7 +353,7 @@ export function StyleAudit({ content, chapterId, onClose }: { content: string; c
             <Button onClick={runAiStyle}
               disabled={!writingReady || aiLoading}
               
-              title={!writingReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
+              title={!writingReady ? blockedHintFor(!!acpWriting) : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 文风体检
             </Button>

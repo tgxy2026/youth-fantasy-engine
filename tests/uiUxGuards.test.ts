@@ -51,8 +51,9 @@ console.log('\n—— uiUxGuards 用例开始 ——')
         /const acpWriting = useAcpWriting\(\)/.test(s)
         && /const writingReady = (?:acpWriting \? acpWriting\.ready : aiReady|aiReady \|\| !!acpWriting\?\.ready)/.test(s), file)
     }
-    ok(`  · ${label}：禁用时给出统一提示（AI_DISABLED_HINT）`,
-      /AI_DISABLED_HINT/.test(s), file)
+    // 3.5.6：统一提示有两条分支（ACP 已配置 → 去连 Agent），只要是同一来源即可
+    ok(`  · ${label}：禁用时给出统一提示（AI_DISABLED_HINT / blockedHint）`,
+      /AI_DISABLED_HINT|blockedHintFor|blockedHint/.test(s), file)
   }
 }
 

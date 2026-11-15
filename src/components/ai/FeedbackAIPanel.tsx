@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
 import { useWritingReady } from '@/lib/agentHost/useWritingReady'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiAnalyzeFeedback, type FeedbackEntry } from '@/lib/ai/aiTasks'
 import { toFeedbackEntries } from '@/lib/app/viewSelectors'
 import { ToolModal } from '@/components/editor/EditorModals'
@@ -21,7 +20,7 @@ interface Props {
  */
 export default function FeedbackAIPanel({ rows, onClose }: Props) {
   // 3.5.6：读者反馈分析经 acpRegistry 走 ACP，判据合流为写作就绪
-  const { ready: writingReady } = useWritingReady()
+  const { ready: writingReady, blockedHint } = useWritingReady()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ summary: string; churnAttribution: string; suggestions: string } | null>(null)
@@ -49,7 +48,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
     <ToolModal title="读者反馈 AI 分析" icon={<BarChart3 size={16} />} onClose={onClose} wide>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="flex-1 text-11 text-ink-500">
-          把已登记的读者反馈 / 运营数据交给 AI，做流失归因与应对建议分析。未配置模型不影响本表手动填写。
+          把已登记的读者反馈 / 运营数据交给 AI，做流失归因与应对建议分析。未接入模型或 ACP 不影响本表手动填写。
         </span>
       </div>
       <AIDataSourceNote feature="feedback-ai" />
@@ -64,7 +63,7 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
         <Button onClick={run}
           disabled={!writingReady || loading}
           
-          title={!writingReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center">
+          title={!writingReady ? blockedHint : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '分析中…' : `开始分析（${entries.length} 条记录）`}
         </Button>

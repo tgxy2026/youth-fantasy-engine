@@ -12,6 +12,7 @@ import { GRID2, Section, Field, NumField, TextField, SelectField, ToggleField } 
 import type { TavernControlModel } from '@/components/tavern/useTavernControlModel'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
 import { profileListOf, activeProfileOf, type TavernProfile } from '@/lib/tavern/settings'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 
 /** 下拉里显示什么：优先档案自己的名字；没名字就用序号兜底（否则两个空档案长得一模一样） */
 const profileOptionLabel = (p: TavernProfile, i: number) => p.name.trim() || `未命名档案 ${i + 1}`
@@ -19,6 +20,8 @@ const profileOptionLabel = (p: TavernProfile, i: number) => p.name.trim() || `�
 export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
   const { setCommon, setProfile, addProfile, removeProfile, selectProfile, s, c, pr, modelOptions, cap, rec, gNumCtx, gBudget, gFixed, drift, applyRecommended, onDefaultModelChange, setLocalWindow } = m
   /** 全部档案（老库只有一份 ⇒ 数组长度 1）+ 当前生效那份的 id（老库没有 id ⇒ 空串，选项值也用它） */
+  // 3.5.6：ACP 模式下标注「这批参数不参与 Agent 调用」（窗口与额度以 ACP 设置为准）
+  const acpWriting = useAcpWriting()
   const profiles = profileListOf(s)
   const curProfileId = activeProfileOf(s).id ?? ''
   return (
@@ -29,6 +32,14 @@ export default function TavernControlBasics({ m }: { m: TavernControlModel }) {
             title="一、通用设置"
             desc="两种模式都生效。模型与上下文这些「跟谁说、说多长」的事在这里定；具体的采样手感与提示词在下面几段。"
           >
+            {/* 3.5.6：ACP 模式下这批参数不参与调用，但界面仍旧可见 —— 必须说明白，
+                否则作者会以为「调了预算 Agent 就会读更多」 */}
+            {acpWriting?.ready && (
+              <div className="rounded-md border border-amber/25 bg-amber/10 px-3 py-2 text-11 text-amber leading-relaxed">
+                当前是 ACP 模式：下面这些模型与上下文预算参数只对 API 模型生效，不参与 Agent 调用。
+                实际窗口与单次发送额度以「模型设置 → ACP 连接」里填的为准。
+              </div>
+            )}
             <SelectField
               label="默认模型"
               hint="留空则跟随「模型设置 → 模型配置」里选中的全局活动模型。两个模式都用它；会话里不再单独选择模型。换模型时，下面的额度会按新模型的推荐值调整（可在能力条里关掉这个行为）。"

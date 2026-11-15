@@ -24,7 +24,6 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { foldVh } from '@/lib/settings/theme'
 import { SEVERITY_LABEL, type IssueSeverity } from '@/lib/audit/audit'
@@ -78,7 +77,7 @@ function statusText(i: Item): string {
 
 export default function OptimizeTicketPanel() {
   // 3.5.6：逐章改写与最新章设定整理都支持 ACP，判据合流为写作就绪
-  const { ready: writingReady, viaAcp, agentName, generation } = useWritingReady()
+  const { ready: writingReady, viaAcp, agentName, generation, acpConfigured, blockedHint } = useWritingReady()
   const [items, setItems] = useState<Item[]>([])
   const [onlyError, setOnlyError] = useState(false)
   /** 正在对照的章（空串＝没开弹窗） */
@@ -175,7 +174,7 @@ export default function OptimizeTicketPanel() {
 
   const executeNow = () => {
     if (exe.running) return
-    if (!writingReady) { showToast('还没接入模型、也没有可用的 ACP 连接，无法执行改写', 'info'); return }
+    if (!writingReady) { showToast((acpConfigured ? 'ACP 未连接，无法执行改写' : '还没接入模型，无法执行改写'), 'info'); return }
     if (!runnable.length) { showToast('先勾选要处理的条目（「需手动处理」的不会自动改）', 'info'); return }
     // 🔴 逐章串行：按章分组合并成一次改写（同章多条绝不反复覆写，见 lib/optimizeTicket 纪律 ①）
     const plan = groupByChapter(runnable)
@@ -191,7 +190,7 @@ export default function OptimizeTicketPanel() {
               task: 'chapter-rewrite',
               generation,
               title: '发送章节正文至 ACP Agent',
-              message: acpGateMessage(agentName, '本次勾选条目涉及的各章正文（逐章发送）与相关设定', '按工单逐章改写'),
+              message: acpGateMessage(agentName, '所勾选条目涉及的各章正文（逐章发送）与相关设定', '按工单逐章改写'),
               agentName, ask: confirmDialog, askOnce: true, signal: ctx.signal,
             })
           : undefined
@@ -305,7 +304,7 @@ export default function OptimizeTicketPanel() {
           </Button>
           <Button variant="primary" size="sm" disabled={!writingReady || exe.running || !runnable.length}
             onClick={executeNow}
-            title={!writingReady ? AI_DISABLED_HINT : (runnable.length ? `按章合并改写 ${runnable.length} 条` : '先勾选要处理的条目')}>
+            title={!writingReady ? blockedHint : (runnable.length ? `按章合并改写 ${runnable.length} 条` : '先勾选要处理的条目')}>
             {exe.running
               ? <><Loader2 size={12} className="animate-spin" /> 修订中…</>
               : <><Sparkles size={12} /> 执行选中{runnable.length ? `（${runnable.length}）` : ''}</>}

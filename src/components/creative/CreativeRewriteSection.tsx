@@ -106,7 +106,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
               <Square size={12} /> 中止
             </Button>
           )}
-          {!writingReady && <span className="text-11 text-amber">{acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : AI_DISABLED_HINT}</span>}
+          {!writingReady && <span className="text-11 text-amber">{acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT}</span>}
         </div>
 
         {s.rewrite && (

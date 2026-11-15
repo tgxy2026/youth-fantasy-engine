@@ -47,9 +47,9 @@ import {
 } from '@/lib/audit/changeListStore'
 import { aiChapterChangeList } from '@/lib/ai/aiTasks'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
-import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 
 /** 重复组类型的中文标签（报告、忽略记录、界面共用同一口径） */
 const REP_KIND_LABEL = { sentence: '句重复', paragraph: '段重复', gram: '词组重复' } as const
@@ -196,6 +196,8 @@ export default function ManuscriptCheckPanel() {
   // 3.5.6：ACP 就绪时本章变化清单走 Agent（判据不变：引文必须逐字命中，否则丢弃）
   const acpWriting = useAcpWriting()
   const writingReady = aiReady || !!acpWriting?.ready
+  // 与其它入口同一口径：ACP 已配置但没连上时，提示去连，而不是笼统说「未配置模型」
+  const blockedHint = acpWriting ? '请先在模型设置中连接 ACP Agent' : AI_DISABLED_HINT
   const [chg, setChg] = useState<ChangeListReport | null>(null)
   const [chgLoading, setChgLoading] = useState(false)
   const [dissent, setDissent] = useState<DissentRecord[]>([])
@@ -564,7 +566,7 @@ export default function ManuscriptCheckPanel() {
               variant="secondary"
               size="sm"
               disabled={chgLoading || !activeId || !writingReady}
-              title={!writingReady ? AI_DISABLED_HINT : undefined}
+              title={!writingReady ? blockedHint : undefined}
               onClick={() => void runChangeList()}
             >
               {chgLoading
@@ -580,7 +582,7 @@ export default function ManuscriptCheckPanel() {
             {chgMaterial.truncated
               ? `前 ${chgMaterial.chars.toLocaleString()} 字（本章共 ${chgMaterial.totalChars.toLocaleString()} 字，超出 ${CHANGE_MATERIAL_LIMIT.toLocaleString()} 字的部分不会发送）`
               : ` ${chgMaterial.chars.toLocaleString()} 字`}
-            交给当前模型，并且只调用 1 次。
+            交给{acpWriting?.ready ? ` ACP Agent「${acpWriting.name}」` : '当前模型'}，并且只调用 1 次。
           </p>
         ) : (
           <>

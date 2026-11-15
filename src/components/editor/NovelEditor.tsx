@@ -422,7 +422,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
               {companion ? '已开启' : '已关闭'}
             </Button>
-            <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? 'ACP 未连接' : '需先接入 AI 模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
+            <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '需先接入 AI 模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
           </div>
           <div className="text-ink-500 text-10 leading-relaxed">
             全部为本机记忆，换章不重置。
@@ -651,7 +651,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               ) : (
                 <Button onClick={regenAllSummaries}
                   disabled={!writingReady || !active}
-                  title={!writingReady ? (acpWriting ? 'ACP 未连接' : '未配置 AI 模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
                   <Layers size={12} />
                 </Button>
               )}

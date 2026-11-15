@@ -100,7 +100,7 @@ ok('雷达在 ACP 下改走直连检索', /opts\.acpText \? webSearchWithoutLeas
 const dialog = read('src/components/dialogs/MarketRadarDialog.tsx')
 ok('雷达弹窗注入闸门与任务标识 market-radar', dialog.includes('acpGatedText') && dialog.includes("task: 'market-radar'"))
 ok('雷达弹窗按写作就绪判断', /writingReady\s*=\s*aiReady \|\| !!acpWriting\?\.ready/.test(dialog))
-ok('闸门文案写明检索词与公开结果', /检索词「/.test(dialog) && /公开检索结果/.test(dialog))
+ok('闸门文案写明检索词与公开结果', /检索词「/.test(dialog) && /公开结果/.test(dialog))
 
 ok('模板补全在 ACP 下用直连检索', read('src/components/ai/AITemplateFill.tsx').includes('searchFn: webSearchWithoutLease'))
 ok('角色卡起草在 ACP 下用直连检索', read('src/components/tavern/TavernCardDraftDialog.tsx').includes('searchFn: webSearchWithoutLease'))
