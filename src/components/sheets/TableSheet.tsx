@@ -29,6 +29,7 @@ import { neighborRowIndex, nativeConsumesVerticalArrow } from '@/lib/table/gridN
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { PageGuideButton } from '@/components/help/PageGuideButton'
+import { registerSelfGuide } from '@/lib/help/selfGuideRegistry'
 import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
 import FeedbackAIPanel from '@/components/ai/FeedbackAIPanel'
 import TermDedupPanel from '@/components/tools/TermDedupPanel'
@@ -186,6 +187,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   const pageGuide = usePageGuide({
     tabId: tab.id, ready: loaded, busy: dirtyKeys.length > 0, enabled: SELF_MANAGED_GUIDE_TABS.has(tab.id),
   })
+  // 🔴 2026-11-15：登记给侧栏「本页指引」—— 否则左下角写「此页无」、页头却有按钮，自相矛盾。
+  const guideStartRef = useRef(pageGuide.start)
+  guideStartRef.current = pageGuide.start
+  useEffect(() => {
+    if (!pageGuide.guide) return
+    return registerSelfGuide(tab.id, () => guideStartRef.current())
+  }, [pageGuide.guide, tab.id])
 
   /**
    * 自定义字段的**类型信息**（存储键 → 类型 / 单位）—— CSV 导入回导用（3.1.3 · R09）。

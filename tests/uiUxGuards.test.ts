@@ -366,9 +366,11 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('🔴 AI 伴写按钮排在颉文姬之后、本章资料之前',
     posOf('{companionTools}') > posOf('/> 颉文姬')
     && posOf('{companionTools}') < posOf('/> 本章资料'))
-  ok('🔴 「本页指引」排在设定检索之后、专注之前',
-    posOf('{pageGuide.guide && <PageGuideButton') > posOf('} 设定检索')
-    && posOf('{pageGuide.guide && <PageGuideButton') < posOf('aria-pressed={focusMode}'))
+  // 2026-11-15：入口统一到左下角 —— 页头不再有「本页指引」，改为登记给侧栏
+  ok('🔴 页头不再重复「本页指引」', !editor.includes('PageGuideButton'))
+  ok('🔴 正文页把引导启动登记给侧栏', /registerSelfGuide\(EDITOR_ID/.test(editor))
+  ok('🔴 设定检索图标方向：展开给左箭头（收起）、隐藏给右箭头（展开）',
+    /searchVisible \? <PanelRightOpen size=\{14\} \/> : <PanelRightClose size=\{14\} \/>/.test(editor))
   ok('工具栏速查文案已同步新顺序',
     editor.includes('颉文姬、AI 伴写、本章资料、设定检索、本页指引与专注'))
   ok('🔴 伴写在上一句没回来时不再重复发（避免撞「操作在途」被熔断）',

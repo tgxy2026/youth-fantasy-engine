@@ -13,6 +13,7 @@ import ProjectHub from '@/components/app/ProjectHub'
 import { useAppLevelGuide } from '@/components/help/usePageGuideHost'
 import GuideOverlay from '@/components/help/GuideOverlay'
 import { peekHelpRequest, subscribeHelpRequests } from '@/lib/help/helpNav'
+import { hasSelfGuide, startSelfGuide, subscribeSelfGuides } from '@/lib/help/selfGuideRegistry'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
 import { abortRunIfProjectChanged } from '@/lib/creative/creativeSession'
@@ -842,6 +843,12 @@ export default function App() {
    * 需要数据级就绪的页签仍走页面内托管（见 `SELF_MANAGED_GUIDE_TABS`）。
    */
   const appGuide = useAppLevelGuide(activeTab, !!projectId)
+  // 🔴 2026-11-15：正文编辑等页签由页面自己托管引导（数据就绪后才开始），
+  // 侧栏那个「本页指引」以前只看 App 层，于是出现「工具栏能点、左下角却写此页无」。
+  // 这里订阅注册表：页面一挂载，侧栏按钮立刻可用，两个入口统一到左下角。
+  const [, bumpSelfGuide] = useState(0)
+  useEffect(() => subscribeSelfGuides(() => bumpSelfGuide(n => n + 1)), [])
+  const selfGuideReady = hasSelfGuide(activeTab)
 
   /**
    * 3.3.1 · P3：「查看完整手册」与「重看本页引导」的跨页投递。
@@ -1042,7 +1049,11 @@ export default function App() {
         onExitProject={exitProject}
         onExport={exportCurrent}
         ctx={visCtx}
-        onPageGuide={appGuide.guide ? appGuide.start : undefined}
+        onPageGuide={appGuide.guide
+          ? appGuide.start
+          : selfGuideReady
+            ? () => { startSelfGuide(activeTab) }
+            : undefined}
       />
       {/* 🔴 2026-09-22：padding 必须放在**内层**，不能放在滚动容器 main 上 ——
           滚动容器一旦自带 padding-top，sticky 表头只会贴到 padding 的**内边缘**（实测停在 32px 处），

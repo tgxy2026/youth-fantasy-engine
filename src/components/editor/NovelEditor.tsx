@@ -1,6 +1,6 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import '@/components/editor/editorMobile.css'
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh, foldZoomLength } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
@@ -17,7 +17,7 @@ import { requestProofLocate, type ProofLocateTarget } from '@/components/editor/
 // 3.3.1 · P2：首次进入正文页的分步引导
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
-import { PageGuideButton } from '@/components/help/PageGuideButton'
+import { registerSelfGuide } from '@/lib/help/selfGuideRegistry'
 import { ForeshadowBoard, ContinuityCheck, StyleAudit } from '@/components/audit/AuditModals'
 // 导出模块（zip/EPUB/DOCX 打包器较重）——改为按需动态导入，避免拖入首屏主包
 // 排版（含缩进单位设置）收进独立弹窗；缩进纯函数在 lib/indent.ts（有单测）
@@ -152,6 +152,19 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
 
   /** 3.3.1 · P2：正文页分步引导。本章真的加载出来才算就绪；保存中不自动弹，免得打断落盘判断 */
   const pageGuide = usePageGuide({ tabId: EDITOR_ID, ready: loaded && !!active, busy: saving })
+  /**
+   * 🔴 2026-11-15：把引导启动函数登记给侧栏「本页指引」。
+   *   正文编辑属「页面自托管」页签（要等章节数据就绪），以前只有页头一个按钮，
+   *   而左下角同一入口只会写「此页无」—— 两个入口自相矛盾。现在统一走左下角：
+   *   页头按钮撤掉，这里只负责把 start 暴露出去。
+   *   用 ref 转发，避免 pageGuide.start 每次渲染换引用导致反复注册。
+   */
+  const guideStartRef = useRef(pageGuide.start)
+  guideStartRef.current = pageGuide.start
+  useEffect(() => {
+    if (!pageGuide.guide) return
+    return registerSelfGuide(EDITOR_ID, () => guideStartRef.current())
+  }, [pageGuide.guide])
 
   // 本章资料抽屉打开时暂时收起设定检索列，避免正文和资料区挤成多列；关闭后恢复作者原有检索偏好。
   const [chapterDrawer, setChapterDrawer] = useState(false)
@@ -594,9 +607,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 })}
                 className="p-1 shrink-0"
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
-                {searchVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} 设定检索
+                {/* 🔴 2026-11-15：lucide 的命名与箭头方向相反 —— PanelRightClose 实际画的是「→」，
+                    PanelRightOpen 画的是「←」。按作者口径：展开时给「←」（点它收起），隐藏时给「→」（点它展开）。 */}
+                {searchVisible ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />} 设定检索
               </Button>
-              {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
               <Button variant="secondary" size="sm" aria-pressed={focusMode}
                 onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
                 className="p-1 shrink-0"

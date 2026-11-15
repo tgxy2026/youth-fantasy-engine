@@ -180,7 +180,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('同窗口与跨窗口都能同步', /addEventListener\(PREF_EVENT/.test(prefs) && /addEventListener\('storage'/.test(prefs))
 
   ok('普通表单页接入（hook + 卡片 + 本页指引）', /usePageGuide/.test(form) && /GuideOverlay/.test(form) && /PageGuideButton/.test(form))
-  ok('正文页接入', /usePageGuide/.test(editor) && /GuideOverlay/.test(editor) && /PageGuideButton/.test(editor))
+  // 2026-11-15：页头那个「本页指引」按钮撤掉了（与左下角重复），改为把 start 登记给侧栏
+  ok('正文页接入', /usePageGuide/.test(editor) && /GuideOverlay/.test(editor) && /registerSelfGuide\(/.test(editor) && !/PageGuideButton/.test(editor))
   ok('空态表格页接入', /usePageGuide/.test(table) && /GuideOverlay/.test(table) && /PageGuideButton/.test(table))
   ok('使用指南页提供开关与重置', /GuideSettings/.test(guidePage))
 }
