@@ -386,7 +386,11 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
       await closeLive()
       await verifyQuiescent()
     },
-    /** 预热：连接后保持宿主活着，后续任务不再付启动税。 */
+    /**
+     * 显式预热：只建宿主、不建会话、不发 prompt。
+     * ⚠️ 当前**没有调用点** —— 连接（connect）本身就会建立并保持宿主，等于自动预热；
+     *    保留此方法供将来「设置页手动预热」或应用启动时预取使用。
+     */
     async warm() {
       await withAgent(undefined, async () => undefined, 'warm')
     },
