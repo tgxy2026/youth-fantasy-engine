@@ -270,9 +270,11 @@ const DISPLAY_NAME = '青春幻想引擎'          // 与 electron-builder.yml �
 const COMPANY = '青春幻想引擎开发组'   // 主 exe 的公司名（验收基准）
 const exePath = path.join(desktopOut, 'win-unpacked', `${EXE_FILENAME}.exe`)
 // 图标 + 元数据写入后主 exe 的逐字节大小（**仅日志比对，不是闸门**）。
-// ⚠️ 换 electron 大版本必然变化 ⇒ 每次升 electron 后按首次实测刷新（历史值见 git log）：
-//    electron 31.7.7 → 181,097,984 ｜ electron 44.6.0 → 246,487,040（2026-10-07 实测）
-const EXPECT_BASE_SIZE = 246487040
+// ⚠️ 换 electron 大版本、换图标或换 rcedit 写入方式都会变 ⇒ 每次变化后按首次实测刷新（历史值见 git log）：
+//    electron 31.7.7 → 181,097,984 ｜ electron 44.6.0 + 旧图标 → 246,487,040
+//    3.5.5 / 3.5.6 实测（同一 electron 44.6.0、3.5.4 起的新图标）→ 246,365,184
+//    🔴 3.5.5 与 3.5.6 的正式包内 exe 尺寸相同、只差版本资源，故两版共用这一个基线。
+const EXPECT_BASE_SIZE = 246365184
 const expectStrings = [COMPANY, DISPLAY_NAME, pkg.version].filter(Boolean)
 
 function exeMetaOk(p) {
