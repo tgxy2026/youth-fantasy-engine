@@ -69,9 +69,20 @@ try {
     app: 'youth-fantasy-engine', kind: 'portable-data', fileVersion: 1, savedAt: 1,
     stores: {
       chapters: [{
-        id: 'c1', projectId: 'p1', volumeId: 'v1', title: '第一章', content: text,
+        id: 'c1', projectId: 'p1', volumeId: 'v1', order: 0, title: '第一章', content: text,
         summary: '合成摘要', status: 'draft', wordCount: text.length, createdAt: 1, updatedAt: 2,
-      }],
+      },
+      { id: 'c2', projectId: 'p1', volumeId: 'v1', order: 1, title: '第二章', content: '乙', summary: '', status: 'draft', wordCount: 1, createdAt: 1, updatedAt: 2 },
+      { id: 'c3', projectId: 'p1', volumeId: 'v1', order: 2, title: '第三章', content: '丙', summary: '', status: 'draft', wordCount: 1, createdAt: 1, updatedAt: 2 }],
+      cardRecords: [
+        { id: 'card1', projectId: 'p1', tabId: 'role', name: '主角', order: 0, data: {} },
+        { id: 'card2', projectId: 'p1', tabId: 'role', name: '配角', order: 1, data: {} },
+        { id: 'card3', projectId: 'p1', tabId: 'role', name: '龙套', order: 2, data: {} },
+      ],
+      tableRows: [
+        { id: 'row1', projectId: 'p1', tabId: 'foreshadow', order: 0, data: {} },
+        { id: 'row2', projectId: 'p1', tabId: 'foreshadow', order: 1, data: {} },
+      ],
     },
   }))
   const tools = createReadonlyTools(file)
@@ -92,6 +103,22 @@ try {
   ok('版本不一致明确报错', true)
   assert.throws(() => tools.invoke('yfe_read_chapter', { chapterId: 'c1', offset: text.length + 1, limit: 5 }), /超出正文长度/)
   ok('只读桥 offset 越界报错', true)
+
+  // ---------- 3.5.6 复核补：清单分页（大批设定不让一次全给） ----------
+  const chaptersAll = tools.invoke('yfe_list_chapters', { projectId: 'p1' }) as unknown
+  ok('不传分页参数仍返回整份数组（旧语义）', Array.isArray(chaptersAll) && (chaptersAll as unknown[]).length === 3)
+  const chaptersPage = tools.invoke('yfe_list_chapters', { projectId: 'p1', offset: 1, limit: 1 }) as Record<string, unknown>
+  const cpage = chaptersPage.page as Record<string, unknown>
+  ok('章节清单分页返回 items + page', Array.isArray(chaptersPage.items) && (chaptersPage.items as unknown[]).length === 1)
+  ok('分页带总数与游标', cpage.offset === 1 && cpage.total === 3 && cpage.nextOffset === 2 && cpage.hasMore === true)
+  const cardsPage = tools.invoke('yfe_list_cards', { projectId: 'p1', offset: 0, limit: 2 }) as Record<string, unknown>
+  ok('设定卡清单可分页', (cardsPage.items as unknown[]).length === 2 && (cardsPage.page as Record<string, unknown>).hasMore === true)
+  const rowsAll = tools.invoke('yfe_list_table_rows', { projectId: 'p1' }) as unknown
+  ok('表格行清单旧语义仍是数组', Array.isArray(rowsAll) && (rowsAll as unknown[]).length === 2)
+  assert.throws(() => tools.invoke('yfe_list_chapters', { projectId: 'p1', limit: 501 }), /limit 必须是 1\.\.500/)
+  ok('分页 limit 越界报错', true)
+  assert.throws(() => tools.invoke('yfe_list_chapters', { projectId: 'p1', offset: 9, limit: 1 }), /超出条目总数/)
+  ok('分页 offset 越界报错（含总数）', true)
 } finally {
   await fsp.rm(dir, { recursive: true, force: true })
 }

@@ -59,6 +59,15 @@ node <绝对路径>/resources/scripts/mcp/yfe-agent.mjs --host-file <本机绝�
 - 桌面随包只读桥（`yfe-readonly.mjs`）的 `yfe_read_chapter` 支持同一组参数与 `range` 字段；便携文件桥保持只读、按文件快照返回。
 - 未传 `offset` 与 `limit` 时**不加** `range` 字段，响应与 3.5.5 完全一致。
 
+### 长清单的分页
+
+`yfe_list_chapters`、`yfe_list_cards`、`yfe_list_table_rows` 在**桌面随包只读桥**里也支持 `offset` / `limit`（条目位置与条数，`limit` 上限 500）：
+
+- 不传两个参数时仍返回**整份数组**，与旧版逐字一致；传了才返回 `{ items, page }`。
+- `page` 给出 `offset`、`returned`、`total`、`nextOffset`、`hasMore`，续读直接用 `nextOffset`。
+- `offset` 超出总数会明确报错（含总数），不会静默返回空数组。
+- 大批设定建议先用清单分页定位，再用 `yfe_read_card` / `yfe_read_table_row` 逐条取详情，避免一次拉完整表。
+
 写操作默认未授权，必须由用户在引擎对目标项目勾选下列动作；授权并不表示用户已要求执行每次具体写入。应用宿主未开启时拒绝经此桥的操作；独立只读桥另有自己的使用方式。
 
 | 动作 | 写入工具 |

@@ -71,8 +71,24 @@ ok('会话回报：发送按窗口推算', adapter.sendBudgetTokens === 32768)
 ok('会话回报：只认合理范围', readAdapterWindow({ contextWindow: 128 }) === null)
 
 const clamped = resolveAcpBudget({ config: { budgetWindow: '131072', budgetSend: '999999' } })
-ok('手填发送上限被窗口收敛', clamped.sendBudgetTokens === 131072 - 8192 - Math.floor(131072 * 0.05))
+const windowCeiling = 131072 - 8192 - Math.floor(131072 * 0.05)
+// 3.5.6 复核补：窗口额度与运行层传输上限取小者（131072 窗口算出的 116327 仍高于 87K 的传输上限）
+ok('手填发送上限被收敛到「窗口额度与传输上限」的较小者',
+  clamped.sendBudgetTokens === Math.min(windowCeiling, clamped.runtimeTokenCeiling),
+  `${clamped.sendBudgetTokens} vs ${windowCeiling}`)
 ok('收敛后有说明', clamped.notice.includes('已收敛'))
+
+// 3.5.6 复核补：窗口很大时还要守住运行层单次请求 256 KiB 的上限（中文 3 字节/字）
+const runtimeCapped = resolveAcpBudget({ config: { budgetWindow: '1048576', budgetSend: '500000' } })
+ok('发送额度被运行层传输上限收敛', runtimeCapped.sendBudgetTokens === runtimeCapped.runtimeTokenCeiling,
+  String(runtimeCapped.sendBudgetTokens))
+ok('传输上限换算按 256 KiB ÷ 3 字节', runtimeCapped.runtimeTokenCeiling === Math.floor((256 * 1024) / 3))
+ok('收敛原因写进说明（窗口本身不受限，建议分批）',
+  runtimeCapped.notice.includes('256 KiB') && runtimeCapped.notice.includes('分批'))
+const roomyWindow = resolveAcpBudget({ config: { budgetWindow: '1048576', budgetOutput: '8192' } })
+ok('窗口很大时自动发送额度也不越过传输上限', roomyWindow.sendBudgetTokens <= roomyWindow.runtimeTokenCeiling,
+  String(roomyWindow.sendBudgetTokens))
+ok('普通窗口不触发传输上限收敛', adapter.sendClampedByRuntime === false)
 
 const bigOutput = resolveAcpBudget({ config: { budgetWindow: '65536', budgetOutput: '20000' } })
 ok('输出预留取手填值', bigOutput.outputReserveTokens === 20000)

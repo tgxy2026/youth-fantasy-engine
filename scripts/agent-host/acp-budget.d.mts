@@ -22,6 +22,10 @@ export interface AcpBudget {
   outputReserveTokens: number
   outputReserveSource: 'user' | 'auto'
   safetyMarginTokens: number
+  /** 运行层单次请求字节上限折算的 token 上限 */
+  runtimeTokenCeiling: number
+  /** 是否因为运行层字节上限（而不是窗口）被收敛 */
+  sendClampedByRuntime: boolean
   inputAllowanceTokens: number
   fallbackUsed: boolean
   notice: string

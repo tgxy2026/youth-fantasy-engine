@@ -27,6 +27,14 @@ const MATERIAL_SHARE = 0.5
 const SAFETY_MARGIN_RATIO = 0.05
 const MAX_OUTPUT_SHARE = 0.4
 
+/**
+ * 运行层单次请求文本上限（与 `acp-runtime.mjs` 保持一致）与最坏情况的字节/词元比。
+ * 中文 1 字 ≈ 3 字节 ≈ 1 token，所以 256 KiB ≈ 87K tokens —— 发送额度超过它没有意义，
+ * 只会让请求在运行层被拒（报「ACP 请求文本无效」，看不出是自己调太大）。
+ */
+export const MAX_REQUEST_BYTES = 256 * 1024
+const BYTES_PER_TOKEN_WORST_CASE = 3
+
 /** 预算相关配置键（runtime settings 与 IPC 白名单共用） */
 export const ACP_BUDGET_FIELDS = ['budgetWindow', 'budgetSend', 'budgetOutput']
 
@@ -114,8 +122,15 @@ export function resolveAcpBudget({
   const autoSend = Math.max(256, Math.floor(effectiveWindow * MATERIAL_SHARE))
   const wantedSend = userSend ?? autoSend
   const ceiling = Math.max(0, effectiveWindow - outputReserveTokens - safetyMarginTokens)
-  const sendBudgetTokens = Math.max(0, Math.min(wantedSend, ceiling))
+  // 🔴 还要守住**运行层字节上限**：单次请求文本超过 256 KiB 会被运行层直接拒
+  //    （acp-runtime.mjs 的 `Buffer.byteLength(text) > 256 * 1024`），
+  //    那时作者只看到「ACP 请求文本无效」，完全不知道是自己把窗口/发送额度调太大。
+  //    中文按 3 字节/字、1 token ≈ 1 字的保守换算折算成 token 上限。
+  const runtimeTokenCeiling = Math.floor(MAX_REQUEST_BYTES / BYTES_PER_TOKEN_WORST_CASE)
+  const cappedCeiling = Math.min(ceiling, runtimeTokenCeiling)
+  const sendBudgetTokens = Math.max(0, Math.min(wantedSend, cappedCeiling))
   const sendClamped = wantedSend > ceiling
+  const sendClampedByRuntime = !sendClamped && wantedSend > runtimeTokenCeiling
 
   const modelText = model || 'Agent 默认模型'
   const labelText = modelLabel || modelText
@@ -130,6 +145,10 @@ export function resolveAcpBudget({
   }
   if (sendClamped) {
     notice += ` 手填发送上限 ${wantedSend} 超过窗口可用额度，已收敛到 ${sendBudgetTokens}（窗口 − 输出预留 − 安全余量）。`
+  }
+  if (sendClampedByRuntime) {
+    notice += ` 本次最多发送已按单个请求 ${Math.round(MAX_REQUEST_BYTES / 1024)} KiB 的传输上限收敛到 ${sendBudgetTokens} tokens，`
+      + '再大的资料请分批（窗口本身不受此限）。'
   }
 
   return {
@@ -151,6 +170,9 @@ export function resolveAcpBudget({
     outputReserveTokens,
     outputReserveSource: userOutput ? 'user' : 'auto',
     safetyMarginTokens,
+    /** 单次请求传输上限折算出的 token 上限（UI 可显示「为什么发送额度被压到这么多」） */
+    runtimeTokenCeiling,
+    sendClampedByRuntime,
     inputAllowanceTokens: sendBudgetTokens,
     fallbackUsed: windowTokens === null,
     notice,

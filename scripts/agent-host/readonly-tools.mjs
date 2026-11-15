@@ -85,6 +85,45 @@ export function parseChapterRangeArgs(args) {
 
 // ---------- 数据读取（只读） ----------
 
+/** 列表分页单次上限（条目数）：长清单（几千张卡 / 几万行）不允许一次全给外部客户端。 */
+export const LIST_PAGE_MAX = 500
+
+/**
+ * 列表工具的可选分页（3.5.6）。
+ *
+ * 🔴 不传 `offset` / `limit` 时**原样返回数组** —— 旧客户端的响应结构一个字段都不变。
+ * 传了才返回 `{ items, page }`，与单章分段同一套「游标 + 总数 + hasMore」口径。
+ */
+export function paginateList(items, args) {
+  const hasOffset = args?.offset !== undefined && args?.offset !== null
+  const hasLimit = args?.limit !== undefined && args?.limit !== null
+  if (!hasOffset && !hasLimit) return items
+  let offset = 0
+  let limit = LIST_PAGE_MAX
+  if (hasOffset) {
+    if (!Number.isInteger(args.offset) || args.offset < 0) throw new Error('offset 必须是不小于 0 的整数（条目位置）。')
+    offset = args.offset
+  }
+  if (hasLimit) {
+    if (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > LIST_PAGE_MAX) {
+      throw new Error(`limit 必须是 1..${LIST_PAGE_MAX} 的整数（条数）。`)
+    }
+    limit = args.limit
+  }
+  if (offset > items.length) {
+    throw new Error(`offset ${offset} 超出条目总数（共 ${items.length} 条）。请从 0 开始或按上次返回的 nextOffset 继续。`)
+  }
+  const page = items.slice(offset, offset + limit)
+  const nextOffset = offset + page.length
+  return { items: page, page: { offset, returned: page.length, total: items.length, nextOffset, hasMore: nextOffset < items.length } }
+}
+
+/** 列表工具共用的分页入参（schema 片段） */
+export const LIST_PAGE_SCHEMA = {
+  offset: { type: 'integer', minimum: 0, description: '起始条目位置，默认 0；不传 offset/limit 时返回整份清单（旧语义）' },
+  limit: { type: 'integer', minimum: 1, maximum: 500, description: '本次最多返回的条目数，默认 500；上限 500' },
+}
+
 /** 各 store 主键 —— 与 storage/storeOps.PORTABLE_KEY_FIELDS 同口径（只列本桥要读的） */
 const KEY_FIELDS = {
   projects: 'id', volumes: 'id', chapters: 'id', cardRecords: 'id', tableRows: 'id',
@@ -234,22 +273,22 @@ export function createReadonlyTools(DATA_FILE, authorizedProjects = null) {
     },
     {
       name: 'yfe_list_chapters',
-      description: '项目的章节清单（标题 / 状态 / 字数 / 排序，不含正文）。可按卷过滤。',
+      description: '项目的章节清单（标题 / 状态 / 字数 / 排序，不含正文）。可按卷过滤；传 offset/limit 时分页返回（附 nextOffset 与总数）。',
       inputSchema: {
         type: 'object',
-        properties: { projectId: { type: 'string' }, volumeId: { type: 'string' } },
+        properties: { projectId: { type: 'string' }, volumeId: { type: 'string' }, ...LIST_PAGE_SCHEMA },
         required: ['projectId'], additionalProperties: false,
       },
       handler(a) {
         const pid = requireString(a, 'projectId')
         const vid = typeof a?.volumeId === 'string' && a.volumeId ? a.volumeId : null
-        return rowsOf(loadData(), 'chapters')
+        return paginateList(rowsOf(loadData(), 'chapters')
           .filter(c => c.projectId === pid && (!vid || c.volumeId === vid))
           .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
           .map(c => ({
             id: c.id, title: c.title, volumeId: c.volumeId, order: c.order, status: c.status,
             wordCount: c.wordCount, excludeFromNumbering: c.excludeFromNumbering === true, updatedAt: c.updatedAt,
-          }))
+          })), a)
       },
     },
     {
@@ -298,19 +337,19 @@ export function createReadonlyTools(DATA_FILE, authorizedProjects = null) {
     },
     {
       name: 'yfe_list_cards',
-      description: '项目的设定卡清单（角色 / 世界观等，按页签过滤可选；不含立绘）。',
+      description: '项目的设定卡清单（角色 / 世界观等，按页签过滤可选；不含立绘）。传 offset/limit 时分页返回。',
       inputSchema: {
         type: 'object',
-        properties: { projectId: { type: 'string' }, tabId: { type: 'string' } },
+        properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, ...LIST_PAGE_SCHEMA },
         required: ['projectId'], additionalProperties: false,
       },
       handler(a) {
         const pid = requireString(a, 'projectId')
         const tab = typeof a?.tabId === 'string' && a.tabId ? a.tabId : null
-        return rowsOf(loadData(), 'cardRecords')
+        return paginateList(rowsOf(loadData(), 'cardRecords')
           .filter(c => c.projectId === pid && (!tab || c.tabId === tab))
           .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
-          .map(c => ({ id: c.id, tabId: c.tabId, name: c.name, order: c.order }))
+          .map(c => ({ id: c.id, tabId: c.tabId, name: c.name, order: c.order })), a)
       },
     },
     {
@@ -325,19 +364,19 @@ export function createReadonlyTools(DATA_FILE, authorizedProjects = null) {
     },
     {
       name: 'yfe_list_table_rows',
-      description: '项目的表格行清单（可按页签过滤；不含图鉴主图）。',
+      description: '项目的表格行清单（可按页签过滤；不含图鉴主图）。传 offset/limit 时分页返回。',
       inputSchema: {
         type: 'object',
-        properties: { projectId: { type: 'string' }, tabId: { type: 'string' } },
+        properties: { projectId: { type: 'string' }, tabId: { type: 'string' }, ...LIST_PAGE_SCHEMA },
         required: ['projectId'], additionalProperties: false,
       },
       handler(a) {
         const pid = requireString(a, 'projectId')
         const tab = typeof a?.tabId === 'string' && a.tabId ? a.tabId : null
-        return rowsOf(loadData(), 'tableRows')
+        return paginateList(rowsOf(loadData(), 'tableRows')
           .filter(r => r.projectId === pid && (!tab || r.tabId === tab))
           .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
-          .map(r => ({ id: r.id, tabId: r.tabId, order: r.order, updatedAt: r.updatedAt, createdAt: r.createdAt }))
+          .map(r => ({ id: r.id, tabId: r.tabId, order: r.order, updatedAt: r.updatedAt, createdAt: r.createdAt })), a)
       },
     },
     {
