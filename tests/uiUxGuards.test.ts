@@ -375,6 +375,13 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     editor.includes('颉文姬、AI 伴写、本章资料、设定检索、本页指引与专注'))
   ok('🔴 伴写在上一句没回来时不再重复发（避免撞「操作在途」被熔断）',
     /if \(ghostBusy\) return/.test(read('src/components/editor/useNovelEditorGhost.ts')))
+
+  // 🔴 2026-11-15（作者报障）：示范项目载入曾把九万多字预置正文记进码字排行。
+  const seed = read('src/lib/app/seedData.ts')
+  ok('🔴 示范项目写入章节必须在「不算日常写作」的抑制区间内',
+    /withRankSuppressed\(async \(\) => \{[\s\S]{0,160}?db\.saveChapter/.test(seed))
+  ok('  · 守卫自检：裸循环的旧写法会被判定为坏形态',
+    !/for \(const ch of chs\) await db\.saveChapter\(ch\)\n\n/.test(seed))
 }
 
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)

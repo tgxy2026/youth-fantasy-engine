@@ -5,6 +5,7 @@ import { TABS } from '@/lib/schema'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { todayKey } from '@/lib/app/date'
+import { withRankSuppressed } from '@/lib/community/rankLedger'
 // 制度四页签 / 地图 / 情节推演画布的**纯数据**（2.8.1 迁出，见文件头注释）——
 // 🔴 `src/data/` 不许运行时 import，故这几块只导出字面量，id/order 在本文件生成。
 import {
@@ -1070,7 +1071,9 @@ async function doCreateDemoProject(): Promise<string> {
     mkChapter(vol2.id, 9, '第20章 十万剑鸣', CH20, '洛家家主授"冢"字令牌。出城三十里界碑，见十万柄剑堆成的万剑冢与三座黑台。陈渊将后山背来的断碑立于剑山正南脚下，按手于碑、唤一声"回来"——整座剑山自顶而下重新亮起。血鸦率三台血光扑至，以十七枚指骨所制骨铃压制；陈渊解封镇界塔第三层，背现九层塔影（缺三层）与暗金鳞，尽吞骨铃，血鸦败走，留下"你不是钥匙，你是那把锁"。十万剑鸣重新响彻荒原，卷二终。', '完稿'),
     mkChapter(vol3.id, 0, '第21章 剑应碑醒', CH21, '剑鸣止于第三声，老瞎子断言碑非回来而是醒了。北边三座黑台血光未灭，血鸦已去而台未撤。陈渊循台检查底座，石缝中刻有一符号——九弯三直绕圈、心嵌凹点，与青玄子识海半碑纹路同源同手。他按下圆点，碑震金线贯穿碑面，剑山首剑以应代鸣，左腕胎记与青铜小塔同时微烫；掌心裂口渗血被圆点吸尽，伤口干白无血，暗金鳞纹却更深。老瞎子点破吞天诀多了一笔——三百年前他背碑时碑上只有八道弯。望剑城万灯齐明、兵马南涌，洛清欢禁足期满尚余二十日；老瞎子轻语：他是锁，锁一扇门，七岁那年开过一次。黑台血渍渗入空气，有物极缓南移；铁柱嗅到三百年前的铁锈味。陈渊南行，北台底座转动，城楼主灯骤灭、满城灯火同熄，暗金鳞纹正一格一格向手腕蔓延。', '草稿'),
   ]
-  for (const ch of chs) await db.saveChapter(ch)
+  // 🔴 2026-11-15：示例正文是预置素材、不是作者写的字，必须挡在码字排行之外
+  //   （否则刚载入示例就被算成「今天码了九万多字」）。withRankSuppressed 正是为此预留的。
+  await withRankSuppressed(async () => { for (const ch of chs) await db.saveChapter(ch) })
 
   // 4) 章节总表联动行（id 用 ch- 前缀，编辑器保存时会自动更新而非新增）
   const masterRows: Array<[Chapter, Record<string, string>]> = [
