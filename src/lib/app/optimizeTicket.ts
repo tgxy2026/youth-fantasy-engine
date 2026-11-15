@@ -434,6 +434,13 @@ interface RunTicketOpts {
    * 不传 ⇒ 本函数自己建一条 `rewrite` 任务（一章一条，作者能看出每章花了多少）。
    */
   request?: CallRequestContext
+  /**
+   * 3.5.6 · ACP 分支：整章改写走 Agent（补字/压缩子调用共用同一发送器）。
+   * 判据不变：正文清洗、字数校准、可疑结果锁替换都在改写层内部。
+   */
+  acpText?: (prompt: string) => Promise<string>
+  /** 3.5.6 · ACP 分支：最新章的设定整理（实体抽取）也走 Agent；不传仍走 API。 */
+  acpExtract?: (prompt: string) => Promise<string>
 }
 
 interface RunTicketResult {
@@ -618,6 +625,7 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
       signal: opts.signal,
       onLog: opts.onLog,
       ...(request ? { request } : {}),
+      ...(opts.acpText ? { acpText: opts.acpText } : {}),
       budget,
     })
   } catch (e) {
@@ -677,7 +685,7 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
     } else {
       try {
         // 设定整理也计入本章预算（抽取 1 次；auto-update 策略的变化检测同样从这份里扣）
-        await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request, budget)
+        await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request, budget, opts.acpExtract)
       } catch (e) {
         // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
         //    至少留一行日志 —— 作者可去设定表手动补。

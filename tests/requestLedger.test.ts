@@ -211,7 +211,8 @@ async function main() {
       /createAttemptBudget\(\{ label: `第 \$\{hit\.no\} 章改写`, max: REWRITE_ATTEMPT_BUDGET \}\)/.test(ticketSrc))
     ok('⑦ 工单改写：预算快照回传界面', /budget: budget\.snapshot\(\)/.test(ticketSrc))
     ok('⑦ 工单改写：设定整理从本章预算扣',
-      /extractAndCommitSettings\(text, hit\.chapter\.title, 'add-only', undefined, opts\.signal, request, budget\)/.test(ticketSrc))
+      // 3.5.6：末尾多传一个 ACP 发送器（可选）；归属与预算位置未变
+      /extractAndCommitSettings\(text, hit\.chapter\.title, 'add-only', undefined, opts\.signal, request, budget(?:, opts\.acpExtract)?\)/.test(ticketSrc))
     ok('⑦ 工单面板：显示已用/上限（不是只报一个模糊数）',
       /调用 \{b\.used\}\/\{b\.max\}/.test(panelSrc) && /MAX_REQUESTS_PER_LOGICAL_CALL/.test(panelSrc))
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { Sparkles, Loader2, AlertCircle, BarChart3 } from 'lucide-react'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiAnalyzeFeedback, type FeedbackEntry } from '@/lib/ai/aiTasks'
 import { toFeedbackEntries } from '@/lib/app/viewSelectors'
@@ -20,7 +20,8 @@ interface Props {
  * 纯增强：未配置模型时按钮禁用，本表手动填写完全不受影响。
  */
 export default function FeedbackAIPanel({ rows, onClose }: Props) {
-  const { ready: aiReady } = useAIReady()
+  // 3.5.6：读者反馈分析经 acpRegistry 走 ACP，判据合流为写作就绪
+  const { ready: writingReady } = useWritingReady()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ summary: string; churnAttribution: string; suggestions: string } | null>(null)
@@ -61,9 +62,9 @@ export default function FeedbackAIPanel({ rows, onClose }: Props) {
 
       {entries.length > 0 && !result && (
         <Button onClick={run}
-          disabled={!aiReady || loading}
+          disabled={!writingReady || loading}
           
-          title={!aiReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center">
+          title={!writingReady ? AI_DISABLED_HINT : '基于已登记的反馈记录做 AI 分析'} variant="primary" size="md" className="flex items-center">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? '分析中…' : `开始分析（${entries.length} 条记录）`}
         </Button>

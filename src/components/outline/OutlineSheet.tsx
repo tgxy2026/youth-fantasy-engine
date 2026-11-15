@@ -27,7 +27,7 @@ import { registerLeaveGuard } from '@/lib/editor/leaveBarrier'
 import { createRecordDraftFlusher } from '@/lib/editor/recordDraftFlush'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import type { TemplateField, FillContext } from '@/lib/ai'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 // R4a · 2.6.0：结构模板节拍对照条（只读）。模板选择的单一来源在 creativeSession，
 // 与创意写作 / 检查工具「全书结构配比」共用同一份（hydrate 幂等，本页可能从未打开过创意写作）。
@@ -62,7 +62,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const fillContext: FillContext = isVolume ? 'outline-volume' : 'outline-chapter'
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
-  const { ready: aiReady } = useAIReady()
+  const { ready: writingReady } = useWritingReady()
   /** AI 补全用的字段模板（key = `模块名::字段名`，与落库的键同名） */
   const cardFields = useMemo<TemplateField[]>(
     () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
@@ -529,10 +529,10 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                 {/* 🔴 2026-10-03 老大定案：与角色管理组同一组语义 ——
                     「AI 新增」= 凭空建一条新大纲（不影响已有条目）；
                     「AI 补全」= 在**当前这一条**上补空白（与表单页 / 表格行同一口径，已填的保留）。 */}
-                <Button variant="secondary" onClick={() => setShowFillNew(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 新建一份${tab.name}（不影响已有${noun}）`}>
+                <Button variant="secondary" onClick={() => setShowFillNew(true)} disabled={!writingReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 新建一份${tab.name}（不影响已有${noun}）`}>
                   <Sparkles size={14} /> AI 新增
                 </Button>
-                <Button variant="secondary" onClick={() => setShowFillExisting(true)} disabled={!aiReady || !draft} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : !draft ? `先选一条${noun}，再让 AI 补全它的空白字段` : `让 AI 补全「${draft.name}」未填写的字段（已填的会保留）`}>
+                <Button variant="secondary" onClick={() => setShowFillExisting(true)} disabled={!writingReady || !draft} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : !draft ? `先选一条${noun}，再让 AI 补全它的空白字段` : `让 AI 补全「${draft.name}」未填写的字段（已填的会保留）`}>
                   <Wand2 size={14} /> AI 补全
                 </Button>
               </>

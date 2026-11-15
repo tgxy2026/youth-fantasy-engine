@@ -11,7 +11,7 @@ import { isNumericPowerField } from '@/lib/schema'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import type { TemplateField, FillContext } from '@/lib/ai'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import { AI_DISABLED_HINT, aiCapabilityOf } from '@/lib/ai/aiScope'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -84,7 +84,7 @@ export default function FormSheet({ tab }: Props) {
 
   // AI 入口：本页签适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
-  const { ready: aiReady } = useAIReady()
+  const { ready: writingReady } = useWritingReady()
   /**
    * 「全书总纲」是**单份表单**（不像分卷 / 章节那样一条一张卡），所以这里的「AI 新增」不是
    * 「新建一条」，而是「让 AI 起草一整份新总纲」—— 与「AI 补全」的差别只在**已填字段会不会被替换**
@@ -296,11 +296,11 @@ export default function FormSheet({ tab }: Props) {
               {/* 「全书总纲」多一个「AI 新增」（起草全份）—— 单份表单没有「新建一条」的语义，
                   它与「AI 补全」的区别只在**已填字段会不会被替换**（见 openFillNew / handleFillNew）。 */}
               {isOutlineMaster && (
-                <Button variant="secondary" onClick={() => void openFillNew()} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 起草一整份新的${tab.name}（采用后替换本页已填内容）`}>
+                <Button variant="secondary" onClick={() => void openFillNew()} disabled={!writingReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : `提供粗略想法，让 AI 起草一整份新的${tab.name}（采用后替换本页已填内容）`}>
                   <Sparkles size={12} /> AI 新增
                 </Button>
               )}
-              <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
+              <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!writingReady} className="flex items-center gap-1.5 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : '提供粗略设定，让 AI 补全本页未填写的字段（已填的会保留）'}>
                 <Sparkles size={12} /> AI 补全
               </Button>
             </>

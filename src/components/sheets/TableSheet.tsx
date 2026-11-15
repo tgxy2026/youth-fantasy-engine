@@ -125,7 +125,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     // 编号
     codeError,
     // 视图与高亮
-    viewMode, setViewMode: storeViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady,
+    viewMode, setViewMode: storeViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, writingReady,
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, saveAtlasConfig, syncAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）
@@ -691,19 +691,19 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           </Button>
           )}
           {aiCap !== 'none' && !isMaster && (
-            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !aiReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : 'AI 新增一行：提供粗略设定，由 AI 补全整行字段后落盘（不影响已有行 / 其他表）' }>
+            <Button variant="secondary" onClick={() => (aiCap === 'organize' ? setShowOrganize(true) : setShowFill(true))} disabled={!writingReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={ !writingReady ? AI_DISABLED_HINT : aiCap === 'organize' ? '让 AI 从章节正文 / 已有设定中整理出尚未登记的条目（不会重复生成）' : 'AI 新增一行：提供粗略设定，由 AI 补全整行字段后落盘（不影响已有行 / 其他表）' }>
               <Sparkles size={14} /> {aiCap === 'organize' ? 'AI 整理' : 'AI 新增'}
             </Button>
           )}
           {/* 读者反馈：AI 分析（运营维护组，不接补全/整理，单独开分析入口） */}
           {tab.id === 'feedback' && (
-            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
+            <Button variant="secondary" onClick={() => setShowFeedbackAI(true)} disabled={!writingReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : '用 AI 分析读者反馈数据：流失归因 + 应对建议'}>
               <Sparkles size={14} /> AI 分析反馈
             </Button>
           )}
           {/* 名词术语：AI 查重（在「AI 新增」之外，额外提供同义/重复归一入口） */}
           {tab.id === 'terms' && (
-            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!aiReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!aiReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
+            <Button variant="secondary" onClick={() => setShowDedupAI(true)} disabled={!writingReady} className="flex items-center gap-1.5 transition-colors shrink-0 disabled:hover:bg-ink-800" title={!writingReady ? AI_DISABLED_HINT : '用 AI 查找同义/重复的术语，建议合并归一'}>
               <Sparkles size={14} /> AI 查重
             </Button>
           )}

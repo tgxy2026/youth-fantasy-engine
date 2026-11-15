@@ -247,7 +247,7 @@ export function ContinuityCheck({ onNavigateTab, onOpenChapter, onClose }: {
             <span className="text-12 font-semibold text-ink-200">本地确定性冲突</span>
             {trend && <CheckTrendNote trend={trend} />}
             <Button onClick={runAiAudit}
-              disabled={!aiReady || aiLoading}
+              disabled={!writingReady || aiLoading}
               
               title={!writingReady ? AI_DISABLED_HINT : '让 AI 基于全部设定与最近 6 章正文，做一遍深度一致性审计'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
@@ -351,7 +351,7 @@ export function StyleAudit({ content, chapterId, onClose }: { content: string; c
           <div className="flex items-center gap-2 mb-2">
             <span className="text-12 font-semibold text-ink-200">本地文风体检</span>
             <Button onClick={runAiStyle}
-              disabled={!aiReady || aiLoading}
+              disabled={!writingReady || aiLoading}
               
               title={!writingReady ? AI_DISABLED_HINT : '让 AI 对照《写作规范》体检本章文风（坏习惯词 / 视角 / 标点 / 节奏）'} variant="secondary" size="md" className="ml-auto flex items-center rounded">
               {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}

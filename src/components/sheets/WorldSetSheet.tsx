@@ -28,7 +28,7 @@ import { uid } from '@/lib/app/id'
 import { activeKeyOf, FREE_DRAFT_KEY, isInternalFieldKey, splitActive, subTabIdOf } from '@/lib/world/worldSets'
 import { isNumericPowerField } from '@/lib/schema'
 import { addButtonLabel, getActivePack, modulesFor, subItemLabel } from '@/lib/schemaTemplates/index'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import type { TemplateField } from '@/lib/ai'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -55,7 +55,7 @@ interface Props {
 }
 
 export default function WorldSetSheet({ tab }: Props) {
-  const { ready: aiReady } = useAIReady()
+  const { ready: writingReady } = useWritingReady()
   const [loading, setLoading] = useState(true)
   const [main, setMain] = useState<Record<string, string>>({})
   const [subs, setSubs] = useState<CardRecord[]>([])
@@ -363,9 +363,9 @@ export default function WorldSetSheet({ tab }: Props) {
             >
               <Save size={13} /> {saving ? '提交中…' : !dirty && saveState.submitted ? '已提交' : '保存'}
             </Button>
-            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!aiReady}
+            <Button variant="secondary" onClick={() => setShowFill(true)} disabled={!writingReady}
               className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium disabled:opacity-40"
-              title={aiReady ? '提供粗略设定，让 AI 补全当前这一层未填的字段' : '还没接入模型'}
+              title={writingReady ? '提供粗略设定，让 AI 补全当前这一层未填的字段' : '还没接入模型'}
             >
               <Sparkles size={12} /> AI 补全
             </Button>
@@ -524,9 +524,9 @@ export default function WorldSetSheet({ tab }: Props) {
               <span className="ml-auto text-10 text-ink-500 tabular-nums">{freeDraftChars} 字</span>
               <Button variant="secondary" size="xs"
                 onClick={() => setShowOrganize(true)}
-                disabled={!aiReady || freeDraftChars === 0}
+                disabled={!writingReady || freeDraftChars === 0}
                 className="flex items-center gap-1"
-                title={aiReady
+                title={writingReady
                   ? (freeDraftChars === 0 ? '先在草稿箱里写点什么，再让 AI 整理' : '让 AI 读这段草稿，整理进上方未填的字段')
                   : '还没接入模型'}
               >

@@ -57,7 +57,7 @@ import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import { useTableWorkspaceFilters } from './useTableWorkspaceFilters'
 import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { buildImportRows, type ImportRowResult } from '@/lib/storage/tableIO'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import { clearFreeDraft } from '@/lib/editor/freeDraft'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
@@ -260,7 +260,8 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
   const codeCol = tab.columns?.find(c => c.name === '编号')?.name
   // AI 入口：本表适用哪种能力（补全 / 整理 / 不接），以及模型是否已配置
   const aiCap = aiCapabilityOf(tab)
-  const { ready: aiReady } = useAIReady()
+  // 3.5.6：AI 整理 / 增行 / 补全都支持 ACP，判据合流为「写作就绪」
+  const { ready: writingReady } = useWritingReady()
   const [showFill, setShowFill] = useState(false)
   const [showOrganize, setShowOrganize] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -1139,7 +1140,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
     codeCol, codeError,
     refOptions, customOpts, // 跨表候选值 / 内置下拉选项：都改成「每列读一次、逐行传下去」
     // 视图与高亮
-    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, aiReady, hlRowId, rowRefs,
+    viewMode, setViewMode, isTimelineCapable, isGraphCapable, isStorylineCapable, isAtlasCapable, isMaster, aiCap, writingReady, hlRowId, rowRefs,
     // 图鉴字段配置（3.1.3）
     effectiveColumns, atlasConfig, atlasNewerFormat, atlasConfigError, saveAtlasConfig, syncAtlasConfig, saveRowImage, atlasImageUsage, atlasImageLimit, importAtlasPackage, createAtlasFields,
     // 采用模板（3.2.0）

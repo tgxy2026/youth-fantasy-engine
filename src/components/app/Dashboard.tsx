@@ -15,7 +15,7 @@ import CharacterDistribution from '@/components/world/CharacterDistribution'
 import WritingGoals from '@/components/creative/WritingGoals'
 import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
 import { todayKey } from '@/lib/app/date'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { aiDiagnoseProject, type ProjectDiagnosis } from '@/lib/ai/aiTasks'
@@ -146,7 +146,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
   useEffect(() => { hydrateCreativeSession() }, [])
 
   // AI 健康诊断（可选增强：未配模型不调用，静态提醒照常显示）
-  const { ready: aiReady } = useAIReady()
+  const { ready: writingReady } = useWritingReady()
   const [diag, setDiag] = useState<ProjectDiagnosis | null>(null)
   const [diagLoading, setDiagLoading] = useState(false)
   const [diagError, setDiagError] = useState<string | null>(null)
@@ -476,9 +476,9 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           <h2 className="text-13 font-semibold text-ink-100 mb-4 flex items-center gap-2">
             <Clock size={14} className="text-amber" /> 创作建议
             <Button onClick={runDiag}
-              disabled={!aiReady || diagLoading}
+              disabled={!writingReady || diagLoading}
               
-              title={!aiReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
+              title={!writingReady ? AI_DISABLED_HINT : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
             </Button>

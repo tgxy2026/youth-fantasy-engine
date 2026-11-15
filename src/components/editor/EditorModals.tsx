@@ -9,7 +9,8 @@ import { scanText, replaceHits } from '@/lib/editor/sensitiveWords'
 import { contextSnippet } from '@/lib/ai/contextSnippet'
 import { diffLines, diffStats } from '@/lib/editor/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
-import { useAIReady } from '@/lib/ai/useAIReady'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
+import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiProofreadText, aiProofreadLogic, isReplaceable, type ProofreadIssue, type ProofreadResult } from '@/lib/ai/aiTasks'
 import { applyProofReplacement, reanchorIssues, APPLY_FAILURE_TEXT } from '@/lib/editor/proofApply'
@@ -162,7 +163,8 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
   /** 从正文「返回校对结果」时滚到这一条并短暂高亮；`nonce` 让同一条能被再次触发 */
   locateReturn?: { issueKey: number; nonce: number } | null
 }) {
-  const { ready: aiReady } = useAIReady()
+  // 3.5.6：校对支持 ACP（proofread 需显式注入发送器，不经注册表）
+  const { ready: writingReady, viaAcp, agentName, generation } = useWritingReady()
   /** 章节归属键 —— 任务中心按 (ownerTab,kind) 取最近一条，结果必须盖章节戳（见 aiTaskCenter「章节归属」） */
   const ch = chapterId ?? ''
 
@@ -247,7 +249,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
 
   const runScope = (scope: ProofScope) => {
     const tk = runnerOf(scope)
-    if (!aiReady || tk.running) return
+    if (!writingReady || tk.running) return
     // 校对的目标文本在发起时**快照**进闭包（任务跑在 store 里，期间组件可能已卸载）
     const target = text
     tk.run(async job => {
@@ -259,8 +261,22 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
         try { ctxText = (await buildProjectContext({ budget: await writerBudgetFor('proofread') })).text } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       }
       const run = scope === 'text' ? aiProofreadText : aiProofreadLogic
+      // 3.5.6：ACP 就绪时由 Agent 校对。校对按块发送，整次任务只确认一次；取消沿用任务中心信号。
+      const acpText = viaAcp && agentName && generation
+        ? acpGatedText({
+            task: 'proofread',
+            generation,
+            title: '发送本章正文至 ACP Agent',
+            message: acpGateMessage(agentName, scope === 'logic' ? '本章正文与设定资料' : '本章正文', '逐块校对'),
+            agentName,
+            ask: confirmDialog,
+            askOnce: true,
+            signal: job.signal,
+          })
+        : undefined
       const res = await run(target, {
         context: ctxText, signal: job.signal,
+        ...(acpText ? { acpText } : {}),
         onProgress: (d, t) => job.progress({ ch, done: d, total: t }), // ⚠️ 带 ch，别把章节戳冲掉
       })
       /**
@@ -377,7 +393,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
           {SCOPE_ORDER.map(scope => {
             const st = scopes[scope]
             const meta = SCOPE_META[scope]
-            if (!aiReady) {
+            if (!writingReady) {
               return (
                 <Button key={scope} disabled title={AI_DISABLED_HINT}
                   variant="secondary" size="md" className="flex items-center cursor-not-allowed">
@@ -400,8 +416,8 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
               </Button>
             )
           })}
-          {!aiReady && (
-            <span className="text-11 text-ink-500">未接入 AI 模型 —— 两块校对都不可用。</span>
+          {!writingReady && (
+            <span className="text-11 text-ink-500">未接入 AI 模型、也没有可用的 ACP 连接 —— 两块校对都不可用。</span>
           )}
         </div>
 

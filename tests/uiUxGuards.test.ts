@@ -393,5 +393,38 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /export function clearProjectRank[\s\S]{0,700}?delSettingFor\(projectId[\s\S]{0,300}?readPending\(\)[\s\S]{0,200}?writePending\(remain\)/.test(ledger))
 }
 
+// ---------- ⑦ 3.5.6 复核：已支持 ACP 的入口不得再按「API 模型就绪」禁用 ----------
+//
+// 背景（2026-11-15 复核发现）：任务层早就支持 `acpText`，但父级页面仍用 `!aiReady` 禁用按钮，
+// 于是「零 API 配置 + ACP 已连接」的作者点不动这些 AI 入口 —— 单测全绿、真机上却不可用。
+// 这里钉住：凡是底层任务支持 ACP 的入口，禁用/提示判据必须是写作就绪（API 或 ACP）。
+{
+  const cases: [string, string][] = [
+    ['src/components/sheets/FormSheet.tsx', '表单 AI 新建 / 补全'],
+    ['src/components/outline/OutlineSheet.tsx', '大纲 AI 新建 / 补全'],
+    ['src/components/sheets/WorldSetSheet.tsx', '世界设定 AI 补全'],
+    ['src/components/sheets/ParallelSetSheet.tsx', '平行设定 AI 补全'],
+    ['src/components/world/CharacterSheet.tsx', '角色卡 AI 入口'],
+    ['src/components/sheets/TableSheet.tsx', '表格 AI 整理 / 增行'],
+    ['src/components/sheets/TableSheetRow.tsx', '表格行内 AI 补全'],
+    ['src/components/sheets/TableRelationGroups.tsx', '关系分组行内 AI 补全'],
+    ['src/components/app/Dashboard.tsx', '健康诊断'],
+    ['src/components/editor/EditorModals.tsx', '编辑器 AI 校对'],
+    ['src/components/tools/OptimizeTicketPanel.tsx', '优化工单逐章改写'],
+    ['src/components/tools/TermDedupPanel.tsx', '术语 AI 查重'],
+    ['src/components/ai/FeedbackAIPanel.tsx', '读者反馈 AI 分析'],
+  ]
+  for (const [file, label] of cases) {
+    const s = read(file)
+    // 去掉整行注释再判：这些文件里有「不要写成 disabled={!aiReady}」这类说明性注释
+    const code = s.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+    ok(`🔴 ${label}：禁用/提示判据不再只看 API 就绪`,
+      !/disabled=\{[^}]*!aiReady/.test(code) && !/title=\{[^}]*!aiReady/.test(code) && !/aiDisabledHint=\{!aiReady/.test(code), file)
+  }
+  // 投稿审核必须**保持**只看 API（它要求内容只在本机处理）
+  ok('🔴 投稿审核界面仍按本地 API 就绪判断（不得换成 writingReady）',
+    !/useWritingReady/.test(read('src/components/community/AdminPanel.tsx')))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

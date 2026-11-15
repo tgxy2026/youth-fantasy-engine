@@ -41,7 +41,7 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
     removeRow,
     isRowDirty,
     aiCap,
-    aiReady,
+    writingReady,
     setFillRow,
   } = model
 
@@ -141,7 +141,7 @@ export default function TableRelationGroups({ tab, model, ctx, onOpenMentions }:
                         {aiCap !== 'none' && (
                           <Button variant="bare" iconOnly size="xs"
                             onClick={() => setFillRow(row)}
-                            disabled={!aiReady}
+                            disabled={!writingReady}
                             className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
                             title="AI 补全本行空白：只填这一行未填写的字段，不影响其他行 / 表"
                           >

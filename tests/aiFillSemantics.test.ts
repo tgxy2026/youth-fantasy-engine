@@ -30,7 +30,8 @@ function main() {
   ok('🔴 AI 补全：传进来的已填值只含可参考字段（已填字段锁定、只补空白）',
     cs.includes('existing={cardAiExisting}') && /cardAiReadKeys\.has\(k\)/.test(cs) && cs.includes('out[k] = v'))
   ok('🔴 AI 补全：弹窗标题带当前卡名', cs.includes('AI 补全 · ${draft.name}'))
-  ok('🔴 AI 补全：模型未就绪或未选卡时禁用', cs.includes('aiDisabledHint={!aiReady ? AI_DISABLED_HINT : undefined}')
+  // 3.5.6：判据可以是 API 就绪或写作就绪（ACP），但必须真的从对应 hook 推导
+  ok('🔴 AI 补全：模型未就绪或未选卡时禁用', /aiDisabledHint=\{!(?:aiReady|writingReady) \? AI_DISABLED_HINT : undefined\}/.test(cs)
     && cs.includes('hasSelection={!!draft}') && tools.includes('disabled={!!props.aiDisabledHint || !props.hasSelection}'))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet 同口径）',
     /const accepted = acceptAiValues\(values\)/.test(cs)
@@ -67,7 +68,8 @@ function main() {
   ok('🔴 右栏底部那排按钮已撤（不再有两处同功能）', !ps.includes('底部：AI 补全 + 保存'))
   ok('与世界设定同形：两者页头都用 px-3.5 h-9 rounded-lg text-13 的按钮规格',
     ps.includes('px-3.5 h-9 rounded-lg text-13') && ws.includes('px-3.5 h-9 rounded-lg text-13'))
-  ok('未选条目时保存 / AI 补全一并禁用', ps.includes('disabled={!selSub || !dirty || saving}') && ps.includes('disabled={!aiReady || !selSub}'))
+  ok('未选条目时保存 / AI 补全一并禁用', ps.includes('disabled={!selSub || !dirty || saving}')
+    && /disabled=\{!(?:aiReady|writingReady) \|\| !selSub\}/.test(ps))
 
   // ── ④ 弹窗主语解析兼容「AI 新增」前缀（否则对话引导会拿整串标题当主语） ──
   const aitf = read('src/components/ai/AITemplateFill.tsx')
@@ -105,7 +107,7 @@ function main() {
   ok('🔴 AI 补全：独立状态 setShowFillExisting(true) + 传 existing={draft.data}',
     os.includes('onClick={() => setShowFillExisting(true)}') && os.includes('existing={draft.data}'))
   ok('🔴 AI 补全：弹窗标题带当前条目名 + 未选条目时禁用',
-    os.includes('AI 补全 · ${draft.name}') && os.includes('disabled={!aiReady || !draft}'))
+    os.includes('AI 补全 · ${draft.name}') && /disabled=\{!(?:aiReady|writingReady) \|\| !draft\}/.test(os))
   ok('🔴 AI 补全采用时只写非空字段（已填的保留，与 FormSheet / CharacterSheet 同口径）',
     /for \(const \[k, v\] of Object\.entries\(values\)\) if \(v && v\.trim\(\)\) next\.data\[k\] = v/.test(os))
   ok('🔴 AI 新增落在目录最上方（order = 最小 order − 1，与本页「新建」一致）',
