@@ -10,6 +10,7 @@ import { aiPaceAnalysis } from '../src/lib/aiTasks/pace'
 import { aiInferStyle } from '../src/lib/aiTasks/styleInfer'
 import { aiComparePlanWithBody } from '../src/lib/aiTasks/planCompareAi'
 import { verifyChangeItems } from '../src/lib/audit/changeList'
+import { ACP_NOT_CONNECTED_HINT, AI_DISABLED_HINT, blockedHintFor } from '../src/lib/ai/aiScope'
 
 let pass = 0
 let fail = 0
@@ -127,6 +128,15 @@ const main = read('electron/main.cjs')
 for (const task of ['change-list', 'pace', 'style-infer', 'plan-compare', 'style-fingerprint']) {
   ok(`任务标识登记与放行：${task}`, bridge.includes(`'${task}'`) && main.includes(`'${task}'`))
 }
+
+// ---------- 统一提示（3.5.6 文本复核后的唯一来源） ----------
+// 20 余处按钮的 title 与 toast 都从这里取；判错一次就是全站文案错一遍。
+ok('ACP 已配置但未连接 → 提示去连 Agent', blockedHintFor(true) === ACP_NOT_CONNECTED_HINT)
+ok('未配置 → 用未接入模型的统一说明', blockedHintFor(false) === AI_DISABLED_HINT)
+ok('提示语是「可操作」的：指到模型设置与 ACP Agent',
+  ACP_NOT_CONNECTED_HINT.includes('模型设置') && ACP_NOT_CONNECTED_HINT.includes('ACP Agent'))
+ok('useWritingReady 不自己拼提示（必须走 blockedHintFor）',
+  /blockedHint: blockedHintFor\(acpConfigured\)/.test(read('src/lib/agentHost/useWritingReady.ts')))
 
 console.log(`\n—— acpSmallEntries 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exit(1)

@@ -255,7 +255,13 @@ if (!SRC) {
     /^src\/lib\/ai\.ts$/.test(r) ||             // 顶层门面（门面留在顶层，与 db.ts 同款）
     /^src\/lib\/outline\/autoContinue\.ts$/.test(r) ||  // 自动续写（3.0 从顶层挪入 outline/）
     /^src\/lib\/(flow|bookbreak)\//.test(r) ||
-    /^src\/lib\/tavern\/(engine|story|draft|vars)\.ts$/.test(r)
+    /^src\/lib\/tavern\/(engine|story|draft|vars)\.ts$/.test(r) ||
+    /**
+     * 3.5.6 六维审计补：ACP 的结构化解析链同样是「Agent 返回文本 → 结构化数据」，
+     * 之前作用域只到 `lib/ai*`，这条链**整段在闸外** —— 新增 ACP 解析器可以绕过这条红线的检查。
+     * 只纳入 `lib/agentHost/`（渲染进程侧解析），`scripts/agent-host/` 是主进程 JSON-RPC 帧与配置文件读取，不算模型文本。
+     */
+    /^src\/lib\/agentHost\//.test(r)
   /**
    * `JSON.parse` 的**具名例外**：`文件 → 理由`。
    * 🔴 例外必须写清「为什么它不是红线要管的那种解析」，否则就是给自己开后门。
@@ -271,6 +277,14 @@ if (!SRC) {
     'src/lib/aiCore/protocols/anthropic.ts': 'Anthropic SSE 单行信封解析，非模型正文结构化解析',
     'src/lib/aiCore/protocols/gemini.ts': 'Gemini SSE 单行信封解析，非模型正文结构化解析',
     'src/lib/aiCore/protocols/openaiResponses.ts': 'Responses SSE 单行信封解析，非模型正文结构化解析',
+    /**
+     * 3.5.6：ACP 的结构化结果解析器。它**不是**绕开 aiParse 偷懒，而是比 aiParse 更严的一层：
+     * 先扫最外层括号判「截断」（Agent 输出被限流/超时截断，必须与「格式不对」分开报），
+     * 再按每个任务声明的形状逐字段过滤（对象/数组、必填键、类型），不合格整条拒收。
+     * 换成 aiParse 会丢掉这两件事 —— 截断会被当成「解析失败」，半份结果可能被当成完整结果。
+     * 保留此处唯一的 `JSON.parse`，并由本闸把整条链纳入作用域（新增 ACP 解析器不能再绕过）。
+     */
+    'src/lib/agentHost/acpStructured.ts': 'ACP 专用结构化解析：先判截断再严格按声明形状过滤，比 aiParse 更严；换用会丢失截断与半份结果的区分',
   }
   {
     const bad: string[] = []
