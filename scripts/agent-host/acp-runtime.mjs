@@ -23,6 +23,37 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
   }
   const configFile = createModeFilePersistence(path.join(root, 'settings.json'))
   const runFile = createModeFilePersistence(path.join(root, 'runtime.json'))
+
+  /**
+   * 清理上次异常退出留下的空工作目录（`sessions/work-xxxxxx`）。
+   *
+   * 正常路径（停用连接 / 空闲回收 / 退出应用）都会在自己的 cwd 上 `fs.rm`；
+   * 但崩溃、任务管理器强杀、断电这些情况没人收尾，目录会一直在。
+   * 它们基本是空的（实测 0 字节），不清理也不会吃磁盘，但数量会慢慢变多。
+   *
+   * 安全约束：
+   *   · 只动 `sessions/` 下形如 `work-xxxxxx` 的目录，别的一概不碰；
+   *   · 当前常驻宿主的 cwd 跳过；
+   *   · 10 分钟内还有改动的跳过 —— 可能正被另一个进程/实例使用（宁可留，不可误删）。
+   */
+  const WORK_DIR_PATTERN = /^work-[A-Za-z0-9]{6}$/
+  async function sweepOrphanSessions() {
+    const workRoot = path.join(root, 'sessions')
+    const entries = await fs.readdir(workRoot, { withFileTypes: true }).catch(() => [])
+    const now = Date.now()
+    let removed = 0
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !WORK_DIR_PATTERN.test(entry.name)) continue
+      const full = path.join(workRoot, entry.name)
+      if (live && path.resolve(live.cwd) === path.resolve(full)) continue
+      const info = await fs.stat(full).catch(() => null)
+      if (!info || now - info.mtimeMs < 10 * 60 * 1000) continue
+      await fs.rm(full, { recursive: true, force: true, maxRetries: 2 }).catch(() => undefined)
+      removed += 1
+    }
+    if (removed) console.log(`[acp] 已清理 ${removed} 个残留工作目录`)
+    return removed
+  }
   /** 最近一次 ACP 调用的耗时分解（只用于诊断，不影响任何行为） */
   let lastTiming = null
 
@@ -417,6 +448,9 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     sessionReady = false
   }
 
+  // 启动先扫一遍历史残留（异步，不阻塞运行时创建）
+  setTimeout(() => { void sweepOrphanSessions().catch(() => undefined) }, 3000).unref?.()
+
   return {
     verifyQuiescent,
     invalidateResults,
@@ -425,6 +459,7 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
       await operation?.finished.catch(() => {})
       await closeLive()
       await verifyQuiescent()
+      void sweepOrphanSessions().catch(() => undefined)
     },
     /**
      * 显式预热：只建宿主、不建会话、不发 prompt。
