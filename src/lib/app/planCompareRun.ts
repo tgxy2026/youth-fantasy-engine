@@ -76,6 +76,8 @@ export interface PlanCompareRunInput {
   bodyText: string
   outline: { data?: Record<string, string> } | null
   signal?: AbortSignal
+  /** 3.5.6 · ACP 分支：给了就只走 Agent（判据与落档口径不变） */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export interface PlanCompareRunResult {
@@ -94,7 +96,10 @@ export interface PlanCompareRunResult {
 export async function runPlanCompareForChapter(input: PlanCompareRunInput): Promise<PlanCompareRunResult> {
   const items = collectPlanItems(input.outline)
   if (!items.length) return { state: 'empty', saved: 0 }
-  const outcome = await aiComparePlanWithBody(items, input.bodyText, input.signal ? { signal: input.signal } : {})
+  const outcome = await aiComparePlanWithBody(items, input.bodyText, {
+    ...(input.signal ? { signal: input.signal } : {}),
+    ...(input.acpText ? { acpText: input.acpText } : {}),
+  })
   if (outcome.state !== 'completed' || !outcome.review) {
     return { state: outcome.state === 'invalid' ? 'invalid' : 'failed', saved: 0, ...(outcome.error ? { error: outcome.error } : {}) }
   }

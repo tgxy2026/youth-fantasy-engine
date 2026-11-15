@@ -15,6 +15,7 @@
 //
 // 🔴 本文件是纯业务逻辑，不 import 任何 UI；`reviewPlanCompare` 是纯函数，AI 调用在它外面。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
@@ -180,6 +181,11 @@ export interface PlanCompareAiOpts {
   signal?: AbortSignal
   request?: CallRequestContext
   onToken?: (delta: string) => void
+  /**
+   * 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置。
+   * 🔴 判据不放宽：`reviewPlanCompare` 仍逐条核对字段与状态，引文必须逐字落在正文里。
+   */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export interface PlanCompareAiOutcome {
@@ -202,7 +208,6 @@ export async function aiComparePlanWithBody(
 ): Promise<PlanCompareAiOutcome> {
   if (!planItems.length) return { state: 'completed', review: reviewPlanCompare('[]', [], chapterText) }
   try {
-    const cfg = await requireProviderFor('review')
     const fence = newAuthorFence()
     const planBlock = planItems
       .map((p, i) => `${i + 1}. planFieldId=${p.planFieldId}\n   计划原文：${p.planQuote}`)
@@ -214,18 +219,28 @@ ${authorBlock(fence, planBlock)}
 ${authorBlock(fence, chapterText.trim() || '（空章节）')}
 
 请逐条对照，返回 JSON 数组。`
-    const text = await chat(
-      cfg,
-      [{ role: 'system', content: composeSystemPrompt(P_plan_compare, cfg) }, { role: 'user', content: user }],
-      {
-        output: 'json-object',
-        reasoning: 'off',
-        timeoutMs: CHAT_TIMEOUT_MS,
-        ...(opts.signal ? { signal: opts.signal } : {}),
-        ...(opts.onToken ? { onToken: opts.onToken } : {}),
-        ...(opts.request ? { request: opts.request } : {}),
-      },
-    )
+    // 3.5.6 · ACP 分支：schema 用「数组包裹」的形状 —— parseObjectArray 遇到含数组字段的对象
+    // 会优先取内部数组，写成 {"items":[…]} 反而会被拆错。
+    let text: string
+    if (opts.acpText) {
+      text = await opts.acpText(
+        `${P_plan_compare}\n\n${user}\n\n${acpJsonInstruction('细纲与正文对照结果', '[{"planFieldId":"计划项的 id（原样照抄）","status":"completed / partial / not-found / different / insufficient","bodyQuotes":["正文里逐字存在的原句"],"note":"一句话说明"}]（每条计划一条结果）')}`,
+      )
+    } else {
+      const cfg = await requireProviderFor('review')
+      text = await chat(
+        cfg,
+        [{ role: 'system', content: composeSystemPrompt(P_plan_compare, cfg) }, { role: 'user', content: user }],
+        {
+          output: 'json-object',
+          reasoning: 'off',
+          timeoutMs: CHAT_TIMEOUT_MS,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.onToken ? { onToken: opts.onToken } : {}),
+          ...(opts.request ? { request: opts.request } : {}),
+        },
+      )
+    }
     const parsed = parseObjectArrayDetailed(text)
     if (parsed.outcome !== 'valid') {
       return {

@@ -15,8 +15,10 @@ import { Activity, Loader2, Sparkles, Eye } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume } from '@/lib/types'
 import { Button } from '@/components/common/Button'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
@@ -50,6 +52,9 @@ export default function PaceAnalysisPanel() {
   // ⚠️ 它返回的是 { ready, label } 对象，不是布尔 —— 写成 `const aiReady = useAIReady()`
   //    会让 canRun 恒真、按钮永不禁用、禁用提示永不显示（写这版时踩过，实机抓出来的）。
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时走 Agent（引文定位、不评分口径与趋势记账都不变）
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -115,12 +120,13 @@ export default function PaceAnalysisPanel() {
   const words = useMemo(() => (content ? countWords(content) : 0), [content])
 
   const run = () => {
-    if (!aiReady) { showToast('还没接入模型，无法分析', 'info'); return }
+    if (!writingReady) { showToast('还没接入模型、也没有可用的 ACP 连接，无法分析', 'info'); return }
     if (running) return
     if (!content.trim()) { showToast('这一章还没有正文', 'info'); return }
     // 🔴 输入在发起时**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载
     const chapterId = activeId
     const text = content
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     startTask<PaceTaskResult, PaceTaskProgress>({
       ownerTab: OWNER_TAB,
       kind: TASK_KIND,
@@ -129,12 +135,26 @@ export default function PaceAnalysisPanel() {
         // 先把章节记进进度：失败时面板仍能认出这份失败属于哪一章
         ctx.progress({ chapterId })
         const pctx = await buildProjectContext({ budget: await writerBudgetFor('pace-analysis'), focusChapterId: chapterId })
-        const report = await aiPaceAnalysis(pctx.text, text, { signal: ctx.signal })
+        const report = await aiPaceAnalysis(pctx.text, text, {
+          signal: ctx.signal,
+          ...(acp ? {
+            acpText: acpGatedText({
+              task: 'pace',
+              generation: acp.generation,
+              title: '发送章节资料至 ACP Agent',
+              message: acpGateMessage(acp.name, '本章正文与设定资料', '观察节奏与章末钩子'),
+              agentName: acp.name,
+              ask: confirmDialog,
+              signal: ctx.signal,
+            }),
+          } : {}),
+        })
         // ④（2.9.2）：落一条台账做「这一章比上次」的趋势。
         //    🔴 **先 await 写盘再 return** —— 任务转 done 时订阅趋势的 effect 才会读到刚落的这条，
         //       顺序反了趋势会永远落后一轮（"上次检查"显示的还是上一次）。
         //    🔴 记 `model`：AI 输出带随机性，趋势只比同模型（见 lib/checkLog.trendOf）。
-        const model = await requireProviderFor('review').then(c => c.model).catch(() => '')
+        //    ACP 下记 Agent 名 —— 换 Agent 同样不可比，不能与前一个模型的历史混算。
+        const model = acp ? `ACP ${acp.name}` : await requireProviderFor('review').then(c => c.model).catch(() => '')
         await paceLogged(chapterId, report, model)
         return { chapterId, report }
       },
@@ -151,7 +171,7 @@ export default function PaceAnalysisPanel() {
     </div>
   }
 
-  const canRun = aiReady && !!content.trim() && !running
+  const canRun = writingReady && !!content.trim() && !running
 
   return (
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden">
@@ -189,7 +209,7 @@ export default function PaceAnalysisPanel() {
           本章 <b className="text-ink-200 tabular-nums">{words}</b> 字
           {words > 0 && <> · 章末钩子区 <b className="text-ink-200 tabular-nums">{Math.max(1, Math.round(words * HOOK_ZONE_RATIO))}</b> 字</>}
         </span>
-        {!aiReady && <span className="text-10 text-ink-500">{AI_DISABLED_HINT}</span>}
+        {!writingReady && <span className="text-10 text-ink-500">{AI_DISABLED_HINT}</span>}
         {trend && (
           <span className="ml-auto">
             <CheckTrendNote trend={trend} neutral noun="个观察点" />

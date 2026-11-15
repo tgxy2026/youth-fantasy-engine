@@ -7,13 +7,15 @@ import { getTab } from '@/lib/schema'
 import { chapterContextRefKey, locateBodyQuote } from '@/lib/revision/chapterContext'
 import type { RefName } from '@/components/editor/novelEditorHelpers'
 import { Button } from '@/components/common/Button'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 import { runPlanCompareForChapter, describePlanCompareRun } from '@/lib/app/planCompareRun'
 import type { PlanCompareReview } from '@/lib/aiTasks/planCompareAi'
 import { Z } from '@/lib/app/zLayer'
 import { foldZoomLength } from '@/lib/settings/theme'
 import { useChapterContextData } from '@/components/editor/useChapterContextData'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 
 const CONTEXT_TABS = ['outline', 'materials', 'quotes'] as const
 type ContextTab = (typeof CONTEXT_TABS)[number]
@@ -53,6 +55,8 @@ export default function ChapterContextPanel({
     catalogError, outlineError, outline, groups, pinned, outlineSuggestions, results, pin, unpin, selectOutline,
   } = useChapterContextData({ projectId, chapterId, ctx })
   const outlineTab = getTab('chapter-outline')
+  // 3.5.6：ACP 就绪时「正文与细纲对照」走 Agent（判据不变：引文必须逐字落在正文里）
+  const acpWriting = useAcpWriting()
 
   // Esc = 收起抽屉（与弹窗同一习惯）；焦点与正文不受影响，作者接着写
   useEffect(() => {
@@ -142,9 +146,20 @@ export default function ChapterContextPanel({
                     disabled={planBusy}
                     onClick={async () => {
                       setPlanBusy(true)
+                      const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
                       try {
                         const r = await runPlanCompareForChapter({
                           projectId, chapterId, chapterNo, chapterTitle, bodyText, outline,
+                          ...(acp ? {
+                            acpText: acpGatedText({
+                              task: 'plan-compare',
+                              generation: acp.generation,
+                              title: '发送细纲与正文至 ACP Agent',
+                              message: acpGateMessage(acp.name, '本章细纲里已填的计划项与本章正文', '逐条对照完成情况'),
+                              agentName: acp.name,
+                              ask: confirmDialog,
+                            }),
+                          } : {}),
                         })
                         setPlanReview(r.review ?? null)
                         showToast(describePlanCompareRun(r), r.state === 'completed' ? 'success' : 'error')

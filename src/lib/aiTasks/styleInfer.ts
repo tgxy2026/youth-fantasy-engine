@@ -6,6 +6,7 @@
  * 🔴 材料按预算裁剪（6000 字）并明示；一次调用，不自动重试、不换模型。
  */
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import type { StyleFieldDef, StyleSuggestion } from '@/lib/forms/styleIO'
@@ -31,10 +32,11 @@ export interface StyleInferRequest {
   fields: Pick<StyleFieldDef, 'key' | 'label'>[]
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /** 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export async function aiInferStyle(req: StyleInferRequest): Promise<StyleSuggestion[]> {
-  const cfg = await requireProviderFor('utility')
   const fence = newAuthorFence()
   const fieldList = req.fields.map(f => `- ${f.key}（${f.label}）`).join('\n')
   const user = `【可用的规范字段（只能用这些 key）】
@@ -44,11 +46,20 @@ ${fieldList}
 ${authorBlock(fence, req.material)}
 
 请从正文反推这些字段目前体现出的写法。`
-  const text = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(P_style_infer, cfg) }, { role: 'user', content: user }],
-    { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
-  )
+  // 3.5.6 · ACP 分支：字段键白名单校验仍在 parseStyleSuggestions（编出来的键一律丢弃）
+  let text: string
+  if (req.acpText) {
+    text = await req.acpText(
+      `${P_style_infer}\n\n${user}\n\n${acpJsonInstruction('写作规范建议', '{"suggestions":[{"key":"模块名::字段名","value":"这一章实际的写法","reason":"依据","quote":"原文引用"}]}（没有把握的字段就不要给）')}`,
+    )
+  } else {
+    const cfg = await requireProviderFor('utility')
+    text = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(P_style_infer, cfg) }, { role: 'user', content: user }],
+      { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
+    )
+  }
   return parseStyleSuggestions(text, req.fields.map(f => f.key))
 }
 

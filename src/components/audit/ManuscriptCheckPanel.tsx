@@ -47,6 +47,8 @@ import {
 } from '@/lib/audit/changeListStore'
 import { aiChapterChangeList } from '@/lib/ai/aiTasks'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 
 /** 重复组类型的中文标签（报告、忽略记录、界面共用同一口径） */
@@ -191,6 +193,9 @@ export default function ManuscriptCheckPanel() {
 
   // ── 3.3.3 · A2：本章变化清单（作者主动触发；一次请求；引文逐字核验） ──────────
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时本章变化清单走 Agent（判据不变：引文必须逐字命中，否则丢弃）
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   const [chg, setChg] = useState<ChangeListReport | null>(null)
   const [chgLoading, setChgLoading] = useState(false)
   const [dissent, setDissent] = useState<DissentRecord[]>([])
@@ -225,13 +230,19 @@ export default function ManuscriptCheckPanel() {
     if (!pid) return
     const mat = buildChangeMaterial(active.content ?? '')
     if (mat.chars === 0) { showToast(EMPTY_CHAPTER_HINT, 'info'); return }
+    const matNote = mat.truncated
+      ? `前 ${mat.chars.toLocaleString()} 字（本章共 ${mat.totalChars.toLocaleString()} 字，超出 ${CHANGE_MATERIAL_LIMIT.toLocaleString()} 字的部分不会发送）`
+      : `全文 ${mat.chars.toLocaleString()} 字`
+    // ACP 就绪时由 Agent 生成：确认文案如实换成接收方（不再写「当前模型 / 1 次调用」）
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     const ok = await confirmDialog({
       title: '生成本章变化清单',
-      message: `会把本章${mat.truncated
-        ? `前 ${mat.chars.toLocaleString()} 字（本章共 ${mat.totalChars.toLocaleString()} 字，超出 ${CHANGE_MATERIAL_LIMIT.toLocaleString()} 字的部分不会发送）`
-        : `全文 ${mat.chars.toLocaleString()} 字`}交给当前模型，只调用 1 次。\n\n`
-        + '不会自动重试、不会自动换模型。结果只作线索：每条必须能在正文里逐字找到，否则会被丢弃。',
-      confirmText: '生成（1 次调用）',
+      message: acp
+        ? `会把本章${matNote}发给 ${acp.name}，只用于提取变化线索。\n\n`
+          + '不会自动重试、不会自动换 Agent。结果只作线索：每条必须能在正文里逐字找到，否则会被丢弃。'
+        : `会把本章${matNote}交给当前模型，只调用 1 次。\n\n`
+          + '不会自动重试、不会自动换模型。结果只作线索：每条必须能在正文里逐字找到，否则会被丢弃。',
+      confirmText: acp ? '发送并生成' : '生成（1 次调用）',
     })
     if (!ok) return
     const ctrl = new AbortController()
@@ -242,6 +253,17 @@ export default function ManuscriptCheckPanel() {
         material: mat.material,
         chapterTitle: active.title || '',
         signal: ctrl.signal,
+        ...(acp ? {
+          acpText: acpGatedText({
+            task: 'change-list',
+            generation: acp.generation,
+            title: '发送本章正文至 ACP Agent',
+            message: acpGateMessage(acp.name, '本章正文（可能已按预算截断）', '提取本章变化线索'),
+            agentName: acp.name,
+            ask: confirmDialog,
+            signal: ctrl.signal,
+          }),
+        } : {}),
       })
       const items = verifyChangeItems(ai.text, active.content ?? '')
       const report: ChangeListReport = {
@@ -541,8 +563,8 @@ export default function ManuscriptCheckPanel() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={chgLoading || !activeId || !aiReady}
-              title={!aiReady ? AI_DISABLED_HINT : undefined}
+              disabled={chgLoading || !activeId || !writingReady}
+              title={!writingReady ? AI_DISABLED_HINT : undefined}
               onClick={() => void runChangeList()}
             >
               {chgLoading

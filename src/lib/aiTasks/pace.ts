@@ -10,6 +10,7 @@
 // 的立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import { PACE_BEAT_KINDS } from '@/lib/outline/paceAnalysis'
 import type { PromptDef } from '@/lib/ai/promptSettings'
@@ -50,9 +51,13 @@ export type { PaceReport } from '@/lib/outline/paceAnalysis'
 export async function aiPaceAnalysis(
   projectContext: string,
   chapterText: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: {
+    signal?: AbortSignal
+    onToken?: (delta: string) => void
+    /** 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+    acpText?: (prompt: string) => Promise<string>
+  },
 ): Promise<PaceReport> {
-  const cfg = await requireProviderFor('review')
   const text = chapterText.trim()
   // 🔴 设定与正文都是**不可信作者文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
   const fence = newAuthorFence()
@@ -64,11 +69,20 @@ ${text ? authorBlock(fence, text) : '（空）'}
 
 请按结构观察本章节奏与章末钩子，输出 JSON。`
 
-  const raw = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(P_pace_analysis, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
-  )
+  // 3.5.6 · ACP 分支：结构约束写成文字；解析仍是 parsePaceReport（引文定位与不评分口径不变）
+  let raw: string
+  if (opts?.acpText) {
+    raw = await opts.acpText(
+      `${P_pace_analysis}\n\n${user}\n\n${acpJsonInstruction('节奏与章末钩子报告', '{"hook":{"present":true,"kind":"悬念","evidence":"章末原文","note":"一句话"},"beats":[{"kind":"情绪爆点类型","quote":"原文片段","note":"一句话"}],"increments":["推进了什么"],"observations":["节奏观察"],"summary":"一句话总评"}')}`,
+    )
+  } else {
+    const cfg = await requireProviderFor('review')
+    raw = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(P_pace_analysis, cfg) }, { role: 'user', content: user }],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
+    )
+  }
   return parsePaceReport(raw, text)
 }
 

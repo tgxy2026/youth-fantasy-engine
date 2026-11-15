@@ -48,7 +48,8 @@ console.log('\n—— uiUxGuards 用例开始 ——')
       /disabled=\{[^}]*!(?:aiReady|writingReady)[^}]*\}/.test(s), file)
     if (viaWriting) {
       ok(`  · ${label}：writingReady 由 useAcpWriting 推导`,
-        /const acpWriting = useAcpWriting\(\)/.test(s) && /const writingReady = acpWriting \? acpWriting\.ready : aiReady/.test(s), file)
+        /const acpWriting = useAcpWriting\(\)/.test(s)
+        && /const writingReady = (?:acpWriting \? acpWriting\.ready : aiReady|aiReady \|\| !!acpWriting\?\.ready)/.test(s), file)
     }
     ok(`  · ${label}：禁用时给出统一提示（AI_DISABLED_HINT）`,
       /AI_DISABLED_HINT/.test(s), file)

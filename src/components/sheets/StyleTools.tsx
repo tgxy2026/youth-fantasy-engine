@@ -14,10 +14,12 @@ import { FileDown, FileUp, Sparkles, Loader2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { foldVh } from '@/lib/settings/theme'
 import { Modal } from '@/components/dialogs/Modal'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { getAllChapters } from '@/lib/db'
 import { downloadText } from '@/lib/storage/zip'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiInferStyle, STYLE_INFER_MATERIAL_LIMIT } from '@/lib/aiTasks/styleInfer'
 import type { StyleSuggestion } from '@/lib/aiTasks/styleInfer'
@@ -44,6 +46,9 @@ interface ImportPreview {
 
 export default function StyleTools({ tab, readData, applyValues }: Props) {
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时由 Agent 反推（字段键白名单与「只产建议」口径不变）
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
 
@@ -97,17 +102,29 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
 
   const runInfer = async () => {
     if (loading) return
-    if (!aiReady) { showToast(AI_DISABLED_HINT, 'info'); return }
+    if (!writingReady) { showToast(AI_DISABLED_HINT, 'info'); return }
     if (!material) { showToast('先选一章有正文的章节', 'info'); return }
     const ac = new AbortController()
     abortRef.current = ac
     const run = ++runRef.current
     setLoading(true); setError(''); setSuggestions([]); setPicked(new Set())
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     try {
       const list = await aiInferStyle({
         material: material.slice(0, STYLE_INFER_MATERIAL_LIMIT),
         fields: styleFieldDefs(tab).map(d => ({ key: d.key, label: d.label })),
         signal: ac.signal,
+        ...(acp ? {
+          acpText: acpGatedText({
+            task: 'style-infer',
+            generation: acp.generation,
+            title: '发送章节正文至 ACP Agent',
+            message: acpGateMessage(acp.name, `本章正文（最多 ${STYLE_INFER_MATERIAL_LIMIT.toLocaleString()} 字）与规范字段清单`, '反推写作规范建议'),
+            agentName: acp.name,
+            ask: confirmDialog,
+            signal: ac.signal,
+          }),
+        } : {}),
       })
       if (run !== runRef.current) return
       if (list.length === 0) {
@@ -306,8 +323,8 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
             <span className="text-11 text-ink-400">
               {material ? `本章 ${material.length} 字${truncated ? `（只送前 ${STYLE_INFER_MATERIAL_LIMIT} 字）` : ''}` : '还没有正文'}
             </span>
-            <Button variant="secondary" onClick={() => void runInfer()} disabled={loading || !aiReady || !material}
-              title={!aiReady ? AI_DISABLED_HINT : '只发一次请求；不会自动重试、不会换模型'}
+            <Button variant="secondary" onClick={() => void runInfer()} disabled={loading || !writingReady || !material}
+              title={!writingReady ? AI_DISABLED_HINT : '只发一次请求；不会自动重试、不会换模型'}
               className="flex items-center gap-1.5">
               {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               {loading ? '反推中…' : '开始反推'}

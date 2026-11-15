@@ -9,6 +9,7 @@
  * 🔴 材料在调用方按 10,000 字裁剪并明示截断，本函数不再二次裁剪 —— 否则"到底送了多少"两处口径。
  */
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -35,6 +36,8 @@ export interface ChapterChangeAiRequest {
   chapterTitle: string
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /** 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 export interface ChapterChangeAiResult {
@@ -44,7 +47,6 @@ export interface ChapterChangeAiResult {
 }
 
 export async function aiChapterChangeList(req: ChapterChangeAiRequest): Promise<ChapterChangeAiResult> {
-  const cfg = await requireProviderFor('utility')
   const fence = newAuthorFence()
   const user = `【章节】${req.chapterTitle.trim() ? authorBlock(fence, req.chapterTitle.trim()) : '（未命名章节）'}
 
@@ -52,6 +54,15 @@ export async function aiChapterChangeList(req: ChapterChangeAiRequest): Promise<
 ${authorBlock(fence, req.material)}
 
 请按要求输出这一章的变化线索。`
+  // 3.5.6 · ACP 分支：JSON 形状写成文字约束；引文核验与条数上限仍在 lib/audit/changeList.ts，
+  // 「换模型不可比」提示在 ACP 下改标 Agent（见返回值 modelTag）。
+  if (req.acpText) {
+    const text = await req.acpText(
+      `${P_change_list}\n\n${user}\n\n${acpJsonInstruction('本章变化线索', '{"changes":[{"type":"信息","before":"","after":"","quote":"正文里的原句"}]}（没有可靠依据就返回 {"changes":[]}）')}`,
+    )
+    return { text, modelTag: 'ACP Agent' }
+  }
+  const cfg = await requireProviderFor('utility')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(P_change_list, cfg) }, { role: 'user', content: user }],
