@@ -104,9 +104,19 @@ async function main() {
   const { snapshot } = await import(pathToFileURL(path.join(ROOT, 'scripts/audit/platform/source.mjs')).href)
   const { hashPaths } = await import(pathToFileURL(path.join(ROOT, 'scripts/verify/evidence.mjs')).href)
   const sourceFingerprint = snapshot(ROOT).fingerprint
-  const dbSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
-  const databaseName = /const DB_NAME = '([^']+)'/.exec(dbSource)?.[1]
-  if (!databaseName) throw new Error('Cannot determine actual database name')
+  /**
+   * 🔴 2026-11-15：DB_NAME 在某次多账号改造后变成 `accountLocalDatabaseName('youth-fantasy-engine')`，
+   *   不再是字符串字面量，原先的 `const DB_NAME = '...'` 正则必然失配（探针报
+   *   「Cannot determine actual database name」）。改成**运行时枚举**，不依赖源码写法。
+   */
+  let databaseName = null
+  const resolveDatabaseName = page => page.evaluate(async () => {
+    const list = await indexedDB.databases()
+    const names = list.map(item => item.name).filter(Boolean)
+    return names.find(name => name === 'youth-fantasy-engine')
+      ?? names.find(name => name.startsWith('youth-fantasy-engine'))
+      ?? null
+  })
   const buildManifest = await hashPaths(build, ['.'])
   const port = await new Promise((resolve, reject) => {
     const listener = net.createServer(); listener.on('error', reject)
@@ -155,7 +165,11 @@ async function main() {
     await until(async () => { try { return (await fetch(origin + '/api/ping', { signal: AbortSignal.timeout(1000) })).ok } catch { return false } })
     const first = await launch(); context = first.ctx; page = first.pg
     await page.goto(origin + '/guest', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
-    await page.waitForFunction(async name => (await indexedDB.databases()).some(item => item.name === name), databaseName)
+    // 库名此时还不知道（由页面自己建），先等「以 youth-fantasy-engine 开头的库」出现，再取真名。
+    await page.waitForFunction(async () => (await indexedDB.databases())
+      .some(item => typeof item.name === 'string' && item.name.startsWith('youth-fantasy-engine')), null, { timeout: BOOT_TIMEOUT })
+    databaseName = await resolveDatabaseName(page)
+    if (!databaseName) throw new Error('无法从页面枚举出本地数据库名')
     check('initial-flags', await page.evaluate(() => !!window.__YFE_WEB__ && !!window.__YFE_GUEST__ && !window.__YFE_PORTABLE__ && !window.electronStore))
     await page.evaluate(({ databaseName, PID, VID, CH, TITLE, ORIGINAL }) => new Promise((resolve, reject) => {
       const request = indexedDB.open(databaseName)
