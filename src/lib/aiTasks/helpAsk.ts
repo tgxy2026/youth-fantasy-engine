@@ -23,6 +23,7 @@ import {
 import {
   ASK_CLARIFY_TEXT, buildThreadContextLine, routeAskRecall, type AskTopic, type AskTopicOption,
 } from '@/lib/help/thread'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 
 /**
  * 一轮提问的上下文（规划 §5.5）。
@@ -74,8 +75,20 @@ export const ASK_OUTPUT_TOKENS = 700
 interface AskDependencies {
   resolveProviderFor: typeof resolveProviderFor
   chat: typeof chat
+  /**
+   * 3.5.6：ACP 通道。给了就**跳过 API provider 解析**，由 Agent 返回 JSON 文本；
+   * 解析与来源校验仍走 `readHelpAnswer`，不因换通道而放宽。
+   */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 const defaultDependencies: AskDependencies = { resolveProviderFor, chat }
+
+/** 由界面注入 ACP 发送器后的依赖集合（正式路径不直接依赖 components）。 */
+export function askDependenciesWithAcp(
+  acpText: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>,
+): AskDependencies {
+  return { ...defaultDependencies, acpText }
+}
 
 function fragmentsStillCurrent(hits: HelpHit[], fragments: HelpPromptFragment[]): boolean {
   const current = prepareHelpPromptFragments(hits)
@@ -144,29 +157,43 @@ export async function askHelpOnce(
   // ② 模型归属走「整理」用途：答疑是低频、短输出、要快的活，不该占创作模型
   let raw = ''
   try {
-    const provider = await dependencies.resolveProviderFor('utility')
-    // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
-    if (signal?.aborted) return { kind: 'cancelled', hits, topic }
-    if (!provider) return { kind: 'no-model', hits, topic }
-    if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits, topic)
-    const prompt = buildHelpAnswerPrompt(question, hits, fragments, buildThreadContextLine(topic))
-    const messages: ChatMessage[] = [
-      { role: 'system', content: prompt.system },
-      { role: 'user', content: prompt.user },
-    ]
-    raw = await dependencies.chat(provider, messages, {
-      // 结构化小任务：显式声明「要 JSON 对象」+「关推理」（3.2.0 · WQ5 的唯一口径）。
-      // 🔴 不要退回旧的兼容写法 —— 新链路必须走协议声明（闸 outputProtocol ⑨ / thinkPolicy 棘轮）。
-      output: 'json-object',
-      reasoning: 'off',
-      // 🔴 提示词隔离：不带作者的创作附加提示词（见文件头 ②）
-      skipUserSystem: true,
-      // 🔴 全局归属：不属于当前打开的小说，也不属于正在跑的任务（见文件头 ①）
-      request: { scope: 'global', projectId: null, taskType: 'help-answer' },
-      intent: 'help-answer',
-      outputTokens: ASK_OUTPUT_TOKENS,
-      signal,
-    })
+    if (dependencies.acpText) {
+      // 配置/网络都不经 API：先核对停止与手册版本，再交给 Agent。
+      if (signal?.aborted) return { kind: 'cancelled', hits, topic }
+      if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits, topic)
+      const prompt = buildHelpAnswerPrompt(question, hits, fragments, buildThreadContextLine(topic))
+      // 🔴 ACP 不支持服务端 JSON 模式：把「只输出这个 JSON」写成文字要求，
+      //    但**不放宽**解析 —— `readHelpAnswer` 仍逐条校验来源与逐字摘录。
+      const schema = '{"answer":"给作者看的回答","quotes":["从片段里逐字复制的一句原文","再一句"]}'
+      raw = await dependencies.acpText(
+        `${prompt.system}\n\n${prompt.user}\n\n${acpJsonInstruction('使用答疑回答', schema)}`,
+        { ...(signal ? { signal } : {}) },
+      )
+    } else {
+      const provider = await dependencies.resolveProviderFor('utility')
+      // 配置读取可能慢于用户按停止；不能在停止后仍发起模型请求。
+      if (signal?.aborted) return { kind: 'cancelled', hits, topic }
+      if (!provider) return { kind: 'no-model', hits, topic }
+      if (!isHelpContentConsistent() || !fragmentsStillCurrent(hits, fragments)) return changedHelp(hits, topic)
+      const prompt = buildHelpAnswerPrompt(question, hits, fragments, buildThreadContextLine(topic))
+      const messages: ChatMessage[] = [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ]
+      raw = await dependencies.chat(provider, messages, {
+        // 结构化小任务：显式声明「要 JSON 对象」+「关推理」（3.2.0 · WQ5 的唯一口径）。
+        // 🔴 不要退回旧的兼容写法 —— 新链路必须走协议声明（闸 outputProtocol ⑨ / thinkPolicy 棘轮）。
+        output: 'json-object',
+        reasoning: 'off',
+        // 🔴 提示词隔离：不带作者的创作附加提示词（见文件头 ②）
+        skipUserSystem: true,
+        // 🔴 全局归属：不属于当前打开的小说，也不属于正在跑的任务（见文件头 ①）
+        request: { scope: 'global', projectId: null, taskType: 'help-answer' },
+        intent: 'help-answer',
+        outputTokens: ASK_OUTPUT_TOKENS,
+        signal,
+      })
+    }
   } catch (error) {
     if (isCancelled(error) || signal?.aborted) return { kind: 'cancelled', hits, topic }
     // 网络 / 端点错误也走回退：手册片段已经拿到了，不能让作者空手

@@ -185,5 +185,46 @@ const hub = read('src/components/app/ProjectHub.tsx')
   ok('未打开项目时「前往功能」禁用并说明原因', /先打开一个项目，才能跳到这个功能页/.test(center))
 }
 
+// ---------- 3.5.6：ACP 通道（不要求 API 模型） ----------
+{
+  const hits = recallForAsk('字太小怎么放大')
+  const hit = hits[0]
+  const section = getHelpArticle(hit.articleId)?.sections.find(item => item.id === hit.sectionId)
+  const quote = (section?.body ?? []).join('\n').slice(0, 20)
+  let providerCalls = 0
+  const prompts: string[] = []
+  const answer = await askHelpOnce('字太小怎么放大', null, undefined, {
+    resolveProviderFor: async () => { providerCalls++; return null },
+    chat: (async () => '{}') as typeof chat,
+    acpText: async prompt => {
+      prompts.push(prompt)
+      return JSON.stringify({ answer: 'ACP 回答', quotes: [quote] })
+    },
+  })
+  ok('🔴 ACP 分支不解析 API provider（零 API 配置也能回答）', providerCalls === 0)
+  ok('ACP 提示词携带 JSON 输出约束', prompts.length === 1 && /【输出格式】/.test(prompts[0]))
+  ok('ACP 回答仍走来源校验', answer.kind === 'answer' && answer.answer === 'ACP 回答')
+
+  const bad = await askHelpOnce('字太小怎么放大', null, undefined, {
+    resolveProviderFor: async () => null,
+    chat: (async () => '{}') as typeof chat,
+    acpText: async () => '不是 JSON',
+  })
+  ok('ACP 输出不合格仍退回检索结果', bad.kind === 'fallback')
+
+  const stopped = new AbortController()
+  stopped.abort()
+  let acpCalls = 0
+  const cancelled = await askHelpOnce('字太小怎么放大', null, stopped.signal, {
+    resolveProviderFor: async () => { throw new Error('不应调用') },
+    chat: (async () => '{}') as typeof chat,
+    acpText: async () => { acpCalls++; return '{}' },
+  })
+  ok('已停止时不发 ACP 请求', cancelled.kind === 'cancelled' && acpCalls === 0)
+
+  ok('界面按 ACP 就绪注入通道', /task:\s*'help'/.test(panel) && /acpWriting\?\.ready/.test(panel))
+  ok('界面如实说明由谁回答', /本次回答由/.test(panel) && /acpWriting\.name/.test(panel))
+}
+
 console.log(`\n—— helpAsk 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

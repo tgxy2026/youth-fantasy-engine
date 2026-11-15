@@ -8,11 +8,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, BookOpen, CornerDownRight, HelpCircle, Loader2, RefreshCw, Send, Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import { confirmDialog } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import {
   CONTENT_VERSION, HELP_RELOAD_LABEL, checkHelpBuild, getHelpArticle, topicFromAnswer, type AskTopic, type HelpHit,
 } from '@/lib/help'
-import { askHelpOnce, type AskResult } from '@/lib/aiTasks/helpAsk'
+import { askDependenciesWithAcp, askHelpOnce, type AskResult } from '@/lib/aiTasks/helpAsk'
 import { helpSourceSnapshot } from '@/lib/aiTasks/helpAnswer'
 
 /** 一条消息：只有「提问」与「结果」两种，结果保留原始 kind 以便如实渲染 */
@@ -45,6 +48,8 @@ const reloadHelpResources = () => {
 
 export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时由 Agent 回答，不再要求先配 API 模型。
+  const acpWriting = useAcpWriting()
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, setPending] = useState(false)
@@ -81,8 +86,19 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     const controller = new AbortController()
     abort.current = controller
     const mine = ++generation.current
+    // 3.5.6：ACP 就绪时走 Agent（连接成功时已告知过一次外发范围，这里复用同一套闸门）。
+    const deps = acpWriting?.ready
+      ? askDependenciesWithAcp(acpGatedText({
+          task: 'help',
+          generation: acpWriting.generation,
+          title: '发送手册片段至 ACP Agent',
+          message: acpGateMessage(acpWriting.name, '本次命中的手册片段与你的问题', '回答使用指南问题'),
+          agentName: acpWriting.name,
+          ask: confirmDialog,
+        }))
+      : undefined
     // 追问上下文只带「上一轮已验证的主题」，不带整段历史（规划 §5.5）
-    const result = await askHelpOnce(text, currentTabId, controller.signal, undefined, { lastTopic })
+    const result = await askHelpOnce(text, currentTabId, controller.signal, deps, { lastTopic })
 
     // 代次不符说明这一轮已经作废（作者停止后又问了一次），结果直接丢弃
     if (mine !== generation.current) return
@@ -266,7 +282,9 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
       )}
       <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-3 py-2 text-11 text-ink-400 leading-relaxed">
         回答只依据内置手册，不读你的稿件、不改任何数据；对话只在本次打开期间存在，关闭即清空。
-        {!aiReady && <span className="text-amber/80"> 未配置模型时只能给手册片段，不会有 AI 回答。</span>}
+        {acpWriting?.ready
+          ? <span className="text-ink-300"> 本次回答由 {acpWriting.name} 处理；手册片段与你的问题会发送给它。</span>
+          : !aiReady && <span className="text-amber/80"> 未配置模型时只能给手册片段，不会有 AI 回答。</span>}
       </div>
 
       <div ref={listRef} className="max-h-80 overflow-y-auto space-y-2 pr-1">

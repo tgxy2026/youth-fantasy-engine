@@ -123,7 +123,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     // 编辑器缩进（2.4.0 · A5）：缩进单位偏好；缩进动作见下方 onIndentKeyDown / applyIndent
     indentUnit, setIndentUnit, pasteNormalize, setPasteNormalize, indentGuides, setIndentGuides,
     // AI 就绪与导出
-    aiReady, writingReady, acpWriting, runExport,
+    writingReady, acpWriting, runExport,
   } = model
 
   // UX06 · 正文工作现场：离页/切章时同步捕获，进章后按「内容摘要是否一致」决定要不要恢复光标与位置
@@ -650,13 +650,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 </Button>
               ) : (
                 <Button onClick={regenAllSummaries}
-                  disabled={!aiReady || !active}
-                  title={!aiReady ? '未配置 AI 模型' : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  disabled={!writingReady || !active}
+                  title={!writingReady ? (acpWriting ? 'ACP 未连接' : '未配置 AI 模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
                   <Layers size={12} />
                 </Button>
               )}
               <HelpPopover title="章节压缩摘要" width="22rem" size={12} className="shrink-0 mt-0.5">
-                {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如「陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬」。\n\n· 摘要保存后同步到「章节总表」的一句话事件列；\n· 摘要出现后还会回填《章节细纲》卡的本章事件（原本为空才填 —— 你手写过的计划不会被覆盖）；\n· 它是「综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。\n· 桌面 ACP 已连接时可手动生成本章摘要，先确认发送本章正文。批量重生成使用 API 模式。'}
+                {'用 AI 把本章正文压缩成约 1/10 长度的连贯摘要（保留关键情节/人物/伏笔/转折/设定），例如「陈渊借雷劫破境，引动青铜小塔吞噬雷池，被苍澜宗执法长老察觉，妹妹陈瑶以桂花糖安抚其经脉反噬」。\n\n· 摘要保存后同步到「章节总表」的一句话事件列；\n· 摘要出现后还会回填《章节细纲》卡的本章事件（原本为空才填 —— 你手写过的计划不会被覆盖）；\n· 它是「综合诊断 / 情节推演」的【简略模式】数据源——用它能大幅加快 AI 调用、省 token；想让 AI 看完整正文时，在这些功能的「完整（正文）」模式里切换即可；\n· 连续性校验与伏笔看板也会读取它来做提示。\n· 桌面 ACP 已连接时可手动生成本章摘要，先确认发送本章正文；批量重生成在 ACP 已连接时整批走 Agent（一批只确认一次），未连接则用 API 模型。'}
                 <AIDataSourceNote feature="chapter-summary" />
               </HelpPopover>
             </div>

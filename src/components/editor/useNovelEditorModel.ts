@@ -64,6 +64,7 @@ import { createEditorKeyboardReorder } from '@/components/editor/editorKeyboardR
 import { useNovelEditorHighlight } from '@/components/editor/useNovelEditorHighlight'
 import { useNovelEditorGhost } from '@/components/editor/useNovelEditorGhost'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { createRegenAcpSend } from '@/components/editor/regenAcp'
 import { useManualSummary } from '@/components/editor/useManualSummary'
 
 type Args = {
@@ -854,7 +855,7 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
   /** 中止批量重生成（UX13：长等待必须能由作者叫停，已更新的章节保持已更新） */
   const stopRegenAll = () => regenT.stop()
   const regenAllSummaries = async () => {
-    if (!aiReady || regenT.running) return
+    if (!writingReady || regenT.running) return
     const ok = await confirmDialog({
       title: '批量重生成章节摘要',
       message: '将对全书所有「有正文」的章节，用 AI 重新生成约 1/10 长度的压缩摘要（覆盖现有摘要）。章节较多时耗时较长、会消耗较多调用，确定继续吗？',
@@ -863,12 +864,16 @@ export function useNovelEditorModel({ ctx, openChapterId, openRequestId, onStats
     regenT.run(async ctx => {
       const all = await db.getAllChapters()
       const vols = await db.getAllVolumes()
+      // 3.5.6：ACP 就绪时整批走 Agent；`askOnce` 让一批只确认一次，取消沿用任务中心的 signal。
+      const acpSend = acpWriting?.ready ? createRegenAcpSend(acpWriting, ctx.signal) : null
       // 🔴 逐章计账抽到 `regenSummaries.ts`：原先单章失败被 `catch {}` 静默跳过、结果只报 {done,total}，
       //    完成提示却写「全书…完成（共 total 章）」⇒ 部分失败被说成全部成功（UX09 生成部分失败）。
       const outcome = await runRegenSummaries(all, {
         signal: ctx.signal,
         isAborted: () => ctx.isAborted(),
-        summarize: (text, opts) => aiChapterSummary(text, opts),
+        summarize: (text, opts) => acpSend
+          ? aiChapterSummary(text, { ...opts, acpText: prompt => acpSend(prompt) })
+          : aiChapterSummary(text, opts),
         // 两步分开传：写章节与同步总表**各自**记账（摘要落库了但总表没跟上，也得如实说）
         save: async next => { await saveChapterWithAi(next) },
         syncMaster: async next => { await syncChapterMaster(next, chapterSeqOf(vols, all, next.id), undefined, storageOwner) },
