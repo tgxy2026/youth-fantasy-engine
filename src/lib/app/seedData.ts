@@ -5,7 +5,7 @@ import { TABS } from '@/lib/schema'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
 import { todayKey } from '@/lib/app/date'
-import { withRankSuppressed } from '@/lib/community/rankLedger'
+import { settleSeedRank, withRankSuppressed } from '@/lib/community/rankLedger'
 // 制度四页签 / 地图 / 情节推演画布的**纯数据**（2.8.1 迁出，见文件头注释）——
 // 🔴 `src/data/` 不许运行时 import，故这几块只导出字面量，id/order 在本文件生成。
 import {
@@ -1074,6 +1074,8 @@ async function doCreateDemoProject(): Promise<string> {
   // 🔴 2026-11-15：示例正文是预置素材、不是作者写的字，必须挡在码字排行之外
   //   （否则刚载入示例就被算成「今天码了九万多字」）。withRankSuppressed 正是为此预留的。
   await withRankSuppressed(async () => { for (const ch of chs) await db.saveChapter(ch) })
+  // 登记预置字数并清零该项目的排行贡献（旧版本已记过脏账、或将来抑制被去掉时兜底）
+  await settleSeedRank(p.id, chs.map(ch => ch.content))
 
   // 4) 章节总表联动行（id 用 ch- 前缀，编辑器保存时会自动更新而非新增）
   const masterRows: Array<[Chapter, Record<string, string>]> = [

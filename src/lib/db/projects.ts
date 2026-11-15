@@ -8,6 +8,8 @@ import type { AiRun } from '@/lib/ai/aiRunTypes'
 import { ops, currentProjectId } from '@/lib/db/core'
 import type { StoreOps } from '@/lib/storage/storeOps'
 import { VOL_LEDGER_PREFIX } from '@/lib/db/volumes'
+import { SEED_INJECTED_KEY, clearProjectRank } from '@/lib/community/rankLedger'
+import { getSettingFor } from '@/lib/db/meta'
 import { type Snapshot, isExportableSnapshot } from '@/lib/db/chapters'
 import type { DailyStat } from '@/lib/db/meta'
 // 🔴 语义向量索引（#013）与知识库资料（#017）住在**独立 IDB 库**里，上面这批 store 管不到 ——
@@ -174,6 +176,13 @@ export async function updateProject(patch: Partial<Project> & { id: string }) {
 
 /** 删除项目及其全部数据 */
 export async function deleteProject(id: string) {
+  /**
+   * 🔴 2026-11-15：示范项目的预置正文曾经被记进码字排行（九万多字），删除时要一并冲抵。
+   *   账本行存在 settingsKV 的 `<id>::…`，下面那轮会被一起删掉；但**待补记队列在 localStorage**，
+   *   不随项目消失，下次补记会按旧 id 重写出一行孤儿账本。所以这里按登记标记清一次。
+   */
+  const seedInjected = await getSettingFor<number>(id, SEED_INJECTED_KEY, 0).catch(() => 0)
+  if (seedInjected > 0) await clearProjectRank(id).catch(() => undefined)
   // 章节行在下面那轮按 projectId 批量删，这里不必先全表读一遍 chapters（曾只为快照守卫而读）
   await ops.del('projects', id)
   notifyProjectDeleted(id)

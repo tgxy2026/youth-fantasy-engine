@@ -382,6 +382,14 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /withRankSuppressed\(async \(\) => \{[\s\S]{0,160}?db\.saveChapter/.test(seed))
   ok('  · 守卫自检：裸循环的旧写法会被判定为坏形态',
     !/for \(const ch of chs\) await db\.saveChapter\(ch\)\n\n/.test(seed))
+
+  // 🔴 2026-11-15（A 方案）：登记预置字数 + 删除时冲抵，两头都得在
+  const ledger = read('src/lib/community/rankLedger.ts')
+  const projects = read('src/lib/db/projects.ts')
+  ok('示范项目载入后登记预置字数并清零排行贡献', /settleSeedRank\(p\.id, chs\.map/.test(seed))
+  ok('删除项目时对带登记标记的项目执行冲抵', /SEED_INJECTED_KEY, 0\)[\s\S]{0,120}?clearProjectRank\(id\)/.test(projects))
+  ok('冲抵同时清账本行与待补记队列（队列在 localStorage，不随项目删）',
+    /export function clearProjectRank[\s\S]{0,700}?delSettingFor\(projectId[\s\S]{0,300}?readPending\(\)[\s\S]{0,200}?writePending\(remain\)/.test(ledger))
 }
 
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)

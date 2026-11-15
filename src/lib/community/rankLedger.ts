@@ -15,7 +15,7 @@
 //    将来可能新增的「批量写入也要走保存函数」的路径留的闸。
 // 服务器按账号汇总当天各项目的增减，周/月榜只累计已结束日期的正净增量。
 
-import { getSettingFor, getSettingsByPrefix, setSettingFor } from '@/lib/db/meta'
+import { delSettingFor, getSettingFor, getSettingsByPrefix, setSettingFor } from '@/lib/db/meta'
 import { countWordsWithPunct } from '@/lib/community/limits'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
@@ -188,6 +188,51 @@ export function recordChapterDeleted(projectId: string, content: string | undefi
   const words = countWordsWithPunct(content || '')
   if (!words) return Promise.resolve()
   return recordRankDelta(projectId, -words, owner)
+}
+
+/** 示范项目「载入过多少预置正文」的登记键（项目级 setting，跟着项目走） */
+export const SEED_INJECTED_KEY = 'seed::injectedWords'
+
+/**
+ * 把某项目在排行上的贡献**彻底清掉**：账本行 + 待补记队列。
+ *
+ * 🔴 为什么删除项目还不够：账本行存在 `settingsKV` 的 `<pid>::…`，确实随项目删；
+ *    但**待补记队列在 localStorage**（`flushPendingNow` 失败重试用），项目删了它还在，
+ *    下次补记就按旧 projectId 重新写出一行孤儿账本。示范项目尤其容易命中：
+ *    载入时一次性灌九万多字，一旦某个写入失败就会整批进队列。
+ *
+ * 走同一条 `chain` 串行队列，避免与进行中的 `recordRankDelta` 抢同一批键。
+ */
+export function clearProjectRank(projectId: string): Promise<void> {
+  if (!projectId) return Promise.resolve()
+  const run = chain.then(async () => {
+    const rows = await getSettingsByPrefix<RankLedgerRow>(projectId, RANK_LEDGER_PREFIX)
+    for (const date of rows.keys()) {
+      await delSettingFor(projectId, RANK_LEDGER_PREFIX + date).catch(() => undefined)
+    }
+    const list = readPending()
+    const remain = list.filter(x => x.projectId !== projectId)
+    if (remain.length !== list.length) writePending(remain)
+  })
+  chain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+/**
+ * 示范项目载入收尾：登记预置正文字数，并把它可能已产生的排行贡献清零。
+ *
+ * 🔴 2026-11-15（作者报障）：载入示范项目曾把九万多字预置正文记进码字排行。
+ *    根治有两半：
+ *      ① 写入路径本身不再记账（`withRankSuppressed`，见 seedData）；
+ *      ② 这里做兜底 + 收尾 —— 即便将来有人把抑制去掉，或旧版本已经记过脏账，
+ *         「建完就清零」等价于**按注入量全额冲抵**，且不会把作者随后自己写的字算错。
+ *    登记的字数不是为了记账，而是让排障与「删项目时该不该冲抵」有据可查。
+ */
+export async function settleSeedRank(projectId: string, texts: Array<string | undefined>): Promise<void> {
+  if (!projectId) return
+  const injected = texts.reduce((sum, text) => sum + countWordsWithPunct(text || ''), 0)
+  await setSettingFor(projectId, SEED_INJECTED_KEY, injected).catch(() => undefined)
+  await clearProjectRank(projectId).catch(() => undefined)
 }
 
 /** 读某项目全部账本行（按日期升序） */
