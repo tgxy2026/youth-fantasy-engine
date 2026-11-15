@@ -129,6 +129,8 @@ export function createAcpClient({ input, output, exited, clientVersion }) {
 
   return {
     request,
+    /** 传输已不可用（脏数据 / 进程退出 / 管道错误）：常驻宿主据此重建，而不是一直打在空处。 */
+    isFailed: () => !!failure,
     async initialize(signal) {
       const result = await request('initialize', {
         protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'Youth Fantasy Engine', version: clientVersion || '0.0.0' },

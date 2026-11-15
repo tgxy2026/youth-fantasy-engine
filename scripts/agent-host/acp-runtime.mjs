@@ -89,6 +89,10 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
   }
 
   async function verifyQuiescent() {
+    // 常驻宿主活着时，pending 表示「正在使用」而不是「上次没退干净」；
+    // 照旧走自愈归档会把正常进程的运行标记误清掉。
+    if (live && !live.exited) return
+    if (live && live.exited) await closeLive().catch(() => undefined)
     try {
       await reconcilePendingRun()
     } catch (error) {
@@ -115,15 +119,111 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     return finished
   }
 
-  async function withAgent(signal, work, purpose = 'session') {
-    await verifyQuiescent()
-    const { selected, configs } = await readSettings()
-    const adapter = registry.get(selected)
-    if (!adapter?.launch) throw new Error('所选 ACP Agent 暂不可连接。')
-    const config = configs[selected] ?? {}
-    const profile = path.join(root, 'profiles', selected)
+  /**
+   * 常驻宿主：**预热 + 进程保活 + 每个任务新会话**。
+   *
+   * 依据（2026-11-15 查证）：官方 agy_acp_server 是 PyInstaller onefile，Windows 上每次冷启动要
+   * 把 Python 解包到 %TEMP%\_MEI*，光这一步 15~16 秒，首个 prompt 前固定付 23~25 秒；
+   * 而同一进程里的第二次 prompt 只要约 1.9 秒。我们实测 initialize≈10s、单次任务≈48s，与之吻合。
+   *
+   * 采用社区通用做法（OpenMausBot / dsh-antigravity-acp）：
+   *   · 一次 prepare → launch → initialize，后续任务复用同一进程与 ACP 连接（预热即「连接后不杀进程」）；
+   *   · **每个任务仍然新建 session** —— 上下文隔离不变，模型/档位/账号之间不会继承未隔离上下文；
+   *   · 空闲 10 分钟自动回收；配置代次变化、进程退出、传输报废都会重建；
+   *   · 登录（purpose=login）**不走常驻**：它要临时改写 BROWSER、从 stderr 抓 OAuth 地址，用完必须整进程回收。
+   */
+  let live = null
+  let idleTimer = null
+  const LIVE_IDLE_MS = 10 * 60 * 1000
+
+  function scheduleIdleClose() {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => { void closeLive().catch(() => undefined) }, LIVE_IDLE_MS)
+    if (typeof idleTimer?.unref === 'function') idleTimer.unref()
+  }
+
+  /** 停掉常驻进程并清除运行标记；幂等。 */
+  async function closeLive() {
+    const current = live
+    if (!current) return
+    live = null
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+    let stopError = null
+    try { await current.launch?.stop() } catch (error) { stopError = error }
+    if (stopError) {
+      // 进程退出无法确认：保留运行标记作为现场证据，并把错误交给调用方 —— 不能假装已清理干净。
+      unconfirmed = true
+      unconfirmedLaunch = current.launch
+      unconfirmedCleanup = current.cleanup
+      sessionReady = false
+      throw stopError
+    }
+    await runFile.clearPending().catch(() => undefined)
+    await current.cleanup?.().catch(() => undefined)
+    // 进程没了，会话自然失效 —— 否则界面会继续显示「会话已验证」。
+    sessionReady = false
+  }
+
+  /** 建立（或复用）常驻宿主。 */
+  async function ensureLive({ adapter, config, profile, signal }) {
+    if (live && !live.exited) {
+      // 进程可能刚在上一轮结束后退出（崩溃 / 组件自行退出）：用一次宏任务窗口确认，
+      // 避免把请求打到已经死掉或已经报废的传输上。
+      const gone = await Promise.race([
+        live.exitPromise.then(() => true).catch(() => true),
+        new Promise(resolve => setTimeout(() => resolve(false), 0)),
+      ])
+      if (gone || live.client?.isFailed?.()) live.exited = true
+    }
+    if (live && !live.exited && live.adapterId === adapter.id && live.generation === generation) return live
+    if (live) await closeLive()
+
     const workRoot = path.join(root, 'sessions')
-    await fs.mkdir(profile, { recursive: true })
+    await fs.mkdir(workRoot, { recursive: true })
+    const cwd = await fs.mkdtemp(path.join(workRoot, 'work-'))
+    const runId = randomBytes(16).toString('hex')
+    const timing = { prepare: 0, launch: 0, initialize: 0 }
+    let prepared
+    let launch = null
+    const cleanup = async () => {
+      await prepared?.cleanup?.().catch(() => {})
+      await fs.rm(cwd, { recursive: true, force: true, maxRetries: 3 }).catch(() => {})
+    }
+    try {
+      let mark = Date.now()
+      prepared = await adapter.prepareLaunch?.({ config, profile, cwd, signal, purpose: 'session' })
+      timing.prepare = Date.now() - mark
+      signal.throwIfAborted()
+      await runFile.markPending({ version: 1, runId, adapter: adapter.id })
+      mark = Date.now()
+      launch = await adapter.launch({ runId, config, profile, cwd, prepared, signal })
+      timing.launch = Date.now() - mark
+      const client = createAcpClient({ ...launch, clientVersion: appVersion })
+      mark = Date.now()
+      const initialized = await client.initialize(signal)
+      timing.initialize = Date.now() - mark
+      const host = {
+        runId, adapterId: adapter.id, generation, launch, client, initialized,
+        cwd, cleanup, exited: false, openedAt: Date.now(), timing,
+      }
+      live = host
+      host.exitPromise = Promise.resolve(launch.exited)
+        .then(() => { if (live === host) host.exited = true })
+        .catch(() => { if (live === host) host.exited = true })
+      scheduleIdleClose()
+      return host
+    } catch (error) {
+      // 进程已拉起但握手失败：必须回收，否则留下没有所有者的 Agent 进程。
+      try { await launch?.stop() } catch { /* 已退出 */ }
+      await cleanup()
+      await runFile.clearPending().catch(() => undefined)
+      throw error
+    }
+  }
+
+  /** 一次性会话（登录用）：保持原行为，用完即停。 */
+  async function withOneShot({ adapter, config, profile, signal, work, purpose }) {
+    const workRoot = path.join(root, 'sessions')
     await fs.mkdir(workRoot, { recursive: true })
     const cwd = await fs.mkdtemp(path.join(workRoot, 'work-'))
     const runId = randomBytes(16).toString('hex')
@@ -135,36 +235,21 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     }
     let marked = false
     let launchAttempted = false
-    // 耗时分解：四段分别计时，便于下次实测定位「30~40 秒」到底花在哪
-    const timing = { purpose, prepare: 0, launch: 0, initialize: 0, task: 0, total: 0, at: '' }
-    const beganAt = Date.now()
     try {
-      let mark = Date.now()
       prepared = await adapter.prepareLaunch?.({ config, profile, cwd, signal, purpose })
-      timing.prepare = Date.now() - mark
       signal.throwIfAborted()
-      await runFile.markPending({ version: 1, runId, adapter: selected }).catch(async error => {
+      await runFile.markPending({ version: 1, runId, adapter: adapter.id }).catch(async error => {
         unconfirmed = await runFile.hasPending().catch(() => true)
         throw error
       })
       marked = true
       signal.throwIfAborted()
       launchAttempted = true
-      mark = Date.now()
       launch = await adapter.launch({ runId, config, profile, cwd, prepared, signal })
-      timing.launch = Date.now() - mark
       const client = createAcpClient({ ...launch, clientVersion: appVersion })
-      mark = Date.now()
       const initialized = await client.initialize(signal)
-      timing.initialize = Date.now() - mark
-      mark = Date.now()
-      const result = await work({ client, initialized, adapter, config, cwd, signal })
-      timing.task = Date.now() - mark
-      return result
+      return await work({ client, initialized, adapter, config, cwd, signal })
     } finally {
-      timing.total = Date.now() - beganAt
-      timing.at = new Date().toISOString()
-      await recordTiming(timing)
       try {
         if (marked) {
           if (launch) await launch.stop()
@@ -183,6 +268,37 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
         }
         else await cleanup()
       }
+    }
+  }
+
+  async function withAgent(signal, work, purpose = 'session') {
+    await verifyQuiescent()
+    const { selected, configs } = await readSettings()
+    const adapter = registry.get(selected)
+    if (!adapter?.launch) throw new Error('所选 ACP Agent 暂不可连接。')
+    const config = configs[selected] ?? {}
+    const profile = path.join(root, 'profiles', selected)
+    await fs.mkdir(profile, { recursive: true })
+    if (purpose === 'login') return await withOneShot({ adapter, config, profile, signal, work, purpose })
+
+    // 耗时分解：reused=true 表示这次没付启动税（预热/保活生效）。
+    const timing = { purpose, reused: false, prepare: 0, launch: 0, initialize: 0, task: 0, total: 0, at: '' }
+    const beganAt = Date.now()
+    timing.reused = !!(live && !live.exited && live.adapterId === adapter.id && live.generation === generation)
+    const host = await ensureLive({ adapter, config, profile, signal })
+    try {
+      return await work({ client: host.client, initialized: host.initialized, adapter, config, cwd: host.cwd, signal })
+    } finally {
+      // 传输报废时当场回收，别留一个没有所有者的进程等下一次请求。
+      if (host.client?.isFailed?.()) await closeLive().catch(() => undefined)
+      timing.prepare = host.timing.prepare
+      timing.launch = host.timing.launch
+      timing.initialize = host.timing.initialize
+      timing.task = Date.now() - beganAt
+      timing.total = timing.task
+      timing.at = new Date().toISOString()
+      await recordTiming(timing)
+      scheduleIdleClose()
     }
   }
 
@@ -232,7 +348,24 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
           // Cleanup must also run after a cancelled turn. withAgent still verifies process exit.
           await client.request('session/close', { sessionId: session.sessionId }, 2000)
         } catch {
-          // Unsupported, disconnected or stalled transports fall back to verified process shutdown.
+          // 🔴 常驻宿主：会话关闭被拒时不能假设 Agent 侧已清理。
+          // 先尝试回收进程；**回收本身失败就按「退出未确认」处理** —— 保留现场与租约并抛错，
+          // 不能把它当成「已清理干净」继续跑下一轮。
+          const current = live
+          if (!current) throw new Error('ACP 会话未能关闭。')
+          live = null
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+          try {
+            await current.launch?.stop()
+          } catch (error) {
+            unconfirmed = true
+            unconfirmedLaunch = current.launch
+            unconfirmedCleanup = current.cleanup
+            throw error
+          }
+          await runFile.clearPending().catch(() => undefined)
+          await current.cleanup?.().catch(() => undefined)
+          sessionReady = false
         }
       }
     }
@@ -250,11 +383,17 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     async stop() {
       operation?.controller.abort(new Error('ACP 任务已取消。'))
       await operation?.finished.catch(() => {})
+      await closeLive()
       await verifyQuiescent()
+    },
+    /** 预热：连接后保持宿主活着，后续任务不再付启动税。 */
+    async warm() {
+      await withAgent(undefined, async () => undefined, 'warm')
     },
     async recover() {
       if (operation) throw new Error('请先等待 ACP 操作结束。')
       // 与 verifyQuiescent 共用同一套核对：能证明进程树已退出就归档，证明不了就保留现场。
+      await closeLive().catch(() => undefined)
       await unconfirmedLaunch?.stop()
       await reconcilePendingRun()
       if (heldLease) heldLease.service.release(heldLease.lease, heldLease.owner)
@@ -284,6 +423,8 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
           id, name, available: typeof launch === 'function', componentVersion: component?.version ?? null,
         })),
         selected, generation, busy: !!operation, options: sessionOptions, ready: sessionReady,
+        // 常驻宿主是否就绪（预热后为 true，空闲回收/崩溃后回 false）
+        live: !!live && !live.exited,
         // 最近一次调用耗时（界面不展示，供日志 / 诊断）
         timing: lastTiming,
         requiresConnection: adapter?.requiresConnection === true,
