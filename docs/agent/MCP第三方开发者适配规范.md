@@ -49,6 +49,16 @@ node <绝对路径>/resources/scripts/mcp/yfe-agent.mjs --host-file <本机绝�
 | 回收站、预览 | `yfe_list_chapter_trash`、`yfe_preview_world_import`、`yfe_preview_backup_restore` |
 | 状态 | `yfe_request_status`，按写入 requestId 查询账本状态 |
 
+### 长章节的分段读取
+
+`yfe_read_chapter` 默认仍返回整章（旧客户端零改动）。长章节或客户端窗口较小时，可传 `offset` / `limit`（字符位置与字符数，`limit` 上限 20000）按范围读取；返回的 `value.range` 给出 `offset`、`returnedChars`、`totalChars`、`nextOffset`、`hasMore` 与 `version`。
+
+- 续读用上一段的 `nextOffset`；`hasMore=false` 表示已读完，此时 `nextOffset` 等于正文长度。
+- 多段拼接时把第一段拿到的 `version` 作为 `expectedVersion` 传入；对不上会返回 `CONFLICT`，说明正文已被修改，应重新读取而不是继续拼接。
+- 先用 `yfe_list_chapters`（或 `yfe_search_project`）定位，再按范围取材；`limit` 只限制本次回包，不改变授权与项目边界。
+- 桌面随包只读桥（`yfe-readonly.mjs`）的 `yfe_read_chapter` 支持同一组参数与 `range` 字段；便携文件桥保持只读、按文件快照返回。
+- 未传 `offset` 与 `limit` 时**不加** `range` 字段，响应与 3.5.5 完全一致。
+
 写操作默认未授权，必须由用户在引擎对目标项目勾选下列动作；授权并不表示用户已要求执行每次具体写入。应用宿主未开启时拒绝经此桥的操作；独立只读桥另有自己的使用方式。
 
 | 动作 | 写入工具 |

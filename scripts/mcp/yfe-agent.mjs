@@ -483,10 +483,16 @@ const READ_TOOLS = [
   },
   {
     name: 'yfe_read_chapter',
-    description: '读取单章完整正文与 updatedAt（写正文前必须先读，用它作为 expectedUpdatedAt）。',
+    description: '读取单章正文与 updatedAt（写正文前必须先读，用它作为 expectedUpdatedAt）。默认返回完整正文；传 offset/limit 时按字符范围分段返回，附 range.nextOffset / hasMore / version；多段拼接时把上次的 version 作为 expectedVersion 传入，正文变化会返回 CONFLICT。',
     inputSchema: {
       type: 'object',
-      properties: { projectId: { type: 'string' }, chapterId: { type: 'string' } },
+      properties: {
+        projectId: { type: 'string' },
+        chapterId: { type: 'string' },
+        offset: { type: 'integer', minimum: 0, description: '起始字符位置，默认 0（不传 offset/limit 则整章返回）' },
+        limit: { type: 'integer', minimum: 1, maximum: 20000, description: '本次最多返回的字符数，上限 20000' },
+        expectedVersion: { type: 'string', description: '上次返回的 range.version；对不上说明正文已变化，需重新读取' },
+      },
       required: ['projectId', 'chapterId'], additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: false },

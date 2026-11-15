@@ -21,6 +21,7 @@ import { submissionBlockReason, platformSubmissionState } from '@/lib/storage/su
 import { leaveGuardDirty } from '@/lib/editor/leaveBarrier'
 import { getAgentActiveChapter } from '@/lib/editor/activeChapter'
 import { addInspiration, AgentContentInputError, deleteChapter, deleteInspiration, listChapterTrash, listInspirations, restoreChapter, updateInspiration, updateVolume } from '@/lib/agentHost/contentOps'
+import { parseChapterRange, readChapterRange } from '@/lib/agentHost/chapterRange'
 import { createMap, createMapPlace, deleteMap, listMapPlaces, listMaps, updateMap, updateMapPlaceCells } from '@/lib/agentHost/mapOps'
 import {
   createPlotCard, deletePlotCard, readPlotCanvas, updatePlotCard, updatePlotConnections,
@@ -297,19 +298,22 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
   async function readChapter(args: Record<string, unknown>): Promise<AgentToolResult> {
     const projectId = str(args, 'projectId', 200)
     const chapterId = str(args, 'chapterId', 200)
+    const parsed = parseChapterRange(args)
+    if ('error' in parsed) return fail('BAD_REQUEST', parsed.error)
     const project = await projectOf(projectId)
     if ('ok' in project) return project
     const owner = deps.captureOwner(projectId)
     const chapter = await owner.store.get<Chapter>('chapters', chapterId)
     if (!chapter || chapter.projectId !== projectId) return fail('NOT_FOUND', `章节不存在：${chapterId}`)
+    const read = readChapterRange(chapter.content ?? '', parsed)
+    if ('conflict' in read) return fail('CONFLICT', '正文已变化，请重新读取本章后再继续。', { chapterId, version: read.conflict })
+    if ('error' in read) return fail('BAD_REQUEST', read.error)
     return {
       ok: true,
       value: {
-        ...chapterSummary(chapter),
-        projectId,
-        content: chapter.content,
-        summary: chapter.summary,
-        createdAt: chapter.createdAt,
+        ...chapterSummary(chapter), projectId, content: read.content,
+        summary: chapter.summary, createdAt: chapter.createdAt,
+        ...(read.range ? { range: read.range } : {}),
       },
     }
   }

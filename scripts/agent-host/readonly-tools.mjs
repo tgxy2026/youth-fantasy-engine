@@ -47,6 +47,42 @@ const BRIDGE_VERSION = '0.1.0'
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18']
 const DEFAULT_PROTOCOL = '2024-11-05'
 
+// ---------- 3.5.6 · 单章分段读取 ----------
+// 🔴 与 `src/lib/agentHost/chapterRange.ts` **同一算法**：只读桥是 .mjs，不能 import 渲染层 TS；
+//    改算法必须两边同步（`tests/mcpChapterRange.test.ts` 会对同一段文本比对版本号）。
+const CHAPTER_RANGE_MAX_LIMIT = 20000
+
+export function chapterVersionOf(content) {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < content.length; i++) {
+    hash ^= content.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `v1-${content.length}-${(hash >>> 0).toString(16)}`
+}
+
+/** 解析可选的分段参数；非法值抛中文错误（与页面执行器同一套文案）。 */
+export function parseChapterRangeArgs(args) {
+  const hasOffset = args?.offset !== undefined && args?.offset !== null
+  const hasLimit = args?.limit !== undefined && args?.limit !== null
+  const version = args?.expectedVersion
+  if (version !== undefined && version !== null && typeof version !== 'string') throw new Error('expectedVersion 必须是字符串。')
+  if (!hasOffset && !hasLimit) return { explicit: false, offset: 0, limit: 0, expectedVersion: version || null }
+  let offset = 0
+  let limit = CHAPTER_RANGE_MAX_LIMIT
+  if (hasOffset) {
+    if (!Number.isInteger(args.offset) || args.offset < 0) throw new Error('offset 必须是不小于 0 的整数（字符位置）。')
+    offset = args.offset
+  }
+  if (hasLimit) {
+    if (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > CHAPTER_RANGE_MAX_LIMIT) {
+      throw new Error(`limit 必须是 1..${CHAPTER_RANGE_MAX_LIMIT} 的整数（字符数）。`)
+    }
+    limit = args.limit
+  }
+  return { explicit: true, offset, limit, expectedVersion: version || null }
+}
+
 // ---------- 数据读取（只读） ----------
 
 /** 各 store 主键 —— 与 storage/storeOps.PORTABLE_KEY_FIELDS 同口径（只列本桥要读的） */
@@ -218,15 +254,45 @@ export function createReadonlyTools(DATA_FILE, authorizedProjects = null) {
     },
     {
       name: 'yfe_read_chapter',
-      description: '读取单章完整内容（正文 + 摘要 + 状态）。',
-      inputSchema: { type: 'object', properties: { chapterId: { type: 'string' } }, required: ['chapterId'], additionalProperties: false },
+      description: '读取单章内容（正文 + 摘要 + 状态）。默认返回完整正文；传 offset/limit 时按字符范围分段返回，附 nextOffset、hasMore 与 version，多段拼接时用 expectedVersion 核对是否同一版本。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chapterId: { type: 'string' },
+          offset: { type: 'integer', minimum: 0, description: '起始字符位置，默认 0' },
+          limit: { type: 'integer', minimum: 1, maximum: 20000, description: '本次最多返回的字符数，默认整章；上限 20000' },
+          expectedVersion: { type: 'string', description: '上次返回的 range.version；对不上说明正文已变化，需重新读取' },
+        },
+        required: ['chapterId'], additionalProperties: false,
+      },
       handler(a) {
         const c = byId(loadData(), 'chapters', requireString(a, 'chapterId'))
         if (!c) throw new Error(`章节不存在：${a.chapterId}`)
-        return {
+        const parsed = parseChapterRangeArgs(a)
+        const content = typeof c.content === 'string' ? c.content : ''
+        const base = {
           id: c.id, projectId: c.projectId, volumeId: c.volumeId, title: c.title,
-          content: c.content, summary: c.summary, status: c.status, wordCount: c.wordCount,
+          summary: c.summary, status: c.status, wordCount: c.wordCount,
           createdAt: c.createdAt, updatedAt: c.updatedAt,
+        }
+        // 旧语义：不传范围参数时原样返回整章（content 保持 undefined 也不改成空串）。
+        if (!parsed.explicit) return { ...base, content: c.content }
+        const version = chapterVersionOf(content)
+        if (parsed.expectedVersion && parsed.expectedVersion !== version) {
+          throw new Error('正文已变化，请重新读取本章后再继续。')
+        }
+        if (parsed.offset > content.length) {
+          throw new Error(`offset ${parsed.offset} 超出正文长度（共 ${content.length} 字）。请从 0 开始或按上次返回的 nextOffset 继续。`)
+        }
+        const text = content.slice(parsed.offset, parsed.offset + parsed.limit)
+        const nextOffset = parsed.offset + text.length
+        return {
+          ...base,
+          content: text,
+          range: {
+            offset: parsed.offset, returnedChars: text.length, totalChars: content.length,
+            nextOffset, hasMore: nextOffset < content.length, version,
+          },
         }
       },
     },
