@@ -2,6 +2,17 @@
 const MAX_FRAME = 1024 * 1024
 const MAX_TEXT = 512 * 1024
 const REQUEST_TIMEOUT = 30_000
+/**
+ * 单次生成（`session/prompt`）的等待上限。
+ *
+ * 🔴 2026-11-16 真机实测（3.5.6 安装版 + Antigravity 1.5.0 + gemini-3.8-flash）：
+ *    「名词术语 AI 查重」32 条 → Agent 用了 190 秒仍未返回，旧值 180s 到点就报
+ *    「ACP session/prompt 超时」，作者只看到一句超时、不知道是被限时还是 Agent 挂了。
+ *    3.5.6 新接的结构化/批量任务（术语查重、多块校对、工单整章改写、拆书逐章抽取）
+ *    都可能落在这个区间，故放宽到 300s，并让超时文案讲清「等了多久、还能怎么办」。
+ *    （普通 JSON-RPC 请求仍是 30s：那类是握手/列表，慢就是真慢。）
+ */
+const PROMPT_TIMEOUT_MS = 300_000
 
 function sessionFailureKind(method, error) {
   if (method !== 'session/new' || error.code !== -32603) return undefined
@@ -105,11 +116,11 @@ export function createAcpClient({ input, output, exited, clientVersion }) {
   input.on('error', streamError)
   void exited.then(streamError, streamError)
 
-  function request(method, params, timeout = REQUEST_TIMEOUT, signal) {
+  function request(method, params, timeout = REQUEST_TIMEOUT, signal, timeoutMessage) {
     signal?.throwIfAborted()
     const id = ++nextId
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => fail(new Error(`ACP ${method} 超时。`)), timeout)
+      const timer = setTimeout(() => fail(new Error(timeoutMessage || `ACP ${method} 超时。`)), timeout)
       const abort = () => fail(signal.reason)
       const cleanup = () => {
         clearTimeout(timer)
@@ -152,7 +163,9 @@ export function createAcpClient({ input, output, exited, clientVersion }) {
       try {
         const result = await request('session/prompt', {
           sessionId, prompt: [{ type: 'text', text }],
-        }, 180_000)
+        }, PROMPT_TIMEOUT_MS, undefined,
+        `ACP 生成超时：已等待 ${Math.round(PROMPT_TIMEOUT_MS / 1000)} 秒，Agent 未在限时内返回。`
+        + '可缩小本次范围（减少条目 / 分段处理）、换更快的模型或推理档位，或切回 API 模式重试。')
         signal?.throwIfAborted()
         if (result?.stopReason !== 'end_turn') throw new Error('ACP 生成未完整结束。')
         const answer = turn.chunks.join('')

@@ -769,5 +769,19 @@ try {
 } finally {
   delete g.window
 }
+// ---------- 长任务超时（2026-11-16 真机实测后放宽） ----------
+// 实测：32 条术语查重在 Antigravity + gemini-3.8-flash 下 190s 仍未返回，旧 180s 到点即失败。
+// 这里钉住阈值与「可操作」的失败文案，避免以后有人顺手改回去。
+{
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const client = fs.readFileSync(path.join(root, 'scripts/agent-host/acp-client.mjs'), 'utf8')
+  ok('单次生成超时为 300s（真机 190s 仍可能不够的余量）', /const PROMPT_TIMEOUT_MS = 300_000/.test(client))
+  ok('session/prompt 用该常量（不再写死 180_000）',
+    /request\('session\/prompt'/.test(client) && /PROMPT_TIMEOUT_MS/.test(client) && !/180_000/.test(client))
+  ok('普通 JSON-RPC 请求仍 30s（握手/列表慢就是真慢）', /const REQUEST_TIMEOUT = 30_000/.test(client))
+  ok('超时文案可操作（已等待 + 缩小范围 + 换模型 + 切回 API）',
+    /已等待/.test(client) && /缩小本次范围/.test(client) && /切回 API 模式/.test(client))
+}
+
 console.log(`acpStructured: ${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1
