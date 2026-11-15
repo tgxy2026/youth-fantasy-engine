@@ -19,9 +19,10 @@
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { getSearchSettings } from '@/lib/settings/searchSettings'
 import {
-  webSearch, searchBlockedReason,
+  webSearch, webSearchWithoutLease, searchBlockedReason,
   type SearchSettings, type SearchTransport,
 } from '@/lib/ai/webSearch'
 
@@ -173,6 +174,12 @@ export interface RadarOptions {
   settings?: SearchSettings
   /** 测试注入：替代真实模型调用（与 tavern 的 `ChatFn` 同一条思路，便于单测走通成功路径） */
   chatFn?: typeof chat
+  /**
+   * 3.5.6 · ACP 分支：给了就只走 Agent（归纳这一步不需要 API 模型），
+   * 且检索改走 `webSearchWithoutLease` —— ACP 模式下模式租约在 Agent 手里，
+   * 不能替模型申请 API 租约；检索本身仍是引擎自己发的公开 HTTP 请求。
+   */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 /**
@@ -199,9 +206,11 @@ export async function runMarketRadar(
     const sources: RadarSource[] = []
     const seen = new Set<string>()
     const errors: string[] = []
+    // ACP 模式没有 API 租约可申请：改走引擎直连检索（同配置、同取消、同条数上限）
+    const search = opts.acpText ? webSearchWithoutLease : webSearch
     for (const q of queries) {
       if (opts.signal?.aborted) return { ok: false, error: '已取消。' }
-      const outcome = await webSearch(q, settings, opts.signal,
+      const outcome = await search(q, settings, opts.signal,
         opts.transport ? { transport: opts.transport } : {})
       if (!outcome.used) {
         if (outcome.error) errors.push(outcome.error)
@@ -220,16 +229,21 @@ export async function runMarketRadar(
     }
 
     // AI 归纳（走「整理」用途路由：这是工具型分析，不必烧最好的模型）
-    const cfg = await requireProviderFor('utility')
+    const cfg = opts.acpText ? null : await requireProviderFor('utility')
     const callChat = opts.chatFn ?? chat
-    const text = await callChat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(P_market_radar, cfg) },
-        { role: 'user', content: buildRadarUserPrompt(input, sources) },
-      ],
-      { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal },
-    )
+    // 3.5.6 · ACP 分支：资料与提示词逐字不变，只换「谁来归纳」
+    const text = opts.acpText
+      ? await opts.acpText(
+          `${P_market_radar}\n\n${buildRadarUserPrompt(input, sources)}\n\n${acpJsonInstruction('市场雷达报告', '{"trend":"趋势判断","platformFit":"平台适配","opportunities":["机会点"],"risks":["风险点"]}')}`,
+        )
+      : await callChat(
+          cfg as NonNullable<typeof cfg>,
+          [
+            { role: 'system', content: composeSystemPrompt(P_market_radar, cfg as NonNullable<typeof cfg>) },
+            { role: 'user', content: buildRadarUserPrompt(input, sources) },
+          ],
+          { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal },
+        )
     const obj = parseLooseObject(text) ?? {}
     const report: RadarReport = {
       generatedAt: Date.now(),

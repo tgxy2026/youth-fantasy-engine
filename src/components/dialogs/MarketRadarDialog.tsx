@@ -23,9 +23,11 @@ import {
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
-import { copyText, showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, copyText, showToast } from '@/components/dialogs/dialogs'
 import { openExternalUrl } from '@/lib/app/desktop'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import {
@@ -116,6 +118,9 @@ interface Props {
 
 export default function MarketRadarDialog({ open, onClose, defaultGenre = '', defaultPlatform = '' }: Props) {
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时「归纳」这一步交给 Agent；检索仍由引擎自己发（不占模型租约）
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   const [genre, setGenre] = useState('')
   const [platform, setPlatform] = useState('')
   const [tags, setTags] = useState('')
@@ -145,7 +150,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
 
   const start = () => {
     if (running) return
-    if (!aiReady) { showToast('还没接入模型，无法归纳检索结果', 'info'); return }
+    if (!writingReady) { showToast('还没接入模型、也没有可用的 ACP 连接，无法归纳检索结果', 'info'); return }
     const input = {
       genre: genre.trim(),
       platform: platform.trim(),
@@ -157,8 +162,22 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
       return
     }
     // 🔴 输入在此**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已卸载（切页签 / 关弹窗）
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     t.run(
-      async ctx => runMarketRadar(input, { signal: ctx.signal }),
+      async ctx => runMarketRadar(input, {
+        signal: ctx.signal,
+        ...(acp ? {
+          acpText: acpGatedText({
+            task: 'market-radar',
+            generation: acp.generation,
+            title: '发送检索结果至 ACP Agent',
+            message: acpGateMessage(acp.name, `检索词「${[input.genre, input.platform, ...input.tags, ...input.keywords].filter(Boolean).slice(0, RADAR_MAX_QUERIES).join('、')}」的公开检索结果`, '归纳趋势与机会点'),
+            agentName: acp.name,
+            ask: confirmDialog,
+            signal: ctx.signal,
+          }),
+        } : {}),
+      }),
       ({ status, result, error }) => {
         if (status === 'failed') return { text: `市场雷达失败：${error || '未知原因'}`, kind: 'error' as const }
         // 任务「跑完了但没查成」也是失败 —— 作者可能已切走，必须说出来（结果区他此刻看不到）
@@ -252,15 +271,15 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button variant="primary" size="sm" disabled={!canRun || !aiReady} onClick={start}
-            title={!aiReady ? AI_DISABLED_HINT : `最多发出 ${RADAR_MAX_QUERIES} 条检索词，再交给模型归纳一次`}>
+          <Button variant="primary" size="sm" disabled={!canRun || !writingReady} onClick={start}
+            title={!writingReady ? AI_DISABLED_HINT : `最多发出 ${RADAR_MAX_QUERIES} 条检索词，再交给模型归纳一次`}>
             {running ? <><Loader2 size={12} className="animate-spin" /> 检索归纳中…</> : <><Sparkles size={12} /> 开始检索</>}
           </Button>
           <span className="text-10 text-ink-500">
             最多 {RADAR_MAX_QUERIES} 条检索词 + 1 次归纳；切走页签不会中断，回来看结果仍在。
           </span>
         </div>
-        {!aiReady && <div className="mt-2 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
+        {!writingReady && <div className="mt-2 text-10 text-ink-500">{AI_DISABLED_HINT}</div>}
       </div>
 
       {/* 结果区 */}

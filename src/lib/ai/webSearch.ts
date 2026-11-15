@@ -275,12 +275,49 @@ function errMessage(data: unknown, status: number): string {
 /**
  * 跑一次检索。**永远不抛**：失败也要回一个带 error 的结果，
  * 让调用方告诉作者「这次没查成」，而不是悄悄退化成「模型瞎编」。
+ *
+ * 🔴 API 模式走 `withApiModeLease`：请求虽不是模型调用，但与模型请求同属外部 API 租约范围，
+ *    模式互斥时不得越过。ACP 模式下的等价实现见 `webSearchWithoutLease`。
  */
 export async function webSearch(
   query: string,
   settings: SearchSettings,
   signal?: AbortSignal,
   deps: { transport?: SearchTransport } = {},
+): Promise<SearchOutcome> {
+  return runSearch(query, settings, signal, deps, true)
+}
+
+/**
+ * 3.5.6 · ACP 模式下的**引擎自有检索通路**（不申请 API 模式租约）。
+ *
+ * 【为什么另开一条】
+ *   ACP 模式下模式租约握在 Agent 手里，`webSearch` 申请 API 租约会直接被拒 ——
+ *   于是市场雷达与起草在「零 API 配置」下彻底拿不到外部资料。而这条检索是**引擎自己**
+ *   向搜索接口发的 HTTP 请求（结果作为文本材料交给 Agent），不是模型 API 调用，
+ *   不需要也不应该占用模型租约。
+ *
+ * 🔴 边界（不得放宽）：
+ *   · 仍必须由作者显式把「联网检索」设成「搜索接口」并配好引擎 —— 默认关闭这条铁律不变；
+ *   · 仍走同一个 `buildSearchRequest` / 同一个传输层（桌面由主进程代发、便携直连）；
+ *   · 取消、超时、结果条数上限与错误文案与 `webSearch` 完全一致；
+ *   · **只在 ACP 模式使用**。API 模式必须走 `webSearch`，否则模式互斥会被绕开。
+ */
+export async function webSearchWithoutLease(
+  query: string,
+  settings: SearchSettings,
+  signal?: AbortSignal,
+  deps: { transport?: SearchTransport } = {},
+): Promise<SearchOutcome> {
+  return runSearch(query, settings, signal, deps, false)
+}
+
+async function runSearch(
+  query: string,
+  settings: SearchSettings,
+  signal: AbortSignal | undefined,
+  deps: { transport?: SearchTransport },
+  lease: boolean,
 ): Promise<SearchOutcome> {
   const q = String(query ?? '').trim()
   const base: SearchOutcome = { used: false, engine: settings.engine, query: q, results: [] }
@@ -293,9 +330,10 @@ export async function webSearch(
   const transport = deps.transport ?? defaultTransport
 
   try {
-    const r = await withApiModeLease(() => signal?.aborted
+    const send = () => signal?.aborted
       ? Promise.resolve({ ok: false as const, error: '已取消' })
-      : transport(req, signal))
+      : transport(req, signal)
+    const r = await (lease ? withApiModeLease(send) : send())
     // 若旧版桥或自定义发送器不能主动中止，必须等实际返回才释放租约，且不采用迟到结果。
     if (signal?.aborted) return { ...base, error: '检索已取消' }
     if (!r.ok) {

@@ -16,6 +16,8 @@ import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@
 import {
   draftCard, EMPTY_CARD_DRAFT, isEmptyCardDraft, type CardDraft, type DraftSource,
 } from '@/lib/tavern/draft'
+import { webSearchWithoutLease } from '@/lib/ai/webSearch'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 
 /** 十三栏的显示名（预览用；顺序＝四章顺序） */
 const CARD_FIELD_LABELS: [keyof CardDraft, string][] = [
@@ -48,6 +50,8 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
   const [source, setSource] = useState<DraftSource | null>(null)
   const [err, setErr] = useState('')
   const search = useSearchSettings()
+  // 3.5.6：ACP 模式下引擎检索不再申请 API 租约（检索是引擎自己发的公开 HTTP 请求）
+  const acpReady = !!useAcpWriting()?.ready
 
   useEffect(() => {
     if (!open) return
@@ -67,6 +71,8 @@ export default function TavernCardDraftDialog({ open, existing, onClose, onApply
         idea, refs,
         ...(existing?.trim() ? { existing } : {}),
         settings: search ?? { mode: 'off', engine: 'bocha', endpoint: '', apiKey: '', topK: 5 },
+        // 3.5.6：ACP 模式下模式租约在 Agent 手里，引擎检索改走不申请租约的直连通路
+        ...(acpReady ? { searchFn: webSearchWithoutLease } : {}),
       })
       setFields(res.fields)
       setSource(res.source)

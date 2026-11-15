@@ -961,7 +961,7 @@ ipcMain.handle('store:path', () => dataFile())
 
   ipcMain.handle('acp:generate', async (e, request) => {
     try {
-      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary', 'review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion', 'help', 'batch-summary', 'creative-bible', 'creative-outline', 'autocontinue', 'chapter-rewrite', 'inspiration-fuse', 'name-suggest', 'ai-assist', 'table-split', 'audit', 'reader-probe', 'sensitive-review', 'bookbreak', 'change-list', 'pace', 'style-infer', 'plan-compare', 'tavern-reply', 'tavern-vars', 'tavern-summary', 'tavern-aux'].includes(request.task) ||
+      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary', 'review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion', 'help', 'batch-summary', 'creative-bible', 'creative-outline', 'autocontinue', 'chapter-rewrite', 'inspiration-fuse', 'name-suggest', 'ai-assist', 'table-split', 'audit', 'reader-probe', 'sensitive-review', 'bookbreak', 'change-list', 'pace', 'style-infer', 'plan-compare', 'market-radar', 'tavern-reply', 'tavern-vars', 'tavern-summary', 'tavern-aux'].includes(request.task) ||
           typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id) ||
           (request.reuseKey !== undefined && (typeof request.reuseKey !== 'string' || !/^[\w:.-]{1,120}$/.test(request.reuseKey)))) throw new Error('ACP 写作请求无效。')
       const owner = rendererLeaseOwner(e)

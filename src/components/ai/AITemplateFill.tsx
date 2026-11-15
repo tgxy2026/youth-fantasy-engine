@@ -34,7 +34,7 @@ import { prepareDraftMaterial, type DraftSource } from '@/lib/editor/draftMateri
 import { deriveTopics, filledToText, type InterviewSpec } from '@/lib/creative/interview'
 import { loadFreeDraft, saveFreeDraft } from '@/lib/editor/freeDraft'
 import { isInternalFieldKey } from '@/lib/world/worldSets'
-import { DEFAULT_SEARCH_SETTINGS } from '@/lib/ai/webSearch'
+import { DEFAULT_SEARCH_SETTINGS, webSearchWithoutLease } from '@/lib/ai/webSearch'
 import { RefsField, SearchPlanLine, DraftSourceLine, useSearchSettings } from '@/components/editor/DraftBits'
 import InterviewChat from '@/components/creative/InterviewChat'
 import InterviewContextPicker, { type ContextChoice } from '@/components/creative/InterviewContextPicker'
@@ -307,6 +307,8 @@ export default function AITemplateFill({
         refs,
         existing: existingText,
         settings: search ?? { ...DEFAULT_SEARCH_SETTINGS },
+        // 3.5.6：ACP 模式下模式租约在 Agent 手里，引擎检索改走不申请租约的直连通路
+        ...(acpWriting?.ready ? { searchFn: webSearchWithoutLease } : {}),
       })
       if (!current()) return
       setSource(material.source)
