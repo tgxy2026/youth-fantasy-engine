@@ -23,6 +23,16 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
   }
   const configFile = createModeFilePersistence(path.join(root, 'settings.json'))
   const runFile = createModeFilePersistence(path.join(root, 'runtime.json'))
+  /** 最近一次 ACP 调用的耗时分解（只用于诊断，不影响任何行为） */
+  let lastTiming = null
+
+  async function recordTiming(timing) {
+    lastTiming = timing
+    const line = `[acp-timing] purpose=${timing.purpose} prepare=${timing.prepare}ms launch=${timing.launch}ms initialize=${timing.initialize}ms 会话+生成=${timing.task}ms 总计=${timing.total}ms`
+    console.log(line)
+    // 打包版没有控制台：同一份分解写到 acp/timing.json，事后可直接查看
+    await fs.writeFile(path.join(root, 'timing.json'), JSON.stringify(timing, null, 2)).catch(() => undefined)
+  }
   let operation = null
   let generation = randomUUID()
   let sessionOptions = null
@@ -125,8 +135,13 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     }
     let marked = false
     let launchAttempted = false
+    // 耗时分解：四段分别计时，便于下次实测定位「30~40 秒」到底花在哪
+    const timing = { purpose, prepare: 0, launch: 0, initialize: 0, task: 0, total: 0, at: '' }
+    const beganAt = Date.now()
     try {
+      let mark = Date.now()
       prepared = await adapter.prepareLaunch?.({ config, profile, cwd, signal, purpose })
+      timing.prepare = Date.now() - mark
       signal.throwIfAborted()
       await runFile.markPending({ version: 1, runId, adapter: selected }).catch(async error => {
         unconfirmed = await runFile.hasPending().catch(() => true)
@@ -135,11 +150,21 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
       marked = true
       signal.throwIfAborted()
       launchAttempted = true
+      mark = Date.now()
       launch = await adapter.launch({ runId, config, profile, cwd, prepared, signal })
+      timing.launch = Date.now() - mark
       const client = createAcpClient({ ...launch, clientVersion: appVersion })
+      mark = Date.now()
       const initialized = await client.initialize(signal)
-      return await work({ client, initialized, adapter, config, cwd, signal })
+      timing.initialize = Date.now() - mark
+      mark = Date.now()
+      const result = await work({ client, initialized, adapter, config, cwd, signal })
+      timing.task = Date.now() - mark
+      return result
     } finally {
+      timing.total = Date.now() - beganAt
+      timing.at = new Date().toISOString()
+      await recordTiming(timing)
       try {
         if (marked) {
           if (launch) await launch.stop()
@@ -259,6 +284,8 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
           id, name, available: typeof launch === 'function', componentVersion: component?.version ?? null,
         })),
         selected, generation, busy: !!operation, options: sessionOptions, ready: sessionReady,
+        // 最近一次调用耗时（界面不展示，供日志 / 诊断）
+        timing: lastTiming,
         requiresConnection: adapter?.requiresConnection === true,
         // 运行方式与隔离账户状态分开暴露：默认 current-user 时即使没开通隔离也照常可连。
         runAs: adapter ? runAsOf(configs[selected]) : null,
