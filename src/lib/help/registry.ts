@@ -20,6 +20,7 @@ import { LOOK_ARTICLES } from '@/lib/help/articles/look'
 import { WORLD_EXTRA_ARTICLES } from '@/lib/help/articles/world-extra'
 import { TRACKING_ARTICLES } from '@/lib/help/articles/tracking'
 import { TOOLS_ARTICLES } from '@/lib/help/articles/tools'
+import { TOOLS_EXTRA_ARTICLES } from '@/lib/help/articles/tools-extra'
 import { TAVERN_ARTICLES } from '@/lib/help/articles/tavern'
 import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
 import { AGENT_BACKEND_ARTICLES } from '@/lib/help/articles/agent-backend'
@@ -43,6 +44,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   ...LOOK_ARTICLES,
   ...TRACKING_ARTICLES,
   ...TOOLS_ARTICLES,
+  ...TOOLS_EXTRA_ARTICLES,
   ...TAVERN_ARTICLES,
   ...MISC_PAGE_ARTICLES,
   ...PLOT_ARTICLES,
