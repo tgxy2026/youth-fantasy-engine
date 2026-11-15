@@ -13,6 +13,7 @@
 //     重复与否交给导入预览的本地校验去标（`validateImport`），作者看得见、可勾选、可放弃。
 //   若在这里也做判重，预览里就再也不会出现「与已有重复」这一状态，作者会以为导入行被吞了。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseObjectArray, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
@@ -39,6 +40,8 @@ export interface ImportSplitRequest {
   maxRows?: number
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /** 3.5.6：ACP 通道（给就不再要求 API 模型；本地校验与预览不变）。 */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 
 export interface ImportSplitResult {
@@ -70,7 +73,7 @@ let TABLE_IMPORT_SPLIT_SYS = `你是「青春幻想引擎」的资料录入助�
  */
 export async function aiSplitTableRows(req: ImportSplitRequest): Promise<ImportSplitResult> {
   // #014 用途路由：表格批量拆分属「整理」
-  const cfg = await requireProviderFor('utility')
+  const cfg = req.acpText ? null : await requireProviderFor('utility')
   const max = req.maxRows ?? 60
 
   const colList = req.columns
@@ -99,14 +102,23 @@ ${authorBlock(newAuthorFence(), req.sourceText.trim())}
 
 请把上面这段内容解析成最多 ${max} 条记录，按出现顺序返回 JSON 数组。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(TABLE_IMPORT_SPLIT_SYS, cfg) },
-      { role: 'user', content: user },
-    ],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
-  )
+  let text: string
+  if (req.acpText) {
+    text = await req.acpText(
+      `${TABLE_IMPORT_SPLIT_SYS}\n\n${user}\n\n${acpJsonInstruction('表格导入拆分', '[{"列名原文":"值"}]')}`,
+      { ...(req.signal ? { signal: req.signal } : {}) },
+    )
+  } else {
+    if (!cfg) throw new Error('表格拆分缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+    text = await chat(
+      cfg,
+      [
+        { role: 'system', content: composeSystemPrompt(TABLE_IMPORT_SPLIT_SYS, cfg) },
+        { role: 'user', content: user },
+      ],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken, output: 'json-object', reasoning: 'off' },
+    )
+  }
 
   const arr = parseObjectArray(text)
   const colNames = req.columns.map(c => c.name)

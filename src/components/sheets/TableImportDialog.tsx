@@ -5,7 +5,7 @@ import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import AutoTextarea from '@/components/common/AutoTextarea'
-import { showToast } from '@/components/dialogs/dialogs'
+import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { foldVh } from '@/lib/settings/theme'
 import type { CalendarDef, TabDef, TableRow } from '@/lib/types'
 import type { CustomFieldType } from '@/lib/atlas/types'
@@ -13,6 +13,8 @@ import { getTableRows } from '@/lib/db'
 import { TABS, type VisCtx } from '@/lib/schema'
 import { downloadBlob } from '@/lib/storage/zip'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { tableImportSplit, usableAiRows, type TableImportSplitOutcome } from '@/lib/ai/tableImportAI'
@@ -95,6 +97,9 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
   const fileRef = useRef<HTMLInputElement>(null)
 
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时也能智能拆分。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   // 🔴 接任务中心（kind 必须与同页签的 organize / fill 不同）：切页签 / 关弹窗都不会掐断请求，也不白烧额度。
   const t = useTaskRunner<TableImportSplitOutcome, string>({
     ownerTab: tab.id, kind: 'import-split', title: `AI 智能拆分 · ${tab.name}`,
@@ -253,15 +258,30 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
   const runAi = () => {
     if (!raw.trim()) { showToast('请先粘贴要解析的内容', 'info'); return }
     const src = raw
-    t.run(job => tableImportSplit(tab, {
-      sourceText: src,
-      useCtx,
-      // 🔴 候选值口径与「AI 整理」一致（2026-10-02 六维审计 P1）：日历名 + 角色可见性
-      calendars,
-      ctx: visCtx,
-      signal: job.signal,
-      onPhase: job.progress,
-    }))
+    t.run(job => {
+      const acpSend = acpWriting?.ready
+        ? acpGatedText({
+            task: 'table-split',
+            generation: acpWriting.generation,
+            title: '发送导入内容至 ACP Agent',
+            message: acpGateMessage(acpWriting.name, '粘贴的原始内容与项目资料', '拆分成表格记录'),
+            agentName: acpWriting.name,
+            ask: confirmDialog,
+            askOnce: true,
+            signal: job.signal,
+          })
+        : null
+      return tableImportSplit(tab, {
+        sourceText: src,
+        useCtx,
+        // 🔴 候选值口径与「AI 整理」一致（2026-10-02 六维审计 P1）：日历名 + 角色可见性
+        calendars,
+        ctx: visCtx,
+        signal: job.signal,
+        onPhase: job.progress,
+        ...(acpSend ? { acpText: (prompt: string) => acpSend(prompt) } : {}),
+      })
+    })
   }
 
   return (
@@ -321,8 +341,8 @@ export default function TableImportDialog({ tab, existing, calendars = [], visCt
         {/* 方式③：AI 智能拆分 */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button onClick={runAi}
-            disabled={t.running || !aiReady || !raw.trim()}
-            title={!aiReady ? AI_DISABLED_HINT : (!raw.trim() ? '先粘贴要解析的内容' : '用你当前配置的模型把粘贴的内容拆成多条记录')}
+            disabled={t.running || !writingReady || !raw.trim()}
+            title={!writingReady ? (acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT) : (!raw.trim() ? '先粘贴要解析的内容' : '把粘贴的内容拆成多条记录')}
             variant="secondary" size="md" className="flex items-center gap-1.5">
             {t.running ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             {t.running ? (t.task?.progress || 'AI 正在解析…') : 'AI 智能拆分'}

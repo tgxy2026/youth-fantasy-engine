@@ -34,6 +34,8 @@ export interface TableImportRunOptions {
   signal?: AbortSignal
   /** 界面阶段提示（「AI 正在解析第 2/3 段…」这类） */
   onPhase?: (text: string) => void
+  /** 3.5.6：ACP 通道（分批后每批各自发送；解析与预览校验不变）。 */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 
 export interface TableImportSplitOutcome {
@@ -128,6 +130,7 @@ export async function tableImportSplit(
       projectContext: ctx,
       maxRows: PER_CHUNK_MAX,
       ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.acpText ? { acpText: (prompt: string) => o.acpText!(prompt) } : {}),
     })
     rows.push(...r.rows)
     rawCount += r.rawCount
