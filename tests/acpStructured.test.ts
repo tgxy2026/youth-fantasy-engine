@@ -718,7 +718,7 @@ async function run() {
 
   console.log('--- 16. ACP 运行标记自愈（pending 不再永久卡死）---')
   {
-    // @ts-expect-error 主进程脚本是纯 ESM，不提供类型声明；这里只验行为
+    // 主进程脚本是纯 ESM；3.5.6 起由 acp-runtime.d.mts 提供最小类型声明（只覆盖这里用到的入口）。
     const { createAcpRuntime } = await import('../scripts/agent-host/acp-runtime.mjs')
     const runId = 'a'.repeat(32)
     const mkRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), 'yfe-pending-'))

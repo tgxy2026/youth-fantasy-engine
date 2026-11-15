@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAcp', {
   disconnect: id => ipcRenderer.invoke('acp:disconnect', id),
   logout: id => ipcRenderer.invoke('acp:logout', id),
   configure: (id, patch) => ipcRenderer.invoke('acp:configure', id, patch),
+  configureBudget: (id, patch) => ipcRenderer.invoke('acp:configure-budget', id, patch),
   cancel: id => ipcRenderer.invoke('acp:cancel', id),
   generate: request => ipcRenderer.invoke('acp:generate', request),
   setupIsolation: id => ipcRenderer.invoke('acp:setup-isolation', id),

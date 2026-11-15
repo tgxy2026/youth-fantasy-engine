@@ -353,7 +353,7 @@ export async function runPlotTurn(
   // 🔴 组装 system 放在这里（2026-09-23 六维审计）：它内部按「最近 6 条消息」抽背景设定的**注入关键词**，
   //    原先在本轮输入并进历史**之前**调用 ⇒ 关键词漏掉本轮 user 输入，一个新关键词要等下一轮才生效。
   //    把 withUser 交给它即可，无需改签名（内部仍是 session.messages.slice(-6)）。
-  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st, provider?.contextWindow)
+  const { system } = await buildPlotSystem({ ...session, messages: withUser }, st, provider?.contextWindow ?? runChat.acp?.windowTokens)
 
   // 🔴 记忆**已经拼在 system 里**了（buildSystemPrompt 干的）—— 所以这里**没有也不该有**
   //    「记忆长度」参数：historyBudget 早把那形参删了（2026-10-02 六维审计待办），
@@ -796,7 +796,7 @@ export async function runFreeTurn(
   // 🔴 组装 system 要传 withUser（2026-10-10 六维审计）：它内部按「最近 6 条消息」抽世界书 /
   //    背景设定的**注入关键词**。用原始 session 会让本轮刚提到的关键词这一轮不生效、要等下一轮 ——
   //    剧情模式 2026-09-23 已修过同一处（上面的 buildPlotSystem 有同款注释），自由模式当时漏了 ⇒ 两模式行为分叉。
-  const { system } = await buildFreeSystem({ ...session, messages: withUser }, chars, st, { windowTokens: provider?.contextWindow })
+  const { system } = await buildFreeSystem({ ...session, messages: withUser }, chars, st, { windowTokens: provider?.contextWindow ?? runChat.acp?.windowTokens })
 
   const p = resolveParamsOf('free', st, session.params)
   const { temperature, ...extraOptions } = toOllamaOptions(p)
@@ -917,7 +917,7 @@ export async function runFreeAssist(
     deps.chatFn ?? await pickTavernChat('tavern-aux', '本场对话与助手指令', '生成助手的润色或建议'),
   )
   const { provider, modelName, fellBack } = await resolveTavernChatProvider(runChat, session.model, st.common.defaultProviderId)
-  const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider?.contextWindow })
+  const { system } = await buildFreeSystem(session, chars, st, { assist: mode, windowTokens: provider?.contextWindow ?? runChat.acp?.windowTokens })
 
   // 参数解析先做（下面算历史额度要用到 contextBudget）—— 与 runFreeTurn 同口径：
   // 会话级覆盖优先，否则回落面板默认。此前这里直接读 st.common.contextBudget，一旦启用会话级

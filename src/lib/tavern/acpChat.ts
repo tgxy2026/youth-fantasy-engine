@@ -24,6 +24,7 @@
 import { chat } from '@/lib/ai'
 import type { ChatFn } from '@/lib/tavern/provider'
 import { acpWritingContext, type AcpTask } from '@/lib/agentHost/acpBridge'
+import { acpBudgetSnapshot } from '@/lib/agentHost/acpBudget'
 import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 
 /**
@@ -55,6 +56,11 @@ export interface TavernAcpOptions {
   ask: (options: AcpGateConfirmOptions) => Promise<boolean>
   /** 项目 / 会话归属校验（发送前与落地前各一次） */
   assertCurrent?: () => void
+  /**
+   * 3.5.6：该 Agent + 实际模型的已知窗口（tokens）。
+   * 只有配置了手填窗口或会话回报时才给；未给时酒馆按 32K 兜底，界面应标「实际窗口未知」。
+   */
+  windowTokens?: number
   /**
    * 一轮对话会连发多次（主回复 → 数值 → 摘要）。逐次弹确认等于毁掉这个功能，
    * 传同一份 `askOnce` 即可整轮只确认一次。
@@ -215,8 +221,12 @@ export async function pickTavernChat(
     throw new Error('酒馆的 ACP 外发确认尚未初始化（缺少界面注入），已中止本次请求以免在未告知的情况下发出资料。')
   }
   const ask = askImpl
+  // 3.5.6：预算按「Agent + 实际模型」取（手填 > 会话回报 > 未知）。
+  // 未知时**不传** —— 酒馆会按 32K 兜底，界面必须如实标「实际窗口未知」，不能编一个数。
+  const budget = await acpBudgetSnapshot()
   return makeTavernAcpChat({
     generation: ctx.generation, agentName: ctx.name, task, scopeText, purpose, ask,
+    ...(budget?.windowTokens ? { windowTokens: budget.windowTokens } : {}),
   })
 }
 
@@ -262,6 +272,10 @@ export function makeTavernAcpChat(o: TavernAcpOptions): ChatFn {
   // 🔴 签名必须与 `ChatFn`（即 `chat`）一致：酒馆 15 处都按 `runChat(provider, msgs, opts)` 调，
   //    少一个参数就会在某一处静默传错位。
   const chatFn: ChatFn = (_provider, messages, options) => sendPrompt(messages, options)
-  chatFn.acp = { agentName: o.agentName, send: sendPrompt }
+  chatFn.acp = {
+    agentName: o.agentName,
+    send: sendPrompt,
+    ...(o.windowTokens ? { windowTokens: o.windowTokens } : {}),
+  }
   return chatFn
 }

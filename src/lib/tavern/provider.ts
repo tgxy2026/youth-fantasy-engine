@@ -16,6 +16,11 @@ import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 export type ChatFn = typeof chat & {
   acp?: {
     agentName: string
+    /**
+     * 3.5.6：该 Agent + 实际模型的已知窗口（手填/会话回报）。
+     * 未配置时省略 —— 酒馆据此回落 `quotas.ts` 的 32K 兜底，不能在这里填一个假值。
+     */
+    windowTokens?: number
     send: (messages: Parameters<typeof chat>[1], options?: Parameters<typeof chat>[2]) => ReturnType<typeof chat>
   }
 }

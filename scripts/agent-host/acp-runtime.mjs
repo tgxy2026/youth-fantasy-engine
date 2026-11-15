@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { createModeFilePersistence } from './mode-file.mjs'
 import { createAcpClient } from './acp-client.mjs'
 import { readSessionOptions } from './acp-options.mjs'
+import { ACP_BUDGET_FIELDS, budgetFieldError, resolveAcpBudget } from './acp-budget.mjs'
 
 // `runAs` 与其它字段一样按字符串持久化与校验，但**不进 `status.config`**：
 // `config` 是「会话选项类配置」的投影（binary/model/thinking/authMethod），
@@ -86,10 +87,25 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     return saved
   }
 
+  /**
+   * 串行化 settings.json 的「读—改—写」。
+   *
+   * 预算保存与模型/档位保存会写同一个文件：不排队时，两边各自读到旧快照再写回，
+   * 后写的那个会把先写的字段悄悄冲掉（预算改完、模型选项又变回默认，且界面上看不出来）。
+   */
+  let settingsWrite = Promise.resolve()
+  function withSettingsWrite(work) {
+    const next = settingsWrite.then(work, work)
+    settingsWrite = next.catch(() => undefined)
+    return next
+  }
+
   async function saveSettings(settings) {
-    await configFile.write(settings)
-    if (JSON.stringify(await configFile.read()) !== JSON.stringify(settings)) throw new Error('ACP 设置回读失败。')
-    generation = randomUUID()
+    return withSettingsWrite(async () => {
+      await configFile.write(settings)
+      if (JSON.stringify(await configFile.read()) !== JSON.stringify(settings)) throw new Error('ACP 设置回读失败。')
+      generation = randomUUID()
+    })
   }
 
   /**
@@ -497,6 +513,16 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     async status() {
       const { selected, configs } = await readSettings()
       const adapter = registry.get(selected)
+      const saved = configs[selected] ?? {}
+      // 「实际模型」= 已保存的选项；没保存时退回会话当前值（即 Agent 默认）。
+      const effectiveModel = typeof saved.model === 'string' && saved.model
+        ? saved.model
+        : (sessionOptions?.model?.current ?? null)
+      const modelLabel = sessionOptions?.model?.values.find(item => item.value === effectiveModel)?.name ?? ''
+      const budget = adapter ? resolveAcpBudget({
+        agentId: selected, agentName: adapter.name, model: effectiveModel, modelLabel,
+        config: saved, sessionOptions,
+      }) : null
       return {
         adapters: adapters.map(({ id, name, launch, component }) => ({
           id, name, available: typeof launch === 'function', componentVersion: component?.version ?? null,
@@ -513,6 +539,9 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
         config: adapter
           ? Object.fromEntries(CONFIG_FIELDS.map(field => [field, typeof configs[selected]?.[field] === 'string' ? configs[selected][field] : '']))
           : null,
+        // 3.5.6：按 Agent + 实际模型解析出的上下文预算（手填 > 会话回报 > 未知）。
+        // 不进 `config`：它不属于会话选项，且要让界面能区分「自动值 / 手填值 / 本次生效值」。
+        budget,
       }
     },
     async prepareSelection(id) {
@@ -551,6 +580,37 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
             !config[key] || sessionOptions[key]?.values.some(item => item.value === config[key]),
           )
         }
+      })
+    },
+    /**
+     * 保存「按 Agent + 实际模型」的上下文预算。
+     *
+     * 🔴 与 `configure` 分开：预算只影响下一次引擎侧装配，不改会话、**不改代次**。
+     *    走 `saveSettings` 会 `generation = randomUUID()`，把正在跑的请求判成「设置已变更」而作废；
+     *    P0 的口径是旧请求按已确认的预算快照继续落地，因此这里只写文件。
+     */
+    async configureBudget(patch) {
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('ACP 预算配置无效。')
+      const entries = Object.entries(patch)
+      if (!entries.length) throw new Error('ACP 预算配置无效。')
+      for (const [key, value] of entries) {
+        if (!ACP_BUDGET_FIELDS.includes(key)) throw new Error('ACP 预算配置无效。')
+        if (typeof value !== 'string' || value.length > 32) throw new Error('ACP 预算配置无效。')
+        const error = budgetFieldError(key, value)
+        if (error) throw new Error(error)
+      }
+      return withSettingsWrite(async () => {
+        const settings = await readSettings()
+        if (!registry.has(settings.selected)) throw new Error('请选择 ACP Agent。')
+        const next = {
+          ...settings,
+          configs: {
+            ...settings.configs,
+            [settings.selected]: { ...settings.configs[settings.selected], ...patch },
+          },
+        }
+        await configFile.write(next)
+        if (JSON.stringify(await configFile.read()) !== JSON.stringify(next)) throw new Error('ACP 设置回读失败。')
       })
     },
     async disconnect(service) {

@@ -20,6 +20,7 @@ import { uid } from '@/lib/app/id'
 import { textFingerprint } from '@/lib/tasks/unitLedger'
 import { requireProviderFor, chat, composeSystemPrompt } from '@/lib/ai'
 import { effectiveWindowOf } from '@/lib/ai/modelCapacity'
+import { acpBudgetSnapshot } from '@/lib/agentHost/acpBudget'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import {
   estimateTokens,
@@ -205,7 +206,10 @@ export async function buildContinuationPlan(args: {
   const { projectId, chapterId, chapterTitle, currentContent, plot, targetWords, picks, summaryCount, prevTextCount } = args
   const budgetChars = await writerBudgetFor('jiewenji-continue')
   const provider = args.acpGeneration ? null : await requireProviderFor('create').catch(() => null)
-  const windowTokens = effectiveWindowOf(provider)
+  // 3.5.6：ACP 路径优先用「Agent + 实际模型」的已知窗口（手填/会话回报）；
+  // 未知时 acp.windowTokens 为 null，仍落到 effectiveWindowOf(null) 的 32K 兜底并如实标注来源。
+  const acp = args.acpGeneration ? await acpBudgetSnapshot().catch(() => null) : null
+  const windowTokens = acp?.windowTokens ?? effectiveWindowOf(provider)
 
   const wantSummaries = picks.has('summaries')
   const wantPrevTexts = picks.has('prev-texts')
@@ -436,7 +440,9 @@ export async function buildContinuationPlan(args: {
   const messages = continuationMessages({ title: chapterTitle, plot, targetWords, blocksText, bodyTail, promptText, provider })
   const budget: RequestBudget = planRequestBudget({
     window: windowTokens,
-    windowSource: provider?.model ? 'preset' : 'fallback',
+    windowSource: acp?.windowTokens
+      ? (acp.windowSource === 'adapter' ? 'preset' : 'user')
+      : provider?.model ? 'preset' : 'fallback',
     systemPrompt: messages[0].content,
     body: messages[1].content,
   })

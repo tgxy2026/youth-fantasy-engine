@@ -953,13 +953,15 @@ ipcMain.handle('store:path', () => dataFile())
     await acpRuntime.configure(service, { [patch.key]: patch.value })
   }))
 
+  ipcMain.handle('acp:configure-budget', (e, id, patch) => withAcpOperation(e, id, () => acpRuntime.configureBudget(patch)))
+
   ipcMain.handle('acp:cancel', (e, id) => {
     return isEngineFrame(e, true) && acpRuntime?.cancel(rendererLeaseOwner(e), id) === true
   })
 
   ipcMain.handle('acp:generate', async (e, request) => {
     try {
-      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary', 'review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion', 'tavern-reply', 'tavern-vars', 'tavern-summary', 'tavern-aux'].includes(request.task) ||
+      if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary', 'review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion', 'help', 'batch-summary', 'tavern-reply', 'tavern-vars', 'tavern-summary', 'tavern-aux'].includes(request.task) ||
           typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id) ||
           (request.reuseKey !== undefined && (typeof request.reuseKey !== 'string' || !/^[\w:.-]{1,120}$/.test(request.reuseKey)))) throw new Error('ACP 写作请求无效。')
       const owner = rendererLeaseOwner(e)

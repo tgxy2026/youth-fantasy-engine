@@ -3,6 +3,7 @@ import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { ChevronDown } from 'lucide-react'
 import { grantAcpConsent, revokeAcpConsent } from '@/lib/agentHost/acpConsent'
+import type { AcpBudgetInfo } from '@/lib/agentHost/acpBudget'
 
 // 🔴 2026-11-15：统一 h-8(32px) 并去掉 py-2 —— 原生 select 的 py-2 会把高度撑到 ~38px，
 //   而 Button size=sm 是 h-8，并排时一高一矮、底边还错位（Agent 下拉与「取消 ACP 操作」）。
@@ -18,6 +19,8 @@ interface AcpSettingsStatus {
   /** 运行方式：默认当前 Windows 用户；隔离需作者主动选择并开通。 */
   runAs?: 'current-user' | 'isolated' | null
   isolation?: 'required' | 'configured' | null
+  /** 3.5.6：按 Agent + 实际模型解析的上下文预算 */
+  budget?: AcpBudgetInfo | null
 }
 
 interface AcpDesktopSettings {
@@ -30,6 +33,7 @@ interface AcpDesktopSettings {
   disconnect(id: string): Promise<{ ok: boolean; error?: string }>
   logout(id: string): Promise<{ ok: boolean; error?: string }>
   configure(id: string, patch: { key: 'model' | 'thinking' | 'runAs'; value: string }): Promise<{ ok: boolean; error?: string }>
+  configureBudget(id: string, patch: Record<string, string>): Promise<{ ok: boolean; error?: string }>
   cancel(id: string): Promise<boolean>
 }
 
@@ -39,6 +43,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
   const [busy, setBusy] = useState(false)
   const [operation, setOperation] = useState<{ id: string; label: string } | null>(null)
   const [error, setError] = useState('')
+  const [budgetDraft, setBudgetDraft] = useState({ window: '', send: '', output: '' })
   useEffect(() => {
     let mounted = true
     void api?.status().then(value => {
@@ -48,6 +53,10 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
     })
     return () => { mounted = false }
   }, [api])
+  // 只在 status 刷新时同步草稿：用户正在输入时 status 不变，不会被覆盖。
+  useEffect(() => {
+    setBudgetDraft(status?.budget?.configured ?? { window: '', send: '', output: '' })
+  }, [status])
 
   async function select(id: string) {
     if (!api || busy || disabled || operation) return
@@ -164,6 +173,39 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
     const current = status.config?.[key] ?? ''
     if (!current) return 'Agent 默认'
     return status.options?.[key]?.values.find(v => v.value === current)?.name ?? current
+  }
+
+  /**
+   * 保存上下文预算（按 Agent 与当前模型存）。
+   *
+   * 🔴 只提交真正改过的字段：三个预算字段各自独立，没动的不能被空串覆盖成「自动」。
+   */
+  async function saveBudget() {
+    if (!api || !selected || !status?.budget || controlsDisabled) return
+    const next = {
+      window: budgetDraft.window.trim(),
+      send: budgetDraft.send.trim(),
+      output: budgetDraft.output.trim(),
+    }
+    const patch: Record<string, string> = {}
+    if (next.window !== status.budget.configured.window) patch.budgetWindow = next.window
+    if (next.send !== status.budget.configured.send) patch.budgetSend = next.send
+    if (next.output !== status.budget.configured.output) patch.budgetOutput = next.output
+    if (!Object.keys(patch).length) {
+      showToast('上下文预算没有变化。', 'info')
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await api.configureBudget(selected.id, patch)
+      if (!result.ok) throw new Error(result.error || '保存 ACP 预算失败。')
+      setStatus(await api.status())
+      showToast('ACP 上下文预算已保存', 'success')
+    } catch (saveError) {
+      showToast(saveError instanceof Error ? saveError.message : '保存 ACP 预算失败。', 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   // 🔴 2026-11-14：试过「右窄状态卡」与「居中限宽」，都被否掉。最终：**铺满父容器、不留左右留白**；
@@ -298,6 +340,60 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
         </label>
       })}
       </div>}
+    </section>}
+    {selected?.available && status.budget && <section aria-labelledby="acp-budget-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 id="acp-budget-heading" className="text-12 font-medium text-ink-200">上下文预算</h3>
+        <span className="text-12 text-ink-400">
+          {status.budget.modelLabel} · {status.budget.windowSource === 'user'
+            ? '按手填窗口'
+            : status.budget.windowSource === 'adapter' ? '会话回报' : '实际窗口未知'}
+        </span>
+      </div>
+      <p className="mt-1 text-11 leading-relaxed text-ink-500">{status.budget.notice}</p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-3">
+        <label className="grid min-w-0 gap-1 text-11 font-medium text-ink-300">
+          上下文窗口（tokens）
+          <input
+            className={selectClass}
+            inputMode="numeric"
+            value={budgetDraft.window}
+            placeholder={status.budget.windowTokens ? `当前 ${status.budget.windowTokens}` : '未知（按 32K 兜底）'}
+            disabled={controlsDisabled}
+            onChange={event => setBudgetDraft({ ...budgetDraft, window: event.target.value })}
+          />
+        </label>
+        <label className="grid min-w-0 gap-1 text-11 font-medium text-ink-300">
+          发送上限（tokens）
+          <input
+            className={selectClass}
+            inputMode="numeric"
+            value={budgetDraft.send}
+            placeholder={`自动 ${status.budget.sendBudgetTokens}`}
+            disabled={controlsDisabled}
+            onChange={event => setBudgetDraft({ ...budgetDraft, send: event.target.value })}
+          />
+        </label>
+        <label className="grid min-w-0 gap-1 text-11 font-medium text-ink-300">
+          输出预留（tokens）
+          <input
+            className={selectClass}
+            inputMode="numeric"
+            value={budgetDraft.output}
+            placeholder={`自动 ${status.budget.outputReserveTokens}`}
+            disabled={controlsDisabled}
+            onChange={event => setBudgetDraft({ ...budgetDraft, output: event.target.value })}
+          />
+        </label>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-11 leading-relaxed text-ink-500">
+          留空表示自动推算。本次生效：窗口 {status.budget.effectiveWindow} · 可发送 {status.budget.sendBudgetTokens} · 输出预留 {status.budget.outputReserveTokens}
+          {status.budget.fallbackUsed ? '（含保守兜底，不是模型标称值）' : ''}。
+          发送上限不会超过「窗口 − 输出预留 − 安全余量」。
+        </p>
+        <Button size="sm" variant="secondary" disabled={controlsDisabled} onClick={() => void saveBudget()}>保存预算</Button>
+      </div>
     </section>}
     {selected && !selected.available && <p className="text-12 text-ink-500">当前构建尚未启用此 Agent 的连接功能。需要使用引擎模型时，请切回 API 模式。</p>}
     <section aria-labelledby="acp-summary-heading" className="rounded-lg border border-ink-700 bg-ink-900/40">
