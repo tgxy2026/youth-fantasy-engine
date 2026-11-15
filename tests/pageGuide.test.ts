@@ -179,10 +179,13 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
   ok('写入前重新读取再合并（不覆盖别人的记录）', /const current = readSet\(kind\)/.test(prefs))
   ok('同窗口与跨窗口都能同步', /addEventListener\(PREF_EVENT/.test(prefs) && /addEventListener\('storage'/.test(prefs))
 
-  ok('普通表单页接入（hook + 卡片 + 本页指引）', /usePageGuide/.test(form) && /GuideOverlay/.test(form) && /PageGuideButton/.test(form))
+  // 2026-11-15：表单页页头按钮撤掉，入口统一到左下角（改为登记给侧栏）
+  ok('普通表单页接入（hook + 卡片 + 登记侧栏入口）',
+    /usePageGuide/.test(form) && /GuideOverlay/.test(form) && /registerSelfGuide\(/.test(form) && !/PageGuideButton/.test(form))
   // 2026-11-15：页头那个「本页指引」按钮撤掉了（与左下角重复），改为把 start 登记给侧栏
   ok('正文页接入', /usePageGuide/.test(editor) && /GuideOverlay/.test(editor) && /registerSelfGuide\(/.test(editor) && !/PageGuideButton/.test(editor))
-  ok('空态表格页接入', /usePageGuide/.test(table) && /GuideOverlay/.test(table) && /PageGuideButton/.test(table))
+  // 2026-11-15：页头按钮撤掉，入口统一到左下角（表格/表单页改为登记给侧栏）
+  ok('空态表格页接入', /usePageGuide/.test(table) && /GuideOverlay/.test(table) && /registerSelfGuide\(/.test(table) && !/PageGuideButton/.test(table))
   ok('使用指南页提供开关与重置', /GuideSettings/.test(guidePage))
 }
 

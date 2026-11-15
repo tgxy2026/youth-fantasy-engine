@@ -28,7 +28,6 @@ import { downloadBlob } from '@/lib/storage/zip'
 import { neighborRowIndex, nativeConsumesVerticalArrow } from '@/lib/table/gridNav'
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
-import { PageGuideButton } from '@/components/help/PageGuideButton'
 import { registerSelfGuide } from '@/lib/help/selfGuideRegistry'
 import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
 import FeedbackAIPanel from '@/components/ai/FeedbackAIPanel'
@@ -685,7 +684,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
               </Button>
             </div>
           )}
-          {!isMaster && pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
+          {/* 2026-11-15：入口统一到左下角「本页指引」（已登记给侧栏），页头不再重复 */}
           {!isMaster && (
           <Button onClick={addRow} variant="primary" size="md" data-guide="table-new" className="flex items-center shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}

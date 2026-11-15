@@ -24,7 +24,6 @@ import MarketRadarDialog from '@/components/dialogs/MarketRadarDialog'
 // 3.3.1 · P2：首次进入页签的分步引导（讲解模式，只读不改数据）
 import { usePageGuide } from '@/components/help/usePageGuide'
 import GuideOverlay from '@/components/help/GuideOverlay'
-import { PageGuideButton } from '@/components/help/PageGuideButton'
 import { registerSelfGuide } from '@/lib/help/selfGuideRegistry'
 import { SELF_MANAGED_GUIDE_TABS } from '@/lib/help/guides'
 import { registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
@@ -255,7 +254,7 @@ export default function FormSheet({ tab }: Props) {
             <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {pageGuide.guide && <PageGuideButton onStart={pageGuide.start} />}
+            {/* 2026-11-15：入口统一到左下角「本页指引」（已登记给侧栏），页头不再重复 */}
             <FieldAliasButton
               tabId={tab.id}
               tabName={tab.name}
