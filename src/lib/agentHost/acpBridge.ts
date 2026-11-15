@@ -22,7 +22,10 @@ export interface AcpStatus {
  * `inspiration-fuse` / `name-suggest` / `ai-assist`（灵感融合、AI 取名、AI 辅助规划） /
  * `table-split`（表格导入 AI 智能拆分，分批发送） /
  * `audit`（检查工具六件套：连续性 / 伏笔 / 健康诊断 / 术语去重 / 文风 / 读者反馈） /
- * `reader-probe`（读者视角审问） / `sensitive-review`（敏感词 AI 复核）
+ * `reader-probe`（读者视角审问） / `sensitive-review`（敏感词 AI 复核） /
+ * `bookbreak`（一键拆书：章节识别 / 逐章抽取 / 设定表汇总 / 关系整理，整本只确认一次） /
+ * `change-list`（本章变化清单） / `pace`（节奏与章末钩子） /
+ * `style-infer`（按章反推写作规范） / `plan-compare`（正文与细纲对照）
  * 酒馆：`tavern-reply`（主回复，流式） / `tavern-vars`（每轮数值） /
  * `tavern-summary`（摘要与记忆） / `tavern-aux`（起草、导入、访谈等辅助产出）
  * 由宿主严格解析校验，同样不直接写作品。
@@ -37,6 +40,8 @@ export type AcpTask =
   | 'creative-bible' | 'creative-outline' | 'autocontinue' | 'chapter-rewrite'
   | 'inspiration-fuse' | 'name-suggest' | 'ai-assist' | 'table-split'
   | 'audit' | 'reader-probe' | 'sensitive-review'
+  | 'bookbreak'
+  | 'change-list' | 'pace' | 'style-infer' | 'plan-compare'
   | 'tavern-reply' | 'tavern-vars' | 'tavern-summary' | 'tavern-aux'
 
 interface AcpBridge {

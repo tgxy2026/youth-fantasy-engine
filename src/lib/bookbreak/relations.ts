@@ -169,6 +169,11 @@ export interface RelationDraftOptions {
    * 缺省或只给部分字段时，其余用推荐值；越界值会被钳制。
    */
   limits?: Partial<RelationMaterialLimits>
+  /**
+   * 3.5.6 · ACP 分支：给了就只走 Agent（两张表各自发送一次）。
+   * 判据不变 —— 引文必须能在材料里逐字找到，编造的关系照样被丢掉。
+   */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 /** 逐表产出统计（界面文案用：哪张表整理出几条、有没有失败） */
@@ -271,6 +276,7 @@ export async function buildRelationDrafts(opts: RelationDraftOptions): Promise<R
         purposeSuffix: '本次依据是「一键拆书」刚抽出的实体清单与开篇样本，不是全文。'
           + '只登记这批材料里「明确写出」的关系，没有把握的宁可不写；'
           + '项目资料仅供你核对人名 / 势力名的写法，「不要」据此推断两者之间存在关系 —— 资料里的势力未必出现在这本书里。',
+        ...(opts.acpText ? { acpText: opts.acpText } : {}),
       })
       // 🔴 本地校验两道：① 关键列必须在候选名单里（模型会把势力/地点写进人物列）
       //    ② 必须给出**材料里逐字存在**的引文（模型会拿项目资料里本书没提到的势力编关系）

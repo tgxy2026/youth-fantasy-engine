@@ -12,7 +12,9 @@ import { aiBriefing } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { STORY_TEMPLATES, getStoryTemplate } from '@/lib/outline/storyStructures'
 import { useAIReady } from '@/lib/ai/useAIReady'
-import { showToast } from '@/components/dialogs/dialogs'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
@@ -84,6 +86,9 @@ function parseBriefing(report: string, chapter: string): Omit<CardItem, 'id' | '
 
 export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const ai = useAIReady()
+  // 3.5.6：ACP 就绪时「生成推演」走 Agent（复用 briefing 同一条管线），不再要求 API 模型。
+  const acpWriting = useAcpWriting()
+  const writingReady = ai.ready || !!acpWriting?.ready
   const [chapters, setChapters] = useState<TableRow[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // 🔴 mono（3.1.1）：卡片类型色失效 ⇒ 改由**边框线型 × 粗细**承载（配合头部已有的类型名文字）
@@ -202,11 +207,24 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const generate = async () => {
-    if (!ai.ready || generating) return
+    if (!writingReady || generating) return
     const chosen = chapters.filter(c => selected.has(c.id))
     if (chosen.length === 0) { showToast('请先在左侧选择至少一个章节', 'info'); return }
     showToast('AI 推演本生成需要 30–90 秒，请耐心等待（并非卡死）', 'info')
     setGenerating({ i: 0, total: chosen.length })
+    // ACP 发送器：本次只发所选章节的要素/压缩摘要与设定资料，逐章各一次（确认由闸门按 Agent 记账）
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
+    const acpText = acp
+      ? acpGatedText({
+          task: 'briefing',
+          generation: acp.generation,
+          title: '发送章节资料至 ACP Agent',
+          message: acpGateMessage(acp.name, '所选各章的章节要素（或压缩摘要）与设定资料', '生成推演卡片'),
+          agentName: acp.name,
+          ask: confirmDialog,
+          askOnce: true,
+        })
+      : undefined
     const projCtx = (await buildProjectContext({ budget: await writerBudgetFor('plot-canvas') })).text
     const newCards: CardItem[] = []
     // 续接在已有卡片右侧，避免与旧推演重叠；首列从可见区内起排，避免最左一列被裁切
@@ -240,7 +258,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         ].filter(Boolean).join('\n')
       }
       try {
-        const res = await aiBriefing(projCtx, ctx)
+        const res = await aiBriefing(projCtx, ctx, acpText ? { acpText } : undefined)
         const parsed = parseBriefing(res.report, ch.data['章节标题'] || ch.data['章节号'] || `第${i + 1}章`)
         // 自动布局：每章一列，卡片纵向堆叠
         const colX = baseX + i * 360
@@ -433,7 +451,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             </div>
             {/* 🆕 3.0.3：临时附加文件 —— 推演时可临时参考作者递进来的一份资料 */}
             <TempAttachmentPicker />
-            <Button variant="primary" disabled={!ai.ready || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            <Button variant="primary" disabled={!writingReady || generating != null} onClick={() => void generate()} className="w-full flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               {generating ? <><Loader2 size={12} className="animate-spin" /> 生成中 {generating.i}/{generating.total}</> : <><Sparkles size={12} /> 生成推演</>}
             </Button>
             <Button onClick={clearCanvas} variant="danger" size="md" className="w-full flex items-center justify-center"><Eraser size={11} /> 清空推演本</Button>
@@ -456,7 +474,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               <LayoutGrid size={11} /> 按模板铺节点
             </Button>
 
-            {!ai.ready && <div className="text-10 text-ink-500 text-center">未配置 AI 模型，生成按钮已禁用</div>}
+            {!writingReady && <div className="text-10 text-ink-500 text-center">未配置 AI 模型、也没有可用的 ACP 连接，生成按钮已禁用</div>}
           </div>
         </div>
 

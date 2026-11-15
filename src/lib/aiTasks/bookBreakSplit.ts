@@ -9,6 +9,7 @@
 //   ② 程序侧（bookbreak/aiSplit.applyAiSplit）把 AI 报的行在原文里逐字回定位，
 //      命中 <2 全部弃用 —— 这里（parse 层）只做宽松抽取，严格采信在 applyAiSplit。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
@@ -30,6 +31,11 @@ export interface BookBreakSplitRequest {
   samples: string[]
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /**
+   * 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置。
+   * 🔴 只换「谁来答」，**不换判据** —— 返回的行照样由 `applyAiSplit` 逐字回原文核对。
+   */
+  acpText?: (prompt: string, call?: { signal?: AbortSignal }) => Promise<string>
 }
 
 /** 解析模型回复（**纯函数**，单测直喂字符串）——宽松抽取，严格采信在 applyAiSplit */
@@ -45,8 +51,6 @@ export function parseChapterLines(raw: string): string[] {
 }
 
 export async function aiBookBreakSplitChapters(req: BookBreakSplitRequest): Promise<string[]> {
-  // #014 用途路由：拆书章节边界识别属「整理」
-  const cfg = await requireProviderFor('utility')
   const numbered = req.samples.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const user = `【章节标题示例（按这些行的格式规律识别）】
 ${numbered}
@@ -55,6 +59,16 @@ ${numbered}
 ${authorBlock(newAuthorFence(), req.sampleText)}
 
 请找出原文里的章节起始行。`
+  // 3.5.6 · ACP 分支：JSON 形状写成文字约束，解析仍是 `parseChapterLines` 的宽松抽取。
+  if (req.acpText) {
+    const text = await req.acpText(
+      `${P_bookbreak_split}\n\n${user}\n\n${acpJsonInstruction('章节起始行', '{"lines":["原文中的章节起始行 1","原文中的章节起始行 2"]}（一条都不确定就返回 {"lines":[]}）')}`,
+      { ...(req.signal ? { signal: req.signal } : {}) },
+    )
+    return parseChapterLines(text)
+  }
+  // #014 用途路由：拆书章节边界识别属「整理」
+  const cfg = await requireProviderFor('utility')
   const text = await chat(
     cfg,
     [{ role: 'system', content: composeSystemPrompt(P_bookbreak_split, cfg) }, { role: 'user', content: user }],

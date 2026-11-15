@@ -23,7 +23,7 @@ import DraftReviewPanel from '@/components/editor/DraftReviewPanel'
 import HelpPopover from '@/components/common/HelpPopover'
 import NewProjectAdvice from '@/components/app/NewProjectAdvice'
 import NumberField from '@/components/common/NumberField'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '@/lib/ai'
 import { adviseImport, type ImportAdvice } from '@/lib/bookbreak/recommend'
 import { estimateCalls, previewSplit, runBookBreak, initialBookBreakResume, bookBreakResumeIssue, bookBreakResumeOwnerCurrent, bookBreakExtractIdentity, type BookBreakResume, type BookBreakFailedUnit, type BookBreakUnitSummary } from '@/lib/bookbreak/run'
@@ -45,6 +45,8 @@ import type { DraftBundle, DraftRow, FlowProgress } from '@/lib/flow/types'
 import { adviseCapacity, type CapacityAdvice } from '@/lib/ai/modelCapacity'
 import { getTavernSettings } from '@/lib/tavern/settings'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { abortTask, dismissTask, markTaskSeen, startTask, useAiTask } from '@/lib/ai/aiTaskCenter'
 
@@ -96,10 +98,14 @@ export default function BookBreakPanel() {
 }
 
 function BookBreakWorkspace() {
-  // 🔴 未配置模型时**预先禁用**「开始抽取」（2026-09-20 六维审计 F1）。
-  //    判据与真实调用一致：拆书链路（aiExtractSettingEntities / aiSummarizeFormSettings）
-  //    都走 requireActiveProvider。选文件 / 预览分章是纯本地步骤，仍照常可用。
+  // 🔴 未配置模型且没有 ACP 连接时**预先禁用**「开始抽取」（2026-09-20 六维审计 F1，3.5.6 补 ACP）。
+  //    判据与真实调用一致：拆书链路（章节识别 / 逐章抽取 / 设定汇总 / 关系整理）
+  //    要么走 API 模型，要么走 ACP 通道。选文件 / 预览分章是纯本地步骤，仍照常可用。
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时整条拆书链路（章节识别 / 逐章抽取 / 设定汇总 / 关系整理）走 Agent，
+  // 不再要求 API 模型；未就绪仍走 API 路径。整本只确认一次。
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   // 订阅任务中心（切页签重挂载后，任务与结果原样还在 —— 本组件不持有运行态）
   const taskSnapshot = useAiTask<BookBreakTaskResult, FlowProgress>(OWNER_TAB, TASK_KIND)
   const taskCheckpoint = (taskSnapshot?.resume ?? null) as BookBreakResume | null
@@ -292,6 +298,9 @@ function BookBreakWorkspace() {
     const useResume = (fromScratch || retryOnly || !!ledger) ? null : resume
     const settings = { persistToChapters, summarizeForms: formsOn, organizeRelations: relationsOn,
       ...(samples.trim() ? { titleSamples: samples } : {}), relationMaterial: material }
+    // ACP 只按「当前代次 + 接收方」快照进闭包：跑的过程中切 Agent / 停用连接，
+    // 闸门会在发送前与落地后各校验一次代次，旧代次直接拒绝（与续跑判据无关）。
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     if (useResume) {
       const issue = bookBreakResumeIssue(rawText, settings, useResume)
       if (issue) { setStartError(issue); return }
@@ -312,6 +321,19 @@ function BookBreakWorkspace() {
           signal: ctx.signal,
           onProgress: p => ctx.progress(p),
           ...settings,
+          // 3.5.6：ACP 就绪时四处 AI 调用共用这一个发送器（整本只确认一次，取消沿用任务中心）
+          ...(acp ? {
+            acpText: acpGatedText({
+              task: 'bookbreak',
+              generation: acp.generation,
+              title: '发送原文与抽取结果至 ACP Agent',
+              message: acpGateMessage(acp.name, '本次导入的原文采样、逐章正文与抽取结果', '识别章节、抽取设定与整理关系'),
+              agentName: acp.name,
+              ask: confirmDialog,
+              askOnce: true,
+              signal: ctx.signal,
+            }),
+          } : {}),
           ...(retryOnly ? { retryFailed: true } : {}),
           ...(fromScratch ? { freshStart: true } : {}),
           ...(activeModel ? { modelTag: activeModel } : {}),
@@ -627,7 +649,7 @@ function BookBreakWorkspace() {
 
       {/* 运行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !aiReady || (!!ledgerCounts && ledgerRemaining === 0)} title={!aiReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
+        <Button size="sm" variant="primary" solid disabled={ownerChanged || running || !raw.trim() || !writingReady || (!!ledgerCounts && ledgerRemaining === 0)} title={!writingReady ? AI_DISABLED_HINT : undefined} onClick={() => start()}>
           {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
           {running ? '抽取中…' : ledgerHasProgress ? (ledgerRemaining > 0 ? `继续抽取（只补剩余 ${ledgerRemaining}）` : ledgerFailed > 0 ? '没有待补单元' : '已完成（可从头重跑）') : resume ? '继续抽取' : '开始抽取'}
         </Button>

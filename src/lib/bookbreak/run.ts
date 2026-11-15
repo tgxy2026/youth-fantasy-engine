@@ -156,6 +156,12 @@ export interface BookBreakOptions {
   resume?: BookBreakResume
   /** 中止时回头交一份续跑信息（界面存住即可显示「继续」） */
   onResume?: (r: BookBreakResume) => void
+  /**
+   * 3.5.6 · ACP 分支（可选）：给了就只走 Agent —— 章节识别、逐章抽取、设定表汇总、
+   * 关系整理四处全部走这一条通道，**不需要 API 模型配置**。
+   * 判据与本地校验一律不变：AI 报的行逐字回原文核对、实体字段/枚举校验、引文必须逐字命中。
+   */
+  acpText?: (prompt: string, call?: { signal?: AbortSignal }) => Promise<string>
 }
 
 export interface BookBreakResult {
@@ -383,6 +389,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
           sampleText: sampleTextForSplit(raw, splitBudget),
           samples,
           ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.acpText ? { acpText: opts.acpText } : {}),
           onToken: d => {
             splitGot += d.length
             if (splitGot - splitReported < 120 && splitGot < 4096) return
@@ -523,6 +530,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
       //    旧实现用 aiExtractSettingEntities()，它把失败也返回 []，于是"失败"被当成"这章没有设定"。
       const step = await aiExtractSettingEntitiesWithStatus(u.text, u.chapterTitle, {
         signal: ctx.signal,
+        ...(opts.acpText ? { acpText: opts.acpText } : {}),
         onToken: d => {
           got += d.length
           if (got - reported < 120 && got < 4096) return
@@ -613,6 +621,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
     let reported = 0
     const values = await aiSummarizeFormSettings(material, {
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.acpText ? { acpText: opts.acpText } : {}),
       // 收字回调同时就是**流式开关**（不传会撞 180s 总超时墙）
       onToken: d => {
         got += d.length
@@ -638,6 +647,7 @@ export async function runBookBreak(raw: string, opts: BookBreakOptions = {}): Pr
       rawText: raw,
       ...(opts.relationMaterial ? { limits: opts.relationMaterial } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.acpText ? { acpText: opts.acpText } : {}),
       onProgress: (ratio, detail) => ctx.report(ratio, detail),
     })
     const failed = r.perTab.filter(t => t.note)

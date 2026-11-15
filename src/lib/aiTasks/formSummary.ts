@@ -4,6 +4,7 @@
 // 🔴 只收「值确实是对象」的页签，**不在这里摊平**：模型按「页签 → 模块 → 字段」输出，
 //    这层拍平会把嵌套对象当空值全丢（2026-09-18 实测 5 张表全丢）。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseLooseObject } from '@/lib/ai/aiParse'
 import { formFieldsPrompt, summaryFormTabs } from '@/lib/flow/formMap'
 import { longStream } from '@/lib/aiTasks/stream'
@@ -47,21 +48,36 @@ const formSummarySys = () => `你是长篇小说的「设定资料整理员」�
  */
 export async function aiSummarizeFormSettings(
   material: string,
-  opts: { signal?: AbortSignal; onToken?: (d: string) => void; onRaw?: (raw: string) => void } = {},
+  opts: {
+    signal?: AbortSignal
+    onToken?: (d: string) => void
+    onRaw?: (raw: string) => void
+    /** 3.5.6 · ACP 分支：给了就只走 Agent，不要求 API 模型配置 */
+    acpText?: (prompt: string, call?: { signal?: AbortSignal }) => Promise<string>
+  } = {},
 ): Promise<Record<string, Record<string, unknown>>> {
-  // #014 用途路由：表单汇总属「整理」
-  const cfg = await requireProviderFor('utility')
+  // #014 用途路由：表单汇总属「整理」（ACP 分支不要 API 模型）
+  const cfg = opts.acpText ? null : await requireProviderFor('utility')
   const tabIds = summaryFormTabs()
   const fieldList = formFieldsPrompt(tabIds)
   const askOnce = async (tighten = false): Promise<Record<string, Record<string, unknown>>> => {
-    const text = await chat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(formSummarySys(), cfg) },
-        { role: 'user', content: `〖材料〗\n${material.trim() || '（无材料）'}\n\n〖要填的字段〗\n${fieldList}\n\n【必须遵守】只输出 JSON；顶层键用上面〖〗里的页签名（不是字段名）；只写材料里有依据的字段，没把握就不写；不要新造专名；单字段 ≤ 60 字；标了「本表可有多套并列主体」的那四张表若有多套，按主体名再分一层（见〖〗下方说明与铁律 7）。${tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精炼，并务必把 JSON 完整输出到最后一个括号。' : ''}` },
-      ],
-      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
-    )
+    const system = formSummarySys()
+    const user = `〖材料〗\n${material.trim() || '（无材料）'}\n\n〖要填的字段〗\n${fieldList}\n\n【必须遵守】只输出 JSON；顶层键用上面〖〗里的页签名（不是字段名）；只写材料里有依据的字段，没把握就不写；不要新造专名；单字段 ≤ 60 字；标了「本表可有多套并列主体」的那四张表若有多套，按主体名再分一层（见〖〗下方说明与铁律 7）。${tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精炼，并务必把 JSON 完整输出到最后一个括号。' : ''}`
+    // 3.5.6 · ACP 分支：页签名清单与结构约束逐字保留，只换「谁来答」；
+    //    下面的「只收对象型页签」过滤照旧 —— 空结果仍会触发第二次收紧重试。
+    const text = opts.acpText
+      ? await opts.acpText(
+          `${system}\n\n${user}\n\n${acpJsonInstruction('全书级设定档案', '{ "页签名": { "模块名": { "字段名": "内容" } } }（只写材料里有依据的字段）')}`,
+          { ...(opts.signal ? { signal: opts.signal } : {}) },
+        )
+      : await chat(
+          cfg as NonNullable<typeof cfg>,
+          [
+            { role: 'system', content: composeSystemPrompt(system, cfg as NonNullable<typeof cfg>) },
+            { role: 'user', content: user },
+          ],
+          { timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off' },
+        )
     opts.onRaw?.(text)
     const obj = parseLooseObject(text) ?? {}
     // 只收「值确实是对象」的页签。
