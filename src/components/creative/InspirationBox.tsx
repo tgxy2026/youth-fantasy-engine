@@ -19,8 +19,10 @@ import { buildProjectContext } from '@/lib/ai/aiContext'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { isCancelled } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -35,6 +37,9 @@ function ideaCardPos(existing: number): { x: number; y: number } {
 
 export default function InspirationBox() {
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪也能融合，不再要求先配 API 模型。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   const [items, setItems] = useState<InspirationItem[]>([])
   const [newText, setNewText] = useState('')
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -90,14 +95,28 @@ export default function InspirationBox() {
   }
 
   const fuse = async () => {
-    if (!aiReady) { showToast('还没接入模型，无法融合', 'info'); return }
+    if (!writingReady) { showToast(acpWriting ? 'ACP 未连接，无法融合' : '还没接入模型，无法融合', 'info'); return }
     if (checked.size < 2) { showToast('至少勾选 2 条灵感才能融合', 'info'); return }
     if (fusing) return
     setFusing(true); setError(''); setFused(null)
     try {
       const chosen = items.filter(i => checked.has(i.id))
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('inspiration-fuse') }).catch(() => ({ text: '' }))
-      const ideas = await aiFuseInspiration({ items: chosen.map(i => i.text), context: ctx.text })
+      const acpSend = acpWriting?.ready
+        ? acpGatedText({
+            task: 'inspiration-fuse',
+            generation: acpWriting.generation,
+            title: '发送灵感与设定至 ACP Agent',
+            message: acpGateMessage(acpWriting.name, '勾选的灵感与项目设定', '融合为情节卡'),
+            agentName: acpWriting.name,
+            ask: confirmDialog,
+            askOnce: true,
+          })
+        : null
+      const ideas = await aiFuseInspiration({
+        items: chosen.map(i => i.text), context: ctx.text,
+        ...(acpSend ? { acpText: prompt => acpSend(prompt) } : {}),
+      })
       if (ideas.length === 0) { setError('这次没融合出可用的创意，再试一次或换几条灵感组合。'); return }
       // 落画布：读最新快照 → 追加 idea 卡 → 写回（与画布的防抖写互不干扰：两页签不同时挂载）
       const persist = await db.getSetting<{ selected: string[]; cards: Array<Record<string, unknown>>; conns: unknown[] }>('plotCanvas', { selected: [], cards: [], conns: [] })
@@ -194,14 +213,14 @@ export default function InspirationBox() {
           {checked.size > 0 && (
             <Button variant="secondary" size="sm" onClick={() => setChecked(new Set())}>清空勾选</Button>
           )}
-          {aiReady ? (
+          {writingReady ? (
             <Button variant="primary" size="sm" className="ml-auto" disabled={fusing || checked.size < 2}
               onClick={() => void fuse()}
               title={checked.size < 2 ? '至少勾选 2 条灵感' : '把勾选的灵感融合成情节卡，放到推演画布'}>
               {fusing ? <><Loader2 size={12} className="animate-spin" /> 融合中…</> : <><Sparkles size={12} /> 融合为情节卡</>}
             </Button>
           ) : (
-            <Button variant="secondary" size="sm" className="ml-auto" disabled title={AI_DISABLED_HINT}>
+            <Button variant="secondary" size="sm" className="ml-auto" disabled title={acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT}>
               <Sparkles size={12} /> 融合为情节卡
             </Button>
           )}

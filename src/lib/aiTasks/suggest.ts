@@ -2,6 +2,7 @@
 // 2026-09-19 结构优化 D1：自 aiTasks.ts 拆出（原 #5 + #6 段）。
 // 为什么合成一个文件：两段各 40~50 行，单独成文件太碎；同为「小工具型」调用，内聚且零新耦合。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseObjectArray, asText } from '@/lib/ai/aiParse'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -46,6 +47,8 @@ export interface NameSuggestRequest {
   signal?: AbortSignal
   /** 流式回调：提供时取名过程逐块可见 */
   onToken?: (delta: string) => void
+  /** 3.5.6：ACP 通道（给就不再要求 API 模型；去重与数量截断照旧）。 */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 
 export interface NameSuggestion {
@@ -56,7 +59,7 @@ export interface NameSuggestion {
 
 export async function aiSuggestNames(req: NameSuggestRequest): Promise<NameSuggestion[]> {
   // #014 用途路由：取名属「整理」（短输出、常反复试）
-  const cfg = await requireProviderFor('utility')
+  const cfg = req.acpText ? null : await requireProviderFor('utility')
   const n = req.count ?? 10
   const sys = P_name_suggest
   const user = `【取名对象】${req.target}
@@ -67,12 +70,22 @@ export async function aiSuggestNames(req: NameSuggestRequest): Promise<NameSugge
 ${req.context.trim() || '（无）'}
 
 请给出 ${n} 个候选。`
-  const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
-    output: 'json-object', reasoning: 'off',
-    timeoutMs: CHAT_TIMEOUT_MS,
-    signal: req.signal,
-    onToken: req.onToken,
-  })
+  let text: string
+  if (req.acpText) {
+    const schema = '{"names":[{"name":"候选名","meaning":"一句寓意"}]}'
+    text = await req.acpText(
+      `${sys}\n\n${user}\n\n${acpJsonInstruction('随机取名候选', schema)}`,
+      { ...(req.signal ? { signal: req.signal } : {}) },
+    )
+  } else {
+    if (!cfg) throw new Error('AI 取名缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+    text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
+      output: 'json-object', reasoning: 'off',
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: req.signal,
+      onToken: req.onToken,
+    })
+  }
   const out: NameSuggestion[] = []
   const seen = new Set<string>()
   for (const it of parseObjectArray(text)) {

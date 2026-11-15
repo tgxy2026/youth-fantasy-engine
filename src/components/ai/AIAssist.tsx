@@ -18,6 +18,8 @@ import {
   requireActiveProvider, composeSystemPrompt, protocolOf,
 } from '@/lib/ai'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -57,6 +59,9 @@ const truncateTitle = (s: string, n = 16) => clipText(s, n)
 
 export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪时辅助规划也能用，不再要求 API 模型。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -151,9 +156,21 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
   }
 
   const send = async () => {
-    if (!aiReady || !prompt.trim() || loading) return
-    const cfg = await requireActiveProvider().catch(() => null)
-    if (!cfg) { setLocalError('尚未配置可用模型，请先到「工作面板 → 模型设置」里添加。'); return }
+    if (!writingReady || !prompt.trim() || loading) return
+    // 3.5.6：ACP 就绪时不需要 API 模型；未连接 ACP 才回退原来的 provider 解析。
+    const acpSend = acpWriting?.ready
+      ? acpGatedText({
+          task: 'ai-assist',
+          generation: acpWriting.generation,
+          title: '发送辅助规划对话至 ACP Agent',
+          message: acpGateMessage(acpWriting.name, '本次对话历史与可选的项目设定资料', '给出剧情、人物或世界观建议'),
+          agentName: acpWriting.name,
+          ask: confirmDialog,
+          askOnce: true,
+        })
+      : null
+    const cfg = acpSend ? null : await requireActiveProvider().catch(() => null)
+    if (!acpSend && !cfg) { setLocalError('尚未配置可用模型，请先到「工作面板 → 模型设置」里添加，或连接 ACP Agent。'); return }
     const text0 = prompt.trim()
     const userMsg: ChatMsg = { id: uid(), role: 'user', content: text0, ts: Date.now() }
     const base: ChatSession = activeSession ?? { id: uid(), title: truncateTitle(text0), messages: [], updatedAt: Date.now() }
@@ -172,7 +189,9 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
     // 会话清单**不在这里快照**（见下方落库处）：任务跑在 store 里，完成时要读**最新**清单再合并
     const bringCtx = bringContext
     t.run(async job => {
-      let sys = composeSystemPrompt(getAssistPrompt(), cfg)
+      let sys = getAssistPrompt()
+      if (cfg) sys = composeSystemPrompt(sys, cfg)
+      else if (!acpSend) throw new Error('辅助规划缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
       if (bringCtx) {
         try {
           const ctx = await buildProjectContext({ budget: await writerBudgetFor('ai-assist') })
@@ -183,11 +202,17 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
         { role: 'system', content: sys },
         ...session0.messages.map(m => ({ role: m.role, content: m.content })),
       ]
-      const reply = await chat(cfg, msgs, {
-        signal: job.signal,
-        // 边出边显只在组件活着时有意义（卸载后 setState 是 no-op，无害）
-        onToken: (d) => setStreamingText(prev => prev + d),
-      })
+      const reply = acpSend
+        ? await acpSend([
+            sys,
+            ...session0.messages.map(m => `${m.role === 'user' ? '作者' : '助手'}：${m.content}`),
+            '请接着回答作者最后一条消息。',
+          ].join('\n\n'))
+        : await chat(cfg as AIProvider, msgs, {
+            signal: job.signal,
+            // 边出边显只在组件活着时有意义（卸载后 setState 是 no-op，无害）
+            onToken: (d) => setStreamingText(prev => prev + d),
+          })
       const assistantMsg: ChatMsg = { id: uid(), role: 'assistant', content: reply, ts: Date.now() }
       const nextSession: ChatSession = { ...session0, messages: [...session0.messages, assistantMsg], updatedAt: Date.now() }
       // 🔴 落库放在**任务内**（不依赖组件存活）：切页签跑完的回复，回来重新加载会话就能看到。
@@ -339,7 +364,7 @@ style={{ height: foldVh('60vh') }}>
               <AutoTextarea
                 value={prompt}
                 onChange={setPrompt}
-                placeholder={aiReady ? '描述你的主题、要求或要自查的设定……' : '未接入模型，请先到「工作面板 → 模型设置」添加'}
+                placeholder={writingReady ? '描述你的主题、要求或要自查的设定……' : (acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : '未接入模型，请先到「工作面板 → 模型设置」添加')}
                 minHeight={40}
                 maxHeight={160}
                 className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 flex-1"
@@ -349,7 +374,7 @@ style={{ height: foldVh('60vh') }}>
                   <AlertCircle size={13} /> 停止
                 </Button>
               ) : (
-                <Button variant="primary" onClick={() => void send()} disabled={!aiReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!aiReady ? AI_DISABLED_HINT : '发送'}>
+                <Button variant="primary" onClick={() => void send()} disabled={!writingReady || !prompt.trim()} className="shrink-0 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={!writingReady ? (acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT) : '发送'}>
                   <Send size={13} /> 发送
                 </Button>
               )}

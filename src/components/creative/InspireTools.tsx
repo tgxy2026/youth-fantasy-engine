@@ -9,10 +9,12 @@ import {
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
-import { copyText } from '@/components/dialogs/dialogs'
+import { copyText, confirmDialog } from '@/components/dialogs/dialogs'
 import AIAssist from '@/components/ai/AIAssist'
 import InspirationBox from '@/components/creative/InspirationBox'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiSuggestNames } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -42,6 +44,9 @@ export default function InspireTools() {
 
   // ---- AI 取名（无模型时禁用，本地能力不受影响）----
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：ACP 就绪也能 AI 取名。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   const [aiNames, setAiNames] = useState<{ name: string; meaning: string }[]>([])
   const [aiNameLoading, setAiNameLoading] = useState(false)
   const [aiNameErr, setAiNameErr] = useState('')
@@ -74,11 +79,26 @@ export default function InspireTools() {
   }
 
   const aiName = async () => {
-    if (!aiReady || aiNameLoading) return
+    if (!writingReady || aiNameLoading) return
     setAiNameLoading(true); setAiNameErr(''); setAiNames([]); setStreamText('')
     try {
       const ctx = await buildProjectContext({ budget: await writerBudgetFor('name-suggest') }).catch(() => ({ text: '' }))
-      const out = await aiSuggestNames({ target: nameType, style, extra: '', context: ctx.text, count: 10, onToken: (d) => setStreamText(prev => prev + d) })
+      const acpSend = acpWriting?.ready
+        ? acpGatedText({
+            task: 'name-suggest',
+            generation: acpWriting.generation,
+            title: '发送取名要求与设定至 ACP Agent',
+            message: acpGateMessage(acpWriting.name, '取名对象、风格要求与世界观上下文', '生成候选名字'),
+            agentName: acpWriting.name,
+            ask: confirmDialog,
+            askOnce: true,
+          })
+        : null
+      const out = await aiSuggestNames({
+        target: nameType, style, extra: '', context: ctx.text, count: 10,
+        ...(acpSend ? { acpText: prompt => acpSend(prompt) } : {}),
+        onToken: (d) => setStreamText(prev => prev + d),
+      })
       setAiNames(out)
     } catch (e) { setAiNameErr(e instanceof Error ? e.message : String(e)) }
     finally { setAiNameLoading(false) }
@@ -141,7 +161,7 @@ export default function InspireTools() {
             <Button onClick={rollNames} variant="primary" size="md" className="ml-auto flex items-center">
               <RefreshCw size={12} /> 换一批
             </Button>
-            {aiReady ? (
+            {writingReady ? (
               <Button onClick={aiName}
                 disabled={aiNameLoading}
                 

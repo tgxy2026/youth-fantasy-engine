@@ -11,6 +11,7 @@
 // 空结果重试一次（与 creative.ts 同款理由：结构瑕疵 regenerate 一次多半就好）；
 // 两次都空则如实返回空数组，由调用方给出明确提示，绝不静默吞掉。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -40,6 +41,8 @@ export interface FuseIdeaRequest {
   context: string
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /** 3.5.6：ACP 通道（给就不再要求 API 模型；溯源编号校验照旧）。 */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 
 /** 一个融合出的情节创意（text 落画布卡片；basedOn 溯源到灵感编号，1 起） */
@@ -70,7 +73,7 @@ export function parseFusedIdeas(raw: string, itemCount: number): FusedIdea[] {
 export async function aiFuseInspiration(req: FuseIdeaRequest): Promise<FusedIdea[]> {
   // 🔴 走「创作」路由（与 creative / rewrite 同类）—— 之前漏网用了全局活动模型，
   //    结果「整理设了便宜模型」时这一处仍烧主模型额度。#014 已把它补进 tests/aiRouting 的清单。
-  const cfg = await requireProviderFor('create')
+  const cfg = req.acpText ? null : await requireProviderFor('create')
   const numbered = req.items.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const user = `【灵感清单（共 ${req.items.length} 条）】
 ${numbered}
@@ -80,11 +83,21 @@ ${req.context.trim() || '（无）'}
 
 请融合出 1~3 个情节创意。`
   const askOnce = async (): Promise<FusedIdea[]> => {
-    const text = await chat(
-      cfg,
-      [{ role: 'system', content: composeSystemPrompt(P_inspiration_fuse, cfg) }, { role: 'user', content: user }],
-      { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
-    )
+    let text: string
+    if (req.acpText) {
+      const schema = '{"ideas":[{"text":"情节创意正文","basedOn":[1,2]}]}'
+      text = await req.acpText(
+        `${P_inspiration_fuse}\n\n${user}\n\n${acpJsonInstruction('灵感融合为情节卡', schema)}`,
+        { ...(req.signal ? { signal: req.signal } : {}) },
+      )
+    } else {
+      if (!cfg) throw new Error('灵感融合缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+      text = await chat(
+        cfg,
+        [{ role: 'system', content: composeSystemPrompt(P_inspiration_fuse, cfg) }, { role: 'user', content: user }],
+        { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: req.signal, onToken: req.onToken },
+      )
+    }
     return parseFusedIdeas(text, req.items.length)
   }
   // 🔴 空结果重试一次；两次都空如实返回（调用方明确提示），绝不静默吞
