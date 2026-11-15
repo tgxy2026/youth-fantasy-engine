@@ -20,6 +20,7 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { downloadText } from '@/lib/storage/zip'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiReviewSensitive, aiContinuityAuditWithStatus, type SensitiveReview, type ContinuityFinding } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
@@ -120,6 +121,9 @@ export default function CheckTools() {
 
   // ---- AI 扩展：敏感词语境复核 / 一致性深度自查（均无模型时禁用，本地能力不受影响）----
   const { ready: aiReady } = useAIReady()
+  // 3.5.6：检查类任务在 ACP 就绪时也走 Agent（发送器由根组件注册）。
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   const [review, setReview] = useState<SensitiveReview[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewErr, setReviewErr] = useState('')
@@ -208,7 +212,7 @@ export default function CheckTools() {
 
   /** 敏感词 AI 检测：复用 aiReviewSensitive 复核命中词；无扫描结果时先自动跑一次系统扫描 */
   const aiDetect = async () => {
-    if (!aiReady || reviewLoading) return
+    if (!writingReady || reviewLoading) return
     let hits = scanResult.flatMap(r => r.hits.map(h => ({ word: h.word, snippet: h.context }))).slice(0, 40)
     if (hits.length === 0) {
       const res = await scanBook()
@@ -222,7 +226,7 @@ export default function CheckTools() {
   }
 
   const aiAudit = async () => {
-    if (!aiReady || auditLoading) return
+    if (!writingReady || auditLoading) return
     // 🔴 缺失即停（§10.3 #2）：跨章审计至少要两章有正文 —— 单章无从「跨章核对」，
     //    与其发一次注定没用的 AI 请求，不如先如实说明并停下。
     const chapters = await db.getAllChapters().catch(() => [])
@@ -323,7 +327,7 @@ export default function CheckTools() {
             <Button variant="danger" onClick={() => scanBook()} disabled={scanning} className="flex items-center gap-1.5 border-danger/25 transition-colors disabled:opacity-50">
               <ScanSearch size={13} /> {scanning ? '扫描中…' : '系统扫描全书'}
             </Button>
-            {aiReady ? (
+            {writingReady ? (
               <Button onClick={aiDetect}
                 disabled={reviewLoading}
                 title="AI 结合上下文判断每个命中词是误报还是真有风险" variant="secondary" size="md" className="flex items-center">
@@ -408,7 +412,7 @@ export default function CheckTools() {
             className="!px-3 !py-2 bg-ink-800 border border-ink-700 rounded-lg text-ink-100 focus:border-amber/40 outline-none placeholder:text-ink-600 w-full mb-3"
           />
           <div className="flex items-center gap-2">
-            {aiReady ? (
+            {writingReady ? (
               <Button variant="info" onClick={aiAudit} disabled={auditLoading} className="transition-colors disabled:opacity-50">
                 <Sparkles size={13} /> {auditLoading ? '自查中…' : 'AI 深度自查'}
               </Button>

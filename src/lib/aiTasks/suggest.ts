@@ -3,6 +3,7 @@
 // 为什么合成一个文件：两段各 40~50 行，单独成文件太碎；同为「小工具型」调用，内聚且零新耦合。
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
 import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
+import { acpTextFor } from '@/lib/agentHost/acpRegistry'
 import { parseObjectArray, asText } from '@/lib/ai/aiParse'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -115,20 +116,39 @@ export interface SensitiveReview {
   suggestion: string
 }
 
-export async function aiReviewSensitive(hits: SensitiveHitInput[], opts?: { signal?: AbortSignal; onToken?: (delta: string) => void }): Promise<SensitiveReview[]> {
+export async function aiReviewSensitive(
+  hits: SensitiveHitInput[],
+  opts?: {
+    signal?: AbortSignal
+    onToken?: (delta: string) => void
+    /** 3.5.6：ACP 通道（给就不再要求 API 模型；逐条判断与解析不变）。 */
+    acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+  },
+): Promise<SensitiveReview[]> {
   // #014 用途路由：敏感词复核属「整理」（逐条判断、调用频繁）
-  const cfg = await requireProviderFor('utility')
+  const acpText = opts?.acpText ?? acpTextFor('sensitive-review', opts?.signal)
+  const cfg = acpText ? null : await requireProviderFor('utility')
   const sys = P_sensitive_recheck
   const list = hits
     .slice(0, 40)
     .map((h, i) => `${i + 1}. 命中词「${h.word}」\n   上下文：${h.snippet.replace(/\s+/g, ' ').slice(0, 120)}`)
     .join('\n')
-  const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: `【命中清单】\n${list}\n\n请逐条给出判断。` }], {
-    output: 'json-object', reasoning: 'off',
-    timeoutMs: CHAT_TIMEOUT_MS,
-    signal: opts?.signal,
-    onToken: opts?.onToken,
-  })
+  const user = `【命中清单】\n${list}\n\n请逐条给出判断。`
+  let text: string
+  if (acpText) {
+    text = await acpText(
+      `${sys}\n\n${user}\n\n${acpJsonInstruction('敏感词复核', '[{"word":"命中词","risk":"低","reason":"","suggestion":""}]')}`,
+      { ...(opts?.signal ? { signal: opts.signal } : {}) },
+    )
+  } else {
+    if (!cfg) throw new Error('敏感词复核缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+    text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
+      output: 'json-object', reasoning: 'off',
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: opts?.signal,
+      onToken: opts?.onToken,
+    })
+  }
   const out: SensitiveReview[] = []
   for (const it of parseObjectArray(text)) {
     const word = asText(it.word ?? it['词'] ?? it['命中词'])

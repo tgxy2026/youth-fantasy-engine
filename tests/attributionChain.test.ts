@@ -121,9 +121,11 @@ async function main() {
       (ac.match(/request/g) ?? []).length >= 12,
       String((ac.match(/request/g) ?? []).length))
     const au = readFileSync('src/lib/aiTasks/audit.ts', 'utf8')
-    ok('④ 审查：六处 chat 全部带 request',
-      (au.match(/\.\.\.\(opts\?\.request \? \{ request: opts\.request \} : \{\}\)/g) ?? []).length === 6,
-      String((au.match(/opts\?\.request/g) ?? []).length))
+    // 3.5.6：六件套的 chat 合并到统一出口 askAuditJson（ACP/API 共用），归属仍逐次透传。
+    ok('④ 审查：六件套经统一出口且带 request',
+      /\.\.\.\(o\.opts\?\.request \? \{ request: o\.opts\.request \} : \{\}\)/.test(au)
+        && (au.match(/askAuditJson\(\{ cfg, sys, user, schema:/g) ?? []).length === 6,
+      String((au.match(/askAuditJson\(/g) ?? []).length))
     const ex = readFileSync('src/lib/aiTasks/extract.ts', 'utf8')
     ok('④ 抽取：chat 带 request',
       /\.\.\.\(opts\?\.request \? \{ request: opts\.request \} : \{\}\)/.test(ex))

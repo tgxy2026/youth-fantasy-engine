@@ -18,6 +18,7 @@ import type { Chapter } from '@/lib/types'
 import { Button } from '@/components/common/Button'
 import { showToast, copyText } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { buildProjectContext } from '@/lib/ai/aiContext'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
@@ -47,6 +48,8 @@ interface ReaderProbeTaskProgress { chapterId: string; lensKey: string }
 export default function ReaderProbePanel() {
   // ⚠️ 它返回 { ready, label } 对象，不是布尔 —— 写成布尔会让按钮永不禁用、提示永不显示。
   const { ready: aiReady } = useAIReady()
+  const acpWriting = useAcpWriting()
+  const writingReady = acpWriting?.ready || aiReady
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [activeId, setActiveId] = useState('')
   const [lensKey, setLensKey] = useState(READER_LENSES[0].key)
@@ -90,10 +93,10 @@ export default function ReaderProbePanel() {
   const lens = readerLensOf(lensKey)
   const isMentor = lensKey === 'mentor'
   const questions = questionsOf(lens)
-  const canRun = aiReady && !!content.trim() && !running
+  const canRun = writingReady && !!content.trim() && !running
 
   const run = () => {
-    if (!aiReady) { showToast('还没接入模型，无法审问', 'info'); return }
+    if (!writingReady) { showToast(acpWriting ? 'ACP 未连接，无法审问' : '还没接入模型，无法审问', 'info'); return }
     if (running) return
     if (!content.trim()) { showToast('这一章还没有正文', 'info'); return }
     // 🔴 输入在发起时**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载
@@ -182,7 +185,7 @@ export default function ReaderProbePanel() {
         <span className="text-ink-400">
           本章 <b className="text-ink-200 tabular-nums">{words}</b> 字
         </span>
-        {!aiReady && <span className="text-10 text-ink-500">{AI_DISABLED_HINT}</span>}
+        {!writingReady && <span className="text-10 text-ink-500">{acpWriting ? 'ACP 未连接' : AI_DISABLED_HINT}</span>}
       </div>
 
       <div className="px-4 py-3">

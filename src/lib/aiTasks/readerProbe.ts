@@ -13,6 +13,8 @@
 //      立场断言守着（它直接读本文件源码，所以**连注释里都不能出现那些词**）。
 
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
+import { acpTextFor } from '@/lib/agentHost/acpRegistry'
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import {
@@ -53,9 +55,15 @@ export async function aiReaderProbe(
   projectContext: string,
   chapterText: string,
   lensKey: string,
-  opts?: { signal?: AbortSignal; onToken?: (delta: string) => void },
+  opts?: {
+    signal?: AbortSignal
+    onToken?: (delta: string) => void
+    /** 3.5.6：ACP 通道（给就不再要求 API 模型；段号定位与解析不变）。 */
+    acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+  },
 ): Promise<ReaderProbeResult> {
-  const cfg = await requireProviderFor('review')
+  const acpText = opts?.acpText ?? acpTextFor('reader-probe', opts?.signal)
+  const cfg = acpText ? null : await requireProviderFor('review')
   const lens = readerLensOf(lensKey)
   const questions = questionsOf(lens) // 问题集单一源：读者三问（缺省）或导师四问
   const text = chapterText.trim()
@@ -77,11 +85,21 @@ ${text ? authorBlock(fence, text) : '（空）'}
 
 请以这个身份读完，按 JSON 结构回答。`
 
-  const raw = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(P_reader_probe, cfg) }, { role: 'user', content: user }],
-    { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
-  )
+  let raw: string
+  if (acpText) {
+    const schema = '{"answers":[{"q":"问题 key","text":"回答","where":"原文片段"}],"summary":"总评"}'
+    raw = await acpText(
+      `${P_reader_probe}\n\n${user}\n\n${acpJsonInstruction('读者视角回答', schema)}`,
+      { ...(opts?.signal ? { signal: opts.signal } : {}) },
+    )
+  } else {
+    if (!cfg) throw new Error('读者视角审问缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+    raw = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(P_reader_probe, cfg) }, { role: 'user', content: user }],
+      { timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off' },
+    )
+  }
   return parseReaderProbe(raw, text, questions)
 }
 

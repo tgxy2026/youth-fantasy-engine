@@ -62,6 +62,9 @@ import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { setTavernAcpAsk } from '@/lib/tavern/acpChat'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
+import { setAcpTextFactory } from '@/lib/agentHost/acpRegistry'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
@@ -187,6 +190,31 @@ export default function App() {
     setTavernAcpAsk(confirmDialog)
     return () => setTavernAcpAsk(null)
   }, [])
+  /**
+   * 3.5.6 · 检查类任务的 ACP 发送器（连续性 / 伏笔 / 健康诊断 / 术语去重 / 文风体检 / 读者审问…）。
+   * 与酒馆同一模式：lib 里的任务函数拿不到确认弹窗，在根组件挂一次，按任务标识取。
+   */
+  const acpWriting = useAcpWriting()
+  const acpReady = acpWriting?.ready === true
+  const acpGeneration = acpWriting?.generation ?? ''
+  const acpName = acpWriting?.name ?? ''
+  useEffect(() => {
+    if (!acpReady) {
+      setAcpTextFactory(null)
+      return
+    }
+    setAcpTextFactory((task, signal) => acpGatedText({
+      task,
+      generation: acpGeneration,
+      title: '发送检查资料至 ACP Agent',
+      message: acpGateMessage(acpName, '本次检查需要的正文与设定资料', '执行检查并给出结果'),
+      agentName: acpName,
+      ask: confirmDialog,
+      askOnce: true,
+      ...(signal ? { signal } : {}),
+    }))
+    return () => setAcpTextFactory(null)
+  }, [acpReady, acpGeneration, acpName])
   // 跳转真正完成后让出目标页面；保存屏障拒绝时保留当前帮助现场。
   useEffect(() => {
     if (assistantHelpOpen && (assistantOpenTab.current !== activeTab || assistantOpenProject.current !== projectId)) {

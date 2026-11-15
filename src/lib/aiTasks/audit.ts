@@ -9,6 +9,8 @@ import { parseObjectArray, parseObjectArrayDetailed, asText, humanText } from '@
 import { newAuthorFence, authorBlock } from '@/lib/ai/promptGuard'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import type { StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
+import { acpTextFor } from '@/lib/agentHost/acpRegistry'
 
 /** 「文风体检」的可编辑正文（出厂默认；作者可在「模型设置 → AI 提示词」里改） */
 let P_style_audit = `你是资深中文网文文风编辑。作者提供了《写作规范》（个人坏习惯词清单 / 标点规范 / 视角规则）和本章正文，请对照规范体检本章文风质量，指出影响阅读体验的文风毛病。
@@ -110,6 +112,47 @@ type ReviewAiOpts = {
   signal?: AbortSignal
   onToken?: (delta: string) => void
   request?: CallRequestContext
+  /** 3.5.6：ACP 通道（给就不再要求 API 模型；三态解析与本地看板不受影响）。 */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+}
+
+type AuditCfg = Parameters<typeof chat>[0] | null
+
+/**
+ * 检查类任务的统一出口：ACP 走 Agent，否则走 API；解析仍在各自函数里。
+ * 抽出来是因为六件套的请求参数完全同形，各写一份必然漂移。
+ */
+async function askAuditJson(o: {
+  cfg: AuditCfg
+  sys: string
+  user: string
+  /** 只作为文字约束下发给 Agent；API 路径仍用服务端 JSON 模式 */
+  schema: string
+  opts?: ReviewAiOpts
+}): Promise<string> {
+  if (o.opts?.acpText) {
+    return o.opts.acpText(
+      `${o.sys}\n\n${o.user}\n\n${acpJsonInstruction('检查结果', o.schema)}`,
+      { ...(o.opts.signal ? { signal: o.opts.signal } : {}) },
+    )
+  }
+  // 根组件注册的全局发送器（检查类任务不在组件里逐个传 acpText）
+  const globalAcp = acpTextFor('audit', o.opts?.signal)
+  if (globalAcp) {
+    return globalAcp(
+      `${o.sys}\n\n${o.user}\n\n${acpJsonInstruction('检查结果', o.schema)}`,
+      { ...(o.opts?.signal ? { signal: o.opts.signal } : {}) },
+    )
+  }
+  if (!o.cfg) throw new Error('检查任务缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+  return chat(o.cfg, [
+    { role: 'system', content: composeSystemPrompt(o.sys, o.cfg) },
+    { role: 'user', content: o.user },
+  ], {
+    output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS,
+    signal: o.opts?.signal, onToken: o.opts?.onToken,
+    ...(o.opts?.request ? { request: o.opts.request } : {}),
+  })
 }
 
 /**
@@ -128,7 +171,7 @@ export async function aiContinuityAuditWithStatus(
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ContinuityFinding[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
   try {
-    const cfg = await requireProviderFor('review')
+    const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
     // 🔴 作者资料与正文都是**不可信文本**：包裹成边界块（内容一字不改，见 promptGuard 文件头）
     const fence = newAuthorFence()
     const sys = P_continuity_audit
@@ -139,13 +182,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（作者未指定正文，请仅在设定资料内部查找互相矛盾之处）'}
 
 请返回问题清单。`
-    const text = await chat(cfg, [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: user }], {
-      output: 'json-object', reasoning: 'off',
-      timeoutMs: CHAT_TIMEOUT_MS,
-      signal: opts?.signal,
-      onToken: opts?.onToken,
-      ...(opts?.request ? { request: opts.request } : {}),
-    })
+    const text = await askAuditJson({ cfg, sys, user, schema: "[{\"level\":\"提示\",\"title\":\"\",\"detail\":\"\",\"where\":\"\"}]", opts })
     // WQ1：三态解析 —— invalid 是失败，合法空数组是"审了没问题"
     const parsed = parseObjectArrayDetailed(text)
     if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
@@ -204,7 +241,7 @@ export async function aiAnalyzeFeedback(
   entries: FeedbackEntry[],
   opts?: ReviewAiOpts,
 ): Promise<FeedbackAnalysis> {
-  const cfg = await requireProviderFor('review')
+  const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
   const list = entries.length
     ? entries
         .map((e, i) => {
@@ -228,17 +265,7 @@ ${entries.length ? authorBlock(fence, list) : list}
 
 请给出诊断。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
-      ...(opts?.request ? { request: opts.request } : {}),
-    },
-  )
+  const text = await askAuditJson({ cfg, sys, user, schema: "{\"summary\":\"\",\"churnAttribution\":\"\",\"suggestions\":\"\"}", opts })
 
   const objs = parseObjectArray(text)
   const obj = objs[0] ?? {}
@@ -270,7 +297,7 @@ export async function aiDiagnoseProject(
   stats: { chapters: number; words: number; volumes: number; unf: number; unusedIdeas: number },
   opts?: ReviewAiOpts,
 ): Promise<ProjectDiagnosis> {
-  const cfg = await requireProviderFor('review')
+  const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
   const fence = newAuthorFence()
   const sys = P_project_diagnosis
 
@@ -283,17 +310,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 
 请给出诊断。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
-      ...(opts?.request ? { request: opts.request } : {}),
-    },
-  )
+  const text = await askAuditJson({ cfg, sys, user, schema: "[{\"score\":0,\"summary\":\"\",\"risks\":[{\"level\":\"\",\"title\":\"\",\"detail\":\"\",\"where\":\"\"}],\"nextSteps\":[\"\"]}]", opts })
 
   const objs = parseObjectArray(text)
   const obj = objs[0] ?? {}
@@ -338,7 +355,7 @@ export async function aiForeshadowReviewWithStatus(
   const one = (state: StepResultState, errorCode?: string): StepExecutionResult<ForeshadowReviewFinding[]> =>
     ({ state, coverage: { requested: 1, completed: state === 'completed' ? 1 : 0, failed: state === 'failed' ? 1 : 0, skipped: 0 }, ...(errorCode ? { errorCode, retryable: state === 'failed' } : {}) })
   try {
-    const cfg = await requireProviderFor('review')
+    const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
     const fence = newAuthorFence()
     const sys = P_foreshadow_review
 
@@ -347,17 +364,7 @@ ${projectContext.trim() ? authorBlock(fence, projectContext.trim()) : '（无）
 
 请审查伏笔闭环健康度。`
 
-    const text = await chat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(sys, cfg) },
-        { role: 'user', content: user },
-      ],
-      {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
-      ...(opts?.request ? { request: opts.request } : {}),
-    },
-    )
+    const text = await askAuditJson({ cfg, sys, user, schema: "[{\"level\":\"提示\",\"title\":\"\",\"detail\":\"\",\"where\":\"\"}]", opts })
 
     const parsed = parseObjectArrayDetailed(text)
     if (parsed.outcome === 'invalid') return one('failed', 'parse-invalid')
@@ -402,7 +409,7 @@ export async function aiDedupTerms(
   terms: { term: string; category: string; definition: string }[],
   opts?: ReviewAiOpts,
 ): Promise<{ groups: TermDupGroup[] }> {
-  const cfg = await requireProviderFor('review')
+  const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
   const fence = newAuthorFence()
   const list = terms
     .map((t, i) => `${i + 1}. ${t.term}${t.category ? `（${t.category}）` : ''}：${t.definition || '—'}`)
@@ -414,17 +421,7 @@ ${list.trim() ? authorBlock(fence, list) : '（空）'}
 
 请找出应合并的重复 / 同义术语。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
-      ...(opts?.request ? { request: opts.request } : {}),
-    },
-  )
+  const text = await askAuditJson({ cfg, sys, user, schema: "[{\"groups\":[{\"terms\":[\"\"],\"reason\":\"\",\"suggestion\":\"\"}]}]", opts })
 
   const objs = parseObjectArray(text)
   const obj = objs[0] ?? {}
@@ -462,7 +459,7 @@ export async function aiStyleCheck(
   styleContext: string,
   opts?: ReviewAiOpts,
 ): Promise<StyleCheckFinding[]> {
-  const cfg = await requireProviderFor('review')
+  const cfg = (opts?.acpText ?? acpTextFor('audit', opts?.signal)) ? null : await requireProviderFor('review')
   const fence = newAuthorFence()
   // ⚠️【写作规范】是模型要**遵守**的规则（不是待处理素材），刻意不包裹；只有正文需要边界保护
   const sys = P_style_audit
@@ -475,17 +472,7 @@ ${chapterText.trim() ? authorBlock(fence, chapterText.trim()) : '（空）'}
 
 请体检本章文风。`
 
-  const text = await chat(
-    cfg,
-    [
-      { role: 'system', content: composeSystemPrompt(sys, cfg) },
-      { role: 'user', content: user },
-    ],
-    {
-      timeoutMs: CHAT_TIMEOUT_MS, signal: opts?.signal, onToken: opts?.onToken, output: 'json-object', reasoning: 'off',
-      ...(opts?.request ? { request: opts.request } : {}),
-    },
-  )
+  const text = await askAuditJson({ cfg, sys, user, schema: "[{\"type\":\"\",\"quote\":\"\",\"issue\":\"\",\"suggestion\":\"\",\"level\":\"提示\"}]", opts })
 
   const out: StyleCheckFinding[] = []
   for (const it of parseObjectArray(text)) {
