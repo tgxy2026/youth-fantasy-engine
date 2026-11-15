@@ -23,6 +23,8 @@ import {
 } from '@/lib/outline/autoContinue'
 import {
   runCreativeWriting,
+  type CreativeAcpTask,
+  type CreativeAcpText,
   type CreativeResume,
   type CreativeTarget,
   type CreativeWritingResult,
@@ -82,8 +84,14 @@ import {
   type CreativeSession,
 } from './sessionTypes'
 
-let snap: CreativeSession = {
-  hydrated: false,
+/** 3.5.6：ACP 发送器工厂（界面在 ACP 就绪时注入；不落盘、不跨会话持久化）。 */
+export type CreativeAcpTextFor = (task: CreativeAcpTask, signal?: AbortSignal) => CreativeAcpText | null
+let creativeAcpTextFor: CreativeAcpTextFor | null = null
+export function setCreativeAcpTextFor(fn: CreativeAcpTextFor | null): void {
+  creativeAcpTextFor = fn
+}
+
+let snap: CreativeSession = {  hydrated: false,
   inputs: { ...DEFAULT_INPUTS },
   running: false,
   progress: null,
@@ -574,6 +582,8 @@ export async function startCreativeRun(opts: { fromScratch?: boolean; forceCheck
           }
           : {}),
         ...(useResume ? { resume: useResume } : {}),
+        // 3.5.6：ACP 就绪时整条流水线（设定奠基 / 大纲 / 连写）走 Agent，不要求 API 模型。
+        ...(creativeAcpTextFor ? { acpTextFor: creativeAcpTextFor } : {}),
         onResume: r => {
           gotResume = r
           set({ resume: r, resumeNeedsReview: false, resumeBlockedReason: '', resumeState: 'resumable' })
@@ -882,8 +892,10 @@ export async function startChapterRewrite(p: {
     const cur = snap.rewrite
     if (cur) set({ rewrite: { ...cur, text: buf } })
   }
+  const acpRewrite = creativeAcpTextFor?.('chapter-rewrite', ctl.signal) ?? null
   try {
     const text = await aiRewriteChapter({
+      ...(acpRewrite ? { acpText: acpRewrite } : {}),
       title: hit.chapter.title,
       body: hit.chapter.content,
       action: p.action,

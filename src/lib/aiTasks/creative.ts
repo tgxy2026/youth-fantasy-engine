@@ -8,6 +8,7 @@ import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
 import { longStream } from '@/lib/aiTasks/stream'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import type { SettingEntityType, ExtractedEntity } from '@/lib/aiTasks/extract'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 
@@ -110,24 +111,37 @@ export async function aiGenerateBible(
     onRaw?: (raw: string) => void
     /** 请求归属（3.2.0 · WQ7）：带上 taskId 才能把用量记到具体任务账上 */
     request?: CallRequestContext
+    /** 3.5.6：ACP 通道。给了就跳过 API provider 解析；解析仍走宽松 JSON，不放宽实体校验。 */
+    acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
   } = {},
 ): Promise<ExtractedEntity[]> {
-  const cfg = await requireProviderFor('create')
   const counts = { ...DEFAULT_BIBLE_COUNTS, ...(opts.counts ?? {}) }
+  const userText = `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。`
 
   const askOnce = async (): Promise<ExtractedEntity[]> => {
-    const text = await chat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
-        // 同样把数量与体量约束重申在**消息末尾**（system 里的铁律容易被忽略）
-        { role: 'user', content: `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。` },
-      ],
-      {
-        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
-        ...(opts.request ? { request: opts.request } : {}),
-      },
-    )
+    let text: string
+    if (opts.acpText) {
+      // ACP 没有服务端 JSON 模式：把结构写成文字要求，解析仍用宽松对象解析。
+      const schema = '{"characters":[{"name":"","role":"","desc":""}],"factions":[{"name":"","desc":""}],"locations":[{"name":"","desc":""}],"terms":[{"name":"","desc":""}],"items":[{"name":"","desc":""}]}'
+      text = await opts.acpText(
+        `${bibleSys(counts)}\n\n${userText}\n\n${acpJsonInstruction('设定草稿', schema)}`,
+        { ...(opts.signal ? { signal: opts.signal } : {}) },
+      )
+    } else {
+      const cfg = await requireProviderFor('create')
+      text = await chat(
+        cfg,
+        [
+          { role: 'system', content: composeSystemPrompt(bibleSys(counts), cfg) },
+          // 同样把数量与体量约束重申在**消息末尾**（system 里的铁律容易被忽略）
+          { role: 'user', content: userText },
+        ],
+        {
+          timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
+          ...(opts.request ? { request: opts.request } : {}),
+        },
+      )
+    }
     opts.onRaw?.(text)
     // 🔴 宽松解析：小模型常在 JSON **结构位**塞杂散字符（实测 qwen3:4b 会插「、」甚至孤立引号），
     //    严格解析会把整批结果全丢掉，且表现为"生成成功但 0 条"—— 极难排查。
@@ -367,9 +381,10 @@ export async function aiPlanOutline(
     onRaw?: (raw: string) => void
     /** 请求归属（3.2.0 · WQ7）：大纲是一次性大调用，必须能记到具体任务账上 */
     request?: CallRequestContext
+    /** 3.5.6：ACP 通道。给了就跳过 API provider 解析；JSON 解析与章数/卷数裁剪不变。 */
+    acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
   },
 ): Promise<OutlineResult> {
-  const cfg = await requireProviderFor('create')
   const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
   const perVolume = Math.max(1, Math.min(MAX_CHAPTERS_PER_VOLUME, Math.round(opts.chaptersPerVolume) || 1))
   // 🔴 缺口补齐（2026-09-20）：本批只补这一卷缺的那几章 —— 章数由缺口定，卷数参数不参与。
@@ -404,37 +419,43 @@ export async function aiPlanOutline(
     const sys = sealing
       ? planSealingSys({ sealing, cap })
       : planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap, structureHint: opts.structureHint })
-    const text = await chat(
-      cfg,
-      [
-        { role: 'system', content: composeSystemPrompt(sys, cfg) },
-        // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
-        //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
+    const userText = `【资料】\n${material.trim() ? authorBlock(newAuthorFence(), material.trim()) : '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
+      // 🔴 末尾是**权重最高**的位置，这里必须与 system 里的分支保持一致：
+      //    2026-09-20 实机抓到过一次自相矛盾 —— system 说"卷大纲一并补全、volumes 只放这一卷"，
+      //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。
+      (sealing
+        ? `\n\n【必须遵守】只输出 JSON；\`volumes\` ${sealing.needVolumeOutline
+            ? `只放「这一卷」（\`title\` 原样写「${sealing.volumeTitle}」，并把「（待写）」那些字段补全）`
+            : '为「空数组」（这一卷已存在，不要再给卷）'}；只写第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
+        : `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`) +
+      (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : '') +
+      (missing > 0 && missing < total
+        ? `\n【注意】上一次只写了 ${missing} 章就收尾了，「还差 ${total - missing} 章」。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
+        : '')
+    let text: string
+    if (opts.acpText) {
+      // ACP 没有服务端 JSON 模式：结构写成文字要求；卷/章数量仍由下方裁剪兜底。
+      const schema = '{"volumes":[{"title":"","positioning":"","stage":"","scope":"","opening":"","climax1":"","turn":"","climax2":"","ending":"","events":"","subplots":""}],"chapters":[{"title":"","event":"","fn":"","cast":"","hook":"","scenes":[""]}]}'
+      text = await opts.acpText(
+        `${sys}\n\n${userText}\n\n${acpJsonInstruction('分卷大纲与逐章细纲', schema)}`,
+        { ...(opts.signal ? { signal: opts.signal } : {}) },
+      )
+    } else {
+      const cfg = await requireProviderFor('create')
+      text = await chat(
+        cfg,
+        [
+          { role: 'system', content: composeSystemPrompt(sys, cfg) },
+          // 🔴 硬约束放**消息末尾**：模型对最后一条指令最敏感。实测仅写在 system 里时
+          //    Qwen3-30B 会无视"只写 1 卷 1 章"，连吐 13000+ 字；末尾重申才压得住。
+          { role: 'user', content: userText },
+        ],
         {
-          role: 'user',
-          // 🔴 资料里含**作者原文**（已有细纲、已有卷大纲），必须走 authorBlock：
-          //    否则作者正文里一句"忽略以上指令"就会被当指令执行（2026-09-20 六维审计 P1-3）。
-          //    `material` 是"可能含作者原文"的整块，所以整块包 —— 与 organize / rewrite 的口径一致。
-          content: `【资料】\n${material.trim() ? authorBlock(newAuthorFence(), material.trim()) : '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
-            // 🔴 末尾是**权重最高**的位置，这里必须与 system 里的分支保持一致：
-            //    2026-09-20 实机抓到过一次自相矛盾 —— system 说"卷大纲一并补全、volumes 只放这一卷"，
-            //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。
-            (sealing
-              ? `\n\n【必须遵守】只输出 JSON；\`volumes\` ${sealing.needVolumeOutline
-                  ? `只放「这一卷」（\`title\` 原样写「${sealing.volumeTitle}」，并把「（待写）」那些字段补全）`
-                  : '为「空数组」（这一卷已存在，不要再给卷）'}；只写第 ${sealing.gapFrom} ~ ${sealing.gapTo} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`
-              : `\n\n【必须遵守】只输出 ${volCount} 卷、每卷 ${perVolume} 章（共 ${total} 章），「一章不少、一章不多」；单字段 ≤ 40 字；整份 JSON ≤ ${cap} 字。`) +
-            (tighten ? '\n【注意】上一次输出被截断了（JSON 没有闭合）。这一次请写得更精练，并务必把 JSON 完整输出到最后一个括号。' : '') +
-            (missing > 0 && missing < total
-              ? `\n【注意】上一次只写了 ${missing} 章就收尾了，「还差 ${total - missing} 章」。这一次务必把 ${total} 章全部写出来（每章可以更精练，但不能少写）。`
-              : ''),
+          timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
+          ...(opts.request ? { request: opts.request } : {}),
         },
-      ],
-      {
-        timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken), output: 'json-object', reasoning: 'off',
-        ...(opts.request ? { request: opts.request } : {}),
-      },
-    )
+      )
+    }
     opts.onRaw?.(text)
     // 同 aiGenerateBible：宽松解析 + 顶层键中英双认（只认英文键会表现为"生成成功但 0 章"）
     const rawObj = parseLooseObject(text) ?? {}

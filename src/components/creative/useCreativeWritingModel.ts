@@ -9,7 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { loadActiveId, loadProviders, AIProvider } from '@/lib/ai'
-import { clearSeed, consumeNotice, hydrateCreativeSession, updateInputs, useCreativeSession, CreativeLength, CreativeTarget } from '@/lib/creative/creativeSession'
+import { clearSeed, consumeNotice, hydrateCreativeSession, updateInputs, useCreativeSession, CreativeLength, CreativeTarget, setCreativeAcpTextFor } from '@/lib/creative/creativeSession'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { probeCreativeProject, CreativeProjectProbe } from '@/lib/ai/aiWorkflow'
 import { MAX_OUTLINE_CHAPTERS, ChapterRewriteAction } from '@/lib/ai/aiTasks'
 import { listRewriteTree, RewriteCandidate } from '@/lib/editor/chapterRewrite'
@@ -25,6 +27,31 @@ export function useCreativeWritingModel() {
   const [interview, setInterview] = useState(false)
   const [cap, setCap] = useState<CapacityAdvice | null>(null)
   const { ready: aiReady } = useAIReady()
+  const acpWriting = useAcpWriting()
+  const acpReady = acpWriting?.ready === true
+  const acpGeneration = acpWriting?.generation ?? ''
+  const acpName = acpWriting?.name ?? ''
+  // 3.5.6：ACP 就绪时把「按阶段发送」的工厂注入创意会话；未就绪则清掉，回退 API。
+  // 🔴 工厂里不缓存跨 run 的实例：每次开跑按当前代次重建，模型/Agent 变更后旧代次会被闸门拒绝。
+  useEffect(() => {
+    if (!acpReady) {
+      setCreativeAcpTextFor(null)
+      return
+    }
+    setCreativeAcpTextFor((task, signal) => acpGatedText({
+      task,
+      generation: acpGeneration,
+      title: '发送创意写作资料至 ACP Agent',
+      message: acpGateMessage(acpName, '本次阶段的设定、大纲或章节正文与参考资料', '推进创意写作'),
+      agentName: acpName,
+      ask: confirmDialog,
+      askOnce: true,
+      ...(signal ? { signal } : {}),
+    }))
+    return () => setCreativeAcpTextFor(null)
+  }, [acpReady, acpGeneration, acpName])
+  /** 创意写作的可写就绪：ACP 就绪即可，不再要求先配 API 模型。 */
+  const writingReady = acpWriting ? acpWriting.ready : aiReady
   // ── 整章改写：选章 / 选动作 / 补充要求 / 目标字数 ──
   const [tree, setTree] = useState<RewriteTree>([])
   const [rwChapter, setRwChapter] = useState('')
@@ -193,7 +220,7 @@ export function useCreativeWritingModel() {
   })()
 
   /** 可开始的条件：模型就绪；库里还没有大纲时，还得先写清楚想写什么 */
-  const canStart = aiReady && (!needSeed || !!inp.seed.trim())
+  const canStart = writingReady && (!needSeed || !!inp.seed.trim())
   const startLabel = s.resume
     ? '继续写作'
     : (outlineOnlyTarget
@@ -202,7 +229,7 @@ export function useCreativeWritingModel() {
 
 
   return {
-    s, inp, interview, setInterview, cap, setCap, aiReady, tree, setTree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, probe, setProbe, refreshProbe, wasRunning, onPickLength, onClearSeed, reloadChapters, flatCands, latestId, pickInfo, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel,
+    s, inp, interview, setInterview, cap, setCap, aiReady, writingReady, acpWriting, tree, setTree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, probe, setProbe, refreshProbe, wasRunning, onPickLength, onClearSeed, reloadChapters, flatCands, latestId, pickInfo, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel,
   }
 }
 

@@ -20,7 +20,7 @@ import { NUM_INPUT, fmtSavedAt, LENGTH_META, LENGTHS, TARGET_META, STRATEGY_META
 import type { CreativeWritingModel } from '@/components/creative/useCreativeWritingModel'
 
 export default function CreativeSetupSection({ m }: { m: CreativeWritingModel }) {
-  const { s, inp, setInterview, aiReady, busy, probe, onPickLength, onClearSeed, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel } = m
+  const { s, inp, setInterview, writingReady, acpWriting, busy, probe, onPickLength, onClearSeed, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel } = m
   if (!s.hydrated) return (
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-12 text-ink-300">
       创作记录尚未读入；如果等待时间过长，请检查存储后重新读取。
@@ -328,7 +328,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             <Button size="sm" variant="secondary" onClick={clearCreativeSession}>清空本次记录</Button>
           )}
           {s.running && <span className="text-11 text-ink-400">{s.progress?.message ?? ''}</span>}
-          {!aiReady && <span className="text-11 text-amber">{AI_DISABLED_HINT}</span>}
+          {!writingReady && <span className="text-11 text-amber">{acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : AI_DISABLED_HINT}</span>}
         </div>
 
         {!s.running && (s.resume || s.resumeBlockedReason) && (

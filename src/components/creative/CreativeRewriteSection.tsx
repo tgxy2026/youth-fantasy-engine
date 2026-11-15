@@ -18,7 +18,7 @@ import { NUM_INPUT, RW_ACTIONS, RW_SCOPE_NOTE } from '@/components/creative/crea
 import type { CreativeWritingModel } from '@/components/creative/useCreativeWritingModel'
 
 export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel }) {
-  const { s, aiReady, tree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, reloadChapters, latestId, pickInfo } = m
+  const { s, writingReady, acpWriting, tree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, reloadChapters, latestId, pickInfo } = m
   return (
     <>
       {/* 整章改写：对已有章节做整章级的润色 / 扩写 / 精简 / 续写 / 改写 */}
@@ -92,7 +92,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" solid disabled={!aiReady || !rwChapter || busy}
+          <Button size="sm" variant="primary" solid disabled={!writingReady || !rwChapter || busy}
             // 🔴 文案别用「开始改写」：上面那排动作里就有一个叫「改写」，两者撞车 ——
             //    更糟的是选了「润色」时按钮仍说"开始改写"，读起来像要执行另一个动作。
             //    改成「开始生成 / 重新生成」（与 AITemplateFill、颉文姬的措辞一致），
@@ -106,7 +106,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
               <Square size={12} /> 中止
             </Button>
           )}
-          {!aiReady && <span className="text-11 text-amber">{AI_DISABLED_HINT}</span>}
+          {!writingReady && <span className="text-11 text-amber">{acpWriting ? 'ACP 未连接 —— 请先到模型设置连接已有会话' : AI_DISABLED_HINT}</span>}
         </div>
 
         {s.rewrite && (

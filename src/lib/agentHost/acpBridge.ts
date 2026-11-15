@@ -16,7 +16,10 @@ export interface AcpStatus {
  * 3.5.5 结构化：`review`（章节编辑意见） / `ooc`（人设偏离） / `advice`（续写方向） /
  * `proofread`（逐块校对，文字层与逻辑层共用，范围由调用方如实标注） / `extract`（设定实体抽取，只出候选） / `changes`（章后整理变化候选） / `organize`（设定表 AI 整理，只出候选行） / `fill`（设定模板补全与对话式填写） / `companion`（编辑器伴写，纯文本）
  * 3.5.6：`help`（使用指南「问 AI」，纯文本 JSON；来源校验仍在 `helpAsk`） /
- * `batch-summary`（批量重生成章节摘要，纯文本；整批只确认一次）
+ * `batch-summary`（批量重生成章节摘要，纯文本；整批只确认一次） /
+ * `creative-bible` / `creative-outline` / `autocontinue`（创意写作三阶段，纯文本 JSON 或正文） /
+ * `chapter-rewrite`（整章改写，含补字/压缩子调用；纯文本） /
+ * `inspiration-fuse` / `name-suggest` / `ai-assist`（灵感融合、AI 取名、AI 辅助规划）
  * 酒馆：`tavern-reply`（主回复，流式） / `tavern-vars`（每轮数值） /
  * `tavern-summary`（摘要与记忆） / `tavern-aux`（起草、导入、访谈等辅助产出）
  * 由宿主严格解析校验，同样不直接写作品。
@@ -28,6 +31,8 @@ export type AcpTask =
   | 'companion'
   | 'help'
   | 'batch-summary'
+  | 'creative-bible' | 'creative-outline' | 'autocontinue' | 'chapter-rewrite'
+  | 'inspiration-fuse' | 'name-suggest' | 'ai-assist'
   | 'tavern-reply' | 'tavern-vars' | 'tavern-summary' | 'tavern-aux'
 
 interface AcpBridge {

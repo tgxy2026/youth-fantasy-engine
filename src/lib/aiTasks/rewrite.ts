@@ -127,6 +127,11 @@ export interface ChapterRewriteOpts {
    * 不传 ⇒ 与改造前逐字一致（老调用零影响）。
    */
   budget?: AttemptBudget
+  /**
+   * 3.5.6：ACP 通道。给了就整条改写链（主改写 + 补字/压缩）走 Agent，不再要求 API 模型；
+   * 正文清洗、字数校准与异常判定完全不变。
+   */
+  acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
 }
 
 /**
@@ -136,7 +141,7 @@ export interface ChapterRewriteOpts {
 export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   // 3.2.0 · WQ6：预算已耗尽 ⇒ **一个请求都不发**（继续只会烧额度，由作者决定是否再试）
   if (o.budget?.exhausted) throw new AIRequestBudgetExhaustedError(o.budget.snapshot())
-  const cfg = await requireProviderFor('create')
+  const cfg = o.acpText ? null : await requireProviderFor('create')
   const fenceId = newAuthorFence()
   // 历史章 / 最新章纪律不同（见上面两条 RULE 的说明）
   const scopeRule = o.isLatest ? CHAPTER_REWRITE_LATEST_RULE : CHAPTER_REWRITE_HISTORY_RULE
@@ -170,7 +175,8 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
     const out = await enforceWordRange({
       // ⚠️ **刻意不传 `sys`**：这一步要的是"只吐新增片段"，
       //    与"整章改写"的 system 天然打架（传下去模型会什么都不输出 —— 见 wordRange 的 DEFAULT_FILL_SYS）。
-      cfg, body: o.body, target,
+      ...(o.acpText ? { acpText: o.acpText } : { cfg }),
+      body: o.body, target,
       // 🔴 补写到**区间下界**为止，别按正中补：续写不能压缩（原文一字不动），
       //    按正中补一旦补多就永远超上限（实测目标 3500 补到了 3968）。
       fillTarget: Math.max(inWords, target - WORD_TOLERANCE),
@@ -207,16 +213,23 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
       ? `请按上面的动作改写这一章，只输出正文，篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点）。`
       : '请按上面的动作改写这一章，只输出正文。',
   )
-  const text = await chat(
-    cfg,
-    [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: lines.join('\n\n') }],
-    {
-      timeoutMs: CHAT_TIMEOUT_MS,
-      ...(o.signal ? { signal: o.signal } : {}),
-      ...(o.onToken ? { onToken: o.onToken } : {}),
-      ...(o.request ? { request: o.request } : {}),
-    },
-  )
+  const userText = lines.join('\n\n')
+  let text: string
+  if (o.acpText) {
+    text = await o.acpText(`${sys}\n\n${userText}`, { ...(o.signal ? { signal: o.signal } : {}) })
+  } else {
+    if (!cfg) throw new Error('整章改写缺少模型配置：既没有 API 模型，也没有 ACP 通道。')
+    text = await chat(
+      cfg,
+      [{ role: 'system', content: composeSystemPrompt(sys, cfg) }, { role: 'user', content: userText }],
+      {
+        timeoutMs: CHAT_TIMEOUT_MS,
+        ...(o.signal ? { signal: o.signal } : {}),
+        ...(o.onToken ? { onToken: o.onToken } : {}),
+        ...(o.request ? { request: o.request } : {}),
+      },
+    )
+  }
   // 一次主改写 = 一次逻辑调用（内部最多再打 3 次实际请求，由 `MAX_REQUESTS_PER_CALL` 兜）
   o.budget?.consume(1)
   let out = cleanChapterOutput(text)
@@ -227,7 +240,7 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
   if (o.targetWords && o.targetWords > 0 && out) {
     out = await enforceWordRange({
       // ⚠️ 同上：不传 `sys`（补写要用"只吐新增片段"的提示词，不用整章改写那套）
-      cfg, body: out, target: o.targetWords,
+      ...(o.acpText ? { acpText: o.acpText } : { cfg }), body: out, target: o.targetWords,
       // 🔴 审计 A1：**校准阶段继续沿用同一份不变量** —— 这正是原实现丢掉的那一段
       invariants,
       ...(o.signal ? { signal: o.signal } : {}),

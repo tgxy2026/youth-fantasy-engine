@@ -501,7 +501,19 @@ export interface CreativeRunInput {
   intent?: string
 }
 
+/** 创意写作相关阶段各自的 ACP 任务标识（记账与界面提示据此区分入口）。 */
+export type CreativeAcpTask = 'creative-bible' | 'creative-outline' | 'autocontinue' | 'chapter-rewrite'
+/** 一次 ACP 发送（prompt 已由各阶段拼好；解析与落库校验不变）。 */
+export type CreativeAcpText = (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+
 export interface CreativeWritingOptions {
+  /**
+   * 3.5.6：按阶段取 ACP 发送器。返回 null（或未提供）就走原来的 API 路径。
+   *
+   * 🔴 只在**开跑前**取一次：整条流水线共用同一个发送器，避免每个阶段各自确认。
+   *    `signal` 是该阶段的取消信号，ACP 请求必须能随「中止」一起取消。
+   */
+  acpTextFor?: (task: CreativeAcpTask, signal?: AbortSignal) => CreativeAcpText | null
   /**
    * 产出目标（默认 `'full'`）。
    *
@@ -690,9 +702,11 @@ export async function runCreativeWriting(
     // 收字回调：一来给作者"正在生成"的实时反馈，二来它同时就是**流式开关**
     // （不传的话非流式请求会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
+    const acpBible = opts.acpTextFor?.('creative-bible', ctx.signal) ?? null
     const entities = await aiGenerateBible(inp.seed, {
       signal: ctx.signal,
       ...(opts.request ? { request: opts.request } : {}),
+      ...(acpBible ? { acpText: acpBible } : {}),
       onToken: d => {
         got += d.length
         if (got % 400 < d.length) ctx.report(0.5, `生成设定草稿… 已收到 ${got} 字`)
@@ -772,10 +786,12 @@ export async function runCreativeWriting(
     // 2.5.0 · A1 结构模板：作者选了模板且**不是缺口补齐**时，注入「全书结构参考」当骨架约束。
     // 🔴 缺口补齐不注入（见 CreativeWritingOptions.structureId 注释）。
     const structureTpl = sealing ? null : getStoryTemplate(opts.structureId)
+    const acpOutline = opts.acpTextFor?.('creative-outline', ctx.signal) ?? null
     const raw = await aiPlanOutline(material, {
       volumes: plannedVolumes,
       chaptersPerVolume: perVolume,
       ...(opts.request ? { request: opts.request } : {}),
+      ...(acpOutline ? { acpText: acpOutline } : {}),
       fromNo,
       fromVolumeNo,
       extending,
@@ -848,6 +864,7 @@ export async function runCreativeWriting(
     // 有细纲就按章号钉进本章 prompt 末段；没有则退回"自由发挥"（仍能跑通，只是不保证贴合大纲）
     const outlines = opts.useOutline === false ? new Map<number, string>() : await loadChapterOutlines()
     let done = 0
+    const acpContinue = opts.acpTextFor?.('autocontinue', ctx.signal) ?? null
     const res = await runAutoContinue(
       {
         chapters: remaining,
@@ -857,6 +874,8 @@ export async function runCreativeWriting(
         strategy: opts.strategy ?? 'add-only',
         ...(inp.intent.trim() ? { intent: inp.intent.trim() } : {}),
         ...(opts.deAi ? { deAi: opts.deAi } : {}),
+        // 3.5.6：ACP 就绪时整条连写链（初稿/补字压缩/去 AI 味/自检/摘要/标题/设定同步）走 Agent。
+        ...(acpContinue ? { acpText: acpContinue } : {}),
         // 🔴 正文缺口优先（默认开）：先把最后一章补到目标字数，再往下写新章。
         //    库里还没有正文时 `last` 为 null，那段自然跳过（从零创作不受影响）。
         ...(opts.topUpLast === false ? {} : { topUpLast: {} }),
