@@ -113,6 +113,7 @@ const panelCases: Array<[string, string, string]> = [
   ['src/components/outline/PaceAnalysisPanel.tsx', 'pace', '节奏与章末钩子'],
   ['src/components/sheets/StyleTools.tsx', 'style-infer', '按章反推写作规范'],
   ['src/components/editor/ChapterContextPanel.tsx', 'plan-compare', '正文与细纲对照'],
+  ['src/components/settings/StyleProfileDialog.tsx', 'style-fingerprint', '从参考文本提炼文风档'],
 ]
 for (const [file, task, label] of panelCases) {
   const src = read(file)
@@ -123,7 +124,7 @@ for (const [file, task, label] of panelCases) {
 
 const bridge = read('src/lib/agentHost/acpBridge.ts')
 const main = read('electron/main.cjs')
-for (const task of ['change-list', 'pace', 'style-infer', 'plan-compare']) {
+for (const task of ['change-list', 'pace', 'style-infer', 'plan-compare', 'style-fingerprint']) {
   ok(`任务标识登记与放行：${task}`, bridge.includes(`'${task}'`) && main.includes(`'${task}'`))
 }
 

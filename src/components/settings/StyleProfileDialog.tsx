@@ -4,7 +4,11 @@ import { Button } from '@/components/common/Button'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
-import { showToast } from '@/components/dialogs/dialogs'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
+import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
+import { useAIReady } from '@/lib/ai/useAIReady'
+import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { getAllChapters } from '@/lib/db'
 import {
   extractFingerprint, loadFingerprints, loadActiveFingerprintId,
@@ -33,6 +37,10 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
   /** 档列表或启用状态变化时回调（调用方刷新自己的下拉） */
   onChanged?: () => void
 }) {
+  // 3.5.6：ACP 就绪时「AI 归纳」这一步交给 Agent；本地量化统计与档结构不变
+  const { ready: aiReady } = useAIReady()
+  const acpWriting = useAcpWriting()
+  const writingReady = aiReady || !!acpWriting?.ready
   const [list, setList] = useState<StyleProfile[]>([])
   const [activeId, setActiveId] = useState('')
   const [picked, setPicked] = useState('')
@@ -118,9 +126,26 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
   const runExtract = () => {
     const texts = sample.trim() ? [sample] : []
     if (!texts.length) { showToast('先粘贴参考文本，或从章节 / 文件导入', 'info'); return }
+    if (!writingReady) { showToast(AI_DISABLED_HINT, 'info'); return }
+    const acp = acpWriting?.ready ? { generation: acpWriting.generation, name: acpWriting.name } : null
     t.run(
       // onToken 传空函数：它同时是流式开关（保活，避免大输入撞 180s 总超时墙）
-      ctx => extractFingerprint(texts, { name, signal: ctx.signal, onToken: () => {} }),
+      ctx => extractFingerprint(texts, {
+        name,
+        signal: ctx.signal,
+        onToken: () => {},
+        ...(acp ? {
+          acpText: acpGatedText({
+            task: 'style-fingerprint',
+            generation: acp.generation,
+            title: '发送参考文本至 ACP Agent',
+            message: acpGateMessage(acp.name, `参考文本（最多 ${MAX_SAMPLE_CHARS.toLocaleString()} 字）与本地量化特征`, '归纳文风档'),
+            agentName: acp.name,
+            ask: confirmDialog,
+            signal: ctx.signal,
+          }),
+        } : {}),
+      }),
       () => null,                            // 完成提示由上面的 useEffect 给出（要说清"还需要手动启用"）
     )
   }
@@ -202,7 +227,8 @@ export function StyleProfileDialog({ open, onClose, ownerTab, onChanged }: {
               placeholder="档名（可留空）"
               className="flex-1 bg-ink-800 border border-ink-700 rounded px-2 py-1 text-12 text-ink-100 outline-none focus:border-amber/40 placeholder:text-ink-600"
             />
-            <Button variant="primary" size="sm" onClick={runExtract} disabled={t.running || !sample.trim()}>
+            <Button variant="primary" size="sm" onClick={runExtract} disabled={t.running || !sample.trim() || !writingReady}
+              title={!writingReady ? AI_DISABLED_HINT : '本地统计 + AI 归纳一次；不会自动重试'}>
               {t.running ? '提炼中…' : '提炼'}
             </Button>
             {t.running && <Button variant="secondary" size="sm" onClick={t.stop}>中止</Button>}

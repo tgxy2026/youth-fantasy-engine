@@ -28,6 +28,7 @@
  */
 import * as db from '@/lib/db'
 import { chat, requireProviderFor, CHAT_TIMEOUT_MS, composeSystemPrompt } from '@/lib/ai'
+import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { longStream } from '@/lib/aiTasks/stream'
 import type { PromptDef } from '@/lib/ai/promptSettings'
 import { parseLooseObject, asText } from '@/lib/ai/aiParse'
@@ -197,6 +198,8 @@ export interface ExtractOptions {
   onToken?: (delta: string) => void
   /** 注入点（单测用）：默认走真实 `chat` */
   chatFn?: typeof chat
+  /** 3.5.6 · ACP 分支：给了就只走 Agent（本地统计与解析判据不变） */
+  acpText?: (prompt: string) => Promise<string>
 }
 
 /**
@@ -212,7 +215,7 @@ export async function extractFingerprint(texts: string[], opts: ExtractOptions =
   const metrics = await analyzeStyleMetrics(texts)
 
   // AI 归纳：走「整理」用途路由 —— 它是一次性分析，不必烧最好的模型
-  const cfg = await requireProviderFor('utility')
+  const cfg = opts.acpText ? null : await requireProviderFor('utility')
   const callChat = opts.chatFn ?? chat
   const user = [
     '【参考文本】',
@@ -223,10 +226,15 @@ export async function extractFingerprint(texts: string[], opts: ExtractOptions =
     metrics.repeatedWords.length ? `重复词：${metrics.repeatedWords.join('、')}` : '',
   ].filter(Boolean).join('\n')
 
-  const text = await callChat(cfg, [
-    { role: 'system', content: composeSystemPrompt(P_style_fingerprint, cfg) },
-    { role: 'user', content: user },
-  ], { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken) })
+  // 3.5.6 · ACP 分支：提示词与本地量化特征逐字保留，只换「谁来归纳」
+  const text = opts.acpText
+    ? await opts.acpText(
+        `${P_style_fingerprint}\n\n${user}\n\n${acpJsonInstruction('文风档归纳', '{"summary":"概括","traits":["用词倾向"],"dos":["宜"],"donts":["忌"]}')}`,
+      )
+    : await callChat(cfg as NonNullable<typeof cfg>, [
+        { role: 'system', content: composeSystemPrompt(P_style_fingerprint, cfg as NonNullable<typeof cfg>) },
+        { role: 'user', content: user },
+      ], { output: 'json-object', reasoning: 'off', timeoutMs: CHAT_TIMEOUT_MS, signal: opts.signal, onToken: longStream(opts.onToken) })
 
   const obj = parseLooseObject(text) ?? {}
   return {

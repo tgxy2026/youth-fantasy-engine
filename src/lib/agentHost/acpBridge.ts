@@ -26,6 +26,7 @@ export interface AcpStatus {
  * `bookbreak`（一键拆书：章节识别 / 逐章抽取 / 设定表汇总 / 关系整理，整本只确认一次） /
  * `change-list`（本章变化清单） / `pace`（节奏与章末钩子） /
  * `style-infer`（按章反推写作规范） / `plan-compare`（正文与细纲对照） /
+ * `style-fingerprint`（从参考文本提炼文风档，本地量化特征照旧本地算） /
  * `market-radar`（市场雷达：引擎自己检索公开信息，再把结果交给 Agent 归纳）
  * 酒馆：`tavern-reply`（主回复，流式） / `tavern-vars`（每轮数值） /
  * `tavern-summary`（摘要与记忆） / `tavern-aux`（起草、导入、访谈等辅助产出）
@@ -43,6 +44,7 @@ export type AcpTask =
   | 'audit' | 'reader-probe' | 'sensitive-review'
   | 'bookbreak'
   | 'change-list' | 'pace' | 'style-infer' | 'plan-compare'
+  | 'style-fingerprint'
   | 'market-radar'
   | 'tavern-reply' | 'tavern-vars' | 'tavern-summary' | 'tavern-aux'
 

@@ -150,6 +150,23 @@ async function main() {
     ok('落盘后可被 buildFingerprintNote 用', buildFingerprintNote(fp).includes('冷硬白描'))
   }
 
+  // ---------- ④-b 3.5.6：ACP 通道（零 API 配置也能提炼） ----------
+  {
+    __resetMockStores()
+    const prompts: string[] = []
+    const fp = await extractFingerprint([SAMPLE_A], {
+      name: 'ACP 冷硬白描',
+      acpText: async prompt => {
+        prompts.push(prompt)
+        return JSON.stringify({ summary: '短句、克制', traits: ['短句'], dos: ['动作带情绪'], donts: ['形容词堆叠'] })
+      },
+    })
+    ok('ACP 通道可直接提炼（不需要 API 模型）', fp.aiSummary === '短句、克制' && fp.traits[0] === '短句')
+    ok('量化特征仍由本地统计得出', fp.metrics.sentenceCount > 0 && fp.sampleChars > 0)
+    ok('提示词带参考文本与本地量化特征', prompts[0].includes('【参考文本】') && prompts[0].includes('【本地统计出的量化特征'))
+    ok('提示词带 JSON 约束（不靠服务端 json 模式）', /【输出格式】/.test(prompts[0]))
+  }
+
   // ---------- ⑤ 🔴 立场红线：不许出现反检测话术 ----------
   {
     const text = STYLE_FINGERPRINT_PROMPTS[0].read()
