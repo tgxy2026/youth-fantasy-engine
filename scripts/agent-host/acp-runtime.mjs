@@ -135,6 +135,41 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
   let live = null
   let idleTimer = null
   const LIVE_IDLE_MS = 10 * 60 * 1000
+  /**
+   * 🔴 2026-11-15（作者选定 A 方案）：**可复用的命名会话池**。
+   *
+   *  进程保活之后，单次伴写剩下的 4 秒几乎全在 `session/new`（官方实测 3.7~4.9s，要拉起 localharness）。
+   *  对「同一章里连续要几句建议」这种高频短任务，复用会话能把这段也省掉；
+   *  代价是 ACP 会话有状态、上下文会累积，所以做了三重约束：
+   *    · 只给显式传 `reuseKey` 的调用方用（目前只有编辑器伴写），其它任务仍每任务新会话；
+   *    · `reuseKey` 由调用方按「项目 + 章节」拼，**换章 / 换项目自然是新 key**；
+   *    · 同一 key 最多复用 POOL_MAX_USES 次，之后自动重建，避免历史越滚越长。
+   *  宿主重建、代次变化、传输报废时整池作废（这批 session 属于那个已死的进程）。
+   */
+  const POOL_MAX_USES = 6
+  const sessionPool = new Map()
+
+  function clearSessionPool() { sessionPool.clear() }
+
+  /** 拿到（或新建）该 key 的会话；返回 sessionId 与 session 对象（新建时才有）。 */
+  async function acquirePooledSession(context, key) {
+    const host = live
+    const entry = sessionPool.get(key)
+    const reusable = !!entry
+      && !!host
+      && entry.hostRunId === host.runId
+      && entry.generation === generation
+      && entry.uses < POOL_MAX_USES
+    if (reusable) {
+      entry.uses += 1
+      return { sessionId: entry.sessionId, session: null, reused: true }
+    }
+    const session = await openSession(context)
+    sessionPool.set(key, {
+      sessionId: session.sessionId, hostRunId: host?.runId ?? '', generation, uses: 1,
+    })
+    return { sessionId: session.sessionId, session, reused: false }
+  }
 
   function scheduleIdleClose() {
     if (idleTimer) clearTimeout(idleTimer)
@@ -147,6 +182,7 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     const current = live
     if (!current) return
     live = null
+    sessionPool.clear()
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     let stopError = null
     try { await current.launch?.stop() } catch (error) { stopError = error }
@@ -291,9 +327,12 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
     } finally {
       // 传输报废时当场回收，别留一个没有所有者的进程等下一次请求。
       if (host.client?.isFailed?.()) await closeLive().catch(() => undefined)
-      timing.prepare = host.timing.prepare
-      timing.launch = host.timing.launch
-      timing.initialize = host.timing.initialize
+      // 复用时本次根本没付启动税：这三段按 0 记，宿主建立耗时另存 hostInitialize，
+      // 否则报表上每次都显示 10 秒，会让人误以为「预热没生效」。
+      timing.prepare = timing.reused ? 0 : host.timing.prepare
+      timing.launch = timing.reused ? 0 : host.timing.launch
+      timing.initialize = timing.reused ? 0 : host.timing.initialize
+      timing.hostInitialize = host.timing.initialize
       timing.task = Date.now() - beganAt
       timing.total = timing.task
       timing.at = new Date().toISOString()
@@ -373,6 +412,7 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
 
   function invalidateResults() {
     generation = randomUUID()
+    sessionPool.clear()
     sessionOptions = null
     sessionReady = false
   }
@@ -555,17 +595,30 @@ export function createAcpRuntime({ root, adapters, appVersion = '' }) {
         })
       })
     },
-    async generate({ service, owner, id, text, expectedGeneration, onChunk }) {
+    async generate({ service, owner, id, text, expectedGeneration, onChunk, reuseKey }) {
       if (expectedGeneration !== generation) throw new Error('ACP 设置已变更。')
       if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 256 * 1024) throw new Error('ACP 请求文本无效。')
+      const pooled = typeof reuseKey === 'string' && /^[\w:.-]{1,120}$/.test(reuseKey) ? reuseKey : ''
       return runOperation({ service, owner, id }, async signal => {
         const textResult = await withAgent(signal, async context => {
           const { adapter, client } = context
           if (adapter.requiresConnection && !sessionReady) throw new Error('请先连接 ACP Agent 并核对模型选项。')
-          return withSession(context, async session => {
-            await adapter.configureSession?.({ ...context, session })
-            return client.prompt({ sessionId: session.sessionId, text, signal, onChunk })
-          })
+          if (!pooled) {
+            return withSession(context, async session => {
+              await adapter.configureSession?.({ ...context, session })
+              return client.prompt({ sessionId: session.sessionId, text, signal, onChunk })
+            })
+          }
+          // 池化会话：命中就复用（配置已继承，不重设；也不关会话），未命中才新建。
+          const acquired = await acquirePooledSession(context, pooled)
+          try {
+            if (acquired.session) await adapter.configureSession?.({ ...context, session: acquired.session })
+            return await client.prompt({ sessionId: acquired.sessionId, text, signal, onChunk })
+          } catch (error) {
+            // Agent 侧把这个会话丢了：丢掉池里那一条，下次自然重建；错误照常上报。
+            sessionPool.delete(pooled)
+            throw error
+          }
         })
         signal.throwIfAborted()
         return textResult

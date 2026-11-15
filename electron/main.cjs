@@ -960,13 +960,16 @@ ipcMain.handle('store:path', () => dataFile())
   ipcMain.handle('acp:generate', async (e, request) => {
     try {
       if (modeClosing || !isEngineFrame(e, true) || !request || !['continuation', 'rewrite', 'diagnosis', 'pleasure', 'opening', 'briefing', 'summary', 'review', 'ooc', 'advice', 'proofread', 'extract', 'changes', 'organize', 'fill', 'companion', 'tavern-reply', 'tavern-vars', 'tavern-summary', 'tavern-aux'].includes(request.task) ||
-          typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id)) throw new Error('ACP 写作请求无效。')
+          typeof request.id !== 'string' || !/^[\w-]{1,100}$/.test(request.id) ||
+          (request.reuseKey !== undefined && (typeof request.reuseKey !== 'string' || !/^[\w:.-]{1,120}$/.test(request.reuseKey)))) throw new Error('ACP 写作请求无效。')
       const owner = rendererLeaseOwner(e)
       const service = await startModeService()
       const isCurrent = () => isEngineFrame(e, true) && rendererLeaseOwner(e) === owner
       if (!isCurrent() || !service || !acpRuntime) throw new Error('ACP 页面已失效。')
       const text = await acpRuntime.generate({
         service, owner, id: request.id, text: request.text, expectedGeneration: request.generation,
+        // 只有显式传 reuseKey 的调用方（编辑器伴写）才复用会话；其它任务仍每任务新会话。
+        reuseKey: request.reuseKey,
         onChunk: delta => {
           if (isCurrent()) e.sender.send('acp:chunk', { id: request.id, delta })
         },

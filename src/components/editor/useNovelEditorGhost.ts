@@ -202,6 +202,9 @@ export function useNovelEditorGhost({
           title: '发送光标前正文至 ACP Agent',
           message: `接收方为 ${acp.name}。本次发送光标前正文与设定摘要，只用于生成一句续写建议（不会改动正文）。`,
           agentName: acp.name,
+          // 🔴 2026-11-15（A 方案）：同一章内复用同一个 ACP 会话，省掉每次 session/new 的约 4 秒。
+          //    键带章节 id ⇒ 换章/换项目自然换键，上下文不会跨章；主进程侧还有次数上限兜底。
+          reuseKey: activeId ? `companion:${activeId}` : undefined,
           signal: ac.signal,
           assertCurrent: () => { if (ac.signal.aborted) throw new Error('已取消。') },
           ask: options => {

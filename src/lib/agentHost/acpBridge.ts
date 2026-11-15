@@ -28,7 +28,7 @@ export type AcpTask =
 
 interface AcpBridge {
   status(): Promise<AcpStatus | null>
-  generate(request: { id: string; task: AcpTask; generation: string; text: string }): Promise<{ ok: boolean; text?: string; error?: string }>
+  generate(request: { id: string; task: AcpTask; generation: string; text: string; reuseKey?: string }): Promise<{ ok: boolean; text?: string; error?: string }>
   cancel(id: string): Promise<boolean>
   onChunk(handler: (chunk: { id: string; delta: string }) => void): () => void
 }
@@ -59,6 +59,8 @@ export async function assertAcpWritingCurrent(generation: string) {
 export async function acpWrite(task: AcpTask, generation: string, text: string, opts?: {
   signal?: AbortSignal
   onToken?: (delta: string) => void
+  /** 会话复用键（只有伴写这类高频短任务用）：同键复用同一个 ACP 会话，省掉 session/new 的 4 秒 */
+  reuseKey?: string
 }): Promise<string> {
   const api = bridge()
   if (!api) throw new Error('ACP 写作仅在桌面端可用。')
@@ -71,7 +73,7 @@ export async function acpWrite(task: AcpTask, generation: string, text: string, 
   const cancel = () => { void api.cancel(id).catch(() => false) }
   opts?.signal?.addEventListener('abort', cancel, { once: true })
   try {
-    const result = await api.generate({ id, task, generation, text })
+    const result = await api.generate({ id, task, generation, text, ...(opts?.reuseKey ? { reuseKey: opts.reuseKey } : {}) })
     opts?.signal?.throwIfAborted()
     if (!result.ok || !result.text) throw new Error(result.error ?? 'ACP 没有返回可用正文。')
     await assertAcpWritingCurrent(generation)

@@ -174,7 +174,9 @@ export async function aiInlineSuggest(contextBefore: string, opts: InlineSuggest
   // 3.5.5 · ACP 分支：伴写是**纯文本**任务（不是 JSON），所以不做结构化校验，
   // 只沿用同一套句末截断。空串＝没有合适建议，与 API 路径一样静默不显示。
   if (opts.acpText) {
-    const raw = await opts.acpText(`${layers.join('\n\n')}\n\n${user}`)
+    // 🔴 2026-11-15：伴写在 ACP 下会复用同一会话（省 4 秒/句），历史里会积累多份近似的前文；
+    //    末尾这句「以本次为准」是社区同款做法（toolnexus ADR-0031 也用它压住"回答陈旧副本"）。
+    const raw = await opts.acpText(`${layers.join('\n\n')}\n\n${user}\n\n（本次给的是最新正文，此前对话里的旧正文已过期；只依据本次内容往下写。）`)
     return trimInlineSuggestion(raw, limit.chars)
   }
   const text = await chat(

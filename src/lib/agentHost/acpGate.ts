@@ -43,6 +43,11 @@ export interface AcpGateInput {
    * 不传则保持旧行为（每次都问）——避免漏接的调用点静默变成「永不确认」。
    */
   agentName?: string
+  /**
+   * 会话复用键（可选）。给了就在同一 ACP 会话里连续发 —— 用于伴写这种「同一章要很多句」的场景：
+   * 省掉每次 4 秒的 `session/new`。键里必须带「项目 + 章节」，换章即换键、上下文不跨章。
+   */
+  reuseKey?: string
 }
 
 /**
@@ -74,6 +79,8 @@ export function acpGatedText(
     const text = await acpWrite(input.task, input.generation, prompt, {
       ...(signal ? { signal } : {}),
       ...(call?.onToken ? { onToken: call.onToken } : {}),
+      // 会话复用：只有显式给了 key 的调用方（伴写）才复用，其它任务保持每任务新会话。
+      ...(input.reuseKey ? { reuseKey: input.reuseKey } : {}),
     })
     await assertAcpWritingCurrent(input.generation)
     input.assertCurrent?.()

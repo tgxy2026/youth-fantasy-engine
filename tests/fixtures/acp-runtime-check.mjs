@@ -160,6 +160,23 @@ try {
   await runtime.configure(service, { model: 'invalid-model' })
   await assert.rejects(generate('model-and-thinking'), /核对模型选项/)
 
+  // 上一段把模型改成了无效值并触发了代次失效：这里恢复有效配置并重新连接，再验会话复用。
+  await runtime.configure(service, { model: 'second-model', thinking: 'high' })
+  await runtime.connect({ service, owner: 'fixture', id: 'login-2' }, false)
+  // 🔴 2026-11-15（A 方案）：同一 reuseKey 复用会话；换 key 必须新建。
+  {
+    const keyed = async (text, reuseKey) => {
+      const expectedGeneration = (await runtime.status()).generation
+      return runtime.generate({ service, owner: 'fixture', id: 'run', task: 'companion', text, expectedGeneration, reuseKey })
+    }
+    const before = (await methods()).filter(m => m === 'session/new').length
+    await keyed('write', 'companion:ch-1')
+    await keyed('write', 'companion:ch-1')
+    assert.equal((await methods()).filter(m => m === 'session/new').length, before + 1, '同一 key 只建一次会话')
+    await keyed('write', 'companion:ch-2')
+    assert.equal((await methods()).filter(m => m === 'session/new').length, before + 2, '换 key 必须新建会话')
+  }
+
   // ---------------------------------------------------------------- R4：运行方式可选
   // 默认必须是「当前 Windows 用户」——R3 曾强制隔离，未开通专用账户就完全无法连接。
   assert.equal((await runtime.status()).runAs, 'current-user', '未设置 runAs 时默认当前 Windows 用户')
