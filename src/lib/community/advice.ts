@@ -12,6 +12,7 @@
 
 import { chat, requireProviderFor, composeSystemPrompt, CHAT_TIMEOUT_MS, blocksLocalModel } from '@/lib/ai'
 import { WEB } from '@/lib/app/platform'
+import { connectionModeStatus } from '@/lib/agentHost/modeBridge'
 // 🔴 只认地址证据，不认 `local` 标记：把远程 URL 勾成「本地」是配置失误，不能成为外发通道。
 import { isLocalModelAddress } from '@/lib/aiCore/localModelPolicy'
 import { protocolOf } from '@/lib/aiCore/protocol'
@@ -105,6 +106,14 @@ export async function suggestReview(input: {
   body: string
   signal?: AbortSignal
 }): Promise<CommunityAdvice> {
+  // 🔴 3.5.6：**投稿审核不进 ACP**。ACP 适配器是否在本机处理内容，当前没有可验证的证据，
+  //    而「待审正文只在本机模型处理」是这条功能的承诺。没有合格适配器之前，
+  //    这里直接说清楚原因，而不是让作者以为「连上了 Agent 就能审」（外部阻塞已记账）。
+  const mode = await connectionModeStatus().then(s => s.mode).catch(() => null)
+  if (mode === 'acp') {
+    throw new Error('当前连接模式是 ACP Agent。投稿审核要求内容只在本机 / 局域网模型处理，'
+      + 'ACP 适配器目前无法证明这一点，因此不参与审核；请切到 API 模式并指定本机端点，本页仍可人工决定。')
+  }
   const cfg = await requireProviderFor('utility')
   if (blocksLocalModel(WEB, cfg) || WEB) {
     throw new Error('网页版不能调用本机模型。审核建议请在桌面版或便携版生成；本页仍可人工决定。')

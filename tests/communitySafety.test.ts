@@ -240,5 +240,19 @@ ok('已发布投稿可单独改为匿名（服务端）', /sub === '\/display'/.
 ok('昵称禁止官方/管理身份字样', /NICKNAME_IMPERSONATION/.test(read('server/lib/communityRules.mjs')))
 ok('申诉绑定版本并可重新进入待审', /kind: 'appeal'/.test(read('server/lib/communityApi.mjs')) && /action === 'reopen'/.test(read('server/lib/communityApi.mjs')))
 
+// ---- 3.5.6 · 投稿审核不接 ACP（本地性无法证明） ----
+{
+  const advice = read('src/lib/community/advice.ts')
+  ok('🔴 审核建议没有 ACP 分支（不发 acpText、不 import acpBridge）',
+    !/acpText|acpBridge|acpWrite/.test(advice))
+  ok('🔴 ACP 模式下明确说明「不参与审核」，而不是笼统报没配模型',
+    /mode === 'acp'/.test(advice) && /ACP 适配器目前无法证明这一点/.test(advice))
+  ok('审核仍要求地址能证明是本机 / 局域网（白名单判据未放宽）',
+    /classifyAdviceTarget\(cfg\)/.test(advice) && /只有\*\*地址能证明是本机\/局域网\*\*的端点才允许/.test(advice))
+  const bridge = read('src/lib/agentHost/acpBridge.ts')
+  ok('任务标识里不存在审核类标识（不存在就无从接错）',
+    !/community-advice|'review-advice'|admin-advice/.test(bridge))
+}
+
 console.log(`communitySafety: ${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1
