@@ -39,7 +39,7 @@ export default function JieWenJiClinic({ m }: { m: JieWenJiModel }) {
                     <Button key={scope} variant="bare" onClick={stopProofread}
                       className={`${aiBtnCls} bg-danger/15 border-danger/30 text-danger hover:bg-danger/25`}
                       title="点击停止（已查出的结果会保留）">
-                      <Loader2 size={12} className="animate-spin" /> 停止（{st.progress.done}/{st.progress.total}）
+                      <Loader2 size={12} className="animate-spin" /> 停止{st.progress.total > 0 ? `（${st.progress.done}/${st.progress.total}）` : ''}
                     </Button>
                   )
                 }

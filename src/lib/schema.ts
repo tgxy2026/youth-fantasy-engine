@@ -174,6 +174,9 @@ export const FEATURE_TIER: Record<string, FeatureTier> = {
   community: 'locked',
   // 模型设置（2026-09-19）：没有它连模型都接不上，与「使用指南」同级锁定
   'model-settings': 'locked',
+  // 3.5.6：后台任务页同样是 locked —— 长任务的进度/中止是**唯一可见入口**，
+  // 在自定义项目里置灰不可取消（否则关掉后任务只能盲跑，作者无处可看）。
+  'task-center': 'locked',
   guide: 'locked',
   'inspire-tools': 'locked',
   'material-library': 'locked',

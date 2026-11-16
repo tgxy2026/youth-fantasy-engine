@@ -1,24 +1,24 @@
 /**
- * 左下角「后台任务」指示器（2.6.3 · 跨页签任务存活）。
+ * 「后台任务」列表（2.6.3 · 跨页签任务存活）。
  *
- * 挂载位置：**Sidebar Footer 内嵌**（见 `Sidebar.tsx`）。
- *   🔴 为什么不是新开一个浮层：项目红线是「左下角只准一个浮层」——项目内那块工具栏是
- *      Sidebar Footer，首页才用 `DataDock`。任务是**项目内**的事，所以内嵌进 Footer 的既有
- *      一节即可，既不新增浮层、也不与 `DataDock` 抢位。
+ * 挂载位置（3.5.6 起变更）：
+ *   · **主位置**：`components/app/TaskCenterPanel.tsx`（独立页签「工作面板 → 后台任务」）。
+ *   · 旧位置（已移除）：Sidebar Footer 内嵌。原因：那块工具栏为给菜单让空间常被折叠，
+ *     一折叠就看不见任务了；本项目「左下角只准一个浮层」的红线仍然有效，只是任务不再占这个位置。
+ *   · `tests/browser/task-center.tsx` 仍把它当独立列表渲染，用于可视化回归。
  *
  * 它同时承担两件事：
  *   ① **一眼可见**：还有几个任务在后台跑、有几个完成但没看；
  *   ② **完成提示的唯一出口**：作者很可能已经切到别的页签，发起它的面板此刻没挂载 ——
- *      store 把提示写进 `notice`，由这里订阅后 toast（lib 层不能 import components，只能这么走）。
+ *      store 把提示写进 `notice`，由 `TaskNoticeBridge`（App 顶层，无 UI）订阅后 toast。
+ *      ⚠️ 页签里的这份只在打开页签时存在，所以不能由它承担全站提示。
  */
-import { useEffect } from 'react'
 import { Activity, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
-import { showToast } from '@/components/dialogs/dialogs'
 import {
-  abortTask, clearFinishedTasks, consumeTaskNotice, dismissTask,
-  runningTaskCount, unreadTaskCount, useAiTasks, useAiTaskNotice,
+  abortTask, clearFinishedTasks, dismissTask,
+  runningTaskCount, unreadTaskCount, useAiTasks,
 } from '@/lib/ai/aiTaskCenter'
 import type { AiTaskStatus } from '@/lib/ai/aiTaskCenter'
 
@@ -38,22 +38,28 @@ const STATUS_CLASS: Record<AiTaskStatus, string> = {
   running: 'text-amber', done: 'text-success', failed: 'text-danger', aborted: 'text-ink-500',
 }
 
-export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (id: string) => void; activeTab: string }) {
+export default function TaskIndicator({ onNavigate, activeTab, scroll = true, maxFinished }: {
+  onNavigate: (id: string) => void
+  activeTab: string
+  /** 侧栏内嵌时自带滚动条；放进页签时由页面整体滚动 → 传 false（3.5.6） */
+  scroll?: boolean
+  /** 只显示最近 N 条已结束任务（页签用 5；不传＝全显示） */
+  maxFinished?: number
+}) {
   const tasks = useAiTasks()
-  const notice = useAiTaskNotice()
-
-  // 先按 ID 认领；StrictMode effect 重放和多个消费者只能有一个成功显示。
-  useEffect(() => {
-    if (!notice || !consumeTaskNotice(notice.id)) return
-    showToast(notice.text, notice.kind)
-  }, [notice])
-
   // 没有任务时整节不渲染（不给界面添乱）
   if (tasks.length === 0) return null
 
   const running = runningTaskCount()
   const unread = unreadTaskCount()
-  const finished = tasks.length - running
+  const finishedTotal = tasks.length - running
+  // 页签模式下只保留最近 maxFinished 条已结束任务（运行中的永不隐藏）
+  let finishedSeen = 0
+  const shown = tasks.filter(t => {
+    if (t.status === 'running') return true
+    finishedSeen += 1
+    return maxFinished == null || finishedSeen <= maxFinished
+  })
 
   return (
     <div>
@@ -76,8 +82,8 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
           `overflow-hidden + max-h-[30rem]` 内容层里，任务一行行累积后会**被裁掉且不可见/不可点**
           （连下面的「清空已结束的记录」一起消失）。给自己加 max-height + overflow-y-auto
           就能在固定高度里滚，不动 Footer 的展开/收起动画。 */}
-      <div className="space-y-1 max-h-[7.5rem] overflow-y-auto pr-0.5">
-        {tasks.map(t => {
+      <div className={scroll ? "space-y-1 max-h-[7.5rem] overflow-y-auto pr-0.5" : "space-y-1"}>
+        {shown.map(t => {
           const msg = t.status === 'running' ? progressMessage(t.progress) : ''
           const showJump = t.status !== 'running' && (t.ownerTab !== activeTab || t.unread)
           return (
@@ -116,7 +122,7 @@ export default function TaskIndicator({ onNavigate, activeTab }: { onNavigate: (
         })}
       </div>
 
-      {finished > 1 && (
+      {finishedTotal > 1 && (
         <div className="mt-1">
           <Button size="xs" variant="secondary" onClick={clearFinishedTasks} title="清除已结束的任务及其内存结果；已写入的内容保留">清空已结束的记录</Button>
         </div>

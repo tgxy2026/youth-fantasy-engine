@@ -132,4 +132,39 @@ export const MISC_PAGE_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.3.1',
     reviewedAt: '2026-10-29',
   },
+  {
+    id: 'page-task-center',
+    revision: 1,
+    title: '后台任务：切页签也不会中断的长任务',
+    summary: '续写、校对、拆书、工单、推演这类长任务在后台继续跑；这里看进度、中止，完成后跳回发起页签看结果。',
+    aliases: ['后台任务', '任务中心', '任务进度', '中止任务', '任务列表'],
+    keywords: ['后台任务', '进度', '中止', '长任务', '切页签', '校对', '拆书', '工单', '推演'],
+    group: '工作面板与正文',
+    tabIds: ['task-center'],
+    availability: 'all',
+    aiRequirement: 'none',
+    sections: [
+      {
+        id: 'what',
+        heading: '它管哪些任务',
+        body: [
+          '耗时可能超过十几秒的长任务会出现在这里：整章改写、文字 / 逻辑校对、拆书抽取、优化工单生成与执行、情节推演、批量摘要等。',
+          '几秒就能返回的短任务（取名、选区润色）不进列表，结果直接回到原来的面板。',
+        ],
+      },
+      {
+        id: 'control',
+        heading: '能做什么',
+        body: [
+          '运行中：可以随时中止（只有你点才会停，切页签不会打断）；',
+          '已结束：保留最近 5 条，用来回看失败原因或中途取消的任务；点「查看」直接跳回发起它的页签。',
+          '本页只负责看进度、中止和跳转，不保存任务产物 —— 结果始终留在发起它的页签里。',
+        ],
+      },
+    ],
+    related: ['tools-ai-extras'],
+    actions: [{ label: '打开后台任务', tabId: 'task-center' }],
+    verifiedAgainst: '3.5.6',
+    reviewedAt: '2026-11-16',
+  },
 ]

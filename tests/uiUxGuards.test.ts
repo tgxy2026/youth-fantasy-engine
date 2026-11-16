@@ -427,5 +427,50 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     !/useWritingReady/.test(read('src/components/community/AdminPanel.tsx')))
 }
 
+// ============ 3.5.6 · 动态态文案与后台任务页（问题 01 / T1 / R02 / R03）============
+//
+// 这几条都是"平时看不见、真机触发后才暴露"的问题，静态审计扫不出来（拼接字符串、
+// 状态机取词、运行态才渲染）。钉住它们，避免下次改动无声回退。
+{
+  const editorModals = read('src/components/editor/EditorModals.tsx')
+  ok('校对停止按钮只表达动作（不再把「停止」与状态词拼成「停止文字校对中」）',
+    /停止校对\s*</.test(editorModals) && !/停止\{meta\.running\}/.test(editorModals))
+  ok('校对进行中的状态与进度单独一行（含「正在切分正文…」兜底，不出 0/0）',
+    /meta\.running/.test(editorModals) && /正在切分正文…/.test(editorModals)
+    && /st\.progress\.total > 0 \? `已完成/.test(editorModals))
+  ok('颉文姬诊所的停止按钮不在总数未知时显示 (0/0)',
+    /st\.progress\.total > 0 \? `（\$\{st\.progress\.done\}\/\$\{st\.progress\.total\}）` : ''/.test(read('src/components/jiewenji/JieWenJiClinic.tsx')))
+  ok('优化工单的运行进度有 total>0 守卫（不出「已处理 0 / 0 章」）',
+    /runProgress\.total > 0/.test(read('src/components/tools/OptimizeTicketPanel.tsx')))
+
+  // R02：后台任务独立页签
+  const part3 = read('src/lib/schemaTabs/part3.ts')
+  const iModel = part3.indexOf("id: 'model-settings'")
+  const iTask = part3.indexOf("id: 'task-center'")
+  const iGuide = part3.indexOf("id: 'guide'")
+  ok('「后台任务」页签存在且位于模型设置与使用指南之间',
+    iTask > 0 && iModel > 0 && iGuide > 0 && iModel < iTask && iTask < iGuide)
+  ok('「后台任务」档位为 locked（默认勾选、不可取消）',
+    /'task-center': 'locked'/.test(read('src/lib/schema.ts')))
+  ok('侧栏工具栏不再内嵌任务列表（避免折叠后藏起来 / 两处入口）',
+    !/<TaskIndicator/.test(read('src/components/app/Sidebar.tsx')))
+  ok('App 渲染「后台任务」页并挂全站任务提示桥',
+    /activeTab === 'task-center'/.test(read('src/App.tsx')) && /<TaskNoticeBridge \/>/.test(read('src/App.tsx')))
+  ok('任务页签有独立页面组件与空态说明',
+    /后台任务/.test(read('src/components/app/TaskCenterPanel.tsx'))
+    && /现在没有后台任务/.test(read('src/components/app/TaskCenterPanel.tsx')))
+
+  // R03：优化工单按卷/按章选范围
+  const panel = read('src/components/tools/OptimizeTicketPanel.tsx')
+  ok('工单生成按所选范围传 chapterIds（不再永远全书）',
+    /chapterIds: ids/.test(panel) && /scopeIds/.test(panel))
+  ok('工单首帧进度用选中章数作 total（不再 0/0）',
+    /ctx\.progress\(\{ done: 0, total: ids\.length \}\)/.test(panel))
+  ok('工单结果只替换所选范围（其它范围条目保留）',
+    /prev\.filter\(i => !scope\.has\(i\.chapterId\)\)/.test(panel))
+  ok('工单单次上限 100 章且只提示不硬拦',
+    /SCOPE_LIMIT = 100/.test(panel) && /超过建议上限/.test(panel) && !/disabled=\{gen\.running \|\| scopeIds\.size > SCOPE_LIMIT\}/.test(panel))
+}
+
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

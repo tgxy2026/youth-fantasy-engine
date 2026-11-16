@@ -78,11 +78,15 @@ import workbenchBg from '@/assets/workbench-bg.png'
 import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/uiPrefs'
 // 3.5.0 · 投稿广场入口事件（项目中心按钮派发，App 只监听一处）
 import { OPEN_COMMUNITY_EVENT } from '@/lib/community/entry'
+// 3.5.6：任务完成提示的全站出口（后台任务拆成页签后，页签没开也要能弹 toast）
+import TaskNoticeBridge from '@/components/common/TaskNoticeBridge'
 
 // 工作台页面在打开时加载，项目中心与导航外壳可以先呈现。
 // 🔴 一律走 `lazyPage`（UX13）：裸 `lazy()` 会把加载失败永久缓存住，「重试」只能整页刷新；
 //    这里每个页面失败后都能换新实例真重发请求，且只在这一页内报错、不动导航。
 const GuidePage = lazyPage(() => import('@/components/app/GuidePage'), '使用指南')
+// 3.5.6：后台任务独立页签（工作面板组，模型设置与使用指南之间）
+const TaskCenterPanel = lazyPage(() => import('@/components/app/TaskCenterPanel'), '后台任务')
 const Dashboard = lazyPage(() => import('@/components/app/Dashboard'), '仪表盘')
 const NovelEditor = lazyPage(() => import('@/components/editor/NovelEditor'), '正文编辑')
 const FormSheet = lazyPage(() => import('@/components/sheets/FormSheet'), '表单')
@@ -713,7 +717,7 @@ export default function App() {
     if (id !== activeTabRef.current) {
       const pending = takeUnnotifiedRunning()
       if (pending.length === 1) {
-        showToast(`「${pending[0].title}」仍在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
+        showToast(`「${pending[0].title}」仍在后台进行 —— 可从「后台任务」页签查看或中止`, 'info')
       } else if (pending.length > 1) {
         showToast(`还有 ${pending.length} 个任务在后台进行 —— 可从左下角「后台任务」查看或中止`, 'info')
       }
@@ -895,7 +899,9 @@ export default function App() {
   if (bootError) {
     return (
       <>
-        <DesktopWriteLockBanner />
+        {/* 3.5.6：任务完成提示的全站出口（任务页签没打开时也要能收到 toast） */}
+      <TaskNoticeBridge />
+      <DesktopWriteLockBanner />
         <PortableWriteLockBanner />
         <FailureNotice title="启动失败" error={bootError.cause}
           description="工作台尚未完成初始化。请保留技术摘要，再尝试重新加载。"
@@ -959,6 +965,10 @@ export default function App() {
     }
     if (activeTab === 'model-settings') {
       return <ModelSettingsPanel />
+    }
+    // 3.5.6：后台任务页签（原内嵌在侧栏工具栏，折叠后不可见 → 拆为独立页）
+    if (activeTab === 'task-center') {
+      return <TaskCenterPanel onNavigate={navigate} />
     }
     if (activeTab === 'inspire-tools') {
       return <InspireTools />

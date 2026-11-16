@@ -12,8 +12,8 @@
  * 🔴 长任务两条都走任务中心（`optimize-ticket` / `optimize-ticket-run`）：
  *    全书诊断 + 逐章改写可能跑几分钟，切页签不中断、结果留着。
  */
-import { useEffect, useMemo, useState } from 'react'
-import { ClipboardList, Loader2, Square, Sparkles, Eye, ListChecks } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClipboardList, Loader2, Square, Sparkles, Eye, ListChecks, CheckSquare, ChevronDown, ChevronRight } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -34,6 +34,10 @@ import {
 import { loadRecheckMemos, memoText, memoWhen, type RecheckMemo } from '@/lib/revision/recheckMemo'
 import type { FactGuardReport } from '@/lib/ai/factGuard'
 import { MAX_REQUESTS_PER_LOGICAL_CALL, type AttemptBudgetSnapshot } from '@/lib/ai/requestLedger'
+// 3.5.6 · R03：生成范围（按卷折叠 + 按章勾选）
+import { listRewriteTree, type RewriteCandidateGroup } from '@/lib/editor/chapterRewrite'
+import { readSetPref, writeSetPref, readStringPref } from '@/lib/settings/uiPrefs'
+import { getCurrentProjectId } from '@/lib/db'
 
 const OWNER_TAB = 'check-tools'
 const KIND_GEN = 'optimize-ticket'
@@ -87,12 +91,63 @@ export default function OptimizeTicketPanel() {
   /** 3.2.1 · T-11：复检结论备忘（项目级 settingsKV）—— 刷新 / 重启后仍能回答「上次改完到底改好没」 */
   const [memos, setMemos] = useState<Map<string, RecheckMemo>>(new Map())
 
+  // ============ 3.5.6 · R03：生成范围（按卷折叠 + 按章勾选）============
+  // 背景：以前「生成工单」一次跑全书；几百上千章的项目代价太大。
+  // 决策：默认选中**最近编辑的那一章所在的卷**；选择记忆按项目持久化；
+  //       单次超过 100 章给「建议按卷分批」提示，但不硬拦。
+  const SCOPE_LIMIT = 100
+  const [tree, setTree] = useState<RewriteCandidateGroup[]>([])
+  const [scopeIds, setScopeIds] = useState<Set<string>>(new Set())
+  const [collapsedVols, setCollapsedVols] = useState<Set<string>>(new Set())
+  /** 本次生成实际用的范围（结果合并只替换这个范围，其它范围的旧条目保留） */
+  const genScopeRef = useRef<string[]>([])
+  const projectId = getCurrentProjectId() || ''
+  const scopeKey = `optimize-ticket-scope:${projectId}`
+  const totalChapters = tree.reduce((n, g) => n + g.items.length, 0)
+
+  useEffect(() => {
+    let alive = true
+    void listRewriteTree().then(groups => {
+      if (!alive) return
+      setTree(groups)
+      const all = new Set(groups.flatMap(g => g.items.map(i => i.chapter.id)))
+      const saved = (readSetPref(scopeKey) ?? []).filter(id => all.has(id))
+      if (saved.length) { setScopeIds(new Set(saved)); return }
+      // 没有记忆：选最近编辑章所在的卷；再没有就选最后一卷（写作进度通常在后段）
+      const lastCh = readStringPref(`editor-last-chapter:${projectId}`)
+      const vol = groups.find(g => g.items.some(i => i.chapter.id === lastCh)) ?? groups[groups.length - 1]
+      setScopeIds(new Set(vol ? vol.items.map(i => i.chapter.id) : [...all]))
+    })
+    return () => { alive = false }
+  }, [scopeKey, projectId])
+
+  const commitScope = (next: Set<string>) => { setScopeIds(next); writeSetPref(scopeKey, next) }
+  const toggleChapter = (id: string) => {
+    const next = new Set(scopeIds)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    commitScope(next)
+  }
+  const toggleVolume = (g: RewriteCandidateGroup) => {
+    const ids = g.items.map(i => i.chapter.id)
+    const allOn = ids.every(id => scopeIds.has(id))
+    const next = new Set(scopeIds)
+    for (const id of ids) { if (allOn) next.delete(id); else next.add(id) }
+    commitScope(next)
+  }
+
   const gen = useTaskRunner<GenResult, GenProgress>({ ownerTab: OWNER_TAB, kind: KIND_GEN, title: '生成优化工单' })
   const exe = useTaskRunner<RunResult, RunProgress>({ ownerTab: OWNER_TAB, kind: KIND_RUN, title: '逐章自动修订' })
 
   // 工单生成结果 → 界面工作副本（勾选位默认全不勾：**绝不静默全跑**）
+  // 3.5.6 · R03：只替换**本次所选范围**的条目，其它范围已有的结果保留（按卷分批生成时不会互相冲掉）
   useEffect(() => {
-    setItems((gen.result?.items ?? []).map(i => ({ ...i, picked: false })))
+    const fresh = gen.result?.items
+    if (!fresh) return
+    const scope = new Set(genScopeRef.current)
+    setItems(prev => [
+      ...prev.filter(i => !scope.has(i.chapterId)),
+      ...fresh.map(i => ({ ...i, picked: false })),
+    ])
   }, [gen.result])
 
   // 执行结果的状态合并回来（切页签后重挂载，靠这一步恢复「哪些已经改过」）。
@@ -149,9 +204,15 @@ export default function OptimizeTicketPanel() {
 
   const genNow = () => {
     if (gen.running) return
+    // 3.5.6 · R03：只生成所选范围；一章没选就不发（避免"点了一下什么都没发生"）
+    const ids = tree.flatMap(g => g.items.map(i => i.chapter.id)).filter(id => scopeIds.has(id))
+    if (!ids.length) { showToast('先在「生成范围」里勾选至少一章', 'info'); return }
+    genScopeRef.current = ids
     gen.run(async ctx => {
-      ctx.progress({ done: 0, total: 0 })
+      // 总数在发请求前就已知 —— 首帧就报 total，不再出现 0/0
+      ctx.progress({ done: 0, total: ids.length })
       const r = await buildTicketDetailed({
+        chapterIds: ids,
         signal: ctx.signal,
         onProgress: (done, total) => ctx.progress({ done, total }),
       })
@@ -318,6 +379,67 @@ export default function OptimizeTicketPanel() {
         诊断全部本地完成（零额度）；执行走「整章改写」，会消耗额度。历史章只做不改设定的润色 / 精简。
       </p>
 
+      {/* 3.5.6 · R03：生成范围（按卷折叠 + 按章勾选）。以前一次跑全书，几百章的项目代价太大。 */}
+      <div className="mb-3 rounded-lg border border-ink-700 bg-ink-800/30 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 text-11">
+          <span className="font-medium text-ink-200">生成范围</span>
+          <span className="text-ink-500 tabular-nums">已选 {scopeIds.size} 章 / 共 {totalChapters} 章</span>
+          <Button size="xs" variant="secondary" disabled={gen.running}
+            onClick={() => commitScope(new Set(tree.flatMap(g => g.items.map(i => i.chapter.id))))}>全选</Button>
+          <Button size="xs" variant="secondary" disabled={gen.running} onClick={() => commitScope(new Set())}>清空</Button>
+          <Button size="xs" variant="ghost" disabled={gen.running}
+            onClick={() => setCollapsedVols(prev => prev.size ? new Set() : new Set(tree.map(g => g.volume.id)))}>
+            {collapsedVols.size ? '展开全部' : '折叠全部'}
+          </Button>
+        </div>
+        {scopeIds.size === 0 && (
+          <p className="mt-1 text-10 text-amber">先在本卷 / 本章里勾选范围，再点「生成工单」。</p>
+        )}
+        {scopeIds.size > SCOPE_LIMIT && (
+          <p className="mt-1 text-10 text-amber">
+            本次选了 {scopeIds.size} 章，超过建议上限 {SCOPE_LIMIT} 章；可以继续，但更推荐按卷分批生成（只替换所选范围的条目，其它范围的结果会保留）。
+          </p>
+        )}
+        <div className="mt-2 max-h-56 overflow-y-auto space-y-0.5 pr-1">
+          {tree.map(g => {
+            const ids = g.items.map(i => i.chapter.id)
+            const allOn = ids.length > 0 && ids.every(id => scopeIds.has(id))
+            const someOn = ids.some(id => scopeIds.has(id))
+            const collapsed = collapsedVols.has(g.volume.id)
+            return (
+              <div key={g.volume.id}>
+                <div className="flex items-center gap-1">
+                  <button type="button" className="text-ink-400 hover:text-amber"
+                    title={collapsed ? '展开本卷' : '折叠本卷'}
+                    onClick={() => setCollapsedVols(prev => {
+                      const n = new Set(prev); if (n.has(g.volume.id)) n.delete(g.volume.id); else n.add(g.volume.id); return n
+                    })}>
+                    {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                  <button type="button" className="flex items-center gap-1.5 text-11 text-ink-200 hover:text-amber"
+                    title="整卷选择 / 取消" onClick={() => toggleVolume(g)}>
+                    {allOn ? <CheckSquare size={12} className="text-amber" /> : <Square size={12} className={someOn ? 'text-amber/60' : 'text-ink-500'} />}
+                    <span>{g.volume.title || '未命名卷'}</span>
+                    <span className="text-ink-500">（{ids.length} 章）</span>
+                  </button>
+                </div>
+                {!collapsed && (
+                  <div className="ml-6 mt-0.5 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                    {g.items.map(it => (
+                      <label key={it.chapter.id} className="flex min-w-0 cursor-pointer items-center gap-1.5 text-11 text-ink-400 hover:text-ink-200">
+                        <input type="checkbox" className="accent-amber" checked={scopeIds.has(it.chapter.id)}
+                          onChange={() => toggleChapter(it.chapter.id)} />
+                        <span className="truncate">{it.no ? `第${it.no}章 ` : ''}{it.chapter.title || '未命名'}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       {/* 运行中提示 */}
       {(gen.running || exe.running) && (
         <div className="mb-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 text-ink-400">
@@ -332,7 +454,9 @@ export default function OptimizeTicketPanel() {
             <div className="flex items-center gap-2">
               <Loader2 size={12} className="animate-spin" />
               正在逐章修订…
-              {runProgress && <span>已处理 {runProgress.done} / {runProgress.total} 章{runProgress.title ? `（${runProgress.title}）` : ''}</span>}
+              {runProgress && (runProgress.total > 0
+                ? <span>已处理 {runProgress.done} / {runProgress.total} 章{runProgress.title ? `（${runProgress.title}）` : ''}</span>
+                : <span>准备中…</span>)}
             </div>
           )}
           <div className="mt-1 text-10 text-ink-500">可以切到别的页签，任务会继续跑；回来看结果仍在。</div>

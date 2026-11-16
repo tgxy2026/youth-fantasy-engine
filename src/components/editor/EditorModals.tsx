@@ -404,8 +404,10 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
             if (st.loading) {
               return (
                 <Button key={scope} onClick={() => stopScope(scope)} variant="danger" size="md"
-                  className="flex items-center text-12" title="点击停止（已查出的部分会保留）">
-                  <AlertCircle size={13} /> 停止{meta.running}（{st.progress.done}/{st.progress.total}）
+                  className="flex items-center text-12" title={`点击停止「${meta.label}」（已查出的部分会保留）`}>
+                  {/* 3.5.6 问题 01：按钮只表达**动作**，状态与进度挪到下方详情行。
+                      旧实现把「停止」与状态词 meta.running 拼在一起，运行时渲染成「停止文字校对中（0/0）」。 */}
+                  <AlertCircle size={13} /> 停止校对
                 </Button>
               )
             }
@@ -432,7 +434,10 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
                 <span className="text-ink-300">{meta.label}</span>
                 {st.loading && (
                   <span className="text-ink-500 flex items-center gap-1">
-                    <Loader2 size={11} className="animate-spin" /> 正在逐段校对…
+                    <Loader2 size={11} className="animate-spin" /> {meta.running}
+                    <span className="text-ink-600">·</span>
+                    {/* 总数要等正文切分完才知道：此时说「正在切分正文…」，绝不显示 0/0（问题 01） */}
+                    <span>{st.progress.total > 0 ? `已完成 ${st.progress.done}/${st.progress.total} 段` : '正在切分正文…'}</span>
                   </span>
                 )}
                 {st.done && !st.error && (

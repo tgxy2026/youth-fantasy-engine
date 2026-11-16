@@ -95,6 +95,7 @@ export interface TableColumn {
 export type TabType =
   | 'dashboard'    // 工作面板
   | 'model-settings' // 模型设置（模型配置 / 正文写作额度 / 联网检索 / AI 提示词）
+  | 'task-center'  // 后台任务（跨页签任务的进度 / 中止 / 完成回看，3.5.6 从侧栏工具栏拆出）
   | 'guide'        // 使用说明
   | 'editor'       // 正文编辑
   | 'community'    // 投稿广场（与正文编辑同级，正文写作组）
