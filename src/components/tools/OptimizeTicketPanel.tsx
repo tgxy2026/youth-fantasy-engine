@@ -112,11 +112,20 @@ export default function OptimizeTicketPanel() {
       setTree(groups)
       const all = new Set(groups.flatMap(g => g.items.map(i => i.chapter.id)))
       const saved = (readSetPref(scopeKey) ?? []).filter(id => all.has(id))
-      if (saved.length) { setScopeIds(new Set(saved)); return }
-      // 没有记忆：选最近编辑章所在的卷；再没有就选最后一卷（写作进度通常在后段）
-      const lastCh = readStringPref(`editor-last-chapter:${projectId}`)
-      const vol = groups.find(g => g.items.some(i => i.chapter.id === lastCh)) ?? groups[groups.length - 1]
-      setScopeIds(new Set(vol ? vol.items.map(i => i.chapter.id) : [...all]))
+      let next: Set<string>
+      if (saved.length) {
+        next = new Set(saved)
+      } else {
+        // 没有记忆：选最近编辑章所在的卷；再没有就选最后一卷（写作进度通常在后段）
+        const lastCh = readStringPref(`editor-last-chapter:${projectId}`)
+        const vol = groups.find(g => g.items.some(i => i.chapter.id === lastCh)) ?? groups[groups.length - 1]
+        next = new Set(vol ? vol.items.map(i => i.chapter.id) : [...all])
+      }
+      setScopeIds(next)
+      // 🔴 默认只展开「含选中章的卷」，其余折叠：几千章的项目一上来就铺全部章节列表会卡
+      //    （每章一个 checkbox，展开态才渲染）。
+      const activeVols = new Set(groups.filter(g => g.items.some(i => next.has(i.chapter.id))).map(g => g.volume.id))
+      setCollapsedVols(new Set(groups.filter(g => !activeVols.has(g.volume.id)).map(g => g.volume.id)))
     })
     return () => { alive = false }
   }, [scopeKey, projectId])

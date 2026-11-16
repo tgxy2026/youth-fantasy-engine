@@ -119,6 +119,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
     'src/components/app/GuidePage.tsx': 'src/components/app/GuidePage.tsx',
     'src/components/community/CommunitySquare.tsx': 'src/components/community/CommunitySquare.tsx',
     'src/components/settings/ModelSettingsPanel.tsx': 'src/components/settings/ModelSettingsPanel.tsx',
+    // 3.5.6：后台任务拆为独立页签后，它的引导锚点在页面组件里（task-center-header）
+    'src/components/app/TaskCenterPanel.tsx': 'src/components/app/TaskCenterPanel.tsx',
   }
   const sources = Object.fromEntries(Object.keys(anchorsByFile).map(file => [file, read(file)]))
   const allSource = Object.values(sources).join('\n')

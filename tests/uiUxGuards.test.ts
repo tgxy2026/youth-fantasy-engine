@@ -459,6 +459,8 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('任务页签有独立页面组件与空态说明',
     /后台任务/.test(read('src/components/app/TaskCenterPanel.tsx'))
     && /现在没有后台任务/.test(read('src/components/app/TaskCenterPanel.tsx')))
+  ok('新页签注册了「本页指引」（否则页头本页指引点开是空的）',
+    /tabId: 'task-center'/.test(read('src/lib/help/guides.ts')))
 
   // R03：优化工单按卷/按章选范围
   const panel = read('src/components/tools/OptimizeTicketPanel.tsx')
@@ -470,6 +472,8 @@ console.log('\n—— uiUxGuards 用例开始 ——')
     /prev\.filter\(i => !scope\.has\(i\.chapterId\)\)/.test(panel))
   ok('工单单次上限 100 章且只提示不硬拦',
     /SCOPE_LIMIT = 100/.test(panel) && /超过建议上限/.test(panel) && !/disabled=\{gen\.running \|\| scopeIds\.size > SCOPE_LIMIT\}/.test(panel))
+  ok('范围树默认只展开含选中章的卷（几千章不卡）',
+    /activeVols/.test(panel) && /setCollapsedVols\(new Set\(groups\.filter\(g => !activeVols\.has/.test(panel))
 }
 
 console.log(`\n—— uiUxGuards 用例结束：${pass} 通过 / ${fail} 失败`)

@@ -171,6 +171,28 @@ export const PAGE_GUIDES: PageGuide[] = [
     ],
   },
   {
+    // 3.5.6：后台任务从侧栏工具栏拆成独立页签 —— 新页签必须有本页指引，
+    // 否则页头「本页指引」点开是空的（作者会以为是坏了）。
+    id: 'task-center-basics',
+    revision: 1,
+    tabId: 'task-center',
+    articleId: 'page-task-center',
+    steps: [
+      {
+        id: 'what',
+        anchor: 'task-center-header',
+        title: '这里是长任务的后台',
+        body: '续写、校对、拆书、优化工单、推演这类要跑一阵的任务会出现在列表里；切到别的页签不会打断它们。短任务（取名、选区润色）不进列表，结果直接回原面板。',
+      },
+      {
+        id: 'control',
+        anchor: 'task-center-header',
+        title: '能中止，也能跳回结果',
+        body: '运行中的任务可以点「中止」（只有你点才会停）。已结束的保留最近 5 条：点「查看」跳回发起它的页签看结果，点叉移除记录（已写入的内容不受影响）。',
+      },
+    ],
+  },
+  {
     id: 'table-empty-start',
     revision: 1,
     tabId: 'foreshadow',
