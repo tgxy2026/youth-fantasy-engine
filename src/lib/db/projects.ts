@@ -23,6 +23,8 @@ import {
 } from '@/lib/search/knowledgeBase'
 // 导出项目包时剔除敏感设置（密钥不进备份）—— 叶子模块，不会与 sync 层成环
 import { isSensitiveSettingKey } from '@/lib/storage/sensitiveMeta'
+// 3.6.0 · A1：作者成果记录导入时的显式重映射（纯函数，不反向依赖 db）
+import { ARTEFACT_SETTING_KEY, remapArtefactsForImport } from '@/lib/artefacts/remap'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
@@ -473,6 +475,23 @@ export async function importProject(bundle: ProjectBundle): Promise<string> {
   }
   if (bundle.settings) {
     for (const s of bundle.settings) {
+      /**
+       * 🔴 3.6.0 · A1：作者成果（`artefacts`）必须**显式重映射**。
+       *    `remapSettingValue` 是白名单式的（只认 worldSubActive / inspirationBox /
+       *    chapterSets / exportSchemes），不认识成果键 ⇒ 原样搬运 ⇒ 记录里的 chapterId /
+       *    rowId 全指向旧项目的 id，表现是「成果还在、点开定位全错」且无任何报错。
+       *    映射不到的引用在 remap 里标 `missing:` 并降为 draft（可读、不可应用）。
+       */
+      if (s.key === ARTEFACT_SETTING_KEY) {
+        await ops.put('settingsKV', {
+          key: `${newPid}::${ARTEFACT_SETTING_KEY}`,
+          value: remapArtefactsForImport(s.value, {
+            chapters: map, rows: rowIdMap, cards: cardIdMap, volumes: volMap,
+            makeId: uid, projectId: newPid, now,
+          }),
+        })
+        continue
+      }
       const sourceChapterId = s.key.startsWith('chapterContext32:') ? s.key.slice('chapterContext32:'.length) : ''
       const sourceOwner = bundle.chapters.find(c => c.id === sourceChapterId)?.projectId || bundle.project.id
       const context = remapChapterContextSetting(s.key, s.value, newPid, sourceOwner, map, cardIdMap, rowIdMap, volMap)
