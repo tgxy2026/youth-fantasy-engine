@@ -351,6 +351,12 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
         </span>
       </div>
       <p className="mt-1 text-11 leading-relaxed text-ink-500">{status.budget.notice}</p>
+      {/* 3.5.6 真机后补：长任务（逻辑校对 / 工单改写 / 拆书）常常要等一两分钟，
+          作者看不到上限就会以为卡死。文案与 scripts/agent-host/acp-client.mjs 的
+          PROMPT_TIMEOUT_MS（300_000）保持一致 —— 改那边记得改这里。 */}
+      <p className="mt-1 text-11 leading-relaxed text-ink-600">
+        单次生成最多等 5 分钟；超时会写明已等待时长，并建议缩小范围、换更快的模型或切回 API 模式。
+      </p>
       <div className="mt-2 grid gap-3 sm:grid-cols-3">
         <label className="grid min-w-0 gap-1 text-11 font-medium text-ink-300">
           上下文窗口（tokens）
