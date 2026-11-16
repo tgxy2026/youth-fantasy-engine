@@ -11,6 +11,10 @@ import {
   mergeRunStates, parseReviewSummaries, withAppendedSummary, type ReviewRunSummary,
 } from '@/lib/revision/reviewSummary'
 import { appendReviewSummary, bindReviewSummaryChapter, loadReviewSummaries } from '@/lib/revision/reviewSummaryStore'
+import {
+  REVIEW_IGNORE_LIMIT, clearReviewIgnore, ignoreIndex, loadReviewIgnores, revisionRequestOf, setReviewIgnore,
+} from '@/lib/revision/reviewIgnore'
+import { isSensitiveMetaKey } from '@/lib/storage/sensitiveMeta'
 import * as db from '../src/lib/db'
 import { __resetMockStores } from './mock-memory'
 
@@ -145,7 +149,7 @@ console.log('—— reviewSummary：运行摘要契约闸（3.6.0 · D）——'
   ok('🔴 ⑥ 资料不足时返回 skipped（不再是 completed + requested:0）',
     /state: 'skipped'/.test(self) && /context-insufficient/.test(self) && !/requested: 0, completed: 0, failed: 0, skipped: 0/.test(self))
   ok('⑥ 自检三项都写运行摘要（含全绿与失败）', /writeSummary/.test(self) && /appendReviewSummary/.test(self))
-  ok('⑥ 自动修正后标 corrected', /writeSummary\(\{ corrected: true \}\)/.test(self))
+  ok('⑥ 自动修正后标 corrected', /writeSummary\(\{ corrected: true/.test(self))
   ok('⑥ 建章后补绑 chapterId，并核对任务/章号',
     /bindReviewSummaryChapter\(/.test(auto) && /chapterNo: plannedNo/.test(auto))
   ok('🔴 ⑥ skipped 不暂停连写（前置不足不是"未完成"）',
@@ -155,6 +159,61 @@ console.log('—— reviewSummary：运行摘要契约闸（3.6.0 · D）——'
   ok('⑥ 空态不再说「全绿不在这里留痕」（与运行摘要不矛盾）',
     !/全绿的检查不占空间，也不在这里留痕/.test(panel))
   ok('⑥ 报告落库返回可关联的 id', /ids\?: string\[\]/.test(read('src/lib/revision/checkReports.ts')))
+}
+
+// ---------- ⑦ 「忽略并说明」记录（本机偏好） ----------
+{
+  __resetMockStores()
+  const pid = 'p-ignore'
+  await setReviewIgnore(pid, { reportId: 'r1', index: 0, title: '节奏拖沓', reason: '角色口癖', at: 1 })
+  await setReviewIgnore(pid, { reportId: 'r1', index: 1, reason: '', at: 2 })
+  ok('⑦ 两条忽略都能读回', (await loadReviewIgnores(pid)).length === 2)
+
+  await setReviewIgnore(pid, { reportId: 'r1', index: 0, title: '节奏拖沓', reason: '改了理由', at: 3 })
+  const after = await loadReviewIgnores(pid)
+  ok('⑦ 同报告同下标覆盖（不出现两条）', after.length === 2
+    && after.find(r => r.index === 0)?.reason === '改了理由')
+  ok('⑦ ignoreIndex 便于界面查询', ignoreIndex(after).get('r1::0')?.reason === '改了理由')
+
+  await clearReviewIgnore(pid, 'r1', 0)
+  ok('⑦ 撤销只删那一条', (await loadReviewIgnores(pid)).length === 1)
+
+  // 上限：忽略是偏好，超出淘汰最旧的
+  for (let i = 0; i < REVIEW_IGNORE_LIMIT + 5; i++) await setReviewIgnore(pid, { reportId: 'bulk', index: i, reason: '', at: i })
+  ok('⑦ 记录上限 500（不无限膨胀）', (await loadReviewIgnores(pid)).length === REVIEW_IGNORE_LIMIT)
+
+  ok('⑦ 忽略记录登记为**本机专属**（不随云同步/项目包走）', isSensitiveMetaKey('reviewIgnore::p1'))
+  ok('⑦ 空项目读回空列表（不报错）', (await loadReviewIgnores('')).length === 0)
+
+  const txt = revisionRequestOf({ chapterName: '第 3 章', level: '中等', title: '节奏拖沓', detail: '前半段铺陈过长', where: '他推门走了出去' })
+  ok('⑦ 修订要求含章名/级别/标题/位置', /第 3 章/.test(txt) && /中等/.test(txt) && /节奏拖沓/.test(txt) && /原文位置/.test(txt))
+  ok('⑦ 修订要求写明「不要改变原意」（防模型顺手重写）', /不要改变原意/.test(txt))
+}
+
+// ---------- ⑧ 修正对照与报告落档结果 ----------
+{
+  const s = buildReviewSummary({
+    id: 'ext', at: 1, fingerprint: 'fp-before', corrected: true,
+    runs: [{ checkId: 'continuity', source: 's', state: 'completed', findings: 1 }],
+    revision: { beforeFingerprint: 'fp-before', beforeWords: 4210, afterFingerprint: 'fp-after', afterWords: 4050 },
+    reportWrite: { saved: 2, pruned: 1 },
+  })
+  ok('⑧ 修正前后字数与指纹都记下（不复制正文）',
+    s.revision?.beforeWords === 4210 && s.revision?.afterWords === 4050
+    && s.revision?.beforeFingerprint === 'fp-before' && s.revision?.afterFingerprint === 'fp-after')
+  ok('⑧ 落档结果（含淘汰）随摘要带回', s.reportWrite?.saved === 2 && s.reportWrite?.pruned === 1)
+  ok('⑧ 报告写入失败可表达', buildReviewSummary({
+    id: 'err', at: 1, fingerprint: 'f', runs: [],
+    reportWrite: { saved: 0, pruned: 0, error: 'quota' },
+  }).reportWrite?.error === 'quota')
+
+  const self = read('src/lib/outline/selfRefine.ts')
+  ok('⑧ 修正成功后把新正文指纹写进摘要', /writeSummary\(\{ corrected: true, after: rw \}\)/.test(self))
+  ok('⑧ 落档结果（saved/pruned/error）写进摘要', /reportWrite = \{ saved: saved\.saved/.test(self))
+  const panel = read('src/components/revision/CheckReportPanel.tsx')
+  ok('⑧ 面板可「忽略并说明」并撤销', /忽略并说明/.test(panel) && /撤销/.test(panel))
+  ok('⑧ 面板可「复制修订要求」', /复制修订要求/.test(panel) && /revisionRequestOf/.test(panel))
+  ok('⑧ 面板显示修正对照与落档结果', /修正对照/.test(panel) && /reportWrite/.test(panel))
 }
 
 console.log(`\n———— reviewSummary：${pass} 通过 / ${fail} 失败 ————`)

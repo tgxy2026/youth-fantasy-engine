@@ -23,6 +23,11 @@ import {
   listCheckReportViews, reportSourceLabel, summarizeReportViews, type CheckReportView,
 } from '@/lib/revision/checkReports'
 import { getCurrentProjectId } from '@/lib/db/core'
+import { copyText, showToast } from '@/components/dialogs/dialogs'
+import {
+  clearReviewIgnore, ignoreIndex, loadReviewIgnores, revisionRequestOf, setReviewIgnore,
+  type ReviewIgnoreRecord,
+} from '@/lib/revision/reviewIgnore'
 import { REVIEW_SUMMARY_LIMIT, type ReviewCheckState, type ReviewRunSummary } from '@/lib/revision/reviewSummary'
 import { loadReviewSummaries } from '@/lib/revision/reviewSummaryStore'
 
@@ -64,6 +69,10 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
    */
   const [summaries, setSummaries] = useState<ReviewRunSummary[] | null>(null)
   const [sumErr, setSumErr] = useState('')
+  /** 3.6.0 · D：「忽略并说明」记录（本机偏好，键 = reportId::index） */
+  const [ignores, setIgnores] = useState<Map<string, ReviewIgnoreRecord>>(new Map())
+  const [ignoreEditing, setIgnoreEditing] = useState<string | null>(null)
+  const [ignoreDraft, setIgnoreDraft] = useState('')
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -73,8 +82,31 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
       setSummaries(r.list)
       setSumErr(r.error ?? '')
     })
+    void loadReviewIgnores(getCurrentProjectId()).then(list => {
+      if (!cancelled) setIgnores(ignoreIndex(list))
+    })
     return () => { cancelled = true }
   }, [])
+
+  const saveIgnore = async (reportId: string, index: number, title: string | undefined) => {
+    const pid = getCurrentProjectId()
+    if (!pid) return
+    const reason = ignoreDraft.trim().slice(0, 200)
+    await setReviewIgnore(pid, { reportId, index, ...(title ? { title } : {}), reason, at: Date.now() })
+    setIgnores(ignoreIndex(await loadReviewIgnores(pid)))
+    setIgnoreEditing(null)
+    setIgnoreDraft('')
+    showToast(reason ? '已记录忽略与理由（只影响这台设备）' : '已忽略（未填理由，只影响这台设备）', 'info')
+  }
+  const undoIgnore = async (reportId: string, index: number) => {
+    const pid = getCurrentProjectId()
+    if (!pid) return
+    await clearReviewIgnore(pid, reportId, index)
+    setIgnores(ignoreIndex(await loadReviewIgnores(pid)))
+  }
+  const copyRevision = async (chapterName: string, f: { level?: string; title?: string; detail?: string; where?: string }) => {
+    await copyText(revisionRequestOf({ chapterName, ...f }), '修订要求已复制，可粘贴到编辑器里的 AI 面板')
+  }
 
   const sum = rows ? summarizeReportViews(rows) : null
   const chapterName = (r: CheckReportView): string => {
@@ -112,6 +144,23 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
                         {s.runs.map(r => `${r.source.replace('章节自检 · ', '')} ${RUN_STATE_LABEL[r.state] ?? r.state}${r.findings ? ` ${r.findings} 条` : ''}`).join(' · ')}
                       </div>
                       {s.reason && <div className="mt-0.5 text-10 text-ink-500">{s.reason}</div>}
+                      {s.revision && (
+                        <div className="mt-0.5 text-10 text-ink-500">
+                          修正对照：{s.revision.beforeWords} 字
+                          {s.revision.afterWords !== undefined ? ` → ${s.revision.afterWords} 字` : '（未产生可用修正）'}
+                          <span className="ml-1 text-ink-600" title="只记指纹与字数，不复制正文；正文本身在章节版本里">
+                            指纹 {s.revision.beforeFingerprint.slice(0, 8)}
+                            {s.revision.afterFingerprint ? ` → ${s.revision.afterFingerprint.slice(0, 8)}` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {s.reportWrite && (
+                        <div className="mt-0.5 text-10 text-ink-500">
+                          报告：落档 {s.reportWrite.saved} 份
+                          {s.reportWrite.pruned ? ` · 淘汰 ${s.reportWrite.pruned} 份更早的` : ''}
+                          {s.reportWrite.error ? <span className="text-danger"> · 写入失败：{s.reportWrite.error}</span> : ''}
+                        </div>
+                      )}
                       {s.reportIds?.length ? (
                         <div className="mt-0.5 text-10 text-ink-500">关联报告 {s.reportIds.length} 份（见下方列表）</div>
                       ) : (
@@ -182,7 +231,10 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
                     <details className="mt-2">
                       <summary className="cursor-pointer text-11 text-ink-200">查看完整发现（{r.findings.length} 条）</summary>
                     <ul className="mt-2 space-y-1.5">
-                      {r.findings.map((f, i) => (
+                      {r.findings.map((f, i) => {
+                        const ikey = `${r.id}::${i}`
+                        const ignored = ignores.get(ikey)
+                        return (
                         <li key={i} className="text-11 leading-relaxed">
                           <span className={`mr-1.5 ${levelCls(f.level)}`}>· {f.level ?? '提示'}</span>
                           <span className="text-ink-100">{f.title ?? '（无标题）'}</span>
@@ -190,8 +242,47 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
                           {f.where
                             ? <span className="ml-1 text-ink-500 whitespace-pre-wrap" title="可定位的原文片段（工单拿它算段号）">〔{f.where}〕</span>
                             : <span className="ml-1 text-ink-600" title="这条发现没有带可引用的原句">〔无引文〕</span>}
+                          {/* 3.6.0 · D：每条问题都能「忽略并说明」或复制成修订要求 —— 只读回看不够用 */}
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-10">
+                            {ignored ? (
+                              <>
+                                <span className="text-ink-500">已忽略{ignored.reason ? `：${ignored.reason}` : '（未填理由）'} · 仅本机</span>
+                                <button type="button" onClick={() => void undoIgnore(r.id, i)}
+                                  className="text-ink-400 hover:text-amber transition-colors">撤销</button>
+                              </>
+                            ) : (
+                              <>
+                                <button type="button"
+                                  onClick={() => { setIgnoreEditing(ikey); setIgnoreDraft('') }}
+                                  className="text-ink-400 hover:text-amber transition-colors"
+                                  title="记下「这条不用改」及理由；不影响其它设备，也不删除报告">忽略并说明</button>
+                                <button type="button"
+                                  onClick={() => void copyRevision(chapterName(r), f)}
+                                  className="text-ink-400 hover:text-amber transition-colors"
+                                  title="复制成一段修订要求，可粘贴到编辑器里的 AI 面板（本版不自动跨页跳转）">复制修订要求</button>
+                              </>
+                            )}
+                          </div>
+                          {ignoreEditing === ikey && (
+                            <div className="mt-1.5 space-y-1">
+                              <textarea
+                                value={ignoreDraft}
+                                maxLength={200}
+                                onChange={e => setIgnoreDraft(e.target.value)}
+                                placeholder="为什么这条不用改（例如：这是角色口癖 / 有意留的伏笔），可留空"
+                                className="w-full text-11 px-2 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-ink-100 outline-none focus:border-amber/50 h-14 resize-none"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => void saveIgnore(r.id, i, f.title)}
+                                  className="px-2 py-0.5 rounded border border-amber/40 bg-amber/10 text-amber">保存忽略</button>
+                                <button type="button" onClick={() => { setIgnoreEditing(null); setIgnoreDraft('') }}
+                                  className="px-2 py-0.5 rounded border border-ink-700 text-ink-400">取消</button>
+                              </div>
+                            </div>
+                          )}
                         </li>
-                      ))}
+                        )
+                      })}
                       {r.findings.length === 0 && (
                         <li className="text-11 text-ink-500">（这份报告没有留下条目）</li>
                       )}

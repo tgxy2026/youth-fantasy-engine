@@ -58,6 +58,21 @@ export interface ReviewRunSummary {
    * `true` 表示摘要针对的是**修正前**的正文，作者回看时要以 `fingerprint` 对号。
    */
   corrected?: boolean
+  /**
+   * 修正前后对照（只存指纹与字数，不复制正文）。
+   * 🔴 正文本身在章节快照里；摘要只负责让作者看出「审的是哪一版、改了多少」。
+   */
+  revision?: {
+    beforeFingerprint: string
+    afterFingerprint?: string
+    beforeWords: number
+    afterWords?: number
+  }
+  /**
+   * 本轮报告落档结果（3.6.0 · D：写入失败与被配额清理必须显式，不能假装存住了）。
+   * 缺失 ⇒ 本轮没有账本上下文（老调用），不是"存了 0 份"。
+   */
+  reportWrite?: { saved: number; pruned: number; error?: string }
 }
 
 /** 摘要来源的最小形状（与 `StepExecutionResult` 兼容，但不强耦合） */
@@ -133,6 +148,8 @@ export function buildReviewSummary(input: {
   reason?: string
   reportIds?: string[]
   corrected?: boolean
+  revision?: ReviewRunSummary['revision']
+  reportWrite?: ReviewRunSummary['reportWrite']
 }): ReviewRunSummary {
   const merged = mergeRunStates(input.runs)
   return {
@@ -152,6 +169,8 @@ export function buildReviewSummary(input: {
     ...(input.chapterNo !== undefined ? { chapterNo: input.chapterNo } : {}),
     ...(input.chapterId ? { chapterId: input.chapterId } : {}),
     ...(input.corrected ? { corrected: true } : {}),
+    ...(input.revision ? { revision: input.revision } : {}),
+    ...(input.reportWrite ? { reportWrite: input.reportWrite } : {}),
     ...((input.reason || merged.issues.length)
       ? { reason: input.reason ?? merged.issues.join('；') }
       : {}),

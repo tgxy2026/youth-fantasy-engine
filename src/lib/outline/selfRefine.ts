@@ -182,6 +182,7 @@ export async function selfRefine(
   // 没有 taskId/projectId 时（老调用、无账本场景）**不硬塞**：挂不到任务上的报告没人看得到。
   // 🔴 旁路，绝不打断创作：`persistCheckReports` 内部不抛，这里再兜一层。
   let reportIds: string[] | undefined
+  let reportWrite: { saved: number; pruned: number; error?: string } | undefined
   if (request?.taskId && request.projectId) {
     const saved = await persistCheckReports({
       projectId: String(request.projectId),
@@ -193,14 +194,18 @@ export async function selfRefine(
         { checkId: 'foreshadow', source: '章节自检 · 伏笔', run: runs[2] as unknown as CheckRunLike },
       ],
     }).catch(() => null)
-    if (saved?.ids?.length) reportIds = saved.ids
+    if (saved) {
+      // 3.6.0 · D：落档结果（含失败与被淘汰）要能显示 —— 报告页 0 份不等于"没问题"
+      reportWrite = { saved: saved.saved, pruned: saved.pruned, ...(saved.error ? { error: saved.error } : {}) }
+      if (saved.ids?.length) reportIds = saved.ids
+    }
   }
   /**
    * 3.6.0 · D：每次自检都留一条**运行摘要**（含全绿与失败 —— 那正是报告页分不清的部分）。
    * 摘要针对的是**自检时的正文**（指纹取 `body`），发生自动修正时标 `corrected`，
    * 作者回看时不会把旧意见当成新正文的结论。
    */
-  const writeSummary = async (extra: { corrected?: boolean; reason?: string } = {}) => {
+  const writeSummary = async (extra: { corrected?: boolean; reason?: string; after?: string } = {}) => {
     if (!request?.taskId || !request.projectId) return undefined
     const summary = buildReviewSummary({
       id: uid(),
@@ -216,6 +221,15 @@ export async function selfRefine(
       ...(reportIds ? { reportIds } : {}),
       ...(extra.reason ? { reason: extra.reason } : {}),
       ...(extra.corrected ? { corrected: true } : {}),
+      ...(reportWrite ? { reportWrite } : {}),
+      // 修正前后对照：只存指纹与字数，不复制正文
+      revision: {
+        beforeFingerprint: hashOf(body),
+        beforeWords: countWords(body),
+        ...(extra.after
+          ? { afterFingerprint: hashOf(extra.after), afterWords: countWords(extra.after) }
+          : {}),
+      },
     })
     const r = await appendReviewSummary(String(request.projectId), summary).catch(() => ({ ok: false as const }))
     return r.ok ? summary.id : undefined
@@ -244,6 +258,6 @@ export async function selfRefine(
     const summaryId = await writeSummary({ reason: '发现了审读问题，但自动修正结果不可用（过短或为空），已保留原文' })
     return { body, selfCheck, ...(summaryId ? { summaryId } : {}) }
   }
-  const summaryId = await writeSummary({ corrected: true })
+  const summaryId = await writeSummary({ corrected: true, after: rw })
   return { body: rw, selfCheck, ...(summaryId ? { summaryId } : {}) }
 }

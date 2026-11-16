@@ -27,6 +27,12 @@ export interface ArtefactSource {
   /** 来源页签（如 races / history） */
   tabId?: string
   chapterId?: string
+  /**
+   * 章节名快照（3.6.0 · B）。
+   * 🔴 「只分析」不绑定项目章节（分析外部参考作品时项目里根本没有这章），
+   *    所以来源只能靠章名 + 文本指纹定位；导入/换项目后它仍是"当时分析的哪一章"。
+   */
+  chapterTitle?: string
   rowId?: string
   cardId?: string
   /** UTF-16 半开区间，按**原始字符串**计位（与 JS 字符索引一致） */

@@ -26,6 +26,7 @@ import NumberField from '@/components/common/NumberField'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { loadActiveId, loadProviders, type AIProvider } from '@/lib/ai'
 import { adviseImport, type ImportAdvice } from '@/lib/bookbreak/recommend'
+import BookAnalysisDialog from '@/components/bookbreak/BookAnalysisDialog'
 import { estimateCalls, previewSplit, runBookBreak, initialBookBreakResume, bookBreakResumeIssue, bookBreakResumeOwnerCurrent, bookBreakExtractIdentity, type BookBreakResume, type BookBreakFailedUnit, type BookBreakUnitSummary } from '@/lib/bookbreak/run'
 import { discardBookBreakTask, modelTagOf, previewBookBreakTask, type BookBreakTaskPreview } from '@/lib/bookbreak/taskStore'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
@@ -169,6 +170,8 @@ function BookBreakWorkspace() {
   }, [taskId, taskStatus, taskUnread])
 
   const [raw, setRaw] = useState(() => task && taskCheckpoint && bookBreakResumeOwnerCurrent(taskCheckpoint) ? taskCheckpoint.sourceText ?? '' : '')
+  // 3.6.0 · B：作品分析（只分析）弹窗
+  const [analysisOpen, setAnalysisOpen] = useState(false)
   const [startError, setStartError] = useState('')
   const [preview, setPreview] = useState<SplitResult | null>(null)
   // 2.6.1 · R2：章节标题示例 —— 填了且本地规则认不出章节时，拆书先用 AI 按示例识别边界（run.ts 阶段 1）
@@ -431,8 +434,15 @@ function BookBreakWorkspace() {
 
   return (
     <div data-guide="page-header" className="mx-auto max-w-5xl">
+      {analysisOpen && <BookAnalysisDialog onClose={() => setAnalysisOpen(false)} />}
       <div className="mb-4 flex items-center gap-2">
         <h1 className="text-15 font-medium text-ink-100">一键拆书</h1>
+        {/* 3.6.0 · B：只分析（外部参考作品 / 先摸清写法再决定拆不拆）—— 不写正文与设定 */}
+        <Button variant="secondary" size="sm" className="gap-1.5"
+          onClick={() => setAnalysisOpen(true)}
+          title="只分析写法：产出分析卡，不改正文、不建设定、不建关系（适合外部参考作品）">
+          作品分析（只分析）
+        </Button>
         <HelpPopover title="一键拆书怎么用" pin>
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
             <p>粘贴或导入一整本小说原文（文件支持 <b>.txt / .md / .docx</b>，上限 20MB；.docx 内的批注、脚注、图片、公式读不到，导入时会如实告诉你），AI 会<b>先按识别出的结构把原文写进「正文编辑」</b>（卷 / 章），再逐章抽取其中的<b>人物 / 势力 / 地点 / 种族 / 物品 / 术语</b>，并尽量补全各类的设定字段（身份定位、外貌特征、实力境界、功法技能、类别、剧情作用…），整理成草稿供你勾选。</p>
