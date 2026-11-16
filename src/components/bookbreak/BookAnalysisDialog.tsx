@@ -54,8 +54,14 @@ export default function BookAnalysisDialog({ onClose }: { onClose: () => void })
       })
       setResult(res)
       const c = res.coverage
+      // 🔴 一个单元都没跑成时不能说「分析完成」（3.6.0：失败不得伪装成绿灯）
+      const label = res.aborted
+        ? '分析已中止'
+        : c.failedUnits > 0
+          ? (c.completedUnits > 0 ? '分析部分完成' : '分析未完成')
+          : '分析完成'
       showToast(
-        `分析${res.aborted ? '已中止' : '完成'}：${c.completedUnits}/${c.plannedUnits} 个单元，${res.cards.length} 张卡`
+        `${label}：${c.completedUnits}/${c.plannedUnits} 个单元，${res.cards.length} 张卡`
         + (c.failedUnits ? `；${c.failedUnits} 个单元失败` : '')
         + (c.truncated ? '；超出上限的部分未处理' : ''),
         c.failedUnits ? 'error' : 'success', 6000,
