@@ -282,6 +282,11 @@ export interface PersistCheckReportsResult {
   skipped: number
   /** 淘汰份数 */
   pruned: number
+  /**
+   * 本次实际写入的载荷 id（3.6.0 · D：运行摘要用它做「可选链接」）。
+   * 旧调用方不读它 ⇒ 行为零变化。
+   */
+  ids?: string[]
   /** 失败原因（不影响创作主流程） */
   error?: string
 }
@@ -338,8 +343,11 @@ export async function persistCheckReports(
           }
           : undefined,
       )
-      if (res.ok) { out.saved++; seen.add(fp) }
-      else out.skipped++
+      if (res.ok) {
+        out.saved++
+        if (res.payloadId) (out.ids ??= []).push(res.payloadId)
+        seen.add(fp)
+      } else out.skipped++
     }
 
     // 淘汰：拿全项目报告（含刚写的）算一遍

@@ -154,7 +154,8 @@ async function main() {
 
   // ---------- 五、接线（自检跑完就落库，且不打断创作） ----------
   {
-    const src = readFileSync('src/lib/outline/autoContinue.ts', 'utf8')
+    // 3.6.0 · D：自检（含落库调用）已从 autoContinue 抽到 outline/selfRefine.ts
+    const src = readFileSync('src/lib/outline/selfRefine.ts', 'utf8')
     ok('⑤ 自检流程调用了落库（不是只有纯函数）', /persistCheckReports\(/.test(src))
     ok('⑤ 用请求归属当 projectId/jobId（挂不到任务的报告没人看得到）',
       /projectId: String\(request\.projectId\)/.test(src) && /jobId: request\.taskId/.test(src))

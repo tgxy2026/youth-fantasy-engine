@@ -84,8 +84,9 @@ console.log('\n▶ rewriteAsk')
     task.includes('buildRewriteAsk(ask, countWords(passage))'))
   ok('🔴 拼装住在零依赖层（否则测试会把传输层 ./ai 拉进 Node）',
     readSrc('src/lib/editor/rewriteAsk.ts').includes('export function buildRewriteAsk'))
-  ok('🔴 autoContinue 的第二调用点也改成传对象',
-    readSrc('src/lib/outline/autoContinue.ts').includes('aiRewritePassage(body, { instruction:'))
+  // 3.6.0 · D：自检本体已从 autoContinue 抽到 outline/selfRefine.ts
+  ok('🔴 连写自检的第二调用点也改成传对象',
+    readSrc('src/lib/outline/selfRefine.ts').includes('aiRewritePassage(body, { instruction:'))
   ok('🔴 组件不自己拼提示词（不许在 UI 层再写一份【修改要求】）',
     !readSrc('src/components/jiewenji/useJieWenJiModel.ts').includes('【修改要求】'))
 }

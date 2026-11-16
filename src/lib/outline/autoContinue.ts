@@ -21,14 +21,14 @@ import * as db from '@/lib/db'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { uid } from '@/lib/app/id'
 import { countWords } from '@/lib/editor/textStats'
-import { requireProviderFor, isCancelled, stripThink } from '@/lib/ai'
+import { requireProviderFor, isCancelled } from '@/lib/ai'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 // 3.2.0 · W3 种子：把「候选产出/采纳/丢弃」记进运行账本（此前 AiRun.candidates 无生产者）
 import { noteCandidate } from '@/lib/ai/aiRunLedger'
 // 3.2.0 · WQ6：批次/步骤总请求预算（补字循环 + 自检 + 设定整理一起计入）
 import { createAttemptBudget, CHAPTER_ATTEMPT_BUDGET, type AttemptBudget } from '@/lib/ai/requestLedger'
-// 3.2.0 · W4（A 策略）：有实质发现的检查才落库，双闸淘汰（每任务 5 份 / 每项目 200 份 / 32 MiB）
-import { persistCheckReports, type CheckRunLike } from '@/lib/revision/checkReports'
+// 3.6.0 · D：自检的运行摘要已抽到 `./selfRefine`；这里只保留「建章后补绑 chapterId」
+import { bindReviewSummaryChapter } from '@/lib/revision/reviewSummaryStore'
 import { hashOf } from '@/lib/semantic/chunk'
 // 3.2.0 · WQ8：抽取证据的原文核验（编造的证据比没有证据更糟）
 import { checkEntityEvidence, describeEvidence } from '@/lib/ai/evidenceCheck'
@@ -42,11 +42,9 @@ import { parseObjectArrayDetailed, asText } from '@/lib/ai/aiParse'
 import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { buildProjectContext, type ProjectContextResult } from '@/lib/ai/aiContext'
 import {
-  aiExtractSettingEntitiesWithStatus,
-  aiContinuityAuditWithStatus, aiOocCheckWithStatus, aiForeshadowReviewWithStatus,
-  aiRewritePassage, aiChapterSummary, cleanChapterOutput,
+  aiExtractSettingEntitiesWithStatus, aiChapterSummary, cleanChapterOutput,
 } from '@/lib/ai/aiTasks'
-import type { Coverage, StepExecutionResult, StepResultState } from '@/lib/revision/revisionTypes'
+import type { StepResultState } from '@/lib/revision/revisionTypes'
 import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settings/settingLedger'
 import { sortChapters, chapterSeqOf } from '@/lib/outline/chapterSeq'
 import { loadDraftMappingContexts, type DraftMappingContext } from '@/lib/flow/draftMapping'
@@ -295,118 +293,11 @@ async function generateOneChapter(opts: {
   })).trim()
 }
 
-/** 编辑自检：连续性 / 人设崩坏 / 伏笔 三类检查，命中严重/中等则单轮改写后接受不完美退出 */
-/**
- * WQ1-2（3.2.0）：连写自检的结果形状。
- *
- * 🔴 `selfCheck.state !== 'completed'` 时调用方**必须暂停后续自动应用**：
- *    三项审校是「本次已启用且承诺执行的必选项」，请求失败 / 解析失败 /
- *    取消都不是"审了没问题"。草稿保留在编辑器，由作者重试或明确跳过。
- */
-export interface SelfRefineResult {
-  body: string
-  selfCheck: StepExecutionResult<RefineFinding[]>
-}
-
-/** 自检三项的共同 Finding 形状（只按 level 过滤，其余字段原样带过） */
-type RefineFinding = { level?: string }
-
-/**
- * WQ1-2 纯汇总：把三项审校的运行结果压成一条（可单测，无 IO）。
- *
- * 规则（§16.2）：
- *   · 全部 completed（**含合法空 findings**）⇒ completed —— 空也是"审了没问题"；
- *   · 任一 cancelled ⇒ cancelled（作者取消立即传播，不当成通过）；
- *   · 全部 failed ⇒ failed；部分失败 ⇒ partial —— 都不得显示"自检通过"。
- */
-export function summarizeSelfCheck(
-  runs: readonly StepExecutionResult<RefineFinding[]>[],
-): StepExecutionResult<RefineFinding[]> {
-  const requested = runs.length
-  const completed = runs.filter(r => r.state === 'completed').length
-  const failed = runs.filter(r => r.state === 'failed').length
-  const cancelled = runs.filter(r => r.state === 'cancelled').length
-  const coverage: Coverage = { requested, completed, failed, skipped: 0 }
-  const bad = runs.filter(r => r.state !== 'completed')
-  const issues = bad.map(r => `${r.sourceId ?? '检查'}:${r.errorCode ?? r.state}`)
-  if (cancelled > 0) {
-    return { state: 'cancelled', coverage, issues, errorCode: 'cancelled' }
-  }
-  if (failed === 0) {
-    return { state: 'completed', coverage, sourceId: 'self-refine' }
-  }
-  if (failed === requested) {
-    return { state: 'failed', coverage, issues, errorCode: runs[0]?.errorCode ?? 'all-checks-failed', retryable: true }
-  }
-  return { state: 'partial', coverage, issues, errorCode: 'some-checks-failed', retryable: true }
-}
-
-async function selfRefine(
-  body: string, ctx: ProjectContextResult, signal?: AbortSignal,
-  onPhase?: (p: string) => void, request?: CallRequestContext,
-  budget?: AttemptBudget,
-  /**
-   * 计划章号（W4：检查报告要按章挂在工单上）。
-   * 🔴 用章号而不是章 id：自检发生在 `createChapterAfter` **之前**，那时新章还没有 id。
-   */
-  chapterNo?: number,
-  /** 3.5.5 · ACP 通道：自检后的单轮改写走 Agent */
-  acpText?: (prompt: string) => Promise<string>,
-): Promise<SelfRefineResult> {
-  if (!ctx.text.trim() || countWords(body) < 200) {
-    return { body, selfCheck: { state: 'completed', coverage: { requested: 0, completed: 0, failed: 0, skipped: 0 }, sourceId: 'self-refine-skipped' } }
-  }
-  // 3.2.0 · WQ6：三项自检 = 三次逻辑调用，先记账再发（预算耗尽时这里就该被上层拦住）
-  budget?.consume(3)
-  onPhase?.('AI 编辑自检（连续性 / 人设 / 伏笔）')
-  const findings: RefineFinding[] = []
-  const push = (arr: readonly RefineFinding[]) => {
-    for (const f of arr) if (f && (f.level === '严重' || f.level === '中等')) findings.push(f)
-  }
-  // WQ1-2：三项都走**带状态**版本 —— 旧写法 `.catch(() => [])` 把请求失败
-  // 吞成"无问题"，是 Q1 登记病灶（自检失败却显示通过）的直接成因。
-  const runs = await Promise.all([
-    aiContinuityAuditWithStatus(ctx.text, body, { signal, ...(request ? { request } : {}) }),
-    aiOocCheckWithStatus(ctx.text, body, { signal, ...(request ? { request } : {}) }),
-    aiForeshadowReviewWithStatus(ctx.text, { signal, ...(request ? { request } : {}) }),
-  ])
-  const selfCheck = summarizeSelfCheck(runs)
-  // 3.2.0 · W4：检查报告落库（A 策略）—— 只存有「严重 / 中等」发现的；
-  // 没有 taskId/projectId 时（老调用、无账本场景）**不硬塞**：挂不到任务上的报告没人看得到。
-  // 🔴 旁路，绝不打断创作：`persistCheckReports` 内部不抛，这里再兜一层。
-  if (request?.taskId && request.projectId) {
-    await persistCheckReports({
-      projectId: String(request.projectId),
-      jobId: request.taskId,
-      ...(chapterNo !== undefined ? { chapterNo } : {}),
-      reports: [
-        { checkId: 'continuity', source: '章节自检 · 连续性', run: runs[0] as unknown as CheckRunLike },
-        { checkId: 'ooc', source: '章节自检 · 人设', run: runs[1] as unknown as CheckRunLike },
-        { checkId: 'foreshadow', source: '章节自检 · 伏笔', run: runs[2] as unknown as CheckRunLike },
-      ],
-    }).catch(() => null)
-  }
-  if (selfCheck.state !== 'completed') {
-    // 必选项失败/取消：不当成通过、不进入改写分支；调用方据此暂停连写
-    onPhase?.(`编辑自检未完成（${selfCheck.issues?.join('；') || selfCheck.state}），本章不自动修正`)
-    return { body, selfCheck }
-  }
-  for (const r of runs) push(r.result?.data ?? [])
-  if (!findings.length) {
-    onPhase?.('编辑自检通过，未发现严重问题')
-    return { body, selfCheck }
-  }
-  onPhase?.(`根据 ${findings.length} 条审读问题改写修正`)
-  const instr = findings.map(f => `- ${(f as { title?: string }).title || '问题'}：${(f as { detail?: string }).detail || ''}`).join('\n')
-  // 2.9.2 · ②：`aiRewritePassage` 收 `RewriteAsk` 对象（编辑区传 5 个动作词，这里传自由文本）
-  const res = await aiRewritePassage(body, { instruction: `修正以下审读问题，保持剧情与文风一致，不要改变原意：\n${instr}` }, '', {
-    signal, ...(acpText ? { acpText } : {}),
-  }).catch(() => null)
-  const rw = res?.rewritten ? stripThink(res.rewritten).trim() : ''
-  // 安全阀：改写结果显著缩水（不足原文 60%）视为模型偷懒或被截断，保留原文
-  if (!rw || countWords(rw) < countWords(body) * 0.6) return { body, selfCheck }
-  return { body: rw, selfCheck }
-}
+// 3.6.0 · D：自检（三项审校 + 自动修正 + 运行摘要）已抽到 `./selfRefine`
+// —— 本文件超过「单文件 1200 行」硬闸（tests/structureGates）。
+// 保留 re-export，既有 import 路径不变（测试与调用方仍可从本文件取）。
+import { selfRefine } from './selfRefine'
+export { summarizeSelfCheck, type SelfRefineResult } from './selfRefine'
 
 async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRequestContext, acpText?: (prompt: string) => Promise<string>): Promise<string> {
   const cfg = acpText ? null : await requireProviderFor('create').catch(() => null)
@@ -1024,8 +915,16 @@ export async function runAutoContinue(
       // 稿子经 onBodyReplace 留给作者审阅（B3 完整检查点属 W2，见 3.2.0 方案 §9）
       const refined = await selfRefine(body, ctx, cb.signal, p => cb.onPhase?.(`${tag}：${p}`), cb.request, budget, ordered.length + i + 1, opts.acpText)
       body = refined.body
-      if (refined.selfCheck.state !== 'completed') {
-        const sc = refined.selfCheck
+      const sc = refined.selfCheck
+      /**
+       * 3.6.0 · D：只有「失败 / 取消 / 部分完成 / 不完整」才暂停。
+       * `skipped` 是**前置不足**（首章还没有上下文、正文过短）——旧实现把它记成
+       * `completed + requested:0` 继续写；现在语义改准，行为保持不变：
+       * 继续写，但日志与运行摘要如实说「本章没做自检」，不冒充已审阅。
+       */
+      if (sc.state === 'skipped') {
+        cb.onLog?.(`${tag}编辑自检已跳过（${sc.issues?.join('；') || '资料不足'}）；本章未审阅，已按原稿继续`)
+      } else if (sc.state !== 'completed') {
         cb.onLog?.(
           `${tag}编辑自检未完成（${sc.state}${sc.issues?.length ? '：' + sc.issues.join('；') : ''}），已暂停连写；`
           + `本章未保存，稿子在编辑器里，审阅后可重试或明确跳过`,
@@ -1070,6 +969,20 @@ export async function runAutoContinue(
       //    按它问调用方"这一章该落进哪一卷" —— 长篇跨卷时第 21 章要进卷二，而不是留在锚点所在的卷一。
       const plannedNo = ordered.length + i + 1
       const ch = await createChapterAfter(anchorId, title, body, sum, cb.volumeIdFor?.(plannedNo))
+      /**
+       * 3.6.0 · D：自检发生在建章**之前**（那时只有计划章号），这里拿到真实 chapterId 再补绑。
+       * 🔴 绑定会核对任务 id 与计划章号，对不上就**保留未绑定** —— 绝不按章号猜归属
+       *    （并发插章 / 草稿重写都可能让「第 N 章」换人）。
+       */
+      if (refined.summaryId && cb.request?.projectId) {
+        const bound = await bindReviewSummaryChapter(
+          String(cb.request.projectId), refined.summaryId, ch.id,
+          { chapterNo: plannedNo, ...(cb.request.taskId ? { taskId: cb.request.taskId } : {}) },
+        ).catch(() => ({ ok: false as const, reason: '写入异常' }))
+        if (!bound.ok) {
+          cb.onLog?.(`${tag}运行摘要未能绑定到本章（${'reason' in bound ? bound.reason : '未知原因'}）—— 摘要仍在，只是没挂到具体章节`)
+        }
+      }
       const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
       const no = chapterSeqOf(lv, lc, ch.id)
       // 3.2.0 · W3 种子：走到这里＝作者已裁决采纳并落库，账本记一条「已采纳」候选引用。

@@ -12,7 +12,7 @@
  *   ③ **淘汰如实**：配额到了会删最旧的（每章 5 份 / 每项目 200 份），删了就是删了，
  *      不写"已清理"以外的说法，也不假装还在。
  */
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { FileWarning, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Modal } from '@/components/dialogs/Modal'
@@ -22,6 +22,22 @@ import { useRevisionRead } from './useRevisionRead'
 import {
   listCheckReportViews, reportSourceLabel, summarizeReportViews, type CheckReportView,
 } from '@/lib/revision/checkReports'
+import { getCurrentProjectId } from '@/lib/db/core'
+import { REVIEW_SUMMARY_LIMIT, type ReviewCheckState, type ReviewRunSummary } from '@/lib/revision/reviewSummary'
+import { loadReviewSummaries } from '@/lib/revision/reviewSummaryStore'
+
+/** 运行摘要的状态人话（`skipped` 必须说"未执行"，不能说"通过"） */
+const SUMMARY_STATE: Record<ReviewCheckState, { label: string; cls: string }> = {
+  completed: { label: '已检完', cls: 'text-success' },
+  partial: { label: '部分完成', cls: 'text-amber' },
+  failed: { label: '检查失败', cls: 'text-danger' },
+  cancelled: { label: '已取消', cls: 'text-ink-400' },
+  skipped: { label: '未执行', cls: 'text-amber' },
+  incomplete: { label: '未完整', cls: 'text-amber' },
+}
+const RUN_STATE_LABEL: Record<string, string> = {
+  completed: '已检', partial: '部分', failed: '失败', cancelled: '取消', skipped: '未检', incomplete: '未完整',
+}
 
 function fmt(ts: number): string {
   if (!ts) return '—'
@@ -42,8 +58,23 @@ export default function CheckReportPanel({ onClose }: { onClose: () => void }) {
 
 function ReportWorkspace({ onClose }: { onClose: () => void }) {
   const { rows, titles, err, reading, load } = useRevisionRead(listCheckReportViews)
+  /**
+   * 3.6.0 · D：运行摘要（每次自检都留一条，含全绿/失败/未执行）。
+   * 🔴 报告是「有问题才存」，所以 0 份报告**不能**推断成没问题 —— 这一块就是补这个歧义。
+   */
+  const [summaries, setSummaries] = useState<ReviewRunSummary[] | null>(null)
+  const [sumErr, setSumErr] = useState('')
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    let cancelled = false
+    void loadReviewSummaries(getCurrentProjectId()).then(r => {
+      if (cancelled) return
+      setSummaries(r.list)
+      setSumErr(r.error ?? '')
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const sum = rows ? summarizeReportViews(rows) : null
   const chapterName = (r: CheckReportView): string => {
@@ -59,6 +90,42 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
       footer={<><span className="text-10 text-ink-500">留档有配额（每章 5 份 / 全书 200 份），更早的报告可能已不在。</span>
         <Button variant="secondary" size="sm" disabled={reading} onClick={() => void load()}><RefreshCw size={13} /> 重试读取</Button></>}>
         <div data-revision-reports>
+          {sumErr !== '' && <div role="alert" className="text-11 text-amber py-1">运行摘要读取失败：{sumErr}（不影响下面的留档报告）</div>}
+          {summaries !== null && summaries.length > 0 && (
+            <section data-review-summaries className="mb-4 rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-12 font-semibold text-ink-200">最近自检</span>
+                <span className="text-10 text-ink-500">每次自检都留一条（含「没查」与「没发现问题」），只保留最近 {REVIEW_SUMMARY_LIMIT} 次</span>
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {summaries.slice(0, 3).map(s => {
+                  const st = SUMMARY_STATE[s.state]
+                  return (
+                    <li key={s.id} data-summary-id={s.id} className="text-11 leading-relaxed">
+                      <span className={`mr-1.5 ${st.cls}`}>· {st.label}</span>
+                      <span className="text-ink-300">
+                        {s.chapterId ? (titles[s.chapterId] ?? '（已不在项目中）') : s.chapterNo !== undefined ? `第 ${s.chapterNo} 章` : '（未绑章）'}
+                      </span>
+                      <span className="ml-1.5 text-ink-500 tabular-nums">{fmt(s.at)}</span>
+                      {s.corrected && <span className="ml-1.5 text-ink-500" title="摘要针对自动修正前的正文">（修正前）</span>}
+                      <div className="mt-0.5 text-10 text-ink-400">
+                        {s.runs.map(r => `${r.source.replace('章节自检 · ', '')} ${RUN_STATE_LABEL[r.state] ?? r.state}${r.findings ? ` ${r.findings} 条` : ''}`).join(' · ')}
+                      </div>
+                      {s.reason && <div className="mt-0.5 text-10 text-ink-500">{s.reason}</div>}
+                      {s.reportIds?.length ? (
+                        <div className="mt-0.5 text-10 text-ink-500">关联报告 {s.reportIds.length} 份（见下方列表）</div>
+                      ) : (
+                        <div className="mt-0.5 text-10 text-ink-600">本轮没有落档报告（全绿或未执行，不等于「有问题但没存」）</div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+              {summaries.length > 3 && (
+                <div className="mt-1.5 text-10 text-ink-600">另有 {summaries.length - 3} 次更早的自检记录（未展开）</div>
+              )}
+            </section>
+          )}
           {rows === null && (
             <div className="flex items-center justify-center py-10 gap-2 text-ink-400">
               <Loader2 size={18} className="animate-spin text-amber" />
@@ -72,7 +139,8 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
               <div className="text-13 text-ink-500 text-center">
                 还没有留档的检查报告。
                 <div className="text-11 mt-1.5">
-                  只有查到「冲突 / 注意」级问题时才会留档 —— 全绿的检查不占空间，也不在这里留痕。
+                  只有查到「冲突 / 注意」级问题时才会留档；全绿的检查不占这份额度，
+                  但每次自检都会在上面「最近自检」留一行状态 —— 0 份报告不等于「查过没问题」。
                 </div>
               </div>
             </div>

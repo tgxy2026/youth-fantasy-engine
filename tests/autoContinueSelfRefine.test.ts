@@ -39,7 +39,10 @@ const bad = (sourceId: string, state: 'failed' | 'cancelled' = 'failed'): StepEx
   ok('有取消项 ⇒ cancelled（作者取消优先上报）', cancelled.state === 'cancelled')
 
   const none = summarizeSelfCheck([])
-  ok('零项（正文太短跳过）⇒ completed', none.state === 'completed')
+  // 3.6.0 · D：口径修正 —— 零项表示「一项都没检」，不能算通过（旧断言是 completed）
+  ok('🔴 零项（没有可检项）⇒ skipped，不是「通过」', none.state === 'skipped')
+  ok('零项时 coverage.skipped = 0 且 requested = 0（不伪造条数）',
+    none.coverage?.requested === 0 && none.coverage?.skipped === 0)
 
   // 负向控制：合法空结果与失败混在一起时，绝不允许汇总成 completed
   const mixed = summarizeSelfCheck([done('continuity'), bad('ooc')])
