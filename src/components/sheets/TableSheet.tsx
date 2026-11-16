@@ -290,9 +290,13 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
     const catNote = p.unknownCategories.length > 0
       ? `\n\n类别值里有 ${p.unknownCategories.length} 个目标表还没有（${p.unknownCategories.slice(0, 3).join('、')}${p.unknownCategories.length > 3 ? '…' : ''}）—— 导入后会自动登记成「类别」列的自定义选项，不会丢值。`
       : ''
+    // 🔴 3.6.0 · H1：包里适用类别为空的字段 —— 原样保留（不静默改成「不限类别」），但必须提前说清楚它不会显示
+    const scopeNote = p.emptyScopeFields.length > 0
+      ? `\n\n有 ${p.emptyScopeFields.length} 个字段的「适用类别」是空的（${p.emptyScopeFields.slice(0, 3).join('、')}${p.emptyScopeFields.length > 3 ? '…' : ''}）—— 导入后表格里可见，图鉴与详情里不会显示。这个空范围会按原样保留，不会自动改成「不限类别」；需要的话可在字段设置里手动放宽。`
+      : ''
     const ok = await confirmDialog({
       title: '导入图鉴资料包',
-      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只「新增」、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}`,
+      message: `将导入 ${p.rows} 条条目；字段：复用 ${p.reusedFields} 个、新建 ${p.createdFields} 个${typeNote}；其中 ${p.images} 条带主图。\n\n导入只「新增」、不覆盖现有条目；图片受项目容量限制（装不下会跳过图片并在结果里说明）。${catNote}${conflictNote}${scopeNote}`,
     })
     if (!ok) return
     if (!owner.current()) return
@@ -746,6 +750,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           imageLimit={atlasImageLimit}
           onExportPackage={exportAtlasPackage}
           onImportPackage={file => void importAtlasPackageFile(file)}
+          // 3.6.0 · H2：图鉴详情里「另有 N 个字段不适用于本条目」的提示要能直达字段设置
+          // 🔴 采用过模板时字段设置不生效（结构由模板快照决定），那时不给这个入口，避免点进去白改一通
+          onOpenFieldSettings={isAtlasCapable && !templateDef ? () => setShowFieldMgr(true) : undefined}
           // 🟢 3.1.3 详情就地编辑：值与草稿全走表格这一份，详情不持有第二份数据
           cellValue={cellVal}
           onCellChange={setCellDraft}
@@ -755,16 +762,22 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           }}
           saving={saving}
           onSave={saveAll}
+          dirtyCount={dirtyKeys.length}
           onRevert={revertCellDrafts}
         />
       ) : viewMode === 'graph' ? (
-        tab.id === 'faction-rels' ? <FactionGraph rows={rows} onNavigate={onNavigate} /> : <RelationGraph rows={rows} />
+        /* 🔴 3.6.0：视图一律吃 `filteredRows`（= 已并入未保存草稿 + 已应用表头筛选），
+            此前这里传的是 `rows`（库值），于是「表格里改了关系人 / 类型、还没点保存就切到关系图」
+            看到的还是旧连线 —— 与图鉴（一直用 filteredRows）两套口径。 */
+        tab.id === 'faction-rels'
+          ? <FactionGraph rows={filteredRows} onNavigate={onNavigate} />
+          : <RelationGraph rows={filteredRows} />
       ) : viewMode === 'storyline' && tab.id === 'foreshadow' ? (
         <StorylineView />
       ) : viewMode === 'timeline' && tab.id === 'history' ? (
-        <HistoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
+        <HistoryTimeline rows={filteredRows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
       ) : viewMode === 'timeline' && tab.id === 'timeline' ? (
-        <StoryTimeline rows={rows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
+        <StoryTimeline rows={filteredRows} tab={tab} calendars={calendars} calendarRule={calendarRule} />
   ) : tab.id === 'relations' ? (
     /* ============ 人物关系：按人物分组的文件夹视图（实现已拆到 TableRelationGroups） ============ */
     <TableRelationGroups tab={tab} model={model} ctx={ctx}

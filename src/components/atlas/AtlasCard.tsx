@@ -21,6 +21,11 @@ interface Props {
   badges: string[]
   /** 摘要字段（≤3，已按作者配置／默认表选好） */
   summaryFields: readonly ResolvedAtlasField[]
+  /**
+   * 3.6.0 · H2：本条因为「类别」不匹配而看不见的自定义字段数。
+   * 🔴 只是**提示**，不是数据缺失 —— 措辞不得暗示"字段被删了/值丢了"。
+   */
+  hiddenCount?: number
   /** 主图（`TableRow.atlasImage`）；没有则显示占位 */
   image?: AtlasImage | null
   /** 密度（方案 §3.1 必交付项）：紧凑 / 标准 / 宽松 */
@@ -38,7 +43,7 @@ const DENSITY = {
   loose: { img: 'h-28', pad: 'p-4', name: 'text-14', gap: 'mt-2' },
 } as const
 
-export default function AtlasCard({ row, nameKey, badges, summaryFields, image, density = 'standard', selected, onOpen, tabIndex, onFocus }: Props) {
+export default function AtlasCard({ row, nameKey, badges, summaryFields, hiddenCount = 0, image, density = 'standard', selected, onOpen, tabIndex, onFocus }: Props) {
   const d = DENSITY[density]
   const name = (row.data[nameKey] ?? '').trim() || '未命名条目'
   // 🔴 逐行过滤：这一行填了哪几个摘要字段就显示哪几个（不同条目条数本就不同）
@@ -107,6 +112,16 @@ export default function AtlasCard({ row, nameKey, badges, summaryFields, image, 
               </div>
             ))}
           </dl>
+        )}
+        {/* 3.6.0 · H2：字段因类别不匹配而没显示 —— 说一句，别让作者以为值丢了。
+            卡片整体是一个按钮，这里只放**不可点**的说明文字（点开卡片进详情看清单与入口）。 */}
+        {hiddenCount > 0 && (
+          <div
+            className="mt-1.5 text-10 leading-snug text-ink-600"
+            title={`另有 ${hiddenCount} 个自定义字段只适用于别的类别，本条目类别下不显示；字段与已填内容都还在。点开卡片可查看清单。`}
+          >
+            另有 {hiddenCount} 个字段不适用于此类别
+          </div>
         )}
       </div>
     </button>

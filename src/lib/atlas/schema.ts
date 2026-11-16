@@ -328,6 +328,45 @@ export function atlasFieldsForCategory<T extends { appliesTo: '*' | string[] }>(
   return fields.filter(f => f.appliesTo === '*' || f.appliesTo.includes(c))
 }
 
+/** 因「适用类别」不匹配而被隐藏的自定义字段（3.6.0 · H2） */
+export interface AtlasCategoryHidden {
+  /** 隐藏字段数（0 ⇒ 调用方不占位） */
+  count: number
+  /** 隐藏字段的显示名，顺序与 `all` 一致（供提示展开时列出） */
+  labels: string[]
+}
+
+/**
+ * 统计「这一条因为类别不匹配而看不见的自定义字段」（3.6.0 · H2）。
+ *
+ * 🔴 为什么要有它：R02 有意按每行「类别」决定看得见哪些字段（避免给「灵兽」显示「魔兽专属」栏），
+ *    但**过滤本身没有任何可见反馈** —— 作者在表格里填了值、切到图鉴却找不到这一栏，
+ *    第一反应是"数据丢了"。这个函数只回答"有几个、分别是哪几个"，不改任何过滤行为。
+ *
+ * 🔴 口径（必须与 `atlasFieldsForCategory` 同源，不能各写一套）：
+ *    · 求差 = 全量自定义字段 − 按类别解析出的字段；
+ *    · 只统计 `source === 'custom'` 且未归档的字段（内置字段适用范围恒为 `'*'`，不会隐藏）；
+ *    · 只表达"字段不适配该类别"，**不是**数据缺失的证据。
+ *
+ * @param all 全量解析结果（`resolveAtlasFields(..., { ignoreAppliesTo: true })`）
+ * @param category 该条目的「类别」值（空 ⇒ 所有带适用范围的字段都算隐藏）
+ */
+export function atlasCategoryHiddenFields(
+  all: readonly ResolvedAtlasField[],
+  category?: string,
+): AtlasCategoryHidden {
+  const scoped = all.filter(f => f.source === 'custom' && !f.archived)
+  const visible = new Set(atlasFieldsForCategory(scoped, category).map(f => f.key))
+  const labels: string[] = []
+  const seen = new Set<string>()
+  for (const f of scoped) {
+    if (visible.has(f.key) || seen.has(f.key)) continue
+    seen.add(f.key)
+    labels.push(f.label)
+  }
+  return { count: labels.length, labels }
+}
+
 /** 按分组聚合（详情页用）。空组分不出现在结果里 —— 字段数为零就不该有标题 */
 export function atlasSections(
   tab: TabDef,

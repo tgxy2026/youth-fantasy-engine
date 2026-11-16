@@ -71,6 +71,17 @@ export default function TemplateFieldEditor({
     if (mode === 'edit') onPatch(p)
   }
 
+  /**
+   * 3.6.0：写适用范围时**不允许空数组落到模板里**。
+   * 本编辑器是「改一下就生效」（没有独立保存按钮），所以拦截必须在这里做：
+   * 取消「不限类别」后先在本地显示空勾选状态并提示，等作者勾上第一个类别才真正下发；
+   * 中途关掉编辑器 ⇒ 模板保持原值（仍是「不限类别」），不会留下谁也看不见的字段。
+   */
+  const applyScope = (next: '*' | string[]) => {
+    setAppliesTo(next)
+    if (next === '*' || next.length > 0) patch({ appliesTo: next })
+  }
+
   const commitOptions = () => {
     const list = [...new Set(optionsText.split('\n').map(s => s.trim()).filter(Boolean))]
     setOptionsText(list.join('\n'))
@@ -227,44 +238,57 @@ export default function TemplateFieldEditor({
         </>
       )}
 
-      {categories.length > 0 && (
-        <div>
-          <span className="text-11 text-ink-400">适用类别</span>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1 text-11 text-ink-300">
-              <input
-                type="checkbox"
-                checked={appliesTo === '*'}
-                onChange={e => {
-                  const next: '*' | string[] = e.target.checked ? '*' : []
-                  setAppliesTo(next)
-                  patch({ appliesTo: next })
-                }}
-              />
-              不限类别
-            </label>
-            {appliesTo !== '*' && categories.map(c => {
-              const on = appliesTo.includes(c)
-              return (
-                <label key={c} className="flex items-center gap-1 text-11 text-ink-300">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={e => {
-                      const next = e.target.checked
-                        ? [...appliesTo, c]
-                        : appliesTo.filter(x => x !== c)
-                      setAppliesTo(next)
-                      patch({ appliesTo: next })
-                    }}
-                  />
-                  {c}
-                </label>
-              )
-            })}
-          </div>
+      {/* 3.6.0：与字段设置面板同一口径 —— 「不限类别」开关不再依赖类别候选是否存在，
+          并阻止把「空适用范围」写进模板（取消不限类别却不勾任何类别 = 这一栏永远不显示）。 */}
+      <div>
+        <span className="text-11 text-ink-400">适用类别</span>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1 text-11 text-ink-300">
+            <input
+              type="checkbox"
+              checked={appliesTo === '*'}
+              onChange={e => applyScope(e.target.checked ? '*' : [])}
+            />
+            不限类别
+          </label>
+          {appliesTo !== '*' && categories.length === 0 && (
+            <span className="text-10 text-amber">这一页没有「类别」列，适用类别不生效</span>
+          )}
+          {appliesTo !== '*' && categories.map(c => {
+            const on = appliesTo.includes(c)
+            return (
+              <label key={c} className="flex items-center gap-1 text-11 text-ink-300">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={e => {
+                    const next = e.target.checked
+                      ? [...appliesTo, c]
+                      : appliesTo.filter(x => x !== c)
+                    applyScope(next)
+                  }}
+                />
+                {c}
+              </label>
+            )
+          })}
         </div>
-      )}
+        {appliesTo !== '*' && appliesTo.length === 0 && (
+          <p className="mt-1 text-10 leading-relaxed text-danger">
+            至少勾一个类别，或勾上「不限类别」—— 否则这一栏不会出现在任何条目上（当前修改未写入模板）。
+          </p>
+        )}
+        {appliesTo !== '*' && categories.length === 0 && appliesTo.length > 0 && (
+          <button
+            type="button"
+            onClick={() => applyScope('*')}
+            className="mt-1 text-10 px-1.5 py-0.5 rounded border border-amber/30 bg-amber/10 text-amber hover:bg-amber/20 transition-colors"
+            title="这一页没有类别维度，改成「不限类别」让它正常显示"
+          >
+            改为不限类别
+          </button>
+        )}
+      </div>
 
       {mode === 'edit' && field && (
         <div className="text-11 text-ink-300">

@@ -16,7 +16,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import '@/components/atlas/atlasMobile.css'
-import { ArrowLeft, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
 import type { AtlasImage, AtlasResolvedSection, ResolvedAtlasField } from '@/lib/atlas/types'
@@ -49,6 +49,13 @@ interface Props {
   nameKey: string
   badges: string[]
   sections: readonly AtlasResolvedSection[]
+  /**
+   * 3.6.0 · H2：本条因「类别」不匹配而被隐藏的自定义字段（count=0 ⇒ 不渲染任何东西）。
+   * 🔴 与图鉴卡片用同一个统计函数，避免两处口径漂移；措辞不得说成"数据丢失"。
+   */
+  hiddenFields?: { count: number; labels: string[] }
+  /** 打开「字段设置」：图鉴页没有这个按钮，由表格页把入口传下来 */
+  onOpenFieldSettings?: () => void
   /** 主图（`TableRow.atlasImage`） */
   image?: AtlasImage | null
   /**
@@ -121,6 +128,7 @@ function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: 
 
 export default function AtlasDetail({
   tabId, row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
+  hiddenFields, onOpenFieldSettings,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
   scrollRef, navigation, navigationGuard, onNavigationStateChange,
@@ -264,6 +272,12 @@ export default function AtlasDetail({
    * 空字段用灰色「—」占位 —— 作者能看到"这里还有一栏没写"，而不是以为字段消失了。
    */
   const [showEmpty, setShowEmpty] = useAtlasWorkspaceOptions(row.projectId, tabId, row.id)
+  /**
+   * 3.6.0 · H2：因类别不匹配被隐藏的字段清单默认收起 —— 平时不占版面，
+   * 作者发现"少了一栏"时才展开（展开后能直接看到字段名并去字段设置）。
+   */
+  const [showHidden, setShowHidden] = useState(false)
+  const categoryText = (valueOf('类别') ?? '').trim()
 
   // 空分组不渲染（方案 §3.2：字段数为零时不出现空分组）；未填字段按开关决定去留
   const visible = sections
@@ -408,6 +422,42 @@ export default function AtlasDetail({
             显示未填写字段
           </label>
         </div>
+        {/* 3.6.0 · H2：字段按类别隐藏时必须有可见反馈，否则作者会以为"表格里有、图鉴里没了 = 数据丢了"。
+            只表达"字段不适配本条目的类别"，不提供任何"恢复/覆盖"动作。 */}
+        {hiddenFields && hiddenFields.count > 0 && (
+          <div className="mb-2 rounded-lg border border-ink-700 bg-ink-800/50 px-2.5 py-1.5">
+            <button
+              type="button"
+              onClick={() => setShowHidden(v => !v)}
+              aria-expanded={showHidden}
+              className="flex w-full items-center gap-1.5 text-left text-10 text-ink-400 hover:text-ink-100 transition-colors"
+              title="这些字段的「适用类别」与本条目类别不匹配，所以不在这里显示；字段定义与已填内容都还在"
+            >
+              {showHidden ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              另有 {hiddenFields.count} 个字段不适用于本条目的类别
+            </button>
+            {showHidden && (
+              <div className="mt-1.5 space-y-1.5 pl-4">
+                <p className="text-10 leading-relaxed text-ink-500">
+                  本条目类别：{categoryText || '未填写'}
+                  {categoryText ? '。' : ' —— 带适用类别的字段在类别为空时一律不显示。'}
+                </p>
+                <p className="text-10 leading-relaxed text-ink-300 break-words">{hiddenFields.labels.join('、')}</p>
+                {onOpenFieldSettings && (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={onOpenFieldSettings}
+                    disabled={editing || dirty || saving}
+                    title={editing || dirty ? '请先保存本条目的改动，再调整字段设置' : '把字段改成「不限类别」，或改本条目类别'}
+                  >
+                    去字段设置
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {visible.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-2 text-ink-500 py-8">

@@ -12,7 +12,7 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, CustomFieldType } from '@/lib/atlas/types'
 import {
   ATLAS_TABS, atlasBadgeKeys, atlasCardBadges, atlasSections, atlasSummaryFields, atlasSearchText,
-  atlasAiVisibilityChanged, atlasFieldsForCategory,
+  atlasAiVisibilityChanged, atlasFieldsForCategory, atlasCategoryHiddenFields,
   defaultSummaryKeys, emptyAtlasSchema, isAtlasTab, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import { atlasColumnsOf } from '@/lib/atlas/columns'
@@ -508,7 +508,9 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   const sheet = read('src/components/sheets/TableSheet.tsx')
   ok('⑲ 导入先校验再落库（parse → 预览确认 → import）',
     sheet.indexOf('parseAtlasPackage') < sheet.indexOf('importAtlasPackage(r.pkg)'))
-  ok('⑲ 导入前有确认弹窗（不当场默默写入）', /previewAtlasImport[\s\S]{0,1200}confirmDialog/.test(sheet))
+  // 3.6.0：预览与确认之间又加了两条提示拼串（缺失类别 / 空适用范围），窗口 1200 → 2000 字符；
+  // 语义不变 —— 仍然是「先预览、再确认，绝不默默写入」
+  ok('⑲ 导入前有确认弹窗（不当场默默写入）', /previewAtlasImport[\s\S]{0,2000}confirmDialog/.test(sheet))
   ok('⑲ 导出用含草稿的 sortedRows', /buildAtlasPackage\(tab, atlasConfig, sortedRows\)/.test(sheet))
 }
 
@@ -1147,6 +1149,126 @@ console.log('—— atlasFields：图鉴字段底座闸（3.1.3）——')
   ok('㉚ R09：界面把字段类型传给导入弹窗', sheet.includes('fieldTypes={atlasFieldTypes}'))
   const dlg = read('src/components/sheets/TableImportDialog.tsx')
   ok('㉚ R09：弹窗把类型信息一路传下去', dlg.includes('fieldTypes'))
+}
+
+// ---------- ㉛ 3.6.0 · H 包：类别隐藏可见性 + 空适用范围死状态 ----------
+//
+// 3.5.6 真机反馈「DIY 字段在图鉴不显示」的根因是**静默过滤**：字段适用范围与条目类别不匹配时
+// 图鉴/详情直接不渲染这一栏，没有任何反馈。H 包不改变过滤设计（R02 有意按行判定），
+// 只保证：① 配置不能进死状态却无人知晓；② 被过滤的字段可被作者看见并处理。
+{
+  const races = tabOf('races')
+  const mk = (over: Partial<AtlasFieldDefinition>): AtlasFieldDefinition => ({
+    id: 'cf_diet', label: '食性', type: 'text', description: '', options: [],
+    appliesTo: '*', groupId: 'ability', order: 10, tableVisible: true, detailVisible: true,
+    searchable: true, aiReadable: true, aiWritable: false, archived: false, ...over,
+  })
+  const cfg = (fields: AtlasFieldDefinition[]): AtlasSchemaConfig => ({ ...emptyAtlasSchema(), fields })
+  const all = resolveAtlasFields(races, {
+    config: cfg([
+      mk({ id: 'cf_any', label: '通用说明', appliesTo: '*' }),
+      mk({ id: 'cf_beast', label: '食性', appliesTo: ['魔兽'] }),
+      mk({ id: 'cf_dead', label: '空范围', appliesTo: [] }),
+      mk({ id: 'cf_arch', label: '已归档', appliesTo: ['魔兽'], archived: true }),
+    ]),
+    purpose: 'detail',
+    ignoreAppliesTo: true,
+  })
+
+  ok('㉛ 类别命中 ⇒ 该字段不算隐藏', atlasCategoryHiddenFields(all, '魔兽').labels.includes('食性') === false)
+  ok('㉛ 类别不匹配 ⇒ 只算它一个（空范围另算）',
+    atlasCategoryHiddenFields(all, '灵兽').labels.includes('食性'), atlasCategoryHiddenFields(all, '灵兽').labels.join('|'))
+  ok('㉛ 类别为空 ⇒ 带范围的都隐藏，「不限类别」不隐藏',
+    atlasCategoryHiddenFields(all, '').labels.join('|') === '食性|空范围', atlasCategoryHiddenFields(all, '').labels.join('|'))
+  ok('㉛ 空数组 appliesTo 在任何类别下都隐藏（死状态必须显形）',
+    atlasCategoryHiddenFields(all, '魔兽').labels.includes('空范围')
+    && atlasCategoryHiddenFields(all, '灵兽').labels.includes('空范围'))
+  ok('㉛ 归档字段不计入隐藏数', !atlasCategoryHiddenFields(all, '').labels.includes('已归档'))
+  ok('㉛ 内置字段不计入隐藏数（它们适用范围恒为「不限类别」）',
+    atlasCategoryHiddenFields(all, '').labels.every(l => ['食性', '空范围'].includes(l)))
+  ok('㉛ count 与 labels 长度一致', (() => {
+    const h = atlasCategoryHiddenFields(all, '灵兽')
+    return h.count === h.labels.length
+  })())
+
+  // 与过滤函数**互补**：全量自定义未归档 = 可见 + 隐藏（两处口径不可能各说各话）
+  for (const cat of ['魔兽', '灵兽', '']) {
+    const scoped = all.filter(f => f.source === 'custom' && !f.archived)
+    const visible = atlasFieldsForCategory(scoped, cat).length
+    ok(`㉛ 互补性（类别=${cat || '空'}）：可见 ${visible} + 隐藏 ${atlasCategoryHiddenFields(all, cat).count} = 全量 ${scoped.length}`,
+      visible + atlasCategoryHiddenFields(all, cat).count === scoped.length)
+  }
+
+  // 导入：空适用范围**原样保留**（不静默改成「不限类别」），但预览必须报出来
+  const pkg = {
+    kind: 'yfe-atlas-package', formatVersion: 1, exportedAt: 123, tabId: 'races', tabName: '种族生物',
+    schema: { fields: [mk({ appliesTo: [] })], groups: [], builtinPresentation: {}, summaryKeys: [] },
+    rows: [{ data: {} }],
+  } as unknown as Parameters<typeof previewAtlasImport>[0]
+  const preview = previewAtlasImport(pkg, null, [])
+  ok('㉛ 导入预览报出空适用范围字段', preview.emptyScopeFields.join('|') === '食性', preview.emptyScopeFields.join('|'))
+  const plan = planAtlasImport(pkg, null, () => 'cf_imported')
+  const imported = plan.fields.find(f => f.id === 'cf_imported')
+  ok('㉛ 导入保留空适用范围（不改成「不限类别」）',
+    Array.isArray(imported?.appliesTo) && (imported!.appliesTo as string[]).length === 0,
+    JSON.stringify(imported?.appliesTo))
+  ok('㉛ 负向：导入后不是通配（否则会让字段在所有条目上突然冒出来）', imported?.appliesTo !== '*')
+
+  // 源码闸：配置侧必须有拦截与可见提示，不能只靠文档纪律
+  const mgr = read('src/components/atlas/AtlasFieldManager.tsx')
+  ok('㉛ 保存时拦截空适用范围', mgr.includes('至少要选一个适用类别'))
+  ok('㉛ 列表里标出死状态字段并可单条修复', mgr.includes('不适用于任何条目') && mgr.includes('改为不限类别'))
+  ok('㉛ 「不限类别」开关不再依赖类别候选是否存在',
+    !/\{categories\.length > 0 && \(\s*<div>\s*<span[^>]*>适用类别/.test(mgr))
+  ok('㉛ 摘要失效键有提示与单条清理（同类配置死状态）',
+    mgr.includes('staleSummaryKeys') && mgr.includes('移除失效项'))
+  ok('㉛ 两个显示开关都关时有说明', mgr.includes('表格与图鉴详情里都不会出现'))
+
+  const card = read('src/components/atlas/AtlasCard.tsx')
+  ok('㉛ 卡片提示不说成「丢失」（只说类别不适用）',
+    card.includes('不适用于此类别') && !card.includes('数据丢失') && !card.includes('字段丢失'))
+  const detail = read('src/components/atlas/AtlasDetail.tsx')
+  ok('㉛ 详情与卡片共用同一统计函数', detail.includes('hiddenFields') && read('src/components/atlas/AtlasView.tsx').includes('atlasCategoryHiddenFields'))
+  ok('㉛ 详情提示给「去字段设置」入口', detail.includes('去字段设置'))
+  ok('㉛ 模板模式下不提供会白改的字段设置入口',
+    /onOpenFieldSettings=\{isAtlasCapable && !templateDef/.test(read('src/components/sheets/TableSheet.tsx')))
+}
+
+// ---------- ㉜ 3.6.0：视图切换必须与表格同一份数据口径 ----------
+//
+// 实测根因：表格的行内编辑写在 drafts 里，`filteredRows`（sortedRows）已合并草稿，
+// 而时间轴 / 关系图早先直接吃 `rows`（库值）⇒「改了还没保存就切视图」看到的还是旧内容。
+// 图鉴一直用 filteredRows，其他视图必须对齐，否则同一功能在不同视图里两套真相。
+{
+  const sheet = read('src/components/sheets/TableSheet.tsx')
+  ok('㉜ 时间轴（历史事件）吃 filteredRows', /<HistoryTimeline rows=\{filteredRows\}/.test(sheet))
+  ok('㉜ 时间轴（时间脉络）吃 filteredRows', /<StoryTimeline rows=\{filteredRows\}/.test(sheet))
+  ok('㉜ 关系图吃 filteredRows', /<RelationGraph rows=\{filteredRows\}/.test(sheet))
+  ok('㉜ 势力关系图吃 filteredRows', /<FactionGraph rows=\{filteredRows\}/.test(sheet))
+  ok('㉜ 负向：视图分支里不再有裸 rows 传参', !/<(HistoryTimeline|StoryTimeline|RelationGraph|FactionGraph) rows=\{rows\}/.test(sheet))
+  const model = read('src/components/sheets/useTableSheetModel.ts')
+  ok('㉜ filteredRows 的来源确实是「已并入草稿」的 sortedRows',
+    /const sortedRows = useMemo\(\s*\(\) => sortRows\(tab, rows\.map\(r => \(\{ \.\.\.r, data: \{ \.\.\.r\.data, \.\.\.\(drafts\[r\.id\] \?\? \{\}\) \} \}\)\)\)/.test(model))
+  // 切到图鉴后「还有修改待保存」不能只是一句话：必须有与表格同语义的保存入口
+  ok('㉜ 图鉴工具条保留全局保存入口', /dirtyCount=\{dirtyKeys\.length\}/.test(sheet)
+    && read('src/components/atlas/AtlasView.tsx').includes('dirtyCount > 0 && onSave'))
+}
+
+// ---------- ㉝ 3.6.0：模板编辑器不许写出「空适用范围」----------
+//
+// 模板编辑器是「改一下立即生效」（没有保存按钮），所以它比字段设置面板更容易留下死配置：
+// 勾掉「不限类别」、还没勾类别就关掉编辑器 —— 旧实现会把 `appliesTo: []` 直接写进模板，
+// 这一栏从此在表格之外的所有视图里消失，且界面上看不出原因。
+{
+  const editor = read('src/components/templates/TemplateFieldEditor.tsx')
+  ok('㉝ 写适用范围走统一入口（空数组不下发）', editor.includes('const applyScope ='))
+  ok('㉝ 只有通配或至少一个类别才落模板',
+    /if \(next === '\*' \|\| next\.length > 0\) patch\(\{ appliesTo: next \}\)/.test(editor))
+  ok('㉝ 负向：不再直接 patch 空数组',
+    !/patch\(\{ appliesTo: next \}\)[\s\S]{0,40}onChange=\{e => \{[\s\S]{0,200}appliesTo: \[\]/.test(editor))
+  ok('㉝ 「不限类别」开关不依赖类别候选存在', !/\{categories\.length > 0 && \(/.test(editor))
+  ok('㉝ 空勾选时当场提示', editor.includes('至少勾一个类别'))
+  ok('㉝ 无类别维度的页签（角色卡）给出「改为不限类别」的出路', editor.includes('这一页没有「类别」列'))
 }
 
 console.log(`\n—— atlasFields 用例结束：${pass} 通过 / ${fail} 失败 ——`)

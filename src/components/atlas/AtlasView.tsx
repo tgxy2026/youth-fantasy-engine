@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import type { TableRow, TabDef } from '@/lib/types'
 import {
-  atlasCardBadges, atlasFieldsForCategory, atlasSections, atlasSummaryFields, resolveAtlasFields,
+  atlasCardBadges, atlasCategoryHiddenFields, atlasFieldsForCategory, atlasSections, atlasSummaryFields, resolveAtlasFields,
 } from '@/lib/atlas/schema'
 import type { AtlasImage, AtlasSchemaConfig } from '@/lib/atlas/types'
 import type { TemplateDef } from '@/lib/templates/definition'
@@ -82,8 +82,21 @@ interface Props {
   saving?: boolean
   /** 保存（= 表格底部同一个 `saveAll`） */
   onSave?: () => Promise<boolean>
+  /**
+   * 3.6.0：本页待保存的行数（含被筛选掉的行，由表格模型给）。
+   * 🔴 图鉴视图里原本没有全局保存入口（浮钮被 `viewMode !== 'atlas'` 排除），
+   *    于是「表格里改了几行、切到图鉴」之后只剩一句「还有修改待保存」却没有按钮 ——
+   *    只能在详情里逐条编辑保存。这个数用于在工具条上补一个与表格同语义的保存入口。
+   */
+  dirtyCount?: number
   /** 撤销详情里本次改动：交回进入编辑态时的字段值快照 */
   onRevert?: (rowId: string, values: Record<string, string>) => void
+  /**
+   * 打开「字段设置」（3.6.0 · H2）。
+   * 图鉴页本身没有字段设置入口（那是表格页的按钮），所以详情里的
+   * 「另有 N 个字段不适用于本条目」提示需要一个回调把作者送过去。
+   */
+  onOpenFieldSettings?: () => void
 }
 
 /** 详情侧栏默认宽度（方案 §3.1：默认 420px，允许 360～600 拖动 —— 拖动留到 F4） */
@@ -98,7 +111,7 @@ const DENSITY_LABEL: Record<Density, string> = { compact: '紧凑', standard: '�
 
 export default function AtlasView({
   tab, rows, aliases, config, templateDef, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
-  cellValue, onCellChange, dirtyOf, saving, onSave, onRevert,
+  cellValue, onCellChange, dirtyOf, saving, onSave, onRevert, onOpenFieldSettings, dirtyCount = 0,
   focusRowId, onFocusConsumed,
   projectId,
 }: Props) {
@@ -191,13 +204,33 @@ export default function AtlasView({
    *    （验收实测：魔兽条目的"食性"存了值，详情里却没有这一项）。
    *    表结构仍取全量（见 `atlasColumnsOf`），这里只决定"这一条看得见哪些"。
    */
-  const detailFields = useMemo(
-    () => atlasFieldsForCategory(
-      templateFields ?? resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
-      selected?.data?.['类别'],
-    ),
-    [tab, aliases, config, templateFields, selected],
+  /**
+   * 详情字段的**全量**口径（不按类别过滤，但仍排除归档与 detailVisible=false）。
+   * 🔴 3.6.0 · H2 起它是「隐藏了几个字段」的求差基准；`detailFields` 由它过滤得出。
+   */
+  const allDetailFields = useMemo(
+    () => templateFields ?? resolveAtlasFields(tab, { aliases, config, purpose: 'detail', ignoreAppliesTo: true }),
+    [tab, aliases, config, templateFields],
   )
+  const detailFields = useMemo(
+    () => atlasFieldsForCategory(allDetailFields, selected?.data?.['类别']),
+    [allDetailFields, selected],
+  )
+  /**
+   * 3.6.0 · H2：这一条因类别不匹配而看不见的字段。
+   * 🔴 与 `detailFields` **同源**（同一份 `allDetailFields` 求差），所以卡片与详情的数字必然一致；
+   *    口径解释在 `atlasCategoryHiddenFields` 里，那里只统计未归档的自定义字段。
+   */
+  const selectedHidden = useMemo(
+    () => atlasCategoryHiddenFields(allDetailFields, selected?.data?.['类别']),
+    [allDetailFields, selected],
+  )
+  /** 每张卡片的隐藏数（一行一次求差；卡片墙几百条也只是一次线性遍历） */
+  const hiddenByRow = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of rows) map.set(row.id, atlasCategoryHiddenFields(allDetailFields, row.data['类别']).count)
+    return map
+  }, [rows, allDetailFields])
   /** 摘要候选取全量（作者在字段设置里显式挑的展示项，不受类别砍） */
   const allSummaryFields = useMemo(
     () => atlasSummaryFields(
@@ -262,6 +295,18 @@ export default function AtlasView({
             {/* 工具条：条数 + 密度 + 资料包（方案 §3.1 必交付项） */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="text-10 text-ink-500 mr-auto">共 {rows.length} 条 · 点卡片看完整资料</span>
+              {/* 3.6.0：切到图鉴后仍要有和表格一致的保存入口（否则「改了没保存」无处落地） */}
+              {dirtyCount > 0 && onSave && (
+                <Button
+                  variant="secondary"
+                  onClick={() => void onSave()}
+                  disabled={saving}
+                  className="text-10"
+                  title={`保存全部修改（${dirtyCount} 行）—— 与表格底部的保存是同一个动作`}
+                >
+                  {saving ? '保存中…' : `保存 ${dirtyCount} 行修改`}
+                </Button>
+              )}
               {/* 排序（3.2.0）：只改展示顺序，不改数据；想真正改顺序请改「编号」列 */}
               <div className="flex items-center gap-0.5 rounded-lg border border-ink-700 bg-ink-800 p-0.5"
                 title="只影响这一屏的排列顺序，不改动任何数据">
@@ -370,6 +415,7 @@ export default function AtlasView({
                   image={row.atlasImage}
                   badges={atlasCardBadges(tab.id, row.data)}
                   summaryFields={atlasFieldsForCategory(allSummaryFields, row.data['类别'])}
+                  hiddenCount={hiddenByRow.get(row.id) ?? 0}
                   selected={row.id === selectedId}
                   tabIndex={row.id === activeCard ? 0 : -1}
                   onFocus={() => setFocusCardId(row.id)}
@@ -400,6 +446,8 @@ export default function AtlasView({
             nameKey={nameKey}
             badges={atlasCardBadges(tab.id, selected.data)}
             sections={sections}
+            hiddenFields={selectedHidden}
+            onOpenFieldSettings={onOpenFieldSettings}
             image={selected.atlasImage}
             // 🔴 不丢 Promise（3.1.3 · R10）：详情要 await 落库结果才能提示"已更新"
             onImageChange={img => onSaveImage?.(selected.id, img)}

@@ -318,19 +318,43 @@ export default function AtlasFieldManager({
   /** 徽标字段：摘要里再选它们＝卡片上同一行字出现两次，所以 chip 上标出来 */
   const badgeKeys = atlasBadgeKeys(tab.id)
   const summaryCandidates = useMemo(() => [
-    ...(tab.columns ?? []).filter(c => !c.hidden).map(c => ({ key: c.name, label: c.name })),
+    ...(tab.columns ?? []).filter(c => !c.hidden).map(c => ({
+      key: c.name,
+      label: c.name,
+      /** 3.6.0：详情里已隐藏的内置字段 —— 卡片上会有、点开详情却没有，必须标出来 */
+      detailHidden: config.builtinPresentation[c.name]?.detailVisible === false,
+    })),
     ...config.fields
       .filter(f => !f.archived)
       .slice()
       .sort((a, b) => a.order - b.order)
-      .map(f => ({ key: f.id, label: f.label })),
-  ], [tab.columns, config.fields])
+      .map(f => ({ key: f.id, label: f.label, detailHidden: !f.detailVisible })),
+  ], [tab.columns, config.fields, config.builtinPresentation])
 
   /** 摘要最多 3 项、按勾选顺序显示；全部取消 = 回到系统默认三项 */
   const toggleSummary = (key: string) => {
     const cur = config.summaryKeys
     const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key].slice(0, 3)
     void commit({ ...config, summaryKeys: next }, { keepDraft: true })
+  }
+
+  /**
+   * 3.6.0：摘要里指向**已归档 / 已删除字段**的键。
+   *
+   * 🔴 这是与空 `appliesTo` 同类的「配置死状态」：`summaryKeys` 存的是字段 id，
+   *    字段归档或永久删除后键还留着 —— 图鉴卡片上这一项静默消失，字段设置里也找不到它
+   *    （候选只列未归档字段），作者连"取消勾选"都做不到，只能整块「恢复默认」。
+   *    这里只做**提示 + 单条清理**，不自动改作者配置。
+   */
+  const candidateKeys = new Set(summaryCandidates.map(c => c.key))
+  const staleSummaryKeys = config.summaryKeys.filter(k => !candidateKeys.has(k))
+  const summaryKeyLabel = (k: string) =>
+    config.fields.find(f => f.id === k)?.label
+    ?? (tab.columns ?? []).find(c => c.name === k)?.name
+    ?? k
+  const dropStaleSummary = () => {
+    if (readOnly || busy) return
+    void commit({ ...config, summaryKeys: config.summaryKeys.filter(k => candidateKeys.has(k)) }, { keepDraft: true })
   }
 
   const commit = async (next: AtlasSchemaConfig, opts?: { keepDraft?: boolean }) => {
@@ -381,6 +405,14 @@ export default function AtlasFieldManager({
     if ((f.type === 'select' || f.type === 'multiSelect') && (f.options ?? []).length === 0) {
       return '单选 / 多选字段至少要有一个选项'
     }
+    /**
+     * 🔴 3.6.0 · H1：空适用范围是**死状态** —— `appliesTo: []` 既不是「不限类别」，
+     *    又不包含任何类别，判定里 `list.length === 0 ⇒ false`，于是这一栏在表格里看得到、
+     *    图鉴与详情里永远不出现（3.5.6 真机反馈的根因）。这里拦住，让作者当场选一个。
+     */
+    if (f.appliesTo !== '*' && (f.appliesTo ?? []).length === 0) {
+      return '至少要选一个适用类别，或勾上「不限类别」'
+    }
     return ''
   }
 
@@ -411,6 +443,35 @@ export default function AtlasFieldManager({
   }
 
   const patch = (p: Partial<AtlasFieldDefinition>) => setDraft(d => (d ? { ...d, ...p } : d))
+
+  /**
+   * 3.6.0 · H1：**空适用范围**判定。
+   * `appliesTo: []` 意味着「谁都不适用」—— 表格列照常存在（列清单取全量），
+   * 但图鉴卡片与详情按行类别过滤时永远把它排除。这是配置能进入的死状态，不是渲染故障。
+   */
+  const isDeadScope = (f: Pick<AtlasFieldDefinition, 'appliesTo'>) =>
+    f.appliesTo !== '*' && (f.appliesTo ?? []).length === 0
+
+  /**
+   * 单条修复：把某个字段改成「不限类别」。
+   * 🔴 只动**作者点了的这一条**：不批量改库、不动已填内容、不动其它字段。
+   */
+  const widenToAnyCategory = async (f: AtlasFieldDefinition) => {
+    if (busy || readOnly) return
+    const next: AtlasSchemaConfig = {
+      ...config,
+      fields: config.fields.map(x => (x.id === f.id ? { ...x, appliesTo: '*' } : x)),
+    }
+    setBusy(true)
+    try {
+      await onSave(next)
+      showToast(`「${f.label}」已改为「不限类别」—— 所有条目都会显示这一栏`, 'success')
+    } catch (e) {
+      showToast(`改适用范围失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <Modal
@@ -488,7 +549,7 @@ export default function AtlasFieldManager({
               {active.map((f, i) => (
                 <li key={f.id} className="flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/60 px-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="text-13 text-ink-100 truncate">{f.label}</span>
                       <span className="shrink-0 text-10 px-1.5 py-0.5 rounded bg-ink-900 border border-ink-700 text-ink-400">
                         {ATLAS_FIELD_TYPE_LABEL[f.type]}
@@ -504,6 +565,28 @@ export default function AtlasFieldManager({
                         >
                           隐藏 · AI 会写
                         </span>
+                      )}
+                      {/* 3.6.0 · H1：空适用范围 ⇒ 图鉴里永远不出现，列表里必须标出来 + 给单条修复 */}
+                      {isDeadScope(f) && (
+                        <>
+                          <span
+                            className="shrink-0 text-10 px-1.5 py-0.5 rounded bg-danger/15 border border-danger/30 text-danger"
+                            title="这个字段的「适用类别」是空的：表格里看得见、填得进，但图鉴卡片与详情永远不会显示它"
+                          >
+                            不适用于任何条目
+                          </span>
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              onClick={() => void widenToAnyCategory(f)}
+                              disabled={busy}
+                              className="shrink-0 text-10 px-1.5 py-0.5 rounded border border-amber/30 bg-amber/10 text-amber hover:bg-amber/20 disabled:opacity-50 transition-colors"
+                              title="改为「不限类别」：所有条目都会显示这一栏；不会改动已填内容"
+                            >
+                              改为不限类别
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                     {f.description && (
@@ -644,31 +727,39 @@ export default function AtlasFieldManager({
                 </label>
               )}
 
-              {categories.length > 0 && (
-                <div>
-                  <span className="text-11 text-ink-400">适用类别</span>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1 text-11 text-ink-300">
-                      <input type="checkbox" checked={draft.appliesTo === '*'}
-                        onChange={e => patch({ appliesTo: e.target.checked ? '*' : [] })} />
-                      不限类别
-                    </label>
-                    {draft.appliesTo !== '*' && categories.map(c => {
-                      const list = draft.appliesTo as string[]
-                      const on = list.includes(c)
-                      return (
-                        <label key={c} className="flex items-center gap-1 text-11 text-ink-300">
-                          <input type="checkbox" checked={on} onChange={e => {
-                            const next = e.target.checked ? [...list, c] : list.filter(x => x !== c)
-                            patch({ appliesTo: next })
-                          }} />
-                          {c}
-                        </label>
-                      )
-                    })}
-                  </div>
+              {/* 3.6.0 · H1：这块原先只在「有类别候选」时才渲染 —— 于是没有候选的页签里
+                  作者连「不限类别」都看不到；现在始终显示开关，候选列表按需出现。 */}
+              <div>
+                <span className="text-11 text-ink-400">适用类别</span>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1 text-11 text-ink-300">
+                    <input type="checkbox" checked={draft.appliesTo === '*'}
+                      onChange={e => patch({ appliesTo: e.target.checked ? '*' : [] })} />
+                    不限类别
+                  </label>
+                  {draft.appliesTo !== '*' && categories.length === 0 && (
+                    <span className="text-10 text-amber">这一页还没有「类别」候选值 —— 取消「不限类别」后，这一栏将无处显示</span>
+                  )}
+                  {draft.appliesTo !== '*' && categories.map(c => {
+                    const list = draft.appliesTo as string[]
+                    const on = list.includes(c)
+                    return (
+                      <label key={c} className="flex items-center gap-1 text-11 text-ink-300">
+                        <input type="checkbox" checked={on} onChange={e => {
+                          const next = e.target.checked ? [...list, c] : list.filter(x => x !== c)
+                          patch({ appliesTo: next })
+                        }} />
+                        {c}
+                      </label>
+                    )
+                  })}
                 </div>
-              )}
+                {isDeadScope(draft) && (
+                  <p className="mt-1 text-10 leading-relaxed text-danger">
+                    还没有勾任何类别 —— 保存后这一栏在表格里看得见，图鉴与详情里却不会出现。请至少勾一个，或勾上「不限类别」。
+                  </p>
+                )}
+              </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                 {([
@@ -693,6 +784,15 @@ export default function AtlasFieldManager({
                 <p className="rounded-lg border border-amber/30 bg-amber/5 px-2.5 py-1.5 text-10 text-amber/90 leading-relaxed">
                   这一栏在表格里看不见，但 AI 仍会往里写 —— 值会出现在详情与检索里，表格中却查不到。
                   想彻底挡住 AI，请同时关掉「允许 AI 填写」。
+                </p>
+              )}
+
+              {/* 3.6.0：两个显示开关都关 ⇒ 表格与图鉴详情都看不到它（只有检索 / AI 还读得到）。
+                  这是同类「配置死状态」：不拦保存（可能是有意只给 AI 用），但必须说出来。 */}
+              {!draft.tableVisible && !draft.detailVisible && (
+                <p className="rounded-lg border border-amber/30 bg-amber/5 px-2.5 py-1.5 text-10 text-amber/90 leading-relaxed">
+                  两个显示开关都关着 —— 这一栏在<strong className="text-amber">表格与图鉴详情里都不会出现</strong>，
+                  只有检索和 AI 还能读到它。想让它看得见，请至少打开一处。
                 </p>
               )}
 
@@ -765,7 +865,7 @@ export default function AtlasFieldManager({
         <section className="space-y-2">
           <h3 className="text-12 font-semibold text-ink-200 flex items-center gap-2">
             <span className="w-1 h-3.5 bg-amber rounded-full" />
-            卡片摘要（{config.summaryKeys.length} / 3）
+            卡片摘要（{config.summaryKeys.length - staleSummaryKeys.length} / 3）
             {config.summaryKeys.length > 0 && !readOnly && (
               <Button
                 variant="bare"
@@ -778,6 +878,22 @@ export default function AtlasFieldManager({
               </Button>
             )}
           </h3>
+          {/* 3.6.0：失效键必须显形 —— 否则作者看到「3/3」但卡片只显示 1 项，以为是卡片坏了 */}
+          {staleSummaryKeys.length > 0 && (
+            <div className="rounded-lg border border-danger/30 bg-danger/5 px-2.5 py-2 space-y-1">
+              <div className="text-10 text-danger leading-relaxed">
+                摘要里有 {staleSummaryKeys.length} 项已不可用（字段被归档或删除）：
+                {staleSummaryKeys.slice(0, 3).map(summaryKeyLabel).join('、')}
+                {staleSummaryKeys.length > 3 ? '…' : ''}
+                —— 图鉴卡片不会显示它们，也不占「最多 3 项」的有效名额。
+              </div>
+              {!readOnly && (
+                <Button size="xs" variant="secondary" disabled={busy} onClick={dropStaleSummary}>
+                  移除失效项
+                </Button>
+              )}
+            </div>
+          )}
           <p className="text-10 text-ink-500 leading-relaxed">
             图鉴卡片在「名称 + 类别」徽标下方，最多再显示 3 项；按勾选顺序排列。
             一个都不勾 = 用系统默认（各页签的默认三项都
@@ -810,6 +926,10 @@ export default function AtlasFieldManager({
                   {c.label}
                   {badgeKeys.includes(c.key) && !checked && (
                     <span className="text-9 text-ink-600" title="这一项已经在卡片名称下方作为徽标显示">徽标</span>
+                  )}
+                  {/* 3.6.0：卡片显示但详情里被「详情里显示」开关挡住的项 —— 两处不一致，先说明 */}
+                  {c.detailHidden && (
+                    <span className="text-9 text-amber/80" title="这一项的「详情里显示」是关的：卡片上会出现，点开详情却没有它">详情不显示</span>
                   )}
                 </label>
               )

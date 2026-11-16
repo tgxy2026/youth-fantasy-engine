@@ -394,6 +394,11 @@ export function planAtlasImport(
     const label = uniqueFieldLabel([...existing.map(e => e.label), ...created.map(c => c.label)], f.label)
     fieldMap[f.id] = id
     created.push({ label, id })
+    /**
+     * 🔴 3.6.0 · H1：这里**逐字保留**包里的 `appliesTo`（包括空数组）。
+     *    导入不是"修复配置"的时机 —— 静默把 `[]` 改成 `'*'` 会让一个原本不显示任何条目的字段
+     *    突然在所有条目上冒出来，属于替作者改数据。空范围由预览如实提示，作者自己决定怎么处理。
+     */
     newFields.push({ ...f, id, label, archived: false })
     if (label !== f.label) {
       conflicts.push({ label: f.label, newLabel: label, reason: conflictReasonOf(f, existing) })
@@ -442,6 +447,12 @@ export function previewAtlasImport(
   unknownCategories: string[]
   /** 名字撞车但定义不同的字段（3.1.3 · R08）：会另建并改名，预览要提前说清楚 */
   conflicts: { label: string; newLabel: string; reason: string }[]
+  /**
+   * 3.6.0 · H1：包里「适用类别」为空数组的字段名。
+   * 这类字段导入后**不会出现在任何图鉴条目**上（值仍在，表格列也在）。
+   * 导入会**原样保留**这个空范围 —— 提示是给作者看的，不是给程序改数据的许可。
+   */
+  emptyScopeFields: string[]
 } {
   const existing = (targetConfig?.fields ?? []).filter(f => !f.archived)
   const reusedFields = pkg.schema.fields.filter(f => existing.some(e => sameAtlasFieldDefinition(e, f))).length
@@ -469,5 +480,8 @@ export function previewAtlasImport(
     createdFields: pkg.schema.fields.length - reusedFields,
     unknownCategories,
     conflicts,
+    emptyScopeFields: pkg.schema.fields
+      .filter(f => f.appliesTo !== '*' && Array.isArray(f.appliesTo) && f.appliesTo.length === 0)
+      .map(f => f.label),
   }
 }
