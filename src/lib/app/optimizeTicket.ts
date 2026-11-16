@@ -685,7 +685,13 @@ export async function runTicketChapter(items: TicketItem[], opts: RunTicketOpts 
     } else {
       try {
         // 设定整理也计入本章预算（抽取 1 次；auto-update 策略的变化检测同样从这份里扣）
-        await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request, budget, opts.acpExtract)
+        const r = await extractAndCommitSettings(text, hit.chapter.title, 'add-only', undefined, opts.signal, request, budget, opts.acpExtract)
+        // 3.6.0 · E1：不再忽略返回值 —— 正文已落库不回滚，但「没同步完」必须留痕（别再让人以为设定齐了）
+        if (r.state !== 'done') {
+          opts.onLog?.(`设定整理未完整完成（新增 ${r.created} 条${r.failed.length ? `，${r.failed.length} 条未登记` : ''}）：`
+            + (r.errors?.join('；') || r.state) + ' —— 正文已落库，可到设定表手动补')
+          console.warn('[optimizeTicket] 最新章改写后设定同步未完整完成：', r.state, r.errors ?? [])
+        }
       } catch (e) {
         // 🔴 别静默吞：正文已落库（不回滚），但「改完最新章却没同步出新设定」会让作者以为设定齐了。
         //    至少留一行日志 —— 作者可去设定表手动补。

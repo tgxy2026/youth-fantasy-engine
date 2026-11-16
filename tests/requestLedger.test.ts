@@ -13,7 +13,7 @@ import {
 } from '@/lib/ai/requestLedger'
 import { enforceWordRange } from '@/lib/editor/wordRange'
 import { aiRewriteChapter } from '@/lib/ai/aiTasks'
-import { extractAndCommitSettings } from '@/lib/outline/autoContinue'
+import { extractAndCommitSettings, settingsCommitState } from '@/lib/outline/autoContinue'
 import { saveActiveId, saveProviders, type AIProvider } from '../src/lib/ai'
 
 let pass = 0, fail = 0
@@ -224,6 +224,44 @@ async function main() {
     ok('⑦ 连写侧：设定整理改为按实际调用逐次记账',
       /cb\.signal, cb\.request, budget(?:, opts\.acpText)?\)/.test(autoSrc)
       && /budget\?\.consume\(1\)[\s\S]{0,120}aiExtractSettingEntitiesWithStatus/.test(autoSrc))
+  }
+
+  // ---------- 八、3.6.0 · E1：章后设定补登的「有状态结果」 ----------
+  //
+  // 病根：旧契约只有 {created, failed} ——「新增 0 条」同时代表
+  //   真的没有新实体 / 登记表没读出来 / 写入异常被吞，作者一律看到「设定齐了」。
+  {
+    const S = settingsCommitState
+    ok('⑧ 真的没有新实体 ⇒ done（不是失败）', S(0, [], []) === 'done')
+    ok('⑧ 预算耗尽 ⇒ skipped', S(0, [], ['budget-exhausted']) === 'skipped')
+    ok('⑧ 作者取消 ⇒ cancelled', S(0, [], ['confirm-cancelled']) === 'cancelled')
+    ok('⑧ 没有交互入口 ⇒ skipped（未执行，不等于取消）', S(0, [], ['confirm-unavailable']) === 'skipped')
+    ok('⑧ 登记表读不出来 ⇒ failed（不得当成新增 0 条）', S(0, [], ['registry-unavailable']) === 'failed')
+    ok('⑧ 抽取未完成 ⇒ failed', S(0, [], ['extract-failed']) === 'failed')
+    ok('⑧ 有失败且有新增 ⇒ partial', S(2, ['甲'], []) === 'partial')
+    ok('⑧ 有失败且无新增 ⇒ failed', S(0, ['甲'], []) === 'failed')
+    ok('⑧ 写入异常（无失败清单）也判 failed', S(0, [], ['commit-failed']) === 'failed')
+    ok('⑧ 只有证据警告 ⇒ 仍算 done（警告不等于失败）', S(1, [], ['evidence-invalid']) === 'done')
+
+    // 真实返回值：预算耗尽路径一条请求都不发
+    const b = createAttemptBudget({ label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET })
+    b.consume(ONE_SHOT_ATTEMPT_BUDGET)
+    const r = await extractAndCommitSettings('他推门走了出去。', '第八章', 'add-only', undefined, undefined, undefined, b)
+    ok('⑧ 预算耗尽：state=skipped 且带原因码',
+      r.state === 'skipped' && r.reasons.includes('budget-exhausted') && /已达上限/.test(r.errors?.join('') ?? ''),
+      JSON.stringify({ state: r.state, reasons: r.reasons }))
+
+    // 源码闸：三处吞错 + 一处死代码必须消失（防回退）
+    const autoSrc = readFileSync('src/lib/outline/autoContinue.ts', 'utf8')
+    ok('⑧ 负向：不再把登记表读取失败吞成空结果', !/loadRegistry\(\)\.catch\(\(\) => null\)/.test(autoSrc))
+    ok('⑧ 负向：不再把补登写入异常吞成空结果', !/commitEntities\([^)]*\)\.catch\(\(\) => empty\)/.test(autoSrc))
+    ok('⑧ 负向：删除无效表达式（失败清单没进 errors）', !/\.\.\.\(r\.failed\.length \? \[\] : \[\]\)/.test(autoSrc))
+    ok('⑧ 连写日志按状态措辞，不再一律「设定新增 0 条」',
+      /settingLine/.test(autoSrc) && /设定整理未完成/.test(autoSrc))
+    const creativeSrc2 = readFileSync('src/lib/creative/creativeSession.ts', 'utf8')
+    ok('⑧ 改写侧按 state 提示', /res\.state === 'done'/.test(creativeSrc2))
+    const ticketSrc2 = readFileSync('src/lib/app/optimizeTicket.ts', 'utf8')
+    ok('⑧ 优化工单不再忽略补登结果', /if \(r\.state !== 'done'\)/.test(ticketSrc2))
   }
 
   console.log(`\n———— requestLedger：${pass} 通过 / ${fail} 失败 ————`)

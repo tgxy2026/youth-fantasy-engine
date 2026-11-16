@@ -463,6 +463,51 @@ async function createChapterAfter(
  * 对外导出（2026-09-19）：整章改写改「最新章」后也要跑这套 —— 最新章后面还没正文，
  * 它的改动必须同步进设定表，否则下一次「接着写」会读到旧设定。
  */
+/**
+ * 3.6.0 · E1：章后设定补登的**有状态**结果。
+ *
+ * 🔴 为什么必须有 state：`{created, failed}` 里「新增 0 条」同时代表三种完全不同的情况 ——
+ *    真的没有新实体 / 登记表没读出来 / 写入异常被吞。旧实现把后两种都返回空结果，
+ *    作者看到「设定新增 0 条」会认为设定齐了（规划 §14 E 包、§5 状态表）。
+ *
+ * 旧调用方只看 `created` / `failed` 仍然成立（字段未删），新增字段向后兼容。
+ */
+export type SettingsCommitState = 'done' | 'partial' | 'failed' | 'skipped' | 'cancelled'
+export type SettingsCommitReason =
+  | 'budget-exhausted'
+  | 'extract-failed'
+  | 'registry-unavailable'
+  | 'commit-failed'
+  | 'update-failed'
+  | 'confirm-unavailable'
+  | 'confirm-cancelled'
+  | 'evidence-invalid'
+export interface SettingsCommitResult {
+  created: number
+  failed: string[]
+  errors?: string[]
+  /** 有状态结果：只有 `done` 可以说「已完成」，`skipped`/`cancelled`/`failed` 都不算通过 */
+  state: SettingsCommitState
+  /** 有限原因码（不存原文、不存请求内容） */
+  reasons: SettingsCommitReason[]
+}
+
+/**
+ * 由原因码与写入结果推出状态（唯一判据，避免各分支各写一套）。
+ * 导出为纯函数：状态推导是 E 包契约的核心，必须能脱离模型与存储穷举单测。
+ */
+export function settingsCommitState(
+  created: number, failed: readonly string[], reasons: readonly SettingsCommitReason[],
+): SettingsCommitState {
+  if (reasons.includes('budget-exhausted')) return 'skipped'
+  if (reasons.includes('confirm-cancelled')) return 'cancelled'
+  if (reasons.includes('confirm-unavailable')) return 'skipped'
+  if (reasons.includes('registry-unavailable') || reasons.includes('extract-failed')) return 'failed'
+  if (failed.length > 0) return created > 0 ? 'partial' : 'failed'
+  if (reasons.includes('commit-failed') || reasons.includes('update-failed')) return 'failed'
+  return 'done'
+}
+
 export async function extractAndCommitSettings(
   body: string, title: string, strategy: ContinueStrategy,
   onConfirm?: (cands: LedgerItem[]) => Promise<LedgerItem[] | null>,
@@ -480,10 +525,10 @@ export async function extractAndCommitSettings(
   budget?: AttemptBudget,
   /** 3.5.5 · ACP 通道：实体抽取与变化检测走 Agent（老调用不传，行为零变化） */
   acpText?: (prompt: string) => Promise<string>,
-): Promise<{ created: number; failed: string[]; errors?: string[] }> {
+): Promise<SettingsCommitResult> {
   if (budget?.exhausted) {
     return {
-      created: 0, failed: [],
+      created: 0, failed: [], state: 'skipped', reasons: ['budget-exhausted'],
       errors: [`${budget.label}的模型请求已达上限（${budget.used}/${budget.max}），设定整理已跳过`],
     }
   }
@@ -494,34 +539,81 @@ export async function extractAndCommitSettings(
     signal, ...(request ? { request } : {}), ...(acpText ? { acpText } : {}),
   })
   if (entRun.state !== 'completed') {
-    return { created: 0, failed: [], errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'] }
+    return {
+      created: 0, failed: [], state: 'failed', reasons: ['extract-failed'],
+      errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'],
+    }
   }
   const entities = entRun.result?.data ?? []
-  if (!entities.length) return { created: 0, failed: [] }
+  // 真的没有新实体：这是**完成**（不是失败），但也不能说成"审读通过"以外的话
+  if (!entities.length) return { created: 0, failed: [], state: 'done', reasons: [] }
   // 3.2.0 · WQ8：核验「原文原句证据」是否真在正文里。
   // 🔴 只报告不丢弃：模型可能把两句合并转述，丢掉会丢真信息；但**编造的证据**必须让作者看见。
   const evidenceNote = describeEvidence(checkEntityEvidence(entities, body))
-  const reg = await loadRegistry().catch(() => null)
-  if (!reg) return { created: 0, failed: [] }
+  /**
+   * 3.6.0 · E1：登记表**读不出来**必须与「没有登记表内容」分开。
+   * 旧实现 `catch(() => null)` 后返回 `{created:0, failed:[]}` —— 作者看到「新增 0 条」，
+   * 实际是这一章的实体根本没做判重。现在如实上报为失败，并把原因码带上。
+   */
+  let reg: Awaited<ReturnType<typeof loadRegistry>>
+  try {
+    reg = await loadRegistry()
+  } catch (e) {
+    return {
+      created: 0, failed: [], state: 'failed', reasons: ['registry-unavailable'],
+      errors: [`设定登记表读取失败，本章未做判重与补登：${e instanceof Error ? e.message : String(e)}`],
+    }
+  }
   const items = classify(entities, reg)
-  const empty = { created: 0, failed: [] as string[] }
   // 3.2.0 · WT2：补登落点按**有效模板**解析（作者改名/同义自建字段后仍写对字段）。
   // 不传 pid 则沿用旧中文列名口径，所以这里必须把当前项目带上。
   const pid = db.getCurrentProjectId()
 
+  /**
+   * 3.6.0 · E1：写入异常不再被 `.catch(() => empty)` 吞成「新增 0 条」。
+   * `commitEntities` 内部已逐条 catch（失败的进 `failed`），这里兜的是更外层的读取/预映射异常。
+   */
+  const commitSafe = async (targets: LedgerItem[], label: string) => {
+    try {
+      return { ...(await commitEntities(targets, title, { pid })), error: '' }
+    } catch (e) {
+      return {
+        created: 0,
+        failed: targets.map(i => i.name).filter(Boolean),
+        error: `${label}写入失败：${e instanceof Error ? e.message : String(e)}`,
+      }
+    }
+  }
+  /** 把失败清单与证据提示折成 errors/reasons（唯一出口，避免各分支各写一套） */
+  const reportOf = (
+    r: { created: number; failed: string[]; error: string },
+    extraReasons: SettingsCommitReason[] = [],
+  ) => {
+    const reasons: SettingsCommitReason[] = [...extraReasons]
+    const errors: string[] = []
+    if (r.error) { errors.push(r.error); reasons.push('commit-failed') }
+    if (r.failed.length) {
+      errors.push(`有 ${r.failed.length} 条设定没能登记：${r.failed.slice(0, 5).join('、')}${r.failed.length > 5 ? ' 等' : ''}`)
+    }
+    if (evidenceNote) { errors.push(evidenceNote); reasons.push('evidence-invalid') }
+    return {
+      created: r.created,
+      failed: r.failed,
+      ...(errors.length ? { errors } : {}),
+      state: settingsCommitState(r.created, r.failed, reasons),
+      reasons,
+    } satisfies SettingsCommitResult
+  }
+
   if (strategy === 'add-only') {
     // 仅限新增：只补登新实体，绝不碰已登记设定
     const news = items.filter(i => i.status === 'new')
-    const r = await commitEntities(news, title, { pid }).catch(() => empty)
-    return {
-      created: r.created, failed: r.failed,
-      ...(evidenceNote ? { errors: [evidenceNote] } : {}),
-    }
+    return reportOf(await commitSafe(news, '新增设定'))
   }
   if (strategy === 'auto-update') {
     // 自动更新：新实体自动补登 + 对已登记实体的变化做安全写回（追加到备注类字段，绝不覆盖属性列）
     const news = items.filter(i => i.status === 'new')
-    const r = await commitEntities(news, title, { pid }).catch(() => empty)
+    const r = await commitSafe(news, '新增设定')
     // 变化检测是第二次逻辑调用：预算到顶就跳过，不硬打
     let w: { applied: number; state: StepResultState } = { applied: 0, state: 'failed' }
     let skippedByBudget = false
@@ -531,27 +623,46 @@ export async function extractAndCommitSettings(
       budget?.consume(1)
       w = await applySettingUpdates(body, title, signal, request, acpText)
     }
-    const errs = [
-      ...(r.failed.length ? [] : []),
-      ...(w.state === 'failed'
-        ? [skippedByBudget ? '设定变化检测因请求预算到上限已跳过' : '设定变化检测失败（解析或请求异常）']
-        : []),
-      ...(evidenceNote ? [evidenceNote] : []),
-    ]
-    return { created: r.created, failed: r.failed, ...(errs.length ? { errors: errs } : {}) }
+    const out = reportOf(r, skippedByBudget ? [] : (w.state === 'failed' ? ['update-failed'] : []))
+    const extra = skippedByBudget
+      ? ['设定变化检测因请求预算到上限已跳过']
+      : w.state === 'failed' ? ['设定变化检测失败（解析或请求异常）'] : []
+    if (!extra.length) return out
+    const errors = [...(out.errors ?? []), ...extra]
+    const reasons: SettingsCommitReason[] = skippedByBudget
+      ? [...out.reasons, 'budget-exhausted']
+      : out.reasons
+    return {
+      ...out,
+      errors,
+      reasons,
+      // 变化检测被预算跳过 ⇒ 整体只能算 skipped（正文已存，整理没做完）
+      state: settingsCommitState(out.created, out.failed, reasons),
+    }
   }
   // confirm：把新实体与疑似重复项交给用户勾选
   const cands = items.filter(i => i.status === 'new' || i.status === 'duplicate')
-  if (!cands.length) return empty
-  const chosen = await onConfirm?.(cands)
-  if (chosen && chosen.length) {
-    const r = await commitEntities(chosen, title, { pid }).catch(() => empty)
+  if (!cands.length) {
     return {
-      created: r.created, failed: r.failed,
+      created: 0, failed: [], state: 'done', reasons: [],
       ...(evidenceNote ? { errors: [evidenceNote] } : {}),
     }
   }
-  return evidenceNote ? { ...empty, errors: [evidenceNote] } : empty
+  if (!onConfirm) {
+    // 没有交互入口 ⇒ 未执行（不是"取消"、也不是"没有新设定"）
+    return {
+      created: 0, failed: [], state: 'skipped', reasons: ['confirm-unavailable'],
+      ...(evidenceNote ? { errors: [evidenceNote] } : {}),
+    }
+  }
+  const chosen = await onConfirm(cands)
+  if (!chosen || !chosen.length) {
+    return {
+      created: 0, failed: [], state: 'cancelled', reasons: ['confirm-cancelled'],
+      ...(evidenceNote ? { errors: [evidenceNote] } : {}),
+    }
+  }
+  return reportOf(await commitSafe(chosen, '新增设定'))
 }
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============
@@ -630,8 +741,14 @@ async function applySettingUpdates(
   }
   const updates = run.updates
   if (!updates.length) return { applied: 0, state: run.state }
-  const reg = await loadRegistry().catch(() => null)
-  if (!reg) return { applied: 0, state: run.state }
+  // 3.6.0 · E1：登记表读不出来 ⇒ 变化检测**未能执行**（state=failed），
+  // 不能沿用 run.state（那会把「读不到登记表」说成「没有变化」）。
+  let reg: Awaited<ReturnType<typeof loadRegistry>>
+  try {
+    reg = await loadRegistry()
+  } catch {
+    return { applied: 0, state: 'failed' }
+  }
   // 有效模板映射上下文：按「本条实际写到的页签」惰性读一次并缓存（读失败 ⇒ 该页签沿用旧口径）
   const ctxCache = new Map<string, DraftMappingContext | null>()
   const ctxOf = async (tabId: string): Promise<DraftMappingContext | undefined> => {
@@ -971,9 +1088,18 @@ export async function runAutoContinue(
       //（抽取 1 次；auto-update 再 +1 次变化检测），不再在这里笼统扣 1 次
       const r = await extractAndCommitSettings(body, ch.title, opts.strategy, cb.onSettingsCandidates, cb.signal, cb.request, budget, opts.acpText)
       const dev = finalWords - opts.targetWords
+      // 3.6.0 · E1：按**状态**措辞，不再一律说「设定新增 0 条」（那会把失败说成正常）
+      const settingLine = r.state === 'done'
+        ? `设定新增 ${r.created} 条`
+        : r.state === 'partial'
+          ? `设定部分完成（新增 ${r.created} 条，另有 ${r.failed.length} 条未登记）`
+          : r.state === 'skipped'
+            ? '设定整理已跳过（正文已保存，可到设定表手动补）'
+            : r.state === 'cancelled'
+              ? '设定补登已取消（正文已保存，可到设定表手动补）'
+              : '设定整理未完成（正文已保存，可到设定表手动补）'
       cb.onLog?.(
-        `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；设定新增 ${r.created} 条`
-        + (r.failed.length ? `，失败：${r.failed.join('、')}` : '')
+        `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；${settingLine}`
         + (r.errors?.length ? `；${r.errors.join('；')}` : ''),
       )
       // 滚动摘要回灌（应对多章记忆滚雪球），复用刚刚生成的 1/10 摘要

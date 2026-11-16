@@ -90,8 +90,12 @@ async function main() {
     ok('⑦ 抽取完成后核验证据', /checkEntityEvidence\(entities, body\)/.test(src))
     ok('🔴 ⑦ 核验结果进了返回值的 errors（作者在运行日志里看得到）',
       /evidenceNote \? \{ errors: \[evidenceNote\] \}/.test(src))
+    // 3.6.0 · E1：写入统一走 `commitSafe`（内部仍原样交给 commitEntities，不为证据警告过滤实体）；
+    // 断言跟着实现改字面，负向条件（不许按 evidence 过滤）保持不变。
     ok('🔴 ⑦ 只报告不丢弃（实体仍原样交给 commitEntities）',
-      /commitEntities\(news, title, \{ pid \}\)/.test(src) && !/entities\.filter\([^)]*evidence/.test(src))
+      /commitEntities\(targets, title, \{ pid \}\)/.test(src)
+      && /commitSafe\(news, '新增设定'\)/.test(src)
+      && !/entities\.filter\([^)]*evidence/.test(src))
   }
 
   console.log(`\n———— evidenceGuard：${pass} 通过 / ${fail} 失败 ————`)

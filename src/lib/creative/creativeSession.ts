@@ -1010,11 +1010,14 @@ export async function applyRewrite() {
         // 3.2.0 · WQ6：设定同步是一次性入口 —— 自己一份小预算，到上限就如实说"没同步完"
         const syncBudget = createAttemptBudget({ label: '设定同步', max: ONE_SHOT_ATTEMPT_BUDGET })
         const res = await extractAndCommitSettings(r.text, r.title, strategy, undefined, undefined, undefined, syncBudget)
-        extra = res.created > 0
-          ? `；已同步设定 +${res.created} 条`
-          : res.errors?.length
-            ? `；设定同步未完整完成（${res.errors.join('；')}），可到设定表手动补`
-            : '；没有需要新增的设定'
+        // 3.6.0 · E1：按状态措辞 —— 「新增 0 条」不等于没同步，也不等于同步完了
+        extra = res.state === 'done'
+          ? (res.created > 0 ? `；已同步设定 +${res.created} 条` : '；没有需要新增的设定')
+          : res.state === 'partial'
+            ? `；设定部分同步（+${res.created} 条，另有 ${res.failed.length} 条未登记），可到设定表手动补`
+            : res.state === 'skipped'
+              ? '；设定同步已跳过（正文已保存，可到设定表手动补）'
+              : `；设定同步未完成（${res.errors?.join('；') || '原因未知'}），可到设定表手动补`
       } catch {
         extra = '；设定同步未能完成（不影响正文，可到表格页用「AI 整理」补）'
       }
