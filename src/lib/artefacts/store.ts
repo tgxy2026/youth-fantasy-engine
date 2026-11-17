@@ -10,11 +10,8 @@
  */
 import { getSettingFor, setSettingFor } from '@/lib/db/meta'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
-import {
-  ARTEFACT_SETTING_KEY, checkArtefactWrite, emptyArtefacts, markStaleByChanges,
-  parseArtefacts, serializeArtefacts, type ArtefactChange,
-} from './remap'
-import type { ArtefactKind, ArtefactRecord, ArtefactState, ArtefactStore } from './types'
+import { ARTEFACT_SETTING_KEY, checkArtefactWrite, emptyArtefacts, parseArtefacts } from './remap'
+import type { ArtefactRecord, ArtefactStore } from './types'
 
 export interface LoadedArtefacts {
   store: ArtefactStore
@@ -82,51 +79,3 @@ export function withUpserted(store: ArtefactStore, record: ArtefactRecord): Arte
   return { ...store, items: next }
 }
 
-export function withRemoved(store: ArtefactStore, id: string): ArtefactStore {
-  return { ...store, items: store.items.filter(it => it.id !== id) }
-}
-
-export function withState(store: ArtefactStore, id: string, state: ArtefactState, now: number): ArtefactStore {
-  return {
-    ...store,
-    items: store.items.map(it => (it.id === id ? { ...it, state, updatedAt: now } : it)),
-  }
-}
-
-/** 清除过期标记（作者明确「仍按此结果继续」时用；不会动 payload） */
-export function withStaleCleared(store: ArtefactStore, id: string): ArtefactStore {
-  return {
-    ...store,
-    items: store.items.map(it => {
-      if (it.id !== id || !it.stale) return it
-      const { stale: _drop, ...rest } = it
-      return rest
-    }),
-  }
-}
-
-/** 筛选（UI 与 B/C/D/F 共用；`kept` 之外默认不参与发送） */
-export function selectArtefacts(
-  store: ArtefactStore,
-  opts: { kind?: ArtefactKind; states?: readonly ArtefactState[]; includeStale?: boolean } = {},
-): ArtefactRecord[] {
-  const states = opts.states ?? ['kept']
-  const includeStale = opts.includeStale ?? true
-  return store.items.filter(it =>
-    (!opts.kind || it.kind === opts.kind)
-    && states.includes(it.state)
-    && (includeStale || !it.stale),
-  )
-}
-
-/** 依赖变化 → 标过期（不删除、不应用） */
-export function withStaleByChanges(
-  store: ArtefactStore, changes: readonly ArtefactChange[], now: number,
-): { store: ArtefactStore; changedIds: string[] } {
-  return markStaleByChanges(store, changes, now)
-}
-
-/** 序列化（供导出/诊断/测试；正常写入走 `saveArtefacts`） */
-export function serializeForExport(store: ArtefactStore): string {
-  return serializeArtefacts(store)
-}

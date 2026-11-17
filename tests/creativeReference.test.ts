@@ -140,7 +140,8 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
 
   const picker = read('src/components/creative/ReferencePicker.tsx')
   ok('⑤ 选择器不预选任何卡（受控于 selected）', !/useState<.*\[\]>?\(\[card/.test(picker) && /selected\.includes/.test(picker))
-  ok('⑤ 过期卡禁用勾选', /disabled=\{c\.stale\}/.test(picker))
+  // 3.6.0 审计：禁用条件扩成「过期 或 已排除」，断言改成检查这个合并判据本身
+  ok('⑤ 过期卡禁用勾选', /const locked = c\.stale \|\| !!c\.excluded/.test(picker) && /disabled=\{locked\}/.test(picker))
   ok('⑤ 显示将发送量与剔除原因', /describeReferenceBlock/.test(picker))
 
   const tasks = read('src/lib/aiTasks/creative.ts')
@@ -151,6 +152,28 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
   ok('⑤ 数据来源表登记了「作品分析」', /'book-analysis':/.test(sources))
   ok('⑤ 创意写作登记了「创作参考（默认不勾选）」', /你勾选的创作参考（默认不勾选）/.test(sources))
   ok('⑤ 明确写了「不勾选就不发」', /不勾选，就一段都不发/.test(sources))
+}
+
+// ---------- ⑤-b 排除 ≠ 未审（3.6.0 审计修正） ----------
+{
+  const cards = referenceCardsOf(store([
+    art({ id: 'ar-keep', state: 'kept' }),
+    art({ id: 'ar-draft', state: 'draft' }),
+    art({ id: 'ar-excluded', state: 'excluded' }),
+  ]))
+  const byId = new Map(cards.map(c => [c.artefactId, c]))
+  ok('⑤-b 排除项带 excluded 标记', byId.get('ar-excluded')?.excluded === true)
+  ok('⑤-b 未审项只有 kept:false，不算排除', byId.get('ar-draft')?.kept === false && !byId.get('ar-draft')?.excluded)
+
+  const block = buildReferenceBlock(cards, ['ar-keep', 'ar-draft', 'ar-excluded'])
+  ok('🔴 ⑤-b 作者排除的卡不会被发出去（即使被勾上）',
+    !block.usedIds.includes('ar-excluded'), JSON.stringify(block.usedIds))
+  ok('⑤-b 剔除原因写「已排除」', block.dropped.some(d => d.id === 'ar-excluded' && d.reason === 'excluded'))
+  ok('⑤-b 未审卡仍然可以发（只是标注）', block.usedIds.includes('ar-draft'))
+  ok('⑤-b 摘要里出现「已排除 N」', /已排除 1/.test(describeReferenceBlock(block)), describeReferenceBlock(block))
+
+  const picker = read('src/components/creative/ReferencePicker.tsx')
+  ok('🔴 ⑤-b 界面把已排除项设为不可勾选', /disabled=\{locked\}/.test(picker) && /已排除（不可选）/.test(picker))
 }
 
 // ---------- ⑥ 发送记录：实际发出的是什么 ----------

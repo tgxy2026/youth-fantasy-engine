@@ -285,8 +285,3 @@ export async function chapterWriteIssues(
   }
 }
 
-/** 一句分步结果（规划要求 UI 明确"正文已保存 / 整理待恢复"，不宣传整章事务） */
-export function describeReceipt(receipt: ChapterWriteReceipt): string {
-  const issues = receiptIssues(receipt)
-  return issues.length ? `正文已保存；${issues.join('；')}` : '正文、摘要、设定、总表均已确认'
-}

@@ -67,13 +67,16 @@ async function main() {
       }
     }
     await closeGuide()
+    /**
+     * 🔴 2026-11-17 审计修正：3.5.1 · U4 起备份提醒从**全屏 Modal 改成非阻断内联条**，
+     *   而且「示范项目不算有数据可丢」——本探针走的正是「先看看示例」，所以提醒**根本不会出现**。
+     *   原实现硬点「稍后再说」5 次、每次 6s，必然超时（缺陷表现：layout.affected 稳定失败，
+     *   并连带 e2e-roundtrip / audit.contracts NOT-RUN）。
+     *   现在改成**有就关、没有就算了**：它已经不是路障，不该被当成就绪条件。
+     */
     const later = page.getByRole('button', { name: '稍后再说', exact: true })
-    for (let i = 0; i < 5; i++) {
-      try { await later.click({ timeout: 6000 }); break } catch (error) {
-        if (i === 4) throw error
-        await closeGuide()
-        await page.waitForTimeout(700)
-      }
+    if (await later.first().isVisible().catch(() => false)) {
+      await later.first().click({ timeout: 6000 }).catch(() => {})
     }
     await page.getByRole('navigation').waitFor()
     await page.evaluate(async value => {

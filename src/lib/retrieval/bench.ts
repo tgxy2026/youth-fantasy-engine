@@ -68,6 +68,8 @@ export interface StrategyMetrics {
   p95Ms: number
   /** 无法定位的命中总数（引用定位能力） */
   unlocatable: number
+  /** 混入别项目行时，**本策略**交出别项目命中的条数（未混入 ⇒ 缺省） */
+  foreignLeaks?: number
   outcomes: QueryOutcome[]
 }
 
@@ -82,8 +84,11 @@ export interface BenchReport {
     vectorBytesIfDim: (dim: number) => number
   }
   strategies: StrategyMetrics[]
-  /** 跨项目串味：把另一个项目的行也塞进 loader，看是否被过滤掉 */
-  foreignLeaks: number
+  /**
+   * 跨项目串味：把另一个项目的行也塞进 loader 后，各策略交出别项目命中的**最坏值**。
+   * `undefined` = 本次没混入别项目行（未测），**不是**「测了 0 条」。
+   */
+  foreignLeaks?: number
   /** 同一条查询跑两遍结果是否一致（确定性） */
   deterministic: boolean
 }
@@ -435,7 +440,9 @@ export async function runRetrievalBench(
       emptyAccuracy: emptyQueries.length
         ? emptyQueries.filter(x => !x.o.falsePositiveOnEmpty).length / emptyQueries.length
         : 1,
-      avgChars: allReturned ? outcomes.reduce((s, o) => s + o.chars, 0) / Math.max(1, withExpectation.length) : 0,
+      // 平均返回字数：总字数 / 全部查询（分母用「有标注的查询数」会把空结果查询的 0 字漏掉，
+      // 算出来的数偏大，看起来像「每次召回都更啰嗦」）
+      avgChars: corpus.queries.length ? outcomes.reduce((s, o) => s + o.chars, 0) / corpus.queries.length : 0,
       p50Ms: percentile(outcomes.map(o => o.ms), 50),
       p95Ms: percentile(outcomes.map(o => o.ms), 95),
       unlocatable: outcomes.reduce((s, o) => s + o.unlocatable, 0),
@@ -444,6 +451,27 @@ export async function runRetrievalBench(
   }
 
   const textBytes = corpus.rows.reduce((n, r) => n + utf8Bytes(JSON.stringify({ i: r.id, t: r.text, ti: r.title })), 0)
+
+  /**
+   * 跨项目串味：只在真的混入别项目行时才计算（未混入 ⇒ 字段缺省，表示「没测」）。
+   * 🔴 之前这里写死 0，报告看着像「测过且合格」——那是最糟的一种假绿灯。
+   */
+  let foreignLeaks: number | undefined
+  if (opts.includeForeignRows) {
+    const foreignRefs = new Set(corpus.foreignRows.map(r => `${r.kind}::${r.refId}`))
+    let worst = 0
+    for (const st of strategies) {
+      let mine = 0
+      for (const q of corpus.queries) {
+        const hits = await st.run({ rows, query: q, topK, perRefCap }).catch((): BenchHit[] => [])
+        mine += hits.filter(h => foreignRefs.has(`${h.kind}::${h.refId}`)).length
+      }
+      const metric = results.find(m => m.id === st.id)
+      if (metric) metric.foreignLeaks = mine
+      if (mine > worst) worst = mine
+    }
+    foreignLeaks = worst
+  }
 
   return {
     corpus: {
@@ -454,7 +482,7 @@ export async function runRetrievalBench(
       vectorBytesIfDim: (dim: number) => dim * 4 * corpus.stats.chunks,
     },
     strategies: results,
-    foreignLeaks: 0,
+    ...(foreignLeaks !== undefined ? { foreignLeaks } : {}),
     deterministic,
   }
 }

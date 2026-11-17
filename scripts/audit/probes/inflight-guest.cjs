@@ -84,7 +84,16 @@ async function main() {
   const sourceFingerprint = snapshot(ROOT).fingerprint
   const buildManifest = await hashPaths(build, ['.'])
   const dbSource = await fs.readFile(path.join(ROOT, 'src/lib/db/core.ts'), 'utf8')
+  /**
+   * 🔴 2026-11-17 审计修正：DB_NAME 在某次多账号改造后变成
+   *   `accountLocalDatabaseName('youth-fantasy-engine')`，不再是字符串字面量 ——
+   *   原先只认 `const DB_NAME = '...'` 的正则必然失配（缺陷表现：探针直接抛
+   *   「Cannot determine actual database name」，连带 inflight-desktop 等 5 项 NOT-RUN）。
+   *   与 `web-guest-roundtrip.mjs` 同口径：两条正则兜底；游客模式取到的就是基名。
+   *   若仍取错，第 211 行的 `indexedDB.databases()` 等待会当场失败，不会静默走错库。
+   */
   const databaseName = /const DB_NAME = '([^']+)'/.exec(dbSource)?.[1]
+    ?? /const DB_NAME = accountLocalDatabaseName\('([^']+)'\)/.exec(dbSource)?.[1]
   if (!databaseName) throw new Error('Cannot determine actual database name')
 
   const port = await freePort()

@@ -104,12 +104,14 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
               <ul className="space-y-1.5">
                 {cards.map(c => {
                   const on = selected.includes(c.artefactId)
+                  // 过期与「作者已排除」都不给勾：前者不可核对，后者是作者的否定决定
+                  const locked = c.stale || !!c.excluded
                   return (
                     <li key={c.artefactId}
                       className={`rounded-lg border px-3 py-2 text-11 ${
                         on ? 'border-amber/40 bg-amber/10' : 'border-ink-700/60 bg-ink-900/40'}`}>
-                      <label className={`flex items-start gap-2 ${c.stale ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                        <input type="checkbox" checked={on} disabled={c.stale}
+                      <label className={`flex items-start gap-2 ${locked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                        <input type="checkbox" checked={on} disabled={locked}
                           onChange={() => toggle(c.artefactId)} className="mt-0.5" />
                         <span className="min-w-0 flex-1">
                           <span className="flex flex-wrap items-center gap-1.5">
@@ -118,8 +120,9 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
                             <span className={`text-10 ${c.claim === 'observed' && c.evidenceVerified ? 'text-success' : 'text-amber'}`}>
                               {c.claim === 'observed' && c.evidenceVerified ? '有依据' : '推测'}
                             </span>
-                            {!c.kept && <span className="text-10 text-ink-500">未审</span>}
+                            {!c.kept && !c.excluded && <span className="text-10 text-ink-500">未审</span>}
                             {c.stale && <span className="text-10 text-amber" title={REFERENCE_STALE_HINT}>已过期（不可选）</span>}
+                            {c.excluded && <span className="text-10 text-ink-500" title="你在成果里已把它标为排除，不会再发送">已排除（不可选）</span>}
                           </span>
                           <span className="mt-0.5 block text-ink-300 whitespace-pre-wrap">{c.content.slice(0, 200)}</span>
                           <span className="mt-0.5 block text-10 text-ink-500">来源：{c.sourceLabel}</span>

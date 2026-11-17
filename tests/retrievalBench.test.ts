@@ -131,6 +131,11 @@ console.log('—— retrievalBench：材料检索对照评测（3.6.0 · G）—
   ok('⑤ noise === 1 - precision（口径自洽）',
     report.strategies.every(s => Math.abs(s.noise - (1 - s.precision)) < 1e-9))
   ok('⑤ 报告标注确定性', report.deterministic === true)
+  ok('🔴 ⑤ 没混入别项目行时，foreignLeaks 缺省（不写成 0 冒充「测过」）',
+    report.foreignLeaks === undefined)
+  ok('⑤ 平均字数分母是全部查询（不是只算有标注的）',
+    Math.abs((report.strategies[0].avgChars * corpus.queries.length)
+      - report.strategies[0].outcomes.reduce((n, o) => n + o.chars, 0)) < 1e-6)
   ok('⑤ 语料统计给出存储口径（文本字节 + 向量估算函数）',
     report.corpus.textBytes > 0 && report.corpus.vectorBytesIfDim(768) === 768 * 4 * report.corpus.chunks)
   ok('⑤ 基线能召回短词跨章（recall > 0）',
@@ -177,6 +182,16 @@ console.log('—— retrievalBench：材料检索对照评测（3.6.0 · G）—
   // 这里记录实测值——>0 说明「loader 一旦出偏差就会串味」，是应该补的一道闸。
   console.log(`\n【跨项目隔离】混入别项目行后，召回交出的别项目命中：${leaks}`)
   ok('⑥ 探查函数可运行并给出数字', typeof leaks === 'number')
+  const leaked = await runRetrievalBench(corpus, {
+    strategies: [baselineStrategy, productionDefaultStrategy],
+    includeForeignRows: true,
+  })
+  ok('🔴 ⑥ 混入别项目行时才计算串味，且给出真实数字（不是写死 0）',
+    typeof leaked.foreignLeaks === 'number', String(leaked.foreignLeaks))
+  const leakProd = leaked.strategies.find(x => x.id === 'production-default')?.foreignLeaks
+  const leakBase = leaked.strategies.find(x => x.id === 'baseline')?.foreignLeaks
+  ok('🔴 ⑥ 生产默认在混入别项目行时一条都不交（项目校验生效）', leakProd === 0, `prod=${leakProd}`)
+  ok('⑥ 旧口径会交（说明这道闸不是摆设）', (leakBase ?? 0) > 0, `base=${leakBase}`)
   ok('🔴 ⑥ 别项目内容不得被召回（纵深防御）', leaks === 0, `leaks=${leaks}`)
 }
 

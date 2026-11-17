@@ -82,13 +82,29 @@ async function waitServer() {
 
 /** 关掉首启后可能出现的模态（如「该导出备份了」提醒），否则点击被遮罩拦截 */
 async function dismissModal(page) {
-  const text = await page.evaluate(() => {
-    const m = document.querySelector('.fixed.inset-0')
-    return m ? (m.innerText || '').slice(0, 200) : ''
+  /**
+   * 🔴 浮层不止 `.fixed.inset-0` 一种（2026-11-17 审计修正）：
+   *    新手引导的根节点是 `[data-guide-overlay]`，遮罩是 `[data-guide-mask]`（inline style 定位）。
+   *    原实现先查 `.fixed.inset-0`，查不到就直接返回 ''，于是「看不见引导、也就永远不点关闭」，
+   *    编辑器被一直挡住 → clickEditor 重试 8 次后抛「被浮层持续遮挡」，并连带 reliability 里
+   *    9 个子项 NOT-RUN。这里改成两条都认，且**只有真的存在浮层**才去点标签（避免误触页面按钮）。
+   */
+  const state = await page.evaluate(() => {
+    const modal = document.querySelector('.fixed.inset-0')
+    const guide = document.querySelector('[data-guide-overlay]')
+    const node = modal || guide
+    return {
+      modal: !!modal,
+      guide: !!guide,
+      text: node ? (node.innerText || '').slice(0, 200) : '',
+    }
   })
-  if (!text) return ''
-  console.log('[step] modal -', text.replace(/\n+/g, ' / '))
-  for (const label of ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '我知道了', '关闭', '取消', '确定', '好的']) {
+  if (!state.modal && !state.guide) return ''
+  if (state.text) console.log('[step] modal -', state.text.replace(/\n+/g, ' / '))
+  const labels = state.guide && !state.modal
+    ? ['关闭本页指引', '跳过本页']
+    : ['关闭本页指引', '跳过本页', '稍后再说', '知道了', '我知道了', '关闭', '取消', '确定', '好的']
+  for (const label of labels) {
     const hit = await page.evaluate((l) => {
       const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === l || (x.getAttribute('aria-label') || '') === l)
       if (b) { b.click(); return true }

@@ -13,7 +13,7 @@
  *
  * 纯逻辑层：只做筛选、裁剪、拼块，不读库（读取在界面侧用 `loadArtefacts`）。
  */
-import type { ArtefactRecord, ArtefactStore } from '@/lib/artefacts/types'
+import type { ArtefactKind, ArtefactStore } from '@/lib/artefacts/types'
 
 /** 可作参考的成果类型：分析卡与参考卡 */
 export const REFERENCE_KINDS = ['analysis', 'reference'] as const
@@ -32,6 +32,11 @@ export interface ReferenceCard {
   stale: boolean
   /** 作者是否已确认（kept）；draft 会在界面上标明"未审" */
   kept: boolean
+  /**
+   * 作者已明确排除（`state === 'excluded'`，3.6.0 · G 审计修正）。
+   * 🔴 排除 ≠ 未审：排除是作者的否定决定，不该还能被勾选发送；未审只是还没看。
+   */
+  excluded?: boolean
 }
 
 export const REFERENCE_LIMITS = {
@@ -61,11 +66,15 @@ function str(v: unknown, max: number): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : ''
 }
 
+/** 哪些成果类型可以当参考（唯一判据；别在别处再写一遍 kind 判断） */
+const canBeReference = (kind: ArtefactKind): kind is 'analysis' | 'reference' =>
+  (REFERENCE_KINDS as readonly string[]).includes(kind)
+
 /** 成果记录 → 参考卡（坏 payload 跳过，不抛） */
 export function referenceCardsOf(store: ArtefactStore): ReferenceCard[] {
   const out: ReferenceCard[] = []
   for (const it of store.items) {
-    if (it.kind !== 'analysis' && it.kind !== 'reference') continue
+    if (!canBeReference(it.kind)) continue
     const p = (it.payload ?? {}) as Record<string, unknown>
     const title = str(p.title, 60)
     const content = str(p.content, 1200)
@@ -83,12 +92,13 @@ export function referenceCardsOf(store: ArtefactStore): ReferenceCard[] {
       sourceLabel: str(it.source.chapterTitle, 60) || '（无来源标注）',
       stale: !!it.stale,
       kept: it.state === 'kept',
+      ...(it.state === 'excluded' ? { excluded: true } : {}),
     })
   }
   return out
 }
 
-export type ReferenceDropReason = 'stale' | 'budget' | 'missing'
+export type ReferenceDropReason = 'stale' | 'budget' | 'missing' | 'excluded'
 
 export interface ReferenceBlock {
   /** 实际要拼进提示词的文本（空串 = 一段都不发） */
@@ -127,6 +137,8 @@ export function buildReferenceBlock(
     const card = byId.get(id)
     if (!card) { dropped.push({ id, reason: 'missing' }); continue }
     if (card.stale) { dropped.push({ id, reason: 'stale' }); continue }
+    // 🔴 作者明确排除的，绝不因为「被勾上了」就发出去
+    if (card.excluded) { dropped.push({ id, reason: 'excluded' }); continue }
     if (usedIds.length >= maxCards) { dropped.push({ id, reason: 'budget' }); continue }
     const body = card.content.slice(0, maxCardChars)
     const tags = [dimensionLabelOf(card.dimension || '')]
@@ -163,19 +175,16 @@ export function describeReferenceBlock(block: ReferenceBlock): string {
 }
 
 function countReasons(dropped: readonly { reason: ReferenceDropReason }[]): string {
-  const n = { stale: 0, budget: 0, missing: 0 }
+  const n = { stale: 0, budget: 0, missing: 0, excluded: 0 }
   for (const d of dropped) n[d.reason]++
   const parts: string[] = []
   if (n.stale) parts.push(`过期 ${n.stale}`)
   if (n.budget) parts.push(`超预算 ${n.budget}`)
   if (n.missing) parts.push(`已不在 ${n.missing}`)
+  if (n.excluded) parts.push(`已排除 ${n.excluded}`)
   return parts.join(' / ')
 }
 
 /** 过期判据的说明（界面 tooltip 用，避免作者以为"卡片坏了"） */
 export const REFERENCE_STALE_HINT = '这张参考的来源已变化或无法核对，不会自动发送；需要的话请重新分析 / 重新保存后再选'
 
-/** 供类型守卫：某条成果是否能出现在参考列表（作者已排除的不显示） */
-export function isReferenceCandidate(it: ArtefactRecord): boolean {
-  return (it.kind === 'analysis' || it.kind === 'reference') && it.state !== 'excluded'
-}

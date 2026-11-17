@@ -280,6 +280,38 @@ async function main() {
     })
     return { status: res.status(), body: await res.text() }
   }
+  /**
+   * 给临时账号**开通云同步资格**。
+   *
+   * 🔴 为什么必须有这一步（2026-11-17 审计修正）：3.5.0 起「注册与同步资格分离」——
+   *    新注册账号显式 `cloudSync: false`，页面会停在**账号本机模式**（IndexedDB），
+   *    服务端因此不注入 `__YFE_PORTABLE__`。本探针验的是 **web-cloud（云端存储）**，
+   *    不先授权就等于在验「本机模式」却按云端的标准断言 —— 实测会停在 initial-flags，
+   *    并连带 reliability 里 9 个子项 NOT-RUN。
+   *    这里走运营同一条路径（`users.mjs` 的 `setUserFlag`），不写产品故障开关、不碰生产数据。
+   */
+  const grantCloud = async name => {
+    const script = path.join(runRoot, 'grant-cloud.mjs')
+    await fs.writeFile(script, `
+import { findByName, setUserFlag } from ${JSON.stringify(pathToFileURL(path.join(ROOT, 'server/lib/users.mjs')).href)}
+const name = process.argv[2]
+const u = findByName(name)
+if (!u) { console.error('no-such-user:' + name); process.exit(2) }
+const r = setUserFlag(u.id, 'cloudSync', true)
+if (!r.ok) { console.error(String(r.error)); process.exit(3) }
+console.log('granted:' + name)
+`)
+    const code = await new Promise(resolve => {
+      const child = spawn(process.execPath, [script, name], { cwd: ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      child.stdout.on('data', v => { out += String(v) })
+      child.stderr.on('data', v => { out += String(v) })
+      child.on('error', v => { out += String(v) })
+      child.on('close', c => { serverLog += `[grant] ${name} exit=${c} ${out.trim()}\n`; resolve(c) })
+    })
+    if (code !== 0) throw new Error('grant cloudSync failed for ' + name)
+  }
+
   /** 页面启动后等前端拿到账号标记（项目中心没有 <nav>，不能用它当就绪信号） */
   const waitUser = async (page, timeout = API_TIMEOUT) => {
     await page.waitForFunction(() => {
@@ -313,6 +345,7 @@ process.on('message',async message=>{
     // ---------- ① 账号 A：注册 → 真实页面启动标记 ----------
     const A = await openContext('a')
     await register(A.ctx, USER_A)
+    await grantCloud(USER_A)
     await A.page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: BOOT_TIMEOUT })
     const nameOnBoot = await waitUser(A.page)
     check('page-renders-account', nameOnBoot === USER_A, String(nameOnBoot) + ' @ ' + A.page.url())
@@ -320,7 +353,8 @@ process.on('message',async message=>{
       web: window.__YFE_WEB__, guest: window.__YFE_GUEST__, portable: window.__YFE_PORTABLE__,
       user: window.__YFE_USER__?.name ?? null,
     }))
-    // 平台矩阵对 web-cloud 的期望：WEB=true、PORTABLE=true（复用 HTTP StoreOps）、GUEST=false、有账号
+    // 平台矩阵对 web-cloud 的期望：WEB=true、PORTABLE=true（复用 HTTP StoreOps）、GUEST=false、有账号。
+    // 🔴 前提是账号**已开通云同步资格**（见 grantCloud）：未开通时页面按设计走账号本机模式。
     check('initial-flags',
       flags.web === 1 && !flags.guest && !!flags.portable && flags.user === USER_A,
       JSON.stringify(flags))
@@ -345,6 +379,7 @@ process.on('message',async message=>{
     // ---------- ③ two-accounts：另一设备/另一账号看不到 A 的数据 ----------
     const B = await openContext('b')
     await register(B.ctx, USER_B)
+    await grantCloud(USER_B)
     const emptyB = await dataStatus(B.ctx)
     check('two-accounts', emptyB.status === 404 && JSON.parse(emptyB.body).missing === true, emptyB.status + ' ' + emptyB.body.slice(0, 120))
 
@@ -393,6 +428,7 @@ process.on('message',async message=>{
     const guestData = await dataStatus(C.ctx)
     check('guest-never-writes-server', guestData.status === 401, guestData.status + ' ' + guestData.body.slice(0, 120))
     await register(C.ctx, USER_C)
+    await grantCloud(USER_C)
     const accountAfterRegister = await dataStatus(C.ctx)
     check('guest-to-account', accountAfterRegister.status === 404 && JSON.parse(accountAfterRegister.body).missing === true,
       accountAfterRegister.status + ' ' + accountAfterRegister.body.slice(0, 120))
