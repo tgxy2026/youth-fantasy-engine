@@ -182,6 +182,23 @@ export function cardFieldPath(tabId: string, preferred: string[]): string | null
 export interface CommitResult {
   created: number
   failed: string[]
+  /**
+   * 3.6.0 · E：**逐项**已写入回执（名字 / 落点页签 / 记录 id）。
+   *
+   * 🔴 为什么要它：之前只回「新增 N 条 + 失败清单」，作者没法知道「具体是哪几条、
+   *    写进了哪张表、哪一行」—— 想核对或撤销只能自己翻表找。这里给到记录 id，
+   *    界面上可以直接定位（不复制内容，不存原文）。
+   *    合并到已有行的（`merged: true`）也算写入，但不算「新增」。
+   */
+  written: CommitWrittenItem[]
+}
+
+export interface CommitWrittenItem {
+  name: string
+  tabId: string
+  recordId: string
+  /** true = 合并进已有行/卡（只补了本次有值的字段），false = 新建 */
+  merged: boolean
 }
 
 /**
@@ -227,6 +244,7 @@ export async function commitEntities(
   items: LedgerItem[], chapterTitle: string, opts: CommitEntitiesOptions = {},
 ): Promise<CommitResult> {
   const failed: string[] = []
+  const written: CommitWrittenItem[] = []
   let created = 0
 
   // 映射上下文按「本条会实际写到的页签」预读一次（调用方复用 / 测试注入优先）
@@ -280,6 +298,7 @@ export async function commitEntities(
           order: all.length,
         }
         await db.saveCardRecord(rec)
+        written.push({ name: item.name, tabId, recordId: rec.id, merged: false })
         created++
       } else {
         const rows = await db.getTableRows(tabId)
@@ -318,11 +337,12 @@ export async function commitEntities(
           createdAt: existing?.createdAt ?? Date.now(),
         }
         await db.saveTableRow(row)
+        written.push({ name: item.name, tabId, recordId: row.id, merged: !!existing })
         if (!existing) created++
       }
     } catch {
       failed.push(item.name)
     }
   }
-  return { created, failed }
+  return { created, failed, written }
 }

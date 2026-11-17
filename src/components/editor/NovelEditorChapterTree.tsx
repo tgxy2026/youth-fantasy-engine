@@ -9,6 +9,8 @@ import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolum
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { flattenChapters } from '@/lib/outline/chapterSeq'
+import { getCurrentProjectId } from '@/lib/db/core'
+import { chapterWriteIssues } from '@/lib/outline/chapterWriteLog'
 
 /**
  * 正文编辑页的**左侧章节树**（2026-09-19 从 NovelEditor.tsx 抽出，原 1113~1287 行）。
@@ -81,6 +83,27 @@ export default function NovelEditorChapterTree({
 }: Props) {
   /** 新建章节菜单开合（提示词弹窗由父组件管，这里只管这一小块 UI） */
   const [addOpen, setAddOpen] = useState(false)
+  /**
+   * 3.6.0 · E：哪些章「正文已保存、整理没做完」。
+   *
+   * 🔴 只标**已提交但没全绿**的记录（摘要失败 / 设定未完成 / 总表未同步），
+   *    这样列表里出现琥珀点时，含义是确定的「这章还欠收拾」，不是装饰。
+   *    读取失败时给出 `writeErr` 并在标题上说明，不静默当作「都正常」。
+   */
+  const [writeState, setWriteState] = useState<{
+    map: Map<string, string[]>
+    writtenCount: Map<string, number>
+    error?: string
+  }>({ map: new Map(), writtenCount: new Map() })
+
+  // 3.6.0 · E：写回执的状态会随保存变化 —— 章节条数变化或重新进入页面时刷一次
+  useEffect(() => {
+    let cancelled = false
+    void chapterWriteIssues(getCurrentProjectId()).then(r => {
+      if (!cancelled) setWriteState(r)
+    })
+    return () => { cancelled = true }
+  }, [chapters.length, activeId])
 
   // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
   // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
@@ -451,6 +474,19 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                             <GripVertical size={12} />
                           </span>
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[ch.status]}`} title={ch.status} />
+                            {/* 3.6.0 · E：正文已保存但整理没做完 —— 悬停看具体欠哪一步 */}
+                            {writeState.map.get(ch.id)?.length ? (
+                              <span
+                                data-chapter-write-issue
+                                className="shrink-0 text-9 leading-none text-amber"
+                                title={`这章正文已保存，但还没收尾：${writeState.map.get(ch.id)!.join('；')}`
+                                  + (writeState.writtenCount.get(ch.id)
+                                    ? `（本轮设定已登记 ${writeState.writtenCount.get(ch.id)} 条，可在设定表核对）`
+                                    : '')}
+                              >
+                                ●
+                              </span>
+                            ) : null}
                             {/* 系统派生的正文序号：与章名无关，改名字它也不会变 */}
                             <span
                               className="text-9 text-ink-600 shrink-0 tabular-nums w-4 text-right"

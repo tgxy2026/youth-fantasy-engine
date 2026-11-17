@@ -50,7 +50,10 @@ import {
   aiExtractSettingEntitiesWithStatus, aiChapterSummary, cleanChapterOutput,
 } from '@/lib/ai/aiTasks'
 import type { StepResultState } from '@/lib/revision/revisionTypes'
-import { classify, commitEntities, loadRegistry, normName, type LedgerItem } from '@/lib/settings/settingLedger'
+import {
+  classify, commitEntities, loadRegistry, normName,
+  type CommitWrittenItem, type LedgerItem,
+} from '@/lib/settings/settingLedger'
 import { sortChapters, chapterSeqOf } from '@/lib/outline/chapterSeq'
 import { loadDraftMappingContexts, type DraftMappingContext } from '@/lib/flow/draftMapping'
 import { resolveSemanticWrite } from '@/lib/templates/semanticWrite'
@@ -417,6 +420,17 @@ export type SettingsCommitReason =
 export interface SettingsCommitResult {
   created: number
   failed: string[]
+  /**
+   * 3.6.0 · E：**逐项**已写入回执（名字 / 页签 / 记录 id / 是否合并进已有行）。
+   * 写入成功时一定存在（可能为空数组）；作者据此能定位到具体那一条，而不是只有「新增 N 条」。
+   */
+  written: CommitWrittenItem[]
+  /**
+   * 3.6.0 · E：`confirm` 策略下**作者实际看到了几条、勾了几条**。
+   * 🔴 只在走了 confirm 时有值：缺失 ⇒ 这一轮没经过勾选（不是「勾了 0 条」）。
+   *    它让「提请 5 条 / 你选 3 条 / 写入 3 条」在回执里说得清，重启后也能回看。
+   */
+  confirm?: { candidates: number; chosen: number }
   errors?: string[]
   /** 有状态结果：只有 `done` 可以说「已完成」，`skipped`/`cancelled`/`failed` 都不算通过 */
   state: SettingsCommitState
@@ -460,7 +474,7 @@ export async function extractAndCommitSettings(
 ): Promise<SettingsCommitResult> {
   if (budget?.exhausted) {
     return {
-      created: 0, failed: [], state: 'skipped', reasons: ['budget-exhausted'],
+      created: 0, failed: [], written: [], state: 'skipped', reasons: ['budget-exhausted'],
       errors: [`${budget.label}的模型请求已达上限（${budget.used}/${budget.max}），设定整理已跳过`],
     }
   }
@@ -472,13 +486,13 @@ export async function extractAndCommitSettings(
   })
   if (entRun.state !== 'completed') {
     return {
-      created: 0, failed: [], state: 'failed', reasons: ['extract-failed'],
+      created: 0, failed: [], written: [], state: 'failed', reasons: ['extract-failed'],
       errors: ['设定实体抽取未完整完成（' + (entRun.errorCode ?? entRun.state) + '）'],
     }
   }
   const entities = entRun.result?.data ?? []
   // 真的没有新实体：这是**完成**（不是失败），但也不能说成"审读通过"以外的话
-  if (!entities.length) return { created: 0, failed: [], state: 'done', reasons: [] }
+  if (!entities.length) return { created: 0, failed: [], written: [], state: 'done', reasons: [] }
   // 3.2.0 · WQ8：核验「原文原句证据」是否真在正文里。
   // 🔴 只报告不丢弃：模型可能把两句合并转述，丢掉会丢真信息；但**编造的证据**必须让作者看见。
   const evidenceNote = describeEvidence(checkEntityEvidence(entities, body))
@@ -492,7 +506,7 @@ export async function extractAndCommitSettings(
     reg = await loadRegistry()
   } catch (e) {
     return {
-      created: 0, failed: [], state: 'failed', reasons: ['registry-unavailable'],
+      created: 0, failed: [], written: [], state: 'failed', reasons: ['registry-unavailable'],
       errors: [`设定登记表读取失败，本章未做判重与补登：${e instanceof Error ? e.message : String(e)}`],
     }
   }
@@ -512,13 +526,14 @@ export async function extractAndCommitSettings(
       return {
         created: 0,
         failed: targets.map(i => i.name).filter(Boolean),
+        written: [] as CommitWrittenItem[],
         error: `${label}写入失败：${e instanceof Error ? e.message : String(e)}`,
       }
     }
   }
   /** 把失败清单与证据提示折成 errors/reasons（唯一出口，避免各分支各写一套） */
   const reportOf = (
-    r: { created: number; failed: string[]; error: string },
+    r: { created: number; failed: string[]; written?: CommitWrittenItem[]; error: string },
     extraReasons: SettingsCommitReason[] = [],
   ) => {
     const reasons: SettingsCommitReason[] = [...extraReasons]
@@ -531,6 +546,7 @@ export async function extractAndCommitSettings(
     return {
       created: r.created,
       failed: r.failed,
+      written: r.written ?? [],
       ...(errors.length ? { errors } : {}),
       state: settingsCommitState(r.created, r.failed, reasons),
       reasons,
@@ -576,25 +592,30 @@ export async function extractAndCommitSettings(
   const cands = items.filter(i => i.status === 'new' || i.status === 'duplicate')
   if (!cands.length) {
     return {
-      created: 0, failed: [], state: 'done', reasons: [],
+      created: 0, failed: [], written: [], state: 'done', reasons: [],
       ...(evidenceNote ? { errors: [evidenceNote] } : {}),
     }
   }
   if (!onConfirm) {
     // 没有交互入口 ⇒ 未执行（不是"取消"、也不是"没有新设定"）
     return {
-      created: 0, failed: [], state: 'skipped', reasons: ['confirm-unavailable'],
+      created: 0, failed: [], written: [], state: 'skipped', reasons: ['confirm-unavailable'],
       ...(evidenceNote ? { errors: [evidenceNote] } : {}),
     }
   }
   const chosen = await onConfirm(cands)
   if (!chosen || !chosen.length) {
     return {
-      created: 0, failed: [], state: 'cancelled', reasons: ['confirm-cancelled'],
+      created: 0, failed: [], written: [], state: 'cancelled', reasons: ['confirm-cancelled'],
+      confirm: { candidates: cands.length, chosen: 0 },
       ...(evidenceNote ? { errors: [evidenceNote] } : {}),
     }
   }
-  return reportOf(await commitSafe(chosen, '新增设定'))
+  // 🔴 作者的实际选择随结果一起回去（提请几条 / 勾了几条 / 实际写入几条），重启后仍可回看
+  return {
+    ...reportOf(await commitSafe(chosen, '新增设定')),
+    confirm: { candidates: cands.length, chosen: chosen.length },
+  }
 }
 
 // ============ C 策略：对已登记实体的变化做安全写回 ============
@@ -1093,6 +1114,11 @@ export async function runAutoContinue(
         summary: summaryState,
         settings: settingsState,
         master: saved.masterState,
+        // 逐项落点（只存定位，不存设定内容）；上限 20 条，避免回执记录无限膨胀
+        ...(r.written.length
+          ? { settingsWritten: r.written.slice(0, 20).map(w => ({ ...w })) }
+          : {}),
+        ...(r.confirm ? { confirm: r.confirm } : {}),
         at: Date.now(),
       }
       const receiptPid = String(cb.request?.projectId ?? db.getCurrentProjectId())

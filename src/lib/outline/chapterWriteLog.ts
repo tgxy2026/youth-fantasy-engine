@@ -35,6 +35,13 @@ export interface ChapterWriteReceipt {
   settings: ChapterStepState
   /** 章节总表同步 */
   master: ChapterStepState
+  /**
+   * 3.6.0 · E：设定补登的**逐项**落点（名字 / 页签 / 记录 id / 是否合并进已有行，最多 20 条）。
+   * 🔴 只存定位，不存设定内容；作者想核对「这条到底进没进表」时能直接对到具体那一行。
+   */
+  settingsWritten?: { name: string; tabId: string; recordId: string; merged: boolean }[]
+  /** 3.6.0 · E：`confirm` 策略下作者的实际选择（提请几条 / 勾了几条）；缺失 ⇒ 没经过勾选 */
+  confirm?: { candidates: number; chosen: number }
   at: number
   /** 给人看的补充（失败原因、"崩溃后核对"等） */
   notes?: string[]
@@ -231,6 +238,51 @@ export function receiptIssues(receipt: ChapterWriteReceipt): string[] {
   if (receipt.settings === 'failed') out.push('设定整理未完成')
   if (receipt.master === 'failed') out.push('章节总表未同步')
   return out
+}
+
+/**
+ * 章节视图用的分步状态（3.6.0 · E）。
+ *
+ * 只收**已提交但没全绿**的记录：正文确认在库、摘要或设定没做完 —— 那正是作者需要
+ * 在章节列表里一眼看到「这章还欠整理」的情况。全绿的不标（列表上不该满屏绿点）。
+ *
+ * 🔴 读失败返回 `error` + 空表，**不伪装成"都正常"**：界面据此显示「状态读取失败」，
+ *    而不是安静地什么都不显示（那样作者会以为一切已收尾）。
+ */
+export async function chapterWriteIssues(
+  pid: string, store: StoreOps = ops,
+): Promise<{ map: Map<string, string[]>; writtenCount: Map<string, number>; error?: string }> {
+  const map = new Map<string, string[]>()
+  /** 该章这一轮设定补登**实际写入**了几条（逐项落点在回执里，这里只给数） */
+  const writtenCount = new Map<string, number>()
+  if (!pid) return { map, writtenCount }
+  try {
+    const list = await loadChapterWrites(pid, store)
+    /**
+     * **每章只取最新一条已提交记录**。
+     *
+     * 记录 id 就是 chapterId（`prepareChapterWrite` 里同 id 覆盖），所以正常情况下每章只有一条；
+     * 这里仍按 `receipt.at` 取最大，是为了防两种情形：老版本留下的重复记录、以及将来若改成
+     * 「一次写入一条历史」时不至于把旧的不完美状态永久挂在章节上。
+     * 🔴 不依赖数组顺序：同一毫秒内连续提交时顺序不可靠，比时间戳才确定。
+     */
+    const latest = new Map<string, ChapterWriteRecord>()
+    for (const rec of list) {
+      if (rec.state !== 'committed' || !rec.receipt) continue
+      const stamp = rec.receipt.at || rec.at
+      const prev = latest.get(rec.chapterId)
+      if (!prev || stamp >= (prev.receipt?.at || prev.at)) latest.set(rec.chapterId, rec)
+    }
+    for (const [chapterId, rec] of latest) {
+      const issues = rec.receipt ? receiptIssues(rec.receipt) : []
+      if (issues.length) map.set(chapterId, issues)
+      const n = rec.receipt?.settingsWritten?.length ?? 0
+      if (n) writtenCount.set(chapterId, n)
+    }
+    return { map, writtenCount }
+  } catch (e) {
+    return { map, writtenCount, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 /** 一句分步结果（规划要求 UI 明确"正文已保存 / 整理待恢复"，不宣传整章事务） */
