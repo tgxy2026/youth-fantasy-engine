@@ -5,12 +5,14 @@
  */
 import AutoTextarea from '@/components/common/AutoTextarea'
 import NumberField from '@/components/common/NumberField'
-import { Eraser, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
+import { useState } from 'react'
+import { Eraser, GitBranch, Loader2, Play, Save, Sparkles, Square, Wand2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { copyText } from '@/components/dialogs/dialogs'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import InspirationPicker from '@/components/creative/InspirationPicker'
 import ReferencePicker from '@/components/creative/ReferencePicker'
+import PlotCandidatePanel from '@/components/creative/PlotCandidatePanel'
 import { StyleProfilePicker } from '@/components/settings/StyleProfilePicker'
 import { clearCreativeSession, hydrateCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '@/lib/creative/creativeSession'
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '@/lib/ai/aiTasks'
@@ -22,6 +24,8 @@ import type { CreativeWritingModel } from '@/components/creative/useCreativeWrit
 
 export default function CreativeSetupSection({ m }: { m: CreativeWritingModel }) {
   const { s, inp, setInterview, writingReady, acpWriting, busy, probe, onPickLength, onClearSeed, pace, outlineOnlyTarget, targets, hasOutline, needSeed, hasOutlineCards, batchTotal, batchOversize, gap, gapTotal, gapWillFill, gapFillTo, probeNote, canStart, startLabel } = m
+  // 3.6.0 · F：剧情候选面板（只改细纲字段；首版只在创意写作页展示与保存）
+  const [plotOpen, setPlotOpen] = useState(false)
   if (!s.hydrated) return (
     <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4 text-12 text-ink-300">
       创作记录尚未读入；如果等待时间过长，请检查存储后重新读取。
@@ -30,6 +34,8 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
   )
   return (
     <>
+      {/* 3.6.0 · F：剧情候选（只改细纲字段） */}
+      {plotOpen && <PlotCandidatePanel onClose={() => setPlotOpen(false)} />}
       <section className="rounded-lg border border-ink-700 bg-ink-800/40 p-4">
         {/* ① 篇幅：短篇一次跑完；中长篇把大纲规划与正文生成分成两趟，各自可反复执行 */}
         <div className="flex flex-wrap items-center gap-1.5">
@@ -263,6 +269,13 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
               <ReferencePicker disabled={s.running}
                 selected={inp.referenceIds ?? []}
                 onChange={v => updateInputs({ referenceIds: v.length ? v : undefined })} />
+              {/* 3.6.0 · F：剧情候选 —— 只改已有细纲卡的字段，不碰正文与设定 */}
+              <Button variant="toggle" selected={plotOpen} disabled={s.running}
+                onClick={() => setPlotOpen(true)} className="rounded-lg"
+                title="为已有章节细纲想出几个走法；应用时逐字段核对当前值，不覆盖你的修改">
+                <GitBranch size={12} className="mr-1" />
+                剧情候选
+              </Button>
             </div>
 
             {inp.deAiOn && (
