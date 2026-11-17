@@ -63,6 +63,9 @@ export const LOCAL_ONLY_META_KEY_PREFIXES: readonly string[] = [
   // 🔴 3.3.3 · A3：模型能力实测缓存（按端点/模型隔离；不含密钥）。
   //   换台设备后端点与网络环境都可能不同，能力结论不能跟着走。
   'aiCapability:',
+  // 3.6.0 · E：章节写入准备记录与回执（`chapterWrite::<项目id>`）。
+  //   记的是「这台机器上的一次写入」；跨设备同步只会留下指向别处章节的定位。
+  'chapterWrite:',
   // 3.6.0 · D：检查报告的「忽略并说明」记录（`reviewIgnore::<项目id>`）。
   //   忽略是本机阅读偏好；记录里的报告 id 还会被配额淘汰，跟云走只会留下指向不存在报告的条目。
   'reviewIgnore:',

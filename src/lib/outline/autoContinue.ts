@@ -29,6 +29,11 @@ import { noteCandidate } from '@/lib/ai/aiRunLedger'
 import { createAttemptBudget, CHAPTER_ATTEMPT_BUDGET, type AttemptBudget } from '@/lib/ai/requestLedger'
 // 3.6.0 · D：自检的运行摘要已抽到 `./selfRefine`；这里只保留「建章后补绑 chapterId」
 import { bindReviewSummaryChapter } from '@/lib/revision/reviewSummaryStore'
+// 3.6.0 · E：章节写入的准备记录与分步回执（崩溃窗口用预分配 id 核对，不猜）
+import {
+  abandonChapterWrite, commitChapterWrite, prepareChapterWrite, receiptIssues,
+  type ChapterWriteReceipt,
+} from '@/lib/outline/chapterWriteLog'
 import { hashOf } from '@/lib/semantic/chunk'
 // 3.2.0 · WQ8：抽取证据的原文核验（编造的证据比没有证据更糟）
 import { checkEntityEvidence, describeEvidence } from '@/lib/ai/evidenceCheck'
@@ -322,7 +327,8 @@ async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRe
 
 async function createChapterAfter(
   anchorId: string | null, title: string, content: string, summary = '', volumeId?: string,
-): Promise<Chapter> {
+  meta?: { plannedNo?: number; taskId?: string },
+): Promise<{ ch: Chapter; opId: string; masterState: 'ok' | 'failed' }> {
   const pid = db.getCurrentProjectId()
   const vols = await db.getAllVolumes()
   const chs = await db.getAllChapters()
@@ -335,8 +341,11 @@ async function createChapterAfter(
   const volChs = chs.filter(c => c.volumeId === targetVolId)
   const order = volChs.length
   // 🔴 B3（2.4.1）：整章正文由 AI 续写产出 —— 记账（纯函数返回新对象，后续改 title 不受影响）
+  // 🔴 3.6.0 · E：**id 在这里一次性定下**（uid），准备记录与写库用同一个 id ——
+  //    崩溃后靠它核对"这一章到底写进去没有"，绝不靠章名或时间猜。
+  const chapterId = uid()
   const ch: Chapter = withAiAssist({
-    id: uid(), projectId: pid, volumeId: targetVolId, order,
+    id: chapterId, projectId: pid, volumeId: targetVolId, order,
     title: title || '未命名章节', content, summary,
     status: '草稿', wordCount: countWords(content),
     createdAt: Date.now(), updatedAt: Date.now(),
@@ -346,11 +355,37 @@ async function createChapterAfter(
   const no = chapterSeqOf(vols, [...chs, ch], ch.id)
   const cleanTitle = (title || '未命名章节').replace(/^第\s*\d+\s*章\s*/, '')
   ch.title = `第${no}章 ${cleanTitle}`
-  await db.saveChapter(ch) // upsert by id，绝不覆盖别的章
-  const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
-  await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
-  return ch
+
+  /**
+   * 🔴 3.6.0 · E：首次不可逆写入**之前**先落准备记录。
+   *    写不成准备记录就**不写正文** —— 宁可这一章不落库，也不留一份崩溃后无法核对、
+   *    只能靠"章名像不像"去猜的半成品。
+   */
+  const prepare = await prepareChapterWrite({
+    projectId: pid, chapterId, volumeId: targetVolId,
+    plannedNo: meta?.plannedNo ?? no, title: ch.title, content,
+    ...(meta?.taskId ? { taskId: meta.taskId } : {}),
+  })
+  try {
+    await db.saveChapter(ch) // upsert by id，绝不覆盖别的章
+  } catch (e) {
+    await abandonChapterWrite(pid, prepare.id, `saveChapter 失败：${e instanceof Error ? e.message : String(e)}`)
+      .catch(() => false)
+    throw e
+  }
+  // 章节总表同步失败**不推翻**正文已保存这一事实（分步回执如实表达）
+  let masterState: 'ok' | 'failed' = 'ok'
+  try {
+    const [lv, lc] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+    await syncChapterMaster(ch, chapterSeqOf(lv, lc, ch.id))
+  } catch (e) {
+    masterState = 'failed'
+    console.warn('[autoContinue] 章节总表同步失败（正文已落库，回执会如实标注）：', e)
+  }
+  return { ch, opId: prepare.id, masterState }
 }
+
+
 
 // ============ 设定抽取与补登（按策略） ============
 
@@ -742,6 +777,8 @@ export async function runAutoContinue(
   let lastBody = last?.content ?? ''
   let lastTitle = last?.title ?? ''
   const created: { id: string; title: string; no: number }[] = []
+  /** 3.6.0 · E：最近一章的保存回执问题（完成状态行要如实说「整理待恢复」） */
+  let lastReceiptIssues: string[] = []
   const minWords = minValidWords(opts.targetWords)
   let memory = ''
   let aborted = false
@@ -974,13 +1011,33 @@ export async function runAutoContinue(
         title = await suggestTitle(body, cb.signal, cb.request, opts.acpText)
         budget.consume(1)
       }
-      // 生成约 1/10 的章节压缩摘要：存入本章 summary（供后续续写参考），并复用于滚动 memory
-      const sum = budget.exhausted ? '' : await aiChapterSummary(body, { signal: cb.signal, ...(opts.acpText ? { acpText: opts.acpText } : {}) }).catch(() => '')
-      if (!budget.exhausted) budget.consume(1)
+      /**
+       * 3.6.0 · E：摘要**失败**与**本来就没有**必须分开。
+       * 旧写法 `.catch(() => '')` 把请求失败变成空摘要，作者永远看不出"想过但没成"；
+       * 现在记成三态（ok / failed / empty / skipped），随保存回执一起落库。
+       */
+      let summaryState: ChapterWriteReceipt['summary'] = 'empty'
+      let sum = ''
+      if (budget.exhausted) {
+        summaryState = 'skipped'
+      } else {
+        try {
+          sum = await aiChapterSummary(body, { signal: cb.signal, ...(opts.acpText ? { acpText: opts.acpText } : {}) })
+          summaryState = sum.trim() ? 'ok' : 'empty'
+        } catch {
+          summaryState = 'failed'
+          sum = ''
+        }
+        budget.consume(1)
+      }
       // 🔴 本章的**计划章号** ＝ 库里已有章数 + 本轮第几章（与上面取细纲的 `ordered.length + i + 1` 同一个数）。
       //    按它问调用方"这一章该落进哪一卷" —— 长篇跨卷时第 21 章要进卷二，而不是留在锚点所在的卷一。
       const plannedNo = ordered.length + i + 1
-      const ch = await createChapterAfter(anchorId, title, body, sum, cb.volumeIdFor?.(plannedNo))
+      const saved = await createChapterAfter(
+        anchorId, title, body, sum, cb.volumeIdFor?.(plannedNo),
+        { plannedNo, ...(cb.request?.taskId ? { taskId: cb.request.taskId } : {}) },
+      )
+      const ch = saved.ch
       /**
        * 3.6.0 · D：自检发生在建章**之前**（那时只有计划章号），这里拿到真实 chapterId 再补绑。
        * 🔴 绑定会核对任务 id 与计划章号，对不上就**保留未绑定** —— 绝不按章号猜归属
@@ -1023,8 +1080,32 @@ export async function runAutoContinue(
             : r.state === 'cancelled'
               ? '设定补登已取消（正文已保存，可到设定表手动补）'
               : '设定整理未完成（正文已保存，可到设定表手动补）'
+      /**
+       * 3.6.0 · E：四步结果写成回执（正文 / 摘要 / 设定 / 总表）。
+       * 🔴 不宣传"整章事务"：哪一步没成就单独说，正文已保存这件事也要说清。
+       */
+      const settingsState: ChapterWriteReceipt['settings'] =
+        r.state === 'done' ? 'done'
+          : r.state === 'partial' ? 'partial'
+            : r.state === 'skipped' || r.state === 'cancelled' ? 'skipped' : 'failed'
+      const receipt: ChapterWriteReceipt = {
+        chapter: 'committed',
+        summary: summaryState,
+        settings: settingsState,
+        master: saved.masterState,
+        at: Date.now(),
+      }
+      const receiptPid = String(cb.request?.projectId ?? db.getCurrentProjectId())
+      const receiptSaved = await commitChapterWrite(receiptPid, saved.opId, receipt).catch(() => false)
+      lastReceiptIssues = receiptIssues(receipt)
+      const stepNotes: string[] = []
+      if (summaryState === 'failed') stepNotes.push('摘要生成失败（已按空摘要保存）')
+      if (summaryState === 'skipped') stepNotes.push('摘要因预算跳过')
+      if (saved.masterState === 'failed') stepNotes.push('章节总表未同步')
+      if (!receiptSaved) stepNotes.push('保存回执未落盘（不影响正文）')
       cb.onLog?.(
         `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；${settingLine}`
+        + (stepNotes.length ? `；${stepNotes.join('；')}` : '')
         + (r.errors?.length ? `；${r.errors.join('；')}` : ''),
       )
       // 滚动摘要回灌（应对多章记忆滚雪球），复用刚刚生成的 1/10 摘要
@@ -1040,9 +1121,12 @@ export async function runAutoContinue(
       break
     }
   }
+  const receiptTail = lastReceiptIssues.length
+    ? `；最近一章：正文已保存，${lastReceiptIssues.join('；')}`
+    : ''
   cb.onPhase?.(
     created.length
-      ? `✓ ${aborted ? '已停止' : paused ? '自检未过已暂停' : '续写完成'}，共新增 ${created.length} 章`
+      ? `✓ ${aborted ? '已停止' : paused ? '自检未过已暂停' : '续写完成'}，共新增 ${created.length} 章${receiptTail}`
       : (aborted ? '已停止，未生成章节' : paused ? '自检未完成，已暂停（稿子已留在编辑器，审阅后可重试）' : '未生成章节（请检查模型配置或查看日志）'),
   )
   return { created }

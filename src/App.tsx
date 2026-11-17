@@ -22,6 +22,7 @@ import { migrateAliasesToFieldDefinitions } from '@/lib/templates/fieldDefinitio
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack } from '@/lib/schemaTemplates/index'
 import { isWorldSetTab, isParallelSetTab } from '@/lib/world/worldSets'
 import * as db from '@/lib/db'
+import { recoverChapterWrites } from '@/lib/outline/chapterWriteLog'
 import { ensureDailyBackup, startAutoBackup, takeBackupFailure } from '@/lib/sync/backup'
 import { DESKTOP, initDesktopStore, flushDesktopSync, getDesktopState, subscribeDesktop, installFullscreenShortcuts } from '@/lib/app/desktop'
 // 3.3.2 · B1：桌面版登录后启动自动同步（见下方 effect 注释）
@@ -638,6 +639,14 @@ export default function App() {
     // 杜绝两条路径跑的迁移集合不一致（审计 P1-7）。
     // 内部顺序：项目形态归一化 → ledger 拆表 → 全局连续编号（numbering 依赖 ledger 的结果）
     await db.runMigrations()
+    /**
+     * 3.6.0 · E：核对上次崩溃/中断留下的章节写入。
+     * 🔴 判据只有「预分配 chapterId 是否在库」——不按章名/时间猜；
+     *    幂等，失败不挡打开项目（下次打开会再核对）。
+     */
+    void recoverChapterWrites(id, async chapterId => (await db.getAllChapters()).some(c => c.id === chapterId))
+      .then(r => { if (r.committed || r.abandoned || r.unresolved) console.info('[recover] 章节写入核对', r) })
+      .catch(() => { /* 核对失败不影响打开 */ })
     await refreshVolumeTabs() // UI 侧缓存刷新，db 层不引用 schema 以免循环依赖
     // 3.2.0 · T3：把历史「字段名」幂等迁移成轻量定义（默认待确认）。
     // 🔴 放后台跑，不拖慢进项目；迁移每写完一个页签都会 emit，已挂载的字段名按钮 / 确认清单自行刷新。
