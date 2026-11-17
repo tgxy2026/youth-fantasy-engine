@@ -65,3 +65,8 @@ export declare function validateScannerRegistry(input: {
   dirNames: string[]
   runNames: string[]
 }): RegistryResult
+
+export declare function validateStructureBudget(input: {
+  budget: Record<string, unknown> | null | undefined
+  counts: Record<string, number>
+}): RegistryResult

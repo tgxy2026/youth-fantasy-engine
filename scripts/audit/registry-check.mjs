@@ -186,3 +186,35 @@ export function validateScannerRegistry({ dirNames, runNames }) {
       : `${dir.length} 支扫描器`)
   return { ok: issues.length === 0, checks, issues }
 }
+
+/**
+ * 结构约束预算（2026-11-18）。
+ *
+ * 🔴 与死导出的差别：死导出允许有历史欠账（预算 22），而结构约束是**预期长期为 0** 的硬线
+ *    （反向依赖、未登记门面）。为 0 的东西不需要预算余量：一旦出现就该失败，
+ *    所以这里的语义是「实际 > 预算（默认 0）即失败」，不做"虚高提醒"。
+ */
+export function validateStructureBudget({ budget, counts }) {
+  const checks = [], issues = []
+  const rules = Object.keys(counts ?? {})
+  if (!rules.length) {
+    checks.push({ name: '结构约束有检查项', status: 'failed', detail: '结构扫描没有产出任何规则计数' })
+    issues.push('结构约束有检查项：结构扫描没有产出任何规则计数')
+    return { ok: false, checks, issues }
+  }
+  const limits = budget?.structure ?? {}
+  const over = []
+  for (const rule of rules) {
+    const cap = Number(limits[rule] ?? 0)
+    const actual = Number(counts[rule] ?? 0)
+    if (!Number.isInteger(actual) || actual > cap) over.push(`${rule} 实际 ${actual} / 上限 ${cap}`)
+  }
+  const passed = over.length === 0
+  checks.push({
+    name: '结构约束不超预算',
+    status: passed ? 'passed' : 'failed',
+    detail: passed ? `${rules.length} 条规则均为 0（预期长期为 0）` : over.join('；'),
+  })
+  if (!passed) issues.push(`结构约束不超预算：${over.join('；')}`)
+  return { ok: passed, checks, issues }
+}

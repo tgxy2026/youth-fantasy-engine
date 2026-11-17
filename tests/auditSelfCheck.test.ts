@@ -104,6 +104,9 @@ ok('CLI 覆盖扫描器清单一致性', /\[passed\] 扫描器清单与目录一
 ok('CLI 覆盖死导出复核清单', /\[passed\] 死导出复核清单有效/.test(cli.out), cli.out.slice(-500))
 ok('CLI 覆盖死导出复核失效检测', /\[passed\] 死导出复核未失效/.test(cli.out), cli.out.slice(-500))
 ok('CLI 覆盖死导出欠账预算', /\[passed\] 死导出欠账不超预算/.test(cli.out), cli.out.slice(-500))
+// 2026-11-18 结构约束（预期长期为 0 的硬线）
+ok('CLI 覆盖门面名单自洽', /\[passed\] 门面名单自洽/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖结构约束预算', /\[passed\] 结构约束不超预算/.test(cli.out), cli.out.slice(-500))
 
 // ---------- 3.6.0：预算与清单一致性（纯函数，坏输入必须被拦） ----------
 {

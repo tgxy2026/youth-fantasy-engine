@@ -16,9 +16,10 @@ import { scanAst } from './ast.mjs'
 import { parse, initializer } from './platform/source.mjs'
 import {
   validateRegistry, countSourceFiles, toolFingerprint, staleToolHints,
-  validateDebtBudget, validateScannerRegistry,
+  validateDebtBudget, validateScannerRegistry, validateStructureBudget,
 } from './registry-check.mjs'
 import { scanDeadExports, staleDeadReviews, validateDeadReviews } from './dead-exports.mjs'
+import { DECLARED_FACADES, scanStructure, validateFacadeRegistry } from './structure-checks.mjs'
 
 export { validateRegistry, toolFingerprint }
 
@@ -94,6 +95,25 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
   const deadFindings = deadScan.findings.filter(f => f.rule === 'dead.export')
   const openDead = deadFindings.filter(f => !reviewedKeys.has(`${f.file}:${f.symbol}`))
   const budget = options.budget ?? readJsonFile('scripts/audit/debt-budget.json')
+  /**
+   * 结构约束（2026-11-18）：反向依赖与未登记门面，**预期长期为 0**。
+   * 这两条判据客观、不含启发式，所以出现即失败，不留预算余量。
+   * 门面名单本身也要自洽——登记了却不存在，名单就变成谎言。
+   */
+  const structure = options.structure ?? scanStructure(root)
+  const facadeCheck = validateFacadeRegistry(DECLARED_FACADES, f => fs.existsSync(path.join(root, f)))
+  result.checks.push({
+    name: '门面名单自洽',
+    status: facadeCheck.ok ? 'passed' : 'failed',
+    detail: facadeCheck.ok ? `${DECLARED_FACADES.length} 个已声明门面均在位` : facadeCheck.issues.join('; '),
+  })
+  result.issues.push(...facadeCheck.issues)
+  const structBudget = validateStructureBudget({
+    budget,
+    counts: { 'arch.reverse-import': structure.stats.reverseImports, 'arch.facade-undeclared': structure.stats.undeclaredFacades },
+  })
+  result.checks.push(...structBudget.checks)
+  result.issues.push(...structBudget.issues)
   const debt = validateDebtBudget({
     budget, actual: openDead.length, reviewed: deadFindings.length - openDead.length,
   })
@@ -117,6 +137,7 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     toolFingerprint: options.toolFingerprint ?? toolFingerprint(root),
     files: staticResult.files,
     inventory: staticResult.inventory,
+    structure: { ...structure.stats, items: structure.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })) },
     deadExports: {
       ...deadScan.stats,
       reviewed: deadFindings.length - openDead.length,

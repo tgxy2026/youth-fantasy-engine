@@ -48,6 +48,11 @@ const report = { schemaVersion: 1, scope: 'audit-contracts-v1; excludes packaged
  *    的门槛，升级工具反而把老版本判成不合格。预算机制既能看见、又能防恶化、还不误伤。
  */
 report.static.deadExports = selfCheck.deadExports
+/**
+ * 结构约束（2026-11-18）：反向依赖 / 未登记门面 —— 判据客观、预期长期为 0。
+ * 它们按「硬线」处理（不是欠账预算）：出现即自检失败，报告不可能 complete。
+ */
+report.static.structure = selfCheck.structure
 if (!selfCheck.ok) report.diagnostics.push({ status: 'blocked', reason: `审计工具自检失败：${selfCheck.issues.join('; ')}` })
 const legacyNames = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
 function runLegacy(name) {
@@ -121,7 +126,12 @@ const failures = report.contracts.filter(c => c.status === 'failed')
 report.status = failures.length || report.static.findings.some(f => f.disposition === 'confirmed') ? 'failed' : report.contracts.every(c => c.status === 'passed') && report.static.findings.every(f => f.disposition === 'dismissed') && !report.diagnostics.length && report.legacy.every(c => c.status === 'executed') ? 'complete' : 'incomplete'
 fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))
 const unregisteredMono = report.static.inventory.filter(x => x.mono && !x.registered)
-const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描完成不等于功能验收通过。`, '', `源码指纹：\`${sourceFingerprint}\``, '', '## 本次扫描', '', `- 软件版本：\`v${report.appVersion}\`　|　审计工具指纹：\`${report.toolFingerprint.slice(0, 16)}\``, `- 静态扫描：\`${report.static.files}\` 个 ts/tsx 文件、\`${report.static.findings.length}\` 个候选；图表 / mono 清单 \`${report.static.inventory.length}\` 项（未登记 \`${unregisteredMono.length}\` 项）`, `- 工具自检：**${selfCheck.ok ? 'passed' : 'failed'}**（${selfCheck.checks.length} 项）；自检失败会阻止报告判为 complete`, ...(selfCheck.ok ? [] : ['', ...selfCheck.issues.map(issue => `- ⚠️ ${issue}`)]), '', '## 必要运行证据', '', ...report.contracts.map(c => `- **${c.status}** ${c.id}：${c.reason}`), '', '## 静态缺陷候选（须人工确认）', '', ...report.static.findings.map(f => `- ${f.file}:${f.line} [${f.rule}/${f.confidence}/${f.disposition}] ${f.message}${f.reviewReason ? '；复核：' + f.reviewReason : ''}`), '', '## 死导出欠账（结构化清单）', '',
+const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描完成不等于功能验收通过。`, '', `源码指纹：\`${sourceFingerprint}\``, '', '## 本次扫描', '', `- 软件版本：\`v${report.appVersion}\`　|　审计工具指纹：\`${report.toolFingerprint.slice(0, 16)}\``, `- 静态扫描：\`${report.static.files}\` 个 ts/tsx 文件、\`${report.static.findings.length}\` 个候选；图表 / mono 清单 \`${report.static.inventory.length}\` 项（未登记 \`${unregisteredMono.length}\` 项）`, `- 工具自检：**${selfCheck.ok ? 'passed' : 'failed'}**（${selfCheck.checks.length} 项）；自检失败会阻止报告判为 complete`, ...(selfCheck.ok ? [] : ['', ...selfCheck.issues.map(issue => `- ⚠️ ${issue}`)]), '', '## 必要运行证据', '', ...report.contracts.map(c => `- **${c.status}** ${c.id}：${c.reason}`), '', '## 静态缺陷候选（须人工确认）', '', ...report.static.findings.map(f => `- ${f.file}:${f.line} [${f.rule}/${f.confidence}/${f.disposition}] ${f.message}${f.reviewReason ? '；复核：' + f.reviewReason : ''}`), '', '## 结构约束（预期长期为 0）', '',
+  `- 反向依赖 \`${report.static.structure.reverseImports}\` 处；未登记门面 \`${report.static.structure.undeclaredFacades}\` 个；扫描 \`${report.static.structure.files}\` 个源码文件`,
+  ...(report.static.structure.items.length
+    ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
+    : ['', '两条规则均为 0。']),
+  '', '## 死导出欠账（结构化清单）', '',
   `- 导出总数 \`${report.static.deadExports.exports}\`；零引用 \`${report.static.deadExports.dead}\`（已复核 \`${report.static.deadExports.reviewed}\` / **未复核 \`${report.static.deadExports.open}\`**）；仅测试引用 \`${report.static.deadExports.testOnly}\`（不计入欠账：单测覆盖是常态）`,
   ...(report.static.deadExports.openItems.length
     ? ['', '未复核清单（逐条给结论后可移入 `scripts/audit/dead-reviews.json`，或直接删除）：', ...report.static.deadExports.openItems.map(i => `- ${i.file}:${i.line} \`${i.symbol}\`（${i.kind}）`)]
