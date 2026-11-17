@@ -90,6 +90,7 @@ const KEYWORD_MIN_COVERAGE = 0.1
 /** 只命中单字不算命中：中文单字噪声太大（「的」「了」「他」满篇都是） */
 const KEYWORD_MIN_BIGRAM_HITS = 2
 
+
 /**
  * 余弦相似度。
  * 边界：任一侧为零向量 ⇒ 返回 0（**不是 NaN** —— NaN 会在排序里变成"随机位置"，
@@ -153,9 +154,19 @@ function prefilter(rows: VecRow[], query: string, keep: number): VecRow[] {
  *    「语义模式不召回 S 级，降级模式却召回」—— 那是绕过权限的漏洞，不是显示问题。
  */
 /** 过滤只用到这几个字段（语义路径与降级路径都能满足，与 `cfg` 无关）。 */
-type FilterOpts = Pick<RecallOptions, 'allowRefIds' | 'excludeRefIds' | 'hideSecretRows' | 'allowChapterIds'>
+type FilterOpts = Pick<RecallOptions, 'projectId' | 'allowRefIds' | 'excludeRefIds' | 'hideSecretRows' | 'allowChapterIds'>
 
 function passesFilters(r: VecRow, opts: FilterOpts, allowKinds: Set<VecKind> | null): boolean {
+  /**
+   * 🔴 3.6.0 · G：**项目隔离的纵深防御**。
+   *
+   * 生产上靠 `loadVectors(projectId)` 在读取层过滤，所以正常路径不会串味；
+   * 但召回层自己**一条项目校验都没有** —— 一旦 loader、索引分区或缓存出错，
+   * 就会把别的项目的正文交进提示词（跨作品串味，是最难察觉、也最伤的一类错误）。
+   * 合成语料实测：把别项目的行混进 loader，基线确实会交出 1 条别项目命中。
+   * 这条判断成本近乎为零，必须在召回侧再拦一道。
+   */
+  if (r.projectId !== opts.projectId) return false
   if (allowKinds && !allowKinds.has(r.kind)) return false
   // 🔴 来源白名单（`excludeRefIds` 的对称能力，2026-10-05 T2 加）：
   //    自由对话要**只召回本场**的消息，而它和别的会话共用一个全局分区 ——
@@ -318,14 +329,47 @@ export async function keywordRecallRelevant(
   const totalWeight = qTokens.reduce((s, t) => s + tokenWeight(t), 0)
   if (totalWeight <= 0) return []
 
+  /**
+   * 🔴 3.6.0 · G：准入闸的「至少 2 个二元命中」要按**查询本身有几个二元词**收敛。
+   *
+   * 原写法固定要求 2 个，于是**只查一个专名**（「玉牌」这种最常见的查法）永远返回空 ——
+   * 一个二元词最多只能命中 1 次，闸门物理上过不去。实测：查「玉牌」时，正文里满是玉牌的
+   * 那一章被丢弃，界面表现成「没有相关资料」。
+   * 现在的口径：
+   *   · 查询里一个二元词都没有（纯单字，如「的了在」）⇒ 直接返回空：这种查询没有检索意义；
+   *   · 否则要求 `min(2, 查询二元词数)` 个命中 —— 单词查询 1 个，多词查询仍是 2 个（不放宽精度）。
+   */
+  const qBigrams = qTokens.filter(t => t.length >= 2).length
+  if (qBigrams === 0) return []
+  const minBigramHits = Math.min(KEYWORD_MIN_BIGRAM_HITS, qBigrams)
+
   const narrowed = prefilter(candidates, q, prefilterAt)
 
   // 一次遍历：既算命中集合，也顺便统计 df（供 IDF 抑制「满篇都是」的词）
-  const hitsOf: { row: VecRow; hit: string[]; bigrams: number }[] = []
+  /**
+   * 🔴 3.6.0 · G：IDF 必须基于**整个项目语料**（`rows`），不能基于「过滤后的候选集」。
+   *
+   * 原来 df/N 都在 `narrowed` 上算。一旦调用方按用途（`kinds`）或章节锚点收窄到
+   * 一两条，N 就变成 1：每个命中词的 idf 都塌到 `log(1.5)≈0.4`，覆盖率整体掉到阈值以下，
+   * 结果是「明明有这条资料，却返回空」—— 界面表现成「没有相关材料」，作者完全看不出
+   * 是过滤太紧还是真的没有。合成语料里复现：只看知识库时同名条目得 0 分被丢弃。
+   *
+   * IDF 是**语料统计量**，本来就不该被一次查询的过滤条件改写。
+   */
+  const N = Math.max(1, rows.length)
   const df = new Map<string, number>()
-  for (const r of narrowed) {
+  const narrowedSet = new Set(narrowed)
+  const hitsOf: { row: VecRow; hit: string[]; bigrams: number }[] = []
+  // 🔴 一次遍历同时算 df 与命中：df 必须覆盖**整个项目语料**（见上），
+  //    但分词只做一遍 —— 分成两遍会让 2000 块的库多花一倍时间（实测 p95 11ms → 25ms）。
+  //    非候选行只参与 df，不参与命中判定。
+  for (const r of rows) {
     if (opts.signal?.aborted) return []
     const tokens = new Set(tokenize(r.text))
+    for (const t of qTokens) {
+      if (tokens.has(t)) df.set(t, (df.get(t) ?? 0) + 1)
+    }
+    if (!narrowedSet.has(r)) continue
     const hit: string[] = []
     let bigrams = 0
     for (const t of qTokens) {
@@ -333,13 +377,11 @@ export async function keywordRecallRelevant(
       hit.push(t)
       if (t.length >= 2) bigrams++
     }
-    if (hit.length === 0 || bigrams < KEYWORD_MIN_BIGRAM_HITS) continue
-    for (const t of hit) df.set(t, (df.get(t) ?? 0) + 1)
+    if (hit.length === 0 || bigrams < minBigramHits) continue
     hitsOf.push({ row: r, hit, bigrams })
   }
   if (hitsOf.length === 0) return []
 
-  const N = narrowed.length
   const scored: RecallHit[] = []
   for (const { row, hit } of hitsOf) {
     let got = 0
