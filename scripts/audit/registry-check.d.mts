@@ -46,3 +46,22 @@ export declare function validateRegistry(input: RegistryInput): RegistryResult
 export declare function countSourceFiles(dir: string): number
 export declare function toolFingerprint(root: string): string
 export declare function staleToolHints(root: string): Array<{ file: string; line: number; target: string }>
+
+// ---------- 3.6.0 · 审计补盲（2026-11-17） ----------
+export interface DebtBudget {
+  deadExports?: number
+  testOnlyExports?: number
+  [key: string]: unknown
+}
+
+export declare function validateDebtBudget(input: {
+  budget: DebtBudget | null | undefined
+  actual: number
+  reviewed: number
+  tolerance?: number
+}): RegistryResult
+
+export declare function validateScannerRegistry(input: {
+  dirNames: string[]
+  runNames: string[]
+}): RegistryResult

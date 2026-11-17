@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "note": "零引用导出的**已复核**结论。键=文件+符号（不用行号：行号随编辑漂移，复核会静默失效）。写不出理由的不要进来——那就该删。每轮审计会把「未复核」的列进报告欠账，并受 debt-budget.json 约束。",
+  "entries": [
+    {
+      "file": "src/lib/aiTasks/jieWenJi.ts",
+      "symbol": "aiContinuePassage",
+      "reason": "3.3.5 起由 lib/ai/aiTasks 门面导出的无状态续写契约（带预算/快照的链路在它之上），归档文档点名保留；删掉会让门面与文档同时悬空"
+    },
+    {
+      "file": "src/lib/aiTasks/proofread.ts",
+      "symbol": "ProofKind",
+      "reason": "公开类型面：由 aiTasks 门面 re-export，供调用方标注校对类型；零运行时开销，删掉需同步改门面，收益只是少一个名字"
+    },
+    {
+      "file": "src/lib/atlas/schema.ts",
+      "symbol": "atlasHasValue",
+      "reason": "与详情页现用的 atlasDisplayValue().length>0 不可互换（前者判解析后的值、后者判显示串）；换用会改变详情页显示与折叠判定，属改行为不是补接线"
+    },
+    {
+      "file": "src/lib/atlas/values.ts",
+      "symbol": "serializeCustomValue",
+      "reason": "与 coerceCustomValue 成对的反向序列化（自定义值回写预留）；删掉等于放弃自定义值写回能力，属能力缺口而非垃圾"
+    },
+    {
+      "file": "src/lib/db/taskLedger.ts",
+      "symbol": "setTaskUnitStatus",
+      "reason": "「只改状态、不改产物」的中间态语义入口；当前被 saveTaskUnit 整体覆盖写入占用，保留是为了需要单独推进状态时不会误写产物"
+    },
+    {
+      "file": "src/lib/outline/outlineCard.ts",
+      "symbol": "VolumeRange",
+      "reason": "正文切卷预留类型（零运行时开销的 interface）；删掉会让 docs/归档/2.5/2.5.2-开发记录.md 的引用悬空，3.2 审计 D6 判定保留"
+    },
+    {
+      "file": "src/lib/revision/faultInjection.ts",
+      "symbol": "rollbackMigration",
+      "reason": "只做状态转换的回滚入口（真实回滚在 templates/migrate.ts）；回滚粒度口径未定案，保留可读的终点语义"
+    },
+    {
+      "file": "src/lib/revision/revisionTypes.ts",
+      "symbol": "TaskRunState",
+      "reason": "契约类型：jobTypes.ts 注释拿它做「同名但不同层」的对照说明；零运行时开销，删了那段注释会指向空气"
+    },
+    {
+      "file": "src/lib/revision/revisionTypes.ts",
+      "symbol": "CommitReceipt",
+      "reason": "契约类型：jobTypes.ts 注释逐条点名（与提交回执同族）；零运行时开销，删除会让注释悬空"
+    },
+    {
+      "file": "src/lib/settings/theme.ts",
+      "symbol": "contentHeight",
+      "reason": "布局唯一锁高口径（height 而非 minHeight，主从双栏独立滚动依赖它）；与 contentMinH 成对，删掉会让「为什么必须 height」失去代码锚点"
+    },
+    {
+      "file": "src/lib/sync/syncClient.ts",
+      "symbol": "createSyncClient",
+      "reason": "同文件的完整客户端工厂；线上装配在 syncBoot + syncController，保留它作为 createHttpTransport 的同文件装配范例"
+    },
+    {
+      "file": "src/lib/sync/syncCore.ts",
+      "symbol": "EXCLUDED_META_KEYS",
+      "reason": "清单下沉到 sensitiveMeta 后的兼容 re-export；electron/main.cjs 与 4 处注释逐条点名它，是「真源已下沉」的唯一代码锚点"
+    },
+    {
+      "file": "src/lib/sync/syncQueueIdb.ts",
+      "symbol": "createIdbQueueStore",
+      "reason": "只服务「只要队列」的单队列场景；已完整实现，零引用会被 tree-shake 掉，删掉只会丢掉这条已实现的路径"
+    },
+    {
+      "file": "src/lib/templates/draftOps.ts",
+      "symbol": "moveFieldToGroup",
+      "reason": "「模板编辑里把字段换分组」是尚未实现的新交互（缺拖拽/选组界面），函数体是纯数据变换，属预留 API 而非「实现完了没接线」"
+    },
+    {
+      "file": "src/lib/templates/semanticSlots.ts",
+      "symbol": "isRecordSlot",
+      "reason": "该规则已由 tableDigest.preferKeys 实现；列投影里不带槽位信息，要接得把映射链传进渲染层（链路改造而非补一行）"
+    },
+    {
+      "file": "src/lib/agentHost/acpBudget.ts",
+      "symbol": "__resetAcpBudgetCache",
+      "reason": "测试缝：模块级 cached 只能由它重置；当前无用例调用，删掉会让后续用例无法隔离模块状态"
+    },
+    {
+      "file": "src/lib/agentHost/acpRegistry.ts",
+      "symbol": "__resetAcpTextFactory",
+      "reason": "测试缝：模块级 factory 只能由它重置；同上，保留隔离入口"
+    },
+    {
+      "file": "src/lib/agentHost/useAcpWriting.ts",
+      "symbol": "__resetAcpWritingSubscription",
+      "reason": "测试缝：listeners/cached/current 只能由它整体重置；ACP 订阅态跨用例残留会互相污染"
+    }
+  ]
+}

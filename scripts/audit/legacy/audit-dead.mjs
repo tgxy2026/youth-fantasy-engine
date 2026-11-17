@@ -7,6 +7,10 @@
 // v2 改为**只排除该符号自身的那一行定义**。
 import fs from 'node:fs'
 import path from 'node:path'
+// 3.6.0 · 审计补盲（2026-11-17）：文本处理与结构化扫描器共用同一份实现。
+// 两份各写一套的话，迟早出现「旧脚本说 32 个、新扫描器说 25 个」却没人说得清谁对。
+// （本文件仍只负责**人读报告**：A/B/C 分类与 KEEP 理由长文，不进 report.json。）
+import { stripComments, stripReexport } from '../source-text.mjs'
 
 const ROOT = (process.argv[2] || 'G:/AI软件/youth-fantasy-engine开发源码').replace(/\\/g, '/')
 const SRC = path.join(ROOT, 'src')
@@ -16,30 +20,6 @@ const SRC = path.join(ROOT, 'src')
  * 🔴 不剥注释会**低估死代码**：某符号若只在注释里被提过一次，就被当成「有外部引用」而漏报。
  * 字符串/模板串保留内容（`data-*` / 类名字符串里的符号名仍算命中）。
  */
-function stripComments(src) {
-  let out = ''
-  let i = 0
-  const n = src.length
-  let st = 'code' // code | line | block | sq | dq | tpl
-  while (i < n) {
-    const c = src[i], c2 = src[i + 1]
-    if (st === 'code') {
-      if (c === '/' && c2 === '/') { st = 'line'; out += '  '; i += 2; continue }
-      if (c === '/' && c2 === '*') { st = 'block'; out += '  '; i += 2; continue }
-      if (c === "'") { st = 'sq'; out += c; i++; continue }
-      if (c === '"') { st = 'dq'; out += c; i++; continue }
-      if (c === '`') { st = 'tpl'; out += c; i++; continue }
-      out += c; i++; continue
-    }
-    if (st === 'line') { if (c === '\n') { st = 'code'; out += c; i++; continue } out += ' '; i++; continue }
-    if (st === 'block') { if (c === '*' && c2 === '/') { st = 'code'; out += '  '; i += 2; continue } out += (c === '\n' ? '\n' : ' '); i++; continue }
-    if (c === '\\') { out += c + (c2 ?? ''); i += 2; continue }
-    if ((st === 'sq' && c === "'") || (st === 'dq' && c === '"') || (st === 'tpl' && c === '`')) { st = 'code'; out += c; i++; continue }
-    out += c; i++; continue
-  }
-  return out
-}
-
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name)
@@ -78,22 +58,6 @@ const rel = f => path.relative(ROOT, f).replace(/\\/g, '/')
 // 🔴 2026-09-19 加固：**再导出不算使用**。
 //    背景：存储层拆分后 src/lib/db.ts 变成门面（只做再导出的索引文件），它会把整层名字"提"一遍，
 //    按原始文本计数会让「死导出候选」被一次性掩盖（拆分当天就实测到了：db.ts 两个真死导出凭空消失）。
-const stripReexport = s => {
-  // 状态机：整段吞掉 export 清单（多行 `export {\n A,\n B,\n} from './x'` 也要吞），
-  // 这类语句只是"把名字提一遍"，不是使用。⚠️ 别用单行正则糊弄 —— 门面恰恰是多行写法。
-  const out = []
-  let inList = false
-  for (const l of s.split(/\r?\n/)) {
-    if (inList) { out.push(''); if (/\}/.test(l)) inList = false; continue }
-    if (/^\s*export\s+(?:\*|type\s*\{|\{)/.test(l)) {
-      out.push('')
-      inList = !(/\}/.test(l) || /\bfrom\s+['"]/.test(l) || /^\s*export\s+\*/.test(l))
-      continue
-    }
-    out.push(l)
-  }
-  return out.join('\n')
-}
 const all = walkAny(ROOT).map(f => ({ f, t: stripReexport(stripComments(fs.readFileSync(f, 'utf8'))) })) // 去注释 + 去再导出，避免「提过」被当成引用
 
 const reFn = /^export\s+(?:async\s+)?(?:function|const|class|let|var)\s+([A-Za-z_$][\w$]*)/gm

@@ -14,7 +14,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { scanAst } from './ast.mjs'
 import { parse, initializer } from './platform/source.mjs'
-import { validateRegistry, countSourceFiles, toolFingerprint, staleToolHints } from './registry-check.mjs'
+import {
+  validateRegistry, countSourceFiles, toolFingerprint, staleToolHints,
+  validateDebtBudget, validateScannerRegistry,
+} from './registry-check.mjs'
+import { scanDeadExports, staleDeadReviews, validateDeadReviews } from './dead-exports.mjs'
 
 export { validateRegistry, toolFingerprint }
 
@@ -43,6 +47,59 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     if (!found) result.issues.push(`sidecar[${i}] ${entry.file} 中找不到 ${entry.symbol} 的变量声明`)
   }
 
+  /**
+   * 3.6.0 · 审计补盲（2026-11-17）：三件以前**没人守**的事。
+   *
+   * ① 扫描器清单一致性：`run.mjs` 的 legacyNames 是手写数组，新增/删除扫描器时两边会漂。
+   * ② 死导出复核清单：格式与「是否还指向真实导出」——符号改名后旧复核会静默失效。
+   * ③ 死导出欠账预算：历史欠账可以留，但**只能减少不能变多**（新增死代码立刻挡）。
+   */
+  const runSrc = fs.existsSync(path.join(root, 'scripts/audit/run.mjs'))
+    ? fs.readFileSync(path.join(root, 'scripts/audit/run.mjs'), 'utf8') : ''
+  const listed = /const legacyNames = \[([^\]]*)\]/.exec(runSrc)
+  const runNames = listed ? [...listed[1].matchAll(/'([^']+)'/g)].map(m => m[1]) : []
+  const legacyDir = path.join(root, 'scripts/audit/legacy')
+  const dirNames = fs.existsSync(legacyDir)
+    ? fs.readdirSync(legacyDir).filter(n => /^audit-.+\.mjs$/.test(n)).map(n => n.replace(/^audit-/, '').replace(/\.mjs$/, ''))
+    : []
+  const scanners = validateScannerRegistry({ dirNames, runNames })
+  result.checks.push(...scanners.checks)
+  result.issues.push(...scanners.issues)
+
+  const readJsonFile = rel => {
+    try { return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')) } catch { return null }
+  }
+  const deadReviews = options.deadReviews ?? readJsonFile('scripts/audit/dead-reviews.json')?.entries ?? null
+  const reviewShape = validateDeadReviews(deadReviews ?? [])
+  result.checks.push({
+    name: '死导出复核清单有效',
+    status: deadReviews && reviewShape.ok ? 'passed' : 'failed',
+    detail: deadReviews ? (reviewShape.ok ? `${deadReviews.length} 条` : reviewShape.issues.join('; ')) : 'scripts/audit/dead-reviews.json 缺失或不可解析',
+  })
+  if (!deadReviews || !reviewShape.ok) {
+    result.issues.push(`死导出复核清单无效：${deadReviews ? reviewShape.issues.join('; ') : '文件缺失或不可解析'}`)
+  }
+  if (deadReviews) {
+    const stale = staleDeadReviews(deadReviews, root)
+    result.checks.push({
+      name: '死导出复核未失效',
+      status: stale.length ? 'failed' : 'passed',
+      detail: stale.length ? stale.map(x => `${x.file}:${x.symbol}（${x.why}）`).join(', ') : `${deadReviews.length} 条均指向现存导出`,
+    })
+    if (stale.length) result.issues.push(`死导出复核有 ${stale.length} 条已失效（符号被删/改名）：${stale.map(x => x.symbol).join(', ')}`)
+  }
+
+  const deadScan = options.deadScan ?? scanDeadExports(root)
+  const reviewedKeys = new Set((deadReviews ?? []).map(e => `${e.file}:${e.symbol}`))
+  const deadFindings = deadScan.findings.filter(f => f.rule === 'dead.export')
+  const openDead = deadFindings.filter(f => !reviewedKeys.has(`${f.file}:${f.symbol}`))
+  const budget = options.budget ?? readJsonFile('scripts/audit/debt-budget.json')
+  const debt = validateDebtBudget({
+    budget, actual: openDead.length, reviewed: deadFindings.length - openDead.length,
+  })
+  result.checks.push(...debt.checks)
+  result.issues.push(...debt.issues)
+
   // 3.4.1 第二轮：工具输出给用户的命令提示不能指向不存在的脚本（tmp 不入库）。
   const stale = options.staleHints ?? staleToolHints(root)
   result.checks.push({
@@ -60,6 +117,12 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     toolFingerprint: options.toolFingerprint ?? toolFingerprint(root),
     files: staticResult.files,
     inventory: staticResult.inventory,
+    deadExports: {
+      ...deadScan.stats,
+      reviewed: deadFindings.length - openDead.length,
+      open: openDead.length,
+      openItems: openDead.map(f => ({ file: f.file, line: f.line, symbol: f.symbol, kind: f.kind, rule: f.rule })),
+    },
   }
 }
 

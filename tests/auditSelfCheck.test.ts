@@ -8,7 +8,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
-import { validateRegistry, toolFingerprint, countSourceFiles, staleToolHints } from '../scripts/audit/registry-check.mjs'
+import {
+  validateRegistry, toolFingerprint, countSourceFiles, staleToolHints,
+  validateDebtBudget, validateScannerRegistry,
+} from '../scripts/audit/registry-check.mjs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -96,6 +99,35 @@ const cli = await new Promise<{ code: number | null; out: string }>((resolve, re
 ok('CLI 对真实仓库自检通过', cli.code === 0 && /Self-check PASSED/.test(cli.out), cli.out.slice(-400))
 ok('CLI 覆盖 sidecar 符号核对', /sidecar 符号/.test(cli.out), cli.out.slice(-400))
 ok('CLI 覆盖工具提示路径检查', /\[passed\] 工具提示路径有效/.test(cli.out), cli.out.slice(-400))
+// 3.6.0 审计补盲：三项新守卫必须真的在跑（否则又是「加了规则没人执行」）
+ok('CLI 覆盖扫描器清单一致性', /\[passed\] 扫描器清单与目录一致/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖死导出复核清单', /\[passed\] 死导出复核清单有效/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖死导出复核失效检测', /\[passed\] 死导出复核未失效/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖死导出欠账预算', /\[passed\] 死导出欠账不超预算/.test(cli.out), cli.out.slice(-500))
+
+// ---------- 3.6.0：预算与清单一致性（纯函数，坏输入必须被拦） ----------
+{
+  const good = validateDebtBudget({ budget: { deadExports: 22 }, actual: 22, reviewed: 18 })
+  ok('预算：恰好用满允许', good.ok && good.checks.every(c => c.status === 'passed'))
+
+  const over = validateDebtBudget({ budget: { deadExports: 22 }, actual: 23, reviewed: 18 })
+  ok('🔴 预算：多一条死代码必须被拦', !over.ok && over.issues.some(i => i.includes('死导出欠账不超预算')))
+
+  const loose = validateDebtBudget({ budget: { deadExports: 30 }, actual: 22, reviewed: 18 })
+  ok('🔴 预算：留太多余量（预算虚高）也要被提醒', !loose.ok && loose.issues.some(i => i.includes('预算未虚高')))
+
+  const missing = validateDebtBudget({ budget: null, actual: 22, reviewed: 18 })
+  ok('预算：配置文件缺失判失败', !missing.ok)
+
+  const same = validateScannerRegistry({ dirNames: ['scan', 'dead'], runNames: ['scan', 'dead'] })
+  ok('扫描器清单：一致时通过', same.ok)
+  const forgot = validateScannerRegistry({ dirNames: ['scan', 'dead', 'newbie'], runNames: ['scan', 'dead'] })
+  ok('🔴 扫描器清单：新增扫描器忘了登记必须被拦', !forgot.ok && forgot.issues.some(i => i.includes('newbie')))
+  const ghost = validateScannerRegistry({ dirNames: ['scan'], runNames: ['scan', 'gone'] })
+  ok('🔴 扫描器清单：登记了不存在的扫描器必须被拦', !ghost.ok && ghost.issues.some(i => i.includes('gone')))
+  const empty = validateScannerRegistry({ dirNames: [], runNames: [] })
+  ok('扫描器清单：空目录判失败（防搬目录后静默失明）', !empty.ok)
+}
 ok('真实仓库无失效工具提示', staleToolHints(process.cwd()).length === 0, JSON.stringify(staleToolHints(process.cwd())))
 
 // 负向：临时工具目录里放一个失效提示，守卫必须抓到；注释里的兼容入口说明必须豁免

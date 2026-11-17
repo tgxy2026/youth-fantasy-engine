@@ -131,3 +131,58 @@ export function staleToolHints(root) {
   if (fs.existsSync(dir)) walk(dir)
   return hits
 }
+
+/**
+ * 死导出「欠账预算」校验（2026-11-17 审计补盲）。
+ *
+ * 🔴 为什么是预算而不是硬阻塞：历史欠账（当前 22 条未复核）不该让升级后的审计把
+ *    一个本来能发版的版本判成失败；但**欠账只允许减少**——一旦新增死代码让实际条数
+ *    超过预算，自检立刻失败、审计不可能 complete。这样既显性化历史问题，又防止恶化。
+ * 🔴 预算只能下调：校验时若 actual 明显低于 budget 也提示（要求同步收紧），避免预算
+ *    长期虚高、失去约束力。
+ */
+export function validateDebtBudget({ budget, actual, reviewed, tolerance = 0 }) {
+  const checks = [], issues = []
+  const check = (name, ok, detail) => {
+    checks.push({ name, status: ok ? 'passed' : 'failed', detail })
+    if (!ok) issues.push(`${name}：${detail}`)
+  }
+  const cap = Number(budget?.deadExports)
+  const open = Number(actual)
+  check('死导出欠账不超预算',
+    Number.isInteger(cap) && cap >= 0 && Number.isInteger(open) && open <= cap,
+    `未复核 ${open} 条 / 预算 ${cap} 条${open > cap ? '（新增死代码必须处理或先复核，禁止直接调高预算）' : ''}`)
+  // 预算明显高于实际（留了很多余量）说明该收紧，否则预算形同虚设
+  check('死导出预算未虚高', Number.isInteger(cap) && Number.isInteger(open) && open >= cap - tolerance,
+    `未复核 ${open} / 预算 ${cap}（差 ${Number.isInteger(cap) ? cap - open : '?'}；清掉欠账后请同步下调 budget）`)
+  check('死导出复核条数已计入',
+    Number.isInteger(reviewed) && reviewed >= 0 && reviewed + open > 0,
+    `已复核 ${reviewed} 条`)
+  return { ok: issues.length === 0, checks, issues }
+}
+
+/**
+ * 扫描器清单一致性（2026-11-17 补）。
+ *
+ * 🔴 病灶：`run.mjs` 的 legacyNames 是**手写数组**，而 `legacy/audit-*.mjs` 是目录里的真实文件。
+ *    两边靠人记——新增一支扫描器忘了登记 ⇒ 永远不跑（报告里看不到它，也不会报错）；
+ *    删了一支却留着登记 ⇒ 每次审计都 spawn 一个不存在的文件，runLegacy 判 blocked，
+ *    报告永远 incomplete 却查不出原因。两种都是「静默失明」，必须在自检里挡。
+ */
+export function validateScannerRegistry({ dirNames, runNames }) {
+  const checks = [], issues = []
+  const check = (name, ok, detail) => {
+    checks.push({ name, status: ok ? 'passed' : 'failed', detail })
+    if (!ok) issues.push(`${name}：${detail}`)
+  }
+  const dir = [...dirNames].sort()
+  const run = [...runNames].sort()
+  const missingInRun = dir.filter(n => !run.includes(n))
+  const missingInDir = run.filter(n => !dir.includes(n))
+  check('扫描器清单与目录一致',
+    dir.length > 0 && missingInRun.length === 0 && missingInDir.length === 0,
+    missingInRun.length || missingInDir.length
+      ? `目录多出 ${missingInRun.join(',') || '无'}；清单多出 ${missingInDir.join(',') || '无'}`
+      : `${dir.length} 支扫描器`)
+  return { ok: issues.length === 0, checks, issues }
+}
