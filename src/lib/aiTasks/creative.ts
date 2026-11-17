@@ -113,10 +113,16 @@ export async function aiGenerateBible(
     request?: CallRequestContext
     /** 3.5.6：ACP 通道。给了就跳过 API provider 解析；解析仍走宽松 JSON，不放宽实体校验。 */
     acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+    /**
+     * 3.6.0 · C：作者勾选的创作参考块（已含「非本项目原文 / 不要照搬 / 不是设定」说明）。
+     * 不传 ⇒ 提示词与改造前逐字一致。
+     */
+    referenceBlock?: string
   } = {},
 ): Promise<ExtractedEntity[]> {
   const counts = { ...DEFAULT_BIBLE_COUNTS, ...(opts.counts ?? {}) }
-  const userText = `【一句话想法】\n${seed.trim()}\n\n请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。`
+  const ref = opts.referenceBlock?.trim()
+  const userText = `【一句话想法】\n${seed.trim()}\n\n${ref ? ref + '\n\n' : ''}请据此生成设定草稿。\n\n【必须遵守】数量上限：主要 ${counts.main} / 次要 ${counts.secondary} / NPC ${counts.npc} / 势力 ${counts.faction} / 地点 ${counts.location} / 术语 ${counts.term} / 物品 ${counts.item}，「宁少勿多」；每个字段 ≤ 40 字；只输出 JSON。`
 
   const askOnce = async (): Promise<ExtractedEntity[]> => {
     let text: string
@@ -383,6 +389,8 @@ export async function aiPlanOutline(
     request?: CallRequestContext
     /** 3.5.6：ACP 通道。给了就跳过 API provider 解析；JSON 解析与章数/卷数裁剪不变。 */
     acpText?: (prompt: string, opts?: { signal?: AbortSignal }) => Promise<string>
+    /** 3.6.0 · C：作者勾选的创作参考块（独立成段，不混进【资料】，避免被当成项目设定） */
+    referenceBlock?: string
   },
 ): Promise<OutlineResult> {
   const volCount = Math.max(1, Math.min(MAX_OUTLINE_VOLUMES, Math.round(opts.volumes) || 1))
@@ -419,7 +427,9 @@ export async function aiPlanOutline(
     const sys = sealing
       ? planSealingSys({ sealing, cap })
       : planOutlineSys({ volumes: volCount, perVolume, extending, fromVolumeNo: volNoStart, cap, structureHint: opts.structureHint })
+    const refBlock = opts.referenceBlock?.trim()
     const userText = `【资料】\n${material.trim() ? authorBlock(newAuthorFence(), material.trim()) : '（无资料，请按通用网文逻辑克制地设定）'}\n\n${task}` +
+      (refBlock ? `\n\n${refBlock}` : '') +
       // 🔴 末尾是**权重最高**的位置，这里必须与 system 里的分支保持一致：
       //    2026-09-20 实机抓到过一次自相矛盾 —— system 说"卷大纲一并补全、volumes 只放这一卷"，
       //    而这里写死"volumes 为空数组"，模型照末尾执行 ⇒ 卷大纲永远补不上。

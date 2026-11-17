@@ -641,6 +641,13 @@ export async function runCreativeWriting(
   const probe = await probeCreativeProject()
   const mode: CreativeMode = probe.hasOutline ? 'continue' : 'scratch'
   const target: CreativeTarget = opts.target ?? 'full'
+  /**
+   * 3.6.0 · C：作者勾选的创作参考 —— **三个阶段（设定奠基 / 大纲 / 连写）共用同一份快照**。
+   * 🔴 读一次、裁一次：中途再改选择不影响本次运行；读失败/没选/全过期 ⇒ 空串（不注入）。
+   */
+  const referenceText = inp.referenceIds?.length
+    ? ((await referenceBlockForIds(inp.referenceIds).catch(() => null))?.text ?? '')
+    : ''
 
   // ② 规模参数
   /** 本批要排几卷 */
@@ -709,6 +716,7 @@ export async function runCreativeWriting(
     const acpBible = opts.acpTextFor?.('creative-bible', ctx.signal) ?? null
     const entities = await aiGenerateBible(inp.seed, {
       signal: ctx.signal,
+      ...(referenceText ? { referenceBlock: referenceText } : {}),
       ...(opts.request ? { request: opts.request } : {}),
       ...(acpBible ? { acpText: acpBible } : {}),
       onToken: d => {
@@ -792,6 +800,7 @@ export async function runCreativeWriting(
     const structureTpl = sealing ? null : getStoryTemplate(opts.structureId)
     const acpOutline = opts.acpTextFor?.('creative-outline', ctx.signal) ?? null
     const raw = await aiPlanOutline(material, {
+      ...(referenceText ? { referenceBlock: referenceText } : {}),
       volumes: plannedVolumes,
       chaptersPerVolume: perVolume,
       ...(opts.request ? { request: opts.request } : {}),
@@ -867,13 +876,6 @@ export async function runCreativeWriting(
     // 按大纲写：从零创作刚落了细纲、「接着写」可能早就有一律现查一次。
     // 有细纲就按章号钉进本章 prompt 末段；没有则退回"自由发挥"（仍能跑通，只是不保证贴合大纲）
     const outlines = opts.useOutline === false ? new Map<number, string>() : await loadChapterOutlines()
-    /**
-     * 3.6.0 · C：只读一次成果、按预算裁成一块文本。
-     * 🔴 读失败 / 没选 / 全过期 ⇒ 空串（不注入），绝不"带半截参考"。
-     */
-    const referenceText = inp.referenceIds?.length
-      ? ((await referenceBlockForIds(inp.referenceIds).catch(() => null))?.text ?? '')
-      : ''
     if (referenceText) ctx.report(0, `已带上 ${inp.referenceIds?.length ?? 0} 张创作参考（约 ${referenceText.length} 字）`)
     let done = 0
     const acpContinue = opts.acpTextFor?.('autocontinue', ctx.signal) ?? null

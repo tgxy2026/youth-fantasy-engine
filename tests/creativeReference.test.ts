@@ -124,7 +124,10 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
   const wf = read('src/lib/ai/aiWorkflow.ts')
   ok('⑤ 工作流按勾选读参考（referenceBlockForIds）', /referenceBlockForIds/.test(wf))
   ok('🔴 ⑤ 只有非空才传（不传空块）', /\.\.\.\(referenceText \? \{ referenceBlock: referenceText \} : \{\}\)/.test(wf))
-  ok('⑤ 参考只作用于「写正文」阶段', /flow\.on\('draft'[\s\S]{0,1200}referenceBlockForIds/.test(wf))
+  ok('⑤ 参考在探测项目后快照一次（三阶段共用）', /const referenceText = inp\.referenceIds/.test(wf))
+  ok('⑤ 设定奠基阶段注入', /aiGenerateBible\(inp\.seed[\s\S]{0,400}referenceBlock: referenceText/.test(wf))
+  ok('⑤ 大纲规划阶段注入', /aiPlanOutline\(material[\s\S]{0,400}referenceBlock: referenceText/.test(wf))
+  ok('⑤ 逐章正文阶段注入', /runAutoContinue\([\s\S]{0,1200}referenceBlock: referenceText/.test(wf))
 
   const auto = read('src/lib/outline/autoContinue.ts')
   ok('🔴 ⑤ 提示词只在有参考块时插入', /\.\.\.\(opts\.referenceBlock \? \[opts\.referenceBlock, ''\] : \[\]\)/.test(auto))
@@ -136,6 +139,10 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
   ok('⑤ 选择器不预选任何卡（受控于 selected）', !/useState<.*\[\]>?\(\[card/.test(picker) && /selected\.includes/.test(picker))
   ok('⑤ 过期卡禁用勾选', /disabled=\{c\.stale\}/.test(picker))
   ok('⑤ 显示将发送量与剔除原因', /describeReferenceBlock/.test(picker))
+
+  const tasks = read('src/lib/aiTasks/creative.ts')
+  ok('⑤ 设定提示词把参考插在「一句话想法」之后', /const ref = opts\.referenceBlock/.test(tasks))
+  ok('⑤ 大纲提示词把参考独立成段（不混进【资料】）', /const refBlock = opts\.referenceBlock/.test(tasks) && /\$\{refBlock\}/.test(tasks))
 
   const sources = read('src/lib/ai/aiDataSources.ts')
   ok('⑤ 数据来源表登记了「作品分析」', /'book-analysis':/.test(sources))
