@@ -16,6 +16,15 @@ import {
   REFERENCE_STALE_HINT, buildReferenceBlock, describeReferenceBlock, dimensionLabelOf,
   referenceCardsOf, type ReferenceCard,
 } from '@/lib/creative/reference'
+import {
+  REFERENCE_SENT_NOTE, REFERENCE_STAGE_LABEL, loadReferenceSends, type ReferenceSendRecord,
+} from '@/lib/creative/referenceLog'
+
+function fmtTime(ts: number): string {
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 export default function ReferencePicker({ selected, onChange, disabled }: {
   selected: readonly string[]
@@ -25,13 +34,22 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
   const [open, setOpen] = useState(false)
   const [cards, setCards] = useState<ReferenceCard[] | null>(null)
   const [err, setErr] = useState('')
+  /** 3.6.0 · C：最近几次「实际发出去的参考文字」（发送前预览 ≠ 真正发出） */
+  const [sends, setSends] = useState<ReferenceSendRecord[]>([])
+  const [sendErr, setSendErr] = useState('')
 
   useEffect(() => {
     let cancelled = false
-    void loadArtefacts(getCurrentProjectId()).then(r => {
+    const pid = getCurrentProjectId()
+    void loadArtefacts(pid).then(r => {
       if (cancelled) return
       setCards(referenceCardsOf(r.store))
       setErr(r.error ?? '')
+    })
+    void loadReferenceSends(pid).then(r => {
+      if (cancelled) return
+      setSends(r.list)
+      setSendErr(r.error ?? '')
     })
     return () => { cancelled = true }
   }, [])
@@ -66,6 +84,9 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
             <p className="text-11 text-ink-400 leading-relaxed">
               参考来自「作品分析」保存的成果（默认都是<b className="text-ink-300">草稿</b>，未审也带「未审」标记）。
               它们只是<b className="text-ink-300">写法参考</b>：发送时会明确告诉模型「非本项目原文、不要照搬情节与人名、不是设定」。
+              <span className="block mt-1 text-ink-500">
+                作者灵感、结构模板、知识库各有自己的入口，不会混进这份参考里 —— 这里只放「从别处作品学到的写法」。
+              </span>
             </p>
             {err !== '' && <div role="alert" className="text-11 text-amber">成果读取失败：{err}（本次将不带参考）</div>}
             {cards === null && (
@@ -109,6 +130,37 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
                 })}
               </ul>
             )}
+
+            {/* 3.6.0 · C：发送记录 —— 预览是"打算发什么"，这里才是"实际发出什么" */}
+            <details className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+              <summary className="text-11 text-ink-300 cursor-pointer">
+                最近发送记录（{sends.length}）· 实际注入的文字
+              </summary>
+              <p className="mt-1 text-10 text-ink-500">{REFERENCE_SENT_NOTE}</p>
+              {sendErr !== '' && <p className="text-10 text-amber">{sendErr}</p>}
+              {sends.length === 0 ? (
+                <p className="mt-1 text-10 text-ink-600">还没有发送过创作参考。</p>
+              ) : (
+                <ul className="mt-1.5 space-y-1.5">
+                  {sends.slice(0, 3).map(r => (
+                    <li key={r.id} className="text-11 leading-relaxed">
+                      <div className="flex flex-wrap items-center gap-x-2 text-10 text-ink-400">
+                        <span>{fmtTime(r.at)}</span>
+                        <span>{REFERENCE_STAGE_LABEL[r.stage]}</span>
+                        <span>{r.usedIds.length} 张 · {r.chars} 字</span>
+                        <span>{r.channel === 'acp' ? 'Agent 通道' : r.channel === 'api' ? 'API 模型' : '通道未记录'}</span>
+                        {r.dropped.length > 0 && <span className="text-amber">剔除 {r.dropped.length} 张</span>}
+                      </div>
+                      <details className="mt-0.5">
+                        <summary className="text-10 text-ink-500 cursor-pointer">看实际发送的文字</summary>
+                        <pre className="mt-1 whitespace-pre-wrap text-10 text-ink-400 leading-relaxed">{r.text}</pre>
+                      </details>
+                    </li>
+                  ))}
+                  {sends.length > 3 && <li className="text-10 text-ink-600">另有 {sends.length - 3} 次更早的发送记录</li>}
+                </ul>
+              )}
+            </details>
           </div>
         </Modal>
       )}

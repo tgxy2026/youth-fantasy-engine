@@ -11,6 +11,9 @@ import {
   referenceCardsOf, type ReferenceCard,
 } from '@/lib/creative/reference'
 import { referenceBlockForIds } from '@/lib/creative/referenceLoad'
+import {
+  REFERENCE_LOG_LIMIT, REFERENCE_SENT_NOTE, appendReferenceSend, loadReferenceSends,
+} from '@/lib/creative/referenceLog'
 import { saveArtefacts } from '@/lib/artefacts/store'
 import type { ArtefactRecord, ArtefactStore } from '@/lib/artefacts/types'
 import * as db from '../src/lib/db'
@@ -124,7 +127,7 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
   const wf = read('src/lib/ai/aiWorkflow.ts')
   ok('⑤ 工作流按勾选读参考（referenceBlockForIds）', /referenceBlockForIds/.test(wf))
   ok('🔴 ⑤ 只有非空才传（不传空块）', /\.\.\.\(referenceText \? \{ referenceBlock: referenceText \} : \{\}\)/.test(wf))
-  ok('⑤ 参考在探测项目后快照一次（三阶段共用）', /const referenceText = inp\.referenceIds/.test(wf))
+  ok('⑤ 参考在探测项目后快照一次（三阶段共用）', /const referenceBlock = inp\.referenceIds/.test(wf) && /const referenceText = referenceBlock\?\.text/.test(wf))
   ok('⑤ 设定奠基阶段注入', /aiGenerateBible\(inp\.seed[\s\S]{0,400}referenceBlock: referenceText/.test(wf))
   ok('⑤ 大纲规划阶段注入', /aiPlanOutline\(material[\s\S]{0,400}referenceBlock: referenceText/.test(wf))
   ok('⑤ 逐章正文阶段注入', /runAutoContinue\([\s\S]{0,1200}referenceBlock: referenceText/.test(wf))
@@ -148,6 +151,61 @@ console.log('—— creativeReference：创作参考契约闸（3.6.0 · C）—
   ok('⑤ 数据来源表登记了「作品分析」', /'book-analysis':/.test(sources))
   ok('⑤ 创意写作登记了「创作参考（默认不勾选）」', /你勾选的创作参考（默认不勾选）/.test(sources))
   ok('⑤ 明确写了「不勾选就不发」', /不勾选，就一段都不发/.test(sources))
+}
+
+// ---------- ⑥ 发送记录：实际发出的是什么 ----------
+{
+  __resetMockStores()
+  const pid = (await db.createProject('发送记录')).id
+
+  const w = await appendReferenceSend(pid, {
+    stage: 'draft', usedIds: ['ar-1'], dropped: [{ id: 'ar-9', reason: 'stale' }],
+    text: '【创作参考（作者选定，非本项目原文）】\n1. [场景与冲突] …', chars: 120, channel: 'acp',
+    taskId: 't-1',
+  })
+  ok('⑥ 写入成功', w.ok)
+  const loaded = await loadReferenceSends(pid)
+  ok('⑥ 读回一条且字段齐全', loaded.list.length === 1
+    && loaded.list[0].stage === 'draft' && loaded.list[0].channel === 'acp' && loaded.list[0].taskId === 't-1')
+  ok('⑥ 记录里存的是**实际注入的文字**', loaded.list[0].text.includes('非本项目原文'))
+  ok('⑥ 剔除原因一起存', loaded.list[0].dropped[0]?.reason === 'stale')
+
+  ok('⑥ 空文本拒写（没发就不该有记录）',
+    !(await appendReferenceSend(pid, { stage: 'bible', usedIds: [], dropped: [], text: '   ', chars: 0, channel: 'api' })).ok)
+
+  // 滚动上限
+  for (let i = 0; i < REFERENCE_LOG_LIMIT + 5; i++) {
+    await appendReferenceSend(pid, {
+      stage: 'outline', usedIds: [], dropped: [], text: `t${i}`, chars: 2, channel: 'api', at: 1000 + i,
+    })
+  }
+  const capped = await loadReferenceSends(pid)
+  ok('⑥ 只留最近 50 条', capped.list.length === REFERENCE_LOG_LIMIT)
+  ok('⑥ 按时间倒序（新的在前）', capped.list.every((r, i) => i === 0 || capped.list[i - 1].at >= r.at))
+  ok('⑥ 最新写入的那条在列表里', capped.list.some(r => r.text === `t${REFERENCE_LOG_LIMIT + 4}`))
+
+  ok('⑥ 单条文字过长会被截断（不无限膨胀）', (await (async () => {
+    await appendReferenceSend(pid, { stage: 'draft', usedIds: [], dropped: [], text: 'x'.repeat(5000), chars: 5000, channel: 'api' })
+    const l = await loadReferenceSends(pid)
+    return l.list[0].text.length <= 2600
+  })()))
+
+  ok('⑥ 空项目读回空列表', (await loadReferenceSends('')).list.length === 0)
+  ok('⑥ 「已发出无法撤回」有固定说明', /无法撤回/.test(REFERENCE_SENT_NOTE))
+}
+
+// ---------- ⑦ 发送记录接线 ----------
+{
+  const wf = read('src/lib/ai/aiWorkflow.ts')
+  ok('⑦ 三个阶段都写发送记录', ['bible', 'outline', 'draft'].every(st => new RegExp(`noteReferenceSent\\('${st}'`).test(wf)))
+  ok('⑦ 通道按该阶段实际 ACP 判断（连写用 acpContinue）', /noteReferenceSent\('draft', acpContinue \? 'acp' : 'api'\)/.test(wf))
+  ok('⑦ 记录在请求之前写（失败也算发出过）', /await noteReferenceSent\('outline'[\s\S]{0,120}aiPlanOutline\(/.test(wf))
+  ok('🔴 ⑦ 写记录失败不挡写作', /\.catch\(\(\) => undefined\)/.test(wf))
+
+  const picker = read('src/components/creative/ReferencePicker.tsx')
+  ok('⑦ 界面可回看实际发送的文字', /loadReferenceSends/.test(picker) && /看实际发送的文字/.test(picker))
+  ok('⑦ 界面显示阶段 / 张数 / 字数 / 通道', /REFERENCE_STAGE_LABEL/.test(picker) && /r\.channel === 'acp'/.test(picker))
+  ok('⑦ 界面写明「已发出无法撤回」', /REFERENCE_SENT_NOTE/.test(picker))
 }
 
 console.log(`\n———— creativeReference：${pass} 通过 / ${fail} 失败 ————`)

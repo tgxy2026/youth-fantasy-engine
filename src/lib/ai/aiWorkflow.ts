@@ -42,6 +42,7 @@ import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from '@/lib/outline/autoContinue'
 // 3.6.0 · C：作者勾选的创作参考（启动时快照一次；默认不勾选 ⇒ 空块，行为与改造前逐字一致）
 import { referenceBlockForIds } from '@/lib/creative/referenceLoad'
+import { appendReferenceSend, type ReferenceSendRecord, type ReferenceSendStage } from '@/lib/creative/referenceLog'
 import * as db from '@/lib/db'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { commitDraftRows } from '@/lib/flow/commit'
@@ -645,9 +646,28 @@ export async function runCreativeWriting(
    * 3.6.0 · C：作者勾选的创作参考 —— **三个阶段（设定奠基 / 大纲 / 连写）共用同一份快照**。
    * 🔴 读一次、裁一次：中途再改选择不影响本次运行；读失败/没选/全过期 ⇒ 空串（不注入）。
    */
-  const referenceText = inp.referenceIds?.length
-    ? ((await referenceBlockForIds(inp.referenceIds).catch(() => null))?.text ?? '')
-    : ''
+  const referenceBlock = inp.referenceIds?.length
+    ? await referenceBlockForIds(inp.referenceIds).catch(() => null)
+    : null
+  const referenceText = referenceBlock?.text ?? ''
+  /**
+   * 3.6.0 · C：把**实际注入的那段文字**记下来（发送前写；请求失败也算"发出过"）。
+   * 🔴 写记录失败不抛：它不该挡住写作；但记录本身是"到底发了什么"的唯一证据。
+   */
+  const noteReferenceSent = async (
+    stage: ReferenceSendStage, channel: ReferenceSendRecord['channel'],
+  ): Promise<void> => {
+    if (!referenceBlock?.text) return
+    await appendReferenceSend(db.getCurrentProjectId(), {
+      stage,
+      usedIds: referenceBlock.usedIds,
+      dropped: referenceBlock.dropped.map(d => ({ id: d.id, reason: d.reason })),
+      text: referenceBlock.text,
+      chars: referenceBlock.chars,
+      channel,
+      ...(opts.request?.taskId ? { taskId: opts.request.taskId } : {}),
+    }).catch(() => undefined)
+  }
 
   // ② 规模参数
   /** 本批要排几卷 */
@@ -714,6 +734,7 @@ export async function runCreativeWriting(
     // （不传的话非流式请求会撞 180s 总超时墙，见 aiTasks 的 longStream 注释）
     let got = 0
     const acpBible = opts.acpTextFor?.('creative-bible', ctx.signal) ?? null
+    await noteReferenceSent('bible', acpBible ? 'acp' : 'api')
     const entities = await aiGenerateBible(inp.seed, {
       signal: ctx.signal,
       ...(referenceText ? { referenceBlock: referenceText } : {}),
@@ -799,6 +820,7 @@ export async function runCreativeWriting(
     // 🔴 缺口补齐不注入（见 CreativeWritingOptions.structureId 注释）。
     const structureTpl = sealing ? null : getStoryTemplate(opts.structureId)
     const acpOutline = opts.acpTextFor?.('creative-outline', ctx.signal) ?? null
+    await noteReferenceSent('outline', acpOutline ? 'acp' : 'api')
     const raw = await aiPlanOutline(material, {
       ...(referenceText ? { referenceBlock: referenceText } : {}),
       volumes: plannedVolumes,
@@ -879,6 +901,7 @@ export async function runCreativeWriting(
     if (referenceText) ctx.report(0, `已带上 ${inp.referenceIds?.length ?? 0} 张创作参考（约 ${referenceText.length} 字）`)
     let done = 0
     const acpContinue = opts.acpTextFor?.('autocontinue', ctx.signal) ?? null
+    await noteReferenceSent('draft', acpContinue ? 'acp' : 'api')
     const res = await runAutoContinue(
       {
         chapters: remaining,
