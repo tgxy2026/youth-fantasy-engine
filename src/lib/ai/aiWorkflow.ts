@@ -40,6 +40,8 @@ import { nextVolumeOrder } from '@/lib/outline/freeVolume'
 import { getStoryTemplate, formatStructureHint } from '@/lib/outline/storyStructures'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { runAutoContinue, type ChapterDraft, type ContinueStrategy, type DraftDecision } from '@/lib/outline/autoContinue'
+// 3.6.0 · C：作者勾选的创作参考（启动时快照一次；默认不勾选 ⇒ 空块，行为与改造前逐字一致）
+import { referenceBlockForIds } from '@/lib/creative/referenceLoad'
 import * as db from '@/lib/db'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { commitDraftRows } from '@/lib/flow/commit'
@@ -499,6 +501,8 @@ export type CreativeTarget = 'outline' | 'full' | 'draft'
 export interface CreativeRunInput {
   seed?: string
   intent?: string
+  /** 3.6.0 · C：本次要带的创作参考（成果 id；默认空 = 不带） */
+  referenceIds?: string[]
 }
 
 /** 创意写作相关阶段各自的 ACP 任务标识（记账与界面提示据此区分入口）。 */
@@ -630,8 +634,8 @@ export async function runCreativeWriting(
   opts: CreativeWritingOptions = {},
 ): Promise<CreativeWritingResult | null> {
   const inp = typeof input === 'string'
-    ? { seed: input, intent: '' }
-    : { seed: input.seed ?? '', intent: input.intent ?? '' }
+    ? { seed: input, intent: '', referenceIds: [] as string[] }
+    : { seed: input.seed ?? '', intent: input.intent ?? '', referenceIds: input.referenceIds ?? [] }
 
   // ① 探测项目现状 → **起点自动判定**（2026-09-20：不再让作者手选"从一句话创作 / 接着已有内容写"）
   const probe = await probeCreativeProject()
@@ -863,6 +867,14 @@ export async function runCreativeWriting(
     // 按大纲写：从零创作刚落了细纲、「接着写」可能早就有一律现查一次。
     // 有细纲就按章号钉进本章 prompt 末段；没有则退回"自由发挥"（仍能跑通，只是不保证贴合大纲）
     const outlines = opts.useOutline === false ? new Map<number, string>() : await loadChapterOutlines()
+    /**
+     * 3.6.0 · C：只读一次成果、按预算裁成一块文本。
+     * 🔴 读失败 / 没选 / 全过期 ⇒ 空串（不注入），绝不"带半截参考"。
+     */
+    const referenceText = inp.referenceIds?.length
+      ? ((await referenceBlockForIds(inp.referenceIds).catch(() => null))?.text ?? '')
+      : ''
+    if (referenceText) ctx.report(0, `已带上 ${inp.referenceIds?.length ?? 0} 张创作参考（约 ${referenceText.length} 字）`)
     let done = 0
     const acpContinue = opts.acpTextFor?.('autocontinue', ctx.signal) ?? null
     const res = await runAutoContinue(
@@ -876,6 +888,8 @@ export async function runCreativeWriting(
         ...(opts.deAi ? { deAi: opts.deAi } : {}),
         // 3.5.6：ACP 就绪时整条连写链（初稿/补字压缩/去 AI 味/自检/摘要/标题/设定同步）走 Agent。
         ...(acpContinue ? { acpText: acpContinue } : {}),
+        // 3.6.0 · C：参考块只在"写正文"这一阶段注入（大纲/设定奠基另算，未接）
+        ...(referenceText ? { referenceBlock: referenceText } : {}),
         // 🔴 正文缺口优先（默认开）：先把最后一章补到目标字数，再往下写新章。
         //    库里还没有正文时 `last` 为 null，那段自然跳过（从零创作不受影响）。
         ...(opts.topUpLast === false ? {} : { topUpLast: {} }),

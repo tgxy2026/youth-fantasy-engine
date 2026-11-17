@@ -8,7 +8,8 @@
 //   ⑤ 成果：分析卡能转成作者成果（A1），默认 draft，不自动进正文。
 import { readFileSync } from 'node:fs'
 import {
-  ANALYSIS_LIMITS, ANALYSIS_DIMENSIONS, analysisCardsToArtefacts, analyzeBook, parseAnalysisCards,
+  ANALYSIS_LIMITS, ANALYSIS_DIMENSIONS, aggregateAnalysis, analysisCardsToArtefacts, analyzeBook,
+  analyzeChapters, parseAggregateCards, parseAnalysisCards,
 } from '@/lib/bookbreak/analysis'
 import { saveArtefacts, loadArtefacts } from '@/lib/artefacts/store'
 import * as db from '../src/lib/db'
@@ -158,6 +159,82 @@ console.log('—— bookAnalysis：只分析管线契约闸（3.6.0 · B）—�
   const loaded = await loadArtefacts(pid)
   ok('⑤ 读回条数一致', loaded.store.items.length === store.items.length && !loaded.error)
   ok('⑤ 读回后仍是 draft（不自动变成正式数据）', loaded.store.items.every(i => i.state === 'draft'))
+}
+
+// ---------- ⑧ 项目内章节：绑定 chapterId（B2） ----------
+{
+  const res = await analyzeChapters(
+    [{ id: 'ch-1', title: '第一章 雪夜', content: BODY_A }],
+    { acpText: async () => cardJson() },
+  )
+  ok('⑧ 分析项目章节时卡片带 chapterId', res.cards.length === 1 && res.cards[0].chapterId === 'ch-1')
+  ok('⑧ 单元也带 chapterId（可回指章节）', res.units[0].chapterId === 'ch-1')
+  const records = analysisCardsToArtefacts(res, 'p-bind', 1)
+  ok('⑧ 成果来源带真实 chapterId（可定位回章节）', records[0].source.chapterId === 'ch-1')
+  ok('⑧ 章节单元键掺章节 id（不同章同名标题不会误复用）',
+    res.units[0].unitKey.startsWith('ch-1::'))
+
+  let calls = 0
+  const reuse = await analyzeChapters(
+    [{ id: 'ch-1', title: '第一章 雪夜', content: BODY_A }],
+    { acpText: async () => { calls++; return cardJson() }, previous: res },
+  )
+  ok('⑧ 项目章节同样能复用（同 id 同正文不重跑）', calls === 0 && reuse.cards.length === 1)
+}
+
+// ---------- ⑨ 跨章聚合（B1） ----------
+{
+  const base = await analyzeBook(RAW, { acpText: async () => cardJson() })
+  const noCards = await aggregateAnalysis({ ...base, cards: [] })
+  ok('⑨ 没有卡片 ⇒ skipped/no-cards（不是"没东西可归纳"）',
+    noCards.state === 'skipped' && noCards.errorCode === 'no-cards')
+
+  let promptSeen = ''
+  const good = await aggregateAnalysis(base, {
+    acpText: async (prompt) => {
+      promptSeen = prompt
+      return JSON.stringify([
+        { dimension: 'character-arc', title: '林照从被动应对到主动追查', content: '第一章只写动作，第二章开始主动查看痕迹', basis: ['第一章 雪夜', '第二章 脚印'], claim: 'observed' },
+        { dimension: 'clue-thread', title: '雪地脚印是未回收的线头', content: '脚印延伸到河边，尚未交代来源', basis: ['第二章 脚印'], claim: 'observed' },
+      ])
+    },
+  })
+  ok('⑨ 聚合完成并产出两类归纳', good.state === 'completed' && good.cards.length === 2)
+  ok('⑨ 依据章名能对上 ⇒ observed + verified',
+    good.cards[0].claim === 'observed' && good.cards[0].basisVerified)
+  ok('⑨ 材料只含卡片摘要，不含原文正文', !promptSeen.includes('林照推开木门'), promptSeen.slice(0, 80))
+  ok('⑨ 材料里能追到卡片标题', promptSeen.includes('开场用动作带出环境'))
+
+  const forged = await aggregateAnalysis(base, {
+    acpText: async () => JSON.stringify([
+      { dimension: 'pacing-curve', title: '中段塌陷', content: 'x', basis: ['第九章 不存在的章'], claim: 'observed' },
+    ]),
+  })
+  ok('🔴 ⑨ 依据章名编造 ⇒ 降级推测 + basisVerified=false',
+    forged.cards[0].claim === 'inferred' && forged.cards[0].basisVerified === false)
+
+  const bad = await aggregateAnalysis(base, {
+    acpText: async () => JSON.stringify([{ dimension: 'x', title: 't', content: 'c' }]),
+  })
+  ok('⑨ 非法维度/空结果 ⇒ failed/parse-invalid（不假装成功）',
+    bad.state === 'failed' && bad.errorCode === 'parse-invalid')
+
+  const noProvider = await aggregateAnalysis(base, {})
+  ok('⑨ 无模型 ⇒ failed/no-provider', noProvider.state === 'failed' && noProvider.errorCode === 'no-provider')
+
+  const parsed = parseAggregateCards(JSON.stringify([{ dimension: 'clue-thread', title: 't', content: 'c', basis: ['第一章 雪夜'], claim: 'observed' }]), ['第一章 雪夜'])
+  ok('⑨ 单元级解析：依据命中', parsed[0].basisVerified === true && parsed[0].claim === 'observed')
+}
+
+// ---------- ⑩ 界面接线：任务中心（B3） ----------
+{
+  const ui = read('src/components/bookbreak/BookAnalysisDialog.tsx')
+  ok('⑩ 分析跑在任务中心（关闭弹窗任务继续）', /startTask</.test(ui) && /useAiTask/.test(ui))
+  ok('⑩ 只分析任务声明 writes 为空（不与写库任务冲突提示）', /writes: \[\]/.test(ui))
+  ok('⑩ 中止走任务中心', /abortTask\(task\.id\)/.test(ui))
+  ok('⑩ 关闭按钮不中止任务', /onClick=\{onClose\}/.test(ui))
+  ok('⑩ 有跨章归纳入口', /跨章归纳/.test(ui) && /aggregateAnalysis/.test(ui))
+  ok('⑩ 一个单元都没跑成时措辞分档', /分析未完成/.test(ui) && /分析部分完成/.test(ui))
 }
 
 console.log(`\n———— bookAnalysis：${pass} 通过 / ${fail} 失败 ————`)

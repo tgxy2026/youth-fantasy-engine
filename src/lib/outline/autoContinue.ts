@@ -239,6 +239,11 @@ async function generateOneChapter(opts: {
   onLog?: (s: string) => void
   /** 3.5.5 · ACP 通道：给了就整章生成与字数校准都走 Agent */
   acpText?: (prompt: string) => Promise<string>
+  /**
+   * 3.6.0 · C：作者选定的创作参考（**已由调用方按预算裁好并加了免责说明**）。
+   * 🔴 只在这一处拼进正文提示词；默认不传 ⇒ 与改造前逐字一致（不自动注入任何成果）。
+   */
+  referenceBlock?: string
 }): Promise<string> {
   const cfg = opts.acpText ? null : await requireProviderFor('create')
   const sys = buildSysPrompt(opts.targetWords, opts.chapterNo, await activeFingerprintNote())
@@ -256,6 +261,7 @@ async function generateOneChapter(opts: {
     '【近期章节概要】（最近 3 章，供把握整体剧情走向，非续写对象）',
     opts.recentSummaries || '（暂无）',
     '',
+    ...(opts.referenceBlock ? [opts.referenceBlock, ''] : []),
     '【续写意图】',
     opts.intent?.trim() || '（作者未指定：请严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要开新线）',
     '',
@@ -693,6 +699,11 @@ export function inspirationBlock(inspirations: string[]): string {
 export async function runAutoContinue(
   opts: {
     chapters: number; targetWords: number; strategy: ContinueStrategy; intent?: string;
+    /**
+     * 3.6.0 · C：作者勾选的创作参考块（已按预算裁剪 + 含免责说明）。
+     * 不传 ⇒ 不注入（默认不勾选，绝不自动注入）。
+     */
+    referenceBlock?: string;
     /** 去 AI 味儿：生成初稿后自动润色一遍再去弹窗交作者裁决；enabled=false 或 prompt 为空则跳过 */
     deAi?: { enabled: boolean; prompt: string }
     /**
@@ -845,6 +856,7 @@ export async function runAutoContinue(
         cb.onPhase?.(`${tag}：AI 续写正文${attempt > 1 ? `（第 ${attempt} 稿）` : ''}`)
         body = await generateOneChapter({
           ctx, prevTail, intent: opts.intent, recentSummaries, targetWords: opts.targetWords,
+          ...(opts.referenceBlock ? { referenceBlock: opts.referenceBlock } : {}),
           chapterNo: ordered.length + i + 1, // 🔴 范围限定：只写这一章，别把下一章的内容带进来（社区反馈）
           signal: cb.signal, onToken: cb.onBodyToken,
           ...(cb.request ? { request: cb.request } : {}),

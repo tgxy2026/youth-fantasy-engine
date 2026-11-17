@@ -60,6 +60,8 @@ export interface AnalysisCard {
   evidence?: AnalysisEvidence
   unitIndex: number
   chapterTitle: string
+  /** 分析项目内章节时的真实章节 id（外部原文为空） */
+  chapterId?: string
 }
 
 export type AnalysisUnitState = 'completed' | 'failed' | 'skipped'
@@ -70,6 +72,8 @@ export interface AnalysisUnit {
   chars: number
   /** 单元键（章名 + 文本指纹）—— 复用/重试的判据 */
   unitKey: string
+  /** 3.6.0 · B2：项目内章节的真实 id */
+  chapterId?: string
   state: AnalysisUnitState
   errorCode?: string
   cards: AnalysisCard[]
@@ -125,6 +129,8 @@ interface Unit {
   chapterTitle: string
   text: string
   unitKey: string
+  /** 3.6.0 · B2：分析项目内章节时带上真实 id（成果可回指章节）；外部原文没有 */
+  chapterId?: string
 }
 
 /** 章 → 单元：超过字符上限的章按窗口切（保留章名，加「（续 N）」） */
@@ -195,7 +201,7 @@ const isAnalysisDimension = (v: string): v is AnalysisDimension => VALID_DIMS.ha
 
 /** 解析模型输出（严格但宽容：缺字段的条目跳过，不整批丢） */
 export function parseAnalysisCards(text: string, opts: {
-  unit: { index: number; chapterTitle: string; text: string; unitKey: string }
+  unit: { index: number; chapterTitle: string; text: string; unitKey: string; chapterId?: string }
   dimensions: readonly AnalysisDimension[]
   maxCards?: number
 }): { cards: AnalysisCard[]; dropped: number } {
@@ -227,6 +233,7 @@ export function parseAnalysisCards(text: string, opts: {
       ...(quote ? { evidence: { chapterTitle: opts.unit.chapterTitle, quote, verified } } : {}),
       unitIndex: opts.unit.index,
       chapterTitle: opts.unit.chapterTitle,
+      ...(opts.unit.chapterId ? { chapterId: opts.unit.chapterId } : {}),
     })
     if (cards.length >= (opts.maxCards ?? ANALYSIS_LIMITS.maxCardsPerUnit)) break
   }
@@ -238,13 +245,54 @@ export function parseAnalysisCards(text: string, opts: {
  *
  * 中止：返回已完成部分，`aborted: true`；未跑到的单元记 `skipped`（不是 failed）。
  */
-export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Promise<AnalysisResult> {
-  const dims = (opts.dimensions?.length ? [...opts.dimensions] : ANALYSIS_DIMENSIONS.map(d => d.id))
-    .filter(d => VALID_DIMS.has(d))
-  const maxUnitChars = Math.max(500, opts.maxUnitChars ?? ANALYSIS_LIMITS.maxUnitChars)
-  const maxUnits = Math.max(1, opts.maxUnits ?? ANALYSIS_LIMITS.maxUnits)
-  const sp = splitNovelText(raw, opts.maxChunks !== undefined ? { maxChunks: opts.maxChunks } : {})
-  const { units, truncated } = expandUnits(sp, maxUnitChars, maxUnits)
+function resolveDims(opts: AnalysisOptions): AnalysisDimension[] {
+  const list = opts.dimensions?.length ? [...opts.dimensions] : ANALYSIS_DIMENSIONS.map(d => d.id)
+  return list.filter(d => VALID_DIMS.has(d))
+}
+
+/**
+ * 项目内章节 → 单元（3.6.0 · B2）。
+ *
+ * 与「外部原文」的差别只有两点：单元带 `chapterId`（成果能回指章节、界面能跳回去），
+ * 单元键里也掺了章节 id（不同章同名标题不会被误复用）。
+ */
+export function chapterUnits(
+  chapters: readonly { id: string; title: string; content: string }[],
+  maxUnitChars: number = ANALYSIS_LIMITS.maxUnitChars,
+  maxUnits: number = ANALYSIS_LIMITS.maxUnits,
+): { units: Unit[]; truncated: boolean } {
+  const out: Unit[] = []
+  let truncated = false
+  for (const ch of chapters) {
+    if (out.length >= maxUnits) { truncated = true; break }
+    const title = (ch.title ?? '').trim() || '未命名章节'
+    const text = ch.content ?? ''
+    if (!text.trim()) continue
+    const parts = text.length <= maxUnitChars
+      ? [text]
+      : Array.from({ length: Math.ceil(text.length / maxUnitChars) }, (_, i) =>
+        text.slice(i * maxUnitChars, (i + 1) * maxUnitChars))
+    for (let i = 0; i < parts.length; i++) {
+      if (out.length >= maxUnits) { truncated = true; break }
+      const seg = parts[i]
+      const segTitle = parts.length > 1 ? `${title}（续 ${i + 1}）` : title
+      out.push({
+        index: out.length,
+        chapterId: ch.id,
+        chapterTitle: segTitle,
+        text: seg,
+        unitKey: `${ch.id}::${segTitle}::${hashOf(seg)}::${seg.length}`,
+      })
+    }
+    if (truncated) break
+  }
+  return { units: out, truncated }
+}
+
+/** 单元执行内核（`analyzeBook` / `analyzeChapters` 共用，避免两套口径漂移） */
+async function analyzeUnits(
+  units: readonly Unit[], truncated: boolean, dims: readonly AnalysisDimension[], opts: AnalysisOptions,
+): Promise<AnalysisResult> {
   const plannedChars = units.reduce((n, u) => n + u.text.length, 0)
 
   // 复用：相同单元键且已完成的直接沿用；调用方点名重试的不复用
@@ -263,18 +311,25 @@ export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Prom
     if (opts.signal?.aborted) { aborted = true }
     const reusable = !retry.has(unit.index) ? prevByKey.get(unit.unitKey) : undefined
     if (reusable) {
-      done.push({ ...reusable, index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length })
+      done.push({
+        ...reusable, index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length,
+        ...(unit.chapterId ? { chapterId: unit.chapterId } : {}),
+      })
       processedChars += unit.text.length
       opts.onProgress?.({ done: done.length, total: units.length, label: `复用已完成单元：${unit.chapterTitle}` })
       continue
     }
     if (aborted) {
-      done.push({ index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey, state: 'skipped', cards: [] })
+      done.push({
+        index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey,
+        ...(unit.chapterId ? { chapterId: unit.chapterId } : {}), state: 'skipped', cards: [],
+      })
       continue
     }
     if (!cfg && !opts.acpText) {
       done.push({
         index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey,
+        ...(unit.chapterId ? { chapterId: unit.chapterId } : {}),
         state: 'failed', errorCode: 'no-provider', cards: [],
       })
       continue
@@ -286,11 +341,15 @@ export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Prom
         ...(opts.acpText ? { acpText: opts.acpText } : {}),
       })
       const { cards } = parseAnalysisCards(typeof text === 'string' ? text : '', {
-        unit: { index: unit.index, chapterTitle: unit.chapterTitle, text: unit.text, unitKey: unit.unitKey },
+        unit: {
+          index: unit.index, chapterTitle: unit.chapterTitle, text: unit.text, unitKey: unit.unitKey,
+          ...(unit.chapterId ? { chapterId: unit.chapterId } : {}),
+        },
         dimensions: dims,
       })
       done.push({
         index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey,
+        ...(unit.chapterId ? { chapterId: unit.chapterId } : {}),
         state: 'completed', cards,
       })
       processedChars += unit.text.length
@@ -298,11 +357,15 @@ export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Prom
       const name = e instanceof Error ? e.name : ''
       if (name === 'AbortError' || opts.signal?.aborted) {
         aborted = true
-        done.push({ index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey, state: 'skipped', cards: [] })
+        done.push({
+          index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey,
+          ...(unit.chapterId ? { chapterId: unit.chapterId } : {}), state: 'skipped', cards: [],
+        })
       } else {
         const code = /JSON|解析|parse/i.test(e instanceof Error ? e.message : '') ? 'parse-invalid' : 'request-failed'
         done.push({
           index: unit.index, chapterTitle: unit.chapterTitle, chars: unit.text.length, unitKey: unit.unitKey,
+          ...(unit.chapterId ? { chapterId: unit.chapterId } : {}),
           state: 'failed', errorCode: code, cards: [],
         })
       }
@@ -319,11 +382,187 @@ export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Prom
     plannedChars,
     processedChars,
   }
-  return { units: done, cards, coverage, dimensions: dims, aborted }
+  return { units: done, cards, coverage, dimensions: [...dims], aborted }
+}
+
+/**
+ * 跑一次「只分析」（外部原文）。**不写任何项目数据**。
+ *
+ * 中止：返回已完成部分，`aborted: true`；未跑到的单元记 `skipped`（不是 failed）。
+ */
+export async function analyzeBook(raw: string, opts: AnalysisOptions = {}): Promise<AnalysisResult> {
+  const dims = resolveDims(opts)
+  const maxUnitChars = Math.max(500, opts.maxUnitChars ?? ANALYSIS_LIMITS.maxUnitChars)
+  const maxUnits = Math.max(1, opts.maxUnits ?? ANALYSIS_LIMITS.maxUnits)
+  const sp = splitNovelText(raw, opts.maxChunks !== undefined ? { maxChunks: opts.maxChunks } : {})
+  const { units, truncated } = expandUnits(sp, maxUnitChars, maxUnits)
+  return analyzeUnits(units, truncated, dims, opts)
+}
+
+/**
+ * 分析**项目内章节**（3.6.0 · B2）：产物带 `chapterId`，成果可回指章节。
+ * 其余口径与 `analyzeBook` 完全一致（同一内核）。
+ */
+export async function analyzeChapters(
+  chapters: readonly { id: string; title: string; content: string }[],
+  opts: AnalysisOptions = {},
+): Promise<AnalysisResult> {
+  const dims = resolveDims(opts)
+  const maxUnitChars = Math.max(500, opts.maxUnitChars ?? ANALYSIS_LIMITS.maxUnitChars)
+  const maxUnits = Math.max(1, opts.maxUnits ?? ANALYSIS_LIMITS.maxUnits)
+  const { units, truncated } = chapterUnits(chapters, maxUnitChars, maxUnits)
+  return analyzeUnits(units, truncated, dims, opts)
 }
 
 function buildSystem(): string {
   return '你是资深网文编辑，擅长拆解叙事方法。只依据给出的原文分析，不脑补未出现的内容；引文必须逐字摘自原文。'
+}
+
+// ============ 跨章聚合（3.6.0 · B1）============
+
+export type AggregateDimension = 'character-arc' | 'pacing-curve' | 'clue-thread'
+
+export const AGGREGATE_DIMENSIONS: readonly { id: AggregateDimension; label: string; hint: string }[] = [
+  { id: 'character-arc', label: '人物弧线', hint: '主要人物从开篇到当前的变化轨迹与动机演进' },
+  { id: 'pacing-curve', label: '节奏曲线', hint: '整本的张弛变化：哪几章推进、哪几章铺陈、有没有塌陷段' },
+  { id: 'clue-thread', label: '线索与回收', hint: '埋下的线索、已有回收、仍悬空的线头' },
+]
+
+export interface AggregateCard {
+  id: string
+  dimension: AggregateDimension
+  title: string
+  content: string
+  /** 依据的章名（模型给；会与本次实际分析过的章名核对） */
+  basis: string[]
+  /** 依据章名是否都能对上本次分析范围 */
+  basisVerified: boolean
+  claim: 'observed' | 'inferred'
+}
+
+export interface AnalysisAggregateResult {
+  cards: AggregateCard[]
+  state: 'completed' | 'failed' | 'skipped'
+  errorCode?: string
+  materialChars: number
+}
+
+export const AGGREGATE_LIMITS = {
+  /** 材料上限：只送「已产出的卡片摘要」，不重送原文 */
+  maxMaterialChars: 12000,
+  maxCards: 24,
+} as const
+
+const AGG_DIMS = new Set<AggregateDimension>(['character-arc', 'pacing-curve', 'clue-thread'])
+const isAggDim = (v: string): v is AggregateDimension => AGG_DIMS.has(v as AggregateDimension)
+
+/** 章名归一（去掉「（续 N）」后缀）—— 聚合依据按"原章"核对 */
+function baseChapterTitle(t: string): string {
+  return t.replace(/（续 \d+）$/, '').trim()
+}
+
+function buildAggregatePrompt(chapters: readonly { title: string; cards: AnalysisCard[] }[]): string {
+  const lines: string[] = ['【已分析章节与卡片摘要】']
+  for (const ch of chapters) {
+    lines.push(`\n## ${ch.title}`)
+    for (const c of ch.cards) {
+      lines.push(`- [${c.dimension}] ${c.title}：${c.content.slice(0, 200)}${c.claim === 'inferred' ? '（推测）' : ''}`)
+    }
+  }
+  return [
+    '下面是逐章分析后的卡片摘要（不是原文）。请做**跨章**归纳，不要重复单章结论。',
+    ...lines,
+    '',
+    '输出 JSON 数组，每条：',
+    '{"dimension":"character-arc|pacing-curve|clue-thread","title":"≤24字","content":"≤400字，要写清变化/趋势/线头","basis":["依据的章名"],"claim":"observed|inferred"}',
+    '要求：',
+    '1. basis 只能写上面出现过的章名（原样抄），不要编造章节；',
+    '2. 没有足够依据就少写，宁少勿凑；',
+    '3. 只归纳，不要给"建议怎么写"的写作指导。',
+  ].join('\n')
+}
+
+/** 解析聚合输出（依据章名对不上 ⇒ 标 unverified + 降级推测） */
+export function parseAggregateCards(
+  text: string, knownTitles: readonly string[], maxCards = AGGREGATE_LIMITS.maxCards,
+): AggregateCard[] {
+  const parsed = parseObjectArrayDetailed(text)
+  const rows = Array.isArray(parsed.data) ? parsed.data : []
+  const known = new Set(knownTitles.map(baseChapterTitle))
+  const out: AggregateCard[] = []
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const o = raw as Record<string, unknown>
+    const dimRaw = typeof o.dimension === 'string' ? o.dimension.trim() : ''
+    const title = typeof o.title === 'string' ? o.title.trim().slice(0, 40) : ''
+    const content = typeof o.content === 'string' ? o.content.trim().slice(0, 800) : ''
+    if (!isAggDim(dimRaw) || !title || !content) continue
+    const basis = Array.isArray(o.basis)
+      ? o.basis.filter((x): x is string => typeof x === 'string').map(x => x.trim()).filter(Boolean).slice(0, 8)
+      : []
+    const basisVerified = basis.length > 0 && basis.every(b => known.has(baseChapterTitle(b)))
+    const claimIn = o.claim === 'observed' || o.claim === 'inferred' ? o.claim : ''
+    out.push({
+      id: `agg_${hashOf(`${dimRaw}::${title}::${out.length}`)}`,
+      dimension: dimRaw,
+      title,
+      content,
+      basis,
+      basisVerified,
+      claim: claimIn === 'observed' && basisVerified ? 'observed' : 'inferred',
+    })
+    if (out.length >= maxCards) break
+  }
+  return out
+}
+
+/**
+ * 跨章聚合：把逐章卡片归纳成人物弧线 / 节奏曲线 / 线索与回收。
+ *
+ * 🔴 材料只送**已产出的卡片摘要**（不重送原文）：一是省 token，二是聚合结论必须能追到卡片，
+ *    否则又会出现"结论没有依据"的老问题。
+ * 🔴 没有卡片 ⇒ `skipped`（不是"这本书没有可归纳的东西"）。
+ */
+export async function aggregateAnalysis(
+  result: AnalysisResult,
+  opts: { signal?: AbortSignal; acpText?: (prompt: string, call?: { signal?: AbortSignal }) => Promise<string>; maxMaterialChars?: number } = {},
+): Promise<AnalysisAggregateResult> {
+  const byChapter = new Map<string, AnalysisCard[]>()
+  for (const c of result.cards) {
+    const arr = byChapter.get(c.chapterTitle) ?? []
+    arr.push(c)
+    byChapter.set(c.chapterTitle, arr)
+  }
+  if (!result.cards.length) return { cards: [], state: 'skipped', errorCode: 'no-cards', materialChars: 0 }
+
+  const maxChars = Math.max(2000, opts.maxMaterialChars ?? AGGREGATE_LIMITS.maxMaterialChars)
+  const chapters: { title: string; cards: AnalysisCard[] }[] = []
+  let used = 0
+  for (const [title, cards] of byChapter) {
+    if (used >= maxChars) break
+    chapters.push({ title, cards })
+    used += cards.reduce((n, c) => n + c.title.length + Math.min(c.content.length, 200) + 20, 0)
+  }
+  const prompt = buildAggregatePrompt(chapters)
+  const cfg = opts.acpText ? null : await requireProviderFor('create').catch(() => null)
+  if (!cfg && !opts.acpText) {
+    return { cards: [], state: 'failed', errorCode: 'no-provider', materialChars: prompt.length }
+  }
+  try {
+    const text = await ask(cfg, '你是资深网文编辑。只根据给出的卡片摘要做跨章归纳，不编造章节与情节。', prompt, {
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.acpText ? { acpText: opts.acpText } : {}),
+    })
+    const cards = parseAggregateCards(typeof text === 'string' ? text : '', chapters.map(c => c.title))
+    if (!cards.length) return { cards: [], state: 'failed', errorCode: 'parse-invalid', materialChars: prompt.length }
+    return { cards, state: 'completed', materialChars: prompt.length }
+  } catch (e) {
+    const name = e instanceof Error ? e.name : ''
+    if (name === 'AbortError' || opts.signal?.aborted) {
+      return { cards: [], state: 'skipped', errorCode: 'cancelled', materialChars: prompt.length }
+    }
+    return { cards: [], state: 'failed', errorCode: 'request-failed', materialChars: prompt.length }
+  }
 }
 
 /**
@@ -341,6 +580,7 @@ export function analysisCardsToArtefacts(
     projectId,
     source: {
       chapterTitle: c.chapterTitle,
+      ...(c.chapterId ? { chapterId: c.chapterId } : {}),
       // 只分析路径不绑定项目章节：来源只有章名 + 文本指纹
       fingerprint: hashOf(`${c.chapterTitle}::${c.evidence?.quote ?? c.title}`),
       ...(c.evidence?.quote ? { quote: c.evidence.quote } : {}),

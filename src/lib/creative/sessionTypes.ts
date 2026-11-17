@@ -59,6 +59,8 @@ export interface CreativeInputs {
    * 节拍表对补几章没有意义，硬塞反而让模型两头为难）。
    */
   structureId: string
+  /** 3.6.0 · C：本次要带的创作参考（成果 id；**默认不勾选 = 不带**，启动时快照成提示词块） */
+  referenceIds?: string[]
 }
 
 export const DEFAULT_INPUTS: CreativeInputs = {

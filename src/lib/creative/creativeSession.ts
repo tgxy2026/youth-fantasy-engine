@@ -555,7 +555,11 @@ export async function startCreativeRun(opts: { fromScratch?: boolean; forceCheck
   try {
     const res = await runCreativeWriting(
       // 🔴 不再传起点：编排器读项目库自己判定（有卷大纲/细纲 → 接着写，否则从零）
-      { seed: inp.seed, intent: inp.intent },
+      {
+        seed: inp.seed, intent: inp.intent,
+        // 3.6.0 · C：任务级快照（启动后再改选择不影响本次请求）
+        ...(inp.referenceIds?.length ? { referenceIds: [...inp.referenceIds] } : {}),
+      },
       {
         target: inp.target,
         volumes: inp.volumes,

@@ -63,7 +63,12 @@ function walk(dir: string, out: string[] = []): string[] {
   const components = files.filter(f => f.startsWith('src/components/'))
   const offendersAbort = components.filter(f => /abortTask\(/.test(code(f)))
   // 允许的只有「作者显式点中止」的按钮所在文件；新增文件必须走同一语义
-  const allowed = new Set(['src/components/bookbreak/BookBreakPanel.tsx', 'src/components/common/TaskIndicator.tsx'])
+  // 3.6.0 · B3：作品分析弹窗里的「中止」也是作者显式点击（关闭不中止，见该文件 onClose）
+  const allowed = new Set([
+    'src/components/bookbreak/BookBreakPanel.tsx',
+    'src/components/bookbreak/BookAnalysisDialog.tsx',
+    'src/components/common/TaskIndicator.tsx',
+  ])
   ok('🔴 ② 组件里只有显式「中止」按钮会 abort（面板卸载不许顺手停任务）',
     offendersAbort.every(f => allowed.has(f)), JSON.stringify(offendersAbort.filter(f => !allowed.has(f))))
 

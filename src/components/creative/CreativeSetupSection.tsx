@@ -10,6 +10,7 @@ import { Button } from '@/components/common/Button'
 import { copyText } from '@/components/dialogs/dialogs'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import InspirationPicker from '@/components/creative/InspirationPicker'
+import ReferencePicker from '@/components/creative/ReferencePicker'
 import { StyleProfilePicker } from '@/components/settings/StyleProfilePicker'
 import { clearCreativeSession, hydrateCreativeSession, saveInputsNow, startCreativeRun, stopCreativeRun, updateInputs } from '@/lib/creative/creativeSession'
 import { MAX_CHAPTERS_PER_VOLUME, MAX_OUTLINE_CHAPTERS, MAX_OUTLINE_VOLUMES } from '@/lib/ai/aiTasks'
@@ -258,6 +259,10 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
               <InspirationPicker disabled={s.running}
                 selected={inp.inspirations ?? []}
                 onChange={v => updateInputs({ inspirations: v })} />
+              {/* 3.6.0 · C：创作参考（默认不勾选；过期卡不可选；只影响本次请求） */}
+              <ReferencePicker disabled={s.running}
+                selected={inp.referenceIds ?? []}
+                onChange={v => updateInputs({ referenceIds: v.length ? v : undefined })} />
             </div>
 
             {inp.deAiOn && (
