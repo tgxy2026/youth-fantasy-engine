@@ -49,6 +49,30 @@ const P = s => out.push(s)
   if (!noGuard.length) P('  ✅ 全部有就绪判断')
 }
 
+/**
+ * 🏛 已判定「保留但暂不挂载」的组件（不是真死代码，也不是待接线缺口）。
+ *
+ * 🔴 为什么要有这张表：F2 每轮都会把它们报成孤儿，而它们的结论**已经判过**——
+ *    每轮重复提案的结果，必然是下一轮有人照单删掉，把回退掉的功能彻底弄丢。
+ *    与 `audit-dead.mjs` 的 KEEP 表同一套纪律：**写不出理由的不许进表**。
+ *
+ * 判据与出处：
+ *   · 3.5.1 六维与全量审计复核（docs/归档/3.5/3.5.1-六维与全量审计复核-2026-11-11.md）：
+ *     `ProjectAutoCover` / `SectionNav` 属「用户要求回退的功能」，当前不接入运行路径，
+ *     按工作区「保留未使用文件」的约定暂留；
+ *   · `PageGuideButton`：3.5.1 起页头不再放「本页指引」按钮（`tests/pageGuide.test.ts`
+ *     与 `tests/uiUxGuards.test.ts` 都断言页面里**不得**出现它），保留备用；
+ *   · 2026-11-18：三者在 F2 里连续三轮重复出现，人工判定均为「已判过、不删」。
+ */
+const KEEP_UNMOUNTED = {
+  'src/components/app/ProjectAutoCover.tsx':
+    '自动字封是 3.5.1 按用户要求回退的功能（项目卡片回到纯色封面）；保留实现待重新启用，删了就没法一键恢复',
+  'src/components/help/PageGuideButton.tsx':
+    '3.5.1 起页头不再放「本页指引」按钮，改用 usePageGuide + GuideOverlay；保留备用（两份契约测试都断言页面里不得出现它）',
+  'src/components/settings/SectionNav.tsx':
+    '长页分节导航是 3.5.1 按用户要求移除的（设置页改回普通滚动）；保留实现待重新启用',
+}
+
 // ── F2. 组件是否真的被挂到页面上 ──────────────────────────────────
 // 「写完了但没接入口」= 功能在，用户用不到。这是 audit-dead 的组件专版：
 // 那里的语义是"死代码"，这里是"功能缺口"（该接入口而不是删）。
@@ -72,14 +96,18 @@ const P = s => out.push(s)
       comps.push({ name, file: rel(f), refs })
     }
   }
-  const orphans = comps.filter(c => c.refs === 0).sort((a, b) => a.file.localeCompare(b.file))
-  P(`\n── F2. 未被任何地方引用的组件（${orphans.length} 个）──`)
+  const zero = comps.filter(c => c.refs === 0).sort((a, b) => a.file.localeCompare(b.file))
+  // 已判定保留的不计入待处理（否则每轮都会重复提案，最后必然被批量删掉）
+  const retained = zero.filter(c => KEEP_UNMOUNTED[c.file])
+  const orphans = zero.filter(c => !KEEP_UNMOUNTED[c.file])
+  P(`\n── F2. 未被任何地方引用的组件（待处理 ${orphans.length} 个 · 已判定保留 ${retained.length} 个）──`)
   P('  判读：先分清性质 ——')
   P('   · 「真死」：语义已被替代/历史遗留 → 删')
   P('   · 「能力缺口」：实现完整只是没接口 → **保留**，报告里建议接入口（删了等于扔掉唯一的自救工具）')
   P('  ⚠️ 通过字符串映射动态渲染的组件会显示为 0，属已知假报，须抽 3~5 个回源码确认。')
   for (const c of (process.env.YFE_AUDIT_FULL === '1' ? orphans : orphans.slice(0, 20))) P(`  ▸ ${c.name}  ${c.file}`)
-  if (!orphans.length) P('  ✅ 所有导出组件都有引用')
+  for (const c of retained) P(`  🏛 ${c.name}  ${c.file} — 已判定保留：${KEEP_UNMOUNTED[c.file]}`)
+  if (!orphans.length) P('  ✅ 没有待处理的未引用组件')
 }
 
 // ── F3. AI / 异步操作的失败是否让用户看见 ─────────────────────────

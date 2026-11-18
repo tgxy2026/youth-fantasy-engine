@@ -16,6 +16,26 @@ import esbuild from 'esbuild'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+/**
+ * 🔴 给 Node 补一个最小 localStorage 桩（2026-11-18 审计工具修正）。
+ *
+ * 本闸只校验字符串表，不需要真存储；但 `schema.ts` 的依赖链在**模块初始化**时就会读
+ * localStorage（墓碑记忆）。Node 没有 DOM ⇒ 实测每次都先打一段 12 行 ReferenceError 堆栈，
+ * 看上去像「闸本身坏了」，长期下来会让人对输出脱敏 —— 那正是审计工具最怕的失效方式。
+ * 桩只做内存键值，行为对齐 Storage 的最小面。
+ */
+if (typeof globalThis.localStorage === 'undefined') {
+  const mem = new Map()
+  globalThis.localStorage = {
+    getItem: k => (mem.has(String(k)) ? mem.get(String(k)) : null),
+    setItem: (k, v) => { mem.set(String(k), String(v)) },
+    removeItem: k => { mem.delete(String(k)) },
+    clear: () => { mem.clear() },
+    key: i => [...mem.keys()][i] ?? null,
+    get length() { return mem.size },
+  }
+}
+
 // schema.ts 会 import './db'（拉进 IndexedDB 等重依赖）→ 打桩绕开
 const stubDb = {
   name: 'stub-db',

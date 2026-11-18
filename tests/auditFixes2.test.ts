@@ -93,6 +93,22 @@ console.log('\n—— auditFixes2 用例开始 ——')
     /from '(?:\.\.\/promptGuard|@\/lib\/ai\/promptGuard)'/.test(cr) && /authorBlock\(newAuthorFence\(\), material\.trim\(\)\)/.test(cr))
 }
 
+// ---------- ⑤-b 2026-11-18 审计 P6：AI 辅助面板的项目资料也要包 ----------
+{
+  // 同一份「项目资料」在 audit.ts 里早已包；AI 辅助面板（AIAssist）当初漏了，
+  // 那一段直接拼进 **system prompt** —— 设定表里夹带「忽略以上指令」会被当指令执行。
+  const assist = read('src/components/ai/AIAssist.tsx').replace(/\r\n/g, '\n')
+  ok('🔴 AI 辅助把项目资料包进 authorBlock（此前是裸拼 system prompt）',
+    /import \{ authorBlock, newAuthorFence \} from '@\/lib\/ai\/promptGuard'/.test(assist)
+    && /\$\{authorBlock\(newAuthorFence\(\), ctx\.text\)\}/.test(assist))
+  // 用「标题在前、包裹在后」判位置，避开源码里 \n 的转义差异（模板串里是字面反斜杠 n）
+  const ctxTitle = '【项目资料（供参考：人名 / 设定 / 时间线 / 势力，可据此约束你的建议）】'
+  const wrapped = '${authorBlock(newAuthorFence(), ctx.text)}'
+  ok('🔴 资料块仍在【项目资料】标题之下（包了但没标题，模型不知道这是什么）',
+    assist.includes(ctxTitle) && assist.includes(wrapped) && assist.indexOf(ctxTitle) < assist.indexOf(wrapped))
+  ok('空资料不包（避免把空串也塞进边界块）', /if \(ctx\.text\) sys \+=/.test(assist))
+}
+
 // ---------- ⑥ P1-4 结构：酒馆「生成初版记忆」必须带 limits ----------
 {
   const m = read('src/components/tavern/useTavernCardModel.ts')

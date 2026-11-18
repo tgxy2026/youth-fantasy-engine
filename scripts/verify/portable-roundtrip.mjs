@@ -122,7 +122,13 @@ async function main() {
         if (b) { b.click(); return true }
         return false
       }, label)
-      if (hit) { await sleep(600); return }
+      if (hit) {
+        // 🔴 不能只 sleep：引导的遮罩（[data-guide-mask]）是**异步**挂上/摘掉的，
+        //    固定 600ms 经常「点完就返回、遮罩还在」，下一次点击又被拦（2026-11-18 实测拦下整轮验收）。
+        await page.waitForFunction(() => !document.querySelector('[data-guide-mask]'), null, { timeout: 2500 }).catch(() => {})
+        await sleep(200)
+        return
+      }
     }
   }
   /**
@@ -161,7 +167,10 @@ async function main() {
       opener.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
       nav.waitFor({ state: 'visible', timeout: 45000 }).catch(() => {}),
     ])
-    if (await opener.isVisible().catch(() => false)) await opener.click()
+    // 🔴 这里曾经是裸 `opener.click()`：重启浏览器后引导会**在 dismiss 之后**异步挂上来，
+    //    遮罩一盖、点击就干等 25s 超时（2026-11-18 reliability 实测：九步里前八步全过，只这步红）。
+    //    走 clickSafely：点不动就清场重试。
+    if (await opener.isVisible().catch(() => false)) { await dismiss(page); await clickSafely(opener) }
     // 🔴 打开项目之后备份提醒会**异步**挂上来，并把背景置 inert/aria-hidden ⇒ 角色定位看不到
     //    `<nav>`。所以「关一次就等」不成立：要「关 → 看是否真的可见 → 再关」，最多 45s。
     const navDeadline = Date.now() + 45000

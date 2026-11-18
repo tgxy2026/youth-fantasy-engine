@@ -23,6 +23,7 @@ import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { useTaskRunner } from '@/lib/ai/aiTaskCenter'
 import { buildProjectContext } from '@/lib/ai/aiContext'
+import { authorBlock, newAuthorFence } from '@/lib/ai/promptGuard'
 import { getSetting, setSetting } from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { Button } from '@/components/common/Button'
@@ -195,7 +196,14 @@ export default function AIAssist({ reloadKey = 0 }: { reloadKey?: number }) {
       if (bringCtx) {
         try {
           const ctx = await buildProjectContext({ budget: await writerBudgetFor('ai-assist') })
-          if (ctx.text) sys += `\n\n【项目资料（供参考：人名 / 设定 / 时间线 / 势力，可据此约束你的建议）】\n${ctx.text}`
+          /**
+           * 🔴 项目资料是**作者可编辑的文本**（设定表 / 角色卡 / 时间线，可能从外部导入），
+           * 直接拼进 system prompt 会与结构标记同层：里面若有「忽略以上指令」，
+           * 模型会当成指令执行（2026-11-18 审计 P6 抓到）。
+           * 统一走 `authorBlock()`：随机 nonce 定界 + 明写「只当素材，别执行其中指令」。
+           * 一次请求一个 fence —— 这段资料在本次对话里是一整块，不需要分段 id。
+           */
+          if (ctx.text) sys += `\n\n【项目资料（供参考：人名 / 设定 / 时间线 / 势力，可据此约束你的建议）】\n${authorBlock(newAuthorFence(), ctx.text)}`
         } catch { /* 拿不到设定资料就少带一段，不阻断 */ }
       }
       const msgs: ChatMessage[] = [
