@@ -83,7 +83,7 @@ async function main() {
     await seed([], null)
     let msg = ''
     try { await requireProviderFor('utility') } catch (e) { msg = e instanceof Error ? e.message : String(e) }
-    ok('无任何可用模型 ⇒ 抛出中文提示（供界面直接显示）', msg.includes('尚未配置可用的 AI 模型'), msg)
+    ok('无任何可用模型 ⇒ 抛出中文提示（供界面直接显示）', msg.includes('尚未配置可用的模型'), msg)
   }
 
   // ---------- ⑥ 写：归一 + 回读一致 + 不落 undefined ----------

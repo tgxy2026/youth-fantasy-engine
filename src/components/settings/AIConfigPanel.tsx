@@ -678,7 +678,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                     <p>给不同用途的 AI 任务分别指定模型：<b>创作</b>写好正文、<b>审校</b>材料读得多、<b>整理</b>调用最频繁。</p>
                     <p className="mt-1.5">三格全部留空 ⇒ 所有功能都跟随上面的「当前模型」，与你从没设过它时完全一样。</p>
                     <p className="mt-1.5">指定的模型被删除、或没填全配置 ⇒ 自动回落到当前模型，不会报错。</p>
-                    <p className="mt-1.5">典型用法：正文用质量最好的模型，「整理」指向一个便宜 / 快的模型，几十次整理调用就不必都烧大模型。</p>
+                    <p className="mt-1.5">典型用法：正文用质量最好的模型，「整理」指向一个便宜 / 快的模型，几十次整理调用就不必都占用主力模型。</p>
                   </HelpPopover>
                 </div>
                 <p className="text-11 text-ink-500 mb-2.5 leading-relaxed">

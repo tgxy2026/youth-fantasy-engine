@@ -207,7 +207,7 @@ export async function requireActiveProvider(): Promise<AIProvider> {
   // 配了、但全是被本形态禁掉的（网页版里的本机模型）⇒ 别报「还没配」，那是误导
   const list = await loadProviders().catch(() => [] as AIProvider[])
   if (list.length > 0 && list.every(isLocalModelBlocked)) throw new Error(WEB_LOCAL_MODEL_NOTICE)
-  throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
+  throw new Error('尚未配置可用的模型，请先到「模型设置 → 模型配置」添加并设为当前。')
 }
 
 /** 同步读取当前快照（useSyncExternalStore 用，返回引用稳定的对象） */

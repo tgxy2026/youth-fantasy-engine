@@ -362,7 +362,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       triggerClassName="shrink-0"
       triggerDisabled={!writingReady}
       triggerTitle={!writingReady
-        ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型')
+        ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型')
         : companion ? 'AI 伴写已开启（默认关闭），点击调整或关闭' : '点击开启 AI 伴写'}
       trigger={<>
         {ghostBusy ? <Loader2 size={14} className="animate-spin" /> : <PenTool size={14} />} AI 伴写
@@ -419,10 +419,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
             <span className="text-ink-200 shrink-0">总开关</span>
             <Button variant="toggle" size="xs" selected={companion} aria-pressed={companion} disabled={!writingReady}
               onClick={() => setCompanion(o => { const v = !o; localStorage.setItem('novel-companion', v ? '1' : '0'); if (!v) dismissGhost(); return v })}
-              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
+              title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : companion ? '点击关闭 AI 伴写（默认关闭）' : '点击开启 AI 伴写'}>
               {companion ? '已开启' : '已关闭'}
             </Button>
-            <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '需先接入 AI 模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
+            <span className="text-ink-500 text-10">{!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '需先接入模型') : companion ? '停笔即续写一句话' : '默认关闭'}</span>
           </div>
           <div className="text-ink-500 text-10 leading-relaxed">
             全部为本机记忆，换章不重置。
@@ -637,7 +637,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               />
               <Button onClick={() => (summarizing ? stopSummary() : void genSummary())}
                 disabled={!summarizing && (!writingReady || !active)}
-                title={summarizing ? '中止摘要生成（已生成的结果不写入）' : !writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
+                title={summarizing ? '中止摘要生成（已生成的结果不写入）' : !writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
                 {summarizing ? <Square size={12} /> : <Sparkles size={12} />}
               </Button>
               {/* 🔴 UX13：长等待必须能叫停。跑起来后这个键变「中止」（同一位置、同一尺寸），
@@ -651,7 +651,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               ) : (
                 <Button onClick={regenAllSummaries}
                   disabled={!writingReady || !active}
-                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置 AI 模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
                   <Layers size={12} />
                 </Button>
               )}

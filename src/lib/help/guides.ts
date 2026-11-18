@@ -172,7 +172,7 @@ export const PAGE_GUIDES: PageGuide[] = [
   },
   {
     // 3.5.6：后台任务从侧栏工具栏拆成独立页签 —— 新页签必须有本页指引，
-    // 否则页头「本页指引」点开是空的（作者会以为是坏了）。
+    // 否则左下角「本页指引」点开是空的（作者会以为是坏了）。
     id: 'task-center-basics',
     revision: 1,
     tabId: 'task-center',

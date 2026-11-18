@@ -53,7 +53,7 @@ async function readPurgeList(projectId: string, captured: ReturnType<typeof capt
   if (row && !Array.isArray(row.value)) throw new Error('字段恢复记录已损坏，请先检查备份。')
   const list = row?.value as PendingFieldPurge[] | undefined ?? []
   if (!list.every(p => p && typeof p.tabId === 'string' && !!p.tabId && typeof p.fieldId === 'string' && !!p.fieldId)) {
-    throw new Error('字段恢复记录包含无法识别的条目，请先检查备份。')
+    throw new Error('备份里的字段恢复数据有不认识的条目，请先检查备份。')
   }
   return list
 }

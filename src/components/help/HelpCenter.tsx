@@ -138,7 +138,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
           )}
           {article.aiRequirement === 'model' && (
             <div className="rounded-lg bg-ink-800 border border-ink-700 px-3 py-2 text-11 text-ink-300">
-              这一页的操作需要先配置可用的 AI 模型；未配置时相关按钮会禁用，本地功能不受影响。
+              这一页的操作需要先配置可用的模型；未配置时相关按钮会禁用，本地功能不受影响。
             </div>
           )}
           {article.sections.map(section => (

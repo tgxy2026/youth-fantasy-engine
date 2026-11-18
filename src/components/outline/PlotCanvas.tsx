@@ -474,7 +474,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
               <LayoutGrid size={11} /> 按模板铺节点
             </Button>
 
-            {!writingReady && <div className="text-10 text-ink-500 text-center">未配置 AI 模型、也没有可用的 ACP 连接，生成按钮已禁用</div>}
+            {!writingReady && <div className="text-10 text-ink-500 text-center">未配置模型、也没有可用的 ACP 连接，生成按钮已禁用</div>}
           </div>
         </div>
 

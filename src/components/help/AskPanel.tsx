@@ -242,7 +242,7 @@ export default function AskPanel({ currentTabId, onOpenArticle }: Props) {
     }
     /** 三种「没有 AI 回答」的情况：措辞必须分得清，不能都说成「手册没写」 */
     const notice = result.kind === 'no-model'
-      ? '还没有配置可用的 AI 模型，这一条不是 AI 回答。下面是本地手册检索到的片段，可直接点开看：'
+      ? '还没有配置可用的模型，这一条不是 AI 回答。下面是本地手册检索到的片段，可直接点开看：'
       : result.kind === 'no-recall'
         ? '本地手册里没有找到直接对应的段落。可以换个说法，或者到「查手册」里按功能找：'
         : result.message

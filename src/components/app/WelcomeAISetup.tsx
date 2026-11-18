@@ -154,7 +154,7 @@ export default function WelcomeAISetup({ onDone, onSkip, onBack }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-16 font-semibold text-ink-50">顺手配一个 AI 模型</h2>
+        <h2 className="text-16 font-semibold text-ink-50">顺手配一个模型</h2>
         <p className="mt-1.5 text-12 text-ink-400 leading-relaxed">
           配好后，AI 续写、校对、取名这些按钮才会亮起来。
           <span className="text-ink-300">不配也不影响写正文</span>

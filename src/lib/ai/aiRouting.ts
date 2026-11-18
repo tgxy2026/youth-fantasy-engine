@@ -93,7 +93,7 @@ export async function requireProviderFor(role: TaskRole): Promise<AIProvider> {
   // 配了但全被本形态禁掉（网页版里的本机模型）时，给的是「为什么不能用」，不是「你没配」
   const list = await loadProviders().catch(() => [] as AIProvider[])
   if (list.length > 0 && list.every(isLocalModelBlocked)) throw new Error(WEB_LOCAL_MODEL_NOTICE)
-  throw new Error('尚未配置可用的 AI 模型，请先到「模型设置 → 模型配置」添加并设为当前。')
+  throw new Error('尚未配置可用的模型，请先到「模型设置 → 模型配置」添加并设为当前。')
 }
 
 /** 某模型被哪些用途引用（列表行徽标、删除前提示用）；未被任何用途引用则返回空数组 */

@@ -419,7 +419,7 @@ export function ProofreadCheck({ content, chapterId, onApply, onClose, onLocate,
             )
           })}
           {!writingReady && (
-            <span className="text-11 text-ink-500">未接入 AI 模型、也没有可用的 ACP 连接 —— 两块校对都不可用。</span>
+            <span className="text-11 text-ink-500">未接入模型、也没有可用的 ACP 连接 —— 两块校对都不可用。</span>
           )}
         </div>
 

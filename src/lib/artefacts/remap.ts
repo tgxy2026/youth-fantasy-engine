@@ -95,7 +95,7 @@ export function parseArtefacts(raw: unknown): ArtefactParseResult {
   if (ver > ARTEFACT_FORMAT_VERSION) {
     return { ok: false, reason: `成果记录来自更新版本（formatVersion ${ver}）`, newer: true }
   }
-  if (!Array.isArray(o.items)) return { ok: false, reason: '成果记录缺少条目数组', newer: false }
+  if (!Array.isArray(o.items)) return { ok: false, reason: '成果数据格式不完整（缺少条目列表）', newer: false }
   const items: ArtefactRecord[] = []
   for (const it of o.items) {
     // 单条损坏不毁整份：跳过坏条目并在下面用数量提示（调用方决定是否告知作者）

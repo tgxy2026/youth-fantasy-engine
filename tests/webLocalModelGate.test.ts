@@ -96,8 +96,10 @@ function openai(baseUrl: string, local?: boolean): ProbeProvider { return { type
 {
   const scope = read('src/lib/ai/aiScope.ts')
   ok('🔴 未配置提示按形态分文案', /AI_DISABLED_HINT = WEB/.test(scope))
+  // 🔴 3.6.1 文案统一：口径词从「AI 模型」改为「模型」（见 docs/文案与用词规范）；
+  //    这条闸的**意图不变** —— 桌面/便携整句保留，不因网页版改动被改口径。
   ok('🔴 桌面/便携文案逐字保留（不因网页版改动被改口径）',
-    scope.includes('需先接入 AI 模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。'))
+    scope.includes('需先接入模型：到「模型设置 → 模型配置」添加本地 Ollama 或联网模型即可启用。'))
   ok('网页版提示改为「添加联网模型」并说明不支持本机',
     /网页版请到「模型设置 → 模型配置」添加联网模型（网页版不支持连接本机模型）/.test(scope))
 }
