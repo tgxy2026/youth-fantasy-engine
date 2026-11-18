@@ -11,6 +11,7 @@ import StoryDateInput from '@/components/common/StoryDateInput'
 import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
 import { createIndexedFieldWriter } from '@/lib/settings/indexedFieldWriter'
+import { collectTableFields, collectTableKeys } from '@/lib/settings/settingSearchFields'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { registerAuxiliaryLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
@@ -238,8 +239,12 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
         if (tab.id === 'relations') continue // 人物关系走下方"按人物汇总"逻辑
         const rows: TableRow[] = tableRows.filter(r => r.tabId === tab.id)
         const colNames = tab.columns?.map(c => c.name) ?? []
-        // 列名 → 作者自定义显示名（与表头「字段名」按钮同一份存储）
-        const clean = sanitizeAliases(colNames, aliasOf.get(tab.id) ?? {})
+        // 🔴 3.6.1：字段清单 = schema 列 ∪ 记录里真实存在的键。
+        //    图鉴视图新增的自定义字段、采用模板后的字段都只活在 `row.data` 里，
+        //    只按 schema 枚举会让它们在设定检索里"消失"（作者看到的正是"改了没同步"）。
+        const allKeys = collectTableKeys(rows.map(r => r.data), colNames)
+        // 键名 → 作者自定义显示名（与表头「字段名」按钮同一份存储）
+        const clean = sanitizeAliases(allKeys, aliasOf.get(tab.id) ?? {})
         // 列定义索引：用于让编辑时沿用原表格的控件类型（select 列仍走下拉）
         const colMap = new Map((tab.columns ?? []).map(c => [c.name, c]))
         const isPair = RELATION_PAIR_TAB_IDS.has(tab.id)
@@ -271,24 +276,12 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
             recordId: r.id,
             subtitle,
             title: displayVal || '（未命名）',
-            fields: colNames
-              .filter(n => r.data[n] && r.data[n].trim())
-              .map(n => {
-                const col = colMap.get(n)
-                const label = n
-                const alias = clean[n]
-                return col?.calendar
-                  ? { label, alias, value: r.data[n], dataKey: n, type: 'calendar-select' as const }
-                  : col?.type === 'tableRef'
-                  ? { label, alias, value: r.data[n], dataKey: n, type: 'tableRef' as const, refTab: col.refTab, refCol: col.refCol }
-                  : col?.type === 'select' && col.options
-                  ? { label, alias, value: r.data[n], dataKey: n, type: 'select' as const, options: col.options }
-                  : col?.type === 'characters'
-                  ? { label, alias, value: r.data[n], dataKey: n, type: 'characters' as const }
-                  : col?.type === 'date'
-                  ? { label, alias, value: r.data[n], dataKey: n, type: 'date' as const }
-                  : { label, alias, value: r.data[n], dataKey: n }
-              }),
+            fields: collectTableFields({
+              data: r.data,
+              keys: allKeys,
+              columnOf: n => colMap.get(n),
+              labels: clean,
+            }),
           })
         }
       }
@@ -355,6 +348,28 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
     window.addEventListener('yfe:agent-write', onAgentWrite)
     return () => window.removeEventListener('yfe:agent-write', onAgentWrite)
   }, [projectId])
+
+  /**
+   * 3.6.1：回到本窗口 / 本标签页时重建索引。
+   *
+   * 同一窗口切页签会重挂本组件、自然重读；但网页版可能同时开着两个标签（一边改设定、一边写正文），
+   * 桌面版也可能在别的窗口里改过。聚焦时补齐一次，避免"改了但检索页还是旧的"。
+   * 🔴 正在编辑时不打断（同一口径：编辑态不重建索引）。
+   */
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || editing) return
+      indexRevision.current++
+      indexStale.current = true
+      setReloadKey(value => value + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [editing])
 
   // 切换一级页签时，把二级筛选重置为 'all'
   useEffect(() => { setActiveSub('all') }, [topGroup])

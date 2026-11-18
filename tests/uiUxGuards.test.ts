@@ -373,8 +373,11 @@ console.log('\n—— uiUxGuards 用例开始 ——')
   ok('🔴 正文页把引导启动登记给侧栏', /registerSelfGuide\(EDITOR_ID/.test(editor))
   ok('🔴 设定检索图标方向：展开给左箭头（收起）、隐藏给右箭头（展开）',
     /searchVisible \? <PanelRightOpen size=\{14\} \/> : <PanelRightClose size=\{14\} \/>/.test(editor))
+  // 🔴 3.6.1：速查文案原来把「本页指引」写在工具栏里 —— 与上面两条（入口已移左下角）
+  //    自相矛盾，按当前界面拆成两段：工具栏列真实存在的按钮，另注「本页指引」在左下角侧栏。
   ok('工具栏速查文案已同步新顺序',
-    editor.includes('颉文姬、AI 伴写、本章资料、设定检索、本页指引与专注'))
+    editor.includes('颉文姬、AI 伴写、本章资料、设定检索与专注')
+    && editor.includes('「本页指引」在左下角侧栏'))
   ok('🔴 伴写在上一句没回来时不再重复发（避免撞「操作在途」被熔断）',
     /if \(ghostBusy\) return/.test(read('src/components/editor/useNovelEditorGhost.ts')))
 
