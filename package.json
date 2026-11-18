@@ -23,6 +23,7 @@
     "verify": "npm run typecheck && npm run lint && npm test",
     "verify:reliability": "node scripts/verify/reliability.mjs --profile local",
     "accept:packaged": "node scripts/verify/packaged-acceptance.mjs --base http://127.0.0.1:8765",
+    "accept:ai": "node scripts/verify/ai-model-smoke.mjs --base http://localhost:11434 --model dongfangshuo-v2:latest",
     "cleanup": "node scripts/cleanup-residual.mjs",
     "cleanup:stale": "node scripts/maintenance/collect-stale.mjs",
     "cleanup:stale:apply": "node scripts/maintenance/collect-stale.mjs --apply",
