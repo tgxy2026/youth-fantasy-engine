@@ -145,9 +145,10 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
     )
   }
 
+  // 3.6.1（低效代码专项）：判空用 !some()，不再为"数一下有没有"分配整段数组
   const nothingHit = keyword
-    && orderedVols.every(v => (byVol.get(v.id) ?? []).filter(hit).length === 0)
-    && orphans.filter(hit).length === 0
+    && orderedVols.every(v => !(byVol.get(v.id) ?? []).some(hit))
+    && !orphans.some(hit)
 
   return (
     <div data-chapter-tree className="space-y-1.5">

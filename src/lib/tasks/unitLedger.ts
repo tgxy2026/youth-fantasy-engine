@@ -98,26 +98,19 @@ export function stableStringify(v: unknown): string {
  *
  * 🔴 为什么不用 `crypto.subtle.digest`：它是异步的，而单元计划要在循环里同步判定；
  *    这里只需要「变了能看出来」，不需要抗碰撞强度 —— 前缀 8 位 hex 加长度已经够用。
- *    与 `lib/semantic/chunk.hashOf` 同一算法，但**刻意各自实现**：本模块是零依赖的
- *    任务叶子，反向 import 语义检索层会把重依赖拖进来（也容易凑成 import 环）。
+ *    与 `lib/semantic/chunk.hashOf` 同一算法，但那一边**刻意各自实现**（本模块不反向依赖语义检索层）。
+ *    🔴 3.6.1：与 `audit/repetition` 的那一份曾是**逐字节相同**的副本，现统一到
+ *    `lib/app/textDigest` —— 它本身零依赖，不会把重依赖拖进任务叶子，也不构成 import 环。
  */
-export function stableHash(text: string): string {
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i)
-    h = Math.imul(h, 0x01000193) >>> 0
-  }
-  return `${h.toString(16).padStart(8, '0')}-${text.length.toString(16)}`
-}
+export { stableHash } from '@/lib/app/textDigest'
+import { stableHash, utf8Bytes as utf8BytesOf } from '@/lib/app/textDigest'
 
-/** UTF-8 实字节（配额口径：中文一个字 3 字节，不能按 JS 字符数算） */
-export function utf8Bytes(text: string): number {
-  return new TextEncoder().encode(text).length
-}
+/** UTF-8 实字节（配额口径：中文一个字 3 字节，不能按 JS 字符数算）；实现同样共用 textDigest */
+export { utf8Bytes } from '@/lib/app/textDigest'
 
 /** 一条记录在台账里占用的字节（按真实序列化算，含索引字段本身） */
 export function recordBytes(value: unknown): number {
-  return utf8Bytes(JSON.stringify(value ?? null))
+  return utf8BytesOf(JSON.stringify(value ?? null))
 }
 
 /** 原文指纹。长度一起进哈希，避免"短文本撞到长文本前缀"这类低级巧合。 */

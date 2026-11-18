@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { writerBudgetFor } from '@/lib/ai/aiWriterBudget'
 import { ToolModal } from '@/components/editor/EditorModals'
 import AuditPanel from '@/components/audit/AuditPanel'
@@ -76,7 +76,20 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
     { status: '已回收', label: '已回收', cls: 'border-t-emerald-500' },
     { status: '孤儿', label: '孤儿', cls: 'border-t-red-500' },
   ]
-  const countBy = (s: ForeshadowStatus) => board.filter(b => b.status === s).length
+  /**
+   * 3.6.1（低效代码专项）：原来每列都 `board.filter(...)` 两次（列数 × 全表 × 2 次分配）。
+   * 现在按状态分一次组，渲染只查表 —— 结果完全一致，少了 2×列数 次数组分配。
+   */
+  const byStatus = useMemo(() => {
+    const map = new Map<ForeshadowStatus, ForeshadowBoardItem[]>()
+    for (const item of board) {
+      const list = map.get(item.status)
+      if (list) list.push(item)
+      else map.set(item.status, [item])
+    }
+    return map
+  }, [board])
+  const countBy = (s: ForeshadowStatus) => byStatus.get(s)?.length ?? 0
 
   return (
     <ToolModal title="伏笔闭环看板" icon={<GitBranch size={16} />} onClose={onClose} wide
@@ -106,7 +119,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
               <div key={col.status} className={`flex flex-col bg-ink-800/60 border border-ink-700 rounded-lg border-t-2 ${col.cls} p-2 min-h-[120px]`}>
                 <div className="text-11 font-semibold text-ink-200 mb-1.5">{col.label}</div>
                 <div className="space-y-1.5">
-                  {board.filter(b => b.status === col.status).map(b => (
+                  {(byStatus.get(col.status) ?? []).map(b => (
                     <div key={b.code} className="rounded bg-ink-850 border border-ink-700 px-2 py-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-11 font-semibold text-amber">{b.code}</span>
@@ -118,7 +131,7 @@ export function ForeshadowBoard({ onNavigateTab, onClose }: { onNavigateTab: (ta
                       )}
                     </div>
                   ))}
-                  {board.filter(b => b.status === col.status).length === 0 && (
+                  {(byStatus.get(col.status) ?? []).length === 0 && (
                     <div className="text-10 text-ink-600 text-center py-2">—</div>
                   )}
                 </div>

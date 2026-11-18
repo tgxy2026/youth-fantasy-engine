@@ -82,15 +82,13 @@ const MIN_PARAGRAPH_CHARS = 16
 const MAX_OCCURRENCES_PER_GROUP = 50
 const MAX_BUCKET = 300
 
-/** FNV-1a + 长度（同步；只用于"变了没有"，不做安全用途） */
-export function stableHash(text: string): string {
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i)
-    h = Math.imul(h, 0x01000193) >>> 0
-  }
-  return `${h.toString(16).padStart(8, '0')}-${text.length.toString(16)}`
-}
+/**
+ * FNV-1a + 长度（同步；只用于"变了没有"，不做安全用途）。
+ * 🔴 3.6.1：实现搬到 `lib/app/textDigest`（与 tasks/unitLedger 共用同一份），
+ *    此处 re-export 保住公开 API 与既有调用点 —— 两份逐字节相同的实现只会"修一处漏一处"。
+ */
+export { stableHash } from '@/lib/app/textDigest'
+import { stableHash } from '@/lib/app/textDigest'
 
 /** 比较用标准化：去空白与标点、全角转半角、英文小写（用于判"完全重复"） */
 export function normalizeForCompare(s: string): string {
