@@ -13,9 +13,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
+import { currentUiZoom } from '@/lib/settings/theme'
 import {
   DEFAULT_PANEL_PREFS, PANEL_FLOAT_MIN_VIEWPORT, clampFloatingRect, dockedRect, effectiveMode,
-  initialFloatingRect, normalizePanelPrefs, serializePanelPrefs, snapSide, snappedLeft,
+  initialFloatingRect, localViewport, normalizePanelPrefs, serializePanelPrefs, snapSide, snappedLeft, toLocalPx,
   type PanelPrefs, type PanelRect, type PanelViewport,
 } from '@/lib/app/panelDock'
 
@@ -90,14 +91,21 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
   // 偏好持久化：写失败只影响"下次记住"，不影响本次会话
   useEffect(() => { writeStringPref(PREF_KEY, serializePanelPrefs(prefs)) }, [prefs])
 
-  const mode = effectiveMode(prefs, viewport)
-  const canFloat = viewport.width >= PANEL_FLOAT_MIN_VIEWPORT
+  /**
+   * 🔴 界面缩放：`<html>` 上的 `zoom` 会把内联 px **再乘一次**，
+   *    所以全部几何都得在「style 像素」空间里算（= 屏幕像素 / zoom）。
+   *    漏了这一步的表现：右侧吸附只剩半边、上下长度被放大（2026-11-18 实测）。
+   */
+  const zoom = currentUiZoom()
+  const local = useMemo(() => localViewport(viewport, zoom), [viewport, zoom])
+  const mode = effectiveMode(prefs, local)
+  const canFloat = local.width >= PANEL_FLOAT_MIN_VIEWPORT
 
   const floatingRect = useMemo<PanelRect | null>(() => {
     if (mode !== 'floating') return null
-    const base = prefs.rect ?? initialFloatingRect(dockedRect(prefs, viewport), prefs, viewport)
-    return clampFloatingRect(base, viewport)
-  }, [mode, prefs, viewport])
+    const base = prefs.rect ?? initialFloatingRect(dockedRect(prefs, local), prefs, local)
+    return clampFloatingRect(base, local)
+  }, [mode, prefs, local])
 
   const dockedClass = prefs.side === 'left'
     ? 'absolute left-3 top-14 bottom-10 w-[360px]'
@@ -118,33 +126,37 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
     if (el) {
       const box = el.getBoundingClientRect()
       if (box.width > 0 && box.height > 0) {
-        return { left: box.left, top: box.top, width: box.width, height: box.height }
+        // 量到的是**缩放后**的屏幕像素，折回 style 像素才能直接参与计算与写回
+        return {
+          left: toLocalPx(box.left, zoom), top: toLocalPx(box.top, zoom),
+          width: toLocalPx(box.width, zoom), height: toLocalPx(box.height, zoom),
+        }
       }
     }
-    return floatingRect ?? dockedRect(prefs, viewport)
-  }, [floatingRect, prefs, viewport])
+    return floatingRect ?? dockedRect(prefs, local)
+  }, [floatingRect, prefs, local, zoom])
 
   const toggleMode = useCallback(() => {
     setPrefs(previous => {
-      const nextMode = effectiveMode(previous, viewport) === 'floating' ? 'docked' : 'floating'
+      const nextMode = effectiveMode(previous, local) === 'floating' ? 'docked' : 'floating'
       if (nextMode === 'docked') return { ...previous, mode: 'docked' }
-      const rect = clampFloatingRect(initialFloatingRect(currentRect(), previous, viewport), viewport)
+      const rect = clampFloatingRect(initialFloatingRect(currentRect(), previous, local), local)
       return { ...previous, mode: 'floating', width: rect.width, rect }
     })
-  }, [currentRect, viewport])
+  }, [currentRect, local])
 
   const switchSide = useCallback(() => {
     setPrefs(previous => {
       const side = previous.side === 'left' ? 'right' : 'left'
       const rect = previous.rect
       // 浮动时换边＝立刻吸附到另一侧（纵向位置保留）
-      if (effectiveMode(previous, viewport) === 'floating' && rect) {
-        const moved = clampFloatingRect({ ...rect, left: snappedLeft(side, rect.width, viewport) }, viewport)
+      if (effectiveMode(previous, local) === 'floating' && rect) {
+        const moved = clampFloatingRect({ ...rect, left: snappedLeft(side, rect.width, local) }, local)
         return { ...previous, side, rect: moved }
       }
       return { ...previous, side }
     })
-  }, [viewport])
+  }, [local])
 
   const reset = useCallback(() => { setPrefs({ ...DEFAULT_PANEL_PREFS }) }, [])
 
@@ -164,9 +176,10 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
     if (!drag || drag.pointerId !== e.pointerId) return
     const next = clampFloatingRect({
       ...drag.origin,
-      left: drag.origin.left + (e.clientX - drag.startX),
-      top: drag.origin.top + (e.clientY - drag.startY),
-    }, viewport)
+      // 指针位移是屏幕像素，除以 zoom 才是 style 像素（否则 132% 下手感发飘、越拖越偏）
+      left: drag.origin.left + toLocalPx(e.clientX - drag.startX, zoom),
+      top: drag.origin.top + toLocalPx(e.clientY - drag.startY, zoom),
+    }, local)
     setPrefs(previous => ({ ...previous, rect: next }))
   }
 
@@ -180,9 +193,9 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
     setPrefs(previous => {
       const rect = previous.rect
       if (!rect) return previous
-      const clamped = clampFloatingRect(rect, viewport)
-      const side = snapSide(clamped, viewport)
-      return { ...previous, side, rect: clampFloatingRect({ ...clamped, left: snappedLeft(side, clamped.width, viewport) }, viewport) }
+      const clamped = clampFloatingRect(rect, local)
+      const side = snapSide(clamped, local)
+      return { ...previous, side, rect: clampFloatingRect({ ...clamped, left: snappedLeft(side, clamped.width, local) }, local) }
     })
   }
 
@@ -200,8 +213,8 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
     if (!resize || resize.pointerId !== e.pointerId) return
     const next = clampFloatingRect({
       ...resize.origin,
-      width: resize.origin.width + (e.clientX - resize.startX),
-    }, viewport)
+      width: resize.origin.width + toLocalPx(e.clientX - resize.startX, zoom),
+    }, local)
     setPrefs(previous => ({ ...previous, width: next.width, rect: next }))
   }
 

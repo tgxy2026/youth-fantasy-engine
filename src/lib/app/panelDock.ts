@@ -36,6 +36,24 @@ export interface PanelPrefs {
   rect: PanelRect | null
 }
 
+/**
+ * 把**屏幕像素**折算成**可写进 style 的像素**（3.6.1 修：右侧吸附只露半边）。
+ *
+ * 🔴 为什么需要：`<html>` 上有 `zoom: var(--ui-zoom)`，内联 `left/top/width/height`
+ *    会被浏览器**再乘一次 zoom**。直接写 `window.innerWidth - width` 这类屏幕坐标，
+ *    在 zoom≠1 时整体右移、尺寸放大 —— 表现就是"吸附右侧只剩半边、上下长度也不对"。
+ *    项目里已有同一口径的 `foldPx`（`lib/settings/theme`），这里独立一份是为了让本模块
+ *    保持纯函数、可在 node 里测（`foldPx` 依赖 document）。
+ */
+export function toLocalPx(screenPx: number, zoom: number): number {
+  return Number.isFinite(zoom) && zoom > 0 ? screenPx / zoom : screenPx
+}
+
+/** 视口在「style 像素」空间里的尺寸（与 toLocalPx 同一口径） */
+export function localViewport(viewport: PanelViewport, zoom: number): PanelViewport {
+  return { width: toLocalPx(viewport.width, zoom), height: toLocalPx(viewport.height, zoom) }
+}
+
 /** 距屏幕边（与改动前 right-3 一致） */
 export const PANEL_EDGE = 12
 /** 顶部起点（与改动前 top-14 一致：工具栏下方） */

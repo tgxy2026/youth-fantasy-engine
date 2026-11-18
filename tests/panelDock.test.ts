@@ -11,8 +11,8 @@ import path from 'node:path'
 import {
   DEFAULT_PANEL_PREFS, PANEL_BOTTOM, PANEL_DEFAULT_WIDTH, PANEL_EDGE, PANEL_FLOAT_MIN_VIEWPORT,
   PANEL_MAX_WIDTH, PANEL_MIN_HEIGHT, PANEL_MIN_WIDTH, PANEL_TOP,
-  clampFloatingRect, dockedRect, effectiveMode, initialFloatingRect, normalizePanelPrefs,
-  serializePanelPrefs, snapSide, snappedLeft, type PanelPrefs,
+  clampFloatingRect, dockedRect, effectiveMode, initialFloatingRect, localViewport, normalizePanelPrefs,
+  serializePanelPrefs, snapSide, snappedLeft, toLocalPx, type PanelPrefs,
 } from '../src/lib/app/panelDock'
 
 let pass = 0, fail = 0
@@ -103,7 +103,30 @@ function main() {
     ok('停靠态不写 rect', !serializePanelPrefs(DEFAULT_PANEL_PREFS).includes('rect'))
   }
 
-  // ⑦ 源码闸：默认样式逐字保留、层级不越界、拖动只认标题栏
+  // ⑦ 界面缩放（zoom）折算：右侧吸附只露半边的回归
+  //
+  // 根因：<html> 上有 zoom，内联 left/top/width 会被**再乘一次**。按屏幕像素算出来的
+  // 右侧吸附位在 zoom≠1 时整体右移、尺寸放大 —— 表现就是"只剩半边、上下长度不对"。
+  {
+    const raw = { width: 1440, height: 900 }
+    const zoom = 1.32
+    const local = localViewport(raw, zoom)
+    ok('视口折算：1440 / 1.32 ≈ 1090.9（style 像素）', Math.abs(local.width - 1440 / 1.32) < 0.001, String(local.width))
+    ok('zoom=1 时折算前后一致', localViewport(raw, 1).width === 1440)
+    ok('非法 zoom 不放大也不缩小', toLocalPx(360, 0) === 360 && toLocalPx(360, Number.NaN) === 360)
+
+    const rect = clampFloatingRect({ left: snappedLeft('right', 360, local), top: 100, width: 360, height: 500 }, local)
+    const screenRight = (rect.left + rect.width) * zoom
+    ok('🔴 132% 缩放下右侧吸附：面板右缘落在视口内（旧的屏幕坐标算法会超出）', screenRight <= raw.width, String(screenRight))
+    ok('132% 下右缘与 12px 边距对齐', Math.abs(screenRight - (raw.width - PANEL_EDGE * zoom)) < 1, String(screenRight))
+    const wrong = (raw.width - 360 - PANEL_EDGE) * zoom + 360 * zoom
+    ok('负面对照：直接用屏幕像素算会溢出视口（这就是被修的 bug）', wrong > raw.width, String(wrong))
+
+    const tallRect = clampFloatingRect({ left: 100, top: 100, width: 360, height: local.height }, local)
+    ok('132% 下高度不超出视口', tallRect.height * zoom <= raw.height, String(tallRect.height * zoom))
+  }
+
+  // ⑧ 源码闸：默认样式逐字保留、层级不越界、拖动只认标题栏
   {
     const hook = readFileSync(path.join(process.cwd(), 'src/components/jiewenji/useJieWenJiPanelLayout.ts'), 'utf8')
     const panel = readFileSync(path.join(process.cwd(), 'src/components/jiewenji/JieWenJi.tsx'), 'utf8')
@@ -121,6 +144,9 @@ function main() {
     ok('源码闸：开关是可访问的两态按钮', /aria-pressed=\{floating\}/.test(panel))
     ok('源码闸：双击标题栏可复位', hook.includes('onDoubleClick'))
     ok('源码闸：窄窗口用共享常量判定', hook.includes('PANEL_FLOAT_MIN_VIEWPORT'))
+    ok('🔴 源码闸：几何按界面缩放折算（否则右侧吸附会只剩半边）',
+      hook.includes('currentUiZoom()') && hook.includes('localViewport(') && hook.includes('toLocalPx('))
+    ok('源码闸：拖动/拉宽位移除以 zoom', (hook.match(/toLocalPx\(e\.client[XY] - /g) ?? []).length >= 3)
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} panelDock ${pass}/${pass + fail}`)
