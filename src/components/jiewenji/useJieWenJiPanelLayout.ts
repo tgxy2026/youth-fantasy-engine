@@ -16,7 +16,7 @@ import { readStringPref, writeStringPref } from '@/lib/settings/uiPrefs'
 import { currentUiZoom } from '@/lib/settings/theme'
 import {
   DEFAULT_PANEL_PREFS, PANEL_FLOAT_MIN_VIEWPORT, clampFloatingRect, dockedRect, effectiveMode,
-  initialFloatingRect, localViewport, normalizePanelPrefs, serializePanelPrefs, snapSide, snappedLeft, toLocalPx,
+  initialFloatingRect, localViewport, normalizePanelPrefs, serializePanelPrefs, snapToEdges, snappedLeft, toLocalPx,
   type PanelPrefs, type PanelRect, type PanelViewport,
 } from '@/lib/app/panelDock'
 
@@ -189,13 +189,21 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     dragRef.current = null
     setDragging(false)
-    // 松手吸附：横向贴边，纵向留在原处（吸附是为了换边，不是跳回默认高度）
+    /**
+     * 松手吸附：**四条边**各自判断（左/右/上/下），靠角落两边一起贴。
+     * 🔴 只有离边 24px 以内才贴（`PANEL_SNAP`）—— 否则永远被吸到左右两侧，
+     *    中间位置放不住，"自由拖动"就成了摆设（2026-11-18 反馈）。
+     */
     setPrefs(previous => {
       const rect = previous.rect
       if (!rect) return previous
-      const clamped = clampFloatingRect(rect, local)
-      const side = snapSide(clamped, local)
-      return { ...previous, side, rect: clampFloatingRect({ ...clamped, left: snappedLeft(side, clamped.width, local) }, local) }
+      const snapped = snapToEdges(clampFloatingRect(rect, local), local)
+      return {
+        ...previous,
+        // 没贴横向边就保留上次的 side（只影响"复位到哪侧"与停靠态）
+        side: snapped.side ?? previous.side,
+        rect: clampFloatingRect(snapped.rect, local),
+      }
     })
   }
 

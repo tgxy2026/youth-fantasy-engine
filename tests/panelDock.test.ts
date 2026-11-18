@@ -11,8 +11,8 @@ import path from 'node:path'
 import {
   DEFAULT_PANEL_PREFS, PANEL_BOTTOM, PANEL_DEFAULT_WIDTH, PANEL_EDGE, PANEL_FLOAT_MIN_VIEWPORT,
   PANEL_MAX_WIDTH, PANEL_MIN_HEIGHT, PANEL_MIN_WIDTH, PANEL_TOP,
-  clampFloatingRect, dockedRect, effectiveMode, initialFloatingRect, localViewport, normalizePanelPrefs,
-  serializePanelPrefs, snapSide, snappedLeft, toLocalPx, type PanelPrefs,
+  PANEL_SNAP, clampFloatingRect, dockedRect, effectiveMode, initialFloatingRect, localViewport,
+  normalizePanelPrefs, serializePanelPrefs, snapSide, snapToEdges, snappedLeft, toLocalPx, type PanelPrefs,
 } from '../src/lib/app/panelDock'
 
 let pass = 0, fail = 0
@@ -103,6 +103,34 @@ function main() {
     ok('停靠态不写 rect', !serializePanelPrefs(DEFAULT_PANEL_PREFS).includes('rect'))
   }
 
+  // ⑥·2 四边吸附（2026-11-18 反馈：只能吸左右两侧，吸附鸡肋）
+  {
+    // 真正落在中间：距上下左右都超过阈值（视口 900 高、面板 500 高 ⇒ top 取 200）
+    const base = { left: 500, top: 200, width: 360, height: 500 }
+    const atLeft = snapToEdges({ ...base, left: PANEL_EDGE + 10 }, VP)
+    ok('靠近左边 → 贴左', atLeft.rect.left === PANEL_EDGE && atLeft.side === 'left', JSON.stringify(atLeft))
+    const atRight = snapToEdges({ ...base, left: VP.width - 360 - PANEL_EDGE - 10 }, VP)
+    ok('靠近右边 → 贴右', atRight.side === 'right' && atRight.rect.left === VP.width - 360 - PANEL_EDGE, JSON.stringify(atRight))
+    const atTop = snapToEdges({ ...base, top: PANEL_EDGE + 10 }, VP)
+    ok('靠近上边 → 贴上', atTop.rect.top === PANEL_EDGE && atTop.vertical === 'top', JSON.stringify(atTop))
+    const bottomTop = VP.height - 500 - PANEL_EDGE
+    const atBottom = snapToEdges({ ...base, top: bottomTop - 10 }, VP)
+    ok('靠近下边 → 贴下', atBottom.rect.top === bottomTop && atBottom.vertical === 'bottom', JSON.stringify(atBottom))
+    const corner = snapToEdges({ ...base, left: PANEL_EDGE + 8, top: PANEL_EDGE + 8 }, VP)
+    ok('靠角落 → 两边一起贴', corner.side === 'left' && corner.vertical === 'top' && corner.rect.left === PANEL_EDGE && corner.rect.top === PANEL_EDGE, JSON.stringify(corner))
+    const middle = snapToEdges(base, VP)
+    ok('🔴 离边远 → 原地不动（中间位置放得住）',
+      middle.rect.left === base.left && middle.rect.top === base.top && middle.side === null && middle.vertical === null, JSON.stringify(middle))
+    const edgeCase = snapToEdges({ ...base, left: PANEL_EDGE + PANEL_SNAP }, VP)
+    ok('正好等于阈值 → 仍吸附', edgeCase.side === 'left')
+    const outside = snapToEdges({ ...base, left: PANEL_EDGE + PANEL_SNAP + 1 }, VP)
+    ok('超出阈值 1px → 不吸附', outside.side === null)
+    const keepSize = snapToEdges({ ...base, left: 10, top: 10 }, VP)
+    ok('吸附只改坐标，不改宽高', keepSize.rect.width === base.width && keepSize.rect.height === base.height)
+    const nearBoth = snapToEdges({ left: PANEL_EDGE + 5, top: VP.height - 500 - PANEL_EDGE - 5, width: 1360, height: 500 }, VP)
+    ok('两侧都够近时取更近的一侧（不来回跳）', nearBoth.side === 'left', JSON.stringify(nearBoth))
+  }
+
   // ⑦ 界面缩放（zoom）折算：右侧吸附只露半边的回归
   //
   // 根因：<html> 上有 zoom，内联 left/top/width 会被**再乘一次**。按屏幕像素算出来的
@@ -147,6 +175,8 @@ function main() {
     ok('🔴 源码闸：几何按界面缩放折算（否则右侧吸附会只剩半边）',
       hook.includes('currentUiZoom()') && hook.includes('localViewport(') && hook.includes('toLocalPx('))
     ok('源码闸：拖动/拉宽位移除以 zoom', (hook.match(/toLocalPx\(e\.client[XY] - /g) ?? []).length >= 3)
+    ok('🔴 源码闸：松手按四条边吸附（不是只吸左右）',
+      hook.includes('snapToEdges(') && !/const side = snapSide\(/.test(hook))
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} panelDock ${pass}/${pass + fail}`)

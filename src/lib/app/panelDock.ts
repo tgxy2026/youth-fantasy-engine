@@ -106,6 +106,55 @@ export function clampFloatingRect(rect: PanelRect, viewport: PanelViewport): Pan
   return { left, top, width, height }
 }
 
+/**
+ * 吸附触发距离（style 像素）：拖到离某条边这么近才贴上去。
+ * 🔴 有阈值才叫「自由拖动」：无阈值时永远被吸到左右两侧，中间位置根本放不住
+ *    （2026-11-18 反馈：只能吸附左右两条边，吸附显得鸡肋）。
+ */
+export const PANEL_SNAP = 24
+
+export interface EdgeSnapResult {
+  rect: PanelRect
+  /** 这次贴到了哪一侧（横向）；没贴边则为 null，用于记住"上次靠哪边" */
+  side: PanelSide | null
+  /** 贴到了哪条竖向边（便于界面/测试判断，不影响存储） */
+  vertical: 'top' | 'bottom' | null
+}
+
+/**
+ * 松手时按**四条边**吸附：左/右/上/下各自独立判断，靠角落时两边一起贴。
+ *   · 距离 ≤ threshold 才算"靠近"，否则原样保留（中间位置放得住）；
+ *   · 横向两侧都够近（面板几乎占满宽度）时取更近的一侧；
+ *   · 吸附只改坐标，不改宽高。
+ */
+export function snapToEdges(rect: PanelRect, viewport: PanelViewport, threshold = PANEL_SNAP): EdgeSnapResult {
+  const rightEdgeLeft = Math.max(PANEL_EDGE, viewport.width - rect.width - PANEL_EDGE)
+  const bottomEdgeTop = Math.max(PANEL_EDGE, viewport.height - rect.height - PANEL_EDGE)
+  const toLeft = rect.left - PANEL_EDGE
+  const toRight = rightEdgeLeft - rect.left
+  const toTop = rect.top - PANEL_EDGE
+  const toBottom = bottomEdgeTop - rect.top
+
+  let left = rect.left
+  let side: PanelSide | null = null
+  if (Math.abs(toLeft) <= threshold || Math.abs(toRight) <= threshold) {
+    // 贴近哪边就贴哪边；几乎占满宽度时取更近的一侧（避免来回跳）
+    const toLeftSide = Math.abs(toLeft) <= Math.abs(toRight)
+    left = toLeftSide ? PANEL_EDGE : rightEdgeLeft
+    side = toLeftSide ? 'left' : 'right'
+  }
+
+  let top = rect.top
+  let vertical: 'top' | 'bottom' | null = null
+  if (Math.abs(toTop) <= threshold || Math.abs(toBottom) <= threshold) {
+    const toTopSide = Math.abs(toTop) <= Math.abs(toBottom)
+    top = toTopSide ? PANEL_EDGE : bottomEdgeTop
+    vertical = toTopSide ? 'top' : 'bottom'
+  }
+
+  return { rect: { ...rect, left, top }, side, vertical }
+}
+
 /** 松手后吸附到哪一侧：看面板中心在视口中线的左还是右（平局算右侧，与默认值一致） */
 export function snapSide(rect: Pick<PanelRect, 'left' | 'width'>, viewport: PanelViewport): PanelSide {
   const center = rect.left + rect.width / 2
