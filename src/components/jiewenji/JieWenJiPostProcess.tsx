@@ -11,6 +11,7 @@
  */
 import { Loader2, RefreshCw, Save, AlertTriangle } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
+import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { Button } from '@/components/common/Button'
 import { POST_KINDS, POST_STATUS_META } from '@/components/jiewenji/jieWenJiParts'
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
@@ -24,6 +25,8 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
           <div className="text-11 text-ink-300 leading-relaxed">
             写完本章后一键整理「事实 / 伏笔 / 关系 / 人物状态」四类变化。
             <span className="text-ink-500">AI 只负责抽取，「是否已登记、是否真变了」由程序精确比对；没登记过的一律只提示、不凭空建，采纳前都要你勾选。</span>
+            {/* 3.6.0 补登记：这一页会把本章正文发给模型，必须让作者看得见（与其它 AI 入口同口径） */}
+            <AIDataSourceNote feature="jiewenji-post" className="mt-1.5" />
           </div>
           <Button onClick={runPost}
             disabled={!writingReady || post.loading || !content.trim()}

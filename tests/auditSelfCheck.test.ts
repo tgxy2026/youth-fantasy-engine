@@ -111,6 +111,9 @@ ok('CLI 覆盖结构约束预算', /\[passed\] 结构约束不超预算/.test(cl
 ok('CLI 覆盖未接线台账有效性', /\[passed\] 未接线台账有效/.test(cli.out), cli.out.slice(-500))
 ok('CLI 覆盖未接线模块登记', /\[passed\] 未接线模块已登记/.test(cli.out), cli.out.slice(-500))
 ok('CLI 覆盖未接线台账失效检测', /\[passed\] 未接线台账未失效/.test(cli.out), cli.out.slice(-500))
+// 2026-11-18 零覆盖台账（能补测的已补，其余记风险 + 触发条件）
+ok('CLI 覆盖零覆盖台账有效性', /\[passed\] 零覆盖台账有效/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖零覆盖台账失效检测', /\[passed\] 零覆盖台账未失效/.test(cli.out), cli.out.slice(-500))
 
 // ---------- 3.6.0：预算与清单一致性（纯函数，坏输入必须被拦） ----------
 {

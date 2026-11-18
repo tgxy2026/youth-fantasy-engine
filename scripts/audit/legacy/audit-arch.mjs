@@ -249,8 +249,42 @@ const INTENTIONAL_FACADES = ['src/lib/db.ts', 'src/lib/ai/aiTasks.ts']
   }
   rep.push([`列表渲染疑似缺 key（${noKey.length}）`, noKey.slice(0, 12), '缺 key 会让 React 整列表重挂载：输入框失焦、动画重播、滚动跳位。'])
 
+  /**
+   * 这条语句是否在「会随渲染反复执行」的作用域里。
+   *
+   * 🔴 2026-11-18 第二次修正：上一版只按缩进过滤，于是**模块级 helper** 也被算成渲染期 ——
+   *    实测误报 `CardMoveDialog` 的 `preview()`（`const s = v.replace(...).trim()`，一行纯格式化）。
+   *    判据改成向上找最近的顶层声明：只有 `PascalCase`（组件）或 `useXxx`（hook）才可能是渲染路径；
+   *    小写函数是普通工具函数，它只在被调用时跑。
+   */
+  const isRenderScope = (ls, upto) => {
+    for (let j = upto; j >= 0; j--) {
+      if (/^\s/.test(ls[j])) continue            // 只看顶格声明
+      const m = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/.exec(ls[j])
+        || /^(?:export\s+)?(?:default\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\(|function)/.exec(ls[j])
+      if (!m) continue
+      return /^[A-Z]/.test(m[1]) || /^use[A-Z]/.test(m[1])
+    }
+    return false
+  }
   // A5-2：render body 里的排序/过滤未 memo
   // 只报「链式 ≥2 段」且「结果真的进 JSX」的 —— 单段 map 到局部小数组不值得 memo。
+  /**
+   * 已判定「规模不构成风险、加 useMemo 只是噪音」的语句（2026-11-18）。
+   *
+   * 这条检查的原意是「行数上万时每次渲染重排全表」。下面这些集合都在几十项以内，
+   * 且所在组件不处于高频输入路径（或已经是纯格式化）—— 加 memo 只会多一层依赖数组。
+   * 键是「文件#变量名」：同一文件里**新增**的链式语句仍然会被报出来。
+   * 🔴 新增一条必须写清规模依据，写不出就别进表。
+   */
+  const A5_ACCEPTED = new Map([
+    ['src/components/settings/SettingSearch.tsx#q', '只是 query.trim().toLowerCase()，字符串操作，不涉及集合遍历'],
+    ['src/components/community/ReadingText.tsx#paragraphs', '本章正文分段（读视图一次性渲染，滚动/字号变化不触发重渲染）；split 是 O(正文字数) 的纯字符串处理，单章量级下为微秒级'],
+    ['src/components/atlas/AtlasFieldManager.tsx#active', '图鉴字段按页签分组，单页签通常 <30 项；组件是弹窗，输入时虽有重渲染但排序成本可忽略'],
+    ['src/components/atlas/AtlasFieldManager.tsx#renamedCount', '同上，别名列表 <30 项'],
+    ['src/components/sheets/FieldAliasDialog.tsx#livePending', '待确认字段名 <30 项，弹窗内逐字输入时的 filter 成本可忽略'],
+  ])
+  const accepted = []
   const heavy = []
   for (const f of tsx) {
     const m = masked.get(f)
@@ -265,6 +299,9 @@ const INTENTIONAL_FACADES = ['src/lib/db.ts', 'src/lib/ai/aiTasks.ts']
        *    更深缩进在 React 里主要来自嵌套函数/回调，那些不是渲染期，报出来只会训练人无视这条。
        */
       if (mt[1].length > 2) continue
+      if (!isRenderScope(ls, i)) continue
+      // 规模已核实、加了 memo 只是噪音的（按「文件#变量名」精确匹配，新增变量仍会被报）
+      if (A5_ACCEPTED.has(`${rel(f)}#${mt[2]}`)) { accepted.push(`${rel(f)}#${mt[2]}`); continue }
       const chain = (ls[i].match(/\.[a-zA-Z]+\(/g) || []).length
       if (chain < 2) continue
       if (!new RegExp(`\\{${mt[2]}[.,}]|\\{${mt[2]}\\s`).test(m)) continue   // 结果没被渲染使用
@@ -274,6 +311,9 @@ const INTENTIONAL_FACADES = ['src/lib/db.ts', 'src/lib/ai/aiTasks.ts']
     }
   }
   rep.push([`渲染期重算：filter/sort/map 未包 useMemo（${heavy.length}）`, heavy.slice(0, 12), '每次渲染重排全表；行数上万时明显卡顿。'])
+  if (accepted.length) {
+    rep.push([`已判定「规模不构成风险」的 ${accepted.length} 处`, accepted.map(a => `${a} — ${A5_ACCEPTED.get(a)}`), '按「文件#变量名」登记；同一文件新增的链式语句仍会被报。'])
+  }
 
   // A5-3：useEffect 内 setState 且该 state 出现在依赖里 → 循环风险
   const loops = []

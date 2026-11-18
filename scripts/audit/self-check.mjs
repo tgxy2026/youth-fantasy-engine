@@ -17,8 +17,9 @@ import { parse, initializer } from './platform/source.mjs'
 import {
   validateRegistry, countSourceFiles, toolFingerprint, staleToolHints,
   validateDebtBudget, validateScannerRegistry, validateStructureBudget,
+  validateCoverageLedger,
 } from './registry-check.mjs'
-import { scanDeadExports, staleDeadReviews, validateDeadReviews } from './dead-exports.mjs'
+import { scanDeadExports, staleDeadReviews, validateDeadReviews, walkCode } from './dead-exports.mjs'
 import { DECLARED_FACADES, scanStructure, validateFacadeRegistry } from './structure-checks.mjs'
 import { ENTRY_FILES, reconcileUnwiredLedger, scanUnwiredModules, validateUnwiredLedger } from './unwired-modules.mjs'
 
@@ -156,6 +157,42 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     }
   }
 
+  /**
+   * 零覆盖台账（2026-11-18）：覆盖率报告里「零测试提及」且属安全/数据/算法类的文件，
+   * 能低成本补测的已补，其余必须留下**风险 + 触发条件**，不能只是"没测"。
+   * 失效检查：某文件后来被测试提到了，就该移出台账（否则台账会变成过时的借口）。
+   */
+  const covLedger = options.coverageLedger ?? readJsonFile('scripts/audit/coverage-ledger.json')
+  const covEntries = covLedger?.entries ?? null
+  if (covEntries) {
+    const mentioned = new Set()
+    const names = new Set(covEntries.map(e => String(e.file).split('/').pop().replace(/\.tsx?$/, '')))
+    /**
+     * 🔴 必须按**词边界**匹配：`WriteLockBanner` 是 `DesktopWriteLockBanner` 的子串，
+     *    用 includes 会把「桌面版横幅已有测试」误当成「这个横幅已有测试」，从而把台账项误判失效。
+     */
+    const nameRes = [...names].map(n => [n, new RegExp(`(?<![A-Za-z0-9_$])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_$])`)])
+    for (const f of walkCode(path.join(root, 'tests'))) {
+      let text = ''
+      try { text = fs.readFileSync(f, 'utf8') } catch { continue }
+      for (const [n, re] of nameRes) if (!mentioned.has(n) && re.test(text)) mentioned.add(n)
+    }
+    const cov = validateCoverageLedger(covEntries, {
+      exists: f => fs.existsSync(path.join(root, f)),
+      riskLevels: covLedger.riskLevels,
+      mentioned,
+    })
+    result.checks.push(...cov.checks)
+    result.issues.push(...cov.issues)
+  } else {
+    result.checks.push({
+      name: '零覆盖台账有效',
+      status: 'failed',
+      detail: 'scripts/audit/coverage-ledger.json 缺失或不可解析',
+    })
+    result.issues.push('零覆盖台账无效：文件缺失或不可解析')
+  }
+
   const structBudget = validateStructureBudget({
     budget,
     counts: { 'arch.reverse-import': structure.stats.reverseImports, 'arch.facade-undeclared': structure.stats.undeclaredFacades },
@@ -186,6 +223,9 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     files: staticResult.files,
     inventory: staticResult.inventory,
     structure: { ...structure.stats, items: structure.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })) },
+    coverage: {
+      entries: (covEntries ?? []).map(e => ({ file: e.file, risk: e.risk, why: e.why, trigger: e.trigger })),
+    },
     unwired: {
       ...unwired.stats,
       entries: (unwiredEntries ?? []).map(e => ({ file: e.file, status: e.status, reason: e.reason })),

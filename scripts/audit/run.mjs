@@ -59,6 +59,11 @@ report.static.structure = selfCheck.structure
  * 现在单列一段：按台账状态分组，gap 单独标出（能力缺口，删了等于扔方案）。
  */
 report.static.unwired = selfCheck.unwired
+/**
+ * 零覆盖台账（2026-11-18）：能补测的已补，其余留下风险与触发条件。
+ * 报告里单列，是为了让「这批文件没测试」这件事每次都看得见，而不是埋在覆盖率日志里。
+ */
+report.static.coverage = selfCheck.coverage
 if (!selfCheck.ok) report.diagnostics.push({ status: 'blocked', reason: `审计工具自检失败：${selfCheck.issues.join('; ')}` })
 const legacyNames = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
 function runLegacy(name) {
@@ -137,7 +142,13 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
   ...(report.static.structure.items.length
     ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
-    '', '## 未接线模块（整模块没有生产 import）', '',
+    '', '## 零覆盖台账（安全 / 数据 / 算法类，无测试但已记风险）', '',
+  `- 登记 \`${report.static.coverage.entries.length}\` 个文件；按风险：${['data', 'sync', 'agent', 'ui', 'display'].map(r => `${r} \`${report.static.coverage.entries.filter(e => e.risk === r).length}\``).join(' · ')}`,
+  `- 台账在 \`scripts/audit/coverage-ledger.json\`：每条写清\`why\`（为什么现在不补）与\`trigger\`（什么情况下必须补）。\`syncMerge\` / \`projectSettingsLock\` / \`schemaLock\` / \`idbMigrateUtil\` 已补测试移出本表`,
+  ...(report.static.coverage.entries.length
+    ? ['', ...report.static.coverage.entries.map(e => `- ${e.file} ［${e.risk}］${e.why}；**触发**：${e.trigger}`)]
+    : ['', '台账为空。']),
+  '', '## 未接线模块（整模块没有生产 import）', '',
   `- 扫描 \`${report.static.unwired.files}\` 个 .ts/.tsx（不含 .d.ts）；已接线 \`${report.static.unwired.wired}\`；**未接线 \`${report.static.unwired.unwired}\`**（其中仅测试引用的 \`${report.static.unwired.testOnly}\` 个）`,
   `- 台账 \`${report.static.unwired.entries.length}\` 条：能力缺口 \`${report.static.unwired.entries.filter(e => e.status === 'gap').length}\` · 已判定保留 \`${report.static.unwired.entries.filter(e => e.status === 'retained').length}\` · 度量夹具 \`${report.static.unwired.entries.filter(e => e.status === 'harness').length}\``,
   ...(report.static.unwired.items.length

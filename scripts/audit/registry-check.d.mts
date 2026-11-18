@@ -70,3 +70,12 @@ export declare function validateStructureBudget(input: {
   budget: Record<string, unknown> | null | undefined
   counts: Record<string, number>
 }): RegistryResult
+
+export declare function validateCoverageLedger(
+  entries: unknown,
+  opts?: {
+    exists?: (file: string) => boolean
+    riskLevels?: string[]
+    mentioned?: Set<string>
+  },
+): RegistryResult

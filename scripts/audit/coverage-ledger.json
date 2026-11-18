@@ -1,0 +1,115 @@
+{
+  "note": "零覆盖台账：覆盖率报告里「零测试提及」且属安全/数据/算法类、但当前无法低成本补测的文件。每条必须写清 risk（风险类型）、why（为什么现在不补）、trigger（什么情况下必须补）。不是「批准不测」，是「记下风险与触发条件」。2026-11-18 首版：原 21 个里 syncMerge / projectSettingsLock / schemaLock / idbMigrateUtil 已补测试移出本表。新增条目必须写满 why 与 trigger，否则自检失败。",
+  "updatedAt": "2026-11-18",
+  "riskLevels": [
+    "data",
+    "sync",
+    "agent",
+    "ui",
+    "display"
+  ],
+  "entries": [
+    {
+      "file": "src/lib/agentHost/worldBackupOps.ts",
+      "risk": "agent",
+      "why": "两个操作（世界包引入 / 备份恢复）都会覆盖现有内容，逻辑本身按 preview→confirm→安全备份→回滚设计；要测就得同时伪造 Agent 桥、preview 产物与失败注入，属集成级成本",
+      "trigger": "改动 preview 目标清单校验 / confirm 门槛 / 安全备份与回滚任一处时，必须补一条单元或 e2e；否则回滚失效只能在真机上靠数据丢失发现"
+    },
+    {
+      "file": "src/lib/sync/syncQueueIdb.ts",
+      "risk": "sync",
+      "why": "本机同步队列的 IDB 后端（-syncq 库），打开失败必须降级成内存；测试需要 IndexedDB 全套桩，当前测试基建里没有可复用的 fake-idb",
+      "trigger": "改队列重试 / 墓碑上报 / 降级策略时补；或引入 fake-indexeddb 后立即补"
+    },
+    {
+      "file": "src/lib/sync/projectPullWrite.ts",
+      "risk": "data",
+      "why": "只做「调用 importProject 落库 + 失败翻译」，本身是薄层；真正的穷举测试在 projectPullBundle（已有）。它需要真实 importProject 与其依赖链",
+      "trigger": "改失败翻译文案或写入目标（新项目 id）时，连同 projectPullBundle 一起补；若有人想改成「覆盖本机」，必须先补测试再动"
+    },
+    {
+      "file": "src/lib/sync/projectBindingStore.ts",
+      "risk": "data",
+      "why": "对 settingsKV 的读写包装（键 sync.binding），行为完全由 meta 层决定；测试等价于测 meta 层，收益低",
+      "trigger": "往里加字段（尤其 token 类）时必须补：该键目前不在敏感键清单里，加凭据会随导出/备份扩散"
+    },
+    {
+      "file": "src/components/editor/useAgentWriteSync.ts",
+      "risk": "agent",
+      "why": "Agent 写入后同步编辑器状态的 hook；依赖编辑器模型与 ACP 会话，属 DOM + 会话级集成",
+      "trigger": "改「Agent 写入时本机有未保存草稿」的处理策略时补；这是最容易丢字的一条路径"
+    },
+    {
+      "file": "src/components/sheets/useAgentWorldSetSync.ts",
+      "risk": "agent",
+      "why": "Agent 写世界设定后刷新表格视图的 hook，同属会话级集成",
+      "trigger": "改刷新时机或覆盖判定时补"
+    },
+    {
+      "file": "src/components/app/SyncConflictCenter.tsx",
+      "risk": "sync",
+      "why": "冲突面板：列出冲突副本、比对、恢复。逻辑在 syncCore/冲突存储里，组件本身是展示与按钮编排，缺 DOM 测试基建",
+      "trigger": "改「恢复哪一版 / 删除冲突副本」的动作时必须补（误删冲突副本等于丢掉作者的云端改动）"
+    },
+    {
+      "file": "src/components/app/MigrationWizard.tsx",
+      "risk": "data",
+      "why": "迁移向导：选源、预览、执行、结果。真正的迁移算法在 lib 层且已有测试，组件层是流程编排",
+      "trigger": "改迁移步骤顺序 / 失败回退文案时补"
+    },
+    {
+      "file": "src/components/app/WriteLockBanner.tsx",
+      "risk": "display",
+      "why": "只读锁定横幅（角色 role=alert），纯展示",
+      "trigger": "改文案或解除条件时顺手看一眼即可；若改成可交互（带按钮）则补"
+    },
+    {
+      "file": "src/components/app/PortableWriteLockBanner.tsx",
+      "risk": "display",
+      "why": "便携版的只读锁定横幅（role=alert），纯展示，没有分支逻辑；真正的锁定判定在便携服务与 writeLock 模块里",
+      "trigger": "改文案、解除条件或加交互按钮时补一条；纯展示改动看一眼即可"
+    },
+    {
+      "file": "src/components/templates/MigrationLockBanner.tsx",
+      "risk": "display",
+      "why": "迁移期间锁定横幅（role=alert），纯展示；真正的锁定与解除由迁移流程控制，逻辑不在本文件",
+      "trigger": "改文案或锁定解除条件时补；若改成带按钮的交互横幅则必须补"
+    },
+    {
+      "file": "src/components/common/DraftSaveFeedback.tsx",
+      "risk": "display",
+      "why": "草稿保存状态的一行反馈（19 行），纯展示",
+      "trigger": "改状态映射（已保存 / 未保存 / 失败）时补：这三态是 E 章后整理验收的观察点"
+    },
+    {
+      "file": "src/components/editor/ChapterImportDialog.tsx",
+      "risk": "data",
+      "why": "批量导入正文：切卷章、预览、勾选、写入。切分算法在 lib 层（有测试），组件层是交互编排",
+      "trigger": "改切分规则调用 / 预览与写入不一致 / 取消后残留时补"
+    },
+    {
+      "file": "src/components/tavern/TavernScriptImportDialog.tsx",
+      "risk": "data",
+      "why": "剧本导入弹窗：解析、分场预览、写入；解析器在 tavern 侧另有测试，本文件是交互层",
+      "trigger": "改解析容错或预览与写入口径时补"
+    },
+    {
+      "file": "src/components/tavern/TavernCardNovelImportDialog.tsx",
+      "risk": "data",
+      "why": "从已有章节导入角色卡的弹窗：选章、抽取、预览、写入四步交互；抽取逻辑在 tavern 侧另有实现与测试，本文件只做编排",
+      "trigger": "改抽取字段映射、预览与写入口径、或\"导入后覆盖已有角色卡\"的策略时补"
+    },
+    {
+      "file": "src/components/tavern/TavernCardBasics.tsx",
+      "risk": "ui",
+      "why": "角色卡基础字段表单（受控输入：姓名/年龄/身份等），只负责输入与校验提示；落库与卡结构在 tavern 存储层",
+      "trigger": "改字段校验规则、默认值或\"输入被吞/保存丢字\"类问题时补；这是角色卡最基础的一屏"
+    },
+    {
+      "file": "src/components/tavern/TavernExportDialog.tsx",
+      "risk": "ui",
+      "why": "导出弹窗：选项与下载触发，实际导出在 exportDoc（有测试）",
+      "trigger": "改导出选项组合或文件名规则时补"
+    }
+  ]
+}

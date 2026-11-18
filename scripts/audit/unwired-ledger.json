@@ -20,22 +20,22 @@
     {
       "file": "src/lib/revision/changeEvents.ts",
       "status": "gap",
-      "reason": "A3「有证据的后续影响提示」：变化事件 / 影响证据 / 相关性复核都已实现且单测覆盖，但产品侧零 import —— 正文改动后不会提示哪几处设定受影响。接线需要界面位置，属产品决定"
+      "reason": "A3「影响证据」：事件记录/合并 + 直接依据 + 相关性复核 + 处置状态（pending/checked/无变化/需改）。产品当前上线的是另一套更粗的实现 outline/futureImpact（只按章号标记、由改写成功与章后整理确认触发），两套解决同一需求；接本模块＝给「未来影响」补证据与处置状态，要动存储与提示 UI，属产品决定"
     },
     {
       "file": "src/lib/revision/generationInvalidation.ts",
       "status": "gap",
-      "reason": "WT2「候选按代次失效」：租约 / 代次 / 迟到回调都已实现，但产品侧零 import。当前的过期保护走的是另一条机制（候选 revision 相等校验），多窗口同批租约没有接线"
+      "reason": "WT2 候选按代次失效（租约/代次/迟到回调）。现存两条活闸已覆盖大部分风险：aiTaskCenter.startTask 拒绝同页签同 kind 重复发起；candidateStore.sameCandidateRevision 拒绝过期写回。缺的只是**跨窗口同批租约**，而桌面单窗口、网页当前也按单标签页使用，暂无触发场景；接入要先定义多窗口语义"
     },
     {
       "file": "src/lib/agentHost/modeAuthority.ts",
       "status": "gap",
-      "reason": "ACP 连接模式切换的持久化授权（崩溃后失败关闭）已实现，但产品没有切换入口，所以无人调用；关掉它不影响现有 ACP 连接，接线需要模式切换 UI"
+      "reason": "ACP 连接模式切换的持久化授权（崩溃后失败关闭）。产品没有「切换连接模式」的入口——模式由设置里的一次性配置决定，所以无人调用。接线需要模式切换 UI 与对应风险说明，属产品决定"
     },
     {
       "file": "src/lib/templates/semanticView.ts",
       "status": "gap",
-      "reason": "语义读取视图（把字段结构投影成身份/动机/状态并标注出处）已实现，但界面与 AI 侧都还没用它 —— AI 的字段提示目前由 consumers.ts 的 atlasFieldHintForAI 承担"
+      "reason": "语义读取视图（把字段结构投影成身份/动机/状态并标注出处）。AI 侧的字段提示已由 templates/consumers.ts 的 atlasFieldHintForAI 承担（唯一实现），本模块面向**界面投影**（在图鉴/设定卡里按语义看数据），未接 UI"
     },
     {
       "file": "src/lib/retrieval/bench.ts",

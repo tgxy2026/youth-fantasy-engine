@@ -25,14 +25,40 @@ export interface MergeContext {
   onConflict?: (info: SyncConflictInfo) => void
 }
 
-export function eqRecord(a: unknown, b: unknown): boolean {
+/**
+ * 两条记录是否「内容相同」。
+ *
+ * 🔴 2026-11-18 修正（补 syncMerge 单测时抓到）：原先用 `JSON.stringify` 比字符串，
+ *    **键序不同就判不同**。记录从两条路径回来（应用内存构造 / 云端 JSON 解析），
+ *    一旦某一侧重新组织过键序，同一份数据就会被判成「变了」→ 假冲突副本 + 反复推送。
+ *    这与文件里记的 formData 主键 bug 是同一类故障（同步乒乓），只是触发条件更隐蔽。
+ *
+ * 改成结构比较：忽略键序、按 JSON 语义跳过 `undefined` 值（`JSON.stringify` 也丢它），
+ * 数组按位置比。记录是 JSON 数据（无环），另设深度上限兜底，异常输入一律判「不同」。
+ */
+export function eqRecord(a: unknown, b: unknown, depth = 0): boolean {
   if (a === b) return true
+  if (typeof a === 'number' && typeof b === 'number' && Number.isNaN(a) && Number.isNaN(b)) return true
   if (!a || !b) return false
-  try {
-    return JSON.stringify(a) === JSON.stringify(b)
-  } catch {
-    return false
+  if (typeof a !== typeof b) return false
+  if (depth > 24) return false // 异常输入（超深或成环）—— 宁可判不同，也不要卡死同步
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((v, i) => eqRecord(v, b[i], depth + 1))
   }
+  if (typeof a === 'object') {
+    const ao = a as Record<string, unknown>
+    const bo = b as Record<string, unknown>
+    const ak = Object.keys(ao).filter(k => ao[k] !== undefined)
+    const bk = Object.keys(bo).filter(k => bo[k] !== undefined)
+    if (ak.length !== bk.length) return false
+    for (const k of ak) {
+      if (!Object.prototype.hasOwnProperty.call(bo, k)) return false
+      if (!eqRecord(ao[k], bo[k], depth + 1)) return false
+    }
+    return true
+  }
+  return false
 }
 /**
  * 两个 store 快照内容是否一致。

@@ -218,3 +218,50 @@ export function validateStructureBudget({ budget, counts }) {
   if (!passed) issues.push(`结构约束不超预算：${over.join('；')}`)
   return { ok: passed, checks, issues }
 }
+
+/**
+ * 零覆盖台账校验（2026-11-18）。
+ *
+ * 覆盖率报告里「零测试提及」的 21 个安全/数据/算法文件，能低成本补测的已补
+ * （syncMerge / projectSettingsLock / schemaLock / idbMigrateUtil），其余进本台账。
+ * 这里拦三件事：
+ *   · 形状：文件存在、风险类型合法、why ≥20 字、trigger ≥10 字、不重复；
+ *   · 失效：某文件后来被测试提到了，就该移出台账（否则台账慢慢变成"过时的借口"）。
+ * 🔴 这不是"批准不测"：trigger 写的是**什么情况下必须补**，改到那一处就得回来补测试。
+ */
+export function validateCoverageLedger(entries, opts = {}) {
+  const checks = [], issues = []
+  const check = (name, ok, detail) => {
+    checks.push({ name, status: ok ? 'passed' : 'failed', detail })
+    if (!ok) issues.push(`${name}：${detail}`)
+  }
+  if (!Array.isArray(entries) || entries.length === 0) {
+    check('零覆盖台账有效', false, '台账为空或不可解析')
+    return { ok: false, checks, issues }
+  }
+  const levels = opts.riskLevels ?? ['data', 'sync', 'agent', 'ui', 'display']
+  const bad = []
+  const seen = new Set()
+  for (const e of entries) {
+    if (!e || typeof e !== 'object') { bad.push('非对象条目'); continue }
+    if (typeof e.file !== 'string' || !e.file.startsWith('src/')) { bad.push(`file 非法：${JSON.stringify(e.file)}`); continue }
+    if (seen.has(e.file)) bad.push(`${e.file} 重复登记`)
+    seen.add(e.file)
+    if (!levels.includes(e.risk)) bad.push(`${e.file} 风险类型「${String(e.risk)}」不在 ${levels.join('/')} 内`)
+    if (typeof e.why !== 'string' || e.why.trim().length < 20) bad.push(`${e.file} 的 why 太短（<20 字）`)
+    if (typeof e.trigger !== 'string' || e.trigger.trim().length < 10) bad.push(`${e.file} 缺 trigger（什么情况下必须补测试）`)
+    if (opts.exists && !opts.exists(e.file)) bad.push(`${e.file} 已不存在（登记未清理）`)
+  }
+  check('零覆盖台账有效', bad.length === 0, bad.length ? bad.join('; ') : `${entries.length} 条（文件/风险/why/trigger 齐全）`)
+
+  if (opts.mentioned) {
+    const stale = entries
+      .filter(e => typeof e?.file === 'string')
+      .map(e => ({ file: e.file, base: e.file.split('/').pop().replace(/\.tsx?$/, '') }))
+      .filter(x => opts.mentioned.has(x.base))
+      .map(x => x.file)
+    check('零覆盖台账未失效', stale.length === 0,
+      stale.length ? `${stale.join(', ')} 已被测试提到，应移出台账` : `${entries.length} 条仍无测试提及`)
+  }
+  return { ok: issues.length === 0, checks, issues }
+}

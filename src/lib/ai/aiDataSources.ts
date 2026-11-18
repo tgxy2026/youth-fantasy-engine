@@ -93,6 +93,7 @@ const NO_OVERVIEW_FEATURES = new Set([
   'proofread',            // 文字层刻意不读设定资料
   'style-check',          // 只读《写作规范》+ 本章正文
   'jiewenji-ledger',      // 设定补登：AI 只读本章正文，是否已登记由程序比对
+  'jiewenji-post',        // 章后整理：只发本章正文，四类比对全在本机做
   'fill-template',        // 走 buildWorldContext（三张表的关键字段），没有概览块
   'feedback-ai', 'term-dedup', 'sensitive-check', 'extract-entities',
   'market-radar', 'style-fingerprint', 'semantic-index', 'kb-recall',
@@ -369,6 +370,23 @@ export const AI_DATA_SOURCES: Record<string, AIFeatureSources> = {
     sources: [
       { group: '本章正文', items: [], note: 'AI 只负责"从正文里抽出专名实体"' },
       { group: '已登记条目（程序比对，不发给 AI）', items: ['全部设定表的名称与别称'], note: '"是否已登记"由程序精确比对，AI 不会凭空编造' },
+    ],
+  },
+
+  /**
+   * 3.6.0 补登记（2026-11-18 审计 P7 抓到）：章后整理原先把本章正文发给模型，
+   * 却没有登记、界面上也没有「本次会读」—— 与其它 AI 入口的透明口径不一致。
+   * 🔴 这里只写**真的发出去**的东西：四类比对（伏笔表 / 关系表 / 角色卡）与「是否已登记」
+   *    都在本机库读，一个字段都不发给模型；两次调用都是「同一份本章正文 + 章节标题」。
+   */
+  'jiewenji-post': {
+    label: '颉文姬 · 章后整理（事实 / 伏笔 / 关系 / 人物状态）',
+    sources: [
+      { group: '本章正文', items: [], note: '只读当前章正文与章名；本章没有正文时整章跳过，不会调用模型' },
+    ],
+    excludes: [
+      '伏笔表 / 关系表 / 角色卡 / 设定表只在本机比对，不发给模型',
+      '同一份正文会调用两次（变化抽取 + 设定实体抽取），都只带本章',
     ],
   },
 
