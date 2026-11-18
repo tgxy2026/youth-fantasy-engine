@@ -40,6 +40,8 @@ export function importNotesForDisplay(preview: ImportPreview | null): string[] {
 /**
  * 主按钮闸：能不能点 + 点不动时说什么。
  * 🔴 三句话分别对应三种真实原因（没预览 / 一章没勾 / 正在导入），不能合成一句「请检查输入」。
+ * 🔴 `committing` 只影响**能不能点**，不新增提示语：3.6.1 之前导入中悬停看到的仍是
+ *    「把勾选的卷章写入正文编辑」，这里逐字保留（加新句子属改用户可见文案）。
  */
 export function chapterImportGate(input: { hasPreview: boolean; pickedCount: number; committing: boolean }): {
   canCommit: boolean
@@ -47,8 +49,7 @@ export function chapterImportGate(input: { hasPreview: boolean; pickedCount: num
 } {
   if (!input.hasPreview) return { canCommit: false, title: '先读取文件或粘贴原文' }
   if (input.pickedCount === 0) return { canCommit: false, title: '至少勾选一章' }
-  if (input.committing) return { canCommit: false, title: '正在导入，请稍候' }
-  return { canCommit: true, title: '把勾选的卷章写入正文编辑' }
+  return { canCommit: !input.committing, title: '把勾选的卷章写入正文编辑' }
 }
 
 /** 落库回执的人话（含「已导入过」与「中途中止」两种特殊结局） */
