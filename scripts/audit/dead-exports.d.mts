@@ -15,6 +15,7 @@ export interface DeadExportStats {
   used: number
   testOnly: number
   dead: number
+  facadeOnly: number
 }
 
 export interface DeadReviewEntry {

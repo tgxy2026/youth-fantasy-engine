@@ -19,7 +19,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { definitionLine, exportedSymbols, referenceText } from './source-text.mjs'
+import { definitionLine, exportedSymbols, referenceText, stripComments } from './source-text.mjs'
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-web', 'release', '.workbuddy'])
 const isDir = e => e.isDirectory()
@@ -61,15 +61,18 @@ export function scanDeadExports(root, opts = {}) {
 
   const buckets = files.map(f => {
     const file = rel(root, f)
+    const raw = stripComments(readFile(f))
     const text = referenceText(readFile(f))
     const tier = file.startsWith('src/') ? 'production'
       : file.startsWith('tests/') ? 'test'
         : 'tooling'
-    return { file, tier, text }
+    // raw 与 text 的差 = 被吞掉的**再导出清单**行。门面靠再导出对外提供 API，
+    // 这些名字删了会让门面直接编译不过（实测：isOllamaProtocol 被 lib/ai 门面再导出）。
+    return { file, tier, text, raw }
   })
 
   const findings = []
-  let exports = 0, used = 0, testOnly = 0, dead = 0
+  let exports = 0, used = 0, testOnly = 0, dead = 0, facadeOnly = 0
 
   for (const unit of buckets) {
     if (unit.tier !== 'production') continue
@@ -77,9 +80,13 @@ export function scanDeadExports(root, opts = {}) {
       exports++
       const re = new RegExp(`\\b${name}\\b`, 'g')
       const hits = { production: 0, test: 0, tooling: 0 }
+      let facadeHits = 0
       for (const other of buckets) {
         if (other.file === unit.file) continue
-        hits[other.tier] += (other.text.match(re) ?? []).length
+        const inBody = (other.text.match(re) ?? []).length
+        hits[other.tier] += inBody
+        // 只出现在再导出清单里的引用：不是「有人用」，但删了会打断门面
+        if (other.tier === 'production') facadeHits += (other.raw.match(re) ?? []).length - inBody
       }
       // 同文件自用不算死：它确实在跑，只是导出面可以收窄（那属于风格问题，不进候选）
       const line = definitionLine(unit.text, name)
@@ -99,6 +106,15 @@ export function scanDeadExports(root, opts = {}) {
       })()
 
       if (hits.production > 0) { used++; continue }
+      /**
+       * 只被门面再导出：**计入统计，不作为候选**。
+       *
+       * 🔴 为什么不报：门面的意义就是把一层能力对外导出（`lib/ai/aiTasks.ts` 一处就 100+ 个），
+       *    逐个复核没有决策价值；而它们也**不能删**（删了门面编译不过，实测：
+       *    `isOllamaProtocol` 被 `lib/ai.ts` 再导出，删掉当场 tsc 报错）。
+       * 但必须让作者看得见——报告里给一条统计：这类符号删除需**同时改门面**。
+       */
+      if (facadeHits > 0) { facadeOnly++; continue }
       if (hits.test > 0) {
         testOnly++
         findings.push({
@@ -119,7 +135,7 @@ export function scanDeadExports(root, opts = {}) {
     }
   }
 
-  return { findings, stats: { files: buckets.length, exports, used, testOnly, dead } }
+  return { findings, stats: { files: buckets.length, exports, used, testOnly, dead, facadeOnly } }
 }
 
 /**

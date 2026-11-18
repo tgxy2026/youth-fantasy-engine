@@ -60,12 +60,6 @@ export function acpBudgetSnapshot(): Promise<AcpBudgetInfo | null> {
   return promise
 }
 
-/** 已知窗口（手填/会话回报）；未知返回 null，调用方自行决定是否用保守兜底。 */
-export async function acpKnownWindow(): Promise<number | null> {
-  const budget = await acpBudgetSnapshot()
-  return budget?.windowTokens ?? null
-}
-
 /** 仅测试用：清掉 TTL 缓存。 */
 export function __resetAcpBudgetCache(): void {
   cached = null

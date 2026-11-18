@@ -132,7 +132,8 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
     ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
   '', '## 死导出欠账（结构化清单）', '',
-  `- 导出总数 \`${report.static.deadExports.exports}\`；零引用 \`${report.static.deadExports.dead}\`（已复核 \`${report.static.deadExports.reviewed}\` / **未复核 \`${report.static.deadExports.open}\`**）；仅测试引用 \`${report.static.deadExports.testOnly}\`（不计入欠账：单测覆盖是常态）`,
+  `- 导出总数 \`${report.static.deadExports.exports}\`；零引用 \`${report.static.deadExports.dead}\`（已复核 \`${report.static.deadExports.reviewed}\` / **未复核 \`${report.static.deadExports.open}\`**）`,
+  `- 仅测试引用 \`${report.static.deadExports.testOnly}\`（不计入欠账：单测覆盖是常态）；仅被**门面再导出** \`${report.static.deadExports.facadeOnly}\`（删除会打断对外 API，须同时改门面）`,
   ...(report.static.deadExports.openItems.length
     ? ['', '未复核清单（逐条给结论后可移入 `scripts/audit/dead-reviews.json`，或直接删除）：', ...report.static.deadExports.openItems.map(i => `- ${i.file}:${i.line} \`${i.symbol}\`（${i.kind}）`)]
     : ['', '未复核清单为空。']),

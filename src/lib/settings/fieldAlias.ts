@@ -15,9 +15,9 @@
  * 存储：项目级 settingsKV，键 `fieldAlias::<tabId>`，值为 `{ [存储键]: 显示名 }`。
  * 不进 `EXCLUDED_META_KEYS` —— 别名要随项目导出 / 云盘同步 / 备份一起走。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getSetting, setSetting, getCurrentProjectId } from '@/lib/db'
-import { aliasKeyOf, labelMapOf, sanitizeAliases, type AliasMap } from './aliasCore'
+import { aliasKeyOf, sanitizeAliases, type AliasMap } from './aliasCore'
 
 // 纯函数核心在 `aliasCore.ts`（模板解析层也要用，那一层不能依赖 React）。
 // 这里原样再导出，既有 import 路径保持不变。
@@ -98,61 +98,4 @@ export function useAliasRevision(): number {
     }
   }, [])
   return rev
-}
-
-/**
- * 组件侧入口。`cols` 传本表的**存储键数组**（顺序即列顺序）。
- * 返回 `labels`（键 → 显示名）与 `save`（保存整张映射）。
- */
-export function useFieldAliases(tabId: string, cols: string[]) {
-  const [map, setMap] = useState<AliasMap>(() => peekAliases(tabId, getCurrentProjectId()) ?? {})
-  const colsRef = useRef(cols)
-  colsRef.current = cols
-  // ⚠️ 分隔符用「转义写法」而不是字面 NUL：等价的运行时值，但**源码里不再有控制字符** ——
-  //    否则 grep / ripgrep 会把整个文件判成 binary，只报文件名不报行号（本项目扫描器会静默失明）。
-  const colsKey = cols.join('\u0000')
-
-  const reload = useCallback(async () => {
-    const m = await loadAliases(tabId)
-    setMap(m)
-  }, [tabId])
-
-  useEffect(() => {
-    let alive = true
-    const hit = peekAliases(tabId, getCurrentProjectId())
-    if (!hit) {
-      void loadAliases(tabId).then(m => {
-        if (alive) setMap(m)
-      })
-    } else {
-      setMap(hit)
-    }
-    // 别的面板改了别名 → 跟着刷新；pid 对不上（换了项目）→ 重读，绝不沿用上一本书的名字
-    const onChange = () => {
-      const cur = peekAliases(tabId, getCurrentProjectId())
-      if (cur) setMap(cur)
-      else void loadAliases(tabId).then(m => { if (alive) setMap(m) })
-    }
-    subs.add(onChange)
-    return () => {
-      alive = false
-      subs.delete(onChange)
-    }
-  }, [tabId])
-
-  const labels = useMemo(
-    () => labelMapOf(colsRef.current, map),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colsKey, map],
-  )
-
-  const save = useCallback(
-    async (next: AliasMap) => {
-      const clean = await saveAliases(tabId, colsRef.current, next)
-      setMap(clean)
-    },
-    [tabId],
-  )
-
-  return { map, labels, reload, save }
 }

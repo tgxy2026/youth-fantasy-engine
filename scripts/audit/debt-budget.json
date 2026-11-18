@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-17",
-  "deadExports": 22,
-  "note": "零引用导出的**未复核**条数上限。历史欠账不因工具升级而阻塞本次审计，但**绝不允许变多**：多一条就让自检失败、审计不可能 complete。清掉一条就把这个数字改小（只降不升）。数字来源：node -e \"import('./scripts/audit/dead-exports.mjs').then(m=>console.log(m.scanDeadExports(process.cwd()).stats.dead))\" 减去 dead-reviews.json 已复核条数。 另：structure 里的规则是**预期长期为 0** 的硬线（反向依赖 / 未登记门面），出现即失败。",
-  "testOnlyExports": 835,
+  "updatedAt": "2026-11-18",
+  "deadExports": 0,
+  "note": "零引用导出的**未复核**条数上限。2026-11-18 清零：21 个零引用导出已删除、1 个（AGENT_RETRYABLE_ERRORS）已复核保留。从今往后**新增一条即失败**，请当场接入口或删除，不要调高这个数字。",
+  "testOnlyExports": 778,
   "structure": {
     "arch.reverse-import": 0,
     "arch.facade-undeclared": 0

@@ -28,16 +28,6 @@ export function driverFor(protocol: WireProtocol): ChatDriver | undefined {
   return REGISTRY[protocol]
 }
 
-/** 运行时登记（新协议模块加载时调用；也便于测试注入受控假 driver） */
-export function registerDriver(driver: ChatDriver): void {
-  REGISTRY[driver.protocol] = driver
-}
-
-/** 已登记的 driver（配置界面 / 诊断用） */
-export function registeredDrivers(): ChatDriver[] {
-  return Object.values(REGISTRY).filter((d): d is ChatDriver => !!d)
-}
-
 /** 能力声明（规划 §4.A）：未登记协议返回 undefined，由调用方如实处理 */
 export function capabilitiesOfProtocol(protocol: WireProtocol): DriverCapabilities | undefined {
   return REGISTRY[protocol]?.capabilities

@@ -51,3 +51,4 @@ export const WIRE_PROTOCOL_LABELS: Record<WireProtocol, string> = {
 export function isOllamaProtocol(p: ProtocolCarrier | null | undefined): boolean {
   return protocolOf(p) === 'ollama'
 }
+

@@ -8,7 +8,6 @@
 //    ③ 检查与候选的关联
 
 import type { RevisionJob, RevisionPayload } from './jobTypes'
-import type { RevisionCandidate } from './revisionCandidate'
 import type { TicketEvidence } from './findingAdapters'
 import { getRevisionJob, getRevisionPayload, saveRevisionPayload } from '@/lib/db/revisionJobs'
 import { uid } from '@/lib/app/id'
@@ -133,18 +132,6 @@ export async function loadCheckResult(payloadId: string): Promise<CheckPayload |
     bytes: p.bytes,
     createdAt: p.createdAt,
   }
-}
-
-/** 关联检查与候选 */
-export function linkCheckToCandidate(
-  checkPayload: CheckPayload,
-  candidate: RevisionCandidate,
-): RevisionCandidate {
-  // 🔴 原先这里 `{...candidate}` 什么都不加 —— 关联函数返回原对象，等于没关联。
-  //    现在把载荷 ID 记在候选上（可选字段，老候选不受影响），并保持幂等。
-  const ids = candidate.checkPayloadIds ?? []
-  if (ids.includes(checkPayload.id)) return candidate
-  return { ...candidate, checkPayloadIds: [...ids, checkPayload.id] }
 }
 
 /** 检查状态恢复：从任务中恢复检查状态 */

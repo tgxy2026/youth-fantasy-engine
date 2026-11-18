@@ -146,25 +146,6 @@ export async function desktopLogout(): Promise<boolean> {
   }
 }
 
-/**
- * 用当前令牌代发请求。
- *
- * 🔴 必须传 `origin`：主进程会拒绝把令牌发到别的源。
- *    少了这道校验，一个被注入的脚本就能把令牌 POST 到任意地址。
- */
-export async function desktopFetch(
-  origin: string, path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {},
-): Promise<{ ok: boolean; status: number; text: string; error?: string }> {
-  if (!hasDesktopAuth()) return { ok: false, status: 0, text: '', error: '当前环境不支持' }
-  const url = path.startsWith('http') ? path : `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`
-  try {
-    const r = await window.electronAuth!.fetch({ url, origin, ...init })
-    return { ok: r.ok, status: r.status, text: r.text ?? '', error: r.error }
-  } catch (e) {
-    return { ok: false, status: 0, text: '', error: e instanceof Error ? e.message : '请求失败' }
-  }
-}
-
 /** 登录服务器 origin（未登录时为空串） */
 export async function desktopOrigin(): Promise<string> {
   if (!hasDesktopAuth()) return ''

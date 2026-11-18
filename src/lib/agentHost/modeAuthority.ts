@@ -49,14 +49,3 @@ export async function createModeAuthority(storage: ModePersistence) {
     },
   }
 }
-
-/**
- * 将一次完整任务纳入模式租约；流式任务应在响应体结束或取消后才返回，
- * 不能只包住 fetch 返回 Response 的阶段。跨进程任务须由唯一宿主持有租约。
- */
-export async function withModeLease<T>(authority: { acquire(mode: ConnectionMode): (() => void) | null }, mode: ConnectionMode, work: () => Promise<T>): Promise<T> {
-  const release = authority.acquire(mode)
-  if (!release) throw new Error('当前连接模式不允许启动此任务')
-  try { return await work() }
-  finally { release() }
-}

@@ -14,7 +14,7 @@ const readIdentity = (): WorkspaceIdentitySource => {
     ready: state ? state.connected : true }
 }
 const identities = createWorkspaceIdentityResolver(readIdentity, digestWorkspaceIdentity, () => workspaceViews.clear())
-export const resolveWorkspaceIdentity = () => identities.resolve()
+
 export function currentWorkspaceScope(projectId: string, pageId: string): WorkspaceScope | null {
   const identity = identities.current()
   return identity ? { ...identity, projectId, pageId } : null

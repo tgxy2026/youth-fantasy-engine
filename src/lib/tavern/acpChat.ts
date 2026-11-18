@@ -126,9 +126,6 @@ export function createTavernConsent(
   return options => (answer ??= ask(options))
 }
 
-/** 单次调用的取消信号与流式回调（`ChatOptions` 里对应的两个字段） */
-export type AcpCallOptions = { signal?: AbortSignal; onToken?: (delta: string) => void }
-
 /**
  * 确认弹窗实现。**由界面注入**（`setTavernAcpAsk`），本文件不 import `components` ——
  * 那是反向依赖（lib → components），会把这个纯逻辑模块拖进 React 世界。

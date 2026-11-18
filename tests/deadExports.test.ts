@@ -6,7 +6,8 @@
 //   ③ 审计工具自己不能给被审对象作证（scripts/audit 排除在外）；
 //   ④ 同文件自用不算死；
 //   ⑤ 复核清单：缺理由 / 符号非法 / 重复 必须被拦；符号被删或改名后复核要判失效；
-//   ⑥ 真实仓库：`useFieldAliases` 确实是死导出（它只在注释里被提到），并把这条钉住。
+//   ⑥ 真实仓库：门面再导出的符号**不能**报成可删（`isOllamaProtocol` 就栽在这，被 tsc 拦下）；
+//      以及「删了 21 个之后欠账归零、预算为 0」这条状态要钉住。
 import fs from 'node:fs'
 import path from 'node:path'
 import { scanDeadExports, staleDeadReviews, validateDeadReviews } from '../scripts/audit/dead-exports.mjs'
@@ -52,6 +53,10 @@ const fixture: Record<string, string> = {
   ].join('\n'),
   // 只用一次自用（同文件）
   [file(SRC, 'c.ts')]: ['export function selfUsed() { return selfUsed }'].join('\n'),
+  // 门面再导出：c 里的 symbol 只被这里再导出（删了就编译不过，不能当死代码）
+  [file(SRC, 'facade.ts')]: [
+    "export { onlyReexported } from './a'",
+  ].join('\n'),
   // 测试引用
   [file(TESTS, 'a.test.ts')]: [
     "import { onlyInTests } from '../src/a'",
@@ -84,7 +89,9 @@ console.log('—— deadExports：死导出结构化扫描（3.6.0 · 审计补�
 // ---------- ② 注释 / 再导出不算引用 ----------
 {
   ok('🔴 ② 只在注释里出现的算死（历史误判点）', bySymbol.get('mentionedInComment')?.rule === 'dead.export')
-  ok('🔴 ② 只在再导出清单里出现的算死（门面会把名字提一遍）', bySymbol.get('onlyReexported')?.rule === 'dead.export')
+  // 🔴 只被门面再导出**不能**算死：删了门面会编译不过（实测 isOllamaProtocol 就栽在这）。
+  //    它既不是"有人用"，也不该进候选 —— 单独计入 facadeOnly，并在报告里提示「删除需同时改门面」。
+  ok('🔴 ② 只被门面再导出的不进候选（计入 facadeOnly）', !bySymbol.has('onlyReexported'))
   ok('② 报告文案说明是「零引用」并给出三个桶计数',
     /生产 0 \/ 测试 0 \/ 工具 0/.test(bySymbol.get('neverUsed')?.message ?? ''))
 }
@@ -104,9 +111,11 @@ console.log('—— deadExports：死导出结构化扫描（3.6.0 · 审计补�
 {
   // 7 条死：a.ts 的 5 个 + b.ts 里导出的 x + c.ts 里「单行自用却没被识别」的修正后应为 6
   // （c.ts 修好后算自用，见下面的正向断言）
-  // 7 条死：a.ts 的 6 个 + b.ts 里导出的 x（c.ts 的单行自用修好后已正确算「自用」）
-  ok('⑤ 统计区分 used / testOnly / dead',
-    result.stats.dead === 7 && result.stats.testOnly === 1 && result.stats.used === 3,
+  // 6 条死：a.ts 的 6 个（onlyReexported 现在只被门面再导出，改计入 facadeOnly）
+  // + b.ts 里导出的 x；c.ts 的单行自用已正确算「自用」
+  ok('⑤ 统计区分 used / testOnly / dead / facadeOnly',
+    result.stats.dead === 6 && result.stats.testOnly === 1 && result.stats.used === 3
+    && result.stats.facadeOnly === 1,
     JSON.stringify(result.stats))
   ok('⑤ 类型导出也参与（interface 不会被漏掉）', bySymbol.get('DeadType')?.kind === 'type')
   ok('⑤ 常量导出也参与', bySymbol.get('CONSTANT_DEAD')?.kind === 'value')
@@ -144,14 +153,13 @@ console.log('—— deadExports：死导出结构化扫描（3.6.0 · 审计补�
   const real = scanDeadExports(process.cwd())
   ok('⑧ 真实仓库能被扫完且导出数合理', real.stats.exports > 1000, JSON.stringify(real.stats))
   const realFindings = real.findings
-  // 🔴 2026-11-17 的教训：它只在 useFieldRenames.ts 的**文件头注释**里被提到，
-  //    不剥注释就会误判成「有人用」。这条断言把那个坑钉住。
-  // 🔴 符号名必须拼出来：测试文件本身也会被扫描，直接写名字（哪怕在 ok() 的名字字符串里）
-  //    等于给这个符号"造"了一个测试引用，断言就会从 dead.export 变成 dead.test-only —— 自指污染。
-  const fieldAliasHook = ['useField', 'Aliases'].join('')
-  ok('🔴 ⑧ 只在注释里被提到的 hook 判死（不剥注释就会误判成有人用）',
-    realFindings.some(f => f.symbol === fieldAliasHook && f.rule === 'dead.export'),
-    JSON.stringify(realFindings.filter(f => f.symbol === fieldAliasHook).map(f => f.rule)))
+  // 🔴 2026-11-18 的教训：`isOllamaProtocol` 被 `lib/ai.ts` 门面再导出，删掉当场 tsc 报错。
+  //    它不该进「零引用」候选，而应计入 facadeOnly（删除需同时改门面）。
+  //    符号名拼出来：测试文件自身也会被扫描，直接写名字会给它"造"一个测试引用（自指污染）。
+  const ollamaHelper = ['isOllama', 'Protocol'].join('')
+  ok('🔴 ⑧ 门面再导出的符号不算零引用（删了门面会编译不过）',
+    !realFindings.some(f => f.symbol === ollamaHelper) && real.stats.facadeOnly > 0,
+    `facadeOnly=${real.stats.facadeOnly}`)
 
   const reviewsRaw = JSON.parse(fs.readFileSync('scripts/audit/dead-reviews.json', 'utf8'))
   const shape = validateDeadReviews(reviewsRaw.entries)

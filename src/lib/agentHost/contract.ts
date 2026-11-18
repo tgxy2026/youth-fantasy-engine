@@ -11,7 +11,7 @@
  * 本文件不依赖 React / 浏览器 / Electron，可在 Node 单测里直接跑。
  */
 
-import type { Project, TabDef, CardRecord, Chapter } from '@/lib/types'
+import type { Project, Chapter } from '@/lib/types'
 
 // ---------- 授权范围 ----------
 
@@ -94,12 +94,6 @@ export function agentActionAllowed(scope: AgentScope, projectId: string, action:
   return !!grant && grant.actions.includes(action)
 }
 
-/** 列出某项目被授予的动作（给工具返回「可写能力」用） */
-export function actionsForProject(scope: AgentScope, projectId: string): AgentAction[] {
-  const grant = scope.projects.find(p => p.projectId === projectId)
-  return grant ? [...grant.actions] : []
-}
-
 // ---------- 工具名与错误码 ----------
 
 export const AGENT_TOOL_NAMES = {
@@ -171,45 +165,6 @@ export const AGENT_TOOL_NAMES = {
   getAgentTask: 'yfe_get_agent_task',
   requestStatus: 'yfe_request_status',
 } as const
-
-export type AgentToolName = (typeof AGENT_TOOL_NAMES)[keyof typeof AGENT_TOOL_NAMES]
-
-/** 写工具（需要对应授权动作） */
-export const AGENT_WRITE_TOOLS: readonly AgentToolName[] = [
-  AGENT_TOOL_NAMES.createSettingCard,
-  AGENT_TOOL_NAMES.updateSettingCard,
-  AGENT_TOOL_NAMES.createWorldSet,
-  AGENT_TOOL_NAMES.setWorldSetActive,
-  AGENT_TOOL_NAMES.updateForm,
-  AGENT_TOOL_NAMES.createTableRow,
-  AGENT_TOOL_NAMES.updateTableRow,
-  AGENT_TOOL_NAMES.createVolume,
-  AGENT_TOOL_NAMES.createChapter,
-  AGENT_TOOL_NAMES.appendChapter,
-  AGENT_TOOL_NAMES.replaceChapter,
-  AGENT_TOOL_NAMES.updateChapterInfo,
-  AGENT_TOOL_NAMES.updateVolume,
-  AGENT_TOOL_NAMES.deleteChapter,
-  AGENT_TOOL_NAMES.addInspiration,
-]
-
-export const AGENT_WRITE_TOOL_ACTIONS: Record<string, AgentAction> = {
-  [AGENT_TOOL_NAMES.createSettingCard]: 'setting:create',
-  [AGENT_TOOL_NAMES.updateSettingCard]: 'setting:write',
-  [AGENT_TOOL_NAMES.createWorldSet]: 'setting:create',
-  [AGENT_TOOL_NAMES.setWorldSetActive]: 'setting:write',
-  [AGENT_TOOL_NAMES.updateForm]: 'form:write',
-  [AGENT_TOOL_NAMES.createTableRow]: 'table:create',
-  [AGENT_TOOL_NAMES.updateTableRow]: 'table:write',
-  [AGENT_TOOL_NAMES.createVolume]: 'volume:create',
-  [AGENT_TOOL_NAMES.createChapter]: 'chapter:create',
-  [AGENT_TOOL_NAMES.appendChapter]: 'chapter:write',
-  [AGENT_TOOL_NAMES.replaceChapter]: 'chapter:write',
-  [AGENT_TOOL_NAMES.updateChapterInfo]: 'chapter:write',
-  [AGENT_TOOL_NAMES.updateVolume]: 'volume:write',
-  [AGENT_TOOL_NAMES.deleteChapter]: 'chapter:delete',
-  [AGENT_TOOL_NAMES.addInspiration]: 'inspiration:write',
-}
 
 /**
  * 失败代码。**失败关闭**：未知代码不得被当成成功。
@@ -289,22 +244,6 @@ export function isValidRequestId(value: unknown): value is string {
 }
 
 /** 宿主账本中的请求状态 */
-export type AgentRequestState = 'pending' | 'success' | 'failed' | 'unknown'
-
-export interface AgentRequestRecord {
-  requestId: string
-  tool: string
-  projectId: string
-  state: AgentRequestState
-  code?: AgentErrorCode
-  error?: string
-  /** 成功时的返回值（截断保存，避免账本膨胀） */
-  result?: unknown
-  createdAt: number
-  updatedAt: number
-  sessionId?: string
-}
-
 // ---------- 字段与内容限制 ----------
 
 /** 单个正文载荷上限（字符）：再大就不该走工具调用，应该用导入通道 */
@@ -328,10 +267,6 @@ export interface SettingTabInfo {
   group: string
   description: string
   fields: { path: string; name: string; desc: string }[]
-}
-
-export function settingTabInfo(tab: TabDef, fields: { path: string; name: string; desc: string }[]): SettingTabInfo {
-  return { tabId: tab.id, name: tab.name, group: tab.group, description: tab.description, fields }
 }
 
 // ---------- 执行器依赖（便于单测注入） ----------
@@ -369,14 +304,6 @@ export function chapterSummary(c: Chapter): AgentChapterSummary {
   }
 }
 
-export interface AgentCardResult {
-  cardId: string
-  tabId: string
-  name: string
-  order: number
-  saved: boolean
-}
-
 export interface AgentChapterWriteResult {
   chapterId: string
   title: string
@@ -396,6 +323,3 @@ export interface AgentWriteNotice {
   cardId?: string
   tabId?: string
 }
-
-/** 内部：把章节写成结果时保留 record 引用，供宿主回读确认 */
-export type AgentCardRecord = CardRecord

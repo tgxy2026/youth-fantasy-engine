@@ -262,8 +262,3 @@ export function uploadRank(opts: { force?: boolean; accountKey?: string } = {}):
   })().finally(() => { running = null })
   return running
 }
-
-/** 设置页展示用：本机记录的上次同步进度（不含内容） */
-export function readRankSyncState(): SyncState | null {
-  return readSyncState()
-}

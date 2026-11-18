@@ -26,8 +26,6 @@ export const COMMUNITY_LIMITS = {
 /** 预设标签：必须与服务端 `COMMUNITY_TAGS` 完全一致（契约测试会比对） */
 export const COMMUNITY_TAGS = ['练笔', '短篇', '设定', '灵感', '求评'] as const
 
-export type CommunityTag = (typeof COMMUNITY_TAGS)[number]
-
 const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/g
 const PUNCT_RE =
   /[\u3000-\u303f\u2014\u2018-\u201d\u2026\u00b7]|[\uff01-\uff0f]|[\uff1a-\uff20]|[\uff3b-\uff40]|[\uff5b-\uff65]/g

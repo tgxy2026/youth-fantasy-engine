@@ -151,7 +151,12 @@ ok('酒馆三处读 ACP 窗口', (engineSrc.match(/runChat\.acp\?\.windowTokens/
 ok('酒馆预算进入系统装配', engineSrc.includes('provider?.contextWindow ?? runChat.acp?.windowTokens'))
 ok('正文续写读取 ACP 预算', read('src/lib/creative/continuationPlan.ts').includes('acpBudgetSnapshot'))
 ok('ChatFn 携带可选窗口', read('src/lib/tavern/provider.ts').includes('windowTokens?: number'))
-ok('渲染层未知返回 null', read('src/lib/agentHost/acpBudget.ts').includes('windowTokens ?? null'))
+// 🔴 2026-11-18：原先断言渲染层访问器 `acpKnownWindow` 的「未知返回 null」契约，
+//    但该访问器全仓零调用（酒馆/续写直接读 `acpBudgetSnapshot`），已按零引用导出清理。
+//    保留这条断言会变成「守着一个没人调用的包装函数」——那不是契约，是噪音。
+ok('预算快照是渲染层唯一入口（不再有零引用包装）',
+  /export (?:async )?function acpBudgetSnapshot/.test(read('src/lib/agentHost/acpBudget.ts'))
+  && !read('src/lib/agentHost/acpBudget.ts').includes('acpKnownWindow'))
 
 console.log(`\nACP_BUDGET ${pass}/${pass + fail}`)
 if (fail > 0) process.exit(1)

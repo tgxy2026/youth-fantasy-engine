@@ -98,8 +98,3 @@ export async function loadFieldGating(tab: TabDef): Promise<FieldGating> {
 export async function loadFieldLabels(tab: TabDef): Promise<Record<string, string>> {
   return (await loadFieldGating(tab)).labels
 }
-
-/** 只取「含义未确认」的存储键（AI 读取 / 索引 / 回填的屏蔽清单） */
-export async function loadPendingFieldKeys(tab: TabDef): Promise<Set<string>> {
-  return (await loadFieldGating(tab)).pending
-}

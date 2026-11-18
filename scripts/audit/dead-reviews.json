@@ -91,6 +91,11 @@
       "file": "src/lib/agentHost/useAcpWriting.ts",
       "symbol": "__resetAcpWritingSubscription",
       "reason": "测试缝：listeners/cached/current 只能由它整体重置；ACP 订阅态跨用例残留会互相污染"
+    },
+    {
+      "file": "src/lib/agentHost/contract.ts",
+      "symbol": "AGENT_RETRYABLE_ERRORS",
+      "reason": "重试口径的唯一机器可读定义（15 个可重试 / INTERNAL 与 STORAGE_BLOCKED 明确不可重试）。当前 TS 侧无消费者，但删掉会把这条安全规则降级成散文；接入宿主账本前先保留"
     }
   ]
 }

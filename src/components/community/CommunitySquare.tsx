@@ -32,7 +32,6 @@ import AdminPanel from '@/components/community/AdminPanel'
 import { Notice } from '@/components/community/ui'
 
 type Tab = 'feed' | 'write' | 'mine' | 'settings' | 'admin'
-type RankTab = 'rank'
 
 interface Props {
   /** 浮层模式（项目中心）传入关闭回调；页签模式不传 */
@@ -332,6 +331,3 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
   }
   return shell
 }
-
-/** 供测试引用：当前页签类型（避免测试与实现各写一套字符串） */
-export type CommunityTabId = Tab | RankTab
