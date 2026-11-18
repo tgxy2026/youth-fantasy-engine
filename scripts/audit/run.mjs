@@ -54,6 +54,13 @@ report.static.deadExports = selfCheck.deadExports
  */
 report.static.structure = selfCheck.structure
 /**
+ * 审计策略化第三轮（2026-11-19）：两条新硬线，各自对应一次"专项才发现的细节"。
+ *   staleCache —— 缓存缩放/窗口尺寸却不订阅变更（面板缩放 bug 的形态）
+ *   duplicateImpls —— 同名导出且函数体相同（stableHash 双份的形态）
+ */
+report.static.staleCache = selfCheck.staleCache
+report.static.duplicateImpls = selfCheck.duplicateImpls
+/**
  * 未接线模块（2026-11-18）：整个模块没有任何生产代码 import。
  * 死导出按符号统计，这类形状在报告里看不见（实测 changeEvents / modeAuthority 都是），
  * 现在单列一段：按台账状态分组，gap 单独标出（能力缺口，删了等于扔方案）。
@@ -141,6 +148,12 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
   `- 反向依赖 \`${report.static.structure.reverseImports}\` 处；未登记门面 \`${report.static.structure.undeclaredFacades}\` 个；扫描 \`${report.static.structure.files}\` 个源码文件`,
   ...(report.static.structure.items.length
     ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
+    : ['', '两条规则均为 0。']),
+    '', '## 新增硬线：尺寸缓存订阅 / 重复实现（2026-11-19）', '',
+  `- 尺寸缓存：扫描 \`${report.static.staleCache.files}\` 个文件，命中 \`${report.static.staleCache.items.length}\` 处（缓存了缩放/窗口尺寸却没有任何 resize / yfe:zoom-changed 订阅）`,
+  `- 重复实现：扫描 \`${report.static.duplicateImpls.files}\` 个文件，命中 \`${report.static.duplicateImpls.items.length}\` 处（同名导出 + 函数体逐字符相同，且函数体 ≥120 字符）`,
+  ...(report.static.staleCache.items.length || report.static.duplicateImpls.items.length
+    ? ['', ...[...report.static.staleCache.items, ...report.static.duplicateImpls.items].map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
     '', '## 零覆盖台账（安全 / 数据 / 算法类，无测试但已记风险）', '',
   `- 登记 \`${report.static.coverage.entries.length}\` 个文件；按风险：${['data', 'sync', 'agent', 'ui', 'display'].map(r => `${r} \`${report.static.coverage.entries.filter(e => e.risk === r).length}\``).join(' · ')}；按状态：整体未测 \`${report.static.coverage.entries.filter(e => (e.status ?? 'open') === 'open').length}\` · 部分已测（其余靠真机） \`${report.static.coverage.entries.filter(e => e.status === 'partial').length}\``,

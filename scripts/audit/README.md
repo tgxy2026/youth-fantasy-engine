@@ -19,6 +19,20 @@ node scripts/audit/run.mjs --probes --evidence <上一步打印的 json 路径>
 - `report.json` 顶层含 `appVersion`、`toolFingerprint`、`sourceFingerprint`、`selfCheck`；`report.md` 的「本次扫描」段列出版本、工具指纹、扫描文件数、图表 / mono 清单与自检结果。
 - `sourceFingerprint` 仍只覆盖 `src/` + `electron/`（**口径未改**，既有证据链不受影响）；`toolFingerprint` 是新增的「审计工具自身」指纹，规则一改就变，用来区分旧工具跑出的报告。
 
+### 结构化硬线第三轮（2026-11-19）
+
+两次「专项才发现的细节」沉淀成规则，都在自检里按硬线处理（命中即 `failed`，不给预算余量）：
+
+| 规则 | 文件 | 判据 | 对应历史事故 |
+| --- | --- | --- | --- |
+| `stale.cache` | `stale-cache.mjs` | 把 `currentUiZoom()` / `window.innerWidth` 缓存进 `useState`，且同文件**没有任何** `resize` / `yfe:zoom-changed` / `subscribeResize` / `matchMedia` 订阅 | 3.6.1 颉文姬面板改缩放后仍按旧视口摆位 |
+| `dup.impl` | `duplicate-impl.mjs` | 跨文件同名导出、函数体去注释压缩空白后**逐字符相同**，且归一化长度 ≥ 120 | 3.6.1 `stableHash` 在 `audit/repetition` 与 `tasks/unitLedger` 各一份 |
+
+判据刻意**不含相似度打分**：只判"完全一致"与"完全没订阅"，命中即可判定。相似但不相同的实现仍留在 `legacy/` 日志里供人工抽样。
+`PROVIDERS`（`stale-cache.mjs`）登记豁免文件（`src/lib/settings/theme.ts` 是这些 API 的实现处），登记了却不存在会让自检失败。
+
+回归用例：`tests/auditRules.test.ts`（规则能抓到历史形态、不误伤正确写法、当前仓库为 0）。
+
 ### 审计工具自检（3.4.1 新增）
 
 ```bash

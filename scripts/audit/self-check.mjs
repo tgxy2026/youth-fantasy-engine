@@ -21,6 +21,8 @@ import {
 } from './registry-check.mjs'
 import { scanDeadExports, staleDeadReviews, validateDeadReviews, walkCode } from './dead-exports.mjs'
 import { DECLARED_FACADES, scanStructure, validateFacadeRegistry } from './structure-checks.mjs'
+import { PROVIDERS, scanStaleCache, validateProviders } from './stale-cache.mjs'
+import { scanDuplicateImpls } from './duplicate-impl.mjs'
 import { ENTRY_FILES, reconcileUnwiredLedger, scanUnwiredModules, validateUnwiredLedger } from './unwired-modules.mjs'
 
 export { validateRegistry, toolFingerprint }
@@ -193,6 +195,43 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     result.issues.push('零覆盖台账无效：文件缺失或不可解析')
   }
 
+  /**
+   * 审计策略化第三轮（2026-11-19）：把两次"专项才发现的细节"沉淀成规则。
+   *   ① stale.cache —— 把缩放/窗口尺寸缓存进 useState 却没有任何变更订阅（3.6.1 面板缩放 bug 的形态）
+   *   ② dup.impl    —— 同名导出且函数体逐字符相同（3.6.1 stableHash 双份的形态）
+   * 两条都不含相似度打分，命中即可判定，所以按硬线处理（出现即失败，不给预算余量）。
+   */
+  const staleCache = options.staleCache ?? scanStaleCache(root)
+  const providerCheck = validateProviders(root)
+  result.checks.push({
+    name: '缩放/尺寸豁免名单自洽',
+    status: providerCheck.ok ? 'passed' : 'failed',
+    detail: providerCheck.ok ? `${PROVIDERS.length} 个提供者文件均在位` : providerCheck.issues.join('; '),
+  })
+  result.issues.push(...providerCheck.issues)
+  result.checks.push({
+    name: '全局尺寸缓存已订阅变更',
+    status: staleCache.findings.length ? 'failed' : 'passed',
+    detail: staleCache.findings.length
+      ? staleCache.findings.map(f => `${f.file}:${f.line}`).join(', ')
+      : `扫描 ${staleCache.files} 个源码文件，未发现「缓存了缩放/窗口尺寸却不订阅」的写法`,
+  })
+  if (staleCache.findings.length) {
+    result.issues.push(`有 ${staleCache.findings.length} 处缓存了缩放/窗口尺寸却没有订阅变更：${staleCache.findings.map(f => `${f.file}:${f.line}`).join(', ')}`)
+  }
+
+  const duplicateImpls = options.duplicateImpls ?? scanDuplicateImpls(root)
+  result.checks.push({
+    name: '无重复实现（同名 + 函数体相同）',
+    status: duplicateImpls.findings.length ? 'failed' : 'passed',
+    detail: duplicateImpls.findings.length
+      ? duplicateImpls.findings.map(f => `${f.file}:${f.line}`).join(', ')
+      : `扫描 ${duplicateImpls.files} 个源码文件，未发现同名同体的重复实现`,
+  })
+  if (duplicateImpls.findings.length) {
+    result.issues.push(`有 ${duplicateImpls.findings.length} 处重复实现：${duplicateImpls.findings.map(f => `${f.file}:${f.line}`).join(', ')}`)
+  }
+
   const structBudget = validateStructureBudget({
     budget,
     counts: { 'arch.reverse-import': structure.stats.reverseImports, 'arch.facade-undeclared': structure.stats.undeclaredFacades },
@@ -223,6 +262,14 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     files: staticResult.files,
     inventory: staticResult.inventory,
     structure: { ...structure.stats, items: structure.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })) },
+    staleCache: {
+      files: staleCache.files,
+      items: staleCache.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })),
+    },
+    duplicateImpls: {
+      files: duplicateImpls.files,
+      items: duplicateImpls.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })),
+    },
     coverage: {
       entries: (covEntries ?? []).map(e => ({
         file: e.file, risk: e.risk, why: e.why, trigger: e.trigger,
