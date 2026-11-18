@@ -21,6 +21,7 @@ import { ArrowLeftRight } from 'lucide-react'
 import { getTab } from '@/lib/schema'
 import { activeMigrationTabIds, subscribeMigrationLock } from '@/lib/templates/migrationGuard'
 import { Z } from '@/lib/app/zLayer'
+import { migrationLockSubject } from '@/lib/app/lockBannerCopy'
 
 export function MigrationLockBanner({ projectId }: { projectId: string }) {
   const [tabIds, setTabIds] = useState<string[]>(() => activeMigrationTabIds(projectId))
@@ -33,7 +34,7 @@ export function MigrationLockBanner({ projectId }: { projectId: string }) {
   if (tabIds.length === 0) return null
 
   const names = tabIds.map(id => getTab(id)?.name ?? id)
-  const subject = names.length === 1 ? `「${names[0]}」` : `${names.length} 个页签（${names.join('、')}）`
+  const subject = migrationLockSubject(names)
 
   return (
     <div

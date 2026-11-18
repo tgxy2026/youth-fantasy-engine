@@ -11,18 +11,11 @@ import {
   conflictStats, conflictStoreLabel, conflictStores, filterConflicts, formatConflictBytes, isConflictExpired,
   type ConflictStatusFilter,
 } from '@/lib/sync/conflictView'
+import {
+  conflictDeletePrompt, conflictLabel, conflictPreview, conflictRestorePrompt,
+  decideConflictRestore, pickConflictSelection,
+} from '@/lib/sync/conflictActions'
 
-const labelOf = (c: StoredSyncConflict) => {
-  const row = (c.server && typeof c.server === 'object' ? c.server : c.local) as { title?: unknown; name?: unknown } | null
-  const name = row?.title ?? row?.name ?? c.key
-  return `${conflictStoreLabel(c.store)} · ${String(name ?? '未知记录')}`
-}
-
-const previewOf = (v: unknown) => {
-  if (v == null) return '此侧已删除或没有该记录'
-  const text = JSON.stringify(v, null, 2)
-  return text.length > 20000 ? `${text.slice(0, 20000)}\n…预览已截断，导出文件包含完整内容` : text
-}
 
 export default function SyncConflictCenter({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -40,7 +33,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     try {
       const list = await db.listSyncConflicts()
       setRecords(list)
-      setSelected(previous => list.some(c => c.metaKey === previous) ? previous : list[0]?.metaKey ?? null)
+      setSelected(previous => pickConflictSelection(list, previous))
       setLoadError('')
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
@@ -71,28 +64,15 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
 
   // 选中项必须落在当前筛选结果里 —— 切换筛选后，旧的选中可能已被筛掉
   useEffect(() => {
-    if (filtered.some(c => c.metaKey === selected)) return
-    setSelected(filtered[0]?.metaKey ?? null)
+    setSelected(pickConflictSelection(filtered, selected))
   }, [filtered, selected])
 
   const current = filtered.find(c => c.metaKey === selected)
   const unresolved = stats.unresolved
   const totalWarn = stats.bytes > CONFLICT_TOTAL_WARN_BYTES
-  // 可原位恢复的**完整**条件（与 db/syncConflicts.ts 的前置校验逐条对齐）：
-  // 章节冲突 + 云端那一版还在 + 本机这一章还在 + 属当前项目。
-  // 🔴 旧实现只看「是 chapters 且 server 非空且 projectId 相符」——
-  //    本机已删（local==null）时按钮照样出现，点下去必然报「当前章节已不存在」。
-  const canRestore = !!current && current.store === 'chapters' && current.server != null && current.local != null
-    && db.getCurrentProjectId() === (current.server as { projectId?: string }).projectId
-  // 🔴 不能只对「非章节」冲突给说明：章节冲突在「云端已删 / 本机已删 / 属其它项目」
-  //    这三种情况下**同样**恢复不了，旧代码会让作者对着一个没有恢复按钮、也没有原因的面板
-  //    直接去点「删除副本」，把本可导出的云端版本丢掉（违反「绝不静默」）。
-  const restoreBlockedReason = (c: StoredSyncConflict) => {
-    if (c.store !== 'chapters') return '此类型暂不支持安全的原位恢复。导出双方完整数据后，可在对应项目中手工核对。'
-    if (c.server == null) return '云端已删除这一章，没有可恢复的云端版本；如需保留本机内容，请先导出双方完整数据。'
-    if (c.local == null) return '本机已删除这一章，无法原位恢复；如需云端版本，请先导出双方完整数据后手工核对。'
-    return '该冲突属于其它项目，请打开对应项目后再恢复（当前只能导出或删除副本）。'
-  }
+  // 🔴 能不能原位恢复、不能时为什么 —— 判定与文案都在 `conflictActions`（那里有单测）；
+  //    旧实现把这段写在组件里，作者点下去才发现「当前章节已不存在」。
+  const restoreDecision = current ? decideConflictRestore(current, db.getCurrentProjectId()) : null
   const exportRecord = (c: StoredSyncConflict) => {
     const name = `青春幻想引擎-同步冲突-${new Date(c.at || Date.now()).toISOString().replace(/[:.]/g, '-')}.json`
     downloadBlob(name, new Blob([JSON.stringify({
@@ -101,11 +81,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     }, null, 2)], { type: 'application/json' }))
   }
   const restore = async (c: StoredSyncConflict) => {
-    const ok = await confirmDialog({
-      title: '恢复云端那一版章节',
-      message: `将用冲突副本覆盖当前章节「${labelOf(c)}」。操作前会自动建立一份完整项目备份；备份失败时不会覆盖。请确认已查看双方内容。`,
-      confirmText: '建立备份并恢复', danger: true,
-    })
+    const ok = await confirmDialog(conflictRestorePrompt(c))
     if (!ok) return
     setBusy(true)
     try {
@@ -127,10 +103,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
     finally { setBusy(false) }
   }
   const remove = async (c: StoredSyncConflict) => {
-    const ok = await confirmDialog({
-      title: '删除冲突副本', message: `将永久删除「${labelOf(c)}」的双方冲突记录。建议先导出副本，再删除。`,
-      confirmText: '删除副本', danger: true,
-    })
+    const ok = await confirmDialog(conflictDeletePrompt(c))
     if (!ok) return
     setBusy(true)
     try { await db.deleteSyncConflict(c.metaKey); await reload() }
@@ -190,7 +163,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
             const expired = isConflictExpired(c)
             return <Button key={c.metaKey} variant="bare" onClick={() => setSelected(c.metaKey)}
               className={`w-full rounded-lg border px-2 py-1.5 text-left text-11 ${selected === c.metaKey ? 'border-amber/50 bg-amber/10' : 'border-ink-700 bg-ink-800/50'}`}>
-              <span className="block truncate text-ink-100">{labelOf(c)} {c.resolvedAt ? '· 已处理' : '· 待处理'}{expired ? ' · 可清理' : ''}</span>
+              <span className="block truncate text-ink-100">{conflictLabel(c)} {c.resolvedAt ? '· 已处理' : '· 待处理'}{expired ? ' · 可清理' : ''}</span>
               <span className="text-10 text-ink-500">{new Date(c.at).toLocaleString()} · <span className={b > CONFLICT_SIZE_WARN_BYTES ? 'text-danger' : ''}>{formatConflictBytes(b)}</span></span>
             </Button>
           })}</div>
@@ -201,17 +174,17 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
           </div>}
           {current && <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div><h3 className="mb-1 text-11 text-ink-300">本机那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.local)}</pre></div>
-              <div><h3 className="mb-1 text-11 text-ink-300">云端那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{previewOf(current.server)}</pre></div>
+              <div><h3 className="mb-1 text-11 text-ink-300">本机那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{conflictPreview(current.local)}</pre></div>
+              <div><h3 className="mb-1 text-11 text-ink-300">云端那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{conflictPreview(current.server)}</pre></div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><Download size={12} /> 导出双方完整数据</Button>
-              {canRestore &&
+              {restoreDecision?.allowed &&
                 <Button variant="secondary" disabled={busy} onClick={() => void restore(current)}><RotateCcw size={12} /> 恢复云端章节</Button>}
               {!current.resolvedAt && <Button variant="secondary" disabled={busy} onClick={() => void resolve(current)}>标为已处理</Button>}
               <Button variant="danger" disabled={busy} onClick={() => void remove(current)}><Trash2 size={12} /> 删除副本</Button>
             </div>
-            {!canRestore && <p className="text-11 text-ink-500">{restoreBlockedReason(current)}</p>}
+            {restoreDecision && !restoreDecision.allowed && <p className="text-11 text-ink-500">{restoreDecision.reason}</p>}
           </>}
 
           {/* 底部状态条：与「资料提及」面板同范式 */}

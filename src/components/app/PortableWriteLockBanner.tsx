@@ -11,6 +11,7 @@ import {
 } from '@/lib/storage/fileBackend'
 import { WriteLockBanner } from '@/components/app/WriteLockBanner'
 import { WEB } from '@/lib/app/platform'
+import { portableWriteLockCopy } from '@/lib/app/lockBannerCopy'
 
 /**
  * 便携版：「数据文件写盘已锁定」的常驻告警条。
@@ -37,11 +38,10 @@ export function PortableWriteLockBanner() {
     )
   }
 
-  // 网页版没有「本地数据文件路径」可复制 ⇒ 主操作换成「导出全部数据」，
-  // 文案也全部换成云端口径。桌面版 / 便携版走原分支，逐字不变。
+  // 网页版没有「本地数据文件路径」可复制 ⇒ 主操作换成「导出全部数据」，文案也全部换成云端口径。
+  // 具体换哪几句在 `lockBannerCopy.portableWriteLockCopy`（有单测，逐字比对）。
   const webMode = WEB
-  const subject = webMode ? '云端数据' : '便携数据文件'
-  const writeBackTo = webMode ? '云端' : '数据文件'
+  const { subject, writeBackTo, primaryLabel, backupHint } = portableWriteLockCopy(webMode)
 
   const doExport = async () => {
     const r = await exportPortableData()
@@ -56,18 +56,16 @@ export function PortableWriteLockBanner() {
       writeBackTo={writeBackTo}
       primary={webMode
         ? {
-            label: '导出全部数据',
+            label: primaryLabel,
             icon: <HardDriveDownload className="h-3.5 w-3.5" />,
             onClick: () => void doExport(),
           }
         : {
-            label: '复制数据文件路径',
+            label: primaryLabel,
             icon: <FolderOpen className="h-3.5 w-3.5" />,
             onClick: () => void onCopyPath(),
           }}
-      backupHint={webMode
-        ? '建议先导出一份 JSON 备份（可导入桌面版），再决定是否继续。'
-        : '建议先把数据文件复制一份备份（可点「复制数据文件路径」定位），再决定是否继续。'}
+      backupHint={backupHint}
       onUnlock={() => unlockPortableWrite()}
     />
   )

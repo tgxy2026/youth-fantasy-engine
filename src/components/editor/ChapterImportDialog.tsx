@@ -25,9 +25,12 @@ import { showToast } from '@/components/dialogs/dialogs'
 import { foldVh } from '@/lib/settings/theme'
 import {
   readImportFile, previewFromText, previewFromJson, mergePreviews, commitImportPreview,
-  isAcceptedImportFile, MAX_IMPORT_FILES,
+  isAcceptedImportFile, MAX_IMPORT_FILES, countWordsLoose,
   type ImportPreview, type PreviewVolume,
 } from '@/lib/storage/chapterImport'
+import {
+  chapterImportGate, chapterImportResultText, importNotesForDisplay, summarizeImportSelection,
+} from '@/lib/editor/chapterImportPlan'
 
 type Mode = 'file' | 'paste'
 
@@ -71,22 +74,11 @@ export default function ChapterImportDialog({ projectName, onDone, onClose, onNa
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // 已勾选的章数（实时重算，供底部按钮显示）
-  const pickedCount = useMemo(
-    () => preview?.volumes.reduce((n, v) => n + v.chapters.filter(c => c.include).length, 0) ?? 0,
-    [preview],
-  )
-  const pickedWords = useMemo(
-    () => preview?.volumes.reduce((n, v) => n + v.chapters.filter(c => c.include).reduce((m, c) => m + countLoose(c.content), 0), 0) ?? 0,
-    [preview],
-  )
+  // 已勾选的章数 / 字数（与落库同一口径，见 `chapterImportPlan`）
+  const { pickedCount, pickedWords } = useMemo(() => summarizeImportSelection(preview), [preview])
 
-  /** 展示用的 notes：splitMode 为 chunks 时，那条「没识别到章节标题」已由上方琥珀提示条接管，去掉避免重复 */
-  const previewNotes = useMemo(() => {
-    const list = preview?.notes ?? []
-    if (preview?.splitMode !== 'chunks') return list
-    return list.filter(n => !n.startsWith('没有识别到章节标题'))
-  }, [preview])
+  /** 展示用的 notes：`chunks` 时那条「没识别到章节标题」已由上方琥珀提示条接管，去掉避免重复 */
+  const previewNotes = useMemo(() => importNotesForDisplay(preview), [preview])
 
   /** 选文件（可多选）→ 逐个读 → 合并预览 */
   const onFiles = async (files: FileList | File[]) => {
@@ -131,16 +123,11 @@ export default function ChapterImportDialog({ projectName, onDone, onClose, onNa
         onProgress: (done, total) => setProgress({ done, total }),
       })
       if (res.alreadyImported) {
-        showToast('检测到同名卷与相同章节，这本书似乎已经导入过，已跳过（如需重导请先删除该卷）', 'info')
+        showToast(chapterImportResultText(res), 'info')
         onClose()
         return
       }
-      const volTxt = res.volumes.map(v => `《${v.title}》${v.chapters}章`).join('、')
-      showToast(
-        `导入完成：新建 ${res.volumes.length} 卷 · ${res.chaptersCreated} 章 · ${fmtNum(res.words)} 字（${volTxt}）`
-        + (res.aborted ? '　（中途中止，已导入的部分已保留）' : ''),
-        'success',
-      )
+      showToast(chapterImportResultText(res), 'success')
       onDone()
       onClose()
     } catch (e) {
@@ -184,6 +171,8 @@ export default function ChapterImportDialog({ projectName, onDone, onClose, onNa
     setCollapsed(s => { const n = new Set(s); n.has(vKey) ? n.delete(vKey) : n.add(vKey); return n })
 
   const hasPreview = !!preview && preview.totalChapters > 0
+  // 主按钮闸（能不能点 / 为什么不能点）在 `chapterImportGate`（有单测）
+  const gate = chapterImportGate({ hasPreview, pickedCount, committing })
 
   return (
     <Modal
@@ -201,8 +190,8 @@ export default function ChapterImportDialog({ projectName, onDone, onClose, onNa
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" size="md" onClick={onClose} disabled={committing}>取消</Button>
-            <Button variant="primary" size="md" onClick={onCommit} disabled={!hasPreview || pickedCount === 0 || committing}
-              title={!hasPreview ? '先读取文件或粘贴原文' : (pickedCount === 0 ? '至少勾选一章' : '把勾选的卷章写入正文编辑')}>
+            <Button variant="primary" size="md" onClick={onCommit} disabled={!gate.canCommit}
+              title={gate.title}>
               {committing
                 ? <><Loader2 size={13} className="animate-spin" /> 导入中{progress ? ` ${progress.done}/${progress.total}` : ''}</>
                 : <><FilePlus2 size={13} /> 导入 {pickedCount > 0 ? `${pickedCount} 章` : ''}</>}
@@ -395,7 +384,7 @@ function VolumeRow({
               <input value={c.title} onChange={e => onChTitle(c.key, e.target.value)}
                 className={`flex-1 min-w-0 bg-transparent border border-transparent hover:border-ink-600 focus:border-amber/50 rounded px-1.5 py-0.5 text-12 ${c.include ? 'text-ink-200' : 'text-ink-500 line-through'}`}
                 title="可改章名" />
-              <span className="text-10 text-ink-600 shrink-0 tabular-nums">{fmtNum(countLoose(c.content))} 字</span>
+              <span className="text-10 text-ink-600 shrink-0 tabular-nums">{fmtNum(countWordsLoose(c.content))} 字</span>
               <span className="text-10 text-ink-600 shrink-0 max-w-[7rem] truncate" title={c.source}>{c.source}</span>
               <Button variant="icon-danger" iconOnly size="sm" onClick={() => onDropCh(c.key)} className="opacity-0 group-hover:opacity-100 shrink-0" title="移除本章">
                 <Trash2 size={11} />
@@ -406,13 +395,6 @@ function VolumeRow({
       )}
     </div>
   )
-}
-
-/** 轻量字数（预览用，口径与 chapterImport 内部一致） */
-function countLoose(text: string): number {
-  const cn = (text.match(/[\u4e00-\u9fff]/g) || []).length
-  const en = (text.replace(/[\u4e00-\u9fff]/g, ' ').match(/[a-zA-Z0-9]+/g) || []).length
-  return cn + en
 }
 
 function fmtNum(n: number): string { return n.toLocaleString('zh-CN') }

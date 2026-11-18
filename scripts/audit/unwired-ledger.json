@@ -24,13 +24,8 @@
     },
     {
       "file": "src/lib/revision/generationInvalidation.ts",
-      "status": "gap",
-      "reason": "WT2 候选按代次失效（租约/代次/迟到回调）。现存两条活闸已覆盖大部分风险：aiTaskCenter.startTask 拒绝同页签同 kind 重复发起；candidateStore.sameCandidateRevision 拒绝过期写回。缺的只是**跨窗口同批租约**，而桌面单窗口、网页当前也按单标签页使用，暂无触发场景；接入要先定义多窗口语义"
-    },
-    {
-      "file": "src/lib/agentHost/modeAuthority.ts",
-      "status": "gap",
-      "reason": "已决策（2026-11-18，用户拍板「需要处理」）：**3.6.1 B6 删除**。核实结论：模式真源在宿主 mode-service，页面侧唯一消费入口是 modeBridge（status/switch/cancel/recover），AIConfigPanel 已有完整切换 UI（相位灯/切换/取消/安全恢复/blocked 提示）；本模块自己持久化「切换中」状态＝在渲染层再造一份真源。删除不改任何用户可见行为；要更强入口另开条目"
+      "status": "retained",
+      "reason": "**3.6.1 定案：不接线，降级保留。** 它要解的「同一候选被并发写」风险已由两条活闸覆盖：aiTaskCenter.startTask 拒绝同页签同类重复发起；candidateStore.sameCandidateRevision 拒绝过期写回（两条都有测试钉住，见 tests/generationInvalidationGate.test.ts）。缺的只是**跨窗口同批租约**，而桌面单窗口、网页当前按单标签页使用，暂无触发场景。**启用条件**：一旦支持多窗口/多标签页同时打开同一项目并并发发起同一批候选，就必须接线并补租约测试。"
     },
     {
       "file": "src/lib/templates/semanticView.ts",

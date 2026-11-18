@@ -220,14 +220,18 @@ export function validateStructureBudget({ budget, counts }) {
 }
 
 /**
- * 零覆盖台账校验（2026-11-18）。
+ * 零覆盖台账校验（2026-11-18 · 3.6.1 加 partial）。
  *
  * 覆盖率报告里「零测试提及」的 21 个安全/数据/算法文件，能低成本补测的已补
  * （syncMerge / projectSettingsLock / schemaLock / idbMigrateUtil），其余进本台账。
- * 这里拦三件事：
+ * 这里拦四件事：
  *   · 形状：文件存在、风险类型合法、why ≥20 字、trigger ≥10 字、不重复；
- *   · 失效：某文件后来被测试提到了，就该移出台账（否则台账慢慢变成"过时的借口"）。
+ *   · 状态：`open`（整体没测）/ `partial`（**可测的部分已抽出来测掉**，剩下靠真机）；
+ *   · partial 的举证：必须写 `remaining`（剩余什么）与 `coveredBy`（哪个测试文件覆盖的，须存在）；
+ *   · 失效：`open` 条目后来被测试提到了，就该移出台账（否则台账慢慢变成"过时的借口"）。
  * 🔴 这不是"批准不测"：trigger 写的是**什么情况下必须补**，改到那一处就得回来补测试。
+ * 🔴 `partial` 是 3.6.1 引入的：界面文件按「抽逻辑 + 测逻辑，展示留真机」处理，
+ *    如果不给它们一个状态，就只能二选一 —— 要么假装测过（删条目），要么一直挂 open（说谎）。
  */
 export function validateCoverageLedger(entries, opts = {}) {
   const checks = [], issues = []
@@ -240,7 +244,9 @@ export function validateCoverageLedger(entries, opts = {}) {
     return { ok: false, checks, issues }
   }
   const levels = opts.riskLevels ?? ['data', 'sync', 'agent', 'ui', 'display']
+  const statuses = opts.statuses ?? ['open', 'partial']
   const bad = []
+  const badPartial = []
   const seen = new Set()
   for (const e of entries) {
     if (!e || typeof e !== 'object') { bad.push('非对象条目'); continue }
@@ -251,17 +257,32 @@ export function validateCoverageLedger(entries, opts = {}) {
     if (typeof e.why !== 'string' || e.why.trim().length < 20) bad.push(`${e.file} 的 why 太短（<20 字）`)
     if (typeof e.trigger !== 'string' || e.trigger.trim().length < 10) bad.push(`${e.file} 缺 trigger（什么情况下必须补测试）`)
     if (opts.exists && !opts.exists(e.file)) bad.push(`${e.file} 已不存在（登记未清理）`)
+    const status = e.status ?? 'open'
+    if (!statuses.includes(status)) { bad.push(`${e.file} 状态「${String(status)}」不在 ${statuses.join('/')} 内`); continue }
+    if (status !== 'partial') continue
+    if (typeof e.remaining !== 'string' || e.remaining.trim().length < 10) {
+      badPartial.push(`${e.file} 标了 partial 却没写 remaining（剩余哪部分靠真机）`)
+    }
+    if (typeof e.coveredBy !== 'string' || !e.coveredBy.startsWith('tests/')) {
+      badPartial.push(`${e.file} 标了 partial 却没写 coveredBy（须指向 tests/ 下的测试文件）`)
+    } else if (opts.exists && !opts.exists(e.coveredBy)) {
+      badPartial.push(`${e.file} 的 coveredBy 不存在：${e.coveredBy}`)
+    }
   }
   check('零覆盖台账有效', bad.length === 0, bad.length ? bad.join('; ') : `${entries.length} 条（文件/风险/why/trigger 齐全）`)
+  check('零覆盖台账 partial 指认有效', badPartial.length === 0,
+    badPartial.length ? badPartial.join('; ') : `${entries.filter(e => e?.status === 'partial').length} 条 partial 均写清 remaining 与 coveredBy`)
 
   if (opts.mentioned) {
+    // 🔴 只有 `open` 会因"被提到"而失效：`partial` 本来就指望有测试覆盖它的可测部分。
     const stale = entries
-      .filter(e => typeof e?.file === 'string')
+      .filter(e => typeof e?.file === 'string' && (e.status ?? 'open') === 'open')
       .map(e => ({ file: e.file, base: e.file.split('/').pop().replace(/\.tsx?$/, '') }))
       .filter(x => opts.mentioned.has(x.base))
       .map(x => x.file)
+    const openCount = entries.filter(e => e?.status !== 'partial').length
     check('零覆盖台账未失效', stale.length === 0,
-      stale.length ? `${stale.join(', ')} 已被测试提到，应移出台账` : `${entries.length} 条仍无测试提及`)
+      stale.length ? `${stale.join(', ')} 已被测试提到，应移出台账或改 partial 并写 coveredBy` : `${openCount} 条 open 仍无测试提及`)
   }
   return { ok: issues.length === 0, checks, issues }
 }

@@ -33,6 +33,7 @@ import {
 import { createScript, listScriptsByStory } from '@/lib/tavern/script'
 import type { TavernStoryIndexItem } from '@/lib/tavern/types'
 import { pickImportTargetId } from '@/lib/app/viewSelectors'
+import { decideScriptImportGate, scriptImportResultText } from '@/lib/tavern/scriptImportGate'
 
 type Mode = 'create' | 'append'
 
@@ -128,8 +129,12 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
 
   const ignoredSettingChars = mode === 'append' && parsed?.ok ? parsed.data.setting.trim().length : 0
 
-  const canGo = !!parsed?.ok && !busy && (mode === 'create'
-    || (!!targetId && conflicts.length === 0 && !nothingToAppend))
+  // 主按钮闸（五种情况各一句话，顺序与文案见 `scriptImportGate`，有单测）
+  const gate = decideScriptImportGate({
+    mode, parsedOk: !!parsed?.ok, busy, targetStoryId: targetId,
+    conflictCount: conflicts.length, nothingToAppend,
+    targetLabel: targetStory ? storyDisplayName(targetStory) : '',
+  })
 
   const copyTemplate = async () => {
     await copyText(IMPORT_TEMPLATE, '模板已复制 —— 直接粘给 AI，或填好后粘回上面的框里')
@@ -166,7 +171,9 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
         await createScript({ ...sc, storyId: story.id })
       }
 
-      showToast(`已导入「${name}」：词条 ${entries.length} 条 · 剧本 ${d.scripts.length} 份`)
+      showToast(scriptImportResultText({
+        mode: 'create', storyLabel: name, entryCount: entries.length, scriptCount: d.scripts.length, ignoredSettingChars: 0,
+      }))
       setRaw('')
       onImported(story.id)
       onClose()
@@ -197,8 +204,10 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
         await createScript({ ...sc, storyId: st.id })
       }
 
-      showToast(`已追加到「${storyDisplayName(st)}」：词条 ${d.entries.length} 条 · 剧本 ${d.scripts.length} 份`
-        + (ignoredSettingChars ? '（文本里的世界设定已忽略）' : ''))
+      showToast(scriptImportResultText({
+        mode: 'append', storyLabel: storyDisplayName(st), entryCount: d.entries.length,
+        scriptCount: d.scripts.length, ignoredSettingChars,
+      }))
       setRaw('')
       onImported(st.id)
       onClose()
@@ -207,15 +216,6 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
     } finally {
       setBusy(false)
     }
-  }
-
-  const goTitle = () => {
-    if (!parsed?.ok) return '先粘贴符合模板的文本'
-    if (mode === 'create') return '把上面解析出来的内容建成一个新故事'
-    if (!targetId) return '先选一个目标故事'
-    if (conflicts.length) return '先按上面的清单改名，再追加'
-    if (nothingToAppend) return '这份文本里没有可追加的内容'
-    return `把这些词条与剧本补进「${targetStory ? storyDisplayName(targetStory) : ''}」`
   }
 
   const errors = parsed && !parsed.ok ? parsed.issues.filter(i => i.level === 'error') : []
@@ -378,8 +378,8 @@ export default function TavernScriptImportDialog({ open, onClose, onImported, de
           <Button variant="secondary" size="md" disabled={busy} onClick={onClose}>取消</Button>
           <Button
             variant="primary" size="md"
-            disabled={!canGo}
-            title={goTitle()}
+            disabled={!gate.canGo}
+            title={gate.title}
             onClick={() => void (mode === 'create' ? doCreate() : doAppend())}
           >
             {busy ? (mode === 'create' ? '导入中…' : '追加中…') : (mode === 'create' ? '导入' : '追加')}

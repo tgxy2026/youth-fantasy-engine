@@ -16,6 +16,9 @@ import type { Dispatch, SetStateAction } from 'react'
 import * as db from '@/lib/db'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { setAgentActiveChapter } from '@/lib/editor/activeChapter'
+import {
+  canApplyAgentChapter, decideAgentWrite, mergeKeepingLocal, type AgentWriteEventDetail,
+} from '@/lib/editor/agentWriteDecision'
 import type { Chapter, Volume } from '@/lib/types'
 
 export interface AgentWriteSyncDeps {
@@ -40,12 +43,18 @@ export function useAgentWriteSync(deps: AgentWriteSyncDeps): void {
     let alive = true
     let refreshSequence = 0
     const onAgentWrite = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectId?: string; kind?: string; chapterId?: string }>).detail
-      if (!detail || (detail.kind !== 'chapter' && detail.kind !== 'volume')) return
-      if (detail.projectId && detail.projectId !== db.getCurrentProjectId()) return
+      const detail = (event as CustomEvent<AgentWriteEventDetail>).detail
+      // 判定全在纯函数里（`agentWriteDecision`）：这里只按结论编排副作用。
+      const decision = decideAgentWrite({
+        detail,
+        currentProjectId: db.getCurrentProjectId(),
+        activeChapter: activeRef.current,
+        draft: draftRef.current,
+      })
+      if (decision.action === 'ignore' || decision.action === 'keep-draft') return
       const current = activeRef.current
-      if (detail.kind === 'volume' || !current || current.id !== detail.chapterId) {
-        const owner = captureOwnedOperation(detail.projectId || db.getCurrentProjectId())
+      if (decision.action === 'refresh-list') {
+        const owner = captureOwnedOperation(detail?.projectId || db.getCurrentProjectId())
         const sequence = ++refreshSequence
         void Promise.all([db.getAllVolumes(owner), db.getAllChapters(owner)]).then(([volumes, chapters]) => {
           if (!alive || sequence !== refreshSequence) return
@@ -59,20 +68,24 @@ export function useAgentWriteSync(deps: AgentWriteSyncDeps): void {
             if (!alive || sequence !== refreshSequence) return previous
             const active = activeRef.current
             const local = active && previous.find(chapter => chapter.id === active.id)
-            return local ? chapters.map(chapter => chapter.id === local.id ? local : chapter) : chapters
+            return mergeKeepingLocal(chapters, local)
           })
         }).catch(() => { /* 保留当前列表，切换视图时可重试 */ })
         return
       }
-      if (draftRef.current !== (current.content ?? '')) return // 有未保存输入：不覆盖
-      const owner = captureOwnedOperation(detail.projectId || db.getCurrentProjectId())
+      if (!current) return
+      const owner = captureOwnedOperation(detail?.projectId || db.getCurrentProjectId())
       const sequence = ++refreshSequence
       void db.getAllChapters(owner).then(list => {
         if (!alive || sequence !== refreshSequence) return
         owner.assertCurrent()
         // 读取时用户可能开始输入或切换章节；此时不能覆盖新的草稿。
-        if (activeRef.current !== current || draftRef.current !== (current.content ?? '')) return
-        const next = list.find(c => c.id === detail.chapterId)
+        const next = list.find(c => c.id === decision.chapterId)
+        if (!canApplyAgentChapter({
+          stillActive: activeRef.current === current,
+          stillSameDraft: draftRef.current === (current.content ?? ''),
+          found: !!next,
+        })) return
         if (!next) return
         setChapters(previous => {
           try { owner.assertCurrent() } catch { return previous }

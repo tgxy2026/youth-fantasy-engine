@@ -9,6 +9,7 @@
 //
 // 🔴 `localDirty:false` 的解释在 `projectPullBundle`：本流程不改本机任何现有内容。
 import { importProject } from '@/lib/db/projects'
+import type { ProjectBundle } from '@/lib/db/projects'
 import { loadCloudCopy, type LoadCloudCopyInput } from '@/lib/sync/projectPullBundle'
 
 export interface SaveCloudCopyResult {
@@ -26,17 +27,33 @@ export interface SaveCloudCopyResult {
 }
 
 /**
+ * 测试注入位（3.6.1 · B1）。
+ *
+ * 🔴 为什么只注入 `importProject`：这一层唯一的"真实世界动作"就是它 ——
+ *    下载与装包已经在 `projectPullBundle` 用假 deps 穷举测过。
+ *    把落库换成假实现，就能断言「写的是新项目 id」「失败不留半成品」「失败翻译成人话」，
+ *    而不必把整条存储链拖进单测。生产不传，行为不变。
+ */
+export interface ProjectPullWritePorts {
+  importProject?: (bundle: ProjectBundle) => Promise<string>
+}
+
+/**
  * 把云端某个版本另存为一本新的本地作品。
  * @param input 与 `loadCloudCopy` 相同（云端 id、原项目元数据、名称、指定版本、测试注入）
+ * @param ports 仅测试注入（见 `ProjectPullWritePorts`）；生产不传
  */
-export async function saveCloudCopyAsNewProject(input: LoadCloudCopyInput): Promise<SaveCloudCopyResult> {
+export async function saveCloudCopyAsNewProject(
+  input: LoadCloudCopyInput,
+  ports?: ProjectPullWritePorts,
+): Promise<SaveCloudCopyResult> {
   const loaded = await loadCloudCopy(input)
   if (!loaded.ok || !loaded.bundle) {
     return { ok: false, reason: loaded.reason, omitted: loaded.omitted, records: 0 }
   }
 
   try {
-    const projectId = await importProject(loaded.bundle)
+    const projectId = await (ports?.importProject ?? importProject)(loaded.bundle)
     return {
       ok: true,
       projectId,

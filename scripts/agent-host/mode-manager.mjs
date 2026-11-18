@@ -15,7 +15,14 @@ function decode(raw, supportedModes) {
  * @param {'api'|'agent'|undefined} initialMode 仅在记录文件**从未存在**且调用方已核对旧配置后给出；
  *   缺失的原因不明（损坏、中断、权限）时不要给出，保持 blocked。
  */
-async function createModeManager(store, initialMode, supportedModes, verifyQuiescent) {
+/**
+ * 状态机本体（3.6.1 起 export 给测试用；宿主调用路径不变）。
+ *
+ * 🔴 为什么导出：`agentHost/modeAuthority`（渲染层重复原型）已删除，逻辑只剩这一份；
+ *    这个函数是「成功 / 切换中重复 / blocked 需先恢复 / 回读不匹配即失败关闭」四条语义的**唯一真源**，
+ *    必须能直接用假 store 穷举，而不是靠真机桌面反复点。
+ */
+export async function createModeManager(store, initialMode, supportedModes, verifyQuiescent) {
   const readMode = async () => decode(await store.read(), supportedModes)
   let state
   let missing = false

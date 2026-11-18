@@ -22,6 +22,7 @@ import { showToast, copyText } from '@/components/dialogs/dialogs'
 import { downloadBlob } from '@/lib/storage/zip'
 import { renderDoc, type DocModel, type ExportFormat } from '@/lib/tavern/exportDoc'
 import { tavernExportSummaryText } from '@/lib/app/viewSelectors'
+import { exportedCountOf } from '@/lib/tavern/exportOptions'
 
 export type ExportBuildOptions = { includeHidden: boolean; withMeta: boolean }
 
@@ -74,9 +75,8 @@ export default function TavernExportDialog({
     await copyText(content, '已复制 Markdown 源码 —— 可直接粘进写作软件')
   }
 
-  const exportedCount = messageCount === undefined
-    ? undefined
-    : Math.max(0, messageCount - (includeHidden ? 0 : hiddenCount))
+  // 关掉「含已隐藏」时要减去隐藏条数（算法见 `exportOptions`，有单测）
+  const exportedCount = exportedCountOf({ messageCount, hiddenCount, includeHidden })
   const summaryText = summary
     ? summary(opts())
     : tavernExportSummaryText({ exportedCount, includeHidden, hiddenCount, withMeta, metaLabel })

@@ -26,6 +26,7 @@ import {
   type CharVars, type FreeCharacter, type TavernCharIndexItem, type TavernStoryIndexItem,
 } from '@/lib/tavern/types'
 import { parseVarInputValue } from '@/lib/app/viewSelectors'
+import { applyVarNote, cardStoryHint, varInputDefaultValue } from '@/lib/tavern/cardBasicsLogic'
 
 interface Props {
   /** 当前正在编辑的卡（父级已收窄为非空 —— 没选中卡时这一整块不挂载） */
@@ -90,7 +91,7 @@ export default function TavernCardBasics({
                       {stories.map(s => <option key={s.id} value={s.id}>{storyDisplayName(s)}</option>)}
                     </select>
                     <p className="mt-1 text-11 leading-relaxed">
-                      {cardStoryId(draft) ? (
+                      {cardStoryHint(cardStoryId(draft)) === 'bound' ? (
                         <span className="text-ink-500">世界设定由这个故事提供，卡里不用再写一遍。</span>
                       ) : (
                         <span className="text-amber/80">
@@ -123,10 +124,8 @@ export default function TavernCardBasics({
                         }
                         const setNote = (text: string) => {
                           const cur: CharVars = cv ?? { values: {}, notes: {} }
-                          const notes = { ...cur.notes }
-                          if (text.trim()) notes[def.key] = text.trim()
-                          else delete notes[def.key]
-                          up('vars', { values: { ...cur.values }, notes })
+                          // 空串必须删键（见 cardBasicsLogic 的说明），不能存成空备注
+                          up('vars', { values: { ...cur.values }, notes: applyVarNote(cur.notes, def.key, text) })
                           setDirty(true)
                         }
                         return (
@@ -135,7 +134,7 @@ export default function TavernCardBasics({
                               <span className="w-12 shrink-0 text-11 text-ink-300">{def.label}</span>
                               <input
                                 key={`val-${def.key}-${String(val ?? 'empty')}`}
-                                defaultValue={val === undefined || val === '' ? (def.kind === 'num' ? String(def.init) : '') : String(val)}
+                                defaultValue={varInputDefaultValue(def, val)}
                                 onBlur={e => setVal(e.target.value)}
                                 inputMode={def.kind === 'num' ? 'numeric' : undefined}
                                 placeholder={def.kind === 'num' ? String(def.init) : '（未填）'}

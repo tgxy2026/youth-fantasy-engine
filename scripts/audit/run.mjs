@@ -143,10 +143,10 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
     ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
     '', '## 零覆盖台账（安全 / 数据 / 算法类，无测试但已记风险）', '',
-  `- 登记 \`${report.static.coverage.entries.length}\` 个文件；按风险：${['data', 'sync', 'agent', 'ui', 'display'].map(r => `${r} \`${report.static.coverage.entries.filter(e => e.risk === r).length}\``).join(' · ')}`,
-  `- 台账在 \`scripts/audit/coverage-ledger.json\`：每条写清\`why\`（为什么现在不补）与\`trigger\`（什么情况下必须补）。\`syncMerge\` / \`projectSettingsLock\` / \`schemaLock\` / \`idbMigrateUtil\` 已补测试移出本表`,
+  `- 登记 \`${report.static.coverage.entries.length}\` 个文件；按风险：${['data', 'sync', 'agent', 'ui', 'display'].map(r => `${r} \`${report.static.coverage.entries.filter(e => e.risk === r).length}\``).join(' · ')}；按状态：整体未测 \`${report.static.coverage.entries.filter(e => (e.status ?? 'open') === 'open').length}\` · 部分已测（其余靠真机） \`${report.static.coverage.entries.filter(e => e.status === 'partial').length}\``,
+  `- 台账在 \`scripts/audit/coverage-ledger.json\`：每条写清\`why\`（为什么现在不补）与\`trigger\`（什么情况下必须补）；标 \`partial\` 的还必须写 \`remaining\`（剩余哪部分）与 \`coveredBy\`（哪个测试文件覆盖的，自检会核对该文件存在）`,
   ...(report.static.coverage.entries.length
-    ? ['', ...report.static.coverage.entries.map(e => `- ${e.file} ［${e.risk}］${e.why}；**触发**：${e.trigger}`)]
+    ? ['', ...report.static.coverage.entries.map(e => `- ${e.file} ［${e.risk} · ${e.status ?? 'open'}］${e.why}；**触发**：${e.trigger}${e.status === 'partial' ? `；**已测**：\`${e.coveredBy}\`；**剩余**：${e.remaining}` : ''}`)]
     : ['', '台账为空。']),
   '', '## 未接线模块（整模块没有生产 import）', '',
   `- 扫描 \`${report.static.unwired.files}\` 个 .ts/.tsx（不含 .d.ts）；已接线 \`${report.static.unwired.wired}\`；**未接线 \`${report.static.unwired.unwired}\`**（其中仅测试引用的 \`${report.static.unwired.testOnly}\` 个）`,

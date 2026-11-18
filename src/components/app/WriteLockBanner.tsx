@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw, Unlock } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
+import { writeLockUnlockPrompt } from '@/lib/app/lockBannerCopy'
 
 /**
  * 「数据文件写盘已锁定」的常驻告警条 —— **桌面版与便携版的公共骨架**。
@@ -51,14 +52,7 @@ export function WriteLockBanner({
   subject, reason, writeBackTo, primary, backupHint, onUnlock,
 }: WriteLockBannerProps) {
   const askUnlock = async () => {
-    const ok = await confirmDialog({
-      title: '确定要用当前内容继续吗？',
-      message:
-        '当前内存里是「空库或残缺数据」—— 原文件没能读出来。\n\n' +
-        '继续之后，只要有数据变动就会写回数据文件，磁盘上那份原文件会被覆盖，且无法恢复。\n\n' +
-        backupHint,
-      danger: true,
-    })
+    const ok = await confirmDialog(writeLockUnlockPrompt(backupHint))
     if (ok) onUnlock()
   }
 

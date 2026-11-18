@@ -25,10 +25,24 @@ export const SYNCQ_DB_VERSION = 2
 export const SYNCQ_STORE = 'jobs'
 export const SYNCQ_TOMB_STORE = 'tombstones'
 
-function openDb(): Promise<IDBDatabase> {
+/**
+ * 测试注入位（3.6.1 · B1）。
+ *
+ * 🔴 为什么是参数而不是全局替换：`indexedDB` 在 Node 里根本不存在，测试只能二选一 ——
+ *    要么装一整套 fake-indexeddb（新依赖），要么把「打开数据库」这一个动作变成可注入。
+ *    这里选后者：生产路径不传，行为与之前逐字相同；传 `null` 表示「确实没有 IDB」，
+ *    用来验证降级分支（不需要动 `globalThis`）。
+ */
+export interface SyncQueueIdbPorts {
+  /** 不传 = 用全局 indexedDB；传 null = 模拟没有 IndexedDB；传实现 = 测试桩 */
+  indexedDb?: IDBFactory | null
+}
+
+function openDb(factory?: IDBFactory | null): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') { reject(new Error('NO_IDB')); return }
-    const req = indexedDB.open(SYNCQ_DB_NAME, SYNCQ_DB_VERSION)
+    const idb = factory === undefined ? (typeof indexedDB === 'undefined' ? null : indexedDB) : factory
+    if (!idb) { reject(new Error('NO_IDB')); return }
+    const req = idb.open(SYNCQ_DB_NAME, SYNCQ_DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
       if (!db.objectStoreNames.contains(SYNCQ_STORE)) {
@@ -65,13 +79,15 @@ function tx<T>(
 /**
  * 建立两块后端。**永不 reject**：打不开 IDB 就两块都降级内存。
  * @param onFallback 降级回调（用来留痕 / 提示"本次任务的队列不持久"）
+ * @param ports 仅测试注入（见 `SyncQueueIdbPorts`）；生产不传
  */
 export async function createSyncStateStores(
   onFallback?: (reason: string) => void,
+  ports?: SyncQueueIdbPorts,
 ): Promise<{ queue: QueueStore; tombstones: TombstoneStore }> {
   let db: IDBDatabase
   try {
-    db = await openDb()
+    db = await openDb(ports?.indexedDb)
   } catch (e) {
     onFallback?.(e instanceof Error ? e.message : String(e))
     return { queue: createMemoryQueueStore(), tombstones: createMemoryTombstoneStore() }
@@ -101,6 +117,6 @@ export async function createSyncStateStores(
 }
 
 /** 只要队列（P3 单用） */
-export async function createIdbQueueStore(onFallback?: (reason: string) => void): Promise<QueueStore> {
-  return (await createSyncStateStores(onFallback)).queue
+export async function createIdbQueueStore(onFallback?: (reason: string) => void, ports?: SyncQueueIdbPorts): Promise<QueueStore> {
+  return (await createSyncStateStores(onFallback, ports)).queue
 }

@@ -224,7 +224,11 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     inventory: staticResult.inventory,
     structure: { ...structure.stats, items: structure.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })) },
     coverage: {
-      entries: (covEntries ?? []).map(e => ({ file: e.file, risk: e.risk, why: e.why, trigger: e.trigger })),
+      entries: (covEntries ?? []).map(e => ({
+        file: e.file, risk: e.risk, why: e.why, trigger: e.trigger,
+        // 3.6.1：partial = 可测部分已抽出来测掉，剩余靠真机（必须带举证）
+        status: e.status ?? 'open', remaining: e.remaining ?? '', coveredBy: e.coveredBy ?? '',
+      })),
     },
     unwired: {
       ...unwired.stats,

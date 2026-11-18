@@ -17,6 +17,7 @@ import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
 import { runLegacyMigration, migrationApi, type LegacyProbe, type MigrationReport } from '@/lib/storage/legacyMigration'
+import { migrationReportRows, migrationStartAction } from '@/lib/app/migrationSteps'
 
 interface Props {
   /** 主进程探测到的旧版数据概况 */
@@ -88,7 +89,8 @@ export default function MigrationWizard({ probe, onClose }: Props) {
    * 否则（仅搬了 IDB / 作者跳过 JSON）直接关闭即可。
    */
   const startUsing = () => {
-    if (report?.json.ok) { location.reload(); return }
+    // 只有整库导入成功才 reload（让新数据立即生效）；否则关闭即可，别把刚看到的报告刷掉
+    if (migrationStartAction(report) === 'reload') { location.reload(); return }
     onClose()
   }
 
@@ -99,16 +101,8 @@ export default function MigrationWizard({ probe, onClose }: Props) {
     { key: 'profile', icon: <SlidersHorizontal size={15} className="text-success" />, title: '界面偏好', desc: '界面缩放、主题、字体等本机偏好', ok: Object.values(probe.profile ?? {}).some(Boolean) },
   ]
 
-  const jsonLine = report
-    ? report.json.skipped
-      ? { text: '已跳过（按你的选择）', ok: true }
-      : report.json.ok
-        ? { text: '已导入' + (report.json.remapped ? `（改写 ${report.json.remapped.app} 处品牌标识）` : ''), ok: true }
-        : { text: '失败：' + (report.json.error || '未知原因'), ok: false }
-    : null
-  const vecLine = report ? (report.vec.ok ? `已迁移 ${report.vec.count} 条向量` : '失败：' + (report.vec.error || '')) : ''
-  const kbLine = report ? (report.kb.ok ? `已迁移 ${report.kb.count} 篇资料` : '失败：' + (report.kb.error || '')) : ''
-  const profileLine = report ? (report.profile.copied.length ? '已复制：' + report.profile.copied.join('、') : '无（或已存在，跳过）') : ''
+  // 四行结果与「跳过≠失败」的判定在 `migrationSteps`（有单测）
+  const reportRows = report ? migrationReportRows(report) : []
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-6 bg-ink-950/70 backdrop-blur-sm" style={{ zIndex: Z.modal }}>
@@ -158,16 +152,11 @@ export default function MigrationWizard({ probe, onClose }: Props) {
 
           {step === 'done' && report && (
             <div className="space-y-2.5">
-              {[
-                { label: '书稿与设定', line: jsonLine },
-                { label: '向量索引', line: report.vec.ok ? { text: vecLine, ok: true } : { text: vecLine, ok: false } },
-                { label: '知识库', line: report.kb.ok ? { text: kbLine, ok: true } : { text: kbLine, ok: false } },
-                { label: '界面偏好', line: { text: profileLine, ok: true } },
-              ].map(row => (
+              {reportRows.map(row => (
                 <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg bg-ink-900/50 border border-ink-700/60 px-3.5 py-2.5">
                   <span className="text-12 text-ink-300">{row.label}</span>
-                  <span className={`text-11 text-right ${row.line && row.line.ok ? 'text-success' : 'text-danger'}`}>
-                    {row.line ? row.line.text : '—'}
+                  <span className={`text-11 text-right ${row.ok ? 'text-success' : 'text-danger'}`}>
+                    {row.text || '—'}
                   </span>
                 </div>
               ))}

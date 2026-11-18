@@ -21,6 +21,7 @@ import Avatar from '@/components/common/Avatar'
 import { Modal } from '@/components/dialogs/Modal'
 import { type NovelTab } from '@/components/tavern/useTavernCardModel'
 import { filterNovelChars, countNovelChars } from '@/lib/app/viewSelectors'
+import { novelImportFooterText, novelTabLabel } from '@/lib/tavern/novelImportLogic'
 
 const NOVEL_TABS: { id: NovelTab; label: string }[] = [
   { id: 'all', label: '全部' },
@@ -28,9 +29,6 @@ const NOVEL_TABS: { id: NovelTab; label: string }[] = [
   { id: 'char-secondary', label: '次要' },
   { id: 'char-npc', label: 'NPC' },
 ]
-const NOVEL_TAB_LABEL: Record<string, string> = {
-  'char-main': '主要', 'char-secondary': '次要', 'char-npc': 'NPC',
-}
 
 interface Props {
   /** 弹窗开着没有 */
@@ -102,7 +100,7 @@ export default function TavernCardNovelImportDialog({
                     <Avatar name={c.name} size={24} />
                     <span className="min-w-0 flex-1 truncate text-12 text-ink-100">{c.name}</span>
                     <span className="shrink-0 text-10 text-ink-600">
-                      {NOVEL_TAB_LABEL[c.tabId] ?? c.tabId}
+                      {novelTabLabel(c.tabId)}
                     </span>
                   </button>
                 </li>
@@ -114,9 +112,7 @@ export default function TavernCardNovelImportDialog({
           )}
           <div className="flex items-center justify-between border-t border-ink-700 pt-2">
             <span className="text-11 text-ink-500">
-              {converting
-                ? '正在转换（要读一遍角色卡，可能要十几秒）…'
-                : `共 ${novelChars.length} 个角色${novelRows.length === novelChars.length ? "" : ` · 命中 ${novelRows.length} 个`}`}
+              {novelImportFooterText({ converting, total: novelChars.length, matched: novelRows.length })}
             </span>
             <Button variant="secondary" size="md" onClick={() => setImportOpen(false)} disabled={converting}>关闭</Button>
           </div>

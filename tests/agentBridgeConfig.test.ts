@@ -1,61 +1,7 @@
 import assert from 'node:assert/strict'
 import { makeAgentBridgeConfig, makeAgentConnectionPrompt, makeCodexAgentBridgeConfig, makeBridgeConfig } from '../src/lib/aiCore/backend/bridgeConfig'
 import { beginModeTransition, canStartModeWork, createModeCoordinator, finishModeTransition, parsePersistedMode } from '../src/lib/agentHost/modeTransition'
-import { createModeAuthority } from '../src/lib/agentHost/modeAuthority'
 const script = 'C:\\Program Files\\YFE\\resources\\scripts\\mcp\\yfe-readonly.mjs'
-{
-  let saved: unknown = { version: 1, phase: 'stable', mode: 'api' }
-  const store = { read: async () => saved, write: async (value: unknown) => { saved = value } }
-  const authority = await createModeAuthority(store)
-  const release = authority.acquire('api')
-  assert.ok(release)
-  const abort = new AbortController()
-  const waiting = authority.switchTo('agent', 'switch-pending', async () => true, abort.signal)
-  await new Promise(resolve => setTimeout(resolve, 0))
-  assert.equal(authority.acquire('api'), null)
-  assert.equal(authority.acquire('agent'), null)
-  abort.abort()
-  await assert.rejects(waiting, /取消/)
-  release()
-  assert.equal(authority.acquire('api'), null)
-  assert.equal(authority.acquire('agent'), null)
-  const recovered = await createModeAuthority(store)
-  assert.equal(recovered.acquire('api'), null)
-  assert.equal(recovered.acquire('agent'), null)
-  saved = { version: 1, phase: 'stable', mode: 'api' }
-  const valid = await createModeAuthority(store)
-  await valid.switchTo('agent', 'switch-success', async () => true)
-  assert.ok(valid.acquire('agent'))
-  assert.equal(valid.acquire('api'), null)
-  const failedWrite = await createModeAuthority({ read: async () => ({ version: 1, phase: 'stable', mode: 'api' }), write: async () => { throw new Error('磁盘失败') } })
-  await assert.rejects(failedWrite.switchTo('agent', 'write-failure', async () => true), /磁盘失败/)
-  assert.equal(failedWrite.acquire('api'), null)
-  assert.equal(failedWrite.acquire('agent'), null)
-  const ignoredWrite = await createModeAuthority({ read: async () => ({ version: 1, phase: 'stable', mode: 'api' }), write: async () => {} })
-  let prepared = false
-  await assert.rejects(ignoredWrite.switchTo('agent', 'ignored-write', async () => { prepared = true; return true }), /切换记录/)
-  assert.equal(prepared, false)
-  assert.equal(ignoredWrite.acquire('api'), null)
-  let releasePrepare!: (value: boolean) => void
-  saved = { version: 1, phase: 'stable', mode: 'api' }
-  const concurrent = await createModeAuthority(store)
-  const pending = concurrent.switchTo('agent', 'first-switch', () => new Promise(resolve => { releasePrepare = resolve }))
-  await new Promise(resolve => setTimeout(resolve, 0))
-  await assert.rejects(concurrent.switchTo('agent', 'second-switch', async () => true), /正在进行/)
-  assert.equal(concurrent.acquire('api'), null)
-  releasePrepare(true)
-  await pending
-  saved = { version: 1, phase: 'stable', mode: 'api' }
-  const draining = await createModeAuthority(store)
-  const held = draining.acquire('api')!
-  const drained = draining.switchTo('agent', 'drain-switch', async () => true)
-  await new Promise(resolve => setTimeout(resolve, 0))
-  assert.equal(draining.acquire('agent'), null)
-  held()
-  await drained
-  assert.ok(draining.acquire('agent'))
-  console.log('PASS 持久切换原型在中断与在途任务时失败关闭')
-}
 {
   const api = { phase: 'stable', mode: 'api' } as const
   const switching = beginModeTransition(api, 'agent', 'switch-1')
