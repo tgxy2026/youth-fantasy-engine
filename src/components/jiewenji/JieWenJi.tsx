@@ -73,7 +73,7 @@ export default function JieWenJi(props: Props) {
 
       {/* 浮动模式的拉宽把手（右下角）：只在浮动时出现，避免停靠模式下多一个可点的角 */}
       {floating && (
-        <div {...layout.resizeHandleProps} data-no-drag role="separator" aria-label="调整面板宽度"
+        <div {...layout.resizeHandleProps} data-no-drag role="separator" aria-orientation="vertical" aria-label="调整面板宽度"
           className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
           style={{ touchAction: 'none' }} />
       )}

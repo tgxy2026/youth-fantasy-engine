@@ -12,7 +12,7 @@ import {
   DEFAULT_PANEL_PREFS, PANEL_BOTTOM, PANEL_DEFAULT_WIDTH, PANEL_EDGE, PANEL_FLOAT_MIN_VIEWPORT,
   PANEL_MAX_WIDTH, PANEL_MIN_HEIGHT, PANEL_MIN_WIDTH, PANEL_TOP,
   PANEL_SNAP, clampFloatingRect, dockedRect, effectiveMode, initialFloatingRect, localViewport,
-  normalizePanelPrefs, serializePanelPrefs, snapSide, snapToEdges, snappedLeft, toLocalPx, type PanelPrefs,
+  normalizePanelPrefs, serializePanelPrefs, snapToEdges, snappedLeft, toLocalPx, type PanelPrefs,
 } from '../src/lib/app/panelDock'
 
 let pass = 0, fail = 0
@@ -57,9 +57,6 @@ function main() {
 
   // ③ 吸附
   {
-    ok('中心偏左 → 吸附左侧', snapSide({ left: 100, width: 360 }, VP) === 'left')
-    ok('中心偏右 → 吸附右侧', snapSide({ left: 1000, width: 360 }, VP) === 'right')
-    ok('正好居中 → 右侧（与默认值一致）', snapSide({ left: VP.width / 2 - 180, width: 360 }, VP) === 'right')
     ok('左侧吸附位 = 12', snappedLeft('left', 360, VP) === PANEL_EDGE)
     ok('右侧吸附位 = 视口宽 - 宽 - 12', snappedLeft('right', 360, VP) === VP.width - 360 - PANEL_EDGE)
     ok('面板比视口宽时吸附位不出现负数', snappedLeft('right', 2000, VP) === PANEL_EDGE)
@@ -174,9 +171,11 @@ function main() {
     ok('源码闸：窄窗口用共享常量判定', hook.includes('PANEL_FLOAT_MIN_VIEWPORT'))
     ok('🔴 源码闸：几何按界面缩放折算（否则右侧吸附会只剩半边）',
       hook.includes('currentUiZoom()') && hook.includes('localViewport(') && hook.includes('toLocalPx('))
+    ok('源码闸：缩放变化会重算（订阅 yfe:zoom-changed）',
+      hook.includes("'yfe:zoom-changed'") && hook.includes('setZoom(currentUiZoom())'))
     ok('源码闸：拖动/拉宽位移除以 zoom', (hook.match(/toLocalPx\(e\.client[XY] - /g) ?? []).length >= 3)
     ok('🔴 源码闸：松手按四条边吸附（不是只吸左右）',
-      hook.includes('snapToEdges(') && !/const side = snapSide\(/.test(hook))
+      hook.includes('snapToEdges(') && !hook.includes('snapSide'))
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} panelDock ${pass}/${pass + fail}`)

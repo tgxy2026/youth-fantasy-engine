@@ -155,12 +155,6 @@ export function snapToEdges(rect: PanelRect, viewport: PanelViewport, threshold 
   return { rect: { ...rect, left, top }, side, vertical }
 }
 
-/** 松手后吸附到哪一侧：看面板中心在视口中线的左还是右（平局算右侧，与默认值一致） */
-export function snapSide(rect: Pick<PanelRect, 'left' | 'width'>, viewport: PanelViewport): PanelSide {
-  const center = rect.left + rect.width / 2
-  return center < viewport.width / 2 ? 'left' : 'right'
-}
-
 /** 吸附后该侧的左边距（面板保持当前宽度，只贴边） */
 export function snappedLeft(side: PanelSide, width: number, viewport: PanelViewport): number {
   return side === 'left' ? PANEL_EDGE : Math.max(PANEL_EDGE, viewport.width - width - PANEL_EDGE)

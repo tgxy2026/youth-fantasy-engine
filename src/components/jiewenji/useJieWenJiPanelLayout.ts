@@ -77,6 +77,13 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
   const panelRef = useRef<HTMLDivElement>(null)
   const [prefs, setPrefs] = useState<PanelPrefs>(readPrefs)
   const [viewport, setViewport] = useState<PanelViewport>(viewportOf)
+  /**
+   * 界面缩放系数放 state（不要每次渲染现读）。
+   * 🔴 缩放由侧栏改，`<html>` 的 zoom 变了但本组件**不会**因此重渲染 ——
+   *    只用 currentUiZoom() 会拿到变化前的值，夹取按旧视口算，面板可能又一次越界。
+   *    所以订阅 `yfe:zoom-changed`（applyZoom 会派发）主动重算。
+   */
+  const [zoom, setZoom] = useState(currentUiZoom)
   const [dragging, setDragging] = useState(false)
   const dragRef = useRef<DragState | null>(null)
   const resizeRef = useRef<ResizeState | null>(null)
@@ -84,8 +91,17 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
   // 窗口尺寸变化：只更新视口，几何在渲染时重新夹取（偏好本身不动）
   useEffect(() => {
     const onResize = () => setViewport(viewportOf())
+    // 界面缩放变化：重读系数 + 重读视口（两者都要，缩放同时影响可用宽度与阈值判定）
+    const onZoom = () => {
+      setZoom(currentUiZoom())
+      setViewport(viewportOf())
+    }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('yfe:zoom-changed', onZoom)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('yfe:zoom-changed', onZoom)
+    }
   }, [])
 
   // 偏好持久化：写失败只影响"下次记住"，不影响本次会话
@@ -96,7 +112,6 @@ export function useJieWenJiPanelLayout(): JieWenJiPanelLayout {
    *    所以全部几何都得在「style 像素」空间里算（= 屏幕像素 / zoom）。
    *    漏了这一步的表现：右侧吸附只剩半边、上下长度被放大（2026-11-18 实测）。
    */
-  const zoom = currentUiZoom()
   const local = useMemo(() => localViewport(viewport, zoom), [viewport, zoom])
   const mode = effectiveMode(prefs, local)
   const canFloat = local.width >= PANEL_FLOAT_MIN_VIEWPORT
