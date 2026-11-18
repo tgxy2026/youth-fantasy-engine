@@ -30,7 +30,7 @@
     {
       "file": "src/lib/agentHost/modeAuthority.ts",
       "status": "gap",
-      "reason": "ACP 连接模式切换的持久化授权（崩溃后失败关闭）。产品没有「切换连接模式」的入口——模式由设置里的一次性配置决定，所以无人调用。接线需要模式切换 UI 与对应风险说明，属产品决定"
+      "reason": "已决策（2026-11-18，用户拍板「需要处理」）：**3.6.1 B6 删除**。核实结论：模式真源在宿主 mode-service，页面侧唯一消费入口是 modeBridge（status/switch/cancel/recover），AIConfigPanel 已有完整切换 UI（相位灯/切换/取消/安全恢复/blocked 提示）；本模块自己持久化「切换中」状态＝在渲染层再造一份真源。删除不改任何用户可见行为；要更强入口另开条目"
     },
     {
       "file": "src/lib/templates/semanticView.ts",
