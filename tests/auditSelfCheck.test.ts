@@ -107,6 +107,10 @@ ok('CLI 覆盖死导出欠账预算', /\[passed\] 死导出欠账不超预算/.t
 // 2026-11-18 结构约束（预期长期为 0 的硬线）
 ok('CLI 覆盖门面名单自洽', /\[passed\] 门面名单自洽/.test(cli.out), cli.out.slice(-500))
 ok('CLI 覆盖结构约束预算', /\[passed\] 结构约束不超预算/.test(cli.out), cli.out.slice(-500))
+// 2026-11-18 未接线模块（整模块没有生产 import）
+ok('CLI 覆盖未接线台账有效性', /\[passed\] 未接线台账有效/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖未接线模块登记', /\[passed\] 未接线模块已登记/.test(cli.out), cli.out.slice(-500))
+ok('CLI 覆盖未接线台账失效检测', /\[passed\] 未接线台账未失效/.test(cli.out), cli.out.slice(-500))
 
 // ---------- 3.6.0：预算与清单一致性（纯函数，坏输入必须被拦） ----------
 {

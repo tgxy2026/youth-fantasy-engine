@@ -53,6 +53,12 @@ report.static.deadExports = selfCheck.deadExports
  * 它们按「硬线」处理（不是欠账预算）：出现即自检失败，报告不可能 complete。
  */
 report.static.structure = selfCheck.structure
+/**
+ * 未接线模块（2026-11-18）：整个模块没有任何生产代码 import。
+ * 死导出按符号统计，这类形状在报告里看不见（实测 changeEvents / modeAuthority 都是），
+ * 现在单列一段：按台账状态分组，gap 单独标出（能力缺口，删了等于扔方案）。
+ */
+report.static.unwired = selfCheck.unwired
 if (!selfCheck.ok) report.diagnostics.push({ status: 'blocked', reason: `审计工具自检失败：${selfCheck.issues.join('; ')}` })
 const legacyNames = ['scan', 'dead', 'graph', 'arch', 'content', 'prompt', 'ui', 'func', 'sec', 'coverage', 'label-consistency']
 function runLegacy(name) {
@@ -131,7 +137,16 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
   ...(report.static.structure.items.length
     ? ['', ...report.static.structure.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
-  '', '## 死导出欠账（结构化清单）', '',
+    '', '## 未接线模块（整模块没有生产 import）', '',
+  `- 扫描 \`${report.static.unwired.files}\` 个 .ts/.tsx（不含 .d.ts）；已接线 \`${report.static.unwired.wired}\`；**未接线 \`${report.static.unwired.unwired}\`**（其中仅测试引用的 \`${report.static.unwired.testOnly}\` 个）`,
+  `- 台账 \`${report.static.unwired.entries.length}\` 条：能力缺口 \`${report.static.unwired.entries.filter(e => e.status === 'gap').length}\` · 已判定保留 \`${report.static.unwired.entries.filter(e => e.status === 'retained').length}\` · 度量夹具 \`${report.static.unwired.entries.filter(e => e.status === 'harness').length}\``,
+  ...(report.static.unwired.items.length
+    ? ['', '清单（状态与理由见 `scripts/audit/unwired-ledger.json`）：', ...report.static.unwired.items.map(i => {
+        const e = report.static.unwired.entries.find(x => x.file === i.file)
+        return `- ${i.file} ［${e?.status ?? '未登记'}］测试引用 ${i.testImporters} 处 — ${e?.reason ?? i.message}`
+      })]
+    : ['', '没有未接线模块。']),
+'', '## 死导出欠账（结构化清单）', '',
   `- 导出总数 \`${report.static.deadExports.exports}\`；零引用 \`${report.static.deadExports.dead}\`（已复核 \`${report.static.deadExports.reviewed}\` / **未复核 \`${report.static.deadExports.open}\`**）`,
   `- 仅测试引用 \`${report.static.deadExports.testOnly}\`（不计入欠账：单测覆盖是常态）；仅被**门面再导出** \`${report.static.deadExports.facadeOnly}\`（删除会打断对外 API，须同时改门面）`,
   ...(report.static.deadExports.openItems.length

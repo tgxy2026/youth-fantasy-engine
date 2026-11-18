@@ -41,7 +41,19 @@ function walk(dir, out = []) {
 }
 const lineOf = (src, i) => src.slice(0, i).split('\n').length
 const rel = f => path.relative(ROOT, f).replace(/\\/g, '/')
-const uneven = vals => vals.length >= 2 && new Set(vals.map(han)).size >= 2
+/**
+ * 🔴 2026-11-18 审计修正（工具缺陷）：原先"汉字数只要有差异就算不齐"。
+ *    于是「待处理候选」(5) vs「全部留档」(4)、「正文章节摘要」(6) vs「章节细纲卡」(5)
+ *    都成了问题 —— 实测 161 组相邻按钮里有 98 组被判不齐，全是正常文案差异。
+ *    现在只报**明显失衡**：字数差 ≥3 且相差 ≥2 倍（如「去」vs「逐章确认初稿」）。
+ *    这条检查的价值在"一眼看出别扭"，不在"字数必须相等"。
+ */
+const uneven = (vals, minDiff = 3, minRatio = 2) => {
+  if (vals.length < 2) return false
+  const ns = vals.map(han)
+  const max = Math.max(...ns), min = Math.min(...ns)
+  return max - min >= minDiff && max >= min * minRatio
+}
 
 /**
  * 取 `<Button …>儿童</Button>` 的可见中文文案。
@@ -148,15 +160,30 @@ for (const file of files) {
 }
 
 // ───────────── 输出 ─────────────
-const dump = (title, rows) => {
+/**
+ * 📌 2026-11-18：只有 A（互斥分段按钮）参与判定。
+ *
+ * 为什么 B/C 降级为「信息」：它们的成员本来就不是等宽语义 ——
+ * B 是相邻动作（「去」「逐章确认初稿」「括号后换行」），C 是字段标签/致谢名单/正则数组
+ * （「口吻」「称呼你的方式」）。用字数差去判它们，只能判出"文案不一样"，那不是缺陷。
+ * 实测：B 98 组、C 102 组被判不齐，逐组看全是正常差异 —— 这种量级的假阳性会训练人无视整条规则。
+ * 现在 B/C 用更严的阈值（差 ≥4 且 ≥3 倍）只列「一眼别扭」的，且标为不判定。
+ */
+const dump = (title, rows, opts = {}) => {
   console.log('\n######## ' + title + ' ########')
+  if (opts.info) console.log('（信息 · 不判定：成员本来不等宽，只列明显失衡供一瞥）')
   let bad = 0
   for (const r of rows) {
     const vals = r.vals ?? r.g.map(x => x.val)
-    const un = uneven(vals)
+    /**
+     * 「label：状态」型开关（去 AI 味儿：已开启 / 逐章确认初稿：已关闭）不算不齐：
+     * 冒号前是名字、冒号后是状态，本来就不该等宽。这类在界面上是**开关**，不是互斥分段选项。
+     */
+    if (opts.skipColon && vals.every(v => /[：:]\s*$/.test(v))) continue
+    const un = uneven(vals, opts.minDiff ?? 3, opts.minRatio ?? 2)
     if (!un && !all) continue
     if (un) bad++
-    if (un) console.log('⚠ ' + rel(r.file) + (r.name ? ' :: ' + r.name : '') +
+    if (un) console.log((opts.info ? '▸ ' : '⚠ ') + rel(r.file) + (r.name ? ' :: ' + r.name : '') +
       '  (L' + (r.line ?? r.g[0].line) + ')')
     else console.log('  ' + rel(r.file))
     console.log('    ' + vals.map(v => han(v) + '字·' + v).join('  |  '))
@@ -165,12 +192,12 @@ const dump = (title, rows) => {
 }
 
 console.log('工作区：' + ROOT)
-dump('A. 互斥分段按钮（variant="toggle"）', groupsA.filter(r => r.g.length >= 2))
-dump('B. 相邻 Button 组', groupsB.filter(r => r.g.length >= 2))
+dump('A. 互斥分段按钮（variant="toggle"）', groupsA.filter(r => r.g.length >= 2), { skipColon: true })
+dump('B. 相邻 Button 组', groupsB.filter(r => r.g.length >= 2), { info: true, minDiff: 4, minRatio: 3 })
 // C 类噪音最多（lib 下有大量数据表常量）⇒ 组件目录的排前面，先看它们
 groupsC.sort((a, b) =>
   (a.file.includes('components') ? 0 : 1) - (b.file.includes('components') ? 0 : 1))
-dump('C. 选项常量数组（组件目录优先）', groupsC)
+dump('C. 选项常量数组（组件目录优先）', groupsC, { info: true, minDiff: 5, minRatio: 3 })
 
 console.log('\n🔴 只给线索：回源码确认是否真渲染为「同一功能模块的并列按钮」再动手。')
 console.log('   排除项：主操作+取消 的异类配对、含数字/英文的规格类、数据表（人名/错别字/主题名）。')

@@ -1,0 +1,56 @@
+{
+  "note": "未接线模块台账。判据见 scripts/audit/unwired-modules.mjs：src 下没有生产代码 import、且不是入口的文件。每条必须写清性质与理由（≥20 字），否则自检失败。status：gap=按下方案实现但产品没接入口（能力缺口，删了等于扔方案）；retained=已判定按需求保留不挂载；harness=评测集/基准脚本等度量夹具（本来就不该被产品 import）；entry=入口文件。新增未接线文件不登记，审计直接失败。",
+  "updatedAt": "2026-11-18",
+  "entries": [
+    {
+      "file": "src/components/app/ProjectAutoCover.tsx",
+      "status": "retained",
+      "reason": "自动字封是 3.5.1 按用户要求回退的功能（项目卡片回到纯色封面）；保留实现待重新启用，删了就没法一键恢复"
+    },
+    {
+      "file": "src/components/help/PageGuideButton.tsx",
+      "status": "retained",
+      "reason": "3.5.1 起页头不再放「本页指引」按钮，改用 usePageGuide + GuideOverlay；两份契约测试（pageGuide / uiUxGuards）都断言页面里不得出现它"
+    },
+    {
+      "file": "src/components/settings/SectionNav.tsx",
+      "status": "retained",
+      "reason": "长页分节导航是 3.5.1 按用户要求移除的（设置页改回普通滚动）；保留实现待重新启用"
+    },
+    {
+      "file": "src/lib/revision/changeEvents.ts",
+      "status": "gap",
+      "reason": "A3「有证据的后续影响提示」：变化事件 / 影响证据 / 相关性复核都已实现且单测覆盖，但产品侧零 import —— 正文改动后不会提示哪几处设定受影响。接线需要界面位置，属产品决定"
+    },
+    {
+      "file": "src/lib/revision/generationInvalidation.ts",
+      "status": "gap",
+      "reason": "WT2「候选按代次失效」：租约 / 代次 / 迟到回调都已实现，但产品侧零 import。当前的过期保护走的是另一条机制（候选 revision 相等校验），多窗口同批租约没有接线"
+    },
+    {
+      "file": "src/lib/agentHost/modeAuthority.ts",
+      "status": "gap",
+      "reason": "ACP 连接模式切换的持久化授权（崩溃后失败关闭）已实现，但产品没有切换入口，所以无人调用；关掉它不影响现有 ACP 连接，接线需要模式切换 UI"
+    },
+    {
+      "file": "src/lib/templates/semanticView.ts",
+      "status": "gap",
+      "reason": "语义读取视图（把字段结构投影成身份/动机/状态并标注出处）已实现，但界面与 AI 侧都还没用它 —— AI 的字段提示目前由 consumers.ts 的 atlasFieldHintForAI 承担"
+    },
+    {
+      "file": "src/lib/retrieval/bench.ts",
+      "status": "harness",
+      "reason": "检索策略基准：给 tests/retrievalBench.test.ts 与 retrieval-bench.ts 量化召回与串味，是度量工具，本来就不该被产品 import"
+    },
+    {
+      "file": "src/lib/ai/evalDatasets335.ts",
+      "status": "harness",
+      "reason": "3.3.5 评测数据集：被 evalRunner335 / evalDatasets335 两个测试消费，用于回归对比，属度量夹具"
+    },
+    {
+      "file": "src/lib/ai/factSamples.ts",
+      "status": "harness",
+      "reason": "固定样本集：给 fixedSamples.test.ts 做抽取质量回归用，属测试夹具，不是产品代码"
+    }
+  ]
+}

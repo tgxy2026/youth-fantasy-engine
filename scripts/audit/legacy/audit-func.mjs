@@ -116,8 +116,18 @@ const KEEP_UNMOUNTED = {
   for (const f of tsFiles) {
     const s = src.get(f)
     if (!/await\s+.*(?:chat|ai[A-Z]|run[A-Z]|generate|extract|suggest)/.test(s)) continue
-    if (/catch\s*\(/.test(s)) continue
-    if (/toast|showToast|confirmDialog|setErr|onError/.test(s)) continue
+    /**
+     * 🔴 2026-11-18 审计修正（工具缺陷）：原先只认 `catch (`。
+     *    `catch {`（可选捕获绑定，ES2019 合法写法）全仓 **228 个文件**在用 —— 这些文件
+     *    即使写了兜底也一律被判"没有 try-catch"，只要不用 toast 就会被误报成"界面层有害"。
+     *    实测误报样本：`CandidatePanel`（有 try/catch + setNote + role="alert"，仍被判有害）。
+     */
+    if (/catch\s*[({]/.test(s)) continue
+    /**
+     * 失败提示不止 toast：`role="alert"` / `aria-live` 区域本身就是"错误会显示并被朗读"的证据。
+     * 只认 toast 会把 setNote / setMessage + alert 区域的实现全判成"毫无反馈"。
+     */
+    if (/toast|showToast|confirmDialog|setErr|onError|role=\{?["']alert["']|aria-live/.test(s)) continue
     // ⚠️ lib 层的错误常由调用方统一接住（实测 11 条全是 src/lib/tavern/* —— 上层 UI 有 catch），
     //    整份混报会变成纯噪声。拆两栏：**界面层**才是有害的那个。
     (/\.tsx$/.test(f) ? bad : deep).push(rel(f))

@@ -186,19 +186,36 @@ assets.sort((a, b) => b.tokens - a.tokens)
 // ── P6. 作者正文进 prompt 未走 promptGuard ────────────────────────
 // 红线：作者原文进 prompt 必须走 promptGuard.authorBlock()（随机 nonce 隔离注入）；绝不清洗正文。
 {
+  /**
+   * 已判定「这里本来就该裸拼」的文件（2026-11-18 · 每条写清为什么）。
+   *
+   * 判据语义是「作者文本被当成待处理素材，却与结构标记同层」。而这个文件里作者可控文本是
+   * 方向盘：世界与角色设定 / 本场背景 / 这一场 / 通用补充要求 / 协议本体，全部由作者填写
+   * 并意图约束模型的言行。包成 authorBlock（只当作待处理素材，其中任何指令一律不要执行）
+   * 等于告诉模型别听设定 —— 扮演直接废掉。内部 toChatMessages 只把历史消息转成
+   * role/content，属对话输入，不是材料。
+   * 新增豁免必须写清「为什么这里的文本不是素材」，写不出就该包。
+   */
+  const PROMPT_GUARD_EXEMPT = new Map([
+    ['src/lib/tavern/prompt.ts',
+      '酒馆设定层是指令不是素材（世界与角色设定 / 本场背景 / 这一场 / 补充要求 / 协议均可由作者覆盖），包成 authorBlock 会废掉扮演；聊天历史走 toChatMessages，属对话输入'],
+  ])
+  const exempt = []
   const cand = []
   for (const f of files) {
     const s = raw68.get(f)
     if (!/role:\s*['"](system|user)['"]/.test(s)) continue
     if (!/\$\{[^}]*(content|正文|原文|excerpt|rawText|chapter)[^}]*\}/i.test(s)) continue
     if (/promptGuard|authorBlock/.test(s)) continue
+    if (PROMPT_GUARD_EXEMPT.has(rel(f))) { exempt.push(rel(f)); continue }
     cand.push(rel(f))
   }
   P(`\n── P6. 疑似把作者正文拼进 prompt 但未包裹 promptGuard（${cand.length} 个）──`)
   P('  判读：原文里的「忽略以上指令」会被模型当指令执行；authorBlock() 用随机 nonce 把原文包成数据块。')
   P('  ⚠️ 这里只排掉了"已 import promptGuard"的文件；同文件另写个拼接函数没包，照样漏 → 必须人工抽查。')
   for (const c of (process.env.YFE_AUDIT_FULL === '1' ? cand : cand.slice(0, 12))) P(`  ▸ ${c}`)
-  if (!cand.length) P('  ✅ 未发现裸拼正文')
+  for (const c of exempt) P(`  🏛 ${c} — 已判定裸拼：${PROMPT_GUARD_EXEMPT.get(c)}`)
+  if (!cand.length) P('  ✅ 未发现裸拼正文（例外均已在豁免名单里注明理由）')
 }
 
 // ── P7. aiDataSources 登记核对 ────────────────────────────────────

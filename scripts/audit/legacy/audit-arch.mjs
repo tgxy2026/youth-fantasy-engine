@@ -256,14 +256,21 @@ const INTENTIONAL_FACADES = ['src/lib/db.ts', 'src/lib/ai/aiTasks.ts']
     const m = masked.get(f)
     const ls = m.split(/\r?\n/)
     for (let i = 0; i < ls.length; i++) {
-      const mt = ls[i].match(/^\s*const (\w+) = [\w.[\]]+(\.[a-z]+\([^)]*\))\./)
+      const mt = ls[i].match(/^(\s*)const (\w+) = [\w.[\]]+(\.[a-z]+\([^)]*\))\./)
       if (!mt) continue
+      /**
+       * 🔴 2026-11-18 审计修正（工具缺陷）：只统计**组件体顶层**（缩进 ≤2）的语句。
+       *    原先任何缩进都算，于是事件处理器里的 `const parts = input.split(...).map()`
+       *    也被当成"每次渲染重排"（实测误报：CheckTools 的 addWord、SettingSearch 的 q）。
+       *    更深缩进在 React 里主要来自嵌套函数/回调，那些不是渲染期，报出来只会训练人无视这条。
+       */
+      if (mt[1].length > 2) continue
       const chain = (ls[i].match(/\.[a-zA-Z]+\(/g) || []).length
       if (chain < 2) continue
-      if (!new RegExp(`\\{${mt[1]}[.,}]|\\{${mt[1]}\\s`).test(m)) continue   // 结果没被渲染使用
+      if (!new RegExp(`\\{${mt[2]}[.,}]|\\{${mt[2]}\\s`).test(m)) continue   // 结果没被渲染使用
       const prev = ls.slice(Math.max(0, i - 3), i).join('\n')
       if (/useMemo/.test(prev) || /useMemo/.test(ls[i])) continue
-      heavy.push(`${rel(f)}:${i + 1}  const ${mt[1]} = …（${chain} 段链）`)
+      heavy.push(`${rel(f)}:${i + 1}  const ${mt[2]} = …（${chain} 段链）`)
     }
   }
   rep.push([`渲染期重算：filter/sort/map 未包 useMemo（${heavy.length}）`, heavy.slice(0, 12), '每次渲染重排全表；行数上万时明显卡顿。'])

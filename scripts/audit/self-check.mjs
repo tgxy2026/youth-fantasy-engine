@@ -20,6 +20,7 @@ import {
 } from './registry-check.mjs'
 import { scanDeadExports, staleDeadReviews, validateDeadReviews } from './dead-exports.mjs'
 import { DECLARED_FACADES, scanStructure, validateFacadeRegistry } from './structure-checks.mjs'
+import { ENTRY_FILES, reconcileUnwiredLedger, scanUnwiredModules, validateUnwiredLedger } from './unwired-modules.mjs'
 
 export { validateRegistry, toolFingerprint }
 
@@ -108,6 +109,53 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     detail: facadeCheck.ok ? `${DECLARED_FACADES.length} 个已声明门面均在位` : facadeCheck.issues.join('; '),
   })
   result.issues.push(...facadeCheck.issues)
+  /**
+   * 未接线模块（2026-11-18）：整个模块没有任何生产代码 import。
+   *
+   * 为什么必须单独一条：死导出按**符号**统计，`test` 桶只报数不列清单，于是
+   * 「实现完整、单测齐全、产品一次都没用」的模块在报告里完全看不见（实测：changeEvents 235 行、
+   * modeAuthority 51 行都是这种形状，只有读 graph 扇入表才能用眼睛捞）。
+   * 三条检查分别拦：台账写得敷衍 / 新增未接线没定性质 / 台账过期变成谎言。
+   */
+  const unwiredLedgerFile = readJsonFile('scripts/audit/unwired-ledger.json')
+  const unwiredEntries = options.unwiredLedger ?? unwiredLedgerFile?.entries ?? null
+  const unwiredCheck = validateUnwiredLedger(unwiredEntries ?? [], f => fs.existsSync(path.join(root, f)))
+  result.checks.push({
+    name: '未接线台账有效',
+    status: unwiredEntries && unwiredCheck.ok ? 'passed' : 'failed',
+    detail: unwiredEntries
+      ? (unwiredCheck.ok ? `${unwiredEntries.length} 条（状态与理由齐全）` : unwiredCheck.issues.join('; '))
+      : 'scripts/audit/unwired-ledger.json 缺失或不可解析',
+  })
+  if (!unwiredEntries || !unwiredCheck.ok) {
+    result.issues.push(`未接线台账无效：${unwiredEntries ? unwiredCheck.issues.join('; ') : '文件缺失或不可解析'}`)
+  }
+
+  const unwired = options.unwired ?? scanUnwiredModules(root)
+  if (unwiredEntries) {
+    const recon = reconcileUnwiredLedger(unwired.findings, unwiredEntries)
+    result.checks.push({
+      name: '未接线模块已登记',
+      status: recon.unregistered.length ? 'failed' : 'passed',
+      detail: recon.unregistered.length
+        ? recon.unregistered.map(f => `${f}（新增未接线，请在 unwired-ledger.json 定性质：gap / retained / harness）`).join(', ')
+        : `${unwired.findings.length} 个未接线模块全部已登记`,
+    })
+    if (recon.unregistered.length) {
+      result.issues.push(`未接线模块有 ${recon.unregistered.length} 个未登记：${recon.unregistered.join(', ')}`)
+    }
+    result.checks.push({
+      name: '未接线台账未失效',
+      status: recon.stale.length ? 'failed' : 'passed',
+      detail: recon.stale.length
+        ? recon.stale.map(f => `${f}（已接线或已删，登记该清了）`).join(', ')
+        : `${unwiredEntries.length} 条均仍为未接线`,
+    })
+    if (recon.stale.length) {
+      result.issues.push(`未接线台账有 ${recon.stale.length} 条已失效：${recon.stale.join(', ')}`)
+    }
+  }
+
   const structBudget = validateStructureBudget({
     budget,
     counts: { 'arch.reverse-import': structure.stats.reverseImports, 'arch.facade-undeclared': structure.stats.undeclaredFacades },
@@ -138,6 +186,12 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     files: staticResult.files,
     inventory: staticResult.inventory,
     structure: { ...structure.stats, items: structure.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })) },
+    unwired: {
+      ...unwired.stats,
+      entries: (unwiredEntries ?? []).map(e => ({ file: e.file, status: e.status, reason: e.reason })),
+      items: unwired.findings.map(f => ({ file: f.file, testImporters: f.testImporters, message: f.message })),
+      entryFiles: ENTRY_FILES,
+    },
     deadExports: {
       ...deadScan.stats,
       reviewed: deadFindings.length - openDead.length,

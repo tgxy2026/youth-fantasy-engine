@@ -63,11 +63,37 @@ const RISKY = /(?:^|[\s"])(?:hover:|focus:|active:|dark:)*(?:bg|text|border|ring
 
 // ── U1. 硬编码颜色（绕过主题 token）───────────────────────────────
 {
+  /**
+   * 已判定「这里本来就该用默认色」的位置（2026-11-18 · 精确到「文件 x 类名」）。
+   *
+   * U1 的立意是「背景/边框/正文色要走 ink/amber token，否则换皮肤时一块补丁」。
+   * 但彩色实心面上的对比文字与遮罩必须写死：它们不是主题色，是对比度与压暗本身。
+   *   - 实心 danger/success 按钮、rose 角标上的白字 -> 换成 token 会失去对比；
+   *   - 模态/抽屉的 bg-black/NN 遮罩 -> 它要的就是「压暗一切」，与主题无关；
+   *   - 封面照片上的 text-white/90 小图标 -> 底下是图片，token 无从保证可读。
+   * 精确到类名：同一文件里再出现别的默认色（如 bg-white）仍然会报。
+   * 新增豁免必须写清「为什么这个类不能走 token」。
+   */
+  const SEMANTIC_COLOR_EXEMPT = new Map([
+    ['src/components/common/Button.tsx', { classes: ['text-white'], why: '实心 danger/success 按钮上的白字：底下是饱和色块，token 无法保证对比度' }],
+    ['src/components/app/WriteLockBanner.tsx', { classes: ['text-white', 'text-white/85', 'text-white/70'], why: '红底警示横幅上的文字与次要行：底色 bg-red-700，白字才是可读组合' }],
+    ['src/components/outline/StoryTimeline.tsx', { classes: ['text-white'], why: 'rose-500 角标上的白字（时间倒流警示），同上' }],
+    ['src/components/app/ProjectHub.tsx', { classes: ['text-white/90', 'bg-black/60'], why: '封面照片上的悬浮操作条：底下是图片，只能压暗 + 白字保证可读' }],
+    ['src/components/dialogs/Modal.tsx', { classes: ['bg-black/60', 'bg-black/45'], why: '模态遮罩：作用就是把底下压暗，与主题 token 无关' }],
+    ['src/components/community/CommunitySquare.tsx', { classes: ['bg-black/60'], why: '浮层模式遮罩，同上' }],
+    ['src/App.tsx', { classes: ['bg-black/60'], why: '懒加载 Suspense 的全屏遮罩，同上' }],
+  ])
+  const exempted = []
   const hits = []
   for (const f of files) {
+    const rule = SEMANTIC_COLOR_EXEMPT.get(rel(f))
     const lines = masked.get(f).split(/\r?\n/)
     lines.forEach((l, i) => {
-      for (const mm of l.matchAll(RISKY)) hits.push({ f: rel(f), i: i + 1, cls: mm[0].trim(), l: escTxt(l).slice(0, 80) })
+      for (const mm of l.matchAll(RISKY)) {
+        const cls = mm[0].trim()
+        if (rule && rule.classes.includes(cls)) { exempted.push(`${rel(f)}:${i + 1}`); continue }
+        hits.push({ f: rel(f), i: i + 1, cls, l: escTxt(l).slice(0, 80) })
+      }
     })
   }
   const byCls = new Map()
@@ -82,6 +108,13 @@ const RISKY = /(?:^|[\s"])(?:hover:|focus:|active:|dark:)*(?:bg|text|border|ring
   for (const [cls, arr] of [...byCls.entries()].sort((a, b) => b[1].length - a[1].length)) {
     if (!risky.has(cls)) continue
     P(`  ▸ ${cls} ×${arr.length}   ${arr.slice(0, 2).map(x => `${x.f}:${x.i}`).join(' / ')}`)
+  }
+  if (exempted.length) {
+    P(`  🏛 已判定「必须写死」的对比/遮罩色 ${exempted.length} 处（不进候选）：`)
+    for (const [file, rule] of SEMANTIC_COLOR_EXEMPT) {
+      const n = exempted.filter(x => x.startsWith(file + ':')).length
+      if (n) P(`     ${n} 处 · ${file} — ${rule.why}`)
+    }
   }
   P('  其余（按频次）：' + [...byCls.entries()].filter(([c]) => !risky.has(c)).sort((a, b) => b[1].length - a[1].length).slice(0, 10).map(([c, a]) => `${c}×${a.length}`).join('、'))
   if (!hits.length) P('  ✅ 全部走主题 token')
