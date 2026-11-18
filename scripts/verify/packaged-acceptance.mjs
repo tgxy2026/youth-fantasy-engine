@@ -50,6 +50,14 @@ async function clearOverlays(page) {
 async function main() {
   const base = arg('--base')
   const exe = arg('--exe')
+  /**
+   * web（云端）与便携在前端是**同一个渲染层**，差别只在服务端注入了什么：
+   * 云端会同时给 `__YFE_WEB__` 与 `__YFE_PORTABLE__`，所以不能只靠 portable 判载体。
+   * `--expect` 显式声明本次要验的形态；不传则按"有 exe = 桌面、否则便携"猜。
+   */
+  const expect = arg('--expect') || (exe ? 'desktop' : 'portable')
+  /** `--login 用户名:密码`：云端形态必须先登录，否则页面是游客（IndexedDB），验不到服务端存储 */
+  const login = arg('--login')
   const resultFile = arg('--result-file')
   if (!base && !exe) throw new Error('需要 --base <url> 或 --exe <安装后的 exe>')
   const runRoot = path.join(ROOT, '.workbuddy/tmp', 'packaged-acceptance-' + crypto.randomBytes(3).toString('hex'))
@@ -87,6 +95,11 @@ async function main() {
       ctx = await chromium.launchPersistentContext(profile, { channel: 'msedge', viewport: { width: 1500, height: 940 }, args: ['--no-first-run', '--no-proxy-server'] })
       page = ctx.pages()[0] ?? await ctx.newPage()
       wire(page)
+      if (login) {
+        const [name, password] = login.split(':')
+        const res = await ctx.request.post(base.replace(/\/$/, '') + '/api/auth/login', { data: { name, password }, timeout: 30_000 })
+        if (!res.ok()) throw new Error('登录失败：' + res.status() + ' ' + (await res.text()).slice(0, 120))
+      }
       await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 90_000 })
     }
     // 🔴 不能「sleep 完就判首启」：打包版首帧可能还在加载 assets，按钮未挂载。
@@ -107,8 +120,9 @@ async function main() {
       //    后者是我想当然写出来的名字，实测永远 undefined（2026-11-18 已装版首跑就栽在这）。
       desktop: typeof window.electronStore === 'object' && window.electronStore !== null,
     })).catch(() => ({}))
-    if (exe) check('carrier.desktop', flags.desktop === true, JSON.stringify(flags))
-    else check('carrier.portable', flags.portable === true, JSON.stringify(flags))
+    if (expect === 'desktop') check('carrier.desktop', flags.desktop === true, JSON.stringify(flags))
+    else if (expect === 'web') check('carrier.web-cloud', flags.web === true && flags.portable === true, JSON.stringify(flags))
+    else check('carrier.portable', flags.portable === true && flags.web !== true, JSON.stringify(flags))
 
     /**
      * ---------- ② 三种启动状态都要认 ----------
@@ -292,7 +306,8 @@ async function main() {
     if (ctx) await ctx.close().catch(() => {})
     const mandatory = checks.filter(c => !c.skipped)
     const result = {
-      kind: 'packaged-acceptance', carrier: exe ? 'desktop-installed' : 'portable',
+      kind: 'packaged-acceptance',
+      carrier: expect === 'desktop' ? 'desktop-installed' : expect === 'web' ? 'web-cloud' : 'portable',
       status: mandatory.every(c => c.passed) ? 'passed' : 'failed',
       passed: mandatory.filter(c => c.passed).length, failed: mandatory.filter(c => !c.passed).length,
       skipped: checks.filter(c => c.skipped).length, checks,
