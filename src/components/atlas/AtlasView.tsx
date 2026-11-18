@@ -28,6 +28,7 @@ import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 // 卡片排序（纯函数 + 单测钉住；编号比较与表格同口径，见该文件头）
 import { ATLAS_ORDERS, sortAtlasRows, type AtlasOrder } from '@/lib/atlas/order'
 import { atlasDetailNeighbour, atlasGridNeighbour } from '@/lib/atlas/navigation'
+import { buildSemanticPreview } from '@/lib/atlas/semanticPreview'
 import { Button } from '@/components/common/Button'
 import { showToast } from '@/components/dialogs/dialogs'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
@@ -215,6 +216,26 @@ export default function AtlasView({
   const detailFields = useMemo(
     () => atlasFieldsForCategory(allDetailFields, selected?.data?.['类别']),
     [allDetailFields, selected],
+  )
+  /**
+   * 3.6.1 · B5「按语义看」：用**与表格同一个解析器**拿到该页签的有效模板，
+   * 再交给 `buildSemanticPreview` 做只读投影。页签不参与语义映射时它返回空数组。
+   */
+  const semanticGroups = useMemo(
+    () => (selected
+      ? buildSemanticPreview(
+        resolveTemplateForTab(tab, {
+          ...(templateDef ? { def: templateDef } : {}),
+          config: config ?? null,
+          aliases,
+          purpose: 'detail',
+          ignoreAppliesTo: true,
+        }),
+        selected,
+        tab.id,
+      )
+      : []),
+    [selected, tab, templateDef, config, aliases],
   )
   /**
    * 3.6.0 · H2：这一条因类别不匹配而看不见的字段。
@@ -446,6 +467,7 @@ export default function AtlasView({
             nameKey={nameKey}
             badges={atlasCardBadges(tab.id, selected.data)}
             sections={sections}
+            semanticGroups={semanticGroups}
             hiddenFields={selectedHidden}
             onOpenFieldSettings={onOpenFieldSettings}
             image={selected.atlasImage}

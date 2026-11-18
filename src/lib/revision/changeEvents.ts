@@ -233,3 +233,75 @@ export function isNewDisposition(
 ): boolean {
   return oldDisposition !== newDisposition
 }
+
+// ============ 影响依据（3.6.1 · 只接「证据层」）============
+//
+// 3.6.0 记账时本模块是 `gap`。3.6.1 的定案是：
+//   **只接证据层，不接处置状态机**。原因：产品已上线的 `outline/futureImpact` 负责
+//   「哪几章的计划要重看一眼」，作者真正缺的是「凭什么说这几章受影响」——
+//   即变化处的**前后引用**；而 `pending/checked/no-change/needs-modify` 是一套新的用户流程，
+//   属于另开条目的事。
+//
+// 🔴 引文一律 ≤ `MAX_QUOTE_LENGTH`（300 字）：依据是提示，不是第二份正文档；
+//    存全文会让每条标记变成几百 KB，且作者核对时也读不完。
+
+/** 一眼能核对的依据：改前那一小段 → 改后那一小段 */
+export interface ChangeEvidence {
+  /** 事件 id（来自 `createChangeEvent`，便于将来追溯） */
+  eventId: string
+  /** 改前片段（≤300 字，超长带省略号） */
+  beforeSummary: string
+  /** 改后片段（≤300 字） */
+  afterSummary: string
+  /** 变化发生的章 / 记录定位（如 `chapter:<id>`） */
+  sourceRef: string
+}
+
+/** 按上限截断并标注省略（不留半截字感） */
+function clip(text: string, limit: number): string {
+  const body = text ?? ''
+  if (body.length <= limit) return body
+  return `${body.slice(0, limit)}…（已截断，共 ${body.length} 字）`
+}
+
+/**
+ * 找出「真正变了的那一段」：剥掉公共前缀与公共后缀，剩下的就是差异区间。
+ *
+ * 🔴 为什么要这样做，而不是直接给改后正文开头 300 字：
+ *    整章改写动的是几百上千字，开头往往是**没变**的部分（章节标题、开场白），
+ *    作者点开「依据」看到一段跟自己改动无关的文字，比不给依据更糟。
+ * 🔴 纯位置比较，不做语义分析（沿用本项目「只做确定性判定」的取向）。
+ */
+export function changedSpan(before: string, after: string, limit = MAX_QUOTE_LENGTH): { beforeSpan: string; afterSpan: string } {
+  const a = before ?? ''
+  const b = after ?? ''
+  const max = Math.min(a.length, b.length)
+  let prefix = 0
+  while (prefix < max && a[prefix] === b[prefix]) prefix++
+  let suffix = 0
+  while (suffix < max - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix++
+  const beforeSpan = a.slice(prefix, a.length - suffix)
+  const afterSpan = b.slice(prefix, b.length - suffix)
+  return { beforeSpan: clip(beforeSpan, limit), afterSpan: clip(afterSpan, limit) }
+}
+
+/**
+ * 造一条变化依据（供 `futureImpact` 打标时一并存下）。
+ * 事件本身走 `createChangeEvent`，存的是**截断后**的摘要 —— 事件表不是正文副本。
+ */
+export function buildChangeEvidence(input: {
+  type: ChangeEventType
+  sourceRef: string
+  before: string
+  after: string
+  reason: string
+}): ChangeEvidence {
+  const span = changedSpan(input.before, input.after)
+  const event = createChangeEvent(input.type, input.sourceRef, span.beforeSpan, span.afterSpan, input.reason)
+  return {
+    eventId: event.id,
+    sourceRef: input.sourceRef,
+    beforeSummary: span.beforeSpan,
+    afterSummary: span.afterSpan,
+  }
+}

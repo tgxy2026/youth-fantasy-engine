@@ -20,6 +20,7 @@
 import * as db from '@/lib/db'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { OUTLINE_TAB_ID, chapterNoOf } from '@/lib/outline/outlineCard'
+import type { ChangeEvidence } from '@/lib/revision/changeEvents'
 
 /** settingsKV 键 —— `db.getSetting/setSetting` 自带 `<pid>::` 前缀，这里不必再拼 */
 const SETTING_KEY = 'futureImpact'
@@ -35,6 +36,12 @@ export interface ImpactMark {
   reason: string
   /** 打标时间 */
   at: number
+  /**
+   * 3.6.1 · 证据层：变化处的「改前 → 改后」引用（各 ≤300 字）。
+   * 🔴 可选：3.6.1 之前打的标记没有这一项，界面要如实说明「这条没留下引用」，
+   *    不能假装有依据。改动处置状态机不在此列（本版刻意不接）。
+   */
+  evidence?: ChangeEvidence
 }
 
 /** 章号是否可用（正整数才参与计算；章纲卡解析不出章号时 `chapterNoOf` 返 0） */
@@ -49,11 +56,11 @@ function usableNo(n: unknown): n is number {
  *   它是已写历史的一部分（上游），不该被自己标记。
  */
 export function planImpact(
-  fromNo: number, futureNos: number[], reason: string, at: number,
+  fromNo: number, futureNos: number[], reason: string, at: number, evidence?: ChangeEvidence,
 ): ImpactMark[] {
   if (!usableNo(fromNo)) return []
   const uniq = [...new Set(futureNos.filter(usableNo).filter(n => n > fromNo))].sort((a, b) => a - b)
-  return uniq.map(n => ({ chapterNo: n, fromChapterNo: fromNo, reason, at }))
+  return uniq.map(n => ({ chapterNo: n, fromChapterNo: fromNo, reason, at, ...(evidence ? { evidence } : {}) }))
 }
 
 /**
@@ -103,12 +110,12 @@ async function futureOutlineNos(fromNo: number, owner?: OwnedOperation): Promise
  * @returns 本次新打上的标记（可能为空 —— 该项目还没写章纲、或变化的是最后一章）
  */
 export async function analyzeFutureImpact(
-  fromChapterNo: number, reason: string, at = Date.now(), owner?: OwnedOperation,
+  fromChapterNo: number, reason: string, at = Date.now(), owner?: OwnedOperation, evidence?: ChangeEvidence,
 ): Promise<ImpactMark[]> {
   if (!usableNo(fromChapterNo)) return []
   const futureNos = await futureOutlineNos(fromChapterNo, owner)
   owner?.assertCurrent()
-  const news = planImpact(fromChapterNo, futureNos, reason, at)
+  const news = planImpact(fromChapterNo, futureNos, reason, at, evidence)
   if (!news.length) return []
   try {
     const merged = mergeMarks(await readImpact(owner), news)

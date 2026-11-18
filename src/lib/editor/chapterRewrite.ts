@@ -19,6 +19,7 @@ import type { Chapter, Volume } from '@/lib/types'
 import { withAiAssist, type AiSourceKind } from '@/lib/ai/aiAssist'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
 import { analyzeFutureImpact } from '@/lib/outline/futureImpact'
+import { buildChangeEvidence } from '@/lib/revision/changeEvents'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 
 /**
@@ -145,7 +146,16 @@ export async function applyChapterRewrite(
   //    · 只在 `rewritten`（回改已写章）时打标 —— `generated` 是「创意写作产出新章」，
   //      那是**按计划推进**（把某个未来章变成已写章），不该反过来说后续计划失效。
   //    · 只标记、绝不改章纲内容；失败静默（提醒失败绝不能连累改写落库）。
-  if (kind === 'rewritten' && seq > 0) await analyzeFutureImpact(seq, '正文改写', undefined, owner).catch(() => {})
+  if (kind === 'rewritten' && seq > 0) {
+    // 3.6.1 · 证据层：把「改前 → 改后」的那一小段一起存进标记，作者展开时能直接核对。
+    // 🔴 只存截断后的片段（≤300 字，见 changeEvents.changedSpan），不存正文副本；
+    //    处置状态机（pending/checked…）本版仍不接。
+    const evidence = buildChangeEvidence({
+      type: 'body-change', sourceRef: `chapter:${chapterId}`,
+      before: ch.content ?? '', after: body, reason: '正文改写',
+    })
+    await analyzeFutureImpact(seq, '正文改写', undefined, owner, evidence).catch(() => {})
+  }
   owner?.assertCurrent()
   return { words }
 }

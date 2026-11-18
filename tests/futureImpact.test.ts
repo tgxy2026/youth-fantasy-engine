@@ -58,10 +58,12 @@ console.log('\n—— futureImpact 用例开始 ——')
   const src = fs.readFileSync('src/lib/editor/chapterRewrite.ts', 'utf8')
   ok('applyChapterRewrite 接了 analyzeFutureImpact',
     src.includes('analyzeFutureImpact(seq,'))
+  // 🔴 2026-11-18（3.6.1 B4）：打标前会先造「变化依据」，调用多了一个 evidence 参数，
+  //    因此这里的源码闸改为「条件在前、调用在后」的宽松匹配 + 精确到新调用的静默闸。
   ok('🔴 只在 rewritten 时打标（generated 是推进、不误伤）',
-    /kind === 'rewritten'.*analyzeFutureImpact/.test(src.replace(/\n/g, ' ')))
+    /kind === 'rewritten'[\s\S]*?analyzeFutureImpact/.test(src))
   ok('打标失败静默（.catch(() => {})）',
-    src.includes("analyzeFutureImpact(seq, '正文改写', undefined, owner).catch(() => {})"))
+    /analyzeFutureImpact\(seq, '正文改写', undefined, owner, evidence\)\.catch\(\(\) => \{\}\)/.test(src))
   ok('只在序号可用时打标（seq > 0）', src.includes('seq > 0'))
 
   // 未来影响模块自身的红线：只标记不改章纲（不 import schema 写入 API 的写函数）

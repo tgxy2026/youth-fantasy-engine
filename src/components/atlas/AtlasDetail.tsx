@@ -19,6 +19,7 @@ import '@/components/atlas/atlasMobile.css'
 import { ArrowLeft, ChevronDown, ChevronRight, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
+import type { SemanticPreviewGroup } from '@/lib/atlas/semanticPreview'
 import type { AtlasImage, AtlasResolvedSection, ResolvedAtlasField } from '@/lib/atlas/types'
 import {
   ATLAS_IMAGE_ACCEPT,
@@ -54,6 +55,12 @@ interface Props {
    * 🔴 与图鉴卡片用同一个统计函数，避免两处口径漂移；措辞不得说成"数据丢失"。
    */
   hiddenFields?: { count: number; labels: string[] }
+  /**
+   * 3.6.1 · B5：「按语义看」的三组只读投影（身份 / 动机 / 状态 + 出处）。
+   * 🔴 空数组 = 该页签不参与语义映射（如「每日字数」），整块不渲染；
+   *    投影只读、不写回、不落第二份事实库 —— 改数据仍回表格里改原字段。
+   */
+  semanticGroups?: readonly SemanticPreviewGroup[]
   /** 打开「字段设置」：图鉴页没有这个按钮，由表格页把入口传下来 */
   onOpenFieldSettings?: () => void
   /** 主图（`TableRow.atlasImage`） */
@@ -127,7 +134,7 @@ function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: 
 }
 
 export default function AtlasDetail({
-  tabId, row, nameKey, badges, sections, image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
+  tabId, row, nameKey, badges, sections, semanticGroups = [], image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
   hiddenFields, onOpenFieldSettings,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
@@ -277,6 +284,8 @@ export default function AtlasDetail({
    * 作者发现"少了一栏"时才展开（展开后能直接看到字段名并去字段设置）。
    */
   const [showHidden, setShowHidden] = useState(false)
+  /** 「按语义看」默认收起：它是另一个视角，不该抢默认视图的位置 */
+  const [showSemantic, setShowSemantic] = useState(false)
   const categoryText = (valueOf('类别') ?? '').trim()
 
   // 空分组不渲染（方案 §3.2：字段数为零时不出现空分组）；未填字段按开关决定去留
@@ -518,6 +527,54 @@ export default function AtlasDetail({
                 </dl>
               </section>
             ))}
+            {/* 3.6.1 · B5「按语义看」：把同一份数据按身份/动机/状态再看一遍，逐项标出处。
+                只读投影 —— 不写回、不另存；改数据仍回表格改原字段。 */}
+            {semanticGroups.length > 0 && (
+              <section data-atlas-semantic>
+                <button type="button" aria-expanded={showSemantic} onClick={() => setShowSemantic(v => !v)}
+                  className="text-11 font-semibold text-amber/90 mb-1.5 flex items-center gap-1.5 hover:text-amber">
+                  <span className="w-1 h-3 bg-amber/60 rounded-full" />
+                  按语义看（身份 / 动机 / 状态）
+                  {showSemantic ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </button>
+                {showSemantic && (
+                  <div className="space-y-2">
+                    {semanticGroups.map(group => (
+                      <div key={group.id}>
+                        <div className="text-10 text-ink-500 mb-0.5">{group.label}</div>
+                        {group.items.length === 0 ? (
+                          <div className="text-11 text-ink-600">
+                            {group.mapped ? '这一组还没有填写内容' : '当前模板里没有可用于这一组的字段'}
+                          </div>
+                        ) : (
+                          <dl className="space-y-1">
+                            {group.items.map(item => (
+                              <div key={item.slot} className="flex gap-2 items-baseline">
+                                <dt className="text-11 text-ink-500 shrink-0 w-20">{item.label}</dt>
+                                <dd className="text-12 text-ink-200 leading-relaxed whitespace-pre-wrap break-words min-w-0">
+                                  {item.value}
+                                  {item.sourceLabels.length > 0 && (
+                                    <span className="ml-1 text-10 text-ink-600">（出处：{item.sourceLabels.join(' / ')}）</span>
+                                  )}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        {group.items.some(item => item.notes.length > 0) && (
+                          <div className="mt-0.5 text-10 text-ink-600">
+                            {group.items.flatMap(item => item.notes).join('；')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div className="text-10 text-ink-600 leading-relaxed">
+                      这是同一份数据的另一种读法，不会写回、也不另存一份；要改内容请回表格改原字段。
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>

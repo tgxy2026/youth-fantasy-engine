@@ -9,6 +9,7 @@
  *    未登记的一律**只提示、不凭空建**；采纳前都要作者勾选。
  * 状态全部来自 useJieWenJiModel（组件只收 m）。
  */
+import { useState } from 'react'
 import { Loader2, RefreshCw, Save, AlertTriangle } from 'lucide-react'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -18,6 +19,8 @@ import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
   const { writingReady, acpWriting, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, content } = m
+  /** 展开了「依据」的章号（3.6.1：只读展示，不落库、不改标记） */
+  const [openEvidence, setOpenEvidence] = useState<Set<number>>(new Set())
   return (
     <div className="space-y-2.5">
       <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
@@ -50,16 +53,46 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
             已写正文被改动后，章节细纲里「这一章之后」的规划可能已过时。核对完点「已处理」清掉标记即可。
           </div>
           <div className="space-y-1">
-            {impacts.map(im => (
-              <div key={im.chapterNo} className="flex items-center gap-1.5">
-                <span className="text-11 text-ink-100 flex-1 min-w-0">
-                  第 {im.chapterNo} 章
-                  <span className="text-10 text-ink-500">（因第 {im.fromChapterNo} 章{im.reason}）</span>
-                </span>
-                <Button variant="bare" type="button" onClick={() => dismissImpact(im.chapterNo)}
-                  className="text-10 text-ink-400 hover:text-amber shrink-0">已处理</Button>
-              </div>
-            ))}
+            {impacts.map(im => {
+              const expanded = openEvidence.has(im.chapterNo)
+              return (
+                <div key={im.chapterNo} className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-11 text-ink-100 flex-1 min-w-0">
+                      第 {im.chapterNo} 章
+                      <span className="text-10 text-ink-500">（因第 {im.fromChapterNo} 章{im.reason}）</span>
+                    </span>
+                    <Button variant="bare" type="button" aria-expanded={expanded}
+                      onClick={() => setOpenEvidence(prev => {
+                        const next = new Set(prev)
+                        if (next.has(im.chapterNo)) next.delete(im.chapterNo)
+                        else next.add(im.chapterNo)
+                        return next
+                      })}
+                      className="text-10 text-ink-400 hover:text-amber shrink-0">
+                      {expanded ? '收起依据' : '看依据'}
+                    </Button>
+                    <Button variant="bare" type="button" onClick={() => dismissImpact(im.chapterNo)}
+                      className="text-10 text-ink-400 hover:text-amber shrink-0">已处理</Button>
+                  </div>
+                  {/* 3.6.1 · 证据层：改前 → 改后那一小段（各 ≤300 字）。只读，不改标记、不改章纲。 */}
+                  {expanded && (
+                    <div className="rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5 text-10 text-ink-400 leading-relaxed">
+                      {im.evidence ? (
+                        <>
+                          <div className="text-ink-500 mb-0.5">依据：第 {im.fromChapterNo} 章的改动处</div>
+                          <div><span className="text-ink-500">改前：</span>{im.evidence.beforeSummary || '（原本没有这段）'}</div>
+                          <div><span className="text-ink-500">改后：</span>{im.evidence.afterSummary || '（这段已删除）'}</div>
+                          <div className="mt-0.5 text-ink-600">只在打标时留下片段，正文本身没有被复制成第二份。</div>
+                        </>
+                      ) : (
+                        <div className="text-ink-500">这条标记早于 3.6.1，没有留下引用；重新改写一次这一章会带上依据。</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
