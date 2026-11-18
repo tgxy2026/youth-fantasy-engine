@@ -706,7 +706,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     纯视觉辅助 —— pointer-events:none + aria-hidden，不参与任何交互与朗读。
                     垫在最底层（z-0）：正文 textarea 背景透明，线能透出来又不会压住文字。
                     间距按当前缩进单位的视觉宽度换算（INDENT_UNITS.emWidth），与「缩进单位」设置联动。 */}
-                {indentGuides && active && (
+                {/* 「无缩进」的 emWidth 为 0：0em 的重复渐变是非法值，直接不画参考线 */}
+                {indentGuides && active && indentUnitEm > 0 && (
                   <div aria-hidden className="absolute inset-0 z-0 pointer-events-none overflow-hidden px-6 md:px-8 pt-6">
                     <div
                       className="h-full"

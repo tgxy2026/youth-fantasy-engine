@@ -53,10 +53,14 @@ export default function FormatModal({ content, unit, onUnitChange, pasteNormaliz
   const runUniform = async () => {
     if (!await confirmDialog({
       title: '统一为段首缩进',
-      message:
-        `把所有段落统一成段首「${unitLabel}」？\n` +
-        `手写的多级缩进（对白、补充说明）会被压平成同一级，用于「全书版面严格对齐」。\n` +
-        `执行后可用 Ctrl+Z 整体撤销。`,
+      message: unit === 'none'
+        // 「无缩进」= 去掉段首空白，不是"压平成同一级"，措辞要跟着改
+        ? '把所有段落的段首空白全部去掉（一律顶格）？\n'
+          + '手写的多级缩进（对白、补充说明）也会被去掉，用于「全书统一顶格」。\n'
+          + '执行后可用 Ctrl+Z 整体撤销。'
+        : `把所有段落统一成段首「${unitLabel}」？\n`
+          + `手写的多级缩进（对白、补充说明）会被压平成同一级，用于「全书版面严格对齐」。\n`
+          + `执行后可用 Ctrl+Z 整体撤销。`,
     })) return
     const next = formatNovelText(content, { mode: 'uniform', unit })
     if (next === content) { showToast('已经是最规范的状态，无需改动', 'info'); return }
@@ -89,6 +93,7 @@ export default function FormatModal({ content, unit, onUnitChange, pasteNormaliz
           <p className="text-11 text-ink-500 mb-2 leading-relaxed">
             按 Tab 缩进一级、回车自动继承缩进、粘贴归一，用的都是这个单位。
             存在本机、不写进项目数据（换台机器重新选一次即可）。
+            {unit === 'none' && <span className="block mt-1 text-ink-400">选了「无缩进」后：Tab 不再加缩进、回车不继承缩进、粘贴会去掉行首空白，「统一为段首缩进」会把段首空白全部去掉（顶格）。</span>}
           </p>
           <div className="flex flex-wrap gap-2">
             {INDENT_UNITS.map(u => (

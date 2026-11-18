@@ -28,7 +28,9 @@ const FULL = '　' // 全角空格
   ok('默认单位的实际字符是两个全角空格', indentTextOf('full2') === FULL + FULL, JSON.stringify(indentTextOf('full2')))
   ok('Tab 单位是真正的制表符', indentTextOf('tab') === '\t')
   ok('⚪ 非法/空值回退到默认单位（不抛异常）', indentTextOf(undefined) === FULL + FULL && indentTextOf(null) === FULL + FULL)
-  ok('清单里 5 种单位，id 不重复', INDENT_UNITS.length === 5 && new Set(INDENT_UNITS.map(u => u.id)).size === 5)
+  ok('清单里 6 种单位（含「无缩进」），id 不重复',
+    INDENT_UNITS.length === 6 && new Set(INDENT_UNITS.map(u => u.id)).size === 6,
+    INDENT_UNITS.map(u => u.id).join(','))
   // 🔴 顺序约定：默认值必须排第一（设置项直接按这个顺序渲染，"推荐"要一眼可见）
   ok('🔴 默认单位排在清单首位', INDENT_UNITS[0].id === DEFAULT_INDENT_UNIT)
 }
@@ -125,6 +127,26 @@ const FULL = '　' // 全角空格
   ok('🔴 一键排版后仍保留段首行（无缩进）', lines[0] === '段首正常的一段。', JSON.stringify(lines[0]))
   ok('🔴 一键排版后缩进一级还在', lines[1] === FULL + FULL + '缩进一级的对白。', JSON.stringify(lines[1]))
   ok('🔴 一键排版后缩进二级还在', lines[2] === FULL.repeat(4) + '缩进两级的补充说明。', JSON.stringify(lines[2]))
+
+  // 「无缩进」（3.6.1 用户要求）：段落一律顶格
+  {
+    const none = INDENT_UNITS.find(u => u.id === 'none')
+    ok('清单里有「无缩进」且单位文本为空串', none?.text === '' && none?.label === '无缩进', JSON.stringify(none))
+    ok('indentTextOf 返回空串', indentTextOf('none') === '')
+    ok('缩进一级对「无缩进」无效（Tab 不加东西）', indentLine('正文', 'none') === '正文')
+    ok('🔴 反缩进对「无缩进」= 去掉全部行首空白', outdentLine(FULL + FULL + '正文', 'none') === '正文')
+    ok('反缩进不会误删正文内容', outdentLine(FULL + '　正文', 'none') === '正文')
+    ok('🔴 粘贴归一对「无缩进」去掉行首空白（不抛错）', normalizePastedText(FULL + '带缩进\n  半角', 'none') === '带缩进\n半角')
+    ok('粘贴归一对「无缩进」不留深渊（空行仍是空行）', normalizePastedText(FULL + '\n' + FULL, 'none') === '\n')
+    ok('块缩进/块反缩进对「无缩进」也不炸',
+      indentBlock('甲\n' + FULL + '乙', 'none') === '甲\n' + FULL + '乙'
+      && outdentBlock('甲\n' + FULL + '乙', 'none') === '甲\n乙')
+    ok('回车继承缩进不受影响', indentForNewLine(FULL + '正文') === FULL)
+    const top = formatNovelText(src, { mode: 'uniform', unit: 'none' })
+    ok('🔴 一键排版选「无缩进」→ 所有段落顶格',
+      top.split('\n').every(l => l === '' || !/^[ \t\u3000]/.test(l)), JSON.stringify(top.split('\n')))
+    ok('顶格后正文内容一字不少（仍是三段）', top.split('\n').filter(Boolean).length === 3, JSON.stringify(top.split('\n')))
+  }
 
   // 旧的"强制统一为段首两格"要仍能显式调用（作为独立选项）
   const forced = formatNovelText(src, { mode: 'uniform' })

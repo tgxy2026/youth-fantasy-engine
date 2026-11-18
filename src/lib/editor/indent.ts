@@ -18,7 +18,7 @@
  */
 
 /** 缩进单位：作者可选，默认全角空格 ×2（中文小说段首缩进的传统写法） */
-export type IndentUnit = 'full2' | 'full1' | 'half4' | 'half2' | 'tab'
+export type IndentUnit = 'full2' | 'full1' | 'half4' | 'half2' | 'tab' | 'none'
 
 export interface IndentUnitDef {
   id: IndentUnit
@@ -45,6 +45,12 @@ export const INDENT_UNITS: IndentUnitDef[] = [
   { id: 'half4', label: '半角空格 ×4', text: '    ', hint: '与部分编辑器、Markdown 预览观感一致', emWidth: 2 },
   { id: 'half2', label: '半角空格 ×2', text: '  ', hint: '与代码风格一致，适合导出给排版工具', emWidth: 1 },
   { id: 'tab', label: 'Tab 字符', text: '\t', hint: '真正的制表符；部分网文平台粘贴后会展开成空格', emWidth: 2 },
+  /**
+   * 无缩进（3.6.1 用户要求）：段落一律顶格。
+   * 🔴 `text` 为空串是**有意的**，并且在这里多打了一个 tail 注释提醒：
+   *    所有用 `indentTextOf()` 的地方都要能处理"单位长度为 0"（见 outdentLine / normalizePastedText）。
+   */
+  { id: 'none', label: '无缩进', text: '', hint: '段落一律顶格；按 Tab 不再加缩进，一键排版会去掉段首空白', emWidth: 0 },
 ]
 
 export const DEFAULT_INDENT_UNIT: IndentUnit = 'full2'
@@ -91,6 +97,9 @@ export function outdentLine(line: string, unit: IndentUnit = DEFAULT_INDENT_UNIT
   const { indent, rest } = splitIndent(line)
   if (indent === '') return line
   const u = indentTextOf(unit)
+  // 🔴 单位为空（「无缩进」）⇒ 反缩进的含义就是"全部去掉"，而不是逐级减 ——
+  //    否则 `startsWith('')` 恒真、slice(0) 原样返回，按 Shift+Tab 会完全没反应。
+  if (u === '') return rest
   if (indent.startsWith(u)) return indent.slice(u.length) + rest
   return indent.slice(Math.min(u.length, indent.length)) + rest
 }
@@ -134,6 +143,10 @@ export function normalizePastedText(text: string, unit: IndentUnit = DEFAULT_IND
   return text.split('\n').map(line => {
     const { indent, rest } = splitIndent(line)
     if (indent === '') return rest === '' ? '' : line
+    // 🔴 单位为空（「无缩进」）⇒ 直接丢掉行首空白。
+    //    不能走下面的 length / u.length：除以 0 得 Infinity，`''.repeat(Infinity)` 会抛 RangeError，
+    //    表现为"选了无缩进，一粘贴就报错/粘贴没反应"。
+    if (u === '') return rest
     const depth = Math.max(1, Math.round(indent.length / u.length))
     return u.repeat(depth) + rest
   }).join('\n')
