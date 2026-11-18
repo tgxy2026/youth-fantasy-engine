@@ -20,7 +20,8 @@ function ok(name: string, cond: boolean, extra = '') {
 }
 
 const chapter = (id: string, title: string, content: string): Chapter => ({
-  id, title, content, wordCount: 0, volumeId: 'v1', status: 'draft', createdAt: 0, updatedAt: 0,
+  id, projectId: 'p1', title, content, wordCount: 0, volumeId: 'v1', order: 0, summary: '',
+  status: '草稿', createdAt: 0, updatedAt: 0,
 } as Chapter)
 
 const CH1 = chapter('c1', '第1章 风起', '林砚提着剑出门。林砚回头看了一眼。')
