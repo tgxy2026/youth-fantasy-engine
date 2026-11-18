@@ -117,7 +117,7 @@ export default function MigrationWizard({ probe, onClose }: Props) {
           <p className="mt-1.5 text-12 text-ink-400 leading-relaxed">
             {step === 'done'
               ? '旧数据已迁移到新版。确认无误后，可卸载旧版本以释放空间。'
-              : '检测到本机有旧版（novel-studio）的数据。可一次性导入到「青春幻想引擎」，导入后旧数据不会被动。'}
+              : '检测到本机有早期版本的数据。可一次性导入到当前版本，导入后旧数据不会被动。'}
           </p>
         </div>
 
@@ -137,7 +137,7 @@ export default function MigrationWizard({ probe, onClose }: Props) {
               ))}
               <div className="flex items-start gap-2 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2.5 text-11 text-ink-200 leading-relaxed mt-1">
                 <AlertTriangle size={14} className="text-amber shrink-0 mt-0.5" />
-                <span>建议先完成导入再卸载旧版。旧版数据仅能在 <b>3.0</b> 一次性导入；更晚的版本将不再识别旧数据。</span>
+                <span>建议先完成导入再卸载旧版。旧数据只提供这一次导入机会；更晚的版本将不再识别旧数据。</span>
               </div>
             </div>
           )}

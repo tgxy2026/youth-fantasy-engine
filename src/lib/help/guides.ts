@@ -143,7 +143,7 @@ export const PAGE_GUIDES: PageGuide[] = [
         id: 'settings',
         anchor: 'guide-settings',
         title: '引导的开关在下面',
-        body: '不想每次进入页签都弹分步介绍，在这里关掉；关掉之后还能从页头的「本页指引」随时重看，也能一键重置记录。',
+        body: '不想每次进入页签都弹分步介绍，在这里关掉；关掉之后还能从左下角的「本页指引」随时重看，也能一键重置记录。',
       },
     ],
   },

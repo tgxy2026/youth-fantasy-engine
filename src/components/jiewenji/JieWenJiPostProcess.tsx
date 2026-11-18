@@ -73,6 +73,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                       {expanded ? '收起依据' : '看依据'}
                     </Button>
                     <Button variant="bare" type="button" onClick={() => dismissImpact(im.chapterNo)}
+                      title="只清掉这条提示，不会改你的章纲内容"
                       className="text-10 text-ink-400 hover:text-amber shrink-0">已处理</Button>
                   </div>
                   {/* 3.6.1 · 证据层：改前 → 改后那一小段（各 ≤300 字）。只读，不改标记、不改章纲。 */}
@@ -86,7 +87,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                           <div className="mt-0.5 text-ink-600">只在打标时留下片段，正文本身没有被复制成第二份。</div>
                         </>
                       ) : (
-                        <div className="text-ink-500">这条标记早于 3.6.1，没有留下引用；重新改写一次这一章会带上依据。</div>
+                        <div className="text-ink-500">这条标记没有留下引用（记录依据是后来才有的功能）；重新改写这一章就会带上依据。</div>
                       )}
                     </div>
                   )}

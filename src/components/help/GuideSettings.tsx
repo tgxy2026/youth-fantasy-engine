@@ -28,7 +28,7 @@ export function GuideSettings() {
   const toggle = useCallback((next: boolean) => {
     setGuideAutoEnabled(next)
     setAuto(next)
-    showToast(next ? '已开启自动引导：进入还没看过的页签会自动分步介绍' : '已关闭自动引导：随时可从页头「本页指引」重新查看', 'info')
+    showToast(next ? '已开启自动引导：进入还没看过的页签会自动分步介绍' : '已关闭自动引导：随时可从左下角「本页指引」重新查看', 'info')
   }, [])
 
   const reset = useCallback(async () => {
@@ -68,7 +68,7 @@ export function GuideSettings() {
           </Button>
         </div>
         <p className="text-11 text-ink-500 leading-relaxed">
-          引导只做说明：它不会替你新建记录、填写正文或调用模型。看过的页签不会重复弹出，随时可以点页头的「本页指引」重看。
+          引导只做说明：它不会替你新建记录、填写正文或调用模型。看过的页签不会重复弹出，随时可以点左下角的「本页指引」重看。
         </p>
       </div>
     </section>

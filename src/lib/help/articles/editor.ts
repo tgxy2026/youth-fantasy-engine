@@ -101,7 +101,7 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
     title: '颉文姬：六个模式分别干什么',
     summary: '查看六个面板的用途、运行条件和结果去向。',
     aliases: ['AI 编辑', '颉文姬', '诊室', '补登', '审读'],
-    keywords: ['颉文姬', '诊室', '编辑', '审读', '简报', '补登', '整理', 'AI'],
+    keywords: ['颉文姬', '诊室', '编辑', '审读', '简报', '补登', '整理', 'AI', '未来计划', '待重审', '依据'],
     group: '工作面板与正文',
     tabIds: ['editor'],
     featureIds: ['clinic', 'edit', 'review', 'brief', 'ledger', 'post'],
@@ -130,6 +130,14 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
         ],
       },
       {
+        id: 'impact-evidence',
+        heading: '「未来计划待重审」怎么核对依据',
+        body: [
+          '整理完本章，如果这次改动波及了后面章节的细纲，面板会列出「未来计划待重审」。每条右侧的「看依据」会展开改动处的「改前 → 改后」片段（各最多 300 字，超出会标「已截断，共 N 字」）。',
+          '依据只留变化的那一小段，不会把整章正文再存一份。早于这个功能打的标记没有依据，展开时会如实说明，重新改写这一章就会带上。核对完点「已处理」只清掉这条提示，不会改你的章纲内容。',
+        ],
+      },
+      {
         id: 'connection-modes',
         heading: 'API 和 ACP 的可用入口',
         body: [
@@ -140,7 +148,7 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
     ],
     related: ['editor-tools', 'faq-proofread-actions', 'agent-backend'],
     actions: [{ label: '去正文编辑', tabId: 'editor' }],
-    verifiedAgainst: '3.5.5',
-    reviewedAt: '2026-11-14',
+    verifiedAgainst: '3.6.1',
+    reviewedAt: '2026-11-18',
   },
 ]

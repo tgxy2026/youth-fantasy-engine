@@ -166,8 +166,11 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
 {
   const hubSrc = read('src/components/app/ProjectHub.tsx')
   const helpOpenCalls = (hubSrc.match(/setHelpOpen\(true\)/g) ?? []).length
-  ok('项目管理页有「使用手册」入口', helpOpenCalls > 0)
-  ok('🔴 只保留一个「使用手册」入口（合并菜单里只有一处，没有留下旧的）',
+  // 🔴 3.6.1 起入口文案统一为「使用指南」（与页签正式名一致）：原先入口叫「使用手册」、
+  //    页签叫「使用指南」，同一功能两个名字。这里钉的是「入口存在且只有一处」，
+  //    文案按统一后的名字核对。
+  ok('项目管理页有「使用指南」入口', helpOpenCalls > 0)
+  ok('🔴 只保留一个「使用指南」入口（合并菜单里只有一处，没有留下旧的）',
     helpOpenCalls === 1, String(helpOpenCalls))
 
   // 🔴 不要用 indexOf('帮助') 这类整文件下标比大小：同一个词在 title / 注释里也出现，
@@ -176,8 +179,8 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
   const helpStart = hubSrc.indexOf('setHelpMenuOpen(o => !o)')
   const helpEnd = hubSrc.indexOf('{/* 新建表单 */}')
   const helpBlock = helpStart > 0 && helpEnd > helpStart ? hubSrc.slice(helpStart, helpEnd) : ''
-  ok('🔴 「新手引导」与「使用手册」在同一个「帮助」菜单里',
-    helpBlock.includes('新手引导') && helpBlock.includes('使用手册'),
+  ok('🔴 「新手引导」与「使用指南」在同一个「帮助」菜单里',
+    helpBlock.includes('新手引导') && helpBlock.includes('使用指南'),
     helpBlock ? '' : '找不到帮助菜单块')
 
   const appStart = hubSrc.indexOf('setAppearanceMenuOpen(o => !o)')

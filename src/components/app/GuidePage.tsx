@@ -110,6 +110,55 @@ const V340_TIPS: { title: string; body: string }[] = [
     body: '「随手记灵感」直接存进本作品的灵感夹，可顺带关联一章（之后能从这里打开那一章）；保存失败会保留输入。时光机里可以存带名称/备注的快照，但它和自动快照共用每章 12 版上限，会被新版本挤出，不是永久归档。',
   },
 ]
+const V360_TIPS: { title: string; body: string }[] = [
+  {
+    title: '分析结果会存成「成果记录」',
+    body: '拆书分析、参考卡可以保存为成果，之后在成果列表回看：保留 / 草稿 / 已排除三种状态各自可见。标了「已排除」的成果不会被发给模型 —— 排除是你的否定决定，不是「还没审」。导出项目时成果跟着走；指向已删章节的会标「失效」并降为草稿，不会悄悄丢掉。',
+  },
+  {
+    title: '一键拆书：分清「本次范围」和「全书」',
+    body: '拆书结果会写明这次分析覆盖到哪、哪些只是范围结论，不会把局部结果说成全书结论。失败或没跑完会如实标注，不会用空结果冒充「没有变化」。',
+  },
+  {
+    title: '创作参考只发你勾选的那几张',
+    body: '参考卡按预算裁剪（最多 12 张、约 2400 字），并明确告诉模型「这是别的作品的写法，不要照搬情节和人名」。来源过期或读不到时一条都不发，界面上会说明原因；你标为「已排除」的参考不会被勾选、也不会被发送。',
+  },
+  {
+    title: '审读记录可以回看',
+    body: '审读跑完会留下摘要记录，在创作轨迹里能翻回来看。失败会如实呈现，不会生成一条空记录冒充成功。',
+  },
+  {
+    title: '章后整理：保存和整理是两件事',
+    body: '正文保存成功后，整理失败只会显示「整理待恢复」，不会宣称整章已经原子完成。整理页也会标「本次会读」：只把本章正文发给模型，伏笔 / 关系 / 角色卡 / 设定表的比对都在本机做。',
+  },
+  {
+    title: '剧情候选：能应用、能放弃、能追溯',
+    body: '候选生成后可应用或放弃；放弃的不会再冒出来。从「检查报告 → 以此发起修订」进来的候选会带上报告编号，之后能回答「这稿是按哪份报告改的」；手填要求改写的候选不带来源，不编造。',
+  },
+  {
+    title: '材料检索带来源章节',
+    body: '检索结果会标出命中来自哪一章，空项目给空态而不是报错。',
+  },
+  {
+    title: '图鉴字段：适用范围不能留空',
+    body: '自定义字段的「适用类别」如果存成空数组，会变成「图鉴永远不显示」的死配置 —— 现在保存会被拦下，并给一个「改为不限类别」的单条动作。隐藏字段的数量与图鉴卡片、详情用同一个判定，0 个时不占地方。',
+  },
+]
+
+const V361_TIPS: { title: string; body: string }[] = [
+  {
+    title: '「未来计划待重审」能看依据了',
+    body: '章后整理里每条待重审的章，右侧多了「看依据」：展开是改动处的「改前 → 改后」片段（各最多 300 字，超出会标已截断）。依据只留变化的那一小段，不会把整章正文再存一份；更早打的标记没有依据时会如实说明。核对完点「已处理」只清提示，不改章纲。',
+  },
+  {
+    title: '图鉴详情能「按语义看」',
+    body: '详情里字段分组下方多了一个默认收起的「按语义看（身份 / 动机 / 状态）」，按这三个用途重列一遍并标出处（这条值来自哪一栏）。它只是读取：不写回、不另存一份；要改内容仍回表格改原字段。',
+  },
+  {
+    title: '同步冲突：不能恢复时不会再给你按钮',
+    body: '冲突面板里「恢复云端章节」只在真的能恢复时出现（章节冲突 + 云端那版还在 + 本机这一章还在 + 属当前项目）；不满足时会写清是哪一条不满足，而不是把按钮藏起来让你去点「删除副本」。删除副本仍要二次确认，并建议先导出。',
+  },
+]
 
 export default function GuidePage({ onNavigate, ctx }: Props) {
   return (
@@ -216,9 +265,9 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <Sparkles size={14} className="text-amber" />
           <h2 className="text-13 font-semibold text-ink-100">3.2.0 · 修订与核对</h2>
-          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">本版新增</span>
-          <HelpPopover title="这一版改了什么" width="22rem">
-            {'这一版没有新页签，改的是「改稿靠不靠得住」：\n\n· 稿子先生成候选、你审阅后才落正文；\n· 落库前会比对正文，改过了就拒绝；\n· 改完自动复检，告诉你问题解决没；\n· 检查结论留档可回看，带原文引文与定位结果；\n· 额度有硬上限，撞到就停。\n\n另有几处顺手改进：图鉴可按编号/名称/最近编辑三种顺序看、中文标点自动配对、图片可直接拖拽上传。\n\n所有结论只如实呈现：没查到就写没查到，做不到就写做不到。'}
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">该版新增</span>
+          <HelpPopover title="这个版本改了什么" width="22rem">
+            {'这个版本没有新页签，改的是「改稿靠不靠得住」：\n\n· 稿子先生成候选、你审阅后才落正文；\n· 落库前会比对正文，改过了就拒绝；\n· 改完自动复检，告诉你问题解决没；\n· 检查结论留档可回看，带原文引文与定位结果；\n· 额度有硬上限，撞到就停。\n\n另有几处顺手改进：图鉴可按编号/名称/最近编辑三种顺序看、中文标点自动配对、图片可直接拖拽上传。\n\n所有结论只如实呈现：没查到就写没查到，做不到就写做不到。'}
           </HelpPopover>
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
@@ -236,13 +285,53 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
         <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
           <Sparkles size={14} className="text-amber" />
           <h2 className="text-13 font-semibold text-ink-100">3.4.0 · 长篇创作工作台</h2>
-          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">本版新增</span>
-          <HelpPopover title="这一版改了什么" width="22rem">
-            {'这一版没有新页签，补的是「规划 → 参考 → 修订 → 导出」的连续工作流：\n\n· 规划板记住你离开时的筛选与位置，回来不用重筛；卡片顺带显示细纲绑定与固定资料条数；\n· 章节收藏集把跨卷章节收在一起，只分组、不动正文顺序；\n· 导出可只导选定章节，并把选择存成具名方案；失效章节会明确列出；\n· 写作面板可直接随手记灵感（可关联章节）；时光机可存带名称/备注的快照。\n\n边界照实写：失效章节不会静默跳过、命名快照仍受 12 版上限、稿件导出不是作品备份。'}
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">该版新增</span>
+          <HelpPopover title="这个版本改了什么" width="22rem">
+            {'这个版本没有新页签，补的是「规划 → 参考 → 修订 → 导出」的连续工作流：\n\n· 规划板记住你离开时的筛选与位置，回来不用重筛；卡片顺带显示细纲绑定与固定资料条数；\n· 章节收藏集把跨卷章节收在一起，只分组、不动正文顺序；\n· 导出可只导选定章节，并把选择存成具名方案；失效章节会明确列出；\n· 写作面板可直接随手记灵感（可关联章节）；时光机可存带名称/备注的快照。\n\n边界照实写：失效章节不会静默跳过、命名快照仍受 12 版上限、稿件导出不是作品备份。'}
           </HelpPopover>
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
           {V340_TIPS.map(tip => (
+            <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
+              <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
+              <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3.6.0：拆书分析与创作闭环 */}
+      <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+        <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+          <Sparkles size={14} className="text-amber" />
+          <h2 className="text-13 font-semibold text-ink-100">3.6.0 · 拆书与创作闭环</h2>
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">该版新增</span>
+          <HelpPopover title="这个版本改了什么" width="22rem">
+            {'这个版本把「作品分析 → 创作参考 → 审读 → 章后整理 → 剧情候选」串成一条有记录、可追溯的链：\n\n· 分析产出可以存成成果，标「已排除」的不会被发送；\n· 拆书分清本次范围与全书结论，不拿局部冒充全书；\n· 创作参考只发你勾选的那几张，来源过期就一条都不发；\n· 审读留摘要记录，可在创作轨迹回看；\n· 章后整理与正文保存分开，失败显示「整理待恢复」；\n· 剧情候选可应用 / 放弃 / 追溯来源报告；\n· 图鉴字段的「适用类别」留空会被拦下，不再存成死配置。\n\n边界照实写：未配置模型时相关功能不可用（界面会直说），不会假装完成。'}
+          </HelpPopover>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {V360_TIPS.map(tip => (
+            <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
+              <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
+              <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3.6.1：质量收口（用户可见的三处） */}
+      <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+        <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+          <Sparkles size={14} className="text-amber" />
+          <h2 className="text-13 font-semibold text-ink-100">3.6.1 · 依据、语义视图与冲突面板</h2>
+          <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30">该版新增</span>
+          <HelpPopover title="这个版本改了什么" width="22rem">
+            {'这一版主要是把上一版记下的欠账收口，界面上你能看到三处变化：\n\n· 章后整理的「未来计划待重审」每条可以看依据（改前 → 改后，最多 300 字）；\n· 图鉴详情多了「按语义看」（身份 / 动机 / 状态 + 出处），只读；\n· 同步冲突面板只在真能恢复时给按钮，不能恢复会写清原因。\n\n没有任何数据格式变化，已有项目打开即用。'}
+          </HelpPopover>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {V361_TIPS.map(tip => (
             <div key={tip.title} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3">
               <div className="text-12 font-semibold text-amber/90">{tip.title}</div>
               <div className="text-11 text-ink-300 leading-relaxed mt-1">{tip.body}</div>

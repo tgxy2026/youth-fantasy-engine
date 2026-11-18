@@ -262,7 +262,7 @@ export default function HelpCenter({ onNavigate, ctx, currentTabId, projectOpen 
           <div className="flex h-8 items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 px-2">
             <Search size={12} className="text-ink-500" />
             <input
-              aria-label="搜索使用手册"
+              aria-label="搜索使用指南内容"
               value={query}
               onChange={event => { setQuery(event.target.value); setOpenId(null) }}
               placeholder="搜一句：字太小怎么放大 / 校对怎么定位原文"

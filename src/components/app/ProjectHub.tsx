@@ -402,7 +402,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               <Button
                 variant="secondary"
                 onClick={() => setHelpMenuOpen(o => !o)}
-                title="帮助：新手引导、使用手册"
+                title="帮助：新手引导、使用指南"
                 aria-haspopup="menu"
                 aria-expanded={helpMenuOpen}
                 className="flex items-center gap-1.5"
@@ -431,10 +431,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     <Button variant="bare" role="menuitem"
                       onClick={() => { setHelpMenuOpen(false); setHelpOpen(true) }}
                       className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      title="不用打开项目也能查使用手册、问功能用法"
+                      title="不用打开项目也能查使用指南、问功能用法"
                     >
                       <BookOpen size={11} className="text-amber" />
-                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">使用手册</span>
+                      <span className="flex-1 min-w-0 text-left whitespace-nowrap">使用指南</span>
                     </Button>
                   </div>
                 </>

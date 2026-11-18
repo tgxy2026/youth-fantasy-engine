@@ -88,7 +88,7 @@ export async function connectionModeStatus(): Promise<ConnectionModeStatus> {
   if (DESKTOP) {
     const api = desktopApi()
     if (!api || typeof api.modeStatus !== 'function') {
-      return { ...BLOCKED_STATUS, reason: '当前安装包不支持连接模式互斥（请使用 3.4.3 互斥版）', canRecover: false }
+      return { ...BLOCKED_STATUS, reason: '当前安装包不支持连接模式互斥（请更新到较新的桌面安装包）', canRecover: false }
     }
     try {
       const status = await api.modeStatus()
@@ -184,7 +184,7 @@ function apiTransport(): ModeLeaseTransport {
       if (DESKTOP) {
         const api = desktopApi()
         if (!api || typeof api.modeAcquire !== 'function') {
-          throw new Error('当前安装包不支持连接模式互斥，已拒绝模型请求（请使用 3.4.3 互斥版）。')
+          throw new Error('当前安装包不支持连接模式互斥，已拒绝模型请求（请更新到较新的桌面安装包）。')
         }
         const r = await api.modeAcquire('api')
         if (!r.ok || typeof r.leaseId !== 'string' || !r.leaseId) throw leaseFailure(r.error)

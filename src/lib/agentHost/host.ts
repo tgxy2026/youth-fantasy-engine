@@ -81,7 +81,7 @@ const pageHeaders = (): Record<string, string> => ({ [PAGE_HEADER]: '1' })
 export async function agentHostStatus(): Promise<AgentHostStatus> {
   if (DESKTOP) {
     const api = desktopApi()
-    if (!api) return { ...EMPTY_STATUS, mode: 'desktop', lastError: '当前安装包尚未提供 Agent 宿主接口（请使用 3.4.3 开发版）。' }
+    if (!api) return { ...EMPTY_STATUS, mode: 'desktop', lastError: '当前安装包尚未提供 Agent 宿主接口（请更新到较新的桌面安装包）。' }
     try {
       const status = await api.status()
       return { ...EMPTY_STATUS, ...status, mode: 'desktop', scope: normalizeAgentScope(status?.scope) }
