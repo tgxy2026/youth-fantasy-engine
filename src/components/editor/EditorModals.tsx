@@ -6,7 +6,7 @@ import { countWords } from '@/lib/editor/textStats'
 import type { Chapter, Volume } from '@/lib/types'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { scanText, replaceHits } from '@/lib/editor/sensitiveWords'
-import { contextSnippet } from '@/lib/ai/contextSnippet'
+import { replaceableCount, replaceAllInContent, replaceTargets, searchChapters, type SearchHit } from '@/lib/editor/searchReplace'
 import { diffLines, diffStats } from '@/lib/editor/textDiff'
 import { ShieldAlert, History, Trash2, Search, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
@@ -855,69 +855,112 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
   )
 }
 
-// ============ 全文搜索替换 ============
-export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose, owner }: {
+// ============ 搜索替换（3.6.1：可选「本章」或「全书」范围）============
+//
+// 原先是「全书搜索替换」：入口写着全书，点开也只能全书。
+// 3.6.1 起改成通用「搜索替换」，进来先选范围：
+//   · 本章：只改当前这一章，其它章一个字都不动（默认，误点也伤不到全书）；
+//   · 全书：沿用原行为，替换前再确认一次并写明会动几章。
+//
+// 🔴 两个口径要分清（也是原实现的一个隐患）：
+//   · 搜索的语料 = 正文 + 章名（章名便于定位）；
+//   · 替换只改**正文** —— 章名不参与替换。只命中章名的条目会标出来，
+//     并**不计入**可替换数量，避免「提示替换 3 处、实际只改了 2 处」。
+export function GlobalSearch({ chapters, activeChapter, onOpenChapter, onReplaced, onClose, owner }: {
   chapters: Chapter[]
+  /** 当前打开的章。没有打开章时「本章」范围不可选（只能全书） */
+  activeChapter?: Chapter | null
   onOpenChapter: (id: string) => void
   onReplaced: (id: string, content: string) => void
   onClose: () => void
-  /** 编辑器挂载捕获的存储归属：全书替换落库不得写进切换后的账号或存储空间 */
+  /** 编辑器挂载捕获的存储归属：替换落库不得写进切换后的账号或存储空间 */
   owner: OwnedOperation
 }) {
+  type Scope = 'chapter' | 'book'
+  const [scope, setScope] = useState<Scope>('chapter')
   const [q, setQ] = useState('')
   const [replacement, setReplacement] = useState('')
-  const [results, setResults] = useState<{ ch: Chapter; count: number; contexts: string[] }[]>([])
+  const [hits, setHits] = useState<SearchHit[]>([])
   const [searched, setSearched] = useState(false)
+
+  /**
+   * 换范围就清空结果。
+   * 🔴 必须清：拿「全书」的命中结果去点「替换」，等于绕过了范围选择。
+   */
+  useEffect(() => { setSearched(false); setHits([]) }, [scope])
+
+  /** 交给纯函数的语料：本章 = 只当前章，全书 = 全部章 */
+  const corpus: Chapter[] = scope === 'chapter' ? (activeChapter ? [activeChapter] : []) : chapters
+  /** 可替换处数（只算正文；章名命中不计） */
+  const replaceable = replaceableCount(hits)
+  const scopeLabel = scope === 'chapter' ? '本章' : '全书'
 
   const doSearch = () => {
     if (!q.trim()) return
-    const out: { ch: Chapter; count: number; contexts: string[] }[] = []
-    for (const ch of chapters) {
-      const text = `${ch.title}\n${ch.content || ''}`
-      let idx = text.indexOf(q)
-      if (idx === -1) continue
-      let count = 0
-      const contexts: string[] = []
-      while (idx !== -1 && contexts.length < 5) {
-        count++
-        contexts.push(contextSnippet(text, idx, q.length))
-        idx = text.indexOf(q, idx + q.length)
-      }
-      while (idx !== -1) { count++; idx = text.indexOf(q, idx + q.length) }
-      out.push({ ch, count, contexts })
-    }
-    setResults(out)
+    setHits(searchChapters(corpus, q))
     setSearched(true)
   }
 
   const replaceAll = async () => {
-    if (!q.trim() || results.length === 0) return
-    const total = results.reduce((s, r) => s + r.count, 0)
-    if (!await confirmDialog({ title: '全书替换', message: `全书将「${q}」替换为「${replacement}」，共 ${total} 处（${results.length} 章）。确认执行？` })) return
+    const needle = q.trim()
+    if (!needle || replaceable === 0) return
+    const chaptersTouched = replaceTargets(hits).length
+    const ok = await confirmDialog({
+      title: scope === 'chapter' ? '本章替换' : '全书替换',
+      message: scope === 'chapter'
+        ? `把本章正文里的「${needle}」替换为「${replacement || '（空）'}」，共 ${replaceable} 处。确认执行？`
+        : `把全书正文里的「${needle}」替换为「${replacement || '（空）'}」，共 ${replaceable} 处（${chaptersTouched} 章）。确认执行？`,
+    })
+    if (!ok) return
     try {
-      for (const r of results) {
-        const next = r.ch.content.split(q).join(replacement)
-        // 🔴 只写正文相关字段（字段级 patch），不用 `saveChapter({ ...r.ch, ... })`：
-        //    r.ch 是**搜索那一刻**的快照，整章写回会把作者期间改过的标题/状态覆盖掉，
+      for (const hit of replaceTargets(hits)) {
+        const next = replaceAllInContent(hit.chapter.content || '', needle, replacement)
+        // 🔴 只写正文相关字段（字段级 patch），不用 `saveChapter({ ...hit.chapter, ... })`：
+        //    chapter 是**搜索那一刻**的快照，整章写回会把作者期间改过的标题/状态覆盖掉，
         //    也会把旧快照的正文盖掉自动保存刚落库的新稿（2026-10-17 全量审计 P2）。
         // 🔴 先落库再回写界面：归属切换或落库失败时不改内存态，避免界面显示已替换而库里没写。
-        await db.patchChapter(r.ch.id, { content: next, wordCount: countWords(next) }, owner)
-        onReplaced(r.ch.id, next)
+        await db.patchChapter(hit.chapter.id, { content: next, wordCount: countWords(next) }, owner)
+        onReplaced(hit.chapter.id, next)
       }
+      showToast(`已替换 ${replaceable} 处（${scopeLabel}）`)
     } catch (e) {
-      showToast(saveFailureMessage('全书替换失败：', e), 'error')
+      showToast(saveFailureMessage('替换失败：', e), 'error')
     }
-    doSearch()
+    // 不清结果就是假象：重搜会拿到旧的 props 快照，看起来"还在"。改成清空让作者再搜一次核对。
+    setSearched(false)
+    setHits([])
   }
 
   return (
-    <ToolModal title="全文搜索替换（全书范围）" icon={<Search size={16} />} onClose={onClose} wide>
+    <ToolModal title="搜索替换" icon={<Search size={16} />} onClose={onClose} wide>
+      {/* 范围：先选范围再搜，避免"以为只改本章、结果动了全书" */}
+      <div className="mb-3 rounded-lg border border-ink-700 bg-ink-800/50 p-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-11 text-ink-400">范围</span>
+          <Button variant="toggle" size="xs" selected={scope === 'chapter'} disabled={!activeChapter}
+            title={activeChapter ? '只改当前这一章，其它章不动' : '还没有打开章节 —— 先打开一章才能用本章范围'}
+            onClick={() => setScope('chapter')}>
+            本章{activeChapter ? `（${activeChapter.title}）` : '（未打开章节）'}
+          </Button>
+          <Button variant="toggle" size="xs" selected={scope === 'book'}
+            title="会改动全书命中的章节，替换前还会再确认一次" onClick={() => setScope('book')}>
+            全书（{chapters.length} 章）
+          </Button>
+        </div>
+        <div className="mt-1 text-10 text-ink-500 leading-relaxed">
+          {scope === 'chapter'
+            ? '只搜索并替换当前这一章的正文，其它章节一个字都不会动。'
+            : '搜索全书正文与章名；替换只改正文，章名不动。替换前会再确认一次。'}
+          {' '}切换范围会清空上一次的结果，需要重新搜索。
+        </div>
+      </div>
+
       <div className="flex gap-2 mb-2">
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && doSearch()}
-          placeholder="搜索全书正文与章名…"
+          placeholder={scope === 'chapter' ? '在本章正文中搜索…' : '在全书正文与章名中搜索…'}
           className="flex-1 !py-1.5 text-13"
           autoFocus
         />
@@ -931,20 +974,31 @@ export function GlobalSearch({ chapters, onOpenChapter, onReplaced, onClose, own
           className="flex-1 !py-1.5 text-12"
         />
         <Button onClick={replaceAll}
-          disabled={!searched || results.length === 0} variant="secondary" size="md">全部替换</Button>
+          disabled={!searched || replaceable === 0} variant="secondary" size="md"
+          title={searched && replaceable === 0 ? '没有可替换的正文命中（只命中章名时不会替换）' : undefined}>
+          全部替换{searched && replaceable > 0 ? `（${replaceable} 处）` : ''}
+        </Button>
       </div>
       {searched && (
-        results.length === 0 ? (
-          <div className="py-8 text-center text-12 text-ink-500">全书未找到「{q}」</div>
+        hits.length === 0 ? (
+          <div className="py-8 text-center text-12 text-ink-500">{scopeLabel}未找到「{q.trim()}」</div>
         ) : (
           <div className="space-y-2">
-            {results.map(r => (
-              <div key={r.ch.id} className="bg-ink-800 border border-ink-700 rounded-lg p-3">
-                <Button variant="bare" onClick={() => { onOpenChapter(r.ch.id); onClose() }} className="text-12 font-semibold text-amber hover:underline text-left">
-                  {r.ch.title}（{r.count} 处）→ 点击跳转
+            {replaceable === 0 && (
+              <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber leading-relaxed">
+                只命中章名 —— 章名不参与替换，所以「全部替换」不可用。要改章名请回左侧章节列表或本章标题框改。
+              </div>
+            )}
+            {hits.map(hit => (
+              <div key={hit.chapter.id} className="bg-ink-800 border border-ink-700 rounded-lg p-3">
+                <Button variant="bare" onClick={() => { onOpenChapter(hit.chapter.id); onClose() }} className="text-12 font-semibold text-amber hover:underline text-left">
+                  {hit.chapter.title}（{hit.count > 0 ? `${hit.count} 处` : '仅章名命中'}）→ 点击跳转
                 </Button>
+                {hit.titleHit && hit.count > 0 && (
+                  <span className="ml-2 text-10 text-ink-500">章名也含这个词（不参与替换）</span>
+                )}
                 <div className="mt-1.5 space-y-0.5">
-                  {r.contexts.map((c, i) => <div key={i} className="text-11 text-ink-400">{c}</div>)}
+                  {hit.contexts.map((c, i) => <div key={i} className="text-11 text-ink-400">{c}</div>)}
                 </div>
               </div>
             ))}
