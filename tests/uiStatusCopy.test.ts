@@ -6,7 +6,9 @@
 //   ③ 迁移中横幅：单页签点名 / 多页签给个数，不能只说「有页签在迁移」；
 //   ④ 草稿保存反馈：错误 > 正在提交 > 还有修改 > 已提交 > 不显示，优先级不能换；
 //   ⑤ 迁移结果：**「按你的选择跳过」不是失败**，判成失败会让作者以为书稿没搬过来。
-import { migrationLockSubject, portableWriteLockCopy, writeLockUnlockPrompt } from '../src/lib/app/lockBannerCopy'
+import { migrationLockSubject, portableWriteLockCopy, writeLockDiagnostics, writeLockUnlockPrompt } from '../src/lib/app/lockBannerCopy'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { draftSaveFeedbackOf, type DraftSaveFeedbackState } from '../src/lib/editor/draftSaveFeedback'
 import { migrationReportRows, migrationStartAction } from '../src/lib/app/migrationSteps'
 import type { MigrationReport } from '../src/lib/storage/legacyMigration'
@@ -50,6 +52,40 @@ function main() {
     ok('网页版主语换成云端数据', web.subject === '云端数据' && web.writeBackTo === '云端', JSON.stringify(web))
     ok('网页版主操作是导出全部数据', web.primaryLabel === '导出全部数据', web.primaryLabel)
     ok('网页版备份指引提到导出 JSON', web.backupHint.includes('JSON'), web.backupHint)
+  }
+
+  // ②·2 复制诊断信息（3.6.1）：让用户一句话就能把判断所需的信息发过来
+  {
+    const at = new Date(2026, 10, 19, 6, 55)
+    const text = writeLockDiagnostics({
+      subject: '数据文件', reason: '数据文件内容不是有效的 JSON（可能被云盘客户端同步截断，或磁盘损坏）',
+      writeBackTo: '磁盘', dataPath: 'C:////Users////me////AppData////Roaming////youth-fantasy-engine////youth-fantasy-engine-data.json',
+      pathKind: '自定义位置', appVersion: 'v3.5.6', platform: '桌面版', at,
+    })
+    ok('带时间（便于和云盘/断电时间对照）', text.includes('2026-11-19 06:55'), text.split('\n')[1])
+    ok('带版本与平台', text.includes('v3.5.6') && text.includes('桌面版'))
+    ok('带数据文件路径与「默认/自定义」', text.includes('youth-fantasy-engine-data.json') && text.includes('自定义位置'))
+    ok('带原始锁定原因（不加工、不改写）', text.includes('不是有效的 JSON'))
+    ok('说清当前是空库、不会写回磁盘', text.includes('空库') && text.includes('不会写回磁盘'))
+    ok('🔴 明说不含正文（用户才敢直接发）', text.includes('不含正文'))
+    ok('拿不到路径时给替代指引而不是空着',
+      writeLockDiagnostics({ subject: '数据文件', reason: 'x', writeBackTo: '磁盘', dataPath: '', appVersion: 'v3.5.6', platform: '桌面版', at })
+        .includes('打开数据文件夹'))
+  }
+
+  // ②·3 源码闸：横幅真的挂了这个按钮，且解锁按钮把后果写进了名字
+  {
+    const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8')
+    const banner = read('src/components/app/WriteLockBanner.tsx')
+    ok('横幅有「复制诊断信息」按钮', banner.includes('复制诊断信息'))
+    ok('🔴 解锁按钮直说后果（不叫「仍用当前内容继续」）',
+      banner.includes('放弃原文件继续') && !banner.includes('仍用当前内容继续'))
+    ok('按钮上有"会覆盖、无法恢复"的悬停说明', banner.includes('无法恢复'))
+    const desktop = read('src/components/app/DesktopWriteLockBanner.tsx')
+    const portable = read('src/components/app/PortableWriteLockBanner.tsx')
+    ok('桌面横幅传入了诊断信息（含默认/自定义位置）',
+      desktop.includes('diagnosticsText') && desktop.includes('pathKind'))
+    ok('便携横幅传入了诊断信息', portable.includes('diagnosticsText'))
   }
 
   // ③ 迁移横幅主语

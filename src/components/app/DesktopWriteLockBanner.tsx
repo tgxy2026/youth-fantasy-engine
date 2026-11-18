@@ -8,6 +8,8 @@ import {
   revealDesktopDataFile,
 } from '@/lib/app/desktop'
 import { WriteLockBanner } from '@/components/app/WriteLockBanner'
+import { writeLockDiagnostics } from '@/lib/app/lockBannerCopy'
+import { APP_VERSION_LABEL } from '@/lib/app/env'
 
 /**
  * 桌面版：「数据文件写盘已锁定」的常驻告警条。
@@ -35,6 +37,16 @@ export function DesktopWriteLockBanner() {
       }}
       backupHint="建议先点「打开数据文件夹」把原文件复制一份备份，再决定是否继续。"
       onUnlock={() => unlockDesktopWrite()}
+      diagnosticsText={() => writeLockDiagnostics({
+        subject: '数据文件',
+        reason: st.writeLockReason,
+        writeBackTo: '磁盘',
+        dataPath: st.dataPath,
+        // 自定义位置最常见的原因就是"把数据放进了云盘同步目录" —— 这一条对判断极关键
+        pathKind: st.isCustomPath ? '自定义位置' : '默认位置',
+        appVersion: APP_VERSION_LABEL,
+        platform: '桌面版',
+      })}
     />
   )
 }

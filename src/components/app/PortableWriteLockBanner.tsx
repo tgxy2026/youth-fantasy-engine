@@ -11,7 +11,8 @@ import {
 } from '@/lib/storage/fileBackend'
 import { WriteLockBanner } from '@/components/app/WriteLockBanner'
 import { WEB } from '@/lib/app/platform'
-import { portableWriteLockCopy } from '@/lib/app/lockBannerCopy'
+import { portableWriteLockCopy, writeLockDiagnostics } from '@/lib/app/lockBannerCopy'
+import { APP_VERSION_LABEL } from '@/lib/app/env'
 
 /**
  * 便携版：「数据文件写盘已锁定」的常驻告警条。
@@ -67,6 +68,13 @@ export function PortableWriteLockBanner() {
           }}
       backupHint={backupHint}
       onUnlock={() => unlockPortableWrite()}
+      diagnosticsText={() => writeLockDiagnostics({
+        subject, reason: st.writeLockReason, writeBackTo,
+        dataPath: portableDataPath(),
+        pathKind: '未知',
+        appVersion: APP_VERSION_LABEL,
+        platform: webMode ? '网页版' : '便携版',
+      })}
     />
   )
 }

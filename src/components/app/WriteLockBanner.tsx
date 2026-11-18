@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle, RefreshCw, Unlock } from 'lucide-react'
+import { AlertTriangle, ClipboardCopy, RefreshCw, Unlock } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { confirmDialog } from '@/components/dialogs/dialogs'
+import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
 import { writeLockUnlockPrompt } from '@/lib/app/lockBannerCopy'
 
@@ -46,10 +46,15 @@ interface WriteLockBannerProps {
   backupHint: string
   /** 作者确认后真正解锁 */
   onUnlock: () => void
+  /**
+   * 「复制诊断信息」的落点（3.6.1）：拼出「版本 + 平台 + 数据路径 + 锁定原因」的成品文本。
+   * 🔴 不含正文内容 —— 用户愿意发就能直接发，省掉"你是什么版本、文件在哪"的来回。
+   */
+  diagnosticsText: () => string
 }
 
 export function WriteLockBanner({
-  subject, reason, writeBackTo, primary, backupHint, onUnlock,
+  subject, reason, writeBackTo, primary, backupHint, onUnlock, diagnosticsText,
 }: WriteLockBannerProps) {
   const askUnlock = async () => {
     const ok = await confirmDialog(writeLockUnlockPrompt(backupHint))
@@ -72,18 +77,26 @@ export function WriteLockBanner({
           解除之前，本次所有编辑都不会写回{writeBackTo}。请先备份数据文件，再选择下面的操作。
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-0.5">
         <Button variant="secondary" size="xs" onClick={primary.onClick}>
           {primary.icon}
           {primary.label}
+        </Button>
+        <Button variant="secondary" size="xs"
+          title="复制版本、平台、数据文件路径与锁定原因（不含正文），直接发给作者即可"
+          onClick={() => { void copyText(diagnosticsText(), '诊断信息已复制，可直接粘贴发给作者（不含正文内容）') }}>
+          <ClipboardCopy className="h-3.5 w-3.5" />
+          复制诊断信息
         </Button>
         <Button variant="secondary" size="xs" onClick={() => location.reload()}>
           <RefreshCw className="h-3.5 w-3.5" />
           重试读取
         </Button>
-        <Button variant="danger" size="xs" onClick={() => void askUnlock()}>
+        {/* 3.6.1：旧按钮名容易被读成"继续用"（只是继续当前的会话）；现在把后果直接写进名字 */}
+        <Button variant="danger" size="xs" onClick={() => void askUnlock()}
+          title="会用当前的空库覆盖数据文件，原文件无法恢复（点击后会再确认一次）">
           <Unlock className="h-3.5 w-3.5" />
-          仍用当前内容继续
+          放弃原文件继续
         </Button>
       </div>
     </div>

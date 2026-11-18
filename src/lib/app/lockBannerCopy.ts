@@ -52,3 +52,44 @@ export function migrationLockSubject(names: readonly string[]): string {
   if (names.length === 1) return `「${names[0]}」`
   return `${names.length} 个页签（${names.join('、')}）`
 }
+
+/**
+ * 「复制诊断信息」的成品文本（3.6.1 · 反馈通道补强）：
+ * 用户遇到「数据文件读取失败」时，让他发截图往往缺少最关键的三样东西
+ * （版本 / 数据文件在哪 / 到底报了哪句），来回三四轮才能开始判断。
+ * 这里把机器侧已经知道的信息拼成一段可粘贴的话，**不含正文内容**，
+ * 用户愿意发就能直接发。
+ */
+export function writeLockDiagnostics(input: {
+  /** 主语：数据文件 / 便携数据文件 / 云端数据 */
+  subject: string
+  reason: string
+  /** 不会写回哪里（磁盘 / 数据文件 / 云端） */
+  writeBackTo: string
+  /** 数据文件路径；拿不到时传空串 */
+  dataPath: string
+  /** 数据位置是默认还是自定义 —— 自定义常意味着"放进了云盘同步目录" */
+  pathKind?: '默认位置' | '自定义位置' | '未知'
+  appVersion: string
+  /** 桌面版 / 便携版 / 网页版 */
+  platform: string
+  at?: Date
+}): string {
+  const at = input.at ?? new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const time = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+  const where = input.dataPath
+    ? `${input.dataPath}${input.pathKind && input.pathKind !== '未知' ? `（${input.pathKind}）` : ''}`
+    : '拿不到（点「打开数据文件夹」后从地址栏复制给我）'
+  return [
+    '青春幻想引擎 · 数据文件读取失败（诊断信息）',
+    `时间：${time}`,
+    `软件：${input.appVersion} · ${input.platform}`,
+    `数据文件：${where}`,
+    `锁定原因：${input.reason}`,
+    `当前状态：内存里是空库，本次编辑不会写回${input.writeBackTo}`,
+    '',
+    '另外麻烦补一张截图：数据文件夹里能看到「文件名 / 大小 / 修改时间」的那一屏。',
+    '（这段信息里不含正文内容，可以直接发。）',
+  ].join('\n')
+}

@@ -30,8 +30,8 @@ export const FAQ_ARTICLES: HelpArticle[] = [
     ],
     related: ['start-without-ai', 'agent-backend'],
     actions: [{ label: '打开模型设置', tabId: 'model-settings' }],
-    verifiedAgainst: '3.3.1',
-    reviewedAt: '2026-10-29',
+    verifiedAgainst: '3.6.1',
+    reviewedAt: '2026-11-19',
   },
   {
     id: 'faq-save-state',
@@ -39,7 +39,7 @@ export const FAQ_ARTICLES: HelpArticle[] = [
     title: '「已保存」和「正在写入」有什么区别',
     summary: '状态栏说的每一句话都对应当前真实落盘状态，不要只看有没有红字。',
     aliases: ['保存了吗', '没保存', '写入失败'],
-    keywords: ['保存', '状态', '写入', '磁盘', '失败'],
+    keywords: ['保存', '状态', '写入', '磁盘', '失败', '数据文件', '读取失败', '红条', '损坏', 'JSON'],
     group: '常见问题与任务教程',
     tabIds: ['editor'],
     availability: 'all',
@@ -60,6 +60,16 @@ export const FAQ_ARTICLES: HelpArticle[] = [
         heading: '切页、切章不会丢稿',
         body: [
           '离开页签或切换章节时，软件会先等当前草稿写盘成功再走；写失败就留在原页，草稿和滚动位置都不动，可以直接重试。',
+        ],
+      },
+      {
+        id: 'data-file-unreadable',
+        heading: '顶部出现红色「数据文件读取失败」怎么办',
+        body: [
+          '这条红条的意思是：软件启动时读不出数据文件，所以**暂停了所有写入**——你原来的数据文件没有被改动。这时不要慌，按顺序做三件事：',
+          '① **先别点「放弃原文件继续」**：它会用当前的空库覆盖数据文件，原文件无法恢复。② 点「打开数据文件夹」，把整个文件夹复制一份到桌面或 U 盘。③ 暂停云盘同步（OneDrive / 坚果云 / 百度网盘），在备份完成前别再让它动这个文件。',
+          '备份好之后点「复制诊断信息」：它会把版本、数据文件路径、锁定原因拼成一段话（**不含正文内容**），直接粘贴发给作者即可，再补一张数据文件夹的截图（能看到文件名、大小、修改时间）。',
+          '恢复顺序：云盘的「版本历史」还原到出问题前 → 用之前导出的项目备份导入 → 另一台电脑上的副本。都拿不到时再找作者协助，不要反复重启重开。',
         ],
       },
     ],
