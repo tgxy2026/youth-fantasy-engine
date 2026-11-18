@@ -147,8 +147,8 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
         <Button size="sm" variant="toggle" selected={tab === 'comment'} onClick={() => setTab('comment')}>待审评论 {overview ? `(${overview.queue.comments})` : ''}</Button>
         <Button size="sm" variant="toggle" selected={tab === 'report'} onClick={() => setTab('report')}>举报处理 {overview ? `(${overview.queue.reports})` : ''}</Button>
         <Button size="sm" variant="toggle" selected={tab === 'appeal'} onClick={() => setTab('appeal')}>申诉复核 {overview ? `(${overview.queue.appeals})` : ''}</Button>
-        <Button size="xs" variant="ghost" onClick={() => { void loadOverview(); void loadQueue(tab) }}>刷新</Button>
-        <Button size="xs" variant="ghost" onClick={() => { void (async () => {
+        <Button size="xs" variant="secondary" onClick={() => { void loadOverview(); void loadQueue(tab) }}>刷新</Button>
+        <Button size="xs" variant="secondary" onClick={() => { void (async () => {
           try { setAudit((await adminAudit(30)).items) } catch (e) { setError(errorText(e)) }
         })() }}>最近操作</Button>
       </div>
@@ -177,7 +177,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
             <h3 className="text-13 font-semibold text-ink-100">{openItem.title || '（无标题）'}</h3>
             <StatusPill>{openItem.status}</StatusPill>
             <span className="text-11 text-ink-400">版本 {openItem.versionId} · {formatTime(openItem.createdAt)}</span>
-            <Button size="xs" variant="ghost" onClick={() => setOpenItem(null)}>关闭</Button>
+            <Button size="xs" variant="secondary" onClick={() => setOpenItem(null)}>关闭</Button>
           </div>
           {openItem.screening && (
             <p className="text-11 text-amber">
@@ -244,7 +244,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
                 {r.detail && <p className="mt-1 text-11 text-ink-300">补充：{r.detail}</p>}
                 <p className="mt-1 text-11 text-ink-400">{formatTime(r.createdAt)}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="xs" variant="ghost" disabled={busy === `claim-${r.id}`}
+                  <Button size="xs" variant="secondary" disabled={busy === `claim-${r.id}`}
                     onClick={() => void run(`claim-${r.id}`, () => adminClaim(isAppeal ? 'appeal' : 'report', [r.id]), isAppeal ? '已领取申诉' : '已领取举报')}>领取</Button>
                   {r.targetType === 'post' && (
                     <Button size="xs" variant="secondary" onClick={() => void openPost(r.targetId, r.versionId || '')}>查看内容</Button>
@@ -253,14 +253,14 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
                     <>
                       <Button size="xs" disabled={busy === `close-${r.id}`}
                         onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'reopen', outcome: '申诉成立，重新进入待审' }), '已重新放回待审队列')}>申诉成立，重新待审</Button>
-                      <Button size="xs" variant="ghost" disabled={busy === `close-${r.id}`}
+                      <Button size="xs" variant="secondary" disabled={busy === `close-${r.id}`}
                         onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'none', outcome: '维持原处理' }), '已驳回申诉')}>维持原处理</Button>
                     </>
                   ) : (
                     <>
                       <Button size="xs" variant="danger" disabled={busy === `close-${r.id}`}
                         onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'takedown', outcome: '举报成立，已下架' }), '已下架并关闭举报')}>举报成立并下架</Button>
-                      <Button size="xs" variant="ghost" disabled={busy === `close-${r.id}`}
+                      <Button size="xs" variant="secondary" disabled={busy === `close-${r.id}`}
                         onClick={() => void run(`close-${r.id}`, () => adminCloseReport({ id: r.id, action: 'none', outcome: '未发现违规' }), '已关闭举报')}>未违规并关闭</Button>
                     </>
                   )}
@@ -282,7 +282,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
                 )}
                 <p className="mt-1 text-11 text-ink-400">{formatTime(c.createdAt)}{c.claimedBy ? ' · 已领取' : ''}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="xs" variant="ghost" disabled={busy === `claim-${c.id}`}
+                  <Button size="xs" variant="secondary" disabled={busy === `claim-${c.id}`}
                     onClick={() => void run(`claim-${c.id}`, () => adminClaim('comment', [c.id]), '已领取评论')}>领取</Button>
                   <Button size="xs" variant="secondary" onClick={() => void openComment(c.id)}>查看</Button>
                   <Button size="xs" disabled={busy === `ok-${c.id}`}
@@ -309,7 +309,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
               )}
               <p className="mt-1 text-11 text-ink-400">{formatTime(p.createdAt)}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="xs" variant="ghost" disabled={busy === `claim-${p.id}`}
+                <Button size="xs" variant="secondary" disabled={busy === `claim-${p.id}`}
                   onClick={() => void run(`claim-${p.id}`, () => adminClaim('post', [p.id]), '已领取投稿')}>领取</Button>
                 <Button size="xs" onClick={() => void openPost(p.id, p.versionId)}>审阅</Button>
               </div>
@@ -318,7 +318,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
         })}
       </ul>
 
-      {cursor && <Button size="sm" variant="ghost" onClick={() => void loadQueue(tab, true)}>加载更多</Button>}
+      {cursor && <Button size="sm" variant="secondary" onClick={() => void loadQueue(tab, true)}>加载更多</Button>}
 
       {audit.length > 0 && (
         <section className="space-y-1 border-t border-ink-700 pt-2">

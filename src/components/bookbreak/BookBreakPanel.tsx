@@ -674,7 +674,7 @@ function BookBreakWorkspace() {
           </Button>
         )}
         {!running && ledger && (
-          <Button size="sm" variant="ghost" onClick={() => void onDiscardLedger()}>丢弃本机记录</Button>
+          <Button size="sm" variant="secondary" onClick={() => void onDiscardLedger()}>丢弃本机记录</Button>
         )}
         {running && task && (
           <Button size="sm" variant="danger" onClick={() => abortTask(task.id)}>中止</Button>

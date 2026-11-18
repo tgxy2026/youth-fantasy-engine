@@ -3,6 +3,7 @@
  *
  * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
  */
+import { useEffect, useRef } from 'react'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import HelpPopover from '@/components/common/HelpPopover'
 import AutoTextarea from '@/components/common/AutoTextarea'
@@ -14,11 +15,33 @@ import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { applyRewrite, discardRewrite, startChapterRewrite, stopChapterRewrite } from '@/lib/creative/creativeSession'
 import { CHAPTER_REWRITE_META } from '@/lib/ai/aiTasks'
 import { countWords } from '@/lib/editor/textStats'
+import { takePendingRevisionForProject } from '@/lib/revision/checkToCandidate'
+import { getCurrentProjectId } from '@/lib/db/core'
 import { NUM_INPUT, RW_ACTIONS, RW_SCOPE_NOTE } from '@/components/creative/creativeWritingParts'
 import type { CreativeWritingModel } from '@/components/creative/useCreativeWritingModel'
 
 export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel }) {
   const { s, writingReady, acpWriting, tree, rwChapter, setRwChapter, rwAction, setRwAction, rwReq, setRwReq, rwWords, setRwWords, busy, reloadChapters, latestId, pickInfo } = m
+  /**
+   * 3.6.0 · 审计项 12：从「检查报告 → 以此发起修订」带过来的要求与报告 id。
+   *
+   * 🔴 只在**首次挂载**消费一次（`take` 取走即清空）：
+   *    · 消费两次会让"上一次的报告"粘到"下一次随手改写"上，候选里就会出现假来源；
+   *    · 放在 ref 里而不是 state：它不参与渲染，只等被 startChapterRewrite 带走。
+   * 🔴 章节已不存在（被删 / 换了项目）就不套用要求 —— 宁可让作者重填，也不要发一份指向空章的要求。
+   */
+  const fromCheckIds = useRef<string[]>([])
+  useEffect(() => {
+    const pid = getCurrentProjectId() ?? ''
+    const pending = takePendingRevisionForProject(pid)
+    if (!pending) return
+    fromCheckIds.current = pending.checkPayloadIds
+    setRwReq(prev => (prev.trim() ? prev : pending.requirement))
+    // 树是 `{ volume, items[] }[]`（见 chapterRewrite.RewriteCandidateGroup）
+    const exists = (tree ?? []).some(g => g.items.some(it => it.chapter.id === pending.chapterId))
+    if (exists) setRwChapter(pending.chapterId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   return (
     <>
       {/* 整章改写：对已有章节做整章级的润色 / 扩写 / 精简 / 续写 / 改写 */}
@@ -98,7 +121,14 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
             //    改成「开始生成 / 重新生成」（与 AITemplateFill、颉文姬的措辞一致），
             //    动作名只由上面那排承担，这里只说"开始产出结果"。
             title="按上面选的动作与「补充要求」处理这一章：先出结果给你过目，确认后才替换正文"
-            onClick={() => void startChapterRewrite({ chapterId: rwChapter, action: rwAction, requirement: rwReq, words: rwWords })}>
+            onClick={() => {
+              const ids = fromCheckIds.current
+              fromCheckIds.current = []
+              void startChapterRewrite({
+                chapterId: rwChapter, action: rwAction, requirement: rwReq, words: rwWords,
+                ...(ids.length ? { checkPayloadIds: ids } : {}),
+              })
+            }}>
             <Wand2 size={12} /> {s.rewrite ? '重新生成' : '开始生成'}
           </Button>
           {s.rewrite?.running && (

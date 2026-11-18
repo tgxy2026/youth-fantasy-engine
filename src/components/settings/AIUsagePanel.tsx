@@ -13,6 +13,7 @@ import * as db from '@/lib/db'
 import { listProjectAiRuns } from '@/lib/db'
 import { summarizeUsage, type UsageSummary } from '@/lib/ai/aiUsageStats'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 
 function fmtMs(ms: number): string {
   if (!ms) return '0 秒'
@@ -48,6 +49,13 @@ export default function AIUsagePanel() {
       <div className="flex items-center gap-2 mb-3">
         <Activity size={14} className="text-amber" />
         <h2 className="text-14 font-semibold text-ink-100">AI 消耗统计</h2>
+        <HelpPopover title="AI 消耗统计怎么算" width="22rem" size={12}>
+          <div className="space-y-1.5 text-11 leading-relaxed">
+            <p>这里只统计<b>本机</b>发生的调用：调用次数、累计耗时、被内容策略拒绝的次数，按模型与用途分开列。表里的数字来自运行账本，<b>不联网、也不上报</b>。</p>
+            <p>「被内容拒绝」是厂商侧拒绝（例如触发安全策略），不是额度用尽；它单列出来，是为了让你分得清"没生成"和"生成失败"。</p>
+            <p>换模型或换设备后，历史数字不会跟过来 —— 两份账不在一个地方，不能相加。</p>
+          </div>
+        </HelpPopover>
         <span className="text-11 text-ink-500">本机记录 · 不联网</span>
         <div className="ml-auto">
           <Button variant="secondary" size="xs" onClick={() => void load()} className="gap-1">

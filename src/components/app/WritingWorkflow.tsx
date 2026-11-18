@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, Compass, FileText, History, X } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 import type { CardRecord, Chapter, TableRow, Volume } from '@/lib/types'
 import type { VisCtx } from '@/lib/schema'
 import { tabVisible, getTab } from '@/lib/schema'
@@ -264,6 +265,13 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             钮紧随 h2（gap-2）；窗口不够时 flex-wrap 让它整条落到下一行，也不挤成一条缝。 */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <h2 id="continue-writing-title" className="text-14 font-semibold text-content-primary flex items-center gap-2"><Compass size={16} className="text-amber" /> 继续创作</h2>
+          <HelpPopover title="「继续创作」按什么排" width="23rem" size={12}>
+            <div className="space-y-1.5 text-11 leading-relaxed">
+              <p>这里不是"最近改过的章节列表"，而是<b>按你上次停下的位置</b>给下一步建议：接着写哪一章、哪份细纲还没落成正文、哪些候选还等你审。</p>
+              <p>下面的「接下来可以处理」是按<b>未完成的动作</b>排的，不是按时间 —— 所以它可能包含很久以前留着的候选；点进去处理掉，它就从这里消失。</p>
+              <p>换项目后这块会重算，不会沿用上一个项目的进度。</p>
+            </div>
+          </HelpPopover>
           <Button variant="primary" size="sm" onClick={() => onNavigate('editor', recent?.id)} aria-label={recent ? `继续写作：${recent.title || '未命名章'}` : '进入正文编辑，建立第一章'}>
             {recent ? '继续写作' : '开始建立章节'} <ChevronRight size={14} />
           </Button>
@@ -288,8 +296,8 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <Button variant="bare" className="min-w-0 flex-1 !justify-start text-left text-12 text-ink-200 hover:text-amber" onClick={() => onNavigate(item.tab, item.chapterId)}>
               <span className="min-w-0"><span className="block [overflow-wrap:anywhere]">{item.title}</span><span className="mt-1 block text-11 text-content-muted">{item.detail}</span></span>
             </Button>
-            <Button variant="ghost" size="xs" onClick={() => postpone(item.key)} aria-label={`稍后处理：${item.title}`} title="24 小时后再显示">稍后</Button>
-            <Button variant="ghost" size="xs" onClick={() => dismiss(item.key)} aria-label={`忽略建议：${item.title}`} title="仅在本机隐藏这条建议">忽略</Button>
+            <Button variant="secondary" size="xs" onClick={() => postpone(item.key)} aria-label={`稍后处理：${item.title}`} title="24 小时后再显示">稍后</Button>
+            <Button variant="secondary" size="xs" onClick={() => dismiss(item.key)} aria-label={`忽略建议：${item.title}`} title="仅在本机隐藏这条建议">忽略</Button>
           </div>)}
         </div> : <div className="text-12 text-ink-500">暂无待处理建议。{(ignored.size > 0 || Object.keys(snoozed).length > 0) && <Button variant="bare" className="ml-2 text-amber" onClick={resetIgnored}>恢复隐藏建议</Button>}</div>}
         {items.length > 0 && (ignored.size > 0 || Object.keys(snoozed).length > 0) && <Button variant="bare" className="mt-2 text-10 text-ink-500 hover:text-amber" onClick={resetIgnored}>恢复隐藏建议</Button>}
@@ -337,11 +345,11 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
           {(restoreNotices.length > 0 || anchorNotice) && <div role="status" className="mb-3 space-y-1 rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber">
             {anchorNotice && <div className="flex items-start gap-2">
               <span className="min-w-0 flex-1">{anchorNotice}</span>
-              <Button variant="ghost" size="xs" aria-label="关闭提示" onClick={() => setAnchorNotice(null)}><X size={12} /></Button>
+              <Button variant="secondary" size="xs" aria-label="关闭提示" onClick={() => setAnchorNotice(null)}><X size={12} /></Button>
             </div>}
             {restoreNotices.map((notice, index) => <div key={`${notice}-${index}`} className="flex items-start gap-2">
               <span className="min-w-0 flex-1">{notice}</span>
-              {index === restoreNotices.length - 1 && <Button variant="ghost" size="xs" aria-label="关闭提示" onClick={() => setRestoreNotices([])}><X size={12} /></Button>}
+              {index === restoreNotices.length - 1 && <Button variant="secondary" size="xs" aria-label="关闭提示" onClick={() => setRestoreNotices([])}><X size={12} /></Button>}
             </div>)}
           </div>}
           {visible('chapter-outline') && <div role="group" aria-label="章节规划板视图" className="mb-4 flex flex-wrap gap-2">
@@ -360,7 +368,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <input value={query} onChange={e => setQuery(e.target.value)} aria-label="搜索章节标题或摘要" placeholder="搜索标题或摘要" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100" />
             <select value={volumeId} onChange={e => setVolumeId(e.target.value)} aria-label="筛选分卷" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部分卷</option>{volumes.map(v => <option key={v.id} value={v.id}>{v.title}</option>)}</select>
             <select value={status} onChange={e => setStatus(e.target.value as BoardStatus)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{BOARD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
-            {hasFilter && <Button variant="ghost" size="sm" onClick={clearFilters} title="清除分卷、状态与关键词筛选">清除筛选</Button>}
+            {hasFilter && <Button variant="secondary" size="sm" onClick={clearFilters} title="清除分卷、状态与关键词筛选">清除筛选</Button>}
           </div>
           <p className="mb-2 text-11 text-ink-500">正文章节 · 来自正文编辑器（只读，点卡片进入该章）· 细纲绑定与固定条数取自正文「本章资料」，不按名称匹配</p>
           {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">

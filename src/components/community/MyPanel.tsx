@@ -116,15 +116,15 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                   })}>编辑</Button>
                 )}
                 {p.hasPublishedVersion && p.status !== 'withdrawn' && p.status !== 'removed' && (
-                  <Button size="sm" variant="ghost" disabled={busy === `display-${p.id}`} onClick={() => void toggleDisplay(p)}>
+                  <Button size="sm" variant="secondary" disabled={busy === `display-${p.id}`} onClick={() => void toggleDisplay(p)}>
                     {p.display === 'anonymous' ? '改为显示昵称' : '改为匿名'}
                   </Button>
                 )}
                 {canAppeal(p) && (
-                  <Button size="sm" variant="ghost" disabled={busy === p.id} onClick={() => void appeal(p)}>申诉</Button>
+                  <Button size="sm" variant="secondary" disabled={busy === p.id} onClick={() => void appeal(p)}>申诉</Button>
                 )}
                 {p.status !== 'withdrawn' && p.status !== 'removed' && (
-                  <Button size="sm" variant="ghost" disabled={busy === p.id}
+                  <Button size="sm" variant="secondary" disabled={busy === p.id}
                     onClick={() => void act(p.id, () => withdrawPost(p.id), '已撤回，公开展示已停止')}>撤回</Button>
                 )}
                 <Button size="sm" variant="danger" disabled={busy === p.id}
@@ -169,7 +169,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                 </p>
               )}
               {c.status !== 'removed' && (
-                <Button size="xs" variant="ghost" className="mt-1" disabled={busy === c.id}
+                <Button size="xs" variant="secondary" className="mt-1" disabled={busy === c.id}
                   onClick={() => void act(c.id, () => deleteComment(c.id), '评论已删除')}>删除</Button>
               )}
             </li>

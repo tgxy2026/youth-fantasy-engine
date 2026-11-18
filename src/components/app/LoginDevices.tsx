@@ -153,7 +153,7 @@ export default function LoginDevices() {
         width="md"
         footer={(
           <div className="flex w-full items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
               刷新
             </Button>

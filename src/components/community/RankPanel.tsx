@@ -129,7 +129,7 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
             与云同步资格无关，关闭即撤回已上传数据。
           </p>
         )}
-        <Button size="sm" variant="ghost" onClick={onOpenSettings}>
+        <Button size="sm" variant="secondary" onClick={onOpenSettings}>
           参与与匿名设置<ChevronRight size={12} />
         </Button>
         {!compact && (

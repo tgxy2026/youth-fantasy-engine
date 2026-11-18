@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { COMMUNITY_LIMITS, COMMUNITY_TAGS, charCount, isBlank } from '@/lib/community/limits'
 import { createPost, updatePost } from '@/lib/community/api'
@@ -179,9 +180,16 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h3 className="text-14 font-semibold text-ink-100">{editTarget ? '修改投稿' : '写一段新投稿'}</h3>
+          <HelpPopover title="投稿要注意什么" width="22rem" size={12}>
+            <div className="space-y-1.5 text-11 leading-relaxed">
+              <p>投稿是<b>纯文字</b>：正文最多 10000 个字符（含空格与换行），超过会被拦下并提示，不会悄悄截断。</p>
+              <p>提交后要<b>管理员审核</b>才公开；审核期间可以修改，修改会重新进入审核。撤回后不会自动恢复，需要重新投稿。</p>
+              <p>标签必须用预设的五个之一（练笔 / 短篇 / 设定 / 灵感 / 求评），自造标签服务端不认。</p>
+            </div>
+          </HelpPopover>
           {savedAt > 0 && !editTarget && <StatusPill>草稿已存本机</StatusPill>}
         </div>
-        <Button size="sm" variant="ghost" onClick={() => setPreview((v) => !v)}>
+        <Button size="sm" variant="secondary" onClick={() => setPreview((v) => !v)}>
           {preview ? <EyeOff size={14} /> : <Eye size={14} />}{preview ? '返回编辑' : '预览读者视角'}
         </Button>
       </div>
@@ -249,7 +257,7 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
           {busy ? '提交中…' : editTarget ? '提交修改' : '提交审核'}
         </Button>
         {!editTarget && (title || body) && (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void clearAll()}>清空草稿</Button>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void clearAll()}>清空草稿</Button>
         )}
         <span className="text-11 text-ink-400">审核流程：规则初筛 → 管理员确认。管理员可选择使用本地 AI 辅助，AI 不会自动发布。</span>
       </div>

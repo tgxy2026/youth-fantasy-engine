@@ -396,7 +396,7 @@ export default function OptimizeTicketPanel() {
           <Button size="xs" variant="secondary" disabled={gen.running}
             onClick={() => commitScope(new Set(tree.flatMap(g => g.items.map(i => i.chapter.id))))}>全选</Button>
           <Button size="xs" variant="secondary" disabled={gen.running} onClick={() => commitScope(new Set())}>清空</Button>
-          <Button size="xs" variant="ghost" disabled={gen.running}
+          <Button size="xs" variant="secondary" disabled={gen.running}
             onClick={() => setCollapsedVols(prev => prev.size ? new Set() : new Set(tree.map(g => g.volume.id)))}>
             {collapsedVols.size ? '展开全部' : '折叠全部'}
           </Button>

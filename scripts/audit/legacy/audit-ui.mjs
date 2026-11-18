@@ -88,11 +88,33 @@ const RISKY = /(?:^|[\s"])(?:hover:|focus:|active:|dark:)*(?:bg|text|border|ring
 }
 
 // ── U2. 硬编码十六进制色 ──────────────────────────────────────────
+/**
+ * 🏛 已判定「这里本来就该写色值」的文件（2026-11-18 审计项 11）。
+ *
+ * 上一版把下面这些也报成硬编码色，共 100/101 处 —— 那不是债，是**颜色真源**：
+ *   · `src/lib/settings/palette.ts` —— 调色板定义（主题 token 就是从这里生成的）；
+ *   · `src/lib/settings/theme.ts`   —— 主题色板与 `--graph-*` 的取值来源；
+ *   · `src/lib/tavern/exportDoc.ts` —— 生成 Word/HTML 文档，外部格式不认 CSS 变量；
+ *   · `CustomThemeDialog` 的 `ACCENT_PLACEHOLDER` —— 输入框示例值。
+ * 把它们报成问题，只会让人每轮都重新判一次「这些是不是该改」，最后必然被当噪音无视。
+ * 🔴 新增条目必须写清为什么：写不出的就不该进表（与死代码 KEEP 同一纪律）。
+ */
+const HEX_TOKEN_SOURCES = new Map([
+  ['src/lib/settings/palette.ts', '调色板定义本身：主题 token 由它生成'],
+  ['src/lib/settings/theme.ts', '主题色板 / --graph-* 的取值来源'],
+  ['src/lib/tavern/exportDoc.ts', '导出 Word/HTML：外部文档不认 CSS 变量'],
+])
+const HEX_TOKEN_LINES = new Map([
+  ['src/components/settings/CustomThemeDialog.tsx', /ACCENT_PLACEHOLDER\s*=\s*'#[0-9a-fA-F]{3,8}'/],
+])
 {
   const hits = []
   for (const f of files) {
+    if (HEX_TOKEN_SOURCES.has(rel(f))) continue
     masked.get(f).split(/\r?\n/).forEach((l, i) => {
       // ⚠️ 只认 CSS 色值形态，避开注释里的「#031 提醒」——已剥注释，这里再加一道保险
+      const lineRule = HEX_TOKEN_LINES.get(rel(f))
+      if (lineRule && lineRule.test(l)) return
       for (const mm of l.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
         if (/^#\d{3}$/.test(mm[0])) continue
         hits.push({ f: rel(f), i: i + 1, l: escTxt(l).slice(0, 80) })

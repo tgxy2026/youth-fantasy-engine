@@ -190,7 +190,7 @@ export default function SettingsPanel({ accountId, onProfileChanged }: Props) {
             {profile.rankOptIn ? '关闭并撤回排行数据' : '开启排行同步'}
           </Button>
           {profile.rankOptIn && (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => {
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => {
               void (async () => {
                 setBusy(true); setError(''); setNotice('')
                 try {

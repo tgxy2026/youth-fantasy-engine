@@ -406,7 +406,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
       {loadError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-11 text-danger">
         <AlertCircle size={13} className="shrink-0" />
         <span className="min-w-0 flex-1">刷新数据失败（{loadError}）；下面显示的是上次成功读取的内容，可能不是最新的。</span>
-        <Button variant="ghost" size="xs" onClick={() => void load()}>重试</Button>
+        <Button variant="secondary" size="xs" onClick={() => void load()}>重试</Button>
       </div>}
 
       <WritingWorkflow key={projectId} projectId={projectId} chapters={chapters} chapterOutlines={chapterOutlines} volumes={volumes} ideas={ideas}

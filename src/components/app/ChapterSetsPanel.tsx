@@ -227,7 +227,7 @@ export default function ChapterSetsPanel({ projectId, chapters, onNavigate, onCl
         <h2 className="font-semibold text-sm">章节收藏集</h2>
         <div className="flex items-center gap-2">
           {!loadError && sets.length < CHAPTER_SET_MAX_COUNT && (
-            <Button size="sm" variant="ghost" onClick={() => { setCreating(true); setNameError('') }}>
+            <Button size="sm" variant="secondary" onClick={() => { setCreating(true); setNameError('') }}>
               <Plus size={14} className="mr-1" />新建
             </Button>
           )}
@@ -262,7 +262,7 @@ export default function ChapterSetsPanel({ projectId, chapters, onNavigate, onCl
           {nameError && <p className="text-xs text-danger">{nameError}</p>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleCreate}>创建</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setCreating(false); setNameError('') }}>取消</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setCreating(false); setNameError('') }}>取消</Button>
           </div>
         </div>
       )}
@@ -315,7 +315,7 @@ export default function ChapterSetsPanel({ projectId, chapters, onNavigate, onCl
                     {renameError && <p className="text-xs text-danger">{renameError}</p>}
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => handleRename(activeSet.id)}>保存</Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setRenaming(null); setRenameError('') }}>取消</Button>
+                      <Button size="sm" variant="secondary" onClick={() => { setRenaming(null); setRenameError('') }}>取消</Button>
                     </div>
                   </div>
                 ) : (
@@ -341,7 +341,7 @@ export default function ChapterSetsPanel({ projectId, chapters, onNavigate, onCl
 
               {/* 添加成员入口 */}
               {!addingTo && (
-                <Button size="sm" variant="ghost" onClick={() => setAddingTo(activeSet.id)}>
+                <Button size="sm" variant="secondary" onClick={() => setAddingTo(activeSet.id)}>
                   <Plus size={13} className="mr-1" />添加章节
                 </Button>
               )}

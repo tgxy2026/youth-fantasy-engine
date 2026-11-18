@@ -248,7 +248,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       ) : signedIn === false && tab === 'feed' ? (
         <Notice>
           你现在未登录：可以浏览广场，但不能投稿、评论或参与排行。
-          {DESKTOP ? <DesktopCloudAccount communityTrigger /> : <Button size="sm" variant="ghost" className="ml-2" onClick={() => void navigateAuth('/login')}>登录</Button>}
+          {DESKTOP ? <DesktopCloudAccount communityTrigger /> : <Button size="sm" variant="secondary" className="ml-2" onClick={() => void navigateAuth('/login')}>登录</Button>}
         </Notice>
       ) : null}
 

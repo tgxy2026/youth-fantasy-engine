@@ -30,6 +30,7 @@ import {
 } from '@/lib/revision/reviewIgnore'
 import { REVIEW_SUMMARY_LIMIT, type ReviewCheckState, type ReviewRunSummary } from '@/lib/revision/reviewSummary'
 import { loadReviewSummaries } from '@/lib/revision/reviewSummaryStore'
+import { requirementFromReport, setPendingRevisionFromCheck } from '@/lib/revision/checkToCandidate'
 
 /** 运行摘要的状态人话（`skipped` 必须说"未执行"，不能说"通过"） */
 const SUMMARY_STATE: Record<ReviewCheckState, { label: string; cls: string }> = {
@@ -226,6 +227,35 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
                           引文 {r.evidence.located}/{r.evidence.total} 可定位
                         </span>
                       )}
+                    </div>
+
+                    {/* 3.6.0 · 审计项 12：检查报告 → 修订候选 的唯一入口。
+                        原先把「复制修订要求」交给作者手动粘到编辑器，链条到这里就断了 ——
+                        候选里永远没有 checkPayloadIds，日后也无法回答"这稿按哪份报告改的"。 */}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Button variant="secondary" size="xs" disabled={!r.chapterId}
+                        onClick={() => {
+                          const pid = getCurrentProjectId()
+                          if (!pid) { showToast('先打开一个项目', 'error'); return }
+                          if (!r.chapterId) { showToast('这份报告没有章节归属，无法发起修订', 'error'); return }
+                          setPendingRevisionFromCheck({
+                            projectId: pid,
+                            chapterId: r.chapterId,
+                            checkPayloadIds: [r.id],
+                            requirement: requirementFromReport({
+                              chapterTitle: titles[r.chapterId] ?? r.chapterTitle,
+                              summary: r.summary,
+                              findings: r.findings,
+                            }),
+                          })
+                          showToast('已带入「创意写作 → 章节改写」：切过去点「开始改写」即可，要求还能再改', 'success')
+                          onClose()
+                        }}>
+                        以此发起修订
+                      </Button>
+                      <span className="text-10 text-ink-500">
+                        {r.chapterId ? '会把这份报告关联到产生的候选上（候选审阅里可追溯）' : '老报告缺章节归属，只能复制要求手填'}
+                      </span>
                     </div>
 
                     <details className="mt-2">

@@ -452,27 +452,27 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       {(close: () => void) => <div role="group" aria-label="编辑工具选项" className="space-y-3">
         <div className="space-y-1">
           <h3 className="text-12 font-semibold text-ink-100">整理与检查</h3>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('format') }}><AlignLeft size={14} /> 排版与缩进</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('sensitive') }}><ShieldAlert size={14} /> 敏感词检测（本章）</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('typo') }}><SpellCheck size={14} /> 校对（本章）</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('format') }}><AlignLeft size={14} /> 排版与缩进</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('sensitive') }}><ShieldAlert size={14} /> 敏感词检测（本章）</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('typo') }}><SpellCheck size={14} /> 校对（本章）</Button>
           {!isLite && <>
-            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('foreshadow') }}><GitBranch size={14} /> 伏笔闭环看板</Button>
-            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('continuity') }}><Link2 size={14} /> 连续性校验</Button>
-            <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('style') }}><Feather size={14} /> 文风体检（本章）</Button>
+            <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('foreshadow') }}><GitBranch size={14} /> 伏笔闭环看板</Button>
+            <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('continuity') }}><Link2 size={14} /> 连续性校验</Button>
+            <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('style') }}><Feather size={14} /> 文风体检（本章）</Button>
           </>}
         </div>
         <div className="space-y-1 border-t border-ink-700 pt-2">
           <h3 className="text-12 font-semibold text-ink-100">版本与检索</h3>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('history') }}><History size={14} /> 时光机 · 版本历史</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('trash') }}><Trash2 size={14} /> 回收站</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onOpenSearch?.() }}><Command size={14} /> 全文检索</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('search') }}><Search size={14} /> 全书搜索替换</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('history') }}><History size={14} /> 时光机 · 版本历史</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('trash') }}><Trash2 size={14} /> 回收站</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); onOpenSearch?.() }}><Command size={14} /> 全文检索</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('search') }}><Search size={14} /> 全书搜索替换</Button>
         </div>
         <div className="space-y-1 border-t border-ink-700 pt-2">
           <h3 className="text-12 font-semibold text-ink-100">写作视图</h3>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); onNavigate?.('chapter-outline') }}><BookOpen size={14} /> 前往本章细纲</Button>
-          <Button variant="ghost" size="sm" aria-pressed={highlightOn} className="w-full !justify-start" onClick={() => { close(); setHighlightOn(value => !value) }}><Highlighter size={14} /> 引用名内联高亮：{highlightOn ? '已开启' : '已关闭'}</Button>
-          <Button variant="ghost" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('lock') }}><Lock size={14} /> 小黑屋 · 强制码字</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); onNavigate?.('chapter-outline') }}><BookOpen size={14} /> 前往本章细纲</Button>
+          <Button variant="secondary" size="sm" aria-pressed={highlightOn} className="w-full !justify-start" onClick={() => { close(); setHighlightOn(value => !value) }}><Highlighter size={14} /> 引用名内联高亮：{highlightOn ? '已开启' : '已关闭'}</Button>
+          <Button variant="secondary" size="sm" className="w-full !justify-start" onClick={() => { close(); setModal('lock') }}><Lock size={14} /> 小黑屋 · 强制码字</Button>
         </div>
       </div>}
     </HelpPopover>

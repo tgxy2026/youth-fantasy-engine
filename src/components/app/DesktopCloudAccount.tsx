@@ -130,12 +130,12 @@ export default function DesktopCloudAccount({ communityTrigger = false }: { comm
         footer={(
           <div className="flex w-full items-center gap-2">
             {signedIn && (
-              <Button variant="ghost" size="sm" onClick={() => void logout()} disabled={busy}>
+              <Button variant="secondary" size="sm" onClick={() => void logout()} disabled={busy}>
                 退出登录
               </Button>
             )}
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>关闭</Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>关闭</Button>
               {!signedIn && (
                 <Button
                   variant="primary" size="sm"

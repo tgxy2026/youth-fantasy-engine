@@ -108,7 +108,7 @@ export default function ChapterContextPanel({
       {(bindingError || outlineError || catalogError) && <div role="status" className="px-3 py-1.5 space-y-1 text-10 text-danger border-b border-ink-700/60">
         {bindingError && <div className="flex items-start gap-1">
           <span className="min-w-0 flex-1">{bindingError}</span>
-          <Button variant="ghost" size="xs" onClick={retryBinding}><RefreshCw size={11} className="mr-0.5" />重试</Button>
+          <Button variant="secondary" size="xs" onClick={retryBinding}><RefreshCw size={11} className="mr-0.5" />重试</Button>
         </div>}
         {outlineError && <div>{outlineError}；稍后重新打开本章资料可再试。</div>}
         {catalogError && <div>{catalogError}；已固定条目是否仍存在暂时无法确认。</div>}

@@ -85,18 +85,46 @@ const norm = s => s.replace(/\s+/g, '')
 
 // ── C1. 页级标题缺问号提示 ─────────────────────────────────────────
 // 红线：每个页签页头都要 HelpPopover。这里做**可达线索**：文件里有 h1/h2 标题却完全没引 HelpPopover。
+/**
+ * 🏛 合法豁免（2026-11-18 · 审计项 11 复核）。
+ *
+ * 红线针对的是**页签页头**：作者进一个页签，能一键问"这块是干什么的"。
+ * 下面这些不是页签，给它们塞问号只会变成噪音（弹窗里再弹说明、帮助页自己解释自己）：
+ *   · 向导 / 一次性流程：WelcomeWizard、WelcomeAISetup、MigrationWizard —— 每步都有正文说明；
+ *   · 弹窗与内嵌面板：ChapterSetsPanel、QuickInspiration、AtlasDetail、SchemaFieldGrid；
+ *   · 共享组件：PageHeader（页头本体，问号由调用方传）、AIDisabledNotice（一句提示条）；
+ *   · 帮助自身：HelpCenter、GuideSettings —— 它们**就是**帮助。
+ * 🔴 新增豁免必须写清"为什么它不是页签"，写不出就说明该补。
+ */
+const HEADER_HELP_EXEMPT = new Map([
+  ['src/components/app/WelcomeWizard.tsx', '首启向导：每一步自带正文说明，没有页签页头'],
+  ['src/components/app/WelcomeAISetup.tsx', '首启里的模型引导步骤，同上'],
+  ['src/components/app/MigrationWizard.tsx', '数据迁移向导：一次性流程，逐步自带说明'],
+  ['src/components/app/ChapterSetsPanel.tsx', '内嵌面板（章节集合），挂在设置页里，页头说明由设置页承担'],
+  ['src/components/app/QuickInspiration.tsx', '内嵌速记面板，入口本身带说明文案'],
+  ['src/components/atlas/AtlasDetail.tsx', '图鉴详情子视图，不是页签'],
+  ['src/components/common/PageHeader.tsx', '共享页头组件：问号由调用方传，自己不该有'],
+  ['src/components/common/SchemaFieldGrid.tsx', '共享字段表格组件，不是页签'],
+  ['src/components/ai/AIDisabledNotice.tsx', '一句禁用提示条，不是页签'],
+  ['src/components/help/HelpCenter.tsx', '帮助中心本身'],
+  ['src/components/help/GuideSettings.tsx', '指引设置本身'],
+])
 {
   const missing = []
+  const exempt = []
   for (const f of tsx) {
     const m = masked.get(f)
     if (!/<h1[\s>]/.test(m) && !/<h2[\s>]/.test(m)) continue      // 不是页级
     if (/HelpPopover/.test(m)) continue
-    missing.push(rel(f))
+    const file = rel(f)
+    if (HEADER_HELP_EXEMPT.has(file)) { exempt.push(file); continue }
+    missing.push(file)
   }
-  P(`\n── C1. 页级标题未见 HelpPopover（${missing.length} 个）──`)
-  P('  判读：逐个开一遍 —— 弹窗/子组件属合法豁免，真正的页签缺了就是红线（而且这是唯一全员 Agreement 的判据，必须人工）。')
+  P(`\n── C1. 页级标题未见 HelpPopover（待补 ${missing.length} 个 · 已豁免 ${exempt.length} 个）──`)
+  P('  判读：只剩"待补"这一栏需要看 —— 弹窗/向导/共享组件已按名单豁免并写明理由。')
   for (const f of missing) P(`  ▸ ${f}`)
-  if (!missing.length) P('  ✅ 所有含页级标题的文件都引用了 HelpPopover')
+  for (const f of exempt) P(`  🏛 ${f} — ${HEADER_HELP_EXEMPT.get(f)}`)
+  if (!missing.length) P('  ✅ 所有页签页头都有 HelpPopover（例外均已在豁免名单里注明理由）')
 }
 
 // ── C2. 重复 UI 文案 ──────────────────────────────────────────────

@@ -771,13 +771,13 @@ export default function CloudSyncPanel({
         width="md"
         footer={(
           <div className="flex w-full items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading || busy}>
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading || busy}>
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
               刷新
             </Button>
             <div className="ml-auto flex items-center gap-2">
               {binding && (
-                <Button variant="ghost" size="sm" onClick={() => void unbind()} disabled={busy}>
+                <Button variant="secondary" size="sm" onClick={() => void unbind()} disabled={busy}>
                   <CloudOff size={12} />
                   解除绑定
                 </Button>
@@ -837,7 +837,7 @@ export default function CloudSyncPanel({
                     从这份备份恢复本机
                   </Button>
                 )}
-                <Button variant="ghost" size="xs" onClick={() => void acceptCurrentAfterPullOp()} disabled={busy}
+                <Button variant="secondary" size="xs" onClick={() => void acceptCurrentAfterPullOp()} disabled={busy}
                   title="只改同步基线，不改本机内容；写入中断过时请先逐章核对">
                   当前内容我已核对
                 </Button>
@@ -911,12 +911,12 @@ export default function CloudSyncPanel({
                       title="把本机这一版传上去；云端旧版会留在历史里">
                       保留本机并上传
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
+                    <Button variant="secondary" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
                       title="会用云端这一版替换本机内容；覆盖前自动备份一份">
                       用云端覆盖本机
                     </Button>
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
                       onClick={() => void saveCloudCopy()}
                       disabled={busy}
@@ -925,7 +925,7 @@ export default function CloudSyncPanel({
                       {busy ? '另存中…' : '两份都留（另存为新书）'}
                     </Button>
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
                       onClick={() => void exportCloudCopy()}
                       disabled={busy}
@@ -950,14 +950,14 @@ export default function CloudSyncPanel({
                     本机没有未同步的改动。可以下载为新书、用云端版本覆盖本机，或导出成文件；覆盖前会先备份。
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>
+                    <Button variant="secondary" size="xs" onClick={() => void saveCloudCopy()} disabled={busy}>
                       下载为新书
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
+                    <Button variant="secondary" size="xs" onClick={() => void applyCloud()} disabled={busy || !!pullOp}
                       title="直接用云端这一版替换本机内容；覆盖前自动备份一份">
                       用云端覆盖本机
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void exportCloudCopy()} disabled={busy}>
+                    <Button variant="secondary" size="xs" onClick={() => void exportCloudCopy()} disabled={busy}>
                       导出云端这一版
                     </Button>
                   </div>
@@ -978,7 +978,7 @@ export default function CloudSyncPanel({
                     <Button variant="primary" size="xs" onClick={() => void restoreCloudCopy()} disabled={busy}>
                       {busy ? '恢复中…' : '恢复云端这一版'}
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={() => void purgeCloudCopy()} disabled={busy}
+                    <Button variant="secondary" size="xs" onClick={() => void purgeCloudCopy()} disabled={busy}
                       title="永久删除云端这本，回收站里也找不回">
                       彻底删除
                     </Button>
@@ -1031,27 +1031,27 @@ export default function CloudSyncPanel({
                       </span>
                       {row.deleted && <span className="shrink-0 text-11 text-rose-300">回收站</span>}
                       {row.deleted && (
-                        <Button variant="ghost" size="xs" onClick={() => void restoreFromTrash(row)} disabled={busy}
+                        <Button variant="secondary" size="xs" onClick={() => void restoreFromTrash(row)} disabled={busy}
                           title="把这本从回收站恢复成可用状态（推进一个版本，历史仍在）">
                           恢复
                         </Button>
                       )}
-                      <Button variant="ghost" size="xs" onClick={() => void toggleHistory(row)} disabled={busy}>
+                      <Button variant="secondary" size="xs" onClick={() => void toggleHistory(row)} disabled={busy}>
                         {historyOpen === row.cloudProjectId ? '收起历史' : '历史'}
                       </Button>
-                      <Button variant="ghost" size="xs" onClick={() => void downloadCloudAsNew(row)}
+                      <Button variant="secondary" size="xs" onClick={() => void downloadCloudAsNew(row)}
                         disabled={busy || row.deleted} title="下载为一本新的本机作品（不覆盖现有作品）；副本会延续与这本云端作品的同步">
                         下载为新书
                       </Button>
                       {row.deleted
                         ? (
-                          <Button variant="ghost" size="xs" onClick={() => void purgeRow(row)} disabled={busy}
+                          <Button variant="secondary" size="xs" onClick={() => void purgeRow(row)} disabled={busy}
                             title="从云端永久删除（回收站里也找不回）">
                             彻底删除
                           </Button>
                         )
                         : (
-                          <Button variant="ghost" size="xs" onClick={() => void moveCloudToTrash(row)} disabled={busy}
+                          <Button variant="secondary" size="xs" onClick={() => void moveCloudToTrash(row)} disabled={busy}
                             title="放进云端回收站（30 天内可恢复）；不影响本机">
                             删除
                           </Button>
@@ -1063,7 +1063,7 @@ export default function CloudSyncPanel({
                           <div key={h.revision} className="flex flex-wrap items-center gap-2 text-11">
                             <span className="text-ink-400">第 {h.revision} 版{h.deleted ? '（删除）' : ''}</span>
                             <span className="text-ink-600">{h.at ? fmtWhen(h.at) : ''}</span>
-                            <Button variant="ghost" size="xs" onClick={() => void exportCloudVersion(row, h.revision)} disabled={busy}>
+                            <Button variant="secondary" size="xs" onClick={() => void exportCloudVersion(row, h.revision)} disabled={busy}>
                               导出这一版
                             </Button>
                           </div>

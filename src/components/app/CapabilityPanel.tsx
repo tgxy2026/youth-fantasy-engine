@@ -14,6 +14,7 @@
  */
 import { Ban, Check, HelpCircle, Minus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 import {
   CAPABILITY_LABEL, REASON_LABEL, STATUS_LABEL,
   type CapabilityId, type CapabilityStatus,
@@ -48,6 +49,13 @@ export default function CapabilityPanel() {
       <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
         <HelpCircle size={14} className="text-amber" />
         <h2 className="text-13 font-semibold text-ink-100">本机运行能力</h2>
+        <HelpPopover title="这项检测在测什么" width="22rem" size={12}>
+          <div className="space-y-1.5 text-11 leading-relaxed">
+            <p>探测的是<b>当前这台设备 + 当前打开方式</b>能做到什么：登录状态、联网、全屏、文件读写等。同一条能力在桌面版、便携版、网页版里结论可能不同，换了打开方式要重新检测。</p>
+            <p>状态后面跟着的<b>原因码</b>比状态本身有用：「策略不给」与「环境没有」是两回事 —— 前者是软件有意限制，后者换个环境（例如装桌面版）就能用。</p>
+            <p>点「重新检测」会重新探一遍；它不改任何数据，只是重算结论。</p>
+          </div>
+        </HelpPopover>
         <span className="text-10 text-ink-600">当前设备 + 当前打开方式</span>
         <div className="ml-auto">
           <Button variant="secondary" size="xs" onClick={refresh} title="重新探测一次（登录状态、联网与全屏会变化）">

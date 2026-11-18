@@ -32,6 +32,12 @@ export interface RecordRewriteCandidateInput {
   beforeText: string
   /** 列表里那一行摘要（作者靠它认出这是哪一稿） */
   summary: string
+  /**
+   * 这份稿子参考过的**检查报告载荷 id**（3.6.0 · 审计项 12）。
+   * 从「检查报告 → 以此发起修订」进来时带上，候选审阅里就能回答"这稿按哪份报告改的"。
+   * 手填要求直接改写时为空 —— 不编造来源。
+   */
+  checkPayloadIds?: string[]
   /** 产出时间；不传取当前时间 */
   createdAt?: number
 }
@@ -67,6 +73,7 @@ export async function recordRewriteCandidate(
     createdAt: now,
     updatedAt: now,
     generation: 1,
+    ...(input.checkPayloadIds?.length ? { checkPayloadIds: [...new Set(input.checkPayloadIds)] } : {}),
   }
   const r = await saveCandidate(candidate)
   if (!r.ok) {

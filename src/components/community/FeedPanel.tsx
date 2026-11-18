@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import HelpPopover from '@/components/common/HelpPopover'
 import { COMMUNITY_LIMITS, COMMUNITY_TAGS, charCount } from '@/lib/community/limits'
 import {
   addComment, getPost, listComments, listPosts, reportContent, votePost,
@@ -258,7 +259,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={closeDetail}>
+          <Button size="sm" variant="secondary" onClick={closeDetail}>
             <ChevronLeft size={14} />返回列表
           </Button>
         </div>
@@ -301,7 +302,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                   <ThumbsDown size={14} />{detail.counts.down}
                 </Button>
                 <span className="inline-flex items-center gap-1 text-12 text-ink-400"><MessageSquare size={13} />{detail.counts.comments}</span>
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => (canWrite ? setReportOpen((v) => !v) : onNeedLogin())}>举报</Button>
+                <Button size="sm" variant="secondary" className="ml-auto" onClick={() => (canWrite ? setReportOpen((v) => !v) : onNeedLogin())}>举报</Button>
               </div>
 
               {reportOpen && (
@@ -318,7 +319,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                     className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100" />
                   <div className="flex gap-2">
                     <Button size="sm" disabled={busy} onClick={() => void submitReport()}>提交举报</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setReportOpen(false)}>取消</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setReportOpen(false)}>取消</Button>
                   </div>
                   <p className="text-11 text-ink-400">举报会进入管理员队列；处理结果可在「我的 → 我的举报」查看。</p>
                 </div>
@@ -328,7 +329,14 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
             <section aria-label="评论" className="w-full min-w-0 border-t border-ink-700/70 pt-6">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-15 font-semibold text-ink-100">评论{commentTotal > 0 ? ` (${commentTotal})` : ''}</h3>
-                <Button size="sm" variant="ghost" className="ml-auto" disabled={commentsLoading}
+                  <HelpPopover title="这里能看到什么" width="22rem" size={12}>
+                    <div className="space-y-1.5 text-11 leading-relaxed">
+                      <p>投稿广场是<b>公开可见</b>的：别人能看到你投稿的正文、点赞与评论。投稿要经管理员审核后才公开，审核前的投稿只有你自己看得到。</p>
+                      <p>点赞/点踩/评论需要登录；未登录可以浏览。举报会进入审核队列，不会因此隐藏内容。</p>
+                      <p>正文在广场上是纯文字展示，排版（加粗、缩进）不会带过去 —— 想保留排版请用导出。</p>
+                    </div>
+                  </HelpPopover>
+                <Button size="sm" variant="secondary" className="ml-auto" disabled={commentsLoading}
                   onClick={() => void loadComments(detail.id, false, commentSeqRef.current)}>刷新评论</Button>
               </div>
               {commentsError && (

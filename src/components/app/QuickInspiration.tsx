@@ -58,7 +58,7 @@ export default function QuickInspiration({ projectId, onOpen, chapters }: { proj
     </label>
     <div className="flex items-center gap-2 flex-wrap">
       <Button size="sm" onClick={() => void save()} disabled={busy || !text.trim()}>{busy ? '保存中…' : '保存到灵感夹'}</Button>
-      <Button size="sm" variant="ghost" onClick={onOpen}>打开灵感启发</Button>
+      <Button size="sm" variant="secondary" onClick={onOpen}>打开灵感启发</Button>
       {notice[projectId] && <span role="status" className="text-11 text-ink-300">{notice[projectId]}</span>}
     </div>
   </section>

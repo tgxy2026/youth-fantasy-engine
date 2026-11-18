@@ -843,6 +843,8 @@ export async function startChapterRewrite(p: {
   chapterId: string
   action: ChapterRewriteAction
   requirement: string
+  /** 来自检查报告时带上载荷 id（3.6.0 · 审计项 12；手填要求时为空） */
+  checkPayloadIds?: string[]
   words: number
 }) {
   if (snap.running || snap.rewrite?.running) return
@@ -949,6 +951,7 @@ export async function startChapterRewrite(p: {
           text,
           beforeText: hit.chapter.content,
           summary: `${CHAPTER_REWRITE_META[p.action].label}：${fromWords} → ${outWords} 字`,
+          ...(p.checkPayloadIds?.length ? { checkPayloadIds: p.checkPayloadIds } : {}),
         })
         if (rec.candidateId) candidateId = rec.candidateId
         else candidateError = rec.detail ?? '候选没能保存'

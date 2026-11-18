@@ -188,7 +188,7 @@ export function WebDataBar() {
       </div>
       {/* 操作单独一行，避免小面板或放大字号时将文字挤成竖排。 */}
       <div className="flex min-w-0 flex-wrap items-center gap-1">
-        <Button size="xs" variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => void (async () => {
+        <Button size="xs" variant="secondary" className="shrink-0 whitespace-nowrap" onClick={() => void (async () => {
           if (await confirmDialog({ title: '查看本机作品', message: '将切换到本浏览器内此账号的作品。云端作品不会被删除，两个存储区不会自动合并。', confirmText: '切换' })) await switchAccountStorage(true)
         })()}>本机作品</Button>
         {/* 云端同步（3.3.2）：先看同步状态，再看设备，最后是退出 */}
