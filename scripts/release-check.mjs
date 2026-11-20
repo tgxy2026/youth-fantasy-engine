@@ -129,6 +129,27 @@ else {
   }
   const bid = fs.readdirSync(distDir).filter((f) => /BUILD/i.test(f))
   add(bid.length ? 'OK' : 'INFO', '构建产物 · BUILD_ID', bid.length ? bid.join(', ') : 'dist 下无 BUILD_ID 文件（部署时由 deploy.sh 写入包内）')
+
+  /**
+   * 3.6.2 · 版本清单。**存在才校，不存在只记 INFO** —— 源码阶段本来就没有 dist/version.json
+   * （它由 release-version-manifest.mjs 在打包后生成），不能因此判源码不合格。
+   * 🔴 但一旦存在就必须与产物逐字节一致：不一致的清单会让**每一个用户**下载后收到"校验失败"，
+   *    而那时已经发版了（见 scripts/verify/version-manifest-check.mjs 顶部说明）。
+   */
+  const manifestPath = path.join(distDir, 'version.json')
+  if (!exists(manifestPath)) {
+    add('INFO', '版本清单 · version.json', '未生成（源码阶段不要求；发布前须跑 node scripts/release-version-manifest.mjs）')
+  } else {
+    const checkTool = path.join(ROOT, 'scripts/verify/version-manifest-check.mjs')
+    if (!exists(checkTool)) add('FAIL', '版本清单 · 校验工具', 'scripts/verify/version-manifest-check.mjs 不存在')
+    else {
+      // 用 runProcess 而不是 run：清单不一致时**由本项给出可读原因**，不需要再叠一条"子进程未成功"
+      const r = await runProcess(process.execPath, [checkTool, '--manifest', manifestPath], { cwd: ROOT, timeoutMs: 120000 })
+      const passed = /VERSION_MANIFEST_CHECK: PASS/.test(r.out || '')
+      const head = (r.out || '').split('\n').filter((l) => /^\s+- |FAIL/.test(l)).slice(0, 4).join('；')
+      add(passed ? 'OK' : 'FAIL', '版本清单 · 与产物一致', passed ? '体积与 sha256 均一致' : `不一致：${head || '见 version-manifest-check 输出'}`)
+    }
+  }
 }
 
 // ==================== 4. 文档引用（随仓必需工具，新克隆不得静默跳过） ====================
