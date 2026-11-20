@@ -15,6 +15,7 @@ import GuideOverlay from '@/components/help/GuideOverlay'
 import { peekHelpRequest, subscribeHelpRequests } from '@/lib/help/helpNav'
 import { hasSelfGuide, startSelfGuide, subscribeSelfGuides } from '@/lib/help/selfGuideRegistry'
 import UpdateDialog from '@/components/app/UpdateDialog'
+import WebUpdateBanner from '@/components/app/WebUpdateBanner'
 import { checkUpdate, isAutoCheckOn, type LatestRelease } from '@/lib/app/versionCheck'
 import { abortRunIfProjectChanged } from '@/lib/creative/creativeSession'
 import { getTab, tabVisible, refreshVolumeTabs, LOCKED_IDS, type VisCtx } from '@/lib/schema'
@@ -953,6 +954,8 @@ export default function App() {
         <DataDock />
         {bossOverlay}
         {communityOverlay}
+        {/* 3.6.2 · 网页版「有新版本，刷新以应用」：只在 WEB 下自查，组件内自我节流 */}
+        <WebUpdateBanner />
       </>
     )
   }
@@ -1165,6 +1168,8 @@ export default function App() {
         />
       )}
       {bossOverlay}
+      {/* 3.6.2 · 主界面这一支也要挂：用户可能整晚停在编辑器里，正是最需要提示刷新的场景 */}
+      <WebUpdateBanner />
     </div>
   )
 }

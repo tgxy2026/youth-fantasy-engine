@@ -4,7 +4,7 @@ import payAlipay from '@/assets/pay-alipay.jpg'
 import authorAvatar from '@/assets/author-avatar.png'
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { APP_VERSION_LABEL } from '@/lib/app/env'
+import { APP_BUILD_ID, APP_BUILD_TIME, APP_VERSION_LABEL, formatBuildTime } from '@/lib/app/env'
 import { copyText } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -225,6 +225,15 @@ export default function AboutPage() {
                   当前版本 <span className="text-ink-100 font-medium">{APP_VERSION_LABEL}</span>
                   。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、小黑盒与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
+                </p>
+                {/**
+                 * 3.6.2 · 构建时间与载体（排障时用户唯一能报准的两个事实）。
+                 * 🔴 「形态」必须由显式标志判断，不能靠取反猜（见 lib/app/env.ts 顶部教训）。
+                 *    这里用与全应用一致的两面旗：WEB 优先、其次 PORTABLE、否则桌面。
+                 */}
+                <p className="text-10 text-ink-500 leading-relaxed mb-4">
+                  构建于 {formatBuildTime(APP_BUILD_TIME)} · {WEB ? '网页版' : PORTABLE ? '便携版' : '桌面版'}
+                  {APP_BUILD_ID ? ` · 构建 ${APP_BUILD_ID.slice(0, 12)}` : ''}
                 </p>
                 {/* 检查更新：查 Gitee 上的最新 Release（只提示、不下载、不安装） */}
                 {/* 🔴 2026-10-13 · 便携版不显示这一组控件：便携版跑在浏览器里、没有安装器，

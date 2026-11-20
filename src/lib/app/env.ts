@@ -14,6 +14,8 @@
 import { DESKTOP } from '@/lib/app/desktop'
 
 declare const __APP_VERSION__: string | undefined
+declare const __BUILD_TIME__: string | undefined
+declare const __BUILD_ID__: string | undefined
 
 /** 应用版本号，由构建时 define 注入（取自 package.json）；dev / 未注入时回退到「开发版」 */
 const APP_VERSION: string = typeof __APP_VERSION__ === 'undefined' ? '开发版' : __APP_VERSION__
@@ -23,5 +25,33 @@ const APP_VERSION: string = typeof __APP_VERSION__ === 'undefined' ? '开发版'
  * 各 UI（关于页 / 侧栏 / 项目中心）一律用它，避免各自 `v{APP_VERSION}` 拼出「v开发版」。
  */
 export const APP_VERSION_LABEL: string = APP_VERSION === '开发版' ? '开发版' : `v${APP_VERSION}`
+
+/**
+ * 构建时间（ISO 串，3.6.2 起注入）。未注入时为空串 —— **不要回退成 `new Date()`**，
+ * 那会让"构建于"变成"打开于"，排障时反而误导。
+ */
+export const APP_BUILD_TIME: string = typeof __BUILD_TIME__ === 'undefined' ? '' : __BUILD_TIME__
+
+/**
+ * 构建标识（可选，发版脚本经 `YFE_BUILD_ID` 注入）。空串 = 未知。
+ * ⚠️ 与线上 `/BUILD_ID` 不是一回事（后者是部署核对凭据，不对外），别拿来判断"有没有新版"。
+ */
+export const APP_BUILD_ID: string = typeof __BUILD_ID__ === 'undefined' ? '' : __BUILD_ID__
+
+/**
+ * 把 ISO 构建时间格式化成 `2026-12-05 20:00`（本地时区）。
+ * 非法/空值返回「未知」——关于页宁可写"未知"也不显示 `Invalid Date`。
+ *
+ * 🔴 纯函数，单独导出是为了能单测：关于页那行文案是**用户排障时唯一能提供的构建信息**，
+ *    它显示错了等于把人往错误方向带。
+ */
+export function formatBuildTime(raw: string): string {
+  const s = (raw || '').trim()
+  if (!s) return '未知'
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '未知'
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 export { DESKTOP }

@@ -12,6 +12,20 @@ const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta
 const helpBuild = `${appVersion}+${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`
 
 /**
+ * 构建时间与构建标识（3.6.2 · 关于页显示「版本 · 构建时间 · 形态」）。
+ *
+ * 🔴 `__BUILD_ID__` 与「线上 BUILD_ID」不是同一件事，别混：
+ *    - 这里的是**可注入的构建标识**，发版脚本可传 `YFE_BUILD_ID`，没传就留空（界面显示"未知"）；
+ *    - 线上 `/BUILD_ID` 是 `server/deploy.sh` 在打包**前**用 `build_id()` 算出来、打包后
+ *      又被远端 `mv` 出 dist 的核对凭据（`server/scripts/deploy.sh:71`）——
+ *      它**不是公开端点**，线上 `curl /BUILD_ID` 得到 404 是设计如此。
+ *    ⇒ 所以"网页版有新版本"不能靠 `/BUILD_ID` 判断（规划初稿的假设不成立），
+ *      改用自建清单里的 `webBuildId`（见 src/lib/app/webVersionNotice.ts）。
+ */
+const buildTime = new Date().toISOString()
+const buildId = (process.env.YFE_BUILD_ID || '').trim()
+
+/**
  * ⚠️ dev 下 `define` 不会替换源码里的 `__APP_VERSION__`（2026-09-02 实测：vite dev 返回的
  * portable.ts 模块中该标识符**原样保留**，于是版本恒走 `typeof __APP_VERSION__ === 'undefined'`
  * 兜底分支，界面显示「开发版」）；而 `vite build` 会正常替换并常量折叠掉兜底。
@@ -19,7 +33,7 @@ const helpBuild = `${appVersion}+${new Date().toISOString().replace(/\D/g, '').s
  * 这里用一个极小的 transform 插件补上 dev 的替换，使 dev 与构建显示一致，
  * 且版本号仍只来自 package.json 一处（不必在 env.ts 里再硬编码一份）。
  */
-function injectAppVersion(version: string, helpBuild: string) {
+function injectAppVersion(version: string, helpBuild: string, buildTime: string, buildId: string) {
   return {
     name: 'inject-app-version',
     transform(code: string, id: string) {
@@ -27,7 +41,14 @@ function injectAppVersion(version: string, helpBuild: string) {
       // ⚠️ 3.0 目录整理（G3）把 env.ts 从 `src/lib/` 挪到 `src/lib/app/`，此处必须同步，
       // 否则 dev 下 `__APP_VERSION__` 不再被替换、对外文案退回「开发版」（静默，不报错）。
       if (file.endsWith('/src/lib/app/env.ts') && code.includes('__APP_VERSION__')) {
-        return { code: code.replace(/__APP_VERSION__/g, JSON.stringify(version)), map: null }
+        return {
+          code: code
+            .replace(/__APP_VERSION__/g, JSON.stringify(version))
+            // 3.6.2：dev 下 define 同样不替换，不补这里关于页会显示「未知」
+            .replace(/__BUILD_TIME__/g, JSON.stringify(buildTime))
+            .replace(/__BUILD_ID__/g, JSON.stringify(buildId)),
+          map: null,
+        }
       }
       /**
        * 手册构建标识（3.3.1 · P4）：dev 下 `define` 同样不替换，这里补上。
@@ -94,7 +115,7 @@ function normalizeDevHost(): Plugin {
 }
 
 export default defineConfig(() => ({
-  plugins: [react(), injectAppVersion(appVersion, helpBuild), injectHelpBuildMeta(helpBuild), normalizeDevHost()],
+  plugins: [react(), injectAppVersion(appVersion, helpBuild, buildTime, buildId), injectHelpBuildMeta(helpBuild), normalizeDevHost()],
   // 相对路径：桌面（Electron）版通过 file:// 加载 dist/index.html，绝对路径会解析到磁盘根目录
   // （对 dev server 无影响）
   // 路径别名 `@` → `src/`（2026-10-10 · 目录结构优化 G0）。
@@ -120,6 +141,9 @@ export default defineConfig(() => ({
     __APP_VERSION__: JSON.stringify(appVersion),
     // 手册构建标识：与 index.html 里的 <meta name="yfe-help-build"> 同源同值（见 injectHelpBuildMeta）
     __HELP_BUILD__: JSON.stringify(helpBuild),
+    // 3.6.2：关于页展示「构建时间」；构建标识可由发版脚本经 YFE_BUILD_ID 传入（缺省空串 ⇒ 界面显示「未知」）
+    __BUILD_TIME__: JSON.stringify(buildTime),
+    __BUILD_ID__: JSON.stringify(buildId),
   },
   server: {
     port: 5199,
