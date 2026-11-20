@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 3.6.0 · 打包形态验收探针（A–H 入口级 + 一次真实存储往返）
+// 打包形态验收探针（A–H 入口级 + 一次真实存储往返）· 版本无关，见 --expect-version
 //
 // 为什么需要它：`scripts/verify/frontend-*.mjs` 那 45 支探针都要 **vite dev server**
 // （它们 import `/src/lib/...`），打包后的 dist 里没有源码模块 ⇒ 一支都跑不了。
@@ -59,6 +59,12 @@ async function main() {
   /** `--login 用户名:密码`：云端形态必须先登录，否则页面是游客（IndexedDB），验不到服务端存储 */
   const login = arg('--login')
   const resultFile = arg('--result-file')
+  /**
+   * `--expect-version 3.6.1`：本次要验的产物版本。
+   * 默认读 package.json；补验上一版产物时必须显式传，否则源码版本已前进会误判。
+   */
+  const expectVersion = arg('--expect-version')
+    || JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8')).version
   if (!base && !exe) throw new Error('需要 --base <url> 或 --exe <安装后的 exe>')
   const runRoot = path.join(ROOT, '.workbuddy/tmp', 'packaged-acceptance-' + crypto.randomBytes(3).toString('hex'))
   await fs.mkdir(runRoot, { recursive: true })
@@ -101,6 +107,21 @@ async function main() {
         if (!res.ok()) throw new Error('登录失败：' + res.status() + ' ' + (await res.text()).slice(0, 120))
       }
       await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 90_000 })
+      /**
+       * 🔴 公网网页版首屏是**独立的静态登录页**（nginx 直接托管，不是 SPA 入口），
+       *    未提供账号时脚本会停在这一页，后面所有入口断言都会假红。
+       *    没有账号就点「免费以游客身份开始创作」进应用 —— 游客走 IndexedDB，
+       *    能验入口与编辑往返，但验不到服务端存储（需 `--login`，结果里会如实标注）。
+       */
+      if (!login) {
+        // 入口在服务端登录页里是 `<a class="guestBtn" href="/guest">`（server/lib/authPage.mjs:90），不是 button。
+        const guestEntry = page.getByRole('link', { name: /免费以游客身份开始创作/ }).first()
+        if (await guestEntry.isVisible().catch(() => false)) {
+          console.log('NOTE 登录页 · 无 --login，改走游客入口（IndexedDB 存储）')
+          await guestEntry.click().catch(() => {})
+          await page.waitForLoadState('domcontentloaded').catch(() => {})
+        }
+      }
     }
     // 🔴 不能「sleep 完就判首启」：打包版首帧可能还在加载 assets，按钮未挂载。
     //    等「先看看示例」或主导航任一出现（最多 60s），再决定走首启还是已有项目。
@@ -112,8 +133,12 @@ async function main() {
     await clearOverlays(page)
 
     // ---------- ① 版本与载体标志（打包最常见的坏法：拿到旧产物） ----------
+    // 🔴 期望版本默认读 package.json，`--expect-version X.Y.Z` 可覆盖：
+    //    补验上一版产物（如 3.6.1 的包在 3.6.2 源码期复验）时，本地版本号已前进，
+    //    写死任何具体版本号都会把"验旧包"判成"拿了旧产物"。
     const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 4000))
-    check('app.version-3.6.0', /3\.6\.0/.test(bodyText), (bodyText.match(/v?3\.\d+\.\d+/g) ?? []).slice(0, 3).join(','))
+    const shownVersions = (bodyText.match(/v?\d+\.\d+\.\d+/g) ?? []).slice(0, 3).join(',')
+    check('app.version', bodyText.includes(expectVersion), `期望 ${expectVersion}，页面 ${shownVersions || '未显示版本'}`)
     const flags = await page.evaluate(() => ({
       portable: !!window.__YFE_PORTABLE__, web: !!window.__YFE_WEB__, guest: !!window.__YFE_GUEST__,
       // 🔴 桌面判据是 `window.electronStore`（preload 注入的 IPC 门面），不是 __YFE_DESKTOP__：
@@ -121,7 +146,16 @@ async function main() {
       desktop: typeof window.electronStore === 'object' && window.electronStore !== null,
     })).catch(() => ({}))
     if (expect === 'desktop') check('carrier.desktop', flags.desktop === true, JSON.stringify(flags))
-    else if (expect === 'web') check('carrier.web-cloud', flags.web === true && flags.portable === true, JSON.stringify(flags))
+    else if (expect === 'web') {
+      /**
+       * 网页版判据只看 `__YFE_WEB__`：它决定界面把「便携版」字样换成「网页版」，是"认对载体"的最小证据。
+       * `__YFE_PORTABLE__` 只在**已登录且云同步**时注入（见 server/index.mjs:490-500）；
+       * 游客 / 账号本机模式下它是 false，此时存储是 IndexedDB —— 不是坏，但必须写在结论里，不能当服务端存储验收。
+       */
+      const cloudStore = flags.portable === true
+      check('carrier.web-cloud', flags.web === true,
+        JSON.stringify(flags) + (cloudStore ? ' :: 云端存储' : ' :: 游客/账号本机（IndexedDB，未验服务端存储）'))
+    }
     else check('carrier.portable', flags.portable === true && flags.web !== true, JSON.stringify(flags))
 
     /**
@@ -235,7 +269,13 @@ async function main() {
         } else {
           diskText = await page.evaluate(() => fetch('/api/data').then(r => (r.ok ? r.text() : '')).catch(() => '')).catch(() => '')
         }
-        check('editor.persisted-on-disk', diskText.includes(markerLine), `disk=${diskText.length}B`)
+        if (!exe && flags.portable !== true) {
+          // 游客 / 账号本机模式：数据存 IndexedDB，服务端没有 data.json ⇒ 这一项无从读起，不是没保存。
+          // 持久化由下面「重载后正文仍在」覆盖。
+          note('editor.persisted-on-disk', '游客/账号本机模式（IndexedDB），无服务端 data.json；持久化看 reopen-after-reload')
+        } else {
+          check('editor.persisted-on-disk', diskText.includes(markerLine), `disk=${diskText.length}B`)
+        }
         // 重载只验「还能正常打开」，不承担"读到同一章"的判据
         await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
         await sleep(2500)
@@ -253,7 +293,7 @@ async function main() {
       }
     }
 
-    // ---------- ④ 3.6.0 核心功能入口（必检） ----------
+    // ---------- ④ 核心功能入口（必检） ----------
     const coreEntries = ['一键拆书', '创意写作', '设定检索', '世界设定', '检查工具']
     for (const label of coreEntries) {
       const found = await page.evaluate(l => {
@@ -264,7 +304,7 @@ async function main() {
     }
 
     /**
-     * ---------- ⑤ 进到「创意写作」再验 3.6.0 的两个新入口 ----------
+     * ---------- ⑤ 进到「创意写作」再验面板内两个入口 ----------
      * 🔴 它们**不在导航上**，而是创意写作面板里的两个按钮（实测文案：「创作参考：未选」「剧情候选」）。
      *    上一版只在"当前视图"里找，所以永远 SKIP —— 那不是产品缺入口，是探针没进去。
      */
