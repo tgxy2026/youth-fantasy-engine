@@ -1374,12 +1374,21 @@ ipcMain.handle('store:path', () => dataFile())
     }
   }
 
-  ipcMain.handle('update:download', async (e, url, fileName) => {
+  /**
+   * @param {string} url
+   * @param {string} fileName
+   * @param {string} [expectedSha256] 3.6.2：渲染层从自建清单里取到的摘要。
+   *   🔴 主进程**不自己取清单**（不给主进程新增网络出口）：只按传入值验，
+   *      传入为空就等于"不校验"，结果里 `verified:false` 如实告诉界面。
+   *      不符时内核删 `.part` 并返回失败 ⇒ 后面的 `launch-installer` 不会被调到。
+   */
+  ipcMain.handle('update:download', async (e, url, fileName, expectedSha256) => {
     const wc = e.sender
     return downloadInstaller({
       url,
       dir: app.getPath('downloads'),
       fileName,
+      expectedSha256,
       // 进度节流在主进程内核里（≥200ms 一次），这里只负责转发给**发起下载的那个窗口**
       onProgress: (p) => {
         try {

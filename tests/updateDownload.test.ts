@@ -12,8 +12,11 @@
 //   ⑤ 大小比对与 HTML 兜底页拦截仍在（Gitee 要求登录时会回 HTML，存成 .exe 会害人）；
 //   ⑥ 拉起安装器前**再校验一次路径**（只在下载文件夹里、.exe、真实存在）—— 不能变成「执行任意 exe」。
 //
-// 🔴 为什么用「读源码」而不是「跑函数」：跑下载要联网、要写盘、要几分钟，不适合放进单测批次；
-//    这里只钉住**结构与边界**，真实端到端由实机探针与人工安装验证覆盖。
+// 🔴 为什么主体仍用「读源码」而不是「跑函数」：真实下载要联网、写「下载」文件夹、几分钟，
+//    不适合放进单测批次；这一层只钉住**结构与边界**。
+// ⚠️ 3.6.2 例外：摘要校验的**失败路径**（不符时删不删 .part、未给摘要时标不标 verified）
+//    必须真跑才看得准，故 ⑧ 段起一个**本地回环小服务**、载荷几 KB、写临时目录 ——
+//    毫秒级、不联网、不碰真实「下载」文件夹。
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -31,7 +34,7 @@ function repoRoot(): string {
   return ''
 }
 
-function main() {
+async function main() {
   const root = repoRoot()
   ok('定位仓库根', !!root, 'cwd=' + process.cwd())
   if (!root) { console.log(`\n通过 ${pass} / 失败 ${fail}`); process.exit(1) }
@@ -64,8 +67,10 @@ function main() {
 
   /* ---------- ② 落盘目录由主进程钉死 ---------- */
   ok('② main.cjs 下载目录取 app.getPath(\'downloads\')', /dir:\s*app\.getPath\('downloads'\)/.test(main))
-  ok('② 渲染层拿不到「目标目录」参数（download 只收 url + fileName）',
-    /download\(url: string, fileName: string\)/.test(desktop))
+  // 3.6.2 起签名多了第三个可选参数（期望摘要），但仍**没有目录参数** —— 钉住这一点，别让"顺手加个 dir"溜进来
+  ok('② 渲染层拿不到「目标目录」参数（download 只收 url + fileName + 可选摘要）',
+    /download\(url: string, fileName: string, expectedSha256\?: string\)/.test(desktop)
+    && !/download\([^)]*dir\s*:/.test(desktop))
 
   /* ---------- ③ 文件名清洗 + ④ .part 暂存 ---------- */
   ok('③ 内核有文件名清洗函数（只取 basename + 强制 .exe）',
@@ -133,8 +138,107 @@ function main() {
   ok('弹窗高度走 foldVh（界面缩放不溢出）', dialog.includes('foldVh('))
   ok('进度订阅有卸载守卫（长任务回来时组件可能已卸载）', dialog.includes('alive.current'))
 
+  /* ---------- ⑦ 3.6.2 · 摘要校验（静态结构） ---------- */
+  ok('⑦ 内核有摘要规范化（只认 64 位 hex，其它一律视为未提供）',
+    core.includes('function normalizeExpectedSha256') && core.includes('s.length !== 64'))
+  ok('⑦ 摘要是「边下边算」（Transform 里 update），不是下完再读一遍盘',
+    /if \(hasher\) hasher\.update\(chunk\)/.test(core))
+  ok('⑦ 不符时返回 reason: sha256-mismatch', core.includes("reason: 'sha256-mismatch'"))
+  ok('⑦ 不符时删掉 .part（不留坏包让用户双击）',
+    /reason: 'sha256-mismatch'/.test(core) && (core.match(/fs\.unlinkSync\(part\)/g) || []).length >= 4)
+  ok('⑦ 未提供摘要时结果标 verified:false（不假装校验过）',
+    core.includes('let verified = false') && /return \{ ok: true, path: dest, size: counted, verified \}/.test(core))
+  ok('⑦ main.cjs 透传 expectedSha256', /update:download', async \(e, url, fileName, expectedSha256\)/.test(main))
+  ok('⑦ preload 桥三参数透传', /download: \(url, fileName, expectedSha256\)/.test(preload))
+  ok('⑦ desktop 封装透传（空串表示不校验）', desktop.includes("api.download(url, fileName, expectedSha256 ?? '')"))
+  ok('⑦ 弹窗点下载前就写清「已校验 / 未校验」', dialog.includes('安装包完整性：') && dialog.includes('未校验（清单未提供摘要'))
+  ok('⑦ 弹窗下载完成态也标明是否校验过', dialog.includes('已校验（sha256 与清单一致）'))
+  ok('⑦ 失败给三条出路：重试 / 换网盘 / 复制下载页',
+    dialog.includes('重试') && dialog.includes('夸克网盘') && dialog.includes('复制下载页'))
+
+  /* ---------- ⑧ 3.6.2 · 真实下载行为（本地服务，不联网） ---------- */
+  await behaviorChecks()
+
   console.log(`\n通过 ${pass} / 失败 ${fail}`)
   process.exit(fail ? 1 : 0)
 }
 
-main()
+/**
+ * 本地起一个只服务几 KB 的 HTTP 服务，真的跑一遍 `downloadInstaller`。
+ *
+ * 🔴 为什么值得破一次"只读源码"的规矩：摘要校验的**核心风险在失败路径**——
+ *    "不符时有没有删掉 .part"、"未给摘要时有没有标 verified:false" 这两件事，
+ *    读源码只能看到字面，跑一遍才能确认顺序真的接对了。
+ *    本地回环 + 几 KB 载荷 ⇒ 毫秒级、不联网、不碰真实「下载」文件夹（写临时目录）。
+ */
+async function behaviorChecks() {
+  const http = await import('node:http')
+  const os = await import('node:os')
+  const crypto = await import('node:crypto')
+  const fsp = await import('node:fs/promises')
+  const { createRequire } = await import('node:module')
+  const requireCjs = createRequire(import.meta.url)
+  const { downloadInstaller } = requireCjs('../electron/updateDownload.cjs') as {
+    downloadInstaller: (o: Record<string, unknown>) => Promise<Record<string, unknown>>
+  }
+
+  // 真 PE 头（MZ）+ 一点内容；downloadInstaller 会以文件头判"是不是可执行文件"
+  const payload = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(4096, 7)])
+  const goodSha = crypto.createHash('sha256').update(payload).digest('hex')
+  const html = Buffer.from('<html>请先登录</html>')
+
+  const server = http.createServer((req, res) => {
+    if (req.url === '/exe') {
+      res.writeHead(200, { 'content-length': String(payload.length) })
+      res.end(payload)
+    } else if (req.url === '/html') {
+      res.writeHead(200, { 'content-length': String(html.length), 'content-type': 'text/plain' })
+      res.end(html)
+    } else {
+      res.writeHead(404); res.end('nope')
+    }
+  })
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', () => r()))
+  const port = (server.address() as { port: number }).port
+  const base = `http://127.0.0.1:${port}`
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'yfe-dl-'))
+  const files = async () => (await fsp.readdir(dir)).sort()
+
+  try {
+    // ① 摘要匹配 → ok，且 .part 已改名为正式文件
+    const r1 = await downloadInstaller({ url: `${base}/exe`, dir, fileName: '好包.exe', expectedSha256: goodSha })
+    ok('行为①摘要匹配 → ok 且 verified:true', r1.ok === true && r1.verified === true, JSON.stringify(r1))
+    ok('行为①落盘文件名沿用清洗后的名字', (await files()).includes('好包.exe'), (await files()).join(','))
+
+    // ② 摘要不符 → 失败 + 删 .part + 不留下任何 exe
+    const before = await files()
+    const r2 = await downloadInstaller({ url: `${base}/exe`, dir, fileName: '坏包.exe', expectedSha256: 'b'.repeat(64) })
+    ok('🔴 行为②摘要不符 → ok:false 且 reason=sha256-mismatch',
+      r2.ok === false && r2.reason === 'sha256-mismatch', JSON.stringify(r2))
+    const after2 = await files()
+    ok('🔴 行为②没有 .part 残留', !after2.some(f => f.endsWith('.part')), after2.join(','))
+    ok('🔴 行为②没有留下坏包（文件列表与之前一致）', after2.join(',') === before.join(','), after2.join(','))
+
+    // ③ 未给摘要 → 可完成但 verified:false（Gitee 兜底通道就是这种）
+    const r3 = await downloadInstaller({ url: `${base}/exe`, dir, fileName: '未校验.exe' })
+    ok('行为③未给摘要 → ok:true 且 verified:false', r3.ok === true && r3.verified === false, JSON.stringify(r3))
+
+    // ④ 摘要格式非法 → 视为未提供（不因为一个坏参数就把好包判坏）
+    const r4 = await downloadInstaller({ url: `${base}/exe`, dir, fileName: '坏参数.exe', expectedSha256: 'xyz' })
+    ok('行为④摘要格式非法 → 当作未提供，仍可完成', r4.ok === true && r4.verified === false, JSON.stringify(r4))
+
+    // ⑤ 非 MZ 头（登录墙网页）→ 仍拒绝（回归：摘要校验不能替掉兜底页拦截）
+    const r5 = await downloadInstaller({ url: `${base}/html`, dir, fileName: '网页.exe', expectedSha256: goodSha })
+    ok('🔴 行为⑤非可执行文件 → 拒绝（兜底页拦截未被摘要校验顶掉）', r5.ok === false, JSON.stringify(r5))
+    ok('行为⑤拒绝后不留 .part', !(await files()).some(f => f.endsWith('.part')))
+
+    // ⑥ 404 → 失败且不留文件
+    const r6 = await downloadInstaller({ url: `${base}/missing`, dir, fileName: '缺.exe' })
+    ok('行为⑥服务端 404 → ok:false', r6.ok === false, JSON.stringify(r6))
+  } finally {
+    await new Promise<void>(r => server.close(() => r()))
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+await main()

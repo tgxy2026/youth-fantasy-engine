@@ -9,8 +9,10 @@
 //   · **落盘位置与文件名由主进程决定** —— 渲染层给的是「原始文件名」而不是路径，且强制 .exe
 //     并做字符清洗（防 `..\..\` 之类穿越、防控制字符）；
 //   · **先写 `<name>.part`，成功后再改名** —— 中断/失败不会留下半截 .exe 被用户误当成品双击；
-//   · **下完比对大小**（主人选的口径）：以响应 `content-length` 为准做**精确比对**；Gitee 的
-//     assets 不提供 sha256，故不做摘要校验（这一点在界面文案里如实写明，不假装有校验）。
+//   · **下完比对大小**（主人选的口径）：以响应 `content-length` 为准做**精确比对**；
+//     3.6.2 起若调用方给了 `expectedSha256`（来自自建 version.json）**再算一遍 sha256 精确比对** ——
+//     不符就删 `.part` 并返回 `sha256-mismatch`，**绝不进入后面拉起安装器那一步**。
+//     Gitee 兜底通道不提供摘要，此时如实返回 `verified:false`（界面显示"未校验"），不假装校验过。
 //   · 额外挡一道**兜底页**：Gitee 在要求登录/限流时会回一个网页，若直接存成 .exe 用户会双击到
 //     一个网页文本 —— 判定以**文件头**为准（真安装包是 PE，头两字节必为 `MZ`，见 looksLikeExe）。
 //     ⚠️ 不要退回「查 content-type 是不是 text/html」：实测 Gitee 把网页以 `text/plain` 返回，
@@ -19,6 +21,7 @@
 // 🔴 永不 throw：Electron 跨 IPC 的异常会被重新包装、原始信息丢失，一律返回结构化结果。
 const fs = require('fs')
 const path = require('path')
+const crypto = require('crypto')
 const { Transform } = require('stream')
 const { pipeline } = require('stream/promises')
 const { Readable } = require('stream')
@@ -59,6 +62,17 @@ function cancelActiveDownload() {
 }
 
 /**
+ * 规范化期望摘要：只认 64 位十六进制（大小写皆可）→ 小写。
+ * 其它（空、缺字段、被截断、含非 hex）一律返回空串 = **未提供**。
+ * 🔴 不能"猜一个"或"补零"：错的期望值会让每一个好包都被判坏，等于把更新通道关死。
+ */
+function normalizeExpectedSha256(raw) {
+  const s = String(raw || '').trim()
+  if (s.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(s)) return ''
+  return s.toLowerCase()
+}
+
+/**
  * 判断落盘的文件是不是真正的 PE 可执行文件（头两字节 `MZ` = 0x4D 0x5A）。
  *
  * 🔴 为什么以**文件头**为准，而不是查 `content-type`（2026-10-07 实机探针的教训）：
@@ -93,10 +107,14 @@ function looksLikeExe(file) {
  * @param {string} o.url        安装包直链（http/https）
  * @param {string} o.dir        目标目录（由主进程传入，如 app.getPath('downloads')）
  * @param {string} o.fileName   原始文件名（只取 basename 并清洗）
+ * @param {string} [o.expectedSha256] 期望摘要（来自自建清单）；缺失/非法即"不校验"，结果里 verified:false
  * @param {(p:{received:number,total:number,percent:number})=>void} [o.onProgress]
- * @returns {Promise<{ok:true,path:string,size:number}|{ok:false,cancelled?:true,error:string}>}
+ * @returns {Promise<
+ *   {ok:true,path:string,size:number,verified:boolean} |
+ *   {ok:false,cancelled?:true,reason?:string,error:string}
+ * >}
  */
-async function downloadInstaller({ url, dir, fileName, onProgress }) {
+async function downloadInstaller({ url, dir, fileName, expectedSha256, onProgress }) {
   let target
   try {
     target = new URL(String(url))
@@ -153,11 +171,15 @@ async function downloadInstaller({ url, dir, fileName, onProgress }) {
 
     const total = Number(res.headers.get('content-length') || 0) || 0
     const out = fs.createWriteStream(part)
+    const expectSha = normalizeExpectedSha256(expectedSha256)
+    // 摘要边下边算（不额外读一遍磁盘：113MB 再读一次既慢又占内存）
+    const hasher = expectSha ? crypto.createHash('sha256') : null
     let counted = 0
     const counter = new Transform({
       transform(chunk, _enc, cb) {
         counted += chunk.length
         received = counted
+        if (hasher) hasher.update(chunk)
         report(total)
         cb(null, chunk)
       },
@@ -185,6 +207,7 @@ async function downloadInstaller({ url, dir, fileName, onProgress }) {
     }
 
     // 🔴 兜底页拦截（见 looksLikeExe 的注释：Gitee 的网页是 text/plain，「查 content-type」判不准）
+    //    先于摘要比对：兜底页的"原因"对用户更有用（去登录/被限流），而不是干巴巴一句"摘要不符"。
     if (!looksLikeExe(part)) {
       try {
         fs.unlinkSync(part)
@@ -192,6 +215,29 @@ async function downloadInstaller({ url, dir, fileName, onProgress }) {
         /* 同上 */
       }
       return { ok: false, error: '下载到的不是可执行文件（可能需要登录或被限流），请改用夸克网盘' }
+    }
+
+    /**
+     * 摘要校验（3.6.2）：只在清单给了摘要时做。
+     * 🔴 不符就删 `.part` —— 半个坏包留在「下载」目录里，用户下次双击的是它。
+     * 🔴 这里返回失败即意味着**不会进入拉起安装器那一步**（调用方只在 ok:true 时 openPath）。
+     */
+    let verified = false
+    if (hasher) {
+      const actual = hasher.digest('hex')
+      if (actual !== expectSha) {
+        try {
+          fs.unlinkSync(part)
+        } catch {
+          /* 同上 */
+        }
+        return {
+          ok: false,
+          reason: 'sha256-mismatch',
+          error: '安装包完整性校验未通过（sha256 与清单不符），已丢弃，请重试或换用夸克网盘',
+        }
+      }
+      verified = true
     }
 
     // 临时名 → 正式名（同目录 rename 是原子的；既有同名文件会被覆盖）
@@ -206,7 +252,7 @@ async function downloadInstaller({ url, dir, fileName, onProgress }) {
       return { ok: false, error: `安装包落盘失败（${(e && e.code) || 'IO'}）：可能旧安装包正被占用，请先关掉它` }
     }
 
-    return { ok: true, path: dest, size: counted }
+    return { ok: true, path: dest, size: counted, verified }
   } catch (e) {
     try {
       fs.unlinkSync(part)

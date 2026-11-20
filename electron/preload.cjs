@@ -184,8 +184,11 @@ contextBridge.exposeInMainWorld('electronWindow', {
 // 「下到「下载」文件夹 → 拉起安装向导」。🔴 目标目录由主进程钉死在 app.getPath('downloads')，
 // 渲染层只给文件名（主进程还要清洗）；进度由主进程节流后推送。
 contextBridge.exposeInMainWorld('electronUpdate', {
-  /** 下载安装包；返回 { ok:true, path, size } 或 { ok:false, cancelled?, error }（永不 reject） */
-  download: (url, fileName) => ipcRenderer.invoke('update:download', url, fileName),
+  /**
+   * 下载安装包；返回 { ok:true, path, size, verified } 或 { ok:false, cancelled?, reason?, error }（永不 reject）。
+   * 3.6.2：第三个参数是期望 sha256（来自自建清单），传空串/不传 = 不校验（结果 verified:false）。
+   */
+  download: (url, fileName, expectedSha256) => ipcRenderer.invoke('update:download', url, fileName, expectedSha256),
   /** 取消进行中的下载；返回 { ok }（true = 确实中止了一个） */
   cancel: () => ipcRenderer.invoke('update:cancel'),
   /** 拉起刚下好的安装器；closeApp=true 则随后退出本程序（覆盖更新须旧文件不被占用） */

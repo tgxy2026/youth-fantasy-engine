@@ -101,9 +101,8 @@ export interface ElectronWindowAPI {
 }
 
 /**
- * preload 注入的「应用内下载安装包」（2.9.0 · 检查更新 2.0）。
- * 🔴 口子收窄到 5 个 + 1 个进度订阅：下载到「下载」文件夹 / 取消 / 拉起安装器 /
- *   在资源管理器里定位 / 退出本程序。**目标目录与文件名清洗都在主进程**（渲染层给的是文件名，不是路径）。
+ * preload 注入的「应用内下载安装包」（2.9.0）。口子 5 个 + 1 个进度订阅；**目标目录与文件名清洗都在主进程**
+ * （渲染层给文件名，不给路径）。
  */
 export interface UpdateDownloadProgress {
   received: number
@@ -112,12 +111,14 @@ export interface UpdateDownloadProgress {
   percent: number
 }
 
+/** 下载结果：`verified`=已按清单 sha256 校验通过（false=清单没给摘要，界面须写"未校验"）；
+ *  `reason='sha256-mismatch'`=摘要不符且 `.part` 已删（不是网络失败，重试或换渠道即可）。 */
 export type UpdateDownloadResult =
-  | { ok: true; path: string; size: number }
-  | { ok: false; cancelled?: true; error: string }
+  | { ok: true; path: string; size: number; verified: boolean }
+  | { ok: false; cancelled?: true; reason?: string; error: string }
 
 export interface ElectronUpdateAPI {
-  download(url: string, fileName: string): Promise<UpdateDownloadResult>
+  download(url: string, fileName: string, expectedSha256?: string): Promise<UpdateDownloadResult>
   /** 取消进行中的下载（没有在下载时返回 ok:false） */
   cancel(): Promise<{ ok: boolean }>
   /** 拉起刚下好的安装器；closeApp=true 则随后退出本程序（覆盖更新须旧文件不被占用） */
@@ -347,15 +348,15 @@ function updateApi(): ElectronUpdateAPI | null {
 }
 
 /**
- * 下载安装包到系统「下载」文件夹（2.9.0）。**永不抛** —— 与 netFetch 同口径：失败走 ok:false，
- * 由界面如实提示（含 cancelled、以及「大小不符已丢弃」这两种要分开说的情况）。
+ * 下载安装包到系统「下载」文件夹（2.9.0；3.6.2 加摘要校验）。**永不抛**，失败走 ok:false。
+ * 传 `expectedSha256`（清单摘要）才真校验；Gitee 兜底没有摘要 ⇒ 传空串，结果 `verified:false`。
  */
-export async function downloadInstallerPackage(url: string, fileName: string): Promise<UpdateDownloadResult> {
+export async function downloadInstallerPackage(url: string, fileName: string, expectedSha256?: string): Promise<UpdateDownloadResult> {
   const api = updateApi()
   if (!api) return { ok: false, error: '当前版本没有「应用内下载」能力（便携版 / 浏览器里请用夸克网盘）' }
   if (!/^https?:\/\//i.test(url)) return { ok: false, error: '只允许 http / https 链接' }
   try {
-    return await api.download(url, fileName)
+    return await api.download(url, fileName, expectedSha256 ?? '')
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }

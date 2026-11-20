@@ -28,8 +28,10 @@ import type { LatestRelease } from '@/lib/app/versionCheck'
  *   ④ 更新说明原样来自 Gitee Release body，经 mdLite 切块后用 **React 文本节点**渲染
  *      （外部输入，绝不用 innerHTML）。
  *
- * 下载落点 = 系统「下载」文件夹（目录由主进程钉死）；完整性按**文件大小**校验
- * （Gitee 的 assets 不提供 sha256 —— 界面文案如实写明，不假装有摘要校验）。
+ * 下载落点 = 系统「下载」文件夹（目录由主进程钉死）。
+ * 🔴 完整性口径（3.6.2 W1 修订）：能自建清单给 `sha256` 就**真校验**，并在界面写「已校验（sha256）」；
+ *    回落 Gitee 兜底通道时拿不到摘要，此时**只能比大小**，界面必须如实写「未校验（清单未提供摘要）」。
+ *    绝不把"只比了大小"说成"已校验"——那是把风险藏起来。
  */
 
 /** 下载后的四种状态（外加一个「正在拉起安装器」的过渡态） */
@@ -37,13 +39,15 @@ type Phase =
   | { kind: 'idle' }
   | { kind: 'downloading'; received: number; total: number; percent: number }
   | { kind: 'launching' }
-  | { kind: 'launched'; path: string; size: number }
-  | { kind: 'error'; message: string }
+  | { kind: 'launched'; path: string; size: number; verified: boolean }
+  /** sha256Mismatch：摘要不符（包坏了/清单写错了），文案要给出"重试 / 换渠道"而不是只说失败 */
+  | { kind: 'error'; message: string; sha256Mismatch?: boolean }
 
 const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB'
 
-/** 安装包文件名：优先用直链里的原名，取不到就按版本拼一个（主进程还会再清洗一遍） */
+/** 安装包文件名：清单给了原始名就用它；否则从直链里取原名；再不行按版本拼一个（主进程还会再清洗一遍） */
 function installerFileName(latest: LatestRelease): string {
+  if (latest.assetName && /\.exe$/i.test(latest.assetName)) return latest.assetName
   const tail = (latest.downloadUrl || '').split('?')[0].split('/').pop() || ''
   const decoded = (() => {
     try {
@@ -91,20 +95,21 @@ export default function UpdateDialog({
     // 进度订阅与下载同生命周期：先订、拿到结果后立刻退订，避免残留监听
     const off = onUpdateDownloadProgress((p) => safeSet({ kind: 'downloading', ...p }))
     try {
-      const r = await downloadInstallerPackage(latest.downloadUrl, installerFileName(latest))
+      // 第三个参数是清单里的摘要；没有摘要（Gitee 兜底）就传空串 ⇒ 下载器只比大小，结果 verified:false
+      const r = await downloadInstallerPackage(latest.downloadUrl, installerFileName(latest), latest.sha256)
       if (!r.ok) {
         if (r.cancelled) {
           safeSet({ kind: 'idle' })
           showToast('已取消下载', 'info')
         } else {
-          safeSet({ kind: 'error', message: r.error })
+          safeSet({ kind: 'error', message: r.error, sha256Mismatch: r.reason === 'sha256-mismatch' })
         }
         return
       }
       // 下好了 → 自动拉起安装向导（closeApp=false：不擅自退出，由作者决定何时关本程序）
       safeSet({ kind: 'launching' })
       const lr = await launchInstallerPackage(r.path, false)
-      if (lr.ok) safeSet({ kind: 'launched', path: r.path, size: r.size })
+      if (lr.ok) safeSet({ kind: 'launched', path: r.path, size: r.size, verified: r.verified })
       else safeSet({ kind: 'error', message: `${lr.error}（安装包已下到「下载」文件夹，可手动双击安装）` })
     } finally {
       off()
@@ -173,6 +178,16 @@ export default function UpdateDialog({
           </Button>
           <Button variant="secondary" disabled={busy} onClick={() => void openUrl(QUARK_URL, '夸克网盘')} className="gap-1.5">
             <ExternalLink size={14} /> 夸克网盘
+          </Button>
+          {/* 第三条出路：把下载页地址复制走（单位内网/代理环境里，浏览器手动下往往比应用内下更通） */}
+          <Button
+            variant="secondary"
+            disabled={busy || !(latest?.downloadUrl || latest?.releaseUrl)}
+            onClick={() => copyText(latest?.downloadUrl || latest?.releaseUrl || '', '已复制下载地址')}
+            className="gap-1.5"
+            title="复制下载地址，可粘到浏览器里手动下载"
+          >
+            <Copy size={14} /> 复制下载页
           </Button>
           <Button variant="secondary" className="ml-auto" onClick={onClose}>稍后提醒</Button>
           <Button
@@ -255,6 +270,10 @@ export default function UpdateDialog({
             <p className="text-12 text-ink-100">
               安装向导已打开（安装包已下到「下载」文件夹，{mb(phase.size)}）。
             </p>
+            <p className="text-11 text-ink-400">
+              完整性：
+              {phase.verified ? '已校验（sha256 与清单一致）' : '未校验（清单未提供摘要，只比对了文件大小）'}
+            </p>
             <p className="text-12 text-ink-300 leading-relaxed">
               若向导提示「应用正在运行、无法覆盖文件」，请先点上面「关闭本程序」再继续安装。
               安装完成后重新打开即可，你的作品与设置都在，不受影响。
@@ -263,11 +282,15 @@ export default function UpdateDialog({
         ) : phase.kind === 'error' ? (
           <div className="space-y-1.5 rounded-lg border border-danger/40 bg-danger/10 p-3">
             <p className="text-12 text-ink-100">下载失败：{phase.message}</p>
-            <p className="text-11 text-ink-400">可以点「重试」，或直接从夸克网盘下载。</p>
+            <p className="text-11 text-ink-400">
+              {phase.sha256Mismatch
+                ? '包在传输中被改动或不完整。已自动丢弃，不会让你装上一个校验不过的包 —— 可以重试，或改用夸克网盘。'
+                : '可以点「重试」、改用夸克网盘，或复制下载地址到浏览器手动下载。'}
+            </p>
           </div>
         ) : (
           <p className="text-12 text-ink-300 leading-relaxed">
-            当前版本已落后，下面是 Gitee 上的更新说明。点「下载安装包」会下载到你的「下载」文件夹并打开安装向导 ——
+            当前版本已落后，下面是这个版本的更新说明。点「下载安装包」会下载到你的「下载」文件夹并打开安装向导 ——
             <span className="text-ink-400">本程序不会在你没点之前下载，也不会替你点安装。</span>
           </p>
         )}
@@ -278,7 +301,18 @@ export default function UpdateDialog({
           style={{ maxHeight: foldVh(phase.kind === 'idle' ? '46vh' : '30vh') }}
         >
           {blocks.length === 0 ? (
-            <p className="text-12 text-ink-500">（这个版本没有填写更新说明）</p>
+            /**
+             * 自建清单**不承载更新说明正文**（那是 Release 页的事）⇒ 从清单来时这里必然为空。
+             * 不能只写"没有填写"，要给出"去哪看"的出口，否则作者会以为这个版本没写说明。
+             */
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-12 text-ink-500">这个版本没有内嵌更新说明。</p>
+              {latest?.releaseUrl && (
+                <Button variant="bare" size="xs" className="text-11 text-amber/90" onClick={() => void openUrl(latest.releaseUrl, '更新说明页')}>
+                  在浏览器里查看
+                </Button>
+              )}
+            </div>
           ) : (
             blocks.map((b, i) => {
               if (b.type === 'h2') return <div key={i} className="text-13 font-semibold text-ink-100 pt-1">{b.text}</div>
@@ -296,6 +330,19 @@ export default function UpdateDialog({
             })
           )}
         </div>
+
+        {(phase.kind === 'idle' || phase.kind === 'error') && latest && (
+          /**
+           * 完整性一行（3.6.2 W1）：**点下载之前**就告诉作者这次会不会真校验，避免事后才发现"只比了大小"。
+           * 摘要来自自建清单；Gitee 兜底通道没有摘要，这里必须写"未校验"，不能显示假的"已校验"。
+           */
+          <p className="text-11 text-ink-500">
+            安装包完整性：
+            {latest.sha256
+              ? `已校验（sha256 ${latest.sha256.slice(0, 10)}…）`
+              : '未校验（清单未提供摘要，只比对文件大小）'}
+          </p>
+        )}
 
         {(phase.kind === 'idle' || phase.kind === 'error') && (
           /**
