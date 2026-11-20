@@ -17,6 +17,8 @@
 import { APP_VERSION_LABEL } from '@/lib/app/env'
 import { GITEE_RELEASES_URL } from '@/lib/app/downloadLinks'
 import { HAS_NET_BRIDGE, netFetch } from '@/lib/app/desktop'
+import { VERSION_MANIFEST_URL, manifestToLatestRelease, parseVersionManifest } from '@/lib/app/versionManifest'
+import type { VersionManifest } from '@/lib/app/versionManifest'
 import { readBoolPref, readStringPref, writeBoolPref, writeStringPref } from '@/lib/settings/uiPrefs'
 
 /** Gitee 最新 Release 查询（公开仓库，匿名可用） */
@@ -33,6 +35,13 @@ export interface LatestRelease {
   downloadUrl: string
   /** Release 页（直链打不开时的兜底） */
   releaseUrl: string
+  /**
+   * 安装包 sha256（小写 64 位）。**只有自建清单给得出**；Gitee 兜底通道一律为空串 = 未校验。
+   * 3.6.2 起交给下载器做完整性比对（见 electron/updateDownload.cjs）。
+   */
+  sha256?: string
+  /** 安装包原始文件名（清单里有就用它，省得从 URL 尾巴上猜） */
+  assetName?: string
 }
 
 /* ---------------- 版本解析与比较 ---------------- */
@@ -143,10 +152,13 @@ export function pickInstallerUrl(assets: unknown): string {
 }
 
 /**
- * 查 Gitee 上的最新 Release。
+ * 查 Gitee 上的最新 Release（**兜底通道，不要删**）。
  * 🔴 失败（断网 / 限流 / 结构变了）一律返回 null —— 调用方据此什么都不做。
+ *
+ * 🔴 2026-11-21（3.6.2 W1）：这份实现保留原样，只在自建清单拿不到时被调用。
+ *    仓库里有一支源码闸（tests/versionCheck.test.ts）盯着"它还在"，别当死代码清理掉。
  */
-async function fetchLatestRelease(): Promise<LatestRelease | null> {
+async function fetchLatestReleaseGitee(): Promise<LatestRelease | null> {
   const raw = await getJson(LATEST_API)
   if (!raw || typeof raw !== 'object') return null
   const r = raw as { tag_name?: unknown; name?: unknown; body?: unknown; assets?: unknown }
@@ -159,6 +171,42 @@ async function fetchLatestRelease(): Promise<LatestRelease | null> {
     downloadUrl: pickInstallerUrl(r.assets),
     releaseUrl: GITEE_RELEASES_URL,
   }
+}
+
+/**
+ * 取自建清单（原始结构）。拿不到 / 结构不符 → null。
+ *
+ * 单独导出是为了让网页版的"有新版本，刷新以应用"能读到 `webBuildId`
+ * （见 src/lib/app/webVersionNotice.ts）—— 取数与解析只走这一条路，避免两处各写一份。
+ */
+export async function fetchVersionManifest(): Promise<VersionManifest | null> {
+  const raw = await getJson(VERSION_MANIFEST_URL)
+  return parseVersionManifest(raw)
+}
+
+/**
+ * 查自建清单并适配成 `LatestRelease`。拿不到 → null。
+ *
+ * 与 Gitee 的关键差别：清单里有 `sha256`，下载器据此做完整性校验；
+ * 但清单**不含更新说明正文**（那是 Release 页的事），所以 `body` 为空串。
+ */
+async function fetchManifest(): Promise<LatestRelease | null> {
+  const manifest = await fetchVersionManifest()
+  return manifest ? manifestToLatestRelease(manifest) : null
+}
+
+/**
+ * 取最新版本：**先自建清单，失败回落 Gitee**（规划 W1 的双源口径）。
+ *
+ * 顺序不能反：Gitee 有 403 限流且只给直链（无摘要），清单才是"可校验"的那条路；
+ * 反过来先查 Gitee 就永远用不上摘要校验了。
+ * 两条都失败 → null（保持"静默"的既有口径，见文件顶部口径③）。
+ *
+ * 导出是给单测钉"顺序与回落"用的（tests/versionManifest.test.ts 会替换全局 fetch）；
+ * 业务侧只经 checkUpdate 调用它。
+ */
+export async function fetchLatestRelease(): Promise<LatestRelease | null> {
+  return (await fetchManifest()) ?? (await fetchLatestReleaseGitee())
 }
 
 /* ---------------- 对外主入口 ---------------- */
