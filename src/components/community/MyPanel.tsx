@@ -246,7 +246,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                   )}
                   <span className="text-11 text-ink-400">合计浏览 {formatViews(c.totalViews)}</span>
                   <div className="ml-auto flex items-center gap-2">
-                    <Button size="xs" variant="secondary" disabled={busy === `sort-${c.id}`}
+                    <Button size="xs" variant="secondary" data-sort-collection={c.id} disabled={busy === `sort-${c.id}`}
                       onClick={() => void (sorting?.id === c.id ? setSorting(null) : openSort(c))}>
                       <ListOrdered size={11} />{sorting?.id === c.id ? '收起排序' : '排序'}
                     </Button>
@@ -281,7 +281,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                     ))}
                   </ul>
                   <div className="mt-2 flex items-center gap-2">
-                    <Button size="xs" disabled={busy === `sort-${c.id}`} onClick={() => void saveSort()}>保存顺序</Button>
+                    <Button size="xs" data-save-order disabled={busy === `sort-${c.id}`} onClick={() => void saveSort()}>保存顺序</Button>
                     <Button size="xs" variant="secondary" onClick={() => setSorting(null)}>取消</Button>
                     <span className="text-10 text-ink-500">保存后合集切换为「手动排序」</span>
                   </div>
@@ -327,6 +327,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                     disabled={busy === `col-post-${p.id}`}
                     onChange={(e) => void movePost(p, e.target.value)}
                     aria-label={`《${p.title || '未命名'}》所属合集`}
+                    data-post-collection={p.id}
                     className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-200"
                   >
                     <option value="">不归入合集</option>

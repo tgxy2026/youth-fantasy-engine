@@ -260,6 +260,106 @@ try {
   const finalPage = await reader.req(`/api/community/collections/${colId}`)
   const total = finalPage.json?.collection?.totalViews ?? -1
   ok('🔴 合集合计浏览已增长（读者读了 2 篇）', total >= 2, String(total))
+
+  // ================= 作者侧：投稿 → 建合集 → 移入 → 排序 =================
+  //
+  // 读者路径验的是"看得见"，这一段验的是"改得动"：
+  // 投稿表单、我的合集新建、把一篇挂进合集、手动排序 —— 全都用真浏览器点。
+  console.log('\n[5/5] 作者侧操作（真浏览器）')
+  const profile2 = path.join(runDir, 'profile2')
+  const ctx2 = await chromium.launchPersistentContext(profile2, {
+    channel: 'msedge',
+    headless: !HEADFUL,
+    viewport: { width: 1440, height: 900 },
+    args: ['--no-first-run', '--no-proxy-server'],
+  })
+  const p2 = ctx2.pages()[0] ?? await ctx2.newPage()
+  p2.setDefaultTimeout(60_000)
+
+  await p2.goto(base, { waitUntil: 'domcontentloaded' })
+  await p2.waitForSelector('#name', { timeout: 30_000 })
+  await p2.fill('#name', BASE_USERS.author.name)
+  await p2.fill('#pwd', BASE_USERS.author.password)
+  await p2.press('#pwd', 'Enter')
+  await p2.waitForFunction(() => {
+    if (document.querySelector('[data-project-hub]')) return true
+    return [...document.querySelectorAll('button')].some((b) => /跳过，直接进入项目管理/.test(b.textContent || ''))
+  }, null, { timeout: 60_000 })
+  const skip2 = p2.getByRole('button', { name: /跳过，直接进入项目管理/ }).first()
+  if (await skip2.isVisible().catch(() => false)) await skip2.click()
+  await p2.waitForSelector('[data-project-hub]', { timeout: 60_000 })
+  await p2.getByRole('button', { name: /投稿广场/ }).first().click()
+  await p2.waitForSelector('[aria-label="投稿广场"]', { timeout: 60_000 })
+  ok('作者登录并打开广场', true)
+
+  // 投稿
+  await p2.getByRole('button', { name: '投稿', exact: true }).first().click()
+  const newTitle = '归墟·四 归途'
+  await p2.fill('#community-title', newTitle)
+  await p2.fill('#community-body', '林昭走到对岸，天已经亮了。铜钱还在他手里，背面刻着一个陆字。')
+  await p2.getByRole('button', { name: /提交审核/ }).first().click()
+  await p2.waitForSelector('text=投稿已提交审核', { timeout: 60_000 })
+  ok('作者在浏览器里提交了一篇投稿', true)
+
+  // 审核（服务端接口；审阅 UI 另有测试覆盖，这里只为把稿子变成可见）
+  {
+    const mine = await author.req('/api/community/my/posts')
+    const pending = (mine.json?.items || []).find((x) => x.status === 'pending' && x.title === newTitle)
+    ok('新投稿出现在我的投稿里（待审）', !!pending, String((mine.json?.items || []).length))
+    if (pending) {
+      const d = await mod.req('/api/community/admin/decision', {
+        method: 'POST',
+        body: { targetType: 'post', id: pending.id, versionId: pending.pendingVersionId, action: 'approve' },
+      })
+      ok('审核通过', d.status === 200, d.text.slice(0, 160))
+    }
+  }
+
+  // 我的 → 新建合集
+  await p2.getByRole('button', { name: '我的', exact: true }).first().click()
+  await p2.waitForSelector('[aria-label="新合集名称"]', { timeout: 60_000 })
+  const newColName = '作者侧合集'
+  await p2.fill('[aria-label="新合集名称"]', newColName)
+  await p2.getByRole('button', { name: /新建合集/ }).first().click()
+  await p2.waitForSelector('text=合集已创建', { timeout: 60_000 })
+  ok('浏览器里新建合集成功', true)
+
+  // 把新稿挂进新合集（下拉选择）
+  {
+    const mine = await author.req('/api/community/my/posts')
+    const row = (mine.json?.items || []).find((x) => x.title === newTitle)
+    ok('能取到新稿的 id', !!row, String((mine.json?.items || []).length))
+    if (row) {
+      const select = p2.locator(`[data-post-collection="${row.id}"]`)
+      await select.waitFor({ timeout: 30_000 })
+      await select.selectOption({ label: newColName })
+      await p2.waitForSelector('text=已加入合集', { timeout: 60_000 })
+      ok('🔴 通过下拉把稿子挂进了合集', true)
+      const after = await author.req('/api/community/my/posts')
+      const moved = (after.json?.items || []).find((x) => x.id === row.id)
+      ok('服务端确认归属已写入', !!moved?.collectionId, JSON.stringify(moved?.collectionId ?? null))
+    }
+  }
+
+  // 排序：把「归墟（连载）」第 1 篇下移后保存
+  {
+    const before = await reader.req(`/api/community/collections/${colId}`)
+    const firstBefore = before.json?.collection?.items?.[0]?.id
+    const sortBtn = p2.locator(`[data-sort-collection="${colId}"]`)
+    await sortBtn.click()
+    await p2.waitForSelector('[data-save-order]', { timeout: 30_000 })
+    // 第一行下移
+    await p2.getByRole('button', { name: /下移「/ }).first().click()
+    await p2.locator('[data-save-order]').click()
+    await p2.waitForSelector('text=顺序已保存', { timeout: 60_000 })
+    const after = await reader.req(`/api/community/collections/${colId}`)
+    ok('🔴 浏览器里排序并保存成功', after.json?.collection?.orderMode === 'manual', String(after.json?.collection?.orderMode))
+    ok('🔴 顺序真的变了（第 1 篇换了人）', after.json?.collection?.items?.[0]?.id !== firstBefore,
+      `${firstBefore} -> ${after.json?.collection?.items?.[0]?.id}`)
+  }
+
+  await p2.screenshot({ path: path.join(runDir, 'author-side.png'), fullPage: false })
+  await ctx2.close().catch(() => {})
 } catch (e) {
   console.error('\nE2E_FAIL', e && e.message ? e.message : e)
   if (ctx) {
