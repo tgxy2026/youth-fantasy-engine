@@ -159,6 +159,23 @@ async function main() {
   /* ---------- ⑧ 3.6.2 · 真实下载行为（本地服务，不联网） ---------- */
   await behaviorChecks()
 
+  /* ---------- ⑨ 3.6.2 · 便攜版：檢查但只提示（不給下載按鈕） ---------- */
+  {
+    const app = read('src/App.tsx')
+    ok('⑨ 更新檢查不再整體跳過便攜版（條件是 !WEB，不是 !PORTABLE）',
+      /if \(!WEB\) void \(async \(\) => \{[\s\S]{0,400}checkUpdate\(false\)/.test(app)
+      && !/if \(!PORTABLE\) void \(async/.test(app),
+      '便攜版跳過分支還在，或改成了别的形态判定')
+    ok('⑨ 由调用方告知能否自装（selfInstall={!PORTABLE}）',
+      app.includes('selfInstall={!PORTABLE}'))
+    ok('⑨ 便攜版给的是「去发布页下载新包」而不是「下载安装包」',
+      dialog.includes('去发布页下载新包') && dialog.includes('不能应用内更新'))
+    ok('⑨ 不能自装时完整性那行不显示（下都下不了，谈校验没意义）',
+      /phase\.kind === 'idle' \|\| phase\.kind === 'error'\) && selfInstall && latest/.test(dialog))
+    ok('⑨ 便攜版说明仍写明「把 data 拷进新目录」（避免用户以为要重装全书）',
+      dialog.includes('把旧目录里的 data 文件夹拷进新目录'))
+  }
+
   console.log(`\n通过 ${pass} / 失败 ${fail}`)
   process.exit(fail ? 1 : 0)
 }

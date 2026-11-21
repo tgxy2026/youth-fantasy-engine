@@ -15,7 +15,7 @@ import {
 } from '@/lib/app/desktop'
 import { parseMarkdownBlocks } from '@/lib/storage/mdLite'
 import { setSkippedVersion } from '@/lib/app/versionCheck'
-import { QUARK_CODE, QUARK_TOKEN, QUARK_URL } from '@/lib/app/downloadLinks'
+import { QUARK_CODE, QUARK_TOKEN, QUARK_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import type { LatestRelease } from '@/lib/app/versionCheck'
 
 /**
@@ -64,10 +64,16 @@ export default function UpdateDialog({
   open,
   latest,
   onClose,
+  selfInstall = true,
 }: {
   open: boolean
   latest: LatestRelease | null
   onClose: () => void
+  /**
+   * 本形态能否自己下载并拉起安装器。桌面版 true；**便携版 false**
+   * （跑在浏览器里、没有安装器，下载了也装不上）——此时只提示"去发布页换新包"。
+   */
+  selfInstall?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
@@ -206,15 +212,31 @@ export default function UpdateDialog({
     // idle
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          disabled={busy || !latest?.downloadUrl}
-          onClick={() => void startDownload()}
-          className="gap-1.5"
-          title={latest?.downloadUrl ? '下载到「下载」文件夹，完成后自动打开安装向导' : '本次没取到安装包直链，请用下方网盘'}
-        >
-          <Download size={14} /> 下载安装包
-        </Button>
+        {selfInstall ? (
+          <Button
+            variant="primary"
+            disabled={busy || !latest?.downloadUrl}
+            onClick={() => void startDownload()}
+            className="gap-1.5"
+            title={latest?.downloadUrl ? '下载到「下载」文件夹，完成后自动打开安装向导' : '本次没取到安装包直链，请用下方网盘'}
+          >
+            <Download size={14} /> 下载安装包
+          </Button>
+        ) : (
+          /**
+           * 便携版：没有安装器 ⇒ 不给"下载安装包"（点了也装不上，是让作者做一件做不到的事）。
+           * 改为直接给发布页入口，并在正文里写清"新包 + 把 data 拷过去"。
+           */
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => void openUrl(latest?.releaseUrl || WEB_APP_URL, '发布页')}
+            className="gap-1.5"
+            title="便携版需要下载新的压缩包替换，不能应用内安装"
+          >
+            <ExternalLink size={14} /> 去发布页下载新包
+          </Button>
+        )}
         <Button variant="secondary" disabled={busy} onClick={() => void openUrl(QUARK_URL, '夸克网盘')} className="gap-1.5">
           <ExternalLink size={14} /> 夸克网盘
         </Button>
@@ -290,8 +312,19 @@ export default function UpdateDialog({
           </div>
         ) : (
           <p className="text-12 text-ink-300 leading-relaxed">
-            当前版本已落后，下面是这个版本的更新说明。点「下载安装包」会下载到你的「下载」文件夹并打开安装向导 ——
-            <span className="text-ink-400">本程序不会在你没点之前下载，也不会替你点安装。</span>
+            {selfInstall ? (
+              <>
+                当前版本已落后，下面是这个版本的更新说明。点「下载安装包」会下载到你的「下载」文件夹并打开安装向导 ——
+                <span className="text-ink-400">本程序不会在你没点之前下载，也不会替你点安装。</span>
+              </>
+            ) : (
+              <>
+                当前版本已落后，下面是这个版本的更新说明。
+                <span className="text-ink-400">
+                  便携版不能应用内更新：请下载新的压缩包，解压后把旧目录里的 data 文件夹拷进新目录，稿件不会丢。
+                </span>
+              </>
+            )}
           </p>
         )}
 
@@ -331,7 +364,7 @@ export default function UpdateDialog({
           )}
         </div>
 
-        {(phase.kind === 'idle' || phase.kind === 'error') && latest && (
+        {(phase.kind === 'idle' || phase.kind === 'error') && selfInstall && latest && (
           /**
            * 完整性一行（3.6.2 W1）：**点下载之前**就告诉作者这次会不会真校验，避免事后才发现"只比了大小"。
            * 摘要来自自建清单；Gitee 兜底通道没有摘要，这里必须写"未校验"，不能显示假的"已校验"。

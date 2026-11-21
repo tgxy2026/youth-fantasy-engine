@@ -535,13 +535,13 @@ export default function App() {
 
       // 2.6.3 · 启动后自动检查更新：**延迟 3 秒 + 完全静默**（失败不弹任何东西），
       // 只有真的查到更高版本才弹一次更新说明。开关默认开，关于页可关。
-      // 🔴 2026-10-13 · **便携版直接跳过**：
-      //    ① 便携版跑在浏览器里、没有安装器 ⇒ 查到新版本也**无法自动更新**，
-      //       弹出来只会让作者做一件做不到的事；
-      //    ② 「使用说明」早已写明便携版没有自动更新检查 —— 原先没分支，文档与实现不符；
-      //    ③ 附带好处：不再消耗 Gitee 匿名配额（实测密集调用会 403 限流，
-      //       而限流会让「检查更新」看起来像坏了，见 memory/2026-10-13.md）。
-      if (!PORTABLE) void (async () => {
+      // 🔴 3.6.2 · **便携版不再整体跳过**（规划 W1「三形态入口」）：
+      //    ① 自建清单优先（见 versionCheck.ts），查清单**不消耗 Gitee 匿名配额** ——
+      //       原先跳过的头号理由（密集调用 403）已经不成立；
+      //    ② 便携版确实装不了包，但"知道有新版"本身有用（作者自己去换压缩包）；
+      //       所以弹窗里**不给下载按钮**（`selfInstall={!PORTABLE}` 由 UpdateDialog 处理）。
+      // 网页版仍跳过：刷新即最新，另有 WebUpdateBanner 负责"线上换版了"的提示。
+      if (!WEB) void (async () => {
         try {
           await new Promise(r => setTimeout(r, 3000))
           if (!isAutoCheckOn()) return
@@ -948,7 +948,7 @@ export default function App() {
         {/* 3.0 · W0-2：首启迁移向导（叠在最上层；关闭后回到欢迎向导 / 项目首页） */}
         {migrationProbe && <MigrationWizard probe={migrationProbe} onClose={() => setMigrationProbe(null)} />}
         {/* 2.6.3 · 启动自动检查到的新版本（在首页这一支挂载即可：启动默认停在这里） */}
-        <UpdateDialog open={updateOpen} latest={updateLatest} onClose={() => setUpdateOpen(false)} />
+        <UpdateDialog open={updateOpen} latest={updateLatest} onClose={() => setUpdateOpen(false)} selfInstall={!PORTABLE} />
         {/* 左下角统一「数据坞」：本机存储 + 云盘文件同步 + 网页版同步三合一（#032）。
             此前三者各画一个 fixed 浮层，定位/层级/圆角都不一致，桌面版会互相遮挡。 */}
         <DataDock />
