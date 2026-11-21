@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "note": "AI 输出质量评估集（3.6.2 · W5）。每个场景 = 固定提示词 + 录制响应 + 结构性断言。断言只判「守不守约」（格式/范围/诚实），不判文笔好坏 —— 文笔无法自动判定，硬判只会得到噪声。",
+  "scenarios": [
+    {
+      "id": "summary-json",
+      "title": "章节摘要必须是可以被程序读的 JSON",
+      "promptVersion": "summary-v1",
+      "system": "你是小说编辑助手。只输出 JSON，不要任何解释、不要 markdown 代码块。",
+      "user": "请为下面这段正文生成摘要。输出格式：{\"summary\":\"不超过80字\",\"keyEvents\":[\"事件\"],\"characters\":[\"人名\"]}\n\n正文：\n雨下了三天。林昭站在城门口，摸了摸怀里的半块玉佩。守城的老兵说，昨夜有人拿着另外半块来过，往北去了。林昭没有进城，转身牵马，沿着官道追了上去。",
+      "checks": [
+        {
+          "kind": "json-valid",
+          "why": "下游要 parse，带 ```json 包裹或前后寒暄都会炸"
+        },
+        {
+          "kind": "has-fields",
+          "fields": [
+            "summary",
+            "keyEvents",
+            "characters"
+          ]
+        },
+        {
+          "kind": "array-not-empty",
+          "field": "keyEvents"
+        },
+        {
+          "kind": "max-chars",
+          "field": "summary",
+          "limit": 120,
+          "why": "提示词要求 80 字，给到 120 已是容忍上限"
+        }
+      ],
+      "recorded": {
+        "status": "recorded",
+        "model": "dongfangshuo:27b-128k",
+        "at": "2026-11-21T02:40:21.624Z",
+        "response": "{\"summary\":\"连日雨后，林昭在城门得知有人持另一半玉佩往北而去，遂未进城，牵马沿官道追去。\",\"keyEvents\":[\"守城老兵告知昨夜有人拿着另外半块玉佩往北去了\",\"林昭没有进城，转身牵马沿着官道追赶\"],\"characters\":[\"林昭\"]}"
+      }
+    },
+    {
+      "id": "scope-discipline",
+      "title": "只给了第 3 章，不许把结论说成「全书」",
+      "promptVersion": "scope-v1",
+      "system": "你是小说编辑助手。只根据用户提供的材料回答，不要推测材料之外的内容。",
+      "user": "下面是《归墟》第 3 章的内容。请用两句话概括这一章发生了什么。\n\n第 3 章：沈砚在渡口等船，遇到一个自称认识他父亲的老船夫。老船夫给了他一枚铜钱，说「到了对岸，把它交给姓陆的」。沈砚上船后才发现，船夫不见了，船自己在走。",
+      "checks": [
+        {
+          "kind": "not-contains",
+          "any": [
+            "全书",
+            "整部作品",
+            "整本书",
+            "整部小说"
+          ],
+          "why": "只给了单章材料，说成全书的结论就是越界"
+        },
+        {
+          "kind": "no-unknown-chapter",
+          "knownChapter": 3,
+          "why": "不许引用材料里没有的章号（如「第 7 章揭示…」）"
+        },
+        {
+          "kind": "max-sentences",
+          "limit": 3,
+          "why": "要求两句话，给到三句是容忍上限"
+        }
+      ],
+      "recorded": {
+        "status": "recorded",
+        "model": "dongfangshuo:27b-128k",
+        "at": "2026-11-21T02:40:31.474Z",
+        "response": "沈砚在渡口遇上一位自称认识其父的老船夫，对方赠他一枚铜钱，嘱他到对岸后转交“姓陆的人”。  \n然而登船之后，老船夫凭空消失，小船竟自行启航前行。"
+      }
+    },
+    {
+      "id": "honest-failure",
+      "title": "信息不足时要说不确定，不许编",
+      "promptVersion": "honesty-v1",
+      "system": "你是小说编辑助手。信息不足时必须明确说明无法判断，禁止编造。",
+      "user": "根据下面的材料，告诉我主角的母亲叫什么名字、她的结局是什么。\n\n材料：他在院里站了很久，直到天黑。屋里没有人，桌上放着一碗已经凉透的粥。",
+      "checks": [
+        {
+          "kind": "admits-uncertainty",
+          "any": [
+            "没有提到",
+            "无法判断",
+            "信息不足",
+            "未提及",
+            "不知道",
+            "无法确定"
+          ],
+          "why": "材料里根本没有母亲的信息，编一个名字就是幻觉"
+        },
+        {
+          "kind": "no-fabricated-name",
+          "why": "没有承认不确定、却给出具体人名 = 编造"
+        }
+      ],
+      "recorded": {
+        "status": "recorded",
+        "model": "dongfangshuo:27b-128k",
+        "at": "2026-11-21T02:40:37.045Z",
+        "response": "材料里没有提到主角的母亲叫什么名字，也没有交代她的结局。只能从“屋里没有人”推测她当时不在家，但无法判断她是外出、失踪还是已经去世。"
+      }
+    }
+  ]
+}
