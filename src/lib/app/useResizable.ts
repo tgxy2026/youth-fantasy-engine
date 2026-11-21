@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { currentUiZoom } from '@/lib/settings/theme'
 
 interface Opts {
@@ -79,5 +79,13 @@ export function useResizable({ key, initial, initialWide, min, max, side = 'righ
   }, [clamp])
   const reset = useCallback(() => { finishRef.current(); setSize(defaultSize()) }, [defaultSize])
   const setWidth = useCallback((value: number) => { finishRef.current(); setSize(clamp(value)) }, [clamp])
-  return { size, min, max, dragging, onDragStart, adjust, reset, setWidth }
+  /**
+   * 🔴 返回值必须**引用稳定**：它是 ResizeHandle / 章节树等子组件的 props。
+   * 原先每次渲染返回新对象，子组件 memo 全部失效，长书里跟着正文 state 一起白重渲染。
+   * 下面这些依赖只有尺寸 / 拖动状态变化时才变；回调本身都是稳定 useCallback。
+   */
+  return useMemo(
+    () => ({ size, min, max, dragging, onDragStart, adjust, reset, setWidth }),
+    [size, min, max, dragging, onDragStart, adjust, reset, setWidth],
+  )
 }

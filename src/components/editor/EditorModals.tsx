@@ -855,12 +855,13 @@ export function TrashBin({ onChanged, onClose }: { onChanged: () => void; onClos
   )
 }
 
-// ============ 搜索替换（3.6.1：可选「本章」或「全书」范围）============
+// ============ 搜索 / 搜索替换（3.6.1 范围；3.6.2 默认仅搜索）============
 //
-// 原先是「全书搜索替换」：入口写着全书，点开也只能全书。
-// 3.6.1 起改成通用「搜索替换」，进来先选范围：
-//   · 本章：只改当前这一章，其它章一个字都不动（默认，误点也伤不到全书）；
-//   · 全书：沿用原行为，替换前再确认一次并写明会动几章。
+// 3.6.1 起是通用「搜索替换」，进来先选范围：
+//   · 本章：只搜 / 改当前这一章，其它章一个字都不动（默认，误点也伤不到全书）；
+//   · 全书：搜索全部章，替换前再确认一次并写明会动几章。
+// 3.6.2 起在「搜索替换」弹窗里拆成两种模式：**默认仅搜索**（只定位、不改正文），
+//   作者确实要批量改写时再切到「搜索并替换」——替换输入与按钮在仅搜索模式下根本不出现。
 //
 // 🔴 两个口径要分清（也是原实现的一个隐患）：
 //   · 搜索的语料 = 正文 + 章名（章名便于定位）；
@@ -877,11 +878,15 @@ export function GlobalSearch({ chapters, activeChapter, onOpenChapter, onReplace
   owner: OwnedOperation
 }) {
   type Scope = 'chapter' | 'book'
+  /** find = 只搜不改；replace = 搜索并批量替换 */
+  type Mode = 'find' | 'replace'
+  const [mode, setMode] = useState<Mode>('find')
   const [scope, setScope] = useState<Scope>('chapter')
   const [q, setQ] = useState('')
   const [replacement, setReplacement] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searched, setSearched] = useState(false)
+  const isReplace = mode === 'replace'
 
   /**
    * 换范围就清空结果。
@@ -933,24 +938,43 @@ export function GlobalSearch({ chapters, activeChapter, onOpenChapter, onReplace
 
   return (
     <ToolModal title="搜索替换" icon={<Search size={16} />} onClose={onClose} wide>
-      {/* 范围：先选范围再搜，避免"以为只改本章、结果动了全书" */}
+      {/* 模式 + 范围：默认只搜不改；替换必须显式切换，避免"想查一下"结果误改正文 */}
       <div className="mb-3 rounded-lg border border-ink-700 bg-ink-800/50 p-2">
         <div className="flex flex-wrap items-center gap-2">
+          <span className="text-11 text-ink-400">模式</span>
+          <Button variant="toggle" size="xs" selected={!isReplace}
+            title="只搜索并定位，不改动任何正文" onClick={() => setMode('find')}>
+            仅搜索
+          </Button>
+          <Button variant="toggle" size="xs" selected={isReplace}
+            title="搜索并批量替换命中的正文，替换前还会确认一次" onClick={() => setMode('replace')}>
+            搜索并替换
+          </Button>
+          <span className="text-10 text-ink-500">
+            {isReplace ? '替换只改正文，章名不动。' : '只搜索并定位，不改动任何正文；需要改写时切到「搜索并替换」。'}
+          </span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-11 text-ink-400">范围</span>
           <Button variant="toggle" size="xs" selected={scope === 'chapter'} disabled={!activeChapter}
-            title={activeChapter ? '只改当前这一章，其它章不动' : '还没有打开章节 —— 先打开一章才能用本章范围'}
+            title={activeChapter ? '只处理当前这一章，其它章不动' : '还没有打开章节 —— 先打开一章才能用本章范围'}
             onClick={() => setScope('chapter')}>
             本章{activeChapter ? `（${activeChapter.title}）` : '（未打开章节）'}
           </Button>
           <Button variant="toggle" size="xs" selected={scope === 'book'}
-            title="会改动全书命中的章节，替换前还会再确认一次" onClick={() => setScope('book')}>
+            title={isReplace ? '会改动全书命中的章节，替换前还会再确认一次' : '搜索全书正文与章名，只定位不改动'}
+            onClick={() => setScope('book')}>
             全书（{chapters.length} 章）
           </Button>
         </div>
         <div className="mt-1 text-10 text-ink-500 leading-relaxed">
           {scope === 'chapter'
-            ? '只搜索并替换当前这一章的正文，其它章节一个字都不会动。'
-            : '搜索全书正文与章名；替换只改正文，章名不动。替换前会再确认一次。'}
+            ? (isReplace
+              ? '只搜索并替换当前这一章的正文，其它章节一个字都不会动。'
+              : '只搜索当前这一章的正文与章名，其它章节不动。')
+            : (isReplace
+              ? '搜索全书正文与章名；替换只改正文，章名不动。替换前会再确认一次。'
+              : '搜索全书正文与章名，只定位不改动。')}
           {' '}切换范围会清空上一次的结果，需要重新搜索。
         </div>
       </div>
@@ -966,25 +990,27 @@ export function GlobalSearch({ chapters, activeChapter, onOpenChapter, onReplace
         />
         <Button onClick={doSearch} variant="primary" size="md">搜索</Button>
       </div>
-      <div className="flex gap-2 items-center mb-4">
-        <input
-          value={replacement}
-          onChange={e => setReplacement(e.target.value)}
-          placeholder="替换为…（留空即删除）"
-          className="flex-1 !py-1.5 text-12"
-        />
-        <Button onClick={replaceAll}
-          disabled={!searched || replaceable === 0} variant="secondary" size="md"
-          title={searched && replaceable === 0 ? '没有可替换的正文命中（只命中章名时不会替换）' : undefined}>
-          全部替换{searched && replaceable > 0 ? `（${replaceable} 处）` : ''}
-        </Button>
-      </div>
+      {isReplace && (
+        <div className="flex gap-2 items-center mb-4">
+          <input
+            value={replacement}
+            onChange={e => setReplacement(e.target.value)}
+            placeholder="替换为…（留空即删除）"
+            className="flex-1 !py-1.5 text-12"
+          />
+          <Button onClick={replaceAll}
+            disabled={!searched || replaceable === 0} variant="secondary" size="md"
+            title={searched && replaceable === 0 ? '没有可替换的正文命中（只命中章名时不会替换）' : undefined}>
+            全部替换{searched && replaceable > 0 ? `（${replaceable} 处）` : ''}
+          </Button>
+        </div>
+      )}
       {searched && (
         hits.length === 0 ? (
           <div className="py-8 text-center text-12 text-ink-500">{scopeLabel}未找到「{q.trim()}」</div>
         ) : (
           <div className="space-y-2">
-            {replaceable === 0 && (
+            {isReplace && replaceable === 0 && (
               <div className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-11 text-amber leading-relaxed">
                 只命中章名 —— 章名不参与替换，所以「全部替换」不可用。要改章名请回左侧章节列表或本章标题框改。
               </div>

@@ -3,6 +3,7 @@
 // Under the mounted owner it persists and syncs the active draft; after setStoreOps replaces the store (bumping the
 // storage epoch) a late replace is blocked from BOTH owners, surfaces a failure prompt, and leaves the draft intact —
 // no unhandled rejection. A freshly remounted editor owns the restored store and can replace again.
+// 3.6.2: the menu keeps its 搜索替换 name; the modal opens in find-only mode — replace input/button must not exist until 「搜索并替换」 is chosen.
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -49,24 +50,29 @@ try {
   const readOriginal = () => page.evaluate(async () => (await window.__searchOwner.originalOps.get('chapters', 'search-owned'))?.content)
   const openSearch = async () => {
     await page.getByRole('button', { name: '编辑工具', exact: true }).click()
-    await page.getByRole('button', { name: '全书搜索替换', exact: true }).click()
-    await page.getByPlaceholder('搜索全书正文与章名…').waitFor()
+    await page.getByRole('button', { name: '搜索替换', exact: true }).click()
+    await page.getByPlaceholder('在本章正文中搜索…').waitFor()
   }
   const runReplace = async (query, replacement) => {
-    await page.getByPlaceholder('搜索全书正文与章名…').fill(query)
+    // 3.6.2：默认仅搜索 —— 必须显式切到替换模式，替换输入才会出现。
+    await page.getByRole('button', { name: '搜索并替换', exact: true }).click()
+    await page.getByPlaceholder('在本章正文中搜索…').fill(query)
     await page.getByRole('button', { name: '搜索', exact: true }).click()
     await page.getByPlaceholder('替换为…（留空即删除）').fill(replacement)
-    await page.getByRole('button', { name: '全部替换', exact: true }).click()
+    await page.getByRole('button', { name: /^全部替换/ }).click()
     await page.getByRole('button', { name: '确定', exact: true }).click()
   }
-  const closeSearch = async () => { await page.keyboard.press('Escape'); await page.getByPlaceholder('搜索全书正文与章名…').waitFor({ state: 'detached' }).catch(() => {}) }
+  const closeSearch = async () => { await page.keyboard.press('Escape'); await page.getByPlaceholder('在本章正文中搜索…').waitFor({ state: 'detached' }).catch(() => {}) }
 
   await openEditor()
   await page.waitForFunction(() => document.querySelector('textarea.novel-textarea')?.value === '原仓搜索正文甲')
   check('the editor opens the seeded chapter under its mounted owner', await editor.inputValue() === '原仓搜索正文甲')
 
   // ---- Positive control: under the current owner the replace persists and syncs the active draft ----
-  await openSearch(); await runReplace('原仓搜索正文甲', '替换后正文乙')
+  await openSearch()
+  const replaceInputVisible = await page.getByPlaceholder('替换为…（留空即删除）').isVisible().catch(() => false)
+  check('search modal opens in find-only mode (no replace input)', !replaceInputVisible)
+  await runReplace('原仓搜索正文甲', '替换后正文乙')
   await page.waitForFunction(async () => (await window.__searchOwner.originalOps.get('chapters', 'search-owned'))?.content === '替换后正文乙')
   await page.waitForFunction(() => document.querySelector('textarea.novel-textarea')?.value === '替换后正文乙')
   check('search-replace persists into the current owner and syncs the active draft', await readOriginal() === '替换后正文乙' && await editor.inputValue() === '替换后正文乙')
@@ -103,7 +109,7 @@ try {
   }))
   check('a late search-replace cannot write the private replacement into either owner', owners.oldSame === '替换后正文乙' && owners.replacement === '替换仓搜索内容', owners)
   const toastText = await page.locator('[data-toast]').innerText().catch(() => '')
-  check('the blocked search-replace surfaces a failure prompt', toastText.includes('全书替换失败'), { toastText })
+  check('the blocked search-replace surfaces a failure prompt', toastText.includes('替换失败'), { toastText })
   check('the rejected search-replace leaves the draft intact', await editor.inputValue() === '替换后正文乙')
   await closeSearch()
 

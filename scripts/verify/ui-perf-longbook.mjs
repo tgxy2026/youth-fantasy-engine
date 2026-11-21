@@ -2,10 +2,14 @@
 /**
  * 长书真机性能探针（3.6.2 · W4）
  *
- * ✅ **状态：已调通（2026-11-21）**。800 章 / 120 万字连跑 3 次：
- *    切章 P50 339 / 327 / 336 ms（波动 3.6%）、P95 354–421 ms、保存 2.4 s（含 2 s 防抖）、
- *    长任务 37–40 个（合计 3.7–3.9 s）、JS 堆 128–264 MB（随 GC 时机波动，非精确指标）。
- * ⚠️ 单次内部有偶发 400–420 ms 尖峰（位置随机），P95 因此偏高 —— 这是切章偶尔卡一下的来源。
+ * ✅ **状态：已调通（2026-11-21；同日补切章冗余渲染修复后的复测）**。800 章 / 120 万字：
+ *    修前：切章高亮 P50 396 ms / P95 429 ms，长任务 110 个（合计 13.3 s），保存 2.6 s；
+ *    修后两轮：高亮 P50 169 / 172 ms、P95 184 / 197 ms，**正文就位** P50 180 ms / P95 202 ms，
+ *    长任务 36 个（合计 4.5 s），保存 2.2 s（含 2 s 防抖），JS 堆 172–283 MB。
+ * ⚠️ 早先记录的 P50 327–339 ms 与本轮的 396 ms 有**跨会话漂移**（开发记录 §1.5c）——
+ *    修前/修后只在同一次会话背靠背跑时可比，别跨天对数字。
+ * ⚠️ 400–420 ms 的单次尖峰不保证复现；验收看**长任务总数 / 总时长**，不看「有没有尖峰」。
+ *    高亮出现 ≠ 正文可读，所以另量「正文就位」（textarea 值以「第N卷第M章」开头）。
  * ⚠️ 首屏 15–24 s 是 dev 形态（Vite 按需编译近千模块），**不代表生产**。
  *
  * 【关键锚点（调通的前提）】
@@ -22,8 +26,8 @@
  *      正文是 `textarea.novel-textarea` —— 定位错了就永远等不到「已保存」）
  *   ④ 长任务计数与总时长（`longtask`，>50ms 的任务）✅
  *   ⑤ JS 堆（若 Chromium 给了 `performance.memory`）✅
- *   ⚠️ 规划里的「全文检索」「图鉴大表筛选」本版**未纳入**：那两个入口的 DOM 结构
- *      随页面改版变动，探针写死选择器会变成"一改就红"的假失败。留待单独一版做。
+ *   ⑥ 全文检索（工具 → 全文检索；含末章覆盖性）✅
+ *   ⑦ 图鉴大表（`--atlas N` 造 N 行；打开耗时 + 名称筛选）✅
  *
  * 【隔离】🔴 绝不碰真实数据：
  *   · 独立 `--user-data-dir`（mkdtemp 临时目录，跑完删除）；
@@ -34,6 +38,7 @@
  *   node scripts/verify/ui-perf-longbook.mjs                  # 默认 800 章（约 120 万字）
  *   node scripts/verify/ui-perf-longbook.mjs --chapters 40    # 小规模自检（几十秒）
  *   node scripts/verify/ui-perf-longbook.mjs --runs 3         # 切章重复次数（默认 3）
+ *   node scripts/verify/ui-perf-longbook.mjs --atlas 2000     # 顺带测图鉴大表（造 2000 行）
  *
  * ⚠️ 需要 Edge / Chrome（`channel: 'msedge'`）。没有的话装一个或改 `channel`。
  */
@@ -254,6 +259,8 @@ try {
 
     const marks = MARKS_ARG ?? (total > 1 ? [0, Math.floor(total / 2), total - 1] : [0])
     const samples = []
+    /** 正文真正换好的耗时（含描边高亮之后的那次草稿同步） */
+    const contentSamples = []
     /** 逐样本明细：ms + 该次期间的长任务个数 */
     const perSample = []
     for (let r = 0; r < RUNS; r++) {
@@ -274,18 +281,32 @@ try {
           return !!el && /bg-amber\/15/.test(el.className)
         }, idx, { timeout: 30_000 }).catch(() => {})
         const ms = Date.now() - t0
+        /**
+         * 🔴 「行高亮」比「正文换好」早一拍：切章后还有一次草稿 state 同步（可能含第二次提交）。
+         *    只量高亮会在长书上把数字说小，所以再等正文 textarea 真的换成目标章。
+         *    造数时正文开头固定是「第V卷第I章」，据此判定，不用章名（章名是「第V卷 第I章」，有空格）。
+         */
+        const perVolume = Math.ceil(CHAPTERS / VOLUMES)
+        const expectPrefix = `第${Math.floor(idx / perVolume) + 1}卷第${(idx % perVolume) + 1}章`
+        const contentHit = await page.waitForFunction(prefix => {
+          const areas = document.querySelectorAll('textarea.novel-textarea')
+          const ta = areas[areas.length - 1]
+          return !!ta && (ta).value.startsWith(prefix)
+        }, expectPrefix, { timeout: 30_000 }).then(() => true).catch(() => false)
+        const contentMs = Date.now() - t0
         const ltAfter = await page.evaluate(() => {
           const l = window.__perfLongTasks ?? []
           return { n: l.length, sum: l.reduce((a, b) => a + b, 0) }
         }).catch(() => ltBefore)
         const heapAfter = await page.evaluate(() => (performance).memory ? (performance).memory.usedJSHeapSize : 0).catch(() => 0)
         samples.push(ms)
+        contentSamples.push(contentMs)
         /**
          * 🔴 归因用：`spike` 判定取「明显高于本轮中位数」，再看它期间有没有长任务。
          *    有长任务 ⇒ 主线程被占（渲染 / GC）；没有 ⇒ 在等 IO 或串行队列。
          */
         perSample.push({
-          idx, ms,
+          idx, ms, contentMs, contentHit,
           longTasks: Math.max(0, ltAfter.n - ltBefore.n),
           /** 该次期间长任务总时长：用来区分「任务变慢」与「多干了一件事」 */
           longTaskMs: Math.max(0, ltAfter.sum - ltBefore.sum),
@@ -301,6 +322,8 @@ try {
     const spikes = perSample.filter((x) => x.ms > med * 1.2)
     result.steps.switchChapter = {
       samples, p50: p50(samples), p95: p95(samples), rounds: RUNS,
+      /** 正文真正切换完成的耗时（比高亮更接近作者体感） */
+      contentSamples, contentP50: p50(contentSamples), contentP95: p95(contentSamples),
       median: med,
       perSample,
       spikes: {
@@ -310,7 +333,7 @@ try {
         samples: spikes,
       },
     }
-    console.log(`切章：P50 ${p50(samples)}ms / P95 ${p95(samples)}ms（${samples.length} 次，共 ${total} 章）`)
+    console.log(`切章：高亮 P50 ${p50(samples)}ms / P95 ${p95(samples)}ms；正文就位 P50 ${p50(contentSamples)}ms / P95 ${p95(contentSamples)}ms（${samples.length} 次，共 ${total} 章）`)
   }
 
   // ---------- ③ 保存 ----------

@@ -13,7 +13,11 @@ for (const input of [
   { exitCode: 0, outputLimit: true }, { exitCode: 1 },
 ]) check('异常判据不被转换为零：' + JSON.stringify(input), !processVerdict(input).ok && processVerdict(input).code !== 0)
 
-const success = await runProcess(process.execPath, ['-e', 'process.stdout.write("可回读输出");process.stderr.write("diagnostic")'])
+// Node 24 在 NODE_USE_ENV_PROXY 开启时会向每个子进程 stderr 打 undici 实验警告；
+// 某些 IDE/沙箱会注入这个变量，先剔掉才能严格比对 stderr 回读。
+const childEnv = { ...process.env }
+delete childEnv.NODE_USE_ENV_PROXY
+const success = await runProcess(process.execPath, ['-e', 'process.stdout.write("可回读输出");process.stderr.write("diagnostic")'], { env: childEnv })
 check('真实异步子进程正确读取中文和stderr', success.ok && success.stdout === '可回读输出' && success.stderr === 'diagnostic' && success.cleanupComplete)
 const failure = await runProcess(process.execPath, ['-e', 'process.stdout.write("old marker");process.exit(7)'])
 check('进程有输出但非零退出仍失败', !failure.ok && failure.code === 7 && failure.out.includes('old marker'))

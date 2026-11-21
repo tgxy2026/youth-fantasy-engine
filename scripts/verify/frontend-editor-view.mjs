@@ -142,9 +142,16 @@ try {
     const { workspaceViews } = await import('/src/lib/settings/workspaceViewState.ts')
     const runtime = await import('/src/lib/settings/workspaceRuntime.ts')
     const db = await import('/src/lib/db.ts')
-    await runtime.resolveWorkspaceIdentity()
     const projectId = db.getCurrentProjectId()
-    const scope = runtime.currentWorkspaceScope(projectId, 'editor')
+    // resolveWorkspaceIdentity 已在 2026-11-18 死导出清理中删除；App 根节点 observeWorkspaceLifecycle
+    // 会在挂载 / 后端切换时异步解析身份，这里只需等它就绪（最多 5s）。
+    const deadline = Date.now() + 5000
+    let scope = runtime.currentWorkspaceScope(projectId, 'editor')
+    while (!scope && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      scope = runtime.currentWorkspaceScope(projectId, 'editor')
+    }
+    if (!scope) throw new Error('工作区身份未就绪，无法读取视图记录')
     const chapters = await db.getAllChapters()
     const records = chapters.map(chapter => workspaceViews.get(scope, chapter.id)).filter(Boolean)
     return { stats: workspaceViews.stats(), json: JSON.stringify(records), count: records.length }
@@ -179,7 +186,8 @@ try {
   // 🔴 用 CSS 定位等 DOM：提醒挂着时 `<nav>` 在可访问性树里根本不存在，role 定位等不到 attached。
   const navAttached = await page.locator('nav').waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false)
   if (!navAttached) {
-    await page.getByRole('button', { name: /继续写作|开始写作/ }).first().click()
+    // 入口按钮文案随版本变过：旧版是「继续写作 / 开始写作」，现在是作品卡上的「打开项目」。
+    await page.getByRole('button', { name: /继续写作|开始写作|打开项目/ }).first().click()
     await page.locator('nav').waitFor({ state: 'attached', timeout: 60000 })
   }
   await openEditor()

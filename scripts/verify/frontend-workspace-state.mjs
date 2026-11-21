@@ -34,9 +34,20 @@ try{
     const runtime=await import('/src/lib/settings/workspaceRuntime.ts')
     const {workspaceViews}=await import('/src/lib/settings/workspaceViewState.ts')
     const db=await import('/src/lib/db.ts'),core=await import('/src/lib/db/core.ts')
-    await runtime.resolveWorkspaceIdentity()
+    // resolveWorkspaceIdentity 已删除（2026-11-18 死导出清理）：身份由 App 根节点异步解析，
+    // 后端切换时由 subscribeStorageContext 自动重解析 —— 这里只等目标空间出现 / 换新。
+    const waitScope=async(projectId,pageId,notSpace)=>{
+      const deadline=Date.now()+5000
+      let scope=runtime.currentWorkspaceScope(projectId,pageId)
+      while((!scope||(notSpace&&scope.space===notSpace))&&Date.now()<deadline){
+        await new Promise(resolve=>setTimeout(resolve,50))
+        scope=runtime.currentWorkspaceScope(projectId,pageId)
+      }
+      if(!scope)throw new Error('工作区身份未就绪')
+      return scope
+    }
     const keepId=db.getCurrentProjectId(),before=JSON.stringify(await db.getAllChapters())
-    const scope=runtime.currentWorkspaceScope(keepId,'editor')
+    const scope=await waitScope(keepId,'editor')
     const victim=await db.createProject('视图清理隔离临时项目')
     const victimScope=runtime.currentWorkspaceScope(victim.id,'editor')
     const value={version:1,kind:'editor',objectId:'view-only-object',revision:'sha-fixture',length:100,
@@ -55,11 +66,10 @@ try{
     const oldGeneration=workspaceViews.generation(),original=core.ops
     core.setStoreOps({...original})
     const clearedAfterBackend=workspaceViews.stats().objects===0
-    await runtime.resolveWorkspaceIdentity()
-    const newScope=runtime.currentWorkspaceScope(keepId,'editor')
+    const newScope=await waitScope(keepId,'editor',scope.space)
     const staleRejected=!workspaceViews.put(scope,value,oldGeneration)
-    core.setStoreOps(original);await runtime.resolveWorkspaceIdentity()
-    const currentScope=runtime.currentWorkspaceScope(keepId,'editor')
+    core.setStoreOps(original)
+    const currentScope=await waitScope(keepId,'editor',newScope.space)
     const contentUntouched=before===JSON.stringify(await db.getAllChapters())
     workspaceViews.put(currentScope,value)
     const {importGuestData}=await import('/src/lib/db/guestData.ts')
@@ -70,8 +80,7 @@ try{
     const imported=await importGuestData(JSON.stringify({app:'youth-fantasy-engine',kind:'portable-data',fileVersion:2,
       stores:{projects:[project],chapters:[{id:'replacement-test-chapter',projectId:keepId,volumeId:'replacement-volume',title:'隔离替换章',content:'替换只发生在本次隔离上下文'}]}}))
     const replacementCleared=imported.ok&&workspaceViews.stats().objects===0&&!workspaceViews.put(currentScope,value,generation)
-    await runtime.resolveWorkspaceIdentity()
-    const afterScope=runtime.currentWorkspaceScope(keepId,'editor')
+    const afterScope=await waitScope(keepId,'editor')
     workspaceViews.put(afterScope,value)
     window.dispatchEvent(new PageTransitionEvent('pagehide'))
     const lifecycleCleared=workspaceViews.stats().objects===0

@@ -1,11 +1,12 @@
-// ============ 搜索替换：范围（本章 / 全书）与口径（3.6.1）============
+// ============ 搜索替换：范围（本章 / 全书）与口径（3.6.1；3.6.2 默认仅搜索）============
 //
-// 需求：原「全书搜索替换」改为通用「搜索替换」，进来先选范围 —— 本章只改当前章，全书改全书。
+// 需求：原「全书搜索替换」改为通用搜索，进来先选范围 —— 本章只搜当前章，全书搜全书。
+// 3.6.2 起默认「仅搜索」（只定位、不改正文），替换必须显式切到「搜索并替换」模式。
 // 这里钉住四件事（都是"静默改错文件/改少东西"的风险点）：
 //   ① 范围由**交给函数的语料**决定：本章传一章、全书传全部（界面不各算一遍）；
 //   ② 「只命中章名」不计入可替换数量 —— 否则会提示替换 3 处、实际只改 2 处；
 //   ③ 替换用 split/join，关键词含正则元字符（括号、星号）也不能炸；
-//   ④ 界面默认「本章」、换范围会清空上一次结果（拿全书结果点替换＝绕过范围选择）。
+//   ④ 界面默认「本章」+「仅搜索」、换范围会清空上一次结果（拿全书结果点替换＝绕过范围选择）。
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Chapter } from '../src/lib/types'
@@ -85,8 +86,14 @@ function main() {
     ok('换范围会清空上一次结果', /useEffect\(\(\) => \{ setSearched\(false\); setHits\(\[\]\) \}, \[scope\]\)/.test(modals))
     ok('两种范围的确认文案都在', modals.includes("'本章替换'") && modals.includes("'全书替换'"))
     ok('只命中章名时明说不可替换', modals.includes('只命中章名'))
-    ok('菜单入口改名为「搜索替换」', editor.includes('搜索替换</Button>') && !editor.includes('全书搜索替换</Button>'))
+    ok('菜单入口保留「搜索替换」', editor.includes('<Search size={14} /> 搜索替换</Button>'))
     ok('把当前章传给弹窗（否则本章范围不可用）', /<GlobalSearch[\s\S]{0,120}activeChapter=\{active\}/.test(editor))
+    // 3.6.2：默认只搜不改；替换输入与按钮只在替换模式渲染
+    ok('默认是「仅搜索」模式', /useState<Mode>\('find'\)/.test(modals))
+    ok('模式切换有「仅搜索 / 搜索并替换」两个入口', modals.includes('仅搜索') && modals.includes('搜索并替换') && modals.includes("setMode('replace')"))
+    ok('替换输入只在替换模式渲染', /\{isReplace && \([\s\S]{0,400}替换为…/.test(modals))
+    ok('替换按钮只在替换模式渲染', /\{isReplace && \([\s\S]{0,800}全部替换/.test(modals))
+    ok('弹窗标题固定为「搜索替换」', modals.includes('title="搜索替换"'))
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} searchReplaceScope ${pass}/${pass + fail}`)

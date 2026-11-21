@@ -1,10 +1,10 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import '@/components/editor/editorMobile.css'
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { foldVh, foldZoomLength } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 
-import type { ChapterStatus } from '@/lib/types'
+import type { Chapter, Volume, ChapterStatus } from '@/lib/types'
 import { countWords } from '@/lib/editor/textStats'
 import { useWordCountWithPunct, wordCountModeOf } from '@/lib/editor/wordCountMode'
 import SettingSearch from '@/components/settings/SettingSearch'
@@ -196,6 +196,31 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   // 段首缩进参考线的间距：按当前单位换算（全角 ≈ 1em / 半角 ≈ 0.5em / Tab ≈ 2em）
   const indentUnitEm = INDENT_UNITS.find(u => u.id === indentUnit)?.emWidth ?? 2
 
+  /**
+   * 章节树是长书里最贵的一棵子树（800 行）：原先它跟着正文 state（每次击键）一起重渲染，
+   * 实测一次切章 6 次、敲 10 个字 24 次（dev 含 StrictMode 双调）。
+   * 这里把**动作**经 ref 转发成引用稳定的函数，视图本身再用 memo 按数据浅比较 ——
+   * 动作调用时永远走最新实现，不会留下旧闭包。
+   * ⚠️ 必须放在 `if (!loaded) return` 之前：条件返回后不能再调 hook。
+   */
+  const treeActionRef = useRef({ openChapter, resetDrag, handleDrop, moveByKeyboard, removeVolume, removeChapter, toggleExcludeNumbering })
+  treeActionRef.current = { openChapter, resetDrag, handleDrop, moveByKeyboard, removeVolume, removeChapter, toggleExcludeNumbering }
+  const treeOpenChapter = useCallback((id: string) => { treeActionRef.current.openChapter(id); setChapterDrawer(false) }, [])
+  const treeResetDrag = useCallback(() => treeActionRef.current.resetDrag(), [])
+  const treeHandleDrop = useCallback(() => treeActionRef.current.handleDrop(), [])
+  const treeMoveByKeyboard = useCallback(
+    (kind: 'vol' | 'ch', id: string, dir: -1 | 1) => treeActionRef.current.moveByKeyboard(kind, id, dir),
+    [],
+  )
+  const treeRemoveVolume = useCallback((v: Volume) => treeActionRef.current.removeVolume(v), [])
+  const treeRemoveChapter = useCallback((c: Chapter) => treeActionRef.current.removeChapter(c), [])
+  const treeToggleExcludeNumbering = useCallback((c: Chapter) => treeActionRef.current.toggleExcludeNumbering(c), [])
+  /** 紧凑模式宽度固定 280；对象引用必须稳定，否则章节树的 memo 每次都失效 */
+  const treePane = useMemo(
+    () => (chapterCompact ? { ...chapterPane, size: 280 } : chapterPane),
+    [chapterCompact, chapterPane],
+  )
+
   if (!loaded) return <LoadingState />
 
   /**
@@ -316,9 +341,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     }
   }
 
+  /** 动作转发 / pane 引用稳定的说明见上方 hook 区（treeActionRef / treePane） */
   const chapterTree = (
         <NovelEditorChapterTree
-          pane={chapterCompact ? { ...chapterPane, size: 280 } : chapterPane}
+          pane={treePane}
           projectName={projectName}
           volumes={volumes}
           chapters={chapters}
@@ -329,18 +355,18 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           dragKind={dragKind}
           setDragKind={setDragKind}
           setDragId={setDragId}
-          resetDrag={resetDrag}
-          handleDrop={handleDrop}
-          moveByKeyboard={moveByKeyboard}
+          resetDrag={treeResetDrag}
+          handleDrop={treeHandleDrop}
+          moveByKeyboard={treeMoveByKeyboard}
           setNamePrompt={setNamePrompt}
           nextChapterNo={nextChapterNo}
           latestTarget={latestTarget}
           activeId={activeId}
-          openChapter={id => { openChapter(id); setChapterDrawer(false) }}
+          openChapter={treeOpenChapter}
           chapterSeqs={chapterSeqs}
-          removeVolume={removeVolume}
-          removeChapter={removeChapter}
-          toggleExcludeNumbering={toggleExcludeNumbering}
+          removeVolume={treeRemoveVolume}
+          removeChapter={treeRemoveChapter}
+          toggleExcludeNumbering={treeToggleExcludeNumbering}
           runExport={runExport}
           exportOpen={exportOpen}
           setExportOpen={setExportOpen}
@@ -619,7 +645,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {/* 工具栏总说明：逐个按钮讲清用途 */}
               <HelpPopover title="工具栏按钮速查" width="27rem" size={14} className="shrink-0">
-                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、AI 伴写、本章资料、设定检索与专注（「本页指引」在左下角侧栏）。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· AI 伴写（工具栏独立按钮，在颉文姬右侧，默认关闭）：点开后调整建议长度 / 去 AI 味 / 参考写作规范 / 文风补充，最下方是总开关。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索：搜索替换（先选本章或全书）；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
+                {'标题行保留章节导航、标题、状态与保存。\n工具行保留撤销/恢复、颉文姬、AI 伴写、本章资料、设定检索与专注（「本页指引」在左下角侧栏）。其余操作在「工具」中按整理与检查、版本与检索、写作视图分组；都可点击或用键盘进入。\n\n【导航】← →：上一章 / 下一章（切章会先自动保存当前草稿）。\n【标题】中间输入框：改本章标题；右侧下拉：章节状态（构思/细纲/草稿/修改/完稿/已发布），会同步到章节总表与写作面板统计。\n\n【文本工具】\n· ↶ / ↷：撤销 / 恢复 —— 与 Ctrl+Z / Ctrl+Y 同一个原生撤销栈（AI 插入、一键排版、缩进都可撤销）；点击会把焦点交回正文；\n· 盾牌：敏感词检测（本章），命中可直接替换；\n· 对齐图标：排版 —— 可设缩进单位，一键排版默认「保留你已有的缩进」、只清理多余空行与行尾空白（另有「统一为段首缩进」用于整章版面严格对齐）；\n· 拼写图标：校对（本章），本地错别字直接查；AI 校对分「查错别字与语病」与「查逻辑与设定矛盾」两块，需接入模型。\n\n【审计工具】（仅完整项目）\n· 分支图标：伏笔闭环看板（全局），挖坑/填坑总账（埋设中/进行中/已回收/孤儿，含跨度与状态未同步预警）；\n· 链条图标：连续性校验（全局），查时间线倒流、人物状态与设定冲突；\n· 羽毛图标：文风体检（本章），坏习惯词 / 省略号误用 / 视角规则（详见《写作规范》）。\n\n【AI】\n· 魔杖：颉文姬·AI 编辑（校对·文字层/校对·逻辑层/综合诊断/选区改稿/审读/简报/设定补登，需接入模型）；\n\n\n【导出】（2.8.0 起不在本工具栏）\n· 全书导出的唯一入口是左侧「章节」栏右上角的「导出」图标：本章 / 全本 TXT / Markdown / EPUB / DOCX / 平台粘贴版 / 按卷 / 按章节逐一导出；其中 DOCX 在弹窗里可选排版预设（字号 / 对齐 / 首行缩进 / 行距 / 字体，或「跟随默认」保持原样），也能一键导出投稿稿件（书名大号居中 + 简介 + 选定章节，简介默认取〈作品信息〉的「正式简介」）。\n\n【文件】\n· 保存：手动保存（Ctrl+S），有未保存的改动时变琥珀色并带呼吸圆点；\n· 时钟：时光机，按时间点回滚本章历史版本；\n· 垃圾桶：回收站，恢复误删的卷 / 章；\n· ⌘ 图标（Ctrl/Cmd+K）：全文检索，搜章节正文 / 角色 / 设定；\n· 人像：本章引用侧栏，列出本章提到的角色 / 设定可直达；\n· 荧光笔：引用名内联高亮开关（默认关闭）；\n· AI 伴写（工具栏独立按钮，在颉文姬右侧，默认关闭）：点开后调整建议长度 / 去 AI 味 / 参考写作规范 / 文风补充，最下方是总开关。开启后停笔会在光标处透出一句浅灰续写建议：Ctrl+Enter 采纳才落进正文，继续打字 / Esc / 移动光标即忽略，正文不会被改；对建议不满意按 Alt+/ 换一句（避开刚才那句重新生成）；Alt+\\ 可手动触发（需接入模型）；\n· 书本：前往本章细纲；\n· 搜索替换：点开后先选模式 —— 「仅搜索」查本章或全书（正文与章名），点结果跳转，不改动任何正文；要批量改写时再切到「搜索并替换」；\n· 锁：小黑屋强制码字（达标前不许退出）。\n\n【视图】\n· 面板图标：显示 / 隐藏左侧设定检索栏；\n· 全屏图标：专注模式，隐藏目录与检索栏只留正文。'}
               </HelpPopover>
             </div>
             </div>

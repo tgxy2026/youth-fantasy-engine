@@ -127,9 +127,16 @@ try {
     const runtime = await import('/src/lib/settings/workspaceRuntime.ts')
     const { workspaceViews } = await import('/src/lib/settings/workspaceViewState.ts')
     const { TABS } = await import('/src/lib/schema.ts')
-    await runtime.resolveWorkspaceIdentity()
-    const target = TABS.find(row => row.group === '角色管理')
-    const scope = runtime.currentWorkspaceScope(db.getCurrentProjectId(), `character:${target.id}`)
+    // resolveWorkspaceIdentity 已删除（2026-11-18 死导出清理）；等 App 根节点的生命周期解析完成。
+    const projectId = db.getCurrentProjectId()
+    const pageId = `character:${TABS.find(row => row.group === '角色管理').id}`
+    const deadline = Date.now() + 5000
+    let scope = runtime.currentWorkspaceScope(projectId, pageId)
+    while (!scope && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      scope = runtime.currentWorkspaceScope(projectId, pageId)
+    }
+    if (!scope) throw new Error('工作区身份未就绪，无法读取视图记录')
     const record = workspaceViews.get(scope, id)
     return { json: JSON.stringify(record), record }
   }, { id: 'detail-probe-a' })

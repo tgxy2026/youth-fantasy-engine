@@ -6,7 +6,7 @@ import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
 import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { foldVh } from '@/lib/settings/theme'
 import { flattenChapters } from '@/lib/outline/chapterSeq'
 import { getCurrentProjectId } from '@/lib/db/core'
@@ -74,7 +74,14 @@ interface Props {
   setImportOpen: Dispatch<SetStateAction<boolean>>
 }
 
-export default function NovelEditorChapterTree({
+/**
+ * 章节树 800 行，重渲染成本高：
+ *   · 父组件每次击键都会重渲染（正文 state 在 NovelEditor）；
+ *   · 切章后 effect 还会再同步一次草稿 state。
+ * 用 memo 按数据做浅比较：动作 props 在 NovelEditor 里已转发成引用稳定的函数，
+ * 其余数据 props 只在真正变化时才换引用。切章只渲染一次，打字时整棵树不参与重渲染。
+ */
+function NovelEditorChapterTree({
   pane, projectName, volumes, chapters, expanded, setExpanded,
   overKey, setOverKey, dragKind, setDragKind, setDragId, resetDrag, handleDrop, moveByKeyboard,
   setNamePrompt, nextChapterNo, latestTarget, activeId, openChapter, chapterSeqs,
@@ -96,14 +103,15 @@ export default function NovelEditorChapterTree({
     error?: string
   }>({ map: new Map(), writtenCount: new Map() })
 
-  // 3.6.0 · E：写回执的状态会随保存变化 —— 章节条数变化或重新进入页面时刷一次
+  // 3.6.0 · E：写回执只在**保存后**可能变化，与「切到哪一章」无关。
+  // 原先依赖 activeId，每次切章都重读 + setWriteState → 白白再渲染一遍 800 行。
   useEffect(() => {
     let cancelled = false
     void chapterWriteIssues(getCurrentProjectId()).then(r => {
       if (!cancelled) setWriteState(r)
     })
     return () => { cancelled = true }
-  }, [chapters.length, activeId])
+  }, [chapters])
 
   // 2.6.1 配套：打开项目恢复到上次章节（可能在很深的卷里）时，把高亮行滚进可视区，
   // 否则长列表里落点根本看不见。block:'nearest' 保证用户手动点选时（本就在可视区内）零滚动。
@@ -552,4 +560,6 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
       </div>
   )
 }
+
+export default memo(NovelEditorChapterTree)
 
