@@ -53,6 +53,13 @@ const num = (name, def) => {
 
 const CHAPTERS = num('--chapters', 800)
 const RUNS = num('--runs', 3)
+/** 自定义切换目标（下标，逗号分隔）。用于对照实验，例如 --marks 0,400 排除末章 */
+const MARKS_ARG = (() => {
+  const i = process.argv.indexOf('--marks')
+  if (i < 0) return null
+  const list = String(process.argv[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((x) => Number.isInteger(x) && x >= 0)
+  return list.length ? list : null
+})()
 /** 每章约 1500 字 → 800 章约 120 万字 */
 const CHARS_PER_CHAPTER = num('--chars', 1500)
 const VOLUMES = Math.max(1, Math.round(CHAPTERS / 80))
@@ -225,11 +232,19 @@ try {
       result.errors.push('切章：展开后仍没有 [data-chapter-id]｜侧栏：' + dump.replace(/\s+/g, ' '))
     }
 
-    const marks = total > 1 ? [0, Math.floor(total / 2), total - 1] : [0]
+    const marks = MARKS_ARG ?? (total > 1 ? [0, Math.floor(total / 2), total - 1] : [0])
     const samples = []
+    /** 逐样本明细：ms + 该次期间的长任务个数 */
+    const perSample = []
     for (let r = 0; r < RUNS; r++) {
       for (const idx of marks) {
         if (idx >= total) continue
+        // 切章前后的长任务增量：用来判断「尖峰是渲染/GC」还是「在等什么」
+        const heapBefore = await page.evaluate(() => (performance).memory ? (performance).memory.usedJSHeapSize : 0).catch(() => 0)
+        const ltBefore = await page.evaluate(() => {
+          const l = window.__perfLongTasks ?? []
+          return { n: l.length, sum: l.reduce((a, b) => a + b, 0) }
+        }).catch(() => ({ n: 0, sum: 0 }))
         const t0 = Date.now()
         await rows.nth(idx).click({ timeout: 15_000 }).catch(() => {})
         // 等到这一行真的变成当前章（active 态），才算切过去了
@@ -238,10 +253,43 @@ try {
           const el = all[i]
           return !!el && /bg-amber\/15/.test(el.className)
         }, idx, { timeout: 30_000 }).catch(() => {})
-        samples.push(Date.now() - t0)
+        const ms = Date.now() - t0
+        const ltAfter = await page.evaluate(() => {
+          const l = window.__perfLongTasks ?? []
+          return { n: l.length, sum: l.reduce((a, b) => a + b, 0) }
+        }).catch(() => ltBefore)
+        const heapAfter = await page.evaluate(() => (performance).memory ? (performance).memory.usedJSHeapSize : 0).catch(() => 0)
+        samples.push(ms)
+        /**
+         * 🔴 归因用：`spike` 判定取「明显高于本轮中位数」，再看它期间有没有长任务。
+         *    有长任务 ⇒ 主线程被占（渲染 / GC）；没有 ⇒ 在等 IO 或串行队列。
+         */
+        perSample.push({
+          idx, ms,
+          longTasks: Math.max(0, ltAfter.n - ltBefore.n),
+          /** 该次期间长任务总时长：用来区分「任务变慢」与「多干了一件事」 */
+          longTaskMs: Math.max(0, ltAfter.sum - ltBefore.sum),
+          heapBeforeMB: Math.round(heapBefore / 1048576),
+          heapAfterMB: Math.round(heapAfter / 1048576),
+          /** 堆明显回落 = 期间发生了一次回收 */
+          heapDropped: heapBefore > 0 && heapAfter > 0 && heapAfter < heapBefore * 0.85,
+        })
       }
     }
-    result.steps.switchChapter = { samples, p50: p50(samples), p95: p95(samples), rounds: RUNS }
+    // 尖峰归因：取明显高于中位数的样本，看它们期间有没有长任务
+    const med = samples.length ? [...samples].sort((a, b) => a - b)[Math.floor((samples.length - 1) / 2)] : 0
+    const spikes = perSample.filter((x) => x.ms > med * 1.2)
+    result.steps.switchChapter = {
+      samples, p50: p50(samples), p95: p95(samples), rounds: RUNS,
+      median: med,
+      perSample,
+      spikes: {
+        count: spikes.length,
+        withLongTask: spikes.filter((x) => x.longTasks > 0).length,
+        withHeapDrop: spikes.filter((x) => x.heapDropped).length,
+        samples: spikes,
+      },
+    }
     console.log(`切章：P50 ${p50(samples)}ms / P95 ${p95(samples)}ms（${samples.length} 次，共 ${total} 章）`)
   }
 
