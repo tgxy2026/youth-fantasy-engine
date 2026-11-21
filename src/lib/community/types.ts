@@ -29,6 +29,17 @@ export interface CommunityPostSummary {
   createdAt: number
   updatedAt: number
   counts: { up: number; down: number; comments: number }
+  /** 浏览量（去重后）。老帖没有这个字段，服务端兜底为 0 */
+  views: number
+  /** 所属合集；未归集时不出现 */
+  collection?: {
+    id: string
+    title: string
+    /** 在合集里的序号（1 起）；有篇目不可见时会跳号 */
+    index: number
+    /** 合集内当前可见的篇数 */
+    total: number
+  }
   displayName: string
   authorLabel?: string
   isExample?: boolean
@@ -38,6 +49,36 @@ export interface CommunityPostSummary {
 
 export interface CommunityPostDetail extends Omit<CommunityPostSummary, 'excerpt'> {
   body: string
+  /** 合集内上下篇；只在详情接口返回 */
+  collectionNav?: { prevId: string | null; nextId: string | null }
+}
+
+/** 合集（我的合集列表项） */
+export interface MyCollection {
+  id: string
+  title: string
+  intro: string
+  orderMode: 'chronological' | 'manual'
+  createdAt: number
+  updatedAt: number
+  postCount: number
+  /** 已挂进合集但尚不可见的（草稿 / 待审）—— 让作者知道"挂上了但读者看不到" */
+  draftCount: number
+  totalViews: number
+}
+
+/** 合集页（公开） */
+export interface CommunityCollectionPage {
+  id: string
+  title: string
+  intro: string
+  orderMode: 'chronological' | 'manual'
+  updatedAt: number
+  postCount: number
+  /** 各篇之和。🔴 是「篇次」不是「人数」，文案不能写成读者数 */
+  totalViews: number
+  isMine: boolean
+  items: CommunityPostSummary[]
 }
 
 export interface CommunityComment {
@@ -57,6 +98,8 @@ export interface MyPost {
   createdAt: number
   updatedAt: number
   title: string
+  /** 所在合集 id（空串 = 未归集） */
+  collectionId?: string
   /** 最新版本正文（仅作者本人可见，用于编辑；公开接口不返回） */
   body: string
   tags: string[]

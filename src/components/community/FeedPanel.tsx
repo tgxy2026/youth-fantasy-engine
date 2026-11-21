@@ -12,10 +12,12 @@
 //   · 提交结果分「已确认 / 确定失败 / 未确认」；未确认时同一意图复用令牌重试，避免重复评论。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, LibraryBig, MessageSquare, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import CollectionPanel from '@/components/community/CollectionPanel'
 import { COMMUNITY_LIMITS, COMMUNITY_TAGS, charCount } from '@/lib/community/limits'
+import { formatViews as fmtViews } from '@/lib/community/format'
 import {
   addComment, getPost, listComments, listPosts, reportContent, votePost,
   CommunityError,
@@ -27,6 +29,7 @@ import ReadingText from '@/components/community/ReadingText'
 
 const READING_SIZE_KEY = 'yfe:community:reading-size'
 const READING_SIZES = [14, 16, 18, 20]
+
 const COMMENT_PAGE_SIZE = 20
 
 function initialReadingSize() {
@@ -57,6 +60,8 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [readingSize, setReadingSize] = useState(initialReadingSize)
+  /** 打开中的合集（null = 关闭）。合集做成浮层，不改广场的页签结构 */
+  const [collectionOpenId, setCollectionOpenId] = useState<string | null>(null)
 
   function changeReadingSize(size: number) {
     setReadingSize(size)
@@ -278,6 +283,19 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
             <article className="w-full min-w-0">
               <h2 className="text-22 font-semibold leading-snug tracking-tight text-ink-100 sm:text-24">{detail.title}</h2>
               {detail.isExample && <div className="mt-2"><StatusPill>示例故事</StatusPill></div>}
+              {/**
+                * 「收录于」这一行是套装里最值钱的一块（参考知乎专栏）：
+                * 读者从广场点进来时并不知道自己看的是一部长篇的第 3 篇，这行把上下文补上。
+                */}
+              {detail.collection && (
+                <button type="button"
+                  onClick={() => setCollectionOpenId(detail.collection?.id ?? null)}
+                  className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber/30 bg-amber/10 px-2.5 py-1 text-11 text-amber hover:bg-amber/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/40">
+                  <LibraryBig size={12} />
+                  <span className="truncate">收录于《{detail.collection.title}》</span>
+                  <span className="shrink-0 text-amber/80">第 {detail.collection.index} / {detail.collection.total} 篇</span>
+                </button>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-12 text-ink-300">
                 <span className="text-ink-300">{detail.displayName}</span>
                 <span>·</span><span>{formatTime(detail.createdAt)}</span>
@@ -292,6 +310,27 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
               </div>
               <div className="mt-4"><ReadingText body={detail.body} fontSize={readingSize} /></div>
 
+              {/**
+                * 上一篇 / 下一篇（参考 Medium Series）。
+                * 🔴 只在**同合集且可见**的范围内跳 —— 到头时不显示该侧，而不是给一个禁用按钮占位。
+                */}
+              {detail.collectionNav && (detail.collectionNav.prevId || detail.collectionNav.nextId) && (
+                <nav className="mt-6 flex flex-col gap-2 border-t border-ink-700/70 pt-4 sm:flex-row" aria-label="合集内翻页">
+                  {detail.collectionNav.prevId ? (
+                    <button type="button" onClick={() => void openPost(detail.collectionNav!.prevId!)}
+                      className="flex flex-1 items-center gap-2 rounded-xl border border-ink-700 px-3 py-2 text-left text-12 text-ink-300 hover:border-amber/40 hover:text-amber">
+                      <ChevronLeft size={14} className="shrink-0" />上一篇
+                    </button>
+                  ) : <span className="hidden flex-1 sm:block" />}
+                  {detail.collectionNav.nextId ? (
+                    <button type="button" onClick={() => void openPost(detail.collectionNav!.nextId!)}
+                      className="flex flex-1 items-center justify-end gap-2 rounded-xl border border-ink-700 px-3 py-2 text-right text-12 text-ink-300 hover:border-amber/40 hover:text-amber">
+                      下一篇<ChevronRight size={14} className="shrink-0" />
+                    </button>
+                  ) : null}
+                </nav>
+              )}
+
               <div className="mt-7 flex flex-wrap items-center gap-2 border-t border-ink-700/70 pt-4">
                 <Button size="sm" variant="secondary" disabled={busy} selected={detail.myVote === 1} onClick={() => void vote(1)}
                   aria-pressed={detail.myVote === 1} aria-label={`点赞，当前 ${detail.counts.up}`}>
@@ -302,6 +341,9 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                   <ThumbsDown size={14} />{detail.counts.down}
                 </Button>
                 <span className="inline-flex items-center gap-1 text-12 text-ink-400"><MessageSquare size={13} />{detail.counts.comments}</span>
+                <span className="inline-flex items-center gap-1 text-12 text-ink-400" title="浏览量（同一人一天只计一次）">
+                  <Eye size={13} />{fmtViews(detail.views)}
+                </span>
                 <Button size="sm" variant="secondary" className="ml-auto" onClick={() => (canWrite ? setReportOpen((v) => !v) : onNeedLogin())}>举报</Button>
               </div>
 
@@ -409,6 +451,14 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
 
   return (
     <div className="space-y-4">
+      {/* 合集浮层：从「收录于」点开。做成浮层而不是新页签，是为了不改广场的页签结构 */}
+      {collectionOpenId && (
+        <CollectionPanel
+          collectionId={collectionOpenId}
+          onClose={() => setCollectionOpenId(null)}
+          onOpenPost={(id) => { setCollectionOpenId(null); void openPost(id) }}
+        />
+      )}
       {!shellOwnsStatus && (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="toggle" selected={!tag} onClick={() => { setTag(''); tagRef.current = ''; void load({ tag: '' }) }}>全部</Button>
@@ -447,6 +497,12 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-15 font-semibold text-ink-100 group-hover:text-amber sm:text-16">{p.title}</h3>
                 {p.isExample && <StatusPill>示例故事</StatusPill>}
+                {p.collection && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber/25 px-2 py-0.5 text-10 text-amber"
+                    title={`收录于《${p.collection.title}》第 ${p.collection.index} / ${p.collection.total} 篇`}>
+                    <LibraryBig size={10} />合集 · 共 {p.collection.total} 篇
+                  </span>
+                )}
                 {p.tags.map((t) => <StatusPill key={t}>{t}</StatusPill>)}
               </div>
               <p className="mt-3 line-clamp-3 text-14 leading-7 text-ink-300">{p.excerpt}</p>
@@ -456,6 +512,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                 <span className="inline-flex items-center gap-1"><ThumbsUp size={11} />{p.counts.up}</span>
                 <span className="inline-flex items-center gap-1"><ThumbsDown size={11} />{p.counts.down}</span>
                 <span className="inline-flex items-center gap-1"><MessageSquare size={11} />{p.counts.comments}</span>
+                <span className="inline-flex items-center gap-1" title="浏览量（同一人一天只计一次）"><Eye size={11} />{fmtViews(p.views)}</span>
               </p>
             </button>
           </li>

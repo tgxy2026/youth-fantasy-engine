@@ -13,7 +13,7 @@ import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import { COMMUNITY_LIMITS, COMMUNITY_TAGS, charCount, isBlank } from '@/lib/community/limits'
-import { createPost, updatePost } from '@/lib/community/api'
+import { createPost, listMyCollections, updatePost } from '@/lib/community/api'
 import { clearDraft, loadDraft, saveDraft } from '@/lib/community/draft'
 import { decideAfterSubmit } from '@/lib/community/publishOutcome'
 import type { DisplayMode } from '@/lib/community/types'
@@ -43,6 +43,9 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
   const [body, setBody] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [display, setDisplay] = useState<DisplayMode>(defaultDisplay)
+  /** 发布时可直接归入合集（3.6.2）。没建过合集时这一栏不出现，不干扰只想发一篇的人 */
+  const [collections, setCollections] = useState<Array<{ id: string; title: string }>>([])
+  const [targetCol, setTargetCol] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [restored, setRestored] = useState(false)
@@ -80,6 +83,16 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
     setRestored(!!draft && !!(draft.title || draft.body))
     setSavedAt(draft?.updatedAt || 0)
   }, [accountKey, editTarget])
+
+  // 拉一次「我的合集」：只用于发布时可选归集。失败静默 —— 合集拉不到不该挡住发稿
+  useEffect(() => {
+    if (editTarget) return
+    let cancelled = false
+    void listMyCollections()
+      .then((r) => { if (!cancelled) setCollections(r.items.map((c) => ({ id: c.id, title: c.title }))) })
+      .catch(() => { /* 静默：没有合集 / 网络抖动都不影响正常发稿 */ })
+    return () => { cancelled = true }
+  }, [editTarget, accountKey])
 
   // 输入停顿 600ms 落本地草稿（编辑态不覆盖「新投稿」草稿）
   useEffect(() => {
@@ -124,6 +137,8 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
       const r = await createPost({
         title: snapshot.title, body: snapshot.body, tags: snapshot.tags,
         display: snapshot.display, clientToken: tokenRef.current,
+        // 归集失败会被服务端**忽略**而不是报错（合集可能刚被删），所以这里不必单独处理
+        ...(targetCol ? { collectionId: targetCol } : {}),
       })
       // 🔴 回执可能晚于账号切换 / 新一次提交：此时不得改动界面与草稿
       if (seq !== seqRef.current) return
@@ -242,6 +257,20 @@ export default function PublishPanel({ accountKey, defaultDisplay, editTarget, o
               </select>
             </Field>
           </div>
+
+          {/**
+            * 发布到合集（3.6.2）。没有合集时整栏不出现 —— 只想发一篇的人不该被多问一句。
+            * 编辑态也不显示：改稿不该顺手换集，换集在「我的投稿」里做（那里有明确的移出/加入）。
+            */}
+          {!editTarget && collections.length > 0 && (
+            <Field label="发布到合集（可选）" hint="归进合集后，读者能在合集里按第 1 篇起的顺序连着读。">
+              <select aria-label="发布到合集" value={targetCol} onChange={(e) => setTargetCol(e.target.value)}
+                className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-13 text-ink-100">
+                <option value="">不归入合集</option>
+                {collections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+            </Field>
+          )}
 
           <Notice kind="warn">
             发布前请确认：内容将公开、可能被他人复制或转载；你需要有权发布这些文字；请避免写入门牌、电话、真实姓名等个人信息。

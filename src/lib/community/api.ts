@@ -15,6 +15,7 @@ import type {
   AdminOverview, AdminPostItem, AdminQueueComment, AdminQueuePost, AdminQueueReport,
   CommunityComment, CommunityPostDetail, CommunityPostSummary, CommunityProfile,
   CommunitySquareState, MyComment, MyPost, RankBoard, RankPeriod,
+  CommunityCollectionPage, MyCollection,
 } from '@/lib/community/types'
 
 // 网页标签页的账号在启动时固定；同浏览器其他标签页更换 Cookie 后，
@@ -121,6 +122,8 @@ export async function fetchRank(period: RankPeriod, date?: string): Promise<Rank
 
 export function createPost(input: {
   title: string; body: string; tags: string[]; display: 'nickname' | 'anonymous'; draft?: boolean; clientToken: string
+  /** 发布时直接归入合集（3.6.2）；服务端校验归属，不合法会被忽略而不是拒绝发稿 */
+  collectionId?: string
 }): Promise<{ post: MyPost; duplicate?: boolean }> {
   return request('/posts', { method: 'POST', body: JSON.stringify(input) })
 }
@@ -264,4 +267,43 @@ export function adminSwitch(patch: { squareOpen?: boolean; postsOpen?: boolean; 
 
 export function adminAudit(limit = 50): Promise<{ items: Array<{ id: string; actorRole: string; action: string; targetType: string; targetId: string; versionId: string; note: string; at: number }> }> {
   return request(`/admin/audit${qsOf({ limit })}`)
+}
+
+// ---------------- 合集（3.6.2） ----------------
+//
+// 🔴 合集页的 `totalViews` 是**各篇之和**（篇次），不是去重后的人数。
+//    文案必须写成「合计浏览」，不能写「读者数」—— 同一人读 10 篇会算 10 次。
+
+export function fetchCollection(id: string): Promise<{ collection: CommunityCollectionPage }> {
+  return request(`/collections/${encodeURIComponent(id)}`)
+}
+
+export function listMyCollections(): Promise<{ items: MyCollection[] }> {
+  return request('/my/collections')
+}
+
+export function createCollection(input: { title: string; intro?: string; orderMode?: 'chronological' | 'manual' }): Promise<{
+  collection: { id: string; title: string; intro: string; orderMode: string }
+}> {
+  return request('/collections', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateCollection(id: string, patch: { title?: string; intro?: string; orderMode?: 'chronological' | 'manual' }): Promise<{ ok: true }> {
+  return request(`/collections/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export function deleteCollection(id: string): Promise<{ released: number }> {
+  return request(`/collections/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** 把投稿加入合集。历史稿件同样适用（不要求是新建的投稿） */
+export function addPostToCollection(collectionId: string, postId: string, order?: number): Promise<{ ok: true }> {
+  return request(`/collections/${encodeURIComponent(collectionId)}/posts`, {
+    method: 'POST',
+    body: JSON.stringify({ postId, order }),
+  })
+}
+
+export function removePostFromCollection(collectionId: string, postId: string): Promise<{ ok: true }> {
+  return request(`/collections/${encodeURIComponent(collectionId)}/posts/${encodeURIComponent(postId)}`, { method: 'DELETE' })
 }

@@ -8,10 +8,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/common/Button'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import {
+  addPostToCollection, createCollection, deleteCollection, listMyCollections, updateCollection,
+  removePostFromCollection,
   deleteComment, deletePost, myAppeals, myComments, myPosts, myReports,
   setPostDisplay, submitAppeal, submitPost, withdrawPost,
 } from '@/lib/community/api'
-import type { MyComment, MyPost } from '@/lib/community/types'
+import type { MyCollection, MyComment, MyPost } from '@/lib/community/types'
+import { formatViews } from '@/lib/community/format'
 import { COMMENT_STATUS_LABELS, POST_STATUS_LABELS, SCREENING_REASON_LABELS } from '@/lib/community/limits'
 import { Empty, Notice, StatusPill, errorText, formatTime } from '@/components/community/ui'
 import type { EditTarget } from '@/components/community/PublishPanel'
@@ -36,6 +39,11 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
   const [comments, setComments] = useState<MyComment[] | null>(null)
   const [reports, setReports] = useState<MyReportRow[] | null>(null)
   const [appeals, setAppeals] = useState<MyAppealRow[] | null>(null)
+  /** 我的合集（3.6.2） */
+  const [collections, setCollections] = useState<MyCollection[] | null>(null)
+  const [newColTitle, setNewColTitle] = useState('')
+  /** 正在改名的合集（inline 编辑：改个名字不该开弹窗） */
+  const [editingCol, setEditingCol] = useState<{ id: string; title: string } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
@@ -43,8 +51,11 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
   const load = useCallback(async () => {
     setError('')
     try {
-      const [p, c, r, a] = await Promise.all([myPosts(), myComments(), myReports(), myAppeals()])
+      const [p, c, r, a, cols] = await Promise.all([
+        myPosts(), myComments(), myReports(), myAppeals(), listMyCollections(),
+      ])
       setPosts(p.items); setComments(c.items); setReports(r.items); setAppeals(a.items)
+      setCollections(cols.items)
     } catch (e) { setError(errorText(e)) }
   }, [])
 
@@ -78,10 +89,132 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         : '已改为显示昵称；这会让不同内容之间更容易被关联。')
   }
 
+  /** 新建合集（3.6.2）。简介留空即可，后续可补 —— 先让人把「分组」这件事完成 */
+  async function createCol() {
+    const title = newColTitle.trim()
+    if (!title) { setError('合集名称不能为空'); return }
+    setBusy('new-col'); setError(''); setNotice('')
+    try {
+      await createCollection({ title })
+      setNewColTitle('')
+      setNotice('合集已创建。可以在每篇投稿下选择「所属合集」。')
+      await load()
+      onChanged()
+    } catch (e) { setError(errorText(e)) } finally { setBusy('') }
+  }
+
+  async function removeCol(c: MyCollection) {    const ok = await confirmDialog({
+      title: `删除合集《${c.title}》？`,
+      message: `删掉的只是合集本身。里面的 ${c.postCount} 篇投稿不会被删除，只会从合集移出，仍然留在广场上。`,
+      confirmText: '删除合集',
+      danger: true,
+    })
+    if (!ok) return
+    await act(`col-${c.id}`, () => deleteCollection(c.id), '合集已删除，篇目仍在广场上')
+  }
+
+  /** 保存合集改名。空名不发请求（服务端也会拒，但没必要多跑一趟） */
+  async function saveRename() {
+    const cur = editingCol
+    if (!cur) return
+    const title = cur.title.trim()
+    if (!title) { setError('合集名称不能为空'); return }
+    await act(`rename-${cur.id}`, () => updateCollection(cur.id, { title }), '合集名称已更新')
+    setEditingCol(null)
+  }
+
+  /**
+   * 改归属：移出 → 加入（顺序不能反，服务端不允许一篇同时在两个合集里）。
+   * 🔴 旧稿件同样适用 —— 这里不判「是不是新建的投稿」，也不要求它已有浏览量。
+   */
+  async function movePost(p: MyPost, targetId: string) {
+    if ((p.collectionId || '') === targetId) return
+    await act(`col-post-${p.id}`, async () => {
+      if (p.collectionId) await removePostFromCollection(p.collectionId, p.id)
+      if (targetId) await addPostToCollection(targetId, p.id)
+    }, targetId ? '已加入合集' : '已从合集移出')
+  }
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <Notice kind="ok">{notice}</Notice>}
+
+      {/**
+        * 我的合集（3.6.2）。
+        * 🔴 放在「我的投稿」之前：连载作者的第一动作是"建一个合集，然后往里放"，
+        *    而不是先看一堆散稿再找归集入口。
+        */}
+      <section aria-label="我的合集" className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-15 font-semibold text-ink-100">我的合集</h3>
+          <span className="text-11 text-ink-400">连载作品按顺序归到这里，读者能从第 1 篇连着读</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={newColTitle}
+            onChange={(e) => setNewColTitle(e.target.value)}
+            // 中文输入法按 Enter 是选词，不能当成提交（项目里所有 Enter/Escape 处理都要守这一条）
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+              e.preventDefault(); void createCol()
+            }}
+            placeholder="合集名称，例如：归墟（连载）"
+            maxLength={40}
+            aria-label="新合集名称"
+            className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-12 text-ink-100 placeholder:text-ink-500"
+          />
+          <Button size="sm" disabled={busy === 'new-col' || !newColTitle.trim()} onClick={() => void createCol()}>
+            {busy === 'new-col' ? '创建中…' : '新建合集'}
+          </Button>
+        </div>
+        {collections === null && <Notice>正在读取…</Notice>}
+        {collections?.length === 0 && (
+          <p className="text-12 text-ink-400">还没有合集。建一个之后，每篇投稿下面就能选「所属合集」了。</p>
+        )}
+        <ul className="space-y-2">
+          {(collections ?? []).map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-ink-700 bg-ink-900/40 px-3 py-2">
+              {editingCol?.id === c.id ? (
+                <>
+                  <input
+                    value={editingCol.title}
+                    autoFocus
+                    maxLength={40}
+                    aria-label="合集新名称"
+                    onChange={(e) => setEditingCol({ id: c.id, title: e.target.value })}
+                    onKeyDown={(e) => {
+                      // 输入法组合期的 Enter 是选词，不是提交
+                      if (e.nativeEvent.isComposing) return
+                      if (e.key === 'Enter') { e.preventDefault(); void saveRename() }
+                      if (e.key === 'Escape') { e.preventDefault(); setEditingCol(null) }
+                    }}
+                    className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-13 text-ink-100"
+                  />
+                  <Button size="xs" disabled={busy === `rename-${c.id}`} onClick={() => void saveRename()}>保存</Button>
+                  <Button size="xs" variant="secondary" onClick={() => setEditingCol(null)}>取消</Button>
+                </>
+              ) : (
+                <>
+                  <span className="text-13 font-medium text-ink-100">{c.title}</span>
+                  <span className="text-11 text-ink-400">{c.postCount} 篇</span>
+                  {c.draftCount > 0 && (
+                    <span className="text-11 text-amber" title="已挂进合集但还没公开（草稿或待审）">
+                      · 其中 {c.draftCount} 篇未公开
+                    </span>
+                  )}
+                  <span className="text-11 text-ink-400">合计浏览 {formatViews(c.totalViews)}</span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button size="xs" variant="secondary" onClick={() => setEditingCol({ id: c.id, title: c.title })}>改名</Button>
+                    <Button size="xs" variant="danger" disabled={busy === `col-${c.id}`}
+                      onClick={() => void removeCol(c)}>删除合集</Button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section aria-label="我的投稿" className="space-y-3">
         <div className="flex items-baseline justify-between gap-2">
@@ -106,6 +239,26 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                 </p>
               )}
               <p className="mt-2 text-11 text-ink-400">赞 {p.counts.up} · 踩 {p.counts.down} · 评论 {p.counts.comments}</p>
+              {/**
+                * 所属合集（3.6.2）。**旧稿件同样能改** —— 不判它是不是新建的，
+                * 也不要求它以前统计过浏览量；归集这件事对已经发过的稿子一样成立。
+                */}
+              {(collections?.length ?? 0) > 0 && (
+                <label className="mt-2 flex flex-wrap items-center gap-2 text-11 text-ink-400">
+                  所属合集
+                  <select
+                    value={p.collectionId || ''}
+                    disabled={busy === `col-post-${p.id}`}
+                    onChange={(e) => void movePost(p, e.target.value)}
+                    aria-label={`《${p.title || '未命名'}》所属合集`}
+                    className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-11 text-ink-200"
+                  >
+                    <option value="">不归入合集</option>
+                    {(collections ?? []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
+                  {busy === `col-post-${p.id}` && <span className="text-ink-500">保存中…</span>}
+                </label>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {p.status === 'draft' && (
                   <Button size="sm" disabled={busy === p.id} onClick={() => void act(p.id, () => submitPost(p.id), '已提交审核')}>提交审核</Button>
