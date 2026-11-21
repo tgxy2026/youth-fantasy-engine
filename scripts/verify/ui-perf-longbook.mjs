@@ -54,6 +54,8 @@ const num = (name, def) => {
 const CHAPTERS = num('--chapters', 800)
 const RUNS = num('--runs', 3)
 /** 自定义切换目标（下标，逗号分隔）。用于对照实验，例如 --marks 0,400 排除末章 */
+/** 图鉴大表要造多少行（0 = 不造，跳过图鉴测量） */
+const ATLAS_ROWS = num('--atlas', 0)
 const MARKS_ARG = (() => {
   const i = process.argv.indexOf('--marks')
   if (i < 0) return null
@@ -140,7 +142,7 @@ try {
   /** 造数据：在页面里直接调 db API（与 scripts/verify/perf-board-500.mjs 同一套路） */
   const seed = async () => {
     const t0 = Date.now()
-    const out = await page.evaluate(async ({ chapters, volumes, chars }) => {
+    const out = await page.evaluate(async ({ chapters, volumes, chars, atlasRows }) => {
       const db = await import('/src/lib/db.ts')
       // 用"新建项目"而不是示例项目：示例项目自带内容会干扰规模判断
       const name = `perf-longbook-${Date.now()}`
@@ -167,8 +169,26 @@ try {
           })
         }
       }
-      return { projectId: p.id, name, count: made, firstChapterTitle: '第1卷 第1章' }
-    }, { chapters: CHAPTERS, volumes: VOLUMES, chars: CHARS_PER_CHAPTER })
+      // 图鉴大表（可选）：用「地理风物」表造行。
+      // data 的键就是**中文列名**（见 lib/storage/tableIO.ts 的 cols.forEach(c => data[c.name] = '')），
+      // 不是内部 id —— 猜错了行会全部空白但表能渲染，很难看出来。
+      if (atlasRows > 0) {
+        for (let i = 0; i < atlasRows; i++) {
+          await db.saveTableRow({
+            id: crypto.randomUUID(), projectId: p.id, tabId: 'geography',
+            data: {
+              '编号': String(i + 1),
+              '名称': `烟雨渡${i}`,
+              '类别': i % 2 ? '城市' : '区域',
+              '地理位置': `云州·第${i}区`,
+              '备注': `第${i}条图鉴`,
+            },
+            order: i, createdAt: now, updatedAt: now,
+          })
+        }
+      }
+      return { projectId: p.id, name, count: made, firstChapterTitle: '第1卷 第1章', atlasRows }
+    }, { chapters: CHAPTERS, volumes: VOLUMES, chars: CHARS_PER_CHAPTER, atlasRows: ATLAS_ROWS })
     result.seeded = { ...out, ms: Date.now() - t0 }
     console.log(`已造 ${out.count} 章（${((Date.now() - t0) / 1000).toFixed(1)}s）`)
     return out
@@ -320,6 +340,142 @@ try {
         .catch(() => [])
       result.steps.save = { ms: Date.now() - t0, heuristic: true, sawSavedState: hit, inputChanged: afterLen !== beforeLen, statusLines }
       console.log(`保存：${result.steps.save.ms}ms（含自动保存防抖；见到「已保存」=${hit}）`)
+    }
+  }
+
+  // ---------- ③b 全文检索 ----------
+  //
+  // 🔴 分两段测，因为这是两件不同的事：
+  //   · **索引就绪**：打开面板到能搜（面板上会显示「建索引…」）—— 长书真正卡的是这一段；
+  //   · **查询延迟**：输入关键词到结果出现。
+  //   合成一个数会让人以为"检索很快"，而实际上用户先等的是索引。
+  {
+    const navWriting = page.getByText('正文编辑', { exact: true }).first()
+    if (await navWriting.count()) { await navWriting.click().catch(() => {}) }
+
+    // 「工具」菜单（HelpPopover 的触发器）→ 全文检索
+    let opened = false
+    // 🔴 HelpPopover 的 aria-label 取 triggerTitle（这里是「编辑工具」），不是可见的「工具」二字
+    const toolBtn = page.locator('[aria-label="编辑工具"]').first()
+    if (await toolBtn.count()) {
+      await toolBtn.click().catch(() => {})
+      const entry = page.getByRole('button', { name: /全文检索/ }).first()
+      if (await entry.count()) { await entry.click().catch(() => {}); opened = true }
+    }
+    if (!opened) {
+      result.errors.push('全文检索：找不到「工具 → 全文检索」入口')
+      console.log('全文检索：入口未找到，跳过')
+    } else {
+      const searchInput = page.locator('input[placeholder*="搜全书"]').first()
+      await searchInput.waitFor({ timeout: 30_000 }).catch(() => {})
+
+      /**
+       * 实测口径：**打开面板 → 输入关键词 → 结果出现**，这是作者真实的路径
+       * （打开就开始打字，不会先等一个索引完成的提示）。
+       *
+       * 另记一个标记：结果已经出来了，但面板上是否还挂着「建索引…」——
+       * 若两者同时成立，用户会以为还没好，那是 UI 误报，得单独记。
+       */
+      const tOpen = Date.now()
+      await searchInput.fill('渡口')
+      const gotHit = await page.waitForSelector('[data-idx]', { timeout: 180_000 }).then(() => true).catch(() => false)
+      const firstHitMs = Date.now() - tOpen
+
+      // 结果条数稳定下来才算查完（分批进来的）
+      let prev = -1, stable = 0
+      for (let i = 0; i < 60 && gotHit; i++) {
+        const n = await page.locator('[data-idx]').count()
+        if (n === prev) { if (++stable >= 3) break } else { stable = 0; prev = n }
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      const queryMs = Date.now() - tOpen
+      const stillIndexing = await page.getByText('建索引…').count().catch(() => 0)
+      result.steps.fullText = {
+        firstHitMs, settledMs: queryMs, hits: prev, keyword: '渡口',
+        showsIndexingLabelAfterResults: stillIndexing > 0,
+      }
+      console.log(`全文检索：首条结果 ${firstHitMs}ms，结果稳定 ${queryMs}ms（${prev} 条）` +
+        (stillIndexing > 0 ? '｜⚠️ 结果已出但仍显示「建索引…」' : ''))
+
+      /**
+       * 🔴 覆盖性验证：137ms 对 120 万字来说快得可疑，必须证明索引真的到了最后一章。
+       *    造数时标题是「第V卷 第I章」，最后一章唯一 - 搜到它就是全量覆盖的证据。
+       */
+      const lastTitle = `第${VOLUMES}卷 第${Math.ceil(CHAPTERS / VOLUMES)}章`
+      await searchInput.fill('')
+      await searchInput.fill(lastTitle)
+      await page.waitForSelector('[data-idx]', { timeout: 30_000 }).catch(() => {})
+      await new Promise((r) => setTimeout(r, 250))
+      const lastHits = await page.locator('[data-idx]').count()
+      // 🔴 只看条数不够：limit=60 会把结果截断，随便一个高频词都能凑满 60 条。
+      //    必须确认结果文本里**真的出现**那一章的标题。
+      const hitTexts = await page.locator('[data-idx]').allInnerTexts().catch(() => [])
+      const indexCoversTail = hitTexts.some((t) => t.includes(lastTitle))
+      result.steps.fullText.indexCoversTail = { keyword: lastTitle, hits: lastHits, found: indexCoversTail }
+      console.log(`全文检索 · 覆盖性：搜「${lastTitle}」→ ${lastHits} 条${indexCoversTail ? '（覆盖到末章 ✅）' : '（⚠️ 末章搜不到，索引可能不全）'}`)
+
+      // 关掉面板，别影响后面的步骤
+      await page.keyboard.press('Escape').catch(() => {})
+      await new Promise((r) => setTimeout(r, 300))
+    }
+  }
+
+  // ---------- ③c 图鉴大表 ----------
+  //
+  // 「大表卡不卡」的真实指标是**打开到表格可交互**，不是筛选那一下 ——
+  // 筛选是纯内存过滤（filteredRows），几千行通常是毫秒级；渲染才是瓶颈。
+  // 所以这里主测打开耗时，顺带记一次筛选后的行数收敛。
+  if (ATLAS_ROWS > 0) {
+    const t0 = Date.now()
+    const navAtlas = page.getByText('地理风物', { exact: true }).first()
+    if (!(await navAtlas.count())) {
+      // 分组的折叠状态不可预期：先试着展开「世界构建」
+      const grp = page.getByText('世界构建', { exact: true }).first()
+      if (await grp.count()) await grp.click().catch(() => {})
+    }
+    const nav2 = page.getByText('地理风物', { exact: true }).first()
+    if (!(await nav2.count())) {
+      result.errors.push('图鉴大表：侧栏找不到「地理风物」入口')
+      console.log('图鉴大表：入口未找到，跳过')
+    } else {
+      await nav2.click().catch(() => {})
+      const appeared = await page.waitForSelector('table tbody tr', { timeout: 120_000 }).then(() => true).catch(() => false)
+      const openMs = Date.now() - t0
+      const rowCount = await page.locator('table tbody tr').count().catch(() => 0)
+      result.steps.atlasTable = { rows: ATLAS_ROWS, openMs, renderedRows: rowCount, appeared }
+      console.log(`图鉴大表：打开 ${openMs}ms（渲染 ${rowCount} 行 / 造 ${ATLAS_ROWS} 行）`)
+
+      /**
+       * 筛选：列头输入框（placeholder="筛选"），每列一个。
+       * 🔴 必须限定在「名称」那一列表头里找 —— 页面上有十几个同样的输入框，
+       *    不限定就会填进「编号」列，然后得出一个假的"筛选很快"。
+       */
+      const filterInput = page.locator('th', { hasText: '名称' }).locator('input[placeholder="筛选"]').first()
+      if (await filterInput.count()) {
+        /**
+         * 🔴 判据不能是「行数变少」：表格是**虚拟滚动**，2000 行也只渲染可见的十几行，
+         *    筛选前后 tr 数量可能一样。第一版就是这么写的，等了 60 秒拿到 15→15。
+         *    改用「筛到一个唯一值后，表格里只剩很少的行」。
+         */
+        const tf = Date.now()
+        await filterInput.fill('烟雨渡1999')
+        const narrowed = await page.waitForFunction(
+          () => document.querySelectorAll('table tbody tr').length <= 3,
+          null, { timeout: 30_000 },
+        ).then(() => true).catch(() => false)
+        const filterMs = Date.now() - tf
+        const after = await page.locator('table tbody tr').count().catch(() => 0)
+        const bodyText = await page.locator('table').first().innerText().catch(() => '')
+        result.steps.atlasFilter = {
+          ms: filterMs, before: rowCount, after, narrowed,
+          /** 表格是否显示了总行数（用来确认 2000 行真的写进去了，而不是只造了十几行） */
+          mentionsTotal: bodyText.includes(String(ATLAS_ROWS)),
+        }
+        console.log(`图鉴大表 · 筛选：${filterMs}ms（${rowCount} → ${after} 行，收敛=${narrowed}）`)
+        await filterInput.fill('')
+      } else {
+        result.errors.push('图鉴大表：找不到「名称」列的筛选框')
+      }
     }
   }
 
