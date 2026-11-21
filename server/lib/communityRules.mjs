@@ -24,6 +24,15 @@ export const COMMUNITY_LIMITS = {
   postDailyMax: 5,
   commentDailyMax: 40,
   reportDailyMax: 20,
+  /**
+   * 合集（3.6.2）。
+   * 🔴 上限按「现有 posts 上限 5000」推算：20 个 × 200 篇 = 4000，不会把单账号的合集篇数
+   *    顶到全站容量；合集标题/简介比投稿短，因为它们是**列表里要读得完**的元信息。
+   */
+  collectionsPerUser: 20,
+  postsPerCollection: 200,
+  collectionTitleMax: 40,
+  collectionIntroMax: 200,
 }
 
 /** 预设标签（首版刻意保持很小，够筛选即可，不做自由标签池） */
@@ -107,6 +116,29 @@ export function validateCommentInput(input) {
     return { ok: false, code: 'COMMENT_TOO_LONG', error: `评论最多 ${COMMUNITY_LIMITS.commentMax} 个字符` }
   }
   return { ok: true, value: { body } }
+}
+
+/**
+ * 合集输入校验（3.6.2）。
+ *
+ * 🔴 合集标题与简介是**公开可见文本**，必须和投稿正文走同一套内容过滤 —— 否则
+ *    「把违规词写进合集名」就成了一条绕过审核的捷径。过滤本身在 api 层调 `screenContent`，
+ *    这里只负责长度与空值（与 `validatePostInput` 同分工）。
+ *
+ * @returns {{ok:true, value:{title:string, intro:string}} | {ok:false, code:string, error:string}}
+ */
+export function validateCollectionInput(input) {
+  const title = typeof input?.title === 'string' ? input.title.trim() : ''
+  const intro = typeof input?.intro === 'string' ? input.intro.trim() : ''
+
+  if (isBlank(title)) return { ok: false, code: 'TITLE_REQUIRED', error: '请填写合集名称' }
+  if (charCount(title) > COMMUNITY_LIMITS.collectionTitleMax) {
+    return { ok: false, code: 'TITLE_TOO_LONG', error: `合集名称最多 ${COMMUNITY_LIMITS.collectionTitleMax} 个字符` }
+  }
+  if (charCount(intro) > COMMUNITY_LIMITS.collectionIntroMax) {
+    return { ok: false, code: 'INTRO_TOO_LONG', error: `合集简介最多 ${COMMUNITY_LIMITS.collectionIntroMax} 个字符` }
+  }
+  return { ok: true, value: { title, intro } }
 }
 
 /**

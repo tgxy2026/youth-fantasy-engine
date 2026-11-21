@@ -26,11 +26,27 @@ export const COMMUNITY_CAPACITY = {
   maxPosts: 5000,
   maxComments: 50000,
   maxReports: 20000,
+  /** 合集上限（3.6.2）：与「每人 20 个」是两道闸，这道防的是全站被少数账号刷满 */
+  maxCollections: 400,
   /** 审计日志保留条数（环形，最新在前） */
   maxAudit: 5000,
   /** 单篇最多保留的历史版本数（超出丢最旧的草稿/被拒版本，已发布版本永不清） */
   maxVersions: 20,
 }
+
+/**
+ * 浏览量口径常量（3.6.2）。
+ * 🔴 这三个数字是**产品口径**，不是随手写的性能参数：
+ *    · `VIEW_WINDOW_MS` 24 小时：同一人一天内反复打开只算一次，跨天再读算新一次；
+ *    · `VIEW_FLUSH_MS` 30 秒：浏览量靠内存累积后合并落盘，不每次读写整库；
+ *    · `VIEW_FLUSH_MAX` 200 次脏计数：热门篇目不必等到 30 秒才落盘。
+ *    代价见 `flushViews()` 的注释：进程被强杀最多丢一个窗口的计数。
+ */
+const VIEW_WINDOW_MS = 24 * 3600 * 1000
+const VIEW_FLUSH_MS = 30 * 1000
+const VIEW_FLUSH_MAX = 200
+/** 去重记录上限（内存环形）；超了淘汰最旧的，重启即清 —— 丢的是"少算一次"而不是算错 */
+const VIEW_SEEN_MAX = 20000
 
 const FILES = {
   posts: 'posts.json',
@@ -41,6 +57,8 @@ const FILES = {
   rank: 'rank.json',
   audit: 'audit.json',
   state: 'state.json',
+  /** 合集（3.6.2）。缺失时按 `{version:1,items:{}}` 初始化，不影响老库启动检查 */
+  collections: 'collections.json',
 }
 
 const DEFAULT_STATE = {
@@ -135,6 +153,164 @@ export function createCommunityStore({
       if (p.uid === uid && p.clientToken && p.clientToken === token) return p
     }
     return null
+  }
+
+  // ---------------- 合集（3.6.2） ----------------
+  //
+  // 🔴 关系**只存一侧**：帖子记 `collectionId`，合集**不存** postIds。
+  //    理由：本存储是「整文件读改写」、没有事务；两处存同一关系必然有一次写失败导致不一致
+  //    （帖子说在 A、合集里却没有它）。单向存 + 反查排序，只有一个写点，坏不了。
+
+  function getCollection(id) {
+    return load('collections').items[String(id || '')] || null
+  }
+  function putCollection(collection) {
+    return mutate('collections', (db) => { db.items[collection.id] = collection; return collection })
+  }
+  function listCollectionsByUid(uid) {
+    return Object.values(load('collections').items).filter((c) => c.uid === uid)
+  }
+  function countCollections() {
+    return Object.keys(load('collections').items).length
+  }
+  function countCollectionsOf(uid) {
+    return listCollectionsByUid(uid).length
+  }
+  function listPostsOfCollection(collectionId) {
+    return Object.values(load('posts').items).filter((p) => p.collectionId === collectionId)
+  }
+  /**
+   * 把帖子挂进合集 / 移出（`collectionId` 传空串 = 移出）。
+   * 🔴 这是「把历史稿件移到合集里」的唯一入口：不要求帖子是新建的，老稿件同样适用，
+   *    也不要求它以前有浏览量 —— 浏览量从挂上之后开始累积即可。
+   * @returns 更新后的帖子；帖子不存在返回 null
+   */
+  function setPostCollection(postId, collectionId, order = 0) {
+    return mutate('posts', (db) => {
+      const p = db.items[String(postId)]
+      if (!p) return null
+      if (collectionId) {
+        p.collectionId = collectionId
+        p.collectionOrder = Number(order) || 0
+      } else {
+        delete p.collectionId
+        delete p.collectionOrder
+      }
+      return p
+    })
+  }
+  /**
+   * 删合集前先解绑篇目。
+   * 🔴 两步无法原子（跨两个文件）。**必须先解绑、再删合集**：
+   *    反过来的话，帖子会指向一个不存在的合集（公开页空白、且没人知道该修哪）。
+   *    这个方向的失败最坏只是「合集还在、篇目已解绑」，作者重试删一次即可。
+   */
+  function clearCollectionPosts(collectionId) {
+    return mutate('posts', (db) => {
+      let n = 0
+      for (const p of Object.values(db.items)) {
+        if (p.collectionId === collectionId) {
+          delete p.collectionId
+          delete p.collectionOrder
+          n++
+        }
+      }
+      return n
+    })
+  }
+  function deleteCollection(id) {
+    return mutate('collections', (db) => {
+      if (!db.items[id]) return false
+      delete db.items[id]
+      return true
+    })
+  }
+  /** 手动排序：顺序即数组下标；只动本合集内的帖子 */
+  function reorderCollection(collectionId, postIds) {
+    return mutate('posts', (db) => {
+      let n = 0
+      postIds.forEach((pid, i) => {
+        const p = db.items[String(pid)]
+        if (p && p.collectionId === collectionId) { p.collectionOrder = i; n++ }
+      })
+      return n
+    })
+  }
+
+  // ---------------- 浏览量（3.6.2） ----------------
+  //
+  // 🔴 绝不每次浏览都落盘：`posts.json` 是整文件读改写，一篇热门投稿若每次浏览都写，
+  //    等于每次浏览都重写全库 JSON。做法是内存累加 + 合并写（30s 或 200 次）——
+  //    代价是进程被强杀时最多丢一个窗口的计数，可接受（浏览量丢几条不影响任何判断）。
+
+  /** postId -> 待落盘的增量 */
+  const viewDirty = new Map()
+  let viewDirtyTotal = 0
+  let viewTimer = null
+  /** `${postId}::${viewerKey}` -> 上次计数时间（内存，重启即清） */
+  const viewSeen = new Map()
+
+  function scheduleViewFlush() {
+    if (viewTimer) return
+    viewTimer = setTimeout(() => { viewTimer = null; flushViews() }, VIEW_FLUSH_MS)
+    // 不吊住进程退出（Node 测试与优雅关闭都需要）
+    if (typeof viewTimer.unref === 'function') viewTimer.unref()
+  }
+
+  /** 把脏计数合并进 posts.json；失败时放回队列，**绝不让阅读报错** */
+  function flushViews() {
+    if (viewDirty.size === 0) return { flushed: 0, posts: 0 }
+    const snapshot = [...viewDirty.entries()]
+    viewDirty.clear()
+    viewDirtyTotal = 0
+    try {
+      mutate('posts', (db) => {
+        for (const [id, n] of snapshot) {
+          const p = db.items[id]
+          if (p) p.views = (Number(p.views) || 0) + n
+        }
+      })
+      return { flushed: snapshot.reduce((s, [, n]) => s + n, 0), posts: snapshot.length }
+    } catch (e) {
+      for (const [id, n] of snapshot) viewDirty.set(id, (viewDirty.get(id) || 0) + n)
+      viewDirtyTotal += snapshot.reduce((s, [, n]) => s + n, 0)
+      return { flushed: 0, posts: 0, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  /**
+   * 记一次浏览；返回是否真的计数（去重后）。
+   * @param {{uid?:string, visitorKey?:string}} viewer
+   *   uid：已登录账号；visitorKey：游客的「IP+UA 哈希」（**api 层算，store 不碰原始 IP**）
+   */
+  function recordView(postId, viewer = {}) {
+    const post = getPost(postId)
+    if (!post) return false
+    const uid = String(viewer.uid || '')
+    // 作者本人不计：自己反复打开不该涨自己的数
+    if (uid && post.uid === uid) return false
+    const key = uid ? `u:${uid}` : (viewer.visitorKey ? `k:${viewer.visitorKey}` : '')
+    if (!key) return false
+    const now = Date.now()
+    const seenKey = `${post.id}::${key}`
+    const last = viewSeen.get(seenKey)
+    if (last && now - last < VIEW_WINDOW_MS) return false
+    if (viewSeen.size >= VIEW_SEEN_MAX) {
+      const oldest = viewSeen.keys().next().value
+      if (oldest) viewSeen.delete(oldest)
+    }
+    viewSeen.set(seenKey, now)
+    viewDirty.set(post.id, (viewDirty.get(post.id) || 0) + 1)
+    viewDirtyTotal += 1
+    if (viewDirtyTotal >= VIEW_FLUSH_MAX) flushViews()
+    else scheduleViewFlush()
+    return true
+  }
+
+  /** 测试与优雅关闭用：立刻落盘并返回结果 */
+  function flushViewsNow() {
+    if (viewTimer) { clearTimeout(viewTimer); viewTimer = null }
+    return flushViews()
   }
 
   // ---------------- 评论 ----------------
@@ -368,6 +544,18 @@ export function createCommunityStore({
     putPost,
     listPosts,
     findPostByToken,
+    getCollection,
+    putCollection,
+    listCollectionsByUid,
+    countCollections,
+    countCollectionsOf,
+    listPostsOfCollection,
+    setPostCollection,
+    clearCollectionPosts,
+    deleteCollection,
+    reorderCollection,
+    recordView,
+    flushViewsNow,
     getComment,
     putComment,
     listCommentsOf,

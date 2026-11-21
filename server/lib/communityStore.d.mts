@@ -4,6 +4,8 @@ export const COMMUNITY_CAPACITY: {
   maxPosts: number
   maxComments: number
   maxReports: number
+  /** 合集上限（3.6.2） */
+  maxCollections: number
   maxAudit: number
   maxVersions: number
 }
@@ -36,6 +38,23 @@ export interface CommunityPost {
   withdrawnAt?: number
   removedAt?: number
   isExample?: boolean
+  /** 浏览量（3.6.2）；老数据没有这个字段 */
+  views?: number
+  /** 所在合集（3.6.2） */
+  collectionId?: string
+  collectionOrder?: number
+}
+
+/** 合集（3.6.2） */
+export interface CommunityCollection {
+  id: string
+  uid: string
+  title: string
+  intro: string
+  orderMode: 'chronological' | 'manual'
+  status: 'active' | 'hidden'
+  createdAt: number
+  updatedAt: number
 }
 
 export interface CommunityComment {
@@ -64,6 +83,20 @@ export interface CommunityStore {
   putPost(post: CommunityPost): CommunityPost
   listPosts(): CommunityPost[]
   findPostByToken(uid: string, token: string): CommunityPost | null
+  // ---- 合集（3.6.2）----
+  getCollection(id: string): CommunityCollection | null
+  putCollection(collection: CommunityCollection): CommunityCollection
+  listCollectionsByUid(uid: string): CommunityCollection[]
+  countCollections(): number
+  countCollectionsOf(uid: string): number
+  listPostsOfCollection(collectionId: string): CommunityPost[]
+  setPostCollection(postId: string, collectionId: string, order?: number): CommunityPost | null
+  clearCollectionPosts(collectionId: string): number
+  deleteCollection(id: string): boolean
+  reorderCollection(collectionId: string, postIds: string[]): number
+  // ---- 浏览量（3.6.2）----
+  recordView(postId: string, viewer?: { uid?: string; visitorKey?: string }): boolean
+  flushViewsNow(): { flushed: number; posts: number; error?: string }
   getComment(id: string): CommunityComment | null
   putComment(comment: CommunityComment): CommunityComment
   listCommentsOf(postId: string): CommunityComment[]

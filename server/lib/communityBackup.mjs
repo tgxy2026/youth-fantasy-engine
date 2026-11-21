@@ -28,6 +28,8 @@ import { anonymousWeekKey, anonymousRankWeeks, validAnonymousHandle, validAnonym
 export const COMMUNITY_FILES = Object.freeze([
   'posts.json', 'comments.json', 'votes.json', 'reports.json',
   'profiles.json', 'rank.json', 'audit.json', 'state.json',
+  // 3.6.2 · 合集：漏了这一个文件，恢复之后合集全丢（且帖子还在，看不出少了什么）
+  'collections.json',
 ])
 export const BACKUP_MANIFEST = 'manifest.json'
 export const BACKUP_FORMAT = 1
@@ -49,7 +51,7 @@ export const defaultIO = {
   sha256: (p) => createHash('sha256').update(readFileSync(p)).digest('hex'),
 }
 
-/** 8 个文件的空结构（首次使用 / 某些文件从未写入过） */
+/** 9 个文件的空结构（首次使用 / 某些文件从未写入过） */
 export function emptyCommunityData() {
   return {
     'posts.json': { version: 1, items: {} },
@@ -59,6 +61,7 @@ export function emptyCommunityData() {
     'profiles.json': { version: 1, items: {} },
     'rank.json': { version: 1, items: {} },
     'audit.json': { version: 1, items: { list: [] } },
+    'collections.json': { version: 1, items: {} },
     'state.json': {
       version: 1,
       items: { global: { squareOpen: true, postsOpen: true, commentsOpen: true, updatedAt: 0 } },

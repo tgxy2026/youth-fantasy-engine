@@ -44,6 +44,18 @@ export function createCommunityDocStore({ root, files, readText, writeText, defa
   }
 
   /**
+   * 「除 posts 外的核心文件」。
+   *
+   * 🔴 3.6.2 修的一处误判：合集（collections.json）可以在**还没发过任何投稿**时就先存在
+   *    （作者先建合集、再发第一篇）。若把它算进「目录里还有别的数据」，那么
+   *    「posts.json 缺失」的判定会被触发，服务直接拒绝读帖 —— 而真实情况是「社区才刚开始用」。
+   *    判据：present 里扣掉 posts 与 collections 之后还有东西，才算「posts 被误删」。
+   */
+  function coreOthers(present) {
+    return [...present].filter((n) => n !== files.posts && n !== files.collections)
+  }
+
+  /**
    * 把初始化标记改为指定状态。
    * strict=true：标记写入失败必须抛出，不能把“评论已写入但标记仍为 false”报告为成功；
    * strict=false：首次使用的 false 标记写失败不阻断已有可读数据（无评论数据时安全）。
@@ -74,7 +86,7 @@ export function createCommunityDocStore({ root, files, readText, writeText, defa
   let commentsObserved = false
   function assertCoreFiles() {
     const present = presentFiles()
-    if (!present.has(files.posts) && present.size > 0) {
+    if (!present.has(files.posts) && coreOthers(present).length > 0) {
       throw new Error('社区核心文件 posts.json 缺失（目录中仍有其他社区数据）；请停写并从备份恢复，禁止用空表继续写入')
     }
     if (!present.has(files.posts)) {
@@ -134,14 +146,20 @@ export function createCommunityDocStore({ root, files, readText, writeText, defa
     }
     if (r.missing) {
       // 运行期间 posts.json 被误删：不能当成空社区继续写
-      if (key === 'posts' && presentFiles().size > 0) {
+      if (key === 'posts' && coreOthers(presentFiles()).length > 0) {
         throw new Error('社区核心文件 posts.json 在运行期间缺失；请停写并从备份恢复')
       }
       if (key === 'comments') {
         if (commentsObserved) {
           throw commentsError('COMMUNITY_COMMENTS_LOST', '评论文件在运行期间缺失；本进程已读取过评论，禁止把缺失当成空表或写回覆盖')
         }
-        const present = [...presentFiles()]
+        /**
+         * 🔴 传给 verdict 的「现有文件」必须**只含内容类文件**。
+         *    合集可以在还没发过投稿时就存在（作者先建合集再写第一篇），
+         *    若把它算进 present，`commentsFileVerdict` 会判成「posts.json 被误删」，
+         *    于是第一次发帖就 500 —— 这条在 3.6.2 第一次跑合集测试时踩到了。
+         */
+        const present = [...presentFiles()].filter((n) => n !== files.collections)
         const posts = readJSONOr(join(root, files.posts), readText)
         const verdict = commentsFileVerdict({
           present,

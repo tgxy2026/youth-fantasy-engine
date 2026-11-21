@@ -12,11 +12,13 @@ import {
   COMMUNITY_LIMITS, COMMUNITY_TAGS,
   POST_STATUS, COMMENT_STATUS,
   charCount, isBlank, validatePostInput, validateCommentInput, validateNickname,
+  validateCollectionInput,
   normalizeDisplayMode, screenContent, commentAutoVisible,
   decodeCursor, clampPageSize, pageRows,
   validateDecision, periodRange, todayKeyCn,
   aggregateRank, applyRankReport,
 } from './communityRules.mjs'
+import { createHash } from 'node:crypto'
 import { sendJSON, readJSONBody } from './http.mjs'
 import { COMMUNITY_CAPACITY as CAP } from './communityStore.mjs'
 import { anonymousWeekKey, anonymousRankWeeks } from './communityAnon.mjs'
@@ -93,23 +95,92 @@ function anonWeekFor(store, display, createdAt) {
   return store.anonymousEnabled() && (display || 'anonymous') !== 'nickname' ? anonymousWeekKey(createdAt) : ''
 }
 
-function publicPost(store, post, { viewer = null, detail = false } = {}) {
+/** 首次发布时间：优先已发布版本的时间，退化到投稿创建时间 */
+const publishedAtOf = (p) => versionOf(p, p.publishedVersionId)?.createdAt || p.createdAt || 0
+
+/**
+ * 合集内排序（合集页与解析器共用一份，避免两处口径漂移）。
+ * 正序是刻意的：读者进合集是从第 1 篇读起，不是像动态流那样从最新往回看。
+ */
+function sortCollectionRows(col, rows) {
+  return [...rows].sort((a, b) => {
+    if (col.orderMode === 'manual') {
+      const d = (Number(a.collectionOrder) || 0) - (Number(b.collectionOrder) || 0)
+      if (d !== 0) return d
+    }
+    return (publishedAtOf(a) - publishedAtOf(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  })
+}
+
+/**
+ * 游客去重键：`sha256(ip + ua)` 取前 16 位。
+ * 🔴 只存哈希、**不存原始 IP** —— 它唯一的用途是"同一个人今天别重复计数"，
+ *    不能变成可以反查访客的日志。
+ */
+function visitorKeyOf(req) {
+  try {
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    const ip = fwd || req.socket?.remoteAddress || ''
+    const ua = String(req.headers['user-agent'] || '')
+    if (!ip && !ua) return ''
+    return createHash('sha256').update(`${ip}|${ua}`).digest('hex').slice(0, 16)
+  } catch {
+    return ''
+  }
+}
+
+function makeCollectionResolver(store) {
+  const cache = new Map()
+
+  return function resolveCollection(post) {
+    const cid = post?.collectionId
+    if (!cid) return null
+    if (!cache.has(cid)) {
+      const col = store.getCollection(cid)
+      if (!col || col.status === 'hidden') { cache.set(cid, null); return null }
+      const rows = sortCollectionRows(col, store.listPostsOfCollection(cid).filter((p) => postPubliclyVisible(p)))
+      cache.set(cid, { col, rows })
+    }
+    const hit = cache.get(cid)
+    if (!hit) return null
+    const idx = hit.rows.findIndex((p) => p.id === post.id)
+    if (idx < 0) return null
+    return {
+      info: { id: hit.col.id, title: hit.col.title, index: idx + 1, total: hit.rows.length },
+      prevId: idx > 0 ? hit.rows[idx - 1].id : null,
+      nextId: idx < hit.rows.length - 1 ? hit.rows[idx + 1].id : null,
+    }
+  }
+}
+
+function publicPost(store, post, { viewer = null, detail = false, resolveCollection = null } = {}) {
   const v = versionOf(post, post.publishedVersionId)
   if (!v) return null
   const mine = !!viewer && viewer.id === post.uid
+  /**
+   * 合集信息（3.6.2）。`resolveCollection` 由调用方给 —— 列表接口传同一个实例（带缓存），
+   * 否则 20 篇 × 200 篇的遍历会把列表拖慢一个量级。
+   */
+  const colHit = resolveCollection ? resolveCollection(post) : null
   const base = {
     id: post.id,
     title: v.title,
     tags: v.tags,
     createdAt: v.createdAt,
     updatedAt: post.updatedAt,
+    /** 浏览量（去重后）。老帖没有这个字段 ⇒ 兜底 0，不写迁移脚本 */
+    views: Number(post.views) || 0,
     counts: { up: post.counts?.up || 0, down: post.counts?.down || 0, comments: post.counts?.comments || 0 },
     displayName: displayNameOf(store, post.uid, post.display || 'anonymous', post.isExample === true ? '' : anonWeekFor(store, post.display, post.createdAt), post.isExample === true),
     authorLabel: post.display === 'nickname' ? '' : '匿名投稿者',
+    ...(colHit ? { collection: colHit.info } : {}),
     ...(post.isExample === true ? { isExample: true } : {}),
   }
-  if (detail) base.body = v.body
-  else base.excerpt = excerptOf(v.body)
+  if (detail) {
+    base.body = v.body
+    // 上下篇只在详情给（列表不需要，多带两个字段会让分页体积变大）
+    if (colHit) base.collectionNav = { prevId: colHit.prevId, nextId: colHit.nextId }
+  } else base.excerpt = excerptOf(v.body)
   if (mine) {
     base.myPost = true
   }
@@ -154,6 +225,8 @@ function myPost(store, post) {
     lastDecision: post.lastDecision || null,
     withdrawnAt: post.withdrawnAt || 0,
     hasPublishedVersion: !!post.publishedVersionId,
+    /** 所在合集（3.6.2）：作者需要在「我的投稿」里看到它挂在哪、从而移出或换集 */
+    collectionId: post.collectionId || '',
   }
 }
 
@@ -269,6 +342,203 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
       })
     }
 
+    // ---------------- 合集（3.6.2） ----------------
+    //
+    // 🔴 合集不单独走人工审核，但标题/简介是公开文本，必须过同一套内容过滤（screenContent）。
+    //    判据与投稿一致，但**去掉 BLANK / TOO_SHORT** —— 那是长度规则，长度已由 validateCollectionInput 管，
+    //    在这里再拦会把「序」这种一字标题误杀。
+
+    if (path === '/api/community/my/collections' && method === 'GET') {
+      if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+      const items = store.listCollectionsByUid(user.id)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .map((c) => {
+          const rows = store.listPostsOfCollection(c.id)
+          return {
+            id: c.id,
+            title: c.title,
+            intro: c.intro || '',
+            orderMode: c.orderMode || 'chronological',
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt,
+            postCount: rows.filter(postPubliclyVisible).length,
+            /** 已挂进合集但还没公开的（草稿/待审）：作者需要知道"它挂上了但读者看不到" */
+            draftCount: rows.filter((p) => !postPubliclyVisible(p)).length,
+            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0), 0),
+          }
+        })
+      return sendJSON(res, 200, { ok: true, items })
+    }
+
+    if (path === '/api/community/collections' && method === 'POST') {
+      if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+      if (!state.squareOpen) return sendJSON(res, 503, { ok: false, code: 'SQUARE_CLOSED', error: '广场暂时关闭' })
+      const body = await readJSONBody(req, 8 * 1024).catch(() => null)
+      if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+      const v = validateCollectionInput(body)
+      if (!v.ok) return sendJSON(res, 400, { ok: false, code: v.code, error: v.error })
+      const hard = screenContent(`${v.value.title}\n${v.value.intro}`, 'post').reasons
+        .filter((r) => r !== 'BLANK' && r !== 'TOO_SHORT')
+      if (hard.length) {
+        return sendJSON(res, 400, {
+          ok: false, code: 'SCREENING_REJECTED',
+          error: '合集名称或简介里有不适合公开展示的内容（网址 / 联系方式等），请修改后重试',
+        })
+      }
+      if (store.countCollectionsOf(user.id) >= COMMUNITY_LIMITS.collectionsPerUser) {
+        return sendJSON(res, 429, {
+          ok: false, code: 'COLLECTION_QUOTA',
+          error: `每人最多 ${COMMUNITY_LIMITS.collectionsPerUser} 个合集`,
+        })
+      }
+      if (store.countCollections() >= CAP.maxCollections) {
+        return sendJSON(res, 503, { ok: false, code: 'CAPACITY_FULL', error: '合集容量已满，请稍后再试' })
+      }
+      const now = Date.now()
+      const col = {
+        id: store.newId('col'),
+        uid: user.id,
+        title: v.value.title,
+        intro: v.value.intro,
+        orderMode: body.orderMode === 'manual' ? 'manual' : 'chronological',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      }
+      store.putCollection(col)
+      return sendJSON(res, 200, { ok: true, collection: { id: col.id, title: col.title, intro: col.intro, orderMode: col.orderMode } })
+    }
+
+    const colMatch = /^\/api\/community\/collections\/([^/]+)(?:\/(posts|order)(?:\/([^/]+))?)?$/.exec(path)
+    if (colMatch) {
+      const colId = decodeURIComponent(colMatch[1])
+      const sub = colMatch[2] || ''
+      const subPostId = colMatch[3] ? decodeURIComponent(colMatch[3]) : ''
+      const col = store.getCollection(colId)
+      const mineCol = !!user && !!col && col.uid === user.id
+      const canSee = !!col && (col.status !== 'hidden' || mineCol || isAdminRole(user))
+
+      if (!sub && method === 'GET') {
+        if (!canSee) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在或已不可见' })
+        const rows = sortCollectionRows(col, store.listPostsOfCollection(colId).filter(postPubliclyVisible))
+        // 全被下架/撤回时，对外 404（作者与管理员仍能看，便于处理）
+        if (rows.length === 0 && !mineCol && !isAdminRole(user)) {
+          return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在或已不可见' })
+        }
+        const resolveCollection = makeCollectionResolver(store)
+        return sendJSON(res, 200, {
+          ok: true,
+          collection: {
+            id: col.id,
+            title: col.title,
+            intro: col.intro || '',
+            orderMode: col.orderMode || 'chronological',
+            updatedAt: col.updatedAt,
+            postCount: rows.length,
+            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0), 0),
+            isMine: mineCol,
+            items: rows.map((p) => publicPost(store, p, { viewer: user, resolveCollection })).filter(Boolean),
+          },
+        })
+      }
+
+      if (!sub && method === 'PATCH') {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!col) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在' })
+        if (!mineCol) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该合集' })
+        const body = await readJSONBody(req, 8 * 1024).catch(() => null)
+        if (!body) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '请求格式错误' })
+        const next = {
+          title: typeof body.title === 'string' ? body.title : col.title,
+          intro: typeof body.intro === 'string' ? body.intro : col.intro,
+        }
+        const v = validateCollectionInput(next)
+        if (!v.ok) return sendJSON(res, 400, { ok: false, code: v.code, error: v.error })
+        const hard = screenContent(`${v.value.title}\n${v.value.intro}`, 'post').reasons
+          .filter((r) => r !== 'BLANK' && r !== 'TOO_SHORT')
+        if (hard.length) {
+          return sendJSON(res, 400, { ok: false, code: 'SCREENING_REJECTED', error: '合集名称或简介里有不适合公开展示的内容，请修改后重试' })
+        }
+        store.putCollection({
+          ...col,
+          title: v.value.title,
+          intro: v.value.intro,
+          orderMode: body.orderMode === 'manual' ? 'manual' : (body.orderMode === 'chronological' ? 'chronological' : (col.orderMode || 'chronological')),
+          updatedAt: Date.now(),
+        })
+        return sendJSON(res, 200, { ok: true })
+      }
+
+      if (!sub && method === 'DELETE') {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!col) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在' })
+        if (!mineCol) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权删除该合集' })
+        // 🔴 先解绑再删记录：反过来会留下指向不存在合集的帖子（见 store 的注释）
+        const released = store.clearCollectionPosts(colId)
+        store.deleteCollection(colId)
+        return sendJSON(res, 200, { ok: true, released })
+      }
+
+      // 把帖子加入合集（**历史稿件同样适用**：不要求投稿是新建的）
+      if (sub === 'posts' && method === 'POST') {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!col) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在' })
+        if (!mineCol) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该合集' })
+        const body = await readJSONBody(req, 4 * 1024).catch(() => null)
+        const postId = String(body?.postId || '')
+        const post = store.getPost(postId)
+        if (!post) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '投稿不存在' })
+        if (post.uid !== user.id) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '只能加入自己的投稿' })
+        if (post.collectionId === colId) return sendJSON(res, 200, { ok: true, unchanged: true })
+        if (post.collectionId) {
+          return sendJSON(res, 409, {
+            ok: false, code: 'ALREADY_IN_COLLECTION',
+            error: '这篇已在另一个合集里，请先从那个合集移出',
+          })
+        }
+        const current = store.listPostsOfCollection(colId).length
+        if (current >= COMMUNITY_LIMITS.postsPerCollection) {
+          return sendJSON(res, 429, {
+            ok: false, code: 'COLLECTION_FULL',
+            error: `每个合集最多 ${COMMUNITY_LIMITS.postsPerCollection} 篇`,
+          })
+        }
+        const order = Number(body?.order)
+        store.setPostCollection(postId, colId, Number.isFinite(order) ? order : current)
+        store.putCollection({ ...col, updatedAt: Date.now() })
+        return sendJSON(res, 200, { ok: true })
+      }
+
+      // 从合集移出（帖子本身不删）
+      if (sub === 'posts' && method === 'DELETE' && subPostId) {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!col) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在' })
+        if (!mineCol) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该合集' })
+        const post = store.getPost(subPostId)
+        if (!post || post.collectionId !== colId) {
+          return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '这篇不在该合集里' })
+        }
+        store.setPostCollection(subPostId, '')
+        store.putCollection({ ...col, updatedAt: Date.now() })
+        return sendJSON(res, 200, { ok: true })
+      }
+
+      // 手动排序（整段重写 collectionOrder）
+      if (sub === 'order' && method === 'PUT') {
+        if (!user) return sendJSON(res, 401, { ok: false, ...staled(ctx.authReason) })
+        if (!col) return sendJSON(res, 404, { ok: false, code: 'NOT_FOUND', error: '合集不存在' })
+        if (!mineCol) return sendJSON(res, 403, { ok: false, code: 'FORBIDDEN', error: '无权修改该合集' })
+        const body = await readJSONBody(req, 64 * 1024).catch(() => null)
+        const ids = Array.isArray(body?.postIds) ? body.postIds.map((x) => String(x)) : null
+        if (!ids) return sendJSON(res, 400, { ok: false, code: 'BAD_REQUEST', error: '需要 postIds 数组' })
+        const n = store.reorderCollection(colId, ids)
+        store.putCollection({ ...col, orderMode: 'manual', updatedAt: Date.now() })
+        return sendJSON(res, 200, { ok: true, updated: n })
+      }
+
+      return sendJSON(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: '不支持的操作' })
+    }
+
     const postMatch = /^\/api\/community\/posts\/([^/]+)(\/comments|\/vote|\/submit|\/withdraw|\/display)?$/.exec(path)
     if (postMatch) {
       const postId = decodeURIComponent(postMatch[1])
@@ -289,7 +559,15 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
             title: user && user.id === post.uid ? (latest?.title || '') : '', updatedAt: post.updatedAt,
           })
         }
-        return sendJSON(res, 200, { ok: true, post: publicPost(store, post, { viewer: user, detail: true }) })
+        /**
+         * 浏览量（3.6.2）：**只有读到详情才算一次**，列表曝光不算。
+         * 计数失败/被去重都不影响返回 —— recordView 内部吞掉异常，绝不让阅读报错。
+         */
+        store.recordView(post.id, user ? { uid: user.id } : { visitorKey: visitorKeyOf(req) })
+        return sendJSON(res, 200, {
+          ok: true,
+          post: publicPost(store, post, { viewer: user, detail: true, resolveCollection: makeCollectionResolver(store) }),
+        })
       }
 
       if (sub === '/comments') {
@@ -622,8 +900,22 @@ const report = {
         screening: screenContent(v.value.body, 'post'),
         clientToken: token,
         counts: { up: 0, down: 0, comments: 0 },
+        /** 浏览量从 0 起；老帖没有这个字段时由 publicPost 兜底，不写迁移 */
+        views: 0,
       }
       store.putPost(post)
+      /**
+       * 顺手挂进合集（3.6.2）。🔴 不合法就**忽略**而不报错：合集可能刚被作者删掉，
+       * 而草稿/正文本身没有理由因此存不下来；忽略后作者在「我的投稿」里仍能重新挂。
+       */
+      const wantCol = String(body.collectionId || '')
+      if (wantCol) {
+        const col = store.getCollection(wantCol)
+        const inCol = col ? store.listPostsOfCollection(wantCol).length : 0
+        if (col && col.uid === user.id && inCol < COMMUNITY_LIMITS.postsPerCollection) {
+          store.setPostCollection(post.id, wantCol, inCol)
+        }
+      }
       return sendJSON(res, 200, { ok: true, post: myPost(store, post) })
     }
 
