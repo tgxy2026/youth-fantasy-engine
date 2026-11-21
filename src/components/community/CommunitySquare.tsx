@@ -50,6 +50,32 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ]
 
 export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout }: Props) {
+  /**
+   * 浮层形态的键盘与焦点（3.6.2 · W6）。
+   *
+   * 🔴 补的是三件套里缺的两件：Esc 关闭、焦点移入与还原。原先这个 `role="dialog"`
+   *    既没有键盘出口、也不接管焦点 —— 键盘用户打开广场后只能靠 Tab 摸到关闭按钮。
+   * 🔴 **刻意不做焦点陷阱**：本面板是长滚动容器，把 Tab 锁在首屏反而会让人到不了下面的投稿流。
+   *    WCAG 2.1.2 要求的是「不能被键盘困住」，而 Esc 随时可退出已满足这一条。
+   */
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (mode !== 'overlay') return
+    const prev = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null
+    overlayRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      // 输入法组合期间的 Esc 是取消候选词，不是关面板
+      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented) return
+      e.preventDefault()
+      onClose?.()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      // 触发元素可能已被移除（比如它是列表里的按钮），只在还挂在文档上时才还原
+      if (prev && prev.isConnected) prev.focus()
+    }
+  }, [mode, onClose])
   const [tab, setTab] = useState<Tab>('feed')
   const [square, setSquare] = useState<CommunitySquareState | null>(null)
   const [profile, setProfile] = useState<CommunityProfile | null>(null)
@@ -323,8 +349,12 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
   // 浮层形态：铺满屏、可关闭；页签形态直接占满内容区（不能 fixed，否则盖住侧栏）
   if (mode === 'overlay') {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black/60 p-2 sm:p-6"
-        style={{ zIndex: Z.modal }} role="dialog" aria-modal="true" aria-label="投稿广场">
+      <div
+        ref={overlayRef}
+        tabIndex={-1}
+        className="fixed inset-0 flex items-center justify-center bg-black/60 p-2 outline-none sm:p-6"
+        style={{ zIndex: Z.modal }} role="dialog" aria-modal="true" aria-label="投稿广场"
+      >
         {shell}
       </div>
     )
