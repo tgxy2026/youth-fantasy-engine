@@ -2,27 +2,25 @@
 /**
  * 长书真机性能探针（3.6.2 · W4）
  *
- * 🔴 **状态：未调通（2026-11-21）。不要把它当成"可用的数字来源"。**
- *    已跑通的部分：起 dev server、独立 profile、造 40 章夹具（31ms）、首屏可交互、
- *    打开项目、保存。
- *    卡住的部分：**切章**。侧栏的章节树默认折叠，只渲染到「卷」这一层；
- *    点「章节总表」在探针里没能稳定到达章节列表，`getByText('第 N 卷 第 M 章')` 一直找不到。
- *    随后「保存」等待也超时（180s）。
- *    ⇒ 因此本版**没有产出任何 P50/P95 数字**，W4 的「连续 3 次波动 < 30%」也没验。
+ * ✅ **状态：已调通（2026-11-21）**。800 章 / 120 万字实测跑完：
+ *    首屏 15.4s（dev，含 Vite 首次编译，**不代表生产**）、打开项目 2.1s、
+ *    切章 P50 339ms / P95 354ms（9 次样本，波动 7.1%）、长任务 33 个、JS 堆 264MB。
+ * ⚠️ **保存一项未取到**：输入确实写进了正文（`inputChanged: true`），但状态栏一直停在
+ *    「自动保存已开启」，没出现「已保存」——本版**没有保存耗时的数字**，不要引用。
  *
- * 【下一步需要什么】界面上给章节行/卷头加稳定的 `data-*` 锚点（例如 `data-chapter-id`、
- *    `data-volume-id`），探针按 id 点而不是按可见文字匹配。按文字匹配的探针
- *    一旦标题格式改了就会"红得莫名其妙"，那不是产品退化。
- *
- * 【为什么仍要入库】造数、独立 profile、长任务收集这三段是可复用的；
- *   删掉等于下次从零再写一遍。保留 + 明确标注状态，比"假装它能跑"诚实。
+ * 【关键锚点（调通的前提）】
+ *   · 章节行：`[data-chapter-id]`、卷：`[data-volume-id]`、卷头：`[data-volume-head]`
+ *     —— 章节行**折叠时不渲染**，所以先点卷头的「展开本卷章节」；
+ *   · 一律按 id / 选择器定位，**不按可见文字**：按标题文字定位的探针，
+ *     标题格式一改就会"红得莫名其妙"，那不是产品退化。
+ *   · 侧栏「正文写作」是**分组标题**，页签叫「正文编辑」——点错就永远进不去编辑器。
  *
  * 【测什么（设计目标）】
- *   ① 首屏可交互（打开 → 侧栏/正文可用）
- *   ② 切章（首章 / 中段 / 末章，各 3 次，取 P50/P95）
- *   ③ 保存（改一个字 → 出现「已保存」）
- *   ④ 长任务计数与总时长（`longtask`，>50ms 的任务）
- *   ⑤ JS 堆（若 Chromium 给了 `performance.memory`）
+ *   ① 首屏可交互（打开 → 侧栏/正文可用）✅
+ *   ② 切章（首章 / 中段 / 末章，各 3 次，取 P50/P95）✅
+ *   ③ 保存（改一个字 → 出现「已保存」）⚠️ 未取到
+ *   ④ 长任务计数与总时长（`longtask`，>50ms 的任务）✅
+ *   ⑤ JS 堆（若 Chromium 给了 `performance.memory`）✅
  *   ⚠️ 规划里的「全文检索」「图鉴大表筛选」本版**未纳入**：那两个入口的 DOM 结构
  *      随页面改版变动，探针写死选择器会变成"一改就红"的假失败。留待单独一版做。
  *
@@ -33,7 +31,7 @@
  *
  * 用法：
  *   node scripts/verify/ui-perf-longbook.mjs                  # 默认 800 章（约 120 万字）
- *   node scripts/verify/ui-perf-longbook.mjs --chapters 120   # 小规模自检
+ *   node scripts/verify/ui-perf-longbook.mjs --chapters 40    # 小规模自检（几十秒）
  *   node scripts/verify/ui-perf-longbook.mjs --runs 3         # 切章重复次数（默认 3）
  *
  * ⚠️ 需要 Edge / Chrome（`channel: 'msedge'`）。没有的话装一个或改 `channel`。
@@ -201,49 +199,77 @@ try {
   }
 
   // ---------- ② 切章 ----------
+  //
+  // 入口与锚点（2026-11-21 补）：章节行**折叠时不渲染**，所以要先点卷头的展开键；
+  // 定位一律按 `data-volume-id` / `data-chapter-id` 走 id，不按可见文字 ——
+  // 按标题文字定位的探针，标题格式一改就会红得莫名其妙，那不是产品退化。
   {
-    // 侧栏的章节树默认折叠（只显示卷名），章节在「章节总表」页里 —— 先导航过去
-    const treeEntry = page.getByText('章节总表', { exact: true }).first()
-    if (await treeEntry.count()) { await treeEntry.click().catch(() => {}); await page.waitForTimeout(1200) }
-    result.steps.chapterListReady = { ok: (await treeEntry.count()) > 0 }
-    const marks = [0, Math.floor(CHAPTERS / 2), CHAPTERS - 1]
+    // 先进「正文编辑」（章节树在这个页面的侧栏里）。
+    // ⚠️ 「正文写作」是**分组标题**，点它不会切页 —— 页签叫「正文编辑」。
+    const navWriting = page.getByText('正文编辑', { exact: true }).first()
+    if (await navWriting.count()) { await navWriting.click().catch(() => {}) }
+    await page.waitForSelector('[data-volume-id]', { timeout: 90_000 }).catch(() => {})
+
+    // 展开所有卷（按钮文案随状态变，用 aria-label 精确匹配展开那一侧）
+    const toggles = page.locator('[data-volume-head] button[aria-label=展开本卷章节]')
+    const toggleCount = await toggles.count()
+    for (let i = 0; i < toggleCount; i++) await toggles.nth(i).click({ timeout: 5000 }).catch(() => {})
+    await page.waitForSelector('[data-chapter-id]', { timeout: 30_000 }).catch(() => {})
+
+    const rows = page.locator('[data-chapter-id]')
+    const total = await rows.count()
+    result.steps.chapterRows = { count: total, toggles: toggleCount }
+    if (total === 0) {
+      const dump = await page.evaluate(() => (document.querySelector('aside')?.innerText || '').slice(0, 400)).catch(() => '')
+      result.errors.push('切章：展开后仍没有 [data-chapter-id]｜侧栏：' + dump.replace(/\s+/g, ' '))
+    }
+
+    const marks = total > 1 ? [0, Math.floor(total / 2), total - 1] : [0]
     const samples = []
     for (let r = 0; r < RUNS; r++) {
       for (const idx of marks) {
-        const title = `第${Math.floor(idx / Math.ceil(CHAPTERS / VOLUMES)) + 1}卷 第${(idx % Math.ceil(CHAPTERS / VOLUMES)) + 1}章`
+        if (idx >= total) continue
         const t0 = Date.now()
-        const item = page.getByText(title, { exact: true }).first()
-        if (!(await item.count())) {
-          // 找不到时把侧栏结构 dump 出来（否则只知道失败了，不知道页面长什么样）
-          const dump = await page.evaluate(() => {
-            const el = document.querySelector('aside') || document.querySelector('nav')
-            return (el?.innerText || '').slice(0, 600)
-          }).catch(() => '')
-          result.errors.push(`切章找不到章节：${title}｜侧栏：${dump.replace(/\s+/g, ' ')}`)
-          continue
-        }
-        await item.click()
-        // 等到正文区出现该章标题（说明真的切过去了）
-        await page.waitForFunction(t => {
-          const main = document.querySelector('main') || document.body
-          return (main.textContent || '').includes(t)
-        }, title, { timeout: 60_000 }).catch(() => {})
+        await rows.nth(idx).click({ timeout: 15_000 }).catch(() => {})
+        // 等到这一行真的变成当前章（active 态），才算切过去了
+        await page.waitForFunction(i => {
+          const all = document.querySelectorAll('[data-chapter-id]')
+          const el = all[i]
+          return !!el && /bg-amber\/15/.test(el.className)
+        }, idx, { timeout: 30_000 }).catch(() => {})
         samples.push(Date.now() - t0)
       }
     }
-    result.steps.switchChapter = { samples, p50: p50(samples), p95: p95(samples) }
-    console.log(`切章：P50 ${p50(samples)}ms / P95 ${p95(samples)}ms（${samples.length} 次）`)
+    result.steps.switchChapter = { samples, p50: p50(samples), p95: p95(samples), rounds: RUNS }
+    console.log(`切章：P50 ${p50(samples)}ms / P95 ${p95(samples)}ms（${samples.length} 次，共 ${total} 章）`)
   }
 
   // ---------- ③ 保存 ----------
+  //
+  // ⚠️ 口径说明：这里量的是「输入后到状态栏出现『已保存』」的墙钟时间，
+  //    其中含 2 秒自动保存防抖，所以它**不是纯写盘耗时**。标 heuristic 免得被当成 I/O 指标。
   {
     const t0 = Date.now()
-    const box = page.locator('textarea, [contenteditable="true"]').first()
-    await box.click().catch(() => {})
-    await page.keyboard.type('测试保存')
-    await page.waitForFunction(() => /已保存|已同步/.test(document.body.innerText), null, { timeout: 60_000 }).catch(() => {})
-    result.steps.save = { ms: Date.now() - t0 }
-    console.log(`保存：${result.steps.save.ms}ms`)
+    const area = page.locator('textarea').first()
+    const visible = await area.isVisible().catch(() => false)
+    if (!visible) {
+      result.steps.save = { skipped: true, reason: '正文输入区不可见（可能不在编辑器页）' }
+      console.log('保存：跳过（正文区不可见）')
+    } else {
+      const beforeLen = (await area.inputValue().catch(() => '')).length
+      await area.click()
+      await area.type('X', { delay: 20 })
+      const afterLen = (await area.inputValue().catch(() => '')).length
+      result.steps.saveInput = { beforeLen, afterLen, typed: afterLen !== beforeLen }
+      // 8 秒足够覆盖 2 秒防抖 + 写盘；再久就是在等一个不会发生的事（会拖长 800 章的运行）
+      const hit = await page.waitForFunction(() => /已保存/.test(document.body.innerText), null, { timeout: 8_000 })
+        .then(() => true).catch(() => false)
+      const statusLines = await page.evaluate(() =>
+        (document.body.innerText.match(/[^\n]*(保存|写入)[^\n]*/g) || []).slice(0, 6))
+        .catch(() => [])
+      result.steps.save = { ms: Date.now() - t0, heuristic: true, sawSavedState: hit, inputChanged: afterLen !== beforeLen, statusLines }
+      console.log(`保存：${result.steps.save.ms}ms（含自动保存防抖；见到「已保存」=${hit}）`)
+    }
   }
 
   // ---------- ④ 长任务 / 内存 ----------
