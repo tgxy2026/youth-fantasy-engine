@@ -170,6 +170,74 @@ function backupLimit(kind: BackupKind): number {
   return 0
 }
 
+/**
+ * 保留策略（纯函数，3.6.2 · W3 抽出）：算「该淘汰哪几份」。
+ *
+ * 🔴 为什么必须抽出来：原来的写法是就地截断（`all` 数组直接切掉尾巴）—— 那段语义藏在
+ *    `createAutoBackup` 末尾三行里，既无法单测，也无法复用给「清理/体检」；
+ *    更要紧的是它的正确性只靠"恰好按 createdAt 倒序排过"这个隐含前提撑着。
+ *    抽成纯函数后，**排序与淘汰规则可以被断言**，而不是靠读代码相信。
+ *
+ * 口径：
+ *   · `limit <= 0`（手动 / 定稿）⇒ **一份都不删**；
+ *   · 否则按 `createdAt` 倒序保留前 `limit` 份，其余全部淘汰（淘汰最旧）；
+ *   · 同一毫秒的多份备份用 `id` 升序做 tie-breaker —— 保证**结果确定**。
+ *     不这么做时，同时间戳的顺序取决于 `sort` 实现，同一份数据两次运行可能删掉不同的备份。
+ *
+ * @returns 需要删除的备份 id（顺序：最旧 → 较新；调用方逐个删即可）
+ */
+export interface RetentionItem { id: string; createdAt: number }
+
+export function planBackupRetention(items: readonly RetentionItem[], limit: number): string[] {
+  if (!Number.isFinite(limit) || limit <= 0) return []
+  const sorted = [...items].sort((a, b) => {
+    const byTime = (b.createdAt || 0) - (a.createdAt || 0)
+    if (byTime !== 0) return byTime
+    // 同时间戳：id 升序 ⇒ 保留"id 较小"的那些，删除"id 较大"的（纯粹为了确定性）
+    return String(a.id).localeCompare(String(b.id))
+  })
+  return sorted.slice(limit).map(i => i.id).reverse()
+}
+
+/**
+ * 备份载荷结构校验（纯函数，3.6.2 · W3）。
+ *
+ * 🔴 为什么恢复前必须先验：`restoreBackup` 的写入是"先写新、再删旧"，中途失败通常还能收拾；
+ *    但**结构本身不完整**（缺 stores、bundle 被截断、空对象）时，它会一路写出一份残缺项目，
+ *    最后才在某个 `bundle.volumes.length` 上炸掉 —— 那时原数据已经被大量新记录覆盖了。
+ *    所以要在**任何写入之前**判死，并给出人能读懂的原因。
+ *
+ * 判据只做"结构是否够用"，不校验业务语义（版本兼容由迁移层负责）：
+ *   · media 片：只要有 `media.blobs` 数组；
+ *   · text / full / 缺省（旧整包）：`bundle` 存在且 `project` 是对象、
+ *     `volumes / chapters / tableRows / cardRecords` 四个数组都在
+ *     —— 缺任何一个，`applyBundleToProject` 都会在循环里抛（`undefined.length`）。
+ */
+export type PayloadVerdict = { ok: true } | { ok: false; reason: string }
+
+export function verifyBackupPayload(raw: unknown): PayloadVerdict {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, reason: '载荷不是对象' }
+  const p = raw as Partial<BackupPayload>
+  if (!p.id || typeof p.id !== 'string') return { ok: false, reason: '载荷缺少 id' }
+  if (!p.projectId || typeof p.projectId !== 'string') return { ok: false, reason: '载荷缺少所属项目' }
+
+  if (p.kind === 'media') {
+    if (!p.media || typeof p.media !== 'object') return { ok: false, reason: '媒体片缺少内容' }
+    if (!Array.isArray((p.media as MediaShard).blobs)) return { ok: false, reason: '媒体片缺少图片列表' }
+    return { ok: true }
+  }
+
+  const b = p.bundle
+  if (!b || typeof b !== 'object') return { ok: false, reason: '载荷缺少数据包' }
+  if (!b.project || typeof b.project !== 'object') return { ok: false, reason: '数据包缺少项目信息' }
+  for (const key of ['volumes', 'chapters', 'tableRows', 'cardRecords'] as const) {
+    if (!Array.isArray((b as unknown as Record<string, unknown>)[key])) {
+      return { ok: false, reason: `数据包缺少「${key}」` }
+    }
+  }
+  return { ok: true }
+}
+
 /** 载荷字节数（与旧 UI 的 `JSON.stringify(bundle).length` 同口径，保持数字可比） */
 function payloadBytes(bundle: ProjectBundle): number {
   return JSON.stringify(bundle).length
@@ -288,12 +356,16 @@ export async function createAutoBackup(projectId: string, kind: BackupKind, labe
     }
   }
   // 滚动淘汰：超过该类型上限则删除最早的（元数据与载荷一起删，避免留下孤儿载荷）。手动备份（limit=0）不淘汰。
+  // 🔴 3.6.2 · W3：淘汰规则改走 `planBackupRetention` 纯函数。
+  //    原先是就地截断 —— 规则藏在三行里、无法单测，且正确性依赖"恰好已排序"这一隐含前提。
+  //    ⚠️ 别把它改回就地截断：`tests/backupRetention.test.ts` 有一条源码闸盯着这里。
   const limit = backupLimit(kind)
   if (limit > 0) {
-    const all = (await store.getAll<BackupMeta>('backups'))
+    const candidates = (await store.getAll<BackupMeta>('backups'))
       .filter(b => b.projectId === projectId && b.kind === kind)
-      .sort((a, b) => b.createdAt - a.createdAt)
-    for (const drop of all.slice(limit)) await deleteBackup(drop.id, store)
+    for (const dropId of planBackupRetention(candidates, limit)) {
+      await deleteBackup(dropId, store)
+    }
   }
   return meta
 }
@@ -535,6 +607,25 @@ export async function restoreBackup(id: string, opts?: RestoreOptions, ownerStor
   const store = ownerStore ?? ops
   const rec = await store.get<BackupMeta>('backups', id)
   if (!rec) throw new Error('备份不存在')
+  /**
+   * 🔴 3.6.2 · W3：**任何写入之前**先验载荷结构。
+   *
+   * 为什么不能等到 `applyBundleToProject` 里自然炸：那条路径是"先写新、再删旧"，
+   * 结构不完整时它会写出一批残缺记录，才在 `bundle.volumes.length` 之类的地方抛错 ——
+   * 此时原数据已被大量新记录覆盖，用户看到的是"恢复失败，但书也乱了"。
+   * 验在前面的代价只是一次 get，收益是失败时**原数据一个字节都没动**。
+   *
+   * ⚠️ 老库兼容：v11 之前载荷与元数据同条，`backupPayloads` 里没有记录 —— 此时 `raw` 为
+   *    undefined，跳过这项校验（结构由 `getBackupPayload` 的 legacy 分支兜底）。
+   */
+  const textId = rec.shards?.textPayloadId ?? id
+  const raw = await store.get<BackupPayload>('backupPayloads', textId)
+  if (raw) {
+    const verdict = verifyBackupPayload(raw)
+    if (!verdict.ok) {
+      throw new Error(`这份备份的结构不完整（${verdict.reason}），已停止恢复；你原有的数据没有被改动`)
+    }
+  }
   const bundle = await getBackupPayload(id, store)
   // 元数据还在、载荷没了（被外部清理过 / 写到一半断电）：必须明确报错，不能"恢复成功"却什么都没恢复
   if (!bundle) throw new Error('这份备份的数据已经找不到了（元数据仍在，载荷缺失），无法恢复')

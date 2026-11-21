@@ -6,7 +6,7 @@
 //    故所有比对必须按「结构 + 内容」而非 id，否则会得到假阳性。
 import * as db from '../src/lib/db'
 import { createDemoProject } from '../src/lib/app/seedData'
-import { __resetMockStores } from './mock-memory'
+import { __resetMockStores, memoryOps } from './mock-memory'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -147,6 +147,63 @@ await db.updateProject({ id: pid, name: '备份测试用项目（示范内容副
   const mine = (await db.createProject('我的小说', '东方修真', '', '', 'full')).id
   const rec = await db.createAutoBackup(mine, 'manual', '普通项目照常')
   ok('🔴 用户自建项目：备份照常生成', !!rec && (await db.listBackups(mine)).length === 1)
+}
+
+// ---------- 4. 恢复中途失败：原有数据必须完好（3.6.2 · W3）----------
+//
+// 这条守的是「恢复这个动作本身不能把数据搞坏」。
+// applyBundleToProject 的写法是「先写新、再删旧」，所以写到一半失败时：
+//   · **原记录都还在**（删除在最后一步，还没执行到）—— 这是本段要断言的核心；
+//   · 可能多出几条写到一半的新记录 —— 这是「先写后删」已知的代价，如实记录，不当成通过。
+{
+  __resetMockStores()
+  const p = await db.createProject('恢复中断演练', '东方修真', '', '', 'full')
+  db.setCurrentProject(p.id)
+  const mkChapter = (id: string, order: number, title: string, content: string) => ({
+    id, projectId: p.id, volumeId: '', order, title, content,
+    summary: '', status: '草稿' as const, wordCount: content.length,
+    createdAt: Date.now(), updatedAt: Date.now(),
+  })
+  await db.saveChapter(mkChapter('c1', 1, '第一章', '恢复中断前的内容一'))
+  await db.saveChapter(mkChapter('c2', 2, '第二章', '恢复中断前的内容二'))
+  const backup = await db.createAutoBackup(p.id, 'manual', '中断演练用的备份')
+  ok('4a 演练前备份已建立', !!backup)
+  // 备份之后又写了一章 ⇒ 恢复会把这一章抹掉（正是要保护的对象）
+  await db.saveChapter(mkChapter('c3', 3, '第三章', '备份之后才写的内容'))
+
+  const before = (await db.getAllChapters()).map(c => ({ id: c.id, title: c.title, content: c.content })).sort((a, b) => a.id.localeCompare(b.id))
+  ok('4b 恢复前共 3 章', before.length === 3, String(before.length))
+
+  // 让第 2 次写入起全部失败（模拟磁盘满 / 权限 / U 盘拔出）
+  let writes = 0
+  const failingStore = {
+    ...memoryOps,
+    put: async (store: string, value: unknown) => {
+      writes++
+      if (writes >= 2) throw new Error('模拟恢复到一半时写入失败')
+      return memoryOps.put(store, value)
+    },
+    putStrict: async (store: string, value: unknown) => {
+      writes++
+      if (writes >= 2) throw new Error('模拟恢复到一半时写入失败')
+      return memoryOps.put(store, value)
+    },
+  }
+
+  let err: unknown = null
+  try {
+    await db.restoreBackup(backup!.id, { skipPreBackup: true }, failingStore as never)
+  } catch (e) { err = e }
+  ok('4c 中途失败 → 明确抛错（不是恢复成功）', err instanceof Error, String(err))
+
+  const after = (await db.getAllChapters()).map(c => ({ id: c.id, title: c.title, content: c.content })).sort((a, b) => a.id.localeCompare(b.id))
+  // 🔴 核心断言：原有三章逐字段都在（删除在最后一步，没执行到）
+  const lost = before.filter(b => !after.some(a => a.id === b.id && a.title === b.title && a.content === b.content))
+  ok('🔴 4d 中途失败后原有章节逐字段完好（一章都没丢、没被改）', lost.length === 0,
+    lost.map(l => l.title).join(','))
+  ok('4e 项目记录仍在（不会留下半空项目）',
+    (await db.getAllProjects()).some(x => x.id === p.id))
+  ok('4f 失败发生在覆盖阶段（确实尝试写过）', writes >= 2, String(writes))
 }
 
 console.log(`\nbackup: ${pass} passed, ${fail} failed`)

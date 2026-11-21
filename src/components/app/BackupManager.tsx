@@ -12,6 +12,7 @@ import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
 import { invalidateTemplateCache } from '@/lib/templates/cache'
+import { drillSummary, runBackupDrill, type DrillResult } from '@/lib/db/backupDrill'
 
 interface Props {
   projectId: string
@@ -48,6 +49,24 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
   useEffect(() => {
     void db.listOrphanBackups().then(setOrphans).catch(() => {})
   }, [])
+
+  /**
+   * 备份可恢复性演练（3.6.2 · W3）：**只读**，不改数据、不试跑恢复。
+   * 结果只活在本次界面里（不落盘）—— 体检结论的价值是"现在能不能恢复"，
+   * 存一份历史结论反而会让人拿旧结论当新事实。
+   */
+  const [drill, setDrill] = useState<DrillResult | null>(null)
+  const [drillBusy, setDrillBusy] = useState(false)
+  const runDrill = async () => {
+    setDrillBusy(true)
+    try {
+      setDrill(await runBackupDrill(projectId))
+    } catch (e) {
+      showToast('检查失败：' + (e as Error).message, 'error')
+    } finally {
+      setDrillBusy(false)
+    }
+  }
   const orphansMB = useMemo(() => orphans.reduce((s, b) => s + b.bytes, 0) / 1024 / 1024, [orphans])
   const cleanOrphans = async () => {
     if (busy || orphans.length === 0) return
@@ -169,6 +188,13 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     } finally {
       setBusy(false)
     }
+  }
+
+  /** 演练结果里点「导出」：按 id 找回元数据，复用同一个导出实现（不另写一条路径） */
+  const exportById = async (id: string) => {
+    const meta = backups.find(b => b.id === id)
+    if (!meta) { showToast('这份备份已不在列表里，请关闭重开后再试', 'error'); return }
+    await exportFile(meta)
   }
 
   // ============ v1.3 迁移 / 换机：导出加密或明文迁移包，导入到另一台设备 ============
@@ -449,6 +475,69 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
                 <br />
                 {WEB ? '备份保存在当前浏览器的作品存储区。' : '备份保存在当前设备的软件数据中。'} 可用每行的 <span className="text-ink-200">↑ 导出</span> 将所选版本存为独立文件。
               </>
+            )}
+          </div>
+
+          {/**
+            * 备份可恢复性（3.6.2 · W3）。
+            * 🔴 为什么值得占这么一块位置：备份列表只显示"创建时间 + 体积"，
+            *    体积正常、载荷却已经读不出来的情况确实存在（外置文件被清理、迁移中断、坏块）。
+            *    等真去恢复才发现，往往已经晚了 —— 这里让他在恢复**之前**就能看见。
+            */}
+          <div className="rounded-lg border border-ink-700 bg-ink-850 px-3 py-2.5 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <ShieldCheck size={13} className="text-amber" />
+              <span className="text-12 text-ink-200">备份可恢复性</span>
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={drillBusy}
+                onClick={() => void runDrill()}
+                className="ml-auto"
+                title="只读检查：看最近 7 天的备份还能不能读出来，不改任何数据"
+              >
+                {drillBusy ? '检查中…' : '检查最近 7 天'}
+              </Button>
+            </div>
+            {drill ? (
+              <>
+                <p className="text-11 text-ink-300 leading-relaxed">
+                  {drillSummary(drill)}
+                  <span className="text-ink-500">
+                    {' '}（检查于 {new Date(drill.checkedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}）
+                  </span>
+                </p>
+                {drill.brokenCount > 0 && (
+                  <ul className="space-y-1">
+                    {drill.points.filter(pt => !pt.restorable).map(pt => (
+                      <li key={pt.id} className="flex flex-wrap items-start gap-2 text-11">
+                        <AlertTriangle size={12} className="text-danger shrink-0 mt-0.5" />
+                        <span className="text-ink-300">
+                          {new Date(pt.createdAt).toLocaleString('zh-CN')} · {pt.label}
+                          <span className="text-danger"> —— {pt.reason ?? '无法读取'}</span>
+                        </span>
+                        <Button
+                          variant="bare"
+                          size="xs"
+                          className="ml-auto text-amber"
+                          onClick={() => void exportById(pt.id)}
+                          title="导出这份备份，看看能不能用别的方式救回来"
+                        >
+                          导出
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-10 text-ink-500 leading-relaxed">
+                  检查只看数据在不在、结构完不完整，<b className="text-ink-400">不会试跑恢复</b>（试跑会覆盖当前项目）。
+                  没列出来的备份是「没检查」，不等于「没问题」。
+                </p>
+              </>
+            ) : (
+              <p className="text-10 text-ink-500 leading-relaxed">
+                检查最近 7 天的备份还能不能读出来 —— 只读，不改任何数据，也不会试跑恢复。
+              </p>
             )}
           </div>
 
