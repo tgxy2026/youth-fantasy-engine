@@ -214,6 +214,8 @@ try {
 
     const firstRead = await detail('bob')
     ok('详情可读', firstRead.status === 200)
+    // 🔴 不等合并落盘就要看到 1：否则刚看完页面上还是旧数字，用户以为坏了
+    ok('🔴 刚看完立刻显示 1（含未落盘增量）', firstRead.json.post.views === 1, String(firstRead.json.post.views))
     store.flushViewsNow()
     ok('首次阅读计 1 次', (await call(`/api/community/posts/${post}`, { as: 'alice' })).json.post.views === 1,
       String((await call(`/api/community/posts/${post}`, { as: 'alice' })).json.post.views))
@@ -270,6 +272,31 @@ try {
       method: 'POST', as: 'bob', body: { title: '幽灵合集', body: body(), display: 'anonymous', collectionId: 'col_nope' },
     })
     ok('🔴 合集不存在时正常发稿（忽略归集，不报错）', withGhost.status === 200, JSON.stringify(withGhost.json))
+  }
+
+  // ================= 作者侧全量篇目（手动排序要用） =================
+  //
+  // 🔴 只给可见篇目是不够的：手动排序排的是整个合集，
+  //    一篇正在审核的稿子排完却不在列表里，它一公开就会跳到末尾 —— 作者白排。
+  {
+    const col = (await call('/api/community/my/collections', { as: 'bob' })).json.items
+      .find((c: any) => c.title === '发布时归集').id as string
+
+    // bob 的合集里此刻有一篇草稿（pending）
+    const mine = await call(`/api/community/collections/${col}`, { as: 'bob' })
+    ok('作者能看到 allItems', Array.isArray(mine.json.collection.allItems), JSON.stringify(Object.keys(mine.json.collection)))
+    ok('🔴 allItems 包含尚不可见的篇目', mine.json.collection.allItems.some((x: any) => x.visible === false))
+    ok('公开 items 只含可见篇目', mine.json.collection.items.every((x: any) => !!x.id))
+    ok('allItems 比 items 多（不可见的不在公开目录里）',
+      mine.json.collection.allItems.length > mine.json.collection.items.length,
+      `${mine.json.collection.allItems.length} vs ${mine.json.collection.items.length}`)
+    ok('allItems 不带正文（正文只走 /my/posts）', mine.json.collection.allItems.every((x: any) => x.body === undefined))
+
+    const byAlice = await call(`/api/community/collections/${col}`, { as: 'alice' })
+    // 别人看到 404（这个合集里还没有公开篇目）—— 或者即便能看，也绝不能带 allItems
+    ok('别人拿不到 allItems',
+      byAlice.status === 404 || byAlice.json?.collection?.allItems === undefined,
+      JSON.stringify({ status: byAlice.status, keys: byAlice.json?.collection ? Object.keys(byAlice.json.collection) : null }))
   }
 } catch (e) {
   console.error('合集测试自身异常：', e)

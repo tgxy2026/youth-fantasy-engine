@@ -79,6 +79,8 @@ export interface CommunityCollectionPage {
   totalViews: number
   isMine: boolean
   items: CommunityPostSummary[]
+  /** 作者/管理员才有：全部篇目（含草稿/待审/已撤回），用于手动排序 */
+  allItems?: Array<{ id: string; title: string; status: string; visible: boolean }>
 }
 
 export interface CommunityComment {

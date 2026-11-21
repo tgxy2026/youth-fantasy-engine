@@ -307,3 +307,14 @@ export function addPostToCollection(collectionId: string, postId: string, order?
 export function removePostFromCollection(collectionId: string, postId: string): Promise<{ ok: true }> {
   return request(`/collections/${encodeURIComponent(collectionId)}/posts/${encodeURIComponent(postId)}`, { method: 'DELETE' })
 }
+
+/**
+ * 手动排序（3.6.2 · 作者侧）。
+ * 传的是**全量篇目**的 id 顺序（含草稿/待审），服务端只认同合集内的帖子。
+ */
+export function reorderCollection(collectionId: string, postIds: string[]): Promise<{ updated: number }> {
+  return request(`/collections/${encodeURIComponent(collectionId)}/order`, {
+    method: 'PUT',
+    body: JSON.stringify({ postIds }),
+  })
+}

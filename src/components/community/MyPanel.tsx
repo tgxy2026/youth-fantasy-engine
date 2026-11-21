@@ -5,10 +5,12 @@
 // 🔴 「改为匿名 / 显示昵称」只改展示、不重新审核 —— 但**不能消除**已经被他人看到或保存的关联。
 
 import { useCallback, useEffect, useState } from 'react'
+import { ArrowDown, ArrowUp, ListOrdered } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { confirmDialog } from '@/components/dialogs/dialogs'
 import {
-  addPostToCollection, createCollection, deleteCollection, listMyCollections, updateCollection,
+  addPostToCollection, createCollection, deleteCollection, fetchCollection, listMyCollections,
+  reorderCollection, updateCollection,
   removePostFromCollection,
   deleteComment, deletePost, myAppeals, myComments, myPosts, myReports,
   setPostDisplay, submitAppeal, submitPost, withdrawPost,
@@ -44,6 +46,11 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
   const [newColTitle, setNewColTitle] = useState('')
   /** 正在改名的合集（inline 编辑：改个名字不该开弹窗） */
   const [editingCol, setEditingCol] = useState<{ id: string; title: string } | null>(null)
+  /** 正在排序的合集（本地数组，点保存才提交，避免每次上移都打一次请求） */
+  const [sorting, setSorting] = useState<{
+    id: string
+    items: Array<{ id: string; title: string; status: string; visible: boolean }>
+  } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
@@ -113,8 +120,42 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
     await act(`col-${c.id}`, () => deleteCollection(c.id), '合集已删除，篇目仍在广场上')
   }
 
-  /** 保存合集改名。空名不发请求（服务端也会拒，但没必要多跑一趟） */
-  async function saveRename() {
+  /**
+   * 打开排序面板。
+   * 🔴 取的是 `allItems`（含草稿/待审/已撤回），不是公开目录 ——
+   *    只排可见篇目的话，一篇正在审核的稿子公开后会跳到末尾，作者白排。
+   */
+  async function openSort(c: MyCollection) {
+    setBusy(`sort-${c.id}`); setError(''); setNotice('')
+    try {
+      const r = await fetchCollection(c.id)
+      const all = r.collection.allItems
+      if (!all) { setError('读不到这个合集的全部篇目（可能不是你的合集）'); return }
+      setSorting({ id: c.id, items: all })
+    } catch (e) { setError(errorText(e)) } finally { setBusy('') }
+  }
+
+  function moveSortItem(index: number, dir: -1 | 1) {
+    setSorting((cur) => {
+      if (!cur) return cur
+      const next = [...cur.items]
+      const to = index + dir
+      if (to < 0 || to >= next.length) return cur
+      const tmp = next[index]
+      next[index] = next[to]
+      next[to] = tmp
+      return { ...cur, items: next }
+    })
+  }
+
+  async function saveSort() {
+    const cur = sorting
+    if (!cur) return
+    await act(`sort-${cur.id}`, () => reorderCollection(cur.id, cur.items.map((i) => i.id)), '顺序已保存')
+    setSorting(null)
+  }
+
+  /** 保存合集改名。空名不发请求（服务端也会拒，但没必要多跑一趟） */  async function saveRename() {
     const cur = editingCol
     if (!cur) return
     const title = cur.title.trim()
@@ -205,11 +246,46 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                   )}
                   <span className="text-11 text-ink-400">合计浏览 {formatViews(c.totalViews)}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    <Button size="xs" variant="secondary" disabled={busy === `sort-${c.id}`}
+                      onClick={() => void (sorting?.id === c.id ? setSorting(null) : openSort(c))}>
+                      <ListOrdered size={11} />{sorting?.id === c.id ? '收起排序' : '排序'}
+                    </Button>
                     <Button size="xs" variant="secondary" onClick={() => setEditingCol({ id: c.id, title: c.title })}>改名</Button>
                     <Button size="xs" variant="danger" disabled={busy === `col-${c.id}`}
                       onClick={() => void removeCol(c)}>删除合集</Button>
                   </div>
                 </>
+              )}
+              {sorting?.id === c.id && (
+                <div className="mt-2 w-full basis-full rounded-lg border border-ink-700 bg-ink-950/40 p-2.5">
+                  <p className="mb-1.5 text-11 leading-relaxed text-ink-400">
+                    按第 1 篇起的顺序排列。灰掉的篇目现在不可见（草稿/待审/已撤回），公开后会回到这个位置。
+                  </p>
+                  <ul className="space-y-0.5">
+                    {sorting.items.map((it, i) => (
+                      <li key={it.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-ink-900/60">
+                        <span className="w-5 shrink-0 text-right text-11 tabular-nums text-ink-500">{i + 1}</span>
+                        <span className={`min-w-0 flex-1 truncate text-12 ${it.visible ? 'text-ink-200' : 'text-ink-500'}`}>
+                          {it.title || '（未命名）'}
+                        </span>
+                        {!it.visible && <span className="shrink-0 text-10 text-amber">不可见</span>}
+                        <Button size="xs" variant="secondary" disabled={i === 0}
+                          aria-label={`上移「${it.title || '未命名'}」`} title="上移" onClick={() => moveSortItem(i, -1)}>
+                          <ArrowUp size={11} />
+                        </Button>
+                        <Button size="xs" variant="secondary" disabled={i === sorting.items.length - 1}
+                          aria-label={`下移「${it.title || '未命名'}」`} title="下移" onClick={() => moveSortItem(i, 1)}>
+                          <ArrowDown size={11} />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Button size="xs" disabled={busy === `sort-${c.id}`} onClick={() => void saveSort()}>保存顺序</Button>
+                    <Button size="xs" variant="secondary" onClick={() => setSorting(null)}>取消</Button>
+                    <span className="text-10 text-ink-500">保存后合集切换为「手动排序」</span>
+                  </div>
+                </div>
               )}
             </li>
           ))}

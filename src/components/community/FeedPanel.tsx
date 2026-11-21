@@ -263,6 +263,18 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
   if (openId) {
     return (
       <div className="space-y-4">
+        {/**
+          * 🔴 合集浮层在**列表态与详情态都要渲染**。
+          *    第一版只挂在列表态的 return 里，结果在详情页点「收录于」时 state 变了却没地方渲染，
+          *    表现是"点了没反应"（真机测试第一次跑就撞到）。
+          */}
+        {collectionOpenId && (
+          <CollectionPanel
+            collectionId={collectionOpenId}
+            onClose={() => setCollectionOpenId(null)}
+            onOpenPost={(id) => { setCollectionOpenId(null); void openPost(id) }}
+          />
+        )}
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={closeDetail}>
             <ChevronLeft size={14} />返回列表
@@ -289,6 +301,8 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                 */}
               {detail.collection && (
                 <button type="button"
+                  data-collection-entry
+                  aria-label={`查看合集目录《${detail.collection.title}》`}
                   onClick={() => setCollectionOpenId(detail.collection?.id ?? null)}
                   className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber/30 bg-amber/10 px-2.5 py-1 text-11 text-amber hover:bg-amber/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/40">
                   <LibraryBig size={12} />
@@ -498,7 +512,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
                 <h3 className="text-15 font-semibold text-ink-100 group-hover:text-amber sm:text-16">{p.title}</h3>
                 {p.isExample && <StatusPill>示例故事</StatusPill>}
                 {p.collection && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber/25 px-2 py-0.5 text-10 text-amber"
+                  <span data-collection-badge className="inline-flex items-center gap-1 rounded-full border border-amber/25 px-2 py-0.5 text-10 text-amber"
                     title={`收录于《${p.collection.title}》第 ${p.collection.index} / ${p.collection.total} 篇`}>
                     <LibraryBig size={10} />合集 · 共 {p.collection.total} 篇
                   </span>

@@ -96,6 +96,7 @@ export interface CommunityStore {
   reorderCollection(collectionId: string, postIds: string[]): number
   // ---- 浏览量（3.6.2）----
   recordView(postId: string, viewer?: { uid?: string; visitorKey?: string }): boolean
+  pendingViews(postId: string): number
   flushViewsNow(): { flushed: number; posts: number; error?: string }
   getComment(id: string): CommunityComment | null
   putComment(comment: CommunityComment): CommunityComment

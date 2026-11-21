@@ -307,6 +307,15 @@ export function createCommunityStore({
     return true
   }
 
+  /**
+   * 尚未落盘的浏览增量。
+   * 🔴 展示时必须加上它：否则刚看完一篇，页面上还是旧数字（要等 30 秒合并才变），
+   *    用户会以为计数坏了。真机测试第一次跑就撞到这一点。
+   */
+  function pendingViews(postId) {
+    return viewDirty.get(String(postId || '')) || 0
+  }
+
   /** 测试与优雅关闭用：立刻落盘并返回结果 */
   function flushViewsNow() {
     if (viewTimer) { clearTimeout(viewTimer); viewTimer = null }
@@ -555,6 +564,7 @@ export function createCommunityStore({
     deleteCollection,
     reorderCollection,
     recordView,
+    pendingViews,
     flushViewsNow,
     getComment,
     putComment,

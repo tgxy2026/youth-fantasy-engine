@@ -169,7 +169,8 @@ function publicPost(store, post, { viewer = null, detail = false, resolveCollect
     createdAt: v.createdAt,
     updatedAt: post.updatedAt,
     /** 浏览量（去重后）。老帖没有这个字段 ⇒ 兜底 0，不写迁移脚本 */
-    views: Number(post.views) || 0,
+    // 落盘值 + 尚未合并的增量（否则刚看完仍显示旧数字）
+    views: (Number(post.views) || 0) + store.pendingViews(post.id),
     counts: { up: post.counts?.up || 0, down: post.counts?.down || 0, comments: post.counts?.comments || 0 },
     displayName: displayNameOf(store, post.uid, post.display || 'anonymous', post.isExample === true ? '' : anonWeekFor(store, post.display, post.createdAt), post.isExample === true),
     authorLabel: post.display === 'nickname' ? '' : '匿名投稿者',
@@ -334,10 +335,12 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
         .filter((row) => !tag || (versionOf(row.post, row.post.publishedVersionId)?.tags || []).includes(tag))
         .sort((a, b) => (b.ts - a.ts) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
       const page = pageRows(rows.map((r) => ({ id: r.id, ts: r.ts, row: r })), { cursor, limit: size })
+      // 一次请求内共用一个解析器：合集排序只遍历一遍（见 makeCollectionResolver 的注释）
+      const listResolver = makeCollectionResolver(store)
       return sendJSON(res, 200, {
         ok: true,
         closed: false,
-        items: page.items.map((it) => publicPost(store, it.row.post, { viewer: user })),
+        items: page.items.map((it) => publicPost(store, it.row.post, { viewer: user, resolveCollection: listResolver })),
         nextCursor: page.nextCursor,
       })
     }
@@ -364,7 +367,8 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
             postCount: rows.filter(postPubliclyVisible).length,
             /** 已挂进合集但还没公开的（草稿/待审）：作者需要知道"它挂上了但读者看不到" */
             draftCount: rows.filter((p) => !postPubliclyVisible(p)).length,
-            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0), 0),
+            // 合计浏览同样要算上未落盘增量，否则读者刚读完，合集合计仍是旧的
+            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0) + store.pendingViews(p.id), 0),
           }
         })
       return sendJSON(res, 200, { ok: true, items })
@@ -435,9 +439,26 @@ export function createCommunityApi({ store, authCheck, rateLimit, findUserById =
             orderMode: col.orderMode || 'chronological',
             updatedAt: col.updatedAt,
             postCount: rows.length,
-            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0), 0),
+            // 合计浏览同样要算上未落盘增量，否则读者刚读完，合集合计仍是旧的
+            totalViews: rows.reduce((s, p) => s + (Number(p.views) || 0) + store.pendingViews(p.id), 0),
             isMine: mineCol,
             items: rows.map((p) => publicPost(store, p, { viewer: user, resolveCollection })).filter(Boolean),
+            /**
+             * 作者/管理员才拿得到「全部篇目」（含草稿、待审、已撤回）。
+             * 🔴 为什么必须有：手动排序排的是**整个合集**，若只给可见篇目，
+             *    作者就没法把一篇正在审核的稿子排到正确位置 —— 排完它一公开就会跳到末尾。
+             *    这里只给标题与状态，不给正文（正文仍只走 /my/posts）。
+             */
+            ...(mineCol || isAdminRole(user)
+              ? {
+                  allItems: sortCollectionRows(col, store.listPostsOfCollection(colId)).map((p) => ({
+                    id: p.id,
+                    title: versionOf(p, p.publishedVersionId)?.title || p.versions?.[p.versions.length - 1]?.title || '',
+                    status: p.status,
+                    visible: postPubliclyVisible(p),
+                  })),
+                }
+              : {}),
           },
         })
       }
