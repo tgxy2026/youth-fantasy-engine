@@ -19,6 +19,7 @@ import {
 } from '@/lib/creative/plotCandidateStore'
 import { chapterNoOf } from '@/lib/outline/outlineCard'
 import type { CardRecord } from '@/lib/types'
+import { recordAiMetric } from '@/lib/ai/metrics'
 
 function fmt(ts: number): string {
   const d = new Date(ts)
@@ -82,8 +83,12 @@ export default function PlotCandidatePanel({ onClose }: { onClose: () => void })
     setErr('')
     setLastReport([])
     try {
+      const hadBefore = mine.length > 0
       const r = await generatePlotCandidates(pid, cardId)
       if (!r.ok) { setErr(r.error ?? '生成失败'); return }
+      // 3.6.2 · W5 打点：已有候选时再点 = 重生成；否则按条数记“展示过”
+      recordAiMetric('candidate', hadBefore ? 'regenerated' : 'shown')
+      for (let i = 1; i < r.created; i++) recordAiMetric('candidate', 'shown')
       showToast(`已生成 ${r.created} 条候选（只保存候选，细纲未改动）`, 'success')
       setCands((await loadPlotCandidates(pid)).list)
     } finally {
@@ -95,14 +100,14 @@ export default function PlotCandidatePanel({ onClose }: { onClose: () => void })
     const r = await applyPlotCandidate(pid, c.id)
     setLastReport(reportLines(r.report))
     setCands((await loadPlotCandidates(pid)).list)
-    if (r.ok) showToast(`已写入 ${r.report.okCount} 个字段`, 'success')
+    if (r.ok) { recordAiMetric('candidate', 'accepted'); showToast(`已写入 ${r.report.okCount} 个字段`, 'success') }
     else setErr(r.error ?? '没有写入任何字段')
   }
 
   const revert = async (c: PlotCandidate) => {
     const r = await revertPlotCandidate(pid, c.id)
     setCands((await loadPlotCandidates(pid)).list)
-    if (r.ok) { showToast(`已撤销 ${r.reverted} 个字段`, 'success'); setLastReport([]) }
+    if (r.ok) { recordAiMetric('candidate', 'undone'); showToast(`已撤销 ${r.reverted} 个字段`, 'success'); setLastReport([]) }
     else {
       setErr(r.error ?? '撤销失败')
       setLastReport(r.blocked.map(b => `${b.label}：当前「${b.current}」，应用后应为「${b.expected}」`))
@@ -111,7 +116,10 @@ export default function PlotCandidatePanel({ onClose }: { onClose: () => void })
 
   const discard = async (c: PlotCandidate) => {
     const ok = await discardPlotCandidate(pid, c.id, '作者在面板里放弃')
-    if (ok) { setCands((await loadPlotCandidates(pid)).list); showToast('已放弃（保留记录）', 'info') }
+    if (ok) {
+      recordAiMetric('candidate', 'rejected')
+      setCands((await loadPlotCandidates(pid)).list); showToast('已放弃（保留记录）', 'info')
+    }
   }
 
   return (

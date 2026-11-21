@@ -8,12 +8,28 @@
  *    故本面板以「调用次数 / 耗时 / 被拒次数」为主，不假装有 token 数据。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, Gauge, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import { listProjectAiRuns } from '@/lib/db'
 import { summarizeUsage, type UsageSummary } from '@/lib/ai/aiUsageStats'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import {
+  clearAiMetrics, flushAiMetrics, summarizeAiMetrics,
+  type AiMetricFeature, type AiMetricSummary,
+} from '@/lib/ai/metrics'
+
+/** 功能名 → 用户看得懂的名字（键是固定枚举，别改成自由字符串） */
+const FEATURE_LABEL: Record<AiMetricFeature, string> = {
+  candidate: '剧情候选',
+  proofread: '审读',
+  postprocess: '章后整理',
+  reference: '创作参考',
+  other: '其他',
+}
+
+const pct = (r: number | null) => (r === null ? '—' : `${Math.round(r * 100)}%`)
 
 function fmtMs(ms: number): string {
   if (!ms) return '0 秒'
@@ -32,8 +48,17 @@ function Stat({ label, value, danger }: { label: string; value: string; danger?:
 
 export default function AIUsagePanel() {
   const [sum, setSum] = useState<UsageSummary | null>(null)
+  /** 3.6.2 · W5：质量度量（近 30 天接受率）。与上面的"用量"互补：一个看花了多少，一个看有没有用 */
+  const [metrics, setMetrics] = useState<AiMetricSummary[] | null>(null)
 
   const load = useCallback(async () => {
+    try {
+      // 埋点是异步落库的，先等一拍再读，免得刚点的操作在面板里"没算上"
+      await flushAiMetrics().catch(() => {})
+      setMetrics(await summarizeAiMetrics({ days: 30 }))
+    } catch {
+      setMetrics([])
+    }
     try {
       const pid = db.getCurrentProjectId() ?? ''
       setSum(summarizeUsage(await listProjectAiRuns(pid)))
@@ -43,6 +68,18 @@ export default function AIUsagePanel() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  const clearMetrics = async () => {
+    const ok = await confirmDialog({
+      title: '清空 AI 质量统计？',
+      message: '会删除本机记录的「显示 / 采纳 / 放弃 / 撤回」计数，无法恢复。\n\n这些数字只用于你自己观察接受率，清空不影响任何作品内容。',
+      danger: true,
+    })
+    if (!ok) return
+    await clearAiMetrics()
+    setMetrics([])
+    showToast('已清空 AI 质量统计', 'info')
+  }
 
   return (
     <section className="rounded-xl border border-ink-700 bg-ink-850/40 p-4">
@@ -118,6 +155,53 @@ export default function AIUsagePanel() {
         口径：每次模型调用记一条（模型 / 耗时 / 是否被内容政策拒绝）。费用由服务商按其价目收取，本页只记用量、不折算金额。
         token 数暂未采集（多数平台的流式响应不回 usage）。数据只在本机账本里，随项目导出 / 备份一并带走。
       </p>
+
+      {/**
+        * 3.6.2 · W5「AI 质量度量」。
+        * 🔴 与上面的消耗统计分开：那个回答"花了多少"，这个回答"有没有用"。
+        *    换模型 / 改提示词前后各看一次，才有对比可言。
+        */}
+      <div className="mt-4 border-t border-ink-700 pt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Gauge size={13} className="text-amber" />
+          <span className="text-12 font-semibold text-ink-100">AI 质量（近 30 天）</span>
+          <HelpPopover title="这些数字怎么来的" width="20rem" size={12}>
+            <div className="space-y-1.5 text-11 leading-relaxed">
+              <p>每次 AI 结果出现算一次<b>显示</b>；你点采纳 / 放弃 / 重新生成 / 撤回各记一次对应事件。</p>
+              <p><b>接受率 = 采纳 ÷ 显示</b>。换模型或改提示词前后各看一次，就能对比是否真的更顺手。</p>
+              <p>只记事件与功能名，<b>不记任何正文</b>；数据只在本机，不上传、不进备份。</p>
+            </div>
+          </HelpPopover>
+          <span className="text-10 text-ink-500">仅存本机</span>
+          <div className="ml-auto">
+            <Button variant="bare" size="xs" onClick={() => void clearMetrics()} className="gap-1 text-11 text-ink-400 hover:text-danger">
+              <Trash2 size={11} /> 清空
+            </Button>
+          </div>
+        </div>
+
+        {metrics === null ? (
+          <p className="text-11 text-ink-500">读取中…</p>
+        ) : metrics.length === 0 ? (
+          <p className="text-11 text-ink-500 leading-relaxed">
+            还没有 AI 质量记录。用一次「剧情候选」并采纳 / 放弃几条，这里就会出现接受率。
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {metrics.map(m => (
+              <li key={m.feature} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-11">
+                <span className="text-ink-200 w-16 shrink-0">{FEATURE_LABEL[m.feature]}</span>
+                <span className="text-ink-400">
+                  显示 {m.shown} · 采纳 {m.accepted} · 放弃 {m.rejected} · 重生成 {m.regenerated} · 撤回 {m.undone}
+                </span>
+                <span className="ml-auto shrink-0 tabular-nums text-ink-300">
+                  接受率 <b className="text-amber">{pct(m.acceptanceRate)}</b>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }
