@@ -39,8 +39,16 @@ $SCP "$SERVER_DIR/scripts/deploy.sh" "$HOST":/tmp/yfe-deploy.sh >/dev/null
 $SSH "$HOST" "mkdir -p /opt/yfe/scripts && mv /tmp/yfe-deploy.sh /opt/yfe/scripts/deploy.sh && chmod +x /opt/yfe/scripts/deploy.sh"
 
 deploy_www() {
-  echo "==> 构建前端"
-  (cd "$ROOT" && npm run build >/dev/null)
+  # 🔴 YFE_SKIP_BUILD=1：跳过构建直接用现有 dist。
+  #    用途：dist 里已有 `version.json`（由 release-version-manifest.mjs 依据**已封装产物**生成），
+  #    而 `npm run build` 会清空 dist 把它冲掉 —— 重建后清单就没了。
+  #    不是"图快"，是为了不丢版本清单；正常发布仍走默认（会构建）。
+  if [ "${YFE_SKIP_BUILD:-}" = "1" ]; then
+    echo "==> 跳过构建（YFE_SKIP_BUILD=1），使用现有 dist"
+  else
+    echo "==> 构建前端"
+    (cd "$ROOT" && npm run build >/dev/null)
+  fi
   echo "==> 打包并上传 www"
   # 把构建摘要写进包里（BUILD_ID 被 build_id 自身排除，不会自我循环）
   printf '%s\n' "$(build_id "$ROOT/dist")" > "$ROOT/dist/BUILD_ID"
