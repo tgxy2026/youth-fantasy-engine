@@ -376,13 +376,33 @@ function sendNotFound(req, res, path) {
   res.end(req.method === 'HEAD' ? undefined : body)
 }
 
-function baseHeaders(ext, isIndex) {
+/**
+ * 静态文件的缓存口径（3.6.2 收尾修正）。
+ *
+ * 🔴 判据只能是「文件名里有没有内容哈希」，不能只看"是不是 index.html"。
+ *    2026-11-21 线上实测：`/version.json` 被发了 `public, max-age=31536000, immutable`。
+ *    清单文件名永远不变 ⇒ 浏览器一年内都不回源 ⇒ 网页版「有新版本，刷新以应用」读到的
+ *    永远是打开页面那天的旧清单，提示等于被关掉（而且清缓存才恢复，用户根本不会想到）。
+ *    只有 Vite 产出的 `assets/<name>-<hash>.js` 这类才能 immutable —— 内容变则文件名变。
+ */
+function cacheControlFor(abs, isIndex) {
+  // ① 壳：每次回源验证（允许存副本，304 省流量）
+  if (isIndex) return 'no-cache, must-revalidate'
+  // ② 版本清单：客户端靠它判断"线上换版了没"，必须每次现取
+  if (abs.endsWith(sep + 'version.json')) return 'no-cache, must-revalidate'
+  // ③ 带内容哈希的构建产物：永久缓存
+  if (abs.includes(sep + 'assets' + sep)) return 'public, max-age=31536000, immutable'
+  // ④ 其余（图标、字体、favicon…）文件名不带哈希 —— 短期缓存，不能 immutable
+  return 'public, max-age=86400'
+}
+
+function baseHeaders(abs, ext, isIndex) {
   return {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cache-Control': isIndex ? 'no-cache, must-revalidate' : 'public, max-age=31536000, immutable',
+    'Cache-Control': cacheControlFor(abs, isIndex),
   }
 }
 
@@ -392,7 +412,7 @@ function serveFile(req, res, abs, ext) {
   if (!st.isFile()) return false
 
   const isIndex = abs.endsWith(sep + 'index.html')
-  const headers = baseHeaders(ext, isIndex)
+  const headers = baseHeaders(abs, ext, isIndex)
   headers['Last-Modified'] = st.mtime.toUTCString()
 
   const inm = req.headers['if-modified-since']

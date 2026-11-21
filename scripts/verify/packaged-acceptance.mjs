@@ -282,10 +282,18 @@ async function main() {
         await clearOverlays(page)
         const opener2 = page.getByRole('button', { name: '打开项目', exact: true }).first()
         if (await opener2.isVisible().catch(() => false)) { await opener2.click().catch(() => {}); await sleep(1200) }
+        /**
+         * 🔴 点完「打开项目」会**再弹一次本页指引**（每个新页面各有一次），
+         *    遮罩 `data-guide-mask` 会把后续点击全吃掉。第一轮网页登录态验收就是栽在这：
+         *    reload 后找不到正文框、五个核心入口全判红，而人工复核时入口一个不少。
+         *    所以每过一道导航都要清一次，而不是只在开头清。
+         */
+        await clearOverlays(page)
         for (const label of ['继续上次', '正文编辑']) {
           const b = page.getByRole('button', { name: label, exact: true }).first()
           if (await b.isVisible().catch(() => false)) { await b.click().catch(() => {}); await sleep(1200) }
         }
+        await clearOverlays(page)
         let box2 = page.locator('textarea.novel-textarea').first()
         if (!(await box2.count())) box2 = page.getByPlaceholder(/开始写|写点什么|在这里写/).first()
         await box2.waitFor({ timeout: 45_000 }).catch(() => {})
@@ -294,6 +302,8 @@ async function main() {
     }
 
     // ---------- ④ 核心功能入口（必检） ----------
+    // 进项目 / 重载 之后引导遮罩会再出现一次，点入口前先清掉（否则全是"找不到"的假红）
+    await clearOverlays(page)
     const coreEntries = ['一键拆书', '创意写作', '设定检索', '世界设定', '检查工具']
     for (const label of coreEntries) {
       const found = await page.evaluate(l => {
