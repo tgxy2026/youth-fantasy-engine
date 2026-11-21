@@ -8,7 +8,7 @@ import {
   revealDesktopDataFile,
 } from '@/lib/app/desktop'
 import { WriteLockBanner } from '@/components/app/WriteLockBanner'
-import { writeLockDiagnostics } from '@/lib/app/lockBannerCopy'
+import { pathKindFromCustom, writeLockDiagnostics } from '@/lib/app/lockBannerCopy'
 import { APP_VERSION_LABEL } from '@/lib/app/env'
 
 /**
@@ -43,7 +43,7 @@ export function DesktopWriteLockBanner() {
         writeBackTo: '磁盘',
         dataPath: st.dataPath,
         // 自定义位置最常见的原因就是"把数据放进了云盘同步目录" —— 这一条对判断极关键
-        pathKind: st.isCustomPath ? '自定义位置' : '默认位置',
+        pathKind: pathKindFromCustom(st.isCustomPath),
         appVersion: APP_VERSION_LABEL,
         platform: '桌面版',
       })}

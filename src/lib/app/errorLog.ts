@@ -22,6 +22,13 @@ export interface ErrorRecord {
   message: string
   /** 来源「文件名:行」（**只留 basename**，绝不带目录 —— 目录里含系统用户名） */
   source: string
+  /**
+   * 堆栈前几帧（**仅"详细错误"开关打开时才有**，且已去掉路径）。
+   *
+   * 🔴 3.6.2 · 为什么默认不记：堆栈里常有绝对路径与源码片段，而诊断包可能被贴到公开 issue。
+   *    规划 C2 的口径是"可选开关、默认关"——用户自己勾了才附加，责任与收益都在他手上。
+   */
+  frames?: string[]
 }
 
 /** 留痕上限：够定位最近一次，又不至于把诊断文本撑长 */
@@ -32,6 +39,43 @@ const MAX = 10
  *    全留着就会随诊断信息一起被复制出去。
  */
 const MSG_MAX = 200
+/** "详细错误"开关（默认关）。打开后每条错误额外留堆栈前 3 帧（去路径）。 */
+let detailedOn = false
+
+/** 打开/关闭"详细错误"（用户在关于页勾选；**不落盘**，重启即回到默认关） */
+export function setDetailedErrors(on: boolean): void {
+  detailedOn = on
+}
+export function isDetailedErrorsOn(): boolean {
+  return detailedOn
+}
+
+/**
+ * 从完整堆栈里取前 `n` 帧，并把每帧里的路径压成 `文件名:行:列`。
+ *
+ * 🔴 去路径是硬要求（与 `shortSource` 同源）：V8 的堆栈形如
+ *    `    at foo (C:\Users\张三\app\src\x.ts:12:3)` —— 直接贴出去就泄露了系统用户名。
+ *    处理不了的行（如 `at <anonymous>`）原样保留，不猜。
+ */
+export function stackHead(stack: string | undefined, n = 3): string[] {
+  if (!stack) return []
+  const out: string[] = []
+  for (const raw of stack.split('\n')) {
+    const line = raw.trim()
+    if (!line || /^[A-Za-z]*Error\b/.test(line)) continue  // 跳过首行"TypeError: xxx"，消息本身已单独存
+    // 把括号内（或整行）的路径压成 basename
+    const m = /^(?:at\s+)?(.*?)\s*\(?((?:[A-Za-z]:)?[^()]*?\.[cm]?[jt]sx?(?::\d+){0,2})\)?$/.exec(line)
+    if (m) {
+      const fn = m[1].trim()
+      const loc = shortSource(m[2].split(':')[0]) + (m[2].match(/(:\d+(?::\d+)?)$/)?.[1] ?? '')
+      out.push(fn ? `at ${fn} (${loc})` : `at ${loc}`)
+    } else {
+      out.push(line.slice(0, 120))
+    }
+    if (out.length >= n) break
+  }
+  return out
+}
 
 const buf: ErrorRecord[] = []
 let installed = false
@@ -63,7 +107,13 @@ export function shortSource(raw?: string | null, line?: number): string {
 
 /** 记一条（环形：超出上限丢最旧的） */
 export function recordError(kind: ErrorKind, e: unknown, source?: string): void {
-  buf.push({ at: Date.now(), kind, message: messageOf(e), source: source ?? '' })
+  const rec: ErrorRecord = { at: Date.now(), kind, message: messageOf(e), source: source ?? '' }
+  // 只有用户显式打开"详细错误"才留堆栈（见 ErrorRecord.frames 的说明）
+  if (detailedOn && e instanceof Error) {
+    const frames = stackHead(e.stack, 3)
+    if (frames.length) rec.frames = frames
+  }
+  buf.push(rec)
   while (buf.length > MAX) buf.shift()
 }
 

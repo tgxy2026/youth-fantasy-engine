@@ -18,9 +18,28 @@ export function __setFlushDesktopResult(value: boolean) { flushResult = value }
 export function flushDesktop() { return Promise.resolve(flushResult) }
 export function subscribeDesktop() { return () => {} }
 // 与 src/lib/app/desktop.ts 的 DesktopState 同形：db.ts 的云同步入口会读 writeLocked
-// （测试环境从不锁写盘，固定 false；将来要测「锁定期行为」就在这里放开）
+// （测试环境默认不锁写盘；要测「锁定期行为」用 __setDesktopWriteLock(true)）
+// 🔴 3.6.2：诊断包要读 dataPath / isCustomPath（只用来判"默认还是自定义位置"，不写进包），
+//    这里补齐字段 —— 桩与真身**不同形**会让"读不到"变成"读到 undefined"，测不出来。
+let stubWriteLocked = false
+let stubIsCustomPath = false
+let stubReason = ''
+/** 测试用：模拟数据文件读取失败（写锁）。用完必须复位。 */
+export function __setDesktopWriteLock(v: boolean, reason = '测试：数据文件读取失败') {
+  stubWriteLocked = v
+  stubReason = v ? reason : ''
+}
+/** 测试用：模拟数据文件被改到自定义位置（云盘目录等）。 */
+export function __setDesktopCustomPath(v: boolean) {
+  stubIsCustomPath = v
+}
 export function getDesktopState() {
-  return { ready: true, connected: true, path: '', dirty: false, writeLocked: false, writeLockReason: '' }
+  return {
+    ready: true, connected: true, path: '', dirty: false,
+    writeLocked: stubWriteLocked, writeLockReason: stubReason,
+    fileName: '本地数据文件', saving: false, lastSavedAt: 0, lastError: '',
+    dataPath: '', isCustomPath: stubIsCustomPath,
+  }
 }
 // 与 src/lib/app/desktop.ts 同名同形：db.ts 的「云端 cache → 本地库」镜像会 import 它判「本地是否已有这条」。
 // 直接复用 mock-memory 那一份，**不要在这里另写一份** —— 两份日期久了对不上就是下次事故。

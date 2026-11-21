@@ -1,9 +1,12 @@
-import type { ReactNode } from 'react'
-import { AlertTriangle, ClipboardCopy, RefreshCw, Unlock } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { AlertTriangle, ClipboardCopy, Download, Loader2, RefreshCw, Unlock } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { confirmDialog, copyText } from '@/components/dialogs/dialogs'
+import { confirmDialog, copyText, showToast } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
 import { writeLockUnlockPrompt } from '@/lib/app/lockBannerCopy'
+import { collectDiagnosticsPack } from '@/lib/app/diagnostics'
+import { diagnosticsFileName, renderDiagnosticsJson } from '@/lib/app/diagnosticsPack'
+import { downloadBlob } from '@/lib/storage/zip'
 
 /**
  * 「数据文件写盘已锁定」的常驻告警条 —— **桌面版与便携版的公共骨架**。
@@ -61,6 +64,25 @@ export function WriteLockBanner({
     if (ok) onUnlock()
   }
 
+  /**
+   * 保存诊断包（3.6.2）：与关于页**同一份采集器**，只是这里不跳转页面也能导出。
+   * 🔴 写锁中体检会明确标 `health.ok=false`（内存是空库，扫它得出的"没问题"是假象）。
+   */
+  const [savingPack, setSavingPack] = useState(false)
+  const savePack = async () => {
+    setSavingPack(true)
+    try {
+      const pack = await collectDiagnosticsPack()
+      const name = diagnosticsFileName(pack)
+      downloadBlob(name, new Blob([renderDiagnosticsJson(pack)], { type: 'application/json' }))
+      showToast(`已保存 ${name}，可当附件发给作者`, 'success')
+    } catch {
+      showToast('保存诊断包失败，请改用「复制诊断信息」', 'error')
+    } finally {
+      setSavingPack(false)
+    }
+  }
+
   return (
     <div
       role="alert"
@@ -87,6 +109,12 @@ export function WriteLockBanner({
           onClick={() => { void copyText(diagnosticsText(), '诊断信息已复制，可直接粘贴发给作者（不含正文内容）') }}>
           <ClipboardCopy className="h-3.5 w-3.5" />
           复制诊断信息
+        </Button>
+        <Button variant="secondary" size="xs" disabled={savingPack}
+          title="保存结构化诊断包（.json，含版本、形态、体检结果，不含正文与路径），可当附件发给作者"
+          onClick={() => void savePack()}>
+          {savingPack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {savingPack ? '导出中…' : '保存诊断包'}
         </Button>
         <Button variant="secondary" size="xs" onClick={() => location.reload()}>
           <RefreshCw className="h-3.5 w-3.5" />

@@ -5,7 +5,7 @@ import authorAvatar from '@/assets/author-avatar.png'
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { APP_BUILD_ID, APP_BUILD_TIME, APP_VERSION_LABEL, formatBuildTime } from '@/lib/app/env'
-import { copyText } from '@/components/dialogs/dialogs'
+import { copyText, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import UpdateDialog from '@/components/app/UpdateDialog'
@@ -15,7 +15,11 @@ import { PORTABLE } from '@/lib/storage/fileBackend'
 // 网页版（云端 / 游客）在文案上必须与桌面版、便携版分开；`WEB` 为真时优先走网页措辞
 import { WEB } from '@/lib/app/platform'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
-import { collectDiagnostics } from '@/lib/app/diagnostics'
+import { currentUiZoom } from '@/lib/settings/theme'
+import { isDetailedErrorsOn, setDetailedErrors } from '@/lib/app/errorLog'
+import { collectDiagnostics, collectDiagnosticsPack } from '@/lib/app/diagnostics'
+import { diagnosticsFileName, renderDiagnosticsJson } from '@/lib/app/diagnosticsPack'
+import { downloadBlob } from '@/lib/storage/zip'
 
 // 关于 / 打赏页：作者 = 铁骨咸鱼（AI 不占版面）。
 const BILI_URL = 'https://b23.tv/zl4vqyw'
@@ -90,6 +94,24 @@ export default function AboutPage() {
     }
   }
 
+  /**
+   * 保存诊断包（.json）：结构化、可附件发送。与上面「复制」**同源**（同一份采集）。
+   * 🔴 落盘由渲染层直接触发下载（`downloadBlob`），不经过任何服务器 —— 数据不出本机。
+   */
+  const saveDiagPack = async () => {
+    setDiagBusy(true)
+    try {
+      const pack = await collectDiagnosticsPack({ uiZoom: currentUiZoom() })
+      const name = diagnosticsFileName(pack)
+      downloadBlob(name, new Blob([renderDiagnosticsJson(pack)], { type: 'application/json' }))
+      showToast(`已保存 ${name}`, 'success')
+    } catch {
+      showToast('保存诊断包失败（可能被浏览器拦截），请改用「复制诊断信息」', 'error')
+    } finally {
+      setDiagBusy(false)
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
@@ -150,16 +172,40 @@ export default function AboutPage() {
                 ))}
               </ul>
 
-              {/* 诊断信息（2026-10-06 补）：反馈问题时附上这段，省去来回问「什么系统 / 多少章 / 哪个版本」 */}
+              {/* 诊断信息（2026-10-06 补；3.6.2 拆成两个出口）：反馈问题时附上这段，
+                  省去来回问「什么系统 / 多少章 / 哪个版本」 */}
               <div className="mt-4 pt-4 border-t border-ink-700">
-                <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void copyDiag()} className="gap-1.5">
-                  <Copy size={13} />
-                  {diagBusy ? '采集中…' : '复制诊断信息'}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void copyDiag()} className="gap-1.5">
+                    <Copy size={13} />
+                    {diagBusy ? '采集中…' : '复制诊断信息'}
+                  </Button>
+                  <Button variant="secondary" size="sm" disabled={diagBusy} onClick={() => void saveDiagPack()} className="gap-1.5">
+                    <Download size={13} />
+                    保存诊断包（.json）
+                  </Button>
+                </div>
                 <p className="mt-2 text-10 leading-relaxed text-ink-500">
-                  反馈问题时附上这段：版本、系统、数据规模与 AI 配置概况。
-                  不含任何作品内容、密钥与文件路径，可放心粘贴。
+                  反馈问题时附上这份：版本、构建时间、运行形态、系统、数据规模、数据体检与 AI 配置概况。
+                  两者内容同源，都不含任何作品内容、密钥与文件路径 —— 复制可直接粘贴，文件可当附件发。
                 </p>
+                {/**
+                 * 详细错误开关（默认关，3.6.2 规划 C2）：
+                 * 打开后错误会额外带上堆栈前 3 行（已去路径）。这是**用户自己**的取舍，
+                 * 所以做成显式勾选，而不是默默记更多东西。
+                 */}
+                <label className="mt-3 flex items-start gap-2 text-10 text-ink-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    defaultChecked={isDetailedErrorsOn()}
+                    onChange={e => setDetailedErrors(e.target.checked)}
+                    className="mt-0.5 accent-amber"
+                  />
+                  <span className="leading-relaxed">
+                    附带详细错误（堆栈前 3 行，已去掉文件路径）
+                    <span className="text-ink-500"> —— 仅本次运行有效，重启回到关闭</span>
+                  </span>
+                </label>
               </div>
             </section>
 
@@ -247,8 +293,9 @@ export default function AboutPage() {
                   </p>
                 ) : PORTABLE ? (
                   <p className="mt-4 text-11 text-ink-400 leading-relaxed">
-                    便携版<strong className="text-ink-300">不提供在线更新</strong>：有新版本时请到发布页下载新的便携版压缩包，
-                    解压后把旧目录里的 <span className="font-mono text-ink-300">data</span> 文件夹拷进新目录即可 —— 稿件不会丢。
+                    便携版<strong className="text-ink-300">不能应用内安装</strong>：启动时会检查是否有新版并提示，
+                    换版请到发布页下载新的便携版压缩包，解压后把旧目录里的{' '}
+                    <span className="font-mono text-ink-300">data</span> 文件夹拷进新目录即可 —— 稿件不会丢。
                   </p>
                 ) : (
                   <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">

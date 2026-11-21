@@ -54,11 +54,30 @@ export function migrationLockSubject(names: readonly string[]): string {
 }
 
 /**
+ * 「数据文件位置」的类别判定（3.6.2 · 与诊断包同口径）。
+ *
+ * 🔴 为什么单独抽成函数而不是各写一个三元表达式：关于页的诊断包（`diagnosticsPack.ts` 的
+ *    `storage.pathKind`）与红条这条文本说的是**同一件事**，两处各写一份三元，
+ *    将来加第三种位置（比如"网络盘"）就必然漏一处 —— 一处说"自定义"、另一处还说"默认"。
+ *
+ * @param isCustomPath 桌面桥给的标记；便携/网页没有这个概念 → 传 undefined（判为未知）
+ */
+export function pathKindFromCustom(isCustomPath: boolean | undefined): '默认位置' | '自定义位置' | '未知' {
+  if (typeof isCustomPath !== 'boolean') return '未知'
+  return isCustomPath ? '自定义位置' : '默认位置'
+}
+
+/**
  * 「复制诊断信息」的成品文本（3.6.1 · 反馈通道补强）：
  * 用户遇到「数据文件读取失败」时，让他发截图往往缺少最关键的三样东西
  * （版本 / 数据文件在哪 / 到底报了哪句），来回三四轮才能开始判断。
  * 这里把机器侧已经知道的信息拼成一段可粘贴的话，**不含正文内容**，
  * 用户愿意发就能直接发。
+ *
+ * ⚠️ 3.6.2 的一个**刻意例外**：这段文本**仍然带数据文件路径**，而诊断包（.json）不带。
+ *    理由：判断"是不是放进了云盘同步目录"必须看路径，而这段是用户**主动**复制给作者的。
+ *    两个出口共用同一套采集与同一套"位置类别"判定（见 `pathKindFromCustom`），
+ *    但**渲染口径不同是设计**，不是漏改。
  */
 export function writeLockDiagnostics(input: {
   /** 主语：数据文件 / 便携数据文件 / 云端数据 */
