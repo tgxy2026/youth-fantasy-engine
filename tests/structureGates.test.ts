@@ -226,6 +226,10 @@ if (!SRC) {
     // 它需要 `import type` 复用 tavern/types 的 TavernMessage / TavernVars）。
     // 与 `src/lib/types.ts` 同款情形：类型声明随功能增长，按行数切出去毫无意义。
     'src/lib/run/runTypes.ts': '类型定义文件：跑团局契约（纯 interface/type，零运行时逻辑），复用 tavern/types 的会话底盘类型',
+    // 3.6.2：加了合集与浏览量的 DTO（CommunityCollectionPage / MyCollection / views / collectionNav）后过 200 行。
+    // **纯类型文件**：全是 interface / type，零函数、零数据表；落 src/data/ 反而违背「data 只放数据」的分工。
+    // 与 types.ts / runTypes.ts 同款情形 —— 类型声明随功能增长，按行数切出去毫无意义。
+    'src/lib/community/types.ts': '社区数据契约：纯 interface/type（含 3.6.2 合集与浏览量 DTO），零运行时逻辑',
   }
   {
     const bad: string[] = []

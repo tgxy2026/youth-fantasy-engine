@@ -121,6 +121,16 @@ function syntheticData() {
       version: 1,
       items: { list: [{ id: 'a1', actorRole: 'moderator', action: 'post.approve', targetType: 'post', targetId: 'p1', at: 19 }] },
     },
+    /** 3.6.2 · 合集：备份清单里新增了这个文件，夹具必须跟上，否则 writeLive 会写出 undefined */
+    'collections.json': {
+      version: 1,
+      items: {
+        col_1: {
+          id: 'col_1', uid: 'u1', title: '合成合集', intro: '', orderMode: 'chronological',
+          status: 'active', createdAt: 1, updatedAt: 2,
+        },
+      },
+    },
     'state.json': {
       version: 1,
       items: { global: { squareOpen: true, postsOpen: true, commentsOpen: true, updatedAt: 20 } },
