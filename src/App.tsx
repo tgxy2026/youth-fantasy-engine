@@ -63,6 +63,7 @@ import JieWenJiSprite from '@/components/jiewenji/JieWenJiSprite'
 import AssistantDock from '@/components/help/AssistantDock'
 import { Modal } from '@/components/dialogs/Modal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import { checkQuotaNotice } from '@/lib/app/quotaNotice'
 import { setTavernAcpAsk } from '@/lib/tavern/acpChat'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
@@ -551,6 +552,15 @@ export default function App() {
             setUpdateOpen(true)
           }
         } catch { /* 🔴 静默：断网 / 限流 / 解析失败都不打扰作者 */ }
+      })()
+      // 3.6.2 · W4：存储配额提示。放在启动 6 秒后、与更新检查错开，避免首屏同时弹两条。
+      // 🔴 同一档位每天最多一次（判定与去重都在 lib 里，这里只管把成品文案交给 toast）。
+      void (async () => {
+        try {
+          await new Promise(r => setTimeout(r, 6000))
+          const notice = await checkQuotaNotice()
+          if (notice) showToast(notice.text, notice.level === 'critical' ? 'error' : 'info', 8000)
+        } catch { /* 拿不到配额就不提，属正常（隐私模式 / WebView） */ }
       })()
       // 🔴 2026-09-19 老大要求：**启动后默认停在「项目管理首页」**，不再自动打开上次的项目。
       //    于是现在进项目只有一条路径 —— 作者在首页挑一个 → `openProject()`，

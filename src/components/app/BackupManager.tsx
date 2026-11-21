@@ -13,6 +13,8 @@ import { Button } from '@/components/common/Button'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
 import { invalidateTemplateCache } from '@/lib/templates/cache'
 import { drillSummary, runBackupDrill, type DrillResult } from '@/lib/db/backupDrill'
+import { describeQuota } from '@/lib/app/quotaNotice'
+import type { QuotaLevel } from '@/lib/app/storageQuota'
 
 interface Props {
   projectId: string
@@ -196,6 +198,16 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
     if (!meta) { showToast('这份备份已不在列表里，请关闭重开后再试', 'error'); return }
     await exportFile(meta)
   }
+
+  /**
+   * 当前存储用量（3.6.2 · W4）。**只展示、不判定** —— 档位与阈值都在 `storageQuota` 里，
+   * 免得"界面说 80% 该提示、lib 说 85% 才提示"这种两套口径。
+   * 拿不到（隐私模式 / WebView 返回 0）时整行不出现，不显示 0%。
+   */
+  const [quota, setQuota] = useState<{ level: QuotaLevel; percent: number | null } | null>(null)
+  useEffect(() => {
+    void describeQuota().then(setQuota).catch(() => {})
+  }, [])
 
   // ============ v1.3 迁移 / 换机：导出加密或明文迁移包，导入到另一台设备 ============
   // v1.6：密码输入改走应用内 PromptModal（浏览器 prompt 在 Electron 桌面端无实现）
@@ -488,6 +500,17 @@ export default function BackupManager({ projectId, projectName, onClose, onResto
             <div className="flex flex-wrap items-center gap-2">
               <ShieldCheck size={13} className="text-amber" />
               <span className="text-12 text-ink-200">备份可恢复性</span>
+              {quota?.percent !== null && quota !== null && (
+                <span
+                  className={
+                    'text-10 ' + (quota.level === 'critical' ? 'text-danger'
+                      : quota.level === 'warn' ? 'text-amber' : 'text-ink-500')
+                  }
+                  title="整个存储空间的用量（含同源其它数据），不只是备份"
+                >
+                  存储已用 {quota.percent}%
+                </span>
+              )}
               <Button
                 variant="secondary"
                 size="xs"
