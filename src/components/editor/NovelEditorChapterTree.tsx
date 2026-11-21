@@ -366,9 +366,10 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             const open = expanded.has(vol.id)
             const volWords = chs.reduce((s, c) => s + c.wordCount, 0)
             return (
-              <div key={vol.id} className="mb-1.5">
+              <div key={vol.id} className="mb-1.5" data-volume-id={vol.id}>
                 <div
                   className={`group flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-ink-800 transition-colors ${overKey?.kind === 'vol' && overKey.id === vol.id ? 'ring-1 ring-amber/70 bg-amber/5' : ''}`}
+                  data-volume-head
                   onDragOver={e => {
                     if (!dragKind) return
                     e.preventDefault()
