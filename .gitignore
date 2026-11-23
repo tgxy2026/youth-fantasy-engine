@@ -42,6 +42,8 @@ _待清理确认-*/
 .workbuddy/portable-sea/
 #   需求评估报告（对用户反馈的分析结论，属过程产物，非产品源码）
 .workbuddy/evals/
+#   真机验收的本机取证（截图 / result.json）—— 过程产物，结论写进 docs，原件不入库
+.workbuddy/evidence/
 
 # 🔴 便携版运行时数据目录 —— 里面是作者的全部稿件，绝不进版本库。
 #    在源码根目录跑 `npm run start:portable` 会生成 ./data/（含整库 JSON 与 .port 锁）；
