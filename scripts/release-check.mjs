@@ -182,6 +182,8 @@ else {
     if (IGNORE.some(([re]) => re.test(it.ref))) return true
     // 这份记录中的主包名是 3.5.2 上线时的取证值，保留原值供对照。
     if (it.doc === 'docs/3.5.2-发布记录-2026-11-12.md' && it.ref === 'assets/index-CVNPZoMI.js') return true
+    // 部署缓存头取证里的 `assets/` 是线上 nginx 的 URL 路径，不是仓库目录。
+    if (it.doc === 'docs/3.6.2-开发记录-2026-11-21.md' && it.ref === 'assets/') return true
     // 长期记忆记的是**当时**的路径（G3 重构后大量旧路径已搬走），不按现行源码判错
     if (/^\.workbuddy\/memory\//.test(it.doc)) return true
     // 工具按中文/标点截断，把完整文件名截成前缀 ⇒ 同目录有同名前缀即视为可定位
