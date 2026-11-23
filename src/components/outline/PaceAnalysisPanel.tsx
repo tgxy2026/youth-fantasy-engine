@@ -29,7 +29,9 @@ import CheckTrendNote from '@/components/audit/CheckTrendNote'
 import { HOOK_ZONE_RATIO, PACE_SEGMENTS, PACE_SEG_UNKNOWN, type PaceReport } from '@/lib/outline/paceAnalysis'
 import { countWords } from '@/lib/editor/textStats'
 // 🔴 章节顺序真源（卷序 → 章序）：Chapter.order 是卷内序号，裸 sort 跨卷必串号
-import { sortChapters } from '@/lib/outline/chapterSeq'
+import { sortChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { computePaceSeries, samplePoints, type PacePoint } from '@/lib/outline/paceMetrics'
+import type { TableRow } from '@/lib/types'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import HelpPopover from '@/components/common/HelpPopover'
 import { markTaskSeen, startTask, useAiTask } from '@/lib/ai/aiTaskCenter'
@@ -56,6 +58,10 @@ export default function PaceAnalysisPanel() {
   const acpWriting = useAcpWriting()
   const writingReady = aiReady || !!acpWriting?.ready
   const [chapters, setChapters] = useState<Chapter[]>([])
+  const [vols, setVols] = useState<Volume[]>([])
+  const [hookRows, setHookRows] = useState<TableRow[]>([])
+  /** 3.7.0 · W5：曲线切换的指标（纯事实指标，不含任何合成分） */
+  const [metric, setMetric] = useState<'words' | 'dialogue' | 'paragraph' | 'gap'>('words')
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   /** ④（2.9.2）：本章的节奏趋势 —— 只统计**同一个模型**的历史（换模型输出不可比） */
@@ -79,12 +85,15 @@ export default function PaceAnalysisPanel() {
   const taskStatus = task?.status
 
   const load = useCallback(async () => {
-    const [chs, vols] = await Promise.all([
+    const [chs, volumes, hooks] = await Promise.all([
       db.getAllChapters().catch(() => [] as Chapter[]),
       db.getAllVolumes().catch(() => [] as Volume[]),
+      db.getTableRows('hookpoints').catch(() => [] as TableRow[]),
     ])
     // 与「本章体检」同源修正：原先裸按 order 排 ⇒ 跨卷串号（第1章 / 第11章 / 第21章 …）
-    const sorted = sortChapters(vols, chs)
+    const sorted = sortChapters(volumes, chs)
+    setVols(volumes)
+    setHookRows(hooks)
     setChapters(sorted)
     setActiveId(prev => prev || (sorted.find(c => (c.wordCount || 0) > 0) ?? sorted[0])?.id || '')
     setLoading(false)
@@ -118,6 +127,27 @@ export default function PaceAnalysisPanel() {
   const active = useMemo(() => chapters.find(c => c.id === activeId), [chapters, activeId])
   const content = active?.content ?? ''
   const words = useMemo(() => (content ? countWords(content) : 0), [content])
+  /** 3.7.0 · W5：全书逐章指标（本地计算，抽稀到 ≤500 点） */
+  const paceSeries = useMemo(() => {
+    const seq = chapterSeqMap(vols, chapters)
+    const input = chapters.map(c => ({ id: c.id, no: seq.get(c.id) ?? 0, title: c.title || '', content: c.content ?? '' }))
+    const hooks = hookRows.map(r => {
+      const raw = String(r.data['章节号'] ?? '')
+      const no = Number(raw.match(/(\d+)/)?.[1] ?? 0)
+      return { chapterNo: no, strength: String(r.data['爽点强度'] ?? '') }
+    })
+    const series = computePaceSeries(input, hooks)
+    return { ...series, points: samplePoints(series.points) }
+  }, [chapters, vols, hookRows])
+  const curve = useMemo(() => {
+    const pts = paceSeries.points
+    if (!pts.length) return { path: '', max: 0 }
+    const valueOf = (q: PacePoint) => metric === 'words' ? q.words : metric === 'dialogue' ? q.dialogueRatio : metric === 'paragraph' ? q.avgParagraph : (q.hookGap ?? 0)
+    const max = Math.max(1, ...pts.map(valueOf))
+    const step = pts.length > 1 ? 100 / (pts.length - 1) : 0
+    const path = pts.map((q, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(36 - (valueOf(q) / max) * 32).toFixed(2)}`).join(' ')
+    return { path, max }
+  }, [paceSeries, metric])
 
   const run = () => {
     if (!writingReady) { showToast('还没接入模型、也没有可用的 ACP 连接，无法分析', 'info'); return }
@@ -214,6 +244,42 @@ export default function PaceAnalysisPanel() {
           <span className="ml-auto">
             <CheckTrendNote trend={trend} neutral noun="个观察点" />
           </span>
+        )}
+      </div>
+
+      {/* 3.7.0 · W5：全书节奏曲线 —— 只呈现事实分布（不加合成分、不做名次、不标区间） */}
+      <div className="px-4 py-3 border-b border-ink-700" data-pace-curve>
+        <div className="flex flex-wrap items-center gap-2 text-11">
+          <span className="text-ink-200 font-medium">全书逐章曲线</span>
+          <span className="text-10 text-ink-500">本地计算 · 每章一个点</span>
+          <select value={metric} onChange={e => setMetric(e.target.value as typeof metric)}
+            className="ml-auto rounded border border-ink-700 bg-ink-950 px-2 py-1 text-11 text-ink-200 outline-none focus:border-amber">
+            <option value="words">字数</option>
+            <option value="dialogue">对话占比</option>
+            <option value="paragraph">平均段长</option>
+            <option value="gap">距上个爽点（章）</option>
+          </select>
+        </div>
+        {paceSeries.points.length === 0 ? (
+          <div className="mt-1.5 text-10 text-ink-500">还没有可画曲线的章节。</div>
+        ) : (
+          <div className="mt-1.5">
+            <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-16 w-full" role="img" aria-label="逐章节奏曲线（事实分布）">
+              <line x1="0" y1="36" x2="100" y2="36" stroke="rgb(var(--ink-700))" strokeWidth="0.4" />
+              <path d={curve.path} fill="none" stroke="rgb(var(--amber))" strokeWidth="0.7" />
+              {paceSeries.points.map((q, i) => q.hooks > 0 ? (
+                <circle key={q.chapterNo}
+                  cx={(paceSeries.points.length > 1 ? i * (100 / (paceSeries.points.length - 1)) : 0).toFixed(2)}
+                  cy={(36 - (q.hookWeight / Math.max(1, ...paceSeries.points.map(x => x.hookWeight))) * 32).toFixed(2)}
+                  r={0.6 + q.hookWeight * 0.3} fill="rgb(var(--amber))" />
+              ) : null)}
+            </svg>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 text-10 text-ink-500">
+              <span>最高值：{metric === 'dialogue' ? `${(curve.max * 100).toFixed(0)}%` : curve.max}</span>
+              <span>按登记强度打点（点越大档越高）</span>
+            </div>
+            {paceSeries.observations.map(o => <div key={o} className="mt-0.5 text-10 text-ink-400">{o}</div>)}
+          </div>
         )}
       </div>
 
