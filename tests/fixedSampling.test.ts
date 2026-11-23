@@ -12,6 +12,8 @@
 import http from 'node:http'
 import { usesFixedSampling, shouldDegradeOn400, nextOpenAIFlags } from '../src/lib/aiCore/protocols/shared'
 import { openaiChatDriver } from '../src/lib/aiCore/protocols/openaiChat'
+import { anthropicDriver } from '../src/lib/aiCore/protocols/anthropic'
+import { clearSamplingRejected, isSamplingRejected } from '../src/lib/aiCore/samplingGuard'
 import type { AIProvider } from '../src/lib/aiCore/core'
 
 let pass = 0, fail = 0
@@ -74,7 +76,21 @@ const server = http.createServer((req, res) => {
     let body: Record<string, unknown> = {}
     try { body = JSON.parse(raw) } catch { /* 忽略 */ }
     const model = String(body.model ?? '')
+    const url = req.url ?? ''
     seen.push({ model, body })
+
+    // —— Anthropic Messages：一律拒绝温度，用来验"作者勾了不发 / 撞一次后不再发" ——
+    if (url.includes('/messages')) {
+      if ('temperature' in body) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ type: 'error', error: { message: 'temperature: only 1 is allowed for this model' } }))
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ content: [{ type: 'text', text: '好' }], stop_reason: 'end_turn' }))
+      return
+    }
+
     const hasTemp = 'temperature' in body || 'top_p' in body || 'presence_penalty' in body || 'frequency_penalty' in body
     if (rejectTemp(model) && hasTemp) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -92,9 +108,9 @@ await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
 const PORT = (server.address() as { port: number }).port
 const ROOT = `http://127.0.0.1:${PORT}/v1`
 
-const providerOf = (model: string): AIProvider => ({
-  id: 'fake', name: '假端点', type: 'openai', protocol: 'openai-chat', local: false,
-  baseUrl: ROOT, apiKey: 'test-key', model,
+const providerOf = (model: string, id = 'fake', extra: Partial<AIProvider> = {}): AIProvider => ({
+  id, name: '假端点', type: 'openai', protocol: 'openai-chat', local: false,
+  baseUrl: ROOT, apiKey: 'test-key', model, ...extra,
 })
 const reset = () => { seen.length = 0 }
 
@@ -129,6 +145,54 @@ reset()
 {
   const out = await openaiChatDriver.chat(providerOf('kimi-k3'), [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 0.3 })
   ok('D · kimi-k3 的 JSON 低温任务同样不带温度', out.content === '好' && !('temperature' in seen[0].body), `请求 ${seen.length} 次`)
+}
+
+// ---------- ⑤ 作者开关 / 会话记忆（兜住"模型名认不出"的中转站） ----------
+clearSamplingRejected('mb', 'deepseek-chat')
+reset()
+{
+  const cfg = providerOf('deepseek-chat', 'mb', { disableSampling: true })
+  const out = await openaiChatDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 0.85 })
+  ok('E · 勾了「不发送采样参数」⇒ 普通模型也不发温度', out.content === '好' && !('temperature' in seen[0].body), `请求 ${seen.length} 次`)
+}
+
+clearSamplingRejected('mem', 'some-relay/kimi-pro-whatever')
+rejectTemp = () => true   // 模拟"名字认不出的中转站"：见温度就拒
+reset()
+{
+  const cfg = providerOf('some-relay/kimi-pro-whatever', 'mem')
+  const out1 = await openaiChatDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 0.85 })
+  ok('F1 · 未识别模型第一次：撞 400 后自动降级成功', out1.content === '好' && seen.length === 2, `请求 ${seen.length} 次`)
+  ok('F2 · 已记进会话记忆', isSamplingRejected('mem', 'some-relay/kimi-pro-whatever') === true)
+
+  reset()
+  const out2 = await openaiChatDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 0.85 })
+  ok('F3 · 第二次直接不发温度（只打 1 次，不再多花钱）', out2.content === '好' && seen.length === 1, `请求 ${seen.length} 次`)
+  ok('F4 · 第二次请求体不含 temperature', !('temperature' in seen[0].body))
+}
+
+// 取消勾选 ⇒ 清掉记忆，下次重新真实试一次（否则永远不敢发）
+clearSamplingRejected('mem', 'some-relay/kimi-pro-whatever')
+ok('G · 清掉记忆后不再被视为"已拒绝"', isSamplingRejected('mem', 'some-relay/kimi-pro-whatever') === false)
+rejectTemp = (model: string) => usesFixedSampling(model)
+
+// ---------- ⑥ 三家官方协议同样尊重这个开关（以 Anthropic 为例） ----------
+reset()
+{
+  const cfg: AIProvider = { ...providerOf('claude-test', 'anth', { disableSampling: true }), protocol: 'anthropic' }
+  const out = await anthropicDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 1.5 })
+  ok('H · Anthropic 勾选后不发 temperature', out.content === '好' && !('temperature' in seen[0].body), `请求 ${seen.length} 次`)
+}
+
+clearSamplingRejected('anth2', 'claude-thinking')
+reset()
+{
+  const cfg: AIProvider = { ...providerOf('claude-thinking', 'anth2'), protocol: 'anthropic' }
+  const out1 = await anthropicDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 1.5 })
+  ok('I1 · Anthropic 撞 400 后降级救回', out1.content === '好' && seen.length === 2, `请求 ${seen.length} 次`)
+  reset()
+  const out2 = await anthropicDriver.chat(cfg, [{ role: 'user', content: 'hi' }], { timeoutMs: 8000, temperature: 1.5 })
+  ok('I2 · 第二次直接不带温度（记忆生效）', out2.content === '好' && seen.length === 1 && !('temperature' in seen[0].body), `请求 ${seen.length} 次`)
 }
 
 server.close()

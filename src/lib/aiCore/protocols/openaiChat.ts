@@ -13,6 +13,7 @@ import {
   AIStreamStalledError, listOpenAIModels, type SseChunk, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+import { isSamplingRejected, markSamplingRejected } from '@/lib/aiCore/samplingGuard'
 import { mergeUsage, usageFromOpenAI, usageFromStreamChunk, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import {
@@ -48,7 +49,15 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: Driver
    *    判据与理由见 `shared.ts` 的 `FIXED_SAMPLING_RE`。
    */
   const fixedSampling = usesFixedSampling(config.model)
-  let flags: OpenAIFlags = { thinkToggle, sampling: !fixedSampling, format: !!responseFormat }
+  /**
+   * 🔴 三层防线（顺序即优先级）：
+   *   ① 模型名命中固定采样名单 → 不发（省掉已知必撞的一次 400）；
+   *   ② 作者在设置页勾了「不发送采样参数」→ 不发（中转站/私有部署的唯一可靠手段）；
+   *   ③ 本会话已经撞过"采样被拒"的 400 → 不发（见 `samplingGuard.ts`）。
+   * 三者任一成立就不带 temperature / top_p / 惩罚项；都不成立才按老行为发。
+   */
+  const samplingAllowed = !fixedSampling && !config.disableSampling && !isSamplingRejected(config.id, config.model)
+  let flags: OpenAIFlags = { thinkToggle, sampling: samplingAllowed, format: !!responseFormat }
   // 请求体由开关决定：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
   //   → bare（再去 temperature 与采样惩罚——推理系模型（o1 / deepseek-r1 等）对 temperature ≠ 1 会直接 400；
   //     部分中转站也会拒绝不认识的字段）。响应格式是**独立**的一档，只在 400 时按需撤。
@@ -84,6 +93,8 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: Driver
       if (!shouldDegradeOn400(txt)) { lastErrorText = txt; break }
       const next = nextOpenAIFlags(flags, txt)
       if (!next) { lastErrorText = txt; break }
+      // 因为"采样被拒"而撤掉采样的这一次，记进会话记忆：同一端点后续调用不再白发
+      if (flags.sampling && !next.sampling) markSamplingRejected(config.id, config.model)
       flags = next
     }
   } catch (e) {

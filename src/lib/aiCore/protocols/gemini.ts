@@ -17,6 +17,7 @@ import {
   describeApiError, AIRefusalError, type SseLineOutcome, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+import { isSamplingRejected, markSamplingRejected } from '@/lib/aiCore/samplingGuard'
 import { mergeUsage, usageFromGemini, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import { withApiModeLease } from '@/lib/agentHost/modeBridge'
@@ -123,7 +124,9 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
   //    Gemini 的 temperature 是 [0, 2]，个别模型只收 [0, 1]；老网关也常不认 responseJsonSchema。
   const canFormat = o.wireFormat === 'json-schema' && !!o.jsonSchema
   const canJsonObject = o.wireFormat === 'json-object'
-  let flags: WireFlags = initialWireFlags(canFormat || canJsonObject)
+  /** 作者勾了「不发送采样参数」，或本会话已撞过这类 400 ⇒ 一开始就不带 temperature */
+  const samplingAllowed = !config.disableSampling && !isSamplingRejected(config.id, config.model)
+  let flags: WireFlags = initialWireFlags(canFormat || canJsonObject, samplingAllowed)
   const buildBody = (f: WireFlags): Record<string, unknown> => {
     const gen: Record<string, unknown> = { ...(f.sampling ? { temperature: o.temperature } : {}) }
     // 官方 structured outputs：responseMimeType + responseJsonSchema（JSON Schema 子集）
@@ -184,6 +187,8 @@ async function geminiChat(config: AIProvider, messages: ChatMessage[], o: Driver
     flags = out.flags
     attempts = out.attempts
     lastErrorText = out.lastErrorText
+    // 因"温度被拒"而撤掉采样 ⇒ 记住，本会话后续调用不再白发一次
+    if (samplingAllowed && out.flags.sampling === false) markSamplingRejected(config.id, config.model)
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Gemini 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)

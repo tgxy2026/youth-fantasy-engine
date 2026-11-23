@@ -12,6 +12,7 @@
 import { OLLAMA_DEFAULT_URL, protocolOf } from '@/lib/aiCore/core'
 import { DEFAULT_TIMEOUTS } from '@/lib/ai/streaming'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+import { shouldDegradeSamplingOn400 } from '@/lib/aiCore/protocols/shared'
 import type { AIProvider } from '@/lib/aiCore/core'
 import { WEB } from '@/lib/app/platform'
 // 3.4.3：API 与 Agent 互斥 —— 旁路模型请求同样必须持有 API 模式租约
@@ -570,6 +571,16 @@ export function describeApiError(status: number, raw: string): string {
       // 3.0 · W1-3：内容政策拒绝也走 400 —— 先分流，别把作者引向「模型名 / 参数」的错误方向
       if (looksLikeSafetyMessage(raw)) {
         return `请求被平台拒绝（HTTP 400）：「这是内容被平台拒绝」，不是模型名 / 参数配置出错。${tail}\n可试试：改掉触发的敏感点后重试 / 换本地模型（不受平台内容政策限制）/ 换一个平台。`
+      }
+      /**
+       * 3.6.2 热修（2026-11-23）：采样参数被拒要给**可执行的一步**，而不是"可能是参数不被接受"。
+       * 典型原话：`invalid temperature: only 1 is allowed for this model`。
+       * 自动降级已经试过（撤掉参数重发），走到这里说明连裸请求也没成 —— 那就让作者勾开关。
+       */
+      if (shouldDegradeSamplingOn400(detail || raw)) {
+        return `请求被平台拒绝（HTTP 400）：这个模型不接受自定义采样参数（温度 / top_p 等）。${tail}\n`
+          + '处理办法：到「模型设置 → 采样参数」勾选「不发送采样参数」后重试。'
+          + '（Kimi k2/k3、o1/o3、gpt-5、deepseek-r1 这类推理模型会把采样参数锁死，传了就会报这个错。）'
       }
       return `请求被平台拒绝（HTTP 400）：最常见的原因是模型名不在该账户已开通的清单里，也可能是参数不被接受。${tail}`
     case 401:

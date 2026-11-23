@@ -18,6 +18,7 @@ import {
   type SseLineOutcome, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+import { isSamplingRejected, markSamplingRejected } from '@/lib/aiCore/samplingGuard'
 import { mergeUsage, usageFromResponses, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import {
@@ -83,7 +84,9 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
   //    实测最常见的两种 400：① 推理系模型拒绝 `temperature ≠ 1`（原话还带 "with this model"）；
   //    ② 中转不认 `text.format`。撤掉能救回来；模型名 / 鉴权 / 额度写错就别白发请求。
   const canFormat = (o.wireFormat === 'json-schema' && !!o.jsonSchema) || o.wireFormat === 'json-object'
-  let flags: WireFlags = initialWireFlags(canFormat)
+  /** 作者勾了「不发送采样参数」，或本会话已撞过这类 400 ⇒ 一开始就不带 temperature */
+  const samplingAllowed = !config.disableSampling && !isSamplingRejected(config.id, config.model)
+  let flags: WireFlags = initialWireFlags(canFormat, samplingAllowed)
   const buildBody = (f: WireFlags, stream: boolean): Record<string, unknown> => {
     const b: Record<string, unknown> = {
       model: config.model,
@@ -137,6 +140,8 @@ async function responsesChat(config: AIProvider, messages: ChatMessage[], o: Dri
     flags = out.flags
     attempts = out.attempts
     lastErrorText = out.lastErrorText
+    // 因"温度被拒"而撤掉采样 ⇒ 记住，本会话后续调用不再白发一次
+    if (samplingAllowed && out.flags.sampling === false) markSamplingRejected(config.id, config.model)
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Responses 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)

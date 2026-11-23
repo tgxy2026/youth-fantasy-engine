@@ -17,6 +17,7 @@ import {
   describeApiError, AIRefusalError, type SseLineOutcome, type StreamReport,
 } from '@/lib/aiCore/transport'
 import { mergeHeaders } from '@/lib/aiCore/headers'
+import { isSamplingRejected, markSamplingRejected } from '@/lib/aiCore/samplingGuard'
 import { mergeUsage, usageFromAnthropic, type RealUsage } from '@/lib/aiCore/usageParse'
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import {
@@ -112,7 +113,9 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
   //    实测会撞的两种 400：① 部分模型只接受 temperature 0–1（作者填 1.2 就整轮挂）；
   //    ② 中转 / 兼容网关不认 output_config。撤掉能救回来，撤不掉（模型名、鉴权、额度）就别白发请求。
   const canFormat = o.wireFormat === 'json-schema' && !!o.jsonSchema
-  let flags: WireFlags = initialWireFlags(canFormat)
+  /** 作者勾了「不发送采样参数」，或本会话已撞过这类 400 ⇒ 一开始就不带 temperature */
+  const samplingAllowed = !config.disableSampling && !isSamplingRejected(config.id, config.model)
+  let flags: WireFlags = initialWireFlags(canFormat, samplingAllowed)
   const buildBody = (f: WireFlags, stream: boolean): Record<string, unknown> => ({
     model: config.model,
     max_tokens: o.outputTokens ?? 8192,
@@ -168,6 +171,8 @@ async function anthropicChat(config: AIProvider, messages: ChatMessage[], o: Dri
     flags = out.flags
     attempts = out.attempts
     lastErrorText = out.lastErrorText
+    // 因"温度被拒"而撤掉采样 ⇒ 记住，本会话后续调用不再白发一次
+    if (samplingAllowed && out.flags.sampling === false) markSamplingRejected(config.id, config.model)
   } catch (e) {
     if (isCancelled(e)) throw e
     if (isAbortError(e)) throw new Error(`Anthropic 响应超时（超过 ${secs(timeoutMs)} 秒）：请检查网络与接口地址。`)

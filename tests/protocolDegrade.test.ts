@@ -15,6 +15,7 @@ import { anthropicDriver } from '../src/lib/aiCore/protocols/anthropic'
 import { geminiDriver } from '../src/lib/aiCore/protocols/gemini'
 import { responsesDriver } from '../src/lib/aiCore/protocols/openaiResponses'
 import { nextWireFlags, shouldDegradeSamplingOn400, MAX_REQUESTS_PER_CALL } from '../src/lib/aiCore/protocols/shared'
+import { clearSamplingRejected } from '../src/lib/aiCore/samplingGuard'
 import { PROTOCOL_WEB_CORS, CORS_VERDICT_LABEL, webProtocolCorsNote } from '../src/lib/aiCore/webCors'
 import type { AIProvider } from '../src/lib/aiCore/core'
 import type { DriverCallOpts } from '../src/lib/aiCore/protocols/contract'
@@ -137,7 +138,17 @@ const providerOf = (protocol: AIProvider['protocol'], baseUrl: string, model: st
 const opts = (extra: Partial<DriverCallOpts> = {}): DriverCallOpts => ({
   timeoutMs: 10_000, temperature: 1.5, ...extra,
 })
-const reset = () => { seen.length = 0 }
+const reset = () => {
+  seen.length = 0
+  /**
+   * 🔴 必须清「采样被拒」的会话记忆（3.6.2 起 driver 会记住）。
+   *    不清的话：用例①撞过 400 之后，用例③（disableCompatibilityRetry）的首次请求
+   *    就已经不带温度 → 不再 400 → 断言"应当抛错"直接假红。
+   */
+  for (const p of ['anthropic', 'gemini', 'openai-responses'] as const) {
+    for (const m of ['claude-test', 'gemini-test', 'gpt-test']) clearSamplingRejected(`fake-${p}`, m)
+  }
+}
 
 // ---------- ① Anthropic：400 指向采样 ⇒ 撤温度重发 ----------
 reject.anthropicTemp = true

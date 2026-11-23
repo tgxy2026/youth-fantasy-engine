@@ -18,10 +18,59 @@ import NumberField from '@/components/common/NumberField'
 import { showToast } from '@/components/dialogs/dialogs'
 import { checkContextWindow, MAX_WINDOW } from '@/lib/ai/modelCapacity'
 import { usesFixedSampling } from '@/lib/aiCore/protocols/shared'
+import { clearSamplingRejected, isSamplingRejected } from '@/lib/aiCore/samplingGuard'
 import {
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '@/lib/ai'
 import type { AITestResult, WireProtocol } from '@/lib/ai'
+
+/**
+ * 「不发送采样参数」开关（3.6.2 热修之二 · 2026-11-23）。
+ *
+ * 【为什么必须有这个开关】按模型名识别（`FIXED_SAMPLING_RE`）只能覆盖已知型号：
+ *   中转站改名、私有部署、作者手填旧模型名（`kimi-latest`）都认不出。
+ *   唯一可靠的兜底是**撞一次就记住 + 让作者一键关掉**：
+ *   · 撞到时驱动层把 `temperature`/`top_p`/惩罚项撤掉重发，本次调用仍能成功；
+ *   · 同时 `samplingGuard` 记进会话记忆，并在这里显示黄条提醒；
+ *   · 作者勾上这个开关（存进 provider）后，请求里**彻底不带**这些字段。
+ *   🔴 勾选框是"不发"，不是"改成 1"：各家对"必须显式 1"与"必须不传"口径不同，只有"不发"两边都成立。
+ */
+export function SamplingTransportField({ providerId, model, checked, onChange }: {
+  providerId: string
+  model: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  const rejected = isSamplingRejected(providerId, model)
+  return (
+    <div className="mt-3">
+      <label className="flex items-start gap-2 text-11 text-ink-400 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => {
+            onChange(e.target.checked)
+            // 取消勾选 ⇒ 清掉"已拒绝"记忆，下次真打一次确认（否则永远不敢发）
+            if (!e.target.checked) clearSamplingRejected(providerId, model)
+          }}
+          className="mt-0.5 accent-amber"
+        />
+        <span>
+          不发送采样参数（温度 / top_p / 惩罚项）
+          <span className="block text-10 text-ink-600 mt-0.5 leading-relaxed">
+            推理型模型（Kimi k2/k3、o1/o3、gpt-5、deepseek-r1 等）会把采样参数锁死，传了就报 400。
+            勾上后请求里彻底不带这些字段，写作、校对都不受影响。
+          </span>
+        </span>
+      </label>
+      {rejected && !checked && (
+        <p className="mt-1 text-10 text-amber/90 leading-relaxed">
+          上次调用时这个端点拒绝了自定义采样参数（本次已自动跳过）。勾上上面这一项，之后就不用每次多试一次。
+        </p>
+      )}
+    </div>
+  )
+}
 
 function fmtMs(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`

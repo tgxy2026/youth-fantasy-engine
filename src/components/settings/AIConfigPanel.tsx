@@ -56,7 +56,7 @@ import {
 } from '@/lib/agentHost/modeBridge'
 import { checkContextWindow } from '@/lib/ai/modelCapacity'
 import NumberField from '@/components/common/NumberField'
-import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, StructureCapabilityField } from '@/components/settings/AIConfigFields'
+import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, SamplingTransportField, StructureCapabilityField } from '@/components/settings/AIConfigFields'
 
 /**
  * 编辑表单 / 列表区的统一宽度：页面很宽，铺满会显得松散难读。
@@ -1001,6 +1001,13 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
                 local={protocolOf(editing) === 'ollama' || !!editing.local}
                 model={editing.model}
                 onChange={v => setEditing(prev => (prev ? { ...prev, temperature: v } : prev))}
+              />
+              {/* 3.6.2 热修：撞到"这个模型不接受采样参数"时的确定性开关（中转站/改名模型的唯一可靠兜底） */}
+              <SamplingTransportField
+                providerId={editing.id}
+                model={editing.model}
+                checked={!!editing.disableSampling}
+                onChange={v => setEditing(prev => (prev ? { ...prev, disableSampling: v } : prev))}
               />
 
               {/* 3.2.0 · WQ5：结构化输出能力（默认关闭）—— 实现在 AIConfigFields.tsx */}

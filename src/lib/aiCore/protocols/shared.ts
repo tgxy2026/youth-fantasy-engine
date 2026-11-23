@@ -158,9 +158,9 @@ export interface WireFlags {
   sampling: boolean
 }
 
-/** 初始开关：结构字段只在调用方确实要、且驱动能落成时才算「开着」 */
-export function initialWireFlags(canFormat: boolean): WireFlags {
-  return { format: canFormat, sampling: true }
+/** 初始开关：结构字段只在调用方确实要、且驱动能落成时才算「开着」；采样默认开，可被作者关掉 */
+export function initialWireFlags(canFormat: boolean, sampling = true): WireFlags {
+  return { format: canFormat, sampling }
 }
 
 /** 错误文案是否明确指向结构输出字段 */

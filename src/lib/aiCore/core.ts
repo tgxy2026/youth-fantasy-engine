@@ -59,6 +59,20 @@ export interface AIProvider {
    */
   temperature?: number
   /**
+   * **不发送采样参数**（3.6.2 热修，2026-11-23）。
+   *
+   * 【为什么需要它】Kimi `kimi-k2.*`/`kimi-k3`、OpenAI `o1/o3`、`gpt-5`、DeepSeek `deepseek-r1`
+   * 这类推理模型把 temperature / top_p / 惩罚项**钉死**，传了就是 400
+   * （`invalid temperature: only 1 is allowed for this model`）。按模型名识别能挡一部分，
+   * 但中转站改名、私有部署、手填旧模型名都认不出 —— 所以给作者一个**确定性开关**：
+   * 勾上之后请求里彻底不带这些字段（不是改成 1：各家对"必须显式 1"与"必须不传"口径不同，
+   * 只有"不发"两边都成立）。
+   *
+   * 不填 = 不勾选（存量配置逐字节不变）；作者在「模型设置 → 采样参数」里自己勾。
+   * 撞到这类 400 时界面会提示他勾选，见 `lib/aiCore/samplingGuard.ts`。
+   */
+  disableSampling?: boolean
+  /**
    * 该端点**已确认**支持结构格式下发（3.2.0 · WQ5）。
    *
    * · `json-object` ⇒ OpenAI 兼容通道下发 `response_format: { type: 'json_object' }`，
