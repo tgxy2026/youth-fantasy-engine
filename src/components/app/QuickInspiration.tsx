@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Lightbulb } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import VoiceInputButton from '@/components/creative/VoiceInputButton'
 import { addItem, INSPIRATION_MAX } from '@/lib/creative/inspirationBox'
 import { registerAuxiliaryLeaveGuard } from '@/lib/editor/leaveBarrier'
 import type { Chapter } from '@/lib/types'
@@ -57,6 +58,7 @@ export default function QuickInspiration({ projectId, onOpen, chapters }: { proj
       </select>
     </label>
     <div className="flex items-center gap-2 flex-wrap">
+      <VoiceInputButton onText={t => { const next = draftRef.current ? `${draftRef.current}\n${t}` : t; draftRef.current = next; setDrafts(current => ({ ...current, [projectId]: next })) }} />
       <Button size="sm" onClick={() => void save()} disabled={busy || !text.trim()}>{busy ? '保存中…' : '保存到灵感夹'}</Button>
       <Button size="sm" variant="secondary" onClick={onOpen}>打开灵感启发</Button>
       {notice[projectId] && <span role="status" className="text-11 text-ink-300">{notice[projectId]}</span>}

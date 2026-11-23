@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import HelpPopover from '@/components/common/HelpPopover'
+import TranscribeSettings from '@/components/settings/TranscribeSettings'
 import AIConfigPanel from '@/components/settings/AIConfigPanel'
 import AIWriterBudgetPanel from '@/components/settings/AIWriterBudgetPanel'
 import SearchSettingsPanel from '@/components/settings/SearchSettingsPanel'
@@ -41,6 +42,9 @@ export default function ModelSettingsPanel() {
         <div data-guide="settings-models" className="space-y-4">
           <AIConfigPanel onChange={() => setCfgVer(v => v + 1)} />
         </div>
+
+        {/* 3.7.0 · W7：语音转写（独立 BYOK 配置，不参与聊天模型列表） */}
+        <TranscribeSettings />
 
         {/* 3.0 · W1-4：AI 消耗统计（本机账本汇总；切页签会重新挂载并重取数）——
             紧跟模型配置：它回答的正是「这个模型这段时间用了多少、被拒了几次」。 */}

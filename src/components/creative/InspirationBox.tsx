@@ -10,6 +10,7 @@
  * · 生成结果同时在下方列出并标「基于灵感 #N」，与画布里的卡一一对应（溯源红线）。
  */
 import Panel from '@/components/common/Panel'
+import VoiceInputButton from '@/components/creative/VoiceInputButton'
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Lightbulb, Loader2, Sparkles, X } from 'lucide-react'
 import * as db from '@/lib/db'
@@ -156,6 +157,7 @@ export default function InspirationBox() {
           placeholder="记一条灵感：一个点子、一句台词、一个画面……（回车记下）"
           className="flex-1 rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-12 text-ink-100 outline-none focus:border-amber placeholder:text-ink-600"
         />
+        <VoiceInputButton onText={t => setNewText(cur => (cur ? `${cur}\n${t}` : t))} />
         <Button variant="secondary" size="sm" disabled={!newText.trim()} onClick={() => void add()}>
           记下来
         </Button>
