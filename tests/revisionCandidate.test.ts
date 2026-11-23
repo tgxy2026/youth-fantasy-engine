@@ -329,17 +329,17 @@ async function case8() {
   const w1 = wordChange('你好世界', '你好美丽的世界')
   ok('⑧① 中文字数增加', w1.beforeWords === 4 && w1.afterWords === 7 && w1.delta === 3)
 
-  // 英文
+  // 英文（3.6.4 起逐字符计：hello world=10，hello beautiful world=19）
   const w2 = wordChange('hello world', 'hello beautiful world')
-  ok('⑧② 英文字数增加', w2.beforeWords === 2 && w2.afterWords === 3 && w2.delta === 1)
+  ok('⑧② 英文字数增加（逐字符）', w2.beforeWords === 10 && w2.afterWords === 19 && w2.delta === 9)
 
   // 中英混合
   const w3 = wordChange('Hello 世界', 'Hello 美丽的世界')
-  ok('⑧③ 中英混合', w3.beforeWords === 3 && w3.afterWords === 6)
+  ok('⑧③ 中英混合', w3.beforeWords === 7 && w3.afterWords === 10)
 
   // 空文本
   const w4 = wordChange('', 'hello')
-  ok('⑧④ 空文本', w4.beforeWords === 0 && w4.afterWords === 1)
+  ok('⑧④ 空文本', w4.beforeWords === 0 && w4.afterWords === 5)
 
   // 无变化
   const w5 = wordChange('hello', 'hello')

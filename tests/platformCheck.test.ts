@@ -35,7 +35,7 @@ function mkCh(id: string, title: string, content: string): Chapter {
     mkCh('c2', '第二章', long),
     mkCh('c3', '空章', ''),
   ]
-  // 上界取 200：长章样本约 340 字（countWords 只数 CJK），这样它必落在区间外
+  // 上界取 200：长章样本约 340 字（countWords 数所有语言文字字符），这样它必落在区间外
   const facts = chapterFacts(chs, [100, 200])
   ok('段数与最长段可算', facts[0].paragraphs === 2, String(facts[0].paragraphs))
   ok('空章不崩（0 段 / 0 字）', facts[2].words === 0 && facts[2].paragraphs === 0 && facts[2].longestParagraph === 0)

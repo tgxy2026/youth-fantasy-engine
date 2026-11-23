@@ -47,10 +47,10 @@ function main() {
       { key: 'c2', title: '二', content: '四五', include: true, source: '' },
     ] }] }))
     ok('全勾选时章数与字数都累加', all.pickedCount === 2 && all.pickedWords === 5, JSON.stringify(all))
-    ok('英文按词计（与 chapterImport 的 countWordsLoose 同源）',
+    ok('英文逐字符计（3.6.4 起与 countWords 全语言口径同源：hello world 你好 = 12）',
       summarizeImportSelection(preview({ volumes: [{ key: 'v', title: 'v', chapters: [
         { key: 'c', title: 'c', content: 'hello world 你好', include: true, source: '' },
-      ] }] })).pickedWords === 4)
+      ] }] })).pickedWords === 12)
   }
 
   // ② notes 去重（只在 chunks 模式下让位给琥珀条）

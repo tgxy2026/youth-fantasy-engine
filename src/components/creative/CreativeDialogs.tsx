@@ -37,7 +37,7 @@ export default function CreativeDialogs({ m }: { m: CreativeWritingModel }) {
             <>
               <div className="mb-3 flex items-center gap-3 text-12">
                 <span className={ok ? 'text-success' : 'text-amber'}>
-                  {d.words} 汉字 {ok ? '· 已达标' : '· 超出容差'}
+                  {d.words} 字 {ok ? '· 已达标' : '· 超出容差'}
                 </span>
                 <span className="text-ink-500">目标 {d.target} ± {WORD_TOLERANCE}（{lo}~{hi}）</span>
                 {inp.deAiOn && <span className="text-ink-300 border border-ink-700 rounded px-1.5 py-0.5">已去 AI 味儿</span>}

@@ -85,6 +85,12 @@ soft('敏感词：正则特殊字符自定义词不炸', () => scanText('这段�
 
 // ---------- F. 字数 ----------
 ok('countWords 边角', countWords('') === 0 && typeof countWords('hello 世界！') === 'number' && countWords('hello 世界！') > 0)
+// 3.6.4 全语言口径：所有语言文字的字母数字逐字符计；「文字＋标点」含中英文标点
+ok('countWords 英文逐字符（hello=5，不再按词）', countWords('hello') === 5)
+ok('countWords 假名/谚文/西里尔逐字符', countWords('こんにちは') === 5 && countWords('한글') === 2 && countWords('Привет') === 6)
+ok('countWords 带音标拉丁不丢字（café=4）', countWords('café') === 4)
+ok('countWords 数字计、空白与 emoji 不计', countWords('a1 中文 123') === 7 && countWords('🙂🙂') === 0)
+ok('countWords 文字＋标点含中英文标点', countWords('你好，世界。', 'text-punct') === 6 && countWords('hi, ok.', 'text-punct') === 6)
 
 // ---------- G. AI 上下文：截断 / 跨卷 / 畸形正文 ----------
 __resetMockStores()

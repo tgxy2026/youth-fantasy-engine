@@ -320,7 +320,7 @@ console.log('\n—— auditFixes2 用例开始 ——')
   ok('  · wordRange：补写（①）与压缩（②）两条路径都包了正文 —— '
     + 'rewrite.ts 的整章改写分支早已包，续写分支走的就是这里',
     /'【本章已写部分】',\n      authorBlock\(fence, body\),/.test(wr)
-    && /`【原文（\$\{words\} 汉字）】`,\n        authorBlock\(fence, body\),/.test(wr))
+    && /`【原文（\$\{words\} 字）】`,\n        authorBlock\(fence, body\),/.test(wr))
 
   ok('  · 空值占位符不被包裹（走 `trim() ? authorBlock(...) : 占位`，不把「（无）」也包进去）',
     (audit.match(/\.trim\(\) \? authorBlock\(fence/g) ?? []).length === 6

@@ -67,9 +67,9 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     () => new Set(TABS.filter(t => !tabVisible(t.id, ctx)).map(t => t.id)),
     [ctx]
   )
-  // #004 字数口径开关：默认「只算汉字」（老口径）；切到「汉字＋标点」＝网文平台计费口径。
+  // #004 字数口径开关：默认「文字」（3.6.4 起覆盖所有语言文字字符）；切到「文字＋标点」＝含中英文标点。
   // 🔴 落库的 `wordCount` 始终是**不含标点**的口径、不改动用户数据 —— 含标点模式只在显示层
-  //    用 countWords(content, 'cjk-punct') 实时重算，所以开关随时可逆、历史数据不会被打脏。
+  //    用 countWords(content, 'text-punct') 实时重算，所以开关随时可逆、历史数据不会被打脏。
   const [withPunct, setWithPunct] = useWordCountWithPunct()
   /** B1 创作复盘：从每日字数提炼"跟之前比"的指标（纯本地） */
   const review = useMemo(() => buildWritingReview(dailyStats), [dailyStats])
@@ -104,7 +104,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
 
   const totalWords = useMemo(
     () => (withPunct
-      ? chapters.reduce((s, c) => s + countWords(c.content || '', 'cjk-punct'), 0)
+      ? chapters.reduce((s, c) => s + countWords(c.content || '', 'text-punct'), 0)
       : chapters.reduce((s, c) => s + c.wordCount, 0)),
     [chapters, withPunct],
   )
@@ -303,8 +303,8 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
       sub: `${chapters.length} 章 · ${realVolumes(volumes).length} 卷`,
       icon: <BookOpen size={16} />, color: 'text-amber',
       help: withPunct
-        ? '正文编辑器里全部章节的字数之和。当前口径＝汉字＋标点（网文平台计费口径），按正文实时重算，不改动已保存的数据。'
-        : '正文编辑器里全部章节的字数之和（汉字按字计、英文按词计，不含标点与空格）。保存章节时自动更新，无需手工登记。',
+        ? '正文编辑器里全部章节的字数之和。当前口径＝文字＋标点（含中英文标点），按正文实时重算，不改动已保存的数据。'
+        : '正文编辑器里全部章节的字数之和（所有语言的字母、数字逐字符计，不含标点与空格）。保存章节时自动更新，无需手工登记。',
     },
     {
       label: '完稿章节',
@@ -359,7 +359,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           aria-pressed={!withPunct}
           onClick={() => setWithPunct(false)}
           className="px-2.5 py-1 rounded-md text-11"
-        >只算汉字</Button>
+        >文字</Button>
         <Button
           variant="toggle"
           size="xs"
@@ -367,10 +367,10 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           aria-pressed={withPunct}
           onClick={() => setWithPunct(true)}
           className="px-2.5 py-1 rounded-md text-11"
-        >汉字 ＋ 标点</Button>
+        >文字 ＋ 标点</Button>
         <span className="text-11 text-content-muted">仅影响显示，不修改已保存字数。</span>
         <HelpPopover title="字数口径说明" width="22rem" pin>
-          平台「作者后台」按「汉字＋标点」统计（含全角空格缩进）；平台「实际计费字数」通常更小，多会把标点与空格剔掉。切换只影响显示，不会改动已保存的数据。
+          「文字」统计所有语言文字的字母与数字（中文、英文、日文假名、韩文、俄文等，逐字符计），不含标点与空格；「文字＋标点」在此基础上加上中英文标点。切换只影响显示，不会改动已保存的数据。
         </HelpPopover>
       </div>
 

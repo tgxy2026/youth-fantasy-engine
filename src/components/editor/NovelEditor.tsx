@@ -851,10 +851,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 🔴 h-10 与检索栏底条（SettingSearch）/ 侧栏左下角把手（Sidebar）统一高度，三条上边框对齐 */}
             <div className="h-10 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-3 px-3 text-11 text-ink-400 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 [&>*]:whitespace-nowrap">
               {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
-              <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '汉字＋标点' : '只算汉字'}口径 · 可在写作面板的「字数口径」里切换）`}>
+              <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '文字＋标点' : '文字'}口径 · 可在写作面板的「字数口径」里切换）`}>
                 <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字
               </span>
-              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「只算汉字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
+              <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「文字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
                 <Flame size={10} />今日 {todayWords} 字
               </span>
               {/**
@@ -908,7 +908,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 </Button>
               </div>
               <HelpPopover title="状态栏 · 码字体验设置" width="23rem" size={12} className="shrink-0">
-                {'左侧三项是实时状态：\n· 字数：本章当前字数（中文按字计）；跟随「字数口径」设置 —— 默认「只算汉字」，可在写作面板切到「汉字＋标点」以对齐平台计费口径；\n· 今日 xx 字：今天的净产出，按增删自动累计（固定「只算汉字」口径，历史增量无法换口径重算），写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
+                {'左侧三项是实时状态：\n· 字数：本章当前字数（所有语言文字的字母、数字逐字符计）；跟随「字数口径」设置 —— 默认「文字」，可在写作面板切到「文字＋标点」（含中英文标点）；\n· 今日 xx 字：今天的净产出，按增删自动累计（固定「文字」口径，历史增量无法换口径重算），写作面板的码字日历用的就是它；\n· 自动保存已开启：停止输入 2 秒自动保存，也可 Ctrl+S 立即保存。\n\n右侧三项是可调设置（本机记忆，换章不重置）：\n· 铺满 / 限宽：铺满 = 码字区宽度跟随窗口铺满；限宽 = 回到舒适阅读宽度居中显示；\n· 打字机：开启后当前输入行始终保持在屏幕中部，眼睛不用一直往下追；\n· 字号 −/＋：正文字号 14–28px。'}
               </HelpPopover>
             </div>
 

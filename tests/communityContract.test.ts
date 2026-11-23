@@ -2,7 +2,7 @@
 //
 // 守三件容易「各写各的」的事：
 //   ① 客户端计数/标签/上限必须与服务端规则层逐项一致（否则界面说能发、服务端说超长）；
-//   ② 「含标点」统计必须复用既有 `countWords(...,'cjk-punct')`，不能另造一套；
+//   ② 「含标点」统计必须复用既有 `countWords(...,'text-punct')`，不能另造一套；
 //   ③ 排行账本的接入点必须覆盖保存 / 删章 / 删卷 / 恢复，且导入与备份恢复**不得**计入。
 //
 // ?? 这是静态契约 + 纯函数等价，不是界面验收；真实双端联调仍需部署环境。
@@ -45,8 +45,8 @@ const samples = [
 const charDiff = samples.filter((s) => clientCharCount(s) !== serverCharCount(s))
 ok('字符计数双端逐样例相等（Unicode 码点口径）', charDiff.length === 0, charDiff.join(' | '))
 
-const punctDiff = samples.filter((s) => countWordsWithPunct(s) !== countWords(s, 'cjk-punct'))
-ok('含标点字数复用既有 countWords(cjk-punct)，无第二套口径', punctDiff.length === 0, punctDiff.join(' | '))
+const punctDiff = samples.filter((s) => countWordsWithPunct(s) !== countWords(s, 'text-punct'))
+ok('含标点字数复用既有 countWords(text-punct)，无第二套口径', punctDiff.length === 0, punctDiff.join(' | '))
 ok('排行榜口径示例：新增 10000 删除 5000 → 净增 5000', (() => {
   const before = '字'.repeat(5000)
   const after = '字'.repeat(10000)

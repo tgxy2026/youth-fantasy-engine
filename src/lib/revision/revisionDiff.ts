@@ -5,6 +5,8 @@
 //    列表只读元数据；打开某章才加载正文和 diff。
 //    量级验收目标：500 章项目、200 个载荷下列表首屏不预读全部候选。
 
+import { countWords } from '@/lib/editor/textStats'
+
 // ============ Diff 行 ============
 export interface RevisionDiffLine {
   /** 行类型 */
@@ -150,18 +152,6 @@ export interface RevisionWordChange {
   delta: number
   /** 百分比变化（正=增加，负=减少） */
   percent: number
-}
-
-/** 简单中英文混合字数统计（按非空白字符计数） */
-function countWords(text: string): number {
-  if (!text) return 0
-  // 中文：每个汉字算 1 字；英文：按空格分词
-  const chinese = (text.match(/[\u4e00-\u9fff]/g) || []).length
-  const english = text
-    .replace(/[\u4e00-\u9fff]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 0).length
-  return chinese + english
 }
 
 export function wordChange(before: string, after: string): RevisionWordChange {

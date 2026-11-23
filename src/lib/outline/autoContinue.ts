@@ -11,8 +11,8 @@
  * - 每章独立 uid()，saveChapter 按 id upsert，绝不写到别的章；顺序由 chapterSeq 派生，永不解析标题。
  * - 设定补登：classify 三档判重 + commitEntities 只写安全字段（名称/描述/首现章/编号），其余留空。
  * - 编辑自检单轮改写（≤2 轮约束内），接受不完美退出，杜绝 self-refine 死循环。
- * - 章节数 1–5、字数 2000–8000 汉字；成品必须落在「目标 ± WORD_TOLERANCE」区间（既补也压）。
- * - ⚠️ 落库硬闸门：正文汉字数不达 minValidWords 一律丢弃重生成，绝不落库
+ * - 章节数 1–5、字数 2000–8000 字；成品必须落在「目标 ± WORD_TOLERANCE」区间（既补也压）。
+ * - ⚠️ 落库硬闸门：正文字数不达 minValidWords 一律丢弃重生成，绝不落库
  *   （历史 bug：stripThink 对未闭合 <think> 会「从标签起全部丢弃」，若对累加文本反复剥离，
  *    先前攒的正文会被整段砍掉只剩残余标点 —— 故 ① 只对单次返回剥离 ② 落库前必校验字数）。
  * - 每章初稿先交作者裁决（采纳/重写/中止），采纳后才进入审查修正与设定补登。
@@ -79,7 +79,7 @@ export type ContinueStrategy = 'add-only' | 'confirm' | 'auto-update'
 
 /** 同一章初稿最多尝试次数（作者重写 + 异常重生成共用此上限） */
 const MAX_DRAFT_ATTEMPTS = 8
-/** 落库硬闸门：低于此汉字数视为模型异常返回，丢弃重生成 */
+/** 落库硬闸门：低于此字数视为模型异常返回，丢弃重生成 */
 function minValidWords(target: number): number {
   return Math.min(600, Math.max(200, Math.round(target * 0.2)))
 }
@@ -170,7 +170,7 @@ function buildSysPrompt(target: number, chapterNo?: number, fpNote?: string): st
   return [
     '你是长篇网络小说的续写助手。请基于作者已有的世界观、角色与剧情，续写下一章正文。',
     '硬性约束：',
-    `1. 篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点与英文单词）。写得过长与过短同样视为不合格，请自行规划详略与场景数量：先估算要写几个场景，再分配篇幅。`,
+    `1. 篇幅必须落在 ${lo}~${hi} 个字之间（按文字字符个数计（所有语言文字的字母数字逐字），不含标点与空白）。写得过长与过短同样视为不合格，请自行规划详略与场景数量：先估算要写几个场景，再分配篇幅。`,
     '2. 必须严格承接【上一章结尾】的场景、时间、地点、人物位置与情绪，从紧接着的下一刻写起。不得跳场景、不得另起新线、不得重述前情、不得写"数日后/数月后"这类大跨度跳跃（除非作者在续写意图中明确要求）。',
     '3. 严格贴合已写章节的叙事视角、人称、文风与人设，保持既有爽文节奏；章末留一个能勾住读者的钩子，但**只留悬念、不写下一章的内容**。',
     '4. 只输出正文本身。不要任何解说、不要小标题、不要章节号、不要"以下是续写"之类的开场白，也不要输出思考过程。',
@@ -273,7 +273,7 @@ async function generateOneChapter(opts: {
     '【续写意图】',
     opts.intent?.trim() || '（作者未指定：请严格沿着上一章结尾的既有走向自然延续，聚焦当前尚未解决的冲突与悬念，不要开新线）',
     '',
-    `请续写下一章正文，篇幅 ${lo}~${hi} 汉字。` +
+    `请续写下一章正文，篇幅 ${lo}~${hi} 字。` +
     (opts.chapterNo
       ? `\n🔴 本次只写第 ${opts.chapterNo} 章，写完这一章就收尾 —— 下一章的内容一个字都不要写。`
       : '\n🔴 本次只写这一章，写完就收尾 —— 不要写出下一章的内容。'),
@@ -288,7 +288,7 @@ async function generateOneChapter(opts: {
 
   // 异常返回（模型抽风 / 思维链剥离后只剩残片）→ 静默重试一次，不再流式以免污染预览
   if (countWords(body) < 50) {
-    opts.onLog?.(`模型返回异常（仅 ${countWords(body)} 汉字），正在重试`)
+    opts.onLog?.(`模型返回异常（仅 ${countWords(body)} 字），正在重试`)
     opts.onBodyReplace?.('')
     body = await askSoft(cfg, sys, user, {
       signal: opts.signal, ...(opts.request ? { request: opts.request } : {}),
@@ -317,7 +317,7 @@ async function suggestTitle(body: string, signal?: AbortSignal, request?: CallRe
   const cfg = acpText ? null : await requireProviderFor('create').catch(() => null)
   if (!cfg && !acpText) return '未命名章节'
   const snippet = body.slice(0, 1500)
-  const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个汉字，只输出标题本身，不要标点、不要引号、不要解释。'
+  const sys = '你是网文编辑。请给这一章起一个简洁、有吸引力、不剧透的章节标题。要求：不含"第N章"前缀，不超过 15 个字，只输出标题本身，不要标点、不要引号、不要解释。'
   const t = await askSoft(cfg, sys, `【本章正文（节选）】\n${snippet}`, {
     signal, ...(request ? { request } : {}),
     ...(acpText ? { acpText } : {}),
@@ -824,8 +824,8 @@ export async function runAutoContinue(
     const floor = Math.max(1, opts.targetWords - Math.max(0, tol))
     const w0 = last.wordCount || countWords(last.content || '')
     if (w0 < floor) {
-      cb.onLog?.(`最后一章《${last.title}》只有 ${w0} 汉字（目标 ${opts.targetWords}），先补齐它再往下写`)
-      cb.onPhase?.(`补齐最后一章（${w0} → ${opts.targetWords} 汉字）…`)
+      cb.onLog?.(`最后一章《${last.title}》只有 ${w0} 字（目标 ${opts.targetWords}），先补齐它再往下写`)
+      cb.onPhase?.(`补齐最后一章（${w0} → ${opts.targetWords} 字）…`)
       try {
         const filled = cleanChapterOutput(await enforceWordRange({
           cfg: opts.acpText ? null : await requireProviderFor('create'),
@@ -856,9 +856,9 @@ export async function runAutoContinue(
           lastBody = filled // 供下一章承接（第 22 章要接着补完的结尾写）
           await syncChapterMaster(last, chapterSeqOf(vols, await db.getAllChapters(), last.id))
           cb.onBodyReplace?.(filled)
-          cb.onLog?.(`《${last.title}》已补齐（${w0} → ${w1} 汉字）`)
+          cb.onLog?.(`《${last.title}》已补齐（${w0} → ${w1} 字）`)
         } else {
-          cb.onLog?.(`《${last.title}》补齐无效（${w0} → ${w1} 汉字），已保持原样`)
+          cb.onLog?.(`《${last.title}》补齐无效（${w0} → ${w1} 字），已保持原样`)
         }
       } catch (e) {
         if (isCancelled(e)) throw e
@@ -932,7 +932,7 @@ export async function runAutoContinue(
         const w = countWords(body)
         // 落库硬闸门：内容异常（只剩残片/标点）一律丢弃重生成，绝不落库
         if (w < minWords) {
-          cb.onLog?.(`${tag}第 ${attempt} 稿内容异常（仅 ${w} 汉字，低于 ${minWords} 下限），已丢弃`)
+          cb.onLog?.(`${tag}第 ${attempt} 稿内容异常（仅 ${w} 字，低于 ${minWords} 下限），已丢弃`)
           noteCandidate(cb.request?.taskId, { target: 'chapter:new', fingerprint: hashOf(body), state: 'discarded' })
           if (attempt >= MAX_DRAFT_ATTEMPTS) throw new Error('模型连续返回异常内容，已中止本章')
           continue
@@ -958,7 +958,7 @@ export async function runAutoContinue(
             shownBody = def
             shownWords = dw
             cb.onBodyReplace?.(shownBody)
-            cb.onLog?.(`${tag}已去除 AI 味儿（${w} → ${dw} 汉字）`)
+            cb.onLog?.(`${tag}已去除 AI 味儿（${w} → ${dw} 字）`)
           } else {
             cb.onLog?.(`${tag}去 AI 味儿结果异常（${dw} 字），已保留原稿`)
           }
@@ -966,7 +966,7 @@ export async function runAutoContinue(
         body = shownBody // 进入后续采纳/自检/落库的，是润色后的稿子（或异常时退回原稿）
 
         if (!cb.onChapterDraft) break
-        cb.onPhase?.(`${tag}：等待作者确认初稿（${shownWords} 汉字）`)
+        cb.onPhase?.(`${tag}：等待作者确认初稿（${shownWords} 字）`)
         decision = await cb.onChapterDraft({
           index: i + 1, total: opts.chapters, attempt,
           body: shownBody, words: shownWords, target: opts.targetWords,
@@ -1020,7 +1020,7 @@ export async function runAutoContinue(
       // 二次闸门：改写/压缩后再校验一次，异常则本章不落库
       const finalWords = countWords(body)
       if (finalWords < minWords) {
-        cb.onLog?.(`${tag}修正后内容异常（仅 ${finalWords} 汉字），本章未保存`)
+        cb.onLog?.(`${tag}修正后内容异常（仅 ${finalWords} 字），本章未保存`)
         continue
       }
 
@@ -1130,7 +1130,7 @@ export async function runAutoContinue(
       if (saved.masterState === 'failed') stepNotes.push('章节总表未同步')
       if (!receiptSaved) stepNotes.push('保存回执未落盘（不影响正文）')
       cb.onLog?.(
-        `${tag}《${ch.title}》已保存（${finalWords} 汉字，${dev >= 0 ? '+' : ''}${dev}）；${settingLine}`
+        `${tag}《${ch.title}》已保存（${finalWords} 字，${dev >= 0 ? '+' : ''}${dev}）；${settingLine}`
         + (stepNotes.length ? `；${stepNotes.join('；')}` : '')
         + (r.errors?.length ? `；${r.errors.join('；')}` : ''),
       )

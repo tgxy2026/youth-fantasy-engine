@@ -112,7 +112,7 @@ let P_continue_passage = `你是小说作者本人，正在接着本章已有正
 1. 只输出**新增的正文**：不复述、不改写已有内容，不写标题、不写说明、不写「（续）」之类的标记。
 2. 紧接上一句往下写：人称、时态、语气、文风与已有正文保持一致，人物言行符合角色设定。
 3. 遵守【项目资料】里的〖写作规范〗（本次没带就不必强求）；可以用其中的设定，但**不得凭空造出新专名**（人名 / 地名 / 势力 / 功法 / 物品）—— 需要时用已有名词。
-4. 有【目标字数】时向它靠拢（按汉字个数计），但**不得为了凑字数注水**、不得用重复句填充。
+4. 有【目标字数】时向它靠拢（按文字字符个数计（所有语言文字的字母数字逐字）），但**不得为了凑字数注水**、不得用重复句填充。
 5. 不写总结、不写升华、不预告后文、不替作者收尾。
 6. 标点必须完整：一句话中间的逗号、停顿一个都不要省，绝不能输出一长串中间没有标点的字。
 7. 直接输出正文，不要 markdown 代码块标记，也不要 JSON。`
@@ -571,7 +571,7 @@ export async function aiContinuePassage(
   const user = [
     `【本章标题】${ask.chapterTitle || '未命名章节'}`,
     ask.plot?.trim() ? `【续写要求】（作者指定，优先照做）\n${ask.plot.trim()}` : '',
-    ask.targetWords && ask.targetWords > 0 ? `【目标字数】新增部分约 ${ask.targetWords} 字（按汉字个数计，标点与空白不计）` : '',
+    ask.targetWords && ask.targetWords > 0 ? `【目标字数】新增部分约 ${ask.targetWords} 字（按文字字符个数计（所有语言文字的字母数字逐字），标点与空白不计）` : '',
     ask.projectContext.trim() ? `【项目资料】（供参考，不要照抄）\n${authorBlock(fence, ask.projectContext.trim())}` : '',
     '【本章已有正文的末尾】',
     ask.bodyTail.trim() ? authorBlock(fence, ask.bodyTail.trim()) : '（本章还没有正文）',
@@ -703,7 +703,7 @@ export async function aiChapterSummary(
   const fence = newAuthorFence()
   const chars = text.replace(/\s/g, '').length
   const target = Math.min(1200, Math.max(100, Math.ceil((chars * 0.1) / 100) * 100))
-  const sys = `你是网文资深编辑。请把下面这一章正文压缩成约 ${target} 个汉字的连贯摘要（约为原文长度的 1/10）。\n`
+  const sys = `你是网文资深编辑。请把下面这一章正文压缩成约 ${target} 个字的连贯摘要（约为原文长度的 1/10）。\n`
     + `要求：\n`
     + `· 保留全部关键情节、人物动作与动机、伏笔的埋设/回收、重要转折、世界观设定点，信息密度要高；\n`
     + `· 用若干自然段或分点呈现，不要只写一句话，但也不要复述无关细节；\n`

@@ -26,21 +26,17 @@ export const COMMUNITY_LIMITS = {
 /** 预设标签：必须与服务端 `COMMUNITY_TAGS` 完全一致（契约测试会比对） */
 export const COMMUNITY_TAGS = ['练笔', '短篇', '设定', '灵感', '求评'] as const
 
-const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/g
-const PUNCT_RE =
-  /[\u3000-\u303f\u2014\u2018-\u201d\u2026\u00b7]|[\uff01-\uff0f]|[\uff1a-\uff20]|[\uff3b-\uff40]|[\uff5b-\uff65]/g
+const LETTER_RE = /[\p{L}\p{N}]/gu
+const PUNCT_RE = /\p{P}/gu
 
 /**
- * 含标点字数（与 `countWords(text,'cjk-punct')` 同规则）。
+ * 含标点字数（与 `countWords(text,'text-punct')` 同规则：所有语言字母数字 + 所有标点）。
  * 🔴 排行口径要求「含标点的净增量」，所以这里**必须**复用同一套正则；
  *    直接调 `countWords` 也行，但本模块在测试里要独立加载以验证两端一致。
  */
 export function countWordsWithPunct(text: string): number {
   if (!text) return 0
-  const cjk = (text.match(CJK_RE) || []).length
-  const punct = (text.match(PUNCT_RE) || []).length
-  const words = (text.replace(CJK_RE, ' ').match(/[a-zA-Z0-9]+/g) || []).length
-  return cjk + punct + words
+  return (text.match(LETTER_RE) || []).length + (text.match(PUNCT_RE) || []).length
 }
 
 /** Unicode 码点计数（界面实时计数用） */
@@ -53,7 +49,7 @@ export function charCount(text: string): number {
 
 /** 只有空白（含全角空格 / 零宽 / BOM） */
 export function isBlank(text: string): boolean {
-  return text.replace(/[\s\u3000\u200b\ufeff]/g, '') === ''
+  return text.replace(/[\s\p{Cf}]/gu, '') === ''
 }
 
 export const POST_STATUS_LABELS: Record<string, string> = {

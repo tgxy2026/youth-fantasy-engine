@@ -25,6 +25,7 @@
 import { splitNovelText, type SplitResult } from '@/lib/bookbreak/split'
 import { readDocxText, isDocxFileName, isLegacyDocFileName } from '@/lib/storage/docxImport'
 import { planVolumes, persistPlanToChapters, type PersistPlan, type PersistResult, type PlannedVolume } from '@/lib/bookbreak/persist'
+import { countWords } from '@/lib/editor/textStats'
 
 /** 单文件大小上限（与拆书一致，20MB） */
 export const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024
@@ -282,16 +283,14 @@ export function mergePreviews(previews: ImportPreview[], notes: string[] = []): 
   return { volumes, totalChapters, totalWords, notes: allNotes, splitMode: 'given' }
 }
 
-/** 轻量字数（预览用，避免依赖编辑器模块；中文按字、英文按词） */
 /**
- * 轻量字数（预览与落库**同一口径**：汉字按字、英文数字按词）。
+ * 轻量字数（预览与落库**同一口径**：3.6.4 起复用 `textStats.countWords`，
+ * 所有语言的字母/数字字符逐字计数，不再是「汉字按字、英文按词」）。
  * 🔴 3.6.1 起导出：弹窗里原先自己抄了一份，两处一旦分叉，
  *    底部「约 M 字」与实际写入的字数就会对不上（作者会以为丢了字）。
  */
 export function countWordsLoose(text: string): number {
-  const cn = (text.match(/[\u4e00-\u9fff]/g) || []).length
-  const en = (text.replace(/[\u4e00-\u9fff]/g, ' ').match(/[a-zA-Z0-9]+/g) || []).length
-  return cn + en
+  return countWords(text)
 }
 
 /** 预览 → 落库计划（过滤掉未勾选的章与空卷）。纯函数。 */

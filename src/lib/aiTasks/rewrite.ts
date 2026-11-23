@@ -203,14 +203,14 @@ export async function aiRewriteChapter(o: ChapterRewriteOpts): Promise<string> {
     // 🔴 上一章结尾同样是**作者正文**：与下方「本章原文」共用同一个 fenceId，包成边界块
     o.contextTail?.trim() ? `【上一章结尾】（只作衔接参考，不要改写这一段）\n${authorBlock(fenceId, o.contextTail.trim().slice(-1200))}` : '',
     o.requirement.trim() ? `【改写要求】\n${o.requirement.trim()}` : '',
-    o.targetWords ? `【目标字数】必须落在 ${lo}~${hi} 个汉字之间（目标 ${o.targetWords}；「按汉字个数计，标点与空白不计」）` : '',
+    o.targetWords ? `【目标字数】必须落在 ${lo}~${hi} 个字之间（目标 ${o.targetWords}；「按文字字符个数计（所有语言文字的字母数字逐字），标点与空白不计」）` : '',
     '【本章原文】',
     authorBlock(fenceId, o.body),
   ].filter(Boolean)
   lines.push(
     '',
     o.targetWords
-      ? `请按上面的动作改写这一章，只输出正文，篇幅必须落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点）。`
+      ? `请按上面的动作改写这一章，只输出正文，篇幅必须落在 ${lo}~${hi} 个字之间（按文字字符个数计（所有语言文字的字母数字逐字），不含标点）。`
       : '请按上面的动作改写这一章，只输出正文。',
   )
   const userText = lines.join('\n\n')

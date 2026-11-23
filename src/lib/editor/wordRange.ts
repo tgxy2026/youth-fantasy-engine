@@ -8,8 +8,8 @@
  * `autoContinue.ts` 依赖 `aiTasks` 门面，若把校准留在那里，改写侧去 import 就成了**循环依赖**
  * （会被 importCycles 闸拦）。抽到这一层后两边都只依赖 `ai` + `textStats`，方向干净。
  *
- * 🔴 **字数口径（全项目统一）**：一律按 `countWords` 计 —— **汉字逐字 + 拉丁词**，
- *    标点与空白**不计**。凡是给模型看的字数要求都必须写明「按汉字个数计，不含标点」：
+ * 🔴 **字数口径（全项目统一）**：一律按 `countWords` 计 —— **所有语言文字的字母数字逐字符**（3.6.4 起），
+ *    标点与空白**不计**。凡是给模型看的字数要求都必须写明「按文字字符个数计（所有语言文字的字母数字逐字），不含标点」：
  *    模型默认按 token 或字符估，写出来必然偏长（实测：目标 4000 写成 5000，超 25%）。
  */
 import { chat, requireActiveProvider, stripThink, isCancelled } from '@/lib/ai'
@@ -192,7 +192,7 @@ export async function enforceWordRange(o: {
       o.onLog?.(`${o.budget.label}的模型请求已达上限（${o.budget.used}/${o.budget.max}），停止继续补写；当前 ${words} 字，目标 ${lo}~${hi} 字`)
       break
     }
-    o.onPhase?.(`补足篇幅（${words} → ${lo}~${hi} 汉字）`)
+    o.onPhase?.(`补足篇幅（${words} → ${lo}~${hi} 字）`)
     const gap = Math.max(0, (o.fillTarget ?? o.target) - words)
     /**
      * 🔴 3.2.2 · 审计 A1：**补写目标不能和冻结约束打架**。
@@ -206,7 +206,7 @@ export async function enforceWordRange(o: {
       '【本章已写部分】',
       authorBlock(fence, body),
       '',
-      `当前已写 ${words} 个汉字，距目标还差约 ${gap} 个汉字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 汉字之间。`,
+      `当前已写 ${words} 个字，距目标还差约 ${gap} 个字。请紧接着上文继续往下写，使全章总量落在 ${lo}~${hi} 字之间。`,
       fillGoal,
       // 🔴 不变量原样重申（审计 A1）：篇幅目标**低于**这些事实约束，冲突时宁可写短
       ...(o.invariants?.trim()
@@ -229,7 +229,7 @@ export async function enforceWordRange(o: {
     o.budget?.consume(1)
     if (countWords(add) < 30) {
       // 无效增量：停止空转，接受偏短。🔴 但必须**说出来**（否则调用方只看到"字数没变"）
-      o.onLog?.(`补写未生效（模型只返回 ${countWords(add)} 汉字，可能失败或被截断）：停在 ${words} 汉字，目标 ${o.target}`)
+      o.onLog?.(`补写未生效（模型只返回 ${countWords(add)} 字，可能失败或被截断）：停在 ${words} 字，目标 ${o.target}`)
       break
     }
     body = body.trimEnd() + '\n\n' + add
@@ -244,14 +244,14 @@ export async function enforceWordRange(o: {
       o.onLog?.(`${o.budget.label}的模型请求已达上限（${o.budget.used}/${o.budget.max}），停止继续压缩；当前 ${words} 字，目标 ${lo}~${hi} 字`)
       break
     }
-    o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 汉字）`)
+    o.onPhase?.(`压缩篇幅（${words} → ${lo}~${hi} 字）`)
     const out = await askSoft(o.cfg ?? null,
       '你是资深网文编辑，擅长在不损失任何情节的前提下做「轻度」精简。只输出精简后的正文本身。',
       [
         // 🔴 给**具体删减量**而不是"压到 X 字"：只说目标时模型常按"精简"的字面理解大删
         //    （实测：3982 → 要求落到 3200~3800，模型一口气压到 2488，被安全阀判异常丢弃）。
-        `下面这一章有 ${words} 个汉字，请「只删掉约 ${Math.max(1, words - o.target)} 个汉字」，`,
-        `使全章落在 ${lo}~${hi} 个汉字之间（按汉字个数计，不含标点）。`,
+        `下面这一章有 ${words} 个字，请「只删掉约 ${Math.max(1, words - o.target)} 个字」，`,
+        `使全章落在 ${lo}~${hi} 个字之间（按文字字符个数计（所有语言文字的字母数字逐字），不含标点）。`,
         '🔴 这是「轻度压缩」，不是重写：',
         '1. 只删冗余的环境描写、重复铺陈、可有可无的形容词与心理独白 —— 删完仍要读得通顺。',
         '2. 保留全部关键情节、转折、对话要点与章末钩子，不得删除任何情节线，不得删掉结尾。',
@@ -269,7 +269,7 @@ export async function enforceWordRange(o: {
           ]
           : []),
         '',
-        `【原文（${words} 汉字）】`,
+        `【原文（${words} 字）】`,
         authorBlock(fence, body),
       ].join('\n'),
       // 🔴 `onToken` 是**流式开关**（不是"要不要显示"）：压缩要输出整章（几千字），
@@ -284,7 +284,7 @@ export async function enforceWordRange(o: {
     o.budget?.consume(1)
     const ow = countWords(out)
     if (!out || ow < lo * 0.85) {
-      o.onLog?.(`压缩结果异常（${ow} 汉字，低于下限 ${Math.round(lo * 0.85)}），保留原文 ${words} 汉字`)
+      o.onLog?.(`压缩结果异常（${ow} 字，低于下限 ${Math.round(lo * 0.85)}），保留原文 ${words} 字`)
       break
     }
     body = out

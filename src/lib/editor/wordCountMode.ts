@@ -1,8 +1,8 @@
 /**
  * 字数口径偏好 —— **单一来源**。
  *
- * #004（2.4.0）引入两种口径：网文平台按「汉字＋标点」计费，而软件内部
- * （落库 `wordCount`、`enforceWordRange` 的 ±300、AI 输出阈值）**一律走老口径**，
+ * #004（2.4.0）引入两种口径；3.6.4 起为「文字 / 文字＋标点」（覆盖所有语言文字字符）。
+ * 软件内部（落库 `wordCount`、`enforceWordRange` 的 ±300、AI 输出阈值）**一律走「文字」口径**，
  * 含标点只在**显示层**实时重算 —— 这样开关随时可逆、历史数据不会被打脏（见 textStats 说明）。
  *
  * 🔴 为什么单拎一个模块：这个偏好被 Dashboard（统计卡 / 码字日历）与编辑器状态栏两处读，
@@ -26,7 +26,7 @@ const WORD_COUNT_PUNCT_KEY = 'word-count-with-punct'
 
 /**
  * 字数口径偏好。
- * @returns `[withPunct, setWithPunct]` —— false＝只算汉字（默认 / 老口径）；true＝汉字＋标点（平台计费口径）
+ * @returns `[withPunct, setWithPunct]` —— false＝文字（默认）；true＝文字＋标点（含中英文标点）
  */
 export function useWordCountWithPunct(): [boolean, (v: boolean) => void] {
   return usePersistedBool(WORD_COUNT_PUNCT_KEY, false)
@@ -34,5 +34,5 @@ export function useWordCountWithPunct(): [boolean, (v: boolean) => void] {
 
 /** 当前偏好对应的 `countWords` 模式参数 */
 export function wordCountModeOf(withPunct: boolean): WordCountMode {
-  return withPunct ? 'cjk-punct' : 'cjk'
+  return withPunct ? 'text-punct' : 'text'
 }

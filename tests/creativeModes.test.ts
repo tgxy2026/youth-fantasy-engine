@@ -262,7 +262,7 @@ console.log('\n—— creativeModes 用例开始 ——')
 
   // ---------- 整章改写：续写动作 + 字数硬校准 + 口径统一（2026-09-20 老大要求）----------
   // 三条要求：① 补一个「续写」（≠ 扩写：原文一字不动、只在末尾接）；② 目标字数必须管住（±300）；
-  // ③ 字数口径统一到**汉字**（前端 countWords，给模型的提示词也要写明）。
+  // ③ 字数口径统一到**文字字符**（前端 countWords 全语言逐字符，给模型的提示词也要写明）。
   const rwSrc = read('src/lib/aiTasks/rewrite.ts')
   ok('🔴 整章改写有五种动作，含「续写」',
     /export type ChapterRewriteAction = 'polish' \| 'expand' \| 'condense' \| 'continue' \| 'rewrite'/.test(rwSrc))
@@ -276,16 +276,16 @@ console.log('\n—— creativeModes 用例开始 ——')
     /out = await enforceWordRange\(\{[\s\S]{0,200}?body: out, target: o\.targetWords/.test(rwSrc))
   ok('🔴 精简不回头补（maxExpand: 0，压到一半又补回去很荒谬）',
     /maxExpand: o\.action === 'condense' \? 0 : 2/.test(rwSrc))
-  ok('🔴 给模型的字数一律写明「按汉字个数计、标点不计」（否则模型按 token / 字符估，必然偏长）',
-    /按汉字个数计，标点与空白不计/.test(rwSrc) && /按汉字个数计，不含标点/.test(rwSrc))
+  ok('🔴 给模型的字数一律写明「按文字字符个数计、标点不计」（否则模型按 token / 字符估，必然偏长）',
+    /按文字字符个数计（所有语言文字的字母数字逐字），标点与空白不计/.test(rwSrc) && /按文字字符个数计（所有语言文字的字母数字逐字），不含标点/.test(rwSrc))
   const wr = read('src/lib/editor/wordRange.ts')
   ok('🔴 字数容差与校准逻辑只有一份（wordRange），逐章连写与整章改写共用',
     /export const WORD_TOLERANCE = 300/.test(wr) && /export async function enforceWordRange/.test(wr)
     && !/async function enforceWordRange/.test(cont))
   ok('🔴 面板仍能从 autoContinue 取到 WORD_TOLERANCE（抽模块不破坏既有 import 路径）',
     /export \{ WORD_TOLERANCE \}/.test(cont))
-  ok('🔴 `countWords` 是汉字口径（CJK 逐字 + 拉丁词），标点不计 —— 界面与 AI 同一口径',
-    /const cjk = \(text\.match\(/.test(read('src/lib/editor/textStats.ts')))
+  ok('🔴 `countWords` 是全语言文字字符口径（Unicode 字母数字逐码点），标点不计 —— 界面与 AI 同一口径',
+    /\\p\{L\}\\p\{N\}/.test(read('src/lib/editor/textStats.ts')))
   // 2026-09-20 实机抓到：续写目标 4000、结果原样 2202，界面上只有「2202 → 2202 字」一个线索 ——
   // 根因是 `askSoft` 把模型失败吞成空串后**静默 break**。校准必须把失败说出来。
   ok('🔴 字数校准失败要如实上报（补写 / 压缩没生效都要 onLog，不许静默）',
