@@ -16,10 +16,14 @@
 import * as db from '@/lib/db'
 import {
   aiExtractChapterChangesWithStatus, aiExtractSettingEntitiesWithStatus,
-  type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus,
+  type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus, type ExtractedResource,
 } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settings/settingLedger'
-import { splitCodes } from '@/lib/audit/audit'
+import { splitCodes } from '@/lib/audit/audit'
+import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { readAliases } from '@/lib/settings/aliases'
+import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { hashOf } from '@/lib/semantic/chunk'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
 import { countWords } from '@/lib/editor/textStats'
@@ -36,6 +40,15 @@ export interface PostProcessInput {
   chapterTitle: string
 }
 
+/** 章号（叙事序）：取不到按 0 处理（账本记录仍可用章 id 定位） */
+async function chapterNoFor(chapterId: string): Promise<number> {
+  try {
+    return chapterSeqMap(await db.getAllVolumes(), await db.getAllChapters()).get(chapterId) ?? 0
+  } catch {
+    return 0
+  }
+}
+
 /** 从库里补出落库与指纹所需的元信息（拿不到就退化，绝不抛） */
 async function resolveMeta(input: PostProcessInput): Promise<{ volumeId: string; wordCount: number; updatedAt: number }> {
   try {
@@ -45,8 +58,8 @@ async function resolveMeta(input: PostProcessInput): Promise<{ volumeId: string;
   return { volumeId: '', wordCount: countWords(input.content ?? ''), updatedAt: Date.now() }
 }
 
-export type PostProcessKind = 'entity' | 'foreshadow' | 'relation' | 'status'
-export type PostProcessStatus = 'new' | 'changed' | 'registered' | 'duplicate'
+export type PostProcessKind = 'entity' | 'foreshadow' | 'relation' | 'status' | 'resource'
+export type PostProcessStatus = 'new' | 'changed' | 'registered' | 'duplicate' | 'unregistered'
 
 export interface PostProcessItem {
   kind: PostProcessKind
@@ -254,7 +267,7 @@ export async function collectPostProcess(
   // WQ1-4：走带状态版本 —— 请求失败与**解析失败**都写 notes，
   // 不再把「JSON 坏了」假装成「本章没有需要整理的条目」（假绿）。
   const chRun = await aiExtractChapterChangesWithStatus(body, chapterTitle, { signal: opts?.signal, acpText: opts?.acpText })
-  const changes = chRun.result?.data ?? { foreshadows: [], relations: [], statuses: [] }
+  const changes = chRun.result?.data ?? { foreshadows: [], relations: [], statuses: [], resources: [] }
   if (chRun.state === 'cancelled') notes.push('AI 抽取已取消，以下仅为已完成的比对。')
   else if (chRun.state !== 'completed') {
     notes.push('AI 抽取未完整完成（' + (chRun.errorCode ?? chRun.state) + '），伏笔/关系/状态三类可能漏检；本次只做已成功的设定实体比对。')
@@ -279,10 +292,68 @@ export async function collectPostProcess(
   items.push(...matchForeshadows(changes.foreshadows, foreRows))
   items.push(...matchRelations(changes.relations, relRows))
   items.push(...matchStatuses(changes.statuses, cardLists))
+  // 3.7.0 · W3：物品流转（未登记只提示，不建条目）
+  const itemRows = await db.getTableRows('items')
+  items.push(...matchResources(changes.resources ?? [], itemRows, await chapterNoFor(input.chapterId), input.chapterId, await readResourceTransfers()))
 
   const actionable = items.filter(i => i.status !== 'registered').length
   if (!actionable) notes.push('本章没有需要整理的条目。')
   return { chapterId: input.chapterId, chapterTitle, fingerprint, at: Date.now(), items, notes }
+}
+
+// ============ 3.7.0 · W3：物品流转比对（纯函数） ============
+
+/**
+ * 把抽出的物品流转候选与 items 表现状比对。
+ *
+ * 🔴 未登记物品 → `unregistered`（界面只提示「先登记物品」，**不凭空建条目**）。
+ * 🔴 同一笔（物品 + 章 + 动作 + 双方 + 证据）已在账本里 ⇒ `registered`（重跑整理不重复记）。
+ */
+export function matchResources(
+  found: readonly ExtractedResource[],
+  itemRows: readonly TableRow[],
+  chapterNo: number,
+  chapterId: string,
+  existing: readonly ResourceTransfer[] = [],
+): PostProcessItem[] {
+  const byName = new Map<string, TableRow>()
+  for (const row of itemRows) {
+    const name = String(row.data['名称'] ?? '').trim()
+    if (name) byName.set(normName(name), row)
+    for (const alias of readAliases('items', row.data)) byName.set(normName(alias), row)
+  }
+  const items: PostProcessItem[] = []
+  for (const r of found) {
+    const item = (r.item ?? '').trim()
+    const evidence = (r.evidence ?? '').trim()
+    if (!item || !evidence) continue
+    const row = byName.get(normName(item))
+    const from = (r.from ?? '').trim()
+    const to = (r.to ?? '').trim()
+    const transferId = `rt-${hashOf(`${chapterId}|${row?.id ?? item}|${r.action}|${from}|${to}|${evidence}`).slice(0, 16)}`
+    const label = `${row ? String(row.data['名称'] ?? item) : item}：${r.action}${from || to ? `（${from || '—'}→${to || '—'}）` : ''}`
+    const detail = [r.action, r.quantity ? `×${r.quantity}` : '', `第${chapterNo || '?'}章`].filter(Boolean).join(' · ')
+    if (!row) {
+      items.push({
+        kind: 'resource', key: `res-${transferId}`, status: 'unregistered', label, detail,
+        evidence, raw: { transfer: null, item },
+      })
+      continue
+    }
+    const transfer: ResourceTransfer = {
+      id: transferId, itemId: row.id, itemName: String(row.data['名称'] ?? item),
+      chapterId, chapterNo, kind: r.action, from, to,
+      ...(r.quantity ? { quantity: r.quantity } : {}), evidence, createdAt: Date.now(),
+    }
+    const exists = existing.some(t => t.id === transfer.id
+      || (t.itemId === transfer.itemId && t.chapterId === chapterId && t.kind === transfer.kind
+        && t.from === transfer.from && t.to === transfer.to && t.evidence === transfer.evidence))
+    items.push({
+      kind: 'resource', key: `res-${transferId}`, status: exists ? 'registered' : 'changed',
+      label, detail, evidence, matchedId: row.id, raw: { transfer, item },
+    })
+  }
+  return items
 }
 
 // ============ ③ 落库（作者勾选后） ============
@@ -302,7 +373,7 @@ function appendNote(existing: string | undefined, note: string): string {
   return e ? `${e}\n${t}` : t
 }
 
-export interface ApplyResult { created: number; failed: string[] }
+export interface ApplyResult { created: number; failed: string[]; /** 3.7.0 · W3：需要作者知道但不算失败的提醒（如账本超限） */ warnings?: string[] }
 
 /**
  * 把**作者勾选**的条目落库。各类落点：
@@ -316,6 +387,7 @@ export async function applyPostProcess(
 ): Promise<ApplyResult> {
   const failed: string[] = []
   let created = 0
+  let warnings: string[] | undefined
 
   // 实体批量走既有提交器
   const entityRaws = items.filter(i => i.kind === 'entity' && i.raw).map(i => i.raw as LedgerItem)
@@ -356,6 +428,18 @@ export async function applyPostProcess(
             ...(row.data['演变触发事件'] !== undefined ? { '演变触发事件': appendNote(row.data['演变触发事件'], note) } : {}),
           },
         })
+      } else if (item.kind === 'resource') {
+        const raw = item.raw as { transfer: ResourceTransfer | null; item: string } | undefined
+        // 未登记物品只提示、不凭空建（UI 也不允许勾选）
+        if (!raw?.transfer) { failed.push(item.label); continue }
+        const rows = await db.getTableRows('items')
+        const row = rows.find(r => r.id === raw.transfer!.itemId)
+        if (!row) { failed.push(item.label); continue }
+        const r = await commitResourceTransfer({
+          itemRow: row, transfer: raw.transfer, chapterLabel: chapterNo > 0 ? `第${chapterNo}章` : (input.chapterTitle || '本章'),
+        })
+        if (!r.ok) { failed.push(item.label); continue }
+        if (r.overflow > 0) (warnings ??= []).push(`流转记录已超过 ${RESOURCE_TRANSFER_LIMIT} 条上限，最早的 ${r.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
       } else if (item.kind === 'status') {
         const raw = item.raw as { st: ExtractedStatus; tabId: string; cardId: string; fieldKey: string } | undefined
         if (!raw?.cardId || !raw.fieldKey) { failed.push(item.label); continue }
@@ -369,6 +453,6 @@ export async function applyPostProcess(
       failed.push(item.label)
     }
   }
-  return { created, failed }
+  return { created, failed, ...(warnings ? { warnings } : {}) }
 }
 

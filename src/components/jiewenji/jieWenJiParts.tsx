@@ -138,6 +138,7 @@ export const POST_KINDS: { kind: PostProcessKind; label: string; hint: string }[
   { kind: 'foreshadow', label: '伏笔', hint: '本章埋设或回收的伏笔' },
   { kind: 'relation', label: '关系', hint: '本章人物关系发生的变化' },
   { kind: 'status', label: '人物状态', hint: '本章人物状态的变化' },
+  { kind: 'resource', label: '物品流转', hint: '本章物品被谁拿到 / 给了谁 / 用掉了（未登记物品只提示，不凭空建）' },
 ]
 
 /** 章后整理：四档结果的徽标样式（`changed` = 有变化待采纳；`new` = 还没登记过） */
@@ -146,6 +147,7 @@ export const POST_STATUS_META: Record<PostProcessStatus, { label: string; cls: s
   duplicate: { label: '疑似重复', cls: 'bg-amber/15 text-amber border-amber/30' },
   changed: { label: '有变化', cls: 'bg-info/15 text-info border-info/30' },
   new: { label: '未登记', cls: 'bg-danger/15 text-danger border-danger/30' },
+  unregistered: { label: '未登记（只提示）', cls: 'bg-amber/15 text-amber border-amber/30' },
 }
 
 const SEV_BADGE: Record<string, string> = {

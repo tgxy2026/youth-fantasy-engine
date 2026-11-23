@@ -154,8 +154,8 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
             <div className="space-y-1">
               {list.map(it => {
                 const meta = POST_STATUS_META[it.status]
-                // 无变化的不给勾（写了也没意义）
-                const canPick = it.status !== 'registered'
+                // 无变化的不给勾（写了也没意义）；未登记物品只提示、绝不凭空建条目
+                const canPick = it.status !== 'registered' && it.status !== 'unregistered'
                 return (
                   <div key={it.key}
                     className={`rounded-lg border px-2 py-1.5 ${canPick ? 'border-ink-600 bg-ink-900/50' : 'border-ink-700/60 bg-ink-900/20'}`}>

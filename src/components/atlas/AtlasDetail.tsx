@@ -36,7 +36,8 @@ import SafeImage from '@/components/common/SafeImage'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
-import { useAtlasWorkspaceOptions } from './useAtlasWorkspaceOptions'
+import { useAtlasWorkspaceOptions } from './useAtlasWorkspaceOptions'
+import { readResourceTransfers, transfersOfItem, type ResourceTransfer } from '@/lib/settings/resourceLedger'
 
 interface Props {
   scrollRef?: RefObject<HTMLDivElement>
@@ -151,6 +152,17 @@ export default function AtlasDetail({
   const [choosingImage, setChoosingImage] = useState(false)
   const activity = useRef({ editing: false, busy: 0, choosing: false })
   const navRef = useRef<HTMLDivElement>(null)
+  /** 3.7.0 · W3：物品条目的结构化流转记录（只读；没有记录就如实说没有） */
+  const [transfers, setTransfers] = useState<ResourceTransfer[] | null>(null)
+  useEffect(() => {
+    if (tabId !== 'items') { setTransfers(null); return }
+    let cancelled = false
+    void readResourceTransfers()
+      .then(list => { if (!cancelled) setTransfers(transfersOfItem(list, row.id)) })
+      .catch(() => { if (!cancelled) setTransfers(null) })
+    return () => { cancelled = true }
+  }, [tabId, row.id])
+
   useLayoutEffect(() => {
     if (!navigationGuard) return
     const blocked = () => activity.current.editing || activity.current.busy > 0 || activity.current.choosing || dirty || saving || finishing.current
@@ -579,6 +591,31 @@ export default function AtlasDetail({
         )}
       </div>
 
+      {/* 3.7.0 · W3：物品流转账本（只读；记录只追加，与手填的「流转轨迹」文本并存但不互相覆盖） */}
+      {tabId === 'items' && transfers && (
+        <section className="px-4 pb-3" data-item-transfers>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-11 text-ink-300">流转记录</span>
+            <span className="text-10 text-ink-500">{transfers.length} 笔 · 只追加不改写</span>
+          </div>
+          {transfers.length === 0 ? (
+            <div className="text-10 text-ink-500 leading-relaxed">还没有结构化流转记录。写完一章后可在「颉文姬 · 整理」里确认物品流转；表格里的「流转轨迹」文本仍可照常手填。</div>
+          ) : (
+            <ol className="space-y-1">
+              {transfers.map(t => (
+                <li key={t.id} className="text-10 text-ink-400 leading-relaxed">
+                  <span className="text-ink-300">第{t.chapterNo || '?'}章</span>
+                  <span className="mx-1">·</span>{t.kind}
+                  {t.quantity ? ` ×${t.quantity}` : ''}
+                  {t.from || t.to ? `（${t.from || '—'}→${t.to || '—'}）` : ''}
+                  {t.evidence ? ` 「${t.evidence}」` : ''}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+
       <footer className="shrink-0 border-t border-ink-700 px-4 py-2.5 flex items-center justify-between gap-2">
         <span className="text-10 text-ink-500 min-w-0 truncate">
           {editing

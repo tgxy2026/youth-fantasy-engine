@@ -435,7 +435,7 @@ export function useJieWenJiModel(props: Props) {
 
   /** 采纳：只落库勾选且**可落库**的条目（`registered` 表示无变化，不该写） */
   const commitPost = async () => {
-    const picked = post.items.filter(i => postPicked.has(i.key) && i.status !== 'registered')
+    const picked = post.items.filter(i => postPicked.has(i.key) && i.status !== 'registered' && i.status !== 'unregistered')
     if (picked.length === 0 || postSaving || !ch) return
     setPostSaving(true)
     try {
@@ -444,6 +444,7 @@ export function useJieWenJiModel(props: Props) {
       )
       if (r.created > 0) {
         showToast(`已整理 ${r.created} 条${r.failed.length ? `（${r.failed.length} 条失败）` : ''}`, 'success')
+        if (r.warnings?.length) showToast(r.warnings.join('；'), 'info')
         onLedgerCommitted?.(r.created)
       } else if (r.failed.length > 0) {
         showToast(`整理失败：${r.failed.join('、')}`, 'error')

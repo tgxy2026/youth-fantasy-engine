@@ -13,11 +13,12 @@ import type { Chapter, CardRecord } from '@/lib/types'
 import { AuditIssue, splitCodes, splitNames, parseStoryDateKey, extractChapterNo, cnNumToArabic } from '@/lib/audit/audit'
 import { readAliases } from '@/lib/settings/aliases'
 import { flattenChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { detectHolderConflicts, readResourceTransfers } from '@/lib/settings/resourceLedger'
 
 const DEATH_KEYWORDS = ['死', '亡', '陨', '卒', '退场', '兵解', '逝', '诛', '殁']
 
 export async function auditContinuity(): Promise<AuditIssue[]> {
-  const [vols, chs, master, timeline, fores, terms, allData, progress, hookpoints, geography, secrets] = await Promise.all([
+  const [vols, chs, master, timeline, fores, terms, allData, progress, hookpoints, geography, secrets, itemRows, transfers] = await Promise.all([
     db.getAllVolumes(),
     db.getAllChapters(),
     db.getAllChapterLedgerRows(),
@@ -30,6 +31,9 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
     // 2.9.1 新增两个只读源：「距离与行程时间」（行程对账）与「知情权限」（秘密生命周期）
     db.getTableRows('geography'),
     db.getTableRows('secrets'),
+    // 3.7.0 · W3：物品账本（items 表行 + 结构化流转记录）
+    db.getTableRows('items'),
+    readResourceTransfers(),
   ])
   const cardRecs: CardRecord[] = allData.cardRecords
 
@@ -382,6 +386,32 @@ export async function auditContinuity(): Promise<AuditIssue[]> {
         detail: `这条秘密计划留到「${plan}」揭晓，而正文已写到第 ${maxNo} 章。${high ? '它的泄露风险登记为「高」，优先核对。' : ''}请确认：如期揭晓了（那就把本行登记更新一下），还是被推后了（那就顺手改掉计划章，免得下轮再报）。`,
         location: { kind: 'tab', tabId: 'secrets', hint: '知情权限' },
       })
+    }
+  }
+
+  // ============ 3.7.0 · W3：物品持有冲突（只 warn、不改正文）============
+  {
+    // 正文里出现「X 的 <物品名>」且 X 与账本该章时点持有者不一致 ⇒ 提示复核。
+    // 🔴 宁缺毋滥：只在明确归属句式 + X 是已登记人名时取样；没有账本记录不猜。
+    const conflicts = detectHolderConflicts({
+      chapters: flat
+        .map(c => ({ id: c.id, chapterNo: chapterNoOf.get(c.id) ?? 0, title: c.title, content: c.content ?? '' }))
+        .filter(c => c.chapterNo > 0),
+      items: itemRows.map(row => ({
+        id: row.id,
+        name: String(row.data['名称'] ?? ''),
+        aliases: readAliases('items', row.data),
+      })).filter(i => !!i.name),
+      transfers,
+      personNames: cardNames,
+    })
+    for (const c of conflicts) {
+      issues.push({
+        id: nid(), severity: 'warn', category: '连续性',
+        title: `物品持有与账本不一致：${c.itemName}`,
+        detail: `第${c.chapterNo}章写着「${c.evidence}」，但流转账本显示这一章时它应在「${c.holder}」手里。请核对正文或补记一笔流转；系统不会自动改正文。`,
+        location: { kind: 'chapter', chapterId: c.chapterId, hint: titleById.get(c.chapterId) ?? '' },
+      } as AuditIssue)
     }
   }
 

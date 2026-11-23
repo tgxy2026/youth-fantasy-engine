@@ -114,7 +114,7 @@ export type { StyleProfile, StyleMetrics, ExtractOptions } from '@/lib/ai/styleF
 // 2026-10-10（3.0 · W2-1）：章后整理抽取 —— 从本章正文抽「伏笔 / 关系 / 人物状态」三类变化候选。
 // 🔴 AI 只抽候选，「是否已登记 / 是否真变了」由 lib/chapterPostProcess.ts 确定性比对。
 export { aiExtractChapterChangesWithStatus, parseChapterChanges, parseChapterChangesDetailed, POST_PROCESS_PROMPTS } from '@/lib/aiTasks/postProcess'
-export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus } from '@/lib/aiTasks/postProcess'
+export type { ChapterChanges, ExtractedForeshadow, ExtractedRelation, ExtractedStatus, ExtractedResource } from '@/lib/aiTasks/postProcess'
 // 3.2.1 · T-09：细纲与正文对照（AI 语义判定 + 本地引文闸）
 export { aiComparePlanWithBody, reviewPlanCompare, MAX_PLAN_COMPARE_ITEMS, PLAN_COMPARE_PROMPTS } from '@/lib/aiTasks/planCompareAi'
 export type { PlanItemInput, PlanCompareReview, PlanCompareAiOutcome } from '@/lib/aiTasks/planCompareAi'
