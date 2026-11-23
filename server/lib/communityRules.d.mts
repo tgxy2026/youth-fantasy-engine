@@ -69,7 +69,7 @@ export function todayKeyCn(nowMs?: number): string
 export function periodRange(period: 'day' | 'week' | 'month', dateKey: string): { start: string; end: string } | null
 
 export function aggregateRank(
-  rows: Array<{ id: string; date: string; netDelta: number }>,
+  rows: Array<{ id: string; date: string; netDelta: number; projectId?: string }>,
   opts: { period?: 'day' | 'week' | 'month'; date?: string; today?: string },
 ): Array<{ id: string; raw: number; value: number; rank: number }>
 

@@ -1176,7 +1176,7 @@ post.updatedAt = Date.now()
         const prev = latest.get(k)
         if (!prev || row.reportedAt > prev.reportedAt || (row.reportedAt === prev.reportedAt && row.seq > prev.seq)) latest.set(k, row)
       }
-      const rows = [...latest.values()].map((r) => ({ id: r.uid, date: r.date, netDelta: r.netDelta }))
+      const rows = [...latest.values()].map((r) => ({ id: r.uid, date: r.date, netDelta: r.netDelta, projectId: r.projectId }))
       const ranked = aggregateRank(rows, { period, date, today })
       // 只保留能展示的账号（匿名或昵称），并且绝不输出 uid
       const entries = ranked

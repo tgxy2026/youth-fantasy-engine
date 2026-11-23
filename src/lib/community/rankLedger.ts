@@ -13,7 +13,7 @@
 // 🔴 只统计「用户自己的真实写作」：导入备份、恢复、云拉取、示范项目都走**直接 put**，
 //    不经过 `afterChapterWrite`，因此天然不计入；`withRankSuppressed` 是给
 //    将来可能新增的「批量写入也要走保存函数」的路径留的闸。
-// 服务器按账号汇总当天各项目的增减，周/月榜只累计已结束日期的正净增量。
+// 服务器按账号汇总当天「各书分别抵扣后」的正净增量（跨书不互相抵消），周/月榜只累计已结束日期的正净增量。
 
 import { delSettingFor, getSettingFor, getSettingsByPrefix, setSettingFor } from '@/lib/db/meta'
 import { countWordsWithPunct } from '@/lib/community/limits'

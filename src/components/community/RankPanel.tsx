@@ -1,6 +1,6 @@
 // 投稿广场 · 码字排行榜（3.5.0）
 //
-// 口径为含标点的正文净增量。负数只抵扣当天，周/月累计已结束日期的正净增量。
+// 口径为含标点的正文净增量。删减只抵同一本书当天的新增（跨书不互相抵消），周/月累计已结束日期的正净增量。
 // 🔴 匿名条目只显示「匿名用户」，不给编号或稳定标识 —— 否则不同周期一比对就能跨内容关联。
 // 🔴 两种形态：`compact` = 宽屏广场右侧竖栏（只显示前十与口径摘要）；
 //    完整形态 = 窄屏展开区域/独立查看，含日期与完整说明。
@@ -73,10 +73,10 @@ export default function RankPanel({ compact = false, dense = false, max = 8, onO
           </Button>
         </div>
         {dense ? (
-          <p className="text-11 text-ink-400">删减只抵扣当天，周榜和月榜累计已结束日期的正净增量。</p>
+          <p className="text-11 text-ink-400">删减只抵扣同一本书当天的新增，周榜和月榜累计已结束日期的正净增量。</p>
         ) : (
           <p className="text-11 leading-relaxed text-ink-400">
-            按<b className="font-medium text-ink-300">含标点的正文净增量</b>统计，删减只抵扣当天。周榜和月榜累计每天结束后的正净增量。
+            按<b className="font-medium text-ink-300">含标点的正文净增量</b>统计，删减只抵扣同一本书当天的新增，不同书之间不互相抵消。周榜和月榜累计每天结束后的正净增量。
           </p>
         )}
       </header>

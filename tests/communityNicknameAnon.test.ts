@@ -389,9 +389,9 @@ try {
   ok('日榜用报告日所在周代号，并显示今日净增', dayRank.json.entries[0]?.displayName === `${hWeek}（匿名用户）` && dayRank.json.entries[0]?.value === 5000)
   ok('净减当天不出现在日榜', (await call('/api/community/rank?period=day&date=2026-11-10')).json.entries.length === 0)
   const weekRank = await call('/api/community/rank?period=week&date=2026-11-11')
-  ok('周榜用本周代号并累计已结束的正净增量', weekRank.json.entries[0]?.displayName === `${hWeek}（匿名用户）` && weekRank.json.entries[0]?.value === 2000)
+  ok('周榜用本周代号并累计已结束的正净增量（跨书删减不抵消）', weekRank.json.entries[0]?.displayName === `${hWeek}（匿名用户）` && weekRank.json.entries[0]?.value === 3000)
   const monthRank = await call('/api/community/rank?period=month&date=2026-11-11')
-  ok('月榜用月首所在周代号并累计已结束的正净增量', monthRank.json.entries[0]?.displayName === `${hMonth}（匿名用户）` && monthRank.json.entries[0]?.value === 2000)
+  ok('月榜用月首所在周代号并累计已结束的正净增量（跨书删减不抵消）', monthRank.json.entries[0]?.displayName === `${hMonth}（匿名用户）` && monthRank.json.entries[0]?.value === 3000)
   ok('月榜与周榜代号不同周', hMonth !== hWeek)
   ok('排行不泄露账号标识', !monthRank.raw.includes('u_carol') && !monthRank.raw.includes('carol'))
   const beforeMidnightCheck = Date.now()
@@ -399,7 +399,7 @@ try {
     setNow(Date.UTC(2026, 10, 11, 16)) // 北京时间 11 月 12 日 00:00
     for (const period of ['week', 'month']) {
       const board = await call(`/api/community/rank?period=${period}`)
-      ok(`${period} 在北京时间零点纳入刚结束的正净增量`, board.json.entries[0]?.value === 7000)
+      ok(`${period} 在北京时间零点纳入刚结束的正净增量`, board.json.entries[0]?.value === 8000)
     }
   } finally { setNow(beforeMidnightCheck) }
   // 昵称排行并存

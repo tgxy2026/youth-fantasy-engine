@@ -387,30 +387,51 @@ export function periodRange(period, dateKey) {
 /**
  * 排行聚合。
  *
- * 日榜汇总同账号当天各项目的有符号净增量。周/月榜累加已结束日期的正净增量。
- * 日期按北京时间计算。并列同名次，次序稳定。
+ * 日榜 = 同账号当天**各书分别抵扣后**的正净增量之和：删减只抵同一本书当天的新增，
+ * 不同书之间不互相抵消（否则一本书的大额删减会把另一本书的新增完全抹掉，作者码了字却不上榜）。
+ * 周/月榜累加已结束日期的「各书抵扣后正净增量」。日期按北京时间计算。并列同名次，次序稳定。
+ * raw 保留当天跨书有符号合计（日榜）或周期有效累计（周/月），便于核对。
  *
- * @param {Array<{id:string, date:string, netDelta:number}>} rows 已按 (uid, date, project) 归一后的行
+ * @param {Array<{id:string, date:string, netDelta:number, projectId?:string}>} rows 已按 (uid, date, project) 归一后的行；
+ *   缺省 projectId 的行视为同一组（兼容不带项目维度的调用）。
  * @param {{period:'day'|'week'|'month', date:string, today?:string}} opts
- * @returns {Array<{id:string, value:number, raw:number, rank:number}>} raw 为日净增量或周期有效累计
+ * @returns {Array<{id:string, value:number, raw:number, rank:number}>}
  */
 export function aggregateRank(rows, { period = 'day', date, today = todayKeyCn() } = {}) {
   const range = periodRange(period, date)
   if (!range) return []
-  const daysByAuthor = new Map()
+  const byAuthor = new Map()
+  const signedDay = new Map()
   for (const r of rows) {
     if (!r || typeof r.date !== 'string') continue
     if (r.date < range.start || r.date > range.end) continue
     if (period !== 'day' && r.date >= today) continue
     const delta = Number(r.netDelta)
     if (!Number.isFinite(delta)) continue
-    if (!daysByAuthor.has(r.id)) daysByAuthor.set(r.id, new Map())
-    const days = daysByAuthor.get(r.id)
-    days.set(r.date, (days.get(r.date) || 0) + delta)
+    const pk = typeof r.projectId === 'string' ? r.projectId : ''
+    if (!byAuthor.has(r.id)) byAuthor.set(r.id, new Map())
+    const days = byAuthor.get(r.id)
+    if (!days.has(r.date)) days.set(r.date, new Map())
+    const projects = days.get(r.date)
+    projects.set(pk, (projects.get(pk) || 0) + delta)
+    if (!signedDay.has(r.id)) signedDay.set(r.id, new Map())
+    const sd = signedDay.get(r.id)
+    sd.set(r.date, (sd.get(r.date) || 0) + delta)
   }
-  const list = [...daysByAuthor.entries()].map(([id, days]) => {
-    const raw = period === 'day' ? days.get(date) : [...days.values()].reduce((sum, delta) => sum + Math.max(0, delta), 0)
-    return { id, raw, value: Math.max(0, raw) }
+  const dayValue = (days, d) => {
+    const projects = days.get(d)
+    if (!projects) return 0
+    let sum = 0
+    for (const net of projects.values()) sum += Math.max(0, net)
+    return sum
+  }
+  const list = [...byAuthor.entries()].map(([id, days]) => {
+    if (period === 'day') {
+      return { id, raw: signedDay.get(id)?.get(date) || 0, value: dayValue(days, date) }
+    }
+    let sum = 0
+    for (const d of days.keys()) sum += dayValue(days, d)
+    return { id, raw: sum, value: sum }
   })
   // 稳定次序：数值降序 → id 升序（id 是不透明句柄，不含账号信息）
   list.sort((a, b) => (b.value - a.value) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))

@@ -192,6 +192,30 @@ ok('多项目汇总到同一作者', (() => {
   ]), { period: 'day', date: '2026-11-10' })
   return r[0].id === 'u1' && r[0].value === 5000 && r[1].id === 'u2' && r[1].value === 4000
 })())
+ok('跨书删减不抵消另一本书的新增（按项目分别抵扣）', (() => {
+  const r = aggregateRank([
+    { id: 'u1', date: '2026-11-10', netDelta: 1401, projectId: 'A' },
+    { id: 'u1', date: '2026-11-10', netDelta: -2234, projectId: 'B' },
+  ], { period: 'day', date: '2026-11-10' })
+  return r.length === 1 && r[0].value === 1401 && r[0].raw === -833
+})())
+ok('同一本书内删减仍抵扣当天新增', (() => {
+  const r = aggregateRank([
+    { id: 'u1', date: '2026-11-10', netDelta: 10000, projectId: 'A' },
+    { id: 'u1', date: '2026-11-10', netDelta: -5000, projectId: 'A' },
+  ], { period: 'day', date: '2026-11-10' })
+  return r.length === 1 && r[0].value === 5000
+})())
+ok('周/月累计各书抵扣后的正净增量', (() => {
+  const rows = [
+    { id: 'u1', date: '2026-11-09', netDelta: 100, projectId: 'A' },
+    { id: 'u1', date: '2026-11-09', netDelta: -50, projectId: 'B' },
+    { id: 'u1', date: '2026-11-10', netDelta: 70, projectId: 'A' },
+  ]
+  const week = aggregateRank(rows, { period: 'week', date: '2026-11-10', today: '2026-11-11' })
+  const month = aggregateRank(rows, { period: 'month', date: '2026-11-10', today: '2026-11-11' })
+  return week[0]?.value === 170 && month[0]?.value === 170
+})())
 ok('周期外的行不计入', (() => {
   const r = aggregateRank(rowsOf([['u1', '2026-10-01', 9999], ['u1', '2026-11-10', 10]]), { period: 'day', date: '2026-11-10' })
   return r.length === 1 && r[0].value === 10
