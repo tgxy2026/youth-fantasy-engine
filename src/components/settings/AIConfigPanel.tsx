@@ -999,6 +999,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
               <TemperatureField
                 value={editing.temperature}
                 local={protocolOf(editing) === 'ollama' || !!editing.local}
+                model={editing.model}
                 onChange={v => setEditing(prev => (prev ? { ...prev, temperature: v } : prev))}
               />
 

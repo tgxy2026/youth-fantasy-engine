@@ -17,6 +17,7 @@ import { Button } from '@/components/common/Button'
 import NumberField from '@/components/common/NumberField'
 import { showToast } from '@/components/dialogs/dialogs'
 import { checkContextWindow, MAX_WINDOW } from '@/lib/ai/modelCapacity'
+import { usesFixedSampling } from '@/lib/aiCore/protocols/shared'
 import {
   TEMPERATURE_TIERS, LOCAL_DEFAULT_TEMPERATURE, CLOUD_DEFAULT_TEMPERATURE,
 } from '@/lib/ai'
@@ -188,11 +189,14 @@ export function StructureCapabilityField({ structured, reasoningWithStructure, p
  * （见 `lib/ai` 的 AIProvider.temperature 与 TEMPERATURE_TIERS）。
  * ⚠️ 只影响创意生成；结构化任务固定低温，不受这一项影响。
  */
-export function TemperatureField({ value, local, onChange }: {
+export function TemperatureField({ value, local, onChange, model }: {
   value: number | undefined
   local: boolean
   onChange: (v: number) => void
+  /** 当前模型名（可选）：命中「固定采样」模型时给一行说明，免得作者以为调了会生效 */
+  model?: string
 }) {
+  const fixed = !!model && usesFixedSampling(model)
   return (
     <div>
       <label className="block text-11 text-ink-500 mb-1">
@@ -219,6 +223,16 @@ export function TemperatureField({ value, local, onChange }: {
       <p className="text-10 text-ink-600 mt-1 leading-relaxed">
         校对、抽取这类结构化任务固定用 0.3 低温，不受这一项影响。
       </p>
+      {fixed && (
+        /**
+         * 固定采样模型（Kimi k2/k3、o1/o3、gpt-5、deepseek-r1…）：请求里**根本不发**采样参数。
+         * 必须说出来 —— 否则作者按了「活」却毫无变化，只会以为软件坏了。
+         */
+        <p className="text-10 text-amber/90 mt-1 leading-relaxed">
+          这个模型固定了采样参数（服务端只接受默认值）：上面三档对它不生效，请求也不会发送温度。
+          用别的模型时才需要调。
+        </p>
+      )}
     </div>
   )
 }

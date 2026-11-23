@@ -17,7 +17,7 @@ import { mergeUsage, usageFromOpenAI, usageFromStreamChunk, type RealUsage } fro
 import { defineDriver, type ChatDriver, type DriverCallOpts, type DriverResult } from '@/lib/aiCore/protocols/contract'
 import {
   HYBRID_THINKING_RE, MAX_REQUESTS_PER_CALL, nextOpenAIFlags, openaiSampling,
-  shouldDegradeOn400, type OpenAIFlags,
+  shouldDegradeOn400, usesFixedSampling, type OpenAIFlags,
 } from '@/lib/aiCore/protocols/shared'
 
 async function openaiChat(config: AIProvider, messages: ChatMessage[], o: DriverCallOpts): Promise<DriverResult> {
@@ -39,7 +39,16 @@ async function openaiChat(config: AIProvider, messages: ChatMessage[], o: Driver
     : o.wireFormat === 'json-object' || o.wireFormat === 'json-schema'
       ? { type: 'json_object' }
       : undefined
-  let flags: OpenAIFlags = { thinkToggle, sampling: true, format: !!responseFormat }
+  /**
+   * 🔴 固定采样模型（Kimi k2/k3、o1/o3/o4、gpt-5、deepseek-r1…）**一开始就不发采样参数**。
+   *    这些模型把 temperature / top_p / 惩罚项钉死，官方口径是"别传"（不传 → 服务端默认 → 200）；
+   *    本项目的 0.85 默认值与 0.3 的 JSON 任务温度对它们必然 400
+   *    （用户实测：`invalid temperature: only 1 is allowed for this model`）。
+   *    放在**首次请求**就生效，而不是等 400 再降级 —— 一次成功，不花两次钱、不让用户先看到报错。
+   *    判据与理由见 `shared.ts` 的 `FIXED_SAMPLING_RE`。
+   */
+  const fixedSampling = usesFixedSampling(config.model)
+  let flags: OpenAIFlags = { thinkToggle, sampling: !fixedSampling, format: !!responseFormat }
   // 请求体由开关决定：full（含 enable_thinking + temperature + 采样）→ noToggle（去 enable_thinking）
   //   → bare（再去 temperature 与采样惩罚——推理系模型（o1 / deepseek-r1 等）对 temperature ≠ 1 会直接 400；
   //     部分中转站也会拒绝不认识的字段）。响应格式是**独立**的一档，只在 400 时按需撤。

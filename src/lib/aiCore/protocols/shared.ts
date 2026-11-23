@@ -32,6 +32,32 @@ export const OPENAI_SAFE_SAMPLING = ['top_p', 'presence_penalty', 'frequency_pen
 export const HYBRID_THINKING_RE = /(^|[/_\-. ])(qwen3|qwen-3|qwq)/i
 
 /**
+ * 「采样参数被服务端钉死」的模型（2026-11-23 · 3.6.2 网页版热修）。
+ *
+ * 🔴 起因（用户实测）：接 Kimi（`api.moonshot.cn`）调 `kimi-k2.*` / `kimi-k3` 一律 400：
+ *    `invalid temperature: only 1 is allowed for this model`。
+ *    这类模型是**推理模型**，Moonshot 把 temperature / top_p / 各项惩罚**钉成定值**，
+ *    官方文档的口径是「**不要传**采样参数」（不传 → 服务端用默认值 → 200）。
+ *    而本项目默认温度 0.85（"标准"档）、结构化任务固定 0.3 ⇒ 必撞。
+ *
+ * 同类还有：OpenAI `o1`/`o3`/`o4` 系（有的直接不支持该字段）、`gpt-5`（chat 通道只认默认值）、
+ * DeepSeek `deepseek-r1` / `deepseek-reasoner`（推理系拒绝 temperature ≠ 1）。
+ *
+ * 🔴 **`kimi-k2-instruct` 必须排除**：它同属 K2 家族但**接受任意温度**（官方推荐 0.6、不强制）。
+ *    上游同类实现就是因为按 `kimi-k2*` 前缀一刀切，把 instruct 系的温度也钳死了（NousResearch #12144）。
+ *    所以这里用负向前瞻显式放行，并留了回归断言。
+ *
+ * 🔴 判据只用来**决定"不发"**，绝不"改成 1"：不同服务商对"必须显式 1"与"必须不传"的口径不一致，
+ *    而"不发"两边都成立 —— 这是唯一不会二次踩雷的写法。
+ */
+export const FIXED_SAMPLING_RE = /(^|[/_\-. ])(kimi-k2(?!-instruct)|kimi-k3|kimi-for-coding|o1|o3|o4|gpt-5|deepseek-r1|deepseek-reasoner)(?=$|[-_. ])/i
+
+/** 该模型是否只接受固定采样（命中 ⇒ 请求体里不下发 temperature / top_p / 惩罚项） */
+export function usesFixedSampling(model: string): boolean {
+  return FIXED_SAMPLING_RE.test(String(model || ''))
+}
+
+/**
  * 一次**逻辑调用**最多允许几次实际请求（3.2.0 · WQ6）。
  *
  * 方案 §16.7：「每次逻辑调用默认最多两次实际请求；已登记的旧接口三级参数兼容路径
@@ -55,6 +81,18 @@ export function openaiSampling(o: DriverCallOpts): Record<string, number> {
 }
 
 /**
+ * 与请求参数无关的**硬失败**（模型名 / 消息结构 / 鉴权 / 额度 / 内容政策 / 上下文）——
+ * 撤掉可选参数也救不回来，重试只是白花一次钱、还把真正的错误信息盖掉。
+ *
+ * 🔴 2026-11-23 收紧：原来用单个词 `model` 判硬失败，于是 Kimi 的原话
+ *    `invalid temperature: only 1 is allowed for this model` 也被判成"模型写错了、别重试"，
+ *    结果**温度导致的 400 一次都降不下来**（用户直接看到原始 400）。
+ *    现在只认"模型确实不存在"的几种说法（not found / no such / unknown / invalid model name）。
+ *    这正是 `shouldDegradeSamplingOn400` 顶部注释里记过的那类误判，只是当时没回头修这条。
+ */
+const HARD_CONFIG_FAIL_RE = /(messages|model[^\n]{0,40}not[ _]found|no such model|unknown[ _]model|invalid[ _]model|model[ _]name|does(?: not|n't) exist|api[-_ ]?key|unauthor|forbidden|auth|quota|balance|insufficient|content[ _]policy|context[ _]length|too many tokens)/i
+
+/**
  * 这条 400 该不该「降级重试」？（3.2.0 · WQ5）
  *
  * 🔴 方案 §16.6：「参数不支持时仅移除被明确拒绝的可选参数；**不把所有 400 都重试成裸请求**」。
@@ -67,17 +105,7 @@ export function openaiSampling(o: DriverCallOpts): Record<string, number> {
 export function shouldDegradeOn400(errorText: string): boolean {
   const t = errorText.trim()
   if (!t) return true
-  return !/(model|messages|api[-_ ]?key|unauthor|forbidden|auth|quota|balance|content[_ ]?policy|context length)/i.test(t)
-}
-
-/**
- * OpenAI 兼容请求的可选参数开关（3.2.0 · WQ5）。
- * 🔴 每降一级只关掉**一个**可选参数：先撤被明确点名的格式，再撤思考开关，最后撤采样。
- */
-export interface OpenAIFlags {
-  thinkToggle: boolean
-  sampling: boolean
-  format: boolean
+  return !HARD_CONFIG_FAIL_RE.test(t)
 }
 
 /** 错误文案是否明确指向结构格式参数（response_format / json_schema） */
@@ -90,11 +118,9 @@ const FORMAT_REJECTED_RE = /(response[_ ]?format|json[_ ]?schema|structured[_ ]?
  *    「Unsupported parameter: 'temperature' is not supported with this model.」—— 里面就有 "model"，
  *    照那条判据会被判成「配置写错了、别重试」，于是温度导致的 400 永远降不下来。
  *    所以这里**先排硬失败、再认采样关键词**，两条判据分开、各管一段。
+ *    （2026-11-23：`shouldDegradeOn400` 自身也按同一口径收紧了，两条判据不再互相矛盾。）
  */
 const SAMPLING_REJECTED_RE = /(temperature|top[ _]?p\b|top[ _]?k\b|\bsampling\b|unsupported[ _]parameter|unrecognized[ _]request[ _]argument|invalid[ _]parameter|not supported with this model|does(?: not|n't) support)/i
-
-/** 与可选参数无关的硬失败（模型名 / 鉴权 / 额度 / 内容政策 / 上下文）—— 撤参数也救不回来 */
-const HARD_CONFIG_FAIL_RE = /(model[ _]not[ _]found|does(?: not|n't) exist|no such model|invalid[ _]api[ _]?key|api[ _]?key|unauthor|forbidden|quota|balance|insufficient|content[ _]policy|context[ _]length|too many tokens)/i
 
 /**
  * 这条 400 是不是「采样参数不被接受」？（3.4.2 · D-1，三家官方协议共用）
@@ -107,6 +133,16 @@ export function shouldDegradeSamplingOn400(errorText: string): boolean {
   if (!t) return false
   if (HARD_CONFIG_FAIL_RE.test(t)) return false
   return SAMPLING_REJECTED_RE.test(t)
+}
+
+/**
+ * OpenAI 兼容请求的可选参数开关（3.2.0 · WQ5）。
+ * 🔴 每降一级只关掉**一个**可选参数：先撤被明确点名的格式，再撤被明确点名的采样，最后撤思考开关。
+ */
+export interface OpenAIFlags {
+  thinkToggle: boolean
+  sampling: boolean
+  format: boolean
 }
 
 /**
@@ -187,6 +223,12 @@ export function budgetExhaustedMessage(label: string, attempts: number): string 
 /** 下一级请求参数；`null` ＝ 已无可撤的可选参数 */
 export function nextOpenAIFlags(f: OpenAIFlags, errorText: string): OpenAIFlags | null {
   if (f.format && FORMAT_REJECTED_RE.test(errorText)) return { ...f, format: false }
+  /**
+   * 🔴 采样被**明确点名**时直接撤采样，不先浪费一次"撤思考开关"。
+   *    原来固定顺序是 format → thinkToggle → sampling：像 Kimi 这种"只跟温度有关"的 400，
+   *    要先白发一次 noToggle 请求（还花作者的钱），第二次才轮到撤温度。现在一步到位。
+   */
+  if (f.sampling && shouldDegradeSamplingOn400(errorText)) return { ...f, sampling: false, ...(f.format ? { format: false } : {}) }
   if (f.thinkToggle) return { ...f, thinkToggle: false }
   if (f.sampling) return { ...f, sampling: false, ...(f.format ? { format: false } : {}) }
   if (f.format) return { ...f, format: false }
