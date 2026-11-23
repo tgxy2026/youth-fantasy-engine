@@ -161,6 +161,8 @@ export interface CheckReportView {
   chapterNo?: number
   /** 落档那一刻的章节名（T3-06；老报告没有 ⇒ 界面退回当前章名） */
   chapterTitle?: string
+  /** 3.7.0 · W2：落档时的正文摘要（正文已变 ⇒ 界面提示「报告基于旧稿」；老报告没有） */
+  bodyDigest?: string
   createdAt: number
   bytes: number
   summary: string
@@ -208,6 +210,7 @@ export async function listCheckReportViews(
       ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
       ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
       ...(typeof r.chapterTitle === 'string' && r.chapterTitle ? { chapterTitle: r.chapterTitle } : {}),
+      ...(typeof r.bodyDigest === 'string' && r.bodyDigest ? { bodyDigest: r.bodyDigest } : {}),
       createdAt: p.createdAt,
       bytes: p.bytes,
       summary: p.summary ?? '',
@@ -258,6 +261,8 @@ export interface PersistCheckReportsInput {
   chapterNo?: number
   /** 归属章名（落档快照；单条报告也可各自覆盖） */
   chapterTitle?: string
+  /** 3.7.0 · W2：落档时的正文摘要（单条可覆盖） */
+  bodyDigest?: string
   /**
    * 本次跑过的检查（顺序无关）。
    * 🔴 单条可自带归属章（3.2.0 · W4 工单诊断：一次调用要落**多章**的报告）；
@@ -272,6 +277,8 @@ export interface PersistCheckReportsInput {
     chapterNo?: number
     /** 落档那一刻的章节名（T3-06：之后改名不影响历史报告） */
     chapterTitle?: string
+    /** 3.7.0 · W2：这份报告落档时的正文摘要 */
+    bodyDigest?: string
   }[]
 }
 
@@ -327,6 +334,7 @@ export async function persistCheckReports(
       const chapterId = r.chapterId ?? input.chapterId
       const chapterNo = r.chapterNo ?? input.chapterNo
       const chapterTitle = r.chapterTitle ?? input.chapterTitle
+      const bodyDigest = r.bodyDigest ?? input.bodyDigest
       const res = await persistCheckResult(
         input.jobId,
         input.projectId,
@@ -335,11 +343,12 @@ export async function persistCheckReports(
         findings,
         r.evidence,
         `检查 ${r.checkId}：严重 ${serious} / 中等 ${minor}`,
-        (chapterId || chapterNo !== undefined || chapterTitle)
+        (chapterId || chapterNo !== undefined || chapterTitle || bodyDigest)
           ? {
             ...(chapterId ? { chapterId } : {}),
             ...(chapterNo !== undefined ? { chapterNo } : {}),
             ...(chapterTitle ? { chapterTitle } : {}),
+            ...(bodyDigest ? { bodyDigest } : {}),
           }
           : undefined,
       )

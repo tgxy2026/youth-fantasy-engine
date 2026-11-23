@@ -62,6 +62,14 @@ export interface RevisionCandidate {
    * 只增可选字段：老候选没有它照常工作。
    */
   checkPayloadIds?: string[]
+  /**
+   * 3.7.0 · W2：生成时的细纲摘要 / 依赖设定摘要（`baselineDigest` 口径）。
+   * 🔴 可选：老候选没有它 —— 过期判定跳过该维，不把老数据误标过期。
+   */
+  outlineDigest?: string
+  settingsDigest?: string
+  /** 3.7.0 · W2：生成时的叙事序号（章序重排 ⇒ 过期） */
+  chapterOrder?: number
 }
 
 // ============ 状态转移结果 ============

@@ -22,7 +22,9 @@ import { useRevisionRead } from './useRevisionRead'
 import {
   listCheckReportViews, reportSourceLabel, summarizeReportViews, type CheckReportView,
 } from '@/lib/revision/checkReports'
-import { getCurrentProjectId } from '@/lib/db/core'
+import { getCurrentProjectId } from '@/lib/db/core'
+import { getAllChapters } from '@/lib/db'
+import { hashOf } from '@/lib/semantic/chunk'
 import { copyText, showToast } from '@/components/dialogs/dialogs'
 import {
   clearReviewIgnore, ignoreIndex, loadReviewIgnores, revisionRequestOf, setReviewIgnore,
@@ -73,7 +75,9 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
   /** 3.6.0 · D：「忽略并说明」记录（本机偏好，键 = reportId::index） */
   const [ignores, setIgnores] = useState<Map<string, ReviewIgnoreRecord>>(new Map())
   const [ignoreEditing, setIgnoreEditing] = useState<string | null>(null)
-  const [ignoreDraft, setIgnoreDraft] = useState('')
+  const [ignoreDraft, setIgnoreDraft] = useState('')
+  /** 3.7.0 · W2：落档后正文又改过的报告（只提示，不改报告内容） */
+  const [staleReports, setStaleReports] = useState<Set<string>>(new Set())
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -88,6 +92,24 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
     })
     return () => { cancelled = true }
   }, [])
+
+  // 3.7.0 · W2：报告记了基准正文摘要的就现算一次 —— 不一致 ⇒ 「报告基于旧稿」；老报告没有摘要 ⇒ 不提示
+  useEffect(() => {
+    if (!rows?.length) { setStaleReports(new Set()); return }
+    let cancelled = false
+    void getAllChapters().then(chapters => {
+      if (cancelled) return
+      const bodies = new Map(chapters.map(c => [c.id, hashOf(c.content ?? '')]))
+      const next = new Set<string>()
+      for (const r of rows) {
+        if (!r.bodyDigest || !r.chapterId) continue
+        const now = bodies.get(r.chapterId)
+        if (now !== undefined && now !== r.bodyDigest) next.add(r.id)
+      }
+      setStaleReports(next)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [rows])
 
   const saveIgnore = async (reportId: string, index: number, title: string | undefined) => {
     const pid = getCurrentProjectId()
@@ -221,6 +243,9 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
                       {r.minor > 0 && <span className="text-amber">注意 {r.minor}</span>}
                       {r.info > 0 && <span>提示 {r.info}</span>}
                       <span>{r.checkId}</span>
+                      {staleReports.has(r.id) && (
+                        <span className="text-amber" title="报告是在当时那版正文上跑出来的；之后正文又改过，结论可能已经不对应当前正文">报告基于旧稿</span>
+                      )}
                       {/* 落库那一刻的证据快照：回答"当时到底有没有证据"，与工单侧按当前正文的定位是两回事 */}
                       {r.evidence && r.evidence.total > 0 && (
                         <span title="落库时按被检查的正文逐字定位；定位不到不代表问题不存在，只代表当时没有可引用的原句">

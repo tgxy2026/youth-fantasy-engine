@@ -1,7 +1,11 @@
-// ============ 候选按代次失效：本版用「两条活闸」替代接线（3.6.1 · B3）============
+// ============ 候选按代次失效：3.7.0 已接线（原 3.6.1 · B3 记账的 gap 关闭）============
 //
-// `revision/generationInvalidation`（275 行，租约 / 代次 / 迟到回调）在 3.6.0 记账时是 `gap`。
-// 3.6.1 的定案是**不接线**：它要解的「同一个候选被两处同时改」风险，产品里已经有两条闸在挡 ——
+// `revision/generationInvalidation`（租约 / 代次 / 迟到回调）在 3.6.0 记账时是 `gap`，
+// 3.6.1 起由下面两条活闸兜住；**3.7.0 · W2 把「基准过期」那一半真正接上了**：
+// `revision/candidateExpiry` 从真实库取当前摘要，调 `isBaselineStale` / `expireCandidate`，
+// 由 `revision/changeWatch` 在正文 / 细纲 / 设定变更后触发（见 tests/baselineWiring.test.ts）。
+// 仍未接线的只剩「跨窗口同批租约」—— 桌面单窗口、网页当前单标签页，暂无触发场景。
+// 下面两条活闸继续钉死：「同一个候选被两处同时改」的存在性防线。
 //   ① `aiTaskCenter.startTask`：同页签同 kind 运行中时**拒绝第二次发起**（重复生成/重复改写）；
 //   ② `candidateStore.saveCandidate` + `sameCandidateRevision`：面板拿的是旧版本时**拒绝写回**
 //      （过期快照覆盖新候选 = 作者的修改与 Agent 的结果互相抹掉）。
@@ -104,6 +108,19 @@ async function main() {
     // 同一版快照重复提交是允许的（幂等重放，不该把正常保存也拦掉）
     const replay = await saveCandidate(mk({ text: '另一个窗口改过的正文', updatedAt: 2000 }), owner, after ?? undefined)
     ok('版本一致时重复提交不被拦（幂等重放）', replay.ok === true, JSON.stringify(replay))
+  }
+
+  // ---------- W2 接线闸（3.7.0）：过期函数的 src 消费者 + 事件类型有生产者 ----------
+  {
+    const fs = await import('node:fs')
+    const expiry = fs.readFileSync('src/lib/revision/candidateExpiry.ts', 'utf8')
+    const watch = fs.readFileSync('src/lib/revision/changeWatch.ts', 'utf8')
+    ok('gap 关闭：isBaselineStale 有生产消费者（不再是零调用）', expiry.includes('isBaselineStale('))
+    ok('gap 关闭：expireCandidate 有生产消费者', expiry.includes('expireCandidate('))
+    ok('changeWatch 接到正文 / 细纲 / 设定三路变更', watch.includes('expireRevisionCandidatesForChapter') && watch.includes('expireRevisionCandidatesForProject'))
+    ok('changeEvents 两类事件被真实构造（buildChangeEvidence → createChangeEvent）',
+      fs.readFileSync('src/lib/revision/changeEvents.ts', 'utf8').includes('createChangeEvent(')
+      && fs.readFileSync('src/lib/revision/changeWatch.ts', 'utf8').includes('buildChangeEvidence('))
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} generationInvalidationGate ${pass}/${pass + fail}`)

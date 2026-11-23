@@ -14,6 +14,7 @@
 //   「部分体现」「证据不足」留在报告里给作者看，但**不进工单** ——
 //   验收集规范里写得很清楚：没有正文证据的判定不许自动生成执行指令。
 import { aiComparePlanWithBody, MAX_PLAN_COMPARE_ITEMS, type PlanItemInput, type PlanCompareReview } from '@/lib/aiTasks/planCompareAi'
+import { hashOf } from '@/lib/semantic/chunk'
 import { persistCheckReports, type CheckFindingLike, type CheckRunLike } from '@/lib/revision/checkReports'
 
 /** 细纲卡里「不是正文计划」的字段：它们是登记/衔接信息，拿去对照只会刷噪音 */
@@ -112,6 +113,8 @@ export async function runPlanCompareForChapter(input: PlanCompareRunInput): Prom
     projectId: input.projectId,
     jobId: 'local-plan-compare',
     chapterId: input.chapterId,
+    // 3.7.0 · W2：报告记下基准正文摘要 —— 之后正文再改，回看时提示「报告基于旧稿」
+    bodyDigest: hashOf(input.bodyText ?? ''),
     ...(input.chapterNo !== undefined ? { chapterNo: input.chapterNo } : {}),
     ...(input.chapterTitle ? { chapterTitle: input.chapterTitle } : {}),
     reports: [{

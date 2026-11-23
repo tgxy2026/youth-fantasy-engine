@@ -47,6 +47,10 @@ export function jobForCandidate(candidate: RevisionCandidate, chapterId: string)
     steps: [],
     baseline: {
       bodyDigest: hashOf(candidate.beforeText ?? ''),
+      // 3.7.0 · W2（R2）：摘要随候选保存 —— 崩溃恢复时重建出的 baseline 与生成时逐字相同
+      ...(candidate.outlineDigest ? { outlineDigest: candidate.outlineDigest } : {}),
+      ...(candidate.settingsDigest ? { settingsDigest: candidate.settingsDigest } : {}),
+      ...(typeof candidate.chapterOrder === 'number' ? { chapterOrder: candidate.chapterOrder } : {}),
       createdAt: candidate.createdAt,
     },
     createdAt: candidate.createdAt,

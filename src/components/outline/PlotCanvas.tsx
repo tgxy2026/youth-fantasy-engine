@@ -20,6 +20,7 @@ import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import { Button } from '@/components/common/Button'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { dataDigestOf } from '@/lib/creative/plotCandidates'
 
 
 // 🔴 'beat'（结构节拍）只由「按模板铺节点」本地生成（2.5.0 · A1），**不进 HEADER_TO_TYPE**
@@ -27,7 +28,7 @@ import { usePersistedBool } from '@/lib/settings/uiPrefs'
 // 🔴 'idea'（灵感融合，2.5.1 · A3）只由灵感夹的「融合为情节卡」生成（同 beat 规则），
 //    **不进 HEADER_TO_TYPE** —— AI 简报解析永远不会产 idea 卡。
 type CardType = 'foreshadow' | 'hook' | 'character' | 'next' | 'beat' | 'idea'
-interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number; /** 灵感融合卡（idea）的溯源编号（1 起，指向融合时勾选的灵感条目）；旧快照无此字段 */ basedOn?: number[] }
+interface CardItem { id: string; chapter: string; type: CardType; text: string; x: number; y: number; /** 灵感融合卡（idea）的溯源编号（1 起，指向融合时勾选的灵感条目）；旧快照无此字段 */ basedOn?: number[]; /** 3.7.0 · W2：推演卡的来源章节台账行 id 与生成时的那一行摘要；旧快照无此字段 */ basedOnId?: string; basedOnDigest?: string }
 type Conn = [string, string]
 interface PlotPersist { selected: string[]; cards: CardItem[]; conns: Conn[] }
 
@@ -95,6 +96,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   const mono = useMonoTheme()
   const ink = 'rgb(var(--ink-100))'
   const [cards, setCards] = useState<CardItem[]>([])
+  /** 3.7.0 · W2：来源台账行的当前摘要（画布卡「来源已变化」只读角标；不改卡、不删卡） */
+  const sourceDigests = useMemo(() => new Map(chapters.map(c => [c.id, dataDigestOf(c.data)])), [chapters])
   const [conns, setConns] = useState<Conn[]>([])
   const [connectMode, setConnectMode] = useState(false)
   const [pendingConn, setPendingConn] = useState<string | null>(null)
@@ -263,7 +266,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         // 自动布局：每章一列，卡片纵向堆叠
         const colX = baseX + i * 360
         parsed.forEach((c, j) => {
-          newCards.push({ ...c, id: `c${Date.now()}_${i}_${j}`, x: colX, y: 110 + j * 130 })
+          newCards.push({ ...c, id: `c${Date.now()}_${i}_${j}`, x: colX, y: 110 + j * 130, basedOnId: ch.id, basedOnDigest: dataDigestOf(ch.data) })
         })
       } catch (e) {
         showToast(`第 ${i + 1} 章推演失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -540,6 +543,10 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
                       </span>
                     </div>
                     <div className="px-2.5 py-2 text-12 text-ink-200 leading-snug">{c.text}</div>
+                    {/* 3.7.0 · W2：来源台账已改 ⇒ 只读提示“来源已变化”，不改卡内容、不自动删卡 */}
+                    {c.basedOnId && c.basedOnDigest && sourceDigests.get(c.basedOnId) !== undefined && sourceDigests.get(c.basedOnId) !== c.basedOnDigest && (
+                      <div className="px-2.5 pb-1.5 text-9 text-amber">来源已变化（章节台账改过，这张卡仍保留）</div>
+                    )}
                     <Button variant="bare"
                       onPointerDown={e => { e.stopPropagation(); removeCard(c.id) }}
                       className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-ink-800 border border-ink-600 text-ink-400 hover:text-danger hover:border-red-400 items-center justify-center hidden group-hover:flex"

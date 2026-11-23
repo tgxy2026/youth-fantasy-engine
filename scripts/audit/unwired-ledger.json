@@ -1,6 +1,6 @@
 {
-  "note": "未接线模块台账。判据见 scripts/audit/unwired-modules.mjs：src 下没有生产代码 import、且不是入口的文件。每条必须写清性质与理由（≥20 字），否则自检失败。status：gap=按下方案实现但产品没接入口（能力缺口，删了等于扔方案）；retained=已判定按需求保留不挂载；harness=评测集/基准脚本等度量夹具（本来就不该被产品 import）；entry=入口文件。新增未接线文件不登记，审计直接失败。2026-11-18 3.6.1：changeEvents（证据层）与 semanticView（图鉴只读投影）已接线后移出本条，gap 归零；generationInvalidation 降级 retained。",
-  "updatedAt": "2026-11-18",
+  "note": "未接线模块台账。判据见 scripts/audit/unwired-modules.mjs：src 下没有生产代码 import、且不是入口的文件。每条必须写清性质与理由（≥20 字），否则自检失败。status：gap=按下方案实现但产品没接入口（能力缺口，删了等于扔方案）；retained=已判定按需求保留不挂载；harness=评测集/基准脚本等度量夹具（本来就不该被产品 import）；entry=入口文件。新增未接线文件不登记，审计直接失败。2026-11-18 3.6.1：changeEvents（证据层）与 semanticView（图鉴只读投影）已接线后移出本条，gap 归零；generationInvalidation 的「基准过期」半边已在 3.7.0 · W2 接线（candidateExpiry 从真实库取摘要 → isBaselineStale / expireCandidate），移出台账；未接的只剩跨窗口同批租约。",
+  "updatedAt": "2026-11-23",
   "entries": [
     {
       "file": "src/components/app/ProjectAutoCover.tsx",
@@ -16,11 +16,6 @@
       "file": "src/components/settings/SectionNav.tsx",
       "status": "retained",
       "reason": "长页分节导航是 3.5.1 按用户要求移除的（设置页改回普通滚动）；保留实现待重新启用"
-    },
-    {
-      "file": "src/lib/revision/generationInvalidation.ts",
-      "status": "retained",
-      "reason": "**3.6.1 定案：不接线，降级保留。** 它要解的「同一候选被并发写」风险已由两条活闸覆盖：aiTaskCenter.startTask 拒绝同页签同类重复发起；candidateStore.sameCandidateRevision 拒绝过期写回（两条都有测试钉住，见 tests/generationInvalidationGate.test.ts）。缺的只是**跨窗口同批租约**，而桌面单窗口、网页当前按单标签页使用，暂无触发场景。**启用条件**：一旦支持多窗口/多标签页同时打开同一项目并并发发起同一批候选，就必须接线并补租约测试。"
     },
     {
       "file": "src/lib/retrieval/bench.ts",

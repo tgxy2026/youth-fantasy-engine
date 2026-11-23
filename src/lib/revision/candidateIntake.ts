@@ -16,6 +16,7 @@
  *      `pending → applied` 不是合法转移，直接改字段等于绕过契约，日后状态图一改就会留下脏数据。
  */
 import { loadCandidate, listJobCandidates, saveCandidate } from './candidateStore'
+import { chapterOrderForChapter, outlineDigestForChapter, settingsDigestForChapter } from './baselineDigest'
 import { invalidateSiblings, transitionCandidate, type RevisionCandidate } from './revisionCandidate'
 
 /** 同章作用域的 job id（见文件头 ①；这两个函数必须成对使用，别在别处另拼） */
@@ -59,6 +60,12 @@ export async function recordRewriteCandidate(
   input: RecordRewriteCandidateInput,
 ): Promise<RecordRewriteCandidateResult> {
   const now = input.createdAt ?? Date.now()
+  // 3.7.0 · W2：生成时把细纲 / 依赖设定 / 章序摘要一并写进候选（读不到就留空，不误判过期）
+  const [outlineDigest, settingsDigest, chapterOrder] = await Promise.all([
+    outlineDigestForChapter(input.chapterId).catch(() => undefined),
+    settingsDigestForChapter(input.chapterId).catch(() => undefined),
+    chapterOrderForChapter(input.chapterId).catch(() => undefined),
+  ])
   const candidate: RevisionCandidate = {
     id: `rc-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     jobId: rewriteJobIdOf(input.chapterId),
@@ -73,6 +80,9 @@ export async function recordRewriteCandidate(
     createdAt: now,
     updatedAt: now,
     generation: 1,
+    ...(outlineDigest ? { outlineDigest } : {}),
+    ...(settingsDigest ? { settingsDigest } : {}),
+    ...(typeof chapterOrder === 'number' ? { chapterOrder } : {}),
     ...(input.checkPayloadIds?.length ? { checkPayloadIds: [...new Set(input.checkPayloadIds)] } : {}),
   }
   const r = await saveCandidate(candidate)

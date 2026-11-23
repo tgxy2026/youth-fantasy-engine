@@ -42,6 +42,10 @@ interface CandidateMeta {
   intent?: RevisionCandidate['intent']
   receipt?: RevisionCandidate['receipt']
   checkPayloadIds?: string[]
+  /** 3.7.0 · W2：生成时的基准摘要（细纲 / 依赖设定 / 章序） */
+  outlineDigest?: string
+  settingsDigest?: string
+  chapterOrder?: number
 }
 
 const isMeta = (v: unknown): v is CandidateMeta =>
@@ -63,6 +67,9 @@ export function candidateToPayload(c: RevisionCandidate): RevisionPayload {
     ...(c.intent ? { intent: c.intent } : {}),
     ...(c.receipt ? { receipt: c.receipt } : {}),
     ...(c.checkPayloadIds?.length ? { checkPayloadIds: c.checkPayloadIds } : {}),
+    ...(c.outlineDigest ? { outlineDigest: c.outlineDigest } : {}),
+    ...(c.settingsDigest ? { settingsDigest: c.settingsDigest } : {}),
+    ...(typeof c.chapterOrder === 'number' ? { chapterOrder: c.chapterOrder } : {}),
   }
   const bytes = bytesOf(c.text) + bytesOf(c.beforeText)
   return {
@@ -109,6 +116,9 @@ export function payloadToCandidate(p: RevisionPayload): RevisionCandidate | null
     ...(meta.intent ? { intent: meta.intent } : {}),
     ...(meta.receipt ? { receipt: meta.receipt } : {}),
     ...(meta.checkPayloadIds?.length ? { checkPayloadIds: meta.checkPayloadIds } : {}),
+    ...(typeof meta.outlineDigest === 'string' ? { outlineDigest: meta.outlineDigest } : {}),
+    ...(typeof meta.settingsDigest === 'string' ? { settingsDigest: meta.settingsDigest } : {}),
+    ...(typeof meta.chapterOrder === 'number' ? { chapterOrder: meta.chapterOrder } : {}),
   }
 }
 

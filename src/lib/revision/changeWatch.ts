@@ -22,7 +22,11 @@ import {
   OUTLINE_TAB_ID, VOLUME_OUTLINE_TAB_ID, chapterNoOf, parseChapterRange, volumeBoundTextsOf,
 } from '@/lib/outline/outlineCard'
 import { buildChangeEvidence, type ChangeEvidence } from '@/lib/revision/changeEvents'
-import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
+import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
+import { expireRevisionCandidatesForChapter, expireRevisionCandidatesForProject } from '@/lib/revision/candidateExpiry'
+import { refreshPlotCandidateStaleness } from '@/lib/creative/plotCandidateStore'
+import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import * as db from '@/lib/db'
 
 /** 全书总纲：唯一的大纲**表单**页签（`src/lib/schemaTabs/part1.ts:96`） */
 export const MASTER_TAB_ID = 'master'
@@ -120,17 +124,55 @@ async function flushProject(pid: string): Promise<void> {
   if (!facts.length) return
   watchStats.flushes++
   const requests: ImpactRequest[] = []
+  const changedChapters = new Set<string>()
+  const outlineCards: { cardId: string; chapterNo: number }[] = []
+  let settingsTouched = false
   for (const fact of facts) {
     const req = impactRequestOf(fact)
-    if (req) requests.push(req)
+    if (req) {
+      requests.push(req)
+      if (req.kind === 'chapter' && fact.tabId === OUTLINE_TAB_ID && typeof req.chapterNo === 'number') {
+        outlineCards.push({ cardId: fact.recordId, chapterNo: req.chapterNo })
+      }
+      continue
+    }
+    if (fact.kind === 'chapter') {
+      if (fact.contentChanged) changedChapters.add(fact.recordId)
+      continue
+    }
+    // 大纲收口点空变更（保存未改值）：既不打标、也不算“分析过一次”
+    if (fact.tabId === MASTER_TAB_ID || fact.tabId === VOLUME_OUTLINE_TAB_ID || fact.tabId === OUTLINE_TAB_ID) continue
+    // 其余 form/row/card 都是设定类写入
+    settingsTouched = true
   }
-  if (!requests.length) return
+  if (!requests.length && !changedChapters.size && !outlineCards.length && !settingsTouched) return
   watchStats.analyses++
+  const owner: OwnedOperation = captureOwnedOperation(pid)
+  try { owner.assertCurrent() } catch { watchStats.errors++; return }
+  // ① 大纲影响标记（W1）：一次算完、一次落库
+  if (requests.length) {
+    try {
+      const plan: ImpactPlan = await applyImpactRequests(requests, Date.now(), owner)
+      void plan
+    } catch { watchStats.errors++ }
+  }
+  // ② 候选 / 剧情候选过期（W2）：正文与细纲的变更各自记账
   try {
-    const owner = captureOwnedOperation(pid)
-    owner.assertCurrent()
-    const plan: ImpactPlan = await applyImpactRequests(requests, Date.now(), owner)
-    if (plan.marks.length === 0 && plan.suggestions.length === 0) return
+    const chapters = changedChapters.size || outlineCards.length ? await db.getAllChapters(owner) : []
+    const seq = chapters.length ? chapterSeqMap(await db.getAllVolumes(owner), chapters) : new Map<string, number>()
+    const chapterIdOfNo = (no: number) => chapters.find(c => (seq.get(c.id) ?? 0) === no)?.id
+    for (const chapterId of changedChapters) {
+      await expireRevisionCandidatesForChapter(chapterId, owner)
+      const no = seq.get(chapterId) ?? 0
+      if (no > 0) await refreshPlotCandidateStaleness(pid, { chapterNo: no })
+    }
+    for (const card of outlineCards) {
+      const chapterId = chapterIdOfNo(card.chapterNo)
+      if (chapterId) await expireRevisionCandidatesForChapter(chapterId, owner)
+      await refreshPlotCandidateStaleness(pid, { cardId: card.cardId, ...(card.chapterNo ? { chapterNo: card.chapterNo } : {}) })
+    }
+    // 设定变更没有“哪一章”可指 ⇒ 按项目扫还挂着的候选（防抖已把批量写合并）
+    if (settingsTouched) await expireRevisionCandidatesForProject(pid, owner)
   } catch (error) {
     // 旁路：保存早已完成；这里失败只影响提示，不影响数据
     watchStats.errors++

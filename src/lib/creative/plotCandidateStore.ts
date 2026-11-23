@@ -13,6 +13,7 @@
 import * as db from '@/lib/db'
 import { getSettingFor, setSettingFor } from '@/lib/db/meta'
 import { uid } from '@/lib/app/id'
+import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { ask } from '@/lib/editor/wordRange'
 import { requireProviderFor } from '@/lib/ai'
 import { loadDraftMappingContexts } from '@/lib/flow/draftMapping'
@@ -20,7 +21,7 @@ import { loadDraftMappingContexts } from '@/lib/flow/draftMapping'
 import { TABS } from '@/lib/schema'
 import { adaptBuiltinTab } from '@/lib/templates/legacyAdapter'
 import {
-  APPLY_OUTCOME_LABEL, OUTLINE_SLOTS, OUTLINE_TAB, outlineFingerprintOf, parsePlotCandidates,
+  APPLY_OUTCOME_LABEL, OUTLINE_SLOTS, OUTLINE_TAB, outlineFingerprintOf, parsePlotCandidates, bodyDigestOf,
   planPlotApply, planPlotRevert, resolveOutlineFields, type PlotApplyReport, type PlotCandidate,
 } from './plotCandidates'
 
@@ -53,6 +54,22 @@ export async function loadPlotCandidates(projectId: string): Promise<LoadedPlotC
 
 async function write(projectId: string, list: PlotCandidate[]): Promise<void> {
   await setSettingFor(projectId, PLOT_CANDIDATE_KEY, list.slice(0, PLOT_CANDIDATE_LIMIT))
+}
+
+/**
+ * 3.7.0 · W2：按章号取所属章正文摘要（只服务“候选基准”提示；取不到就是 undefined）。
+ * 🔴 只对**当前项目**能取：章列表读的是 currentProjectId 的库，串书比取不到更糟。
+ */
+async function bodyDigestForChapterNo(projectId: string, chapterNo: number): Promise<string | undefined> {
+  if (!(chapterNo > 0) || projectId !== db.getCurrentProjectId()) return undefined
+  try {
+    const chapters = await db.getAllChapters()
+    const seq = chapterSeqMap(await db.getAllVolumes(), chapters)
+    const hit = chapters.find(c => (seq.get(c.id) ?? 0) === chapterNo)
+    return hit ? bodyDigestOf(hit.content ?? '') : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -159,10 +176,11 @@ export async function generatePlotCandidates(projectId: string, cardId: string, 
   }
 
   const no = card.name.match(/第\s*(\d+)\s*章/)?.[1]
+  const chapterNo = no ? Number(no) : 0
   const parsed = parsePlotCandidates(text, {
     projectId,
     outlineCardId: card.id,
-    chapterNo: no ? Number(no) : 0,
+    chapterNo,
     chapterTitle: card.name,
     outlineFingerprint: outlineFingerprintOf(card, resolved.map(r => r.key)),
     resolved,
@@ -175,7 +193,9 @@ export async function generatePlotCandidates(projectId: string, cardId: string, 
     return { ok: false, created: 0, candidateIds: [], error: '模型没有给出可应用的候选（可能字段没变化或格式不对），可重试' }
   }
   const { list } = await loadPlotCandidates(projectId)
-  await write(projectId, [...parsed.candidates, ...list])
+  // 3.7.0 · W2：候选基准包含“所属章正文”—— 正文改了以后这份候选就该过期
+  const bodyDigest = await bodyDigestForChapterNo(projectId, chapterNo)
+  await write(projectId, [...parsed.candidates.map(c => (bodyDigest ? { ...c, bodyDigest } : c)), ...list])
   return { ok: true, created: parsed.candidates.length, candidateIds: parsed.candidates.map(c => c.id) }
 }
 
@@ -313,6 +333,38 @@ export async function discardPlotCandidate(projectId: string, candidateId: strin
   } catch {
     return false
   }
+}
+
+/**
+ * 3.7.0 · W2：正文 / 细纲保存后**主动**把失配候选落库为 `stale`（规划 §3 W2.2 ③）。
+ *
+ * 🔴 只改状态、不删候选、不改细纲：作者还能看到“它当时想改成什么”。
+ * 🔴 应用前重读比指纹的防线保留不动 —— 状态是提示，二次校验才是安全边界。
+ */
+export async function refreshPlotCandidateStaleness(
+  projectId: string, opts: { cardId?: string; chapterNo?: number } = {},
+): Promise<number> {
+  const { list } = await loadPlotCandidates(projectId)
+  if (!list.length) return 0
+  const fingerprints = new Map<string, string | null>()
+  const bodies = new Map<number, string | undefined>()
+  const next: PlotCandidate[] = []
+  let changed = 0
+  for (const c of list) {
+    if (c.status !== 'pending' && c.status !== 'partial') { next.push(c); continue }
+    if (opts.cardId && c.outlineCardId !== opts.cardId) { next.push(c); continue }
+    if (opts.chapterNo && c.chapterNo && c.chapterNo !== opts.chapterNo) { next.push(c); continue }
+    let fp = fingerprints.get(c.outlineCardId)
+    if (fp === undefined) { fp = await outlineFingerprintNow(projectId, c.outlineCardId).catch(() => null); fingerprints.set(c.outlineCardId, fp) }
+    let body = c.chapterNo ? bodies.get(c.chapterNo) : undefined
+    if (c.bodyDigest && c.chapterNo && body === undefined) { body = await bodyDigestForChapterNo(projectId, c.chapterNo); bodies.set(c.chapterNo, body) }
+    const stale = fp === null || fp !== c.outlineFingerprint || (!!c.bodyDigest && !!body && body !== c.bodyDigest)
+    if (!stale) { next.push(c); continue }
+    changed++
+    next.push({ ...c, status: 'stale', updatedAt: Date.now() })
+  }
+  if (changed) await write(projectId, next)
+  return changed
 }
 
 /** 供界面显示：某张卡当前指纹（判候选是否过期） */

@@ -112,6 +112,11 @@ export interface PlotCandidate {
   chapterTitle: string
   /** 生成时细纲卡指纹（变了 ⇒ 过期，只给差异不给应用） */
   outlineFingerprint: string
+  /**
+   * 3.7.0 · W2：生成时**所属章正文**的摘要。
+   * 🔴 可选：3.7.0 之前的候选没有它 —— 过期判定跳过这一维，不误标。
+   */
+  bodyDigest?: string
   branchPoint: string
   title: string
   rationale: string
@@ -130,8 +135,18 @@ export function outlineFingerprintOf(card: { name: string; data: Record<string, 
   return hashOf(`${card.name}\n${parts.join('\n')}`)
 }
 
+/** 纯函数：正文的稳定摘要（剧情候选与画布卡共用同一口径） */
+export function bodyDigestOf(text: string): string {
+  return hashOf(text ?? '')
+}
+
+/** 纯函数：字段表的稳定摘要（键排序后 hash） */
+export function dataDigestOf(data: Record<string, string> | undefined): string {
+  return hashOf(Object.keys(data ?? {}).sort().map(k => `${k}=${data?.[k] ?? ''}`).join('\n'))
+}
+
 /** 候选是否还能应用（过期/已放弃/已应用都不行） */
-export function applicabilityOf(c: PlotCandidate, currentFingerprint: string): {
+export function applicabilityOf(c: PlotCandidate, currentFingerprint: string, currentBodyDigest?: string): {
   canApply: boolean
   reason?: 'stale' | 'discarded' | 'applied' | 'no-fields'
 } {
@@ -139,6 +154,10 @@ export function applicabilityOf(c: PlotCandidate, currentFingerprint: string): {
   if (c.status === 'applied') return { canApply: false, reason: 'applied' }
   if (!c.fields.length) return { canApply: false, reason: 'no-fields' }
   if (c.outlineFingerprint !== currentFingerprint) return { canApply: false, reason: 'stale' }
+  // 3.7.0 · W2：正文也是候选的基准 —— 两边都有摘要且不一致 ⇒ 过期
+  if (c.bodyDigest && currentBodyDigest && c.bodyDigest !== currentBodyDigest) {
+    return { canApply: false, reason: 'stale' }
+  }
   return { canApply: true }
 }
 
