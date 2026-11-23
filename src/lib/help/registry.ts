@@ -23,13 +23,14 @@ import { TOOLS_ARTICLES } from '@/lib/help/articles/tools'
 import { TOOLS_EXTRA_ARTICLES } from '@/lib/help/articles/tools-extra'
 import { TAVERN_ARTICLES } from '@/lib/help/articles/tavern'
 import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
+import { VERSION_ARTICLES } from '@/lib/help/articles/version'
 import { AGENT_BACKEND_ARTICLES } from '@/lib/help/articles/agent-backend'
 import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 import { ARTEFACT_ARTICLES } from '@/lib/help/articles/artefacts'
 import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-export const CONTENT_VERSION = 28
+export const CONTENT_VERSION = 29
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.7.0'
@@ -37,6 +38,7 @@ export const SUPPORTED_APP_VERSION = '3.7.0'
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [
   ...START_ARTICLES,
+  ...VERSION_ARTICLES,
   ...EDITOR_ARTICLES,
   ...COMMUNITY_ARTICLES,
   ...PLAN_ARTICLES,
