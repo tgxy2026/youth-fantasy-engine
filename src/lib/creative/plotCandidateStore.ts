@@ -242,6 +242,17 @@ export async function applyPlotCandidate(projectId: string, candidateId: string)
     }
   }
 
+  // 3.7.0 · W2 复核补：正文也是基准 —— 两边都有摘要且不一致 ⇒ 拒绝应用（状态提示由 changeWatch 落库）
+  const bodyNow = await bodyDigestForChapterNo(projectId, cand.chapterNo)
+  if (cand.bodyDigest && bodyNow && cand.bodyDigest !== bodyNow) {
+    const blocked = planPlotApply(cand, card, keys)
+    return {
+      ok: false, status: cand.status,
+      report: { at: Date.now(), items: blocked, okCount: 0, skippedCount: blocked.length, writeOk: false, error: '本章正文已改动，候选过期' },
+      error: '本章正文在生成候选后被改过（候选已过期），已拒绝应用以免按旧正文的建议改细纲；可重新生成候选',
+    }
+  }
+
   const items = planPlotApply(cand, card, keys)
   const okItems = items.filter(i => i.outcome === 'ok')
   let writeOk = false

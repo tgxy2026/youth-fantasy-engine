@@ -63,7 +63,18 @@ const hooks: PaceHookInput[] = [
   ok('不足 500 点原样返回', samplePoints(many.slice(0, 12), 500).length === 12)
 }
 
-// ---------- ④ 立场闸（禁词） ----------
+// ---------- ④ 千章级计算（内存桩口径，真机数字另记） ----------
+{
+  const many = Array.from({ length: 1000 }, (_, i) => ({ id: `c${i}`, no: i + 1, title: `第${i + 1}章`, content: '第一段。第二段。'.repeat(40) }))
+  const hooks = Array.from({ length: 100 }, (_, i) => ({ chapterNo: (i + 1) * 10, strength: '中' }))
+  const t0 = Date.now()
+  const series = computePaceSeries(many, hooks)
+  const ms = Date.now() - t0
+  ok('千章计算 < 2s（内存桩口径）', ms < 2000, String(ms) + 'ms')
+  ok('千章点数完整（抽稀前）', series.points.length === 1000)
+}
+
+// ---------- ⑤ 立场闸（禁词） ----------
 {
   const src = fs.readFileSync('src/lib/outline/paceMetrics.ts', 'utf8')
   const banned = '评分|评级|排名|合格|不合格'

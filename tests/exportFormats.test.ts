@@ -50,6 +50,7 @@ const chapters = [
   ok('引用名装载可重入（useCallback，不是挂载时一次性）', hook.includes('const loadRefNames = useCallback('))
   ok('订阅 db 变更后防抖重载', hook.includes('onDbChange(') && hook.includes('setTimeout(run, 300)'))
   ok('只对设定类写入重载（card / row）', /fact\.kind !== 'card' && fact\.kind !== 'row'/.test(hook))
+  ok('只对参与引用的页签重载（角色卡 + 世界构建表）', hook.includes('refTabs.has(fact.tabId)') && hook.includes("'char-main', 'char-secondary', 'char-npc'"))
   ok('卸载时退订并清定时器', hook.includes('off()') && hook.includes('clearTimeout(timer)'))
 }
 

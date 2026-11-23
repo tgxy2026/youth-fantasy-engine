@@ -181,13 +181,13 @@ async function main() {
   {
     await seed()
     const card = await cardOf('o2')
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1000; i++) {
       await db.saveCardRecord({ ...card, data: { ...card.data, '本章一句话事件': `第${i}稿` } } as never)
     }
     await advance(299)
     ok('299ms 时还没分析', watchStats.analyses === 0)
     await advance(1)
-    ok('100 次连写只触发一次分析', watchStats.analyses === 1, String(watchStats.analyses))
+    ok('1000 次连写只触发一次分析', watchStats.analyses === 1, String(watchStats.analyses))
     ok('只触发一次合并刷新', watchStats.flushes === 1, String(watchStats.flushes))
     const marks = await readImpact()
     ok('合并后标记仍然正确', marks.map(m => m.chapterNo).join(',') === '3,4,5')

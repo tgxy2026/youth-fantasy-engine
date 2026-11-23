@@ -188,5 +188,8 @@ export async function commitResourceTransfer(input: {
     return { ok: false, overflow: 0 }
   }
   const r = await appendResourceTransfers([transfer], input.owner)
-  return { ok: r.appended > 0, overflow: r.overflow }
+  if (r.appended > 0) return { ok: true, overflow: r.overflow }
+  // 账本没写进去 ⇒ 把表格行恢复原样，避免「持有者改了、账本没有」的半截状态（尽力而为）
+  await db.saveTableRow(itemRow, input.owner).catch(() => undefined)
+  return { ok: false, overflow: 0 }
 }

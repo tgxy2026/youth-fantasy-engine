@@ -53,6 +53,14 @@ export const PLOT_ARTICLES: HelpArticle[] = [
           '常见用法是先铺骨架 → 手动连出全书走向 → 再对照着排章节细纲。骨架卡和 AI 推演卡可以混排、可以互相连线。',
         ],
       },
+      {
+        id: 'stale',
+        heading: '来源已变化',
+        body: [
+          '推演卡记录生成时来源章节台账的摘要。台账后来改过时，卡片下方显示「来源已变化」——只提示，不改卡内容、不自动删卡。',
+          '剧情候选与改写候选也会过期：正文 / 细纲 / 本章资料变了，候选会被标成「已过期」并写明原因。',
+        ],
+      },
     ],
     related: ['editor-tools', 'outline-guide'],
     actions: [{ label: '打开情节推演', tabId: 'plot-canvas' }],

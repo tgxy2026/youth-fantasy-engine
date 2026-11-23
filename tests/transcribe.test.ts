@@ -72,6 +72,7 @@ async function main() {
       && !transcribeReady({ baseUrl: 'ftp://x', apiKey: 'k', model: 'm' }) && transcribeReady({ baseUrl: 'http://x', apiKey: 'k', model: 'm' }))
     ok('模型缺省为 whisper-1', normalizeConfig({ baseUrl: 'http://x', apiKey: 'k' }).model === 'whisper-1')
     ok('端点不重复拼斜杠', transcribeEndpoint('https://x/v1///') === 'https://x/v1/audio/transcriptions')
+    ok('贴完整端点时不重复拼', transcribeEndpoint('https://x/v1/audio/transcriptions') === 'https://x/v1/audio/transcriptions')
   }
 
   // ---------- ④ 配置读写（只存三项字符串；无音频） ----------

@@ -52,7 +52,10 @@ export function transcribeReady(config: TranscribeConfig): boolean {
 }
 
 export function transcribeEndpoint(baseUrl: string): string {
-  return `${baseUrl.trim().replace(/\/+$/, '')}/audio/transcriptions`
+  const base = baseUrl.trim().replace(/\/+$/, '')
+  // 作者把完整端点贴进来时不再重复拼（/audio/transcriptions 只出现一次）
+  if (/\/audio\/transcriptions$/i.test(base)) return base
+  return `${base}/audio/transcriptions`
 }
 
 export type TranscribeFailure = 'unconfigured' | 'auth' | 'too-large' | 'network' | 'http' | 'empty'

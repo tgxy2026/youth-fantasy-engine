@@ -14,7 +14,9 @@ import { clearDbChangeListeners } from '../src/lib/db/changeBus'
 import { registerChangeWatch, setWatchClock, whenIdle } from '../src/lib/revision/changeWatch'
 import { recordRewriteCandidate } from '../src/lib/revision/candidateIntake'
 import { loadCandidate, saveCandidate } from '../src/lib/revision/candidateStore'
+import { applyPlotCandidate } from '../src/lib/creative/plotCandidateStore'
 import { rewriteJobIdOf } from '../src/lib/revision/candidateIntake'
+import { expireRevisionCandidatesForChapter } from '../src/lib/revision/candidateExpiry'
 import {
   outlineDigestOf, settingsDigestOf, outlineDigestForChapter, settingsDigestForChapter,
 } from '../src/lib/revision/baselineDigest'
@@ -119,6 +121,11 @@ async function main() {
     const after = await loadCandidate(id)
     ok('正文变更 → 候选变 stale（读存储）', after?.status === 'stale', String(after?.status))
     ok('过期原因 = 正文已变化', (after?.staleReasons ?? []).includes('正文已变化'), JSON.stringify(after?.staleReasons))
+    // 复核补：重复判定不重复追加原因（否则面板里同一句会越堆越多）
+    await expireRevisionCandidatesForChapter('c1')
+    await expireRevisionCandidatesForChapter('c1')
+    const again = await loadCandidate(id)
+    ok('重复过期不重复追加原因', (again?.staleReasons ?? []).filter(r => r === '正文已变化').length === 1, JSON.stringify(again?.staleReasons))
   }
 
   // ---------- ③ 已应用候选不受影响 ----------
@@ -195,6 +202,8 @@ async function main() {
     ok('失配时 applicability 也拒绝应用', applicabilityOf(stored!, fp!, hashOf('新正文')).canApply === false)
     ok('两边都一致时可应用（负向）', applicabilityOf({ ...plotCand }, fp!, hashOf('旧正文')).canApply === true)
     ok('老候选没有 bodyDigest 时不做正文判定（兼容）', applicabilityOf({ ...plotCand, bodyDigest: undefined }, fp!).canApply === true)
+    const blocked = await applyPlotCandidate(PID, 'pc-1')
+    ok('应用前防线也拒绝：正文已变则不写细纲', !blocked.ok && !!blocked.error && blocked.error.includes('正文'), JSON.stringify(blocked.error))
   }
 
   // ---------- ⑧ 画布卡来源摘要口径 ----------

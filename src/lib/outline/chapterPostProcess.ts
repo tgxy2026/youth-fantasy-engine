@@ -421,7 +421,7 @@ export async function applyPostProcess(
         if (!row) { failed.push(item.label); continue }
         const note = [
           raw.rel.change,
-          chapterNo > 0 ? `（第${chapterNo}章）` : (input.chapterTitle ? `（${input.chapterTitle}）` : ''),
+          no > 0 ? `（第${no}章）` : (input.chapterTitle ? `（${input.chapterTitle}）` : ''),
         ].filter(Boolean).join('')
         await db.saveTableRow({
           ...row,

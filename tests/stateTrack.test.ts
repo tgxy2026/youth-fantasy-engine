@@ -113,6 +113,7 @@ async function main() {
     ok('关系变化落库成功', r.created === 1, JSON.stringify(r))
     const row = (await db.getTableRows('relations')).find(x => x.id === 'rel1')!
     ok('原「演变轨迹」文本仍是追加（旧文本保留）', row.data['演变轨迹（按卷）'].startsWith('（第1章）互为师兄弟'), row.data['演变轨迹（按卷）'])
+    ok('关系备注带真实章号（不再是标题兜底）', row.data['演变轨迹（按卷）'].includes('（第3章）'), row.data['演变轨迹（按卷）'])
     const records = await readStateRecords()
     ok('关系行也有状态记录（ref 指向 relations 行）', records.some(x => x.ref.tabId === 'relations' && x.ref.id === 'rel1'))
     ok('关系记录按章可查', !!stateAt(records, ROW_REF, 3)?.state.includes('反目'))

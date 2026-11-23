@@ -6,6 +6,7 @@
 //   ③ 连续性：第 5 章已赠人、第 8 章仍写「他的剑」能检出；无矛盾样本不误报；
 //   ④ 上限与同步：超 200 条如实报告 overflow，settingsKV 新键可读回；
 //   ⑤ 同章同笔不重复记账（重跑整理不会记两遍）。
+import fs from 'node:fs'
 import * as db from '../src/lib/db'
 import { memoryOps, __resetMockStores } from './mock-memory'
 import { setSettingFor, getSettingFor } from '@/lib/db'
@@ -135,7 +136,27 @@ async function main() {
     ok('settingsKV 键可按项目读回（云同步/备份走同一份存储）', Array.isArray(raw))
   }
 
-  // ---------- ⑥ 上限：超 200 条如实报告 overflow，不静默 ----------
+  // ---------- ⑥ 账本写失败：表格行必须回滚，不留半截状态 ----------
+  {
+    await seed()
+    const badOps = {
+      ...memoryOps,
+      put: async (store: string, value: unknown) => {
+        if (store === 'settingsKV') throw new Error('settingsKV down')
+        return memoryOps.put(store as never, value as never)
+      },
+    }
+    db.setStoreOps(badOps as never)
+    const found = [{ item: '青锋剑', action: '转移' as const, from: '甲', to: '乙', evidence: '甲把青锋剑递给乙' }]
+    const items = matchResources(found, [itemRow], 5, 'c1')
+    const r = await applyPostProcess({ chapterId: 'c1', content: 'x', chapterTitle: '第1章' }, items)
+    db.setStoreOps(memoryOps)
+    const row = (await db.getTableRows('items')).find(x => x.id === 'item1')!
+    ok('账本写失败 → 该条目标为失败', r.created === 0 && r.failed.length === 1, JSON.stringify(r))
+    ok('账本写失败 → 表格行回滚到原值（不出现半截状态）', row.data['当前持有者'] === '甲' && row.data['流转轨迹'] === '（第1章）铁匠→甲', row.data['当前持有者'] + ' | ' + row.data['流转轨迹'])
+  }
+
+  // ---------- ⑦ 上限：超 200 条如实报告 overflow，不静默 ----------
   {
     await seed()
     const many = Array.from({ length: RESOURCE_TRANSFER_LIMIT + 5 }, (_, i) => tr({ id: `bulk-${i}`, chapterNo: 1 }))
@@ -144,6 +165,13 @@ async function main() {
     ok('被移出本地的条数如实报告（界面据此提示导出）', r.overflow === 5, JSON.stringify(r))
     await setSettingFor(PID, RESOURCE_TRANSFER_KEY, [{ broken: true }])
     ok('损坏数据读取不炸、按空账本处理', (await readResourceTransfers()).length === 0)
+  }
+
+  // ---------- 集成闸：连续性检查真的接了物品持有冲突 ----------
+  {
+    const src = fs.readFileSync('src/lib/outline/continuityCheck.ts', 'utf8')
+    ok('连续性检查调用 detectHolderConflicts（不是只写单测）', src.includes('detectHolderConflicts(') && src.includes("db.getTableRows('items')") && src.includes('readResourceTransfers()'))
+    ok('冲突只报 warn（不改正文）', /severity: 'warn'[\s\S]{0,200}物品持有/.test(src))
   }
 
   console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)

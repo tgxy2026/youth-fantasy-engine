@@ -51,7 +51,9 @@ async function expireAgainst(
       job, current.bodyDigest, current.outlineDigest, current.settingsDigest, current.chapterOrder,
     )
     if (!verdict.stale) continue
-    const result = expireCandidate(candidate, verdict.reasons)
+    const freshReasons = verdict.reasons.filter(r => !(candidate.staleReasons ?? []).includes(r))
+    if (!freshReasons.length && candidate.status === 'stale') continue
+    const result = expireCandidate(candidate, freshReasons)
     if (!result.ok || !result.candidate) continue
     // 已经是 stale 且理由没新增 → 不重复写库
     if (candidate.status === 'stale') {

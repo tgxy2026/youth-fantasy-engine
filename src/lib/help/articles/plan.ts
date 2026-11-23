@@ -80,6 +80,14 @@ export const PLAN_ARTICLES: HelpArticle[] = [
           '这只是经验顺序，不是软件前提：任何一张表都可以随时回来补。',
         ],
       },
+      {
+        id: 'impact',
+        heading: '大纲改了，系统会提醒',
+        body: [
+          '总纲、卷纲、细纲保存后，受影响的「还没开写」章会在颉文姬「整理」页标成「未来计划待重审」，并附改前 → 改后的片段；核对完点「已处理」。系统不会改你的章纲。',
+          '总纲 / 卷纲改动波及已写章时，只列「已写章节建议复核」，不替你判断哪一章真的受影响。',
+        ],
+      },
     ],
     related: ['positioning-guide', 'editor-tools'],
     actions: [{ label: '打开全书总纲', tabId: 'master' }, { label: '打开章节细纲', tabId: 'chapter-outline' }],

@@ -99,8 +99,11 @@ export function useNovelEditorHighlight({
       void loadRefNames().then(list => { if (!cancelled) setRefNames(list) }).catch(() => undefined)
     }
     run()
+    // 只对参与引用的页签重载（角色卡 + 世界构建表）：细纲/其它表的保存不该触发全量重扫
+    const refTabs = new Set<string>(['char-main', 'char-secondary', 'char-npc', ...TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol).map(t => t.id)])
     const off = onDbChange(fact => {
       if (fact.kind !== 'card' && fact.kind !== 'row') return
+      if (!refTabs.has(fact.tabId)) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(run, 300)
     })
