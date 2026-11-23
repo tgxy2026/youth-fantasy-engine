@@ -13,13 +13,12 @@ import { memoryOps, __resetMockStores } from './mock-memory'
 import { clearDbChangeListeners } from '../src/lib/db/changeBus'
 import { registerChangeWatch, setWatchClock, whenIdle } from '../src/lib/revision/changeWatch'
 import { recordRewriteCandidate } from '../src/lib/revision/candidateIntake'
-import { expireRevisionCandidatesForChapter } from '../src/lib/revision/candidateExpiry'
-import { loadCandidate, listJobCandidates, saveCandidate } from '../src/lib/revision/candidateStore'
+import { loadCandidate, saveCandidate } from '../src/lib/revision/candidateStore'
 import { rewriteJobIdOf } from '../src/lib/revision/candidateIntake'
 import {
   outlineDigestOf, settingsDigestOf, outlineDigestForChapter, settingsDigestForChapter,
 } from '../src/lib/revision/baselineDigest'
-import { getSettingFor, setSettingFor } from '@/lib/db'
+import { setSettingFor } from '@/lib/db'
 import { dataDigestOf, applicabilityOf, type PlotCandidate } from '../src/lib/creative/plotCandidates'
 import { refreshPlotCandidateStaleness, loadPlotCandidates, PLOT_CANDIDATE_KEY, outlineFingerprintNow } from '../src/lib/creative/plotCandidateStore'
 import { listCheckReportViews, persistCheckReports } from '../src/lib/revision/checkReports'
@@ -30,7 +29,6 @@ function ok(name: string, cond: boolean, extra = '') {
   if (cond) { pass++; console.log(`PASS ${name}`) }
   else { fail++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`) }
 }
-const tick = () => new Promise<void>(r => setTimeout(r, 0))
 
 type Timer = { fn: () => void; at: number }
 let timers: Timer[] = []
@@ -94,7 +92,7 @@ async function main() {
     ok('同一细纲卡两次摘要逐字相同（崩溃恢复口径）', outlineDigestOf(card) === outlineDigestOf(card))
     ok('细纲改一个字段 ⇒ 摘要必变', outlineDigestOf(card) !== outlineDigestOf(outline({ '一、本章定位::本章一句话事件': '新事件' })))
     ok('细纲摘要与插入顺序无关（键排序）', outlineDigestOf({ name: 'n', data: { a: '1', b: '2' } })
-      === outlineDigestOf({ name: 'n', data: { b: '2', a: '1' } }))
+      === outlineDigestOf({ name: 'n', data: { b: '2', a: '1' } }) as never)
     const entries = [{ key: 'k1', value: 'v1' }, { key: 'k2', value: 'v2' }]
     ok('设定摘要与传入顺序无关', settingsDigestOf(entries) === settingsDigestOf([...entries].reverse()))
     ok('设定值变了 ⇒ 摘要必变', settingsDigestOf(entries) !== settingsDigestOf([{ key: 'k1', value: 'v9' }, entries[1]]))
@@ -116,7 +114,7 @@ async function main() {
     const before = await loadCandidate(id)
     ok('生成时候选带细纲 / 设定 / 章序摘要', !!before?.outlineDigest && !!before?.settingsDigest && before?.chapterOrder === 1)
 
-    await db.saveChapter(ch({ content: '新正文，作者改过' }))
+    await db.saveChapter(ch({ content: '新正文，作者改过' }) as never)
     await advance(300)
     const after = await loadCandidate(id)
     ok('正文变更 → 候选变 stale（读存储）', after?.status === 'stale', String(after?.status))
@@ -130,7 +128,7 @@ async function main() {
     const cur = await loadCandidate(id)
     const applied = await saveCandidate({ ...cur!, status: 'applied', appliedAt: 1 }, undefined, cur ?? undefined)
     ok('已应用候选写入成功', applied.ok, JSON.stringify(applied))
-    await db.saveChapter(ch({ content: '又改了' }))
+    await db.saveChapter(ch({ content: '又改了' }) as never)
     await advance(300)
     const after = await loadCandidate(id)
     ok('applied 不被过期（终态不动）', after?.status === 'applied')
@@ -168,7 +166,7 @@ async function main() {
       text: '旧稿', beforeText: '旧正文', summary: '整章改写', bytes: 1, createdAt: 1, updatedAt: 1, generation: 1,
     }
     await saveCandidate(legacy)
-    await db.saveChapter(ch({ content: '改了正文' }))
+    await db.saveChapter(ch({ content: '改了正文' }) as never)
     await advance(300)
     const after = await loadCandidate('legacy-1')
     ok('无摘要字段的老候选不误报「细纲/设定已变化」',
@@ -190,7 +188,7 @@ async function main() {
     await setSettingFor(PID, PLOT_CANDIDATE_KEY, [plotCand])
     const changed = await refreshPlotCandidateStaleness(PID, { chapterNo: 1 })
     ok('正文基准失配 → 失配候选落库 stale', changed === 0) // 正文还没改，指纹也没变 ⇒ 0
-    await db.saveChapter(ch({ content: '新正文' }))
+    await db.saveChapter(ch({ content: '新正文' }) as never)
     await refreshPlotCandidateStaleness(PID, { chapterNo: 1 })
     const stored = (await loadPlotCandidates(PID)).list.find(c => c.id === 'pc-1')
     ok('正文改了 ⇒ 剧情候选状态落库为 stale', stored?.status === 'stale', String(stored?.status))
@@ -202,8 +200,8 @@ async function main() {
   // ---------- ⑧ 画布卡来源摘要口径 ----------
   {
     const row = { 章节标题: '第1章', 一句话事件: '旧' }
-    ok('同一字段表两次摘要相同', dataDigestOf(row) === dataDigestOf({ ...row }))
-    ok('字段改了摘要必变', dataDigestOf(row) !== dataDigestOf({ ...row, 一句话事件: '新' }))
+    ok('同一字段表两次摘要相同', dataDigestOf(row) === dataDigestOf({ ...row }) as never)
+    ok('字段改了摘要必变', dataDigestOf(row) !== dataDigestOf({ ...row, 一句话事件: '新' }) as never)
   }
 
   // ---------- ⑨ 对照报告：落档记摘要；老报告不冒充 ----------
