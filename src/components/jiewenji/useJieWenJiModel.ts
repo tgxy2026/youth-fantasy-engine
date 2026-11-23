@@ -26,7 +26,7 @@ import { aiEditorDiagnosis, aiChapterReview, aiOocCheckWithStatus, aiRewritePass
 import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@/lib/settings/settingLedger'
 import * as db from '@/lib/db'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
-import { readImpact, clearImpact, type ImpactMark } from '@/lib/outline/futureImpact'
+import { readImpact, clearImpact, analyzeChapterFutureImpact, readReviewSuggestions, clearReviewSuggestions, type ImpactMark, type ReviewSuggestion } from '@/lib/outline/futureImpact'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
@@ -364,8 +364,13 @@ export function useJieWenJiModel(props: Props) {
   const [postSaving, setPostSaving] = useState(false)
   /** 未来影响标记：章纲里「本章之后」的计划被上游变化波及 */
   const [impacts, setImpacts] = useState<ImpactMark[]>([])
+  /** 3.7.0 · W1：总纲 / 卷纲变更波及的**已写章**——只列「建议复核」，不打标 */
+  const [suggests, setSuggests] = useState<ReviewSuggestion[]>([])
 
-  const loadImpacts = () => { readImpact().then(setImpacts).catch(() => setImpacts([])) }
+  const loadImpacts = () => {
+    readImpact().then(setImpacts).catch(() => setImpacts([]))
+    readReviewSuggestions().then(setSuggests).catch(() => setSuggests([]))
+  }
   useEffect(() => { if (mode === 'post') loadImpacts() }, [mode])
 
   /** 任务状态 → `post`（只在任务引用变化时写；与 ledger 同一套「归属键」纪律） */
@@ -444,6 +449,13 @@ export function useJieWenJiModel(props: Props) {
         showToast(`整理失败：${r.failed.join('、')}`, 'error')
       }
       // 落库过的条目从列表移除（不重扫 —— 重扫要多烧一次 AI，而这批作者已确认过）
+      /**
+       * 3.7.0 · W1：兑现 futureImpact 旧注释承诺 —— 整理确认入库后打「未来章待重审」标。
+       * 此路径**不经 changeBus**（applyPostProcess 内部多次写，逐条发射会风暴）。
+       * 打标是旁路：失败静默，绝不影响已经完成的整理写入。
+       */
+      void analyzeChapterFutureImpact(ch, '章后整理', captureOwnedOperation(db.getCurrentProjectId()))
+        .then(() => loadImpacts()).catch(() => undefined)
       const done = new Set(picked.map(i => i.key))
       setPost(s => ({ ...s, items: s.items.filter(i => !done.has(i.key)) }))
       setPostPicked(new Set())
@@ -455,6 +467,12 @@ export function useJieWenJiModel(props: Props) {
   /** 作者处理完某章的未来计划后清掉它的标记 */
   const dismissImpact = async (chapterNo: number) => {
     await clearImpact(chapterNo)
+    loadImpacts()
+  }
+
+  /** 3.7.0 · W1：作者看过「已写章建议复核」后清掉（不传章号 = 全清） */
+  const dismissSuggestion = async (chapterNo?: number) => {
+    await clearReviewSuggestions(chapterNo)
     loadImpacts()
   }
 
@@ -954,7 +972,7 @@ export function useJieWenJiModel(props: Props) {
     aiReady, writingReady, acpWriting, spriteOn, setSpriteOn, toggleSprite, mode, setMode, diagMode, setDiagMode, diag, runDiag,
     proofs, propsRunning, runProofread, stopProofread, replaceOne,
     ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry,
-    post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, loadImpacts,
+    post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, suggests, dismissSuggestion, loadImpacts,
     selText, instruction, setInstruction, detail, setDetail, targetWords, setTargetWords, rewrite, runRewrite, applyAdvice,
     contOpen, setContOpen, contWords, setContWords, contPlot, setContPlot, contPicks, toggleContPick,
     contSummaryCount, setContSummaryCount, contPrevTextCount, setContPrevTextCount, contPreview, contSnapshot, cont, runContinuation, applyContinuation,

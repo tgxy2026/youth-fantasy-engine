@@ -18,7 +18,7 @@ import { POST_KINDS, POST_STATUS_META } from '@/components/jiewenji/jieWenJiPart
 import type { JieWenJiModel } from '@/components/jiewenji/useJieWenJiModel'
 
 export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
-  const { writingReady, acpWriting, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, content } = m
+  const { writingReady, acpWriting, post, postPicked, setPostPicked, postSaving, runPost, commitPost, impacts, dismissImpact, suggests, dismissSuggestion, content } = m
   /** 展开了「依据」的章号（3.6.1：只读展示，不落库、不改标记） */
   const [openEvidence, setOpenEvidence] = useState<Set<number>>(new Set())
   return (
@@ -50,7 +50,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
             <span className="text-10 text-ink-500">{impacts.length} 章</span>
           </div>
           <div className="text-10 text-ink-400 leading-relaxed mb-1.5">
-            已写正文被改动后，章节细纲里「这一章之后」的规划可能已过时。核对完点「已处理」清掉标记即可。
+            正文、总纲、卷纲或细纲改动后，章节细纲里「这一章之后」的规划可能已过时。核对完点「已处理」清掉标记即可。
           </div>
           <div className="space-y-1">
             {impacts.map(im => {
@@ -60,7 +60,9 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                   <div className="flex items-center gap-1.5">
                     <span className="text-11 text-ink-100 flex-1 min-w-0">
                       第 {im.chapterNo} 章
-                      <span className="text-10 text-ink-500">（因第 {im.fromChapterNo} 章{im.reason}）</span>
+                      <span className="text-10 text-ink-500">
+                        （{im.origin ? `${im.origin}·${im.reason}` : `因第 ${im.fromChapterNo} 章${im.reason}`}）
+                      </span>
                     </span>
                     <Button variant="bare" type="button" aria-expanded={expanded}
                       onClick={() => setOpenEvidence(prev => {
@@ -81,7 +83,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                     <div className="rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5 text-10 text-ink-400 leading-relaxed">
                       {im.evidence ? (
                         <>
-                          <div className="text-ink-500 mb-0.5">依据：第 {im.fromChapterNo} 章的改动处</div>
+                          <div className="text-ink-500 mb-0.5">依据：{im.origin ?? `第 ${im.fromChapterNo} 章`}的改动处</div>
                           <div><span className="text-ink-500">改前：</span>{im.evidence.beforeSummary || '（原本没有这段）'}</div>
                           <div><span className="text-ink-500">改后：</span>{im.evidence.afterSummary || '（这段已删除）'}</div>
                           <div className="mt-0.5 text-ink-600">只在打标时留下片段，正文本身没有被复制成第二份。</div>
@@ -94,6 +96,33 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/*
+        3.7.0 · W1：总纲 / 卷纲改动会波及**已写章节**，但「哪一章真的受影响」是语义判断，
+        确定性规则判不了 —— 所以这里只列**建议复核清单**，不打「待重审」标、不改正文。
+      */}
+      {suggests.length > 0 && (
+        <div className="rounded-lg border border-ink-600 bg-ink-900/40 p-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <AlertTriangle size={11} className="text-ink-400 shrink-0" />
+            <span className="text-11 text-ink-200 font-medium">已写章节建议复核</span>
+            <span className="text-10 text-ink-500">{suggests.length} 章</span>
+            <Button variant="bare" type="button" onClick={() => dismissSuggestion()}
+              title="只清掉这份清单，不会改你的正文或章纲"
+              className="ml-auto text-10 text-ink-400 hover:text-amber shrink-0">已知晓</Button>
+          </div>
+          <div className="text-10 text-ink-400 leading-relaxed mb-1">
+            总纲 / 卷纲改动后，已写章节可能也要回头看。这里只列清单，不替你判断哪一章真的受影响，也不改你的正文。
+          </div>
+          <div className="text-10 text-ink-300 leading-relaxed">
+            {suggests.slice(0, 10).map(s => `第${s.chapterNo}章`).join('、')}
+            {suggests.length > 10 ? ` 等共 ${suggests.length} 章` : ''}
+          </div>
+          <div className="mt-0.5 text-10 text-ink-500">
+            来源：{[...new Set(suggests.map(s => `${s.origin}${s.reason}`))].join('、')}
           </div>
         </div>
       )}

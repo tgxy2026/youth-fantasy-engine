@@ -9,6 +9,7 @@ import { installMobileHint } from '@/lib/app/mobileHint'
 import { installFileDropGuard } from '@/lib/app/dropGuard'
 import { initializeAppearance } from '@/lib/settings/appearance'
 import { installAuthNavigation } from '@/lib/app/authNavigation'
+import { registerChangeWatch } from '@/lib/revision/changeWatch'
 
 initializeAppearance()
 
@@ -23,6 +24,9 @@ installWebTabGuard()
 // 网页版窄屏提示（WEB-11）：界面按桌面布局，手机上基本不可用，这里给一句告知但不阻止访问。
 installMobileHint()
 installAuthNavigation()
+
+// 3.7.0 · W1：db 变更事实 → 大纲级联影响标记 / 候选过期（消费在 revision/changeWatch，保存侧只发事实）
+registerChangeWatch()
 
 // 图片拖拽上传的兜底：拖文件没落进图片区域时，别让浏览器拿它替换整个页面
 // （桌面版整页跳走 = 未保存正文当场没了）。只在拖「文件」时拦，不影响章节拖拽调序与正文选区拖动。

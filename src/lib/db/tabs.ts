@@ -4,7 +4,9 @@ import type { FormData, TableRow, CardRecord } from '@/lib/types'
 import { ops, currentProjectId, touchProject } from '@/lib/db/core'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
+import type { StoreOps } from '@/lib/storage/storeOps'
 import { cardLeaseKey, tableLeaseKey, withFormSave } from '@/lib/agentHost/formLease'
+import { emitDbChange, type DbChangePayload } from '@/lib/db/changeBus'
 
 // ============ 表单数据 ============
 export async function getFormData(tabId: string): Promise<Record<string, string>> {
@@ -38,11 +40,31 @@ export async function saveFormDataFor(pid: string, tabId: string, data: Record<s
   if (!pid || !tabId) return
   const store = owner?.store ?? ops
   owner?.assertCurrent()
+  /**
+   * 3.7.0 · W1：写库成功后发一条**事实**（`revision/changeWatch` 据此打「未来章待重审」）。
+   * 🔴 改前快照只服务「改前 → 改后」证据，读失败当没有旧值 —— 绝不让旁路把保存拖挂。
+   * 🔴 通知在 `withFormSave` 之后发：保存是主路径，通知是旁路。
+   */
+  let before: DbChangePayload | undefined
   await withFormSave(pid, tabId, async () => {
     owner?.assertCurrent()
+    before = await readFieldPayload(store, 'formData', `${pid}::${tabId}`)
     await store.put('formData', { tabId: `${pid}::${tabId}`, data } as FormData)
     void touchProject(pid, store)
   })
+  emitDbChange({ pid, kind: 'form', tabId, recordId: tabId, before, after: { data: { ...data } } })
+}
+
+/** 读改前快照（3.7.0 · W1）：只给变更通知用；任何异常一律当「没有旧值」 */
+async function readFieldPayload(store: StoreOps, kind: 'formData' | 'tableRows' | 'cardRecords', key: string): Promise<DbChangePayload | undefined> {
+  try {
+    const rec = await store.get<FormData | TableRow | CardRecord>(kind, key)
+    if (!rec) return undefined
+    const name = 'name' in rec && typeof rec.name === 'string' ? rec.name : undefined
+    return { data: { ...rec.data }, ...(name === undefined ? {} : { name }) }
+  } catch {
+    return undefined
+  }
 }
 
 // ============ 表格行 ============
@@ -72,11 +94,14 @@ export async function saveTableRow(row: TableRow, owner?: OwnedOperation) {
   const store = owner?.store ?? ops, pid = row.projectId || currentProjectId
   owner?.assertCurrent()
   if (owner && owner.projectId !== pid) throw new Error('表格行不属于当前操作项目。')
+  let before: DbChangePayload | undefined
   await withFormSave(pid, tableLeaseKey(row.tabId), async () => {
     owner?.assertCurrent()
+    before = await readFieldPayload(store, 'tableRows', row.id)
     await store.put('tableRows', { ...row, projectId: pid, updatedAt: Date.now() })
     void touchProject(pid, store)
   })
+  emitDbChange({ pid, kind: 'row', tabId: row.tabId, recordId: row.id, before, after: { data: { ...row.data } } })
 }
 export async function deleteTableRow(id: string) {
   await ops.del('tableRows', id)
@@ -117,16 +142,29 @@ export async function saveCardRecord(rec: CardRecord, owner?: OwnedOperation) {
   // 创建时间（2.4.0 · A4 遗留补全）：**首次落库写一次，之后编辑不改动它**。
   // 🔴 必须回读原值再决定：若直接 `rec.createdAt ?? Date.now()`，每次用新对象保存同一张卡
   //    都会刷新成"现在"，那这个字段就失去意义（它要回答的是"这张卡什么时候建的"）。
+  // 3.7.0 · W1：回读的原值一次两用 —— 创建时间 + 变更通知的「改前快照」。
+  let before: DbChangePayload | undefined
   await withFormSave(pid, cardLeaseKey(rec.tabId), async () => {
     owner?.assertCurrent()
-    let createdAt = rec.createdAt
-    if (createdAt === undefined) {
-      const prev = await store.get<CardRecord>('cardRecords', rec.id)
-      createdAt = prev?.createdAt ?? Date.now()
-    }
+    const prev = await readCardRecord(store, rec.id)
+    before = prev ? { data: { ...prev.data }, ...(prev.name === undefined ? {} : { name: prev.name }) } : undefined
+    const createdAt = rec.createdAt ?? prev?.createdAt ?? Date.now()
     await store.put('cardRecords', { ...rec, projectId: pid, createdAt })
     void touchProject(pid, store)
   })
+  emitDbChange({
+    pid, kind: 'card', tabId: rec.tabId, recordId: rec.id, before,
+    after: { data: { ...rec.data }, ...(rec.name === undefined ? {} : { name: rec.name }) },
+  })
+}
+
+/** 读卡片原值（一次读同时供创建时间与改前快照）；读失败当「没有旧值」 */
+async function readCardRecord(store: StoreOps, id: string): Promise<CardRecord | undefined> {
+  try {
+    return await store.get<CardRecord>('cardRecords', id)
+  } catch {
+    return undefined
+  }
 }
 export async function deleteCardRecord(id: string) {
   await ops.del('cardRecords', id)

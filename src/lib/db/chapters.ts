@@ -8,6 +8,7 @@ import { addDailyWords } from '@/lib/db/meta'
 import { netDeltaOfTexts, recordChapterDeleted, recordRankDelta } from '@/lib/community/rankLedger'
 import { countWordsWithPunct } from '@/lib/community/limits'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
+import { emitDbChange } from '@/lib/db/changeBus'
 
 // ============ 章 ============
 export async function getAllChapters(owner?: OwnedOperation): Promise<Chapter[]> {
@@ -35,6 +36,8 @@ export async function saveChapter(c: Chapter, owner?: OwnedOperation) {
   const old = await store.get<Chapter>('chapters', c.id)
   if (owner && (!old || old.projectId !== pid)) throw new Error('原章节已不存在或不属于当前项目。')
   await store.put('chapters', { ...c, projectId: pid })
+  // 3.7.0 · W1：正文变化事实（写库成功即发；通知是旁路，绝不回抛）
+  emitChapterChange(pid, c.id, old, { ...c, projectId: pid })
   await afterChapterWrite(old, { ...c, projectId: pid }, owner, store)
 }
 
@@ -44,6 +47,7 @@ export async function createChapterForOwner(c: Chapter, owner: OwnedOperation) {
   if (!c.id || c.projectId !== owner.projectId) throw new Error('章节 ID 或项目归属不合法。')
   if (await owner.store.get<Chapter>('chapters', c.id)) throw new Error('章节 ID 已存在。')
   await owner.store.put('chapters', c)
+  emitChapterChange(owner.projectId, c.id, undefined, c)
   await afterChapterWrite(undefined, c, owner, owner.store)
 }
 
@@ -71,8 +75,17 @@ export async function patchChapter(
   if (owner && old.projectId !== owner.projectId) throw new Error('章节不属于当前操作项目。')
   const next: Chapter = { ...old, ...patch, updatedAt: patch.updatedAt ?? Date.now() }
   await store.put('chapters', { ...next, projectId: old.projectId || currentProjectId })
+  // 3.7.0 · W1：正文自动保存实际走这里（patchChapter 只带 content/wordCount），
+  // 所以正文变更事实必须在此也发一份 —— 只挂 saveChapter 会漏掉编辑器里的真实写作。
+  emitChapterChange(old.projectId || currentProjectId, id, old, next)
   await afterChapterWrite(old, next, owner, store)
   return next
+}
+
+/** 3.7.0 · W1：章变更事实（正文是否真的变了由这里判定；标题/摘要改动不误触发正文分析） */
+function emitChapterChange(pid: string, recordId: string, old: Chapter | undefined, next: Chapter) {
+  const contentChanged = old ? old.content !== next.content : (next.content ?? '').length > 0
+  emitDbChange({ pid, kind: 'chapter', tabId: '', recordId, contentChanged })
 }
 
 /** 落库后的派生动作：当日码字增量 + 时光机快照 + 项目时间戳（saveChapter / patchChapter 共用） */
