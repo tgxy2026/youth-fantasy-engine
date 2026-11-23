@@ -30,7 +30,8 @@
     "cleanup:stale:restore": "node scripts/maintenance/collect-stale.mjs --restore",
     "cleanup:tmp": "node scripts/maintenance/collect-tmp-stale.mjs",
     "cleanup:tmp:apply": "node scripts/maintenance/collect-tmp-stale.mjs --apply",
-    "cleanup:tmp:restore": "node scripts/maintenance/collect-tmp-stale.mjs --restore"
+    "cleanup:tmp:restore": "node scripts/maintenance/collect-tmp-stale.mjs --restore",
+    "cleanup:quarantine": "node scripts/maintenance/list-quarantine.mjs"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
