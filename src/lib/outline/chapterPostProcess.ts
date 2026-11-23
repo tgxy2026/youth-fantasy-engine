@@ -22,7 +22,8 @@ import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type L
 import { splitCodes } from '@/lib/audit/audit'
 import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { readAliases } from '@/lib/settings/aliases'
-import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { appendStateRecords, buildStateRecord, STATE_RECORD_LIMIT } from '@/lib/settings/stateTrack'
 import { hashOf } from '@/lib/semantic/chunk'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
@@ -388,6 +389,8 @@ export async function applyPostProcess(
   const failed: string[] = []
   let created = 0
   let warnings: string[] | undefined
+  // 调用方（颉文姬面板）不带章号 ⇒ 这里现算叙事序，避免把记录都记成「第 0 章」
+  const no = chapterNo > 0 ? chapterNo : await chapterNoFor(input.chapterId)
 
   // 实体批量走既有提交器
   const entityRaws = items.filter(i => i.kind === 'entity' && i.raw).map(i => i.raw as LedgerItem)
@@ -428,6 +431,12 @@ export async function applyPostProcess(
             ...(row.data['演变触发事件'] !== undefined ? { '演变触发事件': appendNote(row.data['演变触发事件'], note) } : {}),
           },
         })
+        // 3.7.0 · W4：关系演变同时落一条结构化记录（按章可回溯）
+        const st = await appendStateRecords([buildStateRecord({
+          ref: { kind: 'row', tabId: 'relations', id: raw.rowId, projectId: db.getCurrentProjectId() },
+          chapterId: input.chapterId, chapterNo: no, state: note, trigger: '关系变化',
+        })])
+        if (st.overflow > 0) (warnings ??= []).push(`状态演变记录已超过 ${STATE_RECORD_LIMIT} 条上限，最早的 ${st.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
       } else if (item.kind === 'resource') {
         const raw = item.raw as { transfer: ResourceTransfer | null; item: string } | undefined
         // 未登记物品只提示、不凭空建（UI 也不允许勾选）
@@ -436,7 +445,7 @@ export async function applyPostProcess(
         const row = rows.find(r => r.id === raw.transfer!.itemId)
         if (!row) { failed.push(item.label); continue }
         const r = await commitResourceTransfer({
-          itemRow: row, transfer: raw.transfer, chapterLabel: chapterNo > 0 ? `第${chapterNo}章` : (input.chapterTitle || '本章'),
+          itemRow: row, transfer: raw.transfer, chapterLabel: no > 0 ? `第${no}章` : (input.chapterTitle || '本章'),
         })
         if (!r.ok) { failed.push(item.label); continue }
         if (r.overflow > 0) (warnings ??= []).push(`流转记录已超过 ${RESOURCE_TRANSFER_LIMIT} 条上限，最早的 ${r.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
@@ -446,7 +455,17 @@ export async function applyPostProcess(
         const cards = await db.getCardRecords(raw.tabId)
         const rec = cards.find(c => c.id === raw.cardId)
         if (!rec) { failed.push(item.label); continue }
+        // 3.7.0 · W4：覆盖写之前先把「旧值 → 新值」写成可回溯记录（当前值行为不变）
+        const previous = String(rec.data[raw.fieldKey] ?? '')
         await db.saveCardRecord({ ...rec, data: { ...rec.data, [raw.fieldKey]: raw.st.state } })
+        const st = await appendStateRecords([buildStateRecord({
+          ref: { kind: 'card', tabId: raw.tabId, id: raw.cardId, projectId: db.getCurrentProjectId() },
+          chapterId: input.chapterId, chapterNo: no, state: raw.st.state,
+          ...(previous ? { previous } : {}),
+          trigger: '章后整理',
+          ...(raw.st.evidence ? { evidence: raw.st.evidence } : {}),
+        })])
+        if (st.overflow > 0) (warnings ??= []).push(`状态演变记录已超过 ${STATE_RECORD_LIMIT} 条上限，最早的 ${st.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
       }
       created++
     } catch {

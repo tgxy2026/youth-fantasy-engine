@@ -14,7 +14,7 @@
  *    之前这里直接读 `row.data`，导致「表格里刚改、点开详情还是旧值」—— 与图鉴视图
  *    "不自己去读库"的口径自相矛盾。现在由父级把 `model.cellVal` 传下来。
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import '@/components/atlas/atlasMobile.css'
 import { ArrowLeft, ChevronDown, ChevronRight, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
@@ -37,7 +37,9 @@ import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
 import { useAtlasWorkspaceOptions } from './useAtlasWorkspaceOptions'
-import { readResourceTransfers, transfersOfItem, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { readResourceTransfers, transfersOfItem, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { appendStateRecords, buildStateRecord, evolutionOf, readStateRecords, type StateRecord } from '@/lib/settings/stateTrack'
+import { getCurrentProjectId } from '@/lib/db/core'
 
 interface Props {
   scrollRef?: RefObject<HTMLDivElement>
@@ -162,6 +164,27 @@ export default function AtlasDetail({
       .catch(() => { if (!cancelled) setTransfers(null) })
     return () => { cancelled = true }
   }, [tabId, row.id])
+  /** 3.7.0 · W4：该条目的状态演变（按章；手动补登写这里，不改表格字段） */
+  const [stateRecords, setStateRecords] = useState<StateRecord[] | null>(null)
+  const [stateDraft, setStateDraft] = useState('')
+  const [stateNo, setStateNo] = useState('')
+  const loadStates = useCallback(() => {
+    const pid = getCurrentProjectId()
+    if (!pid) { setStateRecords(null); return }
+    void readStateRecords().then(list => setStateRecords(evolutionOf(list, { kind: 'row', tabId, id: row.id, projectId: pid }))).catch(() => setStateRecords(null))
+  }, [tabId, row.id])
+  useEffect(() => { loadStates() }, [loadStates])
+  const addState = async () => {
+    const pid = getCurrentProjectId(), state = stateDraft.trim(), no = Number(stateNo.trim())
+    if (!pid || !state) { showToast('请先填写这一章的状态', 'info'); return }
+    const ref = { kind: 'row' as const, tabId, id: row.id, projectId: pid }
+    const r = await appendStateRecords([buildStateRecord({
+      ref, chapterId: '', chapterNo: Number.isFinite(no) && no > 0 ? Math.floor(no) : 0,
+      state, trigger: '手动补登',
+    })])
+    if (r.appended > 0) { setStateDraft(''); setStateNo(''); showToast('已补登一条状态演变', 'success'); loadStates() }
+    else showToast('补登没写进去，请重试', 'error')
+  }
 
   useLayoutEffect(() => {
     if (!navigationGuard) return
@@ -613,6 +636,37 @@ export default function AtlasDetail({
               ))}
             </ol>
           )}
+        </section>
+      )}
+
+      {/* 3.7.0 · W4：状态演变（剧情内）—— 只追加、按章回溯；与「设定变更台账」是两回事 */}
+      {stateRecords && (
+        <section className="px-4 pb-3" data-state-evolution>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-11 text-ink-300">状态演变</span>
+            <span className="text-10 text-ink-500">{stateRecords.length} 条 · 按章回溯，不改当前字段</span>
+          </div>
+          {stateRecords.length === 0 ? (
+            <div className="text-10 text-ink-500 leading-relaxed">还没有演变记录。章后整理确认「人物状态 / 关系变化」时会自动记一条；也可以在下方手动补登。</div>
+          ) : (
+            <ol className="space-y-1">
+              {stateRecords.map(r => (
+                <li key={r.id} className="text-10 text-ink-400 leading-relaxed">
+                  <span className="text-ink-300">第{r.chapterNo || '?'}章</span>
+                  {r.previous ? <span className="text-ink-600">（改前：{r.previous}）</span> : null}
+                  <span className="mx-1">→</span>{r.state}
+                  {r.trigger ? <span className="text-ink-600"> · {r.trigger}</span> : null}
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <input value={stateNo} onChange={e => setStateNo(e.target.value)} placeholder="章号" inputMode="numeric"
+              className="w-16 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
+            <input value={stateDraft} onChange={e => setStateDraft(e.target.value)} placeholder="第 N 章时是什么状态（作者直接写）"
+              className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
+            <Button variant="secondary" size="xs" onClick={() => void addState()} disabled={!stateDraft.trim()}>补登</Button>
+          </div>
         </section>
       )}
 
