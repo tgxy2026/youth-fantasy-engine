@@ -259,6 +259,15 @@ function uuidV4(): string {
   })
 }
 
+/**
+ * 3.7.0 · W8·F1：EPUB 的章节平铺顺序（含未分卷章兜底）。
+ * 🔴 原先 exportEPUB 只遍历 volumes，未分卷章会被**静默丢掉**（TXT/MD 早有兜底）。
+ */
+export function epubChapterOrder(volumes: Volume[], chapters: Chapter[]): Chapter[] {
+  // 🔴 结构闸：禁止手写「全书平铺 / 孤儿章判定」—— 一律走 chapterSeq.flattenAll（含孤儿垫底）
+  return flattenAll(volumes, chapters)
+}
+
 export function exportEPUB(projectName: string, volumes: Volume[], chapters: Chapter[]) {
   const zip = new ZipBuilder()
   zip.add('mimetype', 'application/epub+zip')
@@ -269,18 +278,20 @@ export function exportEPUB(projectName: string, volumes: Volume[], chapters: Cha
   let spine = ''
   let nav = ''
   let order = 1
-  for (const vol of volumes) {
-    const chs = chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.order - b.order)
-    for (const ch of chs) {
-      const id = `c${order}`
-      const xhtml = `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeXml(ch.title)}</title></head><body><h1>${escapeXml(ch.title)}</h1>${contentToXhtml(ch.content)}</body></html>`
-      zip.add(`OEBPS/${id}.xhtml`, xhtml)
-      manifest += `<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>\n`
-      spine += `<itemref idref="${id}"/>\n`
-      nav += `<li><a href="${id}.xhtml">${escapeXml(ch.title)}</a></li>\n`
-      order++
-    }
+  /**
+   * 3.7.0 · W8·F1：EPUB 的章节顺序真源 —— 卷内按卷序/章序，**未分卷章垫底**。
+   * 与 TXT/MD 的兜底口径一致；导出与单测共用这一个函数，避免两处各写一套又漂。
+   */
+  for (const ch of epubChapterOrder(volumes, chapters)) {
+    const id = `c${order}`
+    const xhtml = `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeXml(ch.title)}</title></head><body><h1>${escapeXml(ch.title)}</h1>${contentToXhtml(ch.content)}</body></html>`
+    zip.add(`OEBPS/${id}.xhtml`, xhtml)
+    manifest += `<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>\n`
+    spine += `<itemref idref="${id}"/>\n`
+    nav += `<li><a href="${id}.xhtml">${escapeXml(ch.title)}</a></li>\n`
+    order++
   }
+
   const opf = `<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">\n<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n<dc:identifier id="bookid">urn:uuid:${uuidV4()}</dc:identifier>\n<dc:title>${escapeXml(projectName)}</dc:title>\n<dc:language>zh</dc:language>\n</metadata>\n<manifest>\n<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n${manifest}</manifest>\n<spine>\n${spine}</spine>\n</package>`
   zip.add('OEBPS/content.opf', opf)
   zip.add('OEBPS/nav.xhtml',

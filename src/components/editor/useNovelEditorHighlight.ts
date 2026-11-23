@@ -18,6 +18,7 @@ import { TABS } from '@/lib/schema'
 import { readAliases } from '@/lib/settings/aliases'
 import { scanRefHighlight, type RefName } from '@/components/editor/novelEditorHelpers'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { onDbChange } from '@/lib/db/changeBus'
 
 type HighlightArgs = {
   /** 当前章正文（由调用方做 120ms 防抖镜像，见下方 deferredContent） */
@@ -52,45 +53,59 @@ export function useNovelEditorHighlight({
     return () => clearTimeout(t)
   }, [draftContent])
 
-  // v1.3：加载可用引用名（角色卡 + 世界构建各设定表的条目名称），供本章引用侧栏与内联高亮
-  // v1.6：别称一并登记（aliasOf 指向原本名称）——正文出现别称时同样高亮，并归入原名条目
+  /**
+   * 3.7.0 · W8·F2：引用名清单**可重载**（原先挂载时加载一次，写作途中新增的设定/别称
+   * 既不参与高亮，也不出现在「正文引用」侧栏 —— 作者必须重进编辑器才看得到）。
+   */
+  const loadRefNames = useCallback(async (): Promise<RefName[]> => {
+    const names: RefName[] = []
+    const projectId = db.getCurrentProjectId()
+    for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
+      const recs = await db.getCardRecords(tabId)
+      for (const r of recs) {
+        if (r.name && r.name.trim()) {
+          const nm = r.name.trim()
+          const ref = { kind: 'card' as const, projectId, tabId, id: r.id }
+          names.push({ name: nm, type: 'character', tabId, ref })
+          for (const a of readAliases(tabId, r.data)) {
+            if (a !== nm) names.push({ name: a, type: 'character', tabId, ref, aliasOf: nm })
+          }
+        }
+      }
+    }
+    // 世界构建组下的全部设定表（国家/地理/种族/物品/历史/术语…）均以 displayCol 作为条目名称参与高亮
+    for (const tab of TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol)) {
+      const recs = await db.getTableRows(tab.id)
+      for (const r of recs) {
+        const v = r.data[tab.displayCol as string]
+        if (v && v.trim()) {
+          const nm = v.trim()
+          const ref = { kind: 'row' as const, projectId, tabId: tab.id, id: r.id }
+          names.push({ name: nm, type: 'setting', tabId: tab.id, ref })
+          for (const a of readAliases(tab.id, r.data)) {
+            if (a !== nm) names.push({ name: a, type: 'setting', tabId: tab.id, ref, aliasOf: nm })
+          }
+        }
+      }
+    }
+    return names
+  }, [])
+
+  /** 挂载加载 + 数据变更后 300ms 防抖重载（批量导入不会逐条重扫） */
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      const names: RefName[] = []
-      const projectId = db.getCurrentProjectId()
-      for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
-        const recs = await db.getCardRecords(tabId)
-        for (const r of recs) {
-          if (r.name && r.name.trim()) {
-            const nm = r.name.trim()
-            const ref = { kind: 'card' as const, projectId, tabId, id: r.id }
-            names.push({ name: nm, type: 'character', tabId, ref })
-            for (const a of readAliases(tabId, r.data)) {
-              if (a !== nm) names.push({ name: a, type: 'character', tabId, ref, aliasOf: nm })
-            }
-          }
-        }
-      }
-      // 世界构建组下的全部设定表（国家/地理/种族/物品/历史/术语…）均以 displayCol 作为条目名称参与高亮
-      for (const tab of TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol)) {
-        const recs = await db.getTableRows(tab.id)
-        for (const r of recs) {
-          const v = r.data[tab.displayCol as string]
-          if (v && v.trim()) {
-            const nm = v.trim()
-            const ref = { kind: 'row' as const, projectId, tabId: tab.id, id: r.id }
-            names.push({ name: nm, type: 'setting', tabId: tab.id, ref })
-            for (const a of readAliases(tab.id, r.data)) {
-              if (a !== nm) names.push({ name: a, type: 'setting', tabId: tab.id, ref, aliasOf: nm })
-            }
-          }
-        }
-      }
-      if (!cancelled) setRefNames(names)
-    })()
-    return () => { cancelled = true }
-  }, [])
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const run = () => {
+      void loadRefNames().then(list => { if (!cancelled) setRefNames(list) }).catch(() => undefined)
+    }
+    run()
+    const off = onDbChange(fact => {
+      if (fact.kind !== 'card' && fact.kind !== 'row') return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(run, 300)
+    })
+    return () => { cancelled = true; off(); if (timer) clearTimeout(timer) }
+  }, [loadRefNames])
 
   /**
    * 高亮扫描：一次联动同时产出「叠层 HTML」与「命中集合」，基于 120ms 防抖镜像避免逐键重算。

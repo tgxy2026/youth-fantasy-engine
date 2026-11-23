@@ -236,8 +236,10 @@ export function isNewDisposition(
 
 // ============ 影响依据（3.6.1 · 只接「证据层」）============
 //
-// 3.6.0 记账时本模块是 `gap`。3.6.1 的定案是：
-//   **只接证据层，不接处置状态机**。原因：产品已上线的 `outline/futureImpact` 负责
+// 3.6.0 记账时本模块是 `gap`；3.6.1 先只接证据层。**3.7.0 · W2 起两类事件真正被构造**：
+//   `revision/changeWatch` 用 `buildChangeEvidence`（内部 `createChangeEvent`）为总纲 / 卷纲 /
+//   细纲 / 设定变更生成证据，并据此把候选标为过期；处置状态机仍未接（沿用 3.6.1 定案）。
+// 当时的取舍：产品已上线的 `outline/futureImpact` 负责
 //   「哪几章的计划要重看一眼」，作者真正缺的是「凭什么说这几章受影响」——
 //   即变化处的**前后引用**；而 `pending/checked/no-change/needs-modify` 是一套新的用户流程，
 //   属于另开条目的事。

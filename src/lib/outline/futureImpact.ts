@@ -15,8 +15,10 @@
 //   刻意只存「章号 + 原因 + 时间」这几十字节 —— 价值在于提醒作者「这几章的计划要重看一眼」，
 //   不在于变成一个可编辑的第二数据源（与 `checkLog` 的取舍同口径）。
 //
-// 📌 触发点：`chapterRewrite.applyChapterRewrite` 成功后（唯一会覆盖作者正文的路径，
-//    与 W1-1 版本保护同处）+ 章后整理确认后（W2-1b）。
+// 📌 触发点（3.7.0 · W1 已全部接线）：
+//    ① `chapterRewrite.applyChapterRewrite` 成功后（唯一会覆盖作者正文的路径）；
+//    ② 章后整理确认后（`commitPost` → `analyzeChapterFutureImpact`，3.7.0 兑现旧承诺）；
+//    ③ 总纲 / 卷纲 / 细纲 保存（`revision/changeWatch` 消费 db 变更事实，批量 300ms 防抖）。
 import * as db from '@/lib/db'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import { OUTLINE_TAB_ID, chapterNoOf } from '@/lib/outline/outlineCard'
