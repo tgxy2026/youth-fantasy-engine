@@ -55,7 +55,14 @@ const rows = [
   ['3.5.1', '网页版引导持久化 + 前端体验打磨'],
   ['3.5.2', '评论分页去重 + 社区备份恢复 + 昵称冷却 + 匿名周代号'],
   ['3.5.3', '排行日结口径修正 + 云端项目异常保护'],
-  ['3.5.4', '桌面接入外部 Agent（ACP）：三模式互斥 + 七个纯文本入口 ◀ 当前', 'now'],
+  ['3.5.4', '桌面接入外部 Agent（ACP）：三模式互斥 + 七个纯文本入口'],
+  ['3.5.5', 'ACP 结构化任务（审校 / 校对 / 续写方向）+ 设定整理 + 伴写'],
+  ['3.5.6', 'ACP 覆盖面补齐（几乎所有 AI 入口）+ 后台任务页 + 工单按卷选范围'],
+  ['3.6.0', '拆书分析闭环：成果记录 + 创作参考只发勾选 + 章后整理'],
+  ['3.6.1', '搜索替换先选范围 + 颉文姬面板拖拽吸附 + 体验收口'],
+  ['3.6.2', '投稿广场合集连载 + 浏览量 + 切章不再重渲染整棵目录'],
+  ['3.6.3', '思考型模型不再被采样参数卡死（Kimi / o1 / gpt-5 / r1）'],
+  ['3.7.0', '大纲级联记得住 + 物品与状态按章回溯 + 节奏曲线与投稿体检 + 语音灵感 ◀ 当前', 'now'],
 ]
 
 const timelineHtml = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
@@ -68,9 +75,9 @@ tr.now td{background:rgba(244,185,66,.13);color:#fff;font-weight:600}
 tr.now td.v{color:#ffd166}
 .foot{margin-top:26px;padding-top:16px;border-top:1px solid #33363c;color:#7b828c;font-size:12px;line-height:1.7}
 </style></head><body>
-<h1>版本演进 · 1.0.0 → 3.5.4</h1>
+<h1>版本演进 · 1.0.0 → 3.7.0</h1>
 <table>${rows.map(([v, t, cls]) => `<tr class="${cls || ''}"><td class="v">${v}</td><td>${t}</td></tr>`).join('')}</table>
-<div class="foot">从 29 个页签起步，到 10 大板块 56 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.5.4：桌面版可接外部 Agent（ACP），API / MCP / ACP 三选一。</div>
+<div class="foot">从 29 个页签起步，到 10 大板块 56 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.7.0：大纲改了系统记得住，物品与状态能按章回溯，观察面只摆事实。</div>
 </body></html>`
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
