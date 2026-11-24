@@ -9,6 +9,7 @@
  */
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import InterviewChat from '@/components/creative/InterviewChat'
 import NewProjectAdvice from '@/components/app/NewProjectAdvice'
 import { showToast } from '@/components/dialogs/dialogs'
@@ -24,9 +25,10 @@ export default function CreativeWritingPanel() {
   const m = useCreativeWritingModel()
   const { inp, interview, setInterview } = m
   return (
-    <div data-guide="page-header" className="mx-auto max-w-5xl">
-      <div className="mb-4 flex items-center gap-2">
-        <h1 className="text-15 font-medium text-ink-100">创意写作</h1>
+    <div data-guide="page-header" className="w-full">
+      <div className={`${PAGE_HEADER_BLOCK_CLASS} mb-4`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={PAGE_TITLE_CLASS}>创意写作</h1>
         <HelpPopover title="创意写作怎么用" pin>
           <div className="space-y-1.5 text-11 leading-relaxed text-ink-300">
             <p>这条流水线分<b>两个阶段</b>，各自都可以<b>反复执行</b>；先选<b>篇幅</b>，再选这一次要产出什么。</p>
@@ -44,6 +46,8 @@ export default function CreativeWritingPanel() {
             <AIDataSourceNote feature="creative-writing" compact />
           </div>
         </HelpPopover>
+        </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>按篇幅与阶段生成大纲和正文，人工闸门确认后才落库。</p>
       </div>
 
       <NewProjectAdvice kind="creative-writing" />

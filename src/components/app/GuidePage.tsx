@@ -1,6 +1,7 @@
 import { BookOpen, Lightbulb, ListOrdered, Sparkles } from 'lucide-react'
 import { TABS, EDITOR_TAB, EDITOR_ID, tabVisible, type VisCtx } from '@/lib/schema'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { Button } from '@/components/common/Button'
 import HelpCenter from '@/components/help/HelpCenter'
 import { GuideSettings } from '@/components/help/GuideSettings'
@@ -163,13 +164,14 @@ const V361_TIPS: { title: string; body: string }[] = [
 export default function GuidePage({ onNavigate, ctx }: Props) {
   return (
     <div className="w-full page-enter">
-      <header className="mb-6">
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">使用指南</h1>
+          <h1 className={PAGE_TITLE_CLASS}>使用指南</h1>
           <HelpPopover title="使用指南怎么看" width="22rem" size={14}>
             {'这一页是全软件的地图，卡壳时先回这里。\n\n· 推荐填写顺序：按 1→10 的顺序点进去填，可按作品需要调整顺序，点任意按钮可直达该页签；\n· 全部功能页签：所有页签的一句话说明，点标题直接跳转；\n· 核心创作方法论：12 条网文实操心法，动笔前后各看一遍。\n\n页面有问号图标时，可点开查看当前功能的操作说明。\n\n【两种帮助入口的分工】\n· 页面里的「?」：只讲你正在用的这一块（字段含义、选项影响），随开随关，不动任何数据；\n· 左下角「本页指引」：进本页的分步引导，把主要区域按顺序走一遍；看过的页签不会重复弹，可随时重看，自动弹出也能在设置里关掉。\n\n要找跨页流程（例如怎么从拆书走到创作参考），到本页的「使用手册」里搜关键词。'}
           </HelpPopover>
         </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>手册搜索、分步引导与推荐填写顺序，一页看懂怎么用。</p>
       </header>
 
       {/* 3.3.1 · P1：内置使用手册（本地检索，不需要模型）。放在最上面：卡壳时先搜一句，

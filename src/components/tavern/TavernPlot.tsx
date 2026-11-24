@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import * as db from '@/lib/db'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
@@ -428,8 +429,9 @@ export default function TavernPlot() {
   return (
     <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       {/* ---------- 顶部工具条：只放「本场」的操作，导航（选/新建）都在左栏 ---------- */}
-      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
-        <h1 className="text-lg font-bold text-ink-50 mr-1">剧情推演</h1>
+<header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={`${PAGE_TITLE_CLASS} mr-1`}>剧情推演</h1>
 
         <HelpPopover title="剧情推演怎么用" width="24rem" size={14}>
   左栏是全部场次（点一下就切），右边是这一场的对话。
@@ -470,6 +472,8 @@ export default function TavernPlot() {
             </Button>
           </>
         )}
+      </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>左栏选场次，右边看对话；只试戏，不写回小说。</p>
       </header>
 
       {/* 元指令速查：**必须留在 header 外面** —— 放进输入区的话，没有会话 / 没选中推演时

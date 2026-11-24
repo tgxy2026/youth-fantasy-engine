@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import { usePersistedSet } from '@/lib/settings/uiPrefs'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { showToast, confirmDialog } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
@@ -354,10 +355,10 @@ export default function TavernScript() {
 
   return (
     <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
-      <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
         <div className="flex items-center gap-1.5">
 
-          <h1 className="text-lg font-bold text-ink-50">故事剧本</h1>
+          <h1 className={PAGE_TITLE_CLASS}>故事剧本</h1>
 
           <HelpPopover title="故事与剧本怎么配合" width="26rem" size={14}>
   先有「故事」，再有「剧本」 —— 一个故事下可以有多份剧本，左边树里折叠展示。
@@ -374,9 +375,7 @@ export default function TavernScript() {
 </HelpPopover>
 
         </div>
-        <p className="text-12 text-ink-400 mt-1">
-          故事决定世界什么样，剧本决定这一场发生什么事。故事与剧本存在全局（跨项目），先建故事，再往下挂剧本。
-        </p>
+        <p className={PAGE_DESCRIPTION_CLASS}>故事定世界，剧本定这一场；先建故事，再往下挂剧本。</p>
       </header>
 
       <div className="flex flex-wrap items-center gap-2 pt-3">

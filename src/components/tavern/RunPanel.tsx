@@ -30,6 +30,7 @@ import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -179,8 +180,9 @@ export default function RunPanel() {
 
   return (
     <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
-      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
-        <h1 className="text-lg font-bold text-ink-50 mr-1">跑团互动</h1>
+<header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={`${PAGE_TITLE_CLASS} mr-1`}>跑团互动</h1>
         <HelpPopover title="跑团互动怎么用" width="26rem" size={14}>
           AI 在这里当 <b>KP（守秘人）</b>主持一次有始有终的冒险 —— 不是陪聊，而是裁决与推进。
           {'\n\n'}· 在下方「你的行动」里写你要做什么（观察 / 交谈 / 取证…），也可以只写「我想撬开抽屉」。
@@ -190,7 +192,7 @@ export default function RunPanel() {
           {'\n\n'}· 每局可以「存档」：打一档、随时回滚（回滚本身也能撤销）。
           <AIDataSourceNote feature="tavern-run" />
         </HelpPopover>
-        <span className="text-11 text-ink-500">AI 当 KP · 检定 · 线索 · 同伴 · 秘密与结局</span>
+        
 
         <div className="ml-auto flex items-center gap-2">
           {worldOptions.length > 0 && (
@@ -211,7 +213,9 @@ export default function RunPanel() {
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void doCreate() }}
           />
           <Button variant="primary" size="md" disabled={busy} onClick={() => void doCreate()}>＋ 新建一局</Button>
+</div>
         </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>AI 当 KP：检定、线索、同伴与结局，存档可回滚。</p>
       </header>
 
       <div data-conversation-layout className="flex flex-1 min-h-0 gap-3 pt-3">

@@ -7,7 +7,7 @@
  *   B 「导入/导出/清空全部」收进「更多」菜单（清空全部不许再常驻红按钮）
  *   C 表格横向溢出时的右侧渐隐提示
  *   D 说明段落字号 11px（badge / 序号 / 代码块刻意保留 10px，别误伤）
- *   E 表单型页签放宽到 max-w-5xl
+ *   E 表单型页签全宽填充（2026-11-24 起：去居中限宽，留白走 App 外层统一 padding）
  *   F 人物文件夹头的关系摘要 chips
  *   G 编号类列单元格不折行 + 默认 130
  */
@@ -87,10 +87,16 @@ const ok = (name: string, cond: boolean, extra = '') => {
     ok(`D ${f.split('/').pop()} 不再有 10px 说明段落`,
       !/text-10 leading-relaxed text-ink-[56]00/.test(src) && !/text-10 text-ink-[56]00 leading-relaxed/.test(src))
   }
+  // 2026-11-24 主人拍板改版：三页去掉居中限宽、全宽填充右侧窗口；左右留白交回 App 外层
+  // 统一 padding（与其他页一致），故这里钉「根节点 w-full 且无 mx-auto / max-w」。
   const creative = read('src/components/creative/CreativeWritingPanel.tsx')
-  ok('E 创意写作表单放宽到 max-w-5xl', creative.includes('mx-auto max-w-5xl'))
+  ok('E 创意写作全宽填充（根 w-full、无居中限宽）', creative.includes('className="w-full"') && !/mx-auto|max-w-/.test(creative))
   const bookbreak = read('src/components/bookbreak/BookBreakPanel.tsx')
-  ok('E 一键拆书表单放宽到 max-w-5xl', bookbreak.includes('mx-auto max-w-5xl'))
+  ok('E 一键拆书全宽填充（根 w-full、无居中限宽）', bookbreak.includes('className="w-full"') && !/mx-auto|max-w-/.test(bookbreak))
+  const tavernControl = read('src/components/tavern/TavernControl.tsx')
+  ok('E 控制面板全宽填充（根 w-full、无居中限宽）', tavernControl.includes('className="w-full space-y-4"') && !/mx-auto|max-w-/.test(tavernControl))
+  const app = read('src/App.tsx')
+  ok('E 三页左右留白与其他页同源（外层 padding 只豁免编辑器）', app.includes("${isEditor ? '' : 'p-3 @min-[40rem]/workspace:p-6 @min-[64rem]/workspace:p-8'}"))
 }
 
 // ---------- F 关系摘要 ----------

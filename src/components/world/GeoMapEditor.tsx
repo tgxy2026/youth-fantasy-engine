@@ -4,6 +4,7 @@ import type { PointerEvent as RPointerEvent } from 'react'
 import { Maximize2, ZoomIn, ZoomOut, MapPin, Pencil, ImagePlus, X, Plus, Minus } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS } from '@/components/common/PageHeader'
 import { MAP_SPACE_FALLBACK } from '@/lib/settings/palette'
 import { Button } from '@/components/common/Button'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
@@ -92,7 +93,8 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
   return (
     <div data-adaptive-map className="flex flex-col h-full min-h-0">
       {/* 顶部工具条（通栏） */}
-      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
+      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700/60 bg-ink-900/95 backdrop-blur shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <MapPin size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>
@@ -195,8 +197,10 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
               className="rounded-md border border-ink-700 text-ink-300 hover:text-amber hover:border-amber/40 transition-colors">
               <Minus size={12} />
             </Button>
-          </span>
+</span>
         </div>
+        </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>手绘格子地图，标注范围与地点，按层级自动分层。</p>
       </div>
 
       {/* 中段：地图列表 + 画布（两者严格等高） */}

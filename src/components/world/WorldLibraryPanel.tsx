@@ -22,6 +22,7 @@ import type { WorldStoredRecord } from '@/lib/world/worldTypes'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import WorldVersionDiffDialog from '@/components/world/WorldVersionDiffDialog'
 
 function fmt(ts: number): string {
@@ -178,16 +179,16 @@ export default function WorldLibraryPanel() {
 
   return (
     <div className="page-enter flex h-full flex-col overflow-hidden">
-      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
-        <h1 className="text-lg font-bold text-ink-50 mr-1">世界引擎</h1>
+<header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={`${PAGE_TITLE_CLASS} mr-1`}>世界引擎</h1>
         <HelpPopover title="世界引擎怎么用" width="24rem" size={14}>
           这里放的是可封存、可跨作品引用的世界。
           {'\n\n'}· 「新建世界」把当前项目的世界（世界设定 / 力量体系 / 制度四页签 / 世界构建组）抽一份进来 —— 这一步不改项目里的任何数据。
           {'\n\n'}· 「封存」把当前内容固化成「不可变版本」：封存之后，再改项目里的世界也不会动到这一版。
           {'\n\n'}· 世界引擎是跨作品的：换一本书，这里的世界照样在；将来也能在别的作品里显式引入某一版。
           {'\n\n'}· 🔴 反向不成立：改了项目里的世界，已经抽出来的世界不会自动更新 —— 想要新的，就再抽一份。这是「派生须显式、不自动同步」的边界。
-        </HelpPopover>
-        <span className="text-11 text-ink-500">把世界抽出来·封版·将来给别的作品引用</span>
+</HelpPopover>
 
         <div className="ml-auto flex items-center gap-2">
           <input
@@ -200,7 +201,9 @@ export default function WorldLibraryPanel() {
           <Button variant="primary" size="md" disabled={busy} onClick={() => void doCreate()}>
             ＋ 从当前项目新建世界
           </Button>
+</div>
         </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>把世界抽出来、封存成版本，将来给别的作品引用。</p>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto pt-3">

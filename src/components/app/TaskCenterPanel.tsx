@@ -1,5 +1,6 @@
 import { Activity } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import Panel from '@/components/common/Panel'
 import TaskIndicator from '@/components/common/TaskIndicator'
 import { runningTaskCount, useAiTasks } from '@/lib/ai/aiTaskCenter'
@@ -22,14 +23,14 @@ export default function TaskCenterPanel({ onNavigate }: { onNavigate: (id: strin
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6" data-guide="task-center-header">
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-5`} data-guide="task-center-header">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">后台任务</h1>
+          <h1 className={PAGE_TITLE_CLASS}>后台任务</h1>
           <HelpPopover title="后台任务是什么" width="22rem" size={14}>
             {'切到别的页签时，正在跑的 AI 任务不会被中断——它在这里继续跑，完成后结果留在发起它的页签里，切回去就能接着看 / 写入。\n\n· 运行中：可以随时点「中止」（只有你点才会停，切页签不会）；\n· 已完成 / 失败：点「查看」直接跳回那个页签；\n· 多个任务可以同时跑，各自独立；\n· 已结束的记录保留最近 5 条，用来回看失败原因或中途取消的任务。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">
+        <p className={PAGE_DESCRIPTION_CLASS}>
           跨页签任务进度 · 中止 · 完成后跳回发起页签
         </p>
       </header>

@@ -28,6 +28,7 @@
  */
 
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { Button } from '@/components/common/Button'
@@ -97,10 +98,10 @@ export default function TavernCard() {
     /* 固定头部 + 下方独立滚动区：滚动只发生在标题条**下面**，
        内容不会再滑到条子后面被半透明条盖住（原先 sticky + bg-ink-900/95 的观感问题）。 */
     <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
-      <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
         <div className="flex items-center gap-1.5">
 
-          <h1 className="text-xl font-bold text-ink-50">角色卡片</h1>
+          <h1 className={PAGE_TITLE_CLASS}>角色卡片</h1>
 
           <HelpPopover title="角色卡片怎么填" width="24rem" size={14}>
   一张卡 = AI 的「人设说明书」：写得越具体，演得越像。四章模板：
@@ -118,10 +119,7 @@ export default function TavernCard() {
 </HelpPopover>
 
         </div>
-        <p className="text-12 text-ink-400 mt-1">
-          自由模式的角色卡片：四章模板 + 归属故事（世界观在故事里，不用重复写）。
-          左栏按故事分组，「未归属」抽屉存放暂时不属于任何故事的卡。
-        </p>
+        <p className={PAGE_DESCRIPTION_CLASS}>四章模板 + 归属故事，决定 AI 怎么演这个角色。</p>
 
       </header>
 

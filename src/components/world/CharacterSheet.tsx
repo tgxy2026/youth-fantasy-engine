@@ -16,6 +16,7 @@ import { useCardDraftSave } from './useCardDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import CharacterTools from '@/components/world/CharacterTools'
 import FieldDescription from '@/components/common/FieldDescription'
 import CharacterPortraitPanel from '@/components/world/CharacterPortraitPanel'
@@ -813,11 +814,11 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
 
   return (
     <div className="page-enter h-full min-h-0 flex flex-col" data-character-workspace>
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 shrink-0 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
         <div className="min-w-[14rem] flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
-            <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
+            <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={14}>{isCharTab ? `这是「${tab.name}」角色卡，按模块填写人物设定：
 
 · 左侧列表切换 / 新建 / 删除角色；点击上方姓名可直接改名（保存后生效）。
 · 键盘聚焦左侧角色后按 ↑ / ↓ 可切换；输入框方向键保持编辑用途。切换前会保存当前草稿，失败时留在原处。
@@ -834,7 +835,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
 · 修改后点右上「保存」或按 Ctrl+S；存不下的内容可分段，不必挤在一行里。
 · 这里的内容同样会进 AI 的设定资料，模型写正文时读得到。`}</HelpPopover>
           </div>
-          <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+          <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>{pageSummary(tab.description, `「${tab.name}」：左侧选择卡片，右侧按模块填写后保存。`)}</p>
         </div>
         {/* 🔴 2026-10-09 与 TableSheet 同一处修复：工具条 `shrink-0` + 标题只有 `min-w-0`
             ⇒ 窄窗口下标题被压成一条竖缝（本页需 992px，1000px 窗口只有 728px）。

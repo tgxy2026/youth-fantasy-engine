@@ -55,7 +55,10 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
   const ws = read('src/components/sheets/WorldSetSheet.tsx')
   ok('② 世界设定：根容器锁高（page-enter flex h-full flex-col overflow-hidden）',
     ws.includes('page-enter flex h-full flex-col overflow-hidden'))
-  ok('② 世界设定：页头 shrink-0（保存/AI 补全常驻，不随右栏滚走）', ws.includes('<header className="mb-4 shrink-0">'))
+  // 2026-11-24：页头样式收口到 PageHeader 的设计令牌，类名里不再手写 shrink-0 ——
+  // 令牌 PAGE_HEADER_STICKY_CLASS 内含 shrink-0；这里守住「页头仍用该令牌」即可。
+  ok('② 世界设定：页头 shrink-0（保存/AI 补全常驻，不随右栏滚走）',
+    ws.includes('<header className={`${PAGE_HEADER_STICKY_CLASS} mb-4`}'))
   ok('② 世界设定：双栏容器 flex-1 min-h-0（锁高链传给两栏）', ws.includes('<div className="flex flex-1 min-h-0 gap-4">'))
   ok('② 世界设定：左栏层目录 flex 列 + min-h-0（flex 子项默认 min-height:auto，删了就撑破锁高）',
     ws.includes('w-56 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 overflow-hidden flex flex-col min-h-0'))
@@ -72,7 +75,7 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
 {
   const ps = read('src/components/sheets/ParallelSetSheet.tsx')
   ok('② 制度四页签：根容器锁高', ps.includes('page-enter flex h-full flex-col overflow-hidden'))
-  ok('② 制度四页签：页头 shrink-0', ps.includes('<header className="mb-4 shrink-0">'))
+  ok('② 制度四页签：页头 shrink-0', ps.includes('<header className={`${PAGE_HEADER_STICKY_CLASS} mb-4`}'))
   ok('② 制度四页签：双栏容器 flex-1 min-h-0', ps.includes('<div className="flex flex-1 min-h-0 gap-4">'))
   ok('② 制度四页签：左栏条目列表独立滚动（flex-1 min-h-0 overflow-y-auto）',
     ps.includes('<div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">'))
@@ -87,7 +90,7 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
   // 允许元素上带其它属性（例如 3.3.1 引导锚点 `data-guide`）—— 本闸要守的是「这块 shrink-0」，
   // 不是属性顺序；写死整串会变成「一加属性就红」，反而逼人删掉锚点。
   ok('② 创作轨迹：页头 + 总览 + AI 占比三块都 shrink-0（只让双栏区吃剩余高度）',
-    /<header[^>]*className="mb-5 shrink-0"/.test(tp) &&
+    tp.includes('<header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>') &&
     tp.includes('grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 shrink-0') &&
     tp.includes('mb-5 shrink-0 rounded-xl border border-ink-700 bg-ink-850/40 px-4 py-3'))
   ok('② 创作轨迹：双栏容器 flex-1 min-h-0', tp.includes('<div className="flex flex-1 min-h-0 gap-4">'))

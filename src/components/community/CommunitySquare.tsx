@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { Z } from '@/lib/app/zLayer'
 import { WEB, WEB_CLOUD, WEB_GUEST, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { DESKTOP } from '@/lib/app/desktop'
@@ -308,16 +309,16 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
 
   const shell = (
     <div ref={hostRef} className={shellClass}>
-      <header data-guide="page-header" className="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-900/25 px-4 py-4 sm:px-6">
+      <header data-guide="page-header" className="flex flex-wrap items-center gap-3 border-b border-ink-700/60 bg-ink-900/95 backdrop-blur px-4 py-4 sm:px-6">
         <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-2 text-18 font-semibold text-ink-100">
+          <h2 className={`flex items-center gap-2 ${PAGE_TITLE_CLASS}`}>
             投稿广场
             <HelpPopover title="投稿广场怎么用" side="right" width="23rem" size={14}>
               {'这里可以阅读和分享故事片段。登录账号后可投稿、点赞、点踩和评论；投稿需管理员审核后公开。\n\n· 在「投稿」填写纯文字，正文最多 10000 个字符（包含空格和换行）；在「我的」查看审核状态、撤回或管理投稿。\n· 在「设置」填写社区昵称，分别选择投稿、评论和排行的展示方式。排行自愿开启，只上传含标点的正文净增量；周榜和月榜累计已结束日期的正净增量。\n· 社区账号不要求云同步资格；便携版暂不支持投稿广场。更详细的说明可在「使用指南」里搜索「投稿广场」。'}
             </HelpPopover>
             {square && !square.open && <span className="rounded-full border border-amber/40 px-2 py-0.5 text-11 font-normal text-amber">暂停开放</span>}
           </h2>
-          <p className="mt-1 text-12 text-ink-300">在这里分享故事，也读一读别人的世界。</p>
+          <p className={PAGE_DESCRIPTION_CLASS}>分享故事，也读一读别人的世界。</p>
         </div>
         {mode === 'overlay' && onClose && (
           <Button variant="ghost" iconOnly onClick={onClose} aria-label="关闭投稿广场"><X size={18} /></Button>

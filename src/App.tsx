@@ -1035,7 +1035,7 @@ export default function App() {
       return <RunPanel />
     }
     if (activeTab === 'tavern-control') {
-      return <div className="p-6"><TavernControl /></div>
+      return <TavernControl />
     }
     if (activeTab === 'guide') {
       return <GuidePage onNavigate={navigate} ctx={visCtx} />

@@ -17,6 +17,7 @@ import StorylineView from '@/components/outline/StorylineView'
 import RelationGraph from '@/components/world/RelationGraph'
 import FactionGraph from '@/components/world/FactionGraph'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import AIOrganize from '@/components/ai/AIOrganize'
@@ -504,11 +505,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             · 工具条去掉 `shrink-0` 并加 `flex-wrap justify-end ml-auto` ——
               它独占一行时会被压到行宽、内部按钮再按需折行，且始终靠右。
           宽屏下三者都不生效 ⇒ 版式与改动前逐像素一致。 */}
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
         <div className="min-w-[14rem] flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
-            <HelpPopover title={`${tab.name} · 怎么用`} width="23rem" size={13}>{`这是「${tab.name}」数据表，常见操作：
+            <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
+            <HelpPopover title={`${tab.name} · 怎么用`} width="23rem" size={14}>{`这是「${tab.name}」数据表，常见操作：
 
 · 右上「新增一行」添加记录；表格内直接点单元格编辑，改完点「保存」（或 Ctrl+S）。
 · 列宽可拖拽：拖动列标题右缘的分隔条调整宽度，只改当前列、不挤压其他列；整体超出页面时表格底部出现横向滑条。
@@ -531,7 +532,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
           </div>
-          <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+          <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>{pageSummary(tab.description, `「${tab.name}」数据表：新增一行后直接在表格内填写、筛选并保存。`)}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-11 transition-opacity ${saved ? 'opacity-100 text-success' : 'opacity-0'}`}>

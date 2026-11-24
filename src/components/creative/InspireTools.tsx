@@ -8,6 +8,7 @@ import {
   Sparkles, Star, Trash2, RefreshCw, Check
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { copyText, confirmDialog } from '@/components/dialogs/dialogs'
 import AIAssist from '@/components/ai/AIAssist'
@@ -106,14 +107,14 @@ export default function InspireTools() {
 
   return (
     <div className="w-full page-enter">
-      <header data-guide="page-header" className="mb-6">
+      <header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">灵感启发</h1>
+          <h1 className={PAGE_TITLE_CLASS}>灵感启发</h1>
           <HelpPopover title="灵感启发怎么用" width="24rem" size={14}>
             {'这一页是「灵感与创意」的三件套，都从「灵感启发」这个动作出发。\n\n【灵感夹】随手记下点子攒起来，勾选几条让 AI 融合成情节卡，直接放到推演画布上。\n\n【随机取名生成器】按类型（人名 / 门派 / 功法 / 地名 / 法宝 / 技能 / 组织 / 怪物）× 题材风格批量出名字：点名字即复制，点星标收藏；纯本地能力，没有模型也能用。\n\n【AI 辅助规划】多轮对话式脑暴（剧情 / 人物 / 世界观 / 一致性自查），可结合你的世界观设定给建议。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">灵感夹 · 随机取名生成器 · AI 辅助规划</p>
+        <p className={PAGE_DESCRIPTION_CLASS}>灵感夹 · 随机取名生成器 · AI 辅助规划</p>
       </header>
 
       <div className="space-y-4">

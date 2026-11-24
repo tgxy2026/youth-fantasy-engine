@@ -16,6 +16,7 @@ import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TempAttachmentPicker from '@/components/ai/TempAttachmentPicker'
 import { Button } from '@/components/common/Button'
@@ -375,7 +376,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* 顶部通栏标题条（与左侧「选择章节」窗口左缘对齐） */}
-      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3 flex-wrap shrink-0">
+      <div data-guide="page-header" className="px-4 py-2.5 border-b border-ink-700/60 bg-ink-900/95 backdrop-blur shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <GitBranch size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>
@@ -417,6 +419,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
             <GitBranch size={11} /> {connectMode ? '连接中…' : '连接模式'}
           </Button>
         </div>
+        </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>把本章简报铺成可拖拽、可连线的剧情卡片画布。</p>
       </div>
 
       {/* 主体：左章节选择 + 右推演画布（两列等高） */}

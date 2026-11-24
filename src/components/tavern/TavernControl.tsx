@@ -12,6 +12,7 @@
  *   ③ 分段说明的显隐走 ShowBands.Provider，Provider 本身留在本组件。
  */
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import PromptModal from '@/components/dialogs/PromptModal'
 import TavernControlModes from '@/components/tavern/TavernControlModes'
@@ -36,26 +37,22 @@ export default function TavernControl() {
   if (!m) return <LoadingState />
   const { s, showBands, setShowBands, dirty, saving, presetNaming, setPresetNaming, leftColRef, rightColRef, storePresetAs, setPlot, setFree, setVars, toggleVarKey, save, reset, pl, fr, modelOptions, rec, gSoft, gHard, gLong, gDiary } = m
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4">
+    <div className="w-full space-y-4">
       {/* 🔴 吸顶（对齐四个同形态页头）：本页内容高达 6500+px，改中段内容（如「我的档案」）时必须向下滚 ——
           页头原本随滚动走，实测滚到档案区时保存按钮在视口上方 2400px 处。
           ⚠️ 本页外层用 space-y-4 供间距，故**不加** mb-5（加了会双重间距）。 */}
       {/* 🔴 2026-10-09 与 TableSheet / CharacterSheet 同一处修复：工具条 `shrink-0` + 左栏可压缩
           ⇒ 窄窗口下左侧标题被挤成竖排（同一 bug 家族）。改成「放不下就折行」。 */}
-      <header data-guide="page-header" className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-0 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
         <div className="min-w-[14rem] flex-1">
           {/* h1 是块级元素，问号必须与它同处一个 flex 行内容器，否则会被挤到标题下一行 */}
           <div className="flex items-center gap-1.5">
-            <h1 className="text-16 text-ink-100">控制面板</h1>
+            <h1 className={PAGE_TITLE_CLASS}>控制面板</h1>
             <HelpPopover title="控制面板怎么用" width="24rem" size={14}>
               {'酒馆模式全部「接进 AI 的参数与提示词」都在这里，只影响酒馆对话、不碰正文写作的模型配置。改完点右上「保存」，下一轮对话开始时生效。\n\n· 左列是「全局的、一次调好就不动的」：跟谁说、我是谁、整套怎么存，以及两种模式共用的格式契约（输出后处理）；\n· 右列是「分模式的手感与输出规则」：剧情推演 / 自由对话各自的采样参数与阈值、本场数值；\n· 每个数值都标了取值范围；「显示分段说明」打开后，还能看到「调大 / 调小分别会怎样」；\n· 「三、预设方案」可以把整套设置存成快照，一键切换或导出分享；\n· 默认值就是出厂值：不动它时行为与之前完全一致。'}
             </HelpPopover>
           </div>
-          <p className="mt-1 text-12 text-ink-500 leading-relaxed">
-            全部参数改动只影响酒馆对话，不碰正文写作的模型配置。改完点右上「保存」，下一轮对话开始时生效。
-            <br />
-            默认值就是内置的出厂值 —— 不动它时行为与之前完全一致。
-          </p>
+          <p className={PAGE_DESCRIPTION_CLASS}>酒馆对话的全部参数与提示词；改完保存，下一轮对话开始时生效。</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {dirty && <span className="text-11 text-amber">{UNSAVED_CHANGES_HINT}</span>}

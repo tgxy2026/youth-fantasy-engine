@@ -23,6 +23,7 @@
  */
 
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { Z } from '@/lib/app/zLayer'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import TavernEchoHints from '@/components/tavern/TavernEchoHints'
@@ -122,8 +123,9 @@ export default function TavernFree() {
   return (
     <div data-adaptive-conversation className="page-enter flex h-full flex-col overflow-hidden">
       {/* 顶部：只放「本场」的操作，导航（选/新建）都在左栏 */}
-      <header data-guide="page-header" className="shrink-0 flex flex-wrap items-center gap-2 border-b border-ink-700 pb-3">
-        <h1 className="text-lg font-bold text-ink-50 mr-1">自由对话</h1>
+      <header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={`${PAGE_TITLE_CLASS} mr-1`}>自由对话</h1>
 
         <HelpPopover title="自由对话怎么用" width="24rem" size={14}>
   这里的对话不绑小说项目：换一本书，角色卡与记忆照样在。
@@ -206,6 +208,8 @@ export default function TavernFree() {
             <Button variant="danger" size="md" onClick={() => void removeSession()}>删除对话</Button>
           </>
         )}
+      </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>不绑项目的自由对话，角色卡与记忆跨会话共享。</p>
       </header>
 
       {/* 元指令速查：**必须留在 header 外面** —— 放进输入区的话，没有会话时那块不渲染，

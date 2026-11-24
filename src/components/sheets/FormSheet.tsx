@@ -7,6 +7,7 @@ import { useManualDraftSave } from '@/components/common/useManualDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import { isNumericPowerField } from '@/lib/schema'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import AITemplateFill from '@/components/ai/AITemplateFill'
@@ -242,16 +243,16 @@ export default function FormSheet({ tab }: Props) {
     // 所有表单页一律 100% 宽度，跟随窗口自适应（模块列数按断点变化）
     <div className="w-full page-enter">
       {/* 头部 */}
-      <header data-guide="form-header" className="mb-5 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+      <header data-guide="form-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`} style={{ zIndex: Z.pageBase }}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
+              <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
               <HelpPopover title={`${tab.name} · 怎么填`} width="23rem" size={14}>
                 {`${tab.description}\n\n填写要点：\n· 左侧是字段名与说明，右侧输入框直接填，内容长会自动变高；\n· 未填时下方会给出「示例：…」参考，照着改成自己的设定即可；\n· 顶部进度条显示已填 / 总项数，不必一次填满，随写随补；\n· Ctrl+S 或点「保存」落库，右下角出现浮动按钮说明还有未保存的改动；\n· 「清空」会清掉本页全部内容（不可撤销，慎用）。\n\n填完的内容会自动进入正文编辑器左侧的设定检索栏，写作时可随时速查与就地修改。`}
               </HelpPopover>
             </div>
-            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-3xl">{tab.description}</p>
+            <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>{pageSummary(tab.description, `「${tab.name}」表单：按模块填写后保存，内容会进入正文左侧的设定检索。`)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {/* 2026-11-15：入口统一到左下角「本页指引」（已登记给侧栏），页头不再重复 */}

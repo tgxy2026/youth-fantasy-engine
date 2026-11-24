@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { UNSAVED_CHANGES_HINT } from '@/lib/constants'
 import { showToast } from '@/components/dialogs/dialogs'
@@ -139,10 +140,10 @@ export default function TavernWorld() {
 
   return (
     <div data-tavern-world className="page-enter flex h-full flex-col overflow-hidden">
-      <header data-guide="page-header" className="shrink-0 border-b border-ink-700 pb-3">
+      <header data-guide="page-header" className={`${PAGE_HEADER_BLOCK_CLASS} mb-3`}>
         <div className="flex items-center gap-1.5">
 
-          <h1 className="text-lg font-bold text-ink-50">背景设定</h1>
+          <h1 className={PAGE_TITLE_CLASS}>背景设定</h1>
 
           <HelpPopover title="背景设定怎么填" width="24rem" size={14}>
   给剧情推演准备一份「作者侧资料」，用来替代每轮都塞进上下文的长文档。
@@ -165,10 +166,7 @@ export default function TavernWorld() {
 </HelpPopover>
 
         </div>
-        <p className="text-12 text-ink-400 mt-1">
-          把项目资料提炼成一份精简背景，供剧情推演使用。只对剧情推演生效、随项目（换书就是另一份）——
-          自由对话不读它：那里可能混着不同世界观的角色。
-        </p>
+        <p className={PAGE_DESCRIPTION_CLASS}>把项目资料提炼成精简背景，按关键词注入剧情推演。</p>
       </header>
 
       {!w ? (

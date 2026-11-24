@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import {
   type Block,
   type CharType,
@@ -23,18 +24,15 @@ export default function MaterialLibrary() {
 
   return (
     <div className="w-full page-enter">
-      <header data-guide="page-header" className="mb-5">
+      <header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">素材资料</h1>
-          <span className="text-12 text-ink-400">内置写作参考素材库 · 只读</span>
+          <h1 className={PAGE_TITLE_CLASS}>素材资料</h1>
           <HelpPopover title="素材资料怎么用" side="right">
             {'这里是一份\u300c只读\u300d的写作参考，卡壳时翻一翻：\n\n· 五类素材：人物设计 / 故事结构 / 世界框架 / 情绪爽点 / 描写笔法；\n· 上方切换分类，左侧选条目，右侧读全文；\n· 内容为内置素材，不能编辑 —— 想沉淀属于你自己作品的设定，' +
               '请用「世界构建」「创作管理」下的正式表格（它们才会进 AI 的上下文）。'}
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">
-          收录可直接借鉴的写作参考（人物设计 / 故事结构 / 世界框架 / 情绪爽点 / 描写笔法）；内容仅供阅读，不支持编辑。
-        </p>
+        <p className={PAGE_DESCRIPTION_CLASS}>人物 / 结构 / 世界 / 爽点 / 描写五类内置参考，只读研读。</p>
       </header>
 
       {/* 分类子页签：点开素材资料后出现，类似灵感工具下的子页签（灵感启发 / 检查工具 / 素材资料） */}

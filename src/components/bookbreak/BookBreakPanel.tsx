@@ -21,6 +21,7 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import { Button } from '@/components/common/Button'
 import DraftReviewPanel from '@/components/editor/DraftReviewPanel'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_BLOCK_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import NewProjectAdvice from '@/components/app/NewProjectAdvice'
 import NumberField from '@/components/common/NumberField'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -433,12 +434,13 @@ function BookBreakWorkspace() {
   }
 
   return (
-    <div data-guide="page-header" className="mx-auto max-w-5xl">
+    <div data-guide="page-header" className="w-full">
       {analysisOpen && <BookAnalysisDialog onClose={() => setAnalysisOpen(false)} />}
-      <div className="mb-4 flex items-center gap-2">
-        <h1 className="text-15 font-medium text-ink-100">一键拆书</h1>
+      <div className={`${PAGE_HEADER_BLOCK_CLASS} mb-4`}>
+        <div className="flex flex-wrap items-center gap-2">
+        <h1 className={PAGE_TITLE_CLASS}>一键拆书</h1>
         {/* 3.6.0 · B：只分析（外部参考作品 / 先摸清写法再决定拆不拆）—— 不写正文与设定 */}
-        <Button variant="secondary" size="sm" className="gap-1.5"
+        <Button variant="secondary" size="sm" className="ml-auto order-last gap-1.5"
           onClick={() => setAnalysisOpen(true)}
           title="只分析写法：产出分析卡，不改正文、不建设定、不建关系（适合外部参考作品）">
           作品分析（只分析）
@@ -454,6 +456,8 @@ function BookBreakWorkspace() {
             <AIDataSourceNote feature="bookbreak" compact />
           </div>
         </HelpPopover>
+        </div>
+        <p className={PAGE_DESCRIPTION_CLASS}>粘贴整本原文，拆成卷章并抽取人物、势力、地点等设定。</p>
       </div>
 
       <NewProjectAdvice kind="bookbreak" />
@@ -483,16 +487,18 @@ function BookBreakWorkspace() {
           className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = '' }}
         />
+        {/* 2026-11-24 全宽改版：宽屏下原文输入与标题示例并排（5:3），窄屏保持上下堆叠 */}
+        <div className="mt-2 grid items-start gap-2 @min-[64rem]/workspace:grid-cols-[minmax(0,5fr)_minmax(0,3fr)]">
         <textarea
           value={raw}
           onChange={e => setRaw(e.target.value)}
           disabled={running}
           spellCheck={false}
           placeholder="把小说原文粘贴到这里（支持整本），或点右上角「导入 .txt / .md / .docx」。"
-          className="mt-2 h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
+          className="h-56 w-full resize-y rounded border border-ink-700 bg-ink-900 px-3 py-2 text-12 leading-relaxed text-ink-200 outline-none focus:border-amber/50 disabled:opacity-60"
         />
         {/* 2.6.1 · R2：章节标题示例 —— 本地规则认不出章节时的 AI 识别引导（拍板：有示例则 AI 优先） */}
-        <div className="mt-2 rounded border border-ink-700 bg-ink-900/60 p-2.5">
+        <div className="rounded border border-ink-700 bg-ink-900/60 p-2.5">
           <div className="flex items-center gap-1.5">
             <span className="text-11 font-medium text-ink-200">章节标题示例</span>
             <HelpPopover title="章节标题示例怎么用" width="22rem">
@@ -522,7 +528,10 @@ function BookBreakWorkspace() {
           </div>
           <AIDataSourceNote feature="bookbreak-split" />
         </div>
-        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
+        </div>
+        {/* 三个收尾开关：宽屏三列并排，窄屏保持堆叠（关系开关的「材料上限」面板仍在整行下方展开） */}
+        <div className="mt-2 grid items-start gap-x-4 gap-y-2 @min-[64rem]/workspace:grid-cols-3">
+        <label className="flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"
             checked={writeToChapters}
@@ -535,7 +544,7 @@ function BookBreakWorkspace() {
             <span className="text-ink-500">—— 切分完就能在「正文写作」里翻着读；已有卷章只追加、不动。</span>
           </span>
         </label>
-        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
+        <label className="flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"
             checked={summarizeForms}
@@ -548,7 +557,7 @@ function BookBreakWorkspace() {
             <span className="text-ink-500">—— 多一次模型调用，把整本书的信息收敛成一份档案；已填过的字段只补空、不覆盖你手改过的内容。</span>
           </span>
         </label>
-        <label className="mt-2 flex items-start gap-1.5 text-11 text-ink-300">
+        <label className="flex items-start gap-1.5 text-11 text-ink-300">
           <input
             type="checkbox"
             checked={organizeRelations}
@@ -565,6 +574,7 @@ function BookBreakWorkspace() {
             </span>
           </span>
         </label>
+        </div>
         {organizeRelations && (
           <div className="mt-1.5 pl-5">
             <Button size="xs" variant="secondary" disabled={running} onClick={() => setShowLimits(v => !v)}>

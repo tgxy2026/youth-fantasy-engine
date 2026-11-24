@@ -34,6 +34,8 @@ import { activeKeyOf, FREE_DRAFT_KEY, isInternalFieldKey, splitActive, subTabIdO
 import { addButtonLabel, modulesFor, subItemLabel, getActivePack, type GenrePack } from '@/lib/schemaTemplates/index'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
+import { Z } from '@/lib/app/zLayer'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import PromptModal from '@/components/dialogs/PromptModal'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
@@ -378,9 +380,9 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
     // 🔴 2026-10-17：根容器锁高 + 恒双栏独立滚动 —— 与 WorldSetSheet / MasterDetail 同范式
     //    （主人 3.1.2 要求主从双栏全局一致：左栏条目自滚、右栏表单自滚，页头按钮常驻）。
     <div data-adaptive-master="parallel" className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-4`} style={{ zIndex: Z.pageBase }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 怎么用`} width="24rem" size={14}>
             {`这个页签是「并列」结构 —— 没有「全书统一」那一层，直接一条一条建：\n\n`
               + `· 点下面的「${addLabel}」新建一条，每条一个名称 + 一份表单。`
@@ -418,6 +420,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
             </Button>
           </div>
         </div>
+        <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>{pageSummary(tab.description, `「${tab.name}」：一条一条建，只有活跃条目会发给 AI。`)}</p>
       </header>
 
       {/* 🔴 2026-10-17：恒双栏 + 锁高（同 WorldSetSheet，见那边注释）—— 两栏各自独立滚动 */}

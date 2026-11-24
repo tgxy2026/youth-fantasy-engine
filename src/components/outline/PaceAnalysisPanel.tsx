@@ -274,13 +274,13 @@ export default function PaceAnalysisPanel() {
         ) : (
           <div className="mt-1.5">
             <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-16 w-full" role="img" aria-label="逐章节奏曲线（事实分布）">
-              <line x1="0" y1="36" x2="100" y2="36" stroke="rgb(var(--ink-700))" strokeWidth="0.4" />
-              <path d={curve.path} fill="none" stroke="rgb(var(--amber))" strokeWidth="0.7" />
+              <line x1="0" y1="36" x2="100" y2="36" style={{ stroke: 'rgb(var(--ink-700))' }} strokeWidth="0.4" />
+              <path d={curve.path} fill="none" style={{ stroke: 'rgb(var(--amber))' }} strokeWidth="0.7" />
               {paceSeries.points.map((q, i) => q.hooks > 0 ? (
                 <circle key={q.chapterNo}
                   cx={(paceSeries.points.length > 1 ? i * (100 / (paceSeries.points.length - 1)) : 0).toFixed(2)}
                   cy={(36 - (q.hookWeight / Math.max(1, ...paceSeries.points.map(x => x.hookWeight))) * 32).toFixed(2)}
-                  r={0.6 + q.hookWeight * 0.3} fill="rgb(var(--amber))" />
+                  r={0.6 + q.hookWeight * 0.3} style={{ fill: 'rgb(var(--amber))' }} />
               ) : null)}
             </svg>
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-10 text-ink-500">

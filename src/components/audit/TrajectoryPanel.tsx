@@ -31,6 +31,7 @@ import { foldVh } from '@/lib/settings/theme'
 import { summarizeAiAssist, AI_SOURCE_LABELS, AI_SOURCE_KINDS } from '@/lib/ai/aiAssist'
 import AiDisclosureDialog from '@/components/dialogs/AiDisclosureDialog'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import { Button } from '@/components/common/Button'
 import SelectRow from '@/components/common/SelectRow'
 import { showToast } from '@/components/dialogs/dialogs'
@@ -214,9 +215,9 @@ export default function TrajectoryPanel() {
       {versionOpen && <BookVersionPanel onClose={() => setVersionOpen(false)} onRestored={() => void load()} />}
       {candidateOpen && <CandidatePanel onClose={() => setCandidateOpen(false)} />}
       {reportOpen && <CheckReportPanel onClose={() => setReportOpen(false)} />}
-      <header data-guide="page-header" className="mb-5 shrink-0">
+      <header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">创作轨迹</h1>
+          <h1 className={PAGE_TITLE_CLASS}>创作轨迹</h1>
           <HelpPopover title="创作轨迹怎么用" width="23rem" size={14}>
             {`按章回看「这一章是怎么写出来的」：细纲 → 各次改动 → 当前稿，附逐日字数。\n\n· 数据来自已有记录（章节时间戳、自动快照、每日字数），不另外采集你的操作；证据包在本机生成；\n· 每章最多保留 12 个历史版本，超出后会自动清理最旧的 —— 若早期版本已不在，页面会如实写明；\n· 可导出证据包：PDF（${WEB ? '在打印对话框中另存为 PDF，弹窗受阻时下载 HTML 后打印' : '桌面版可保存 PDF，便携版通过打印对话框另存'}）/ 单文件 HTML（可打印）/ JSON（供机器核验）。\n\n用途：投稿、报名或向编辑说明创作过程时参考。软件不参与规避 AI 检测。`}
           </HelpPopover>
@@ -239,7 +240,7 @@ export default function TrajectoryPanel() {
             </Button>
           </div>
         </div>
-        <p className="mt-1 text-13 text-ink-300">细纲 → 各次改动 → 当前稿 · 可导出证据包</p>
+        <p className={PAGE_DESCRIPTION_CLASS}>细纲 → 各次改动 → 当前稿 · 可导出证据包</p>
       </header>
 
       {/* 全书总览 */}

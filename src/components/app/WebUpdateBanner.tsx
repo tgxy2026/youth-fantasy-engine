@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { WEB } from '@/lib/app/platform'
 import { dismissForToday, fetchLatestWebBuildId, readDismissedOn, shouldPrompt } from '@/lib/app/webVersionNotice'
+import { foldVh } from '@/lib/settings/theme'
 
 /**
  * 网页版「有新版本，刷新以应用」提示条（3.6.2 · W1）。
@@ -70,7 +71,8 @@ export default function WebUpdateBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 left-1/2 z-40 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-amber/40 bg-ink-850/95 px-3 py-2 shadow-lg backdrop-blur"
+      className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-amber/40 bg-ink-850/95 px-3 py-2 shadow-lg backdrop-blur"
+      style={{ maxWidth: foldVh('92vw') }}
     >
       <RefreshCw size={14} className="shrink-0 text-amber" />
       <span className="text-12 text-ink-200">网页版有新版本，刷新即可用上（当前页面不会自动刷新）</span>

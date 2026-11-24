@@ -38,6 +38,8 @@ import { useAgentWorldSetSync } from '@/components/sheets/useAgentWorldSetSync'
 import { cardLeaseKey, registerFormEditor, waitForAgentForm } from '@/lib/agentHost/formLease'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import HelpPopover from '@/components/common/HelpPopover'
+import { Z } from '@/lib/app/zLayer'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import PromptModal from '@/components/dialogs/PromptModal'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
@@ -327,9 +329,9 @@ export default function WorldSetSheet({ tab }: Props) {
     //    不能再有的页签改了有的没改）。此前是 `w-full` 跟页滚：右栏表单被整页拖着滚，
     //    左栏层目录滚出视野后想切层得先滚回顶部。
     <div data-adaptive-master="world" className="page-enter flex h-full flex-col overflow-hidden">
-      <header className="mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-4`} style={{ zIndex: Z.pageBase }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
           <HelpPopover title={`${tab.name} · 母子结构怎么用`} width="24rem" size={14}>
             {`这个页签分两层：\n\n`
               + `· 【母级】全书统一 —— 整本书只有一个，写这套设定的顶层规则（${masterHint}）。`
@@ -371,6 +373,7 @@ export default function WorldSetSheet({ tab }: Props) {
             </Button>
           </div>
         </div>
+        <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>{pageSummary(tab.description, `「${tab.name}」：全书统一与子世界两层，只有活跃子世界会发给 AI。`)}</p>
 
         {/* AI 会读到什么（把"只有活跃的才喂"摆到明面） */}
         <div className="mt-2">

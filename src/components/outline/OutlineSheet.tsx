@@ -9,6 +9,7 @@ import {
   Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import PromptModal from '@/components/dialogs/PromptModal'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -478,12 +479,12 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   return (
     <div data-outline-workspace className="w-full page-enter h-full min-h-0 flex flex-col">
       {/* 头部 */}
-      <header className="mb-4 shrink-0 sticky top-0 bg-ink-900/95 backdrop-blur py-3" style={{ zIndex: Z.pageBase }}>
+<header className={`${PAGE_HEADER_STICKY_CLASS} mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-ink-50">{tab.name}</h1>
-              <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={13}>{`${tab.description}
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className={PAGE_TITLE_CLASS}>{tab.name}</h1>
+              <HelpPopover title={`${tab.name} · 怎么填`} width="22rem" size={14}>{`${tab.description}
 
 这是「${tab.name}」大纲，按${noun}拆分规划：
 
@@ -493,9 +494,9 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
 · 右侧按模块（定位 / 核心 / 钩子……）双栏铺开，长文自动撑高。
 · 顶部进度条显示当前${noun}已填字段比例；修改后点「保存」或 Ctrl+S。${tab.tips?.length ? '\n\n填写提示：\n' + tab.tips.map(tip => '· ' + tip).join('\n') : ''}`}</HelpPopover>
             </div>
-            <p className="mt-1.5 text-13 text-ink-300 leading-relaxed max-w-none">
-              <span className="hidden @min-[64rem]/workspace:inline">{tab.description}</span>
-              <span className="@min-[64rem]/workspace:hidden">按{noun}规划故事，选择目录后填写，修改后保存。完整说明见标题旁帮助。</span>
+            <p className={PAGE_DESCRIPTION_CLASS} title={tab.description}>
+              <span className="hidden @min-[64rem]/workspace:inline">{pageSummary(tab.description, `「${tab.name}」：左侧新建与排序，右侧按模块填写后保存。`)}</span>
+              <span className="@min-[64rem]/workspace:hidden">按{noun}规划故事，选择目录后填写，修改后保存。</span>
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 pt-1">

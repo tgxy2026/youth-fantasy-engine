@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import TranscribeSettings from '@/components/settings/TranscribeSettings'
 import AIConfigPanel from '@/components/settings/AIConfigPanel'
 import AIWriterBudgetPanel from '@/components/settings/AIWriterBudgetPanel'
@@ -25,16 +26,16 @@ export default function ModelSettingsPanel() {
 
   return (
     <div className="w-full page-enter">
-      <header className="mb-6" data-guide="settings-header">
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-5`} data-guide="settings-header">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-ink-50">模型设置</h1>
+          <h1 className={PAGE_TITLE_CLASS}>模型设置</h1>
           <HelpPopover title="模型设置怎么用" width="24rem" size={14}>
             <p>先在「运行模式」选择调用方式。API 模式使用配置的模型。MCP 模式供外部客户端访问已授权的作品资料。Windows x64 桌面版可显示 ACP 模式，组件能否连接以 ACP 设置区的状态为准。便携版提供 API 和 MCP，网页版使用联网 API 模型。每次只生效一种模式。</p>
             <p className="mt-2">API 模式下可设置模型、用途路由、语义检索与联网检索。正文写作 AI 额度控制单次带入的项目资料量。AI 提示词可按页面列出的功能编辑或还原。</p>
             <p className="mt-2">AI 消耗统计查看本机账本。网络代理按需设置。酒馆的额度与扮演协议在「酒馆模式 → 控制面板」设置。</p>
           </HelpPopover>
         </div>
-        <p className="mt-1 text-13 text-ink-300">模型配置（含用途路由 / 语义检索） · AI 消耗统计 · 网络代理 · 正文写作 AI 额度 · 联网检索 · AI 提示词</p>
+        <p className={PAGE_DESCRIPTION_CLASS}>模型配置 · 消耗统计 · 网络代理 · 额度与提示词</p>
       </header>
 
       <div className="space-y-4">

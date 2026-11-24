@@ -8,6 +8,7 @@ import { APP_BUILD_ID, APP_BUILD_TIME, APP_VERSION_LABEL, formatBuildTime } from
 import { copyText, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
+import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import UpdateDialog from '@/components/app/UpdateDialog'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN, GITEE_RELEASES_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
@@ -118,7 +119,7 @@ export default function AboutPage() {
       <div data-guide="page-header" className="max-w-5xl mx-auto px-6 py-8">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-1">
-          <h1 className="text-2xl font-bold text-ink-50">关于打赏</h1>
+          <h1 className={PAGE_TITLE_CLASS}>关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
             {WEB
               ? '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；网页版不做任何版本检查。'
@@ -127,7 +128,7 @@ export default function AboutPage() {
                 : '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
           </HelpPopover>
         </div>
-        <p className="text-ink-400 text-sm mb-8">
+        <p className={`${PAGE_DESCRIPTION_CLASS} mb-8`} title="关于「青春幻想引擎」与它的作者，以及支持作者的方式。">
           关于「青春幻想引擎」（<span className="tracking-wide text-ink-500">Youth Fantasy Engine</span>）与它的作者，以及支持作者的方式。
         </p>
 

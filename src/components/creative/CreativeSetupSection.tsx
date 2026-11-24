@@ -1,7 +1,8 @@
 /**
  * 创意写作 · 创作设置（长度档 / 目标 / 想法 / 规划与连写入口）（C1 · 2.4.2 自 CreativeWritingPanel.tsx 拆出）
  *
- * 🔴 纯搬家：JSX 一字未改；状态全部来自 useCreativeWritingModel（组件只收 m）。
+ * 🔴 状态全部来自 useCreativeWritingModel（组件只收 m）。
+ * 2026-11-24 全宽改版：连写设置在 ≥80rem 工作区宽度下双列并排（仅布局，逻辑未动）。
  */
 import AutoTextarea from '@/components/common/AutoTextarea'
 import NumberField from '@/components/common/NumberField'
@@ -212,7 +213,8 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
         {!outlineOnlyTarget && (
         <details className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2" open>
           <summary className="cursor-pointer text-12 text-ink-200">连写设置（每章设定同步 · 去 AI 味儿 · 逐章确认）</summary>
-          <div className="mt-2.5 space-y-3">
+          {/* 2026-11-24 全宽改版：宽屏下「同步策略」与「开关 + 去味 + 文风」双列并排，窄屏保持堆叠 */}
+          <div className="mt-2.5 grid items-start gap-3 @min-[80rem]/workspace:grid-cols-2">
             <div>
               <div className="mb-1.5 text-12 text-ink-300">每章设定同步策略</div>
               <p className="mb-1.5 text-10 leading-relaxed text-ink-500">
@@ -231,6 +233,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
               <p className="mt-1 text-10 leading-relaxed text-ink-500">{STRATEGY_META[inp.strategy].hint}</p>
             </div>
 
+            <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="toggle" selected={inp.deAiOn} disabled={s.running}
                 onClick={() => updateInputs({ deAiOn: !inp.deAiOn })}
@@ -306,6 +309,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             {/* 文风档（#015）：与「去 AI 味儿」并列 —— 那条管「别像 AI」，这条管「像作者自己」 */}
             <StyleProfilePicker ownerTab="creative-writing"
               hint="按你提炼的文风落笔；与去 AI 味儿、灵感并列，互不覆盖" />
+            </div>
           </div>
         </details>
         )}
