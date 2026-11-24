@@ -4,6 +4,9 @@
 #    老用户迁移走「卸载旧版 → 装新版 → 首启自动导入旧数据」（见 docs/3.0-开发方案.md §3 / §6）。
 appId: cn.youthfantasyengine.yfe
 productName: 青春幻想引擎
+# 主 exe「属性 → 详细信息 → 公司」取自 package.json 的 `author`（appInfo.companyName = author.name，
+# 当前为「青春幻想引擎开发组」，与 scripts/build-desktop.mjs 的 COMPANY 常量逐字一致）。
+# ⚠️ 不要在 yml 里另写 companyName —— electron-builder 26 的配置 schema 没有这一项，会直接中止构建。
 copyright: Copyright © 2026
 
 directories:
@@ -46,19 +49,19 @@ electronLanguages:
 # 🔴 必须挂 afterPack：它跑在「Electron 已解包、NSIS 尚未打」之间，删掉的文件不会进安装包。
 afterPack: scripts/prune-electron-dist.cjs
 
-# 🔴🔴 主 exe 的图标与版本元数据**不在 electron-builder 钩子里写**（2026-10-02 · 2.7.1 轮实测踩坑）。
+# 🔴🔴 主 exe 的图标与版本元数据**交给 electron-builder 自己写**（2026-11-24 修正）。
 #
-# 【试过并放弃的方案】先后试过 afterPack 与 afterAllArtifactBuild 两个钩子，都不行：
-#   · afterPack —— electron-builder 在它之后**还会再写一次主 exe**（exe 的 mtime 比钩子日志晚 5 秒），
-#     把刚写好的元数据整体覆盖回默认值。`signAndEditExecutable: false` 只关掉它改「资源」，
-#     关不掉它重写文件本身。
-#   · afterAllArtifactBuild —— 时机够晚了，但钩子跑在 **electron-builder 自己的进程内**，
-#     此时主 exe 仍被它占着，rcedit 写不进去：12 次重试全失败，写后校验始终查不到串。
-#     （electron-builder 一退出、同一份产物手工跑 rcedit 立刻成功、体积精确回到基线。）
+# 【历史】2.7.1–3.7.0 一直用「关掉内置 rcedit + 外层手工补写」的绕法，起因是 2026-10-02
+#   在 electron-builder **24.13.3** 上实测「它写主 exe 资源必报 Fatal error: Unable to commit
+#   changes，重试 4 次耗尽后直接中止构建」。当时没有更细的开关，只能整段关掉。
+#   副作用：每次封装都要人工在外层跑 rcedit + --prepackaged 重打，且 after-pack.cjs 那个
+#   补写钩子**根本没挂到 afterAllArtifactBuild**（yml 里只有 afterPack），等于一直是死代码。
 #
-# 【现行方案】写入放到 scripts/build-desktop.mjs 里，在 **electron-builder 进程完全退出之后**执行 ——
-#   那里 exe 已无人占用，rcedit 一次就能写进去。顺序：
-#     electron-builder 打完包 → 校验主 exe → 缺失则补写 → 重打包让 exe 进包 → 再补一次 → 复验。
+# 【现在】electron-builder 26 提供了更细的开关：
+#   · `signAndEditExecutable: false` —— 资源编辑**与**签名一起跳过（旧行为，会导致 exe 无图标无版本）；
+#   · `signExecutable: false`        —— **只跳过签名，保留资源编辑**（图标 + 版本/公司/产品名照写）。
+#   app-builder-lib/out/winPackager.js:236 的分支确认：设了它仍会走 signAndEditResources()。
+#   本项目不做代码签名，故用后者即可让 exe 元数据在打包阶段一次写对，不再需要外层补救。
 win:
   # 🔴 3.0 · D3：安装目录与主 exe 名由此决定（`Programs\YouthFantasyEngine\YouthFantasyEngine.exe`）。
   #    与包名形态解耦：productName 仍是中文显示名，executableName 只管文件系统里的目录/文件名。
@@ -70,12 +73,8 @@ win:
       arch:
         - x64
   icon: build/icon.ico
-  # 🔴 跳过 electron-builder 内置的 rcedit：本机它写主 exe 资源必报 `Fatal error: Unable to commit changes`，
-  #    且 electron-builder 24.13.3 在重试 4 次耗尽后**直接中止整个构建（exit 1）**、NSIS 阶段不再执行
-  #    （2026-10-02 实测连续 3 次；历史记录「失败但继续打包」已不成立）。本项目不做代码签名，
-  #    跳过该步无副作用；主 exe 元数据由 afterAllArtifactBuild 钩子保证
-  #    （实测体积 181,097,984 逐字节一致、含开发组名与版本串）。
-  signAndEditExecutable: false
+  # 只跳过代码签名，保留图标与版本元数据写入（见上）
+  signExecutable: false
 
 nsis:
   oneClick: false                # 非一键安装：可自选安装目录

@@ -44,10 +44,10 @@ function run(cmd, args, extraEnv = {}) {
 console.log('[1/3] TypeScript 类型检查 ...')
 run(process.execPath, [tsc, '--noEmit'])
 
-// 🔴 复用模式（YFE_REUSE_OUT）：跳过 vite build。
-//   原因：dist 变了就得重打 NSIS（app.asar 封的是 dist），而重打 NSIS 会再次写主 exe、
-//   把从外层补写好的元数据覆盖回默认值 —— 那就回到了死循环。
-//   复用模式的语义就是「产物已在，只补校验与交付」，dist 必须保持原样。
+// 调试开关（YFE_REUSE_OUT）：跳过 vite build，直接用已有产物目录做「校验 + 交付」。
+//   2026-11-24 起正常封装**不需要**它 —— 元数据已由 electron-builder 在打包阶段写好，
+//   不再有「重打包会覆盖补写结果」的死循环（那也是当年引入本开关的原因）。
+//   保留仅为排查产物 / 复验时省掉一次重建。
 const reuseOutEnv = process.env.YFE_REUSE_OUT || ''
 if (reuseOutEnv) {
   console.log(`[2/3] 复用模式：跳过 Vite 构建（产物已存在，重建 dist 会作废已打的 app.asar）`)
@@ -197,11 +197,8 @@ if (!reuseOut && existsSync(desktopOutBase)) {
 // 回收站操作异常导致 electron-builder 以非零码退出——但安装包 exe 已正常产出。
 // 故此处不立即失败：若 exe 已存在则视为成功并继续交付，否则才真正报错。
 //
-// 🔴 复用模式（YFE_REUSE_OUT）：**跳过 electron-builder**，直接用该目录里已有的产物。
-//   用途：主 exe 的元数据补写必须从**外层**做（本环境脚本内起子进程被拦成 EBUSY），
-//   补写完成后重跑本脚本时传 YFE_REUSE_OUT=<同一目录>，走这里直接校验 + 交付。
-//   为什么不能在这里重打包：① electron-builder 会**再次写主 exe**，把补写的元数据覆盖回默认值；
-//   ② `win-unpacked/resources/app.asar` 常被实时防护占着，重打包会直接失败。
+// 调试开关（YFE_REUSE_OUT）：**跳过 electron-builder**，直接用该目录里已有的产物做校验 + 交付。
+//   正常发布不用它（原因见文件顶部）；只有「产物已经在、只想复验或重新交付」时才传。
 // 复用模式不重打，故也不需要 electronDist；正常模式则先备好「已解包 Electron」缓存
 const electronDist = reuseOut ? null : ensureUnpackedElectronDist()
 const builderArgs = [builder, '--win', '--x64', `-c.directories.output=${desktopOut}`]
@@ -243,38 +240,33 @@ if (buildResult.status !== 0) {
 }
 
 /**
- * 🔴🔴 主 exe 验收 + 重打安装包（2026-10-02 · 2.7.1 轮实测后新增）。
+ * 主 exe 的图标与版本元数据：**由 electron-builder 在打包阶段写入**（2026-11-24 起）。
  *
- * 【为什么需要这一段】写主 exe 元数据的钩子已从 `afterPack` 挪到 `afterAllArtifactBuild`
- *   （原因见 electron-builder.yml 的注释：electron-builder 在 afterPack 之后还会再写一次主 exe，
- *   把刚写好的元数据整体覆盖回默认值）。但那个时机**在安装包已经打好之后**——
- *   安装包里封的仍是「默认元数据」的 exe。所以必须：
- *     ① 先查主 exe 到底写没写进去（不信钩子日志，只信 PE 里的字节）；
- *     ② 没写进去就地补写 → **重打安装包**让它封进去 → **再补一次**（重打包本身又会覆盖）；
- *     ④ 最后复验。
+ * 【历史】2.7.1–3.7.0 用的是「关掉内置 rcedit + 外层手工补写」的绕法：当时 electron-builder 24
+ *   写主 exe 资源必报 `Fatal error: Unable to commit changes`，重试耗尽还会中止整个构建，
+ *   只能把 `signAndEditExecutable` 整段关掉，再在外层跑 rcedit + `--prepackaged` 重打。
+ *   代价：每次发版人工介入三轮；而 `--prepackaged` 会复用同目录旧 `*-nsis.7z`，
+ *   漏删就会把「没补元数据的 exe」封进安装包（2026-10-29 实踩）。
  *
- * 【为什么必须重打】NSIS 是在 afterPack 之后打的 ⇒ 包内是旧 exe。
- *   只补 win-unpacked 的 exe 而不重打包，安装出来的程序仍是 Electron 默认图标/版本信息 ——
- *   也就是 2.7.1 首轮封装「日志全绿、验收却不过」的那个坏产物的真正后果。
+ * 【现在】electron-builder 26 支持 `win.signExecutable: false` —— **只跳过签名、保留资源编辑**
+ *   （app-builder-lib/out/winPackager.js 里确认：设了它仍会走 signAndEditResources）。
+ *   ⇒ 图标 + FileVersion / ProductVersion / CompanyName / ProductName / LegalCopyright
+ *     在 packaging 阶段一次写对，NSIS 在同一次运行内直接封这份 exe，无需任何外层补救。
  *
- * 【为什么补写要写两遍】重打包会再次触发 electron-builder 写 exe ⇒ 又覆盖回默认值。
- *   故顺序必须是「补写 → 重打包 → 再补写」，且第二次之后**不再重打包**（否则死循环）。
+ * 本段只做**验收**：读回 PE 查字符串，写不对就停下查配置，不做「自动修补」。
  */
-// 🔴 3.0：这里拆成两个常量，**不要再合并成一个**（2026-10-08 结论）。
-//   · EXE_FILENAME —— 决定 `win-unpacked/` 下主 exe 的文件名，必须与 electron-builder.yml 的
-//     `win.executableName`（YouthFantasyEngine）逐字一致；不一致会让 existsSync(exePath) 恒 false，
-//     主 exe 元数据/图标补写被**静默跳过** → 交付一个元数据是 Electron 默认值的坏包。
-//   · DISPLAY_NAME —— 人类可读展示名，与 electron-builder.yml 的 productName 一致（保持中文）。
 const EXE_FILENAME = 'YouthFantasyEngine'   // 与 electron-builder.yml 的 win.executableName 一致
 const DISPLAY_NAME = '青春幻想引擎'          // 与 electron-builder.yml 的 productName 一致
-const COMPANY = '青春幻想引擎开发组'   // 主 exe 的公司名（验收基准）
+const COMPANY = '青春幻想引擎开发组'   // 与 package.json 的 author 一致（appInfo.companyName = author.name）
 const exePath = path.join(desktopOut, 'win-unpacked', `${EXE_FILENAME}.exe`)
 // 图标 + 元数据写入后主 exe 的逐字节大小（**仅日志比对，不是闸门**）。
-// ⚠️ 换 electron 大版本、换图标或换 rcedit 写入方式都会变 ⇒ 每次变化后按首次实测刷新（历史值见 git log）：
+// ⚠️ 换 electron 大版本、换图标或换写入方式都会变 ⇒ 按首次实测刷新（历史值见 git log）：
 //    electron 31.7.7 → 181,097,984 ｜ electron 44.6.0 + 旧图标 → 246,487,040
-//    3.5.5 / 3.5.6 实测（同一 electron 44.6.0、3.5.4 起的新图标）→ 246,365,184
-//    🔴 3.5.5 与 3.5.6 的正式包内 exe 尺寸相同、只差版本资源，故两版共用这一个基线。
-const EXPECT_BASE_SIZE = 246365184
+//    3.5.5 / 3.5.6（外层 rcedit 补写）→ 246,365,184
+//    3.7.0 起（electron-builder 自带资源编辑）→ 246,365,696
+//    🔴 差的 512 字节来自 **LegalCopyright**（rcedit 方案没写这一项），不是图标缺失；
+//       图标缺失会少约 248 KB，量级完全不同，别把两种差异当成一回事。
+const EXPECT_BASE_SIZE = 246365696
 const expectStrings = [COMPANY, DISPLAY_NAME, pkg.version].filter(Boolean)
 
 function exeMetaOk(p) {
@@ -286,101 +278,34 @@ function exeMetaOk(p) {
   }
 }
 
-if (existsSync(exePath)) {
-  const chk = exeMetaOk(exePath)
-  if (chk.ok) {
-    console.log(`[build:desktop] 主 exe 元数据校验通过（${chk.size} 字节${chk.size === EXPECT_BASE_SIZE ? '，与基线逐字节一致' : `（基线 ${EXPECT_BASE_SIZE}，差 ${chk.size - EXPECT_BASE_SIZE}）`}）`)
-  } else {
-    console.warn(`[build:desktop] 主 exe 元数据缺失（体积 ${chk.size}），开始补写 + 重打包 ...`)
-    /**
-     * 校验主 exe 元数据；缺失时**打印一条可直接粘贴执行的 rcedit 命令**并以非零码退出。
-     *
-     * 🔴🔴 为什么脚本自己不调 rcedit（2026-10-02 实踩，本环境红线）：
-     *   本环境里**任何脚本内 spawn 出来的子进程都会被拦成 `EBUSY`** ——
-     *   实测 `spawnSync(rcedit, …)` 恒返回 `{status:null, error:{code:'EBUSY'}}`，
-     *   走 `shell:true`、走 `cmd.exe /c bat` 全部一样（bat 内容已确认正确、rcedit 也确实能写，
-     *   但**从脚本里就是启动不了**）。而从 Git Bash **外层**直接跑 rcedit 则 100% 成功、
-     *   体积精确回到基线 181,097,984。
-     *   ⇒ 结论与 skill 一致：**脚本内不起子进程，改由外层执行**。
-     *
-     * 【用法】本脚本打印那条命令后退出（码 2）→ 外层执行它 → 再跑一次本脚本即完成校验与交付。
-     */
-    const patchExe = () => {
-      const rcedit = (() => {
-        // ① 优先 electron-builder 的 winCodeSign 缓存（版本与 builder 自带的一致）
-        const cache = path.join(process.env.LOCALAPPDATA || '', 'electron-builder', 'Cache', 'winCodeSign')
-        if (existsSync(cache)) {
-          for (const sub of readdirSync(cache)) {
-            const p = path.join(cache, sub, 'rcedit-x64.exe')
-            if (existsSync(p)) return p
-          }
-        }
-        // ② 兜底：项目自带的 rcedit（devDependency）—— 本机没有 winCodeSign 缓存时靠它。
-        //    🔴 2026-11-01：此前只找缓存，缓存从没下过 ⇒ 元数据一直补不上、exe 属性里的版本/图标是默认值。
-        const local = path.join(root, 'node_modules', 'rcedit', 'bin', 'rcedit-x64.exe')
-        return existsSync(local) ? local : ''
-      })()
-      if (!rcedit) {
-        console.warn('[build:desktop] ❌ 找不到 rcedit，无法补写主 exe')
-        return false
-      }
-      const cmd = [
-        `"${rcedit}"`, `"${exePath}"`,
-        '--set-version-string', 'FileDescription', DISPLAY_NAME,
-        '--set-version-string', 'ProductName', DISPLAY_NAME,
-        '--set-version-string', 'InternalName', EXE_FILENAME,
-        '--set-version-string', 'CompanyName', COMPANY,
-        '--set-file-version', pkg.version,
-        '--set-product-version', `${pkg.version}.0`,
-        '--set-icon', '"' + path.join(root, 'build', 'icon.ico') + '"',
-      ].join(' ')
-      // 🔴🔴 补写之后**必须用 `--prepackaged` 重打 NSIS**（2026-10-02 实测，这是唯一可行解）。
-      //   原因：electron-builder 每次运行都会在 packaging 阶段**从 electron 压缩包重新铺一遍 exe**，
-      //   把外层补写好的元数据与图标**整体覆盖回默认值**（实测 4 种调法都如此：afterPack /
-      //   afterAllArtifactBuild / 复用模式 / 补写后立刻 `--win nsis`，无一例外）。
-      //   而普通调用无法指定「沿用已铺好的 win-unpacked」。
-      //   `--prepackaged <dir>` 正是 electron-builder 提供的这个开关：**跳过解包、直接用现成的
-      //   win-unpacked 去做 NSIS** ⇒ exe 保持不动。实测打包后 exe 仍是 181,097,984。
-      const rebuildCmd = [
-        `"${process.execPath}" node_modules/electron-builder/cli.js --win nsis --x64`,
-        `--prepackaged "${path.join(desktopOut, 'win-unpacked')}"`,
-        `-c.directories.output="${desktopOut}"`,
-      ].join(' ')
-      console.error('\n[build:desktop] ✋ 主 exe 元数据/图标缺失，需从**外层**执行下面两步')
-      console.error('[build:desktop] （本环境脚本内起子进程一律被拦成 EBUSY；且 electron-builder 重跑会覆盖 exe）\n')
-      console.error('  ① 补写主 exe：\n     ' + cmd + '\n')
-      console.error('  ② 用 --prepackaged 重打安装包（保住刚补好的 exe）：\n     ' + rebuildCmd + '\n')
-      writeFileSync(
-        path.join(root, '.workbuddy', 'tmp', 'last-desktop-out.txt'),
-        `${desktopOut}\n${cmd}\n${rebuildCmd}\n`,
-        'utf8',
-      )
-      console.error(`[build:desktop] （两步命令已记入 .workbuddy/tmp/last-desktop-out.txt）\n`)
-      return false
-    }
-
-    // 补写必须从外层做（脚本内起子进程被 EBUSY 拦）⇒ 打印命令后退出，等外层补完再重跑本脚本。
-    patchExe()
-    process.exit(2)
-  }
+if (!existsSync(exePath)) {
+  console.error(`[build:desktop] 未找到主 exe：${exePath}`)
+  console.error('[build:desktop] 检查 electron-builder.yml 的 win.executableName 是否仍为 YouthFantasyEngine')
+  process.exit(3)
 }
+
+const chk = exeMetaOk(exePath)
+if (!chk.ok) {
+  console.error(`[build:desktop] ❌ 主 exe 元数据验收未通过（体积 ${chk.size}）`)
+  console.error(`[build:desktop]   应含这些串：${expectStrings.join(' / ')}`)
+  console.error('[build:desktop] 按这三处查：')
+  console.error('[build:desktop]   ① electron-builder.yml 的 win 段是否被改回 signAndEditExecutable: false')
+  console.error('[build:desktop]      （那一项会把「资源编辑」与「签名」一起跳过 → exe 无图标无版本）')
+  console.error('[build:desktop]   ② build/icon.ico 是否存在（图标缺失时体积会少约 248 KB）')
+  console.error('[build:desktop]   ③ package.json 的 author 是否被改（公司名取自 author.name）')
+  console.error('[build:desktop] 本次产物不可交付。')
+  process.exit(3)
+}
+console.log(
+  `[build:desktop] 主 exe 元数据验收通过（${chk.size} 字节${chk.size === EXPECT_BASE_SIZE ? '，与基线逐字节一致' : `（基线 ${EXPECT_BASE_SIZE}，差 ${chk.size - EXPECT_BASE_SIZE}）`}）`,
+)
 
 // 把安装包复制到固定交付目录
 const destDir = path.join(root, 'release', '桌面安装版')
 mkdirSync(destDir, { recursive: true })
 copyFileSync(src, path.join(destDir, setupName))
 console.log(`\n打包完成：${path.join(destDir, setupName)}（${(setupSize / 1024 / 1024).toFixed(2)} MB，体积闸门已通过）`)
-/**
- * 🔴 交付前必核对「安装包里那个 exe」——不只看 win-unpacked 里那个。
- *
- * 2026-10-29 两次实踩，第一版判读是错的，真因已确认：
- *   `--prepackaged` **会复用同目录下已有的 `youth-fantasy-engine-<v>-x64.nsis.7z`**（build 阶段
- *   用**未补元数据**的 exe 压出来的）。所以哪怕 win-unpacked 里已经是 rcedit 补好的 246,487,040，
- *   重打出来的 Setup 里仍是 246,238,720（缺 ProductName/图标，包小 ~30KB）。
- *   ⇒ 正确做法：**先删该目录下的 `*.7z` 与 `*.exe`**，再跑 `--prepackaged`，让 7z 重新压。
- *
- * 脚本内起子进程在本环境恒被拦成 EBUSY，所以无法自己解包核对；这里打印强制核对步骤与期望值。
- */
-console.log(`[build:desktop] 交付前必核对：安装包内 YouthFantasyEngine.exe 应为 ${EXPECT_BASE_SIZE} 字节`)
-console.log('[build:desktop]   .workbuddy/tmp/eb-7zip/bin/7za.exe l "' + path.join(destDir, setupName) + '" | grep YouthFantasyEngine.exe')
-console.log('[build:desktop]   不一致 ⇒ prepackaged 复用了旧的 *-nsis.7z（里面是未补元数据的 exe）：先删该目录下 *.7z 与 *.exe，再重跑 --prepackaged')
+// 包内 exe 不必再单独核对：NSIS 与 packaging 在同一次 electron-builder 运行内完成，
+// 封的就是上面验收通过的那份 exe，不存在 `--prepackaged` 复用旧 `*-nsis.7z` 的路径。
+// （3.7.0 实测：包内 YouthFantasyEngine.exe = 246,365,696 B，与 win-unpacked 完全一致。）
+console.log('[build:desktop] NSIS 在同一次运行内封装上面这份 exe，无需再核对包内 exe。')
