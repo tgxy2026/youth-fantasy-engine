@@ -132,6 +132,16 @@ async function main() {
   }
 
   console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)
+  // ---------- 接线闸：角色卡详情有「状态演变」 ----------
+  {
+    const fs = await import('node:fs')
+    const sheet = fs.readFileSync('src/components/world/CharacterSheet.tsx', 'utf8')
+    const comp = fs.readFileSync('src/components/world/StateEvolution.tsx', 'utf8')
+    ok('角色卡详情挂了 StateEvolution（kind: card）', sheet.includes('<StateEvolution') && sheet.includes("kind: 'card'"))
+    ok('状态演变组件只追加（appendStateRecords + buildStateRecord）', comp.includes('appendStateRecords(') && comp.includes('buildStateRecord(') && comp.includes('target: recordRef'))
+    ok('组件支持手动补登（章号 + 状态）', comp.includes('placeholder="章号"') && comp.includes('补登'))
+  }
+
   if (fail > 0) process.exit(1)
 }
 

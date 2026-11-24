@@ -27,6 +27,7 @@ import { loadRegistry, classify, commitEntities, CARD_TABS, LedgerItem } from '@
 import * as db from '@/lib/db'
 import { collectPostProcess, applyPostProcess, type PostProcessItem } from '@/lib/outline/chapterPostProcess'
 import { readImpact, clearImpact, analyzeChapterFutureImpact, readReviewSuggestions, clearReviewSuggestions, type ImpactMark, type ReviewSuggestion } from '@/lib/outline/futureImpact'
+import { saveOpeningSnapshot } from '@/lib/audit/openingSnapshot'
 import { useAIReady } from '@/lib/ai/useAIReady'
 import { LS_SPRITE_ENABLED } from '@/lib/constants'
 import { useTaskRunner, chapterOwned, taskChapter, type ChOwned, type ChProgress } from '@/lib/ai/aiTaskCenter'
@@ -936,6 +937,8 @@ export function useJieWenJiModel(props: Props) {
       owner.assertCurrent()
       const v = await aiOpeningCheck(ctx.text, openingText ?? content, { signal: job.signal, acpText })
       owner.assertCurrent()
+      // 3.7.0 · 复核补：把「一句话定调」存进项目（体检页据此引用原话；失败不影响检查结果）
+      await saveOpeningSnapshot(owner.projectId, v.report, { chapterId: ch, owner })
       return { ch, v }
     })
   }

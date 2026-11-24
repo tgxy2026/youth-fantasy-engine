@@ -59,6 +59,7 @@ import { guardTabWrite, type TabWriteSource } from '@/lib/templates/migrationGua
 import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import { useDetailWorkspaceView } from '@/components/common/useDetailWorkspaceView'
+import StateEvolution from '@/components/world/StateEvolution'
 import type { NavigateToReference } from '@/lib/app/navigation'
 
 /**
@@ -1061,6 +1062,8 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
               {isCharacterCardTab(tab.id) && !cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
                       name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
                       onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
+              {/* 3.7.0 · W4：角色卡按章状态演变（只读列表 + 手动补登；与「设定变更」页签不是一回事） */}
+              <StateEvolution target={{ kind: 'card', tabId: tab.id, id: draft.id, projectId: draft.projectId || getCurrentProjectId() || '' }} hint="记的是剧情内发生了什么；改字段仍在上面的栏目里。" />
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">

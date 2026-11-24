@@ -67,4 +67,12 @@ const banned = '评分|评级|排名|合格|不合格|签约潜力|合格率'
 }
 
 console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)
+  // ---------- 接线闸：开篇结论真的进了体检页 ----------
+  {
+    const dialog = fs.readFileSync('src/components/audit/SubmissionReportDialog.tsx', 'utf8')
+    const model = fs.readFileSync('src/components/jiewenji/useJieWenJiModel.ts', 'utf8')
+    ok('黄金三章跑完会存结论快照', model.includes('saveOpeningSnapshot(owner.projectId'))
+    ok('体检页读取快照并作为「开篇」引用', dialog.includes('readOpeningSnapshot(') && dialog.includes('opening: { conclusion'))
+  }
+
 if (fail > 0) process.exit(1)

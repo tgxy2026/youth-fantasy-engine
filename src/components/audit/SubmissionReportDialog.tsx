@@ -14,6 +14,7 @@ import { sortChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { computePaceSeries } from '@/lib/outline/paceMetrics'
 import { buildTicket } from '@/lib/app/optimizeTicket'
 import { buildSubmissionReport, submissionReportJson, type SubmissionReport } from '@/lib/audit/submissionReport'
+import { readOpeningSnapshot } from '@/lib/audit/openingSnapshot'
 import type { Chapter, Volume, TableRow } from '@/lib/types'
 
 export default function SubmissionReportDialog({ onClose }: { onClose: () => void }) {
@@ -24,11 +25,12 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
     let cancelled = false
     void (async () => {
       try {
-        const [chs, vols, hooks, tickets] = await Promise.all([
+        const [chs, vols, hooks, tickets, opening] = await Promise.all([
           db.getAllChapters().catch(() => [] as Chapter[]),
           db.getAllVolumes().catch(() => [] as Volume[]),
           db.getTableRows('hookpoints').catch(() => [] as TableRow[]),
           buildTicket().catch(() => []),
+          readOpeningSnapshot(db.getCurrentProjectId()).catch(() => null),
         ])
         const sorted = sortChapters(vols, chs)
         const seq = chapterSeqMap(vols, chs)
@@ -41,7 +43,11 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
         )
         if (cancelled) return
         const lines = series.observations.length ? series.observations : ['还没有可统计的正文。']
-        setReport(buildSubmissionReport({ body: { lines, at: Date.now() }, todo: { tickets, at: Date.now() } }))
+        setReport(buildSubmissionReport({
+          ...(opening ? { opening: { conclusion: opening.conclusion, at: opening.at, source: opening.source } } : {}),
+          body: { lines, at: Date.now() },
+          todo: { tickets, at: Date.now() },
+        }))
       } finally {
         if (!cancelled) setLoading(false)
       }
