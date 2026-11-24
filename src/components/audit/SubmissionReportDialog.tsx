@@ -15,6 +15,7 @@ import { computePaceSeries } from '@/lib/outline/paceMetrics'
 import { buildTicket } from '@/lib/app/optimizeTicket'
 import { buildSubmissionReport, submissionReportJson, type SubmissionReport } from '@/lib/audit/submissionReport'
 import { readOpeningSnapshot } from '@/lib/audit/openingSnapshot'
+import { readPlatformSnapshot, readReaderProbeSnapshot } from '@/lib/audit/submissionSnapshots'
 import type { Chapter, Volume, TableRow } from '@/lib/types'
 
 export default function SubmissionReportDialog({ onClose }: { onClose: () => void }) {
@@ -25,12 +26,15 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
     let cancelled = false
     void (async () => {
       try {
-        const [chs, vols, hooks, tickets, opening] = await Promise.all([
+        const pid = db.getCurrentProjectId()
+        const [chs, vols, hooks, tickets, opening, platform, reader] = await Promise.all([
           db.getAllChapters().catch(() => [] as Chapter[]),
           db.getAllVolumes().catch(() => [] as Volume[]),
           db.getTableRows('hookpoints').catch(() => [] as TableRow[]),
           buildTicket().catch(() => []),
-          readOpeningSnapshot(db.getCurrentProjectId()).catch(() => null),
+          readOpeningSnapshot(pid).catch(() => null),
+          readPlatformSnapshot(pid).catch(() => null),
+          readReaderProbeSnapshot(pid).catch(() => null),
         ])
         const sorted = sortChapters(vols, chs)
         const seq = chapterSeqMap(vols, chs)
@@ -43,9 +47,11 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
         )
         if (cancelled) return
         const lines = series.observations.length ? series.observations : ['还没有可统计的正文。']
+        const readerLine = reader ? `最近一次读者探针（${reader.lens}）：${reader.summary}（${reader.notes} 条反馈）` : null
         setReport(buildSubmissionReport({
           ...(opening ? { opening: { conclusion: opening.conclusion, at: opening.at, source: opening.source } } : {}),
-          body: { lines, at: Date.now() },
+          ...(platform ? { platform: { platform: platform.platform, observations: platform.observations, at: platform.at } } : {}),
+          body: { lines: readerLine ? [...lines, readerLine] : lines, at: Math.max(Date.now(), reader?.at ?? 0) },
           todo: { tickets, at: Date.now() },
         }))
       } finally {

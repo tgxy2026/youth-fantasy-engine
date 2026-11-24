@@ -15,6 +15,7 @@ import { EMPTY_CHAPTER_HINT } from '@/lib/constants'
 import { Copy, Eye, Loader2, Sparkles, UserRound } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter } from '@/lib/types'
+import { saveReaderProbeSnapshot } from '@/lib/audit/submissionSnapshots'
 import { Button } from '@/components/common/Button'
 import { showToast, copyText } from '@/components/dialogs/dialogs'
 import { useAIReady } from '@/lib/ai/useAIReady'
@@ -102,7 +103,9 @@ export default function ReaderProbePanel() {
     // 🔴 输入在发起时**快照**进闭包：任务跑在 store 里，跑的过程中组件可能已经卸载
     const chapterId = activeId
     const lensK = lensKey
+    const lensName = lens.name
     const text = content
+    const projectId = db.getCurrentProjectId()
     startTask<ReaderProbeTaskResult, ReaderProbeTaskProgress>({
       ownerTab: OWNER_TAB,
       kind: TASK_KIND,
@@ -112,6 +115,8 @@ export default function ReaderProbePanel() {
         ctx.progress({ chapterId, lensKey: lensK })
         const pctx = await buildProjectContext({ budget: await writerBudgetFor('reader-probe'), focusChapterId: chapterId })
         const result = await aiReaderProbe(pctx.text, text, lensK, { signal: ctx.signal })
+        // 3.7.0 · W6 复核补：只存「身份 + 收尾一句 + 条数」，供投稿体检引用（失败不影响结果）
+        void saveReaderProbeSnapshot(projectId, lensName, result)
         return { chapterId, lensKey: lensK, result }
       },
       // 失败要说出来（作者可能已经切走了，面板上的红字他看不到）；成功不弹 —— 结果就在本页

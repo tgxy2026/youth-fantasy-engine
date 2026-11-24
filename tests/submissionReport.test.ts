@@ -73,6 +73,11 @@ console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ———�
     const model = fs.readFileSync('src/components/jiewenji/useJieWenJiModel.ts', 'utf8')
     ok('黄金三章跑完会存结论快照', model.includes('saveOpeningSnapshot(owner.projectId'))
     ok('体检页读取快照并作为「开篇」引用', dialog.includes('readOpeningSnapshot(') && dialog.includes('opening: { conclusion'))
+    const platform = fs.readFileSync('src/components/audit/PlatformCheckPanel.tsx', 'utf8')
+    const probe = fs.readFileSync('src/components/audit/ReaderProbePanel.tsx', 'utf8')
+    ok('分平台预检跑完会存观察句快照', platform.includes('savePlatformSnapshot(db.getCurrentProjectId(), report)'))
+    ok('读者探针跑完会存摘要快照', probe.includes('saveReaderProbeSnapshot(projectId, lensName, result)'))
+    ok('体检页读取平台 / 探针快照', dialog.includes('readPlatformSnapshot(pid)') && dialog.includes('readReaderProbeSnapshot(pid)'))
   }
 
 if (fail > 0) process.exit(1)

@@ -70,6 +70,9 @@ try {
 
   const nav = page.getByRole('navigation')
   await nav.getByRole('button', { name: '检查工具', exact: true }).click()
+  // 先跑一次分平台预检（纯本地），让 platform 区有可引用结果
+  await page.getByRole('button', { name: '预检全书', exact: true }).click()
+  await page.waitForTimeout(500)
   await page.getByRole('button', { name: '投稿体检', exact: true }).click()
   const opening = page.locator('[data-report-section="opening"]')
   await opening.waitFor()
@@ -77,6 +80,9 @@ try {
     await opening.getAttribute('data-report-state'))
   check('体检页显示落库时的原话', await opening.getByText(/能签/).first().isVisible())
   check('仍注明仅供参考', await opening.getByText(/仅供参考/).first().isVisible())
+  const platform = page.locator('[data-report-section="platform"]')
+  check('体检页平台区已引用预检观察', await platform.getAttribute('data-report-state') === 'ran', await platform.getAttribute('data-report-state'))
+  check('平台区保留观察句（不只一句结论）', (await platform.innerText()).length > 10)
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.locator('[data-submission-report]').waitFor({ state: 'detached' }).catch(() => undefined)
 

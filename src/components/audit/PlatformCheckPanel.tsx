@@ -16,6 +16,7 @@ import type { Chapter } from '@/lib/types'
 import { PLATFORM_RULES, platformRuleOf, type PlatformId } from '@/lib/app/platformRules'
 import { NO_CHAPTERS_HINT } from '@/lib/constants'
 import { precheckBook, type PlatformCheckReport } from '@/lib/audit/platformCheck'
+import { savePlatformSnapshot } from '@/lib/audit/submissionSnapshots'
 import { getCustomSensitiveWords } from '@/lib/editor/sensitiveWords'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -55,7 +56,10 @@ export default function PlatformCheckPanel() {
     setRunning(true)
     try {
       const custom = await getCustomSensitiveWords().catch(() => [] as string[])
-      setReport(precheckBook(chapters, platform, custom))
+      const report = precheckBook(chapters, platform, custom)
+      setReport(report)
+      // 3.7.0 · W6 复核补：把这次观察句存进项目，投稿体检可直接引用（失败不影响预检）
+      void savePlatformSnapshot(db.getCurrentProjectId(), report)
     } finally {
       setRunning(false)
     }
