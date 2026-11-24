@@ -8,7 +8,7 @@ import type { HelpArticle } from '@/lib/help/types'
 export const EDITOR_ARTICLES: HelpArticle[] = [
   {
     id: 'dashboard-overview',
-    revision: 1,
+    revision: 2,
     title: '写作面板：一屏看清今天该干什么',
     summary: '今日写作、章节进度、伏笔清点与快捷入口都在这页，不动笔也能用来复盘。',
     aliases: ['首页', '工作台', '今日写作', '进度'],
@@ -23,7 +23,7 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
         heading: '这页看什么',
         body: [
           '今日写作量、章节进度、伏笔清点与各类快捷入口集中在这里 —— 它是「打开软件先看一眼」的落点，不写正文也不影响任何数据。',
-          '「字数口径」（文字 / 文字+标点）在这里切换：「文字」统计所有语言文字的字母与数字（中文、英文、日文、韩文等逐字符计），「文字+标点」再加上中英文标点。正文底部的实时字数会跟着一起变；已记录的今日码字量按固定口径累计，不会因为换口径被重算。',
+          '「字数口径」（文字 / 文字+标点）在这里切换：「文字」统计所有语言文字的字母与数字（中文、英文、日文、韩文等逐字符计），「文字+标点」再加上所有标点符号（含中英文）。正文底部的实时字数会跟着一起变；已记录的今日码字量按固定口径累计，不会因为换口径被重算。',
         ],
       },
       {
@@ -40,8 +40,8 @@ export const EDITOR_ARTICLES: HelpArticle[] = [
     ],
     related: ['editor-tools', 'start-first-chapter'],
     actions: [{ label: '打开使用指南', tabId: 'guide' }],
-    verifiedAgainst: '3.4.0',
-    reviewedAt: '2026-11-04',
+    verifiedAgainst: '3.7.0',
+    reviewedAt: '2026-11-24',
   },
   {
     id: 'editor-tools',

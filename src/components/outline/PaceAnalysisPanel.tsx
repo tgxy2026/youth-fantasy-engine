@@ -143,11 +143,20 @@ export default function PaceAnalysisPanel() {
     const pts = paceSeries.points
     if (!pts.length) return { path: '', max: 0 }
     const valueOf = (q: PacePoint) => metric === 'words' ? q.words : metric === 'dialogue' ? q.dialogueRatio : metric === 'paragraph' ? q.avgParagraph : (q.hookGap ?? 0)
-    const max = Math.max(1, ...pts.map(valueOf))
+    // 「距上个爽点」：首个爽点之前的章是 null（不知道），不能画成 0（与「本章有爽点」混淆）——断线跳过
+    const usable = metric === 'gap' ? pts.filter(q => q.hookGap !== null) : pts
+    const max = Math.max(1, ...usable.map(valueOf))
     const step = pts.length > 1 ? 100 / (pts.length - 1) : 0
-    const path = pts.map((q, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(36 - (valueOf(q) / max) * 32).toFixed(2)}`).join(' ')
+    let penDown = false
+    const path = pts.map((q, i) => {
+      if (metric === 'gap' && q.hookGap === null) { penDown = false; return '' }
+      const cmd = penDown ? 'L' : 'M'
+      penDown = true
+      return `${cmd}${(i * step).toFixed(2)},${(36 - (valueOf(q) / max) * 32).toFixed(2)}`
+    }).filter(Boolean).join(' ')
     return { path, max }
   }, [paceSeries, metric])
+  const gapUnknown = metric === 'gap' && !paceSeries.points.some(q => q.hookGap !== null)
 
   const run = () => {
     if (!writingReady) { showToast('还没接入模型、也没有可用的 ACP 连接，无法分析', 'info'); return }
@@ -251,7 +260,7 @@ export default function PaceAnalysisPanel() {
       <div className="px-4 py-3 border-b border-ink-700" data-pace-curve>
         <div className="flex flex-wrap items-center gap-2 text-11">
           <span className="text-ink-200 font-medium">全书逐章曲线</span>
-          <span className="text-10 text-ink-500">本地计算 · 每章一个点</span>
+          <span className="text-10 text-ink-500">本地计算 · 每章一个点（超 500 章自动抽稀）</span>
           <select value={metric} onChange={e => setMetric(e.target.value as typeof metric)}
             className="ml-auto rounded border border-ink-700 bg-ink-950 px-2 py-1 text-11 text-ink-200 outline-none focus:border-amber">
             <option value="words">字数</option>
@@ -275,7 +284,9 @@ export default function PaceAnalysisPanel() {
               ) : null)}
             </svg>
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-10 text-ink-500">
-              <span>最高值：{metric === 'dialogue' ? `${(curve.max * 100).toFixed(0)}%` : curve.max}</span>
+              {gapUnknown
+                ? <span>还没有登记爽点，「距上个爽点」没有可画的事实（首个爽点前的章不画成 0）。</span>
+                : <span>最高值：{metric === 'dialogue' ? `${(curve.max * 100).toFixed(0)}%` : curve.max}</span>}
               <span>按登记强度打点（点越大档越高）</span>
             </div>
             {paceSeries.observations.map(o => <div key={o} className="mt-0.5 text-10 text-ink-400">{o}</div>)}

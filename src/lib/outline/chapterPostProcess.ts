@@ -19,10 +19,10 @@ import {
   type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus, type ExtractedResource,
 } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settings/settingLedger'
-import { splitCodes } from '@/lib/audit/audit'
+import { splitCodes } from '@/lib/audit/audit'
 import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { readAliases } from '@/lib/settings/aliases'
-import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
+import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
 import { appendStateRecords, buildStateRecord, STATE_RECORD_LIMIT } from '@/lib/settings/stateTrack'
 import { hashOf } from '@/lib/semantic/chunk'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
@@ -41,15 +41,15 @@ export interface PostProcessInput {
   chapterTitle: string
 }
 
-/** 章号（叙事序）：取不到按 0 处理（账本记录仍可用章 id 定位） */
-async function chapterNoFor(chapterId: string): Promise<number> {
-  try {
-    return chapterSeqMap(await db.getAllVolumes(), await db.getAllChapters()).get(chapterId) ?? 0
-  } catch {
-    return 0
-  }
-}
-
+/** 章号（叙事序）：取不到按 0 处理（账本记录仍可用章 id 定位） */
+async function chapterNoFor(chapterId: string): Promise<number> {
+  try {
+    return chapterSeqMap(await db.getAllVolumes(), await db.getAllChapters()).get(chapterId) ?? 0
+  } catch {
+    return 0
+  }
+}
+
 /** 从库里补出落库与指纹所需的元信息（拿不到就退化，绝不抛） */
 async function resolveMeta(input: PostProcessInput): Promise<{ volumeId: string; wordCount: number; updatedAt: number }> {
   try {
@@ -465,6 +465,12 @@ export async function applyPostProcess(
           trigger: '章后整理',
           ...(raw.st.evidence ? { evidence: raw.st.evidence } : {}),
         })])
+        if (st.appended === 0) {
+          // 留痕没写进去 ⇒ 恢复角色卡原值，避免「旧值被覆盖、账本却没有」的半截状态（与资源账本同口径）
+          await db.saveCardRecord(rec).catch(() => undefined)
+          failed.push(item.label)
+          continue
+        }
         if (st.overflow > 0) (warnings ??= []).push(`状态演变记录已超过 ${STATE_RECORD_LIMIT} 条上限，最早的 ${st.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
       }
       created++

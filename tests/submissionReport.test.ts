@@ -4,7 +4,7 @@
 //   ① 各来源缺失时如实显示「未跑」；有结果时原文引用、不改写；
 //   ② 立场：模块与界面文案不含判定类用词（沿 platformCheck 禁词模式）；
 //   ③ 导出 JSON 与界面同源、可往返；
-//   ④ 待办条数来自既有优化工单，不新造统计。
+//   ④ 待办条数来自已留档的检查报告（只读汇总），不补跑检查、不新造统计。
 import fs from 'node:fs'
 import { buildSubmissionReport, submissionReportJson } from '../src/lib/audit/submissionReport'
 import type { TicketItem } from '../src/lib/app/optimizeTicket'
@@ -44,7 +44,7 @@ const banned = '评分|评级|排名|合格|不合格|签约潜力|合格率'
   ok('开篇注明仅供参考（不当作平台判定）', by('opening').lines.join('').includes('以平台实际为准'))
   ok('平台区保留观察句原文', by('platform').lines.includes('第1章 3200 字'))
   ok('正文事实区保留事实句', by('body').lines.includes('第 12–18 章连续 7 章没有登记爽点。'))
-  ok('待办条数 = 工单条数（不另算）', by('todo').lines[0].includes('未决 2 条'), by('todo').lines[0])
+  ok('待办条数 = 留档报告挂章后的条数（不另算）', by('todo').lines[0].includes('已留档检查发现 2 条待处理问题'), by('todo').lines[0])
   ok('有结果的区各自带时间', by('opening').at === 111 && by('platform').at === 222 && by('body').at === 333 && by('todo').at === 444)
   ok('生成时间取调用时间', r.generatedAt === 1000)
 
@@ -78,6 +78,8 @@ console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ———�
     ok('分平台预检跑完会存观察句快照', platform.includes('savePlatformSnapshot(db.getCurrentProjectId(), report)'))
     ok('读者探针跑完会存摘要快照', probe.includes('saveReaderProbeSnapshot(projectId, lensName, result)'))
     ok('体检页读取平台 / 探针快照', dialog.includes('readPlatformSnapshot(pid)') && dialog.includes('readReaderProbeSnapshot(pid)'))
+    ok('体检页不补跑检查（不调 buildTicket / runChapterCheck）', !dialog.includes('buildTicket') && !dialog.includes('runChapterCheck'))
+    ok('待办只读已留档报告（loadCheckReports）', dialog.includes('loadCheckReports(pid)'))
   }
 
 if (fail > 0) process.exit(1)

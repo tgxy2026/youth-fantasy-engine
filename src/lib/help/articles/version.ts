@@ -7,11 +7,11 @@ import type { HelpArticle } from '@/lib/help/types'
 export const VERSION_ARTICLES: HelpArticle[] = [
   {
     id: 'whats-new-370',
-    revision: 1,
+    revision: 2,
     title: '3.7.0：正史变了，系统会提醒',
     summary: '大纲改动会标记受影响的未来章；候选与报告会过期；物品流转与人物状态可按章回溯；节奏只摆事实；语音灵感可转写。',
     aliases: ['更新说明', '新功能', '3.7.0'],
-    keywords: ['3.7.0', '待重审', '过期', '资源账本', '状态演变', '节奏曲线', '投稿体检', '语音', '字数控字'],
+    keywords: ['3.7.0', '待重审', '过期', '资源账本', '状态演变', '节奏曲线', '投稿体检', '语音', '字数口径'],
     group: '快速开始',
     tabIds: ['guide', 'check-tools', 'editor'],
     availability: 'all',
@@ -39,7 +39,7 @@ export const VERSION_ARTICLES: HelpArticle[] = [
         heading: '物品流转与状态演变可回溯',
         body: [
           '章后整理多了「物品流转」一类：谁在第几章把什么给了谁，必须带正文原句才能勾选写入。物品不在「物品资源」表里时只提示「先登记物品」，不会凭空建条目。图鉴里打开物品可见「流转记录」。',
-          '人物状态、关系变化确认后会额外记一条「第 N 章时是什么状态」；物品、势力、关系行也一样。记录详情里有「状态演变」列表，也可手动补登。它与「设定变更」页签不是一回事：那个记你改字段，这里记故事里发生了什么。',
+          '人物状态、关系变化确认后会额外记一条「第 N 章时是什么状态」（旧值一并留痕）；物品、势力、关系行与角色卡详情也都有「状态演变」列表，可手动补登（这几类不自动记，由你决定哪次变化值得留痕）。它与「设定变更」页签不是一回事：那个记你改字段，这里记故事里发生了什么。',
         ],
       },
       {
@@ -54,7 +54,7 @@ export const VERSION_ARTICLES: HelpArticle[] = [
         id: 'voice',
         heading: '语音灵感（需自备转写服务）',
         body: [
-          '灵感夹与写作面板的「语音」可以录一段话转成文字。需要在「模型设置 → 语音转写」填服务地址、Key 与模型名 —— 只支持 OpenAI 兼容的 /audio/transcriptions，不内置任何服务商预设。',
+          '灵感夹与随手记的「语音」可以录一段话转成文字。需要在「模型设置 → 语音转写」填服务地址、Key 与模型名 —— 只支持 OpenAI 兼容的 /audio/transcriptions，不内置任何服务商预设。',
           '录音必须你点「开始 / 结束」；上限 120 秒或 10MB，先到先停。音频只发送到你填的服务，本应用不留存、不进备份、不进云同步、不进诊断信息。转写文本先放进输入框，核对后再保存。未配置时按钮不可用。',
         ],
       },
@@ -78,6 +78,6 @@ export const VERSION_ARTICLES: HelpArticle[] = [
     related: ['page-trajectory'],
     actions: [{ label: '打开检查工具', tabId: 'check-tools' }],
     verifiedAgainst: '3.7.0',
-    reviewedAt: '2026-11-23',
+    reviewedAt: '2026-11-24',
   },
 ]

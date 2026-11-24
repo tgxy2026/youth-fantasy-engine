@@ -67,7 +67,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     () => new Set(TABS.filter(t => !tabVisible(t.id, ctx)).map(t => t.id)),
     [ctx]
   )
-  // #004 字数口径开关：默认「文字」（3.6.4 起覆盖所有语言文字字符）；切到「文字＋标点」＝含中英文标点。
+  // #004 字数口径开关：默认「文字」（3.6.4 起覆盖所有语言文字字符）；切到「文字＋标点」＝含所有标点（Unicode \p{P}）。
   // 🔴 落库的 `wordCount` 始终是**不含标点**的口径、不改动用户数据 —— 含标点模式只在显示层
   //    用 countWords(content, 'text-punct') 实时重算，所以开关随时可逆、历史数据不会被打脏。
   const [withPunct, setWithPunct] = useWordCountWithPunct()
@@ -303,7 +303,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
       sub: `${chapters.length} 章 · ${realVolumes(volumes).length} 卷`,
       icon: <BookOpen size={16} />, color: 'text-amber',
       help: withPunct
-        ? '正文编辑器里全部章节的字数之和。当前口径＝文字＋标点（含中英文标点），按正文实时重算，不改动已保存的数据。'
+        ? '正文编辑器里全部章节的字数之和。当前口径＝文字＋标点（含所有标点符号），按正文实时重算，不改动已保存的数据。'
         : '正文编辑器里全部章节的字数之和（所有语言的字母、数字逐字符计，不含标点与空格）。保存章节时自动更新，无需手工登记。',
     },
     {
@@ -370,7 +370,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
         >文字 ＋ 标点</Button>
         <span className="text-11 text-content-muted">仅影响显示，不修改已保存字数。</span>
         <HelpPopover title="字数口径说明" width="22rem" pin>
-          「文字」统计所有语言文字的字母与数字（中文、英文、日文假名、韩文、俄文等，逐字符计），不含标点与空格；「文字＋标点」在此基础上加上中英文标点。切换只影响显示，不会改动已保存的数据。
+          「文字」统计所有语言文字的字母与数字（中文、英文、日文假名、韩文、俄文等，逐字符计），不含标点与空格；「文字＋标点」在此基础上加上所有标点符号（含中英文）。切换只影响显示，不会改动已保存的数据。
         </HelpPopover>
       </div>
 

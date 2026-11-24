@@ -45,6 +45,8 @@ export interface PersistedCheckReport {
   chapterId?: string
   chapterNo?: number
   findings: ContinuityFinding[]
+  /** 留档时间（载荷 createdAt；汇总页注明「来源时间」用） */
+  at?: number
 }
 
 /** 从载荷形状里安全取出检查结论（模型/老数据都可能不成形） */
@@ -166,6 +168,7 @@ export async function loadCheckReports(projectId: string): Promise<PersistedChec
       ...(typeof r.chapterId === 'string' ? { chapterId: r.chapterId } : {}),
       ...(typeof r.chapterNo === 'number' ? { chapterNo: r.chapterNo } : {}),
       findings,
+      at: p.createdAt,
     })
   }
   return out

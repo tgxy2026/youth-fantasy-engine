@@ -158,13 +158,12 @@ export async function saveCardRecord(rec: CardRecord, owner?: OwnedOperation) {
   })
 }
 
-/** 读卡片原值（一次读同时供创建时间与改前快照）；读失败当「没有旧值」 */
+/**
+ * 读卡片原值（一次读同时供创建时间与改前快照）。
+ * 🔴 读失败必须上抛、让保存失败：createdAt 靠回读原值保住，吞错会把创建时间静默重置成现在。
+ */
 async function readCardRecord(store: StoreOps, id: string): Promise<CardRecord | undefined> {
-  try {
-    return await store.get<CardRecord>('cardRecords', id)
-  } catch {
-    return undefined
-  }
+  return await store.get<CardRecord>('cardRecords', id)
 }
 export async function deleteCardRecord(id: string) {
   await ops.del('cardRecords', id)

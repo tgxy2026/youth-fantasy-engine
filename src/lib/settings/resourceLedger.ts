@@ -65,27 +65,46 @@ export async function readResourceTransfers(owner?: OwnedOperation): Promise<Res
   }
 }
 
+/** 追加串行锁：读-改-写不得交错（手动补登与章后整理可能并发写同一键） */
+let appendChain: Promise<unknown> = Promise.resolve()
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = appendChain.then(task, task)
+  appendChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
 /**
  * 追加一笔/多笔流转（纯追加，按 id 去重）。
  *
+ * 🔴 读库失败 ⇒ 中止追加（appended:0）：绝不能拿空数组当基线，否则写成功会把整本旧账本覆盖掉。
  * @returns overflow 被移出本地存储的条数（>0 时界面必须提示作者导出后清理，见规划 §3 W3.2）
  */
 export async function appendResourceTransfers(
   incoming: readonly ResourceTransfer[], owner?: OwnedOperation,
 ): Promise<{ appended: number; total: number; overflow: number }> {
-  const list = await readResourceTransfers(owner)
-  const seen = new Set(list.map(t => t.id))
-  const add = incoming.filter(t => validTransfer(t) && !seen.has(t.id))
-  if (!add.length) return { appended: 0, total: list.length, overflow: 0 }
-  const next = [...add, ...list]
-  const kept = next.slice(0, RESOURCE_TRANSFER_LIMIT)
-  try {
-    if (owner) await db.setSettingFor(owner.projectId, RESOURCE_TRANSFER_KEY, kept, owner)
-    else await db.setSetting(RESOURCE_TRANSFER_KEY, kept)
-  } catch {
-    return { appended: 0, total: list.length, overflow: 0 }
-  }
-  return { appended: add.length, total: kept.length, overflow: Math.max(0, next.length - kept.length) }
+  return serialized(async () => {
+    let list: ResourceTransfer[]
+    try {
+      const raw = owner
+        ? await db.getSettingFor<unknown>(owner.projectId, RESOURCE_TRANSFER_KEY, [], owner)
+        : await db.getSetting<unknown>(RESOURCE_TRANSFER_KEY, [])
+      list = Array.isArray(raw) ? raw.filter(validTransfer) : []
+    } catch {
+      return { appended: 0, total: 0, overflow: 0 }
+    }
+    const seen = new Set(list.map(t => t.id))
+    const add = incoming.filter(t => validTransfer(t) && !seen.has(t.id))
+    if (!add.length) return { appended: 0, total: list.length, overflow: 0 }
+    const next = [...add, ...list]
+    const kept = next.slice(0, RESOURCE_TRANSFER_LIMIT)
+    try {
+      if (owner) await db.setSettingFor(owner.projectId, RESOURCE_TRANSFER_KEY, kept, owner)
+      else await db.setSetting(RESOURCE_TRANSFER_KEY, kept)
+    } catch {
+      return { appended: 0, total: list.length, overflow: 0 }
+    }
+    return { appended: add.length, total: kept.length, overflow: Math.max(0, next.length - kept.length) }
+  })
 }
 
 /** 纯函数：某条目在「第 N 章结束时」的持有者（≤N 的最后一笔；没有任何记录返回 undefined） */

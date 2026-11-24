@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import * as db from '../src/lib/db'
 import { memoryOps, __resetMockStores } from './mock-memory'
 import { clearDbChangeListeners } from '../src/lib/db/changeBus'
-import { registerChangeWatch, setWatchClock, whenIdle } from '../src/lib/revision/changeWatch'
+import { registerChangeWatch, resetWatchStats, setWatchClock, watchStats, whenIdle } from '../src/lib/revision/changeWatch'
 import { recordRewriteCandidate } from '../src/lib/revision/candidateIntake'
 import { loadCandidate, saveCandidate } from '../src/lib/revision/candidateStore'
 import { applyPlotCandidate } from '../src/lib/creative/plotCandidateStore'
@@ -242,6 +242,30 @@ async function main() {
     const runner = fs.readFileSync('src/lib/revision/candidateRunner.ts', 'utf8')
     ok('jobForCandidate 的 baseline 带上细纲 / 设定摘要（R2）',
       runner.includes('candidate.outlineDigest') && runner.includes('candidate.settingsDigest'))
+  }
+
+  // ---------- ⑪ 防抖合并：正文变过的事实不被后发的「仅标题 patch」冲掉 ----------
+  {
+    await seed()
+    const id = await makeCandidate()
+    await db.patchChapter('c1', { content: '正文真的改了', wordCount: 7 } as never)
+    await db.patchChapter('c1', { title: '第1章 新标题' } as never) // 正文未变 ⇒ contentChanged:false
+    await advance(300)
+    const after = await loadCandidate(id)
+    ok('正文 patch＋标题 patch 合并后仍按正文过期（OR 合并）',
+      after?.status === 'stale' && (after?.staleReasons ?? []).includes('正文已变化'), JSON.stringify(after?.staleReasons))
+  }
+
+  // ---------- ⑫ 设定空变更（保存未改值）不触发全书过期扫描 ----------
+  {
+    await seed()
+    const id = await makeCandidate()
+    resetWatchStats()
+    await db.saveCardRecord({ id: 'char1', projectId: PID, tabId: 'char-main', name: '甲', order: 0, data: { 姓名: '甲', 状态: '健在' } } as never)
+    await advance(300)
+    const after = await loadCandidate(id)
+    ok('设定保存未改值 → 候选不被过期', after?.status === 'pending', String(after?.status))
+    ok('空变更不算一次分析', watchStats.analyses === 0, JSON.stringify(watchStats))
   }
 
   clearDbChangeListeners()

@@ -17,11 +17,20 @@ import {
 export default function TranscribeSettings() {
   const [cfg, setCfg] = useState<TranscribeConfig>({ baseUrl: '', apiKey: '', model: TRANSCRIBE_DEFAULT_MODEL })
   const [saved, setSaved] = useState(false)
-  useEffect(() => { void loadTranscribeConfig().then(c => { setCfg(c); setSaved(transcribeReady(c)) }) }, [])
+  useEffect(() => {
+    let cancelled = false
+    void loadTranscribeConfig().then(c => { if (!cancelled) { setCfg(c); setSaved(transcribeReady(c)) } }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
   const ready = transcribeReady(cfg)
 
   const save = async () => {
-    await saveTranscribeConfig(cfg)
+    try {
+      await saveTranscribeConfig(cfg)
+    } catch {
+      showToast('转写配置没写进去（存储失败），请重试', 'error')
+      return
+    }
     setSaved(transcribeReady(cfg))
     showToast(transcribeReady(cfg) ? '转写配置已保存' : '已保存，但还不能用（地址或 Key 为空）', transcribeReady(cfg) ? 'success' : 'info')
   }
@@ -34,7 +43,7 @@ export default function TranscribeSettings() {
           {saved ? '已配置' : '未配置'}
         </span>
         <HelpPopover title="语音转写怎么用" width="22rem">
-          {'灵感夹与写作面板的「🎤 语音」用它把录音转成文字。\n\n'
+          {'灵感夹与随手记的「🎤 语音」用它把录音转成文字。\n\n'
             + '· 只支持 OpenAI 兼容的 /audio/transcriptions 接口：填服务根地址（如 https://api.example.com/v1）、Key 与模型名；\n'
             + '· 不内置任何服务商预设，也不参与聊天模型列表；\n'
             + '· 录音会发送到上面填的服务。本应用不留存音频，也不把音频写进备份、云同步或诊断信息；\n'

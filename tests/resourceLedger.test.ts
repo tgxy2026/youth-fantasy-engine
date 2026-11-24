@@ -167,6 +167,25 @@ async function main() {
     ok('损坏数据读取不炸、按空账本处理', (await readResourceTransfers()).length === 0)
   }
 
+  // ---------- ⑧ 读库失败 ⇒ 中止追加：绝不拿空基线覆盖旧账本 ----------
+  {
+    await seed()
+    await setSettingFor(PID, RESOURCE_TRANSFER_KEY, [tr({ id: 'old-1', chapterNo: 2 })])
+    const badOps = {
+      ...memoryOps,
+      get: async (store: string, id: string) => {
+        if (store === 'settingsKV') throw new Error('settingsKV read down')
+        return memoryOps.get(store as never, id as never)
+      },
+    }
+    db.setStoreOps(badOps as never)
+    const r = await appendResourceTransfers([tr({ id: 'new-1', chapterNo: 6 })])
+    db.setStoreOps(memoryOps)
+    ok('读库失败 ⇒ 中止追加（appended 0）', r.appended === 0, JSON.stringify(r))
+    const raw = await getSettingFor<ResourceTransfer[]>(PID, RESOURCE_TRANSFER_KEY, [])
+    ok('读库失败不覆盖旧账本（旧记录原样还在）', raw.length === 1 && raw[0].id === 'old-1', JSON.stringify(raw))
+  }
+
   // ---------- 集成闸：连续性检查真的接了物品持有冲突 ----------
   {
     const src = fs.readFileSync('src/lib/outline/continuityCheck.ts', 'utf8')

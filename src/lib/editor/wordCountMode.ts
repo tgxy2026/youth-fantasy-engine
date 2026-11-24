@@ -26,7 +26,7 @@ const WORD_COUNT_PUNCT_KEY = 'word-count-with-punct'
 
 /**
  * 字数口径偏好。
- * @returns `[withPunct, setWithPunct]` —— false＝文字（默认）；true＝文字＋标点（含中英文标点）
+ * @returns `[withPunct, setWithPunct]` —— false＝文字（默认）；true＝文字＋标点（含所有标点符号）
  */
 export function useWordCountWithPunct(): [boolean, (v: boolean) => void] {
   return usePersistedBool(WORD_COUNT_PUNCT_KEY, false)

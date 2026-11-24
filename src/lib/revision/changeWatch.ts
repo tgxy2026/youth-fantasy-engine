@@ -93,8 +93,11 @@ function accept(fact: DbChangeFact): void {
   let map = pending.get(fact.pid)
   if (!map) { map = new Map(); pending.set(fact.pid, map) }
   const prev = map.get(key)
-  // 同一记录在窗口内被写多次（正文自动保存）：改前值取最早的，改后值取最新的
-  map.set(key, prev ? { ...fact, before: prev.before ?? fact.before } : fact)
+  // 同一记录在窗口内被写多次（正文自动保存）：改前值取最早的，改后值取最新的；
+  // 正文变更事实取 OR —— 「正文 patch＋仅标题 patch」合并后不能丢掉正文变过的事实
+  map.set(key, prev
+    ? { ...fact, before: prev.before ?? fact.before, ...(prev.contentChanged || fact.contentChanged ? { contentChanged: true } : {}) }
+    : fact)
   schedule(fact.pid)
 }
 
@@ -142,6 +145,8 @@ async function flushProject(pid: string): Promise<void> {
     }
     // 大纲收口点空变更（保存未改值）：既不打标、也不算“分析过一次”
     if (fact.tabId === MASTER_TAB_ID || fact.tabId === VOLUME_OUTLINE_TAB_ID || fact.tabId === OUTLINE_TAB_ID) continue
+    // 纪律③同样适用于设定类：前后一字未变（保存未改值）不触发全书过期扫描；新建（无改前）算变更
+    if (fact.before && !describeOutlineChange(fact.before, fact.after)) continue
     // 其余 form/row/card 都是设定类写入
     settingsTouched = true
   }

@@ -59,23 +59,44 @@ export async function readStateRecords(owner?: OwnedOperation): Promise<StateRec
   }
 }
 
-/** 追加（按 id 去重）。超 500 条移动最旧并如实返回 overflow（界面提示导出）。 */
+/** 追加串行锁：读-改-写不得交错（手动补登与章后整理可能并发写同一键） */
+let appendChain: Promise<unknown> = Promise.resolve()
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = appendChain.then(task, task)
+  appendChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+/**
+ * 追加（按 id 去重）。超 500 条移动最旧并如实返回 overflow（界面提示导出）。
+ * 🔴 读库失败 ⇒ 中止追加（appended:0）：绝不能拿空数组当基线覆盖掉整本旧记录。
+ */
 export async function appendStateRecords(
   incoming: readonly StateRecord[], owner?: OwnedOperation,
 ): Promise<{ appended: number; total: number; overflow: number }> {
-  const list = await readStateRecords(owner)
-  const seen = new Set(list.map(r => r.id))
-  const add = incoming.filter(r => validRecord(r) && !seen.has(r.id))
-  if (!add.length) return { appended: 0, total: list.length, overflow: 0 }
-  const next = [...add, ...list]
-  const kept = next.slice(0, STATE_RECORD_LIMIT)
-  try {
-    if (owner) await db.setSettingFor(owner.projectId, STATE_RECORD_KEY, kept, owner)
-    else await db.setSetting(STATE_RECORD_KEY, kept)
-  } catch {
-    return { appended: 0, total: list.length, overflow: 0 }
-  }
-  return { appended: add.length, total: kept.length, overflow: Math.max(0, next.length - kept.length) }
+  return serialized(async () => {
+    let list: StateRecord[]
+    try {
+      const raw = owner
+        ? await db.getSettingFor<unknown>(owner.projectId, STATE_RECORD_KEY, [], owner)
+        : await db.getSetting<unknown>(STATE_RECORD_KEY, [])
+      list = Array.isArray(raw) ? raw.filter(validRecord) : []
+    } catch {
+      return { appended: 0, total: 0, overflow: 0 }
+    }
+    const seen = new Set(list.map(r => r.id))
+    const add = incoming.filter(r => validRecord(r) && !seen.has(r.id))
+    if (!add.length) return { appended: 0, total: list.length, overflow: 0 }
+    const next = [...add, ...list]
+    const kept = next.slice(0, STATE_RECORD_LIMIT)
+    try {
+      if (owner) await db.setSettingFor(owner.projectId, STATE_RECORD_KEY, kept, owner)
+      else await db.setSetting(STATE_RECORD_KEY, kept)
+    } catch {
+      return { appended: 0, total: list.length, overflow: 0 }
+    }
+    return { appended: add.length, total: kept.length, overflow: Math.max(0, next.length - kept.length) }
+  })
 }
 
 /**

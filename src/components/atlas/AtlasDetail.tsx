@@ -168,22 +168,38 @@ export default function AtlasDetail({
   const [stateRecords, setStateRecords] = useState<StateRecord[] | null>(null)
   const [stateDraft, setStateDraft] = useState('')
   const [stateNo, setStateNo] = useState('')
-  const loadStates = useCallback(() => {
+  const [addingState, setAddingState] = useState(false)
+  const stateAlive = useRef(true)
+  useEffect(() => { stateAlive.current = true; return () => { stateAlive.current = false } }, [])
+  const loadStates = useCallback((isCurrent: () => boolean = () => true) => {
     const pid = getCurrentProjectId()
     if (!pid) { setStateRecords(null); return }
-    void readStateRecords().then(list => setStateRecords(evolutionOf(list, { kind: 'row', tabId, id: row.id, projectId: pid }))).catch(() => setStateRecords(null))
+    void readStateRecords()
+      .then(list => { if (isCurrent()) setStateRecords(evolutionOf(list, { kind: 'row', tabId, id: row.id, projectId: pid })) })
+      .catch(() => { if (isCurrent()) setStateRecords(null) })
   }, [tabId, row.id])
-  useEffect(() => { loadStates() }, [loadStates])
+  useEffect(() => {
+    let cancelled = false
+    loadStates(() => !cancelled)
+    return () => { cancelled = true }
+  }, [loadStates])
   const addState = async () => {
+    if (addingState) return
     const pid = getCurrentProjectId(), state = stateDraft.trim(), no = Number(stateNo.trim())
     if (!pid || !state) { showToast('请先填写这一章的状态', 'info'); return }
-    const ref = { kind: 'row' as const, tabId, id: row.id, projectId: pid }
-    const r = await appendStateRecords([buildStateRecord({
-      ref, chapterId: '', chapterNo: Number.isFinite(no) && no > 0 ? Math.floor(no) : 0,
-      state, trigger: '手动补登',
-    })])
-    if (r.appended > 0) { setStateDraft(''); setStateNo(''); showToast('已补登一条状态演变', 'success'); loadStates() }
-    else showToast('补登没写进去，请重试', 'error')
+    setAddingState(true)
+    try {
+      const ref = { kind: 'row' as const, tabId, id: row.id, projectId: pid }
+      const r = await appendStateRecords([buildStateRecord({
+        ref, chapterId: '', chapterNo: Number.isFinite(no) && no > 0 ? Math.floor(no) : 0,
+        state, trigger: '手动补登',
+      })])
+      if (!stateAlive.current) return
+      if (r.appended > 0) { setStateDraft(''); setStateNo(''); showToast('已补登一条状态演变', 'success'); loadStates(() => stateAlive.current) }
+      else showToast('补登没写进去，请重试', 'error')
+    } finally {
+      if (stateAlive.current) setAddingState(false)
+    }
   }
 
   useLayoutEffect(() => {
@@ -612,64 +628,64 @@ export default function AtlasDetail({
             )}
           </div>
         )}
+
+        {/* 3.7.0 · W3：物品流转账本（只读；记录只追加，与手填的「流转轨迹」文本并存但不互相覆盖） */}
+        {tabId === 'items' && transfers && (
+          <section className="mt-4" data-item-transfers>
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className="text-11 text-ink-300">流转记录</span>
+              <span className="text-10 text-ink-500">{transfers.length} 笔 · 只追加不改写</span>
+            </div>
+            {transfers.length === 0 ? (
+              <div className="text-10 text-ink-500 leading-relaxed">还没有结构化流转记录。写完一章后可在「颉文姬 · 整理」里确认物品流转；表格里的「流转轨迹」文本仍可照常手填。</div>
+            ) : (
+              <ol className="space-y-1">
+                {transfers.map(t => (
+                  <li key={t.id} className="text-10 text-ink-400 leading-relaxed">
+                    <span className="text-ink-300">第{t.chapterNo || '?'}章</span>
+                    <span className="mx-1">·</span>{t.kind}
+                    {t.quantity ? ` ×${t.quantity}` : ''}
+                    {t.from || t.to ? `（${t.from || '—'}→${t.to || '—'}）` : ''}
+                    {t.evidence ? ` 「${t.evidence}」` : ''}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
+
+        {/* 3.7.0 · W4：状态演变（剧情内）—— 只追加、按章回溯；与「设定变更台账」是两回事 */}
+        {stateRecords && (
+          <section className="mt-4" data-state-evolution>
+            <div className="mb-1 flex items-center gap-1.5">
+              <span className="text-11 text-ink-300">状态演变</span>
+              <span className="text-10 text-ink-500">{stateRecords.length} 条 · 按章回溯，不改当前字段</span>
+            </div>
+            {stateRecords.length === 0 ? (
+              <div className="text-10 text-ink-500 leading-relaxed">还没有演变记录。章后整理确认「人物状态 / 关系变化」时会自动记一条；也可以在下方手动补登。</div>
+            ) : (
+              <ol className="space-y-1">
+                {stateRecords.map(r => (
+                  <li key={r.id} className="text-10 text-ink-400 leading-relaxed">
+                    <span className="text-ink-300">第{r.chapterNo || '?'}章</span>
+                    {r.previous ? <span className="text-ink-600">（改前：{r.previous}）</span> : null}
+                    <span className="mx-1">→</span>{r.state}
+                    {r.trigger ? <span className="text-ink-600"> · {r.trigger}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <input value={stateNo} onChange={e => setStateNo(e.target.value)} placeholder="章号" inputMode="numeric"
+                className="w-16 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
+              <input value={stateDraft} onChange={e => setStateDraft(e.target.value)} placeholder="第 N 章时是什么状态（作者直接写）"
+                className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
+              <Button variant="secondary" size="xs" onClick={() => void addState()} disabled={!stateDraft.trim() || addingState}>补登</Button>
+            </div>
+          </section>
+        )}
       </div>
 
-      {/* 3.7.0 · W3：物品流转账本（只读；记录只追加，与手填的「流转轨迹」文本并存但不互相覆盖） */}
-      {tabId === 'items' && transfers && (
-        <section className="px-4 pb-3" data-item-transfers>
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-11 text-ink-300">流转记录</span>
-            <span className="text-10 text-ink-500">{transfers.length} 笔 · 只追加不改写</span>
-          </div>
-          {transfers.length === 0 ? (
-            <div className="text-10 text-ink-500 leading-relaxed">还没有结构化流转记录。写完一章后可在「颉文姬 · 整理」里确认物品流转；表格里的「流转轨迹」文本仍可照常手填。</div>
-          ) : (
-            <ol className="space-y-1">
-              {transfers.map(t => (
-                <li key={t.id} className="text-10 text-ink-400 leading-relaxed">
-                  <span className="text-ink-300">第{t.chapterNo || '?'}章</span>
-                  <span className="mx-1">·</span>{t.kind}
-                  {t.quantity ? ` ×${t.quantity}` : ''}
-                  {t.from || t.to ? `（${t.from || '—'}→${t.to || '—'}）` : ''}
-                  {t.evidence ? ` 「${t.evidence}」` : ''}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      )}
-
-      {/* 3.7.0 · W4：状态演变（剧情内）—— 只追加、按章回溯；与「设定变更台账」是两回事 */}
-      {stateRecords && (
-        <section className="px-4 pb-3" data-state-evolution>
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-11 text-ink-300">状态演变</span>
-            <span className="text-10 text-ink-500">{stateRecords.length} 条 · 按章回溯，不改当前字段</span>
-          </div>
-          {stateRecords.length === 0 ? (
-            <div className="text-10 text-ink-500 leading-relaxed">还没有演变记录。章后整理确认「人物状态 / 关系变化」时会自动记一条；也可以在下方手动补登。</div>
-          ) : (
-            <ol className="space-y-1">
-              {stateRecords.map(r => (
-                <li key={r.id} className="text-10 text-ink-400 leading-relaxed">
-                  <span className="text-ink-300">第{r.chapterNo || '?'}章</span>
-                  {r.previous ? <span className="text-ink-600">（改前：{r.previous}）</span> : null}
-                  <span className="mx-1">→</span>{r.state}
-                  {r.trigger ? <span className="text-ink-600"> · {r.trigger}</span> : null}
-                </li>
-              ))}
-            </ol>
-          )}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <input value={stateNo} onChange={e => setStateNo(e.target.value)} placeholder="章号" inputMode="numeric"
-              className="w-16 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
-            <input value={stateDraft} onChange={e => setStateDraft(e.target.value)} placeholder="第 N 章时是什么状态（作者直接写）"
-              className="min-w-0 flex-1 rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-10 text-ink-200" />
-            <Button variant="secondary" size="xs" onClick={() => void addState()} disabled={!stateDraft.trim()}>补登</Button>
-          </div>
-        </section>
-      )}
-
       <footer className="shrink-0 border-t border-ink-700 px-4 py-2.5 flex items-center justify-between gap-2">
         <span className="text-10 text-ink-500 min-w-0 truncate">
           {editing

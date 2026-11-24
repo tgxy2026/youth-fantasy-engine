@@ -5,7 +5,8 @@
  *   · **显式录音**：必须点「开始」/「结束」，绝不静默开麦；录音中红点 + 计时；
  *   · 上限 120 秒 / 10MB，先到先停；
  *   · 录音只存在内存，转写后即弃；文本先放进输入框由作者编辑再保存；
- *   · 未配置转写服务时按钮不可用并如实说明原因。
+ *   · 未配置转写服务时按钮不可用并如实说明原因；
+ *   · 🔴 卸载（切页签）＝丢弃本次录音：只释放麦克风，**绝不自动转写上传**。
  */
 import { useEffect, useRef, useState } from 'react'
 import { Mic, Square } from 'lucide-react'
@@ -24,25 +25,40 @@ export default function VoiceInputButton({ onText, label = '语音' }: { onText:
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stopRef = useRef<() => void>(() => undefined)
+  const aliveRef = useRef(true)
+  const discardedRef = useRef(false)
 
-  useEffect(() => { void loadTranscribeConfig().then(setCfg).catch(() => setCfg(null)) }, [])
-  useEffect(() => () => { timerRef.current && clearInterval(timerRef.current); recorderRef.current?.state === 'recording' && recorderRef.current.stop() }, [])
+  useEffect(() => {
+    aliveRef.current = true
+    discardedRef.current = false
+    let cancelled = false
+    void loadTranscribeConfig().then(c => { if (!cancelled) setCfg(c) }).catch(() => { if (!cancelled) setCfg(null) })
+    return () => {
+      cancelled = true
+      aliveRef.current = false
+      discardedRef.current = true
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+    }
+  }, [])
 
   const ready = !!cfg && transcribeReady(cfg)
 
   const stopTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null } }
 
   const finish = async (blob: Blob) => {
+    if (!aliveRef.current || discardedRef.current) return
     setBusy(true)
     try {
       if (!cfg) return
       if (blob.size > VOICE_MAX_BYTES) { showToast('录音超过 10MB 上限，请缩短后重录', 'info'); return }
       const r = await transcribeAudio(blob, cfg)
+      if (!aliveRef.current) return
       if (!r.ok) { showToast(r.detail ?? '转写失败，请重试', 'error'); return }
       onText(r.text ?? '')
       showToast('已转写，先核对再保存', 'success')
     } finally {
-      setBusy(false)
+      if (aliveRef.current) setBusy(false)
     }
   }
 
@@ -54,16 +70,24 @@ export default function VoiceInputButton({ onText, label = '语音' }: { onText:
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 权限弹窗期间作者可能已切页签：流回来时组件已卸载 ⇒ 立即释放麦克风，不进录音
+      if (!aliveRef.current) { stream.getTracks().forEach(t => t.stop()); return }
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported(t)) ?? ''
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       chunksRef.current = []
-      rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      rec.ondataavailable = e => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+        // 10MB 先到先停（与 120 秒同口径）：累计体积超限立即结束，不等作者手动点
+        if (chunksRef.current.reduce((s, b) => s + b.size, 0) > VOICE_MAX_BYTES) stopRef.current()
+      }
       rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
         stopTimer()
-        setRecording(false)
+        if (aliveRef.current) setRecording(false)
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' })
         chunksRef.current = []
+        // 卸载触发的 stop：丢弃音频，绝不自动上传（「音频不上传直到你点结束」）
+        if (discardedRef.current) return
         if (blob.size > 0) void finish(blob)
       }
       recorderRef.current = rec
@@ -78,7 +102,7 @@ export default function VoiceInputButton({ onText, label = '语音' }: { onText:
         })
       }, 1000)
     } catch {
-      showToast('麦克风没有打开（可能是权限被拒）。不会在未授权时录音。', 'error')
+      if (aliveRef.current) showToast('麦克风没有打开（可能是权限被拒）。不会在未授权时录音。', 'error')
     }
   }
 

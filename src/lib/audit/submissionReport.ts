@@ -30,7 +30,7 @@ export interface SubmissionReportInput {
   platform?: { platform: string; observations: string[]; at: number }
   /** 正文事实：逐章指标里的连续无爽点段（本地事实） */
   body?: { lines: string[]; at: number }
-  /** 待办问题：优化工单未决条数 */
+  /** 待办问题：已留档检查报告里可挂到当前章节的待处理条数（只读汇总，不补跑检查） */
   todo?: { tickets: readonly TicketItem[]; at: number }
 }
 
@@ -76,7 +76,10 @@ export function buildSubmissionReport(input: SubmissionReportInput, now = Date.n
   sections.push(input.todo
     ? {
       key: 'todo', title: '待办问题', state: 'ran',
-      lines: [`优化工单未决 ${openTickets} 条`, ...(openTickets ? ['按章分组的明细在「优化工单」面板里。'] : ['当前没有未决条目。'])],
+      lines: [
+        `已留档检查发现 ${openTickets} 条待处理问题`,
+        ...(openTickets ? ['按章分组的明细在「优化工单」面板里。'] : ['这些问题匹配不到当前章节（可能已删章），请在「优化工单」面板核对。']),
+      ],
       source: '优化工单', at: input.todo.at,
     }
     : { key: 'todo', title: '待办问题', state: 'not-run', lines: [NOT_RUN_HINT], source: '优化工单', at: 0 })

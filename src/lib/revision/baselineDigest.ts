@@ -66,31 +66,31 @@ export async function outlineDigestForChapter(chapterId: string, owner?: OwnedOp
   }
 }
 
-/** 读一条固定引用的当前值（取不到 = 空串，仍在摘要里占位 —— 删除资料本身也是一次变化） */
+/**
+ * 读一条固定引用的当前值。条目已删 ⇒ 规范化空值占位（删除资料本身也是一次变化，可确定性重算）；
+ * 🔴 读库失败 ⇒ 异常上抛，由 settingsDigestForChapter 返 undefined 跳过这一维 ——
+ *    绝不让「读失败」伪装成「资料已删」，否则会把好候选误标过期（一号纪律）。
+ */
 async function valueOfRef(ref: RecordRef, pid: string, owner?: OwnedOperation): Promise<string> {
-  try {
-    if (ref.kind === 'card' || ref.kind === 'outline') {
-      const rows = owner ? await db.getCardRecordsFor(pid, ref.tabId, owner) : await db.getCardRecords(ref.tabId)
-      const hit = rows.find(r => r.id === ref.id)
-      return canonicalOf(hit?.name, hit?.data)
-    }
-    if (ref.kind === 'row') {
-      const rows = owner ? await db.getTableRowsFor(pid, ref.tabId, owner) : await db.getTableRows(ref.tabId)
-      const hit = rows.find(r => r.id === ref.id)
-      return canonicalOf(undefined, hit?.data)
-    }
-    if (ref.kind === 'form') {
-      const data = owner ? await db.getFormDataFor(pid, ref.tabId, owner) : await db.getFormData(ref.tabId)
-      return canonicalOf(undefined, data)
-    }
-    if (ref.kind === 'chapter') {
-      const chs = owner ? await db.getAllChapters(owner) : await db.getAllChapters()
-      return canonicalOf(undefined, { 正文: chs.find(c => c.id === ref.id)?.content ?? '' })
-    }
-    return ''
-  } catch {
-    return ''
+  if (ref.kind === 'card' || ref.kind === 'outline') {
+    const rows = owner ? await db.getCardRecordsFor(pid, ref.tabId, owner) : await db.getCardRecords(ref.tabId)
+    const hit = rows.find(r => r.id === ref.id)
+    return canonicalOf(hit?.name, hit?.data)
   }
+  if (ref.kind === 'row') {
+    const rows = owner ? await db.getTableRowsFor(pid, ref.tabId, owner) : await db.getTableRows(ref.tabId)
+    const hit = rows.find(r => r.id === ref.id)
+    return canonicalOf(undefined, hit?.data)
+  }
+  if (ref.kind === 'form') {
+    const data = owner ? await db.getFormDataFor(pid, ref.tabId, owner) : await db.getFormData(ref.tabId)
+    return canonicalOf(undefined, data)
+  }
+  if (ref.kind === 'chapter') {
+    const chs = owner ? await db.getAllChapters(owner) : await db.getAllChapters()
+    return canonicalOf(undefined, { 正文: chs.find(c => c.id === ref.id)?.content ?? '' })
+  }
+  return ''
 }
 
 /** 依赖设定摘要：章 id ⇒ 该章「本章资料」固定引用的当前值；没有固定项 → 空集摘要（稳定值） */

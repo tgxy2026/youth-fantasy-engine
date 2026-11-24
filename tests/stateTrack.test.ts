@@ -131,6 +131,48 @@ async function main() {
     ok('损坏数据读取不炸、按空账本处理', (await readStateRecords()).length === 0)
   }
 
+  // ---------- ⑥ 读库失败 ⇒ 中止追加：绝不拿空基线覆盖旧记录 ----------
+  {
+    await seed()
+    await db.setSetting(STATE_RECORD_KEY, [rec({ id: 'old-1', chapterNo: 1 })])
+    const badOps = {
+      ...memoryOps,
+      get: async (store: string, id: string) => {
+        if (store === 'settingsKV') throw new Error('settingsKV read down')
+        return memoryOps.get(store as never, id as never)
+      },
+    }
+    db.setStoreOps(badOps as never)
+    const r = await appendStateRecords([rec({ id: 'new-1', chapterNo: 2 })])
+    db.setStoreOps(memoryOps)
+    ok('读库失败 ⇒ 中止追加（appended 0）', r.appended === 0, JSON.stringify(r))
+    const raw = await getSettingFor<StateRecord[]>(PID, STATE_RECORD_KEY, [])
+    ok('读库失败不覆盖旧记录（旧记录原样还在）', raw.length === 1 && raw[0].id === 'old-1', JSON.stringify(raw))
+  }
+
+  // ---------- ⑦ 状态记录写失败 ⇒ 角色卡回滚，不留半截状态 ----------
+  {
+    await seed()
+    const badOps = {
+      ...memoryOps,
+      put: async (store: string, value: unknown) => {
+        if (store === 'settingsKV') throw new Error('settingsKV down')
+        return memoryOps.put(store as never, value as never)
+      },
+    }
+    db.setStoreOps(badOps as never)
+    const item = {
+      kind: 'status' as const, key: 'st-y', status: 'changed' as const, label: '甲：重伤', detail: '第3章',
+      evidence: '甲身中三刀，倒在血泊里',
+      raw: { st: { name: '甲', state: '重伤', evidence: '甲身中三刀，倒在血泊里' }, tabId: 'char-main', cardId: 'char1', fieldKey: '一、角色档案::人物状态' },
+    }
+    const r = await applyPostProcess({ chapterId: 'c3', content: 'x', chapterTitle: '第3章' }, [item])
+    db.setStoreOps(memoryOps)
+    ok('状态记录写失败 ⇒ 该条目标为失败', r.created === 0 && r.failed.length === 1, JSON.stringify(r))
+    const card = (await db.getCardRecords('char-main')).find(c => c.id === 'char1')!
+    ok('角色卡回滚到旧值（不出现「卡改了、记录没有」）', card.data['一、角色档案::人物状态'] === '健在', card.data['一、角色档案::人物状态'])
+  }
+
   console.log(`\n———— 结果：${pass} 通过 / ${fail} 失败 ————`)
   // ---------- 接线闸：角色卡详情有「状态演变」 ----------
   {

@@ -12,7 +12,7 @@ import { copyText } from '@/components/dialogs/dialogs'
 import * as db from '@/lib/db'
 import { sortChapters, chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { computePaceSeries } from '@/lib/outline/paceMetrics'
-import { buildTicket } from '@/lib/app/optimizeTicket'
+import { loadCheckReports, intakeFromReports, mergeIntake, type ChapterRef } from '@/lib/revision/ticketIntake'
 import { buildSubmissionReport, submissionReportJson, type SubmissionReport } from '@/lib/audit/submissionReport'
 import { readOpeningSnapshot } from '@/lib/audit/openingSnapshot'
 import { readPlatformSnapshot, readReaderProbeSnapshot } from '@/lib/audit/submissionSnapshots'
@@ -27,11 +27,11 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
     void (async () => {
       try {
         const pid = db.getCurrentProjectId()
-        const [chs, vols, hooks, tickets, opening, platform, reader] = await Promise.all([
+        const [chs, vols, hooks, reports, opening, platform, reader] = await Promise.all([
           db.getAllChapters().catch(() => [] as Chapter[]),
           db.getAllVolumes().catch(() => [] as Volume[]),
           db.getTableRows('hookpoints').catch(() => [] as TableRow[]),
-          buildTicket().catch(() => []),
+          loadCheckReports(pid).catch(() => []),
           readOpeningSnapshot(pid).catch(() => null),
           readPlatformSnapshot(pid).catch(() => null),
           readReaderProbeSnapshot(pid).catch(() => null),
@@ -46,13 +46,19 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
           }),
         )
         if (cancelled) return
-        const lines = series.observations.length ? series.observations : ['还没有可统计的正文。']
+        // 🔴 待办只读**已留档**的检查报告（与工单同一套挂章/去重口径）；绝不在此页补跑检查
+        const refs: ChapterRef[] = sorted.map(c => ({ id: c.id, title: c.title || '', no: seq.get(c.id) ?? 0, body: c.content ?? '' }))
+        const tickets = mergeIntake([], intakeFromReports(reports, refs).items).items
+        const todoAt = reports.reduce((m, r) => Math.max(m, r.at ?? 0), 0)
         const readerLine = reader ? `最近一次读者探针（${reader.lens}）：${reader.summary}（${reader.notes} 条反馈）` : null
+        const bodyLines = series.observations.length
+          ? (readerLine ? [...series.observations, readerLine] : series.observations)
+          : (readerLine ? [readerLine] : [])
         setReport(buildSubmissionReport({
           ...(opening ? { opening: { conclusion: opening.conclusion, at: opening.at, source: opening.source } } : {}),
           ...(platform ? { platform: { platform: platform.platform, observations: platform.observations, at: platform.at } } : {}),
-          body: { lines: readerLine ? [...lines, readerLine] : lines, at: Math.max(Date.now(), reader?.at ?? 0) },
-          todo: { tickets, at: Date.now() },
+          ...(bodyLines.length ? { body: { lines: bodyLines, at: Math.max(Date.now(), reader?.at ?? 0) } } : {}),
+          ...(reports.length ? { todo: { tickets, at: todoAt || Date.now() } } : {}),
         }))
       } finally {
         if (!cancelled) setLoading(false)
