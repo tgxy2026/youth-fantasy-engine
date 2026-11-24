@@ -397,13 +397,25 @@ function cacheControlFor(abs, isIndex) {
 }
 
 function baseHeaders(abs, ext, isIndex) {
-  return {
+  const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Cache-Control': cacheControlFor(abs, isIndex),
   }
+  /**
+   * 版本清单**允许任意源读取**（跨域更新的唯一一处例外）。
+   *
+   * 🔴 2026-11-24 便携版验收实测：便携版在 `http://127.0.0.1:<port>` 起页面，
+   *    桌面版 renderer 也在 `file://` / 自定义协议里跑，两者都会 fetch 本清单做更新检查；
+   *    不给 `Access-Control-Allow-Origin` 时浏览器按 CORS 拦掉，控制台留 pageerror，
+   *    而回落路 Gitee 有 403 限流 ⇒ 这两端的「检查更新」长期只剩一条不稳的路。
+   *    清单本身是公开只读文件（版本号、产物直链、sha256），**不含任何用户数据**，
+   *    加 `*` 不泄露任何东西；其余静态文件仍保持不给跨域。
+   */
+  if (abs.endsWith(sep + 'version.json')) headers['Access-Control-Allow-Origin'] = '*'
+  return headers
 }
 
 function serveFile(req, res, abs, ext) {
