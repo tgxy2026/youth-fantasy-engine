@@ -11,12 +11,13 @@ import StoryDateInput from '@/components/common/StoryDateInput'
 import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
 import { createIndexedFieldWriter } from '@/lib/settings/indexedFieldWriter'
-import { collectTableFields, collectTableKeys } from '@/lib/settings/settingSearchFields'
+import { collectTableFields, collectTableKeys, pickKnownKeys } from '@/lib/settings/settingSearchFields'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { registerAuxiliaryLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { useAliasRevision, sanitizeAliases, defaultLabelOf, type AliasMap } from '@/lib/settings/fieldAlias'
 import { loadFieldLabels } from '@/lib/templates/labels'
+import { loadEffectiveSearchMeta, type EffectiveSearchMeta } from '@/lib/templates/effectiveSearchMeta'
 import { useFieldDefinitionRevision } from '@/lib/templates/useFieldRenames'
 // 卡片页签的字段键与「字段名」按钮**同源**（moduleAliasTargets）—— 各算一份必然漂移
 import { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
@@ -179,9 +180,14 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
       // 显示名：与 AI 上下文同一口径（采用模板 > 轻量定义 > 别名 > 原名），
       // 一次并发读齐本页用得到的页签，供下面逐字段取名字。
       const aliasOf = new Map<string, AliasMap>()
+      /** 当前有效字段（与表格 / 图鉴同口径）；读取失败时为空，回退旧行为 */
+      const metaOf = new Map<string, EffectiveSearchMeta>()
       await Promise.all(
         TABS.filter(t => !hiddenTabs.has(t.id)).map(async t => {
-          aliasOf.set(t.id, await loadFieldLabels(t))
+          const [labels, meta] = await Promise.all([loadFieldLabels(t), loadEffectiveSearchMeta(t)])
+          if (meta) metaOf.set(t.id, meta)
+          // 图鉴自定义字段的显示名只在 meta 里；有 meta 时以它为准（仍保留 loadFieldLabels 作回退）
+          aliasOf.set(t.id, meta?.labels ?? labels)
         }),
       )
       if (cancelled || !current()) return
@@ -198,6 +204,7 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
             moduleAliasTargets(tab.modules).map(t => t.key),
             aliasOf.get(tab.id) ?? {},
           )
+          const known = metaOf.get(tab.id)
           for (const rec of recs) {
             // 角色卡需要过滤："未登场"的角色不显示
             // （人物状态字段可能位于不同模块下，如"一、基础信息::人物状态"或"NPC档案::人物状态"，统一按字段名查找）
@@ -214,12 +221,12 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
               recordId: rec.id,
               title: rec.name,
               fields: Object.entries(rec.data)
-                .filter(([, v]) => v && v.trim())
+                .filter(([k, v]) => v && v.trim() && (!known || known.keys.has(k)))
                 .map(([k, v]) => {
                   // 🔴 显示名的默认值走单一真源 `defaultLabelOf`（取**最后**一段 `::`）——
                   //    别在这里自己 split('::')[1]：键含多段 `::` 时两者会取到不同的段。
                   const label = defaultLabelOf(k)
-                  const alias = clean[k]
+                  const alias = (known?.labels ?? clean)[k]
                   const opts = CARD_SELECT_FIELDS[label]
                   const ref = CARD_TABLE_REF_FIELDS[label]
                   if (ref) return { label, alias, value: v, dataKey: k, type: 'tableRef' as const, refTab: ref.tabId, refCol: ref.col, multi: ref.multi }
@@ -242,9 +249,13 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
         // 🔴 3.6.1：字段清单 = schema 列 ∪ 记录里真实存在的键。
         //    图鉴视图新增的自定义字段、采用模板后的字段都只活在 `row.data` 里，
         //    只按 schema 枚举会让它们在设定检索里"消失"（作者看到的正是"改了没同步"）。
-        const allKeys = collectTableKeys(rows.map(r => r.data), colNames)
+        const allKeys = pickKnownKeys(
+          collectTableKeys(rows.map(r => r.data), colNames),
+          metaOf.get(tab.id)?.keys,
+        )
         // 键名 → 作者自定义显示名（与表头「字段名」按钮同一份存储）
         const clean = sanitizeAliases(allKeys, aliasOf.get(tab.id) ?? {})
+        const labels = metaOf.get(tab.id)?.labels ?? clean
         // 列定义索引：用于让编辑时沿用原表格的控件类型（select 列仍走下拉）
         const colMap = new Map((tab.columns ?? []).map(c => [c.name, c]))
         const isPair = RELATION_PAIR_TAB_IDS.has(tab.id)
@@ -280,7 +291,7 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
               data: r.data,
               keys: allKeys,
               columnOf: n => colMap.get(n),
-              labels: clean,
+              labels,
             }),
           })
         }

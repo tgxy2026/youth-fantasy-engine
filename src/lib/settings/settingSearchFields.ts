@@ -87,3 +87,17 @@ export function collectTableKeys(
   }
   return keys
 }
+
+/**
+ * 只保留「当前有效字段」里的键。
+ *
+ * 🔴 3.7.3 修：记录里的历史键（删除 / 归档的自定义字段、隐藏列、旧模板字段）
+ *    仍留在 `row.data` 里；表格与图鉴不渲染它们，设定检索也不该再列出来。
+ *    `known` 取不到（读取失败）时回退全部键 —— 宁可多显示，也不要整页空白。
+ */
+export function pickKnownKeys(
+  keys: readonly string[],
+  known: ReadonlySet<string> | null | undefined,
+): string[] {
+  return known ? keys.filter(key => known.has(key)) : [...keys]
+}

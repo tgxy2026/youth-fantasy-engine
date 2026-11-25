@@ -14,9 +14,13 @@
 //   ⑥ 只读投影：不改原 `data`。
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import * as db from '../src/lib/db'
+import { memoryOps, __resetMockStores } from './mock-memory'
+import { TABS } from '../src/lib/schema'
 import {
-  collectTableFields, collectTableKeys, type SearchColumnLike,
+  collectTableFields, collectTableKeys, pickKnownKeys, type SearchColumnLike,
 } from '../src/lib/settings/settingSearchFields'
+import { loadEffectiveSearchMeta } from '../src/lib/templates/effectiveSearchMeta'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -35,7 +39,7 @@ const COLUMNS: SearchColumnLike[] = [
 ]
 const columnOf = (name: string) => COLUMNS.find(c => c.name === name)
 
-function main() {
+async function main() {
   // ① 核心：图鉴里新增的自定义字段（不在 schema 列里）也要出现
   {
     const data = { 编号: 'R-001', 名称: '赤炎狼', 食性: '肉食', 弱点: '畏水' }
@@ -101,14 +105,38 @@ function main() {
     const src = readFileSync(path.join(process.cwd(), 'src/components/settings/SettingSearch.tsx'), 'utf8')
     ok('源码闸：检索页用 collectTableFields 建字段', src.includes('collectTableFields('))
     ok('源码闸：检索页用 collectTableKeys 求键并集', src.includes('collectTableKeys('))
+    ok('源码闸：检索页按当前有效字段过滤历史键', src.includes('loadEffectiveSearchMeta(') && src.includes('pickKnownKeys('))
     ok('源码闸：不再按 tab.columns 直接枚举字段（防回退）',
       !/fields:\s*colNames\s*\n?\s*\.filter/.test(src))
     ok('源码闸：聚焦 / 可见性变化会重建索引（跨窗口同步）',
       src.includes("window.addEventListener('focus', refresh)") && src.includes("document.addEventListener('visibilitychange', refresh)"))
   }
 
+  // ⑧ 当前有效字段过滤：历史键不出现，读取失败回退全部
+  {
+    const keys = ['名称', '旧字段', '新字段']
+    ok('历史老键被当前有效字段过滤', pickKnownKeys(keys, new Set(['名称', '新字段'])).join(',') === '名称,新字段')
+    ok('有效字段读取失败时保留全部（不整页空白）', pickKnownKeys(keys, null).join(',') === '名称,旧字段,新字段')
+  }
+
+  // ⑨ 与表格 / 图鉴同口径的有效字段解析（IO 层）
+  {
+    db.setStoreOps(memoryOps)
+    __resetMockStores()
+    db.setCurrentProject('p-setting-search')
+    const items = TABS.find(t => t.id === 'items')
+    const card = TABS.find(t => t.id === 'char-main')
+    if (!items || !card) throw new Error('测试所需的 items / char-main 页签不存在')
+    const meta = await loadEffectiveSearchMeta(items)
+    ok('表格有效字段能解析出来', !!meta && meta.keys.size > 0 && meta.keys.has('名称'), JSON.stringify([...(meta?.keys ?? [])]))
+    ok('历史自定义键 / 已删字段不进入有效字段', !!meta && !meta.keys.has('cf_deleted_field'))
+    const cardMeta = await loadEffectiveSearchMeta(card)
+    ok('卡片有效字段能解析出来且键仍带模块前缀',
+      !!cardMeta && [...cardMeta.keys].some(k => k.includes('::')))
+  }
+
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} settingSearchFields ${pass}/${pass + fail}`)
   if (fail) process.exitCode = 1
 }
 
-main()
+main().catch(err => { console.error(err); process.exit(1) })
