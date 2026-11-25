@@ -1,6 +1,7 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type, Compass, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type, Compass, X, BookText } from 'lucide-react'
+import { getTabIcon, getTabSubtitle } from '@/components/app/sidebarTabMeta'
 import BrandMark from '@/components/common/BrandMark'
 import BackToSource, { type ReturnSource } from '@/components/app/BackToSource'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -358,13 +359,16 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
       )}
 
       {/* Nav */}
-      <nav className={`min-h-0 py-2 px-2 space-y-0.5 ${overlay ? 'shrink-0' : 'flex-1 overflow-y-auto'}`}>
+      <nav className={`min-h-0 py-2.5 px-2 space-y-1 ${overlay ? 'shrink-0' : 'flex-1 overflow-y-auto'}`}>
         {!overlay && focusGroup && onToggleNavMode && (
-          <div className="flex items-center justify-between px-2 py-1 mb-1">
-            <span className="text-11 font-semibold text-ink-400 tracking-wide truncate">
-              {navMode === 'focus' ? focusGroup : '全部目录'}
+          <div className="flex items-center justify-between gap-2 px-2 py-1 mb-1.5 border-b border-ink-700/60 pb-2">
+            <span className="flex items-center gap-1.5 min-w-0 text-12 font-semibold text-ink-200 tracking-wide truncate">
+              {navMode === 'focus' && GROUP_ICONS[focusGroup] && (
+                <span className="text-amber shrink-0" aria-hidden="true">{GROUP_ICONS[focusGroup]}</span>
+              )}
+              <span className="truncate">{navMode === 'focus' ? focusGroup : '全部目录'}</span>
             </span>
-            <Button variant="bare" onClick={onToggleNavMode} title={navMode === 'focus' ? '展开全部功能目录' : '仅看当前所选分组'} className="h-5 px-1.5 rounded-md text-10 text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 shrink-0">{navMode === 'focus' ? '全部目录' : '仅当前组'}</Button>
+            <Button variant="bare" onClick={onToggleNavMode} title={navMode === 'focus' ? '展开全部功能目录' : '仅看当前所选分组'} className="h-6 px-2 rounded-md text-11 text-ink-300 hover:text-ink-100 bg-ink-800/50 hover:bg-ink-800 border border-ink-700/60 shrink-0">{navMode === 'focus' ? '全部目录' : '仅当前组'}</Button>
           </div>
         )}
         {GROUPS.map(group => {
@@ -380,7 +384,7 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
               {!focusActive && (
                 <Button variant="bare"
                   onClick={() => toggleGroup(group)}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-11 font-medium text-ink-400 hover:text-ink-200 transition-colors tracking-wider"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-12 font-semibold text-ink-300 hover:text-ink-100 transition-colors tracking-wide"
                 >
                   {GROUP_ICONS[group]}
                   <span>{group}</span>
@@ -391,11 +395,44 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
                 </Button>
               )}
               {isOpen && (
-                <div className={`${focusActive ? 'space-y-0.5' : 'mt-0.5 space-y-0.5'}`}>
+                <div className={focusActive ? 'space-y-1.5' : 'mt-0.5 space-y-0.5'}>
                   {tabs.map(tab => {
                     const active = activeTab === tab.id
-                    const padLeft = focusActive ? 'pl-2.5' : 'pl-7'
-                    const subPadLeft = focusActive ? 'pl-6' : 'pl-11'
+                    const subPadLeft = focusActive ? 'pl-8' : 'pl-9'
+                    const tabClass = focusActive
+                      ? `group w-full text-left !justify-start px-2.5 py-2.5 rounded-xl transition-all duration-150 flex items-center gap-2.5 border ${active
+                        ? 'bg-amber/12 text-amber border-amber/35 shadow-sm'
+                        : 'text-ink-200 hover:text-ink-50 hover:bg-ink-800/75 border-ink-700/35 hover:border-ink-700/70'}`
+                      : `group w-full text-left !justify-start px-2.5 py-1.5 pl-4 rounded-lg text-13 transition-all duration-150 flex items-center gap-2 border ${active
+                        ? 'bg-amber/12 text-amber font-medium border-amber/30'
+                        : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border-transparent'}`
+                    const renderTabBody = (trailing: React.ReactNode) => (focusActive ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-colors ${active
+                            ? 'bg-amber/18 text-amber border border-amber/25'
+                            : 'bg-ink-800/80 text-ink-400 group-hover:text-ink-200 group-hover:bg-ink-700/70'}`}
+                        >
+                          {getTabIcon(tab, 16)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-14 font-medium leading-tight truncate">{tab.name}</span>
+                          <span aria-hidden="true" className={`block text-11 leading-tight truncate mt-0.5 ${active ? 'text-amber/75' : 'text-ink-400/90 group-hover:text-ink-300'}`}>
+                            {getTabSubtitle(tab)}
+                          </span>
+                        </span>
+                        {trailing}
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true" className={`shrink-0 ${active ? 'text-amber' : 'text-ink-400 group-hover:text-ink-200'}`}>
+                          {getTabIcon(tab, 14)}
+                        </span>
+                        <span className="truncate flex-1">{tab.name}</span>
+                        {trailing}
+                      </>
+                    ))
                     // 「章节总表」展开为各卷子表（按卷建表）：每卷一张独立台账表
                     if (tab.id === 'chapter-master') {
                       return (
@@ -403,19 +440,18 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
                           <Button variant="bare"
                             onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
                             aria-current={active ? 'page' : undefined}
-                            className={`w-full text-left !justify-start px-2.5 py-1.5 ${padLeft} rounded-lg text-13 transition-all duration-150 flex items-center
-                              ${active
-                                ? 'bg-amber/12 text-amber font-medium border border-amber/30'
-                                : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
+                            aria-label={tab.name}
+                            className={tabClass}
                           >
-                            {tab.name}
-                            <ChevronDown size={11} className={`ml-auto transition-transform duration-200 ${volOpen ? '' : '-rotate-90'}`} />
+                            {renderTabBody(
+                              <ChevronDown aria-hidden="true" size={focusActive ? 13 : 12} className={`shrink-0 transition-transform duration-200 ${volOpen ? '' : '-rotate-90'}`} />
+                            )}
                           </Button>
                           {volOpen && (
-                            <div className="mt-0.5 space-y-0.5">
+                            <div className="mt-1 space-y-0.5">
                               {volumeTabs.length === 0 && (
                                 <Button onClick={createVolume} variant="secondary" size="sm" className="w-full text-left flex items-center">
-                                  <FolderPlus size={11} /> 新建第一卷
+                                  <FolderPlus size={12} /> 新建第一卷
                                 </Button>
                               )}
                               {volumeTabs.map(v => (
@@ -423,12 +459,14 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
                                     aria-current={v.id === activeTab ? 'page' : undefined}
-                                    className={`flex-1 text-left !justify-start px-2.5 py-1 ${subPadLeft} rounded-lg text-12 transition-all duration-150
+                                    aria-label={v.name}
+                                    className={`flex-1 text-left !justify-start px-2.5 py-1.5 ${subPadLeft} rounded-lg text-13 transition-all duration-150 flex items-center gap-1.5
                                       ${v.id === activeTab
                                         ? 'bg-amber/12 text-amber font-medium border border-amber/30'
                                         : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
                                   >
-                                    {v.name}
+                                    <BookText size={12} aria-hidden="true" className="shrink-0 opacity-75" />
+                                    <span className="truncate">{v.name}</span>
                                   </Button>
                                   <Button variant="bare"
                                     onClick={() => removeVolume(v)}
@@ -440,8 +478,8 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="sm" className="w-full text-left flex items-center">
-                                  <FolderPlus size={11} /> 新建卷
+                                <Button onClick={createVolume} variant="secondary" size="sm" className="w-full text-left flex items-center mt-1">
+                                  <FolderPlus size={12} /> 新建卷
                                 </Button>
                               )}
                             </div>
@@ -454,12 +492,16 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
                         aria-current={active ? 'page' : undefined}
-                        className={`w-full text-left !justify-start px-2.5 py-1.5 ${padLeft} rounded-lg text-13 transition-all duration-150
-                          ${active
-                            ? 'bg-amber/12 text-amber font-medium border border-amber/30'
-                            : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
+                        aria-label={tab.name}
+                        className={tabClass}
                       >
-                        {tab.name}
+                        {renderTabBody(focusActive ? (
+                          <ChevronRight
+                            aria-hidden="true"
+                            size={14}
+                            className={active ? 'shrink-0 text-amber/80' : 'shrink-0 text-ink-500 opacity-0 group-hover:opacity-70 transition-opacity'}
+                          />
+                        ) : null)}
                       </Button>
                     )
                   })}
