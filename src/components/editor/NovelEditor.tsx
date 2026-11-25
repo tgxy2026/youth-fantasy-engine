@@ -611,35 +611,35 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               >
                 <Redo2 size={14} />
               </Button>
-              <Button variant="ghost" size="sm" aria-pressed={jieWenJiOpen}
+              <Button variant="bare" aria-pressed={jieWenJiOpen}
                 data-guide="jiewenji-entry"
                 onClick={() => setJieWenJiOpen(o => !o)}
-                className={`shrink-0 ${jieWenJiOpen ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300 hover:text-amber'}`}
+                className={`h-8 px-3 text-12 border shrink-0 ${jieWenJiOpen ? 'bg-amber/12 text-amber border-amber/30' : 'border-transparent text-ink-300 hover:text-amber hover:bg-ink-800/70'}`}
                 title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
                 <Wand2 size={14} /> 颉文姬
               </Button>
               {companionTools}
               <div className="w-px h-4 bg-ink-700/60 mx-0.5" />
-              <Button variant="ghost" size="sm" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`shrink-0 ${showRefs ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+              <Button variant="bare" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`h-8 px-3 text-12 border shrink-0 ${showRefs ? 'bg-amber/12 text-amber border-amber/30' : 'border-transparent text-ink-300 hover:text-amber hover:bg-ink-800/70'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
               </Button>
               {secondaryTools}
-              <Button variant="ghost" size="sm" aria-pressed={searchVisible || searchDrawer}
+              <Button variant="bare" aria-pressed={searchVisible || searchDrawer}
                 onClick={() => afterSearchSubmit(() => {
                   if (showRefs) setShowRefs(false)
                   else if (!searchFits) setSearchDrawer(true)
                   else setShowSearch(!showSearch)
                 })}
-                className={`shrink-0 ${searchVisible || searchDrawer ? '!text-ink-100 !bg-ink-800/60' : 'text-ink-300'}`}
+                className={`h-8 px-3 text-12 border shrink-0 ${searchVisible || searchDrawer ? 'text-ink-100 bg-ink-800/60 border-transparent' : 'border-transparent text-ink-300 hover:text-ink-100 hover:bg-ink-800/70'}`}
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {/* 🔴 2026-11-15：lucide 的命名与箭头方向相反 —— PanelRightClose 实际画的是「→」，
                     PanelRightOpen 画的是「←」。按作者口径：展开时给「←」（点它收起），隐藏时给「→」（点它展开）。 */}
                 {searchVisible ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />} 设定检索
               </Button>
-              <Button variant="ghost" size="sm" aria-pressed={focusMode}
+              <Button variant="bare" aria-pressed={focusMode}
                 onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
-                className={`shrink-0 ${focusMode ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300'}`}
+                className={`h-8 px-3 text-12 border shrink-0 ${focusMode ? 'bg-amber/12 text-amber border-amber/30' : 'border-transparent text-ink-300 hover:text-ink-100 hover:bg-ink-800/70'}`}
                 title={focusMode ? '退出专注模式' : '专注模式'}>
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {focusMode ? '退出专注' : '专注'}
               </Button>

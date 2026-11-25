@@ -4,8 +4,8 @@
 // Dismiss only known startup reminders, then require a real, actionable editor navigation control.
 // A late reminder between the visibility check and click is retried within the same bounded deadline.
 async function openEditorNavigation(page, timeout = 45000) {
-  await page.locator('nav').first().waitFor({ state: 'attached', timeout })
-  const nav = page.getByRole('navigation').first()
+  await page.locator('aside nav').first().waitFor({ state: 'attached', timeout })
+  const nav = page.locator('aside nav').first()
   const end = Date.now() + timeout
   let lastError
   while (Date.now() < end) {
@@ -24,6 +24,14 @@ async function openEditorNavigation(page, timeout = 45000) {
         .click({ timeout: Math.min(1500, Math.max(1, end - Date.now())) }).catch(() => {})
       await guide.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     }
+    /**
+     * 3.7.2 双层工坊导航默认只展开「当前所选分组」；下游探针会在返回的 nav 里
+     * 继续点击其它分组页签（如章节细纲 / 关系图 / 时间脉络），因此此处先展开「全部目录」。
+     */
+    const showAll = nav.getByRole('button', { name: '全部目录', exact: true }).first()
+    if (await showAll.isVisible().catch(() => false)) {
+      await showAll.click({ timeout: Math.min(1500, Math.max(1, end - Date.now())) }).catch(() => {})
+    }
     try {
       await nav.getByRole('button', { name: '正文编辑', exact: true }).click({ timeout: Math.min(1500, Math.max(1, end - Date.now())) })
       return nav
@@ -40,7 +48,7 @@ async function openEditorNavigation(page, timeout = 45000) {
    */
   try {
     const diag = await page.evaluate(() => {
-      const nav = document.querySelector('nav')
+      const nav = document.querySelector('aside nav') || document.querySelector('nav')
       const buttons = nav ? [...nav.querySelectorAll('button')] : []
       const target = buttons.find(b => (b.textContent || '').trim() === '正文编辑')
       if (!target) {

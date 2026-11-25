@@ -364,15 +364,7 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
             <span className="text-11 font-semibold text-ink-400 tracking-wide truncate">
               {navMode === 'focus' ? focusGroup : '全部目录'}
             </span>
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={onToggleNavMode}
-              title={navMode === 'focus' ? '展开全部功能目录' : '仅看当前所选分组'}
-              className="!h-5 !px-1.5 !text-10 text-ink-400 hover:text-ink-100 shrink-0"
-            >
-              {navMode === 'focus' ? '全部目录' : '仅当前组'}
-            </Button>
+            <Button variant="bare" onClick={onToggleNavMode} title={navMode === 'focus' ? '展开全部功能目录' : '仅看当前所选分组'} className="h-5 px-1.5 rounded-md text-10 text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 shrink-0">{navMode === 'focus' ? '全部目录' : '仅当前组'}</Button>
           </div>
         )}
         {GROUPS.map(group => {
@@ -505,8 +497,8 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
         ref={flyoutRef}
         role="region"
         aria-label="界面与数据设置面板"
-        className={`fixed left-12 bottom-0 max-h-[min(78vh,calc(100vh-3.5rem))] rounded-tr-xl border-t border-r border-ink-700/80 bg-ink-900/98 backdrop-blur-md shadow-2xl ws-surface ws-flyout-right flex flex-col overflow-hidden ${toolsOpen ? '' : 'hidden'}`}
-        style={{ zIndex: Z.dropdown, width: collapsed ? '224px' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: 224 }}
+        className={`fixed left-12 bottom-0 rounded-tr-xl border-t border-r border-ink-700/80 bg-ink-900/98 backdrop-blur-md shadow-2xl ws-surface ws-flyout-right flex flex-col overflow-hidden ${toolsOpen ? '' : 'hidden'}`}
+        style={{ zIndex: Z.dropdown, width: collapsed ? '224px' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: 224, maxHeight: `min(${foldVh('78vh')}, calc(${foldVh('100vh')} - 3.5rem))` }}
       >
         <div className="h-10 shrink-0 px-3 border-b border-ink-700/70 flex items-center justify-between gap-2">
           <span className="text-12 font-semibold text-ink-200 tracking-wide">界面与数据</span>
