@@ -218,7 +218,7 @@ export default function ChapterContextPanel({
               {outlineSuggestions.length > 0 && (
                 <div className="rounded-lg border border-ink-700 bg-ink-900/45 p-2 space-y-2">
                   <div className="text-10 font-medium text-ink-300">细纲中提到的登记资料</div>
-                  <p className="text-9 text-ink-500 leading-relaxed">按名称、别称或编号做字面匹配。唯一匹配可直接固定；同名资料会列出候选供你选择。固定只方便本章查看，不会自动加入 AI 请求。</p>
+                  <p className="text-9 text-ink-500 leading-relaxed">按名称、别称或编号做字面匹配。唯一匹配可直接固定；同名资料会列出候选供你选择。固定只方便本章查看，不会自动加入 AI 续写请求；导出 WCP 网页资料包时会自动带入。</p>
                   {outlineSuggestions.map(suggestion => (
                     <div key={`${suggestion.fieldKey}|${suggestion.term}`} className="border-t border-ink-700/60 pt-1.5">
                       <div className="mb-1 text-9 text-ink-500">
@@ -277,7 +277,7 @@ export default function ChapterContextPanel({
           )) : <p className="px-2 py-1 text-10 text-ink-500">{catalogError ? '资料目录读取失败，暂时无法搜索；可稍后重新打开本章资料。' : '没有找到可固定的资料。'}</p> : <p className="px-2 py-1 text-10 text-ink-500">正在读取资料…</p>)}
           <div>
             <div className="px-1 py-1 text-10 text-ink-500">固定资料 · {pinned.length}</div>
-            {pinned.length === 0 ? <p className="px-2 py-2 text-11 text-ink-500">暂时没有固定资料。固定只方便本章查看，不会自动加入 AI 请求。</p> : pinned.map(({ ref, item, unavailable }) => (
+            {pinned.length === 0 ? <p className="px-2 py-2 text-11 text-ink-500">暂时没有固定资料。固定只方便本章查看，不会自动加入 AI 续写请求；导出 WCP 网页资料包时会自动带入。</p> : pinned.map(({ ref, item, unavailable }) => (
               <div key={chapterContextRefKey(ref)} className="rounded-lg px-2 py-1.5 hover:bg-ink-800 flex items-start gap-2">
                 <Users size={12} className="text-amber mt-0.5 shrink-0" />
                 <button type="button" disabled={!item} onClick={() => onOpenRecord(ref)} className="text-left min-w-0 flex-1 disabled:cursor-default">
@@ -309,7 +309,7 @@ export default function ChapterContextPanel({
 
       <footer className="px-3 py-2 border-t border-ink-700 text-10 text-ink-500 leading-relaxed shrink-0">
         跟随当前章：切换章节会换成那一章自己的绑定与固定项，正文草稿与光标留在编辑区。
-        <span className="mt-1 block">固定只方便本章查看；续写是否带入固定资料，仍按「续写计划」里你勾选的来源，不因打开这个抽屉而改变。</span>
+        <span className="mt-1 block">固定只方便本章查看；续写是否带入固定资料，仍按「续写计划」里你勾选的来源，不因打开这个抽屉而改变；导出 WCP 网页资料包时会自动带入这些固定资料。</span>
         {!docked && <span className="mt-1 block text-ink-600">窄窗口下抽屉浮在正文右侧，按 Esc 或右上角 × 收起，快捷键与工具栏都仍可用。</span>}
       </footer>
     </section>

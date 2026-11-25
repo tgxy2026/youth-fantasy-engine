@@ -171,8 +171,10 @@ function case6a() {
   const dataHook = read('src/components/editor/useChapterContextData.ts')
   ok('⑥⑦ A1 有细纲/关联资料/正文引用三项切换',
     panel.includes("['outline', '细纲']") && panel.includes("['materials', '关联资料']") && panel.includes("['quotes', '正文引用']"))
+  const ctxSrc = read('src/lib/revision/chapterContext.ts')
   ok('⑥⑧ 细纲与固定资料按项目设置持久化',
-    dataHook.includes('chapterContext32:') && dataHook.includes('getSettingFor') && dataHook.includes('setSettingFor'))
+    dataHook.includes('chapterContextSettingKey') && ctxSrc.includes('chapterContext32:')
+    && dataHook.includes('getSettingFor') && dataHook.includes('setSettingFor'))
   ok('⑥⑨ 正文编辑器接入资料抽屉，引用使用稳定记录 ID',
     editor.includes('<ChapterContextPanel') && editor.includes('detail: { tabId: ref.tabId, rowId: ref.id }'))
   ok('⑥⑩ 记录跳转支持章节细纲卡并经过草稿安全切换',
@@ -184,7 +186,7 @@ function case6a() {
   ok('⑥⑬ 抽屉固定于视口并按缩放折算尺寸',
     panel.includes('className="fixed right-3') && panel.includes("foldZoomLength('3.5rem')") && panel.includes("foldZoomLength('24rem')"))
   ok('⑥⑭ 细纲命中只作为手动固定建议，不改变 AI 输入',
-    dataHook.includes('findOutlineReferenceSuggestions') && panel.includes('不会自动加入 AI 请求') && panel.includes('onClick={() => pin(candidate.ref)}'))
+    dataHook.includes('findOutlineReferenceSuggestions') && panel.includes('不会自动加入 AI 续写请求') && panel.includes('onClick={() => pin(candidate.ref)}'))
 }
 
 // ───────────────── ⑦ 变化事件创建 ─────────────────

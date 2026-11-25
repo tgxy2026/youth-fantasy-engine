@@ -10,7 +10,7 @@ import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import type { EffectiveTemplate } from '@/lib/templates/types'
 import { readAliases } from '@/lib/settings/aliases'
 import {
-  chapterContextRefKey, emptyChapterContextBinding, findOutlineReferenceSuggestions,
+  chapterContextRefKey, chapterContextSettingKey, emptyChapterContextBinding, findOutlineReferenceSuggestions,
   normalizeChapterContextBinding, outlinePurposeForField,
   type OutlinePurpose,
   type ChapterContextBinding,
@@ -25,8 +25,6 @@ export interface ChapterContextCatalogItem {
   searchText: string
   matchTerms: string[]
 }
-
-const SETTING_PREFIX = 'chapterContext32:'
 
 function valueSummary(data: Record<string, string>): string {
   return Object.values(data).map(v => v.trim()).filter(Boolean).slice(0, 3).join(' · ').slice(0, 160)
@@ -82,7 +80,7 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
     setBindingStatus('loading')
     setBindingError('')
     setLoadingError('')
-    void db.getSettingFor<unknown>(projectId, `${SETTING_PREFIX}${chapterId}`, null).then(raw => {
+    void db.getSettingFor<unknown>(projectId, chapterContextSettingKey(chapterId), null).then(raw => {
       if (attempt !== loadAttempt.current) return
       const next = normalizeChapterContextBinding(raw, projectId)
       bindingRef.current = next
@@ -192,7 +190,7 @@ export function useChapterContextData({ projectId, chapterId, ctx }: Args) {
     saveQueue.current = saveQueue.current
       .catch(() => undefined)
       .then(async () => {
-        await db.setSettingFor(projectId, `${SETTING_PREFIX}${chapterId}`, next)
+        await db.setSettingFor(projectId, chapterContextSettingKey(chapterId), next)
         persistedRef.current = next
       })
       .catch(() => {

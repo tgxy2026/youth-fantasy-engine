@@ -18,7 +18,8 @@ import { loadChapterOutlines } from '@/lib/ai/aiWorkflow'
 import { activeFingerprintNote } from '@/lib/ai/styleFingerprint'
 import { deAiGenerateRule } from '@/lib/ai/deAiStyle'
 import { renderTable } from '@/lib/ai/tableRender'
-import { TABS } from '@/lib/schema'
+import { TABS, getTab } from '@/lib/schema'
+import { chapterContextSettingKey, normalizeChapterContextBinding } from '@/lib/revision/chapterContext'
 import { resolveSlot } from '@/lib/flow/fieldMap'
 import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import {
@@ -276,6 +277,39 @@ async function collectChapterOutline(chapterNo: number, radius: number, notes: s
   }
 }
 
+// ---------- 本章固定资料（作者在「本章资料 → 关联资料」里显式固定的条目） ----------
+
+async function collectPinnedMaterials(chapterId: string, notes: string[]): Promise<string> {
+  try {
+    const projectId = db.getCurrentProjectId()
+    const raw = await db.getSettingFor<unknown>(projectId, chapterContextSettingKey(chapterId), null)
+    const binding = normalizeChapterContextBinding(raw, projectId)
+    if (!binding.pinnedRefs.length) return ''
+    const blocks: string[] = []
+    for (const ref of binding.pinnedRefs) {
+      const tab = getTab(ref.tabId)
+      if (!tab) continue
+      if (ref.kind === 'card') {
+        const records = await db.getCardRecordsFor(projectId, ref.tabId)
+        const record = records.find(item => item.id === ref.id)
+        if (record) blocks.push(renderCharacterCard(ref.tabId, record))
+      } else if (ref.kind === 'row') {
+        const rows = await db.getTableRowsFor(projectId, ref.tabId)
+        const row = rows.find(item => item.id === ref.id)
+        if (row) blocks.push(`### ${tab.name}\n${renderTable(tab, [row])}`)
+      }
+    }
+    if (!blocks.length) {
+      notes.push('本章固定资料已失效或找不到，已跳过。')
+      return ''
+    }
+    return blocks.join('\n\n')
+  } catch {
+    notes.push('本章固定资料读取失败，已跳过。')
+    return ''
+  }
+}
+
 // ---------- 角色 / 物品 / 伏笔 ----------
 
 async function collectCharacters(
@@ -483,6 +517,13 @@ export async function collectWcpPack(input: WcpCollectInput): Promise<WcpCollect
       id: 'ctx-draft', group: 'context', title: '本章已写草稿',
       content: clip(draft, 200_000), priority: 2, sourceKind: 'chapter', sourceRef: input.chapterId ?? '',
     })
+    const pinned = input.chapterId ? await collectPinnedMaterials(input.chapterId, notes) : ''
+    if (pinned) {
+      delta.push({
+        id: 'ctx-pinned', group: 'context', title: '本章固定资料',
+        content: pinned, priority: 3, sourceKind: 'tab', sourceRef: 'chapter-context',
+      })
+    }
     if (!draft.trim()) notes.push('本章还没有正文；续写包只带细纲与前文，请确认后再交给网页模型。')
   } else if (input.scene === 'chapter-polish') {
     const selected = input.selectedText ?? ''

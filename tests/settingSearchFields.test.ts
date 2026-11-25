@@ -135,6 +135,13 @@ async function main() {
       !!cardMeta && [...cardMeta.keys].some(k => k.includes('::')))
   }
 
+  // ⑩ 源码闸：图鉴配置读取失败时必须返回 null，让检索页回退旧行为（E-2）
+  {
+    const metaSrc = readFileSync(path.join(process.cwd(), 'src/lib/templates/effectiveSearchMeta.ts'), 'utf8')
+    ok('源码闸：图鉴配置 error 时返回 null 回退', metaSrc.includes('if (loaded?.error) return null'))
+    ok('源码闸：读取异常时返回 null 回退', /catch\s*\{\s*return null\s*\}/.test(metaSrc))
+  }
+
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} settingSearchFields ${pass}/${pass + fail}`)
   if (fail) process.exitCode = 1
 }

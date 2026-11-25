@@ -10,6 +10,13 @@
 
 import type { RecordRef } from '@/lib/revision/revisionTypes'
 
+/** 项目设置里的章节绑定键前缀；WCP 取材也按同一键读取固定资料。 */
+export const CHAPTER_CONTEXT_SETTING_PREFIX = 'chapterContext32:'
+
+export function chapterContextSettingKey(chapterId: string): string {
+  return `${CHAPTER_CONTEXT_SETTING_PREFIX}${chapterId}`
+}
+
 /** 项目设置里的章节绑定；只保存稳定 ID，不复制细纲或设定正文。 */
 export interface ChapterContextBinding {
   schema: 1
