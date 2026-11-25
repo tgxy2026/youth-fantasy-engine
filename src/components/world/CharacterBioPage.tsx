@@ -581,8 +581,8 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
               title={c.name}
               className={`group cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150 ${
                 isActive
-                  ? 'bg-amber/15 border-amber/30 text-amber'
-                  : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'
+                  ? 'bg-amber/12 border-amber/30 text-amber ws-control'
+                  : 'bg-ink-850/90 border-ink-700/75 text-ink-300 hover:border-ink-600 hover:bg-ink-800/60'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -621,7 +621,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                   <Trash2 size={12} />
                 </Button>
               </div>
-              <div className="text-10 text-ink-500 mt-0.5 truncate">
+              <div className="text-10 text-ink-500 mt-0.5 truncate ws-num">
                 {nodeCount} 个节点 · {hasProse ? '已有正文' : '待写正文'}
               </div>
             </div>
@@ -632,10 +632,10 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   }
 
   const renderNodeCard = (node: BioEventNode, idx: number, totalInGroup: number) => (
-    <div key={node.id} className="rounded-lg border border-ink-700 bg-ink-900/50 p-3 space-y-1.5">
+    <div key={node.id} className="rounded-lg border border-ink-700/75 border-l-2 border-l-amber/50 bg-ink-900/55 p-3 space-y-1.5 ws-control">
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-          <span className="px-1.5 py-px rounded text-10 font-medium bg-amber/15 text-amber border border-amber/25">
+          <span className="px-1.5 py-px rounded-md text-10 font-medium bg-amber/15 text-amber border border-amber/25 ws-num">
             {node.phase === 'prequel' ? '开篇前' : `第 ${node.chapterNo} 章`}
           </span>
           <span className="px-1.5 py-px rounded text-10 bg-ink-800 border border-ink-700 text-ink-300">{displayTagOf(node.tag)}</span>
@@ -760,13 +760,13 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
             {selectedCard && selectedBio && (
               <>
                 {/* 角色头条 */}
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-700 bg-ink-850 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-700/75 bg-ink-850/95 px-4 py-3 ws-surface">
                   <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-15 font-semibold text-ink-50 truncate">{selectedCard.name}</h2>
                     <span className="px-2 py-0.5 rounded-full text-10 bg-amber/15 text-amber border border-amber/30">
                       {tierLabelOf(selectedCard.tabId)}
                     </span>
-                    <span className="text-11 text-ink-500">{sortedNodes.length} 个重要节点</span>
+                    <span className="text-11 text-ink-500 ws-num">{sortedNodes.length} 个重要节点</span>
                   </div>
                   <Button
                     variant="secondary"
@@ -784,11 +784,10 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 </div>
 
                 {/* 上层：人物生平小传正文 */}
-                <section className="rounded-xl border border-ink-700 bg-ink-850 p-4 space-y-3">
+                <section className="rounded-xl border border-ink-700/75 bg-ink-850/95 p-4 space-y-3 ws-surface">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-13 font-semibold text-ink-100">一、人物生平小传正文</h3>
-                      <p className="text-11 text-ink-500 mt-0.5">自由分段记录完整生平；AI 起草或续写仅提供预览，不会覆盖已有手写内容。</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {proseDirty && (
@@ -835,11 +834,10 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 </section>
 
                 {/* 下层：重要节点事件轴 */}
-                <section className="rounded-xl border border-ink-700 bg-ink-850 p-4 space-y-3">
+                <section className="rounded-xl border border-ink-700/75 bg-ink-850/95 p-4 space-y-3 ws-surface">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-13 font-semibold text-ink-100">二、重要节点事件轴</h3>
-                      <p className="text-11 text-ink-500 mt-0.5">开篇前按手动顺序排列，正文阶段按章号升序自动对齐。</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)}>
@@ -855,6 +853,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                       </Button>
                       <Button
                         variant="primary"
+                        solid
                         size="sm"
                         onClick={() => { setEditingNode(null); setFormOpen(true) }}
                       >
@@ -902,7 +901,6 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                           onRenameBuiltin={(oldName, newName) => void handleRenameTag(oldName, newName)}
                         />
                       </div>
-                      <span className="text-11 text-ink-500">支持输入新类型，也支持对默认预填充与自定义类型进行修改或移除。</span>
                     </div>
                   )}
 

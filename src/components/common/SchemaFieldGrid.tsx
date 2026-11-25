@@ -45,18 +45,18 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
       ? 'grid grid-cols-1 xl:grid-cols-2 gap-5 items-start'
       : 'grid grid-cols-1 2xl:grid-cols-2 gap-5 items-start'}`}>
       {modules.map(mod => (
-        <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden h-full">
-          <div className="px-5 py-3 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+        <section key={mod.name} className="bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden h-full ws-surface">
+          <div className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 flex items-center gap-2">
             <span className="w-1 h-3.5 rounded-full bg-amber/70" />
             <h2 className="text-13 font-semibold text-ink-100">{mod.name}</h2>
-            <span className="text-10 text-ink-500 ml-auto">{mod.fields.length} 项</span>
+            <span className="text-10 text-ink-500 ml-auto ws-num">{mod.fields.length} 项</span>
           </div>
-          <div className="divide-y divide-ink-700/60">
+          <div className="divide-y divide-ink-700/45">
             {mod.fields.map(field => {
               const key = `${mod.name}::${field.name}`
               const val = data[key] ?? ''
               return (
-                <div key={key} className="px-3 py-3 grid grid-cols-1 @min-[32rem]/fields:grid-cols-[160px_minmax(0,1fr)] gap-2 @min-[32rem]/fields:gap-4 hover:bg-ink-800/40 transition-colors">
+                <div key={key} className="px-3 py-3 grid grid-cols-1 @min-[32rem]/fields:grid-cols-[160px_minmax(0,1fr)] gap-2 @min-[32rem]/fields:gap-4 hover:bg-ink-800/30 transition-colors">
                   <div>
                     <div
                       className="text-13 font-medium text-ink-100"

@@ -342,7 +342,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
     <section aria-label="创作摘要" data-guide="dashboard-summary">
       <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <h2 className="text-14 font-semibold text-content-primary">创作摘要</h2>
-        <p className="text-13 text-content-secondary">今日字数变化 <strong className="font-semibold text-content-primary">{todayWords.toLocaleString()}</strong> 字</p>
+        <p className="text-13 text-content-secondary">今日变化 <strong className="font-semibold text-content-primary ws-num">{todayWords.toLocaleString()}</strong> 字</p>
         <p className="text-12 text-content-muted">
           {review.weekTrend === 'new' ? '前 7 日净产量为 0'
             : review.weekTrend === 'none' || review.weekDeltaPct === null ? '暂无前 7 日对比'
@@ -368,7 +368,6 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           onClick={() => setWithPunct(true)}
           className="px-2.5 py-1 rounded-md text-11"
         >文字 ＋ 标点</Button>
-        <span className="text-11 text-content-muted">仅影响显示，不修改已保存字数。</span>
         <HelpPopover title="字数口径说明" width="22rem" pin>
           「文字」统计所有语言文字的字母与数字（中文、英文、日文假名、韩文、俄文等，逐字符计），不含标点与空格；「文字＋标点」在此基础上加上所有标点符号（含中英文）。切换只影响显示，不会改动已保存的数据。
         </HelpPopover>
@@ -377,7 +376,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
       {/* 统计卡 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.filter(c => !(c.label === '未回收伏笔' && !showForeshadowCard)).map(card => (
-          <div key={card.label} className="bg-surface-panel border border-line-subtle rounded-xl p-4 card-hover">
+          <div key={card.label} className="bg-surface-panel/95 border border-line-subtle/80 rounded-xl p-4 ws-surface card-hover">
             <div className={`flex items-center gap-2 ${card.color}`}>
               {card.icon}
               <span className="text-13 text-content-secondary">{card.label}</span>
@@ -385,7 +384,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
                 {card.help}
               </HelpPopover>
             </div>
-            <div className="mt-2 text-2xl font-semibold text-content-primary tracking-tight">{card.value}</div>
+            <div className="mt-2 text-2xl font-semibold text-content-primary tracking-tight ws-num">{card.value}</div>
             <div className="mt-1 text-12 text-content-muted">{card.sub}</div>
           </div>
         ))}
@@ -396,9 +395,9 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
 
   return (
     <div className="w-full page-enter">
-      <PageHeader title="写作面板" description={<><span className="font-medium [overflow-wrap:anywhere]">{projectName || '当前项目'}</span><span className="mx-2" aria-hidden="true">·</span>继续创作，掌握作品进度。</>} help={
+      <PageHeader title="写作面板" description={<span className="font-medium [overflow-wrap:anywhere]">{projectName || '当前项目'}</span>} help={
           <HelpPopover title="写作面板怎么用" width="22rem" size={14}>
-            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板：接着上次写、缺什么资料一眼看清、按卷排章规划（每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；3.4.0 起每张章卡还显示该章的细纲绑定与固定资料条数（取自正文「本章资料」，不按章节名猜；未绑定写「未绑定细纲」，绑定的卡被删写「已失效」）；\n· 章节收藏集：把跨卷章节收在一起，按原有顺序浏览；删集不删章，失效成员会标出来；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
+            {'项目创作概览，数字根据当前项目记录汇总，不需要重复手动维护。\n\n· 继续创作 / 项目起步清单 / 章节规划板：接着上次写、缺什么资料一眼看清、按卷排章规划（每章列出更新时间，并对「状态与正文对不上」的章给出 ⚠ 提示 —— 只提示，不会自动改状态）；每张章卡还显示该章的细纲绑定与固定资料条数（取自正文「本章资料」，不按章节名猜；未绑定写「未绑定细纲」，绑定的卡被删写「已失效」）；\n· 章节收藏集：把跨卷章节收在一起，按原有顺序浏览；删集不删章，失效成员会标出来；\n· 统计卡（最多四张）：累计字数 / 完稿章节 / 未回收伏笔 / 近 7 日产量（自定义项目未启用「伏笔追踪」时不显示「未回收伏笔」，仅三张）；\n· 详细统计与趋势：默认收起，点击展开；开合偏好仅保存在本机，不修改章节或目标。\n· 码字日历：在正文编辑器写作时自动打卡，年度热力图看全年节奏（可切换年份），右侧是全年产量 / 打卡天数 / 最长连续 / 最佳单日；\n· 近 7 日写作字数：来自「写作进度」手工登记的目标与实际；\n· 快捷入口：常用页签一键直达；\n· 分卷进度 / 创作建议：查看进度与可行动事项，普通建议不代表保存或同步故障。\n\n每个区块标题旁的 ? 都有更细的说明。'}
           </HelpPopover>
       } />
 
@@ -421,15 +420,15 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
               {'连载期间使用频率最高的 6 个页签，点一下直达：\n\n· 正文编辑：码字主战场；\n· 章节总表：全书章节台账（字数/伏笔/出场人物）；\n· 伏笔追踪：挖坑填坑总账；\n· 时间脉络：剧情日期与事件对照，防穿帮；\n· 爽点节奏：每章爽点分布，防「太平淡」；\n· 灵感素材：素材随手入库，卡文时来翻。'}
             </HelpPopover>
           </h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {quickLinks.filter(q => !hiddenTabIds.has(q.id)).map(q => (
               <Button variant="bare"
                 key={q.id}
                 onClick={() => onNavigate(q.id)}
-                className="flex flex-col items-center gap-2 py-4 rounded-lg bg-ink-800 border border-ink-700 text-ink-300 hover:border-amber/40 hover:text-amber transition-all card-hover"
+                className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-ink-800/70 border border-ink-700/75 text-ink-200 hover:border-amber/40 hover:text-amber transition-all ws-control card-hover"
               >
                 {q.icon}
-                <span className="text-11">{q.name}</span>
+                <span className="text-12 font-medium">{q.name}</span>
               </Button>
             ))}
           </div>
@@ -453,7 +452,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
                   <div key={vol.id}>
                     <div className="flex items-center justify-between text-11 mb-1">
                       <span className="text-ink-200">{vol.title}</span>
-                      <span className="text-ink-500">{done}/{chs.length} 章 · {pct}%</span>
+                      <span className="text-ink-400 ws-num">{done}/{chs.length} 章 · {pct}%</span>
                     </div>
                     <div className="h-1.5 bg-ink-700 rounded-full overflow-hidden">
                       <div className="h-full bg-amber/60 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
@@ -477,7 +476,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
             <Button onClick={runDiag}
               disabled={!writingReady || diagLoading}
               
-              title={!writingReady ? blockedHint : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="md" className="flex items-center rounded">
+              title={!writingReady ? blockedHint : '用 AI 基于项目实际资料做一次健康诊断（健康分 + 风险 + 下一步建议）'} variant="secondary" size="xs" className="flex items-center gap-1 rounded-md">
               {diagLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               AI 诊断
             </Button>
@@ -588,7 +587,6 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
             <ChevronRight size={14} className={statisticsOpen ? 'rotate-90' : ''} aria-hidden />
           </button>
         </h2>
-        <p className="mt-2 text-11 text-ink-400">码字日历、手工登记趋势{!isLite && '、角色出场'}与创作复盘；展开偏好仅保存在本机。</p>
         <div id={statisticsId + '-content'} hidden={!statisticsOpen}>
           {statisticsOpen && <div className="mt-4">
       {/* 码字日历 · 年度热力图 + 年度数字卡（v3.1.2 · 主人拍板 C 混合方案） */}
@@ -606,7 +604,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
               <div className="text-12 text-ink-100 font-semibold">
                 今日 {todayWords.toLocaleString()} 字
               </div>
-              <div className="text-10 text-ink-500">在正文编辑器写作时自动记录</div>
+              
             </div>
           </div>
           {/* 连续打卡 */}
@@ -683,7 +681,6 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
               <span data-heat={3} className="w-2.5 h-2.5 rounded-[2px] bg-amber/80 inline-block" />
               <span data-heat={4} className="w-2.5 h-2.5 rounded-[2px] bg-amber inline-block" />
               <span>多</span>
-              <span className="ml-3">数据来自编辑器自动记录（进/减字数都计入当日）</span>
         </div>
       </Panel>
 

@@ -162,26 +162,26 @@ function NovelEditorChapterTree({
   return (
       <div
         data-guide="chapter-tree"
-        className="relative shrink-0 border-r border-ink-700 bg-ink-900 flex flex-col"
+        className="relative shrink-0 border-r border-ink-700/70 bg-ink-900/95 flex flex-col"
         style={{ width: pane.size, minWidth: pane.size }}
       >
         {/* 拖拽调整章节树宽度 */}
         <ResizeHandle pane={pane} label="章节栏宽度" layer={Z.pageHandle} />
-        <div className="flex flex-wrap items-center gap-2 px-3.5 min-h-14 border-b border-ink-700 shrink-0" data-chapter-toolbar>
-          <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200 flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-1 px-2.5 h-12 border-b border-ink-700/70 shrink-0" data-chapter-toolbar>
+          <span className="shrink-0 whitespace-nowrap text-12 font-semibold text-ink-200 flex items-center gap-1">
             <BookMarked size={13} className="text-amber" /> 章节
             <HelpPopover title="卷章目录怎么用" width="22rem" side="right">
               {'全书的卷 / 章结构树，也是章节间切换的入口。\n\n· 右上「新建卷」建卷，卷名右侧悬停出现「＋」新建该卷下的章；\n· 右上「新建章节」是二选一：「最新章节」自动挂到**最后一卷的末尾**、正文序号接着上一章往下排；「自由章节」不归入任何卷、收进「自由章节」托管卷（排全书最前、不占正文序号），随时可拖进任意卷；\n· 悬停出现「⋮⋮」拖把，按住可拖动分卷/章节重排，章节可拖到其他卷（拖到空卷的「+ 新建第一章」处可加入该卷）；\n· 单击章节打开正文；双击章名可改名；单击卷名可改卷名；\n· 章前小圆点是状态色：灰=构思、蓝=细纲、黄=草稿、橙=修改、绿=完稿/已发布；\n· 圆点右侧的小数字是「正文序号」：由卷序与章序自动生成，跨卷连续，改名不会影响它，拖拽重排后会自动重算；\n· 悬停出现「＃」可把某章设为「不计入序号」（序章 / 番外 / 后记不占号），设后该图标变琥珀色常驻，再点一次恢复；\n· 悬停出现垃圾桶可删除，删除的卷章进回收站，可在工具栏「回收站」里恢复；\n· 右上「导出」图标是全书导出的唯一入口：本章 / 全本 TXT / Markdown / EPUB / Word（可排版、可导投稿稿）/ 平台粘贴版 / 按卷 / 按章节逐一导出。\n· 右上「导入」图标（导出左侧）可批量导入正文：选文件（.txt / .md / .docx / .json，可多选）或粘贴原文，自动切成卷章，预览里可改卷名/章名、逐章勾选，确认后追加到当前项目（纯本地、不接 AI）。\n\n新建章节会自动登记进该卷的「章节台账」，字数与摘要保存时同步。'}
             </HelpPopover>
           </span>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-0.5 shrink-0">
             {/* 3.0.1：批量导入正文 —— 把在别处写好的存稿整批搬进卷/章（纯本地，不接 AI）。
                 放在「导出」左侧：导入/导出是对称的一对，作者心智里也在同一处找。 */}
-            <Button variant="icon-amber"
+            <Button variant="icon-amber" size="xs"
               onClick={() => setImportOpen(true)}
-              className="p-1 shrink-0"
+              className="shrink-0"
               title="批量导入正文：从文件或粘贴导入（.txt / .md / .docx / .json），自动切成卷章，预览确认后写入">
-              <FileDown size={14} />
+              <FileDown size={13} />
             </Button>
             {/* 导出：本章 / 全本 / 多格式 / 按卷 / 按章节 —— 全书导出的**唯一入口**。
                 2.8.0 从编辑器工具栏迁来：原先工具栏与本处各挂一个导出按钮、功能重叠且不一致
@@ -191,10 +191,10 @@ function NovelEditorChapterTree({
             <div className="relative shrink-0">
               <Button variant="bare"
                 onClick={() => setExportOpen(o => !o)}
-                className={`flex items-center p-1 h-8 shrink-0 rounded-lg transition-colors ${exportOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
+                className={`flex items-center px-1 h-6 shrink-0 rounded-lg transition-colors ${exportOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
                 title="导出全书：本章 / 全本 TXT / Markdown / EPUB / Word（可排版·投稿稿）/ 平台粘贴版 / 按卷 / 按章节"
               >
-                <Upload size={14} />
+                <Upload size={13} />
                 <ChevronDown size={9} className="ml-0.5 opacity-70" />
               </Button>
               {exportOpen && (
@@ -203,7 +203,7 @@ function NovelEditorChapterTree({
                       （关闭功能本身由 Esc / 再点按钮提供，见 2026-09-22 六维审计 U5） */}
                   <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setExportOpen(false)} aria-hidden />
                   {/* left-0 而非 right-0：章节栏最窄只有 200px、菜单 min-w 220px，右对齐会越过屏幕左缘 */}
-                  <div className="absolute left-0 top-full mt-1 min-w-[220px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5 overflow-y-auto"
+                  <div className="absolute left-0 top-full mt-1 min-w-[220px] bg-ink-850 border border-ink-700 rounded-lg shadow-2xl py-1.5 overflow-y-auto ws-surface"
 style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     {activeChapter && (
                       <Button variant="bare"
@@ -299,7 +299,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 </>
               )}
             </div>
-            <Button variant="icon-amber" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="p-1 shrink-0">
+            <Button variant="icon-amber" size="xs" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="shrink-0">
               <FolderPlus size={13} />
             </Button>
             {/* 新建章节：一个入口、二选一（2026-10-30 主人要求，原「新建自由章节」的功能保留）。
@@ -310,12 +310,12 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
             <div className="relative shrink-0">
               <Button variant="bare"
                 onClick={() => setAddOpen(o => !o)}
-                className={`flex items-center p-1 h-8 shrink-0 rounded-lg transition-colors ${addOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
+                className={`flex items-center px-1 h-6 shrink-0 rounded-lg transition-colors ${addOpen ? 'text-amber bg-amber/15' : 'text-ink-400 hover:text-amber'}`}
                 title="新建章节：可选择「最新章节」（追加到最后一卷末尾）或「自由章节」（不归卷）"
                 aria-haspopup="menu"
                 aria-expanded={addOpen}
               >
-                <FilePlus2 size={14} />
+                <FilePlus2 size={13} />
                 <ChevronDown size={9} className="ml-0.5 opacity-70" />
               </Button>
               {addOpen && (
@@ -325,7 +325,7 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                     /* 🔴 右对齐 + 限宽：这个按钮在标题栏最右，用 left-0 展开会在窄面板里溢出被裁
                        （2026-10-31 实机验证：399px 宽时菜单右半边被面板边缘切掉，只看到「新建最…」）。
                        右侧两项的说明文字用 truncate，长卷名也不会把菜单撑出边界。 */
-                    className="absolute right-0 top-full mt-1 min-w-[200px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    className="absolute right-0 top-full mt-1 min-w-[200px] bg-ink-850 border border-ink-700 rounded-lg shadow-2xl py-1.5 ws-surface"
                     style={{ zIndex: Z.pagePanelTop, maxWidth: `min(280px, calc(${foldVh('100vw')} - 24px))` }}
                     role="menu"
                   >

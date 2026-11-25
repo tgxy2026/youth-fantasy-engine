@@ -27,13 +27,13 @@ interface Props {
 
 /** 页头容器：吸顶 + 半透明填充 + 细分隔线（各页签共用，不要另写） */
 export const PAGE_HEADER_CLASS =
-  'shrink-0 border-b border-ink-700/60 py-3'
+  'shrink-0 border-b border-ink-700/50 py-2.5'
 
-/** 页签主标题：统一 20px / semibold */
-export const PAGE_TITLE_CLASS = 'text-xl font-semibold leading-snug text-ink-50 break-words'
+/** 页签主标题：统一 18px / semibold / 紧凑字距 */
+export const PAGE_TITLE_CLASS = 'text-[18px] font-semibold tracking-tight leading-snug text-ink-50 break-words'
 
-/** 页签说明：统一 13px / 次要色 */
-export const PAGE_DESCRIPTION_CLASS = 'mt-1.5 max-w-full truncate text-13 leading-relaxed text-ink-300'
+/** 页签说明：统一 12px / 次要色 */
+export const PAGE_DESCRIPTION_CLASS = 'mt-1 max-w-full truncate text-12 leading-relaxed text-ink-400'
 
 /**
  * 页头说明只保留第一句，并交给 PAGE_DESCRIPTION_CLASS 单行省略。
@@ -47,11 +47,11 @@ export function pageSummary(text: string | null | undefined, fallback = ''): str
 }
 
 /** 完整页头（含吸顶与底色）：复杂工具条页面直接套这个类名，不再手抄 */
-export const PAGE_HEADER_STICKY_CLASS = `${PAGE_HEADER_CLASS} sticky top-0 bg-ink-900/95 backdrop-blur`
+export const PAGE_HEADER_STICKY_CLASS = `${PAGE_HEADER_CLASS} sticky top-0 bg-ink-900/92 backdrop-blur-md`
 
 /** 块状页头（标题行 + 说明上下堆叠）：酒馆角色卡 / 背景设定这类页签使用 */
 export const PAGE_HEADER_BLOCK_CLASS =
-  'shrink-0 border-b border-ink-700/60 bg-ink-900/95 backdrop-blur py-3'
+  'shrink-0 border-b border-ink-700/50 bg-ink-900/92 backdrop-blur-md py-2.5'
 
 export default function PageHeader({
   title, description, help, status, actions, anchor = 'page-header', sticky = true, className = 'mb-5',

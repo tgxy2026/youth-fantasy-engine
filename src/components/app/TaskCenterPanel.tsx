@@ -40,7 +40,7 @@ export default function TaskCenterPanel({ onNavigate }: { onNavigate: (id: strin
           <div className="flex items-center gap-2 mb-3">
             <Activity size={13} className="text-amber" />
             <h2 className="text-13 font-semibold text-ink-100">任务列表</h2>
-            <span className="text-11 text-ink-500 tabular-nums">
+            <span className="text-11 text-ink-400 ws-num">
               {running > 0 ? `运行中 ${running}` : '当前没有运行中的任务'}
               {finished > 0 ? ` · 已结束 ${finished}` : ''}
             </span>

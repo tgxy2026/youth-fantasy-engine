@@ -381,7 +381,7 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
         <div className="flex items-center gap-2 min-w-0">
           <GitBranch size={15} className="text-amber shrink-0" />
           <span className="font-semibold text-ink-100">{tab.name}</span>
-          <span className="text-11 text-ink-500">{cards.length} 张卡片 · {conns.length} 条推演链</span>
+          <span className="text-11 text-ink-500 ws-num">{cards.length} 张卡片 · {conns.length} 条推演链</span>
           <HelpPopover
             title="情节推演"
             width="20rem"
@@ -426,8 +426,8 @@ export default function PlotCanvas({ tab }: { tab: TabDef }) {
       {/* 主体：左章节选择 + 右推演画布（两列等高） */}
       <div data-plot-layout className="flex-1 flex min-h-0">
         {/* 左侧：章节选择 */}
-        <div data-plot-sidebar className="w-64 shrink-0 border-r border-ink-700 bg-ink-850/60 flex flex-col min-h-0">
-          <div className="px-3 py-2.5 border-b border-ink-700">
+        <div data-plot-sidebar className="w-64 shrink-0 border-r border-ink-700/70 bg-ink-900/90 flex flex-col min-h-0">
+          <div className="px-3 py-2.5 border-b border-ink-700/60">
             <div className="flex items-center gap-2 text-ink-100 font-medium"><GitBranch size={14} className="text-amber" /> 选择章节</div>
             <div className="text-10 text-ink-500 mt-0.5">多选后点「生成推演」，复用颉文姬「本章写作简报」同一 AI 管线</div>
           </div>

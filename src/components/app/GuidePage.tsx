@@ -6,6 +6,7 @@ import { Button } from '@/components/common/Button'
 import HelpCenter from '@/components/help/HelpCenter'
 import { GuideSettings } from '@/components/help/GuideSettings'
 import CapabilityPanel from '@/components/app/CapabilityPanel'
+import { VERSION_ARTICLES } from '@/lib/help/articles/version'
 
 interface Props {
   onNavigate: (id: string) => void
@@ -261,6 +262,32 @@ export default function GuidePage({ onNavigate, ctx }: Props) {
             ))}
         </div>
       </section>
+
+      {/* 3.7.x 近期版本更新说明（与内置手册 version.ts 同源，按版本倒序展示） */}
+      {[...VERSION_ARTICLES].reverse().map(art => (
+        <section key={art.id} className="mb-6 bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden ws-surface">
+          <div className="px-5 py-3 bg-ink-800/80 border-b border-ink-700/70 flex items-center gap-2">
+            <Sparkles size={14} className="text-amber" />
+            <h2 className="text-13 font-semibold text-ink-100">{art.title}</h2>
+            <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 ws-num">
+              v{art.verifiedAgainst}
+            </span>
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-12 text-ink-300 leading-relaxed">{art.summary}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {art.sections.map(sec => (
+                <div key={sec.id} className="rounded-lg bg-ink-800/60 border border-ink-700/60 px-4 py-3 space-y-1.5">
+                  <div className="text-12 font-semibold text-amber/90">{sec.heading}</div>
+                  {sec.body.map((p, idx) => (
+                    <p key={idx} className="text-11 text-ink-300 leading-relaxed">{p}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
 
       {/* 3.2.0 新增能力（不新增页签，补的是入口用法） */}
       <section className="mb-6 bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">

@@ -380,7 +380,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
         </div>
 
         {/* 右侧详情 / 新增面板：高度与画布严格一致 */}
-        <div className="w-80 shrink-0 border-l border-ink-700 bg-ink-850/60 overflow-y-auto">
+        <div className="w-80 shrink-0 border-l border-ink-700/70 bg-ink-900/85 overflow-y-auto">
           <div className="p-4">
             {addPos ? (
             <AddMarkerForm
@@ -427,7 +427,7 @@ export default function GeoMapEditor({ tab }: { tab: TabDef }) {
       </div>
 
       {/* 底部状态条：叠加图层 + 操作提示（颜色由系统按层级自动调配，不再按类别展示色卡） */}
-      <div className="px-4 py-1.5 border-t border-ink-700 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
+      <div className="px-4 py-1.5 border-t border-ink-700/60 bg-ink-900/60 flex items-center gap-3 flex-wrap text-10 text-ink-400 shrink-0">
         <span className="flex items-center gap-1.5">
           {mono
             ? <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" style={{ stroke: monoInk }} strokeWidth="1.6" strokeDasharray="7 5" /></svg>

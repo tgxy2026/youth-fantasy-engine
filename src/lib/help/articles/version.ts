@@ -139,4 +139,45 @@ export const VERSION_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.7.1',
     reviewedAt: '2026-11-25',
   },
+  {
+    id: 'whats-new-372',
+    revision: 1,
+    title: '3.7.2：工坊风格重塑与界面一致性升级',
+    summary: '采用中性深灰双层工坊导航，网页登录页与打赏页同步焕新，左下角设置支持由左向右弹出，并精简冗余文案、升级内置 AI 提示词与多屏适配。',
+    aliases: ['更新说明', '新功能', '3.7.2', '工坊风格'],
+    keywords: ['3.7.2', '工坊', '图标轨', '向右弹出', '登录页', '按钮对齐', '去AI味', '提示词'],
+    group: '快速开始',
+    tabIds: ['dashboard', 'about'],
+    availability: 'all',
+    aiRequirement: 'none',
+    sections: [
+      {
+        id: 'workshop-shell',
+        heading: '双层工坊导航与顶部对齐',
+        body: [
+          '最左侧新增紧凑图标轨，按创作阶段切换模块；支持仅看当前分组或展开全部目录，同时保留窄屏（< 900px）抽屉适配与全部九套配色主题。',
+          '移除侧栏顶部重复搜索栏（可通过图标轨放大镜或 Ctrl+K 快速检索），使图标轨、项目栏、章节栏与编辑器标题栏顶部横线在同一高度对齐。',
+        ],
+      },
+      {
+        id: 'flyout-and-buttons',
+        heading: '设置向右弹出与跨页签细节统一',
+        body: [
+          '左下角齿轮按钮改为从左侧向右平滑弹出「界面与数据」浮层，宽度自适应贴合侧栏栏位，不挤压目录区。',
+          '统一网页版登录/重置页与关于打赏页的视觉与自适应布局，并拉齐表格/表单/人物卡片页头的按钮高度与对比权重。',
+        ],
+      },
+      {
+        id: 'prompt-and-responsive',
+        heading: '内置文案与 AI 提示词精修',
+        body: [
+          '精简多处页面说明，纠正与新版入口不一致的帮助文本；优化续写、改稿、校对、连贯性审查与去 AI 味提示词的事实约束与细节表现力。',
+        ],
+      },
+    ],
+    related: ['look-theme-density'],
+    actions: [{ label: '打开写作面板', tabId: 'dashboard' }],
+    verifiedAgainst: '3.7.2',
+    reviewedAt: '2026-11-25',
+  },
 ]

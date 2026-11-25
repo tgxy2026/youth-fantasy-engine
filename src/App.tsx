@@ -1109,6 +1109,7 @@ export default function App() {
         returnSource={navHistory.top ? { label: navHistory.top.label, onBack: goBackToSource } : undefined}
         activeTab={activeTab}
         onNavigate={navigate}
+        onOpenSearch={() => setSearchOpen(true)}
         collapsed={false}
         projectName={projectName}
         onExitProject={exitProject}

@@ -69,19 +69,19 @@ function variantClass(v: Variant, solid: boolean, selected: boolean): string {
     case 'toggle':
       // 分段式选中：选中=琥珀描边底色，未选中=ink 中性底色（令牌唯一真源，抹平 /10·/15·/20 漂移）
       return selected
-        ? 'bg-amber/15 text-amber border border-amber/30'
-        : 'bg-ink-800 text-ink-400 border border-ink-700'
+        ? 'bg-amber/15 text-amber font-medium border border-amber/30'
+        : 'bg-ink-800/80 text-ink-400 border border-ink-700/80 hover:text-ink-200 hover:border-ink-600'
     case 'toggle-text':
       // 纯文字/图标选中：仅选中态染琥珀，未选中态颜色由调用方 className 决定（零损迁移原有 text-ink-*）
       return selected ? 'text-amber' : ''
     case 'primary':
       return solid
-        ? 'bg-amber text-ink-900 border border-amber hover:bg-amber/90 shadow-lg shadow-amber/20'
-        : 'bg-amber/15 text-amber border border-amber/30 hover:bg-amber/25'
+        ? 'bg-amber text-ink-900 font-medium border border-amber hover:bg-amber-soft shadow-sm shadow-amber/20'
+        : 'bg-amber/12 text-amber font-medium border border-amber/25 hover:bg-amber/20 hover:border-amber/40'
     case 'secondary':
-      return 'bg-ink-800 text-ink-200 border border-ink-600 hover:bg-ink-700'
+      return 'bg-ink-800/90 text-ink-100 border border-ink-700 hover:bg-ink-700/80 hover:border-ink-600 ws-control'
     case 'ghost':
-      return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/60 border border-transparent'
+      return 'text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'
     case 'danger':
       return solid
         ? 'bg-red-600 text-white border border-red-600 hover:bg-red-700 shadow-lg'
@@ -169,7 +169,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
   const cls = [
     'inline-flex items-center justify-center gap-1.5 select-none whitespace-normal',
-    'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+    'transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed',
     sizeCls,
     shapeCls,
     vCls,

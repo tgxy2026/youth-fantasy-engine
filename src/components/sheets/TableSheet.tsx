@@ -527,7 +527,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 · 带「上级 / 层级归属」列的表（国家势力、地理风物、种族生物、物品资源、历史事件、名词术语等）支持「树形层级」：按隶属关系折叠 / 展开，行首的树形图标按钮可在某条下新增子条目（编号形如「父编号-001」，父级顺序号不变），父级下拉自动排除自身与子孙防成环。
 · 行首操作会按表格能力显示：适用时可删除此行、AI 补全本行空白（只填当前行未填字段，不影响其他行 / 表）或新增子条目；母表、无 AI 能力或无层级的表会隐藏不适用操作。章节总表行首另有「打开正文」按钮。
 · 批量：右上角的 AI 按钮（不同表显示为「AI 整理」或「AI 新增」，部分表没有这个按钮）——「AI 整理」从章节正文 / 已有设定批量整理出尚未登记的条目并落盘（不重复生成）；「AI 新增」则新建一行并由 AI 补全整行。
-· 右上「更多」菜单里是低频操作：**批量导入**（粘贴表格 / CSV / 纯文本或上传文件，散文式设定可用「AI 智能拆分」自动解析成多条）、**导出 CSV**（Excel 可直接打开）；人物关系 / 历史事件另有**清空全部**（会先问一次再删）。
+· 右上「导入导出」菜单包含**批量导入**（粘贴表格 / CSV / 纯文本或上传文件，散文式设定可用「AI 智能拆分」自动解析成多条）与**导出 CSV**（Excel 可直接打开）；人物关系 / 历史事件页头另有独立的**清空**按钮（点按后需二次确认才删除）。
 · CSV 是**通用交换格式，不是无损备份**：多维候选会被铺成一段纯文本、图片与附件根本不在文件里、换行以外的排版也还原不回来。要原样搬运（含字段定义与主图），请用图鉴页签的「导出资料包」。${isAtlasCapable ? '\n· 图鉴卡片可用方向键按网格移动；打开详情后，↑ / ← 看上一条，↓ / → 看下一条，也可点上一条 / 下一条。编辑或图片处理期间请先完成当前操作。' : ''}`}
             <AIDataSourceNote feature="organize-rows" />
           </HelpPopover>
@@ -600,23 +600,23 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             <Button variant="bare" onClick={() => void clearAll()}
               aria-label={`清空「${tab.name}」中所有 ${rows.length} 条记录`}
               title={`清空「${tab.name}」中所有 ${rows.length} 条记录（会先问你一次，删了不可恢复）`}
-              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-12 border border-ink-700 text-ink-400 hover:text-danger hover:border-danger/40 hover:bg-danger/10 transition-colors">
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 bg-ink-800/75 border border-ink-700 text-ink-400 hover:text-danger hover:border-danger/40 hover:bg-danger/10 ws-control transition-colors">
               <Trash2 size={13} /> 清空
             </Button>
           )}
           {/* 3.1.3：种族生物 / 物品资源的「表格 ⇄ 图鉴」（方案 §3.1；入口只开放 races / items） */}
           {isAtlasCapable && (
-            <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
+            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('atlas')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'atlas' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
                 title="图鉴视图：卡片墙浏览，点卡片看完整资料，可就地编辑（与表格共用同一份草稿）"
               >
@@ -625,17 +625,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {isTimelineCapable && (
-            <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
+            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('timeline')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'timeline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Calendar size={11} /> 时间轴
@@ -653,17 +653,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </Button>
           )}
           {isGraphCapable && (
-            <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
+            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'graph' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Network size={11} /> 关系图
@@ -671,17 +671,17 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {isStorylineCapable && (
-            <div className="flex items-center bg-ink-800 border border-ink-700 rounded-lg p-0.5">
+            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'table' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <Table2 size={11} /> 表格
               </Button>
               <Button variant="bare"
                 onClick={() => setViewMode('storyline')}
-                className={`flex items-center gap-1 px-3 h-8 rounded text-12 transition-colors
+                className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
                   ${viewMode === 'storyline' ? 'bg-amber/15 text-amber' : 'text-ink-400 hover:text-ink-200'}`}
               >
                 <GitBranch size={11} /> 剧情线
@@ -716,10 +716,11 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
 
       {/* 编号规则说明（有编号列的表格展示，防止编号混乱无法识别） */}
       {tab.codeRule && (
-        <div className="mb-4 rounded-lg border border-amber/20 bg-amber/5 px-3.5 py-2.5 flex items-start gap-2">
-          <Hash size={12} className="mt-0.5 shrink-0 text-amber/80" />
-          <span className="text-11 text-amber/80 leading-relaxed">{tab.codeRule}</span>
-        </div>
+        <details className="mb-3 rounded-lg border border-ink-700/70 bg-ink-850/75 px-3.5 py-2 text-11 text-ink-400">
+          <summary className="cursor-pointer select-none inline-flex items-center gap-1.5 text-amber/85 hover:text-amber">
+            <Hash size={11} /> 编号规则          </summary>
+          <p className="mt-1.5 text-ink-300 leading-relaxed">{tab.codeRule}</p>
+        </details>
       )}
 
       {/* 编号校验错误：存在重复编号时阻止保存并提示修改 */}

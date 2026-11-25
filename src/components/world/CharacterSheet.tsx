@@ -910,7 +910,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
           onQueryChange={setListQuery}
           placeholder={isCharTab ? '搜角色名或别称…' : `搜${noun}名…`}
           searchHint={isFiltering
-            ? <span className="text-10 text-ink-500">筛出 {shownRecords.length} / 共 {records.length}</span>
+            ? <span className="text-10 text-ink-500 ws-num">筛出 {shownRecords.length} / 共 {records.length}</span>
             : undefined}
           emptyHint={listEmptyHint}
           isEmpty={shownRecords.length === 0}
@@ -964,14 +964,14 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                 //    （模板可以改名，不再按名字现场比 —— 2026-09-22 曾因此静默不渲染）。
                 const isBasicMod = group.isBasic
                 return (
-                <details key={group.id} open={expanded.has(group.id)} onToggle={e => toggle(group.id, e.currentTarget.open)} data-card-group={group.id} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
-                  <summary className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 cursor-pointer text-12 font-semibold text-ink-100">
-                    <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400">{group.fields.length} 项</span>
+                <details key={group.id} open={expanded.has(group.id)} onToggle={e => toggle(group.id, e.currentTarget.open)} data-card-group={group.id} className="bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden ws-surface">
+                  <summary className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 cursor-pointer text-12 font-semibold text-ink-100">
+                    <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400 ws-num">{group.fields.length} 项</span>
                   </summary>
                   {/* 立绘始终占据基础信息右侧两格（含未上传空位）；仅窄宽度 flex-wrap 时换行。 */}
                   <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
-                  <div className={`divide-y divide-ink-700/60 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-start' : ''}`}>
+                  <div className={`divide-y divide-ink-700/45 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-start' : ''}`}>
                     {group.fields.map(field => {
                       const key = field.key
                       const permissions = fieldPermissions.get(key)

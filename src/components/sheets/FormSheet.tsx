@@ -280,7 +280,7 @@ export default function FormSheet({ tab }: Props) {
                 }}
               />
             )}
-            <Button onClick={clearAll} variant="danger" size="md" className="flex items-center text-danger">
+            <Button onClick={clearAll} variant="bare" className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 bg-ink-800/75 border border-ink-700 text-ink-400 hover:text-danger hover:border-danger/40 hover:bg-danger/10 ws-control transition-colors">
               <RotateCcw size={12} /> 清空
             </Button>
           <Button variant="toggle" selected={dirty}
@@ -317,13 +317,13 @@ export default function FormSheet({ tab }: Props) {
         </div>
         {/* 进度条 */}
         <div className="mt-3 flex items-center gap-3">
-          <div className="flex-1 h-1 bg-ink-700 rounded-full overflow-hidden">
+          <div className="flex-1 h-1 bg-ink-700/60 rounded-full overflow-hidden">
             <div
               className="h-full bg-amber/70 rounded-full transition-all duration-500"
               style={{ width: `${totalFields ? (filledCount / totalFields) * 100 : 0}%` }}
             />
           </div>
-          <span className="text-10 text-ink-400 shrink-0">{filledCount} / {totalFields} 项已填</span>
+          <span className="text-10 text-ink-400 shrink-0 ws-num">{filledCount} / {totalFields} 项已填</span>
         </div>
         <DraftSaveFeedback state={saveState} dirty={dirty} onRetry={() => void save()} />
       </header>

@@ -260,7 +260,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
 
   return (
     <div ref={rootRef} className="space-y-4 mb-6">
-      <Panel className="border-amber/25" aria-labelledby="continue-writing-title" data-continue-writing>
+      <Panel className="border-amber/25 ws-surface" aria-labelledby="continue-writing-title" data-continue-writing>
         {/* 🔴 快捷钮跟标题走、不贴行末（主人 2026-10-17 要求）：去掉 justify-between，
             钮紧随 h2（gap-2）；窗口不够时 flex-wrap 让它整条落到下一行，也不挤成一条缝。 */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -272,7 +272,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
               <p>换项目后这块会重算，不会沿用上一个项目的进度。</p>
             </div>
           </HelpPopover>
-          <Button variant="primary" size="sm" onClick={() => onNavigate('editor', recent?.id)} aria-label={recent ? `继续写作：${recent.title || '未命名章'}` : '进入正文编辑，建立第一章'}>
+          <Button variant="primary" solid size="sm" onClick={() => onNavigate('editor', recent?.id)} aria-label={recent ? `继续写作：${recent.title || '未命名章'}` : '进入正文编辑，建立第一章'}>
             {recent ? '继续写作' : '开始建立章节'} <ChevronRight size={14} />
           </Button>
         </div>
@@ -281,7 +281,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
           <h3 className="mt-1 text-xl font-semibold leading-relaxed text-content-primary [overflow-wrap:anywhere]">{recent.title || '未命名章'}</h3>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-12 text-content-secondary">
             <span className="rounded border border-line-subtle px-2 py-0.5">{recent.status}</span>
-            <span>{Number.isFinite(recent.wordCount) ? `${recent.wordCount.toLocaleString()} 字` : '字数待统计'}</span>
+            <span><span className="ws-num">{Number.isFinite(recent.wordCount) ? `${recent.wordCount.toLocaleString()} 字` : '字数待统计'}</span></span>
             <time dateTime={recentTimestamp ? new Date(recentTimestamp).toISOString() : undefined} title={recentTimestamp ? new Date(recentTimestamp).toLocaleString() : undefined}>
               {recentTimestamp ? `更新于 ${humanAgo(recentTimestamp)}` : '更新时间未知'}
             </time>
@@ -292,7 +292,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
         </div>}
         {items.length > 0 && <h3 className="mb-2 text-12 font-medium text-content-secondary">接下来可以处理</h3>}
         {items.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {items.map(item => <div key={item.key} className="flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/60 p-2.5">
+          {items.map(item => <div key={item.key} className="flex items-center gap-2 rounded-lg border border-ink-700/75 bg-ink-800/50 hover:border-ink-600 p-2.5 transition-colors">
             <Button variant="bare" className="min-w-0 flex-1 !justify-start text-left text-12 text-ink-200 hover:text-amber" onClick={() => onNavigate(item.tab, item.chapterId)}>
               <span className="min-w-0"><span className="block [overflow-wrap:anywhere]">{item.title}</span><span className="mt-1 block text-11 text-content-muted">{item.detail}</span></span>
             </Button>
@@ -370,7 +370,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
             <select value={status} onChange={e => setStatus(e.target.value as BoardStatus)} aria-label="筛选章节状态" className="rounded-lg border border-ink-700 bg-ink-900 px-2 text-12"><option value="all">全部状态</option>{BOARD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select>
             {hasFilter && <Button variant="secondary" size="sm" onClick={clearFilters} title="清除分卷、状态与关键词筛选">清除筛选</Button>}
           </div>
-          <p className="mb-2 text-11 text-ink-500">正文章节 · 来自正文编辑器（只读，点卡片进入该章）· 细纲绑定与固定条数取自正文「本章资料」，不按名称匹配</p>
+          <p className="mb-2 text-11 text-ink-500">点击卡片直达对应章节编辑（细纲绑定取自「本章资料」，不按名称匹配）</p>
           {mismatchCount > 0 && <p className="mb-3 flex items-center gap-1 text-11 text-amber">
             <AlertTriangle size={11} className="shrink-0" /> 本页已显示的章节里有 {mismatchCount} 章的状态与正文对不上（仅提示，不会自动修改）
           </p>}
@@ -383,7 +383,7 @@ export default function WritingWorkflow({ projectId, chapters, chapterOutlines, 
               const mismatch = chapterStatusMismatch(c)
               // A.3：只展示有据可查的绑定；未绑定照实说，不按名称猜
               const contextLine = visible('chapter-outline') ? describeChapterContext(chapterContexts[c.id], outlineNames) : null
-              return <Button key={c.id} variant="bare" data-board-card={c.id} className="min-w-0 rounded-lg border border-ink-700 bg-ink-800/50 p-3 text-left hover:border-amber/40" onClick={() => openChapterFromBoard(c.id)}>
+              return <Button key={c.id} variant="bare" data-board-card={c.id} className="min-w-0 rounded-lg border border-ink-700/75 bg-ink-800/45 p-3 text-left hover:border-amber/40 ws-control" onClick={() => openChapterFromBoard(c.id)}>
                 <span className="flex justify-between gap-2 text-12 text-ink-100"><span className="truncate">{c.title || '未命名章'}</span><span className="shrink-0 text-amber">{c.status}</span></span>
                 <span className="mt-1 block text-11 text-ink-400 line-clamp-2">{c.summary.trim() || '暂无章节摘要'}</span>
                 <span className="mt-2 flex items-center gap-1 text-10 text-ink-500"><History size={10} /> {c.wordCount} 字 · {c.content.trim() ? '已有正文' : '尚无正文'} · 更新于 {humanAgo(c.updatedAt)}</span>

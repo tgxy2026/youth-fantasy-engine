@@ -90,7 +90,7 @@ export function MasterList({
             onChange={e => onQueryChange!(e.target.value)}
             placeholder={placeholder}
             aria-label={placeholder}
-            className="w-full !pl-7 text-12"
+            className="w-full !pl-7 text-12 ws-control"
           />
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
         </div>
@@ -102,7 +102,7 @@ export function MasterList({
       <div ref={scrollRef} data-master-scroll className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mr-1 pr-1 space-y-1.5">
         {isEmpty && emptyHint
           ? (
-            <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700 rounded-lg">
+            <div className="text-center text-ink-500 text-12 py-12 border border-dashed border-ink-700/70 rounded-lg">
               {emptyHint}
             </div>
           )

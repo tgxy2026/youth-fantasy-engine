@@ -281,36 +281,26 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
         上限 340px：窗口很矮时不至于多出一大片空白。
       */}
       <div
-        className="relative w-full max-w-[1400px] mx-auto px-6 lg:px-10 pt-10 page-enter"
+        className="relative w-full max-w-[1400px] mx-auto px-6 lg:px-10 pt-6 page-enter"
         style={{ zIndex: Z.pageHandle, paddingBottom: 'min(calc(var(--dock-height, 0px) + 2.5rem), 340px)' }}
       >
-        {/* 品牌区 */}
-        <header className="mb-10 text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber/15 border border-amber/30 mb-4">
-            <BrandMark size={26} className="text-amber" />
+        {/* 工坊顶栏 + 操作组 */}
+        <header className="mb-6 pb-4 border-b border-ink-700/60 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-amber/12 border border-amber/30 shrink-0">
+              <BrandMark size={20} className="text-amber" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-ink-50 tracking-tight flex items-baseline gap-2">
+                青春幻想引擎
+                <span className="text-12 font-normal text-ink-400 ws-num">{APP_VERSION_LABEL}</span>
+              </h1>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-ink-50 tracking-wide flex items-baseline justify-center gap-2">
-            青春幻想引擎
-            <span className="text-base font-normal text-ink-400">{APP_VERSION_LABEL}</span>
-          </h1>
-          <p className="mt-2 text-13 text-ink-400">在你的世界中讲述你的故事</p>
-        </header>
 
-        {/* 操作条 */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-14 font-semibold text-ink-100 flex items-center gap-2 flex-wrap">
-            <Sparkles size={14} className="text-amber" /> 我的作品 ({projects.length})
-            <span className="text-12 font-normal text-ink-400">每本书是一个独立项目 · 打开后进入完整创作面板</span>
-            <HelpPopover title="项目管理怎么用" width="22rem" size={13}>
-              {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入已有项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入已有项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（定时滚动与每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
-            </HelpPopover>
-          </h2>
-          {/* 🔴 加了「云端同步」之后这排按钮更多了：允许换行（原先 shrink-0 不能换行，
-              窄窗口会把整排挤出可视区）。换行不影响任何按钮的点击。 */}
-          <div className="flex flex-wrap gap-2 items-stretch justify-end">
+          <div className="flex flex-wrap gap-2 items-center justify-end">
             <Button onClick={createDemo}
               disabled={busy}
-
               title="一键创建含完整示例数据的测试项目" variant="secondary" size="md" className="flex items-center">
               <BookPlus size={13} /> 创建示范项目
             </Button>
@@ -321,15 +311,6 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             <Button variant="secondary" onClick={openCommunity} title="打开投稿广场（可浏览、投稿、评论与排行）" className="transition-colors">
               <MessagesSquare size={13} /> 投稿广场
             </Button>
-            {/**
-              * 3.3.2 · 换设备的第一步：**在没有本机作品时**把云端那本书取回来。
-              *
-              * 🔴 面板原先只挂在「作品内部」（桌面在侧栏、网页在账号行），项目中心没有任何云端入口
-              *    ⇒ 新设备上（0 本书）既看不到云端作品，也点不到「下载为新书」，头号场景第一步被堵死
-              *    （2026-10-31 真机验收 L16）。
-              * 🔴 这里必须给**看得见文字**的按钮：网页版那个纯图标入口按文案找不到，用户也发现不了。
-              * `onProjectsChanged={load}`：下载出来的新书要立刻出现在下面的列表里。
-              */}
             <CloudSyncPanel inline block={false} showState={false} size="md" onProjectsChanged={load} />
             <input
               ref={fileRef}
@@ -342,17 +323,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 e.target.value = ''
               }}
             />
-            <Button variant="primary" onClick={() => setCreating(true)} className="flex items-center gap-1.5 font-medium transition-colors">
+            <Button variant="primary" solid onClick={() => setCreating(true)} className="flex items-center gap-1.5 font-medium">
               <BookPlus size={14} /> 新建小说项目
             </Button>
-            {/* 2.6.1 · R1：按钮升级为「看板娘设置」——开关与自定义图都进弹窗（原直接 toggle 行为收进弹窗内开关） */}
-            {/* ============ 3.3.2 · 顶部按钮合组（2026-10-31 主人反馈 F1）============
-                原来这里是四个按钮（看板娘设置 / 应用图标 / 新手引导 / 使用手册），1280 宽就换两排。
-                现在按"同一类意图"并成两个入口：
-                  · 外观 —— 看板娘设置 + 应用图标（都是"软件长什么样"）
-                  · 帮助 —— 新手引导 + 使用手册（都是"不认识这个软件时从哪开始"）
-                用下拉菜单而不是"弹窗里再点一次"：多一层弹窗只会让人多点一次，且都还要再开各自弹窗。
-                菜单层级沿用章节树那套（Z.pagePanel / pagePanelTop），点空白处关闭。 */}
             <div className="relative">
               <Button
                 variant="secondary"
@@ -369,7 +342,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 <>
                   <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setAppearanceMenuOpen(false)} aria-hidden />
                   <div
-                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-850 border border-ink-700 rounded-lg shadow-2xl py-1.5 ws-surface"
                     style={{ zIndex: Z.pagePanelTop }}
                     role="menu"
                   >
@@ -382,7 +355,6 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                       <span className="flex-1 min-w-0 text-left whitespace-nowrap">看板娘设置</span>
                       <span className="shrink-0 text-10 text-ink-500">{mascotHidden ? '已隐藏' : '显示中'}</span>
                     </Button>
-                    {/* 应用图标只有桌面安装版能改（.lnk 只在 Windows 安装版存在），其它形态不显示这一项 */}
                     {appIconOk && (
                       <Button variant="bare" role="menuitem"
                         onClick={() => { setAppearanceMenuOpen(false); setAppIconOpen(true) }}
@@ -414,7 +386,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 <>
                   <div className="fixed inset-0" style={{ zIndex: Z.pagePanel }} onClick={() => setHelpMenuOpen(false)} aria-hidden />
                   <div
-                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-800 border border-ink-600 rounded-lg shadow-2xl py-1.5"
+                    className="absolute right-0 top-full mt-1 min-w-[196px] bg-ink-850 border border-ink-700 rounded-lg shadow-2xl py-1.5 ws-surface"
                     style={{ zIndex: Z.pagePanelTop }}
                     role="menu"
                   >
@@ -431,7 +403,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     <Button variant="bare" role="menuitem"
                       onClick={() => { setHelpMenuOpen(false); setHelpOpen(true) }}
                       className="w-full !justify-start px-3 py-1.5 text-12 text-ink-100 hover:bg-ink-700 flex items-center gap-2"
-                      title="不用打开项目也能查使用指南、问功能用法"
+                      title="不用打开项目也能查使用手册、问功能用法"
                     >
                       <BookOpen size={11} className="text-amber" />
                       <span className="flex-1 min-w-0 text-left whitespace-nowrap">使用指南</span>
@@ -441,6 +413,15 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               )}
             </div>
           </div>
+        </header>
+
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-13 font-semibold text-ink-100 flex items-center gap-2">
+            <Sparkles size={14} className="text-amber" /> 我的作品 (<span className="ws-num">{projects.length}</span>)
+            <HelpPopover title="项目管理怎么用" width="22rem" size={13}>
+              {'一本书 = 一个独立项目，设定 / 大纲 / 正文 / 统计互不干扰。\n\n· 新建小说项目：只需书名即可开工，封面与其他信息随时可补；\n· 创建示范项目：一键写入完整范例数据（卷章正文、设定表单、角色卡、伏笔、时间脉络、码字统计），用来快速摸清各功能怎么用，体验完可直接删除；\n· 导入已有项目：选择之前导出的 .json 备份即可还原全部内容；\n· 备份：把某本书导出成 .json 文件，换设备或重装前务必先导一份；导入已有项目可选择之前的 .json 备份还原；\n· 设定集：一键导出汇总全书世界观 / 人物 / 设定表的 Markdown 文档；\n· 备份与恢复：查看打开项目时自动生成的备份（定时滚动与每日首次打开各一类），可一键恢复历史版本；\n· 打开项目：进入该书的完整创作面板。'}
+            </HelpPopover>
+          </h2>
         </div>
 
         {/* 新建表单 */}
@@ -580,12 +561,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
         {/* 项目卡片 */}
         {projects.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-ink-700 py-16 text-center">
+          <div className="rounded-xl border border-dashed border-ink-700/80 py-14 text-center">
             <BookPlus size={28} className="mx-auto text-ink-600 mb-3" />
             <div className="text-13 text-ink-400">还没有作品，点击右上角「新建小说项目」开启第一本书</div>
-            <div className="mt-1.5 text-11 text-ink-500">
-              第一次使用？点上方「创建示范项目」，一键体验全部功能
-            </div>
+            <div className="mt-1.5 text-11 text-ink-500">或点上方「创建示范项目」快速体验</div>
           </div>
         ) : (
           <div className="space-y-8">
@@ -603,7 +582,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                     {items.map(p => (
-              <div key={p.id} data-project-card={p.id} className="group bg-ink-850 border border-ink-700 rounded-xl p-5 hover:border-amber/30 transition-all card-hover">
+              <div key={p.id} data-project-card={p.id} className="group bg-ink-850/95 border border-ink-700/75 rounded-xl p-4 ws-surface hover:border-amber/35 transition-all card-hover">
                 {editingId === p.id ? (
                   /* 编辑模式：修改书名与封面 */
                   <div>
@@ -707,9 +686,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                   <>
                     <div className="flex flex-wrap items-stretch gap-5 min-h-[184px]">
                       {p.cover ? (
-                        <SafeImage src={p.cover} alt={p.name} retry={false} className="w-128px object-cover rounded-md border border-ink-600 shrink-0 self-stretch" />
+                        <SafeImage src={p.cover} alt={p.name} retry={false} className="w-128px object-cover rounded-lg border border-ink-700/80 shrink-0 self-stretch" />
                       ) : (
-                        <div className="w-128px rounded-md border border-dashed border-ink-600 bg-ink-800/60 shrink-0 self-stretch flex items-center justify-center">
+                        <div className="w-128px rounded-lg border border-dashed border-ink-700/80 bg-ink-800/50 shrink-0 self-stretch flex items-center justify-center">
                           <Feather size={22} className="text-ink-600" />
                         </div>
                       )}
@@ -720,12 +699,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                               题材标签多数和书名重复，形态标签（自定义）在编辑项目里能看到 ——
                               列表上多两个彩色胶囊，扫一眼只添噪声。 */}
                           <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-10 text-ink-500">
+                            <span className="text-11 text-ink-400 ws-num">
                               {p.stats?.volumes ?? 0} 卷 · {p.stats?.chapters ?? 0} 章 · {((p.stats?.words ?? 0) / 10000).toFixed(1)} 万字
                             </span>
                           </div>
                           {p.intro && <p className="mt-2 text-11 text-ink-400 line-clamp-2">{p.intro}</p>}
-                          <div className="mt-2 text-10 text-ink-600">
+                          <div className="mt-2 text-10 text-ink-500 ws-num">
                             创建于 {new Date(p.createdAt).toLocaleDateString()} · 最近活动 {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
                         </div>

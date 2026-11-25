@@ -128,7 +128,7 @@ export default function WelcomeWizard({ onDone }: Props) {
           </div>
           <h1 className="text-2xl font-bold text-ink-50 tracking-wide flex items-baseline justify-center gap-2">
             青春幻想引擎
-            <span className="text-base font-normal text-ink-400">{APP_VERSION_LABEL}</span>
+            <span className="text-base font-normal text-ink-400 ws-num">{APP_VERSION_LABEL}</span>
           </h1>
           <p className="mt-2 text-13 text-ink-400">在你的世界中讲述你的故事</p>
         </header>
@@ -155,7 +155,7 @@ export default function WelcomeWizard({ onDone }: Props) {
                   variant="toggle"
                   selected={choice === c.key}
                   onClick={() => setChoice(c.key)}
-                  className="w-full flex-row items-center !justify-start gap-3.5 p-4 h-auto text-left rounded-xl"
+                  className="w-full flex-row items-center !justify-start gap-3.5 p-4 h-auto text-left rounded-xl ws-surface"
                 >
                   <span className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-lg ${c.iconCls}`}>
                     {c.icon}

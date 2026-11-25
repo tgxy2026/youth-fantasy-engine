@@ -1,6 +1,6 @@
 import ResizeHandle from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
-import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type, Compass } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronUp, Users, Globe, Map, PenTool, Activity, Wrench, LayoutDashboard, ArrowLeft, Upload, Sparkles, Palette, SlidersHorizontal, ZoomIn, ZoomOut, FolderPlus, Trash2, Beer, Maximize2, Image as ImageIcon, Type, Compass, X } from 'lucide-react'
 import BrandMark from '@/components/common/BrandMark'
 import BackToSource, { type ReturnSource } from '@/components/app/BackToSource'
 import HelpPopover from '@/components/common/HelpPopover'
@@ -57,6 +57,14 @@ interface Props {
   returnSource?: ReturnSource
   activeTab: string
   onNavigate: (id: string) => void
+  onOpenSearch?: () => void
+  /** 桌面端：由图标轨底部设置键从左向右弹出的「界面与数据」浮层 */
+  toolsOpen?: boolean
+  onCloseTools?: () => void
+  /** 桌面双层工坊导航联动：当前图标轨选中的分组与展示模式 */
+  focusGroup?: string | null
+  navMode?: 'focus' | 'all'
+  onToggleNavMode?: () => void
   collapsed: boolean
   projectName: string
   onExitProject: () => void
@@ -70,7 +78,7 @@ interface Props {
   onPageGuide?: () => void
 }
 
-export default function Sidebar({ activeTab, onNavigate, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, returnSource, onPageGuide }: Props) {
+export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = 'all', onToggleNavMode, collapsed, projectName, onExitProject, onExport, ctx, overlay = false, focusTools = false, toolsOpen = false, onCloseTools, returnSource, onPageGuide }: Props) {
   // 折叠状态**跨会话记忆**（见 lib/uiPrefs）：
   //   · 分组存的是「已折叠的分组」而不是「已展开的分组」→ 以后新增分组时，
   //     老用户的记录里没有它，落回默认值（展开）；反之新分组一上来就是收起的，很别扭。
@@ -86,12 +94,30 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
   const [footerCollapsed, setFooterCollapsed] = usePersistedBool('dock-collapsed', false)
   const [appearanceOpen, setAppearanceOpen] = usePersistedBool('sidebar-appearance-open', false)
   const toolsRef = useRef<HTMLDivElement>(null)
+  const flyoutRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!focusTools) return
     setFooterCollapsed(false)
     const frame = requestAnimationFrame(() => toolsRef.current?.scrollIntoView({ block: 'end' }))
     return () => cancelAnimationFrame(frame)
   }, [focusTools, setFooterCollapsed])
+  useEffect(() => {
+    if (overlay || !toolsOpen || !onCloseTools) return
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as Element | null
+      if (el?.closest('[data-settings-trigger], [role="dialog"], [role="menu"]')) return
+      if (flyoutRef.current && !flyoutRef.current.contains(e.target as Node)) onCloseTools()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) onCloseTools()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [overlay, toolsOpen, onCloseTools])
   // 主题与界面缩放（与 <html data-theme> / zoom 同步）
   const [theme, setTheme] = useState(getStoredTheme())
   const [zoom, setZoom] = useState(getStoredZoom())
@@ -174,70 +200,210 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
     })
   }
 
+  const toolsContent = (
+    <>
+      {/* 导出备份提示（3.5.1 · U4）：不再弹全屏 Modal，改成这块工具栏里的内联提示条。
+          只在「确实很久没导出 + 有真实作品」时出现；示范项目不提醒。 */}
+      <BackupReminder variant="sidebar" hasProject isDemo={isDemoProjectName(projectName)} onExport={onExport} />
+      {/* 3.5.6：任务列表已拆为独立页签「工作面板 → 后台任务」；此处不再内嵌（见 TaskCenterPanel）。 */}
+      {/* 低频外观设置按需展开，主题/字体/全屏不再常驻堆在缩放周围。 */}
+      <section className="rounded-lg border border-ink-700/70 bg-ink-850/60">
+        <Button variant="bare" onClick={() => setAppearanceOpen(!appearanceOpen)}
+          aria-label={appearanceOpen ? '收起外观设置' : '展开外观设置'} aria-expanded={appearanceOpen}
+          className="flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-11 text-ink-300 hover:text-amber">
+          <Palette size={12} className="shrink-0" />
+          <span>外观设置</span>
+          <span className="ml-auto truncate text-ink-500">{THEMES.find(t => t.id === theme)?.name}</span>
+          <ChevronDown size={11} className={`shrink-0 transition-transform ${appearanceOpen ? 'rotate-180' : ''}`} />
+        </Button>
+        <div className={`space-y-2 px-2 pb-2 ${appearanceOpen ? '' : 'hidden'}`}>
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-11 text-ink-400">主题与字体</span>
+          {/* 字体设置入口（2026-09-28 · 社区需求）：正文编辑器 + 界面全站两口 */}
+          <Button
+            variant="ghost" iconOnly size="xs" type="button"
+            onClick={() => setFontOpen(true)}
+            title="字体设置（正文编辑器与界面）"
+            aria-label="字体设置"
+            className="ml-auto -mr-1"
+          >
+            <Type size={11} />
+          </Button>
+          {/* 自定义主题入口（2.5.0 · C1）：总是打开弹窗（已存参数则载入当前参数继续调） */}
+          <Button
+            variant="ghost" iconOnly size="xs" type="button"
+            onClick={() => setCustomThemeOpen(true)}
+            title="自定义主题（母版 + 强调色 + 色相偏移）"
+            aria-label="自定义主题"
+            className="-mr-1"
+          >
+            <SlidersHorizontal size={11} />
+          </Button>
+        </div>
+        <div className="grid grid-cols-5 justify-items-center gap-2">
+          {THEMES.map(t => (
+            <Button variant="bare"
+              key={t.id}
+              aria-label={`${t.name}主题`}
+              aria-pressed={theme === t.id}
+              title={t.id === 'custom'
+                ? `${t.name}（${t.desc}）—— 点这里${getStoredCustomTheme() ? '切换，旁边的滑杆图标可调整参数' : '开始配置'}`
+                : `${t.name}（${t.desc}）`}
+              onClick={() => {
+                // custom 圆点：已有参数直接切换生效；首次（无参数）打开配置弹窗
+                if (t.id === 'custom' && !getStoredCustomTheme()) setCustomThemeOpen(true)
+                else changeTheme(t.id)
+              }}
+              className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${theme === t.id ? 'border-amber ring-1 ring-amber/50' : 'border-ink-600'}`}
+              style={{ background: t.swatch }}
+            />
+          ))}
+        </div>
+        <AppearanceToggles />
+        </div>
+      </section>
+
+      {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
+      <div className="space-y-1.5" data-zoom-panel>
+        <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
+        <span className="flex shrink-0 items-center gap-1">界面缩放
+          <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
+            {'调整整个软件的字号与元素大小（80%–160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
+          </HelpPopover>
+        </span>
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1">
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
+        <Button variant="toggle" size="xs" selected={zoomAuto} aria-label="跟随窗口自动调整" aria-pressed={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
+          title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
+          自动
+        </Button>
+          {/* 数值组：− / 比例 / % / + 整体靠右，与左边的「自动」分列两端 */}
+          <span className="flex min-w-0 items-center gap-0.5">
+          <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} aria-label="缩小界面" title="缩小界面（按 10% 递减）" className="!min-w-6">
+            <ZoomOut size={12} />
+          </Button>
+          <span className="flex min-w-0 items-center justify-center gap-1">
+            <NumberField
+              value={zoom}
+              onChange={(v) => { if (typeof v === 'number') { setZoom(applyZoom(v, { manual: true })); setZoomAuto(false) } }}
+              min={80}
+              max={160}
+              ariaLabel="界面缩放百分比"
+              title="手动输入缩放比例（80%–160%），回车或失焦生效"
+              className="h-6 w-9 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            <span className="text-ink-400 text-11">%</span>
+          </span>
+          <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} aria-label="放大界面" title="放大界面（按 10% 递增）" className="!min-w-6">
+            <ZoomIn size={12} />
+          </Button>
+          </span>
+        </div>
+        <DensityControl inline />
+        </div>
+      </div>
+      {DESKTOP && <DesktopDataBar />}
+      {WEB ? (GUEST || WEB_ACCOUNT_LOCAL ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
+      {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
+      {DESKTOP && <DesktopCloudAccount />}
+      {DESKTOP && <CloudSyncPanel inline />}
+      <Button variant="secondary" size="xs" onClick={onPageGuide}
+        disabled={!onPageGuide}
+        className="w-full !justify-start gap-1.5"
+        title={onPageGuide
+          ? '分步认识当前页签（随时可重看，不新建记录、不改数据）'
+          : '当前页签没有分步指引'}>
+        <Compass size={12} /> 本页指引
+        {!onPageGuide && <span className="ml-auto text-11 text-ink-600">此页无</span>}
+      </Button>
+      <BossKeySettings />
+    </>
+  )
+
   return (
+    <>
     <aside
-      className={`relative h-full min-h-0 flex flex-col border-r border-ink-700 bg-ink-900/95 shrink-0 ${overlay ? 'overflow-y-auto' : ''}`}
+      className={`relative h-full min-h-0 flex flex-col border-r border-ink-700/70 bg-ink-900/95 shrink-0 ${overlay ? 'overflow-y-auto' : collapsed ? 'hidden' : ''}`}
       style={{ width: overlay ? '100%' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: overlay ? 0 : 224 }}
     >
       {/* 拖拽调整侧栏宽度 */}
       {!overlay && <ResizeHandle pane={sidebar} label="侧栏宽度" layer={Z.pageBase} />}
-      {/* Logo */}
-      <div className="px-4 h-14 border-b border-ink-700 shrink-0 flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
-          <BrandMark size={16} className="text-amber" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-14 font-bold text-ink-50 tracking-wide">青春幻想引擎 <span className="text-10 font-normal text-ink-400 ml-1">{APP_VERSION_LABEL}</span></div>
-          <div className="text-10 text-ink-400 -mt-0.5 truncate">小说创作工作台</div>
-        </div>
-      </div>
-
-      {/* 当前项目条 */}
-      <div className="px-3 py-2.5 border-b border-ink-700 shrink-0">
-        <div className="rounded-lg bg-ink-800/70 border border-ink-700 px-2.5 py-2">
-          <div className="text-9 text-ink-500 mb-0.5">当前项目</div>
-          <div className="text-13 font-semibold text-amber truncate leading-tight" title={projectName}>{projectName}</div>
-          {returnSource && <BackToSource {...returnSource} />}
-          <div className="flex gap-1 mt-2">
-            <Button onClick={onExitProject}
-              
-              title="返回项目列表" variant="secondary" size="xs" className="min-w-0 flex-1 !gap-1 !whitespace-nowrap rounded">
-              <ArrowLeft size={10} className="shrink-0" /> 切换项目
-            </Button>
-            <Button onClick={onExport}
-              
-              title="导出当前项目 JSON 备份" variant="secondary" size="xs" className="min-w-0 flex-1 !gap-1 !whitespace-nowrap rounded">
-              <Upload size={10} className="shrink-0" /> 备份
-            </Button>
+      {/* 工坊顶部项目头：固定 48px 高度，与左侧图标轨、章节树、正文标题栏顶部横线对齐 */}
+      <div className="h-12 px-3 border-b border-ink-700/70 shrink-0 flex items-center gap-2 min-w-0">
+        {overlay && (
+          <div className="w-7 h-7 rounded-lg bg-amber/15 border border-amber/30 flex items-center justify-center shrink-0">
+            <BrandMark size={14} className="text-amber" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-13 font-semibold text-ink-50 truncate tracking-tight" title={projectName}>{projectName}</span>
+            <span className="text-10 text-ink-500 shrink-0 ws-num">{APP_VERSION_LABEL}</span>
           </div>
         </div>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button onClick={onExitProject} title="返回项目列表" aria-label="切换项目" variant="ghost" iconOnly size="xs">
+            <ArrowLeft size={13} />
+          </Button>
+          <Button onClick={onExport} title="导出当前项目 JSON 备份" aria-label="备份当前项目" variant="ghost" iconOnly size="xs">
+            <Upload size={13} />
+          </Button>
+        </div>
       </div>
+      {returnSource && (
+        <div className="px-3 py-1.5 border-b border-ink-700/60 shrink-0">
+          <BackToSource {...returnSource} />
+        </div>
+      )}
 
       {/* Nav */}
       <nav className={`min-h-0 py-2 px-2 space-y-0.5 ${overlay ? 'shrink-0' : 'flex-1 overflow-y-auto'}`}>
+        {!overlay && focusGroup && onToggleNavMode && (
+          <div className="flex items-center justify-between px-2 py-1 mb-1">
+            <span className="text-11 font-semibold text-ink-400 tracking-wide truncate">
+              {navMode === 'focus' ? focusGroup : '全部目录'}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onToggleNavMode}
+              title={navMode === 'focus' ? '展开全部功能目录' : '仅看当前所选分组'}
+              className="!h-5 !px-1.5 !text-10 text-ink-400 hover:text-ink-100 shrink-0"
+            >
+              {navMode === 'focus' ? '全部目录' : '仅当前组'}
+            </Button>
+          </div>
+        )}
         {GROUPS.map(group => {
-          const isOpen = !collapsedGroups.has(group)
+          const focusActive = !overlay && !!focusGroup && navMode === 'focus'
+          const isOpen = focusActive ? true : !collapsedGroups.has(group)
           const tabs = group === '正文写作'
             ? [EDITOR_TAB, ...TABS.filter(t => t.group === group && tabVisible(t.id, ctx))]
             : TABS.filter(t => t.group === group && tabVisible(t.id, ctx))
           if (tabs.length === 0 && group !== '正文写作') return null
+          if (focusActive && group !== focusGroup) return null
           return (
             <div key={group}>
-              <Button variant="bare"
-                onClick={() => toggleGroup(group)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-12 font-medium text-ink-400 hover:text-ink-200 transition-colors uppercase tracking-wider"
-              >
-                {GROUP_ICONS[group]}
-                <span>{group}</span>
-                <ChevronDown
-                  size={12}
-                  className={`ml-auto transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
-                />
-              </Button>
+              {!focusActive && (
+                <Button variant="bare"
+                  onClick={() => toggleGroup(group)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-11 font-medium text-ink-400 hover:text-ink-200 transition-colors tracking-wider"
+                >
+                  {GROUP_ICONS[group]}
+                  <span>{group}</span>
+                  <ChevronDown
+                    size={12}
+                    className={`ml-auto transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+                  />
+                </Button>
+              )}
               {isOpen && (
-                <div className="mt-0.5 space-y-0.5">
+                <div className={`${focusActive ? 'space-y-0.5' : 'mt-0.5 space-y-0.5'}`}>
                   {tabs.map(tab => {
                     const active = activeTab === tab.id
+                    const padLeft = focusActive ? 'pl-2.5' : 'pl-7'
+                    const subPadLeft = focusActive ? 'pl-6' : 'pl-11'
                     // 「章节总表」展开为各卷子表（按卷建表）：每卷一张独立台账表
                     if (tab.id === 'chapter-master') {
                       return (
@@ -245,10 +411,10 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                           <Button variant="bare"
                             onClick={() => { setVolOpen(!volOpen); onNavigate(tab.id) }}
                             aria-current={active ? 'page' : undefined}
-                            className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150 flex items-center
+                            className={`w-full text-left !justify-start px-2.5 py-1.5 ${padLeft} rounded-lg text-13 transition-all duration-150 flex items-center
                               ${active
-                                ? 'bg-amber/15 text-amber font-medium border border-amber/25'
-                                : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                                ? 'bg-amber/12 text-amber font-medium border border-amber/30'
+                                : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
                           >
                             {tab.name}
                             <ChevronDown size={11} className={`ml-auto transition-transform duration-200 ${volOpen ? '' : '-rotate-90'}`} />
@@ -256,7 +422,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                           {volOpen && (
                             <div className="mt-0.5 space-y-0.5">
                               {volumeTabs.length === 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="sm" className="w-full text-left flex items-center">
                                   <FolderPlus size={11} /> 新建第一卷
                                 </Button>
                               )}
@@ -265,10 +431,10 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                   <Button variant="bare"
                                     onClick={() => onNavigate(v.id)}
                                     aria-current={v.id === activeTab ? 'page' : undefined}
-                                    className={`flex-1 text-left !justify-start px-2.5 py-1 pl-12 rounded-md text-13 transition-all duration-150
+                                    className={`flex-1 text-left !justify-start px-2.5 py-1 ${subPadLeft} rounded-lg text-12 transition-all duration-150
                                       ${v.id === activeTab
-                                        ? 'bg-amber/15 text-amber font-medium border border-amber/25'
-                                        : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                                        ? 'bg-amber/12 text-amber font-medium border border-amber/30'
+                                        : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
                                   >
                                     {v.name}
                                   </Button>
@@ -282,7 +448,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                                 </div>
                               ))}
                               {volumeTabs.length > 0 && (
-                                <Button onClick={createVolume} variant="secondary" size="md" className="w-full text-left flex items-center">
+                                <Button onClick={createVolume} variant="secondary" size="sm" className="w-full text-left flex items-center">
                                   <FolderPlus size={11} /> 新建卷
                                 </Button>
                               )}
@@ -296,10 +462,10 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
                         key={tab.id}
                         onClick={() => onNavigate(tab.id)}
                         aria-current={active ? 'page' : undefined}
-                        className={`w-full text-left !justify-start px-2.5 py-1.5 pl-8 rounded-md text-sm transition-all duration-150
+                        className={`w-full text-left !justify-start px-2.5 py-1.5 ${padLeft} rounded-lg text-13 transition-all duration-150
                           ${active
-                            ? 'bg-amber/15 text-amber font-medium border border-amber/25'
-                            : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800 border border-transparent'}`}
+                            ? 'bg-amber/12 text-amber font-medium border border-amber/30'
+                            : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800/70 border border-transparent'}`}
                       >
                         {tab.name}
                       </Button>
@@ -312,13 +478,9 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
         })}
       </nav>
 
-      {/* Footer */}
-      {/* 高度按侧栏自身限制，随界面缩放一起变化；展开的设置在内部滚动，给菜单保留空间。 */}
-      <div className={`min-h-0 border-t border-ink-700 shrink-0 flex flex-col ${footerCollapsed ? 'h-10' : ''}`}
-        style={{ maxHeight: overlay ? undefined : 'min(45%, max(2.5rem, calc(100% - 18rem)))' }}>
-        {/* 🔴 B6（2026-09-22 老大新增）：左下角工具栏折叠把手。
-            收起后内容高度归零，上方页签区（`nav.flex-1`）自动吃掉释放的空间 —— 即"菜单栏自然延伸"。
-            把手带 title / aria-label / aria-expanded，键盘与读屏可达。 */}
+      {/* Footer：窄屏抽屉保持内联折叠条；桌面端改为点击左下角设置键从左向右弹出浮层 */}
+      {overlay && (
+      <div className={`min-h-0 border-t border-ink-700/70 shrink-0 flex flex-col ${footerCollapsed ? 'h-10' : ''}`}>
         <button
           type="button"
           onClick={() => setFooterCollapsed(!footerCollapsed)}
@@ -332,153 +494,39 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
           <span>界面与数据</span>
           {footerCollapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
         </button>
-        {/* 保持组件挂载以订阅保存/后台任务状态；收起时不留下可被键盘聚焦的隐藏控件。 */}
-        <div ref={toolsRef} data-sidebar-tools className={`min-h-0 space-y-2 px-3 pb-2 ${overlay ? '' : 'overflow-y-auto overscroll-contain'} ${footerCollapsed ? 'hidden' : ''}`}>
-        {/* 导出备份提示（3.5.1 · U4）：不再弹全屏 Modal，改成这块工具栏里的内联提示条。
-            只在「确实很久没导出 + 有真实作品」时出现；示范项目不提醒。 */}
-        <BackupReminder variant="sidebar" hasProject isDemo={isDemoProjectName(projectName)} onExport={onExport} />
-        {/* 3.5.6：任务列表已拆为独立页签「工作面板 → 后台任务」；此处不再内嵌（见 TaskCenterPanel）。 */}
-        {/* 低频外观设置按需展开，主题/字体/全屏不再常驻堆在缩放周围。 */}
-        <section className="rounded-lg border border-ink-700 bg-ink-800/30">
-          <Button variant="bare" onClick={() => setAppearanceOpen(!appearanceOpen)}
-            aria-label={appearanceOpen ? '收起外观设置' : '展开外观设置'} aria-expanded={appearanceOpen}
-            className="flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-11 text-ink-300 hover:text-amber">
-            <Palette size={12} className="shrink-0" />
-            <span>外观设置</span>
-            <span className="ml-auto truncate text-ink-500">{THEMES.find(t => t.id === theme)?.name}</span>
-            <ChevronDown size={11} className={`shrink-0 transition-transform ${appearanceOpen ? 'rotate-180' : ''}`} />
-          </Button>
-          <div className={`space-y-2 px-2 pb-2 ${appearanceOpen ? '' : 'hidden'}`}>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className="text-11 text-ink-400">主题与字体</span>
-            {/* 字体设置入口（2026-09-28 · 社区需求）：正文编辑器 + 界面全站两口 */}
-            <Button
-              variant="ghost" iconOnly size="xs" type="button"
-              onClick={() => setFontOpen(true)}
-              title="字体设置（正文编辑器与界面）"
-              aria-label="字体设置"
-              className="ml-auto -mr-1"
-            >
-              <Type size={11} />
-            </Button>
-            {/* 自定义主题入口（2.5.0 · C1）：总是打开弹窗（已存参数则载入当前参数继续调） */}
-            <Button
-              variant="ghost" iconOnly size="xs" type="button"
-              onClick={() => setCustomThemeOpen(true)}
-              title="自定义主题（母版 + 强调色 + 色相偏移）"
-              aria-label="自定义主题"
-              className="-mr-1"
-            >
-              <SlidersHorizontal size={11} />
-            </Button>
-          </div>
-          <div className="grid grid-cols-5 justify-items-center gap-2">
-            {THEMES.map(t => (
-              <Button variant="bare"
-                key={t.id}
-                aria-label={`${t.name}主题`}
-                aria-pressed={theme === t.id}
-                title={t.id === 'custom'
-                  ? `${t.name}（${t.desc}）—— 点这里${getStoredCustomTheme() ? '切换，旁边的滑杆图标可调整参数' : '开始配置'}`
-                  : `${t.name}（${t.desc}）`}
-                onClick={() => {
-                  // custom 圆点：已有参数直接切换生效；首次（无参数）打开配置弹窗
-                  if (t.id === 'custom' && !getStoredCustomTheme()) setCustomThemeOpen(true)
-                  else changeTheme(t.id)
-                }}
-                className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${theme === t.id ? 'border-amber ring-1 ring-amber/50' : 'border-ink-600'}`}
-                style={{ background: t.swatch }}
-              />
-            ))}
-          </div>
-          <AppearanceToggles />
-          </div>
-        </section>
-
-        {/* 缩放标题与操作固定分两行，避免侧栏宽度或缩放变化时随机折行。 */}
-        <div className="space-y-1.5" data-zoom-panel>
-          <div className="flex items-center justify-between gap-2 text-11 text-ink-300">
-          <span className="flex shrink-0 items-center gap-1">界面缩放
-            <HelpPopover title="界面缩放怎么用" width="20rem" size={11}>
-              {'调整整个软件的字号与元素大小（80%–160%）。\n\n· 默认「跟随窗口」：按窗口宽度自动取一个舒适值，窗口大小变化时自动重算，大屏不再卡在 100%；\n· 用 +/− 或直接输入百分比即视为手动指定，此后不再自动适配；点「自动」可切回跟随；\n· 设置保存在本地，下次打开沿用；\n· 缩放与主题切换相互独立，互不影响。'}
-            </HelpPopover>
-          </span>
-          </div>
-          {/* 🔴 一行里放两块（主人 2026-10-29）：左侧缩放胶囊，右侧界面密度（单键切换）。
-              🔴 胶囊要**自己撑满剩余宽度**（主人 2026-10-29 第二次要求）：上下几条（外观设置 / 保存 /
-                  数据文件）都是撑满的，只有它原来是 w-fit 的小胶囊，侧栏拖宽后右边空一截。
-                  现在 `min-w-0 flex-1`：拖动侧栏时它跟着变长；内部两组用 justify-between ——
-                  左边「自动」（模式），右边「− 数字 % +」（数值），中间留弹性空隙。
-              🔴 最窄 224px（内容区 207px）仍必须是一行：内部实测需 ~130px + 密度键 44 + 间距 4 = 178，
-                  余量约 29px，所以 flex-wrap 只作极端字体放大的兜底。 */}
-          <div className="flex w-full flex-wrap items-center gap-x-1 gap-y-1">
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-ink-700 bg-ink-800/40 px-1 py-1">
-          <Button variant="toggle" size="xs" selected={zoomAuto} aria-label="跟随窗口自动调整" aria-pressed={zoomAuto} onClick={toAutoZoom} className="shrink-0 !px-1.5 !text-11"
-            title={zoomAuto ? '当前为「跟随窗口」模式（窗口尺寸变化时自动重算）' : '切回「跟随窗口」：按当前窗口宽度重新适配'}>
-            自动
-          </Button>
-            {/* 数值组：− / 比例 / % / + 整体靠右，与左边的「自动」分列两端 */}
-            <span className="flex min-w-0 items-center gap-0.5">
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(-10)} aria-label="缩小界面" title="缩小界面（按 10% 递减）" className="!min-w-6">
-              <ZoomOut size={12} />
-            </Button>
-            <span className="flex min-w-0 items-center justify-center gap-1">
-              {/* U-1 · 2.6.0：改走 NumberField（允许自由输入、提交时钳到 80~160），替换手写 type=number + blur 提交 */}
-              {/* 🔴 3.0 修复（2026-10-10）：此处原先的类名**大半是无效的** —— index.css 里那条全局
-                  `input, textarea, select` 规则**不在 @layer 内**，而未分层样式优先于 Tailwind 的
-                  @layer utilities ⇒ px-1 / py-0.5 / rounded / bg-* / border-* / text-* 全被
-                  全局的 12px 内边距 + 14px 字号压掉：48px 宽的框只剩 22px 可用，
-                  「132」只显示成「1」，高度 34px 也比同排控件高一截。
-                  需覆盖的一律加 `!`；h-6 与同排 toggle（size=xs）对齐。 */}
-              <NumberField
-                value={zoom}
-                onChange={(v) => { if (typeof v === 'number') { setZoom(applyZoom(v, { manual: true })); setZoomAuto(false) } }}
-                min={80}
-                max={160}
-                ariaLabel="界面缩放百分比"
-                title="手动输入缩放比例（80%–160%），回车或失焦生效"
-                className="h-6 w-9 !px-1 !py-0 !rounded-lg text-11 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <span className="text-ink-400 text-11">%</span>
-            </span>
-            <Button variant="icon-amber" size="xs" onClick={() => changeZoom(10)} aria-label="放大界面" title="放大界面（按 10% 递增）" className="!min-w-6">
-              <ZoomIn size={12} />
-            </Button>
-            </span>
-          </div>
-          <DensityControl inline />
-          </div>
-        </div>
-        {/* 本机存储：数据文件保存 / 导出 / 导入。
-            内嵌进侧栏而非全局 fixed 浮层，避免压住左下角（#032 布局规范化）。
-            便携版改用浏览器等价实现（导出=下载 / 导入=选文件 / 路径可复制）—— 2026-10-10 便携版 WP-2b */}
-        {/* 🔴 网页版必须**先判 WEB**：网页云端同时带 PORTABLE 标记（复用其 HTTP StoreOps），
-            若只判 PORTABLE 会显示成「便携数据文件 ./data/…」这种云端不存在的路径。 */}
-        {DESKTOP && <DesktopDataBar />}
-        {WEB ? (GUEST || WEB_ACCOUNT_LOCAL ? <GuestDataBar /> : <WebDataBar />) : PORTABLE && <PortableDataBar />}
-        {/* 云盘文件同步：项目内也能看到同步状态并随时开关 / 换目录 */}
-        {CLOUD_FILE_SYNC && <CloudFileSyncBar variant="sidebar" />}
-        {/* 桌面版云端账号（3.3.2 · P5）：登录后才会出现「云端同步」入口 */}
-        {DESKTOP && <DesktopCloudAccount />}
-        {DESKTOP && <CloudSyncPanel inline />}
-        {/* 3.3.1 · P2/P3：本页指引（只有当前页签有引导时才传入；关掉自动引导后仍可从这里重看）
-            🔴 3.3.2 · 2026-10-31 主人反馈 F3：位置从「界面与数据」最上面移到**云端同步之后、老板键之前**。
-            🔴 没有引导的页签**也占位（置灰）**：否则这一行时有时无，下面的「老板键」会跟着上下跳，
-               用户会以为点错了地方。占位比"干净"更重要。 */}
-        <Button variant="secondary" size="xs" onClick={onPageGuide}
-          disabled={!onPageGuide}
-          className="w-full !justify-start gap-1.5"
-          title={onPageGuide
-            ? '分步认识当前页签（随时可重看，不新建记录、不改数据）'
-            : '当前页签没有分步指引'}>
-          <Compass size={12} /> 本页指引
-          {!onPageGuide && <span className="ml-auto text-11 text-ink-600">此页无</span>}
-        </Button>
-        {/* 老板键（3.3.2 · §15）：桌面=隐藏窗口，便携/网页=遮挡当前页面 */}
-        <BossKeySettings />
+        <div ref={toolsRef} data-sidebar-tools className={`min-h-0 space-y-2 px-3 pb-2 ${footerCollapsed ? 'hidden' : ''}`}>
+          {toolsContent}
         </div>
       </div>
-      {/* 自定义主题弹窗（2.5.0 · C1）：
+      )}
+    </aside>
+    {!overlay && (
+      <div
+        ref={flyoutRef}
+        role="region"
+        aria-label="界面与数据设置面板"
+        className={`fixed left-12 bottom-0 max-h-[min(78vh,calc(100vh-3.5rem))] rounded-tr-xl border-t border-r border-ink-700/80 bg-ink-900/98 backdrop-blur-md shadow-2xl ws-surface ws-flyout-right flex flex-col overflow-hidden ${toolsOpen ? '' : 'hidden'}`}
+        style={{ zIndex: Z.dropdown, width: collapsed ? '224px' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: 224 }}
+      >
+        <div className="h-10 shrink-0 px-3 border-b border-ink-700/70 flex items-center justify-between gap-2">
+          <span className="text-12 font-semibold text-ink-200 tracking-wide">界面与数据</span>
+          <Button
+            variant="ghost"
+            iconOnly
+            size="xs"
+            onClick={onCloseTools}
+            title="收起设置面板"
+            aria-label="关闭设置面板"
+          >
+            <X size={13} />
+          </Button>
+        </div>
+        <div ref={toolsRef} data-sidebar-tools className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-2 px-2.5 py-2.5">
+          {toolsContent}
+        </div>
+      </div>
+    )}
+    {/* 自定义主题弹窗（2.5.0 · C1）：
           · 关闭未应用 → 弹窗内部已回滚，这里读回真实主题同步 state；
           · 应用 → yfe-theme 已落盘 'custom'，直接对齐。 */}
       <CustomThemeDialog
@@ -489,7 +537,7 @@ export default function Sidebar({ activeTab, onNavigate, projectName, onExitProj
       {/* 字体设置弹窗（2026-09-28）：应用/取消都在弹窗内部完成（CSS 变量即时生效，
           不影响 React 状态），关闭无需同步任何 state。 */}
       <FontSettingsDialog open={fontOpen} onClose={() => setFontOpen(false)} />
-    </aside>
+    </>
   )
 }
 

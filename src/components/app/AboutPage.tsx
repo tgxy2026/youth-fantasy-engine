@@ -8,8 +8,10 @@ import { APP_BUILD_ID, APP_BUILD_TIME, APP_VERSION_LABEL, formatBuildTime } from
 import { copyText, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
-import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
+import { Modal } from '@/components/dialogs/Modal'
+import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import UpdateDialog from '@/components/app/UpdateDialog'
+import { VERSION_ARTICLES } from '@/lib/help/articles/version'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN, GITEE_RELEASES_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
 import { PORTABLE } from '@/lib/storage/fileBackend'
@@ -68,6 +70,7 @@ export default function AboutPage() {
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<{ hasUpdate: boolean; latest: LatestRelease | null; skipped?: boolean } | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
   const [autoCheck, setAuto] = usePersistedBool('update-auto-check', isAutoCheckOn())
   // 诊断信息（2026-10-06 补 · 可观测性）：反馈问题时一键复制环境与规模摘要
   const [diagBusy, setDiagBusy] = useState(false)
@@ -114,11 +117,36 @@ export default function AboutPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="w-full page-enter pb-6">
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
-      <div data-guide="page-header" className="max-w-5xl mx-auto px-6 py-8">
-        {/* 标题 */}
-        <div className="flex items-center gap-3 mb-1">
+      <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="近期版本更新说明" width="lg">
+        <div className="space-y-4">
+          {[...VERSION_ARTICLES].reverse().map(art => (
+            <section key={art.id} className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-4 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-13 font-semibold text-ink-100">{art.title}</h3>
+                <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 ws-num">
+                  v{art.verifiedAgainst}
+                </span>
+              </div>
+              <p className="text-12 text-ink-300 leading-relaxed">{art.summary}</p>
+              <div className="space-y-2 pt-1">
+                {art.sections.map(sec => (
+                  <div key={sec.id} className="rounded-lg bg-ink-900/50 border border-ink-700/50 px-3 py-2 space-y-1">
+                    <div className="text-11 font-semibold text-amber/90">{sec.heading}</div>
+                    {sec.body.map((p, idx) => (
+                      <p key={idx} className="text-11 text-ink-300 leading-relaxed">{p}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </Modal>
+      {/* 标题 */}
+      <header data-guide="page-header" className={`${PAGE_HEADER_STICKY_CLASS} mb-5`}>
+        <div className="flex items-center gap-3">
           <h1 className={PAGE_TITLE_CLASS}>关于打赏</h1>
           <HelpPopover title="这一页是什么" side="right">
             {WEB
@@ -128,9 +156,10 @@ export default function AboutPage() {
                 : '介绍本作与作者、友情链接，以及支持作者的方式。\n\n· 致谢名单按打赏时间排序，随打赏持续更新；\n· 页面图文与链接均为内置静态资源；会联网的只有版本检查 —— 手动点「检查更新」，以及默认开启的「启动时自动检查」（可在本页关掉）。'}
           </HelpPopover>
         </div>
-        <p className={`${PAGE_DESCRIPTION_CLASS} mb-8`} title="关于「青春幻想引擎」与它的作者，以及支持作者的方式。">
+        <p className={PAGE_DESCRIPTION_CLASS} title="关于「青春幻想引擎」与它的作者，以及支持作者的方式。">
           关于「青春幻想引擎」（<span className="tracking-wide text-ink-500">Youth Fantasy Engine</span>）与它的作者，以及支持作者的方式。
         </p>
+      </header>
 
         {/* 主体：左列（作者信息 + 友情链接） / 右列（打赏支持，拉长对齐）。
             lg 下给定最小高度，两列 items-stretch 等高，多出的空间由 flex-1 区块自然留白 */}
@@ -138,7 +167,7 @@ export default function AboutPage() {
           {/* 左列：作者信息 + 友情链接 */}
           <div className="lg:col-span-1 flex flex-col gap-6">
             {/* 作者信息 */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<BookOpen size={15} className="text-amber" />}>作者信息</SectionTitle>
               <div className="flex flex-col items-center text-center">
                 <img
@@ -162,7 +191,7 @@ export default function AboutPage() {
             </section>
 
             {/* 联系方式（flex-1 撑满左列剩余高度） */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
               <ul className="space-y-3">
                 {CONTACT_LINKS.map(l => (
@@ -213,7 +242,7 @@ export default function AboutPage() {
             {/* 跨版本指引（2026-10-18）：网页版 ⇄ 桌面版 / 便携版互导。
                 三端是同一款软件的不同用法，人往往先接触网页版再想装到电脑上（或反过来），
                 这里给一条明确的往返路径，并说明「换版本不会丢稿」——那句最能打消顾虑。 */}
-            <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>
                 {WEB ? '装到电脑上用' : '在浏览器里用'}
               </SectionTitle>
@@ -236,7 +265,7 @@ export default function AboutPage() {
                     <Download size={13} /> 前往 Gitee 下载 <ExternalLink size={11} />
                   </a>
                   <p className="mt-3 text-10 leading-relaxed text-ink-500">
-                    换设备前请先在左下角存储区导出 JSON 备份，再按目标版本的导入提示操作。
+                    换设备前请先在左下角设置中的存储区导出 JSON 备份，再按目标版本的导入提示操作。
                   </p>
                 </>
               ) : (
@@ -266,11 +295,18 @@ export default function AboutPage() {
 
             {/* 获取最新版本：只给网盘链接 + 版本号，不联网检测 */}
             {QUARK_URL && (
-              <section className="rounded-xl bg-ink-850 border border-ink-700 p-6">
+              <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
                 <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="text-xs text-ink-400">
+                    当前版本 <span className="text-ink-100 font-medium ws-num">{APP_VERSION_LABEL}</span>
+                  </span>
+                  <Button variant="secondary" size="xs" onClick={() => setNotesOpen(true)} className="gap-1">
+                    <BookOpen size={12} /> 更新说明
+                  </Button>
+                </div>
                 <p className="text-ink-400 text-xs leading-relaxed mb-4">
-                  当前版本 <span className="text-ink-100 font-medium">{APP_VERSION_LABEL}</span>
-                  。新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、小黑盒与 QQ 交流群——
+                  新版本安装包发布在下方网盘，更新公告同步发在 B 站主页、小黑盒与 QQ 交流群——
                   若社交平台看到更新公告，可来此获取最新版。
                 </p>
                 {/**
@@ -382,7 +418,7 @@ export default function AboutPage() {
                 · 致谢名单排在码下方；名单下方**刻意留白**（`flex-1` 空占位吸收剩余高度），
                   以后加人自然向下生长，不会顶动上面的码；
                 · 底部对齐由外层 grid 的 `items-stretch` 保证（左列「联系方式」flex-1 撑满）。 */}
-          <section className="lg:col-span-2 rounded-xl bg-ink-850 border border-ink-700 p-6 flex flex-col">
+          <section className="lg:col-span-2 rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 flex flex-col ws-surface">
             <SectionTitle icon={<Heart size={15} className="text-amber" />}>打赏支持</SectionTitle>
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。
@@ -399,7 +435,7 @@ export default function AboutPage() {
                   <img
                     src={p.img}
                     alt={`${p.key === 'wechat' ? '微信' : '支付宝'}收款码`}
-                    className="w-full aspect-[2/3] object-contain rounded-md"
+                    className="w-full max-h-[380px] aspect-[2/3] object-contain rounded-md"
                   />
                 </div>
               ))}
@@ -430,7 +466,6 @@ export default function AboutPage() {
             <div className="flex-1" aria-hidden />
           </section>
         </div>
-      </div>
     </div>
   )
 }

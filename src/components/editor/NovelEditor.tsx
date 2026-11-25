@@ -385,7 +385,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       title="AI 伴写"
       width="22rem"
       triggerVariant="secondary"
-      triggerClassName="shrink-0"
+      triggerClassName="shrink-0 !bg-transparent !border-transparent hover:!bg-ink-800/70 hover:!border-ink-700/60 !shadow-none"
       triggerDisabled={!writingReady}
       triggerTitle={!writingReady
         ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型')
@@ -473,7 +473,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
     </HelpPopover>
   )
   const secondaryTools = (
-    <HelpPopover title="编辑工具" triggerTitle="编辑工具" triggerVariant="secondary" triggerClassName="shrink-0 aria-expanded:border-amber/50"
+    <HelpPopover title="编辑工具" triggerTitle="编辑工具" triggerVariant="secondary" triggerClassName="shrink-0 !bg-transparent !border-transparent hover:!bg-ink-800/70 aria-expanded:!bg-ink-800/80 aria-expanded:!border-ink-700 !shadow-none"
       trigger={<>工具 <ChevronDown size={12} /></>} pin focusOnOpen width="22rem">
       {(close: () => void) => <div role="group" aria-label="编辑工具选项" className="space-y-3">
         <div className="space-y-1">
@@ -536,15 +536,15 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
       )}
 
       {/* 右侧 2/3：编辑区 */}
-      <div className="flex-1 flex flex-col min-w-0 bg-ink-950/92 relative">
+      <div className="flex-1 flex flex-col min-w-0 bg-ink-950/96 relative">
         {chapterCompact && !active && <div className="shrink-0 border-b border-ink-700 p-2">
           <Button variant="secondary" size="sm" onClick={() => setChapterDrawer(true)} title="打开章节目录"><BookOpen size={14} />章节目录</Button>
         </div>}
         {active ? (
           <>
             {/* 标题/状态/保存常驻；次工具按用途收纳，行高随实际内容分配。 */}
-            <div className="shrink-0 border-b border-ink-700 bg-ink-900/50" data-editor-toolbar data-guide="editor-toolbar">
-            <div className="flex flex-wrap items-center gap-2 px-4 min-h-14" data-editor-primary>
+            <div className="shrink-0 border-b border-ink-700/70 bg-ink-900/75 backdrop-blur-sm" data-editor-toolbar data-guide="editor-toolbar">
+            <div className="flex flex-wrap items-center gap-2 px-4 min-h-12 py-1" data-editor-primary>
               {chapterCompact && <Button variant="secondary" size="sm" className="shrink-0"
                 title="打开章节目录" onClick={() => setChapterDrawer(true)}><BookOpen size={14} />章节</Button>}
               <div className="flex items-center gap-1">
@@ -567,7 +567,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 // 🔴 3.2.2（审计 U2）：这里的标题**视觉上就是输入框本身**，没有 label 可关联 ——
                 //    给读屏软件一个准确名称，否则只念"编辑框"。
                 aria-label="章节标题"
-                className="!bg-transparent !border-transparent !px-1 text-14 font-semibold text-ink-50 flex-1 basis-40 min-w-32 hover:!border-ink-600 focus:!border-amber/50 font-serif"
+                className="!bg-transparent !border-transparent !px-1.5 text-15 font-semibold tracking-tight text-ink-50 flex-1 basis-40 min-w-32 hover:!border-ink-700 focus:!border-amber/50 font-serif"
               />
               <select
                 value={active.status}
@@ -578,13 +578,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               {/* 保存始终在标题行可见，按钮条件与提交机制沿用原逻辑。 */}
-              <Button variant="primary" size="sm" aria-label="保存正文"
+              <Button variant="primary" solid={draftContent !== active.content} size="sm" aria-label="保存正文"
                 onClick={() => commitContent()}
                 disabled={saving || draftContent === active.content}
-                className={`relative p-1 rounded transition-colors shrink-0
+                className={`relative rounded-lg transition-all shrink-0
                   ${draftContent !== active.content
-                    ? 'text-amber hover:bg-amber/15'
-                    : 'text-ink-500 cursor-not-allowed'}`}
+                    ? ''
+                    : '!bg-ink-800/50 !border-ink-700/60 !text-ink-500 cursor-not-allowed'}`}
                 title={diskError ? `尚未写入磁盘：${diskError}` : saving ? '保存中…' : diskPending ? '正在写入…' : draftContent !== active.content ? '保存（Ctrl+S）' : '当前正文无待保存改动'}
               >
                 <Save size={14} /> {saving ? '保存中…' : '保存'}
@@ -593,7 +593,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 )}
               </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-700/50 px-4 py-1.5" data-editor-utilities>
+            <div className="flex flex-wrap items-center gap-1 border-t border-ink-700/70 px-4 py-1" data-editor-utilities>
               {/* E1（2.6.2）撤销 / 恢复：直接调 execCommand 驱动**原生撤销栈** —— 与 Ctrl+Z / Ctrl+Y
                   完全同一栈，不另建自绘撤销栈（AI 插入 / 一键排版 / 缩进都走 execCommand('insertText')，
                   天然在栈里）。点击先把焦点还给正文 textarea：execCommand 的作用对象是聚焦的可编辑元素。 */}
@@ -611,35 +611,35 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               >
                 <Redo2 size={14} />
               </Button>
-              <Button variant="secondary" size="sm" aria-pressed={jieWenJiOpen}
+              <Button variant="ghost" size="sm" aria-pressed={jieWenJiOpen}
                 data-guide="jiewenji-entry"
                 onClick={() => setJieWenJiOpen(o => !o)}
-                className={`p-1 transition-colors shrink-0 ${jieWenJiOpen ? 'text-amber' : 'text-ink-400 hover:text-amber'}`}
+                className={`shrink-0 ${jieWenJiOpen ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300 hover:text-amber'}`}
                 title="颉文姬 · AI 编辑：校对 / 综合诊断 / 选区改稿 / 审读 / 写作简报 / 本章设定补登（AI 增强需配模型）"
               >
                 <Wand2 size={14} /> 颉文姬
               </Button>
               {companionTools}
-              <div className="w-px h-4 bg-ink-700" />
-              <Button variant="secondary" size="sm" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`p-1 transition-colors shrink-0 ${showRefs ? 'text-amber' : 'text-ink-400 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
+              <div className="w-px h-4 bg-ink-700/60 mx-0.5" />
+              <Button variant="ghost" size="sm" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`shrink-0 ${showRefs ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300 hover:text-amber'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
               </Button>
               {secondaryTools}
-              <Button variant="secondary" size="sm" aria-pressed={searchVisible || searchDrawer}
+              <Button variant="ghost" size="sm" aria-pressed={searchVisible || searchDrawer}
                 onClick={() => afterSearchSubmit(() => {
                   if (showRefs) setShowRefs(false)
                   else if (!searchFits) setSearchDrawer(true)
                   else setShowSearch(!showSearch)
                 })}
-                className="p-1 shrink-0"
+                className={`shrink-0 ${searchVisible || searchDrawer ? '!text-ink-100 !bg-ink-800/60' : 'text-ink-300'}`}
                 title={showRefs ? '收起本章资料并恢复设定检索栏' : !searchFits ? '打开设定检索' : showSearch ? '隐藏设定检索栏' : '显示设定检索栏'}>
                 {/* 🔴 2026-11-15：lucide 的命名与箭头方向相反 —— PanelRightClose 实际画的是「→」，
                     PanelRightOpen 画的是「←」。按作者口径：展开时给「←」（点它收起），隐藏时给「→」（点它展开）。 */}
                 {searchVisible ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />} 设定检索
               </Button>
-              <Button variant="secondary" size="sm" aria-pressed={focusMode}
+              <Button variant="ghost" size="sm" aria-pressed={focusMode}
                 onClick={() => afterSearchSubmit(() => setFocusMode(!focusMode))}
-                className="p-1 shrink-0"
+                className={`shrink-0 ${focusMode ? '!bg-amber/12 !text-amber border !border-amber/30' : 'text-ink-300'}`}
                 title={focusMode ? '退出专注模式' : '专注模式'}>
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {focusMode ? '退出专注' : '专注'}
               </Button>
@@ -657,13 +657,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                 value={active.summary}
                 aria-label="章节压缩摘要"
                 onChange={e => updateMeta({ summary: e.target.value })}
-                placeholder="章节压缩摘要（AI 约 1/10，供综合诊断/推演简略模式）…"
+                placeholder="章节摘要（AI 约 1/10，供诊断与推演）…"
                 rows={1}
-                className="!bg-transparent !border-transparent !px-0 py-1 text-11 leading-relaxed text-ink-300 hover:!border-ink-600 focus:!border-amber/50 flex-1 min-w-0 resize-none overflow-hidden box-border appearance-none"
+                className="!bg-transparent !border-transparent !px-0 py-1 text-11 leading-relaxed text-ink-300 hover:!border-ink-700 focus:!border-amber/50 flex-1 min-w-0 resize-none overflow-hidden box-border appearance-none"
               />
               <Button onClick={() => (summarizing ? stopSummary() : void genSummary())}
                 disabled={!summarizing && (!writingReady || !active)}
-                title={summarizing ? '中止摘要生成（已生成的结果不写入）' : !writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="secondary" size="md" className="shrink-0">
+                title={summarizing ? '中止摘要生成（已生成的结果不写入）' : !writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '让 AI 根据正文自动生成压缩摘要（约原文 1/10）'} variant="ghost" iconOnly size="xs" className="shrink-0">
                 {summarizing ? <Square size={12} /> : <Sparkles size={12} />}
               </Button>
               {/* 🔴 UX13：长等待必须能叫停。跑起来后这个键变「中止」（同一位置、同一尺寸），
@@ -671,13 +671,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               {regenAll ? (
                 <Button onClick={stopRegenAll}
                   title="中止批量重生成（已更新的章节保持已更新）" aria-label="中止批量重生成"
-                  variant="secondary" size="md" className="shrink-0">
+                  variant="ghost" iconOnly size="xs" className="shrink-0">
                   <Square size={12} />
                 </Button>
               ) : (
                 <Button onClick={regenAllSummaries}
                   disabled={!writingReady || !active}
-                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="secondary" size="md" className="shrink-0">
+                  title={!writingReady ? (acpWriting ? '请先在模型设置中连接 ACP Agent' : '未配置模型') : '批量重生成全书各章压缩摘要（约原文 1/10，覆盖现有摘要）'} variant="ghost" iconOnly size="xs" className="shrink-0">
                   <Layers size={12} />
                 </Button>
               )}
@@ -839,7 +839,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                   onSelect={syncSel}
                   onMouseUp={syncSel}
                   onScroll={scheduleHighlightSync}
-                  placeholder="落笔即入江湖……（自动保存已开启 · Ctrl+S 立即保存）"
+                  placeholder="开始写作…（自动保存 · Ctrl+S 立即保存）"
                   className="novel-textarea absolute inset-0 z-10 overflow-y-auto px-6 md:px-8 pt-6"
                   style={{ fontSize: `${fontSize}px`, lineHeight: 1.9, color: highlightOn ? 'transparent' : undefined, caretColor: highlightOn ? 'rgb(var(--amber))' : undefined, paddingBottom: chapterCompact ? '2rem' : foldVh('40vh') }}
                   spellCheck={false}
@@ -849,13 +849,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
 
             {/* 底部状态栏：实时字数 / 今日码字 / 保存状态 / 打字机模式 / 字号
                 🔴 h-10 与检索栏底条（SettingSearch）/ 侧栏左下角把手（Sidebar）统一高度，三条上边框对齐 */}
-            <div className="h-10 shrink-0 border-t border-ink-700 bg-ink-900/70 flex items-center gap-3 px-3 text-11 text-ink-400 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 [&>*]:whitespace-nowrap">
+            <div className="h-10 shrink-0 border-t border-ink-700/60 bg-ink-900/80 flex items-center gap-3 px-4 text-11 text-ink-400 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 [&>*]:whitespace-nowrap">
               {/* 本章实时字数：跟随「字数口径」偏好（#004）—— 与写作面板共用同一个开关 */}
               <span className="flex items-center gap-1" title={`本章字数（${withPunct ? '文字＋标点' : '文字'}口径 · 可在写作面板的「字数口径」里切换）`}>
-                <Hash size={10} />{countWords(draftContent, wordCountModeOf(withPunct))} 字
+                <Hash size={10} /><span className="ws-num text-ink-200 font-medium">{countWords(draftContent, wordCountModeOf(withPunct))}</span> 字
               </span>
               <span className="flex items-center gap-1 text-amber/80" title="今日码字量（按增删自动累计，固定「文字」口径 —— 它记的是当天净增量，换口径也无法重算历史）">
-                <Flame size={10} />今日 {todayWords} 字
+                <Flame size={10} />今日 <span className="ws-num font-medium">{todayWords}</span> 字
               </span>
               {/**
                 * 🔴 3.2.2（审计 D4）：**磁盘结论优先**。
@@ -877,8 +877,8 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               {showPageWide && (
               <Button variant="bare"
                 onClick={() => { const v = !pageWide; setPageWide(v); localStorage.setItem('novel-page-wide', v ? '1' : '0') }}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors whitespace-nowrap
-                  ${pageWide ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap
+                  ${pageWide ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700/75 hover:text-ink-200'}`}
                 title={pageWide ? '当前：码字区铺满窗口（点击改为限宽阅读）' : '当前：限宽阅读（点击改为铺满窗口）'}
               >
                 <PanelsTopLeft size={11} /> {pageWide ? '铺满' : '限宽'}
@@ -886,13 +886,13 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               )}
               <Button variant="bare"
                 onClick={() => { const v = !typewriter; setTypewriter(v); localStorage.setItem('novel-typewriter', v ? '1' : '0') }}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-colors whitespace-nowrap
-                  ${typewriter ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700 hover:text-ink-200'}`}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md border transition-colors whitespace-nowrap
+                  ${typewriter ? 'bg-amber/15 text-amber border-amber/30' : 'text-ink-400 border-ink-700/75 hover:text-ink-200'}`}
                 title="打字机模式：输入行自动保持在屏幕中部"
               >
                 <AlignCenter size={11} /> 打字机
               </Button>
-              <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700 bg-ink-800/60">
+              <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md border border-ink-700/75 bg-ink-800/70 ws-control">
                 <Button variant="bare"
                   onClick={() => changeFontSize(-1)}
                   className="w-5 flex items-center justify-center rounded text-ink-400 hover:text-amber transition-colors"

@@ -15,6 +15,7 @@ import {
 } from '@/lib/app/desktop'
 import { parseMarkdownBlocks } from '@/lib/storage/mdLite'
 import { setSkippedVersion } from '@/lib/app/versionCheck'
+import { VERSION_ARTICLES } from '@/lib/help/articles/version'
 import { QUARK_CODE, QUARK_TOKEN, QUARK_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import type { LatestRelease } from '@/lib/app/versionCheck'
 
@@ -333,20 +334,42 @@ export default function UpdateDialog({
           className="overflow-y-auto rounded-lg border border-ink-700 bg-ink-900/50 p-3 space-y-1.5"
           style={{ maxHeight: foldVh(phase.kind === 'idle' ? '46vh' : '30vh') }}
         >
-          {blocks.length === 0 ? (
-            /**
-             * 自建清单**不承载更新说明正文**（那是 Release 页的事）⇒ 从清单来时这里必然为空。
-             * 不能只写"没有填写"，要给出"去哪看"的出口，否则作者会以为这个版本没写说明。
-             */
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-12 text-ink-500">这个版本没有内嵌更新说明。</p>
-              {latest?.releaseUrl && (
-                <Button variant="bare" size="xs" className="text-11 text-amber/90" onClick={() => void openUrl(latest.releaseUrl, '更新说明页')}>
-                  在浏览器里查看
-                </Button>
-              )}
-            </div>
-          ) : (
+          {blocks.length === 0 ? (() => {
+            const builtIn = latest ? VERSION_ARTICLES.find(a => a.verifiedAgainst === latest.version) : undefined
+            if (builtIn) {
+              return (
+                <div className="space-y-2">
+                  <div className="text-13 font-semibold text-ink-100">{builtIn.title}</div>
+                  <p className="text-12 text-ink-300 leading-relaxed">{builtIn.summary}</p>
+                  {builtIn.sections.map(sec => (
+                    <div key={sec.id} className="space-y-1 pt-1">
+                      <div className="text-12 font-semibold text-amber/90">{sec.heading}</div>
+                      {sec.body.map((p, idx) => (
+                        <div key={idx} className="flex gap-1.5 text-12 text-ink-300">
+                          <span className="text-ink-500">·</span>
+                          <span className="flex-1 leading-relaxed">{p}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+            return (
+              /**
+               * 自建清单**不承载更新说明正文**（那是 Release 页的事）⇒ 从清单来且本地未内置时走链接兜底。
+               * 不能只写"没有填写"，要给出"去哪看"的出口，否则作者会以为这个版本没写说明。
+               */
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-12 text-ink-500">这个版本没有内嵌更新说明。</p>
+                {latest?.releaseUrl && (
+                  <Button variant="bare" size="xs" className="text-11 text-amber/90" onClick={() => void openUrl(latest.releaseUrl, '更新说明页')}>
+                    在浏览器里查看
+                  </Button>
+                )}
+              </div>
+            )
+          })() : (
             blocks.map((b, i) => {
               if (b.type === 'h2') return <div key={i} className="text-13 font-semibold text-ink-100 pt-1">{b.text}</div>
               if (b.type === 'h3') return <div key={i} className="text-12 font-semibold text-amber/90 pt-1">{b.text}</div>
