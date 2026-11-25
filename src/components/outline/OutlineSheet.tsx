@@ -108,7 +108,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   // AI 新增弹窗（凭空建一条新大纲）／AI 补全弹窗（在**当前这一条**上补空白，已填的保留）
-const [showFillNew, setShowFillNew] = useState(false)
+  const [showFillNew, setShowFillNew] = useState(false)
   const [showFillExisting, setShowFillExisting] = useState(false)
   /** 3.7.3 · WCP 大纲/细纲推演：导出完整包 / 粘回细纲文本（只复制，不自动覆盖已有细纲） */
   const [wcpOpen, setWcpOpen] = useState(false)
@@ -478,7 +478,7 @@ const [showFillNew, setShowFillNew] = useState(false)
   </section>
   if (!loaded) return <LoadingState />
 
-const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
+  const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
   const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0
   /** 细纲卡名形如「第12章 听雪」；推演包只需要章号，取不到按 0 处理 */
   const outlineChapterNo = draft ? (Number((draft.name.match(/\d+/) ?? [''])[0]) || 0) : 0
@@ -486,7 +486,7 @@ const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim())
   return (
     <div data-outline-workspace className="w-full page-enter h-full min-h-0 flex flex-col">
       {/* 头部 */}
-<header className={`${PAGE_HEADER_STICKY_CLASS} mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
+      <header className={`${PAGE_HEADER_STICKY_CLASS} mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2`} style={{ zIndex: Z.pageBase }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -526,11 +526,11 @@ const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim())
             >
               <Save size={13} /> {saving ? '提交中…' : (dirty ? '保存' : '无待提交修改')}
             </Button>
-<Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
+            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
-            {tab.id === 'chapter-outline' && draft && (
-              <Button variant="secondary" onClick={() => setWcpOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors"
+            {draft && (
+              <Button variant="secondary" size="md" onClick={() => setWcpOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors"
                 title="导出大纲 / 细纲推演资料包，交给网页模型推演">
                 <Globe2 size={14} /> WCP 推演包
               </Button>
@@ -788,24 +788,19 @@ const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim())
           onClose={() => setShowFillExisting(false)}
         />
       )}
-
-      {tab.id === 'chapter-outline' && (
-        <>
-          <WcpExportModal
-            open={wcpOpen}
-            onClose={() => setWcpOpen(false)}
-            scene="outline-expand"
-            chapterNo={outlineChapterNo}
-            onOpenImport={() => setWcpImportOpen(true)}
-          />
-          <WcpImportModal
-            open={wcpImportOpen}
-            onClose={() => setWcpImportOpen(false)}
-            scene="outline-expand"
-            chapterNo={outlineChapterNo}
-          />
-        </>
-      )}
+      <WcpExportModal
+        open={wcpOpen}
+        onClose={() => setWcpOpen(false)}
+        scene="outline-expand"
+        chapterNo={outlineChapterNo}
+        onOpenImport={() => setWcpImportOpen(true)}
+      />
+      <WcpImportModal
+        open={wcpImportOpen}
+        onClose={() => setWcpImportOpen(false)}
+        scene="outline-expand"
+        chapterNo={outlineChapterNo}
+      />
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
       <PromptModal
         open={!!namePrompt}

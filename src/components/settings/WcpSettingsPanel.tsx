@@ -12,9 +12,9 @@
  * 🔴 视觉：统一共享 `Button` / `Panel` / `NumberField` / `AutoTextarea` / `HelpPopover`，
  *    不使用幽灵按钮、不在 className 里叠字号、不写死会导致缩放溢界的宽度。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, CheckCircle2, Copy, Download, FlaskConical, Globe2, Package, RefreshCw, Settings2,
+  AlertTriangle, CheckCircle2, Copy, FileUp, FlaskConical, Globe2, Package, RefreshCw, Settings2,
 } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
@@ -64,6 +64,9 @@ const FIELD_LABEL = 'text-12 text-ink-300'
 
 export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'loading' }: Props) {
   const [cfg, setCfg] = useState<WcpGlobalConfig | null>(null)
+  /** NumberField 失焦钳制时会紧接着调用 onCommit；ref 保证拿到同一帧刚写入的最新值 */
+  const cfgRef = useRef<WcpGlobalConfig | null>(null)
+  cfgRef.current = cfg
   const [ps, setPs] = useState<WcpProjectState | null>(null)
   const [loading, setLoading] = useState(true)
   const [baseBusy, setBaseBusy] = useState(false)
@@ -214,7 +217,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
                 <label key={m.id} className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
                   <input
                     type="checkbox"
-                    className="mt-0.5 shrink-0"
+                    className="mt-0.5 shrink-0 accent-amber"
                     checked={ps.baseModules.includes(m.id)}
                     onChange={() => void toggleModule(m.id)}
                   />
@@ -233,7 +236,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button variant="primary" size="sm" onClick={() => void downloadBase()} disabled={baseBusy || !basePack}>
-                <Download size={12} /> 下载底包
+                <FileUp size={12} /> 下载底包
               </Button>
               <Button variant="secondary" size="sm" onClick={() => void copyBase()} disabled={baseBusy || !basePack}>
                 <Copy size={12} /> 复制底包
@@ -305,24 +308,36 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
             <div className={FIELD_ROW}>
               <span className={FIELD_LABEL}>默认前文章数</span>
               <NumberField value={cfg.prevChapterCount} min={0} max={WCP_PREV_CHAPTER_MAX} className="w-20"
-                ariaLabel="默认前文章数" onCommit={() => void saveField('prevChapterCount', cfg.prevChapterCount)}
-                onChange={v => setCfg(prev => (prev ? { ...prev, prevChapterCount: v ?? 0 } : prev))} />
+                ariaLabel="默认前文章数" onCommit={() => { const cur = cfgRef.current; if (cur) void saveField('prevChapterCount', cur.prevChapterCount) }}
+                onChange={v => {
+                  const next = cfgRef.current ? { ...cfgRef.current, prevChapterCount: v ?? 0 } : null
+                  cfgRef.current = next
+                  setCfg(next)
+                }} />
             </div>
             <div className={FIELD_ROW}>
               <span className={FIELD_LABEL}>默认摘要章数</span>
               <NumberField value={cfg.prevSummaryCount} min={0} max={WCP_PREV_SUMMARY_MAX} className="w-20"
-                ariaLabel="默认摘要章数" onCommit={() => void saveField('prevSummaryCount', cfg.prevSummaryCount)}
-                onChange={v => setCfg(prev => (prev ? { ...prev, prevSummaryCount: v ?? 0 } : prev))} />
+                ariaLabel="默认摘要章数" onCommit={() => { const cur = cfgRef.current; if (cur) void saveField('prevSummaryCount', cur.prevSummaryCount) }}
+                onChange={v => {
+                  const next = cfgRef.current ? { ...cfgRef.current, prevSummaryCount: v ?? 0 } : null
+                  cfgRef.current = next
+                  setCfg(next)
+                }} />
             </div>
             <div className={FIELD_ROW}>
               <span className={FIELD_LABEL}>单包字符预算</span>
               <NumberField value={cfg.maxPackBudgetChars} min={WCP_BUDGET_MIN} max={WCP_BUDGET_MAX} step={1000}
                 className="w-28" ariaLabel="单包字符预算"
-                onCommit={() => void saveField('maxPackBudgetChars', cfg.maxPackBudgetChars)}
-                onChange={v => setCfg(prev => (prev ? { ...prev, maxPackBudgetChars: v ?? WCP_BUDGET_MIN } : prev))} />
+                onCommit={() => { const cur = cfgRef.current; if (cur) void saveField('maxPackBudgetChars', cur.maxPackBudgetChars) }}
+                onChange={v => {
+                  const next = cfgRef.current ? { ...cfgRef.current, maxPackBudgetChars: v ?? WCP_BUDGET_MIN } : null
+                  cfgRef.current = next
+                  setCfg(next)
+                }} />
             </div>
             <label className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
-              <input type="checkbox" className="mt-0.5 shrink-0" checked={cfg.includeWriterNotes}
+              <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" checked={cfg.includeWriterNotes}
                 onChange={e => void saveField('includeWriterNotes', e.target.checked)} />
               <span className="min-w-0">
                 <span className="block text-12 text-ink-200">附带作者备注</span>

@@ -40,7 +40,7 @@ export interface WcpImportModalProps {
   content?: string
   onAppendBody?: (text: string) => void
   onReplaceBody?: (text: string) => void
-  onReplaceSelection?: (text: string) => void
+  onReplaceSelection?: (text: string) => boolean | void
   /** 业务页专用正文用途（如「存为小传正文」「填入细纲草稿」） */
   onUseBody?: (text: string) => void
   useBodyLabel?: string
@@ -104,8 +104,12 @@ export default function WcpImportModal({
   }, [text, cfg?.summaryFormat])
 
   const stats = items ? summarizeWcpCandidates(items) : null
-  /** 没有卡片 / 纯文本 / JSON 失败时都展示原文，避免「解析失败就什么都看不到」 */
-  const showRawChanges = !!parsed && (parsed.format === 'none' || parsed.markdownCards.length === 0)
+  /** 仅无第二部分 / JSON 失败 / Markdown 无结构化卡片时展示原文；JSON 正常解析后由候选比对区接管 */
+  const showRawChanges = !!parsed && (parsed.format === 'none' || parsed.jsonFailed || (parsed.format === 'markdown' && parsed.markdownCards.length === 0))
+  /** 先比对候选再追加正文时，库内正文尚未包含第一部分，合并后才能让引文核验命中新写出的原句 */
+  const effectiveContent = parsed?.body && !content.includes(parsed.body)
+    ? [content.trimEnd(), parsed.body].filter(Boolean).join('\n\n')
+    : content
 
   const copyBody = async () => {
     if (!parsed?.body) return
@@ -157,7 +161,7 @@ export default function WcpImportModal({
       const built = await buildWcpCandidates({
         chapterId,
         chapterTitle: chapterTitle ?? '',
-        content,
+        content: effectiveContent,
         changes: parsed.changes,
       })
       setItems(built.items)
@@ -181,7 +185,7 @@ export default function WcpImportModal({
     setApplying(true)
     try {
       const res = await applyWcpCandidates(
-        { chapterId, chapterTitle: chapterTitle ?? '', content },
+        { chapterId, chapterTitle: chapterTitle ?? '', content: effectiveContent },
         chosen,
         chapterNo ?? 0,
       )
@@ -275,7 +279,7 @@ export default function WcpImportModal({
                     </Button>
                   )}
                   {onReplaceSelection && (
-                    <Button variant="secondary" size="sm" onClick={() => { if (parsed.body) { onReplaceSelection(parsed.body); showToast('已替换选中片段。', 'success') } }}
+                    <Button variant="secondary" size="sm" onClick={() => { if (parsed.body && onReplaceSelection(parsed.body) !== false) showToast('已替换选中片段。', 'success') }}
                       disabled={!parsed.body}>
                       <Replace size={12} /> 替换选中片段
                     </Button>
@@ -336,7 +340,7 @@ export default function WcpImportModal({
                           const st = STATUS_META[item.status]
                           return (
                             <label key={`${item.key}::${idx}`} className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/50 px-2.5 py-1.5">
-                              <input type="checkbox" className="mt-0.5 shrink-0" disabled={!selectable}
+                              <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" disabled={!selectable}
                                 checked={selectable && picked.has(item.key)} onChange={() => togglePicked(item.key)} />
                               <span className="min-w-0 flex-1">
                                 <span className="flex flex-wrap items-center gap-1.5">

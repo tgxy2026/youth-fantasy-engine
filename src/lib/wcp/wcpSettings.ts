@@ -145,8 +145,8 @@ export function saveWcpProjectState(
 /**
  * 记录一次底包导出（时间 + 源数据指纹）。
  *
- * 🔴 只写这一处：底包导出成功后调用；不要在预览/复制时调用 ——
- *    「已导出过的指纹」必须对应真实落盘过的文件，否则过期提示会谎报「最新」。
+ * 🔴 只写这一处：底包下载或复制成功后调用；不要在仅预览时调用 ——
+ *    「已导出过的指纹」必须对应真实交付过的文件/剪贴板内容，否则过期提示会谎报「最新」。
  */
 export async function markWcpBaseExported(fingerprint: string, pid = db.getCurrentProjectId()): Promise<WcpProjectState> {
   return saveWcpProjectState({ lastBaseExportAt: Date.now(), lastBaseFingerprint: fingerprint }, pid)

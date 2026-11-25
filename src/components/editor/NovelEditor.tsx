@@ -33,7 +33,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2, FileText, ChevronDown, AlertTriangle, Square, Download
+  Undo2, Redo2, FilePlus2, FileText, FileUp, Globe2, ChevronDown, AlertTriangle, Square
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -654,7 +654,7 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               <HelpPopover title="WCP 网页资料包" width="22rem" size={14} pin focusOnOpen
                 triggerVariant="secondary" triggerSize="sm"
                 triggerClassName="shrink-0 !bg-transparent !border-transparent hover:!bg-ink-800/70 aria-expanded:!bg-ink-800/80 aria-expanded:!border-ink-700 !shadow-none"
-                trigger={<>WCP 接力 <ChevronDown size={12} /></>}
+                trigger={<><Globe2 size={14} /> WCP 接力 <ChevronDown size={12} /></>}
                 triggerTitle="WCP 网页资料包：导出给网页模型 / 粘回回复">
                 {(close: () => void) => (
                   <div className="space-y-2">
@@ -663,11 +663,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
                     </p>
                     <Button variant="secondary" size="sm" className="w-full !justify-start"
                       onClick={() => { close(); openWcpExport('chapter-continue') }}>
-                      <Download size={12} /> 导出续写包
+                      <FileUp size={12} /> 导出续写包
                     </Button>
                     <Button variant="secondary" size="sm" className="w-full !justify-start"
                       onClick={() => { close(); openWcpExport('chapter-polish') }}>
-                      <Download size={12} /> 导出润色包（优先用选中文字）
+                      <FileUp size={12} /> 导出润色包（优先用选中文字）
                     </Button>
                     <Button variant="secondary" size="sm" className="w-full !justify-start"
                       onClick={() => { close(); openWcpImport('chapter-continue') }}>
@@ -1102,9 +1102,10 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               const sel = selRef.current
               if (!sel || sel.end <= sel.start) {
                 showToast('没有选中片段，无法替换。', 'error')
-                return
+                return false
               }
               updateContent(draftContent.slice(0, sel.start) + text + draftContent.slice(sel.end))
+              return true
             }}
           />
         </>

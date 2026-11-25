@@ -9,7 +9,7 @@
  *    不把「预算不够」藏成一个总数。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Copy, Download, FileText, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Copy, FileText, FileUp, RefreshCw } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import AutoTextarea from '@/components/common/AutoTextarea'
@@ -129,17 +129,21 @@ export default function WcpExportModal({
     showToast('资料包已下载。', 'success')
   }
 
+  const showChapterWindow = scene === 'chapter-continue' || scene === 'chapter-polish' || scene === 'continuity-audit'
+
   const footer = (
     <>
       <Button variant="secondary" size="md" onClick={onClose}>关闭</Button>
-      <Button variant="secondary" size="md" onClick={() => { onClose(); onOpenImport?.() }} disabled={!onOpenImport}>
-        粘贴网页回复
-      </Button>
+      {onOpenImport && (
+        <Button variant="secondary" size="md" onClick={() => { onClose(); onOpenImport() }}>
+          粘贴网页回复
+        </Button>
+      )}
       <Button variant="secondary" size="md" onClick={() => void copyPack()} disabled={!pack}>
         <Copy size={13} /> 复制全文
       </Button>
       <Button variant="primary" size="md" onClick={downloadPack} disabled={!pack}>
-        <Download size={13} /> 下载 .{cfg?.defaultFileExt ?? 'md'}
+        <FileUp size={13} /> 下载 .{cfg?.defaultFileExt ?? 'md'}
       </Button>
     </>
   )
@@ -177,16 +181,20 @@ export default function WcpExportModal({
                   onClick={() => { setCfg({ ...cfg, summaryFormat: 'markdown' }); invalidate() }}>Markdown 清单</Button>
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className={FIELD_LABEL}>前文章节数</span>
-              <NumberField value={prevChapterCount} min={0} max={WCP_PREV_CHAPTER_MAX} className="w-20"
-                ariaLabel="前文章节数" onChange={v => { setPrevChapterCount(v ?? 0); invalidate() }} />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className={FIELD_LABEL}>章节摘要数</span>
-              <NumberField value={prevSummaryCount} min={0} max={WCP_PREV_SUMMARY_MAX} className="w-20"
-                ariaLabel="章节摘要数" onChange={v => { setPrevSummaryCount(v ?? 0); invalidate() }} />
-            </div>
+            {showChapterWindow && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={FIELD_LABEL}>前文章节数</span>
+                  <NumberField value={prevChapterCount} min={0} max={WCP_PREV_CHAPTER_MAX} className="w-20"
+                    ariaLabel="前文章节数" onChange={v => { setPrevChapterCount(v ?? 0); invalidate() }} />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={FIELD_LABEL}>章节摘要数</span>
+                  <NumberField value={prevSummaryCount} min={0} max={WCP_PREV_SUMMARY_MAX} className="w-20"
+                    ariaLabel="章节摘要数" onChange={v => { setPrevSummaryCount(v ?? 0); invalidate() }} />
+                </div>
+              </>
+            )}
           </div>
 
           {cfg.includeWriterNotes && (
