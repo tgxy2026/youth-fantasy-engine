@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Download, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileUp, RotateCcw, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
@@ -178,7 +178,7 @@ export default function SyncConflictCenter({ compact = false }: { compact?: bool
               <div><h3 className="mb-1 text-11 text-ink-300">云端那一版</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-ink-700 bg-ink-900 p-2 text-10 text-ink-300">{conflictPreview(current.server)}</pre></div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><Download size={12} /> 导出双方完整数据</Button>
+              <Button variant="secondary" disabled={busy} onClick={() => exportRecord(current)}><FileUp size={12} /> 导出双方完整数据</Button>
               {restoreDecision?.allowed &&
                 <Button variant="secondary" disabled={busy} onClick={() => void restore(current)}><RotateCcw size={12} /> 恢复云端章节</Button>}
               {!current.resolvedAt && <Button variant="secondary" disabled={busy} onClick={() => void resolve(current)}>标为已处理</Button>}

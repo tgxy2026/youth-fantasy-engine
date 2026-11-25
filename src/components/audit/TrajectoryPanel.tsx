@@ -15,7 +15,7 @@
  *      没有键盘记录，导出不联网。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileDiff, History, FileDown, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, FileWarning, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { FileDiff, History, FileUp, Loader2, AlertTriangle, BookOpen, BookMarked, FileWarning, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { Chapter, Volume, CardRecord } from '@/lib/types'
 import type { Snapshot } from '@/lib/db'
@@ -265,7 +265,7 @@ export default function TrajectoryPanel() {
           </div>
           <div className="ml-auto">
             <Button variant="secondary" size="sm" onClick={() => setAiDraftOpen(true)}>
-              <FileDown size={12} /> 生成申报说明
+              <FileUp size={12} /> 生成申报说明
             </Button>
           </div>
         </div>

@@ -10,7 +10,7 @@
  * 数字来自真实记录，**不靠手填** —— 这正是它可核验的前提。
  */
 import { useMemo, useState } from 'react'
-import { Copy, Download, Check } from 'lucide-react'
+import { Check, Copy, FileUp } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { showToast, copyText } from '@/components/dialogs/dialogs'
@@ -71,7 +71,7 @@ export default function AiDisclosureDialog({
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
-          <Button variant="secondary" size="sm" onClick={saveTxt}><Download size={12} /> 存为 TXT</Button>
+          <Button variant="secondary" size="sm" onClick={saveTxt}><FileUp size={12} /> 存为 TXT</Button>
           <Button variant="primary" size="sm" onClick={copy}>
             {copied ? <><Check size={12} /> 已复制</> : <><Copy size={12} /> 复制全文</>}
           </Button>

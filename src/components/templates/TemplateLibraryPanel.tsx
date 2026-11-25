@@ -8,7 +8,7 @@
  *   · 模板包只含结构，不含条目正文 / 图片 / 凭据。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { ArrowUpCircle, BookMarked, Download, Upload } from 'lucide-react'
+import { ArrowUpCircle, BookMarked, FileDown, FileUp } from 'lucide-react'
 import type { TabDef } from '@/lib/types'
 import type { TemplateDef } from '@/lib/templates/definition'
 import {
@@ -191,11 +191,11 @@ export default function TemplateLibraryPanel({ tab, current, busy, onUpgrade }: 
         )}
         {current && (
           <Button variant="secondary" size="sm" onClick={() => void exportPack()} disabled={disabled} className="flex items-center gap-1.5">
-            <Download size={12} /> 导出模板包
+            <FileUp size={12} /> 导出模板包
           </Button>
         )}
         <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={disabled} className="flex items-center gap-1.5">
-          <Upload size={12} /> 导入模板包
+          <FileDown size={12} /> 导入模板包
         </Button>
         <input
           ref={fileRef}

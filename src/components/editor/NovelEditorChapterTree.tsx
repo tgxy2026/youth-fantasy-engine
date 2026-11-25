@@ -3,7 +3,7 @@ import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
-import { BookMarked, Upload, Download, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
+import { BookMarked, Upload, FileDown, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { isFreeVolume, realVolumes, nextVolumeNo } from '@/lib/outline/freeVolume'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
@@ -181,7 +181,7 @@ function NovelEditorChapterTree({
               onClick={() => setImportOpen(true)}
               className="p-1 shrink-0"
               title="批量导入正文：从文件或粘贴导入（.txt / .md / .docx / .json），自动切成卷章，预览确认后写入">
-              <Download size={14} />
+              <FileDown size={14} />
             </Button>
             {/* 导出：本章 / 全本 / 多格式 / 按卷 / 按章节 —— 全书导出的**唯一入口**。
                 2.8.0 从编辑器工具栏迁来：原先工具栏与本处各挂一个导出按钮、功能重叠且不一致

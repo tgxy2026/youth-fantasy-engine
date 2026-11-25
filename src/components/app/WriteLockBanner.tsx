@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { AlertTriangle, ClipboardCopy, Download, Loader2, RefreshCw, Unlock } from 'lucide-react'
+import { AlertTriangle, ClipboardCopy, FileUp, Loader2, RefreshCw, Unlock } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { confirmDialog, copyText, showToast } from '@/components/dialogs/dialogs'
 import { Z } from '@/lib/app/zLayer'
@@ -113,7 +113,7 @@ export function WriteLockBanner({
         <Button variant="secondary" size="xs" disabled={savingPack}
           title="保存结构化诊断包（.json，含版本、形态、体检结果，不含正文与路径），可当附件发给作者"
           onClick={() => void savePack()}>
-          {savingPack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {savingPack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
           {savingPack ? '导出中…' : '保存诊断包'}
         </Button>
         <Button variant="secondary" size="xs" onClick={() => location.reload()}>

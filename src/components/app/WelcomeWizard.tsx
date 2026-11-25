@@ -21,7 +21,7 @@ import { Z } from '@/lib/app/zLayer'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { WEB, WEB_GUEST } from '@/lib/app/platform'
-import { BookPlus, Sparkles, Upload, ArrowRight, Check, Loader2 } from 'lucide-react'
+import { BookPlus, Sparkles, FileDown, ArrowRight, Check, Loader2 } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { ProjectBundle } from '@/lib/db'
 import { Button } from '@/components/common/Button'
@@ -57,7 +57,7 @@ const CARDS: { key: Choice; icon: ReactNode; iconCls: string; title: string; bod
   },
   {
     key: 'import',
-    icon: <Upload size={16} />,
+    icon: <FileDown size={16} />,
     iconCls: 'bg-info/15 text-info',
     title: '我有备份',
     body: '导入之前用本软件导出的 .json 备份，把整本书原样还原回来。',

@@ -210,11 +210,11 @@ export default function StyleTools({ tab, readData, applyValues }: Props) {
     <>
       <Button variant="secondary" onClick={doExport} className="flex items-center gap-1.5 font-medium"
         title="导出本页写作规范为 JSON 文件（含空字段；可再用「导入」回到同一页）">
-        <FileDown size={12} /> 导出
+        <FileUp size={12} /> 导出
       </Button>
       <Button variant="secondary" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 font-medium"
         title="从导出的 JSON 文件导入；先预览差异，确认后才并入草稿">
-        <FileUp size={12} /> 导入
+        <FileDown size={12} /> 导入
       </Button>
       <Button variant="secondary" onClick={openInfer} className="flex items-center gap-1.5 font-medium"
         title="选一章正文，让 AI 按本页已有字段反推「这一章实际怎么写」；只产建议，逐条勾选后才并入草稿">
