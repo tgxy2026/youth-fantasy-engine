@@ -95,6 +95,7 @@ export default function WcpExportModal({
         scene,
         summaryFormat: cfg.summaryFormat,
         ...(chapterId ? { chapterId } : {}),
+        ...(chapterNo && chapterNo > 0 ? { chapterNo } : {}),
         ...(chapterTitle ? { chapterTitle } : {}),
         draft,
         selectedText,
@@ -115,7 +116,7 @@ export default function WcpExportModal({
     } finally {
       setBusy(false)
     }
-  }, [cfg, kind, scene, chapterId, chapterTitle, draft, selectedText, prevChapterCount, prevSummaryCount, focusCharacterId, focusCharacterName, extra, baseModules])
+  }, [cfg, kind, scene, chapterId, chapterNo, chapterTitle, draft, selectedText, prevChapterCount, prevSummaryCount, focusCharacterId, focusCharacterName, extra, baseModules])
 
   const copyPack = async () => {
     if (!pack) return

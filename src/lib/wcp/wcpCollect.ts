@@ -47,6 +47,8 @@ export interface WcpCollectInput {
   summaryFormat: WcpSummaryFormat
   /** 当前章 id（续写 / 润色 / 找茬 / 小传场景） */
   chapterId?: string
+  /** 当前章序号（大纲 / 细纲场景没有 chapterId，需由页面显式传入） */
+  chapterNo?: number
   chapterTitle?: string
   /** 当前章正文（编辑器最新态，可能尚未保存） */
   draft?: string
@@ -416,7 +418,10 @@ export async function collectWcpPack(input: WcpCollectInput): Promise<WcpCollect
   const notes: string[] = []
   const projectName = await readProjectName()
   const chapter = input.chapterId ? await readChapter(input.chapterId) : undefined
-  const chapterNo = input.chapterId ? await readChapterNo(input.chapterId) : 0
+  // 编辑器场景以库里章号为准；大纲/细纲场景没有 chapterId，回退到页面传入的章号
+  const chapterNo = input.chapterId
+    ? await readChapterNo(input.chapterId)
+    : (input.chapterNo && input.chapterNo > 0 ? input.chapterNo : 0)
   const chapterTitle = input.chapterTitle ?? chapter?.title ?? ''
   const draft = input.draft ?? chapter?.content ?? ''
   const needBase = input.kind !== 'delta' || input.scene === 'outline-expand' || input.scene === 'continuity-audit'
