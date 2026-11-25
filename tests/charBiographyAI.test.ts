@@ -37,10 +37,12 @@ async function main() {
     const okRes = parseExtractedBioNodesDetailed(JSON.stringify([
       { chapterNo: 5, title: '外门大比夺魁', summary: '以杂役身份战胜柳风', tag: '高光时刻', evidence: '陈渊徒手接下柳风剑气' },
       { chapterNo: 5, title: '缺证据节点', summary: '无原文依据应丢弃', tag: '其他' },
-      { chapterNo: 6, title: '怪标签节点', tag: '未知标签', evidence: '原句在' },
+      { chapterNo: 6, title: '自定义标签节点', tag: '宗门暗线', evidence: '原句在' },
+      { chapterNo: 7, title: '空标签节点', tag: '   ', evidence: '另有原句' },
     ]), '陈渊')
-    ok('节点解析：有标题与依据保留，缺依据丢弃', okRes.outcome !== 'invalid' && okRes.data.length === 2, JSON.stringify(okRes))
-    ok('缺省角色名回填且未知标签归入「其他」', okRes.data[0].name === '陈渊' && okRes.data[1].tag === '其他')
+    ok('节点解析：有标题与依据保留，缺依据丢弃', okRes.outcome !== 'invalid' && okRes.data.length === 3, JSON.stringify(okRes))
+    ok('缺省角色名回填、保留自定义标签且空标签归入「其他」',
+      okRes.data[0].name === '陈渊' && okRes.data[1].tag === '宗门暗线' && okRes.data[2].tag === '其他')
 
     const bad = parseExtractedBioNodesDetailed('不是 JSON')
     ok('非法 JSON 返回 invalid', bad.outcome === 'invalid' && bad.data.length === 0)
@@ -88,13 +90,21 @@ async function main() {
   // ---------- ③ 示范项目纯数据播种 ----------
   {
     await seed()
+    const cardIds: Record<string, string> = {
+      陈渊: 'id-chen', 洛清欢: 'id-luo', 萧景行: 'id-xiao', 青玄子: 'id-qing',
+      柳风: 'id-liu', 顾长风: 'id-gu', 周崇: 'id-zhou', 枯血: 'id-ku',
+      血魔尊者: 'id-xue', 洛崇: 'id-luochong', 血鸦: 'id-xueya',
+    }
     await seedDemoBiographies(
-      { 陈渊: 'id-chen', 洛清欢: 'id-luo', 萧景行: 'id-xiao' },
+      cardIds,
       Array.from({ length: 21 }, (_, i) => `ch-${i + 1}`),
     )
     const chenBio = await readBiography('id-chen')
-    ok('示范项目播种陈渊小传与双阶段节点', !!chenBio && chenBio.prose.includes('混沌神体') && chenBio.nodes.length >= 5)
-    ok('示范项目覆盖 6 位主要/次要角色', DEMO_CHAR_BIOGRAPHIES.length === 6)
+    const kuBio = await readBiography('id-ku')
+    const xueyaBio = await readBiography('id-xueya')
+    ok('示范项目播种陈渊小传与双阶段节点', !!chenBio && chenBio.prose.includes('混沌神体') && chenBio.nodes.length >= 6)
+    ok('示范项目覆盖全部 11 位主要/次要角色且补齐周崇/枯血/血魔尊者/洛崇/血鸦',
+      DEMO_CHAR_BIOGRAPHIES.length === 11 && !!kuBio && kuBio.nodes.length >= 3 && !!xueyaBio && xueyaBio.nodes.length >= 3)
   }
 
   console.log(`\ncharBiographyAI: ${pass} passed, ${fail} failed`)

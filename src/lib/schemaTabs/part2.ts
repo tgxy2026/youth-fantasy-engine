@@ -12,7 +12,7 @@ export const TABS_PART2: TabDef[] = [
 // ==================== 表格型 ====================
 
 {
-  id: 'relations', name: '人物关系', group: '角色管理', type: 'table',
+  id: 'relations', name: '角色关系', group: '角色管理', type: 'table',
   description: '人物两两关系台账：关系现状、知情度、按卷演变——防"关系失忆"与"泄密穿帮"。同一对人物可登记多条关系（「人物A → 人物B」为有向，A 是视角主体；按「关系类型」区分）。',
   columns: [
     ch('人物A'), ch('人物B'),

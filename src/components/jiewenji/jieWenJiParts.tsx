@@ -136,9 +136,9 @@ export const STATUS_META: Record<MatchStatus, { label: string; cls: string }> = 
 export const POST_KINDS: { kind: PostProcessKind; label: string; hint: string }[] = [
   { kind: 'entity', label: '事实 · 设定', hint: '本章新出现的人 / 势力 / 地点 / 种族 / 物品 / 术语' },
   { kind: 'foreshadow', label: '伏笔', hint: '本章埋设或回收的伏笔' },
-  { kind: 'relation', label: '关系', hint: '本章人物关系发生的变化' },
+  { kind: 'relation', label: '角色关系', hint: '本章角色关系发生的变化' },
   { kind: 'status', label: '人物状态', hint: '本章人物状态的变化' },
-  { kind: 'biography', label: '人物小传节点', hint: '主要/次要角色的里程碑转折事件（仅追加到人物小传，不覆盖正文）' },
+  { kind: 'biography', label: '角色小传节点', hint: '主要/次要角色的里程碑转折事件（仅追加到角色小传，不覆盖正文）' },
   { kind: 'resource', label: '物品流转', hint: '本章物品被谁拿到 / 给了谁 / 用掉了（未登记物品只提示，不凭空建）' },
 ]
 

@@ -11,7 +11,7 @@ import { getStorageContextEpoch, subscribeStorageContext } from '@/lib/storage/c
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { cardLeaseKey, registerFormEditor, waitForAgentForm, withFormSave } from '@/lib/agentHost/formLease'
-import { Plus, Trash2, UserRound, Info, Save, EyeOff, Search } from 'lucide-react'
+import { Plus, Trash2, UserRound, Info, Save, EyeOff, Search, Sparkles, Wand2, ScrollText } from 'lucide-react'
 import { useCardDraftSave } from './useCardDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
@@ -852,16 +852,40 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
           <Button onClick={addCard} variant="primary" size="md" className="flex items-center">
             <Plus size={14} /> 新建{noun}
           </Button>
+          {aiCap !== 'none' && (
+            <>
+              <Button variant="secondary" size="md" disabled={!writingReady}
+                title={!writingReady ? blockedHint : `用 AI 凭空新建一张${noun}档案`}
+                onClick={() => setShowFill(true)}>
+                <Sparkles size={14} /> AI 新增{noun}
+              </Button>
+              <Button variant="secondary" size="md" disabled={!writingReady || !draft}
+                title={!writingReady ? blockedHint : !draft ? '请先选中一条档案' : '只补全当前档案的空白字段'}
+                onClick={() => setShowFillExisting(true)}>
+                <Wand2 size={14} /> AI 补全
+              </Button>
+            </>
+          )}
+          {isCharTab && (
+            <Button variant="secondary" size="md" disabled={!draft}
+              title={!draft ? '请先在左侧选择角色' : '打开该角色的角色小传与重要节点事件轴'}
+              onClick={() => {
+                if (!draft) return
+                if (onNavigateReference) onNavigateReference({ tabId: 'char-bio', label: draft.name, rowId: draft.id, sourceId: draft.id })
+                else onNavigate?.('char-bio')
+              }}>
+              <ScrollText size={14} /> 角色小传
+            </Button>
+          )}
           <CharacterTools noun={noun} isCharacter={isCharTab}
             templateTitle={isTemplateTab(tab.id) ? (templateDef
               ? '模板「' + templateDef.name + '」第 ' + templateDef.revision + ' 版：编辑字段与分组、预览变更、恢复到迁移前'
               : '套用模板：固定当前结构，或从空白开始设计字段') : undefined}
             alias={!templateDef && <FieldAliasButton tabId={tab.id} tabName={tab.name} size="sm" variant="bare"
               intro="给这一页的字段起你自己看得懂的名字（每张卡用的是同一套字段）。" targets={aliasTargets} />}
-            aiEnabled={aiCap !== 'none'} aiDisabledHint={!writingReady ? blockedHint : undefined}
             hasSelection={!!draft} canMove={moveTargets.length > 0}
             onTemplate={() => setShowTemplate(true)} onImport={() => setShowImport(true)} onExport={exportCsv}
-            onCreateAI={() => setShowFill(true)} onFillAI={() => setShowFillExisting(true)} onMove={() => setMoveOpen(true)} />
+            onMove={() => setMoveOpen(true)} />
           {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
               这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
           {isCharTab && (
@@ -933,16 +957,8 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
         <div ref={detailRef} data-character-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CharacterProfileHeader name={draft.name} portrait={isCharacterCardTab(tab.id) ? (draft.portrait || draft.portrait2) : undefined}
-                  facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
-                {(tab.id === 'char-main' || tab.id === 'char-secondary') && (
-                  <Button variant="secondary" size="xs" title="打开该角色的人物小传与重要节点事件轴"
-                    onClick={() => onNavigateReference ? onNavigateReference({ tabId: 'char-bio', label: draft.name, rowId: draft.id, sourceId: draft.id }) : onNavigate?.('char-bio')}>
-                    人物小传
-                  </Button>
-                )}
-              </div>
+              <CharacterProfileHeader name={draft.name} portrait={isCharacterCardTab(tab.id) ? (draft.portrait || draft.portrait2) : undefined}
+                facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
               {cardGroups.map(group => {
                 // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好
                 //    （模板可以改名，不再按名字现场比 —— 2026-09-22 曾因此静默不渲染）。

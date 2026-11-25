@@ -7,19 +7,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown, ArrowUp, BookOpen, Download, ExternalLink, History,
-  Loader2, Pencil, Plus, Save, ScrollText, Sparkles, Trash2, Undo2, UserRound,
+  Loader2, Pencil, Plus, Save, ScrollText, Sparkles, Tags, Trash2, Undo2, UserRound,
 } from 'lucide-react'
 import * as db from '@/lib/db'
+import type { CustomOptionPayload } from '@/lib/db'
+import type { NavigateToReference } from '@/lib/app/navigation'
 import { TABS } from '@/lib/schema'
 import type { CardRecord, Chapter, Volume } from '@/lib/types'
 import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { captureOwnedOperation } from '@/lib/storage/ownedOperation'
 import { downloadText } from '@/lib/storage/zip'
 import { readAliases } from '@/lib/settings/aliases'
+import { resolveOptions } from '@/lib/settings/customOptions'
 import { evolutionOf, readStateRecords, type StateRecord } from '@/lib/settings/stateTrack'
 import {
-  appendBioNodes, BIO_NODE_TAGS, deleteBioNode, emptyBiography,
-  formatBiographyMarkdown, isDuplicateBioNode, readAllBiographies,
+  appendBioNodes, BIO_NODE_TAGS, BIO_TAG_COL_NAME, deleteBioNode, emptyBiography,
+  formatBiographyMarkdown, isDuplicateBioNode, readAllBiographies, renameBioNodeTag,
   reorderCharacterPrequelNode, saveBiographyProse, sortBioNodes, upsertBioNode,
   type BioEventNode, type BioNodeSource, type CharacterBiography,
 } from '@/lib/settings/charBiography'
@@ -28,6 +31,7 @@ import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { acpStructuredText } from '@/lib/agentHost/acpStructured'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import { Button } from '@/components/common/Button'
+import CustomSelect, { CUSTOM_OPTIONS_EVENT } from '@/components/common/CustomSelect'
 import HelpPopover from '@/components/common/HelpPopover'
 import PageHeader, { pageSummary } from '@/components/common/PageHeader'
 import { MasterDetail, MasterList } from '@/components/common/MasterDetail'
@@ -36,13 +40,14 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import {
-  BatchScanPanel, BioNodeForm, ComposePreviewPanel, StatePromotePanel, type ScanCandidate,
+  AddBioCharacterModal, BatchScanPanel, BioNodeForm, ComposePreviewPanel, StatePromotePanel, type ScanCandidate,
 } from '@/components/world/CharacterBioPanels'
 
 interface Props {
   focusRowId?: string | null
   onFocusConsumed?: () => void
   onNavigate?: (id: string, chapterId?: string, rowId?: string) => void
+  onNavigateReference?: NavigateToReference
 }
 
 const SOURCE_LABEL: Record<BioNodeSource, string> = {
@@ -50,6 +55,12 @@ const SOURCE_LABEL: Record<BioNodeSource, string> = {
   'post-process': '章后整理',
   'batch-scan': '正文整理',
   'state-promote': '状态演变引入',
+}
+
+function tierLabelOf(tabId: string): string {
+  if (tabId === 'char-main') return '主要角色'
+  if (tabId === 'char-secondary') return '次要角色'
+  return 'NPC 角色'
 }
 
 function summarizeCardData(rec: CardRecord): string {
@@ -66,7 +77,7 @@ function summarizeCardData(rec: CardRecord): string {
   return lines.join('\n')
 }
 
-export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNavigate }: Props) {
+export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNavigate, onNavigateReference }: Props) {
   const tabMeta = useMemo(() => TABS.find(t => t.id === 'char-bio'), [])
   const { ready: writingReady, viaAcp, agentName, generation, blockedHint } = useWritingReady()
 
@@ -82,6 +93,10 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   const [savingProse, setSavingProse] = useState(false)
 
   const [tagFilter, setTagFilter] = useState<string>('全部')
+  const [tagOptionsPayload, setTagOptionsPayload] = useState<CustomOptionPayload>({ items: [], hidden: [] })
+  const [manageTagsOpen, setManageTagsOpen] = useState(false)
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [addingBio, setAddingBio] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editingNode, setEditingNode] = useState<BioEventNode | null>(null)
   const [nodeSaving, setNodeSaving] = useState(false)
@@ -100,15 +115,17 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
   const loadAll = useCallback(async () => {
-    const [mainList, secList, bioMap, stList, vols, chs] = await Promise.all([
+    const [mainList, secList, npcList, bioMap, stList, vols, chs, tagOpts] = await Promise.all([
       db.getCardRecords('char-main').catch(() => [] as CardRecord[]),
       db.getCardRecords('char-secondary').catch(() => [] as CardRecord[]),
+      db.getCardRecords('char-npc').catch(() => [] as CardRecord[]),
       readAllBiographies(),
       readStateRecords(),
       db.getAllVolumes().catch(() => [] as Volume[]),
       db.getAllChapters().catch(() => [] as Chapter[]),
+      db.getCustomOptions('char-bio', BIO_TAG_COL_NAME).catch((): CustomOptionPayload => ({ items: [], hidden: [] })),
     ])
-    const allCards = [...mainList, ...secList]
+    const allCards = [...mainList, ...secList, ...npcList]
     const seq = chapterSeqMap(vols, chs)
     const orderedChs = chs
       .map(ch => ({ chapter: ch, chapterNo: seq.get(ch.id) ?? 0 }))
@@ -118,15 +135,29 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
     setBios(bioMap)
     setStateRecords(stList)
     setChapters(orderedChs)
+    setTagOptionsPayload(tagOpts)
     setLoaded(true)
     setActiveId(prev => {
       if (focusRowId && allCards.some(c => c.id === focusRowId)) return focusRowId
-      if (prev && allCards.some(c => c.id === prev)) return prev
-      return allCards[0]?.id ?? null
+      if (prev && allCards.some(c => c.id === prev) && (prev in bioMap)) return prev
+      return allCards.find(c => c.id in bioMap)?.id ?? null
     })
   }, [focusRowId])
 
   useEffect(() => { void loadAll() }, [loadAll])
+
+  useEffect(() => {
+    let alive = true
+    const onChanged = (e: Event) => {
+      const d = (e as CustomEvent<{ tabId?: string; colName?: string }>).detail
+      if (!d || d.tabId !== 'char-bio' || d.colName !== BIO_TAG_COL_NAME) return
+      void db.getCustomOptions('char-bio', BIO_TAG_COL_NAME).then(p => {
+        if (alive) setTagOptionsPayload(p)
+      }).catch(() => {})
+    }
+    window.addEventListener(CUSTOM_OPTIONS_EVENT, onChanged)
+    return () => { alive = false; window.removeEventListener(CUSTOM_OPTIONS_EVENT, onChanged) }
+  }, [])
 
   useEffect(() => {
     if (focusRowId && cards.some(c => c.id === focusRowId)) {
@@ -180,7 +211,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
         return
       }
       setBios(prev => ({ ...prev, [selectedCard.id]: r.bio! }))
-      showToast('已保存人物小传正文', 'success')
+      showToast('已保存角色小传正文', 'success')
     } finally {
       setSavingProse(false)
     }
@@ -188,18 +219,25 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
 
   useSaveHotkey(handleSaveProse)
 
+  const bioCardIdsSet = useMemo(() => new Set(Object.keys(bios)), [bios])
+  const bioCards = useMemo(
+    () => cards.filter(c => bioCardIdsSet.has(c.id) || c.id === activeId),
+    [cards, bioCardIdsSet, activeId],
+  )
+
   const filteredCards = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return cards
-    return cards.filter(c => {
+    if (!q) return bioCards
+    return bioCards.filter(c => {
       if (c.name.toLowerCase().includes(q)) return true
       const aliases = readAliases(c.tabId, c.data)
       return aliases.some(a => a.toLowerCase().includes(q))
     })
-  }, [cards, query])
+  }, [bioCards, query])
 
   const mainCards = useMemo(() => filteredCards.filter(c => c.tabId === 'char-main'), [filteredCards])
   const secCards = useMemo(() => filteredCards.filter(c => c.tabId === 'char-secondary'), [filteredCards])
+  const npcCards = useMemo(() => filteredCards.filter(c => c.tabId === 'char-npc'), [filteredCards])
 
   const charStates = useMemo(() => {
     if (!selectedCard) return []
@@ -207,14 +245,62 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
     return evolutionOf(stateRecords, { kind: 'card', tabId: selectedCard.tabId, id: selectedCard.id, projectId: pid })
   }, [selectedCard, stateRecords])
 
+  const resolvedTagNames = useMemo(
+    () => resolveOptions([...BIO_NODE_TAGS], tagOptionsPayload).map(o => o.name),
+    [tagOptionsPayload],
+  )
+  const displayTagOf = useCallback(
+    (raw: string) => tagOptionsPayload.renamed?.[raw] ?? raw,
+    [tagOptionsPayload.renamed],
+  )
+
   const sortedNodes = useMemo(() => sortBioNodes(selectedBio?.nodes ?? []), [selectedBio])
+  const allFilterTags = useMemo(() => {
+    const base = ['全部', ...resolvedTagNames]
+    const seen = new Set(base)
+    for (const n of sortedNodes) {
+      const label = displayTagOf(n.tag)
+      if (label && !seen.has(label)) {
+        seen.add(label)
+        base.push(label)
+      }
+    }
+    return base
+  }, [resolvedTagNames, sortedNodes, displayTagOf])
+
+  useEffect(() => {
+    if (tagFilter !== '全部' && !allFilterTags.includes(tagFilter)) {
+      setTagFilter('全部')
+    }
+  }, [tagFilter, allFilterTags])
+
   const visibleNodes = useMemo(
-    () => (tagFilter === '全部' ? sortedNodes : sortedNodes.filter(n => n.tag === tagFilter)),
-    [sortedNodes, tagFilter],
+    () => (tagFilter === '全部'
+      ? sortedNodes
+      : sortedNodes.filter(n => displayTagOf(n.tag) === tagFilter || n.tag === tagFilter)),
+    [sortedNodes, tagFilter, displayTagOf],
   )
   const prequelNodes = useMemo(() => visibleNodes.filter(n => n.phase === 'prequel'), [visibleNodes])
   const storyNodes = useMemo(() => visibleNodes.filter(n => n.phase === 'story'), [visibleNodes])
   const allPrequelCount = useMemo(() => sortedNodes.filter(n => n.phase === 'prequel').length, [sortedNodes])
+
+  const handleRenameTag = async (oldName: string, newName: string) => {
+    const next = newName.trim()
+    if (!oldName.trim() || !next || oldName === next) return
+    const prevDisplay = tagOptionsPayload.renamed?.[oldName]
+    let totalUpdated = 0
+    const r1 = await renameBioNodeTag(oldName, next)
+    if (r1.ok) totalUpdated += r1.updated
+    if (prevDisplay && prevDisplay !== oldName) {
+      const r2 = await renameBioNodeTag(prevDisplay, next)
+      if (r2.ok) totalUpdated += r2.updated
+    }
+    if (totalUpdated > 0) {
+      const fresh = await readAllBiographies()
+      setBios(fresh)
+    }
+    setTagFilter(prev => (prev === oldName || prev === prevDisplay ? next : prev))
+  }
 
   const refreshSelectedBio = async (characterId: string) => {
     const fresh = await readAllBiographies()
@@ -307,6 +393,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
           aliases: readAliases(selectedCard.tabId, selectedCard.data),
           chapters: slice.map(x => ({ chapterNo: x.chapterNo, title: x.chapter.title, content: x.chapter.content })),
           existingTitles: sortedNodes.map(n => n.title),
+          allowedTags: resolvedTagNames,
         },
         { signal: ctrl.signal, ...(acpText ? { acpText } : {}) },
       )
@@ -383,7 +470,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
       const res = await aiComposeBiography(
         {
           characterName: selectedCard.name,
-          tierLabel: selectedCard.tabId === 'char-main' ? '主要角色' : '次要角色',
+          tierLabel: tierLabelOf(selectedCard.tabId),
           mode,
           cardSummary: summarizeCardData(selectedCard),
           existingProse: proseDraft,
@@ -411,10 +498,44 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
 
   const handleExportMd = () => {
     if (!selectedCard || !selectedBio) return
-    const tier = selectedCard.tabId === 'char-main' ? '主要角色' : '次要角色'
+    const tier = tierLabelOf(selectedCard.tabId)
     const md = formatBiographyMarkdown(selectedCard.name, tier, { ...selectedBio, prose: proseDraft })
-    downloadText(`${selectedCard.name}-人物小传.md`, md, 'text/markdown;charset=utf-8')
-    showToast('已导出 Markdown 人物小传', 'success')
+    downloadText(`${selectedCard.name}-角色小传.md`, md, 'text/markdown;charset=utf-8')
+    showToast('已导出 Markdown 角色小传', 'success')
+  }
+
+  const handlePickCharacterForBio = async (card: CardRecord) => {
+    if (addingBio) return
+    if (bioCardIdsSet.has(card.id)) {
+      setAddModalOpen(false)
+      setQuery('')
+      await switchCharacter(card.id)
+      return
+    }
+    if (proseDirty && selectedCard) {
+      const leave = await confirmDialog({
+        title: '小传正文尚未保存',
+        message: `「${selectedCard.name}」的小传正文有未保存改动，切换角色会丢弃这些改动。是否继续？`,
+        confirmText: '放弃改动并切换',
+        cancelText: '留在本角色',
+      })
+      if (!leave) return
+    }
+    setAddingBio(true)
+    try {
+      const r = await saveBiographyProse(card.id, '')
+      if (!r.ok || !r.bio) {
+        showToast('创建角色小传失败，请重试', 'error')
+        return
+      }
+      setBios(prev => ({ ...prev, [card.id]: r.bio! }))
+      setQuery('')
+      setActiveId(card.id)
+      setAddModalOpen(false)
+      showToast(`已为「${card.name}」建立角色小传，可开始编写`, 'success')
+    } finally {
+      setAddingBio(false)
+    }
   }
 
   const renderGroupList = (title: string, list: CardRecord[]) => {
@@ -460,7 +581,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
           <span className="px-1.5 py-px rounded text-10 font-medium bg-amber/15 text-amber border border-amber/25">
             {node.phase === 'prequel' ? '开篇前' : `第 ${node.chapterNo} 章`}
           </span>
-          <span className="px-1.5 py-px rounded text-10 bg-ink-800 border border-ink-700 text-ink-300">{node.tag}</span>
+          <span className="px-1.5 py-px rounded text-10 bg-ink-800 border border-ink-700 text-ink-300">{displayTagOf(node.tag)}</span>
           {node.storyTime && <span className="text-10 text-ink-500">{node.storyTime}</span>}
           <span className="text-13 font-medium text-ink-100">{node.title}</span>
         </div>
@@ -496,52 +617,72 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
     </div>
   )
 
-  if (!loaded) return <div className="p-6 max-w-6xl mx-auto"><LoadingState /></div>
+  if (!loaded) return <div className="page-enter h-full min-h-0 flex flex-col"><LoadingState /></div>
 
   return (
-    <div className="p-6 max-w-6xl mx-auto h-full flex flex-col min-h-0">
+    <div className="page-enter h-full min-h-0 flex flex-col">
       <PageHeader
-        title="人物小传"
+        title="角色小传"
         description={pageSummary(tabMeta?.description, '主要与次要角色的生平小传与重要节点事件轴')}
         help={(
-          <HelpPopover title="人物小传怎么用">
+          <HelpPopover title="角色小传怎么用" width="22rem" size={14}>
             <div className="space-y-1.5">
-              <p>· 分上下两层：上层写人物生平小传长文，下层按「开篇前 → 正文章号」记重要里程碑节点。</p>
+              <p>· 分上下两层：上层写角色生平小传长文，下层按「开篇前 → 正文章号」记重要里程碑节点。</p>
               <p>· 前传节点可手动上下调序；正文节点按章号升序，并可直接点「原文」回正文。</p>
-              <p>· 可从 3.7.0「状态演变」零消耗引入节点，也可在「颉文姬 · 整理」里自动抽出里程碑候选。</p>
+              <p>· 节点类型支持自定义增、改、删（含预填类型）；可从 3.7.0「状态演变」零消耗引入，或在「颉文姬 · 整理」自动抽取。</p>
               <AIDataSourceNote feature="char-bio" />
             </div>
           </HelpPopover>
         )}
-        actions={selectedCard && (
+        actions={(
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="toggle"
-              selected={proseDirty}
-              disabled={!proseDirty || savingProse}
-              onClick={() => void handleSaveProse()}
-              title={proseDirty ? '保存小传正文（Ctrl+S）' : '小传正文已保存'}
-            >
-              <Save size={12} /> {savingProse ? '保存中…' : proseDirty ? '保存正文' : '已保存'}
-            </Button>
-            <Button variant="secondary" size="md" onClick={handleExportMd}>
-              <Download size={12} /> 导出 Markdown
+            {selectedCard && (
+              <>
+                <Button
+                  variant="toggle"
+                  size="md"
+                  selected={proseDirty}
+                  disabled={!proseDirty || savingProse}
+                  onClick={() => void handleSaveProse()}
+                  title={proseDirty ? '保存小传正文（Ctrl+S）' : '小传正文已保存'}
+                >
+                  <Save size={14} /> {savingProse ? '保存中…' : proseDirty ? '保存正文' : '已保存'}
+                </Button>
+                <Button variant="secondary" size="md" onClick={handleExportMd}>
+                  <Download size={14} /> 导出 Markdown
+                </Button>
+              </>
+            )}
+            <Button variant="primary" size="md" onClick={() => setAddModalOpen(true)}>
+              <Plus size={14} /> 新增角色小传
             </Button>
           </div>
         )}
       />
 
-      {cards.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center border border-dashed border-ink-700 rounded-xl text-ink-500 gap-2 p-8">
+      {bioCards.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center border border-dashed border-ink-700 rounded-xl text-ink-500 gap-2.5 p-8">
           <ScrollText size={26} className="text-ink-600" />
-          <p className="text-13 text-ink-300">还没有主要或次要角色卡</p>
-          <p className="text-11 text-ink-500">先在「主要角色」或「次要角色」里建立角色，这里会自动列出。</p>
-          <Button variant="secondary" size="sm" onClick={() => onNavigate?.('char-main')}>前往主要角色</Button>
+          <p className="text-13 text-ink-300">{cards.length > 0 ? '还没有建立任何角色小传' : '项目内还没有角色卡片'}</p>
+          <p className="text-11 text-ink-500">
+            {cards.length > 0
+              ? '请从已有「主要角色 / 次要角色 / NPC 角色」中挑选人物，即可开始编写小传正文与节点轴。'
+              : '请先在「主要角色」「次要角色」或「NPC 角色」页签建好角色卡片，再来这里编写小传。'}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {cards.length > 0 ? (
+              <Button variant="primary" size="sm" onClick={() => setAddModalOpen(true)}>
+                <Plus size={13} /> 新增角色小传
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={() => onNavigate?.('char-main')}>前往主要角色</Button>
+            )}
+          </div>
         </div>
       ) : (
         <MasterDetail>
           <MasterList
-            widthClass="w-48 lg:w-56"
+            widthClass="w-44 lg:w-52"
             query={query}
             onQueryChange={setQuery}
             placeholder="搜角色名或别称…"
@@ -551,6 +692,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
             <div className="space-y-3">
               {renderGroupList('主要角色', mainCards)}
               {renderGroupList('次要角色', secCards)}
+              {renderGroupList('NPC 角色', npcCards)}
             </div>
           </MasterList>
 
@@ -562,16 +704,22 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                   <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-15 font-semibold text-ink-50 truncate">{selectedCard.name}</h2>
                     <span className="px-2 py-0.5 rounded-full text-10 bg-amber/15 text-amber border border-amber/30">
-                      {selectedCard.tabId === 'char-main' ? '主要角色' : '次要角色'}
+                      {tierLabelOf(selectedCard.tabId)}
                     </span>
                     <span className="text-11 text-ink-500">{sortedNodes.length} 个重要节点</span>
                   </div>
                   <Button
                     variant="secondary"
-                    size="xs"
-                    onClick={() => onNavigate?.(selectedCard.tabId, undefined, selectedCard.id)}
+                    size="sm"
+                    onClick={() => {
+                      if (onNavigateReference) {
+                        onNavigateReference({ tabId: selectedCard.tabId, label: selectedCard.name, rowId: selectedCard.id, sourceId: selectedCard.id })
+                      } else {
+                        onNavigate?.(selectedCard.tabId, undefined, selectedCard.id)
+                      }
+                    }}
                   >
-                    <ExternalLink size={11} /> 回到角色卡
+                    <ExternalLink size={13} /> 回到角色卡
                   </Button>
                 </div>
 
@@ -582,20 +730,20 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                       <h3 className="text-13 font-semibold text-ink-100">一、人物生平小传正文</h3>
                       <p className="text-11 text-ink-500 mt-0.5">自由分段记录完整生平；AI 起草或续写仅提供预览，不会覆盖已有手写内容。</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       {proseDirty && (
-                        <Button variant="secondary" size="xs" onClick={() => setProseDraft(selectedBio.prose)}>
-                          <Undo2 size={11} /> 撤销
+                        <Button variant="secondary" size="sm" onClick={() => setProseDraft(selectedBio.prose)}>
+                          <Undo2 size={13} /> 撤销
                         </Button>
                       )}
                       <Button
                         variant="secondary"
-                        size="xs"
+                        size="sm"
                         disabled={!writingReady || composing}
                         title={!writingReady ? blockedHint : '根据角色卡、重要节点与状态演变生成小传'}
                         onClick={() => void handleCompose(proseDraft.trim() ? 'continue' : 'draft')}
                       >
-                        {composing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                        {composing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                         {composing ? '生成中…' : proseDraft.trim() ? 'AI 续写小传' : 'AI 起草小传'}
                       </Button>
                     </div>
@@ -633,48 +781,80 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                       <h3 className="text-13 font-semibold text-ink-100">二、重要节点事件轴</h3>
                       <p className="text-11 text-ink-500 mt-0.5">开篇前按手动顺序排列，正文阶段按章号升序自动对齐。</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Button variant="secondary" size="xs" onClick={() => setPromoteOpen(v => !v)}>
-                        <History size={11} /> 从状态演变引入（{charStates.length}）
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setPromoteOpen(v => !v)}>
+                        <History size={13} /> 从状态演变引入（{charStates.length}）
                       </Button>
                       <Button
                         variant="secondary"
-                        size="xs"
+                        size="sm"
                         onClick={() => setScanOpen(v => !v)}
                         title="按章节范围抽取该角色的里程碑节点候选"
                       >
-                        <Sparkles size={11} /> AI 从正文整理节点
+                        <Sparkles size={13} /> AI 从正文整理节点
                       </Button>
                       <Button
                         variant="primary"
-                        size="xs"
+                        size="sm"
                         onClick={() => { setEditingNode(null); setFormOpen(true) }}
                       >
-                        <Plus size={11} /> 新增节点
+                        <Plus size={13} /> 新增节点
                       </Button>
                     </div>
                   </div>
 
-                  {/* 标签筛选 */}
-                  <div className="flex flex-wrap items-center gap-1">
-                    {['全部', ...BIO_NODE_TAGS].map(tag => (
+                  {/* 动态节点类型筛选 + 自定义管理入口 */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {allFilterTags.map(tag => (
                       <Button
                         key={tag}
                         variant="toggle"
-                        size="xs"
+                        size="sm"
                         selected={tagFilter === tag}
                         onClick={() => setTagFilter(tag)}
                       >
                         {tag}
                       </Button>
                     ))}
+                    <Button
+                      variant="toggle"
+                      size="sm"
+                      selected={manageTagsOpen}
+                      onClick={() => setManageTagsOpen(v => !v)}
+                      title="新增自定义节点类型，或重命名、移除默认类型"
+                      className="ml-auto"
+                    >
+                      <Tags size={13} /> 管理类型
+                    </Button>
                   </div>
+
+                  {manageTagsOpen && (
+                    <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2">
+                      <span className="text-12 text-ink-300 shrink-0">自定义节点类型：</span>
+                      <div className="w-56 h-8 rounded-lg border border-ink-700 bg-ink-950 px-1 flex items-center focus-within:border-amber/50">
+                        <CustomSelect
+                          tabId="char-bio"
+                          colName={BIO_TAG_COL_NAME}
+                          options={[...BIO_NODE_TAGS]}
+                          value={tagFilter === '全部' ? '' : tagFilter}
+                          onChange={v => setTagFilter(v || '全部')}
+                          payload={tagOptionsPayload}
+                          onRenameBuiltin={(oldName, newName) => void handleRenameTag(oldName, newName)}
+                        />
+                      </div>
+                      <span className="text-11 text-ink-500">支持输入新类型，也支持对默认预填充与自定义类型进行修改或移除。</span>
+                    </div>
+                  )}
 
                   {formOpen && (
                     <BioNodeForm
+                      key={editingNode?.id ?? 'new'}
                       initial={editingNode}
                       nextPrequelOrder={allPrequelCount}
                       saving={nodeSaving}
+                      defaultTag={resolvedTagNames[0]}
+                      tagOptionsPayload={tagOptionsPayload}
+                      onRenameTag={(oldName, newName) => void handleRenameTag(oldName, newName)}
                       onCancel={() => { setFormOpen(false); setEditingNode(null) }}
                       onSubmit={handleSaveNode}
                     />
@@ -743,6 +923,15 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
           </div>
         </MasterDetail>
       )}
+      <AddBioCharacterModal
+        open={addModalOpen}
+        cards={cards}
+        existingBioIds={bioCardIdsSet}
+        adding={addingBio}
+        onClose={() => setAddModalOpen(false)}
+        onPick={handlePickCharacterForBio}
+        onNavigateTab={tabId => { setAddModalOpen(false); onNavigate?.(tabId) }}
+      />
     </div>
   )
 }

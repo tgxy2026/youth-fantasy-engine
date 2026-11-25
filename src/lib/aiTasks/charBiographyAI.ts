@@ -16,7 +16,7 @@ import type { PromptDef } from '@/lib/ai/promptSettings'
 import { acpJsonInstruction } from '@/lib/agentHost/acpStructured'
 import { isAcpCancelled } from '@/lib/agentHost/acpGate'
 import type { TaskResult } from '@/lib/revision/revisionTypes'
-import { BIO_NODE_TAGS, type BioNodeTag } from '@/lib/settings/charBiography'
+import type { BioNodeTag } from '@/lib/settings/charBiography'
 
 let BIO_EXTRACT_SYS = `你是长篇小说「人物小传整理」助理。请从作者提供的章节正文中，为指定角色抽取**真正具有生平里程碑意义的重要节点事件**。
 
@@ -47,11 +47,9 @@ export interface ExtractedBioNode {
   evidence: string
 }
 
-const VALID_TAGS = new Set<string>(BIO_NODE_TAGS)
-
 function normalizeTag(raw: string): BioNodeTag {
   const t = raw.trim()
-  return VALID_TAGS.has(t) ? (t as BioNodeTag) : '其他'
+  return t ? t.slice(0, 24) : '其他'
 }
 
 /** 纯函数：解析模型输出的重要节点 JSON 数组（缺标题或原文依据一律丢弃） */
@@ -84,6 +82,7 @@ export interface ExtractBioNodesRequest {
   aliases?: string[]
   chapters: { chapterNo: number; title: string; content: string }[]
   existingTitles?: string[]
+  allowedTags?: string[]
 }
 
 export interface ExtractBioNodesResult {
@@ -106,13 +105,16 @@ export async function aiExtractBioNodes(
   }
   const fence = newAuthorFence()
   const aliasLine = req.aliases?.length ? `（别称：${req.aliases.join('、')}）` : ''
+  const allowedNote = req.allowedTags?.length
+    ? `\n【当前可用节点类型】${req.allowedTags.join(' / ')}（请优先选用这些类型）`
+    : ''
   const existingNote = req.existingTitles?.length
     ? `\n已登记节点标题（请勿重复抽取相同事件）：${req.existingTitles.slice(-20).join('；')}`
     : ''
   const chapterBlocks = req.chapters
     .map(ch => `--- 第 ${ch.chapterNo} 章 ${ch.title} ---\n${authorBlock(fence, ch.content)}`)
     .join('\n\n')
-  const user = `【目标角色】${req.characterName.trim()}${aliasLine}${existingNote}
+  const user = `【目标角色】${req.characterName.trim()}${aliasLine}${allowedNote}${existingNote}
 
 【待整理章节正文】
 ${chapterBlocks}
@@ -218,8 +220,8 @@ export const CHAR_BIO_PROMPTS: PromptDef[] = [
     meta: {
       id: 'char-bio-extract',
       group: '设定与资料',
-      name: '人物小传节点抽取',
-      note: '人物小传页：从选定章节抽取指定角色的里程碑转折节点（只出候选、带原文依据，不覆盖已有节点）。',
+      name: '角色小传节点抽取',
+      note: '角色小传页：从选定章节抽取指定角色的里程碑转折节点（只出候选、带原文依据，不覆盖已有节点）。',
     },
     read: () => BIO_EXTRACT_SYS,
     write: t => { BIO_EXTRACT_SYS = t },
@@ -228,8 +230,8 @@ export const CHAR_BIO_PROMPTS: PromptDef[] = [
     meta: {
       id: 'char-bio-compose',
       group: '设定与资料',
-      name: '人物小传正文整理',
-      note: '人物小传页：结合角色卡设定与已确认重要节点生成小传初稿或续写建议（需作者确认后才采纳）。',
+      name: '角色小传正文整理',
+      note: '角色小传页：结合角色卡设定与已确认重要节点生成小传初稿或续写建议（需作者确认后才采纳）。',
     },
     read: () => BIO_COMPOSE_SYS,
     write: t => { BIO_COMPOSE_SYS = t },

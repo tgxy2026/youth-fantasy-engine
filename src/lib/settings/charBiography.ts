@@ -18,18 +18,13 @@ import type { StateRecord } from '@/lib/settings/stateTrack'
 export const CHAR_BIOGRAPHY_KEY = 'charBiographies'
 /** 单角色节点上限（防止异常高频写入膨胀）；超限如实返回 overflow */
 export const BIO_NODE_LIMIT = 200
+/** 自定义节点类型在 customOptions 中的列名（与 CustomSelect 共用） */
+export const BIO_TAG_COL_NAME = '节点类型'
 
 export type BioNodePhase = 'prequel' | 'story'
-export type BioNodeTag =
-  | '前传背景'
-  | '成长突破'
-  | '关系转折'
-  | '高光时刻'
-  | '重大失去'
-  | '身份变化'
-  | '其他'
+export type BioNodeTag = string
 
-export const BIO_NODE_TAGS: readonly BioNodeTag[] = [
+export const BIO_NODE_TAGS = [
   '前传背景',
   '成长突破',
   '关系转折',
@@ -37,7 +32,7 @@ export const BIO_NODE_TAGS: readonly BioNodeTag[] = [
   '重大失去',
   '身份变化',
   '其他',
-]
+] as const
 
 export type BioNodeSource = 'manual' | 'post-process' | 'batch-scan' | 'state-promote'
 
@@ -80,7 +75,6 @@ export interface CharacterBiography {
 type BioMap = Record<string, CharacterBiography>
 
 const VALID_SOURCES = new Set<BioNodeSource>(['manual', 'post-process', 'batch-scan', 'state-promote'])
-const VALID_TAGS = new Set<string>(BIO_NODE_TAGS)
 
 function normalizeChapterNo(n: unknown): number {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
@@ -88,7 +82,7 @@ function normalizeChapterNo(n: unknown): number {
 
 function normalizeTag(tag: unknown, fallbackPhase: BioNodePhase): BioNodeTag {
   const s = typeof tag === 'string' ? tag.trim() : ''
-  if (VALID_TAGS.has(s)) return s as BioNodeTag
+  if (s) return s.slice(0, 24)
   return fallbackPhase === 'prequel' ? '前传背景' : '其他'
 }
 
@@ -256,18 +250,18 @@ export function bioNodeFromStateRecord(record: StateRecord, order = 0, now = Dat
   })
 }
 
-/** 导出单角色人物小传为 Markdown */
+/** 导出单角色角色小传为 Markdown */
 export function formatBiographyMarkdown(
   characterName: string,
   tierLabel: string,
   bio: CharacterBiography,
 ): string {
   const name = characterName.trim() || '未命名角色'
-  const lines: string[] = [`# ${name} · 人物小传`, '']
+  const lines: string[] = [`# ${name} · 角色小传`, '']
   if (tierLabel.trim()) {
     lines.push(`> 定位：${tierLabel.trim()}`, '')
   }
-  lines.push('## 一、人物生平小传', '')
+  lines.push('## 一、角色生平小传', '')
   lines.push(bio.prose.trim() || '（暂未编写小传正文）', '')
   lines.push('## 二、重要节点事件轴', '')
   const sorted = sortBioNodes(bio.nodes)
@@ -524,5 +518,36 @@ export async function updateLastScannedChapter(
     }
     const nextMap: BioMap = { ...read.map, [characterId]: nextBio }
     return { ok: await writeMapStrict(nextMap, owner) }
+  })
+}
+
+/** 批量重命名已有节点中的类型标签（配合 CustomSelect 内置/自定义选项改名同步既有节点） */
+export async function renameBioNodeTag(
+  oldTag: string,
+  newTag: string,
+  owner?: OwnedOperation,
+): Promise<{ ok: boolean; updated: number }> {
+  const prev = oldTag.trim()
+  const next = newTag.trim().slice(0, 24)
+  if (!prev || !next || prev === next) return { ok: true, updated: 0 }
+  return serialized(async () => {
+    const read = await readMapStrict(owner)
+    if (!read.ok) return { ok: false, updated: 0 }
+    let updated = 0
+    const nextMap: BioMap = {}
+    const now = Date.now()
+    for (const [charId, bio] of Object.entries(read.map)) {
+      let changed = false
+      const nextNodes = bio.nodes.map(n => {
+        if (n.tag !== prev) return n
+        changed = true
+        updated++
+        return { ...n, tag: next, updatedAt: now }
+      })
+      nextMap[charId] = changed ? { ...bio, nodes: nextNodes, updatedAt: now } : bio
+    }
+    if (updated === 0) return { ok: true, updated: 0 }
+    if (!await writeMapStrict(nextMap, owner)) return { ok: false, updated: 0 }
+    return { ok: true, updated }
   })
 }

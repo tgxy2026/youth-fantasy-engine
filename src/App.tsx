@@ -97,7 +97,7 @@ const WorldSetSheet = lazyPage(() => import('@/components/sheets/WorldSetSheet')
 const ParallelSetSheet = lazyPage(() => import('@/components/sheets/ParallelSetSheet'), '平行设定')
 const TableSheet = lazyPage(() => import('@/components/sheets/TableSheet'), '表格')
 const CharacterSheet = lazyPage(() => import('@/components/world/CharacterSheet'), '角色卡')
-const CharacterBioPage = lazyPage(() => import('@/components/world/CharacterBioPage'), '人物小传')
+const CharacterBioPage = lazyPage(() => import('@/components/world/CharacterBioPage'), '角色小传')
 const OutlineSheet = lazyPage(() => import('@/components/outline/OutlineSheet'), '大纲')
 const AboutPage = lazyPage(() => import('@/components/app/AboutPage'), '关于')
 const FullTextSearch = lazyPage(() => import('@/components/editor/FullTextSearch'), '全文搜索')
@@ -766,9 +766,11 @@ export default function App() {
     validate: intent => resolveNavigationDestination(intent, {
       // Editor is intentionally outside TABS/getTab; it is a first-class route nonetheless.
       available: id => (id === 'editor' || !!getTab(id)) && tabVisible(id, visCtx),
-      recordKind: id => { const type = getTab(id)?.type; return type === 'card' || type === 'table' ? type : null },
+      recordKind: id => { const t = getTab(id)?.type; return t === 'card' || t === 'table' ? t : t === 'char-bio' ? 'card' : null },
       chapterExists: id => db.chapterExistsFor(projectId ?? '', id),
-      recordExists: (kind, tabId, recordId) => db.tabRecordExistsFor({ kind, projectId: projectId ?? '', tabId, recordId }),
+      recordExists: (kind, tabId, recordId) => tabId === 'char-bio'
+        ? Promise.all(['char-main', 'char-secondary', 'char-npc'].map(t => db.tabRecordExistsFor({ kind: 'card', projectId: projectId ?? '', tabId: t, recordId }))).then(r => r.some(Boolean))
+        : db.tabRecordExistsFor({ kind, projectId: projectId ?? '', tabId, recordId }),
     }),
     commit: intent => {
       if (intent.kind === 'exit') { clearHistory(); doExitProject() }
@@ -1077,7 +1079,7 @@ export default function App() {
       case 'canvas':
         return <PlotCanvas tab={tab} />
       case 'char-bio':
-        return <CharacterBioPage key={`${projectId}-bio`} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} />
+        return <CharacterBioPage key={`${projectId}-bio`} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} onNavigateReference={navigateToReference} />
       default:
         return <div className="p-8">未知页签类型</div>
     }

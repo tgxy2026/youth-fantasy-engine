@@ -819,7 +819,7 @@ async function doCreateDemoProject(): Promise<string> {
     '地理位置': '青岚宗后山禁地',
     '隐藏设定': '识海那半块碑与南荒收割台压阵石同源；他一直没敢告诉任何人',
   }))
-  await db.saveCardRecord(card('char-secondary', '周崇', 12, {
+  await saveBioCard(card('char-secondary', '周崇', 12, {
     '姓名': '周崇',
     '别称': '周执事',
     '保密等级': 'B',
@@ -849,7 +849,7 @@ async function doCreateDemoProject(): Promise<string> {
     '地理位置': '青岚山',
     '隐藏设定': '掌门闭关前亲口点名要他照看陈渊',
   }))
-  await db.saveCardRecord(card('char-secondary', '枯血', 13, {
+  await saveBioCard(card('char-secondary', '枯血', 13, {
     '姓名': '枯血',
     '别称': '枯血护法',
     '保密等级': 'A',
@@ -879,7 +879,7 @@ async function doCreateDemoProject(): Promise<string> {
     '地理位置': '南荒',
     '隐藏设定': '第14章败走时，三百年本命血已被陈渊吞去三成',
   }))
-  await db.saveCardRecord(card('char-secondary', '血魔尊者', 10, {
+  await saveBioCard(card('char-secondary', '血魔尊者', 10, {
     '姓名': '血魔尊者',
     '别称': '尊者',
     '保密等级': 'S',
@@ -920,7 +920,7 @@ async function doCreateDemoProject(): Promise<string> {
     '人物状态': '在岗',
   }))
 
-  await db.saveCardRecord(card('char-secondary', '洛崇', 14, {
+  await saveBioCard(card('char-secondary', '洛崇', 14, {
     '姓名': '洛崇',
     '别称': '三房管事',
     '保密等级': 'B',
@@ -950,7 +950,7 @@ async function doCreateDemoProject(): Promise<string> {
     '地理位置': '望剑城',
     '隐藏设定': '三十年前清冢时，他在剑山脚下拓过一块断碑的碑文，一直收着没给任何人看',
   }))
-  await db.saveCardRecord(card('char-secondary', '血鸦', 15, {
+  await saveBioCard(card('char-secondary', '血鸦', 15, {
     '姓名': '血鸦',
     '别称': '',
     '保密等级': 'A',

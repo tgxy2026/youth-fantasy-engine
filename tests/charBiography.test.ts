@@ -20,6 +20,7 @@ import {
   isDuplicateBioNode,
   readAllBiographies,
   readBiography,
+  renameBioNodeTag,
   reorderCharacterPrequelNode,
   reorderPrequelNode,
   saveBiographyProse,
@@ -109,7 +110,7 @@ async function main() {
       nodes: [prequelPromoted, promoted],
     })
     ok('导出 Markdown 含角色名、定位、正文与双阶段节点',
-      md.includes('# 陈渊 · 人物小传') && md.includes('定位：主要角色')
+      md.includes('# 陈渊 · 角色小传') && md.includes('定位：主要角色')
       && md.includes('自幼父母双亡') && md.includes('### 开篇前（前传）') && md.includes('### 正文阶段') && md.includes('第12章'))
   }
 
@@ -158,6 +159,18 @@ async function main() {
     ok('超出单角色节点上限如实截断并报告 overflow',
       bulkRes.ok && bulkRes.total === BIO_NODE_LIMIT && bulkRes.overflow === 3 && bulkRes.appended === BIO_NODE_LIMIT)
 
+    // 自定义节点类型保留与跨角色批量改名
+    const customTagNode = buildBioNode({ id: 'b-custom', phase: 'story', chapterNo: 15, title: '门派暗线触发', tag: '门派暗线' })
+    ok('自定义节点类型原样保留而不强制降级为其他', customTagNode.tag === '门派暗线')
+    await appendBioNodes(CHAR_ID, [customTagNode])
+    await saveBiographyProse('char-other', '配角正文')
+    await appendBioNodes('char-other', [buildBioNode({ id: 'o1', phase: 'prequel', title: '配角暗线', tag: '门派暗线' })])
+    const renRes = await renameBioNodeTag('门派暗线', '宗门伏线')
+    ok('renameBioNodeTag 跨角色批量改名生效',
+      renRes.ok && renRes.updated === 2
+      && (await readBiography(CHAR_ID))?.nodes.find(n => n.id === 'b-custom')?.tag === '宗门伏线'
+      && (await readBiography('char-other'))?.nodes[0]?.tag === '宗门伏线')
+
     // 损坏数据只读兜底不崩溃
     await db.setSettingFor(PID, CHAR_BIOGRAPHY_KEY, { broken: 'not-an-object', [CHAR_ID]: { prose: 'ok', nodes: [{ bad: true }] } })
     const repaired = await readAllBiographies()
@@ -187,10 +200,11 @@ async function main() {
     const rAppend = await appendBioNodes(CHAR_ID, [buildBioNode({ id: 'new-1', phase: 'story', chapterNo: 2, title: '新节点' })])
     const rUpsert = await upsertBioNode(CHAR_ID, buildBioNode({ id: 'new-2', phase: 'story', chapterNo: 3, title: '新节点2' }))
     const rDelete = await deleteBioNode(CHAR_ID, 'keep-1')
+    const rRename = await renameBioNodeTag('成长突破', '突破')
     db.setStoreOps(memoryOps)
 
-    ok('读库失败时四个写接口全部中止并返回 ok:false',
-      !rProse.ok && !rAppend.ok && !rUpsert.ok && !rDelete.ok && putCalled === 0)
+    ok('读库失败时五个写接口全部中止并返回 ok:false',
+      !rProse.ok && !rAppend.ok && !rUpsert.ok && !rDelete.ok && !rRename.ok && putCalled === 0)
     const intact = await readBiography(CHAR_ID)
     ok('读库失败后原有正文与节点完好无损',
       intact?.prose === '珍贵手写小传' && intact.nodes.length === 1 && intact.nodes[0].id === 'keep-1')

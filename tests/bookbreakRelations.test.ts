@@ -51,7 +51,7 @@ db.setCurrentProject('rel-test')
   ])
   ok('两张关系行 → 两条草稿', drafts.length === 2)
   ok('目标页签与显示名正确（界面按它分组）',
-    drafts[0].tabId === 'relations' && drafts[0].tabName === '人物关系', drafts[0].tabName)
+    drafts[0].tabId === 'relations' && drafts[0].tabName === '角色关系', drafts[0].tabName)
   ok('主名用「A · B」合成', drafts[0].name === '萧景行 · 萧景炎', drafts[0].name)
   ok('🔴 nameKey 指向第一列（界面上改主名改的就是「人物A」）',
     drafts[0].nameKey === '人物A', drafts[0].nameKey)

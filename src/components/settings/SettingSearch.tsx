@@ -313,11 +313,11 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
           out.push({
             key: `rel-${name}`,
             kind: 'relation',
-            source: '人物关系',
+            source: '角色关系',
             group: '角色管理',
             tabId: 'relations',
             title: name,
-            subtitle: `${rels.length} 条人物关系`,
+            subtitle: `${rels.length} 条角色关系`,
             fields: rels.map(rel => ({
               label: `${rel.other}${rel.type ? `（${rel.type}）` : ''}`,
               value: rel.detail || '（暂无详情）',

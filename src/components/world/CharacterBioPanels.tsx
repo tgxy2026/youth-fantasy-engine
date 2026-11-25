@@ -7,12 +7,17 @@
  *   3. BatchScanPanel      —— 从正文批量抽取重要节点候选并勾选追加
  *   4. ComposePreviewPanel —— AI 起草 / 续写小传正文预览条（不自动覆盖）
  */
-import { useState } from 'react'
-import { Check, Loader2, Sparkles, History, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Loader2, Sparkles, History, Search, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import CustomSelect from '@/components/common/CustomSelect'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import { Modal } from '@/components/dialogs/Modal'
+import type { CardRecord } from '@/lib/types'
+import { readAliases } from '@/lib/settings/aliases'
+import type { CustomOptionPayload } from '@/lib/db'
 import {
-  BIO_NODE_TAGS, bioNodeFromStateRecord, buildBioNode, isDuplicateBioNode,
+  BIO_NODE_TAGS, BIO_TAG_COL_NAME, bioNodeFromStateRecord, buildBioNode, isDuplicateBioNode,
   type BioEventNode, type BioNodePhase, type BioNodeTag,
 } from '@/lib/settings/charBiography'
 import type { StateRecord } from '@/lib/settings/stateTrack'
@@ -22,19 +27,26 @@ export function BioNodeForm({
   initial,
   nextPrequelOrder,
   saving,
+  defaultTag,
+  tagOptionsPayload,
+  onRenameTag,
   onCancel,
   onSubmit,
 }: {
   initial?: BioEventNode | null
   nextPrequelOrder: number
   saving: boolean
+  defaultTag?: string
+  tagOptionsPayload?: CustomOptionPayload
+  onRenameTag?: (oldName: string, newName: string) => void
   onCancel: () => void
   onSubmit: (node: BioEventNode) => Promise<void>
 }) {
   const [phase, setPhase] = useState<BioNodePhase>(initial?.phase ?? 'story')
   const [chapterNo, setChapterNo] = useState(initial?.chapterNo ? String(initial.chapterNo) : '1')
   const [storyTime, setStoryTime] = useState(initial?.storyTime ?? '')
-  const [tag, setTag] = useState<BioNodeTag>(initial?.tag ?? (initial?.phase === 'prequel' ? '前传背景' : '成长突破'))
+  const fallbackTag = defaultTag || (initial?.phase === 'prequel' ? '前传背景' : '成长突破')
+  const [tag, setTag] = useState<BioNodeTag>(initial?.tag ?? fallbackTag)
   const [title, setTitle] = useState(initial?.title ?? '')
   const [summary, setSummary] = useState(initial?.summary ?? '')
   const [evidence, setEvidence] = useState(initial?.evidence ?? '')
@@ -59,20 +71,20 @@ export function BioNodeForm({
   }
 
   return (
-    <div className="rounded-xl border border-amber/35 bg-ink-900/70 p-3.5 space-y-2.5">
+    <div className="rounded-xl border border-amber/35 bg-ink-900/70 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-12 font-semibold text-amber">{initial ? '编辑重要节点' : '新增重要节点'}</span>
+        <span className="text-13 font-semibold text-amber">{initial ? '编辑重要节点' : '新增重要节点'}</span>
         <Button variant="bare" iconOnly size="xs" onClick={onCancel} aria-label="关闭节点表单">
           <X size={13} />
         </Button>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <label className="text-11 text-ink-400 space-y-1">
           <span className="block">阶段</span>
           <select
             value={phase}
             onChange={e => setPhase(e.target.value as BioNodePhase)}
-            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+            className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
           >
             <option value="prequel">开篇前（前传）</option>
             <option value="story">正文阶段（按章）</option>
@@ -86,7 +98,7 @@ export function BioNodeForm({
               min={1}
               value={chapterNo}
               onChange={e => setChapterNo(e.target.value)}
-              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+              className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
           </label>
         ) : (
@@ -96,22 +108,24 @@ export function BioNodeForm({
               value={storyTime}
               onChange={e => setStoryTime(e.target.value)}
               placeholder="如：灵历3014年冬"
-              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+              className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
           </label>
         )}
-        <label className="text-11 text-ink-400 space-y-1">
-          <span className="block">节点类型</span>
-          <select
-            value={tag}
-            onChange={e => setTag(e.target.value as BioNodeTag)}
-            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
-          >
-            {BIO_NODE_TAGS.map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </label>
+        <div className="text-11 text-ink-400 space-y-1">
+          <span className="block">节点类型（可自定义增删改）</span>
+          <div className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-1 flex items-center focus-within:border-amber/50">
+            <CustomSelect
+              tabId="char-bio"
+              colName={BIO_TAG_COL_NAME}
+              options={[...BIO_NODE_TAGS]}
+              value={tag}
+              onChange={v => setTag(v || defaultTag || (phase === 'prequel' ? '前传背景' : '其他'))}
+              payload={tagOptionsPayload}
+              onRenameBuiltin={onRenameTag}
+            />
+          </div>
+        </div>
       </div>
       {phase === 'story' && (
         <label className="block text-11 text-ink-400 space-y-1">
@@ -120,7 +134,7 @@ export function BioNodeForm({
             value={storyTime}
             onChange={e => setStoryTime(e.target.value)}
             placeholder="如：灵历3024年八月"
-            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+            className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
           />
         </label>
       )}
@@ -130,7 +144,7 @@ export function BioNodeForm({
           value={title}
           onChange={e => setTitle(e.target.value)}
           placeholder="一句话概括关键事件（如：外门大比夺魁）"
-          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+          className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
         />
       </label>
       <label className="block text-11 text-ink-400 space-y-1">
@@ -140,7 +154,7 @@ export function BioNodeForm({
           value={summary}
           onChange={e => setSummary(e.target.value)}
           placeholder="记录前因后果、性格或立场转折…"
-          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50 resize-y"
+          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-2 text-12 text-ink-100 outline-none focus:border-amber/50 resize-y"
         />
       </label>
       <label className="block text-11 text-ink-400 space-y-1">
@@ -149,7 +163,7 @@ export function BioNodeForm({
           value={evidence}
           onChange={e => setEvidence(e.target.value)}
           placeholder="可附原文原句摘录"
-          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 text-12 text-ink-100 outline-none focus:border-amber/50"
+          className="w-full h-8 rounded-lg border border-ink-700 bg-ink-950 px-2.5 text-12 text-ink-100 outline-none focus:border-amber/50"
         />
       </label>
       <div className="flex justify-end gap-2 pt-1">
@@ -183,15 +197,15 @@ export function StatePromotePanel({
   const fresh = candidates.filter(c => !c.dup)
 
   return (
-    <div className="rounded-xl border border-ink-700 bg-ink-900/70 p-3.5 space-y-2.5">
+    <div className="rounded-xl border border-ink-700 bg-ink-900/70 p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-12 font-semibold text-ink-100">
-          <History size={13} className="text-amber" />
+        <div className="flex items-center gap-1.5 text-13 font-semibold text-ink-100">
+          <History size={14} className="text-amber" />
           从「状态演变」引入（不消耗 AI）
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {fresh.length > 0 && (
-            <Button variant="primary" size="xs" disabled={busy} onClick={() => void onPromote(fresh.map(x => x.node))}>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void onPromote(fresh.map(x => x.node))}>
               全部引入（{fresh.length} 条）
             </Button>
           )}
@@ -273,18 +287,18 @@ export function BatchScanPanel({
   }
 
   return (
-    <div className="rounded-xl border border-amber/35 bg-ink-900/70 p-3.5 space-y-2.5">
+    <div className="rounded-xl border border-amber/35 bg-ink-900/70 p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-12 font-semibold text-amber">
-          <Sparkles size={13} />
+        <div className="flex items-center gap-1.5 text-13 font-semibold text-amber">
+          <Sparkles size={14} />
           AI 从正文整理重要节点
         </div>
         <Button variant="bare" iconOnly size="xs" onClick={onClose} aria-label="关闭批量整理面板">
           <X size={13} />
         </Button>
       </div>
-      <AIDataSourceNote feature="char-bio" compact className="text-10" />
-      <div className="flex flex-wrap items-center gap-2 text-11">
+      <AIDataSourceNote feature="char-bio" compact className="text-11" />
+      <div className="flex flex-wrap items-center gap-2 text-12">
         <span className="text-ink-400">扫描章号范围：</span>
         <input
           type="number"
@@ -292,7 +306,7 @@ export function BatchScanPanel({
           max={Math.max(1, chapterCount)}
           value={fromNo}
           onChange={e => setFromNo(e.target.value)}
-          className="w-16 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-11 text-ink-100"
+          className="w-16 h-8 rounded-lg border border-ink-700 bg-ink-950 px-2 text-12 text-ink-100"
         />
         <span className="text-ink-500">至</span>
         <input
@@ -301,18 +315,18 @@ export function BatchScanPanel({
           max={Math.max(1, chapterCount)}
           value={toNo}
           onChange={e => setToNo(e.target.value)}
-          className="w-16 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-11 text-ink-100"
+          className="w-16 h-8 rounded-lg border border-ink-700 bg-ink-950 px-2 text-12 text-ink-100"
         />
-        <span className="text-ink-500">（全书共 {chapterCount} 章{lastScannedNo > 0 ? ` · 上次扫至第 ${lastScannedNo} 章` : ''}）</span>
+        <span className="text-11 text-ink-500">（全书共 {chapterCount} 章{lastScannedNo > 0 ? ` · 上次扫至第 ${lastScannedNo} 章` : ''}）</span>
         <Button
           variant="primary"
-          size="xs"
+          size="sm"
           disabled={!writingReady || scanning || chapterCount === 0}
           title={!writingReady ? blockedHint : chapterCount === 0 ? '项目暂无章节正文' : '抽取里程碑事件候选（只追加，不覆盖）'}
           onClick={startScan}
           className="ml-auto"
         >
-          {scanning ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+          {scanning ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {scanning ? '抽取中…' : '开始抽取候选'}
         </Button>
       </div>
@@ -351,8 +365,8 @@ export function BatchScanPanel({
               ))}
             </div>
             <div className="flex justify-end">
-              <Button variant="primary" solid size="xs" disabled={picked.size === 0} onClick={onApply}>
-                <Check size={11} /> 追加选中的 {picked.size} 条到事件轴
+              <Button variant="primary" solid size="sm" disabled={picked.size === 0} onClick={onApply}>
+                <Check size={13} /> 追加选中的 {picked.size} 条到事件轴
               </Button>
             </div>
           </div>
@@ -378,27 +392,159 @@ export function ComposePreviewPanel({
   onDiscard: () => void
 }) {
   return (
-    <div className="rounded-xl border border-amber/40 bg-amber/5 p-3.5 space-y-2">
+    <div className="rounded-xl border border-amber/40 bg-amber/5 p-4 space-y-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-12 font-semibold text-amber">
+        <span className="text-13 font-semibold text-amber">
           AI {mode === 'continue' ? '续写建议' : '小传初稿'}预览（未写入，由你决定采纳方式）
         </span>
         <Button variant="bare" iconOnly size="xs" onClick={onDiscard} aria-label="放弃预览">
           <X size={13} />
         </Button>
       </div>
-      <div className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ink-700 bg-ink-950/70 p-2.5 text-12 text-ink-200 leading-relaxed">
+      <div className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ink-700 bg-ink-950/70 p-3 text-12 text-ink-200 leading-relaxed">
         {text}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" size="xs" onClick={onDiscard}>放弃</Button>
+        <Button variant="secondary" size="sm" onClick={onDiscard}>放弃</Button>
         {hasExisting && (
-          <Button variant="secondary" size="xs" onClick={onAppend}>追加到现有正文末尾</Button>
+          <Button variant="secondary" size="sm" onClick={onAppend}>追加到现有正文末尾</Button>
         )}
-        <Button variant="primary" solid size="xs" onClick={onReplace}>
+        <Button variant="primary" solid size="sm" onClick={onReplace}>
           {hasExisting ? '替换当前正文' : '采用为正文'}
         </Button>
       </div>
     </div>
+  )
+}
+
+const PICKER_GROUPS: { tabId: 'char-main' | 'char-secondary' | 'char-npc'; label: string }[] = [
+  { tabId: 'char-main', label: '主要角色' },
+  { tabId: 'char-secondary', label: '次要角色' },
+  { tabId: 'char-npc', label: 'NPC 角色' },
+]
+
+export function AddBioCharacterModal({
+  open,
+  cards,
+  existingBioIds,
+  adding,
+  onClose,
+  onPick,
+  onNavigateTab,
+}: {
+  open: boolean
+  cards: CardRecord[]
+  existingBioIds: Set<string>
+  adding: boolean
+  onClose: () => void
+  onPick: (card: CardRecord) => Promise<void>
+  onNavigateTab?: (tabId: 'char-main' | 'char-secondary' | 'char-npc') => void
+}) {
+  const [query, setQuery] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return cards
+    return cards.filter(c => {
+      if (c.name.toLowerCase().includes(q)) return true
+      return readAliases(c.tabId, c.data).some(a => a.toLowerCase().includes(q))
+    })
+  }, [cards, query])
+
+  return (
+    <Modal open={open} onClose={onClose} title="选择角色并建立小传" width="lg">
+      <div className="space-y-3.5">
+        <p className="text-12 text-ink-400">
+          从「主要角色」「次要角色」「NPC 角色」中挑选已有角色卡片，为其建立小传并开始编写；若找不到目标角色，请先到对应角色卡页签建档。
+        </p>
+
+        {cards.length > 0 && (
+          <div className="relative">
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="按姓名或别称搜索已有角色…"
+              className="w-full h-9 rounded-lg border border-ink-700 bg-ink-950 !pl-8 pr-3 text-12 text-ink-100 outline-none focus:border-amber/50"
+            />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
+          </div>
+        )}
+
+        {cards.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-ink-700 py-8 px-4 text-center space-y-2.5">
+            <p className="text-13 text-ink-300">项目内还没有任何角色卡片</p>
+            <p className="text-11 text-ink-500">请先前往「主要角色」「次要角色」或「NPC 角色」建好角色，再来编写角色小传。</p>
+            {onNavigateTab && (
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                {PICKER_GROUPS.map(g => (
+                  <Button key={g.tabId} variant="secondary" size="sm" onClick={() => onNavigateTab(g.tabId)}>
+                    前往{g.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-ink-700 py-8 text-center text-12 text-ink-500">
+            没有匹配「{query.trim()}」的已有角色，可先在角色管理页签新建该角色。
+          </div>
+        ) : (
+          <div className="max-h-80 overflow-y-auto pr-1 space-y-3">
+            {PICKER_GROUPS.map(group => {
+              const list = filtered.filter(c => c.tabId === group.tabId)
+              if (list.length === 0) return null
+              return (
+                <div key={group.tabId} className="space-y-1.5">
+                  <div className="text-11 font-medium text-ink-400 px-0.5">{group.label}（{list.length}）</div>
+                  <div className="space-y-1.5">
+                    {list.map(c => {
+                      const hasBio = existingBioIds.has(c.id)
+                      const aliases = readAliases(c.tabId, c.data)
+                      return (
+                        <div
+                          key={c.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 hover:border-ink-500 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <UserRound size={13} className="text-ink-400 shrink-0" />
+                              <span className="text-13 font-medium text-ink-100 truncate">{c.name}</span>
+                              {aliases.length > 0 && (
+                                <span className="text-11 text-ink-500 truncate">（{aliases.join('、')}）</span>
+                              )}
+                            </div>
+                          </div>
+                          {hasBio ? (
+                            <Button variant="secondary" size="sm" disabled={adding} onClick={() => void onPick(c)}>
+                              已有小传 · 打开
+                            </Button>
+                          ) : (
+                            <Button variant="primary" size="sm" disabled={adding} onClick={() => void onPick(c)}>
+                              选择添加
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-ink-700/60">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {cards.length > 0 && onNavigateTab && PICKER_GROUPS.map(g => (
+              <Button key={g.tabId} variant="ghost" size="sm" onClick={() => onNavigateTab(g.tabId)}>
+                去{g.label}建卡
+              </Button>
+            ))}
+          </div>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={adding}>关闭</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
