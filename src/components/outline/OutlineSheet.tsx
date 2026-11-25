@@ -6,7 +6,7 @@ import { getCardRecordsFor, saveCardRecord, deleteCardRecord, getCurrentProjectI
 import { uid } from '@/lib/app/id'
 import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import {
-  Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2,
+  Plus, Trash2, Info, Save, Check, Copy, ChevronUp, ChevronDown, BookOpen, FileText, Layers, Sparkles, Wand2, Globe2,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
@@ -19,6 +19,8 @@ import { useMasterRecordNavigation } from '@/components/common/useMasterRecordNa
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
 import { usePaneWorkspaceScroll } from '@/components/common/usePaneWorkspaceScroll'
 import { Button } from '@/components/common/Button'
+import WcpExportModal from '@/components/wcp/WcpExportModal'
+import WcpImportModal from '@/components/wcp/WcpImportModal'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
@@ -106,8 +108,11 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   const [tplOpen, setTplOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   // AI 新增弹窗（凭空建一条新大纲）／AI 补全弹窗（在**当前这一条**上补空白，已填的保留）
-  const [showFillNew, setShowFillNew] = useState(false)
+const [showFillNew, setShowFillNew] = useState(false)
   const [showFillExisting, setShowFillExisting] = useState(false)
+  /** 3.7.3 · WCP 大纲/细纲推演：导出完整包 / 粘回细纲文本（只复制，不自动覆盖已有细纲） */
+  const [wcpOpen, setWcpOpen] = useState(false)
+  const [wcpImportOpen, setWcpImportOpen] = useState(false)
 
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
@@ -473,8 +478,10 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   </section>
   if (!loaded) return <LoadingState />
 
-  const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
+const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
   const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0
+  /** 细纲卡名形如「第12章 听雪」；推演包只需要章号，取不到按 0 处理 */
+  const outlineChapterNo = draft ? (Number((draft.name.match(/\d+/) ?? [''])[0]) || 0) : 0
 
   return (
     <div data-outline-workspace className="w-full page-enter h-full min-h-0 flex flex-col">
@@ -519,9 +526,15 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
             >
               <Save size={13} /> {saving ? '提交中…' : (dirty ? '保存' : '无待提交修改')}
             </Button>
-            <Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
+<Button variant="secondary" onClick={() => setTplOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors" title="套用经典结构模板快速搭建大纲">
               <Layers size={14} /> 模板库
             </Button>
+            {tab.id === 'chapter-outline' && draft && (
+              <Button variant="secondary" onClick={() => setWcpOpen(true)} className="flex items-center gap-1.5 font-medium transition-colors"
+                title="导出大纲 / 细纲推演资料包，交给网页模型推演">
+                <Globe2 size={14} /> WCP 推演包
+              </Button>
+            )}
             <Button onClick={addRecord} variant="primary" size="md" className="flex items-center">
               <Plus size={14} /> 新建{noun}
             </Button>
@@ -776,6 +789,23 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
         />
       )}
 
+      {tab.id === 'chapter-outline' && (
+        <>
+          <WcpExportModal
+            open={wcpOpen}
+            onClose={() => setWcpOpen(false)}
+            scene="outline-expand"
+            chapterNo={outlineChapterNo}
+            onOpenImport={() => setWcpImportOpen(true)}
+          />
+          <WcpImportModal
+            open={wcpImportOpen}
+            onClose={() => setWcpImportOpen(false)}
+            scene="outline-expand"
+            chapterNo={outlineChapterNo}
+          />
+        </>
+      )}
       {/* v1.6：应用内输入弹窗（替代浏览器 prompt，桌面端可用） */}
       <PromptModal
         open={!!namePrompt}

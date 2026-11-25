@@ -33,7 +33,7 @@ import {
   ShieldAlert, History, Search, Lock, AlignLeft, Hash, AlignCenter, Flame,
   GitBranch, Link2, SpellCheck, Feather, PanelsTopLeft,
   Command, Highlighter, BookOpen, Users, Sparkles, Loader2, Wand2, Layers, PenTool,
-  Undo2, Redo2, FilePlus2, ChevronDown, AlertTriangle, Square
+  Undo2, Redo2, FilePlus2, FileText, ChevronDown, AlertTriangle, Square, Download
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -46,6 +46,9 @@ import { Button } from '@/components/common/Button'
 import { LoadingState } from '@/components/common/LoadingState'
 import NovelEditorChapterTree from '@/components/editor/NovelEditorChapterTree'
 import ExportFormatDialog from '@/components/dialogs/ExportFormatDialog'
+import WcpExportModal from '@/components/wcp/WcpExportModal'
+import WcpImportModal from '@/components/wcp/WcpImportModal'
+import type { WcpSceneId } from '@/lib/wcp/wcpTypes'
 import ChapterImportDialog from '@/components/editor/ChapterImportDialog'
 import { CompanionStyleDialog } from '@/components/tavern/CompanionStyleDialog'
 import { dimLabels } from '@/lib/tavern/companionStyle'
@@ -133,6 +136,26 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   useEditorWorkspaceView({ enabled: loaded, activeId, taRef, scrollRef, content: active?.content ?? null, skipRestore: ownsPosition })
 
   /**
+   * 3.7.3 · WCP 就近入口。
+   *
+   * 🔴 选中片段在**打开弹窗的那一刻**快照：弹窗一开，textarea 失焦，
+   *    `getSelText()` 之后可能取不到原文 —— 届时润色包就会静默变成「整章」。
+   * 🔴 两个场景共用同一套弹窗；回流弹窗的正文动作按页面能力传入。
+   */
+  const openWcpExport = (scene: WcpSceneId) => {
+    if (scene === 'chapter-polish' && !getSelText()) {
+      showToast('没有选中文字：润色包会把整章正文作为待润色文本。', 'info')
+    }
+    setWcpScene(scene)
+    setWcpSelected(getSelText() ?? '')
+    setWcpExportOpen(true)
+  }
+  const openWcpImport = (scene: WcpSceneId) => {
+    setWcpScene(scene)
+    setWcpImportOpen(true)
+  }
+
+  /**
    * 3.3.1 · P7：校对结果的「定位原文」。
    *
    * 🔴 为什么弹窗必须先收起：`setSelectionRange` 与 `scrollTop` 作用在正文 textarea 上，
@@ -170,6 +193,11 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
   const [chapterDrawer, setChapterDrawer] = useState(false)
   const [searchDrawer, setSearchDrawer] = useState(false)
   const [dirtySearch, setDirtySearch] = useState<'inline' | 'drawer' | null>(null)
+  /** 3.7.3 · WCP 就近接力：导出 / 回流弹窗与「打开时那一刻」的选中片段 */
+  const [wcpScene, setWcpScene] = useState<WcpSceneId>('chapter-continue')
+  const [wcpExportOpen, setWcpExportOpen] = useState(false)
+  const [wcpImportOpen, setWcpImportOpen] = useState(false)
+  const [wcpSelected, setWcpSelected] = useState('')
   /**
    * 3.4.0 · B：宽窗「停靠」/ 窄窗「浮层」。
    * 抽屉本身是 fixed 的 24rem；正文列按限宽居中，1440 视口下两者会叠出近百像素。
@@ -621,6 +649,33 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
               </Button>
               {companionTools}
               <div className="w-px h-4 bg-ink-700/60 mx-0.5" />
+              {/* 3.7.3 · WCP：正文续写 / 片段润色两个就近入口 + 回流。
+                  用带文字的 secondary 按钮（不使用幽灵样式），与工具栏其余入口同高。 */}
+              <HelpPopover title="WCP 网页资料包" width="22rem" size={14} pin focusOnOpen
+                triggerVariant="secondary" triggerSize="sm"
+                triggerClassName="shrink-0 !bg-transparent !border-transparent hover:!bg-ink-800/70 aria-expanded:!bg-ink-800/80 aria-expanded:!border-ink-700 !shadow-none"
+                trigger={<>WCP 接力 <ChevronDown size={12} /></>}
+                triggerTitle="WCP 网页资料包：导出给网页模型 / 粘回回复">
+                {(close: () => void) => (
+                  <div className="space-y-2">
+                    <p className="text-11 text-ink-400 leading-relaxed">
+                      不需要 API Key。导出资料包交给 Gemini / Claude 网页版，再把回复粘回来；正文与变动候选都要你确认后才生效。
+                    </p>
+                    <Button variant="secondary" size="sm" className="w-full !justify-start"
+                      onClick={() => { close(); openWcpExport('chapter-continue') }}>
+                      <Download size={12} /> 导出续写包
+                    </Button>
+                    <Button variant="secondary" size="sm" className="w-full !justify-start"
+                      onClick={() => { close(); openWcpExport('chapter-polish') }}>
+                      <Download size={12} /> 导出润色包（优先用选中文字）
+                    </Button>
+                    <Button variant="secondary" size="sm" className="w-full !justify-start"
+                      onClick={() => { close(); openWcpImport('chapter-continue') }}>
+                      <FileText size={12} /> 粘贴网页回复
+                    </Button>
+                  </div>
+                )}
+              </HelpPopover>
               <Button variant="bare" aria-pressed={showRefs} data-refs-trigger onClick={() => afterSearchSubmit(() => setShowRefs(o => !o))} className={`h-8 px-3 text-12 border shrink-0 ${showRefs ? 'bg-amber/12 text-amber border-amber/30' : 'border-transparent text-ink-300 hover:text-amber hover:bg-ink-800/70'}`} title="本章资料：查看细纲、固定资料与正文引用">
                 <Users size={14} /> 本章资料
               </Button>
@@ -1015,6 +1070,44 @@ export default function NovelEditor({ onStatsChange, onNavigate, onOpenSearch, p
           onApply={replaceAllText}
           onClose={() => setModal(null)}
         />
+      )}
+      {/* 3.7.3 · WCP 导出 / 回流弹窗：正文续写与片段润色共用 */}
+      {active && (
+        <>
+          <WcpExportModal
+            open={wcpExportOpen}
+            onClose={() => setWcpExportOpen(false)}
+            scene={wcpScene}
+            chapterId={active.id}
+            chapterTitle={active.title}
+            chapterNo={chapterSeqs.get(active.id) ?? 0}
+            draft={draftContent}
+            selectedText={wcpSelected}
+            onOpenImport={() => setWcpImportOpen(true)}
+          />
+          <WcpImportModal
+            open={wcpImportOpen}
+            onClose={() => setWcpImportOpen(false)}
+            scene={wcpScene}
+            chapterId={active.id}
+            chapterTitle={active.title}
+            chapterNo={chapterSeqs.get(active.id) ?? 0}
+            content={draftContent}
+            onAppendBody={text => {
+              const head = draftContent.trimEnd()
+              updateContent(head ? `${head}\n\n${text}` : text)
+            }}
+            onReplaceBody={text => updateContent(text)}
+            onReplaceSelection={text => {
+              const sel = selRef.current
+              if (!sel || sel.end <= sel.start) {
+                showToast('没有选中片段，无法替换。', 'error')
+                return
+              }
+              updateContent(draftContent.slice(0, sel.start) + text + draftContent.slice(sel.end))
+            }}
+          />
+        </>
       )}
       {/* 颉文姬 · AI 编辑抽屉（v1.6 收官功能） */}
       {jieWenJiOpen && active && (

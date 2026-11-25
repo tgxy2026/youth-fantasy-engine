@@ -3,6 +3,7 @@
 // 只写用户可见、可核验的行为变化：不承诺"更聪明"，也不做好坏判断。
 // 每条都能在界面上找到对应入口；没有把握的功能（未真机走通转写）如实写清限制。
 import type { HelpArticle } from '@/lib/help/types'
+import { VERSION_373_ARTICLES } from '@/lib/help/articles/version-373'
 
 export const VERSION_ARTICLES: HelpArticle[] = [
   {
@@ -180,4 +181,5 @@ export const VERSION_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.7.2',
     reviewedAt: '2026-11-25',
   },
+  ...VERSION_373_ARTICLES,
 ]

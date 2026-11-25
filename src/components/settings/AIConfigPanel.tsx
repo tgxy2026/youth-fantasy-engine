@@ -29,6 +29,7 @@ import { syncTuningWithModel } from '@/lib/tavern/settings'
 import { SELECT_PLACEHOLDER } from '@/lib/constants'
 import { SAMPLING_FIELDS, isOllamaSamplingChannel } from '@/lib/ai/modelSampling'
 import AcpSettings from './AcpSettings'
+import WcpSettingsPanel from './WcpSettingsPanel'
 import AIDisabledNotice from '@/components/ai/AIDisabledNotice'
 import { filterModels } from '@/lib/ai/modelFilter'
 import SamplingUnavailable from '@/components/common/SamplingUnavailable'
@@ -78,6 +79,15 @@ type Mode = keyof typeof MODE_LABELS
 
 export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
   const [connectionView, setConnectionView] = useState<Mode>('api')
+  /**
+   * 3.7.3 · WCP 第 4 模式：**纯本地视图态**。
+   *
+   * 🔴 不要改成 `switchConnectionMode('wcp')`，也不要把 'wcp' 塞进 `Mode`：
+   *    WCP 不占宿主三模式（API / MCP / ACP）的互斥租约，`modeTransition.ts` 零修改。
+   * 🔴 `modeStatus` 的 3 秒轮询只覆盖 `connectionView`；本 state 不受影响 ——
+   *    即使宿主处于 switching / blocked，WCP 页签仍可点可用（规划 D6 / R1）。
+   */
+  const [wcpView, setWcpView] = useState(false)
   /** 3.4.3：模式真源来自宿主；页签只是它的显示，不再用页面 state 冒充模式。 */
   const [modeStatus, setModeStatus] = useState<ConnectionModeStatus | null>(null)
   const [switchId, setSwitchId] = useState<string | null>(null)
@@ -402,7 +412,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
     <section className="rounded-lg border border-ink-700 bg-ink-850/30">
       <div className="shrink-0 px-4 py-3 border-b border-ink-700">
         <div className="flex items-center gap-1.5">
-          <h2 className="text-14 font-semibold text-ink-100">{connectionView === 'agent' ? 'Agent 连接' : connectionView === 'acp' ? 'ACP 连接' : '模型配置'}</h2>
+          <h2 className="text-14 font-semibold text-ink-100">{wcpView ? 'WCP 模式 · 网页资料包' : connectionView === 'agent' ? 'Agent 连接' : connectionView === 'acp' ? 'ACP 连接' : '模型配置'}</h2>
           <HelpPopover title="模型配置怎么用" width="24rem" size={14}>
             <p>全应用共用这一份模型配置 —— AI 辅助规划、逐章连写（创意写作）、取名、校对、设定补全都按这里选中的「当前」模型走；下方「AI 用途路由」还能给创作 / 审校 / 整理三类任务分别指定模型，留空即跟随当前模型；酒馆模式默认也跟随它，但可在酒馆「控制面板」里单独指定（含「整理记忆用的模型」）。桌面安装版切到 ACP 模式后，这些入口改由「ACP 连接」里的 Agent 处理，本节配置不参与。</p>
             <p className="mt-1.5">两类平台：</p>
@@ -442,20 +452,31 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             key={mode}
             variant="toggle"
             size="sm"
-            selected={connectionView === mode}
+            selected={!wcpView && connectionView === mode}
             role="radio"
-            aria-checked={connectionView === mode}
-            onClick={() => void requestMode(mode)}
+            aria-checked={!wcpView && connectionView === mode}
+            onClick={() => { setWcpView(false); void requestMode(mode) }}
             disabled={!!switchId || modeStatus?.phase !== 'stable'}
             data-connection-mode-tab={mode}
           >{MODE_LABELS[mode]}</Button>)}
+          {/* 3.7.3 · WCP 第 4 模式：独立本地视图态 —— 不调 switchConnectionMode，
+              不受 modeStatus 轮询 / blocked 锁影响；toggle 令牌与其余模式 100% 一致。 */}
+          <Button
+            variant="toggle"
+            size="sm"
+            selected={wcpView}
+            role="radio"
+            aria-checked={wcpView}
+            onClick={() => setWcpView(true)}
+            data-connection-mode-tab="wcp"
+          >WCP 模式</Button>
         </div>
         {modeStatus && <span className={`ml-auto inline-flex items-center gap-1.5 text-11 ${modeStatus.phase === 'stable' ? 'text-ink-500' : 'text-amber'}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.phase === 'switching' ? 'bg-amber animate-pulse' : modeStatus.phase === 'blocked' ? 'bg-amber' : 'bg-emerald-400'}`} />
           {modeStatus.phase === 'switching' ? '切换中' : modeStatus.phase === 'blocked' ? '不可用' : '已生效'}
         </span>}
       </div>
-      {!(connectionView === 'acp' && modeStatus?.phase === 'stable' && modeStatus.mode === 'acp') && <div className="px-4 pt-2.5" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
+      {!wcpView && !(connectionView === 'acp' && modeStatus?.phase === 'stable' && modeStatus.mode === 'acp') && <div className="px-4 pt-2.5" data-connection-mode-state={modeStatus?.phase ?? 'loading'}>
         {modeStatus === null ? <p className="text-11 text-ink-500">正在读取连接模式…</p> : modeStatus.phase === 'switching' ? (
           <div className="rounded-lg border border-amber/30 bg-amber/[0.07] px-3 py-2.5">
             <p className="flex items-center gap-2 text-12 text-amber">
@@ -494,7 +515,12 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
           </div>
         )}
       </div>}
-      {connectionView === 'agent' ? <div className="p-4">
+      {wcpView ? <div className="p-4">
+        <WcpSettingsPanel
+          backendMode={modeStatus?.mode ?? null}
+          backendPhase={modeStatus?.phase ?? 'loading'}
+        />
+      </div> : connectionView === 'agent' ? <div className="p-4">
         {WEB ? <p className="text-11 text-ink-500">网页版不能使用本机 Agent 桥。</p> : <AgentBridgeSetup />}
       </div> : connectionView === 'acp' ? <div className="p-4 space-y-3">
         <AcpSettings
@@ -1039,7 +1065,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
       </div>}
     </section>
   )
-  const showApiNotice = WEB || (!switchId && !recovering && modeStatus?.phase === 'stable' && modeStatus.mode === 'api')
+  const showApiNotice = !wcpView && (WEB || (!switchId && !recovering && modeStatus?.phase === 'stable' && modeStatus.mode === 'api'))
   return (
     <>
       <AIDisabledNotice apiMode={showApiNotice} />

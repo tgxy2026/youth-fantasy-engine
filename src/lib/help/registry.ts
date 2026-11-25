@@ -28,18 +28,20 @@ import { AGENT_BACKEND_ARTICLES } from '@/lib/help/articles/agent-backend'
 import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 import { ARTEFACT_ARTICLES } from '@/lib/help/articles/artefacts'
 import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
+import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-// 33（2026-11-25 · 3.7.2）：新增 whats-new-372 篇并更新外观设置与按钮文案口径。
-export const CONTENT_VERSION = 33
+// 34（2026-11-25 · 3.7.3）：新增 WCP 网页资料包使用篇与 3.7.3 更新说明。
+export const CONTENT_VERSION = 34
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.7.2'
+export const SUPPORTED_APP_VERSION = '3.7.3'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [
   ...START_ARTICLES,
   ...VERSION_ARTICLES,
+  ...WCP_ARTICLES,
   ...EDITOR_ARTICLES,
   ...COMMUNITY_ARTICLES,
   ...PLAN_ARTICLES,

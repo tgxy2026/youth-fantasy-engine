@@ -98,6 +98,12 @@ export interface ProjectContextOptions {
    *    而那种 bug 比"多带一段文字"难查得多。显式传 false 仍然可以关掉。
    */
   kb?: boolean
+  /**
+   * 是否附「本次附加文件」（AI 弹窗里一次性拖入的临时资料）。
+   * 默认 true（既有调用点行为不变）；WCP 资料包**必须传 false** ——
+   * 那些文件只属于当时那次对话，不属于长期设定/底包，导出后会被网页模型反复看到。
+   */
+  includeTempDocs?: boolean
   /** 参考资料召回条数上限，默认 4 */
   kbLimit?: number
   /**
@@ -889,7 +895,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
   //    先占满预算，附件就会把后者**挤出**预算闸（`push` 超限即丢）——而显式给的东西
   //    被静默丢掉，比参考资料没进来严重得多。
   //    机制与生命周期纪律见 `lib/ai/tempDocs.ts`（独立模块：aiContext 已贴着 1200 行结构闸）。
-  if (getTempDocs().length > 0 && !opts.skeletonOnly) {
+  if (opts.includeTempDocs !== false && getTempDocs().length > 0 && !opts.skeletonOnly) {
     // 作者显式递进来的东西整块进，不参与单段裁剪
     push('本次附加文件', renderTempDocs(getTempDocs()), { whole: true })
   }

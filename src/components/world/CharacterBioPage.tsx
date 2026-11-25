@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowDown, ArrowUp, BookOpen, ExternalLink, FileUp, History,
+  ArrowDown, ArrowUp, BookOpen, ExternalLink, FileUp, History, Globe2,
   Loader2, Pencil, Plus, Save, ScrollText, Search, Sparkles, Tags, Trash2, Undo2, UserRound,
 } from 'lucide-react'
 import * as db from '@/lib/db'
@@ -40,6 +40,8 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
 import MentionPanel from '@/components/app/MentionPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
+import WcpExportModal from '@/components/wcp/WcpExportModal'
+import WcpImportModal from '@/components/wcp/WcpImportModal'
 import {
   AddBioCharacterModal, BatchScanPanel, BioNodeForm, ComposePreviewPanel, StatePromotePanel, type ScanCandidate,
 } from '@/components/world/CharacterBioPanels'
@@ -112,6 +114,9 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
 
   const [composing, setComposing] = useState(false)
   const [composePreview, setComposePreview] = useState<{ mode: 'draft' | 'continue'; text: string } | null>(null)
+  /** 3.7.3 · WCP 小传资料包：导出 / 回流（回流 Part 1 可填入小传草稿，Part 2 里程碑勾选追加） */
+  const [wcpExportOpen, setWcpExportOpen] = useState(false)
+  const [wcpImportOpen, setWcpImportOpen] = useState(false)
 
   const abortRef = useRef<AbortController | null>(null)
   useEffect(() => () => { abortRef.current?.abort() }, [])
@@ -676,6 +681,11 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
 
   if (!loaded) return <div className="page-enter h-full min-h-0 flex flex-col"><LoadingState /></div>
 
+  /** 最近一章：小传候选节点需要一个章坐标（只用于记录，不会改正文） */
+  const latestChapter = chapters.reduce<{ chapter: Chapter; chapterNo: number } | null>(
+    (acc, cur) => (!acc || cur.chapterNo > acc.chapterNo ? cur : acc), null,
+  )
+
   return (
     <div className="page-enter h-full min-h-0 flex flex-col">
       <PageHeader
@@ -708,6 +718,10 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 {/* 🔴 2026-11-25 主人指正：导出是「把内容送出去」，箭头该朝上；
                     此前用 Download（向下）表达的是「拿进来」，与导入同义，语义反了。
                     与 BookVersionPanel 的「导出」（FileUp）保持一致。 */}
+                <Button variant="secondary" size="md" onClick={() => setWcpExportOpen(true)}
+                  title="导出该角色的小传资料包，交给网页模型整理">
+                  <Globe2 size={14} /> WCP 小传包
+                </Button>
                 <Button variant="secondary" size="md" onClick={handleExportMd}>
                   <FileUp size={14} /> 导出 Markdown
                 </Button>
@@ -980,6 +994,32 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
             )}
           </div>
         </MasterDetail>
+      )}
+      {selectedCard && (
+        <>
+          <WcpExportModal
+            open={wcpExportOpen}
+            onClose={() => setWcpExportOpen(false)}
+            scene="bio-organize"
+            chapterId={latestChapter?.chapter.id}
+            chapterNo={latestChapter?.chapterNo ?? 0}
+            draft={proseDraft}
+            focusCharacterId={selectedCard.id}
+            focusCharacterName={selectedCard.name}
+            onOpenImport={() => setWcpImportOpen(true)}
+          />
+          <WcpImportModal
+            open={wcpImportOpen}
+            onClose={() => setWcpImportOpen(false)}
+            scene="bio-organize"
+            chapterId={latestChapter?.chapter.id}
+            chapterNo={latestChapter?.chapterNo ?? 0}
+            content={proseDraft}
+            onUseBody={text => setProseDraft(text)}
+            useBodyLabel="填入小传草稿"
+            onApplied={() => void refreshSelectedBio(selectedCard.id)}
+          />
+        </>
       )}
       <AddBioCharacterModal
         open={addModalOpen}

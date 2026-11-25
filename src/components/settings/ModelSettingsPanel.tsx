@@ -30,12 +30,13 @@ export default function ModelSettingsPanel() {
         <div className="flex items-center gap-2">
           <h1 className={PAGE_TITLE_CLASS}>模型设置</h1>
           <HelpPopover title="模型设置怎么用" width="24rem" size={14}>
-            <p>先在「运行模式」选择调用方式。API 模式使用配置的模型。MCP 模式供外部客户端访问已授权的作品资料。Windows x64 桌面版可显示 ACP 模式，组件能否连接以 ACP 设置区的状态为准。便携版提供 API 和 MCP，网页版使用联网 API 模型。每次只生效一种模式。</p>
+            <p>先在「运行模式」选择调用方式。API 模式使用配置的模型。MCP 模式供外部客户端访问已授权的作品资料。Windows x64 桌面版可显示 ACP 模式，组件能否连接以 ACP 设置区的状态为准。便携版提供 API 和 MCP，网页版使用联网 API 模型。API / MCP / ACP 每次只生效一种。</p>
+            <p className="mt-2">第 4 个页签「WCP 模式」是离线接力：不需要 API Key，把设定、角色与前文打包给 Gemini / Claude 网页版，再把回复粘回来。它不占上面三种模式的运行状态，可随时并存使用。</p>
             <p className="mt-2">API 模式下可设置模型、用途路由、语义检索与联网检索。正文写作 AI 额度控制单次带入的项目资料量。AI 提示词可按页面列出的功能编辑或还原。</p>
             <p className="mt-2">AI 消耗统计查看本机账本。网络代理按需设置。酒馆的额度与扮演协议在「酒馆模式 → 控制面板」设置。</p>
           </HelpPopover>
         </div>
-        <p className={PAGE_DESCRIPTION_CLASS}>模型配置 · 消耗统计 · 网络代理 · 额度与提示词</p>
+        <p className={PAGE_DESCRIPTION_CLASS}>模型配置 · WCP 网页接力 · 消耗统计 · 网络代理 · 额度与提示词</p>
       </header>
 
       <div className="space-y-4">
