@@ -8,7 +8,7 @@
  *   4. ComposePreviewPanel —— AI 起草 / 续写小传正文预览条（不自动覆盖）
  */
 import { useMemo, useState } from 'react'
-import { Check, Loader2, Sparkles, History, Search, UserRound, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2, Sparkles, History, Search, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import CustomSelect from '@/components/common/CustomSelect'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -441,30 +441,41 @@ export function AddBioCharacterModal({
   onNavigateTab?: (tabId: 'char-main' | 'char-secondary' | 'char-npc') => void
 }) {
   const [query, setQuery] = useState('')
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+
+  // 只展示尚未建立小传的角色卡（已有小传的角色直接在左侧列表切换）
+  const availableCards = useMemo(
+    () => cards.filter(c => !existingBioIds.has(c.id)),
+    [cards, existingBioIds],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return cards
-    return cards.filter(c => {
+    if (!q) return availableCards
+    return availableCards.filter(c => {
       if (c.name.toLowerCase().includes(q)) return true
       return readAliases(c.tabId, c.data).some(a => a.toLowerCase().includes(q))
     })
-  }, [cards, query])
+  }, [availableCards, query])
+
+  const toggleGroup = (tabId: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [tabId]: !prev[tabId] }))
+  }
 
   return (
     <Modal open={open} onClose={onClose} title="选择角色并建立小传" width="lg">
       <div className="space-y-3.5">
         <p className="text-12 text-ink-400">
-          从「主要角色」「次要角色」「NPC 角色」中挑选已有角色卡片，为其建立小传并开始编写；若找不到目标角色，请先到对应角色卡页签建档。
+          从「主要角色」「次要角色」「NPC 角色」中挑选尚未建立小传的已有角色；可按分组折叠/展开或输入关键词快速检索。
         </p>
 
-        {cards.length > 0 && (
+        {availableCards.length > 0 && (
           <div className="relative">
             <input
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="按姓名或别称搜索已有角色…"
+              placeholder="按姓名或别称搜索未建小传的角色…"
               className="w-full h-9 rounded-lg border border-ink-700 bg-ink-950 !pl-8 pr-3 text-12 text-ink-100 outline-none focus:border-amber/50"
             />
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
@@ -485,49 +496,62 @@ export function AddBioCharacterModal({
               </div>
             )}
           </div>
+        ) : availableCards.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-ink-700 py-8 px-4 text-center space-y-2">
+            <p className="text-13 text-ink-300">全部已有角色都已建立角色小传</p>
+            <p className="text-11 text-ink-500">如需为新角色编写小传，请先到「主要角色 / 次要角色 / NPC 角色」页签建档。</p>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ink-700 py-8 text-center text-12 text-ink-500">
-            没有匹配「{query.trim()}」的已有角色，可先在角色管理页签新建该角色。
+            未匹配到「{query.trim()}」的未建小传角色，可先在角色管理页签新建或确认其是否已建过小传。
           </div>
         ) : (
-          <div className="max-h-80 overflow-y-auto pr-1 space-y-3">
+          <div className="max-h-80 overflow-y-auto pr-1 space-y-2.5">
             {PICKER_GROUPS.map(group => {
               const list = filtered.filter(c => c.tabId === group.tabId)
               if (list.length === 0) return null
+              const isCollapsed = !query.trim() && !!collapsedGroups[group.tabId]
               return (
                 <div key={group.tabId} className="space-y-1.5">
-                  <div className="text-11 font-medium text-ink-400 px-0.5">{group.label}（{list.length}）</div>
-                  <div className="space-y-1.5">
-                    {list.map(c => {
-                      const hasBio = existingBioIds.has(c.id)
-                      const aliases = readAliases(c.tabId, c.data)
-                      return (
-                        <div
-                          key={c.id}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 hover:border-ink-500 transition-colors"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <UserRound size={13} className="text-ink-400 shrink-0" />
-                              <span className="text-13 font-medium text-ink-100 truncate">{c.name}</span>
-                              {aliases.length > 0 && (
-                                <span className="text-11 text-ink-500 truncate">（{aliases.join('、')}）</span>
-                              )}
+                  <Button
+                    variant="bare"
+                    size="sm"
+                    onClick={() => toggleGroup(group.tabId)}
+                    aria-expanded={!isCollapsed}
+                    className="w-full !justify-between px-2.5 py-1.5 text-12 font-medium text-ink-300 bg-ink-900/70 hover:bg-ink-800 border border-ink-700/60"
+                  >
+                    <span>{group.label}（{list.length}）</span>
+                    <span className="inline-flex items-center gap-1 text-11 text-ink-500">
+                      {isCollapsed ? '展开' : '收起'}
+                      {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                    </span>
+                  </Button>
+                  {!isCollapsed && (
+                    <div className="space-y-1.5">
+                      {list.map(c => {
+                        const aliases = readAliases(c.tabId, c.data)
+                        return (
+                          <div
+                            key={c.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/50 px-3 py-2 hover:border-ink-500 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <UserRound size={13} className="text-ink-400 shrink-0" />
+                                <span className="text-13 font-medium text-ink-100 truncate">{c.name}</span>
+                                {aliases.length > 0 && (
+                                  <span className="text-11 text-ink-500 truncate">（{aliases.join('、')}）</span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          {hasBio ? (
-                            <Button variant="secondary" size="sm" disabled={adding} onClick={() => void onPick(c)}>
-                              已有小传 · 打开
-                            </Button>
-                          ) : (
                             <Button variant="primary" size="sm" disabled={adding} onClick={() => void onPick(c)}>
                               选择添加
                             </Button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -536,8 +560,8 @@ export function AddBioCharacterModal({
 
         <div className="flex items-center justify-between gap-2 pt-1 border-t border-ink-700/60">
           <div className="flex flex-wrap items-center gap-1.5">
-            {cards.length > 0 && onNavigateTab && PICKER_GROUPS.map(g => (
-              <Button key={g.tabId} variant="ghost" size="sm" onClick={() => onNavigateTab(g.tabId)}>
+            {onNavigateTab && PICKER_GROUPS.map(g => (
+              <Button key={g.tabId} variant="secondary" size="sm" onClick={() => onNavigateTab(g.tabId)}>
                 去{g.label}建卡
               </Button>
             ))}

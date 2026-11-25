@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown, ArrowUp, BookOpen, Download, ExternalLink, History,
-  Loader2, Pencil, Plus, Save, ScrollText, Sparkles, Tags, Trash2, Undo2, UserRound,
+  Loader2, Pencil, Plus, Save, ScrollText, Search, Sparkles, Tags, Trash2, Undo2, UserRound,
 } from 'lucide-react'
 import * as db from '@/lib/db'
 import type { CustomOptionPayload } from '@/lib/db'
@@ -21,7 +21,7 @@ import { readAliases } from '@/lib/settings/aliases'
 import { resolveOptions } from '@/lib/settings/customOptions'
 import { evolutionOf, readStateRecords, type StateRecord } from '@/lib/settings/stateTrack'
 import {
-  appendBioNodes, BIO_NODE_TAGS, BIO_TAG_COL_NAME, deleteBioNode, emptyBiography,
+  appendBioNodes, BIO_NODE_TAGS, BIO_TAG_COL_NAME, deleteBiography, deleteBioNode, emptyBiography,
   formatBiographyMarkdown, isDuplicateBioNode, readAllBiographies, renameBioNodeTag,
   reorderCharacterPrequelNode, saveBiographyProse, sortBioNodes, upsertBioNode,
   type BioEventNode, type BioNodeSource, type CharacterBiography,
@@ -38,6 +38,7 @@ import { MasterDetail, MasterList } from '@/components/common/MasterDetail'
 import { LoadingState } from '@/components/common/LoadingState'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
+import MentionPanel from '@/components/app/MentionPanel'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import {
   AddBioCharacterModal, BatchScanPanel, BioNodeForm, ComposePreviewPanel, StatePromotePanel, type ScanCandidate,
@@ -97,6 +98,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   const [manageTagsOpen, setManageTagsOpen] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addingBio, setAddingBio] = useState(false)
+  const [mention, setMention] = useState<{ id: string; name: string; aliases: string[] } | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editingNode, setEditingNode] = useState<BioEventNode | null>(null)
   const [nodeSaving, setNodeSaving] = useState(false)
@@ -538,6 +540,30 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
     }
   }
 
+  const handleDeleteBiography = async (card: CardRecord) => {
+    const hasSavedBio = bioCardIdsSet.has(card.id)
+    if (!hasSavedBio) {
+      if (activeId === card.id) setActiveId(cards.find(c => c.id !== card.id && bioCardIdsSet.has(c.id))?.id ?? null)
+      return
+    }
+    const okDel = await confirmDialog({
+      title: '删除角色小传',
+      message: `确定删除「${card.name}」的角色小传正文与全部重要节点吗？\n此操作不会删除原角色卡档案。`,
+      confirmText: '确认删除小传',
+      danger: true,
+    })
+    if (!okDel) return
+    const r = await deleteBiography(card.id)
+    if (!r.ok) { showToast('删除角色小传失败，请重试', 'error'); return }
+    const nextMap = { ...bios }
+    delete nextMap[card.id]
+    setBios(nextMap)
+    if (activeId === card.id) {
+      setActiveId(cards.find(c => c.id !== card.id && (c.id in nextMap))?.id ?? null)
+    }
+    showToast(`已删除「${card.name}」的角色小传`, 'success')
+  }
+
   const renderGroupList = (title: string, list: CardRecord[]) => {
     if (list.length === 0) return null
     return (
@@ -549,25 +575,56 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
           const nodeCount = bio?.nodes.length ?? 0
           const hasProse = !!bio?.prose.trim()
           return (
-            <button
+            <div
               key={c.id}
-              type="button"
               onClick={() => void switchCharacter(c.id)}
-              className={`w-full text-left rounded-lg border px-3 py-2 transition-all duration-150 ${
+              title={c.name}
+              className={`group cursor-pointer rounded-lg border px-3 py-2.5 transition-all duration-150 ${
                 isActive
                   ? 'bg-amber/15 border-amber/30 text-amber'
                   : 'bg-ink-850 border-ink-700 text-ink-300 hover:border-ink-500'
               }`}
             >
-              <div className="flex items-center gap-1.5">
-                <UserRound size={12} className="shrink-0" />
-                <span className="text-13 font-medium truncate flex-1">{c.name}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="bare"
+                  className="min-w-0 flex-1 !justify-start"
+                  onClick={e => { e.stopPropagation(); void switchCharacter(c.id) }}
+                  aria-pressed={isActive}
+                  aria-label={`选择角色：${c.name}`}
+                >
+                  <UserRound size={13} className="shrink-0" />
+                  <span className="text-13 font-medium truncate">{c.name}</span>
+                </Button>
                 {isActive && proseDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber shrink-0" />}
+                <Button
+                  variant="bare"
+                  iconOnly
+                  size="xs"
+                  title={`查看「${c.name}」在正文中的提及`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setMention({ id: c.id, name: c.name, aliases: readAliases(c.tabId, c.data) })
+                  }}
+                  className="opacity-40 group-hover:opacity-100 text-ink-500 hover:text-amber transition-all"
+                >
+                  <Search size={12} />
+                </Button>
+                <Button
+                  variant="icon-danger"
+                  iconOnly
+                  size="xs"
+                  title={`删除「${c.name}」的角色小传`}
+                  onClick={e => { e.stopPropagation(); void handleDeleteBiography(c) }}
+                  className="opacity-40 group-hover:opacity-100 transition-all"
+                >
+                  <Trash2 size={12} />
+                </Button>
               </div>
               <div className="text-10 text-ink-500 mt-0.5 truncate">
                 {nodeCount} 个节点 · {hasProse ? '已有正文' : '待写正文'}
               </div>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -932,6 +989,15 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
         onPick={handlePickCharacterForBio}
         onNavigateTab={tabId => { setAddModalOpen(false); onNavigate?.(tabId) }}
       />
+      {mention && (
+        <MentionPanel
+          name={mention.name}
+          aliases={mention.aliases}
+          onClose={() => setMention(null)}
+          onNavigate={onNavigate ?? (() => {})}
+          onNavigateReference={onNavigateReference}
+        />
+      )}
     </div>
   )
 }

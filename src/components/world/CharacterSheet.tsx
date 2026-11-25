@@ -278,7 +278,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
   // 左栏搜索（A+C 的 C 项）：角色一多时，滚只解决「翻得到」、搜才解决「定位快」
   const [listQuery, setListQuery] = useMasterQuery()
   const { filtered: shownRecords, isFiltering } = useMasterFilter(
-    visibleRecords, listQuery, r => r.name,
+    visibleRecords, listQuery, r => (isCharTab ? [r.name, ...readAliases(tab.id, r.data)].join(' ') : r.name),
   )
   // 空态语义：0 张卡 / 全被「已退场」隐藏 / 搜索无结果 —— 三者文案不同
   const listEmptyHint = records.length === 0
@@ -908,7 +908,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
           widthClass="w-44 lg:w-52"
           query={listQuery}
           onQueryChange={setListQuery}
-          placeholder={`搜${noun}名…`}
+          placeholder={isCharTab ? '搜角色名或别称…' : `搜${noun}名…`}
           searchHint={isFiltering
             ? <span className="text-10 text-ink-500">筛出 {shownRecords.length} / 共 {records.length}</span>
             : undefined}

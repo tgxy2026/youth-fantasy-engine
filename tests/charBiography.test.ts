@@ -14,6 +14,7 @@ import {
   bioNodeFromStateRecord,
   buildBioNode,
   CHAR_BIOGRAPHY_KEY,
+  deleteBiography,
   deleteBioNode,
   emptyBiography,
   formatBiographyMarkdown,
@@ -171,6 +172,10 @@ async function main() {
       && (await readBiography(CHAR_ID))?.nodes.find(n => n.id === 'b-custom')?.tag === '宗门伏线'
       && (await readBiography('char-other'))?.nodes[0]?.tag === '宗门伏线')
 
+    // 删除整份小传与读库失败保护
+    const delBioRes = await deleteBiography('char-other')
+    ok('deleteBiography 删除整角色小传成功', delBioRes.ok && delBioRes.deleted && (await readBiography('char-other')) === null)
+
     // 损坏数据只读兜底不崩溃
     await db.setSettingFor(PID, CHAR_BIOGRAPHY_KEY, { broken: 'not-an-object', [CHAR_ID]: { prose: 'ok', nodes: [{ bad: true }] } })
     const repaired = await readAllBiographies()
@@ -201,10 +206,11 @@ async function main() {
     const rUpsert = await upsertBioNode(CHAR_ID, buildBioNode({ id: 'new-2', phase: 'story', chapterNo: 3, title: '新节点2' }))
     const rDelete = await deleteBioNode(CHAR_ID, 'keep-1')
     const rRename = await renameBioNodeTag('成长突破', '突破')
+    const rDelBio = await deleteBiography(CHAR_ID)
     db.setStoreOps(memoryOps)
 
-    ok('读库失败时五个写接口全部中止并返回 ok:false',
-      !rProse.ok && !rAppend.ok && !rUpsert.ok && !rDelete.ok && !rRename.ok && putCalled === 0)
+    ok('读库失败时六个写接口全部中止并返回 ok:false',
+      !rProse.ok && !rAppend.ok && !rUpsert.ok && !rDelete.ok && !rRename.ok && !rDelBio.ok && putCalled === 0)
     const intact = await readBiography(CHAR_ID)
     ok('读库失败后原有正文与节点完好无损',
       intact?.prose === '珍贵手写小传' && intact.nodes.length === 1 && intact.nodes[0].id === 'keep-1')

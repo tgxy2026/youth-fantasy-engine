@@ -551,3 +551,20 @@ export async function renameBioNodeTag(
     return { ok: true, updated }
   })
 }
+
+/** 删除整条角色小传记录（仅删小传正文与节点，不影响角色卡档案；读失败中止写入） */
+export async function deleteBiography(
+  characterId: string,
+  owner?: OwnedOperation,
+): Promise<{ ok: boolean; deleted: boolean }> {
+  if (!characterId.trim()) return { ok: false, deleted: false }
+  return serialized(async () => {
+    const read = await readMapStrict(owner)
+    if (!read.ok) return { ok: false, deleted: false }
+    if (!(characterId in read.map)) return { ok: true, deleted: false }
+    const nextMap = { ...read.map }
+    delete nextMap[characterId]
+    if (!await writeMapStrict(nextMap, owner)) return { ok: false, deleted: false }
+    return { ok: true, deleted: true }
+  })
+}
