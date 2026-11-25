@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowDown, ArrowUp, BookOpen, Download, ExternalLink, History,
+  ArrowDown, ArrowUp, BookOpen, ExternalLink, FileUp, History,
   Loader2, Pencil, Plus, Save, ScrollText, Search, Sparkles, Tags, Trash2, Undo2, UserRound,
 } from 'lucide-react'
 import * as db from '@/lib/db'
@@ -705,8 +705,11 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 >
                   <Save size={14} /> {savingProse ? '保存中…' : proseDirty ? '保存正文' : '已保存'}
                 </Button>
+                {/* 🔴 2026-11-25 主人指正：导出是「把内容送出去」，箭头该朝上；
+                    此前用 Download（向下）表达的是「拿进来」，与导入同义，语义反了。
+                    与 BookVersionPanel 的「导出」（FileUp）保持一致。 */}
                 <Button variant="secondary" size="md" onClick={handleExportMd}>
-                  <Download size={14} /> 导出 Markdown
+                  <FileUp size={14} /> 导出 Markdown
                 </Button>
               </>
             )}
