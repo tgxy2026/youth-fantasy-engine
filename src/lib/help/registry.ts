@@ -30,7 +30,8 @@ import { ARTEFACT_ARTICLES } from '@/lib/help/articles/artefacts'
 import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-export const CONTENT_VERSION = 31
+// 32（2026-11-25 · 3.7.1）：新增 whats-new-371 篇（角色小传 / 图鉴关联编辑 / 布局小修）。
+export const CONTENT_VERSION = 32
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.7.1'
