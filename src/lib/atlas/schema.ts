@@ -227,6 +227,8 @@ export function resolveAtlasFields(tab: TabDef, opts: ResolveAtlasOptions = {}):
       source: 'builtin',
       builtinType: col.type ?? 'text',
       ...(col.fixedOptions ? { fixedOptions: true } : {}),
+      ...(col.refTab ? { refTab: col.refTab } : {}),
+      ...(col.refCol ? { refCol: col.refCol } : {}),
       groupId: groupOfBuiltin(col.name),
       order: pres?.order ?? index,
       options: col.options,

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import '@/components/atlas/atlasMobile.css'
 import { ArrowLeft, ChevronDown, ChevronRight, ImagePlus, Loader2, Save, Table2, Trash2, Undo2 } from 'lucide-react'
 import type { TableRow } from '@/lib/types'
+import { SABC_LABELS, type VisCtx } from '@/lib/schema'
 import { atlasDisplayValue } from '@/lib/atlas/schema'
 import type { SemanticPreviewGroup } from '@/lib/atlas/semanticPreview'
 import type { AtlasImage, AtlasResolvedSection, ResolvedAtlasField } from '@/lib/atlas/types'
@@ -36,6 +37,8 @@ import SafeImage from '@/components/common/SafeImage'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import AtlasCellInput from './AtlasCellInput'
 import { CellTextarea } from '@/components/sheets/tableSheetShared'
+import CharacterSelect from '@/components/world/CharacterSelect'
+import TableRefSelect from '@/components/sheets/TableRefSelect'
 import { useAtlasWorkspaceOptions } from './useAtlasWorkspaceOptions'
 import { readResourceTransfers, transfersOfItem, type ResourceTransfer } from '@/lib/settings/resourceLedger'
 import { appendStateRecords, buildStateRecord, evolutionOf, readStateRecords, type StateRecord } from '@/lib/settings/stateTrack'
@@ -49,6 +52,10 @@ interface Props {
    * 才看得到、加得到同一批自定义值。
    */
   tabId: string
+  /** 项目形态上下文（透传给角色卡下拉，控制极简项目是否列出 NPC） */
+  ctx?: VisCtx
+  /** 跨表引用列的表格级候选缓存（与表格共享同一份一次读取结果） */
+  refOptions?: Record<string, string[]>
   row: TableRow
   nameKey: string
   badges: string[]
@@ -112,12 +119,26 @@ import { atlasDetailEditable } from '@/lib/atlas/editability'
 import CustomSelect from '@/components/common/CustomSelect'
 export { atlasDetailEditable }
 
-/** 单个字段的编辑器：自定义字段走 `AtlasCellInput`，内置字段只用文本 / 下拉两种 */
-function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: ResolvedAtlasField; value: string; onChange: (v: string) => void }) {
+/** 稳定空数组：当父级已传入 refOptions（表格级缓存）时传它，避免控件首帧各自整表读取 */
+const EMPTY_OPTIONS: string[] = []
+const DEFAULT_VIS_CTX: VisCtx = { type: 'full', features: [] }
+
+/** 单个字段的编辑器：自定义字段走 `AtlasCellInput`，内置字段按类型分派文本 / 下拉 / 角色 / 跨表引用 */
+function DetailInput({
+  tabId, field, value, onChange, ctx, refOptions,
+}: {
+  tabId: string
+  field: ResolvedAtlasField
+  value: string
+  onChange: (v: string) => void
+  ctx?: VisCtx
+  refOptions?: Record<string, string[]>
+}) {
   if (field.source === 'custom') {
     return <AtlasCellInput field={field} value={value} onChange={onChange} />
   }
-  if ((field.builtinType ?? 'text') === 'select') {
+  const builtinType = field.builtinType ?? 'text'
+  if (builtinType === 'select') {
     // 🔴 OPT-010（2026-10-19 主人反馈）：原先这里是原生 select、只读 schema 预设选项 ——
     //    表格模式用的 CustomSelect 能加自定义值、也能看到别人加的值，图鉴却都看不到也加不了。
     //    现统一走 CustomSelect（同一份 customOption::<pid>::<tabId>::<列名> 存储）。
@@ -129,7 +150,30 @@ function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: 
         options={field.options ?? []}
         value={value}
         onChange={onChange}
+        labelMap={field.key === '保密等级' ? SABC_LABELS : undefined}
         {...(field.fixedOptions ? { fixedOptions: true } : {})}
+      />
+    )
+  }
+  if (builtinType === 'character') {
+    return (
+      <CharacterSelect
+        value={value}
+        onChange={onChange}
+        placeholder={field.label}
+        ctx={ctx ?? DEFAULT_VIS_CTX}
+      />
+    )
+  }
+  if (builtinType === 'tableRef' && field.refTab && field.refCol) {
+    return (
+      <TableRefSelect
+        refTabId={field.refTab}
+        refCol={field.refCol}
+        options={refOptions ? (refOptions[field.key] ?? EMPTY_OPTIONS) : undefined}
+        value={value}
+        onChange={onChange}
+        placeholder={field.label}
       />
     )
   }
@@ -137,7 +181,7 @@ function DetailInput({ tabId, field, value, onChange }: { tabId: string; field: 
 }
 
 export default function AtlasDetail({
-  tabId, row, nameKey, badges, sections, semanticGroups = [], image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
+  tabId, ctx, refOptions, row, nameKey, badges, sections, semanticGroups = [], image, onImageChange, projectImageBytes = 0, imageLimit = ATLAS_TOTAL_LIMIT,
   hiddenFields, onOpenFieldSettings,
   overlay, onClose, onEditInTable,
   cellValue, onCellChange, dirty = false, saving = false, onSave, onRevert,
@@ -229,8 +273,8 @@ export default function AtlasDetail({
   const editable = !!onCellChange
   /** 本次编辑态里可改的字段（进出编辑态时重算，类别改了跟着变） */
   const editKeys = useMemo(
-    () => sections.flatMap(sec => sec.fields).filter(atlasDetailEditable).map(f => f.key),
-    [sections],
+    () => sections.flatMap(sec => sec.fields).filter(f => atlasDetailEditable(f, tabId)).map(f => f.key),
+    [sections, tabId],
   )
 
   const startEdit = () => {
@@ -538,7 +582,7 @@ export default function AtlasDetail({
                 </h3>
                 <dl className="space-y-1.5">
                   {sec.fields.map(({ field, value }) => {
-                    const canEdit = editing && atlasDetailEditable(field)
+                    const canEdit = editing && atlasDetailEditable(field, tabId)
                     if (canEdit) {
                       return (
                         <div key={field.key} data-workspace-field={field.key}>
@@ -552,6 +596,8 @@ export default function AtlasDetail({
                               field={field}
                               value={valueOf(field.key)}
                               onChange={v => onCellChange?.(field.key, v)}
+                              ctx={ctx}
+                              refOptions={refOptions}
                             />
                           </dd>
                         </div>
@@ -560,8 +606,8 @@ export default function AtlasDetail({
                     // 长内容（长文本 / 说明性字段）单独成块，短值左右并排 —— 与表格里的观感一致
                     const isLong = value.length > 40 || field.builtinType === 'textarea' || field.customType === 'longText'
                     /** 编辑态下没能改的字段，说清楚为什么 —— 否则作者会以为"这里坏了" */
-                    const lockedHint = editing && editable && !atlasDetailEditable(field)
-                      ? '这类字段（编号 / 引用 / 日期）请在表格里改'
+                    const lockedHint = editing && editable && !atlasDetailEditable(field, tabId)
+                      ? '这类字段（编号 / 上级与层级归属 / 所属地图 / 日期）请在表格里改'
                       : undefined
                     return (
                       <div key={field.key} data-workspace-field={field.key} className={isLong ? '' : 'flex gap-2 items-baseline'} title={lockedHint}>

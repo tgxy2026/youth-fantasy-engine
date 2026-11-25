@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen } from 'lucide-react'
 import type { TableRow, TabDef } from '@/lib/types'
+import type { VisCtx } from '@/lib/schema'
 import {
   atlasCardBadges, atlasCategoryHiddenFields, atlasFieldsForCategory, atlasSections, atlasSummaryFields, resolveAtlasFields,
 } from '@/lib/atlas/schema'
@@ -42,6 +43,10 @@ interface Props {
   focusRowId?: string | null
   onFocusConsumed?: () => void
   tab: TabDef
+  /** 项目形态上下文（透传给角色卡下拉，控制极简项目是否列出 NPC） */
+  ctx?: VisCtx
+  /** 跨表引用列的表格级候选缓存（与表格共享同一份一次读取结果） */
+  refOptions?: Record<string, string[]>
   /** 已并入草稿 + 已筛选的行（`model.filteredRows`） */
   rows: TableRow[]
   /** 内置字段的显示名覆写（fieldAlias） */
@@ -111,7 +116,7 @@ const MIN_CARD_W: Record<Density, number> = { compact: 150, standard: 180, loose
 const DENSITY_LABEL: Record<Density, string> = { compact: '紧凑', standard: '标准', loose: '宽松' }
 
 export default function AtlasView({
-  tab, rows, aliases, config, templateDef, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
+  tab, ctx, refOptions, rows, aliases, config, templateDef, onEditInTable, onSaveImage, imageUsage = 0, imageLimit, onExportPackage, onImportPackage,
   cellValue, onCellChange, dirtyOf, saving, onSave, onRevert, onOpenFieldSettings, dirtyCount = 0,
   focusRowId, onFocusConsumed,
   projectId,
@@ -195,7 +200,7 @@ export default function AtlasView({
         def: templateDef,
         purpose: 'detail',
         ignoreAppliesTo: true,
-      }))
+      }), tab)
       : null),
     [tab, templateDef],
   )
@@ -463,6 +468,8 @@ export default function AtlasView({
             key={selected.id}
             scrollRef={detailRef}
             tabId={tab.id}
+            ctx={ctx}
+            refOptions={refOptions}
             row={selected}
             nameKey={nameKey}
             badges={atlasCardBadges(tab.id, selected.data)}

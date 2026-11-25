@@ -1,11 +1,13 @@
-// ============ 图鉴详情就地编辑（3.1.3 · 2026-10-19 主人拍板「要」）============
+// ============ 图鉴详情就地编辑（3.1.3 · 2026-10-19；3.7.1 开放纯跨表与角色单选）============
 //
 // 锁三件事：
-//   ① 哪些字段能在详情里改 —— 文本 / 有候选的下拉 / 自定义六类型放开，
-//      编号、跨表引用、角色、日期、无候选下拉（历法）一律留在表格；
+//   ① 哪些字段能在详情里改 —— 文本 / 有候选的下拉 / 角色单选 / 纯跨表关联 / 自定义六类型放开，
+//      编号、自引用父级（上级 / 层级归属）、所属地图、角色多选、日期、无候选下拉（历法）一律留在表格；
 //   ② 「撤销本次改动」只回滚详情动过的那几栏，表格里其它未保存草稿一根不动；
 //   ③ 回滚到库值时把草稿**摘干净**（不留下一条等值草稿，否则 dirty 会假亮、保存按钮永远可点）。
 import { atlasDetailEditable } from '../src/lib/atlas/editability'
+import { ATLAS_TABS, resolveAtlasFields } from '../src/lib/atlas/schema'
+import { TABS } from '../src/lib/schema'
 import { revertDraftCells, type DraftMap } from '../src/components/sheets/tableSheetDraftOps'
 import type { ResolvedAtlasField } from '../src/lib/atlas/types'
 
@@ -33,21 +35,59 @@ function field(over: Partial<ResolvedAtlasField> & { key: string }): ResolvedAtl
 }
 
 // ── ① 可编辑性 ──
-const cases: Array<[string, ResolvedAtlasField, boolean]> = [
-  ['内置纯文本（名称）可改', field({ key: '名称', builtinType: 'text' }), true],
-  ['内置长文本（能力特性）可改', field({ key: '能力特性', builtinType: 'textarea' }), true],
-  ['内置有候选下拉（类别）可改', field({ key: '类别', builtinType: 'select', options: ['人族', '魔兽'] }), true],
-  ['编号不可改（自动生成 + 唯一校验）', field({ key: '编号', builtinType: 'text' }), false],
-  ['跨表引用（上级）不可改', field({ key: '上级', builtinType: 'tableRef' }), false],
-  ['角色列不可改', field({ key: '当前持有者', builtinType: 'character' }), false],
-  ['结构化日期不可改', field({ key: '发生时间', builtinType: 'date' }), false],
-  ['无候选下拉（历法）不可改', field({ key: '历法', builtinType: 'select' }), false],
-  ['空的候选数组同样不可改', field({ key: 'x', builtinType: 'select', options: [] }), false],
-  ['自定义字段一律可改', field({ key: 'cf_a', source: 'custom', customType: 'longText' }), true],
-  ['自定义多选可改', field({ key: 'cf_b', source: 'custom', customType: 'multiSelect', options: ['甲'] }), true],
+const cases: Array<[string, ResolvedAtlasField, string | undefined, boolean]> = [
+  ['内置纯文本（名称）可改', field({ key: '名称', builtinType: 'text' }), undefined, true],
+  ['内置长文本（能力特性）可改', field({ key: '能力特性', builtinType: 'textarea' }), undefined, true],
+  ['内置有候选下拉（类别）可改', field({ key: '类别', builtinType: 'select', options: ['人族', '魔兽'] }), undefined, true],
+  ['编号不可改（自动生成 + 唯一校验）', field({ key: '编号', builtinType: 'text' }), 'items', false],
+  ['角色单选列（当前持有者）可改', field({ key: '当前持有者', builtinType: 'character' }), 'items', true],
+  ['角色多选列仍不可改', field({ key: '知情者', builtinType: 'characters' }), undefined, false],
+  ['纯跨表引用（国家势力·地理位置）可改', field({ key: '地理位置', builtinType: 'tableRef', refTab: 'geography', refCol: '名称' }), 'nations', true],
+  ['纯跨表引用（地理风物·势力归属）可改', field({ key: '势力归属', builtinType: 'tableRef', refTab: 'nations', refCol: '名称' }), 'geography', true],
+  ['自引用父级（传 tabId：物品·上级）不可改', field({ key: '上级', builtinType: 'tableRef', refTab: 'items', refCol: '名称' }), 'items', false],
+  ['自引用父级（不传 tabId：上级）不可改', field({ key: '上级', builtinType: 'tableRef', refTab: 'items', refCol: '名称' }), undefined, false],
+  ['自引用父级（传 tabId：地理·层级归属）不可改', field({ key: '层级归属', builtinType: 'tableRef', refTab: 'geography', refCol: '名称' }), 'geography', false],
+  ['自引用父级（不传 tabId：层级归属）不可改', field({ key: '层级归属', builtinType: 'tableRef', refTab: 'geography', refCol: '名称' }), undefined, false],
+  ['地图绑定（地理·所属地图）不可改', field({ key: '所属地图', builtinType: 'tableRef', refTab: 'geomaps', refCol: '名称' }), 'geography', false],
+  ['缺少来源表的 tableRef 不可改', field({ key: '残缺引用', builtinType: 'tableRef' }), 'items', false],
+  ['结构化日期不可改', field({ key: '发生时间', builtinType: 'date' }), undefined, false],
+  ['无候选下拉（历法）不可改', field({ key: '历法', builtinType: 'select' }), undefined, false],
+  ['空的候选数组同样不可改', field({ key: 'x', builtinType: 'select', options: [] }), undefined, false],
+  ['自定义字段一律可改', field({ key: 'cf_a', source: 'custom', customType: 'longText' }), undefined, true],
+  ['自定义多选可改', field({ key: 'cf_b', source: 'custom', customType: 'multiSelect', options: ['甲'] }), undefined, true],
 ]
-for (const [name, f, want] of cases) {
-  ok(name, atlasDetailEditable(f) === want, `实际 ${atlasDetailEditable(f)}`)
+for (const [name, f, tabId, want] of cases) {
+  ok(name, atlasDetailEditable(f, tabId) === want, `实际 ${atlasDetailEditable(f, tabId)}`)
+}
+
+// ── ①-b 四个图鉴页签真实 schema 逐项核验 ──
+const expectedLocked: Record<string, string[]> = {
+  races: ['编号', '上级'],
+  items: ['编号', '上级'],
+  nations: ['编号', '上级'],
+  geography: ['编号', '层级归属', '所属地图'],
+}
+const expectedUnlockedRef: Record<string, string[]> = {
+  races: [],
+  items: ['当前持有者'],
+  nations: ['地理位置'],
+  geography: ['势力归属'],
+}
+for (const tabId of ATLAS_TABS) {
+  const tab = TABS.find(t => t.id === tabId)
+  ok(`存在图鉴页签定义：${tabId}`, !!tab)
+  if (!tab) continue
+  const resolved = resolveAtlasFields(tab, { purpose: 'detail', ignoreAppliesTo: true })
+  const locked = resolved.filter(f => !atlasDetailEditable(f, tabId)).map(f => f.key)
+  ok(
+    `${tabId} 锁定字段清单一致`,
+    locked.length === expectedLocked[tabId].length && expectedLocked[tabId].every(k => locked.includes(k)),
+    `实际锁定=[${locked.join(', ')}]`,
+  )
+  for (const key of expectedUnlockedRef[tabId]) {
+    const f = resolved.find(x => x.key === key)
+    ok(`${tabId}.${key} 已开放图鉴可编辑`, !!f && atlasDetailEditable(f, tabId))
+  }
 }
 
 // ── ② / ③ 撤销本次改动 ──

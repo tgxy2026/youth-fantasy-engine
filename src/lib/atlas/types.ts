@@ -125,6 +125,10 @@ export interface ResolvedAtlasField {
    * 不允许在详情/表格的自定义下拉里增改删。透传自列定义的 fixedOptions。
    */
   fixedOptions?: boolean
+  /** 跨表引用来源表（内置 `tableRef` 列透传，如 `geography` / `nations`） */
+  refTab?: string
+  /** 跨表引用来源列名（内置 `tableRef` 列透传，如 `名称`） */
+  refCol?: string
   tableVisible: boolean
   detailVisible: boolean
   searchable: boolean

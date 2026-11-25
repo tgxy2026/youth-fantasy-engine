@@ -35,7 +35,7 @@ const COL_TYPE_OF: Partial<Record<TemplateFieldType, TableColumn['type']>> = {
 }
 
 /** 字段 → 图鉴解析结构（图鉴视图 / 卡片自定义控件共用） */
-export function atlasFieldOfTemplate(f: EffectiveField): ResolvedAtlasField {
+export function atlasFieldOfTemplate(f: EffectiveField, baseCol?: TableColumn): ResolvedAtlasField {
   const customType = customTypeOf(f)
   return {
     key: f.sourceKey,
@@ -48,6 +48,8 @@ export function atlasFieldOfTemplate(f: EffectiveField): ResolvedAtlasField {
     ...(f.description ? { description: f.description } : {}),
     ...(f.options ? { options: f.options } : {}),
     ...(f.fixedOptions ? { fixedOptions: true } : {}),
+    ...(!customType && baseCol?.refTab ? { refTab: baseCol.refTab } : {}),
+    ...(!customType && baseCol?.refCol ? { refCol: baseCol.refCol } : {}),
     tableVisible: f.permissions.table,
     detailVisible: f.permissions.detail,
     searchable: f.permissions.search,
@@ -183,8 +185,9 @@ export function cardGroupsOfTemplate(tab: TabDef, tpl: EffectiveTemplate): CardG
 // ────────────────────────── 图鉴视图 ──────────────────────────
 
 /** 模板 → 图鉴字段清单（已按用途筛过；调用方再按条目类别判 `appliesTo`） */
-export function atlasFieldsOfTemplate(tpl: EffectiveTemplate): ResolvedAtlasField[] {
-  return sortedFields(tpl.fields).map(atlasFieldOfTemplate)
+export function atlasFieldsOfTemplate(tpl: EffectiveTemplate, tab?: TabDef): ResolvedAtlasField[] {
+  const baseByName = tab ? new Map((tab.columns ?? []).map(c => [c.name, c])) : undefined
+  return sortedFields(tpl.fields).map(f => atlasFieldOfTemplate(f, baseByName?.get(f.sourceKey)))
 }
 
 /** 模板 → 图鉴详情分组 */
