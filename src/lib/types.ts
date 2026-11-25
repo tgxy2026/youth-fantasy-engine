@@ -120,6 +120,7 @@ export type TabType =
   | 'creative-writing'  // 创意写作（全自动创作工作流：想法 → 设定 → 大纲 → 逐章成稿）
   | 'tavern-world'   // 酒馆模式 · 背景设定（提炼过的世界资料，按关键词注入）
   | 'worlds'         // 世界引擎（世界引擎：抽取 / 封存版本 / 跨作品引用，3.0 · W4-1）
+  | 'char-bio'       // 人物小传（主要/次要角色生平小传正文 + 重要节点事件轴，3.7.1）
 
 /** 页签定义 */
 export interface TabDef {

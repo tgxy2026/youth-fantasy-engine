@@ -18,10 +18,11 @@ import type { PromptDef } from '@/lib/ai/promptSettings'
 import type { StepExecutionResult, StepResultState, TaskResult } from '@/lib/revision/revisionTypes'
 import { AcpStructuredError, acpField, acpJsonInstruction, decodeAcpRows } from '@/lib/agentHost/acpStructured'
 import { isAcpCancelled } from '@/lib/agentHost/acpGate'
+import { parseExtractedBioNodesDetailed, type ExtractedBioNode } from '@/lib/aiTasks/charBiographyAI'
 
 let POST_PROCESS_SYS = `你是长篇小说「章后整理」助理。作者刚写完本章，请从本章正文中抽取**本章带来的变化**，供作者核对登记。
 
-只抽下面四类，输出一个 JSON 数组，每个元素必须带 kind 字段：
+只抽下面五类，输出一个 JSON 数组，每个元素必须带 kind 字段：
 
 一、kind = "伏笔" —— 本章**埋设**或**回收**的伏笔
    - action：只能取 "埋设" 或 "回收"
@@ -52,9 +53,17 @@ let POST_PROCESS_SYS = `你是长篇小说「章后整理」助理。作者刚�
    铁律：只抽**持有关系真的变了**的物品（赠予 / 抢夺 / 购得 / 用掉 / 遗失）；
         仅被提及、被看见、被描述外形的不算，同一个人一直拿在手里的不算。
 
+五、kind = "小传节点" —— 主要或次要角色在本章发生的**生平里程碑级转折**（入人物小传事件轴）
+   - name：人物名（照正文用名）
+   - title：一句话事件标题（如"外门大比夺魁""南荒初遇洛清欢"）
+   - summary：事件经过与心理/立场转折（30~100 字）
+   - tag：只能取 成长突破 / 关系转折 / 高光时刻 / 重大失去 / 身份变化 / 其他
+   - evidence：正文中体现该事件的原句（照抄、不改写、不超过 80 字）
+   铁律：只抽**真正能写进人物生平传记的重大节点**；日常对话、普通赶路、小打小闹**一律不抽**（宁缺勿滥）。
+
 总铁律：
 1. 只依据本章正文，不推测、不补充、不虚构——这是资料整理，不是创作。
-2. 四类都可能为空；本章没有这类变化就返回空数组，**不要为了凑数硬抽**。
+2. 五类都可能为空；本章没有这类变化就返回空数组，**不要为了凑数硬抽**。
 3. 只输出 JSON 数组，不要任何解释文字、不要代码块围栏。`
 
 export interface ExtractedForeshadow {
@@ -94,16 +103,18 @@ export interface ExtractedResource {
   evidence: string
 }
 
-/** 一次章后整理抽出的四类变化（尚未与登记表现状比对） */
+/** 一次章后整理抽出的五类变化（尚未与登记表现状比对） */
 export interface ChapterChanges {
   foreshadows: ExtractedForeshadow[]
   relations: ExtractedRelation[]
   statuses: ExtractedStatus[]
   /** 3.7.0 · W3：物品流转候选 */
   resources: ExtractedResource[]
+  /** 3.7.1：人物小传重要节点候选 */
+  biographies?: ExtractedBioNode[]
 }
 
-const EMPTY_CHANGES: ChapterChanges = { foreshadows: [], relations: [], statuses: [], resources: [] }
+const EMPTY_CHANGES: ChapterChanges = { foreshadows: [], relations: [], statuses: [], resources: [], biographies: [] }
 
 /** WQ1-4：带状态版本（判定口径同 aiExtractSettingEntitiesWithStatus） */
 export async function aiExtractChapterChangesWithStatus(
@@ -129,10 +140,10 @@ export async function aiExtractChapterChangesWithStatus(
 【本章正文】
 ${authorBlock(fence, body)}
 
-请抽取本章带来的伏笔 / 关系 / 状态 / 物品流转变化。`
+请抽取本章带来的伏笔 / 关系 / 状态 / 物品流转 / 小传节点变化。`
   // 3.5.5 · ACP 分支：只出变化候选，是否真的变了仍由 chapterPostProcess 做确定性比对。
   if (opts?.acpText) {
-    const prompt = `${POST_PROCESS_SYS}\n\n${user}\n\n${acpJsonInstruction('章后整理变化候选', '[{"kind":"伏笔","action":"埋设 或 回收","code":"F0001（没有就空串）","content":"一句话概括"},{"kind":"关系","a":"甲","b":"乙","type":"关系类型（可空）","change":"怎么变的"},{"kind":"状态","name":"人物","state":"当前状态","evidence":"原文原句"},{"kind":"物品","item":"物品名","action":"获得/失去/转移/消耗","from":"转出方（可空）","to":"接收方（可空）","quantity":1,"evidence":"原文原句"}]（本章没有变化就返回 []）')}`
+    const prompt = `${POST_PROCESS_SYS}\n\n${user}\n\n${acpJsonInstruction('章后整理变化候选', '[{"kind":"伏笔","action":"埋设 或 回收","code":"F0001（没有就空串）","content":"一句话概括"},{"kind":"关系","a":"甲","b":"乙","type":"关系类型（可空）","change":"怎么变的"},{"kind":"状态","name":"人物","state":"当前状态","evidence":"原文原句"},{"kind":"物品","item":"物品名","action":"获得/失去/转移/消耗","from":"转出方（可空）","to":"接收方（可空）","quantity":1,"evidence":"原文原句"},{"kind":"小传节点","name":"主要或次要角色名","title":"一句话事件标题","summary":"事件经过","tag":"成长突破","evidence":"原文原句"}]（本章没有变化就返回 []）')}`
     const rows = decodeAcpRows(await opts.acpText(prompt), { shape: 'array', min: 0, max: 60 })
     rows.forEach((row, index) => {
       const kind = acpField(row, ['kind', '类型', '类别'], '类别', { max: 20 })
@@ -151,6 +162,10 @@ ${authorBlock(fence, body)}
         acpField(row, ['item', '物品', '名称'], '物品名', { max: 80 })
         const action = acpField(row, ['action', '动作'], '物品动作', { max: 10 })
         if (!['获得', '失去', '转移', '消耗'].includes(action)) throw new AcpStructuredError('bad-field', `${at}的物品动作不认识：${action}`)
+        acpField(row, ['evidence', '证据', '原句'], '原文证据', { max: 120 })
+      } else if (kind === '小传节点') {
+        acpField(row, ['name', '姓名', '人物'], '人物名', { max: 60 })
+        acpField(row, ['title', '标题', '事件'], '节点标题', { max: 120 })
         acpField(row, ['evidence', '证据', '原句'], '原文证据', { max: 120 })
       } else {
         throw new AcpStructuredError('bad-field', `${at}的类别不认识：${kind}`)
@@ -205,11 +220,12 @@ export function parseChapterChangesDetailed(text: string): TaskResult<ChapterCha
   if (parsed.outcome === 'invalid') {
     return { outcome: 'invalid', data: { ...EMPTY_CHANGES }, diagnostics: parsed.diagnostics, truncated: parsed.truncated }
   }
-  const out: ChapterChanges = { foreshadows: [], relations: [], statuses: [], resources: [] }
+  const out: ChapterChanges = { foreshadows: [], relations: [], statuses: [], resources: [], biographies: [] }
   const seenFore = new Set<string>()
   const seenRel = new Set<string>()
   const seenSt = new Set<string>()
   const seenRes = new Set<string>()
+  const bioRows: unknown[] = []
 
   for (const it of parsed.data) {
     const kind = asText(it.kind ?? it['类型'] ?? it['类别']).trim()
@@ -255,7 +271,12 @@ export function parseChapterChangesDetailed(text: string): TaskResult<ChapterCha
       if (seenRes.has(key)) continue
       seenRes.add(key)
       out.resources.push({ item, action, from, to, ...(quantity ? { quantity } : {}), evidence })
+    } else if (kind === '小传节点') {
+      bioRows.push(it)
     }
+  }
+  if (bioRows.length) {
+    out.biographies = parseExtractedBioNodesDetailed(JSON.stringify(bioRows)).data.filter(b => !!b.name)
   }
   return { outcome: parsed.outcome, data: out, diagnostics: parsed.diagnostics, truncated: parsed.truncated }
 }
@@ -267,7 +288,7 @@ export const POST_PROCESS_PROMPTS: PromptDef[] = [
       id: 'chapter-post-process',
       group: '设定与资料',
       name: '章后整理抽取',
-      note: '从本章正文抽取「伏笔 / 关系 / 人物状态 / 物品流转」四类变化候选（章后整理用，AI 只抽候选、不判是否已登记）。',
+      note: '从本章正文抽取「伏笔 / 关系 / 人物状态 / 物品流转 / 小传节点」五类变化候选（章后整理用，AI 只抽候选、不判是否已登记）。',
     },
     read: () => POST_PROCESS_SYS,
     write: t => { POST_PROCESS_SYS = t },

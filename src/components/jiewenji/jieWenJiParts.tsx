@@ -138,6 +138,7 @@ export const POST_KINDS: { kind: PostProcessKind; label: string; hint: string }[
   { kind: 'foreshadow', label: '伏笔', hint: '本章埋设或回收的伏笔' },
   { kind: 'relation', label: '关系', hint: '本章人物关系发生的变化' },
   { kind: 'status', label: '人物状态', hint: '本章人物状态的变化' },
+  { kind: 'biography', label: '人物小传节点', hint: '主要/次要角色的里程碑转折事件（仅追加到人物小传，不覆盖正文）' },
   { kind: 'resource', label: '物品流转', hint: '本章物品被谁拿到 / 给了谁 / 用掉了（未登记物品只提示，不凭空建）' },
 ]
 

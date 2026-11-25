@@ -140,4 +140,39 @@ export const WORLD_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.3.1',
     reviewedAt: '2026-10-29',
   },
+  {
+    id: 'char-bio-guide',
+    revision: 1,
+    title: '人物小传：生平正文与重要节点轴',
+    summary: '集中记录主要与次要角色的人物生平与里程碑转折，支持手写、从状态演变引入与章后整理追加。',
+    aliases: ['人物小传', '角色生平', '节点轴', '前传'],
+    keywords: ['人物小传', '生平', '节点', '前传', '状态演变', '章后整理', '主要角色', '次要角色'],
+    group: '角色与世界',
+    tabIds: ['char-bio'],
+    availability: 'all',
+    aiRequirement: 'none',
+    prerequisites: ['先在「主要角色」或「次要角色」里建好角色卡'],
+    sections: [
+      {
+        id: 'layers',
+        heading: '双层结构：小传正文 + 重要节点事件轴',
+        body: [
+          '上层「人物生平小传正文」适合自由分段撰写完整人物传记；下层「重要节点事件轴」按「开篇前（前传）→ 正文第 N 章」记录关键转折。',
+          '前传节点可手动上移/下移调序，正文阶段节点按章号升序自动对齐；带章号的节点可直接点「原文」跳回正文编辑。',
+        ],
+      },
+      {
+        id: 'ai-sync',
+        heading: '手动编辑与 AI 整理分工',
+        body: [
+          '可随时零消耗从 3.7.0「状态演变」把关键状态提拔为小传节点；也可用「AI 从正文整理节点」或「颉文姬 · 整理」抽出里程碑候选，勾选后只追加、不覆盖已有正文或节点。',
+          '「AI 起草 / 续写小传」仅生成预览，由你决定追加到末尾、替换或放弃；导出支持单角色 Markdown。',
+        ],
+      },
+    ],
+    related: ['char-main-guide', 'relations-guide'],
+    actions: [{ label: '打开人物小传', tabId: 'char-bio' }],
+    verifiedAgainst: '3.7.1',
+    reviewedAt: '2026-11-25',
+  },
 ]

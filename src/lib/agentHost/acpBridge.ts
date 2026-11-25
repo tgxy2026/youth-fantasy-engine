@@ -46,6 +46,7 @@ export type AcpTask =
   | 'change-list' | 'pace' | 'style-infer' | 'plan-compare'
   | 'style-fingerprint'
   | 'market-radar'
+  | 'char-bio'
   | 'tavern-reply' | 'tavern-vars' | 'tavern-summary' | 'tavern-aux'
 
 interface AcpBridge {

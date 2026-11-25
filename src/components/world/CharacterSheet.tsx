@@ -933,9 +933,15 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
         <div ref={detailRef} data-character-detail className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-contain pr-1">
           {draft ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <CharacterProfileHeader name={draft.name} portrait={isCharacterCardTab(tab.id) ? (draft.portrait || draft.portrait2) : undefined}
                   facts={isCharTab ? characterProfileFacts(profileFields, draft.data) : []} onRename={renameCard} />
+                {(tab.id === 'char-main' || tab.id === 'char-secondary') && (
+                  <Button variant="secondary" size="xs" title="打开该角色的人物小传与重要节点事件轴"
+                    onClick={() => onNavigateReference ? onNavigateReference({ tabId: 'char-bio', label: draft.name, rowId: draft.id, sourceId: draft.id }) : onNavigate?.('char-bio')}>
+                    人物小传
+                  </Button>
+                )}
               </div>
               {cardGroups.map(group => {
                 // ⚠️ 立绘列挂在「基础信息」组上：是否基础组由 cardGroups 统一算好

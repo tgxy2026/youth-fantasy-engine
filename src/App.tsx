@@ -97,6 +97,7 @@ const WorldSetSheet = lazyPage(() => import('@/components/sheets/WorldSetSheet')
 const ParallelSetSheet = lazyPage(() => import('@/components/sheets/ParallelSetSheet'), '平行设定')
 const TableSheet = lazyPage(() => import('@/components/sheets/TableSheet'), '表格')
 const CharacterSheet = lazyPage(() => import('@/components/world/CharacterSheet'), '角色卡')
+const CharacterBioPage = lazyPage(() => import('@/components/world/CharacterBioPage'), '人物小传')
 const OutlineSheet = lazyPage(() => import('@/components/outline/OutlineSheet'), '大纲')
 const AboutPage = lazyPage(() => import('@/components/app/AboutPage'), '关于')
 const FullTextSearch = lazyPage(() => import('@/components/editor/FullTextSearch'), '全文搜索')
@@ -1075,6 +1076,8 @@ export default function App() {
         return <GeoMapEditor tab={tab} />
       case 'canvas':
         return <PlotCanvas tab={tab} />
+      case 'char-bio':
+        return <CharacterBioPage key={`${projectId}-bio`} focusRowId={focusRowId} onFocusConsumed={clearFocusRow} onNavigate={navigate} />
       default:
         return <div className="p-8">未知页签类型</div>
     }

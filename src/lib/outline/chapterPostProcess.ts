@@ -16,7 +16,7 @@
 import * as db from '@/lib/db'
 import {
   aiExtractChapterChangesWithStatus, aiExtractSettingEntitiesWithStatus,
-  type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus, type ExtractedResource,
+  type ExtractedBioNode, type ExtractedEntity, type ExtractedForeshadow, type ExtractedRelation, type ExtractedStatus, type ExtractedResource,
 } from '@/lib/ai/aiTasks'
 import { loadRegistry, classify, commitEntities, cardFieldPath, normName, type LedgerItem, type EntityRegistry } from '@/lib/settings/settingLedger'
 import { splitCodes } from '@/lib/audit/audit'
@@ -24,6 +24,10 @@ import { chapterSeqMap } from '@/lib/outline/chapterSeq'
 import { readAliases } from '@/lib/settings/aliases'
 import { commitResourceTransfer, readResourceTransfers, RESOURCE_TRANSFER_LIMIT, type ResourceTransfer } from '@/lib/settings/resourceLedger'
 import { appendStateRecords, buildStateRecord, STATE_RECORD_LIMIT } from '@/lib/settings/stateTrack'
+import {
+  appendBioNodes, BIO_NODE_LIMIT, buildBioNode, isDuplicateBioNode, readAllBiographies,
+  type BioEventNode, type CharacterBiography,
+} from '@/lib/settings/charBiography'
 import { hashOf } from '@/lib/semantic/chunk'
 import type { CallRequestContext } from '@/lib/ai/callTracking'
 import { chapterFingerprint } from '@/lib/ai/aiRunLedger'
@@ -59,7 +63,7 @@ async function resolveMeta(input: PostProcessInput): Promise<{ volumeId: string;
   return { volumeId: '', wordCount: countWords(input.content ?? ''), updatedAt: Date.now() }
 }
 
-export type PostProcessKind = 'entity' | 'foreshadow' | 'relation' | 'status' | 'resource'
+export type PostProcessKind = 'entity' | 'foreshadow' | 'relation' | 'status' | 'resource' | 'biography'
 export type PostProcessStatus = 'new' | 'changed' | 'registered' | 'duplicate' | 'unregistered'
 
 export interface PostProcessItem {
@@ -293,13 +297,71 @@ export async function collectPostProcess(
   items.push(...matchForeshadows(changes.foreshadows, foreRows))
   items.push(...matchRelations(changes.relations, relRows))
   items.push(...matchStatuses(changes.statuses, cardLists))
+  const chapterNo = await chapterNoFor(input.chapterId)
   // 3.7.0 · W3：物品流转（未登记只提示，不建条目）
   const itemRows = await db.getTableRows('items')
-  items.push(...matchResources(changes.resources ?? [], itemRows, await chapterNoFor(input.chapterId), input.chapterId, await readResourceTransfers()))
+  items.push(...matchResources(changes.resources ?? [], itemRows, chapterNo, input.chapterId, await readResourceTransfers()))
+  // 3.7.1：人物小传节点（仅匹配主要/次要角色；只追加候选）
+  const bioCards = cardLists.filter(c => c.tabId === 'char-main' || c.tabId === 'char-secondary')
+  items.push(...matchBiographies(changes.biographies ?? [], bioCards, chapterNo, input.chapterId, await readAllBiographies()))
 
   const actionable = items.filter(i => i.status !== 'registered').length
   if (!actionable) notes.push('本章没有需要整理的条目。')
   return { chapterId: input.chapterId, chapterTitle, fingerprint, at: Date.now(), items, notes }
+}
+
+// ============ 3.7.1：人物小传节点比对（纯函数） ============
+
+/**
+ * 把抽出的里程碑节点与主要/次要角色卡及已有小传比对。
+ * 未在主要/次要角色卡找到 ⇒ `unregistered`（只提示、不建卡）；重复节点 ⇒ `registered`。
+ */
+export function matchBiographies(
+  found: readonly ExtractedBioNode[],
+  cards: { tabId: string; list: CardRecord[] }[],
+  chapterNo: number,
+  chapterId: string,
+  bios: Record<string, CharacterBiography> = {},
+): PostProcessItem[] {
+  const mainAndSec = cards.filter(c => c.tabId === 'char-main' || c.tabId === 'char-secondary')
+  const idx = indexCards(mainAndSec)
+  const items: PostProcessItem[] = []
+  for (const b of found) {
+    const name = (b.name ?? '').trim()
+    const title = (b.title ?? '').trim()
+    const evidence = (b.evidence ?? '').trim()
+    if (!name || !title || !evidence) continue
+    const hit = idx.get(normName(name))
+    const keyHash = hashOf(`${chapterId}|${hit?.rec.id ?? name}|${title}|${evidence}`).slice(0, 16)
+    const label = `${hit ? hit.rec.name : name} · ${title}`
+    const detail = [b.tag, b.summary || title, `第${chapterNo || '?'}章`].filter(Boolean).join(' · ')
+    if (!hit) {
+      items.push({
+        kind: 'biography', key: `bio-${keyHash}`, status: 'unregistered', label,
+        detail: `${b.summary || title}（仅收录主要/次要角色；未在主要/次要角色卡找到「${name}」）`,
+        evidence, raw: { cardId: '', node: null },
+      })
+      continue
+    }
+    const existingNodes = bios[hit.rec.id]?.nodes ?? []
+    const node = buildBioNode({
+      id: `bio-${keyHash}`,
+      phase: chapterNo > 0 ? 'story' : 'prequel',
+      chapterId,
+      chapterNo,
+      title,
+      summary: b.summary,
+      tag: b.tag,
+      source: 'post-process',
+      evidence,
+    })
+    const dup = existingNodes.some(n => n.id === node.id) || isDuplicateBioNode(existingNodes, node)
+    items.push({
+      kind: 'biography', key: `bio-${keyHash}`, status: dup ? 'registered' : 'changed',
+      label, detail, evidence, matchedId: hit.rec.id, raw: { cardId: hit.rec.id, node },
+    })
+  }
+  return items
 }
 
 // ============ 3.7.0 · W3：物品流转比对（纯函数） ============
@@ -472,6 +534,12 @@ export async function applyPostProcess(
           continue
         }
         if (st.overflow > 0) (warnings ??= []).push(`状态演变记录已超过 ${STATE_RECORD_LIMIT} 条上限，最早的 ${st.overflow} 条已不在本机账本里 —— 建议先导出备份再清理。`)
+      } else if (item.kind === 'biography') {
+        const raw = item.raw as { cardId: string; node: BioEventNode } | undefined
+        if (!raw?.cardId || !raw.node) { failed.push(item.label); continue }
+        const res = await appendBioNodes(raw.cardId, [raw.node])
+        if (!res.ok) { failed.push(item.label); continue }
+        if (res.overflow > 0) (warnings ??= []).push(`人物小传节点已超过 ${BIO_NODE_LIMIT} 条上限，部分靠后或新增节点未能保留 —— 建议导出备份后精简。`)
       }
       created++
     } catch {

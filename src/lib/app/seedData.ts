@@ -600,9 +600,11 @@ async function doCreateDemoProject(): Promise<string> {
   })
 
   // 2) 角色卡：schema 示例值即角色档案（陈渊/萧景行/王铁柱）+ 手工补充
+  const bioCardIds: Record<string, string> = {}
+  const saveBioCard = (rec: CardRecord) => { bioCardIds[rec.name] = rec.id; return db.saveCardRecord(rec) }
   const cardChenYuan = card('char-main', '陈渊', 0, { '别称': '阿渊、渊哥' })
-  await db.saveCardRecord(cardChenYuan)
-  await db.saveCardRecord(card('char-secondary', '萧景行', 0, {
+  await saveBioCard(cardChenYuan)
+  await saveBioCard(card('char-secondary', '萧景行', 0, {
     '姓名': '萧景行',
     '别称': '大师兄、萧师兄',
     '保密等级': 'A',
@@ -660,7 +662,7 @@ async function doCreateDemoProject(): Promise<string> {
     '所属势力': '洛家',
     '隐藏设定': '身怀洛家秘传「听雪剑意」，外界不知其深浅',
   })
-  await db.saveCardRecord(cardLuoQinghuan)
+  await saveBioCard(cardLuoQinghuan)
   await db.saveCardRecord(card('char-npc', '王铁柱', 0, { '别称': '铁柱', '保密等级': 'B' }))
   const cardLaoXiazi = card('char-npc', '老瞎子', 1, {
     '姓名': '老瞎子',
@@ -693,7 +695,7 @@ async function doCreateDemoProject(): Promise<string> {
     '关键出场': '第4章雨夜截杀，被陈渊借神体反杀，临死供出玉令',
     '人物状态': '已退场',
   }))
-  await db.saveCardRecord(card('char-secondary', '柳风', 4, {
+  await saveBioCard(card('char-secondary', '柳风', 4, {
     '姓名': '柳风',
     '别称': '外门第一人',
     '保密等级': 'B',
@@ -747,7 +749,7 @@ async function doCreateDemoProject(): Promise<string> {
     '人物状态': '杂役院在岗',
   }))
 
-  await db.saveCardRecord(card('char-secondary', '顾长风', 7, {
+  await saveBioCard(card('char-secondary', '顾长风', 7, {
     '姓名': '顾长风',
     '别称': '顾师兄',
     '保密等级': 'B',
@@ -787,7 +789,7 @@ async function doCreateDemoProject(): Promise<string> {
     '关键出场': '第7章后巷窥探；第9章谷口夜袭被擒',
     '人物状态': '第9章被擒',
   }))
-  await db.saveCardRecord(card('char-secondary', '青玄子', 9, {
+  await saveBioCard(card('char-secondary', '青玄子', 9, {
     '姓名': '青玄子',
     '别称': '掌门',
     '保密等级': 'S',
@@ -1597,6 +1599,11 @@ async function doCreateDemoProject(): Promise<string> {
   } catch (e) {
     console.warn('[seed] 示范推演会话创建失败：', e)
   }
+
+  try {
+    const { seedDemoBiographies } = await import('@/lib/settings/charBiographySeed')
+    await seedDemoBiographies(bioCardIds, chs.map(c => c.id))
+  } catch (e) { console.warn('[seed] 示范人物小传播种失败：', e) }
 
   return p.id
 }
