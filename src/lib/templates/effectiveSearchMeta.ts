@@ -42,9 +42,12 @@ export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSea
       loadFieldDefinitions(pid, tab.id).catch(() => null),
       loadAliases(tab.id).catch(() => ({} as Record<string, string>)),
     ])
-    const config = isAtlasTab(tab.id)
-      ? (await loadAtlasSchema(pid, tab.id as AtlasTabId)).config
+    const loaded = isAtlasTab(tab.id)
+      ? await loadAtlasSchema(pid, tab.id as AtlasTabId)
       : null
+    // 配置读取失败时 config 是空默认；这时返回 null，让检索页回退旧行为，避免自定义字段整片消失
+    if (loaded?.error) return null
+    const config = loaded?.config ?? null
     const tpl = resolveTemplateForTab(tab, {
       ...(def ? { def } : {}),
       config,
