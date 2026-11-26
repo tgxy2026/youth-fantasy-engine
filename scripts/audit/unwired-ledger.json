@@ -3,6 +3,11 @@
   "updatedAt": "2026-11-23",
   "entries": [
     {
+      "file": "src/components/settings/MascotSettingsDialog.tsx",
+      "status": "retained",
+      "reason": "3.7.3 方案 D 改造中按用户要求从项目管理首页移除看板娘显示及设置入口，保留组件与立绘资源待后续放置其他位置"
+    },
+    {
       "file": "src/components/app/ProjectAutoCover.tsx",
       "status": "retained",
       "reason": "自动字封是 3.5.1 按用户要求回退的功能（项目卡片回到纯色封面）；保留实现待重新启用，删了就没法一键恢复"

@@ -25,6 +25,7 @@ import {
 import { isSensitiveSettingKey } from '@/lib/storage/sensitiveMeta'
 // 3.6.0 · A1：作者成果记录导入时的显式重映射（纯函数，不反向依赖 db）
 import { ARTEFACT_SETTING_KEY, remapArtefactsForImport } from '@/lib/artefacts/remap'
+import { flattenAll } from '@/lib/outline/chapterSeq'
 
 // ============ 项目 ============
 // 旧版项目形态 'lite'(精简) / 'minimal'(极简) 已移除；把存储中残留的旧值归一化为 'full'
@@ -246,7 +247,21 @@ export async function deleteProject(id: string) {
 }
 
 // ============ 项目统计（项目列表页用，不依赖 currentProjectId） ============
-export type ProjectStats = { chapters: number; words: number; volumes: number }
+export type LastEditedChapter = {
+  id: string
+  title: string
+  updatedAt: number
+  wordCount: number
+  excerpt: string
+  status?: string
+}
+
+export type ProjectStats = {
+  chapters: number
+  words: number
+  volumes: number
+  lastChapter?: LastEditedChapter
+}
 
 export async function getProjectStats(id: string): Promise<ProjectStats> {
   return (await getProjectsStats([id]))[id] ?? { chapters: 0, words: 0, volumes: 0 }
@@ -264,16 +279,52 @@ export async function getProjectsStats(ids: string[]): Promise<Record<string, Pr
   for (const id of ids) out[id] = { chapters: 0, words: 0, volumes: 0 }
   if (!ids.length) return out
 
+  const chsByProject = new Map<string, Chapter[]>()
+  const volsByProject = new Map<string, Volume[]>()
   const [chs, vols] = await Promise.all([ops.getAll<Chapter>('chapters'), ops.getAll<Volume>('volumes')])
   for (const c of chs) {
     const s = out[c.projectId]
     if (!s) continue
     s.chapters++
     s.words += c.wordCount || 0
+    const list = chsByProject.get(c.projectId)
+    if (list) list.push(c)
+    else chsByProject.set(c.projectId, [c])
   }
   for (const v of vols) {
     const s = out[v.projectId]
-    if (s) s.volumes++
+    if (!s) continue
+    s.volumes++
+    const list = volsByProject.get(v.projectId)
+    if (list) list.push(v)
+    else volsByProject.set(v.projectId, [v])
+  }
+  for (const pid of ids) {
+    const projChs = chsByProject.get(pid)
+    if (!projChs?.length) continue
+    const ordered = flattenAll(volsByProject.get(pid) ?? [], projChs)
+    let best: Chapter | undefined
+    let bestTime = -1
+    let bestIdx = -1
+    ordered.forEach((c, idx) => {
+      const t = c.updatedAt ?? 0
+      if (!best || t > bestTime || (t === bestTime && idx >= bestIdx)) {
+        best = c
+        bestTime = t
+        bestIdx = idx
+      }
+    })
+    if (best) {
+      const raw = (best.content ?? '').replace(/\r\n/g, '\n').trim()
+      out[pid].lastChapter = {
+        id: best.id,
+        title: best.title?.trim() || '未命名章节',
+        updatedAt: best.updatedAt ?? 0,
+        wordCount: best.wordCount || 0,
+        excerpt: raw,
+        status: best.status,
+      }
+    }
   }
   return out
 }

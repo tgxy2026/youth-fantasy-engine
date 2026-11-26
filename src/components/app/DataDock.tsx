@@ -11,7 +11,7 @@ import { PORTABLE } from '@/lib/storage/fileBackend'
 import { GUEST } from '@/lib/db/guestData'
 import { WEB, WEB_ACCOUNT_LOCAL } from '@/lib/app/platform'
 import { CLOUD_FILE_SYNC } from '@/lib/sync/desktopCloudSync'
-import { currentUiZoom, foldVh } from '@/lib/settings/theme'
+import { currentUiZoom } from '@/lib/settings/theme'
 import { Z } from '@/lib/app/zLayer'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import DensityControl from '@/components/settings/DensityControl'
@@ -88,11 +88,11 @@ export default function DataDock() {
     <div
       ref={dockRef}
       data-data-dock
-      className={`fixed left-4 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
+      className={`fixed left-3 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
         // 收起＝贴到屏幕底边（bottom-0）+ 去掉下圆角，视觉上"缩进底边"；只留把手那一条
         collapsed ? 'bottom-0 py-0.5 rounded-b-none' : 'bottom-4 py-2'
       }`}
-      style={{ zIndex: Z.dock, width: foldVh('min(240px, 17vw)') }}
+      style={{ zIndex: Z.dock, width: 'min(316px, calc(100vw / var(--ui-zoom, 1) - 1.5rem))' }}
     >
       {/* 🔴 B6 折叠把手：收起时贴屏底、只显示这一条，箭头朝上提示「可展开」 */}
       <button

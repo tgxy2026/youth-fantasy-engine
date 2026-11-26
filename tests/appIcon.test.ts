@@ -104,10 +104,8 @@ ok('⑤ appIconSupported 需要桥 + 平台双判', desktop.includes('export asy
 const hub = read('src/components/app/ProjectHub.tsx')
 ok('⑥ 项目管理首页接了弹窗', hub.includes('AppIconDialog'))
 ok('⑥ 入口按钮受 appIconOk 守卫（不支持则不显示）', hub.includes('appIconOk &&'))
-const mascotLabel = hub.indexOf('>看板娘设置</span>')
 const iconLabel = hub.indexOf('>应用图标</span>')
-ok('⑥ 位置在看板娘设置按钮之后（主人指定的落点）',
-  mascotLabel >= 0 && iconLabel > mascotLabel)
+ok('⑥ 方案 D 合并「更多」菜单内含应用图标入口', iconLabel >= 0)
 const dlg = read('src/components/settings/AppIconDialog.tsx')
 ok('⑥ 弹窗默认/幻想/典雅三套都来自主进程清单（不硬编码 key）', dlg.includes('listAppIconPresets'))
 ok('⑥ 弹窗提供「恢复默认」', dlg.includes('resetAppIcon'))

@@ -173,21 +173,12 @@ const pkgVersion = JSON.parse(read('package.json')).version as string
   ok('🔴 只保留一个「使用指南」入口（合并菜单里只有一处，没有留下旧的）',
     helpOpenCalls === 1, String(helpOpenCalls))
 
-  // 🔴 不要用 indexOf('帮助') 这类整文件下标比大小：同一个词在 title / 注释里也出现，
-  //    比出来的顺序毫无意义（第一次写就是这么红的）。改成**按块切片**：
-  //    从每个菜单的展开回调起、到下一个块的开头止，只在这段里查关键字。
   const helpStart = hubSrc.indexOf('setHelpMenuOpen(o => !o)')
   const helpEnd = hubSrc.indexOf('{/* 新建表单 */}')
   const helpBlock = helpStart > 0 && helpEnd > helpStart ? hubSrc.slice(helpStart, helpEnd) : ''
-  ok('🔴 「新手引导」与「使用指南」在同一个「帮助」菜单里',
+  ok('🔴 「新手引导」与「使用指南」收拢在「帮助」菜单里',
     helpBlock.includes('新手引导') && helpBlock.includes('使用指南'),
     helpBlock ? '' : '找不到帮助菜单块')
-
-  const appStart = hubSrc.indexOf('setAppearanceMenuOpen(o => !o)')
-  const appBlock = appStart > 0 && helpStart > appStart ? hubSrc.slice(appStart, helpStart) : ''
-  ok('🔴 顶部有「外观」合并入口，内含看板娘设置与应用图标（F1）',
-    appBlock.includes('看板娘设置') && appBlock.includes('应用图标'),
-    appBlock ? '' : '找不到外观菜单块')
   ok('🔴 顶部不再有独立的应用图标 / 新手引导按钮（否则又会排成两排）',
     (hubSrc.match(/<ImageIcon size=\{13\} \/> 应用图标/g) ?? []).length === 0
     && (hubSrc.match(/<Compass size=\{13\} \/> 新手引导/g) ?? []).length === 0)
