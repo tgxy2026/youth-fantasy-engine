@@ -17,7 +17,7 @@ const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 ))
 
 // 复用 app 图标（与 index.html 的 favicon 同款金色文档图形），登录页/重置页作为品牌 logo
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#e5a93c" width="40" height="40" aria-hidden="true"><path d="M4 4h12l4 4v12H4V4zm2 2v12h12V8.5L15.5 6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2z"/></svg>`
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#44764e" width="40" height="40" aria-hidden="true"><path d="M4 4h12l4 4v12H4V4zm2 2v12h12V8.5L15.5 6H6zm2 3h8v2H8V9zm0 4h8v2H8v-2z"/></svg>`
 
 const icon = (paths) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`
 const EYE = icon('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>')
@@ -64,7 +64,7 @@ export function renderAuthPage({ mode = 'invite', notice = '', error = '' } = {}
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>登录 · 青春幻想引擎</title>
-<meta name="theme-color" content="#0b0c0e">
+<meta name="theme-color" content="#e6f0e0">
 <style>${AUTH_STYLE}</style>
 </head>
 <body class="auth-entry">
@@ -161,7 +161,7 @@ export function renderResetPage({ error = '', name = '' } = {}) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>重置密码 · 青春幻想引擎</title>
-<meta name="theme-color" content="#0b0c0e">
+<meta name="theme-color" content="#e6f0e0">
 <style>${AUTH_STYLE}</style>
 </head>
 <body class="auth-entry">
