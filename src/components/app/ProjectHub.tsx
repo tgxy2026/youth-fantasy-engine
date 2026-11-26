@@ -33,6 +33,7 @@ import { Button } from '@/components/common/Button'
 import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import { appIconSupported } from '@/lib/app/desktop'
+import { loadProjectIntroTexts } from '@/lib/app/projectIntroForm'
 
 const HelpCenter = lazyPage(() => import('@/components/help/HelpCenter'), '帮助中心')
 const BackupManager = lazyPage(() => import('@/components/app/BackupManager'), '备份管理')
@@ -51,6 +52,8 @@ interface Props {
 
 interface Row extends Project {
   stats?: db.ProjectStats
+  /** 3.7.5：卡片简介位与搜索读的文案（《作品信息》正式简介 → 一句话简介 → 旧 `intro`） */
+  introText?: string
 }
 
 type CreateType = 'full' | 'custom'
@@ -131,7 +134,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     const list = await db.getAllProjects()
     // 🔴 2026-09-22 六维审计 P2：改走批量版 —— 原先逐个 `getProjectStats` 是 N 项目 × 2 次全表读。
     const statsMap = await db.getProjectsStats(list.map(p => p.id))
-    const withStats = list.map(p => ({ ...p, stats: statsMap[p.id] }))
+    // 3.7.5：简介改读《作品信息》的「正式简介 / 一句话简介」，没填才回退旧 `intro`
+    const introTexts = await loadProjectIntroTexts(list)
+    const withStats = list.map(p => ({ ...p, stats: statsMap[p.id], introText: introTexts[p.id] ?? '' }))
     setProjects(withStats)
     setLoaded(true)
   }, [])
@@ -143,7 +148,9 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
     const base = projects.filter(p => {
       if (filterType !== 'all' && (p.projectType ?? 'full') !== filterType) return false
       if (!kw) return true
-      return p.name.toLowerCase().includes(kw) || (p.intro ?? '').toLowerCase().includes(kw)
+      // 3.7.5：搜索也认《作品信息》里的简介（卡片显示的是它，搜不到就成了两套）
+      return p.name.toLowerCase().includes(kw)
+        || (p.introText ?? p.intro ?? '').toLowerCase().includes(kw)
     })
     return [...base].sort((a, b) => {
       if (sortBy === 'words') return (b.stats?.words ?? 0) - (a.stats?.words ?? 0)
@@ -828,8 +835,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                             <span>创建于 {new Date(selected.createdAt).toLocaleDateString()}</span>
                             <span>最近活动 {formatRelativeDay(selected.updatedAt)}</span>
                           </div>
-                          <p className="mt-3.5 text-13 text-ink-300 leading-relaxed flex-1 min-h-0 max-h-[120px] overflow-y-auto pr-1 break-words">
-                            {selected.intro ? selected.intro : <span className="text-ink-500">暂无简介，可在「编辑项目」里补充。</span>}
+                          {/* 3.7.5：读《作品信息》的「正式简介 / 一句话简介」（正式优先），
+                              没填才回退项目记录上的旧 intro；两处都空才显示兜底提示。 */}
+                          <p className="mt-3.5 text-13 text-ink-300 leading-relaxed flex-1 min-h-0 max-h-[120px] overflow-y-auto pr-1 break-words whitespace-pre-line">
+                            {selected.introText ? selected.introText : <span className="text-ink-500">暂无简介，可在《作品信息》页的「一句话简介」或「正式简介」里填写。</span>}
                           </p>
                           <div className="mt-auto pt-4 flex items-center gap-2.5 flex-nowrap">
                             <Button
