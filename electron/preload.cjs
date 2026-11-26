@@ -221,6 +221,19 @@ contextBridge.exposeInMainWorld('electronAppIcon', {
   reset: () => ipcRenderer.invoke('appicon:reset'),
 })
 
+// 3.7.4 · WCP 本地 Agent 工作区（WCP-Local）：默认根 / 可写探活 / 原子增量同步 /
+// outbox 扫描读取 / 成对归档 / 打开目录。渲染层不直接接触 fs。
+contextBridge.exposeInMainWorld('electronWcpWorkspace', {
+  defaultRoot: () => ipcRenderer.invoke('wcpWorkspace:defaultRoot'),
+  diagnose: root => ipcRenderer.invoke('wcpWorkspace:diagnose', root),
+  chooseRoot: () => ipcRenderer.invoke('wcpWorkspace:chooseRoot'),
+  apply: payload => ipcRenderer.invoke('wcpWorkspace:apply', payload),
+  scan: payload => ipcRenderer.invoke('wcpWorkspace:scan', payload),
+  read: payload => ipcRenderer.invoke('wcpWorkspace:read', payload),
+  archive: payload => ipcRenderer.invoke('wcpWorkspace:archive', payload),
+  reveal: payload => ipcRenderer.invoke('wcpWorkspace:reveal', payload),
+})
+
 // 3.0 · W0-2 老用户数据迁移：探测旧版（novel-studio）数据、读旧整库 JSON、写新整库 JSON、
 // 复制 Chromium profile、定位并拉起旧版卸载器。remap 逻辑在渲染层（纯函数可单测），这层只搬运。
 contextBridge.exposeInMainWorld('electronMigration', {

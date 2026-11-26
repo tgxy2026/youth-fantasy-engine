@@ -14,7 +14,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, CheckCircle2, Copy, FileUp, FlaskConical, Globe2, Package, RefreshCw, Settings2,
+  AlertTriangle, CheckCircle2, Copy, Download, FileUp, FlaskConical, FolderOpen, Globe2, HardDrive,
+  Package, RefreshCw, Settings2, ShieldCheck,
 } from 'lucide-react'
 import Panel from '@/components/common/Panel'
 import { Button } from '@/components/common/Button'
@@ -36,9 +37,22 @@ import {
   saveWcpProjectState,
 } from '@/lib/wcp/wcpSettings'
 import {
+  hasWcpWorkspaceBridge,
+  workspaceChooseRoot,
+  workspaceReveal,
+} from '@/lib/wcp/wcpWorkspaceClient'
+import {
+  invalidateWcpWorkspaceProbe,
+  probeWcpWorkspace,
+  syncWcpWorkspace,
+  type WcpWorkspaceStatus,
+} from '@/lib/wcp/wcpWorkspaceSync'
+import { WCP_WORKSPACE_CONFIG_EVENT } from '@/components/wcp/useWcpWorkspaceSync'
+import {
   WCP_BASE_MODULES,
   WCP_BUDGET_MAX,
   WCP_BUDGET_MIN,
+  WCP_WORKSPACE_INTERVAL_OPTIONS,
   WCP_PREV_CHAPTER_MAX,
   WCP_PREV_SUMMARY_MAX,
   type WcpGlobalConfig,
@@ -75,6 +89,8 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
   const [baseFingerprint, setBaseFingerprint] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [testInput, setTestInput] = useState('')
+  const [ws, setWs] = useState<WcpWorkspaceStatus | null>(null)
+  const [wsBusy, setWsBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -84,6 +100,8 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
       setCfg(g)
       setPs(p)
       setLoading(false)
+      const st = await probeWcpWorkspace().catch(() => null)
+      if (active && st) setWs(st)
     })()
     return () => { active = false }
   }, [])
@@ -141,6 +159,86 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
     }
   }
 
+  const refreshWorkspace = useCallback(async (force = false) => {
+    const st = await probeWcpWorkspace(undefined, { force }).catch(() => null)
+    if (st) setWs(st)
+  }, [])
+
+  const saveWorkspaceField = async <K extends keyof WcpGlobalConfig>(key: K, value: WcpGlobalConfig[K]) => {
+    await saveField(key, value)
+    invalidateWcpWorkspaceProbe()
+    window.dispatchEvent(new Event(WCP_WORKSPACE_CONFIG_EVENT))
+    await refreshWorkspace(true)
+  }
+
+  const toggleWorkspaceEnabled = async () => {
+    try {
+      const next = await saveWcpProjectState({ workspaceEnabled: !(ps?.workspaceEnabled ?? false) })
+      setPs(next)
+      invalidateWcpWorkspaceProbe()
+      window.dispatchEvent(new Event(WCP_WORKSPACE_CONFIG_EVENT))
+      await refreshWorkspace(true)
+    } catch (e) {
+      showToast('启用状态保存失败：' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }
+
+  const chooseWorkspaceRoot = async () => {
+    const picked = await workspaceChooseRoot()
+    if (!picked) return
+    await saveWorkspaceField('workspaceRoot', picked)
+    showToast('工作区根目录已更新。', 'success')
+  }
+
+  const openWorkspaceFolder = async () => {
+    if (!ws?.folder) return
+    const r = await workspaceReveal(ws.root, ws.folder)
+    if (!r.ok) showToast('打开目录失败：' + (r.error || '未知原因'), 'error')
+  }
+
+  const updateWorkspaceNow = async () => {
+    setWsBusy(true)
+    try {
+      const r = await syncWcpWorkspace({ reason: 'manual' })
+      if (!r.ok) showToast('工作区更新失败：' + (r.error || '未知原因'), 'error', 6000)
+      else if (r.skipped) showToast('工作区已是最新，没有写盘。', 'info')
+      else showToast(`工作区已更新：写入 ${r.wrote} 个文件${r.deleted ? `，清理 ${r.deleted} 个过期文件` : ''}。`, 'success')
+      await refreshWorkspace(true)
+    } finally {
+      setWsBusy(false)
+    }
+  }
+
+  const copyWorkspacePrompt = async () => {
+    setWsBusy(true)
+    try {
+      const r = await syncWcpWorkspace({ reason: 'manual' })
+      if (!r.ok) {
+        showToast('工作区同步失败：' + (r.error || '未知原因'), 'error', 6000)
+        return
+      }
+      if (r.mode === 'zip') {
+        showToast('当前形态已改为打包下载；请解压后把工作区路径告诉 Agent。', 'info')
+        return
+      }
+      const ok = await copyText(r.prompt, 'Agent 提示词已复制；粘贴给本地 Agent 即可开工。')
+      if (ok) showToast(r.skipped ? '工作区已是最新，提示词已复制。' : `已同步 ${r.wrote} 个文件，提示词已复制。`, 'success')
+      await refreshWorkspace(true)
+    } finally {
+      setWsBusy(false)
+    }
+  }
+
+  const downloadWorkspaceZip = async () => {
+    setWsBusy(true)
+    try {
+      const r = await syncWcpWorkspace({ reason: 'manual', allowZipFallback: true })
+      if (!r.ok) showToast('打包工作区失败：' + (r.error || '未知原因'), 'error', 6000)
+      else showToast('已打包下载离线工作区；解压后即可交给本地 Agent。', 'success')
+    } finally {
+      setWsBusy(false)
+    }
+  }
   const downloadBase = async () => {
     if (!basePack) return
     const mime = cfg?.defaultFileExt === 'txt' ? 'text/plain;charset=utf-8' : 'text/markdown;charset=utf-8'
@@ -201,6 +299,144 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
         </p>
       </Panel>
 
+      {/* ② 本地 Agent 工作区（WCP-Local · 3.7.4） */}
+      <Panel className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <HardDrive size={14} className="shrink-0 text-amber" />
+          <h2 className="text-14 font-semibold text-ink-100">本地 Agent 工作区（WCP-Local）</h2>
+          <HelpPopover title="本地工作区怎么用" width="25rem" size={14}>
+            <p>桌面版把设定、当前章上下文与输出契约按文件同步到本机安全目录。Claude Code、Codex、Cursor、Cline 等本地 Agent 只需读取工作区，不用你每次上传文件。</p>
+            <p className="mt-2">工作区只读区随创作自动保鲜：打开项目会提醒过期，也可以选定时静默更新或只手动更新。每次只覆写有变化的文件，不留历史副本，也绝不碰 outbox/。</p>
+            <p className="mt-2">Agent 的产物写入 outbox/：一步生成可导入的 .wcp.json 与方便阅读的 .md，回引擎在「WCP 回流」里一键核对入库并归档。</p>
+            <p className="mt-2">网页版 / 便携版没有本地写盘权限，可改下载同等目录结构的 .zip，解压后交给本地 Agent。</p>
+          </HelpPopover>
+          <span className={`ml-auto rounded-md border px-2 py-1 text-11 ${ws?.freshness === 'fresh'
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            : ws?.freshness === 'stale'
+              ? 'border-amber/35 bg-amber/10 text-amber'
+              : 'border-ink-700 bg-ink-800/60 text-ink-400'}`}>
+            {ws?.label ?? '正在检查工作区…'}
+          </span>
+        </div>
+        <p className="mt-1.5 text-12 text-ink-400 leading-relaxed">
+          只读区按文件同步，唯一可写区是 <span className="text-ink-200">outbox/</span>；同步不占用 API / MCP / ACP 的运行态。
+          {ws?.lastSyncAt ? <span className="text-ink-500">　·　上次同步：{new Date(ws.lastSyncAt).toLocaleString()}</span> : null}
+        </p>
+
+        <div className="mt-3 space-y-2.5">
+          <div className="rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+            <div className={FIELD_ROW}>
+              <span className={FIELD_LABEL}>工作区目录</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button variant="secondary" size="xs" onClick={() => void chooseWorkspaceRoot()} disabled={!hasWcpWorkspaceBridge() || wsBusy}>
+                  <FolderOpen size={12} /> 自定义目录
+                </Button>
+                <Button variant="secondary" size="xs" onClick={() => void saveWorkspaceField('workspaceRoot', '')}
+                  disabled={!hasWcpWorkspaceBridge() || !cfg.workspaceRoot || wsBusy}>
+                  恢复默认
+                </Button>
+                <Button variant="secondary" size="xs" onClick={() => void openWorkspaceFolder()} disabled={!hasWcpWorkspaceBridge() || !ws?.folder || wsBusy}>
+                  打开文件夹
+                </Button>
+                <Button variant="secondary" size="xs" onClick={() => void refreshWorkspace(true)} disabled={wsBusy}>
+                  <RefreshCw size={12} /> 刷新状态
+                </Button>
+              </div>
+            </div>
+            <p className="mt-1 break-all text-11 text-ink-300">
+              {ws?.root || cfg.workspaceRoot || '默认：数据文件同级的 wcp-workspaces/'}
+              {ws?.folder ? <span className="text-ink-500">　/　{ws.folder}</span> : null}
+            </p>
+          </div>
+
+          <label className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+            <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" checked={ps.workspaceEnabled}
+              onChange={() => void toggleWorkspaceEnabled()} />
+            <span className="min-w-0">
+              <span className="block text-12 text-ink-200">本书启用本地 Agent 工作区</span>
+              <span className="block text-11 text-ink-500 leading-relaxed">未启用的书不参与打开提醒与定时更新，也不会写任何工作区文件。</span>
+            </span>
+          </label>
+
+          <div className={FIELD_ROW}>
+            <span className={FIELD_LABEL}>更新策略</span>
+            <div className="inline-flex flex-wrap gap-1.5">
+              <Button variant="toggle" size="xs" selected={cfg.workspaceSyncMode === 'remind-on-open'}
+                onClick={() => void saveWorkspaceField('workspaceSyncMode', 'remind-on-open')}>打开时提醒</Button>
+              <Button variant="toggle" size="xs" selected={cfg.workspaceSyncMode === 'auto-interval'}
+                onClick={() => void saveWorkspaceField('workspaceSyncMode', 'auto-interval')}>定时自动</Button>
+              <Button variant="toggle" size="xs" selected={cfg.workspaceSyncMode === 'manual'}
+                onClick={() => void saveWorkspaceField('workspaceSyncMode', 'manual')}>仅手动</Button>
+            </div>
+          </div>
+
+          {cfg.workspaceSyncMode === 'auto-interval' && (
+            <div className={FIELD_ROW}>
+              <span className={FIELD_LABEL}>自动刷新间隔</span>
+              <div className="inline-flex flex-wrap gap-1.5">
+                {WCP_WORKSPACE_INTERVAL_OPTIONS.map(min => (
+                  <Button key={min} variant="toggle" size="xs" selected={cfg.workspaceSyncIntervalMin === min}
+                    onClick={() => void saveWorkspaceField('workspaceSyncIntervalMin', min)}>{min} 分钟</Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+              <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" checked={cfg.syncFullChapters}
+                onChange={e => void saveWorkspaceField('syncFullChapters', e.target.checked)} />
+              <span className="min-w-0">
+                <span className="block text-12 text-ink-200">同步全书历史章节（04-chapters/）</span>
+                <span className="block text-11 text-ink-500 leading-relaxed">供大上下文 Agent 按索引翻查前文；默认关闭，开启后只增量刷新变化的章节。</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+              <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" checked={cfg.archiveOutboxAfterImport}
+                onChange={e => void saveWorkspaceField('archiveOutboxAfterImport', e.target.checked)} />
+              <span className="min-w-0">
+                <span className="block text-12 text-ink-200">导入后自动归档收件箱</span>
+                <span className="block text-11 text-ink-500 leading-relaxed">成功载入后把 .wcp.json 与 .md 成对移入 outbox/imported/，避免重复导入。</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => void updateWorkspaceNow()} disabled={wsBusy || !hasWcpWorkspaceBridge()}>
+              {wsBusy ? <RefreshCw size={12} className="animate-spin" /> : <ShieldCheck size={12} />} 立即更新工作区
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void copyWorkspacePrompt()} disabled={wsBusy || !hasWcpWorkspaceBridge()}>
+              <Copy size={12} /> 同步并复制 Agent 提示词
+            </Button>
+            {!hasWcpWorkspaceBridge() && (
+              <Button variant="secondary" size="sm" onClick={() => void downloadWorkspaceZip()} disabled={wsBusy}>
+                <Download size={12} /> 下载离线工作区 .zip
+              </Button>
+            )}
+          </div>
+
+          {!hasWcpWorkspaceBridge() && (
+            <p className="rounded-md border border-amber/30 bg-amber/10 px-2.5 py-1.5 text-11 text-amber">
+              当前是网页 / 便携形态：没有本地写盘权限。下载 .zip 后解压，把目录路径告诉本地 Agent 即可；回流仍走「WCP 回流」的浏览文件 / 拖拽 / 粘贴。
+            </p>
+          )}
+          {hasWcpWorkspaceBridge() && ws && !ws.writable && (
+            <p className="rounded-md border border-amber/30 bg-amber/10 px-2.5 py-1.5 text-11 text-amber">
+              {ws.error || '工作区目录当前不可写，请改选一个可写目录。'}
+            </p>
+          )}
+          {ws && ws.freshness === 'stale' && (
+            <p className="rounded-md border border-amber/30 bg-amber/10 px-2.5 py-1.5 text-11 text-amber">
+              工作区有新的改动还没同步。点「立即更新工作区」只会覆写有变化的文件，不影响 outbox/ 里 Agent 的产物。
+            </p>
+          )}
+          {ws?.notes.length ? (
+            <ul className="space-y-0.5 text-11 text-ink-500">
+              {ws.notes.map((n, i) => <li key={i}>· {n}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      </Panel>
       {/* ② 底包管理 + 全局偏好 */}
       <Panel className="p-4">
         <div className="mb-3 flex items-center gap-2">
@@ -351,7 +587,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
         </div>
       </Panel>
 
-      {/* ③ 输出格式与试解析台 */}
+      {/* ④ 输出格式与试解析台 */}
       <Panel className="p-4">
         <div className="flex flex-wrap items-center gap-2">
           <FlaskConical size={14} className="shrink-0 text-amber" />

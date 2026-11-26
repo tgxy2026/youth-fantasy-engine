@@ -9,7 +9,7 @@
  *    不把「预算不够」藏成一个总数。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Copy, FileText, FileUp, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Copy, Download, FileText, FileUp, FolderSync, RefreshCw } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import AutoTextarea from '@/components/common/AutoTextarea'
@@ -21,6 +21,8 @@ import { collectWcpPack } from '@/lib/wcp/wcpCollect'
 import { packWcpDocument, type WcpPackResult } from '@/lib/wcp/wcpPacker'
 import { getWcpScenario } from '@/lib/wcp/wcpTemplates'
 import { loadWcpGlobalConfig, loadWcpProjectState } from '@/lib/wcp/wcpSettings'
+import { hasWcpWorkspaceBridge } from '@/lib/wcp/wcpWorkspaceClient'
+import { syncWcpWorkspace } from '@/lib/wcp/wcpWorkspaceSync'
 import {
   WCP_PREV_CHAPTER_MAX,
   WCP_PREV_SUMMARY_MAX,
@@ -63,6 +65,7 @@ export default function WcpExportModal({
   const [pack, setPack] = useState<WcpPackResult | null>(null)
   const [notes, setNotes] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const [wsBusy, setWsBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -118,6 +121,45 @@ export default function WcpExportModal({
     }
   }, [cfg, kind, scene, chapterId, chapterNo, chapterTitle, draft, selectedText, prevChapterCount, prevSummaryCount, focusCharacterId, focusCharacterName, extra, baseModules])
 
+  const hasWorkspace = hasWcpWorkspaceBridge()
+
+  /** 3.7.4：同步工作区并复制 Agent 提示词；无桥接时降级为打包下载 .zip（D4） */
+  const syncWorkspace = async () => {
+    setWsBusy(true)
+    try {
+      const r = await syncWcpWorkspace({
+        reason: 'export',
+        scene,
+        ...(chapterId ? { chapterId } : {}),
+        ...(chapterNo && chapterNo > 0 ? { chapterNo } : {}),
+        ...(chapterTitle ? { chapterTitle } : {}),
+        draft,
+        selectedText,
+        ...(focusCharacterId ? { focusCharacterId } : {}),
+        ...(focusCharacterName ? { focusCharacterName } : {}),
+        ...(extra.trim() ? { extraInstruction: extra.trim() } : {}),
+        allowZipFallback: true,
+      })
+      if (!r.ok) {
+        showToast('工作区同步失败：' + (r.error || '未知原因'), 'error', 6000)
+        return
+      }
+      if (r.mode === 'zip') {
+        showToast('已打包下载离线工作区；解压后把目录路径告诉本地 Agent 即可。', 'success')
+        return
+      }
+      const ok = await copyText(r.prompt, 'Agent 提示词已复制')
+      if (ok) {
+        showToast(r.skipped
+          ? '工作区已是最新，提示词已复制。'
+          : `工作区已同步 ${r.wrote} 个文件，提示词已复制。`, 'success')
+      }
+    } catch (e) {
+      showToast('工作区同步失败：' + (e instanceof Error ? e.message : String(e)), 'error', 6000)
+    } finally {
+      setWsBusy(false)
+    }
+  }
   const copyPack = async () => {
     if (!pack) return
     await copyText(pack.text, '资料包已复制到剪贴板')
@@ -198,6 +240,18 @@ export default function WcpExportModal({
             )}
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+            <span className="text-11 text-ink-400">本地 Agent 工作区</span>
+            <Button variant="secondary" size="sm" onClick={() => void syncWorkspace()} disabled={wsBusy}>
+              {hasWorkspace ? <FolderSync size={12} /> : <Download size={12} />}
+              {hasWorkspace ? '同步工作区并复制 Agent 提示词' : '下载离线工作区 .zip'}
+            </Button>
+            <span className="text-11 text-ink-500">
+              {hasWorkspace
+                ? '把工作区刷新到最新后，自动复制带绝对路径的开机提示词。'
+                : '当前形态无本地写盘权限：下载同等目录结构的 .zip，解压后交给本地 Agent。'}
+            </span>
+          </div>
           {cfg.includeWriterNotes && (
             <div>
               <p className={FIELD_LABEL}>作者补充说明（可选，会写进资料包）</p>

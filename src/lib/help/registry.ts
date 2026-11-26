@@ -31,11 +31,11 @@ import { COMMUNITY_ARTICLES } from '@/lib/help/articles/community'
 import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
-// 34（2026-11-25 · 3.7.3）：新增 WCP 网页资料包使用篇与 3.7.3 更新说明。
-export const CONTENT_VERSION = 34
+// 35（2026-11-26 · 3.7.4）：新增「本地 Agent 工作区（WCP-Local）」使用篇。
+export const CONTENT_VERSION = 35
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.7.3'
+export const SUPPORTED_APP_VERSION = '3.7.4'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [

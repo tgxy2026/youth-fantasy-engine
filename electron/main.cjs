@@ -31,6 +31,8 @@ const desktopAuth = require('./desktopAuth.cjs')
 const bossKey = require('./bossKey.cjs')
 // 3.3.2 · 桌面端同步整链自检（`--desktop-sync-selftest`，见文件内注释与 syncSelftest.cjs 头）
 const { runSyncSelftest } = require('./syncSelftest.cjs')
+// 3.7.4 · WCP 本地 Agent 工作区：默认根 / 路径穿越锁定 / 原子增量写 / outbox 回流归档
+const wcpWorkspace = require('./wcpWorkspace.cjs')
 
 /**
  * 账号服务器地址（3.3.2 · 2026-10-31 起用户不用再填）。
@@ -725,6 +727,10 @@ app.whenReady().then(async () => {
   })
 
 ipcMain.handle('store:path', () => dataFile())
+  // ---- 3.7.4 · WCP 本地 Agent 工作区 ----
+  // 🔴 默认根锁定在**真实数据文件同级** `wcp-workspaces/`；写入前做可写探活。
+  //    渲染层只传相对清单，主进程负责路径穿越拦截与 outbox 免删。
+  wcpWorkspace.registerWcpWorkspaceIpc({ ipcMain, app, shell, dialog, dataFile, ownsCurrentData })
   ipcMain.handle('agent:bridge-script-path', () => {
     const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
     const script = path.join(root, 'scripts', 'mcp', app.isPackaged ? 'yfe-readonly.mjs' : 'yfe-readonly-desktop.mjs')

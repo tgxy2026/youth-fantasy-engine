@@ -87,4 +87,69 @@ export const WCP_ARTICLES: HelpArticle[] = [
     verifiedAgainst: '3.7.3',
     reviewedAt: '2026-11-25',
   },
+  {
+    id: 'wcp-local-workspace',
+    revision: 1,
+    title: '本地 Agent 工作区：让 Claude Code / Cursor 直接读你的资料',
+    summary: '桌面版把设定、当前章上下文与输出契约按文件同步到本机安全目录；本地 Agent 读工作区写作，把结果写进 outbox/，回引擎一键核对入库。',
+    aliases: ['WCP-Local', '本地工作区', '本地 Agent', 'Claude Code', 'Codex', 'Cursor', 'Cline', 'Windsurf', 'outbox'],
+    keywords: ['WCP', '本地 Agent', '工作区', 'AGENTS.md', 'manifest', 'outbox', '收件箱', '定时更新', '提醒', 'zip'],
+    group: '模型与 AI',
+    tabIds: ['model-settings', 'editor', 'chapter-outline', 'check-tools', 'char-bio'],
+    availability: 'all',
+    aiRequirement: 'none',
+    prerequisites: ['桌面版才有本地写盘权限；网页版 / 便携版可下载离线 .zip。', '先在「模型设置 → WCP 模式」的「本地 Agent 工作区」里点一次更新。'],
+    sections: [
+      {
+        id: 'what-is-local',
+        heading: '它和网页 WCP 有什么不同',
+        body: [
+          '网页 WCP 是把整包资料下载后上传给 Gemini / Claude 网页版；本地 Agent 工作区（WCP-Local）则是把同一批资料**按文件**落到本机目录。Claude Code、Codex、Cursor、Windsurf、Cline 这类能读写本地文件的 Agent，可以直接按 `AGENTS.md` 的指引按需读取，不必每次上传。',
+          '工作区根目录默认在当前数据文件同级的 `wcp-workspaces/`（例如 `%APPDATA%\\youth-fantasy-engine\\wcp-workspaces\\`）；数据文件迁到 D 盘或同步盘时会自动跟随。也可以在设置里自定义目录并一键恢复默认。',
+        ],
+      },
+      {
+        id: 'three-steps',
+        heading: '日常三步',
+        body: [
+          '第一步：在「模型设置 → WCP 模式 → 本地 Agent 工作区」点「立即更新工作区」，或点「同步并复制 Agent 提示词」。提示词里带着工作区的**绝对路径**、`AGENTS.md`、`manifest.json`、`02-context/task.md` 与 `outbox/` 位置。',
+          '第二步：把提示词粘贴给本地 Agent，再补上这次的具体剧情要求。它会先读 `AGENTS.md` 与 `manifest.json`，再按需读取 `01-base/` 设定与 `02-context/` 当前章上下文。',
+          '第三步：Agent 完成后，把两份同名文件写进 `outbox/`：`<前缀>.wcp.json`（严格按 `03-schemas/wcp-output.schema.json`）与 `<前缀>.md`（正文 + 可读摘要）。回到「WCP 回流」弹窗，收件箱会列出这些产物。',
+        ],
+      },
+      {
+        id: 'freshness',
+        heading: '资料保鲜：提醒 / 定时 / 手动',
+        body: [
+          '三种策略随时切换：「打开时提醒」（默认，有新改动只提示、不静默覆盖）、「定时自动」（5 / 10 / 15 / 30 分钟，有改动才在后台原位刷新）、「仅手动」（只在你点按钮时更新）。',
+          '每次刷新先在内存里算总指纹：内容没变就零写盘；有变化时只覆写哈希变化的文件，不保留历史副本。打开「同步全书历史章节」后会额外生成 `04-chapters/` 供大上下文 Agent 翻查前文，同样只增量刷新变化的章节。',
+          '只有「曾同步过」或你在设置里勾了「本书启用本地 Agent 工作区」的书才会提醒或定时写盘；从未用过的书零打扰。',
+        ],
+      },
+      {
+        id: 'outbox-back',
+        heading: '收件箱回流与安全边界',
+        body: [
+          '「WCP 回流」弹窗顶部会出现「本地 Agent 收件箱（outbox/）」卡片：`载入 JSON` 会先校验契约与 `projectId`（跨书立即拦截），再直接比对候选；同名 `.md` 可以预览、复制或载入解析。',
+          '导入成功后，默认把对应的 `.wcp.json` 与 `.md` 成对移入 `outbox/imported/` 归档，避免重复导入；这个自动归档可在设置里关闭。',
+          '安全边界：只读区（`01-base/`、`02-context/`、`03-schemas/`、`04-chapters/`、`manifest.json`、`AGENTS.md`、`CLAUDE.md`）Agent 不得修改；`outbox/` 是唯一可写区，刷新时永远不会被清理。工作区也不占用 API / MCP / ACP 的运行态。',
+        ],
+      },
+      {
+        id: 'web-fallback',
+        heading: '网页版 / 便携版怎么办',
+        body: [
+          '这两个形态没有本地写盘权限。设置页与 WCP 导出弹窗会改为「下载离线工作区 `.zip`」：包内目录结构与桌面版一致（路径纯 ASCII，Windows 解压不乱码），解压后把目录路径告诉本地 Agent 即可。',
+          '回流仍用「WCP 回流」的浏览文件 / 拖拽 / 粘贴 `.wcp.json` 或 `.md`，与 3.7.3 完全一致。',
+        ],
+      },
+    ],
+    related: ['wcp-relay', 'whats-new-373'],
+    actions: [
+      { label: '打开模型设置', tabId: 'model-settings' },
+      { label: '打开正文编辑', tabId: 'editor' },
+    ],
+    verifiedAgainst: '3.7.4',
+    reviewedAt: '2026-11-26',
+  },
 ]

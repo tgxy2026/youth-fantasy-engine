@@ -22,6 +22,14 @@ export type WcpSummaryFormat = 'json' | 'markdown'
 /** 导出文件扩展名（.md 默认；.txt 供只收纯文本的网页模型） */
 export type WcpFileExt = 'md' | 'txt'
 
+/**
+ * 本地 Agent 工作区（WCP-Local · 3.7.4）的保鲜策略：
+ *   · `remind-on-open` —— 打开项目 / 检测到过时时温和提醒，不静默覆盖；
+ *   · `auto-interval` —— 按固定间隔在后台检查指纹，有改动才原位增量写盘；
+ *   · `manual`        —— 不提醒、不定时，只能手动点「立即更新工作区」。
+ */
+export type WcpWorkspaceSyncMode = 'manual' | 'remind-on-open' | 'auto-interval'
+
 /** 首版 5 大创作场景（规划 D8） */
 export type WcpSceneId =
   | 'chapter-continue'
@@ -46,6 +54,19 @@ export interface WcpGlobalConfig {
   includeWriterNotes: boolean
   /** 单包字符预算上限（网页长上下文给宽裕值，可调） */
   maxPackBudgetChars: number
+  /**
+   * 工作区根目录（3.7.4）。空串 = 跟随数据文件同级 `wcp-workspaces/`；
+   * 非空时必须是绝对路径，由主进程再做路径穿越锁定。
+   */
+  workspaceRoot: string
+  /** 工作区保鲜策略（出厂「打开提醒」） */
+  workspaceSyncMode: WcpWorkspaceSyncMode
+  /** 定时自动更新的间隔（分钟），只接受 5 / 10 / 15 / 30 */
+  workspaceSyncIntervalMin: number
+  /** D2：是否额外同步 `04-chapters/` 全书历史章节（出厂关闭） */
+  syncFullChapters: boolean
+  /** D3：回流导入成功后是否把 `.wcp.json` + `.md` 成对归档到 `outbox/imported/` */
+  archiveOutboxAfterImport: boolean
 }
 
 /** 单项目状态：按项目隔离（切书不串底包过期状态） */
@@ -56,6 +77,16 @@ export interface WcpProjectState {
   lastBaseExportAt: number | null
   /** 上次导出底包时的源数据指纹（用于判定「设定已更新，建议重导」） */
   lastBaseFingerprint: string
+  /** 是否已启用本地 Agent 工作区（首次同步自动置 true） */
+  workspaceEnabled: boolean
+  /** 上次成功同步工作区的时间（毫秒）；从未同步为 null */
+  lastWorkspaceSyncAt: number | null
+  /** 上次同步时的只读区总指纹（未变则零写盘） */
+  lastWorkspaceFingerprint: string
+  /** 上次同步时每个只读文件的哈希（文件名 → 哈希），用于最小化增量写盘 */
+  lastWorkspaceFileHashes: Record<string, string>
+  /** 上次同步使用的场景：刷新时沿用，避免探活与导出场景互搏反复重写 task.md */
+  lastWorkspaceScene: WcpSceneId | ''
 }
 
 export const WCP_GLOBAL_CONFIG_KEY = 'wcpGlobalConfig'
@@ -71,6 +102,15 @@ export const WCP_PREV_SUMMARY_MAX = 20
 /** 单段裁剪后至少保留的字符数：不足就整段省略，别留半句误导模型 */
 export const WCP_MIN_SECTION_CHARS = 240
 
+/** 工作区定时刷新可选间隔（分钟）：只给四档，避免用户填出 1 分钟狂刷盘 */
+export const WCP_WORKSPACE_INTERVAL_OPTIONS: readonly number[] = [5, 10, 15, 30]
+/** 工作区定时刷新出厂间隔 */
+export const WCP_WORKSPACE_DEFAULT_INTERVAL_MIN = 10
+/** 工作区契约版本（manifest.schemaVersion） */
+export const WCP_WORKSPACE_SCHEMA_VERSION = 'wcp-workspace/v1'
+/** 单份 `.wcp.json` 产物契约版本 */
+export const WCP_OUTPUT_SCHEMA_VERSION = 'wcp-output/v1'
+
 export const DEFAULT_WCP_GLOBAL_CONFIG: Readonly<WcpGlobalConfig> = {
   defaultFileExt: 'md',
   defaultPackKind: 'delta',
@@ -79,6 +119,11 @@ export const DEFAULT_WCP_GLOBAL_CONFIG: Readonly<WcpGlobalConfig> = {
   prevSummaryCount: 3,
   includeWriterNotes: true,
   maxPackBudgetChars: 120_000,
+  workspaceRoot: '',
+  workspaceSyncMode: 'remind-on-open',
+  workspaceSyncIntervalMin: WCP_WORKSPACE_DEFAULT_INTERVAL_MIN,
+  syncFullChapters: false,
+  archiveOutboxAfterImport: true,
 }
 
 /** 底包模块：`tabIds` 直接交给 `buildProjectContext({ onlyTabIds })` 取材 */
@@ -123,6 +168,11 @@ export const DEFAULT_WCP_PROJECT_STATE: Readonly<WcpProjectState> = {
   baseModules: [...DEFAULT_WCP_BASE_MODULES],
   lastBaseExportAt: null,
   lastBaseFingerprint: '',
+  workspaceEnabled: false,
+  lastWorkspaceSyncAt: null,
+  lastWorkspaceFingerprint: '',
+  lastWorkspaceFileHashes: {},
+  lastWorkspaceScene: '',
 }
 
 export const WCP_PACK_KIND_LABEL: Record<WcpPackKind, string> = {

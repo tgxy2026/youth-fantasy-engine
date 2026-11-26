@@ -68,6 +68,7 @@ import { setTavernAcpAsk } from '@/lib/tavern/acpChat'
 import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { setAcpTextFactory } from '@/lib/agentHost/acpRegistry'
+import { useWcpWorkspaceSync } from '@/components/wcp/useWcpWorkspaceSync'
 import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
@@ -136,6 +137,8 @@ export default function App() {
   const [visCtx, setVisCtx] = useState<VisCtx>({ type: 'full', features: [], pack: DEFAULT_PACK })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
+  // 3.7.4 · WCP-Local：打开提醒 / 定时静默刷新（只在已启用的书上工作）
+  useWcpWorkspaceSync(projectId)
   // 3.5.0 · 投稿广场浮层（全局，项目内/项目外都能开）
   const [communityOpen, setCommunityOpen] = useState(false)
   const [booted, setBooted] = useState(false)

@@ -23,11 +23,16 @@ import {
   WCP_PREV_CHAPTER_MAX,
   WCP_PREV_SUMMARY_MAX,
   WCP_PROJECT_STATE_KEY,
+  WCP_WORKSPACE_DEFAULT_INTERVAL_MIN,
+  WCP_WORKSPACE_INTERVAL_OPTIONS,
   type WcpFileExt,
   type WcpGlobalConfig,
   type WcpProjectState,
+  type WcpSceneId,
   type WcpSummaryFormat,
+  type WcpWorkspaceSyncMode,
 } from '@/lib/wcp/wcpTypes'
+import { WCP_OUTPUT_SCENES } from '@/lib/wcp/wcpWorkspaceSchema'
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -41,6 +46,52 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
   if (!Number.isFinite(n)) return def
   return Math.min(max, Math.max(min, Math.floor(n)))
+}
+
+/** 间隔只接受 5 / 10 / 15 / 30：填了别的值就取最接近的一档，避免 1 分钟狂刷盘 */
+function normalizeInterval(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
+  if (!Number.isFinite(n)) return WCP_WORKSPACE_DEFAULT_INTERVAL_MIN
+  if (WCP_WORKSPACE_INTERVAL_OPTIONS.includes(n)) return n
+  const target = Math.min(240, Math.max(1, Math.floor(n)))
+  let best = WCP_WORKSPACE_DEFAULT_INTERVAL_MIN
+  for (const opt of WCP_WORKSPACE_INTERVAL_OPTIONS) {
+    if (Math.abs(opt - target) < Math.abs(best - target)) best = opt
+  }
+  return best
+}
+
+/**
+ * 自定义工作区根目录归一化。
+ *
+ * 🔴 只接受**绝对路径**：相对路径会被主进程按当前工作目录解析，落点不可预期；
+ *    损坏 / 非法值一律回空串（= 跟随数据文件同级 `wcp-workspaces/`）。
+ */
+function normalizeWorkspaceRoot(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  const s = v.trim()
+  if (!s || s.length > 500 || s.includes('\u0000')) return ''
+  if (/^[A-Za-z]:[\\/]/.test(s)) return s
+  if (s.startsWith('\\\\') || s.startsWith('/')) return s
+  return ''
+}
+
+/** 只读文件哈希归一化：只留 ASCII 相对路径 + 十六进制哈希，防止把脏数据写回 manifest */
+function normalizeFileHashes(v: unknown): Record<string, string> {
+  if (!isRecord(v)) return {}
+  const out: Record<string, string> = {}
+  let count = 0
+  for (const [rawPath, rawHash] of Object.entries(v)) {
+    if (count >= 5000) break
+    if (typeof rawHash !== 'string') continue
+    const path = rawPath.trim()
+    const hash = rawHash.trim()
+    if (!path || path.length > 300 || !/^[0-9a-f]{8,40}$/i.test(hash)) continue
+    if (path.startsWith('/') || path.startsWith('.') || path.startsWith('outbox/') || path.includes('\\') || /(^|\/)\.\.(\/|$)/.test(path)) continue
+    out[path] = hash
+    count++
+  }
+  return out
 }
 
 /** 勾选模块归一化：只保留已知 id、去重；**空数组是合法选择**（作者可以全不勾） */
@@ -67,6 +118,11 @@ export function normalizeWcpGlobalConfig(raw: unknown): WcpGlobalConfig {
     prevSummaryCount: clampInt(r.prevSummaryCount, DEFAULT_WCP_GLOBAL_CONFIG.prevSummaryCount, 0, WCP_PREV_SUMMARY_MAX),
     includeWriterNotes: typeof r.includeWriterNotes === 'boolean' ? r.includeWriterNotes : DEFAULT_WCP_GLOBAL_CONFIG.includeWriterNotes,
     maxPackBudgetChars: clampInt(r.maxPackBudgetChars, DEFAULT_WCP_GLOBAL_CONFIG.maxPackBudgetChars, WCP_BUDGET_MIN, WCP_BUDGET_MAX),
+    workspaceRoot: normalizeWorkspaceRoot(r.workspaceRoot),
+    workspaceSyncMode: pickOne<WcpWorkspaceSyncMode>(r.workspaceSyncMode, ['manual', 'remind-on-open', 'auto-interval'], DEFAULT_WCP_GLOBAL_CONFIG.workspaceSyncMode),
+    workspaceSyncIntervalMin: normalizeInterval(r.workspaceSyncIntervalMin),
+    syncFullChapters: typeof r.syncFullChapters === 'boolean' ? r.syncFullChapters : DEFAULT_WCP_GLOBAL_CONFIG.syncFullChapters,
+    archiveOutboxAfterImport: typeof r.archiveOutboxAfterImport === 'boolean' ? r.archiveOutboxAfterImport : DEFAULT_WCP_GLOBAL_CONFIG.archiveOutboxAfterImport,
   }
 }
 
@@ -76,10 +132,19 @@ export function normalizeWcpProjectState(raw: unknown): WcpProjectState {
   const at = typeof r.lastBaseExportAt === 'number' && Number.isFinite(r.lastBaseExportAt) && r.lastBaseExportAt > 0
     ? Math.floor(r.lastBaseExportAt)
     : null
+  const workspaceAt = typeof r.lastWorkspaceSyncAt === 'number' && Number.isFinite(r.lastWorkspaceSyncAt) && r.lastWorkspaceSyncAt > 0
+    ? Math.floor(r.lastWorkspaceSyncAt)
+    : null
   return {
     baseModules: normalizeModules(r.baseModules),
     lastBaseExportAt: at,
     lastBaseFingerprint: typeof r.lastBaseFingerprint === 'string' ? r.lastBaseFingerprint : '',
+    // 显式开关优先；老库没有该字段时，只有真的同步过（有时间戳）才算启用
+    workspaceEnabled: typeof r.workspaceEnabled === 'boolean' ? r.workspaceEnabled : workspaceAt !== null,
+    lastWorkspaceSyncAt: workspaceAt,
+    lastWorkspaceFingerprint: typeof r.lastWorkspaceFingerprint === 'string' ? r.lastWorkspaceFingerprint : '',
+    lastWorkspaceFileHashes: normalizeFileHashes(r.lastWorkspaceFileHashes),
+    lastWorkspaceScene: WCP_OUTPUT_SCENES.includes(r.lastWorkspaceScene as WcpSceneId) ? r.lastWorkspaceScene as WcpSceneId : '',
   }
 }
 
@@ -150,4 +215,26 @@ export function saveWcpProjectState(
  */
 export async function markWcpBaseExported(fingerprint: string, pid = db.getCurrentProjectId()): Promise<WcpProjectState> {
   return saveWcpProjectState({ lastBaseExportAt: Date.now(), lastBaseFingerprint: fingerprint }, pid)
+}
+
+/**
+ * 记录一次工作区同步成功（指纹 + 单文件哈希 + 场景）。
+ *
+ * 🔴 只由 `wcpWorkspaceSync` 在**宿主确认写入成功**后调用：
+ *    下载 `.zip` 的兜底不算「本地工作区已最新」，不能写这份状态。
+ */
+export async function markWcpWorkspaceSynced(
+  fingerprint: string,
+  fileHashes: Record<string, string>,
+  scene: WcpSceneId,
+  pid = db.getCurrentProjectId(),
+  at = Date.now(),
+): Promise<WcpProjectState> {
+  return saveWcpProjectState({
+    workspaceEnabled: true,
+    lastWorkspaceSyncAt: at,
+    lastWorkspaceFingerprint: fingerprint,
+    lastWorkspaceFileHashes: fileHashes,
+    lastWorkspaceScene: scene,
+  }, pid)
 }

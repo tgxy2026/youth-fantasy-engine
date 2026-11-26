@@ -21,7 +21,8 @@ import { renderTable } from '@/lib/ai/tableRender'
 import { TABS, getTab } from '@/lib/schema'
 import { chapterContextSettingKey, normalizeChapterContextBinding } from '@/lib/revision/chapterContext'
 import { resolveSlot } from '@/lib/flow/fieldMap'
-import { chapterSeqMap } from '@/lib/outline/chapterSeq'
+import { chapterSeqMap, flattenAll } from '@/lib/outline/chapterSeq'
+import type { WcpWorkspaceChapterSource } from '@/lib/wcp/wcpWorkspaceBuilder'
 import {
   formatBiographyMarkdown,
   readAllBiographies,
@@ -40,7 +41,7 @@ import {
   type WcpSummaryFormat,
 } from '@/lib/wcp/wcpTypes'
 import type { WcpPackInput, WcpPackSection } from '@/lib/wcp/wcpPacker'
-import type { CardRecord, Chapter, TableRow } from '@/lib/types'
+import type { CardRecord, Chapter, TableRow, Volume } from '@/lib/types'
 
 export interface WcpCollectInput {
   kind: WcpPackKind
@@ -640,4 +641,151 @@ export async function collectWcpPack(input: WcpCollectInput): Promise<WcpCollect
       : {}),
   }
   return { pack, baseFingerprint: base.fingerprint, notes }
+}
+
+// ============ 本地 Agent 工作区 · 取材适配（3.7.4 · W1/W3）============
+
+export interface WcpWorkspaceCollectInput {
+  scene: WcpSceneId
+  /** 当前聚焦章节（编辑器 / 页面显式传入）；缺省取最近编辑的一章 */
+  chapterId?: string
+  chapterNo?: number
+  chapterTitle?: string
+  draft?: string
+  selectedText?: string
+  focusCharacterId?: string
+  focusCharacterName?: string
+  extraInstruction?: string
+  baseModules?: readonly string[]
+  /** D2：是否读取全书历史章节 */
+  includeFullChapters: boolean
+  summaryFormat?: WcpSummaryFormat
+  budgetChars?: number
+}
+
+export interface WcpWorkspaceCollectedData {
+  projectId: string
+  projectName: string
+  baseFingerprint: string
+  notes: string[]
+  sections: WcpPackSection[]
+  activeChapterId?: string
+  activeChapterNo?: number
+  activeChapterTitle?: string
+  volumeTitle?: string
+  chapters: WcpWorkspaceChapterSource[]
+}
+
+/**
+ * 缺省聚焦章节：与 `db/projects.getProjectsStats` 的「最近编辑章」**完全同口径** ——
+ * 按全书真实叙事序 `flattenAll` 展平，`updatedAt` 降序；同时间戳取叙事序更靠后的一章。
+ *
+ * 🔴 为什么不能只按 `updatedAt` 排序：导入/批量迁移后多章时间戳完全相同时，
+ *    `Array.sort` 不稳定，可能选中第 1 章 —— 提醒与上下文都会指错位置。
+ */
+export function pickWorkspaceFocusChapter(vols: readonly Volume[], chs: readonly Chapter[]): Chapter | undefined {
+  const ordered = flattenAll(vols, chs)
+  let best: Chapter | undefined
+  let bestTime = -1
+  let bestIdx = -1
+  ordered.forEach((c, idx) => {
+    const t = c.updatedAt ?? 0
+    if (!best || t > bestTime || (t === bestTime && idx >= bestIdx)) {
+      best = c
+      bestTime = t
+      bestIdx = idx
+    }
+  })
+  return best
+}
+
+/**
+ * 为工作区取好资料段（复用 `collectWcpPack` 的完整包口径）与可选历史章节。
+ *
+ * 🔴 只读：不修改任何项目数据；任一环节失败只记 `notes`，不中断整次同步。
+ * 🔴 「当前章」口径：页面显式传入优先；否则取**最近编辑**的一章（规划 §2.3）。
+ */
+export async function collectWcpWorkspaceData(input: WcpWorkspaceCollectInput): Promise<WcpWorkspaceCollectedData> {
+  const pid = db.getCurrentProjectId()
+  const notes: string[] = []
+  let projectName = '未命名作品'
+  if (pid) {
+    try {
+      projectName = (await db.getProject(pid))?.name?.trim() || '未命名作品'
+    } catch { /* 书名读不到不影响取材 */ }
+  }
+
+  let vols: Awaited<ReturnType<typeof db.getAllVolumes>> = []
+  let chs: Awaited<ReturnType<typeof db.getAllChapters>> = []
+  try {
+    ;[vols, chs] = await Promise.all([db.getAllVolumes(), db.getAllChapters()])
+  } catch {
+    notes.push('卷章读取失败：本次不生成 04-chapters/，当前章坐标按传入值处理。')
+  }
+
+  const seq = chapterSeqMap(vols, chs)
+  let focus = input.chapterId ? chs.find(c => c.id === input.chapterId) : undefined
+  if (!focus && !input.chapterId && chs.length) focus = pickWorkspaceFocusChapter(vols, chs)
+
+  const chapterId = input.chapterId ?? focus?.id
+  const chapterNo = chapterId
+    ? (seq.get(chapterId) ?? 0)
+    : (input.chapterNo && input.chapterNo > 0 ? input.chapterNo : 0)
+  const chapterTitle = input.chapterTitle ?? focus?.title ?? ''
+  const focusVolume = focus ? vols.find(v => v.id === focus!.volumeId) : undefined
+
+  const collected = await collectWcpPack({
+    kind: 'full',
+    scene: input.scene,
+    summaryFormat: input.summaryFormat ?? 'json',
+    ...(chapterId ? { chapterId } : {}),
+    ...(chapterNo > 0 ? { chapterNo } : {}),
+    ...(chapterTitle ? { chapterTitle } : {}),
+    draft: input.draft,
+    selectedText: input.selectedText,
+    ...(input.focusCharacterId ? { focusCharacterId: input.focusCharacterId } : {}),
+    ...(input.focusCharacterName ? { focusCharacterName: input.focusCharacterName } : {}),
+    ...(input.baseModules ? { baseModules: input.baseModules } : {}),
+    ...(input.extraInstruction ? { extraInstruction: input.extraInstruction } : {}),
+    ...(input.budgetChars ? { budgetChars: input.budgetChars } : {}),
+    includeWriterNotes: !!input.extraInstruction?.trim(),
+  })
+  notes.push(...collected.notes)
+
+  const chapters: WcpWorkspaceChapterSource[] = []
+  if (input.includeFullChapters) {
+    const volIndex = new Map<string, number>()
+    ;[...vols].sort((a, b) => a.order - b.order).forEach((v, i) => volIndex.set(v.id, i + 1))
+    const ordered = flattenAll(vols, chs)
+    ordered.forEach((ch, i) => {
+      const content = (ch.content ?? '').trim()
+      if (!content) return
+      const volume = vols.find(v => v.id === ch.volumeId)
+      chapters.push({
+        no: seq.get(ch.id) ?? 0,
+        sequence: i + 1,
+        title: ch.title || '',
+        volumeIndex: volIndex.get(ch.volumeId) ?? 0,
+        volumeTitle: volume?.title ?? '',
+        status: String(ch.status ?? ''),
+        wordCount: ch.wordCount ?? content.length,
+        summary: ch.summary ?? '',
+        content,
+      })
+    })
+    if (!chapters.length) notes.push('开启「同步全书历史章节」但全书还没有正文，04-chapters/ 为空。')
+  }
+
+  return {
+    projectId: pid,
+    projectName,
+    baseFingerprint: collected.baseFingerprint,
+    notes,
+    sections: [...collected.pack.sections],
+    ...(chapterId ? { activeChapterId: chapterId } : {}),
+    ...(chapterNo > 0 ? { activeChapterNo: chapterNo } : {}),
+    ...(chapterTitle ? { activeChapterTitle: chapterTitle } : {}),
+    ...(focusVolume?.title ? { volumeTitle: focusVolume.title } : {}),
+    chapters,
+  }
 }
