@@ -82,8 +82,8 @@ async function doCreateDemoProject(): Promise<string> {
   const p = await db.createProject('吞天神脉（示范）', '东方修真', '废脉？我吞的就是天！', '', 'full')
   db.setCurrentProject(p.id)
 
-  // 1) 表单型页签：全部填入 Excel 示例行内容
-  await db.saveFormData('positioning', formByExamples('positioning'))
+  // 1) 表单型页签：全部填入 Excel 示例行内容（3.7.5：正式简介留空，首页简介才显示招牌句）
+  await db.saveFormData('positioning', formByExamples('positioning', { 正式简介: '' }))
   await db.saveFormData('worldbase', formByExamples('worldbase'))
   await db.saveFormData('power', formByExamples('power'))
   await db.saveFormData('master', formByExamples('master'))
