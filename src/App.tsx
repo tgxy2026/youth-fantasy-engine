@@ -1,4 +1,3 @@
-import FailureNotice from '@/components/common/FailureNotice'
 import { createStorageFailureNotice } from '@/lib/app/storageFailureNotice'
 import { storageWriteContext } from '@/lib/storage/writeOwner'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
@@ -52,6 +51,8 @@ import { runBossSaveBarrier } from '@/lib/app/bossSave'
 import { bootSync } from '@/lib/app/syncBoot'
 import { installPortableVecKb } from '@/lib/storage/portableVecKb'
 import { DesktopWriteLockBanner } from '@/components/app/DesktopWriteLockBanner'
+import { AppBootFailure, AppBootLoading } from '@/components/app/AppBootScreens'
+import TaskNoticeBridge from '@/components/common/TaskNoticeBridge'
 import { PortableWriteLockBanner } from '@/components/app/PortableWriteLockBanner'
 import { MigrationLockBanner } from '@/components/templates/MigrationLockBanner'
 import DataDock from '@/components/app/DataDock'
@@ -69,7 +70,6 @@ import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { acpGateMessage, acpGatedText } from '@/lib/agentHost/acpGate'
 import { setAcpTextFactory } from '@/lib/agentHost/acpRegistry'
 import { useWcpWorkspaceSync } from '@/components/wcp/useWcpWorkspaceSync'
-import { Button } from '@/components/common/Button'
 import { abortAllTasks, resetTaskCenter, takeUnnotifiedRunning } from '@/lib/ai/aiTaskCenter'
 import { applyZoom, currentUiZoom, foldVh, getStoredZoom, isZoomAuto } from '@/lib/settings/theme'
 import { saveFailureMessage } from '@/lib/app/saveFailureHint'
@@ -83,7 +83,6 @@ import { usePersistedBool, readBoolPref, readStringPref } from '@/lib/settings/u
 // 3.5.0 · 投稿广场入口事件（项目中心按钮派发，App 只监听一处）
 import { OPEN_COMMUNITY_EVENT } from '@/lib/community/entry'
 // 3.5.6：任务完成提示的全站出口（后台任务拆成页签后，页签没开也要能弹 toast）
-import TaskNoticeBridge from '@/components/common/TaskNoticeBridge'
 
 // 工作台页面在打开时加载，项目中心与导航外壳可以先呈现。
 // 🔴 一律走 `lazyPage`（UX13）：裸 `lazy()` 会把加载失败永久缓存住，「重试」只能整页刷新；
@@ -924,34 +923,13 @@ export default function App() {
   // 启动失败：给一页能读懂的错误 + 一个重试入口，而不是永远停在黑屏上
   if (bootError) {
     return (
-      <>
-        {/* 3.5.6：任务完成提示的全站出口（任务页签没打开时也要能收到 toast） */}
-      <TaskNoticeBridge />
-      <DesktopWriteLockBanner />
-        <PortableWriteLockBanner />
-        <FailureNotice title="启动失败" error={bootError.cause}
-          description="工作台尚未完成初始化。请保留技术摘要，再尝试重新加载。"
-          actions={<Button variant="primary" size="md" onClick={() => location.reload()}>重新加载工作台</Button>}>
-          {DESKTOP || PORTABLE
-            ? '当前页面尚未载入数据管理工具。需要排障时，请先通过系统文件管理器复制已有数据文件和备份，避免覆盖原文件。'
-            : '请保留当前站点数据，避免直接清理浏览器存储。此时数据管理工具尚未载入，请勿依赖库内导出入口。'}
-        </FailureNotice>
-      </>
+      <AppBootFailure cause={bootError.cause} desktopOrPortable={DESKTOP || PORTABLE}
+        onReload={() => location.reload()} />
     )
   }
 
   if (!booted) {
-    return (
-      <>
-        <DesktopWriteLockBanner />
-        <PortableWriteLockBanner />
-        <main role="status" aria-label="正在打开创作工作台" className="flex flex-col items-center justify-center gap-2 bg-surface-app p-6 text-center" style={{ minHeight: foldVh('100vh') }}>
-          <p className="text-14 font-semibold text-content-primary">正在打开创作工作台…</p>
-          <p className="text-12 text-content-muted">正在读取工作台数据与设置，请稍候。</p>
-        </main>
-        {bossOverlay}
-      </>
-    )
+    return <AppBootLoading overlay={bossOverlay} />
   }
 
   // 项目未打开：首次使用先走首启向导（2.4.0 · A1），其余情况进项目管理页
@@ -1094,6 +1072,8 @@ export default function App() {
     <div key={`proj-${projectId}`} className="relative flex h-screen overflow-hidden bg-transparent">
       <DesktopWriteLockBanner />
       <PortableWriteLockBanner />
+      {/* 3.5.6：任务完成提示的全站出口（任务页签没打开时也要能收到 toast） */}
+      <TaskNoticeBridge />
       {/* 3.2.1：某页签正在换模板时点名告知（写入拦截早就在 planTabWrite 层，这里补可见性） */}
       <MigrationLockBanner projectId={projectId} />
       {/* v1.3 幻想工作台背景：纯线条浅金线稿，透明底、若隐若现。

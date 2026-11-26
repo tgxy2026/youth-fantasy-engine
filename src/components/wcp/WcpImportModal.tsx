@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, Archive, CheckCircle2, Copy, FileText, Inbox, ListChecks, Loader2, RefreshCw, Replace, Save, Upload,
+  AlertTriangle, Copy, FileText, Replace, Save, Upload,
 } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -20,7 +20,9 @@ import AutoTextarea from '@/components/common/AutoTextarea'
 import { LoadingState } from '@/components/common/LoadingState'
 import { confirmDialog, copyText, showToast } from '@/components/dialogs/dialogs'
 import * as db from '@/lib/db'
-import type { PostProcessItem, PostProcessStatus } from '@/lib/outline/chapterPostProcess'
+import type { PostProcessItem } from '@/lib/outline/chapterPostProcess'
+import WcpOutboxCard from '@/components/wcp/WcpOutboxCard'
+import WcpChangesPanel from '@/components/wcp/WcpChangesPanel'
 import {
   applyWcpCandidates,
   buildWcpCandidates,
@@ -62,14 +64,6 @@ export interface WcpImportModalProps {
   onUseBody?: (text: string) => void
   useBodyLabel?: string
   onApplied?: (created: number) => void
-}
-
-const STATUS_META: Record<PostProcessStatus, { label: string; cls: string }> = {
-  new: { label: '新增', cls: 'border-amber/30 bg-amber/10 text-amber' },
-  changed: { label: '可写入', cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' },
-  registered: { label: '已存在', cls: 'border-ink-700 bg-ink-800/60 text-ink-400' },
-  duplicate: { label: '重复', cls: 'border-ink-700 bg-ink-800/60 text-ink-400' },
-  unregistered: { label: '需先登记', cls: 'border-danger/30 bg-danger/10 text-danger' },
 }
 
 const BODY_LABEL: Record<WcpSceneId, string> = {
@@ -449,93 +443,21 @@ export default function WcpImportModal({
       {!cfg ? <LoadingState text="正在读取 WCP 偏好…" /> : (
         <div className="space-y-4">
           {hasOutbox && (
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Inbox size={13} className="shrink-0 text-amber" />
-                <p className="text-12 font-medium text-ink-200">本地 Agent 收件箱（outbox/）</p>
-                <span className="text-11 text-ink-500">
-                  {outboxBusy ? '正在扫描…' : outbox.length ? `${outbox.length} 组待处理产物` : '暂无产物'}
-                </span>
-                <Button variant="secondary" size="xs" className="ml-auto" onClick={() => void scanOutbox()} disabled={outboxBusy}>
-                  <RefreshCw size={12} className={outboxBusy ? 'animate-spin' : ''} /> 重新扫描
-                </Button>
-              </div>
-              <p className="mt-1 text-11 text-ink-500 leading-relaxed">
-                本地 Agent 写入 outbox/ 的成果会列在这里。载入 `.wcp.json` 会先校验契约与 projectId，再直接比对候选；同名 `.md` 可预览或载入。
-              </p>
-
-              {outboxError && (
-                <p className="mt-2 flex items-start gap-1.5 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-11 text-danger">
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {outboxError}
-                </p>
-              )}
-
-              {!outboxBusy && outbox.length === 0 && !outboxError && (
-                <p className="mt-2 rounded-md border border-ink-700 bg-ink-900/60 px-2.5 py-2 text-11 text-ink-500">
-                  收件箱还是空的。把上面复制的 Agent 提示词交给本地 Agent，让它把产物写到 outbox/ 即可。
-                </p>
-              )}
-
-              {outbox.length > 0 && (
-                <div className="mt-2 max-h-52 overflow-auto space-y-1.5">
-                  {outbox.map(entry => (
-                    <div key={entry.base} className="rounded-md border border-ink-700 bg-ink-900/50 px-2.5 py-1.5">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="min-w-0 flex-1 truncate text-12 text-ink-200">{entry.base}</span>
-                        <span className="text-10 text-ink-500">{new Date(entry.mtimeMs).toLocaleString()}</span>
-                        {entry.jsonName && <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-10 text-emerald-300">JSON</span>}
-                        {entry.mdName && <span className="rounded border border-ink-700 bg-ink-800/60 px-1 py-0.5 text-10 text-ink-400">MD</span>}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {entry.jsonName && (
-                          <Button variant="primary" size="xs" onClick={() => void loadOutboxJson(entry)}>
-                            <ListChecks size={12} /> 载入 JSON
-                          </Button>
-                        )}
-                        {entry.mdName && (
-                          <>
-                            <Button variant="secondary" size="xs" onClick={() => void previewOutboxMarkdown(entry)}>
-                              预览 MD
-                            </Button>
-                            <Button variant="secondary" size="xs" onClick={() => void copyOutboxMarkdown(entry)}>
-                              <Copy size={12} /> 复制 MD
-                            </Button>
-                            <Button variant="secondary" size="xs" onClick={() => void loadOutboxMarkdown(entry)}>
-                              载入 MD
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {outboxLoaded && (
-                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5">
-                  <span className="text-11 text-emerald-300">已载入：{outboxLoaded.base}（{outboxLoaded.projectName}）</span>
-                  <span className="text-11 text-ink-500">导入成功后会成对归档到 outbox/imported/。</span>
-                  <Button variant="secondary" size="xs" className="ml-auto" onClick={() => void archiveLoadedOutbox(false)}>
-                    <Archive size={12} /> 立即归档
-                  </Button>
-                </div>
-              )}
-
-              {outboxPreview && (
-                <div className="mt-2 rounded-md border border-ink-700 bg-ink-950/60 p-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-11 text-ink-300">{outboxPreview.name}</span>
-                    <Button variant="secondary" size="xs" onClick={() => void copyText(outboxPreview.text, 'Markdown 产物已复制')}>
-                      <Copy size={12} /> 复制
-                    </Button>
-                    <Button variant="secondary" size="xs" onClick={() => setOutboxPreview(null)}>收起</Button>
-                  </div>
-                  <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words text-11 text-ink-400">
-                    {outboxPreview.text}
-                  </pre>
-                </div>
-              )}
-            </div>
+            <WcpOutboxCard
+              entries={outbox}
+              busy={outboxBusy}
+              error={outboxError}
+              loaded={outboxLoaded}
+              preview={outboxPreview}
+              onScan={() => void scanOutbox()}
+              onLoadJson={entry => void loadOutboxJson(entry)}
+              onPreviewMd={entry => void previewOutboxMarkdown(entry)}
+              onCopyMd={entry => void copyOutboxMarkdown(entry)}
+              onLoadMd={entry => void loadOutboxMarkdown(entry)}
+              onArchive={() => void archiveLoadedOutbox(false)}
+              onCopyPreview={() => { if (outboxPreview) void copyText(outboxPreview.text, 'Markdown 产物已复制') }}
+              onClosePreview={() => setOutboxPreview(null)}
+            />
           )}
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
             <span className="text-11 text-ink-500">摘要格式</span>
@@ -624,96 +546,20 @@ export default function WcpImportModal({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
-                <p className="flex flex-wrap items-center gap-2 text-11 text-ink-300">
-                  <ListChecks size={12} className="text-amber" />
-                  第二部分 · 变动摘要
-                  {parsed.format === 'json' && parsed.jsonFailed && <span className="text-amber">（解析失败，仅保留原文）</span>}
-                </p>
-
-                {parsed.format === 'markdown' && parsed.markdownCards.length > 0 && (
-                  <div className="mt-1.5 space-y-2">
-                    {parsed.markdownCards.map((c, i) => (
-                      <div key={i}>
-                        <p className="text-11 font-medium text-ink-300">{c.section}</p>
-                        <ul className="mt-0.5 space-y-0.5 text-11 text-ink-400">
-                          {c.items.map((it, j) => <li key={j}>· {it}</li>)}
-                        </ul>
-                      </div>
-                    ))}
-                    <p className="text-11 text-ink-500">Markdown 清单不含可直接入库的候选；请按上面的卡片人工核对。</p>
-                  </div>
-                )}
-
-                {parsed.format === 'json' && !parsed.jsonFailed && (
-                  <>
-                    <p className="mt-1 text-11 text-ink-500">
-                      候选必须与库内登记现状比对后才能勾选；未登记的伏笔 / 关系 / 物品 / 小传只提示，不会凭空建。
-                    </p>
-                    {!chapterId && <p className="mt-1 text-11 text-amber">当前上下文没有章节 id，候选写入不可用。</p>}
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => void buildCandidates()}
-                        disabled={building || !chapterId || !hasWcpCandidates(parsed.changes)}>
-                        {building ? <Loader2 size={12} className="animate-spin" /> : <ListChecks size={12} />}
-                        {items ? '重新比对' : '比对成候选'}
-                      </Button>
-                      {items && stats && (
-                        <span className="text-11 text-ink-500">
-                          可勾选 {stats.selectable} · 仅提示 {stats.hintOnly} · 已存在 {stats.registered}
-                        </span>
-                      )}
-                    </div>
-
-                    {items && (
-                      <div className="mt-2 max-h-64 overflow-auto space-y-1.5">
-                        {items.map((item, idx) => {
-                          const selectable = isWcpItemSelectable(item)
-                          const st = STATUS_META[item.status]
-                          return (
-                            <label key={`${item.key}::${idx}`} className="flex items-start gap-2 rounded-md border border-ink-700 bg-ink-900/50 px-2.5 py-1.5">
-                              <input type="checkbox" className="mt-0.5 shrink-0 accent-amber" disabled={!selectable}
-                                checked={selectable && picked.has(item.key)} onChange={() => togglePicked(item.key)} />
-                              <span className="min-w-0 flex-1">
-                                <span className="flex flex-wrap items-center gap-1.5">
-                                  <span className="text-12 text-ink-200">{item.label}</span>
-                                  <span className={`rounded border px-1 py-0.5 text-10 ${st.cls}`}>{st.label}</span>
-                                </span>
-                                <span className="block text-11 text-ink-500 leading-relaxed">{item.detail}</span>
-                                {item.evidence && <span className="block text-11 text-ink-600">依据：「{item.evidence}」</span>}
-                              </span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {items && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Button variant="primary" size="sm" onClick={() => void applySelected()}
-                          disabled={applying || !chapterId || picked.size === 0}>
-                          {applying ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                          写入勾选条目
-                        </Button>
-                        <span className="text-11 text-ink-500">只追加不覆盖；写入后可在对应页签继续修改。</span>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {showRawChanges && (
-                  <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-11 text-ink-300">
-                    {parsed.rawChanges || '（没有识别到第二部分）'}
-                  </pre>
-                )}
-
-                {result && (
-                  <div className="mt-2 rounded-md border border-ink-700 bg-ink-900/60 px-2.5 py-2 text-11">
-                    <p className="flex items-center gap-1.5 text-emerald-300"><CheckCircle2 size={12} /> 已写入 {result.created} 条</p>
-                    {result.failed.length > 0 && <p className="mt-1 text-danger">失败 {result.failed.length} 条：{result.failed.slice(0, 3).join('、')}{result.failed.length > 3 ? ' 等' : ''}</p>}
-                    {(result.warnings ?? []).map((w, i) => <p key={i} className="mt-1 text-amber">{w}</p>)}
-                  </div>
-                )}
-              </div>
+              <WcpChangesPanel
+                parsed={parsed}
+                items={items}
+                picked={picked}
+                building={building}
+                applying={applying}
+                stats={stats}
+                {...(chapterId ? { chapterId } : {})}
+                showRawChanges={showRawChanges}
+                result={result}
+                onBuild={() => void buildCandidates()}
+                onApply={() => void applySelected()}
+                onToggle={togglePicked}
+              />
             </>
           )}
         </div>

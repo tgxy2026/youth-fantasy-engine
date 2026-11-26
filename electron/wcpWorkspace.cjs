@@ -75,11 +75,29 @@ async function atomicWrite(abs, text) {
     await handle.sync()
     await handle.close()
     handle = null
-    await fsp.rename(tmp, abs)
+    await renameWithRetry(tmp, abs)
   } catch (err) {
     try { if (handle) await handle.close() } catch { /* 已关闭 */ }
     try { await fsp.unlink(tmp) } catch { /* 名字唯一，残留不影响后续写 */ }
     throw err
+  }
+}
+
+/**
+ * Windows 瞬时占用（杀软 / 索引 / 文件监视）会让 rename 报 EPERM/EACCES/EBUSY。
+ * 工作区是「Agent 可能正在读」的目录，更不能因为一次瞬时占用把整次同步判失败。
+ */
+async function renameWithRetry(from, to) {
+  const delays = [10, 20, 50, 100, 200, 300]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fsp.rename(from, to)
+      return
+    } catch (err) {
+      const code = err && err.code
+      if ((code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') || attempt >= delays.length) throw err
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+    }
   }
 }
 

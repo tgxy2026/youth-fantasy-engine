@@ -65,9 +65,28 @@ function writeAtomicSync(file, text) {
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(tmp, text, 'utf8')
-  try { fs.renameSync(tmp, file) } catch (error) {
+  try { renameWithRetrySync(tmp, file) } catch (error) {
     try { fs.unlinkSync(tmp) } catch { /* 清理失败不影响主流程 */ }
     throw error
+  }
+}
+
+/**
+ * Windows 上 rename 可能被杀软 / 文件监视**瞬时占用**而报 EPERM / EACCES / EBUSY
+ * （2026-11-26 全量审计：agent.host 证据生产者 15 个用例因此连带失败，单独复跑全绿）。
+ * 账本写是同步路径，用 Atomics.wait 做很短的阻塞退避；非占用类错误立即抛出。
+ */
+function renameWithRetrySync(from, to) {
+  const delays = [10, 20, 50, 100, 200]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(from, to)
+      return
+    } catch (error) {
+      const code = error && error.code
+      if ((code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') || attempt >= delays.length) throw error
+      try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delays[attempt]) } catch { /* 环境不支持就立即重试 */ }
+    }
   }
 }
 
