@@ -280,9 +280,17 @@ export interface AgentProjectSummary {
   updatedAt: number
 }
 
-export function projectSummary(p: Project): AgentProjectSummary {
+/**
+ * 作品摘要（给外部 Agent 看的「这本是什么书」）。
+ *
+ * 🔴 3.7.5：`intro` 由调用方传入**已解析的简介**（《作品信息》正式简介 → 一句话简介 →
+ *    项目记录旧 `intro`，判据在 `lib/app/projectIntro`）。
+ *    执行器有这个能力（它能读 formData），但契约本身**不引 db** ——
+ *    拿不到解析值时退化成 `p.intro`，老行为不变。
+ */
+export function projectSummary(p: Project, resolvedIntro?: string): AgentProjectSummary {
   return {
-    id: p.id, name: p.name, genre: p.genre, intro: p.intro,
+    id: p.id, name: p.name, genre: p.genre, intro: (resolvedIntro ?? p.intro) ?? '',
     projectType: p.projectType ?? 'full', updatedAt: p.updatedAt,
   }
 }

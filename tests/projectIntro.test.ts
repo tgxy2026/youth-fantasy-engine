@@ -9,6 +9,7 @@ import {
   INTRO_FIELD_FORMAL, INTRO_FIELD_ONE_LINE, ONE_LINE_INTRO_MAX, INTRO_TAB_ID,
   pickIntroFromForm, resolveProjectIntro,
 } from '../src/lib/app/projectIntro'
+import { projectSummary } from '../src/lib/agentHost/contract'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -57,6 +58,16 @@ ok('表单有值 ⇒ 旧 intro 不覆盖它', resolveProjectIntro({ [INTRO_FIELD
   // 「含简介就算」，这里就会串。这条守住"只认这两个字段"。
   const form = { '作品简介': '第三个别名字段', [INTRO_FIELD_ONE_LINE]: '一句话' }
   ok('其它含「简介」的字段不抢位', pickIntroFromForm(form) === '一句话')
+}
+
+// ---------- ⑤ Agent 契约：解析后的简介要能覆盖旧字段 ----------
+{
+  const base = { id: 'p1', name: '书', genre: '东方修真', intro: '旧的一条', createdAt: 1, updatedAt: 2 } as never
+  ok('projectSummary 传入解析值 → 用解析值', projectSummary(base, '《作品信息》里的一句').intro === '《作品信息》里的一句')
+  ok('projectSummary 不传解析值 → 退回 p.intro（老行为不变）', projectSummary(base).intro === '旧的一条')
+  ok('projectSummary 解析值为空串 → 就空着（不偷偷回退旧值）', projectSummary(base, '').intro === '')
+  const noIntro = { id: 'p2', name: '书2', genre: '', intro: undefined, createdAt: 1, updatedAt: 2 } as never
+  ok('projectSummary 两处都空 → 空串而不是 undefined', projectSummary(noIntro).intro === '')
 }
 
 console.log(`\nprojectIntro: ${pass} passed, ${fail} failed`)

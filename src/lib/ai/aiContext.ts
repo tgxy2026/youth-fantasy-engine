@@ -38,6 +38,7 @@ import { createContextAssembler } from '@/lib/ai/contextAssembler'
 import { manifestFromAssembled, type MaterialManifest } from '@/lib/ai/requestBudget'
 import { loadAtlasFieldsForAI } from '@/lib/ai/atlasContext'
 import { loadFieldGating } from '@/lib/templates/labels'
+import { loadProjectIntroTexts } from '@/lib/app/projectIntroForm'
 import type { Chapter, TabDef, Volume } from '@/lib/types'
 import type { AiContextSnapshot } from '@/lib/ai/aiRunTypes'
 
@@ -906,6 +907,9 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
     const proj = await db.getProject(pid)
     if (proj) {
       const st = await db.getProjectStats(pid).catch(() => ({ chapters: 0, words: 0, volumes: 0 }))
+      // 🔴 3.7.5：简介与首页卡片同源 —— 《作品信息》正式简介 → 一句话简介 → 旧 `intro`。
+      //    作者填在《作品信息》里的简介，AI 也该看得到（此前只有示范项目那条有值）。
+      const introText = (await loadProjectIntroTexts([{ id: pid, intro: proj.intro }]))[pid] ?? ''
       const head = [
         `书名：${proj.name}`,
         // 类型＝题材包（2.7.1）：值就是四字包名 ⇒ 直接可读，无需额外映射。
@@ -918,7 +922,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
         //    「编辑项目」里打开它，或填《作品信息》页的「类型赛道」字段（那一路照旧发出）。
         //    见 `lib/ai/aiGenreHint.ts`。
         await genreLineForAI(proj.genre),
-        proj.intro ? `简介：${clip(proj.intro, 200)}` : '',
+        introText ? `简介：${clip(introText, 200)}` : '',
         // 🔴 3.3.5：体量与写作节奏都是**每次保存都会变**的统计值。
         //    续写要冻结预览快照并在发送前逐字比对（见 `creative/continuationPlan.ts`），
         //    这类统计一抖就会让「资料或模型已变化」误报 —— 而这些数字对续写正文没有参考价值。
@@ -935,7 +939,7 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
       //      实现见 lib/ai/projectLevelHint.ts（含这次实测教训的完整说明）。
       projectLevelQuery = [
         proj.name,
-        proj.intro ? clip(proj.intro, 200) : '',
+        introText ? clip(introText, 200) : '',
       ]
         .filter(Boolean)
         .join('\n')

@@ -8,11 +8,11 @@ import type { HelpArticle } from '@/lib/help/types'
 export const PLAN_ARTICLES: HelpArticle[] = [
   {
     id: 'positioning-guide',
-    revision: 1,
+    revision: 2,
     title: '作品信息：动笔前先把商业定位想清楚',
     summary: '赛道、平台、读者、卖点 —— 五组字段，决定后面每一页怎么填。',
     aliases: ['作品定位', '定位', '赛道', '卖点'],
-    keywords: ['作品信息', '定位', '赛道', '平台', '读者', '卖点', '简介', '题材'],
+    keywords: ['作品信息', '定位', '赛道', '平台', '读者', '卖点', '简介', '题材', '首页简介'],
     group: '开书定位与大纲',
     tabIds: ['positioning'],
     availability: 'all',
@@ -27,6 +27,14 @@ export const PLAN_ARTICLES: HelpArticle[] = [
           '三、卖点与差异化：核心卖点、差异化亮点、开篇钩子。',
           '四、简介与物料：一句话简介、正式简介、书封创意。',
           '五、风险预案：切书线、备选方向。',
+        ],
+      },
+      {
+        id: 'home-intro',
+        heading: '这两个简介会出现在哪',
+        body: [
+          '项目管理首页卡片上那句简介，读的就是这一页的「一句话简介」和「正式简介」：两个都填时显示正式简介，只填一个就显示那一个。',
+          '两处都没填时，卡片显示「暂无简介」的提示 —— 想补就直接回到这一页填。',
         ],
       },
       {

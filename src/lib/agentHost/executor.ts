@@ -50,6 +50,7 @@ import { AGENT_MUTABLE_TABLES, updateTableRow } from '@/lib/agentHost/updateTabl
 import { validateTableFields } from '@/lib/agentHost/validateTableFields'
 import { updateSettingCard } from '@/lib/agentHost/updateSettingCard'
 import { setWorldSetActive } from '@/lib/agentHost/setWorldSetActive'
+import { loadProjectIntroTexts } from '@/lib/app/projectIntroForm'
 import type { OwnedOperation } from '@/lib/storage/ownedOperation'
 import type { CardRecord, Chapter, FormData, Project, TabDef, TableRow, Volume } from '@/lib/types'
 import type { TavernReport } from '@/lib/tavern/types'
@@ -86,6 +87,7 @@ export interface AgentExecutorDeps {
   countWords(text: string): number
   getTab(tabId: string): TabDef | undefined
   cardFieldsOf(tab: TabDef): { name: string; path: string; desc: string }[]
+  resolveProjectIntroTexts?(projects: Project[]): Promise<Record<string, string>> // 3.7.5 · 缺省退回 p.intro
 }
 
 export interface AgentExecutor {
@@ -125,6 +127,7 @@ export function defaultExecutorDeps(): AgentExecutorDeps {
     countWords: text => countWords(text),
     getTab: id => getTab(id),
     cardFieldsOf: tab => cardFieldsOf(tab),
+    resolveProjectIntroTexts: projects => loadProjectIntroTexts(projects),
   }
 }
 
@@ -264,10 +267,11 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
   async function listProjects(scope: AgentScope): Promise<AgentToolResult> {
     const projects = await deps.getProjects()
     const current = deps.currentProjectId()
+    const intros: Record<string, string> = deps.resolveProjectIntroTexts ? await deps.resolveProjectIntroTexts(projects).catch(() => ({})) : {}
     return {
       ok: true,
       value: projects.map(p => ({
-        ...projectSummary(p),
+        ...projectSummary(p, intros[p.id]),
         open: p.id === current,
         grantedActions: scope.projects.find(g => g.projectId === p.id)?.actions ?? [],
       })),
@@ -658,10 +662,11 @@ export function createAgentExecutor(deps: AgentExecutorDeps): AgentExecutor {
     const projectChapters = chapters.filter(c => c.projectId === projectId)
     const grantedActions = scope.projects.find(g => g.projectId === projectId)?.actions ?? []
     const writable = agentActionAllowed(scope, projectId, 'setting:create')
+    const intros: Record<string, string> = deps.resolveProjectIntroTexts ? await deps.resolveProjectIntroTexts([project]).catch(() => ({})) : {}
     return {
       ok: true,
       value: {
-        ...projectSummary(project),
+        ...projectSummary(project, intros[projectId]),
         open: true,
         grantedActions,
         volumes: projectVolumes

@@ -34,7 +34,8 @@ import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 // 35（2026-11-26 · 3.7.4）：新增「本地 Agent 工作区（WCP-Local）」使用篇。
 // 36（2026-11-26 · 3.7.4 发布）：新增 whats-new-374，并把版本变化篇统一从
 //   version-index.ts 出口 —— 手册与关于页共用一份聚合，避免两处各拼一遍时漏篇。
-export const CONTENT_VERSION = 36
+// 37（2026-11-26 · 3.7.5）：首页简介改读《作品信息》，作品信息篇补一段「这两个简介会出现在哪」。
+export const CONTENT_VERSION = 37
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.7.5'
