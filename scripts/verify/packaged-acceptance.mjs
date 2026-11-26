@@ -304,10 +304,23 @@ async function main() {
     // ---------- ④ 核心功能入口（必检） ----------
     // 进项目 / 重载 之后引导遮罩会再出现一次，点入口前先清掉（否则全是"找不到"的假红）
     await clearOverlays(page)
+    /**
+     * 🔴 3.7.2 起导航改成「左侧图标轨 + 按分组展开的目录」：默认只渲染当前分组
+     *    （工作面板），其它分组的页签根本不在 DOM 里 —— 直接按文字找会把
+     *    一键拆书 / 创意写作 / 世界设定 / 检查工具 全部误判成"打包产物里找不到该入口"
+     *    （2026-11-26 3.7.4 验收实测 4 假红）。所以先点「全部目录」把 58 个入口铺开。
+     *    ⚠️ 只点一次：它是开合按钮，连点会又收回去。
+     */
+    const allDirBtn = page.getByRole('button', { name: /全部目录/ }).first()
+    if (await allDirBtn.isVisible().catch(() => false)) {
+      await allDirBtn.click().catch(() => {})
+      await sleep(1500)
+      await clearOverlays(page)
+    }
     const coreEntries = ['一键拆书', '创意写作', '设定检索', '世界设定', '检查工具']
     for (const label of coreEntries) {
       const found = await page.evaluate(l => {
-        const nodes = [...document.querySelectorAll('nav button, nav a, button')].filter(b => b.offsetParent)
+        const nodes = [...document.querySelectorAll('nav button, nav a, button, [role="button"]')].filter(b => b.offsetParent)
         return nodes.some(b => (b.textContent || '').trim() === l)
       }, label)
       check('entry.' + label, found, found ? '' : '打包产物里找不到该入口')
