@@ -11,7 +11,7 @@ import HelpPopover from '@/components/common/HelpPopover'
 import { Modal } from '@/components/dialogs/Modal'
 import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS } from '@/components/common/PageHeader'
 import UpdateDialog from '@/components/app/UpdateDialog'
-import { VERSION_ARTICLES } from '@/lib/help/articles/version'
+import { ALL_VERSION_NOTES } from '@/lib/help/articles/version-index'
 import { QUARK_URL, QUARK_CODE, QUARK_TOKEN, GITEE_RELEASES_URL, WEB_APP_URL } from '@/lib/app/downloadLinks'
 import { checkUpdate, isAutoCheckOn, setAutoCheck, type LatestRelease } from '@/lib/app/versionCheck'
 import { PORTABLE } from '@/lib/storage/fileBackend'
@@ -121,7 +121,7 @@ export default function AboutPage() {
       <UpdateDialog open={dialogOpen} latest={result?.latest ?? null} onClose={() => setDialogOpen(false)} />
       <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="近期版本更新说明" width="lg">
         <div className="space-y-4">
-          {[...VERSION_ARTICLES].reverse().map(art => (
+          {[...ALL_VERSION_NOTES].reverse().map(art => (
             <section key={art.id} className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-4 space-y-2.5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-13 font-semibold text-ink-100">{art.title}</h3>

@@ -100,7 +100,8 @@ const stages = [
       ['3.6.3', '思考型模型不再被采样参数卡死（Kimi / o1 / gpt-5 / r1）'],
       ['3.7.0', '大纲级联记得住 + 物品与状态按章回溯 + 节奏曲线与投稿体检 + 语音灵感'],
       ['3.7.1', '角色小传：上层写传 + 下层节点轴，从状态演变一键提拔'],
-      ['3.7.2', '工坊风全站界面统一 + 全站文案与 AI 提示词优化 + 内置更新说明补全 ◀ 当前', 'now'],
+      ['3.7.2', '工坊风全站界面统一 + 全站文案与 AI 提示词优化 + 内置更新说明补全'],
+      ['3.7.4', '不配 API 也能让 AI 读到设定：WCP 资料包 + 本地 Agent 工作区 ◀ 当前', 'now'],
     ],
   },
 ]
@@ -127,12 +128,12 @@ li.now .dot{background:#ffd166;box-shadow:0 0 0 3px rgba(244,185,66,.22);transfo
 li.now .v,li.now .t{color:#ffd166;font-weight:700}
 .foot{margin-top:22px;padding-top:15px;border-top:1px solid #33363c;color:#7b828c;font-size:11.5px;line-height:1.7}
 </style></head><body>
-<h1>版本演进 · 1.0.0 → 3.7.2</h1>
+<h1>版本演进 · 1.0.0 → 3.7.4</h1>
 ${stages.map(s => `<div class="stage">
 <div class="stage-head"><div class="stage-line"><span class="tag">${s.tag}</span><span class="stage-title">${s.title}</span></div><span class="stage-note">${s.note}</span></div>
 <ul class="track">${s.rows.map(([v, t, cls]) => `<li class="${cls || ''}"><span class="dot"></span><span class="v">${v}</span><span class="t">${t}</span></li>`).join('')}</ul>
 </div>`).join('\n')}
-<div class="foot">从 29 个页签起步，到 10 大板块 57 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.7.2：工坊风全站界面统一，文案与 AI 提示词全面精修。</div>
+<div class="foot">从 29 个页签起步，到 10 大板块 58 个页签 ——<br>世界观、角色、大纲、正文，串成一条线。<br>3.7.4：不配 API 也能让 AI 读到你的设定，产物丢进 outbox 一键回流。</div>
 </body></html>`
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true })

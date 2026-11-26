@@ -23,7 +23,7 @@ import { TOOLS_ARTICLES } from '@/lib/help/articles/tools'
 import { TOOLS_EXTRA_ARTICLES } from '@/lib/help/articles/tools-extra'
 import { TAVERN_ARTICLES } from '@/lib/help/articles/tavern'
 import { MISC_PAGE_ARTICLES } from '@/lib/help/articles/misc-pages'
-import { VERSION_ARTICLES } from '@/lib/help/articles/version'
+import { ALL_VERSION_NOTES } from '@/lib/help/articles/version-index'
 import { AGENT_BACKEND_ARTICLES } from '@/lib/help/articles/agent-backend'
 import { PLOT_ARTICLES } from '@/lib/help/articles/plot'
 import { ARTEFACT_ARTICLES } from '@/lib/help/articles/artefacts'
@@ -32,7 +32,9 @@ import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 
 /** 整套内容的版本：正文、目录、索引必须同版本，否则来源引用不可信 */
 // 35（2026-11-26 · 3.7.4）：新增「本地 Agent 工作区（WCP-Local）」使用篇。
-export const CONTENT_VERSION = 35
+// 36（2026-11-26 · 3.7.4 发布）：新增 whats-new-374，并把版本变化篇统一从
+//   version-index.ts 出口 —— 手册与关于页共用一份聚合，避免两处各拼一遍时漏篇。
+export const CONTENT_VERSION = 36
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.7.4'
@@ -40,7 +42,7 @@ export const SUPPORTED_APP_VERSION = '3.7.4'
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [
   ...START_ARTICLES,
-  ...VERSION_ARTICLES,
+  ...ALL_VERSION_NOTES,
   ...WCP_ARTICLES,
   ...EDITOR_ARTICLES,
   ...COMMUNITY_ARTICLES,
