@@ -24,7 +24,6 @@ import type { AtlasImage, AtlasSchemaConfig } from '@/lib/atlas/types'
 import type { TemplateDef } from '@/lib/templates/definition'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import { atlasFieldsOfTemplate } from '@/lib/templates/render'
-import { foldVh } from '@/lib/settings/theme'
 import { usePersistedEnum } from '@/lib/settings/uiPrefs'
 // 卡片排序（纯函数 + 单测钉住；编号比较与表格同口径，见该文件头）
 import { ATLAS_ORDERS, sortAtlasRows, type AtlasOrder } from '@/lib/atlas/order'
@@ -304,7 +303,7 @@ export default function AtlasView({
     : orderedRows.some(row => row.id === selectedId) ? selectedId : orderedRows[0]?.id ?? null
 
   return (
-    <div ref={hostRef} className="relative flex gap-4 min-h-0" style={{ height: foldVh('62vh') }}>
+    <div ref={hostRef} className="relative flex-1 min-h-0 flex gap-4">
       {/* 列表：自己滚（与右侧详情各滚各的，方案 §3.1） */}
       <div ref={listRef} data-atlas-list tabIndex={-1} role="region" aria-label="图鉴条目"
         aria-hidden={narrow && !!selectedId ? true : undefined} className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1">
@@ -461,7 +460,7 @@ export default function AtlasView({
       {/* 详情：宽屏占右侧固定宽，窄屏覆盖主体（点「返回」关闭） */}
       {selected && (
         <div
-          className={narrow ? 'absolute inset-0' : 'shrink-0 min-h-0'}
+          className={narrow ? 'absolute inset-0' : 'shrink-0 min-h-0 h-full'}
           style={narrow ? undefined : { width: DETAIL_W }}
         >
           <AtlasDetail

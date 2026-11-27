@@ -696,9 +696,9 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                   <Copy size={11} /> 复制
                 </Button>
               </div>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+              <div className="columns-1 xl:columns-2 gap-4 space-y-4">
                 {tab.modules!.map(mod => (
-                  <section key={mod.name} className="bg-ink-850 rounded-xl border border-ink-700 overflow-hidden">
+                  <section key={mod.name} className="break-inside-avoid bg-ink-850 yfe-surface-2 rounded-xl border border-ink-700 overflow-hidden">
                     <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                       <span className="w-1 h-3 rounded-full bg-amber/70" />
                       <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>

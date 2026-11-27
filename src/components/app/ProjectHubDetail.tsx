@@ -123,7 +123,7 @@ export default function ProjectHubDetail({
   return (
     <div key={selected.id} data-project-card={selected.id} className="flex-1 min-h-0 flex flex-col">
       {/* ① 顶部 Bento 双列：左侧 Hero 展示卡 + 右侧四卡工作区 */}
-      <section className="shrink-0 grid grid-cols-1 xl:grid-cols-[minmax(450px,510px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(500px,560px)_minmax(0,1fr)] gap-4 mb-4 items-stretch">
+      <section className="shrink-0 grid grid-cols-1 xl:grid-cols-[minmax(490px,540px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(520px,580px)_minmax(0,1fr)] gap-4 mb-4 items-stretch">
         {/* 左侧：Hero 展示卡（实体书封 + 作品名/元信息/简介引文框/主操作） */}
         <div className="rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-5 ws-surface relative overflow-hidden flex flex-col sm:flex-row items-stretch gap-5 min-w-0">
           <div
@@ -218,7 +218,7 @@ export default function ProjectHubDetail({
                 projectId={selected.id}
                 projectName={selected.name}
                 mode="text"
-                label="阅读"
+                label="阅读模式"
                 size="md"
                 className="!px-2 !text-12"
               />

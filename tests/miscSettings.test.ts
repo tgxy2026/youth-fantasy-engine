@@ -18,6 +18,7 @@
 //   · 表格行与卡片**存在不同的 store**（tableRows / cardRecords）⇒ 必须有迁移，
 //     否则作者先前填好的条目会在界面上「凭空消失」（数据还在库里，只是没人读）。
 import fs from 'node:fs'
+import { parseMiscBlocks, serializeMiscBlocks } from '../src/components/world/MiscBlocksEditor'
 import path from 'node:path'
 import {
   TABS, FEATURE_TIER, DEFAULT_IDS, STRONG_DEPS, ANY_DEPS, SETTING_SUBTABS, getTab, tierOf,
@@ -162,6 +163,23 @@ const tab = getTab(MIS)
   ok('四条示例都在（种子闸要求页签不为空，空表作者也不会用）',
     /VOL3_MISC_SEED/.test(seed) &&
     ['玄脉品级划分', '灵石兑换比率', '望剑城收剑之制', '黑台刻符与锁门制'].every(n => seedVol3.includes(n)))
+}
+
+// ---------- ⑦ 卡内多条独立明细块解析与序列化（3.7.5） ----------
+{
+  const plain = parseMiscBlocks('纯文本设定')
+  ok('单条纯文本兼容解析为「设定正文」', plain.length === 1 && plain[0].title === '设定正文' && plain[0].body === '纯文本设定')
+  ok('单条默认名称序列化保持纯文本', serializeMiscBlocks(plain) === '纯文本设定')
+
+  const multi = serializeMiscBlocks([
+    { title: '规则一', body: '第一段' },
+    { title: '规则二', body: '第二段' },
+  ])
+  const parsedMulti = parseMiscBlocks(multi)
+  ok('多条明细块序列化与回读往返一致',
+    parsedMulti.length === 2 &&
+    parsedMulti[0].title === '规则一' && parsedMulti[0].body === '第一段' &&
+    parsedMulti[1].title === '规则二' && parsedMulti[1].body === '第二段')
 }
 
 console.log(`\n—— miscSettings 用例结束：${pass} 通过 / ${fail} 失败`)

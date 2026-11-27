@@ -24,6 +24,7 @@ import CharacterPortraitPanel from '@/components/world/CharacterPortraitPanel'
 import CharacterProfileHeader from '@/components/world/CharacterProfileHeader'
 import { characterProfileFields, characterProfileFacts } from '@/lib/world/characterProfile'
 import AutoTextarea from '@/components/common/AutoTextarea'
+import MiscBlocksEditor from '@/components/world/MiscBlocksEditor'
 import TableRefSelect from '@/components/sheets/TableRefSelect'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import PromptModal from '@/components/dialogs/PromptModal'
@@ -979,10 +980,10 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                   <summary className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 cursor-pointer text-12 font-semibold text-ink-100">
                     <span>{group.label}</span><span className="ml-2 text-11 font-normal text-ink-400 ws-num">{group.fields.length} 项</span>
                   </summary>
-                  {/* 立绘始终占据基础信息右侧两格（含未上传空位）；仅窄宽度 flex-wrap 时换行。 */}
-                  <div className={isBasicMod ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
+                  {/* 立绘只属于角色卡：「其他设定」等纯文本卡片不铺立绘列 */}
+                  <div className={isBasicMod && isCharacterCardTab(tab.id) ? '@container/character-basic flex flex-wrap items-stretch' : ''}>
                   {/* 字段区（左）：包一层 flex-col + justify-center，让它在立绘撑高时**均匀铺开**而不是顶在上边 */}
-                  <div className={`divide-y divide-ink-700/45 ${isBasicMod ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-start' : ''}`}>
+                  <div className={`divide-y divide-ink-700/45 ${isBasicMod && isCharacterCardTab(tab.id) ? 'flex-1 min-w-[min(100%,20rem)] flex flex-col justify-start' : ''}`}>
                     {group.fields.map(field => {
                       const key = field.key
                       const permissions = fieldPermissions.get(key)
@@ -1061,6 +1062,11 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                                   <option key={o} value={o}>{o}</option>
                                 ))}
                               </select>
+                            ) : tab.id === 'misc-settings' && field.name === '内容' ? (
+                              <MiscBlocksEditor
+                                value={val}
+                                onChange={v => updateField(key, v)}
+                              />
                             ) : (
                               <AutoTextarea
                                 ariaLabel={field.label}
@@ -1073,32 +1079,25 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
                               />
                             )}
                             {!val && field.example && (
-                              <div className="field-example flex items-start gap-1 mt-0.5">
-                                <Info size={10} className="mt-0.5 shrink-0" />
-                                <span>示例：{field.example}</span>
-                              </div>
+                              <div className="field-example flex items-start gap-1 mt-0.5"><Info size={10} className="mt-0.5 shrink-0" /><span>示例：{field.example}</span></div>
                             )}
                           </div>
                         </div>
                       )
                     })}
                   </div>
-                  {isBasicMod && (<CharacterPortraitPanel
+                  {isCharacterCardTab(tab.id) && isBasicMod && (<CharacterPortraitPanel
                       name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
                       onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
-                  {/* 闭合「基础信息」的左右分栏容器（其余模块这个 div 不生成，类名为空也无害） */}
                   </div>
                 </details>
                 )
               })}
-              {/* 立绘只属于角色卡：「其他设定」「分卷大纲」「章节细纲」等纯文本卡片不提供图片入口
-                  （2026-11-13 主人反馈：兜底设定页不应出现人物立绘上传）。 */}
+              {/* 立绘只属于角色卡：「其他设定」「分卷大纲」「章节细纲」等纯文本卡片不提供图片入口 */}
               {isCharacterCardTab(tab.id) && !cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
                       name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
                       onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
-              {/* 3.7.0 · W4：角色卡按章状态演变（只读列表 + 手动补登；与「设定变更」页签不是一回事）
-                  3.7.5（Q-05①）：只给角色卡保留 —— 「其他设定 / 分卷大纲 / 章节细纲」这些纯文本卡片
-                  没有"剧情内状态"这回事，此前无条件挂在每张卡底部白占空间。 */}
+              {/* 3.7.5（Q-05①）：只给角色卡保留状态演变 */}
               {isCharacterCardTab(tab.id) && (
                 <StateEvolution target={{ kind: 'card', tabId: tab.id, id: draft.id, projectId: draft.projectId || getCurrentProjectId() || '' }} hint="记的是剧情内发生了什么；改字段仍在上面的栏目里。" />
               )}

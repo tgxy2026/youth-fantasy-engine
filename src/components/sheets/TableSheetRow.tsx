@@ -120,9 +120,9 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
         key={row.id}
         data-workspace-record={row.id}
         ref={el => { rowRefs.current[row.id] = el }}
-        className={`group hover:bg-ink-800/60 transition-colors ${bg ?? ''} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-success/80 bg-success/10' : ''}`}
+        className={`group hover:bg-ink-800/50 transition-colors ${bg ?? (index % 2 === 1 ? 'bg-ink-900/20' : '')} ${rowDirty ? 'bg-amber/5' : ''} ${hlRowId === row.id ? 'ring-2 ring-success/80 bg-success/10' : ''}`}
       >
-        <td className="px-2 py-1 text-center text-ink-500 text-10 relative">
+        <td className="px-2 py-1.5 text-center text-ink-500 text-10 ws-num border-r border-ink-700/25 relative">
           {index + 1}
           {rowDirty && <span className="absolute left-0 top-1 w-0.5 h-5 bg-amber rounded-r" />}
           {dupHint && (
@@ -231,7 +231,7 @@ export default function TableSheetRow({ tab, model, entry, index, onNavigate, on
             )
           }
           return (
-            <td key={col.name} className="px-1 py-1 align-middle" style={{ width: widthOf(col.name) }}>
+            <td key={col.name} className="px-2 py-1.5 align-middle border-r border-ink-700/20 last:border-r-0" style={{ width: widthOf(col.name) }}>
               {col.type === 'date' ? (
                 /* 严格"某年某月某日"日期输入（月/日候选按项目历法规则生成） */
                 <StoryDateInput

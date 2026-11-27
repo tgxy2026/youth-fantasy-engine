@@ -13,7 +13,7 @@
  *      不进项目数据、不参与云同步（换台机器重新翻一次即可）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
 import { getChaptersFor, getVolumesFor } from '@/lib/db'
@@ -73,6 +73,8 @@ export default function ReaderModal({ open, onClose, projectId, projectName, ini
   const [activeId, setActiveId] = useState<string>('')
   const [loaded, setLoaded] = useState(false)
   const [atEnd, setAtEnd] = useState(false)
+  const [query, setQuery] = useState('')
+  const [collapsedVols, setCollapsedVols] = useState<Set<string>>(() => new Set())
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const dwellRef = useRef<number | null>(null)
   const savedRef = useRef(0)
@@ -116,6 +118,25 @@ export default function ReaderModal({ open, onClose, projectId, projectName, ini
   }, [volumes, chapters])
 
   const flat = useMemo(() => groups.flatMap(g => g.chapters), [groups])
+  const trimmedQuery = query.trim().toLowerCase()
+  const filteredGroups = useMemo(() => {
+    if (!trimmedQuery) return groups
+    return groups
+      .map(g => {
+        if (g.title.toLowerCase().includes(trimmedQuery)) return g
+        const chs = g.chapters.filter(c => (c.title || '').toLowerCase().includes(trimmedQuery))
+        return chs.length ? { ...g, chapters: chs } : null
+      })
+      .filter((g): g is VolumeGroup => !!g)
+  }, [groups, trimmedQuery])
+  const toggleVol = (volId: string) => {
+    setCollapsedVols(prev => {
+      const next = new Set(prev)
+      if (next.has(volId)) next.delete(volId)
+      else next.add(volId)
+      return next
+    })
+  }
   const index = flat.findIndex(c => c.id === activeId)
   const current = index >= 0 ? flat[index] : null
   const prev = index > 0 ? flat[index - 1] : null
@@ -208,31 +229,69 @@ export default function ReaderModal({ open, onClose, projectId, projectName, ini
       bodyClassName="!p-0 !overflow-hidden !min-h-0 flex"
     >
         {/* 左：卷章目录（只读） */}
-        <aside className="w-56 shrink-0 border-r border-ink-700/70 flex flex-col min-h-0 bg-ink-900/40">
+        <aside className="w-60 shrink-0 border-r border-ink-700/70 flex flex-col min-h-0 bg-ink-900/40">
           <div className="flex items-center gap-2 px-3 h-11 border-b border-ink-700/60 shrink-0">
             <BookOpen size={13} className="text-amber shrink-0" />
             <span className="text-12 font-medium text-ink-100 truncate" title={projectName}>{projectName}</span>
             <span className="ml-auto text-10 text-ink-500 ws-num shrink-0">{progressText}</span>
           </div>
+          <div className="px-2.5 py-2 border-b border-ink-700/50 shrink-0">
+            <div className="relative flex items-center">
+              <Search size={12} className="absolute left-2 text-ink-500 pointer-events-none" />
+              <input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="搜索章节或卷名…"
+                aria-label="搜索章节"
+                className="w-full h-7 pl-7 pr-6 rounded-md border border-ink-700/70 bg-ink-850/75 text-11 text-ink-100 placeholder:text-ink-500 outline-none focus:border-amber/60 transition-colors"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="清空搜索"
+                  className="absolute right-1.5 text-ink-500 hover:text-ink-200 p-0.5"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex-1 min-h-0 overflow-y-auto py-1.5">
             {!loaded && <div className="px-3 py-3 text-11 text-ink-500">正在读取章节…</div>}
             {loaded && flat.length === 0 && <div className="px-3 py-3 text-11 text-ink-500">这本书还没有章节。</div>}
-            {groups.map(group => (
-              <div key={group.id} className="mb-1.5">
-                <div className="px-3 py-1 text-10 text-ink-500 sticky top-0 bg-ink-900/85 backdrop-blur-sm">{group.title}</div>
-                {group.chapters.map(c => (
+            {loaded && flat.length > 0 && filteredGroups.length === 0 && (
+              <div className="px-3 py-3 text-11 text-ink-500">没有匹配的章节</div>
+            )}
+            {filteredGroups.map(group => {
+              const isCollapsed = !trimmedQuery && collapsedVols.has(group.id)
+              return (
+                <div key={group.id} className="mb-1">
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => go(c)}
-                    className={`w-full text-left px-3 py-1.5 text-12 truncate transition-colors ${c.id === activeId ? 'bg-amber/15 text-amber' : 'text-ink-300 hover:bg-ink-800/60 hover:text-ink-100'}`}
-                    title={c.title}
+                    onClick={() => toggleVol(group.id)}
+                    aria-expanded={!isCollapsed}
+                    className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-11 font-medium text-ink-400 hover:text-ink-100 sticky top-0 bg-ink-900/90 backdrop-blur-sm transition-colors text-left"
                   >
-                    {c.title || '未命名章节'}
+                    {isCollapsed ? <ChevronRight size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />}
+                    <span className="truncate flex-1">{group.title}</span>
+                    <span className="text-10 text-ink-500 ws-num shrink-0">{group.chapters.length}</span>
                   </button>
-                ))}
-              </div>
-            ))}
+                  {!isCollapsed && group.chapters.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => go(c)}
+                      className={`w-full text-left pl-6 pr-3 py-1.5 text-12 truncate transition-colors ${c.id === activeId ? 'bg-amber/15 text-amber' : 'text-ink-300 hover:bg-ink-800/60 hover:text-ink-100'}`}
+                      title={c.title}
+                    >
+                      {c.title || '未命名章节'}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
           </div>
           <div className="shrink-0 border-t border-ink-700/60 px-2 py-2 flex items-center gap-1.5">
             <Button variant="secondary" size="sm" onClick={() => go(prev)} disabled={!prev} className="flex-1 justify-center" title="上一章">

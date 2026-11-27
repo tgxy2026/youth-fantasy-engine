@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowDown, ArrowUp, BookOpen, ExternalLink, FileUp, History, Globe2,
+  ArrowDown, ArrowUp, BookOpen, ChevronDown, ChevronRight, ExternalLink, FileUp, History, Globe2,
   Loader2, Pencil, Plus, Save, ScrollText, Search, Sparkles, Tags, Trash2, Undo2, UserRound,
 } from 'lucide-react'
 import * as db from '@/lib/db'
@@ -91,6 +91,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   const [chapters, setChapters] = useState<{ chapter: Chapter; chapterNo: number }[]>([])
 
   const [query, setQuery] = useState('')
+  const [collapsedTiers, setCollapsedTiers] = useState<Set<string>>(() => new Set())
   const [activeId, setActiveId] = useState<string | null>(null)
   const [proseDraft, setProseDraft] = useState('')
   const [savingProse, setSavingProse] = useState(false)
@@ -569,12 +570,31 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
     showToast(`已删除「${card.name}」的角色小传`, 'success')
   }
 
+  const toggleTier = (title: string) => {
+    setCollapsedTiers(prev => {
+      const next = new Set(prev)
+      if (next.has(title)) next.delete(title)
+      else next.add(title)
+      return next
+    })
+  }
+
   const renderGroupList = (title: string, list: CardRecord[]) => {
     if (list.length === 0) return null
+    const isCollapsed = !query.trim() && collapsedTiers.has(title)
     return (
       <div className="space-y-1.5">
-        <div className="px-1 text-10 font-medium text-ink-500">{title}（{list.length}）</div>
-        {list.map(c => {
+        <button
+          type="button"
+          onClick={() => toggleTier(title)}
+          aria-expanded={!isCollapsed}
+          className="w-full flex items-center gap-1 px-1 py-0.5 text-11 font-medium text-ink-400 hover:text-ink-100 transition-colors text-left"
+        >
+          {isCollapsed ? <ChevronRight size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />}
+          <span>{title}</span>
+          <span className="text-10 text-ink-500 ws-num">（{list.length}）</span>
+        </button>
+        {!isCollapsed && list.map(c => {
           const isActive = c.id === activeId
           const bio = bios[c.id]
           const nodeCount = bio?.nodes.length ?? 0

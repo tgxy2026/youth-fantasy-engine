@@ -855,16 +855,16 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             {/* 🔴 sticky 表头：tr 上 sticky + 每个 th 补不透明背景（否则滚动时下面几行会透出来） */}
             <thead>
               <tr className="sticky top-0 z-10 bg-ink-800 border-b border-ink-700">
-                <th className="bg-ink-800 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
+                <th className="bg-ink-800 border-r border-ink-700/35 w-10 px-2 py-2.5 align-middle text-ink-500 text-10 font-medium">#</th>
                 <th className="bg-ink-800 px-1 py-2.5 align-middle" style={{ width: ROW_ACTION_COL_W }} />
                 {effectiveColumns.map(col => (
-                  <th key={col.name} data-workspace-column={col.name} className="bg-ink-800 px-3 py-2 align-middle text-left text-ink-200 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
+                  <th key={col.name} data-workspace-column={col.name} className="bg-ink-800 border-r border-ink-700/35 last:border-r-0 px-2.5 py-2 align-middle text-left text-ink-200 text-12 font-semibold whitespace-nowrap relative" style={{ width: widthOf(col.name) }}>
                     <div className="truncate" title={colTitleOf(col)}>{colLabelOf(col)}</div>
                     {col.type === 'select' && col.options ? (
                       <select
                         value={colFilters[col.name] ?? ''}
                         onChange={e => setColFilters(prev => ({ ...prev, [col.name]: e.target.value }))}
-                        className="mt-1 w-full text-10 px-1 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 outline-none focus:border-amber/40"
+                        className="mt-1.5 w-full h-7 !py-0 text-11 px-1.5 rounded-md bg-ink-900/75 border border-ink-700/80 text-ink-100 outline-none focus:border-amber/50 transition-colors"
                       >
                         <option value="">全部</option>
                         {/* 与行内下拉同口径：内置（去隐藏/应用改名）+ 用户自定义项 */}
@@ -877,7 +877,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
                         value={colFilters[col.name] ?? ''}
                         onChange={e => setColFilters(prev => ({ ...prev, [col.name]: e.target.value }))}
                         placeholder="筛选"
-                        className="mt-1 w-full text-10 px-1.5 py-0.5 rounded bg-ink-900/60 border border-ink-700 text-ink-100 placeholder:text-ink-600 outline-none focus:border-amber/40"
+                        className="mt-1.5 w-full h-7 !py-0 text-11 px-2 rounded-md bg-ink-900/75 border border-ink-700/80 text-ink-100 placeholder:text-ink-500 outline-none focus:border-amber/50 transition-colors"
                       />
                     )}
                     <div
