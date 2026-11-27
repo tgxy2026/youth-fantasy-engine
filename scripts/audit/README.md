@@ -33,6 +33,16 @@ node scripts/audit/run.mjs --probes --evidence <上一步打印的 json 路径>
 
 回归用例：`tests/auditRules.test.ts`（规则能抓到历史形态、不误伤正确写法、当前仓库为 0）。
 
+### 结构化硬线第四轮（3.7.5 · 2026-11-26）
+
+把三项在 3.7.1–3.7.5 暴露出的审计盲区升格进自检与结构化报告：
+
+| 规则 / 能力 | 文件 | 解决的盲区 |
+| --- | --- | --- |
+| 红线 10–15 硬线化 | `redline-checks.mjs` | 将裸剪贴板、未走 `foldVh()` 的 `vh/vw`、SVG `rgb(var(--...))` 属性、硬编码 `z-index` 魔数、文字按钮 `ghost`、Enter 未挡 `isComposing` 从日志升格为自检硬线（命中直接阻断 `complete`） |
+| 高风险零覆盖自动对账 | `coverage-checks.mjs` | 自动比对 A 类（安全/数据/算法）零覆盖文件与 `coverage-ledger.json`，阻断新模块（如 3.7.3/3.7.4 WCP 组件）漏登风险 |
+| WCP-Local 路径登记 | `platform/policy.json` (`wcpAuditPaths`) | 登记 3.7.4 新增的本地 Agent 工作区宿主、同步、解析与测试核心链路，纳入 `validateRegistry` 路径在位自检 |
+
 ### 审计工具自检（3.4.1 新增）
 
 ```bash

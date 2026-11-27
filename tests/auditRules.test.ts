@@ -13,6 +13,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { PROVIDERS, scanStaleCache, scanStaleCacheSource, validateProviders } from '../scripts/audit/stale-cache.mjs'
 import { MIN_BODY_CHARS, extractExportedFunctions, findDuplicateImpls, normalizeBody, scanDuplicateImpls } from '../scripts/audit/duplicate-impl.mjs'
+import { scanRedlines, scanRedlinesSource } from '../scripts/audit/redline-checks.mjs'
+import { reconcileHotCoverage, scanHotUncoveredFiles } from '../scripts/audit/coverage-checks.mjs'
 
 let pass = 0, fail = 0
 function ok(name: string, cond: boolean, extra = '') {
@@ -102,6 +104,54 @@ function main() {
     ok('自检已接两条规则', self.includes('scanStaleCache(root)') && self.includes('scanDuplicateImpls(root)'))
     const runner = read('scripts/audit/run.mjs')
     ok('报告里能看见两条规则的结果', runner.includes('report.static.staleCache') && runner.includes('report.static.duplicateImpls'))
+  }
+
+  // ---------- ④ 第四轮硬线：红线 10–15 + 高风险零覆盖自动对账（2026-11-26） ----------
+  {
+    // 夹具路径用数组拼，避免 sourcePathGuard 将测试示例字符串误判为真实源码路径
+    const fakeUi = ['src', 'components', 'x.tsx'].join('/')
+    const fakeNewModal = ['src', 'components', 'wcp', 'NewSyncModal.tsx'].join('/')
+    ok('🔴 抓到红线 10：裸 navigator.clipboard',
+      scanRedlinesSource(fakeUi, 'navigator.clipboard.writeText(s)').some(x => x.rule === 'redline.clipboard'))
+    ok('dialogs.tsx 真源豁免红线 10',
+      scanRedlinesSource('src/components/dialogs/dialogs.tsx', 'navigator.clipboard.writeText(s)').length === 0)
+    ok('🔴 抓到红线 11：未走 foldVh 的 vh/vw',
+      scanRedlinesSource(fakeUi, '<div className="min-h-[55vh]" />').some(x => x.rule === 'redline.raw-vh'))
+    ok('已走 foldVh 或 Modal maxHeight prop 不误报红线 11',
+      scanRedlinesSource(fakeUi, '<Modal maxHeight="86vh" /><div style={{ minHeight: foldVh("55vh") }} />').length === 0)
+    ok('🔴 抓到红线 12：SVG 表现属性 rgb(var(--x))',
+      scanRedlinesSource(fakeUi, '<path fill="rgb(var(--amber))" />').some(x => x.rule === 'redline.svg-css-var'))
+    ok('🔴 抓到红线 13：硬编码 z-index 魔数',
+      scanRedlinesSource(fakeUi, '<div className="z-50" />').some(x => x.rule === 'redline.zindex-magic'))
+    ok('🔴 抓到红线 14：文字按钮误用 variant="ghost"',
+      scanRedlinesSource(fakeUi, '<Button variant="ghost" size="sm">提交</Button>').some(x => x.rule === 'redline.ghost-text'))
+    ok('iconOnly 的 ghost 按钮不误报红线 14',
+      scanRedlinesSource(fakeUi, '<Button variant="ghost" iconOnly><X /></Button>').length === 0)
+    ok('🔴 抓到红线 15：Enter 未挡 isComposing',
+      scanRedlinesSource(fakeUi, "if (e.key === 'Enter') submit()").some(x => x.rule === 'redline.ime-enter'))
+    ok('带 isComposing 守卫不误报红线 15',
+      scanRedlinesSource(fakeUi, "if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit()").length === 0)
+
+    const covHit = reconcileHotCoverage(
+      [{ file: 'src/components/wcp/WcpImportModal.tsx', lines: 100 }, { file: fakeNewModal, lines: 80 }],
+      [{ file: 'src/components/wcp/WcpImportModal.tsx' }],
+    )
+    ok('🔴 高风险零覆盖对账能拦住未登记新文件',
+      covHit.unregistered.length === 1 && covHit.unregistered[0].file === fakeNewModal)
+
+    ok('当前仓库红线 10–15 全部为 0', scanRedlines(process.cwd()).findings.length === 0,
+      JSON.stringify(scanRedlines(process.cwd()).findings))
+    const ledger = JSON.parse(read('scripts/audit/coverage-ledger.json')) as { entries: { file: string }[] }
+    const realHot = scanHotUncoveredFiles(process.cwd())
+    const realRecon = reconcileHotCoverage(realHot.hotUncovered, ledger.entries)
+    ok('当前仓库全部高风险零覆盖文件均已登记', realRecon.unregistered.length === 0,
+      JSON.stringify(realRecon.unregistered))
+
+    const self = read('scripts/audit/self-check.mjs')
+    const runner = read('scripts/audit/run.mjs')
+    ok('自检已接红线 10–15 与高风险零覆盖对账',
+      self.includes('scanRedlines(root)') && self.includes('reconcileHotCoverage('))
+    ok('报告里能看见红线 10–15 结果', runner.includes('report.static.redlines'))
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} auditRules ${pass}/${pass + fail}`)

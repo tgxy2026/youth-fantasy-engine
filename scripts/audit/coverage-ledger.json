@@ -1,6 +1,6 @@
 {
-  "note": "零覆盖台账：覆盖率报告里「零测试提及」且属安全/数据/算法类、但当前无法低成本补测的文件。每条必须写清 risk（风险类型）、why（为什么现在不补）、trigger（什么情况下必须补）。不是「批准不测」，是「记下风险与触发条件」。状态：open=整体没测；partial=可测部分已抽出来测掉（必须写 coveredBy 指向测试文件、remaining 说明剩余靠什么验收）。2026-11-18 首版 17 条；3.6.1 里 B1 四个数据/同步文件补测后移出（17 → 13），B2/B7 十个组件转 partial，open 归零。新增条目必须写满 why 与 trigger，否则自检失败。",
-  "updatedAt": "2026-11-18",
+  "note": "零覆盖台账：覆盖率报告里「零测试提及」且属安全/数据/算法类、但当前无法低成本补测的文件。每条必须写清 risk（风险类型）、why（为什么现在不补）、trigger（什么情况下必须补）。不是「批准不测」，是「记下风险与触发条件」。状态：open=整体没测；partial=可测部分已抽出来测掉（必须写 coveredBy 指向测试文件、remaining 说明剩余靠什么验收）。2026-11-18 首版 17 条；3.6.1 里 B1 四个数据/同步文件补测后移出（17 → 13），B2/B7 十个组件转 partial，open 归零。2026-11-26 3.7.5：self-check 接入高风险零覆盖自动对账（reconcileHotCoverage），补录 3.7.3/3.7.4 新增的 3 个 WCP 界面/hook 文件（均已由底层纯函数单测覆盖核心协议）。新增条目必须写满 why 与 trigger，否则自检失败。",
+  "updatedAt": "2026-11-26",
   "riskLevels": [
     "data",
     "sync",
@@ -125,6 +125,33 @@
       "trigger": "改导出选项组合或文件名规则时补",
       "coveredBy": "tests/tavernDialogs.test.ts",
       "remaining": "导出条数（关掉含已隐藏要减隐藏数）已抽成纯函数并测掉；剩余靠真机：两种格式的下载与复制 Markdown"
+    },
+    {
+      "file": "src/components/wcp/WcpImportModal.tsx",
+      "risk": "data",
+      "status": "partial",
+      "why": "组件本体是 React 弹窗交互、工作区读取按钮与差异预览渲染，本版不引 DOM 测试栈；底层 JSON/MD 解析、冲突校验与落库逻辑均已独立并补齐单测",
+      "trigger": "改 WCP 回流解析契约、落库策略或覆盖确认流程时补测",
+      "coveredBy": "tests/wcpParser.test.ts",
+      "remaining": "WCP 包解析、正文章节切分、哈希冲突与增量合并均已在纯函数单测覆盖；剩余靠真机：弹窗文件拖拽/粘贴、本地工作区读回按钮与差异确认交互"
+    },
+    {
+      "file": "src/components/wcp/WcpExportModal.tsx",
+      "risk": "data",
+      "status": "partial",
+      "why": "组件本体是 React 弹窗编排（范围选择、复制/下载交互与一键导出工作区入口），核心打包与脱敏逻辑已落到 wcpPacker 并有单测覆盖",
+      "trigger": "改导出范围拼接规则、脱敏过滤或工作区导出入口逻辑时补测",
+      "coveredBy": "tests/wcpPacker.test.ts",
+      "remaining": "WCP 资料收集、分片打包与格式拼装均已测掉；剩余靠真机：弹窗选项勾选、复制到剪贴板与 .md 下载交互"
+    },
+    {
+      "file": "src/components/wcp/useWcpWorkspaceSync.ts",
+      "risk": "sync",
+      "status": "partial",
+      "why": "hook 本体负责 React 状态订阅、轮询与 Electron IPC 调度，核心同步状态机与写入/回流防覆盖规则已下沉到 wcpWorkspaceSync 并由单测覆盖",
+      "trigger": "改工作区同步轮询时机、锁冲突判断或自动回流提示逻辑时补测",
+      "coveredBy": "tests/wcpWorkspaceSync.test.ts",
+      "remaining": "工作区增量导出、指纹对比与待审变更汇总已在纯逻辑单测覆盖；剩余靠真机：hook 挂载监听、目录切换与 toast 联动"
     }
   ]
 }

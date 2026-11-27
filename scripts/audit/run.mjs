@@ -61,6 +61,11 @@ report.static.structure = selfCheck.structure
 report.static.staleCache = selfCheck.staleCache
 report.static.duplicateImpls = selfCheck.duplicateImpls
 /**
+ * 审计策略化第四轮（2026-11-26）：界面与交互红线 10–15 升格为结构化硬线，
+ * 高风险零覆盖自动对账进入自检（见 self-check.mjs）。
+ */
+report.static.redlines = selfCheck.redlines
+/**
  * 未接线模块（2026-11-18）：整个模块没有任何生产代码 import。
  * 死导出按符号统计，这类形状在报告里看不见（实测 changeEvents / modeAuthority 都是），
  * 现在单列一段：按台账状态分组，gap 单独标出（能力缺口，删了等于扔方案）。
@@ -155,6 +160,11 @@ const md = ['# 审计结果', '', `状态：**${report.status}**。静态扫描�
   ...(report.static.staleCache.items.length || report.static.duplicateImpls.items.length
     ? ['', ...[...report.static.staleCache.items, ...report.static.duplicateImpls.items].map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
     : ['', '两条规则均为 0。']),
+    '', '## 界面与交互红线（10–15，预期长期为 0 · 2026-11-26 升格）', '',
+  `- 扫描 \`${report.static.redlines.files}\` 个文件，命中 \`${report.static.redlines.items.length}\` 处（裸剪贴板 / 未折算 vh / SVG css-var / 硬编码 z-index / 非 iconOnly 的 ghost 按钮 / Enter 未挡 isComposing）`,
+  ...(report.static.redlines.items.length
+    ? ['', ...report.static.redlines.items.map(i => `- ${i.file}:${i.line} [${i.rule}] ${i.message}`)]
+    : ['', '六条红线均为 0。']),
     '', '## 零覆盖台账（安全 / 数据 / 算法类，无测试但已记风险）', '',
   `- 登记 \`${report.static.coverage.entries.length}\` 个文件；按风险：${['data', 'sync', 'agent', 'ui', 'display'].map(r => `${r} \`${report.static.coverage.entries.filter(e => e.risk === r).length}\``).join(' · ')}；按状态：整体未测 \`${report.static.coverage.entries.filter(e => (e.status ?? 'open') === 'open').length}\` · 部分已测（其余靠真机） \`${report.static.coverage.entries.filter(e => e.status === 'partial').length}\``,
   `- 台账在 \`scripts/audit/coverage-ledger.json\`：每条写清\`why\`（为什么现在不补）与\`trigger\`（什么情况下必须补）；标 \`partial\` 的还必须写 \`remaining\`（剩余哪部分）与 \`coveredBy\`（哪个测试文件覆盖的，自检会核对该文件存在）`,

@@ -24,6 +24,8 @@ import { DECLARED_FACADES, scanStructure, validateFacadeRegistry } from './struc
 import { PROVIDERS, scanStaleCache, validateProviders } from './stale-cache.mjs'
 import { scanDuplicateImpls } from './duplicate-impl.mjs'
 import { ENTRY_FILES, reconcileUnwiredLedger, scanUnwiredModules, validateUnwiredLedger } from './unwired-modules.mjs'
+import { scanRedlines } from './redline-checks.mjs'
+import { reconcileHotCoverage, scanHotUncoveredFiles } from './coverage-checks.mjs'
 
 export { validateRegistry, toolFingerprint }
 
@@ -186,6 +188,18 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     })
     result.checks.push(...cov.checks)
     result.issues.push(...cov.issues)
+    const hotCov = options.hotCoverage ?? scanHotUncoveredFiles(root)
+    const hotRecon = reconcileHotCoverage(hotCov.hotUncovered, covEntries)
+    result.checks.push({
+      name: '高风险零覆盖文件已登记',
+      status: hotRecon.unregistered.length ? 'failed' : 'passed',
+      detail: hotRecon.unregistered.length
+        ? hotRecon.unregistered.map(x => `${x.file}（新增高风险零覆盖，请补测或登记进 coverage-ledger.json）`).join(', ')
+        : `${hotCov.hotUncovered.length} 个 A 类零覆盖文件全部已登记`,
+    })
+    if (hotRecon.unregistered.length) {
+      result.issues.push(`高风险零覆盖文件有 ${hotRecon.unregistered.length} 个未登记：${hotRecon.unregistered.map(x => x.file).join(', ')}`)
+    }
   } else {
     result.checks.push({
       name: '零覆盖台账有效',
@@ -232,6 +246,23 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     result.issues.push(`有 ${duplicateImpls.findings.length} 处重复实现：${duplicateImpls.findings.map(f => `${f.file}:${f.line}`).join(', ')}`)
   }
 
+  /**
+   * 审计策略化第四轮（2026-11-26）：把红线 10–15 从 legacy-scan 日志升格为硬线。
+   * 历史 3.7.1（文字按钮 ghost）与 3.7.3（内联 vh）都在旧日志里出现过但报告仍 complete，
+   * 升格后命中直接让自检失败、阻断 complete。
+   */
+  const redlines = options.redlines ?? scanRedlines(root)
+  result.checks.push({
+    name: '界面与交互红线清零（10–15）',
+    status: redlines.findings.length ? 'failed' : 'passed',
+    detail: redlines.findings.length
+      ? redlines.findings.map(f => `${f.file}:${f.line} [${f.rule}]`).join(', ')
+      : `扫描 ${redlines.files} 个源码文件，红线 10–15 全部为 0`,
+  })
+  if (redlines.findings.length) {
+    result.issues.push(`界面与交互红线命中 ${redlines.findings.length} 处：${redlines.findings.map(f => `${f.file}:${f.line}`).join(', ')}`)
+  }
+
   const structBudget = validateStructureBudget({
     budget,
     counts: { 'arch.reverse-import': structure.stats.reverseImports, 'arch.facade-undeclared': structure.stats.undeclaredFacades },
@@ -269,6 +300,10 @@ export function auditSelfCheck(root = DEFAULT_ROOT, options = {}) {
     duplicateImpls: {
       files: duplicateImpls.files,
       items: duplicateImpls.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })),
+    },
+    redlines: {
+      files: redlines.files,
+      items: redlines.findings.map(f => ({ rule: f.rule, file: f.file, line: f.line, message: f.message })),
     },
     coverage: {
       entries: (covEntries ?? []).map(e => ({

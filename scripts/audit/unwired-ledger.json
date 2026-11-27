@@ -1,16 +1,11 @@
 {
-  "note": "未接线模块台账。判据见 scripts/audit/unwired-modules.mjs：src 下没有生产代码 import、且不是入口的文件。每条必须写清性质与理由（≥20 字），否则自检失败。status：gap=按下方案实现但产品没接入口（能力缺口，删了等于扔方案）；retained=已判定按需求保留不挂载；harness=评测集/基准脚本等度量夹具（本来就不该被产品 import）；entry=入口文件。新增未接线文件不登记，审计直接失败。2026-11-18 3.6.1：changeEvents（证据层）与 semanticView（图鉴只读投影）已接线后移出本条，gap 归零；generationInvalidation 的「基准过期」半边已在 3.7.0 · W2 接线（candidateExpiry 从真实库取摘要 → isBaselineStale / expireCandidate），移出台账；未接的只剩跨窗口同批租约。",
-  "updatedAt": "2026-11-23",
+  "note": "未接线模块台账。判据见 scripts/audit/unwired-modules.mjs：src 下没有生产代码 import、且不是入口的文件。每条必须写清性质与理由（≥20 字），否则自检失败。status：gap=按下方案实现但产品没接入口（能力缺口，删了等于扔方案）；retained=已判定按需求保留不挂载；harness=评测集/基准脚本等度量夹具（本来就不该被产品 import）；entry=入口文件。新增未接线文件不登记，审计直接失败。2026-11-18 3.6.1：changeEvents（证据层）与 semanticView（图鉴只读投影）已接线后移出本条，gap 归零；generationInvalidation 的「基准过期」半边已在 3.7.0 · W2 接线（candidateExpiry 从真实库取摘要 → isBaselineStale / expireCandidate），移出台账；未接的只剩跨窗口同批租约。2026-11-26 3.7.5：ProjectAutoCover 已重新接入首页目录与详情封面，移出台账。",
+  "updatedAt": "2026-11-26",
   "entries": [
     {
       "file": "src/components/settings/MascotSettingsDialog.tsx",
       "status": "retained",
       "reason": "3.7.3 方案 D 改造中按用户要求从项目管理首页移除看板娘显示及设置入口，保留组件与立绘资源待后续放置其他位置"
-    },
-    {
-      "file": "src/components/app/ProjectAutoCover.tsx",
-      "status": "retained",
-      "reason": "自动字封是 3.5.1 按用户要求回退的功能（项目卡片回到纯色封面）；保留实现待重新启用，删了就没法一键恢复"
     },
     {
       "file": "src/components/help/PageGuideButton.tsx",

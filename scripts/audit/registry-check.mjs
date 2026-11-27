@@ -19,6 +19,7 @@ export function registeredPaths(contracts, policy) {
     for (const [i, file] of (policy[key] ?? []).entries()) push(`policy.${key}[${i}]`, file)
   }
   for (const [i, file] of (policy.agentAuditPaths ?? []).entries()) push(`policy.agentAuditPaths[${i}]`, file)
+  for (const [i, file] of (policy.wcpAuditPaths ?? []).entries()) push(`policy.wcpAuditPaths[${i}]`, file)
   for (const [i, s] of (policy.sidecars ?? []).entries()) push(`policy.sidecars[${i}].file`, s?.file)
   for (const [i, file] of (contracts.charts ?? []).entries()) push(`contracts.charts[${i}]`, file)
   for (const [i, x] of (contracts.nonChartMono ?? []).entries()) push(`contracts.nonChartMono[${i}].file`, x?.file)
