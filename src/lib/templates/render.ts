@@ -175,7 +175,9 @@ export function cardGroupsOfTemplate(tab: TabDef, tpl: EffectiveTemplate): CardG
         id: g.id,
         label: g.label,
         order: g.order,
-        isBasic: g.label.includes('基础信息'),
+        // 3.7.5（Q-04）：第一组也算基础组（立绘列挂在基础组右侧）。
+        // 只认组名含「基础信息」时，NPC 角色的唯一组「NPC档案」没有基础组 ⇒ 立绘掉到卡片底部。
+        isBasic: g.label.includes('基础信息') || g.order === 0,
         fields,
       }
     })

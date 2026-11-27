@@ -185,10 +185,16 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
   /** 统一的渲染模型：内置模块与模板分组都折算成同一形状，渲染处不再分支 */
   const cardGroups = useMemo<CardGroupView[]>(() => {
     if (!templateDef || !templateView) {
-      return (tab.modules ?? []).map(m => ({
+      return (tab.modules ?? []).map((m, index) => ({
         id: m.name,
         label: m.name,
-        isBasic: m.name.includes('基础信息'),
+        /**
+         * 3.7.5（Q-04）：**第一组也算基础组** —— 立绘列挂在基础组右侧。
+         * 原先只认组名含「基础信息」，而 NPC 角色的唯一模块叫「NPC档案」⇒ 没有基础组
+         * ⇒ 立绘掉到卡片最底部的兜底分支（整行横铺、右侧一片空白）。
+         * 与同文件下方「默认展开」的判据（`g.isBasic || index === 0`）保持同一口径。
+         */
+        isBasic: m.name.includes('基础信息') || index === 0,
         fields: m.fields.map(f => {
           const key = `${m.name}::${f.name}`
           return {
@@ -1085,8 +1091,12 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
               {isCharacterCardTab(tab.id) && !cardGroups.some(group => group.isBasic) && (<CharacterPortraitPanel
                       name={draft.name} portrait={draft.portrait} portrait2={draft.portrait2} busy={portraitBusy}
                       onPick={(f, slot) => void updatePortrait(f, slot)} onRemove={slot => void updatePortrait(null, slot)} />)}
-              {/* 3.7.0 · W4：角色卡按章状态演变（只读列表 + 手动补登；与「设定变更」页签不是一回事） */}
-              <StateEvolution target={{ kind: 'card', tabId: tab.id, id: draft.id, projectId: draft.projectId || getCurrentProjectId() || '' }} hint="记的是剧情内发生了什么；改字段仍在上面的栏目里。" />
+              {/* 3.7.0 · W4：角色卡按章状态演变（只读列表 + 手动补登；与「设定变更」页签不是一回事）
+                  3.7.5（Q-05①）：只给角色卡保留 —— 「其他设定 / 分卷大纲 / 章节细纲」这些纯文本卡片
+                  没有"剧情内状态"这回事，此前无条件挂在每张卡底部白占空间。 */}
+              {isCharacterCardTab(tab.id) && (
+                <StateEvolution target={{ kind: 'card', tabId: tab.id, id: draft.id, projectId: draft.projectId || getCurrentProjectId() || '' }} hint="记的是剧情内发生了什么；改字段仍在上面的栏目里。" />
+              )}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-ink-500 text-sm border border-dashed border-ink-700 rounded-xl">

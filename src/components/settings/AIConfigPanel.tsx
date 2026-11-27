@@ -73,7 +73,15 @@ import { TestResultBar, TestingBar, ContextWindowField, TemperatureField, Sampli
 const BODY = 'max-w-3xl'
 
 /** 列表态两栏：左「列表/添加」（自适应，minmax(0,1fr) 防长模型名撑破）｜右「路由/超时」（定宽 20rem） */
-const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem] gap-x-6 gap-y-5 items-start'
+/**
+ * 模型配置页的两栏栅格（3.7.5 · Q-02 复核后收窄）。
+ *
+ * 原值 `xl:grid-cols-[minmax(0,1fr)_20rem]`：左栏 1fr 在宽屏**没有上限** ——
+ * 1920 宽下左栏能到 1500px，两个「添加…模型」按钮被拉成一米长；右栏又死钉 20rem（320px），
+ * 「AI 用途路由」三格下拉与超时输入被挤。现改为：左栏给 1.6 份额且右栏随屏宽在 19–27rem 之间浮动，
+ * 宽屏下右栏不再是"永远 320px"，窄屏（<1280）仍回退单栏。
+ */
+const LIST_GRID = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)] 2xl:grid-cols-[minmax(0,1.6fr)_minmax(21rem,27rem)] gap-x-6 gap-y-5 items-start'
 const MODE_LABELS = { api: 'API 模式', agent: 'MCP 模式', acp: 'ACP 模式' } as const
 type Mode = keyof typeof MODE_LABELS
 
