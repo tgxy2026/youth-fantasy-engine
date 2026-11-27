@@ -41,11 +41,17 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
   )
   const aliasLabels = useFieldDisplayLabels(tabId ?? '', keys)
   return (
-    <div className={`@container/fields ${twoColumn
-      ? 'grid grid-cols-1 xl:grid-cols-2 gap-5 items-start'
-      : 'grid grid-cols-1 2xl:grid-cols-2 gap-5 items-start'}`}>
+    /**
+     * 3.7.5（Q-08）：网格改**多列流**（CSS columns），卡片高度按内容自然收尾。
+     *
+     * 原来用 `grid + items-start`，而每张卡又带 `h-full` ⇒ 短卡被拉到同行最高那张的高度，
+     * 卡内尾部出现大片空白（方案①）；把 `h-full` 去掉又会露出页面背景（方案②），两种都难看。
+     * 多列流让短卡下面**立刻接同列下一张**，既不拉伸也不露底色；DOM 顺序不变 ⇒
+     * 键盘 Tab 与读屏仍按 一、二、三、四 走（主人已确认接受"报纸分栏"视觉）。
+     */
+    <div className={`@container/fields gap-5 ${twoColumn ? 'columns-1 xl:columns-2' : 'columns-1 2xl:columns-2'}`}>
       {modules.map(mod => (
-        <section key={mod.name} className="bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden h-full ws-surface">
+        <section key={mod.name} className="mb-5 break-inside-avoid bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden ws-surface">
           <div className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 flex items-center gap-2">
             <span className="w-1 h-3.5 rounded-full bg-amber/70" />
             <h2 className="text-13 font-semibold text-ink-100">{mod.name}</h2>
