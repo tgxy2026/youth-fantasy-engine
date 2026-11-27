@@ -608,6 +608,7 @@ export function useTableSheetModel({ tab, focusRowId, onFocusConsumed }: Args) {
       setRelGroupOpen(prev => new Set(prev).add('rel-__unnamed__'))
       setRelRowOpen(prev => new Set(prev).add(row.id))
     }
+    return row.id
   }
 
   const removeRow = async (rowId: string) => {

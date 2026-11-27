@@ -4,7 +4,7 @@
  * 本文件**只负责长相**：状态、effect、派生值与动作全部在 `useTableSheetModel()`（2026-09-19 拆出）。
  * 下面那行同名解构是刻意的 —— 让 JSX 保持原样、零改动，把「搬家」与「改造」分开做。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
@@ -387,16 +387,63 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   /** 跳转聚焦：只在目标行**变化**时滚一次（否则高亮期间每次输入都会把容器拉回去） */
   const lastFocusId = useRef<string | null>(null)
   const [restoreRowId, pinRestore] = useState<string | null>(null)
+  const [pendingRevealId, setPendingRevealId] = useState<string | null>(null)
   const rowWindow = useRowWindow({
     ids: rowIds,
     rowRefs: model.rowRefs,
     scrollRef: pan.ref,
     enabled: loaded && viewMode === 'table' && rowIds.length > ROW_WINDOW_THRESHOLD,
-    pinnedId: focusRowId ?? restoreRowId,
+    pinnedId: focusRowId ?? restoreRowId ?? pendingRevealId,
   })
   const revealRow = rowWindow.revealId
   useTableWorkspaceScroll({ tabId: tab.id, ready: loaded && viewMode === 'table' && tab.id !== 'relations',
     ids: rowIds, filters: colFilters, scrollRef: pan.ref, revealId: revealRow, focusRowId, pinRestore })
+
+  const handleAddRow = async () => {
+    const newId = await addRow()
+    if (newId) setPendingRevealId(newId)
+  }
+
+  // Q-07：新增行后若不在当前可视区内，滚动到新行（最多 20 帧每 4 帧补写直到稳定；已在视口内则不跳）
+  useLayoutEffect(() => {
+    if (!pendingRevealId || !loaded || viewMode !== 'table' || tab.id === 'relations') return
+    if (!rowIds.includes(pendingRevealId)) { setPendingRevealId(null); return }
+    const el = pan.ref.current
+    if (!el) return
+    const existing = model.rowRefs.current[pendingRevealId]
+    if (existing) {
+      const box = el.getBoundingClientRect()
+      const headerH = el.querySelector('thead tr')?.getBoundingClientRect().height ?? 0
+      const r = existing.getBoundingClientRect()
+      if (r.top >= box.top + headerH - 1 && r.bottom <= box.bottom + 1) {
+        setPendingRevealId(null)
+        return
+      }
+    }
+    let cancelled = false, raf = 0, frameNo = 0, lastTop = -1, stable = 0
+    revealRow(pendingRevealId)
+    const step = () => {
+      if (cancelled) return
+      const rowEl = model.rowRefs.current[pendingRevealId]
+      if (!rowEl) {
+        if (frameNo % 4 === 0) revealRow(pendingRevealId)
+      } else {
+        const box = el.getBoundingClientRect()
+        const r = rowEl.getBoundingClientRect()
+        if (r.bottom > box.bottom + 1 || r.top < box.top) {
+          rowEl.scrollIntoView({ block: 'nearest' })
+        }
+        if (Math.abs(el.scrollTop - lastTop) < 1) stable++
+        else stable = 0
+        lastTop = el.scrollTop
+        if (stable >= 2) { setPendingRevealId(null); return }
+      }
+      if (++frameNo >= 20) { setPendingRevealId(null); return }
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => { cancelled = true; cancelAnimationFrame(raf) }
+  }, [pendingRevealId, loaded, viewMode, tab.id, rowIds, pan.ref, model.rowRefs, revealRow])
 
   /**
    * 跳转聚焦先「滚到附近」：虚拟化后目标行可能压根没挂载，靠 scrollIntoView 会扑空。
@@ -691,7 +738,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           )}
           {/* 2026-11-15：入口统一到左下角「本页指引」（已登记给侧栏），页头不再重复 */}
           {!isMaster && (
-          <Button onClick={addRow} variant="primary" size="md" data-guide="table-new" className="flex items-center shrink-0">
+          <Button onClick={handleAddRow} variant="primary" size="md" data-guide="table-new" className="flex items-center shrink-0">
             <Plus size={14} /> {tab.id === 'relations' ? '新增一条关系' : '新增一行'}
           </Button>
           )}

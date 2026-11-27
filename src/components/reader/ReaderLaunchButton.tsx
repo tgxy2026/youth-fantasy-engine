@@ -18,16 +18,16 @@ interface Props {
   /** 从正文页进来时落在当前章；首页入口不传 */
   initialChapterId?: string | null
   mode?: 'text' | 'icon'
+  label?: string
   variant?: 'secondary' | 'bare'
   size?: 'xs' | 'sm' | 'md'
   className?: string
 }
 
 export default function ReaderLaunchButton({
-  projectId, projectName, initialChapterId, mode = 'text', variant = 'secondary', size = 'md', className = '',
+  projectId, projectName, initialChapterId, mode = 'text', label = '阅读模式', variant = 'secondary', size = 'md', className = '',
 }: Props) {
   const [open, setOpen] = useState(false)
-  const label = '阅读模式'
   return (
     <>
       <Button

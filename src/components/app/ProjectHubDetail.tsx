@@ -191,35 +191,36 @@ export default function ProjectHubDetail({
               </p>
             </div>
 
-            <div className="mt-auto pt-4 flex items-center gap-2.5 flex-nowrap">
+            <div className="mt-auto pt-4 flex items-center gap-1 flex-wrap">
               <Button
                 variant="primary"
                 solid
                 size="md"
-                className="whitespace-nowrap px-3"
+                className="whitespace-nowrap !px-2 !text-12"
                 onClick={() => onOpen(selected.id)}
                 title="打开项目"
                 aria-label="打开项目"
               >
-                <FolderOpen size={15} /> 打开项目
+                <FolderOpen size={14} /> 打开项目
               </Button>
               <Button
                 variant="secondary"
                 size="md"
-                className="whitespace-nowrap px-3"
+                className="whitespace-nowrap !px-2 !text-12"
                 onClick={() => onEdit(selected)}
                 title="编辑项目"
                 aria-label="编辑项目"
               >
-                <Pencil size={14} /> 编辑项目
+                <Pencil size={13} /> 编辑项目
               </Button>
-              {/* 3.7.5（Q-03）：第三个按钮进阅读模式 —— 与另两枚同高同风格，三枚缩紧内边距同排不换行 */}
+              {/* 3.7.5（Q-03）：第三个按钮进阅读模式 —— 与另两枚同高同风格，1440 宽下单行不换行不裁切 */}
               <ReaderLaunchButton
                 projectId={selected.id}
                 projectName={selected.name}
                 mode="text"
+                label="阅读"
                 size="md"
-                className="px-3"
+                className="!px-2 !text-12"
               />
             </div>
           </div>
