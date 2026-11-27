@@ -35,10 +35,12 @@ import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 // 36（2026-11-26 · 3.7.4 发布）：新增 whats-new-374，并把版本变化篇统一从
 //   version-index.ts 出口 —— 手册与关于页共用一份聚合，避免两处各拼一遍时漏篇。
 // 37（2026-11-26 · 3.7.5）：首页简介改读《作品信息》，作品信息篇补一段「这两个简介会出现在哪」。
-export const CONTENT_VERSION = 37
+// 38（2026-11-28 · 3.7.5 发布补记）：012cb3f 已把 whats-new-375 接进 version-index，
+//   但漏了 +1 —— 索引内容已变而版本未变，缓存旧索引不会作废（网页版会搜不到 3.7.5 篇）。
+export const CONTENT_VERSION = 38
 
 /** 这套内容核对时对应的软件版本 */
-export const SUPPORTED_APP_VERSION = '3.7.5'
+export const SUPPORTED_APP_VERSION = '3.7.6'
 
 /** 全部文章。顺序即同一分组内的展示顺序 */
 export const HELP_ARTICLES: HelpArticle[] = [
