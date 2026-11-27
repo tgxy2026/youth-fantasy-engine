@@ -158,8 +158,10 @@ const tab = getTab(MIS)
     /card\('misc-settings'/.test(seed))
   ok('表格播种里已无 misc-settings（残留会播出一批谁也读不到的行）',
     !/^\s*\['misc-settings',/m.test(seed))
-  ok('三条示例都在（种子闸要求页签不为空，空表作者也不会用）',
-    ['玄脉品级划分', '灵石兑换比率', '望剑城收剑之制'].every(n => seed.includes(n)))
+  const seedVol3 = read('src/data/seedVol3.ts')
+  ok('四条示例都在（种子闸要求页签不为空，空表作者也不会用）',
+    /VOL3_MISC_SEED/.test(seed) &&
+    ['玄脉品级划分', '灵石兑换比率', '望剑城收剑之制', '黑台刻符与锁门制'].every(n => seedVol3.includes(n)))
 }
 
 console.log(`\n—— miscSettings 用例结束：${pass} 通过 / ${fail} 失败`)

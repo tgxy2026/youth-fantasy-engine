@@ -115,7 +115,7 @@ for (const [f, label] of MASTER_DETAIL_PAGES) {
   const rowRe = /^\s*\[\d+, '[a-z]+', '[^']*', (\d+), (\d+)\]/gm
   let m: RegExpExecArray | null
   while ((m = rowRe.exec(block))) xs.push(Number(m[1]))
-  ok('③-a 种子共 10 张卡（解析到 10 行坐标）', xs.length === 10, `实际 ${xs.length}`)
+  ok('③-a 种子共 16 张卡（卷三新增 6 张，解析到 16 行坐标）', xs.length === 16, `实际 ${xs.length}`)
   ok('③-a 种子每张卡 x ≥ 170（左缘 ≥ 40px，不再被裁）', xs.length > 0 && xs.every(x => x >= 170),
     `最小 x = ${xs.length ? Math.min(...xs) : 'N/A'}`)
   ok('③-a 种子首列就在规范起点 170（与 AI 生成 / 模板铺节点同口径）', xs.includes(170))

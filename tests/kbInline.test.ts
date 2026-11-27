@@ -131,7 +131,11 @@ console.log('  ── ①-B 真实召回（不 mock recall） ──')
 console.log('  ── ①-C 装配器端到端（buildProjectContext） ──')
 {
   const { buildProjectContext } = await import('../src/lib/ai/aiContext')
-  const built = await buildProjectContext({ budget: 6000, includeChapterList: false })
+  // 🔴 3.7.5：示范项目扩到三卷 30 章后，设定段（世界设定/力量体系/政治/经济/宗教/大纲…）
+  //    在 6000 预算下就把额度吃满，参考资料按"设定优先"的装配顺序会进 dropped（这是既有策略，
+  //    不是接线失效）。本用例只验证装配器真的把资料段接进来，故用大窗口档预算；
+  //    预算被设定挤掉的情形由装配器 dropped 清单如实告知作者。
+  const built = await buildProjectContext({ budget: 20000, includeChapterList: false })
   ok('装配结果含〖参考资料〗段', /〖参考资料〗/.test(built.text), built.sections.join(' / '))
   ok('参考资料正文真的进了上下文', built.text.includes('SENTINEL_KB_INLINE_ZQ7'))
   ok('该段记进了 sections（「上下文查看」能看见）', built.sections.some(s => /参考资料/.test(s)))
