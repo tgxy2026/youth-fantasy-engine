@@ -137,7 +137,8 @@ const ok = (name: string, cond: boolean, extra = '') => {
     !/'ⓘ /.test(part2) && !/'⚠️ /.test(part2))
   ok('A4 信息性说明保留中性图标（字段说明用 ⓘ，tips 由界面渲染 Info）',
     part1.includes('ⓘ 选多个势力时') &&
-    read('src/components/world/CharacterSheet.tsx').includes('<Info size={12}'))
+    // 3.7.5（Q-06）：tips 统一收进 PageInfoNotes，图标由这个共享组件渲染
+    read('src/components/common/PageInfoNotes.tsx').includes('<Info size={11}'))
 
   const cal = read('src/components/common/CalendarRuleModal.tsx')
   ok('A4 历法规则说明用 ⓘ', cal.includes('ⓘ 改这项') && !cal.includes('⚠️ 改这项'))

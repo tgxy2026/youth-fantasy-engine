@@ -2,9 +2,10 @@ import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } fr
 import { Z } from '@/lib/app/zLayer'
 import type { TabDef } from '@/lib/types'
 import { getFormDataFor, saveFormDataFor, getCurrentProjectId } from '@/lib/db'
-import { Save, RotateCcw, Info, Sparkles, Radar } from 'lucide-react'
+import { Save, RotateCcw, Sparkles, Radar } from 'lucide-react'
 import { useManualDraftSave } from '@/components/common/useManualDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import PageInfoNotes from '@/components/common/PageInfoNotes'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import HelpPopover from '@/components/common/HelpPopover'
 import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
@@ -328,6 +329,9 @@ export default function FormSheet({ tab }: Props) {
         <DraftSaveFeedback state={saveState} dirty={dirty} onRetry={() => void save()} />
       </header>
 
+      {/* 3.7.5（Q-06）：填写说明统一收进顶部「信息说明」，默认收起（原先挂页面底部，把表单撑长） */}
+      <PageInfoNotes tips={tab.tips} />
+
       {/* 模块（C10：抽成 SchemaFieldGrid —— 母级表单与子世界表单共用同一份渲染，避免漂移） */}
       <div data-guide="form-fields">
         <SchemaFieldGrid
@@ -338,18 +342,6 @@ export default function FormSheet({ tab }: Props) {
           tabId={tab.id}
         />
       </div>
-
-      {/* 底部提示 */}
-      {tab.tips && tab.tips.length > 0 && (
-        <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4">
-          {tab.tips.map((tip, i) => (
-            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
-              <Info size={12} className="mt-0.5 shrink-0" />
-              <span>{tip}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* 底部浮动保存按钮（页面很长时方便） */}
       {dirty && <SaveFab onClick={save} label="保存修改" />}

@@ -97,10 +97,10 @@ ok('③ 每个 th 都有不透明背景（否则滚动时下面几行会从表�
   (sheet.match(/<th[^>]*className="bg-ink-800 /g) ?? []).length >= 3)
 ok('③ 表头里原有的列名 + 筛选框一起被冻住（select 与 input 两个分支都还在）',
   /<th key=\{col\.name\}[^>]*className="bg-ink-800[\s\S]*?col\.type === 'select'[\s\S]*?<input/.test(sheet))
-ok('③ 内容区独立滚动（maxHeight 用 foldVh 折算，跟随界面缩放）',
-  sheet.includes('foldVh(') && /maxHeight:\s*foldVh\('62vh'\)/.test(sheet))
-ok('③ 用 maxHeight 而非 height —— 行数少时表格自适应、不出现大片空白',
-  !/height:\s*foldVh\('62vh'\)/.test(sheet))
+ok('③ 内容区独立滚动、且吃满可用高度（3.7.5 Q-06：不再写死 62vh，窗口多高就用多高）',
+  /flex-1 min-h-0 overflow-x-auto overflow-y-auto/.test(sheet) && !/foldVh\('62vh'\)/.test(sheet))
+ok('③ 页面根竖向 flex + 表格外框 flex-1 min-h-0（否则表格吃不满剩余高度）',
+  /page-enter h-full flex flex-col min-h-0/.test(sheet) && /relative flex-1 min-h-0 flex flex-col rounded-xl/.test(sheet))
 
 // ---------- ④ 接线位置与回归面 ----------
 ok('④ usePanScroll 在 early return 之前调用（rules-of-hooks）',

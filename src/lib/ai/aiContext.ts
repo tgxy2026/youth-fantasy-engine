@@ -909,7 +909,11 @@ export async function buildProjectContext(opts: ProjectContextOptions = {}): Pro
       const st = await db.getProjectStats(pid).catch(() => ({ chapters: 0, words: 0, volumes: 0 }))
       // 🔴 3.7.5：简介与首页卡片同源 —— 《作品信息》正式简介 → 一句话简介 → 旧 `intro`。
       //    作者填在《作品信息》里的简介，AI 也该看得到（此前只有示范项目那条有值）。
-      const introText = (await loadProjectIntroTexts([{ id: pid, intro: proj.intro }]))[pid] ?? ''
+      //    ⚠️ 读表失败必须回退旧字段：`projectLevelQuery` 靠这段撑参考资料召回，
+      //    一旦这里抛错被外层 catch 吞掉，整段「作品概览」就没了、召回也跟着哑掉。
+      const introText = await loadProjectIntroTexts([{ id: pid, intro: proj.intro }])
+        .then(map => map[pid] ?? '')
+        .catch(() => proj.intro ?? '')
       const head = [
         `书名：${proj.name}`,
         // 类型＝题材包（2.7.1）：值就是四字包名 ⇒ 直接可读，无需额外映射。

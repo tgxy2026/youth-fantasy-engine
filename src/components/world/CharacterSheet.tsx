@@ -14,6 +14,7 @@ import { cardLeaseKey, registerFormEditor, waitForAgentForm, withFormSave } from
 import { Plus, Trash2, UserRound, Info, Save, EyeOff, Search, Sparkles, Wand2, ScrollText } from 'lucide-react'
 import { useCardDraftSave } from './useCardDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import PageInfoNotes from '@/components/common/PageInfoNotes'
 import { readPortraitFile } from '@/lib/media/imagePortrait'
 import HelpPopover from '@/components/common/HelpPopover'
 import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pageSummary } from '@/components/common/PageHeader'
@@ -907,6 +908,10 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
       </header>
       <DraftSaveFeedback state={manualSave} dirty={dirty} onRetry={() => void save()} />
 
+      {/* 3.7.5（Q-06）：填写说明统一收进顶部「信息说明」，默认收起。
+          原先挂在页面底部且 `max-h-24` 内部滚动（全站第三种做法），既占高度又要滚两处。 */}
+      <PageInfoNotes tips={tab.tips} />
+
       {/* The App workspace supplies a definite height; header wrapping consumes real space. */}
       <MasterDetail>
         {/* 卡片列表（含搜索 + 独立滚动） */}
@@ -1105,17 +1110,6 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
           )}
         </div>
       </MasterDetail>
-
-      {tab.tips && tab.tips.length > 0 && (
-        <div className="mt-3 max-h-24 shrink-0 overflow-y-auto rounded-xl border border-amber/20 bg-amber/5 p-3 space-y-1.5">
-          {tab.tips.map((tip, i) => (
-            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
-              <Info size={12} className="mt-0.5 shrink-0" />
-              <span>{tip}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* 浮动保存按钮 */}
       {dirty && <SaveFab onClick={save} label={`保存「${draft?.name}」修改`} />}

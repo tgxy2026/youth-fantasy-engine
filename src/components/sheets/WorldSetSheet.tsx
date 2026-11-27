@@ -20,6 +20,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { BookOpen, Copy, Globe2, Layers, NotebookPen, Pencil, Plus, Save, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { useManualDraftSave } from '@/components/common/useManualDraftSave'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import PageInfoNotes from '@/components/common/PageInfoNotes'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
 import { captureCandidateOwner } from '@/lib/ai/candidateContext'
 import type { CardRecord, TabDef } from '@/lib/types'
@@ -551,13 +552,8 @@ export default function WorldSetSheet({ tab }: Props) {
             </div>
           </div>
 
-          {tab.tips && tab.tips.length > 0 && (
-            <div className="mt-4 rounded-xl border border-amber/20 bg-amber/5 p-4">
-              <div className="text-11 text-ink-300 leading-relaxed">
-                {tab.tips.map((t, i) => <div key={i}>· {t}</div>)}
-              </div>
-            </div>
-          )}
+          {/* 3.7.5（Q-06）：与表格 / 表单页统一成「信息说明」折叠块（这里在内容流里，不夹表格，故位置不动） */}
+          <PageInfoNotes tips={tab.tips} className="mt-4" />
         </div>
       </div>
 

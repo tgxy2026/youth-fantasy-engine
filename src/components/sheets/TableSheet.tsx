@@ -10,7 +10,7 @@ import type { TabDef } from '@/lib/types'
 import { Z } from '@/lib/app/zLayer'
 import { addCustomItem, deleteTableRow, getCurrentProjectId, saveTableRow } from '@/lib/db'
 import { SABC_LABELS, type VisCtx } from '@/lib/schema'
-import { Plus, Trash2, Info, Save, Check, Calendar, CalendarClock, Table2, Hash, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
+import { Plus, Trash2, Save, Check, Calendar, CalendarClock, Table2, AlertTriangle, Network, Sparkles, GitBranch, FileDown, FileUp, BookOpen, Settings2, LayoutTemplate } from 'lucide-react'
 import HistoryTimeline from '@/components/outline/HistoryTimeline'
 import StoryTimeline from '@/components/outline/StoryTimeline'
 import StorylineView from '@/components/outline/StorylineView'
@@ -59,9 +59,9 @@ import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
 import { atlasCategoryOptions } from '@/lib/atlas/schema'
 import { usePanScroll } from '@/lib/app/usePanScroll'
 import { useRowWindow } from '@/components/sheets/useRowWindow'
-import { foldVh } from '@/lib/settings/theme'
 import { captureWorkspaceView } from '@/lib/settings/workspaceRuntime'
 import DraftSaveFeedback from '@/components/common/DraftSaveFeedback'
+import PageInfoNotes from '@/components/common/PageInfoNotes'
 import { useTableWorkspaceScroll } from './useTableWorkspaceScroll'
 
 interface Props {
@@ -493,7 +493,8 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   if (!loaded) return <LoadingState />
 
   return (
-    <div className="page-enter">
+    /* 3.7.5（Q-06）：根节点竖向 flex 并撑满内容区 ⇒ 表格吃满剩余高度，只有内容真超出才滚动 */
+    <div className="page-enter h-full flex flex-col min-h-0">
       {/* 头部
           🔴🔴 2026-10-09 主人反馈「缩小窗口时页面显示异常」：本页工具条很长（历史事件表 1105px），
           原来它是 `shrink-0`（不可压缩）、而左侧标题容器只有 `min-w-0`（**能被压到 0 宽**）——
@@ -714,14 +715,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         </div>
       </header>
 
-      {/* 编号规则说明（有编号列的表格展示，防止编号混乱无法识别） */}
-      {tab.codeRule && (
-        <details className="mb-3 rounded-lg border border-ink-700/70 bg-ink-850/75 px-3.5 py-2 text-11 text-ink-400">
-          <summary className="cursor-pointer select-none inline-flex items-center gap-1.5 text-amber/85 hover:text-amber">
-            <Hash size={11} /> 编号规则          </summary>
-          <p className="mt-1.5 text-ink-300 leading-relaxed">{tab.codeRule}</p>
-        </details>
-      )}
+      {/* 编号规则 + 填写说明：3.7.5（Q-06）合并成顶部一块「信息说明」，默认收起。
+          原先编号规则在上、tips 在页面底部，两头把表格夹住；表格还写死 62vh ⇒ 窗口再高也只滚那么点。 */}
+      <PageInfoNotes codeRule={tab.codeRule} tips={tab.tips} />
 
       {/* 编号校验错误：存在重复编号时阻止保存并提示修改 */}
       {codeError && (
@@ -789,7 +785,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
   ) : (
         <>
       {/* 表格 */}
-      <div className="relative rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
+      <div className="relative flex-1 min-h-0 flex flex-col rounded-xl border border-ink-700 bg-ink-850 overflow-hidden">
         {/* 🔴 表头冻结 + 左键拖拽平移（2026-10-17）：纵向滚动收进本容器（maxHeight 只在内容长时生效），
             表头 sticky 钉顶；横向既可拖滚动条，也可左键按住直接拖动。 */}
         <div
@@ -804,10 +800,9 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           onMouseLeave={pan.handlers.onMouseLeave}
           onClickCapture={pan.handlers.onClickCapture}
           className={
-            'overflow-x-auto overflow-y-auto ' +
+            'flex-1 min-h-0 overflow-x-auto overflow-y-auto ' +
             (pan.dragging ? 'cursor-grabbing select-none ' : 'cursor-grab ')
           }
-          style={{ maxHeight: foldVh('62vh') }}
         >
           <table className="text-12 table-fixed" style={{ width: totalWidth || undefined, minWidth: '100%' }}>
             {/* 🔴 sticky 表头：tr 上 sticky + 每个 th 补不透明背景（否则滚动时下面几行会透出来） */}
@@ -897,18 +892,6 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
         )}
       </div>
         </>
-      )}
-
-      {/* 底部提示 */}
-      {tab.tips && tab.tips.length > 0 && (
-        <div className="mt-5 rounded-xl border border-amber/20 bg-amber/5 p-4 space-y-1.5">
-          {tab.tips.map((tip, i) => (
-            <div key={i} className="text-12 text-amber/80 leading-relaxed flex items-start gap-2">
-              <Info size={12} className="mt-0.5 shrink-0" />
-              <span>{tip}</span>
-            </div>
-          ))}
-        </div>
       )}
 
       {dirtyKeys.length > 0 && !isMaster && viewMode !== 'atlas' && (
