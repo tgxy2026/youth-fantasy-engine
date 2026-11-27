@@ -38,7 +38,7 @@ export default function ReaderLaunchButton({
         title={mode === 'icon' ? '阅读模式：像看小说一样读自己的书（只读）' : '阅读模式：像看小说一样读自己的书（只读，不会改动正文）'}
         aria-label={mode === 'icon' ? label : undefined}
       >
-        <BookOpen size={mode === 'icon' ? 13 : 15} />
+        <BookOpen size={mode === 'icon' ? 13 : 14} className="shrink-0" />
         {mode === 'text' && <span className="ml-1">{label}</span>}
       </Button>
       {open && (

@@ -182,45 +182,46 @@ export default function ProjectHubDetail({
             </div>
 
             {/* 3.7.5：读《作品信息》的「正式简介 / 一句话简介」（正式优先），
-                没填才回退项目记录上的旧 intro；两处都空才显示兜底提示。 */}
-            <div className="mt-3.5 rounded-xl border border-ink-700/50 border-l-2 border-l-amber/50 yfe-surface-3 px-3.5 py-2.5 flex-1 min-h-0 max-h-[136px] overflow-y-auto">
-              <p className="text-13 text-ink-200 leading-relaxed break-words whitespace-pre-line">
+                没填才回退项目记录上的旧 intro；两处都空才显示兜底提示。
+                去掉实体边框窗口，自然排版占满按钮上方空间，过长时以省略号截断。 */}
+            <div className="mt-3 flex-1 min-h-0 overflow-hidden">
+              <p className="text-13 text-ink-200 leading-relaxed break-words whitespace-pre-line line-clamp-6 xl:line-clamp-7 2xl:line-clamp-8">
                 {selected.introText
                   ? selected.introText
                   : <span className="text-ink-500">暂无简介，可在《作品信息》页的「一句话简介」或「正式简介」里填写。</span>}
               </p>
             </div>
 
-            <div className="mt-auto pt-4 flex items-center gap-1 flex-wrap">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               <Button
                 variant="primary"
                 solid
                 size="md"
-                className="whitespace-nowrap !px-2 !text-12"
+                className="w-full justify-center whitespace-nowrap !px-1.5 !text-13"
                 onClick={() => onOpen(selected.id)}
                 title="打开项目"
                 aria-label="打开项目"
               >
-                <FolderOpen size={14} /> 打开项目
+                <FolderOpen size={14} className="shrink-0" /> 打开项目
               </Button>
               <Button
                 variant="secondary"
                 size="md"
-                className="whitespace-nowrap !px-2 !text-12"
+                className="w-full justify-center whitespace-nowrap !px-1.5 !text-13"
                 onClick={() => onEdit(selected)}
                 title="编辑项目"
                 aria-label="编辑项目"
               >
-                <Pencil size={13} /> 编辑项目
+                <Pencil size={13} className="shrink-0" /> 编辑项目
               </Button>
-              {/* 3.7.5（Q-03）：第三个按钮进阅读模式 —— 与另两枚同高同风格，1440 宽下单行不换行不裁切 */}
+              {/* 3.7.5（Q-03）：第三个按钮进阅读模式 —— 三枚等宽铺满简介栏宽度 */}
               <ReaderLaunchButton
                 projectId={selected.id}
                 projectName={selected.name}
                 mode="text"
                 label="阅读模式"
                 size="md"
-                className="!px-2 !text-12"
+                className="w-full justify-center !px-1.5 !text-13"
               />
             </div>
           </div>

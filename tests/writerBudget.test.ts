@@ -9,7 +9,8 @@
 //   ④ 系数表与展示名表**键集合一致**（漏一个 label 会让面板明细里少一行）。
 import {
   WRITER_BUDGET_KINDS, WRITER_BUDGET_LABELS, DEFAULT_WRITER_BASE, DEFAULT_WRITER_BUDGET, WRITER_BASE_LIMITS,
-  WRITER_RECOMMEND, budgetForKind, previewAt, recommendWriterBase, type WriterBudgetKind,
+  WRITER_RECOMMEND, PROOFREAD_WINDOW_TIERS, budgetForKind, previewAt, recommendWriterBase,
+  proofreadBudgetForWindow, type WriterBudgetKind,
 } from '../src/lib/ai/aiWriterBudget'
 import { adviseCapacity, CLOUD_EFFECTIVE_RATIO, REPLY_RESERVE_TOKENS } from '../src/lib/ai/modelCapacity'
 
@@ -142,6 +143,17 @@ ok('换模型：推荐值 = 窗口 × 比例并对齐 100（96K）',
   rec96 === Math.round(98304 * WRITER_RECOMMEND.local.ratio / 100) * 100, String(rec96))
 ok('换模型：推荐值 = 窗口 × 比例并对齐 100（128K）',
   rec128 === Math.round(131072 * WRITER_RECOMMEND.local.ratio / 100) * 100, String(rec128))
+
+// ---------- ⑧ 校对档 128K~1024K 云端窗口档位适配（3.7.5） ----------
+ok('校对档档位覆盖 128K/256K/512K/1024K',
+  PROOFREAD_WINDOW_TIERS.map(t => t.label).join(',') === '1024K,512K,256K,128K')
+ok('低于 128K 云端模型保留回退预算 6000', proofreadBudgetForWindow(65536, 6000, false) === 6000)
+ok('本地模型即使 128K 也不盲目放大（受显存保护）', proofreadBudgetForWindow(131072, 6000, true) === 6000)
+ok('128K 云端模型校对档起步提升至 24000', proofreadBudgetForWindow(131072, 6000, false) === 24000)
+ok('256K 云端模型校对档提升至 48000', proofreadBudgetForWindow(262144, 6000, false) === 48000)
+ok('512K 云端模型校对档提升至 96000', proofreadBudgetForWindow(524288, 6000, false) === 96000)
+ok('1024K 云端模型校对档提升至 160000', proofreadBudgetForWindow(1048576, 6000, false) === 160000)
+ok('若用户手动基准换算高于档位，取较大值', proofreadBudgetForWindow(131072, 30000, false) === 30000)
 
 console.log(`\n—— writerBudget 用例结束：${pass} 通过 / ${fail} 失败`)
 if (fail > 0) process.exitCode = 1

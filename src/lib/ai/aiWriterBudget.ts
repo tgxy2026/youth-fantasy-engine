@@ -16,7 +16,7 @@
  * 与酒馆的额度**互不影响**：这里只管正文写作链路，酒馆那两个数在「控制面板」里单独设置。
  */
 import * as db from '@/lib/db'
-import { adviseCapacity, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from '@/lib/ai/modelCapacity'
+import { adviseCapacity, effectiveWindowOf, isLocalProvider, modelFingerprintOf, shouldApplyTuning, type CapacityAdvice } from '@/lib/ai/modelCapacity'
 import { loadProviders, loadActiveId, type AIProvider } from '@/lib/ai'
 import { loadRouting, DEFAULT_ROUTING } from '@/lib/ai/aiRouting'
 import { getTavernSettings } from '@/lib/tavern/settings'
@@ -166,16 +166,59 @@ export async function saveWriterBudget(next: WriterBudgetSettings): Promise<Writ
   return out
 }
 
+/**
+ * 校对档上下文预算档位（3.7.5，128K 起步，按云端 API 常见上下文窗口分级放大）。
+ *
+ * 背景：默认 6000 字符是为早期小窗口/本地模型定的，对当下普遍支持 128K~1024K 的云端 API 过于保守
+ * （长篇设定较多时参考资料会被挤进 dropped）。仅在非本地模型且开启自动跟随时按档位抬升，
+ * 取与基准换算值的较大者，既保住小窗口/手动基准，也让大窗口 API 充分携带设定与参考资料。
+ */
+export const PROOFREAD_WINDOW_TIERS = [
+  { minWindow: 1_048_576, budget: 160_000, label: '1024K' },
+  { minWindow: 524_288, budget: 96_000, label: '512K' },
+  { minWindow: 262_144, budget: 48_000, label: '256K' },
+  { minWindow: 131_072, budget: 24_000, label: '128K' },
+] as const
+
+/** 按模型上下文窗口计算校对档建议预算（未达 128K 或本地模型返回 fallbackBudget） */
+export function proofreadBudgetForWindow(
+  windowTokens: number,
+  fallbackBudget: number,
+  isLocal = false,
+): number {
+  if (isLocal || !Number.isFinite(windowTokens) || windowTokens < 131_072) {
+    return fallbackBudget
+  }
+  const hit = PROOFREAD_WINDOW_TIERS.find(t => windowTokens >= t.minWindow)
+  return hit ? Math.max(fallbackBudget, hit.budget) : fallbackBudget
+}
+
 /** 某功能在给定基准下实际使用的资料预算（对齐到 100 字，免得界面上出现 6375 这种数） */
 export function budgetForKind(kind: WriterBudgetKind, base: number): number {
   const raw = base * WRITER_BUDGET_KINDS[kind]
   return Math.max(1000, Math.round(raw / 100) * 100)
 }
 
-/** 调用点用这个：读设置 + 换算一步到位 */
+/** 调用点用这个：读设置 + 换算一步到位（校对档对 128K+ 云端模型按窗口档位放大） */
 export async function writerBudgetFor(kind: WriterBudgetKind): Promise<number> {
-  const { base } = await getWriterBudget()
-  return budgetForKind(kind, base)
+  const { base, autoTuneByModel } = await getWriterBudget()
+  const baseBudget = budgetForKind(kind, base)
+  if ((kind !== 'proofread' && kind !== 'jiewenji-proofread') || autoTuneByModel === false) {
+    return baseBudget
+  }
+  try {
+    const [providers, activeId, routing] = await Promise.all([
+      loadProviders().catch(() => [] as AIProvider[]),
+      loadActiveId().catch(() => null),
+      loadRouting().catch(() => ({ ...DEFAULT_ROUTING })),
+    ])
+    const reviewId = routing.review || activeId
+    const p = providers.find(x => x.id === reviewId) ?? null
+    if (!p) return baseBudget
+    return proofreadBudgetForWindow(effectiveWindowOf(p), baseBudget, isLocalProvider(p))
+  } catch {
+    return baseBudget
+  }
 }
 
 /**
