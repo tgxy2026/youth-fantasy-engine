@@ -50,7 +50,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
         </div>
 
         {/* ② 这一次要产出什么（可选项随篇幅变化） */}
-        <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <div className="mb-1.5 text-12 text-ink-300">这一次要产出什么</div>
           <div className="flex flex-wrap gap-1.5">
             {targets.map(k => (
@@ -211,7 +211,7 @@ export default function CreativeSetupSection({ m }: { m: CreativeWritingModel })
             设定同步策略、去 AI 味儿、逐章确认两边完全一致）
             「只做大纲规划」不写正文，这些设置整块收起来，免得让人以为接下来还要连写 */}
         {!outlineOnlyTarget && (
-        <details className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2" open>
+        <details className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2" open>
           <summary className="cursor-pointer text-12 text-ink-200">连写设置（每章设定同步 · 去 AI 味儿 · 逐章确认）</summary>
           {/* 2026-11-24 全宽改版：宽屏下「同步策略」与「开关 + 去味 + 文风」双列并排，窄屏保持堆叠 */}
           <div className="mt-2.5 grid items-start gap-3 @min-[80rem]/workspace:grid-cols-2">

@@ -408,7 +408,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
               {!commentsLoading && !commentsError && commentTotal === 0 && <p className="mt-2 text-12 text-ink-400">还没有评论。写下第一条看法吧。</p>}
               <ul className="mt-3 space-y-3">
                 {comments.map((c) => (
-                  <li key={c.id} className="rounded-xl border border-ink-700/70 bg-ink-900/40 p-3.5">
+                  <li key={c.id} className="rounded-xl border border-ink-700/70 yfe-surface-3 p-3.5">
                     <p className="text-11 text-ink-400">
                       <span className="text-ink-300">{c.displayName}</span>
                       {c.byAuthor ? ' · 作者' : ''} · {formatTime(c.createdAt)}
@@ -493,7 +493,7 @@ export default function FeedPanel({ canWrite, defaultDisplay, onNeedLogin, shell
       {!shellOwnsStatus && loading && items.length === 0 && (
         <ul className="space-y-3" aria-label="正在加载投稿">
           {[0, 1, 2].map((i) => (
-            <li key={i} className="animate-pulse rounded-2xl border border-ink-700 bg-ink-900/40 p-4">
+            <li key={i} className="animate-pulse rounded-2xl border border-ink-700 yfe-surface-3 p-4">
               <div className="h-4 w-1/3 rounded bg-ink-800" />
               <div className="mt-3 h-3 w-full rounded bg-ink-800/80" />
               <div className="mt-2 h-3 w-2/3 rounded bg-ink-800/80" />

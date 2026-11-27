@@ -159,14 +159,14 @@ export default function PlotCandidatePanel({ onClose }: { onClose: () => void })
         {err !== '' && <div role="alert" className="text-11 text-danger">{err}</div>}
 
         {lastReport.length > 0 && (
-          <section className="rounded-lg border border-ink-700 bg-ink-900/50 px-3 py-2">
+          <section className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
             <div className="text-11 text-ink-200 mb-1">本次逐字段结果</div>
             <ul className="space-y-0.5">{lastReport.map((l, i) => <li key={i} className="text-10 text-ink-400">{l}</li>)}</ul>
           </section>
         )}
 
         {mine.length === 0 && keysInfo?.resolved.length ? (
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-6 text-center text-12 text-ink-500">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-6 text-center text-12 text-ink-500">
             这张细纲卡还没有候选。点「生成 2~3 条候选」—— 生成只保存候选，不会改细纲。
           </div>
         ) : null}
@@ -178,7 +178,7 @@ export default function PlotCandidatePanel({ onClose }: { onClose: () => void })
             const disabled = busy || stale || c.status === 'applied' || c.status === 'discarded' || !canWrite
             return (
               <li key={c.id} data-plot-candidate={c.id}
-                className="rounded-xl border border-ink-700/60 bg-ink-900/40 px-3 py-2.5">
+                className="rounded-xl border border-ink-700/60 yfe-surface-3 px-3 py-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-12 font-medium text-ink-100">{c.title}</span>
                   <span className="text-10 text-ink-500">第 {c.chapterNo} 章</span>

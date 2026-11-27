@@ -15,7 +15,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
   const { writingReady, acpWriting, ledger, ledgerPicked, setLedgerPicked, ledgerSaving, runLedger, setLedgerTargetTab, commitLedger, jumpToEntry, content } = m
   return (
           <div className="space-y-2.5">
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
+            <div className="rounded-lg border border-ink-700 yfe-surface-3 p-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="text-11 text-ink-300 leading-relaxed">
                   从本章正文抽出有专名的设定实体，与已有设定比对后分三档。
@@ -34,7 +34,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
             {ledger.error && <div className="text-11 text-danger px-1">{ledger.error}</div>}
 
             {!ledger.loading && ledger.scannedAt > 0 && ledger.items.length === 0 && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">
+              <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-4 text-center text-11 text-ink-500">
                 本章没有抽出设定实体
               </div>
             )}
@@ -54,7 +54,7 @@ export default function JieWenJiLedger({ m }: { m: JieWenJiModel }) {
                       return (
                         <div
                           key={it.key}
-                          className={`rounded-lg border px-2 py-1.5 ${it.status === 'new' ? 'border-ink-600 bg-ink-900/50' : 'border-ink-700/60 bg-ink-900/20'}`}
+                          className={`rounded-lg border px-2 py-1.5 ${it.status === 'new' ? 'border-ink-600 yfe-surface-3' : 'border-ink-700/60 bg-ink-900/20'}`}
                         >
                           <div className="flex items-start gap-1.5">
                             {it.status === 'new' ? (

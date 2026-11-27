@@ -235,7 +235,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
             const r = it as AdminQueueReport
             const isAppeal = r.kind === 'appeal'
             return (
-              <li key={r.id} className="rounded-xl border border-ink-700 bg-ink-900/50 p-3">
+              <li key={r.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3">
                 <p className="text-12 text-ink-100">
                   {isAppeal ? '申诉' : '举报'} {r.targetType === 'post' ? '投稿' : '评论'} · {r.reason}
                   <StatusPill>{r.status === 'claimed' ? '已领取' : '待处理'}</StatusPill>
@@ -273,7 +273,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
           if (tab === 'comment') {
             const c = it as AdminQueueComment
             return (
-              <li key={c.id} className="rounded-xl border border-ink-700 bg-ink-900/50 p-3">
+              <li key={c.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3">
                 <p className="text-12 text-ink-100">{c.body}</p>
                 {c.screening && (
                   <p className="mt-1 text-11 text-amber">
@@ -295,7 +295,7 @@ export default function AdminPanel({ onTitle }: { onTitle?: (n: number) => void 
           }
           const p = it as AdminQueuePost
           return (
-            <li key={p.id} className="rounded-xl border border-ink-700 bg-ink-900/50 p-3">
+            <li key={p.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3">
               <p className="flex flex-wrap items-center gap-2">
                 <span className="text-13 font-semibold text-ink-100">{p.title || '（无标题）'}</span>
                 {p.claimedBy && <StatusPill>已领取</StatusPill>}

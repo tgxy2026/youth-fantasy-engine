@@ -45,7 +45,7 @@ export default function CreativeRewriteSection({ m }: { m: CreativeWritingModel 
   return (
     <>
       {/* 整章改写：对已有章节做整章级的润色 / 扩写 / 精简 / 续写 / 改写 */}
-      <section className="mt-4 rounded-lg border border-ink-700 bg-ink-900/40 p-4">
+      <section className="mt-4 rounded-lg border border-ink-700 yfe-surface-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-13 text-ink-100">整章改写</span>
           <HelpPopover title="整章改写怎么用" width="24rem" size={12}>

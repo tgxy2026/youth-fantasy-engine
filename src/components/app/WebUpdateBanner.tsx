@@ -71,7 +71,7 @@ export default function WebUpdateBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-amber/40 bg-ink-850/95 px-3 py-2 shadow-lg backdrop-blur"
+      className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border border-amber/40 yfe-surface-4-soft px-3 py-2 shadow-lg backdrop-blur"
       style={{ maxWidth: foldVh('92vw') }}
     >
       <RefreshCw size={14} className="shrink-0 text-amber" />

@@ -388,7 +388,7 @@ export function StyleAudit({ content, chapterId, onClose }: { content: string; c
             <div className="mt-3 space-y-2">
               <div className="text-11 text-ink-500">AI 文风体检</div>
               {aiStyle.map((f, i) => (
-                <div key={i} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+                <div key={i} className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className={`px-1.5 py-px rounded text-10 ${f.level === '严重' ? 'bg-danger/15 text-danger' : f.level === '中等' ? 'bg-amber/15 text-amber' : 'bg-info/15 text-info'}`}>{f.level}</span>
                     <span className="text-11 text-ink-400">{f.type}</span>

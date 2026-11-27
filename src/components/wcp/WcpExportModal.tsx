@@ -195,7 +195,7 @@ export default function WcpExportModal({
     <Modal open={open} onClose={onClose} title={`WCP 导出 · ${meta.name}${chapterNo ? ` · 第${chapterNo}章` : ''}`} width="2xl" maxHeight="86vh" footer={footer} footerAlign="end">
       {!cfg ? <LoadingState text="正在读取 WCP 偏好…" /> : (
         <div className="space-y-4">
-          <p className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 text-ink-400 leading-relaxed">
+          <p className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-11 text-ink-400 leading-relaxed">
             {meta.materialHint}
             <span className="text-ink-500">　·　导出的资料包不会写入任何项目数据；复制与下载都不会改动「底包导出记录」。</span>
           </p>
@@ -240,7 +240,7 @@ export default function WcpExportModal({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
             <span className="text-11 text-ink-400">本地 Agent 工作区</span>
             <Button variant="secondary" size="sm" onClick={() => void syncWorkspace()} disabled={wsBusy}>
               {hasWorkspace ? <FolderSync size={12} /> : <Download size={12} />}
@@ -268,7 +268,7 @@ export default function WcpExportModal({
           </div>
 
           {pack && (
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+            <div className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
               <p className="flex flex-wrap items-center gap-2 text-11 text-ink-400">
                 <FileText size={12} className="text-amber" />
                 {pack.filename}
@@ -291,7 +291,7 @@ export default function WcpExportModal({
               )}
               <details className="mt-2">
                 <summary className="cursor-pointer text-11 text-ink-400 hover:text-ink-200">查看全文预览</summary>
-                <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-11 text-ink-300">
+                <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 yfe-surface-3 p-2.5 text-11 text-ink-300">
                   {pack.text}
                 </pre>
               </details>

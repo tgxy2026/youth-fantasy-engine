@@ -15,7 +15,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
  * ⚠️ 间距（`mb-6` / `mt-6` 等）一律由调用方经 `className` 追加 —— 不在这里内置，
  *    否则每个调用点都要和默认值打架。
  */
-export const PANEL_CLS = 'bg-ink-850/95 border border-ink-700/75 rounded-xl p-5 ws-surface'
+export const PANEL_CLS = 'yfe-surface-2 border border-ink-700/75 rounded-xl p-5 ws-surface'
 
 export default function Panel({ className = '', children, ...rest }: HTMLAttributes<HTMLElement> & { children?: ReactNode }) {
   return (

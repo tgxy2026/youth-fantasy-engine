@@ -170,7 +170,7 @@ export default function ChapterTreeSelect({ volumes, chapters, value, onChange, 
         )}
       </div>
 
-      <div className={`rounded border border-ink-700 bg-ink-950/60 p-1 ${listClass ?? 'max-h-56'} overflow-y-auto`}>
+      <div className={`rounded border border-ink-700 yfe-surface-3 p-1 ${listClass ?? 'max-h-56'} overflow-y-auto`}>
         {orderedVols.map(v => group(
           v.id,
           v.title || '（未命名卷）',

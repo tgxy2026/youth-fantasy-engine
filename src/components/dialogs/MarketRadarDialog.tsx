@@ -237,7 +237,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
       }
     >
       {/* 顶部口径：这是「联网检索 + 模型归纳」，不是市场结论；数据来源也在这里说清 */}
-      <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+      <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
         <div className="text-11 leading-relaxed text-ink-300">
           按你给的题材 / 平台去公开网络检索，再由模型归纳成趋势与机会点 —— <b className="text-ink-200">仅供参考，不构成市场结论</b>，
           也不替你写正文或大纲。
@@ -416,7 +416,7 @@ export default function MarketRadarDialog({ open, onClose, defaultGenre = '', de
             )}
 
             {/* 口径尾注（照抄 report.disclaimer，不加工） */}
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-10 leading-relaxed text-ink-500">
+            <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-10 leading-relaxed text-ink-500">
               {report.disclaimer || RADAR_DISCLAIMER}
             </div>
           </div>

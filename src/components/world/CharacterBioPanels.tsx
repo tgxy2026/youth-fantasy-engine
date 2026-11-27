@@ -219,7 +219,7 @@ export function StatePromotePanel({
       ) : (
         <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
           {candidates.map(({ record, node, dup }) => (
-            <div key={record.id} className="flex items-start justify-between gap-2 rounded-lg border border-ink-700/70 bg-ink-950/60 px-2.5 py-2">
+            <div key={record.id} className="flex items-start justify-between gap-2 rounded-lg border border-ink-700/70 yfe-surface-1 px-2.5 py-2">
               <div className="min-w-0 flex-1">
                 <div className="text-11 text-ink-200">
                   <span className="text-amber">{record.chapterNo > 0 ? `第${record.chapterNo}章` : '未标章'}</span>
@@ -401,7 +401,7 @@ export function ComposePreviewPanel({
           <X size={13} />
         </Button>
       </div>
-      <div className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ink-700 bg-ink-950/70 p-3 text-12 text-ink-200 leading-relaxed">
+      <div className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ink-700 yfe-surface-1 p-3 text-12 text-ink-200 leading-relaxed">
         {text}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
@@ -533,7 +533,7 @@ export function AddBioCharacterModal({
                         return (
                           <div
                             key={c.id}
-                            className="flex items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/50 px-3 py-2 hover:border-ink-500 transition-colors"
+                            className="flex items-center justify-between gap-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 hover:border-ink-500 transition-colors"
                           >
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">

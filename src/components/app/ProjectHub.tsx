@@ -334,7 +334,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
       {/* 工坊顶栏（对齐方案 D：极简 5 控件） */}
       <header
-        className="relative shrink-0 border-b border-ink-700/65 bg-ink-950/75 backdrop-blur-md shadow-sm px-5 lg:px-7 py-3 flex flex-wrap items-center justify-between gap-3"
+        className="relative shrink-0 border-b border-ink-700/65 yfe-surface-1 shadow-sm px-5 lg:px-7 py-3 flex flex-wrap items-center justify-between gap-3"
         style={{ zIndex: Z.pagePanel }}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -446,7 +446,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       {/* 方案 D 主分栏：左侧 340px 目录 + 右侧工作台详情 */}
       <div className="relative flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]" style={{ zIndex: Z.pageHandle }}>
         {/* 左栏：作品目录（搜索 / 排序 / 胶囊筛选 + 独立滚动） */}
-        <aside className="border-b lg:border-b-0 lg:border-r border-ink-700/65 bg-ink-950/65 backdrop-blur-md flex flex-col min-h-0 max-h-[340px] lg:max-h-none">
+        <aside className="border-b lg:border-b-0 lg:border-r border-ink-700/65 yfe-surface-1 flex flex-col min-h-0 max-h-[340px] lg:max-h-none">
           <div className="px-3.5 pt-3.5 pb-2.5 space-y-2.5 shrink-0 border-b border-ink-700/40">
             <div className="flex items-center gap-2">
               <label className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-ink-700/80 bg-ink-900/85 px-2.5 h-[34px] focus-within:border-amber/60 transition-colors ws-control">
@@ -721,7 +721,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               </div>
             ) : projects.length === 0 ? (
               <div className="flex items-center justify-center" style={{ minHeight: foldVh('55vh') }}>
-                <div className="text-center max-w-md rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-8 ws-surface">
+                <div className="text-center max-w-md rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-8 ws-surface">
                   <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber/12 border border-amber/30 flex items-center justify-center text-amber">
                     <BookPlus size={26} />
                   </div>
@@ -744,7 +744,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
               </div>
             ) : !selected ? (
               <div className="flex items-center justify-center" style={{ minHeight: foldVh('45vh') }}>
-                <div className="text-center rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md px-8 py-7 ws-surface">
+                <div className="text-center rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md px-8 py-7 ws-surface">
                   <div className="w-11 h-11 mx-auto mb-3 rounded-xl bg-ink-900/70 border border-ink-700/70 flex items-center justify-center text-ink-500">
                     <Search size={20} />
                   </div>

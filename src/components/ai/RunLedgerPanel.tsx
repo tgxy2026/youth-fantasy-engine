@@ -103,7 +103,7 @@ export default function RunLedgerPanel({ onClose }: { onClose: () => void }) {
                   ? gaps.map(g => `${g.source.ref}（${g.reason ?? (g.scope === 'trimmed' ? '只带了一部分' : '未带入')}）`).join('\n')
                   : (r.context?.dropped ?? []).join('、')
                 return (
-                  <li key={r.id} className="rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
+                  <li key={r.id} className="rounded-xl yfe-surface-3 border border-ink-700/60 px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="text-11 px-1.5 py-0.5 rounded bg-ink-800 text-ink-300">
                         {KIND_LABEL[r.kind] ?? r.kind}

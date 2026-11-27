@@ -23,7 +23,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
   const [openEvidence, setOpenEvidence] = useState<Set<number>>(new Set())
   return (
     <div className="space-y-2.5">
-      <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
+      <div className="rounded-lg border border-ink-700 yfe-surface-3 p-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="text-11 text-ink-300 leading-relaxed">
             写完本章后一键整理「事实 / 伏笔 / 关系 / 人物状态」四类变化。
@@ -130,13 +130,13 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
       {post.error && <div className="text-11 text-danger px-1">{post.error}</div>}
 
       {!post.loading && post.scannedAt === 0 && (
-        <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-4 text-center text-11 text-ink-500">
           点右上「整理本章」开始扫描
         </div>
       )}
 
       {!post.loading && post.scannedAt > 0 && post.items.length === 0 && (
-        <div className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-4 text-center text-11 text-ink-500">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-4 text-center text-11 text-ink-500">
           本章没有需要整理的条目
         </div>
       )}
@@ -158,7 +158,7 @@ export default function JieWenJiPostProcess({ m }: { m: JieWenJiModel }) {
                 const canPick = it.status !== 'registered' && it.status !== 'unregistered'
                 return (
                   <div key={it.key}
-                    className={`rounded-lg border px-2 py-1.5 ${canPick ? 'border-ink-600 bg-ink-900/50' : 'border-ink-700/60 bg-ink-900/20'}`}>
+                    className={`rounded-lg border px-2 py-1.5 ${canPick ? 'border-ink-600 yfe-surface-3' : 'border-ink-700/60 bg-ink-900/20'}`}>
                     <div className="flex items-start gap-1.5">
                       {canPick ? (
                         <input

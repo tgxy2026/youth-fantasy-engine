@@ -83,7 +83,7 @@ export default function SubmissionReportDialog({ onClose }: { onClose: () => voi
           <div className="space-y-2.5">
             {report.sections.map(s => (
               <section key={s.key} data-report-section={s.key} data-report-state={s.state}
-                className={`rounded-xl border px-4 py-3 ${s.state === 'ran' ? 'border-ink-700 bg-ink-900/50' : 'border-ink-700/60 bg-ink-900/25'}`}>
+                className={`rounded-xl border px-4 py-3 ${s.state === 'ran' ? 'border-ink-700 yfe-surface-3' : 'border-ink-700/60 bg-ink-900/25'}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-12 text-ink-100">{s.title}</span>
                   <span className={`text-10 px-1.5 py-0.5 rounded border ${s.state === 'ran' ? 'border-success/30 text-success bg-success/10' : 'border-ink-600 text-ink-400 bg-ink-800'}`}>

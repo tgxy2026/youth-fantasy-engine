@@ -361,7 +361,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
       </svg>
 
       {/* 图例：关系类型（边色） */}
-      <div className="absolute left-3 top-3 flex flex-wrap gap-2 max-w-[60%] bg-ink-850/80 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
+      <div className="absolute left-3 top-3 flex flex-wrap gap-2 max-w-[60%] yfe-surface-4 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
         {(() => {
           const present = [...new Set(edges.map(e => e.type))]
           const ordered = [
@@ -382,7 +382,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
 
       {/* 悬停详情（边 → 关系现状；节点 → 类别 / 上级） */}
       {(hoverEdge || hoverName?.kind === 'node') && (
-        <div className="absolute left-3 bottom-3 right-3 flex items-center gap-3 flex-wrap bg-ink-850/85 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
+        <div className="absolute left-3 bottom-3 right-3 flex items-center gap-3 flex-wrap yfe-surface-4 backdrop-blur rounded-lg px-2.5 py-1.5 border border-ink-700">
           {hoverEdge ? (
             <>
               <span className="text-11 font-semibold" style={{ color: mono ? monoInk : colorOf(hoverEdge.type) }}>{hoverEdge.a} → {hoverEdge.type} → {hoverEdge.b}</span>
@@ -405,7 +405,7 @@ export default function FactionGraph({ rows, onNavigate }: Props) {
 
       {/* 右侧成员面板 */}
       {selected && (
-        <div className="absolute right-3 top-12 bottom-3 w-64 bg-ink-850/95 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
+        <div className="absolute right-3 top-12 bottom-3 w-64 yfe-surface-4 backdrop-blur rounded-xl border border-ink-700 p-3 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-13 font-semibold text-amber">{selected}</div>
                 <Button variant="icon-muted" onClick={() => setSelected(null)} title="关闭详情" aria-label="关闭详情">

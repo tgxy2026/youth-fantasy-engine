@@ -493,7 +493,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
             )}
 
             {previewOpen && basePack && (
-              <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+              <div className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 p-3">
                 <p className="text-11 text-ink-400">
                   共 {basePack.toc.length} 段 · 全文 {basePack.chars} 字符
                   （完整 {basePack.fullCount} / 裁剪 {basePack.trimmedCount} / 省略 {basePack.droppedCount}）
@@ -633,7 +633,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
                 </Button>
               </div>
             )}
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+            <div className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
               <p className="flex flex-wrap items-center gap-2 text-11 text-ink-400">
                 {parsed.format === 'json'
                   ? <><CheckCircle2 size={12} className="text-emerald-400" /> 第二部分已按 JSON 解析</>
@@ -650,14 +650,14 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
               <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div className="min-w-0">
                   <p className="mb-1 text-11 font-medium text-ink-300">第一部分 · 正文</p>
-                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-11 text-ink-200">
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 yfe-surface-3 p-2.5 text-11 text-ink-200">
                     {parsed.body || '（空）'}
                   </pre>
                 </div>
                 <div className="min-w-0">
                   <p className="mb-1 text-11 font-medium text-ink-300">第二部分 · 变动摘要</p>
                   {parsed.markdownCards.length > 0 ? (
-                    <div className="max-h-56 overflow-auto rounded-md border border-ink-700 bg-ink-950/60 p-2.5 space-y-2">
+                    <div className="max-h-56 overflow-auto rounded-md border border-ink-700 yfe-surface-3 p-2.5 space-y-2">
                       {parsed.markdownCards.map((c, i) => (
                         <div key={i}>
                           <p className="text-11 font-medium text-ink-300">{c.section}</p>
@@ -668,7 +668,7 @@ export default function WcpSettingsPanel({ backendMode = null, backendPhase = 'l
                       ))}
                     </div>
                   ) : (
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-11 text-ink-200">
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 yfe-surface-3 p-2.5 text-11 text-ink-200">
                       {parsed.rawChanges || '（空）'}
                     </pre>
                   )}

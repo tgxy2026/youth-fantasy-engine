@@ -114,7 +114,7 @@ export default function CalendarPicker({ value, onChange }: Props) {
             maxHeight: pos.maxHeight,
             transform: pos.flip ? 'translateY(-100%)' : undefined,
           }}
-          className="fixed overflow-y-auto rounded-lg bg-ink-850 border border-ink-700 shadow-xl p-2.5"
+          className="fixed overflow-y-auto rounded-lg yfe-surface-4-soft border border-ink-700 shadow-xl p-2.5"
             data-touch-menu="1"
         >
           <div className="flex items-center justify-between mb-2">

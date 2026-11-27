@@ -88,7 +88,7 @@ export default function DataDock() {
     <div
       ref={dockRef}
       data-data-dock
-      className={`fixed left-3 flex flex-col rounded-xl border border-ink-700/70 bg-ink-900/85 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
+      className={`fixed left-3 flex flex-col rounded-xl border border-ink-700/70 yfe-surface-4 px-2.5 shadow-xl backdrop-blur transition-all duration-200 ${
         // 收起＝贴到屏幕底边（bottom-0）+ 去掉下圆角，视觉上"缩进底边"；只留把手那一条
         collapsed ? 'bottom-0 py-0.5 rounded-b-none' : 'bottom-4 py-2'
       }`}

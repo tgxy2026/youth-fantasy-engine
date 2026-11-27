@@ -88,7 +88,7 @@ export default function DiffView({ before, after, context = 3, maxHeight = '60vh
         </Button>
       </div>
 
-      <div className="rounded-lg border border-ink-700 bg-ink-950/60 overflow-auto font-mono text-11 leading-relaxed"
+      <div className="rounded-lg border border-ink-700 yfe-surface-3 overflow-auto font-mono text-11 leading-relaxed"
         style={{ maxHeight: foldVh(maxHeight) }}>
         {rows.map((r, i) => r.kind === 'gap' ? (
           <div key={`gap-${i}`} className="px-3 py-1 text-center text-10 text-ink-600 bg-ink-900/60 select-none">

@@ -607,7 +607,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
           )}
           {/* 3.1.3：种族生物 / 物品资源的「表格 ⇄ 图鉴」（方案 §3.1；入口只开放 races / items） */}
           {isAtlasCapable && (
-            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
+            <div className="h-9 flex items-center yfe-surface-2 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
@@ -626,7 +626,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {isTimelineCapable && (
-            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
+            <div className="h-9 flex items-center yfe-surface-2 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
@@ -654,7 +654,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </Button>
           )}
           {isGraphCapable && (
-            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
+            <div className="h-9 flex items-center yfe-surface-2 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors
@@ -672,7 +672,7 @@ export default function TableSheet({ tab, onNavigate, ctx = { type: 'full', feat
             </div>
           )}
           {isStorylineCapable && (
-            <div className="h-9 flex items-center bg-ink-850/90 border border-ink-700/75 rounded-lg p-0.5 ws-control">
+            <div className="h-9 flex items-center yfe-surface-2 border border-ink-700/75 rounded-lg p-0.5 ws-control">
               <Button variant="bare"
                 onClick={() => setViewMode('table')}
                 className={`flex items-center gap-1 px-3 h-7 rounded text-12 transition-colors

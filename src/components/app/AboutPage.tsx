@@ -122,7 +122,7 @@ export default function AboutPage() {
       <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="近期版本更新说明" width="lg">
         <div className="space-y-4">
           {[...ALL_VERSION_NOTES].reverse().map(art => (
-            <section key={art.id} className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-4 space-y-2.5">
+            <section key={art.id} className="rounded-xl border border-ink-700/75 yfe-surface-2 p-4 space-y-2.5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-13 font-semibold text-ink-100">{art.title}</h3>
                 <span className="text-10 px-1.5 py-0.5 rounded bg-amber/15 text-amber border border-amber/30 ws-num">
@@ -132,7 +132,7 @@ export default function AboutPage() {
               <p className="text-12 text-ink-300 leading-relaxed">{art.summary}</p>
               <div className="space-y-2 pt-1">
                 {art.sections.map(sec => (
-                  <div key={sec.id} className="rounded-lg bg-ink-900/50 border border-ink-700/50 px-3 py-2 space-y-1">
+                  <div key={sec.id} className="rounded-lg yfe-surface-3 border border-ink-700/50 px-3 py-2 space-y-1">
                     <div className="text-11 font-semibold text-amber/90">{sec.heading}</div>
                     {sec.body.map((p, idx) => (
                       <p key={idx} className="text-11 text-ink-300 leading-relaxed">{p}</p>
@@ -167,7 +167,7 @@ export default function AboutPage() {
           {/* 左列：作者信息 + 友情链接 */}
           <div className="lg:col-span-1 flex flex-col gap-6">
             {/* 作者信息 */}
-            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
+            <section className="rounded-xl yfe-surface-2 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<BookOpen size={15} className="text-amber" />}>作者信息</SectionTitle>
               <div className="flex flex-col items-center text-center">
                 <img
@@ -191,7 +191,7 @@ export default function AboutPage() {
             </section>
 
             {/* 联系方式（flex-1 撑满左列剩余高度） */}
-            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
+            <section className="rounded-xl yfe-surface-2 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>联系方式</SectionTitle>
               <ul className="space-y-3">
                 {CONTACT_LINKS.map(l => (
@@ -242,7 +242,7 @@ export default function AboutPage() {
             {/* 跨版本指引（2026-10-18）：网页版 ⇄ 桌面版 / 便携版互导。
                 三端是同一款软件的不同用法，人往往先接触网页版再想装到电脑上（或反过来），
                 这里给一条明确的往返路径，并说明「换版本不会丢稿」——那句最能打消顾虑。 */}
-            <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
+            <section className="rounded-xl yfe-surface-2 border border-ink-700/75 p-6 ws-surface">
               <SectionTitle icon={<Globe size={15} className="text-amber" />}>
                 {WEB ? '装到电脑上用' : '在浏览器里用'}
               </SectionTitle>
@@ -295,7 +295,7 @@ export default function AboutPage() {
 
             {/* 获取最新版本：只给网盘链接 + 版本号，不联网检测 */}
             {QUARK_URL && (
-              <section className="rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 ws-surface">
+              <section className="rounded-xl yfe-surface-2 border border-ink-700/75 p-6 ws-surface">
                 <SectionTitle icon={<Download size={15} className="text-amber" />}>获取最新版本</SectionTitle>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <span className="text-xs text-ink-400">
@@ -418,7 +418,7 @@ export default function AboutPage() {
                 · 致谢名单排在码下方；名单下方**刻意留白**（`flex-1` 空占位吸收剩余高度），
                   以后加人自然向下生长，不会顶动上面的码；
                 · 底部对齐由外层 grid 的 `items-stretch` 保证（左列「联系方式」flex-1 撑满）。 */}
-          <section className="lg:col-span-2 rounded-xl bg-ink-850/95 border border-ink-700/75 p-6 flex flex-col ws-surface">
+          <section className="lg:col-span-2 rounded-xl yfe-surface-2 border border-ink-700/75 p-6 flex flex-col ws-surface">
             <SectionTitle icon={<Heart size={15} className="text-amber" />}>打赏支持</SectionTitle>
             <p className="text-ink-500 text-xs mb-5">
               如果本软件对你有帮助，欢迎扫码支持作者。

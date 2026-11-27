@@ -379,7 +379,7 @@ export default function TavernFree() {
                   if (isOpeningMessage(m, i, session.script)) {
                     return (
                       <div key={m.id} className="mx-auto w-full max-w-[92%]">
-                        <div className="rounded-lg border border-ink-700 bg-ink-900/50 px-3.5 py-2.5">
+                        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3.5 py-2.5">
                           <div className="mb-1 flex items-center gap-1.5">
                             <Clapperboard size={11} className="text-amber/70" />
                             <span className="text-10 text-amber/80">开场</span>

@@ -95,7 +95,7 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
               </div>
             )}
             {cards !== null && cards.length === 0 && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-6 text-center text-12 text-ink-500">
+              <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-6 text-center text-12 text-ink-500">
                 还没有可用的创作参考。
                 <div className="text-11 mt-1">先到「一键拆书 → 作品分析（只分析）」跑一轮，点「保存为成果」后就会出现在这里。</div>
               </div>
@@ -135,7 +135,7 @@ export default function ReferencePicker({ selected, onChange, disabled }: {
             )}
 
             {/* 3.6.0 · C：发送记录 —— 预览是"打算发什么"，这里才是"实际发出什么" */}
-            <details className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+            <details className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
               <summary className="text-11 text-ink-300 cursor-pointer">
                 最近发送记录（{sends.length}）· 实际注入的文字
               </summary>

@@ -217,20 +217,20 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
       )}
       {!unavailable && status && !status.running && <p className="text-11 text-amber">{status.lastError || 'Agent 宿主尚未运行，请确认引擎已启动并稍候重试。'}</p>}
       {!unavailable && <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <p className="text-11 text-ink-500">写入连接</p>
           <p className={`mt-0.5 text-12 ${enabled ? 'text-amber' : 'text-ink-200'}`}>{enabled ? '已开启' : '未开启'}</p>
         </div>
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <p className="text-11 text-ink-500">宿主</p>
           <p className={`mt-0.5 text-12 ${status ? (status.running ? 'text-emerald-400' : 'text-amber') : 'text-ink-400'}`}>{status ? (status.running ? '运行中' : '未运行') : '读取中…'}</p>
         </div>
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <p className="text-11 text-ink-500">已连接页面</p>
           <p className="mt-0.5 text-12 text-ink-200">{status?.clients ?? '—'}</p>
         </div>
       </div>}
-      <label className="flex items-start justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+      <label className="flex items-start justify-between gap-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
         <span>
           <span className="block text-12 text-ink-100">开启 Agent 写入连接</span>
           <span className="mt-0.5 block text-11 text-ink-500">{DESKTOP ? '桌面实时只读桥也依赖此开关和项目授权。' : '可在「只读桥配置」中单独配置便携文件读取。'}</span>
@@ -288,7 +288,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
             </div>
           </div>
         })()}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <Button size="sm" variant="secondary" onClick={() => void save()} disabled={busy || !dirty}>保存授权</Button>
           <span className={`text-11 ${dirty ? 'text-amber' : 'text-ink-500'}`}>{busy ? '正在保存…' : dirty ? '有未保存的修改' : '授权已与宿主同步'}</span>
           <span className="ml-auto text-11 text-ink-500">
@@ -302,7 +302,7 @@ function WriteConnection({ node, onNodeChange }: { node: string; onNodeChange(va
         </div>
         <p className="max-w-3xl text-11 text-ink-500 leading-relaxed"><EmphasisText text="Agent 可通过任务台账登记「全书审读 / 逐章改写」这类跨多次调用的进度；**断线重连后可继续**。引擎不能强制终止外部进程，「取消请求」只是**协作式标记**。" /></p>
         {tasks.length === 0 && <p className="rounded-lg border border-dashed border-ink-700 px-3 py-3 text-11 text-ink-500">当前项目还没有 Agent 任务记录。</p>}
-        {tasks.map(task => <div key={task.id} className="rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-2">
+        {tasks.map(task => <div key={task.id} className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <span className="truncate text-12 text-ink-100">{task.title}</span>
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-11 ${taskStatusClass(task)}`}>{taskStatusLabel(task)}</span>

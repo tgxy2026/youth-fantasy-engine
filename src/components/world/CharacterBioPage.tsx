@@ -637,7 +637,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
   }
 
   const renderNodeCard = (node: BioEventNode, idx: number, totalInGroup: number) => (
-    <div key={node.id} className="rounded-lg border border-ink-700/75 border-l-2 border-l-amber/50 bg-ink-900/55 p-3 space-y-1.5 ws-control">
+    <div key={node.id} className="rounded-lg border border-ink-700/75 border-l-2 border-l-amber/50 yfe-surface-3 p-3 space-y-1.5 ws-control">
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
           <span className="px-1.5 py-px rounded-md text-10 font-medium bg-amber/15 text-amber border border-amber/25 ws-num">
@@ -774,7 +774,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
             {selectedCard && selectedBio && (
               <>
                 {/* 角色头条 */}
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-700/75 bg-ink-850/95 px-4 py-3 ws-surface">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-700/75 yfe-surface-2 px-4 py-3 ws-surface">
                   <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-15 font-semibold text-ink-50 truncate">{selectedCard.name}</h2>
                     <span className="px-2 py-0.5 rounded-full text-10 bg-amber/15 text-amber border border-amber/30">
@@ -798,7 +798,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 </div>
 
                 {/* 上层：人物生平小传正文 */}
-                <section className="rounded-xl border border-ink-700/75 bg-ink-850/95 p-4 space-y-3 ws-surface">
+                <section className="rounded-xl border border-ink-700/75 yfe-surface-2 p-4 space-y-3 ws-surface">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-13 font-semibold text-ink-100">一、人物生平小传正文</h3>
@@ -827,7 +827,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                     minRows={5}
                     maxHeight={380}
                     placeholder={`为「${selectedCard.name}」撰写人物生平小传（支持自由分段）…`}
-                    className="w-full rounded-lg border border-ink-700 bg-ink-950/70 px-3 py-2.5 text-13 text-ink-100 leading-relaxed outline-none focus:border-amber/50"
+                    className="w-full rounded-lg border border-ink-700 yfe-surface-1 px-3 py-2.5 text-13 text-ink-100 leading-relaxed outline-none focus:border-amber/50"
                   />
                   {composePreview && (
                     <ComposePreviewPanel
@@ -848,7 +848,7 @@ export default function CharacterBioPage({ focusRowId, onFocusConsumed, onNaviga
                 </section>
 
                 {/* 下层：重要节点事件轴 */}
-                <section className="rounded-xl border border-ink-700/75 bg-ink-850/95 p-4 space-y-3 ws-surface">
+                <section className="rounded-xl border border-ink-700/75 yfe-surface-2 p-4 space-y-3 ws-surface">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-13 font-semibold text-ink-100">二、重要节点事件轴</h3>

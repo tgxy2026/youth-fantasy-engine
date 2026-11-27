@@ -392,7 +392,7 @@ function ModeTabs({ value, onChange }: { value: SyncMode; onChange: (m: SyncMode
     { key: 's3', label: 'S3 兼容' },
   ]
   return (
-    <div className="flex gap-1 rounded-lg border border-ink-700/70 bg-ink-900/40 p-0.5">
+    <div className="flex gap-1 rounded-lg border border-ink-700/70 yfe-surface-3 p-0.5">
       {items.map((it) => (
         <button
           key={it.key}

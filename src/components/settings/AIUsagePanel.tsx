@@ -39,7 +39,7 @@ function fmtMs(ms: number): string {
 
 function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+    <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
       <div className="text-10 text-ink-500">{label}</div>
       <div className={`text-15 font-semibold tabular-nums ${danger ? 'text-danger' : 'text-ink-100'}`}>{value}</div>
     </div>

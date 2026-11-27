@@ -109,7 +109,7 @@ export default function CollectionPanel({ collectionId, onClose, onOpenPost }: P
           )}
 
           {data.isMine && (
-            <p className="rounded-lg border border-ink-700 bg-ink-900/50 px-3 py-2 text-11 leading-relaxed text-ink-400">
+            <p className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-11 leading-relaxed text-ink-400">
               这是你的合集。要改名、删合集或调整篇目，请到「我的投稿」里操作 —— 那里会再校验一次权限。
             </p>
           )}

@@ -576,7 +576,7 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
       {/* R4a · 2.6.0 结构模板节拍对照条（章节细纲页 · 只读）：按细纲卡数折算各拍章号范围，
           当前编辑章所在拍高亮。模板选择跟随创意写作 / 全书结构配比（单一来源），此处不提供切换。 */}
       {!isVolume && beatRanges && (
-        <div data-outline-structure className="mb-3 shrink-0 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700/75 bg-ink-850/90 px-3 py-2 ws-surface">
+        <div data-outline-structure className="mb-3 shrink-0 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700/75 yfe-surface-2 px-3 py-2 ws-surface">
           <span className="text-10 text-ink-500 shrink-0">结构对照 · {structureTpl!.name}</span>
           {/* 🔴 问号紧跟功能名（红线）：必须排在标签之后、chips 之前，否则被 flex-wrap 的 chips 挤到行尾 */}
           <HelpPopover title="结构对照 · 怎么用" width="22rem">

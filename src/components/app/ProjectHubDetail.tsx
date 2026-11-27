@@ -82,7 +82,7 @@ export default function ProjectHubDetail({
     items: BackupMeta[],
     emptyText: string,
   ) => (
-    <div className="rounded-xl border border-ink-700/50 bg-ink-900/50 px-3 py-2.5 flex flex-col min-h-0">
+    <div className="rounded-xl border border-ink-700/50 yfe-surface-3 px-3 py-2.5 flex flex-col min-h-0">
       <div className="flex items-center justify-between text-11 text-ink-400 mb-2 shrink-0">
         <span className="font-medium text-ink-200 flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full ${items.length > 0 ? 'bg-amber/80' : 'bg-ink-600'}`} />
@@ -125,7 +125,7 @@ export default function ProjectHubDetail({
       {/* ① 顶部 Bento 双列：左侧 Hero 展示卡 + 右侧四卡工作区 */}
       <section className="shrink-0 grid grid-cols-1 xl:grid-cols-[minmax(450px,510px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(500px,560px)_minmax(0,1fr)] gap-4 mb-4 items-stretch">
         {/* 左侧：Hero 展示卡（实体书封 + 作品名/元信息/简介引文框/主操作） */}
-        <div className="rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-5 ws-surface relative overflow-hidden flex flex-col sm:flex-row items-stretch gap-5 min-w-0">
+        <div className="rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-5 ws-surface relative overflow-hidden flex flex-col sm:flex-row items-stretch gap-5 min-w-0">
           <div
             aria-hidden
             className="absolute inset-0 pointer-events-none"
@@ -183,7 +183,7 @@ export default function ProjectHubDetail({
 
             {/* 3.7.5：读《作品信息》的「正式简介 / 一句话简介」（正式优先），
                 没填才回退项目记录上的旧 intro；两处都空才显示兜底提示。 */}
-            <div className="mt-3.5 rounded-xl border border-ink-700/50 border-l-2 border-l-amber/50 bg-ink-900/45 px-3.5 py-2.5 flex-1 min-h-0 max-h-[136px] overflow-y-auto">
+            <div className="mt-3.5 rounded-xl border border-ink-700/50 border-l-2 border-l-amber/50 yfe-surface-3 px-3.5 py-2.5 flex-1 min-h-0 max-h-[136px] overflow-y-auto">
               <p className="text-13 text-ink-200 leading-relaxed break-words whitespace-pre-line">
                 {selected.introText
                   ? selected.introText
@@ -229,7 +229,7 @@ export default function ProjectHubDetail({
         <div className="flex flex-col gap-3 min-w-0">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
             {/* 1) 作品概览 */}
-            <div className="rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-3.5 ws-surface flex flex-col">
+            <div className="rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-3.5 ws-surface flex flex-col">
               <h3 className="text-12 font-semibold text-ink-200 flex items-center gap-2 mb-2.5">
                 <span className="w-6 h-6 rounded-lg bg-amber/12 text-amber flex items-center justify-center shrink-0">
                   <Layers size={13} />
@@ -237,19 +237,19 @@ export default function ProjectHubDetail({
                 <span>作品概览</span>
               </h3>
               <div className="grid grid-cols-2 gap-2 flex-1">
-                <div className="rounded-xl border border-ink-700/55 bg-ink-900/50 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
+                <div className="rounded-xl border border-ink-700/55 yfe-surface-3 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
                   <div className="text-[20px] leading-tight font-bold text-ink-50 ws-num">{selected.stats?.volumes ?? 0}</div>
                   <div className="mt-0.5 text-10 text-ink-500">卷</div>
                 </div>
-                <div className="rounded-xl border border-ink-700/55 bg-ink-900/50 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
+                <div className="rounded-xl border border-ink-700/55 yfe-surface-3 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
                   <div className="text-[20px] leading-tight font-bold text-ink-50 ws-num">{selected.stats?.chapters ?? 0}</div>
                   <div className="mt-0.5 text-10 text-ink-500">章</div>
                 </div>
-                <div className="rounded-xl border border-ink-700/55 bg-ink-900/50 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
+                <div className="rounded-xl border border-ink-700/55 yfe-surface-3 px-3 py-2 flex flex-col justify-center transition-colors hover:border-amber/35">
                   <div className="text-[20px] leading-tight font-bold text-amber ws-num">{((selected.stats?.words ?? 0) / 10000).toFixed(1)}</div>
                   <div className="mt-0.5 text-10 text-ink-500">万字</div>
                 </div>
-                <div className="rounded-xl border border-ink-700/55 bg-ink-900/50 px-3 py-2 flex flex-col justify-center min-w-0 transition-colors hover:border-amber/35">
+                <div className="rounded-xl border border-ink-700/55 yfe-surface-3 px-3 py-2 flex flex-col justify-center min-w-0 transition-colors hover:border-amber/35">
                   <div className="text-13 leading-tight font-bold text-ink-100 truncate">{genreName}</div>
                   <div className="mt-0.5 text-10 text-ink-500">作品题材</div>
                 </div>
@@ -257,7 +257,7 @@ export default function ProjectHubDetail({
             </div>
 
             {/* 2) 导出与备份 */}
-            <div className="rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-3.5 ws-surface flex flex-col">
+            <div className="rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-3.5 ws-surface flex flex-col">
               <h3 className="text-12 font-semibold text-ink-200 flex items-center gap-2 mb-2.5">
                 <span className="w-6 h-6 rounded-lg bg-amber/12 text-amber flex items-center justify-center shrink-0">
                   <FileUp size={13} />
@@ -342,7 +342,7 @@ export default function ProjectHubDetail({
           </div>
 
           {/* 4) 最近自动备份（占满右上整宽，双列展示 5 分钟定时与每日备份） */}
-          <div className="rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-3.5 ws-surface flex-1 min-h-[164px] flex flex-col">
+          <div className="rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-3.5 ws-surface flex-1 min-h-[164px] flex flex-col">
             <div className="flex items-center justify-between gap-2 mb-2.5 shrink-0">
               <h3 className="text-12 font-semibold text-ink-200 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-lg bg-amber/12 text-amber flex items-center justify-center shrink-0">
@@ -371,7 +371,7 @@ export default function ProjectHubDetail({
       </section>
 
       {/* ② 下半部分：最后编辑的章节（拉高填满剩余可视高度，仅内部框滚动） */}
-      <section className="flex-1 min-h-[240px] flex flex-col rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-4 ws-surface">
+      <section className="flex-1 min-h-[240px] flex flex-col rounded-2xl border border-ink-700/75 yfe-surface-2 backdrop-blur-md p-4 ws-surface">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 shrink-0">
           <h3 className="text-12 font-semibold text-ink-200 flex items-center gap-2">
             <span className="w-6 h-6 rounded-lg bg-amber/12 text-amber flex items-center justify-center shrink-0">
@@ -405,7 +405,7 @@ export default function ProjectHubDetail({
           )}
         </div>
         {!selected.stats?.lastChapter ? (
-          <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-ink-700/60 bg-ink-900/35 px-4 py-6">
+          <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-ink-700/60 yfe-surface-3 px-4 py-6">
             <p className="text-12 text-ink-500">这本书还没有创建章节，打开项目后即可开始创作。</p>
           </div>
         ) : (
@@ -416,7 +416,7 @@ export default function ProjectHubDetail({
                 {selected.stats.lastChapter.title}
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-ink-700/55 bg-ink-900/55 px-6 py-4 font-serif text-14 text-ink-200 leading-[1.95] tracking-[0.015em] whitespace-pre-wrap break-words">
+            <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-ink-700/55 yfe-surface-3 px-6 py-4 font-serif text-14 text-ink-200 leading-[1.95] tracking-[0.015em] whitespace-pre-wrap break-words">
               {selected.stats.lastChapter.excerpt || '（本章暂未填写正文内容）'}
             </div>
           </div>

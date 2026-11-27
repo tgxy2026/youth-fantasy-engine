@@ -143,7 +143,7 @@ export default function AIPromptSettings({ refreshKey = 0 }: { refreshKey?: numb
                 const dirty = draft !== e.text
                 const isCollapsed = !expandedPrompts.has(e.id)
                 return (
-                  <div key={e.id} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+                  <div key={e.id} className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-12 font-medium text-ink-100">{e.name}</span>
                       {e.overridden && (

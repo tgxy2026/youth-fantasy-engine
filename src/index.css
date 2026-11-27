@@ -103,6 +103,17 @@
    ============================================================ */
 :root,
 [data-theme='dark'] {
+  /* ---- 3.7.5 · Q-01：四档语义表面透明度（底色见 .yfe-surface-N）----
+     L1 容器（页面大区 / 侧栏 / 抽屉外壳）0.55
+     L2 内容卡（卡片）0.82　L3 卡内块（卡内小格）0.90　L4 浮层（弹窗 / 浮窗）0.96
+     🔴 硬约束：同页相邻两层 alpha 差 ≥ 0.06（0.82-0.55 / 0.90-0.82 / 0.96-0.90 均达标）。
+     🔴 全站只允许这 4 个值出现在「容器级」背景上；chip / 输入框 / 进度条等点缀不动。
+     ⚠️ 浅色四主题单独调高（见下方「浅色主题 · 四档透明度」），mono 收为实色。 */
+  --yfe-l1: 0.55;
+  --yfe-l2: 0.82;
+  --yfe-l3: 0.90;
+  --yfe-l4: 0.96;
+
   --ink-950: 11 12 14;
   --ink-900: 16 17 21;
   --ink-850: 21 23 29;
@@ -323,6 +334,14 @@
   --danger: 0 0 0;    /* 语义由图标 + 文字 + 描边承载，不靠色相 */
   --success: 0 0 0;
   --info: 0 0 0;
+
+  /* 3.7.5 · Q-01：纯黑白不允许半透明（/N 变体已被下方「半透明回收」段收成纯白/纯黑）。
+     四档统一取 1（实色），层级差由既有描边规则承担 —— 这是 mono 的既有设计，
+     不是本轮的退化；文档里已把 mono 列为「相邻层 alpha 差」的已知例外。 */
+  --yfe-l1: 1;
+  --yfe-l2: 1;
+  --yfe-l3: 1;
+  --yfe-l4: 1;
 }
 
 /* ---- 浅色主题 · 图谱界面色覆盖 ----
@@ -347,6 +366,21 @@
   --graph-accent: var(--amber);
   --graph-accent-strong: var(--amber);
   --graph-accent-text: var(--amber-soft);
+}
+
+/* ---- 3.7.5 · Q-01：浅色四主题 · 四档透明度单独调高 ----
+   浅色底上沿用暗色的 0.55 会让正文透出页面纹理、对比度不足（台账拍板第 6 条：
+   「浅色主题允许单独调高 alpha」）。档差仍守住 ≥ 0.06：
+   0.86-0.70 = 0.16 ｜ 0.92-0.86 = 0.06 ｜ 0.98-0.92 = 0.06。
+   磨砂保留（L2 / L4），只是浅色下透明度更低、纹理更不明显。 */
+[data-theme='eye-care'],
+[data-theme='sepia'],
+[data-theme='porcelain'],
+[data-theme='peach-note'] {
+  --yfe-l1: 0.70;
+  --yfe-l2: 0.86;
+  --yfe-l3: 0.92;
+  --yfe-l4: 0.98;
 }
 
 /* ============================================================
@@ -727,6 +761,50 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-ink-600/70 rounded-full; }
 ::-webkit-scrollbar-thumb:hover { @apply bg-ink-500; }
+
+/* ---------- 3.7.5 · Q-01：四档语义表面（容器级颜色的单一真源）----------
+   背景色一律从这里取，**不再在组件里写任意 alpha**（全站 57 种 → 4 档）。
+   层级语义：
+     .yfe-surface-1  L1 容器（页面大区 / 侧栏 / 抽屉外壳）—— 不加磨砂，避免整页糊掉纹理
+     .yfe-surface-2  L2 内容卡 —— 磨砂 8px
+     .yfe-surface-3  L3 卡内块 —— 不叠磨砂（嵌套在 L2 上，再叠一层只会白耗合成开销）
+     .yfe-surface-4  L4 浮层（弹窗 / 浮窗）—— 磨砂 16px；-soft 变体沿用 ink-850 底色
+   ⚠️ 未分层声明：与 .ws-surface 同层（优先于 Tailwind 工具类），故替换后即使旧 `bg-*`
+      没删干净也不会打架；但仍要求清理旧类，避免源码里两套说法。
+   ⚠️ 表格 sticky 表头必须保持实色（TableSheet 的 th 用 bg-ink-800 实色，**不要**套本类），
+      否则滚动时下面的行会透出来。 */
+.yfe-surface-1 {
+  background-color: rgb(var(--ink-900) / var(--yfe-l1, 0.55));
+}
+.yfe-surface-2 {
+  background-color: rgb(var(--ink-850) / var(--yfe-l2, 0.82));
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+  backdrop-filter: blur(8px) saturate(1.04);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.14);
+}
+.yfe-surface-3 {
+  background-color: rgb(var(--ink-900) / var(--yfe-l3, 0.90));
+}
+.yfe-surface-4 {
+  background-color: rgb(var(--ink-900) / var(--yfe-l4, 0.96));
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+.yfe-surface-4-soft {
+  background-color: rgb(var(--ink-850) / var(--yfe-l4, 0.96));
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+/* mono（严格二值）：四档全部收成纯白，层级靠既有描边规则（本节下方 ③）区分。
+   特异性 (0,2,0) 高于上面的 (0,1,0)，无需 !important。 */
+[data-theme='mono'] .yfe-surface-1,
+[data-theme='mono'] .yfe-surface-2,
+[data-theme='mono'] .yfe-surface-3,
+[data-theme='mono'] .yfe-surface-4,
+[data-theme='mono'] .yfe-surface-4-soft {
+  background-color: #FFFFFF;
+}
 
 /* ---------- 工坊微质感表面与等宽数字 ---------- */
 .ws-surface {

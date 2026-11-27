@@ -76,7 +76,7 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
   if (compact) {
     return (
       <>
-        <div className="flex w-12 shrink-0 flex-col items-center gap-3 border-r border-ink-700/70 bg-ink-950/95 py-3" aria-label="项目快捷导航">
+        <div className="flex w-12 shrink-0 flex-col items-center gap-3 border-r border-ink-700/70 yfe-surface-1 py-3" aria-label="项目快捷导航">
           <BrandMark size={22} className="text-amber" />
           <Button variant="ghost" iconOnly size="sm" onClick={() => { setSettings(false); setOpen(true) }}
             aria-label="打开项目菜单" aria-expanded={open} title="打开项目菜单">
@@ -114,7 +114,7 @@ export default function WorkspaceSidebar(props: ComponentProps<typeof Sidebar>) 
   return (
     <div className="flex h-full min-h-0 shrink-0">
       <nav
-        className="flex w-12 shrink-0 flex-col items-center border-r border-ink-700/70 bg-ink-950/95 pb-2.5 gap-1"
+        className="flex w-12 shrink-0 flex-col items-center border-r border-ink-700/70 yfe-surface-1 pb-2.5 gap-1"
         aria-label="工坊功能图标轨"
       >
         <div className="h-12 w-full flex items-center justify-center border-b border-ink-700/70 shrink-0">

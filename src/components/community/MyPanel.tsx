@@ -215,7 +215,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         )}
         <ul className="space-y-2">
           {(collections ?? []).map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-ink-700 bg-ink-900/40 px-3 py-2">
+            <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-ink-700 yfe-surface-3 px-3 py-2">
               {editingCol?.id === c.id ? (
                 <>
                   <input
@@ -257,7 +257,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
                 </>
               )}
               {sorting?.id === c.id && (
-                <div className="mt-2 w-full basis-full rounded-lg border border-ink-700 bg-ink-950/40 p-2.5">
+                <div className="mt-2 w-full basis-full rounded-lg border border-ink-700 yfe-surface-3 p-2.5">
                   <p className="mb-1.5 text-11 leading-relaxed text-ink-400">
                     按第 1 篇起的顺序排列。灰掉的篇目现在不可见（草稿/待审/已撤回），公开后会回到这个位置。
                   </p>
@@ -301,7 +301,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         {posts?.length === 0 && <Empty title="还没有投稿" hint="到「投稿」页写一段愿意公开的文字试试。" />}
         <ul className="space-y-3">
           {(posts ?? []).map((p) => (
-            <li key={p.id} className="rounded-2xl border border-ink-700 bg-ink-900/50 p-4">
+            <li key={p.id} className="rounded-2xl border border-ink-700 yfe-surface-3 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-15 font-semibold text-ink-100">{p.title || '（未命名）'}</span>
                 <StatusPill tone={statusTone(p.status)}>{POST_STATUS_LABELS[p.status] || p.status}</StatusPill>
@@ -373,7 +373,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         {appeals?.length === 0 && <p className="text-12 text-ink-400">还没有提交过申诉。审核未通过或内容被下架时，可以在上方对应投稿点「申诉」。</p>}
         <ul className="space-y-2">
           {(appeals ?? []).map((a) => (
-            <li key={a.id} className="rounded-xl border border-ink-700 bg-ink-900/40 p-3 text-12 text-ink-200">
+            <li key={a.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3 text-12 text-ink-200">
               <StatusPill tone={a.status === 'closed' ? 'ok' : 'warn'}>{a.status === 'closed' ? '已复核' : '复核中'}</StatusPill>
               <span className="ml-2 text-11 text-ink-400">{formatTime(a.createdAt)}</span>
               {a.outcome && <p className="mt-1 text-11 text-ink-300">结果：{a.outcome}</p>}
@@ -387,7 +387,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         {comments?.length === 0 && <p className="text-12 text-ink-400">还没有评论。</p>}
         <ul className="space-y-2">
           {(comments ?? []).map((c) => (
-            <li key={c.id} className="rounded-xl border border-ink-700 bg-ink-900/40 p-3">
+            <li key={c.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill tone={statusTone(c.status)}>{COMMENT_STATUS_LABELS[c.status] || c.status}</StatusPill>
                 <span className="text-11 text-ink-400">{formatTime(c.createdAt)}</span>
@@ -412,7 +412,7 @@ export default function MyPanel({ onEdit, onChanged }: Props) {
         {reports?.length === 0 && <p className="text-12 text-ink-400">还没有提交过举报。</p>}
         <ul className="space-y-2">
           {(reports ?? []).map((r) => (
-            <li key={r.id} className="rounded-xl border border-ink-700 bg-ink-900/40 p-3 text-12 text-ink-200">
+            <li key={r.id} className="rounded-xl border border-ink-700 yfe-surface-3 p-3 text-12 text-ink-200">
               <span className="mr-2 text-11 text-ink-400">{formatTime(r.createdAt)}</span>
               {r.targetType === 'post' ? '投稿' : '评论'} · {r.status === 'closed' ? `已处理：${r.outcome || '已关闭'}` : '处理中'}
             </li>

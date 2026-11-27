@@ -92,7 +92,7 @@ export default function ModelCapabilityPanel({
   if (!provider) return null
 
   return (
-    <section className="mt-3 rounded-lg border border-ink-700 bg-ink-900/30 px-3 py-2.5">
+    <section className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <ShieldQuestion size={13} className="text-ink-400" />
         <span className="text-12 text-ink-200">能力来源与诊断</span>

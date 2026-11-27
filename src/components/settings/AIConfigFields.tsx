@@ -196,7 +196,7 @@ export function StructureCapabilityField({ structured, reasoningWithStructure, p
       <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
         <label className="block text-11 text-ink-500">结构化输出能力<span className="text-ink-600"> · 高级 · 默认关闭</span></label>
       </div>
-      <div className="space-y-2 rounded-lg border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+      <div className="space-y-2 rounded-lg border border-ink-700 yfe-surface-3 px-2.5 py-2">
         <label className="flex items-start gap-2 text-12 text-ink-200">
           <input
             type="checkbox"

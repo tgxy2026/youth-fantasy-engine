@@ -421,7 +421,7 @@ export default function ExportFormatDialog({
     >
       <div className="space-y-4 text-13">
         {/* 具名导出方案折叠区 */}
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-2.5">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 p-2.5">
           <button
             type="button"
             onClick={() => setSchemesOpen(!schemesOpen)}
@@ -584,7 +584,7 @@ export default function ExportFormatDialog({
             </div>
 
             {/* 发布前预检 */}
-            <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+            <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-ink-200 text-12">发布前预检</span>
                 <SegGroup value={precheckPlatform} onChange={setPrecheckPlatform} options={[

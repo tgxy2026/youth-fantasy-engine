@@ -50,7 +50,7 @@ export default function WcpChangesPanel({
   onBuild, onApply, onToggle,
 }: WcpChangesPanelProps) {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    <div className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
       <p className="flex flex-wrap items-center gap-2 text-11 text-ink-300">
         <ListChecks size={12} className="text-amber" />
         第二部分 · 变动摘要
@@ -127,7 +127,7 @@ export default function WcpChangesPanel({
       )}
 
       {showRawChanges && (
-        <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-11 text-ink-300">
+        <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 yfe-surface-3 p-2.5 text-11 text-ink-300">
           {parsed.rawChanges || '（没有识别到第二部分）'}
         </pre>
       )}

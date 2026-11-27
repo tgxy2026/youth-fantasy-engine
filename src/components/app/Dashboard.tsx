@@ -758,7 +758,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* 本周 vs 上周 */}
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
             <div className="text-10 text-ink-500">本周（近 7 天）</div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="text-16 font-bold text-ink-100 tabular-nums">{review.thisWeek.toLocaleString('zh-CN')}</span>
@@ -777,7 +777,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           </div>
 
           {/* 连续写作 */}
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
             <div className="text-10 text-ink-500">连续写作</div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="text-16 font-bold text-ink-100 tabular-nums">{review.currentStreak}</span>
@@ -790,7 +790,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           </div>
 
           {/* 最高产的一天 */}
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
             <div className="text-10 text-ink-500">最高产的一天</div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="text-16 font-bold text-ink-100 tabular-nums">
@@ -802,7 +802,7 @@ export default function Dashboard({ onNavigate, projectId, projectName, onExport
           </div>
 
           {/* 本月产量 */}
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
             <div className="text-10 text-ink-500">本月产量</div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="text-16 font-bold text-ink-100 tabular-nums">{review.thisMonth.toLocaleString('zh-CN')}</span>

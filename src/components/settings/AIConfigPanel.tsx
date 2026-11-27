@@ -510,7 +510,7 @@ export default function AIConfigPanel({ onChange }: { onChange?: () => void }) {
             </> : <p className="mt-1 text-ink-500">当前环境没有可恢复的本机模式服务。</p>}
           </div>
         ) : (
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5" data-connection-mode={modeStatus.mode ?? undefined}>
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5" data-connection-mode={modeStatus.mode ?? undefined}>
             <p className="flex items-center gap-2 text-12 text-ink-100">
               <span className={`h-1.5 w-1.5 rounded-full ${modeStatus.mode === 'agent' ? 'bg-amber' : 'bg-emerald-400'}`} />
               {modeStatus.mode && MODE_LABELS[modeStatus.mode]}

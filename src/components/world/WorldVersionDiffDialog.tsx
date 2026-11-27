@@ -115,13 +115,13 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
         </div>
 
         {!diff ? (
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-ink-500">
+          <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-ink-500">
             选两个不同的版本再看。当前选的版本不存在（可能刚被删）。
           </div>
         ) : (
           <>
             {/* 汇总 */}
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
               <span className="text-ink-200">v{oldV} → v{newV}</span>
               {/* 0 值不带语义色：数字为 0 时用灰，避免"删除 0"常驻一条红字 */}
               <span className={diff.addedCount ? 'text-success' : 'text-ink-500'}>新增 {diff.addedCount}</span>
@@ -131,7 +131,7 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
             </div>
 
             {changed.length === 0 ? (
-              <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+              <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
                 <span className="text-success">两版内容一致</span>
                 <span className="ml-2 text-ink-500">
                   （条目数与字段值都相同；指纹相同就是"没改过"，不是"差异太小看不见"）
@@ -140,7 +140,7 @@ export default function WorldVersionDiffDialog({ world, open, onClose }: {
             ) : (
               <div className="space-y-2 overflow-y-auto pr-1" style={{ maxHeight: foldVh('46vh') }}>
                 {shown.map(e => (
-                  <div key={`${e.tabId}::${e.kind}::${e.rowId}`} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-1.5">
+                  <div key={`${e.tabId}::${e.kind}::${e.rowId}`} className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-1.5">
                     <div className="flex items-center gap-2">
                       <span className={`shrink-0 ${DIFF_STYLE[e.diffKind]}`}>{DIFF_LABEL[e.diffKind]}</span>
                       <span className="text-ink-100">{e.name || '（未命名）'}</span>

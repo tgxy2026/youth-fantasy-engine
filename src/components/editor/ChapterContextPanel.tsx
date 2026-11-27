@@ -75,7 +75,7 @@ export default function ChapterContextPanel({
     <section
       aria-label="本章资料"
       data-docked={docked ? '1' : '0'}
-      className="fixed right-3 top-14 bottom-10 w-96 max-w-[calc(100%-1.5rem)] bg-ink-850 border border-ink-700 rounded-xl shadow-2xl flex flex-col"
+      className="fixed right-3 top-14 bottom-10 w-96 max-w-[calc(100%-1.5rem)] yfe-surface-4-soft border border-ink-700 rounded-xl shadow-2xl flex flex-col"
       style={{
         zIndex: Z.pageBase,
         top: foldZoomLength('3.5rem'),
@@ -137,7 +137,7 @@ export default function ChapterContextPanel({
                 <span className="truncate">资料来源：章节细纲 · {outline.name}</span>
                 <button type="button" className="text-amber hover:text-amber/80 shrink-0" onClick={() => onOpenRecord({ kind: 'outline', projectId, tabId: 'chapter-outline', id: outline.id })}>打开原卡 →</button>
               </div>
-              <div className="rounded-lg border border-ink-700/80 bg-ink-900/45 p-2">
+              <div className="rounded-lg border border-ink-700/80 yfe-surface-3 p-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-10 text-ink-300">正文与细纲对照</span>
                   <Button
@@ -202,7 +202,7 @@ export default function ChapterContextPanel({
                 )}
               </div>
               {groups.length ? groups.map((group, index) => (
-                <div key={`${group.label}-${index}`} className="rounded-lg border border-ink-700/80 bg-ink-900/45 p-2">
+                <div key={`${group.label}-${index}`} className="rounded-lg border border-ink-700/80 yfe-surface-3 p-2">
                   <div className="text-10 font-medium text-amber/90 mb-1">{group.label}</div>
                   <dl className="space-y-2">
                     {group.values.map(item => <div key={item.label}>
@@ -216,7 +216,7 @@ export default function ChapterContextPanel({
                 </div>
               )) : <p className="text-11 text-ink-500">这张细纲卡目前没有已填写的字段。</p>}
               {outlineSuggestions.length > 0 && (
-                <div className="rounded-lg border border-ink-700 bg-ink-900/45 p-2 space-y-2">
+                <div className="rounded-lg border border-ink-700 yfe-surface-3 p-2 space-y-2">
                   <div className="text-10 font-medium text-ink-300">细纲中提到的登记资料</div>
                   <p className="text-9 text-ink-500 leading-relaxed">按名称、别称或编号做字面匹配。唯一匹配可直接固定；同名资料会列出候选供你选择。固定只方便本章查看，不会自动加入 AI 续写请求；导出 WCP 网页资料包时会自动带入。</p>
                   {outlineSuggestions.map(suggestion => (

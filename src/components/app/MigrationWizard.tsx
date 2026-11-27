@@ -126,7 +126,7 @@ export default function MigrationWizard({ probe, onClose }: Props) {
           {step === 'intro' && (
             <div className="space-y-3">
               {items.map(it => (
-                <div key={it.key} className="flex items-start gap-3 rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
+                <div key={it.key} className="flex items-start gap-3 rounded-xl yfe-surface-3 border border-ink-700/60 px-4 py-3">
                   <span className="mt-0.5">{it.icon}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-13 font-medium text-ink-100">{it.title}</div>
@@ -153,7 +153,7 @@ export default function MigrationWizard({ probe, onClose }: Props) {
           {step === 'done' && report && (
             <div className="space-y-2.5">
               {reportRows.map(row => (
-                <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg bg-ink-900/50 border border-ink-700/60 px-3.5 py-2.5">
+                <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg yfe-surface-3 border border-ink-700/60 px-3.5 py-2.5">
                   <span className="text-12 text-ink-300">{row.label}</span>
                   <span className={`text-11 text-right ${row.ok ? 'text-success' : 'text-danger'}`}>
                     {row.text || '—'}

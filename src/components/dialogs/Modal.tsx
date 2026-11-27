@@ -5,6 +5,7 @@ import { Button } from '@/components/common/Button'
 import { Z } from '@/lib/app/zLayer'
 import { foldVh } from '@/lib/settings/theme'
 import { OverlayContext, registerDialog } from '@/lib/app/overlayScope'
+import { SURFACE } from '@/lib/ui/surface'
 
 // z 轴分层真源已独立到 src/lib/app/zLayer.ts（纯常量不该挂在组件文件上，
 // 否则每个要用它的下拉都得 import 整个 Modal）。此处再导出，既有 `import { Z } from './Modal'` 不受影响。
@@ -163,7 +164,9 @@ export function Modal({
     align === 'left' ? 'items-stretch justify-start' : align === 'center' ? 'items-center justify-center p-4' : 'items-start justify-center'
   const overlayStyle = align === 'top' ? { paddingTop: foldVh(topOffset) } : undefined
 
-  const panelSurface = surface === '900' ? 'bg-ink-900' : 'bg-ink-850'
+  // 3.7.5 · Q-01 · L4：浮层统一走四档令牌（0.96 + 磨砂），不再用实色 ink-900/850。
+  //   surface='900' 保留原来的深一档观感，用 overlay 的 ink-900 底色；其余沿用 ink-850（-soft）。
+  const panelSurface = surface === '900' ? SURFACE.overlay : SURFACE.overlaySoft
   const panelAccent =
     accent === 'amber' ? 'border-amber/30' : accent === 'emerald' ? 'border-emerald-700/50' : 'border-ink-700'
   const footerAlignCls =

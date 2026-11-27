@@ -238,7 +238,7 @@ export default function InspirationBox() {
 
       {/* 本轮产出（溯源） */}
       {fused && fused.length > 0 && (
-        <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+        <div className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
           <div className="text-10 text-ink-500 mb-1.5">本轮产出 {fused.length} 张卡，已在推演画布上（可拖动、可删除）：</div>
           <div className="space-y-1.5">
             {fused.map((f, i) => (

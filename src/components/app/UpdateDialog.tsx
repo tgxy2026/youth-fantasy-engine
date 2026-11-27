@@ -331,7 +331,7 @@ export default function UpdateDialog({
 
         {/* 更新说明：Gitee 原文经 mdLite 切块 —— 🔴 纯文本渲染，外部输入不走 innerHTML */}
         <div
-          className="overflow-y-auto rounded-lg border border-ink-700 bg-ink-900/50 p-3 space-y-1.5"
+          className="overflow-y-auto rounded-lg border border-ink-700 yfe-surface-3 p-3 space-y-1.5"
           style={{ maxHeight: foldVh(phase.kind === 'idle' ? '46vh' : '30vh') }}
         >
           {blocks.length === 0 ? (() => {

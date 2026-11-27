@@ -44,7 +44,7 @@ export default function InspirationPicker({ disabled, selected, onChange }: {
       </Button>
 
       {open && (
-        <div className="mt-2 space-y-1.5 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2.5">
+        <div className="mt-2 space-y-1.5 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2.5">
           {items.length === 0 ? (
             <div className="text-11 text-ink-500">
               灵感夹还是空的 —— 去「灵感启发」页记几条，写章时就能带上了。

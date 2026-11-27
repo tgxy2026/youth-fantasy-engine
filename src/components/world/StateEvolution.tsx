@@ -55,7 +55,7 @@ export default function StateEvolution({ target: recordRef, hint }: { target: Re
 
   if (!records) return null
   return (
-    <section data-state-evolution className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+    <section data-state-evolution className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
       <div className="mb-1 flex items-center gap-1.5">
         <span className="text-11 text-ink-300">状态演变</span>
         <span className="text-10 text-ink-500">{records.length} 条 · 按章回溯，不改当前字段</span>

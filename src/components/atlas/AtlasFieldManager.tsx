@@ -663,7 +663,7 @@ export default function AtlasFieldManager({
 
               {/* 3.3.3 · B6：已有字段的类型转换（预览在前，值不改） */}
               {editingId && (
-                <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-2.5 py-2">
+                <div className="rounded-lg border border-ink-700 yfe-surface-3 px-2.5 py-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-11 text-ink-400">转换类型</span>
                     <select

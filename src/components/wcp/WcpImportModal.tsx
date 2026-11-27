@@ -459,7 +459,7 @@ export default function WcpImportModal({
               onClosePreview={() => setOutboxPreview(null)}
             />
           )}
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
             <span className="text-11 text-ink-500">摘要格式</span>
             <Button variant="toggle" size="xs" selected={cfg.summaryFormat === 'json'}
               onClick={() => void switchFormat('json')}>JSON</Button>
@@ -508,13 +508,13 @@ export default function WcpImportModal({
                 </ul>
               )}
 
-              <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+              <div className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
                 <p className="flex flex-wrap items-center gap-2 text-11 text-ink-300">
                   <FileText size={12} className="text-amber" />
                   第一部分 · {BODY_LABEL[scene]}
                   <span className="text-ink-500">· {parsed.body.length} 字符</span>
                 </p>
-                <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 bg-ink-950/60 p-2.5 text-12 text-ink-200">
+                <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-ink-700 yfe-surface-3 p-2.5 text-12 text-ink-200">
                   {parsed.body || '（第一部分为空）'}
                 </pre>
                 <div className="mt-2 flex flex-wrap items-center gap-2">

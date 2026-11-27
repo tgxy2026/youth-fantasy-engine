@@ -539,7 +539,7 @@ export default function Sidebar({ activeTab, onNavigate, focusGroup, navMode = '
         ref={flyoutRef}
         role="region"
         aria-label="界面与数据设置面板"
-        className={`fixed left-12 bottom-0 rounded-tr-xl border-t border-r border-ink-700/80 bg-ink-900/98 backdrop-blur-md shadow-2xl ws-surface ws-flyout-right flex flex-col overflow-hidden ${toolsOpen ? '' : 'hidden'}`}
+        className={`fixed left-12 bottom-0 rounded-tr-xl border-t border-r border-ink-700/80 yfe-surface-4 backdrop-blur-md shadow-2xl ws-surface ws-flyout-right flex flex-col overflow-hidden ${toolsOpen ? '' : 'hidden'}`}
         style={{ zIndex: Z.dropdown, width: collapsed ? '224px' : `min(${sidebar.size}px, ${foldVh('35vw')})`, minWidth: 224, maxHeight: `min(${foldVh('78vh')}, calc(${foldVh('100vh')} - 3.5rem))` }}
       >
         <div className="h-10 shrink-0 px-3 border-b border-ink-700/70 flex items-center justify-between gap-2">

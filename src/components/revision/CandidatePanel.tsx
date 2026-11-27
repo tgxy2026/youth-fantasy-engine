@@ -184,7 +184,7 @@ function CandidateWorkspace({ onClose }: { onClose: () => void }) {
                 const d = diffStats(c.beforeText, c.text)
                 const busy = busyId === c.id
                 return (
-                  <li key={c.id} data-candidate-id={c.id} data-candidate-status={c.status} className="min-w-0 rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
+                  <li key={c.id} data-candidate-id={c.id} data-candidate-status={c.status} className="min-w-0 rounded-xl yfe-surface-3 border border-ink-700/60 px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className={`text-11 px-1.5 py-0.5 rounded bg-ink-800 ${st.cls}`}>{st.text}</span>
                       <span className="text-13 text-ink-100 truncate">{title}</span>

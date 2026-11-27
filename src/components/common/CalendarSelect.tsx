@@ -75,7 +75,7 @@ export default function CalendarSelect({ value, onChange, calendars }: Props) {
         <div
           ref={dropRef}
           style={{ zIndex: Z.dropdownNested, left: pos.left, top: pos.top, minWidth: pos.minWidth, transform: pos.flip ? 'translateY(-100%)' : undefined }}
-          className="fixed overflow-y-auto rounded-md bg-ink-800 border border-ink-600 shadow-xl py-1 max-h-72"
+          className="fixed overflow-y-auto rounded-md yfe-surface-4-soft border border-ink-600 shadow-xl py-1 max-h-72"
           data-touch-menu="1"
         >
           {calendars.length === 0 && (

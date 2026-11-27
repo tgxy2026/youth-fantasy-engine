@@ -158,7 +158,7 @@ export default function BookAnalysisDialog({ onClose }: { onClose: () => void })
         <Button variant="secondary" size="sm" onClick={onClose}>关闭</Button>
       </>}>
       <div className="space-y-3">
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 text-ink-400 leading-relaxed">
+        <div className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-11 text-ink-400 leading-relaxed">
           适合两类场景：① 外部参考作品——只想学写法，<b className="text-ink-200">不希望原文进你的项目</b>；
           ② 先摸清结构再决定要不要一键拆书。分析只读原文，不落任何正式数据。
           <div className="mt-1.5"><AIDataSourceNote feature="book-analysis" compact /></div>
@@ -229,7 +229,7 @@ export default function BookAnalysisDialog({ onClose }: { onClose: () => void })
         )}
 
         {result && (
-          <section className="rounded-xl border border-ink-700 bg-ink-900/40 px-3 py-2.5 space-y-1.5">
+          <section className="rounded-xl border border-ink-700 yfe-surface-3 px-3 py-2.5 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-11 text-ink-300">
               <span>单元 <b className="text-ink-100 tabular-nums">{result.coverage.completedUnits}</b>/{result.coverage.plannedUnits}</span>
               {result.coverage.failedUnits > 0 && <span className="text-danger">失败 {result.coverage.failedUnits}</span>}
@@ -257,7 +257,7 @@ export default function BookAnalysisDialog({ onClose }: { onClose: () => void })
                 </h3>
                 <ul className="space-y-1.5">
                   {cards.slice(0, 30).map(c => (
-                    <li key={c.id} className="rounded-lg border border-ink-700/60 bg-ink-900/40 px-3 py-2 text-11">
+                    <li key={c.id} className="rounded-lg border border-ink-700/60 yfe-surface-3 px-3 py-2 text-11">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-ink-100 font-medium">{c.title}</span>
                         <span className="text-10 text-ink-500">{c.chapterTitle}</span>

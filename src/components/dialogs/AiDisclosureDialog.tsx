@@ -117,7 +117,7 @@ export default function AiDisclosureDialog({
         </div>
       )}
 
-      <div className="rounded-lg border border-ink-700 bg-ink-950/60 p-3">
+      <div className="rounded-lg border border-ink-700 yfe-surface-1 p-3">
         <pre className="whitespace-pre-wrap break-words font-sans text-12 leading-relaxed text-ink-200">{draft}</pre>
       </div>
     </Modal>

@@ -258,7 +258,7 @@ export default function GuideOverlay({ guide, startStep = 0, onClose, onOpenArti
         aria-labelledby="guide-step-title"
         tabIndex={-1}
         data-guide-card={guide.id}
-        className="fixed rounded-xl border border-amber/40 bg-ink-850 shadow-2xl p-4 outline-none"
+        className="fixed rounded-xl border border-amber/40 yfe-surface-4-soft shadow-2xl p-4 outline-none"
         style={{
           zIndex: GUIDE_Z + 2,
           top: layout.card.top, left: layout.card.left,

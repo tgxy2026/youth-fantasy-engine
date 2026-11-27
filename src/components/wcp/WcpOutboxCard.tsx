@@ -29,7 +29,7 @@ export default function WcpOutboxCard({
   onScan, onLoadJson, onPreviewMd, onCopyMd, onLoadMd, onArchive, onCopyPreview, onClosePreview,
 }: WcpOutboxCardProps) {
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    <div className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Inbox size={13} className="shrink-0 text-amber" />
         <p className="text-12 font-medium text-ink-200">本地 Agent 收件箱（outbox/）</p>
@@ -102,7 +102,7 @@ export default function WcpOutboxCard({
       )}
 
       {preview && (
-        <div className="mt-2 rounded-md border border-ink-700 bg-ink-950/60 p-2.5">
+        <div className="mt-2 rounded-md border border-ink-700 yfe-surface-3 p-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-11 text-ink-300">{preview.name}</span>
             <Button variant="secondary" size="xs" onClick={onCopyPreview}>

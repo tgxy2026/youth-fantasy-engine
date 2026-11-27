@@ -451,7 +451,7 @@ export default function OptimizeTicketPanel() {
 
       {/* 运行中提示 */}
       {(gen.running || exe.running) && (
-        <div className="mb-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-11 text-ink-400">
+        <div className="mb-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-11 text-ink-400">
           {gen.running && (
             <div className="flex items-center gap-2">
               <Loader2 size={12} className="animate-spin" />
@@ -483,7 +483,7 @@ export default function OptimizeTicketPanel() {
       {/* 3.2.1 · T-11：刷新 / 重启后工单会清空，但「上次改完到底改好没」不该一起消失。
           只列**有记录**的章（没有记录＝未运行，不显示，绝不写成「已清」）。 */}
       {!gen.running && memos.size > 0 && (
-        <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+        <div className="mt-3 rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
           <div className="text-11 text-ink-300 mb-1">最近复检记录（刷新后仍保留）</div>
           <ul className="space-y-0.5">
             {[...memos.values()].sort((a, b) => b.at - a.at).slice(0, 8).map(m => (
@@ -570,7 +570,7 @@ export default function OptimizeTicketPanel() {
           {view === 'issue' ? (
             <div className="space-y-2 overflow-y-auto pr-1" style={{ maxHeight: foldVh('60vh') }}>
               {issueGroups.map(g => (
-                <div key={g.key} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2">
+                <div key={g.key} className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className={`shrink-0 rounded border px-1.5 py-0.5 text-10 ${sevBadge(g.severity)}`}>
                       {SEVERITY_LABEL[g.severity]}

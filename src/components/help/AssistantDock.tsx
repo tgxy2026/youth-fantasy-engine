@@ -45,7 +45,7 @@ export default function AssistantDock({ onClose, children }: Props) {
       ref={panelRef}
       data-assistant-dock
       aria-label="使用答疑助手"
-      className="fixed right-0 top-0 bottom-0 flex flex-col border-l border-ink-700 bg-ink-900 shadow-2xl"
+      className="fixed right-0 top-0 bottom-0 flex flex-col border-l border-ink-700 yfe-surface-4 shadow-2xl"
       style={{ width: `calc(${DOCK_WIDTH} / var(--ui-zoom, 1))`, zIndex: Z.pagePanel }}
     >
       <header className="flex items-center gap-2 px-3 h-10 border-b border-ink-700 shrink-0">

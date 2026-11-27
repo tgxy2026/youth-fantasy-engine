@@ -178,7 +178,7 @@ export default function BookVersionPanel({
           ) : (
             <>
               {/* ① 完成检查 */}
-              <section className="rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-3">
+              <section className="rounded-xl border border-ink-700 yfe-surface-3 px-4 py-3">
                 <div className="text-12 font-medium text-ink-200 mb-2">完成检查</div>
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-11 text-ink-300">
                   <span>总字数 <b className="text-ink-100 tabular-nums">{stats.totalWords.toLocaleString('zh-CN')}</b></span>
@@ -231,7 +231,7 @@ export default function BookVersionPanel({
               </section>
 
               {/* ③ 冻结表单 */}
-              <section className="rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-3">
+              <section className="rounded-xl border border-ink-700 yfe-surface-3 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Lock size={13} className="text-amber" />
                   <span className="text-12 font-medium text-ink-200">冻结这一版</span>
@@ -274,7 +274,7 @@ export default function BookVersionPanel({
                     {versions.map(v => {
                       const same = !!v.fingerprint && v.fingerprint === fp
                       return (
-                        <li key={v.id} className="rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3">
+                        <li key={v.id} className="rounded-xl yfe-surface-3 border border-ink-700/60 px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <BookMarked size={12} className="text-amber shrink-0" />
                             <span className="text-13 text-ink-100">{v.label}</span>

@@ -250,7 +250,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
     </details>}
     {/* 🔴 2026-11-14 R4：运行方式可选。R3 强制隔离，未开通专用账户就看不到下面的「账号与连接」，
         等于把「先能用起来」堵死了；现在默认当前 Windows 用户，隔离是作者主动选择的一项能力。 */}
-    {selected?.available && <section aria-labelledby="acp-runas-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    {selected?.available && <section aria-labelledby="acp-runas-heading" className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
       <h3 id="acp-runas-heading" className="text-12 font-medium text-ink-200">运行方式</h3>
       <p className="mt-1 text-11 leading-relaxed text-ink-500">
         切换会先停掉当前 ACP 任务并重建进程；两种方式各自使用自己的登录资料，互不覆盖、互不清理。
@@ -289,7 +289,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
         </div>
       )}
     </section>}
-    {selected?.available && configured && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    {selected?.available && configured && <section aria-labelledby="acp-connection-heading" className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 id="acp-connection-heading" className="text-12 font-medium text-ink-200">账号与连接</h3>
         <span className="inline-flex items-center gap-1.5 text-12 text-ink-400">
@@ -341,7 +341,7 @@ export default function AcpSettings({ disabled, showActiveMode }: { disabled: bo
       })}
       </div>}
     </section>}
-    {selected?.available && status.budget && <section aria-labelledby="acp-budget-heading" className="rounded-lg border border-ink-700 bg-ink-900/40 p-3">
+    {selected?.available && status.budget && <section aria-labelledby="acp-budget-heading" className="rounded-lg border border-ink-700 yfe-surface-3 p-3">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 id="acp-budget-heading" className="text-12 font-medium text-ink-200">上下文预算</h3>
         <span className="text-12 text-ink-400">

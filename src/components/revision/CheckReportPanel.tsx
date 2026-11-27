@@ -147,7 +147,7 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
         <div data-revision-reports>
           {sumErr !== '' && <div role="alert" className="text-11 text-amber py-1">运行摘要读取失败：{sumErr}（不影响下面的留档报告）</div>}
           {summaries !== null && summaries.length > 0 && (
-            <section data-review-summaries className="mb-4 rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-3">
+            <section data-review-summaries className="mb-4 rounded-xl border border-ink-700 yfe-surface-3 px-4 py-3">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-12 font-semibold text-ink-200">最近自检</span>
                 <span className="text-10 text-ink-500">每次自检都留一条（含「没查」与「没发现问题」），只保留最近 {REVIEW_SUMMARY_LIMIT} 次</span>
@@ -230,7 +230,7 @@ function ReportWorkspace({ onClose }: { onClose: () => void }) {
 
               <ul className="space-y-2.5">
                 {rows.map(r => (
-                  <li key={r.id} data-report-id={r.id} className="min-w-0 rounded-xl bg-ink-900/50 border border-ink-700/60 px-4 py-3 [overflow-wrap:anywhere]">
+                  <li key={r.id} data-report-id={r.id} className="min-w-0 rounded-xl yfe-surface-3 border border-ink-700/60 px-4 py-3 [overflow-wrap:anywhere]">
                     <div className="flex items-center gap-2">
                       <span className="text-11 px-1.5 py-0.5 rounded bg-ink-800 text-ink-300">
                         {reportSourceLabel(r.source)}

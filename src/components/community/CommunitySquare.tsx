@@ -253,7 +253,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       {/* 3.5.1 · U1：同一时刻最多一条状态。离线=引导卡（中性）；关闭=warn；真实错误=error；
           操作反馈=warn；未登录浏览=info+登录 CTA。五者互斥，不再堆叠。 */}
       {connectionDown ? (
-        <div className="rounded-xl border border-ink-700 bg-ink-900/40 px-4 py-8 text-center" role="status">
+        <div className="rounded-xl border border-ink-700 yfe-surface-3 px-4 py-8 text-center" role="status">
           <p className="text-15 font-semibold text-ink-100">连接云端后，读一读别人的世界</p>
           <p className="mx-auto mt-2 max-w-md text-12 leading-relaxed text-ink-300">
             广场需要连接云端账号。本地写作与草稿不受任何影响。
@@ -280,7 +280,7 @@ export default function CommunitySquare({ onClose, mode = 'overlay', forceLayout
       ) : null}
 
       {!wide && rankOpen && (
-        <div id="community-rank-inline" className="rounded-xl border border-ink-700 bg-ink-900/40 p-3">
+        <div id="community-rank-inline" className="rounded-xl border border-ink-700 yfe-surface-3 p-3">
           {/* 窄屏展开只给前 5 名并隐藏长篇说明：再多会把正文挤出首屏 */}
           <RankPanel compact dense max={5} onOpenSettings={openSettings} shellOwnsStatus={shellOwnsStatus} />
         </div>

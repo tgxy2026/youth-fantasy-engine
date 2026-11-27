@@ -334,7 +334,7 @@ export default function PaceAnalysisPanel() {
             <div>
               <div className="grid grid-cols-3 gap-2">
                 {PACE_SEGMENTS.map(seg => (
-                  <div key={seg} className="rounded-lg border border-ink-700 bg-ink-900/40 px-3 py-2 text-center">
+                  <div key={seg} className="rounded-lg border border-ink-700 yfe-surface-3 px-3 py-2 text-center">
                     <div className="text-10 text-ink-400">{seg}</div>
                     <div className="text-13 font-bold tabular-nums text-ink-100">{d.distribution[seg]}</div>
                   </div>
