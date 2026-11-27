@@ -1,18 +1,17 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import * as db from '@/lib/db'
 import type { ProjectBundle } from '@/lib/db'
-import { listBackups, type BackupKind, type BackupMeta } from '@/lib/db/backups'
+import { listBackups, type BackupMeta } from '@/lib/db/backups'
 import type { Project } from '@/lib/types'
 import {
-  BookPlus, FolderOpen, Trash2, FileUp, FileDown, FileText, X, Feather, Loader2, ImageIcon, Pencil, Check, BookText, History, ListChecks, Compass,
-  BookOpen, MessagesSquare, Search, Clock, Shield, ChevronDown, Plus, Sparkles, Layers,
+  BookPlus, FileDown, X, Loader2, ImageIcon, Pencil, Check, ListChecks, Compass,
+  BookOpen, MessagesSquare, Search, ChevronDown, Plus, Sparkles,
 } from 'lucide-react'
 import HelpPopover from '@/components/common/HelpPopover'
 import { lazyPage } from '@/components/common/LazyPage'
 import { Modal } from '@/components/dialogs/Modal'
 import SafeImage from '@/components/common/SafeImage'
 import SelectRow from '@/components/common/SelectRow'
-import Tooltip from '@/components/common/Tooltip'
 import { Z } from '@/lib/app/zLayer'
 // 3.5.0 · 投稿广场：项目中心入口（没有打开任何书时也能进广场）
 import { openCommunity } from '@/lib/community/entry'
@@ -24,6 +23,7 @@ import { markExported } from '@/lib/sync/backupReminder'
 import { rebuildKbIndexAfterRestore } from '@/lib/search/kbRestoreIndex'
 import { APP_VERSION_LABEL } from '@/lib/app/env'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
+import { foldVh } from '@/lib/settings/theme'
 import { LOCKED_IDS, DEFAULT_IDS } from '@/lib/schema'
 import { DEFAULT_PACK, normalizeGenrePack, setActivePack, type GenrePack } from '@/lib/schemaTemplates/index'
 import { getGenreToAIFor, setGenreToAIFor } from '@/lib/ai/aiGenreHint'
@@ -34,6 +34,8 @@ import CloudSyncPanel from '@/components/app/CloudSyncPanel'
 import { useImageDrop, DropOverlay } from '@/components/common/ImageDropZone'
 import { appIconSupported } from '@/lib/app/desktop'
 import { loadProjectIntroTexts } from '@/lib/app/projectIntroForm'
+import ProjectAutoCover from '@/components/app/ProjectAutoCover'
+import ProjectHubDetail, { formatRelativeDay, type ProjectHubRow } from '@/components/app/ProjectHubDetail'
 
 const HelpCenter = lazyPage(() => import('@/components/help/HelpCenter'), '帮助中心')
 const BackupManager = lazyPage(() => import('@/components/app/BackupManager'), '备份管理')
@@ -50,39 +52,11 @@ interface Props {
   onReplayWelcome?: () => void
 }
 
-interface Row extends Project {
-  stats?: db.ProjectStats
-  /** 3.7.5：卡片简介位与搜索读的文案（《作品信息》正式简介 → 一句话简介 → 旧 `intro`） */
-  introText?: string
-}
+type Row = ProjectHubRow
 
 type CreateType = 'full' | 'custom'
 type FilterType = 'all' | 'full' | 'custom'
 type SortKey = 'recent' | 'words' | 'created' | 'name'
-
-const BACKUP_KIND_LABEL: Record<BackupKind, string> = {
-  auto5min: '定时滚动备份',
-  daily: '每日首次打开',
-  manual: '手动备份',
-  frozen: '定稿版本',
-}
-
-function formatRelativeDay(ts: number): string {
-  const days = Math.floor((Date.now() - ts) / 86_400_000)
-  if (days <= 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 30) return `${days} 天前`
-  return new Date(ts).toLocaleDateString()
-}
-
-function formatBackupTime(ts: number): string {
-  return new Date(ts).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const [projects, setProjects] = useState<Row[]>([])
@@ -288,7 +262,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
   const createDemo = async () => {
     if (!await confirmDialog({
       title: '创建示范项目',
-      message: '创建示范项目「吞天神脉」？\n将写入示例宇宙（陈渊·苍澜大陆）的全部范例数据：两卷二十章正文（约九万字）、设定表单、角色卡、伏笔、时间脉络、码字统计，以及酒馆模式的背景设定与一个可直接开演的剧情推演场景。可用于体验和测试各项功能。',
+      message: '创建示范项目「吞天神脉」？\n将写入示例宇宙（陈渊·苍澜大陆）的全部范例数据：三卷三十章正文（约十二万字）、设定表单、角色卡、伏笔、时间脉络、码字统计，以及酒馆模式的背景设定与一个可直接开演的剧情推演场景。可用于体验和测试各项功能。',
     })) return
     setBusy(true)
     try {
@@ -360,17 +334,19 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
       {/* 工坊顶栏（对齐方案 D：极简 5 控件） */}
       <header
-        className="relative shrink-0 border-b border-ink-700/60 bg-ink-950/60 backdrop-blur-sm px-5 lg:px-7 py-3 flex flex-wrap items-center justify-between gap-3"
+        className="relative shrink-0 border-b border-ink-700/65 bg-ink-950/75 backdrop-blur-md shadow-sm px-5 lg:px-7 py-3 flex flex-wrap items-center justify-between gap-3"
         style={{ zIndex: Z.pagePanel }}
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="inline-flex items-center justify-center w-[34px] h-[34px] rounded-[10px] bg-amber/12 border border-amber/30 shrink-0">
-            <BrandMark size={18} className="text-amber" />
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="inline-flex items-center justify-center w-[36px] h-[36px] rounded-[11px] bg-gradient-to-br from-amber/20 to-amber/5 border border-amber/35 shadow-sm shadow-amber/10 shrink-0">
+            <BrandMark size={19} className="text-amber" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-bold text-ink-50 tracking-tight flex items-baseline gap-1.5">
-              青春幻想引擎
-              <span className="text-11 font-normal text-ink-500 ws-num">{APP_VERSION_LABEL}</span>
+            <h1 className="text-base font-bold text-ink-50 tracking-tight flex items-center gap-2">
+              <span>青春幻想引擎</span>
+              <span className="px-1.5 py-0.5 rounded-md border border-ink-700/70 bg-ink-900/75 text-10 font-normal text-ink-400 ws-num">
+                {APP_VERSION_LABEL}
+              </span>
             </h1>
           </div>
         </div>
@@ -453,6 +429,8 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
             )}
           </div>
 
+          <span className="hidden sm:block h-5 w-px bg-ink-700/60 mx-0.5" aria-hidden />
+
           <Button
             variant="primary"
             solid
@@ -468,10 +446,10 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
       {/* 方案 D 主分栏：左侧 340px 目录 + 右侧工作台详情 */}
       <div className="relative flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]" style={{ zIndex: Z.pageHandle }}>
         {/* 左栏：作品目录（搜索 / 排序 / 胶囊筛选 + 独立滚动） */}
-        <aside className="border-b lg:border-b-0 lg:border-r border-ink-700/60 bg-ink-950/55 flex flex-col min-h-0 max-h-[340px] lg:max-h-none">
-          <div className="px-3.5 pt-3.5 pb-2.5 space-y-2.5 shrink-0">
+        <aside className="border-b lg:border-b-0 lg:border-r border-ink-700/65 bg-ink-950/65 backdrop-blur-md flex flex-col min-h-0 max-h-[340px] lg:max-h-none">
+          <div className="px-3.5 pt-3.5 pb-2.5 space-y-2.5 shrink-0 border-b border-ink-700/40">
             <div className="flex items-center gap-2">
-              <label className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-ink-700/80 bg-ink-900/80 px-2.5 h-[34px] focus-within:border-amber/55">
+              <label className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-ink-700/80 bg-ink-900/85 px-2.5 h-[34px] focus-within:border-amber/60 transition-colors ws-control">
                 <Search size={13} className="text-ink-500 shrink-0" />
                 <input
                   value={query}
@@ -490,7 +468,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as SortKey)}
                 aria-label="排序方式"
-                className="h-[34px] rounded-lg border border-ink-700/80 bg-ink-900/80 px-2.5 text-12 text-ink-200 shrink-0"
+                className="h-[34px] rounded-lg border border-ink-700/80 bg-ink-900/85 px-2.5 text-12 text-ink-200 shrink-0 ws-control"
               >
                 <option value="recent">最近活动</option>
                 <option value="words">字数</option>
@@ -501,7 +479,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
             <div className="flex items-center justify-between gap-2">
               <div
-                className="inline-flex items-center p-[3px] gap-0.5 rounded-[9px] border border-ink-700/70 bg-ink-900/80"
+                className="inline-flex items-center p-[3px] gap-0.5 rounded-[9px] border border-ink-700/70 bg-ink-900/85"
                 role="group"
                 aria-label="按项目形态筛选"
               >
@@ -550,7 +528,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                     <span>{group.label}</span>
                     <span className="px-1.5 py-px rounded bg-ink-800/90 text-ink-400 border border-ink-700/70 ws-num">{group.items.length}</span>
                   </div>
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     {group.items.map(p => {
                       const active = !creating && selected?.id === p.id
                       return (
@@ -561,17 +539,31 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                           onClick={() => selectProject(p.id)}
                           onDoubleClick={() => onOpen(p.id)}
                           title={`${p.name}（双击直接打开）`}
-                          className="items-center gap-3 rounded-[10px] px-2.5 py-2"
+                          className="relative items-center gap-3 rounded-xl px-2.5 py-2 overflow-hidden"
                         >
+                          <span
+                            aria-hidden
+                            className={`w-[3px] h-7 rounded-full shrink-0 transition-colors ${active ? 'bg-amber' : 'bg-transparent'}`}
+                          />
                           {p.cover ? (
-                            <SafeImage src={p.cover} alt={p.name} retry={false} className="w-9 h-[52px] object-cover rounded-md border border-ink-700/80 shrink-0" />
+                            <SafeImage
+                              src={p.cover}
+                              alt={p.name}
+                              retry={false}
+                              className="w-9 h-[52px] object-cover rounded-r-md rounded-l-[3px] border border-ink-700/80 shrink-0 shadow-sm"
+                            />
                           ) : (
-                            <div className="w-9 h-[52px] rounded-md border border-dashed border-ink-700/80 bg-ink-800/50 shrink-0 flex items-center justify-center text-ink-600">
-                              <Feather size={13} />
-                            </div>
+                            <ProjectAutoCover
+                              name={p.name}
+                              genre={p.genre}
+                              size="xs"
+                              className="w-9 h-[52px] shadow-sm"
+                            />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="text-13 font-semibold text-ink-100 truncate">{p.name}</div>
+                            <div className={`text-13 font-semibold truncate ${active ? 'text-ink-50' : 'text-ink-100'}`}>
+                              {p.name}
+                            </div>
                             <div className="mt-0.5 text-11 text-ink-500 ws-num truncate">
                               {p.stats?.chapters ?? 0} 章 · {((p.stats?.words ?? 0) / 10000).toFixed(1)} 万字 · {formatRelativeDay(p.updatedAt)}
                             </div>
@@ -593,7 +585,7 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
 
             {/* 新建表单 */}
             {creating ? (
-              <div className="mb-6 rounded-xl border border-amber/25 bg-ink-850/95 p-5 ws-surface page-enter">
+              <div className="mb-6 rounded-2xl border border-amber/30 bg-ink-850/92 backdrop-blur-md p-6 ws-surface page-enter">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-14 font-semibold text-ink-100">新建小说项目</h3>
                   <Button variant="icon-muted" onClick={() => setCreating(false)} title="关闭" aria-label="关闭"><X size={16} /></Button>
@@ -728,10 +720,12 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 </div>
               </div>
             ) : projects.length === 0 ? (
-              <div className="min-h-[55vh] flex items-center justify-center">
-                <div className="text-center max-w-md px-4">
-                  <BookPlus size={40} className="mx-auto text-ink-500 mb-3" />
-                  <h2 className="text-xl font-semibold text-ink-100">还没有作品，开启第一本书</h2>
+              <div className="flex items-center justify-center" style={{ minHeight: foldVh('55vh') }}>
+                <div className="text-center max-w-md rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md p-8 ws-surface">
+                  <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber/12 border border-amber/30 flex items-center justify-center text-amber">
+                    <BookPlus size={26} />
+                  </div>
+                  <h2 className="text-xl font-bold text-ink-50">还没有作品，开启第一本书</h2>
                   <p className="mt-2 text-12 text-ink-400 leading-relaxed">
                     只需要书名即可开工。想先摸清各功能？创建一个带完整范例数据的示范项目，体验完可直接删除。
                   </p>
@@ -749,9 +743,11 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 </div>
               </div>
             ) : !selected ? (
-              <div className="min-h-[45vh] flex items-center justify-center">
-                <div className="text-center px-4">
-                  <Search size={28} className="mx-auto text-ink-600 mb-3" />
+              <div className="flex items-center justify-center" style={{ minHeight: foldVh('45vh') }}>
+                <div className="text-center rounded-2xl border border-ink-700/75 bg-ink-850/88 backdrop-blur-md px-8 py-7 ws-surface">
+                  <div className="w-11 h-11 mx-auto mb-3 rounded-xl bg-ink-900/70 border border-ink-700/70 flex items-center justify-center text-ink-500">
+                    <Search size={20} />
+                  </div>
                   <div className="text-14 font-semibold text-ink-200">没有符合条件的作品</div>
                   <div className="mt-1.5 text-12 text-ink-500">调整左侧搜索关键词或形态筛选后再看</div>
                   <Button variant="secondary" size="sm" className="mt-4" onClick={() => { setQuery(''); setFilterType('all') }}>
@@ -760,275 +756,20 @@ export default function ProjectHub({ onOpen, onReplayWelcome }: Props) {
                 </div>
               </div>
             ) : (
-              <div key={selected.id} data-project-card={selected.id} className="flex-1 min-h-0 flex flex-col">
-                {/* ① 顶部 Bento 双列：左侧大封面 + 紧凑作品头，右侧四卡工作区（上排三卡 + 下排整宽两列自动备份） */}
-                {(() => {
-                  const auto5minBackups = recentBackups.filter(bk => bk.kind === 'auto5min')
-                  const dailyBackups = recentBackups.filter(bk => bk.kind === 'daily')
-                  const titleSizeCls = selected.name.length <= 10
-                    ? 'text-[24px] 2xl:text-[28px] leading-snug'
-                    : selected.name.length <= 20
-                      ? 'text-[20px] 2xl:text-[23px] leading-snug'
-                      : 'text-[17px] 2xl:text-[19px] leading-snug'
-                  const renderBackupColumn = (
-                    title: string,
-                    items: BackupMeta[],
-                    emptyText: string,
-                  ) => (
-                    <div className="rounded-lg border border-ink-700/55 bg-ink-900/45 px-3 py-2 flex flex-col min-h-0">
-                      <div className="flex items-center justify-between text-11 text-ink-400 mb-1.5 shrink-0">
-                        <span className="font-medium text-ink-300">{title}</span>
-                        <span className="ws-num text-ink-500">{items.length} 条</span>
-                      </div>
-                      {items.length === 0 ? (
-                        <p className="text-11 text-ink-500 my-auto leading-relaxed">{emptyText}</p>
-                      ) : (
-                        <ul className="flex-1 min-h-0 max-h-[120px] overflow-y-auto divide-y divide-ink-700/50 pr-1">
-                          {items.map(bk => (
-                            <li key={bk.id} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0 text-11 text-ink-300 ws-num">
-                              <Clock size={11} className="text-ink-500 shrink-0" />
-                              <span
-                                className="min-w-0 flex-1 truncate"
-                                title={`${formatBackupTime(bk.createdAt)} · ${bk.label || BACKUP_KIND_LABEL[bk.kind]}`}
-                              >
-                                {formatBackupTime(bk.createdAt)}
-                              </span>
-                              <Button
-                                variant="secondary"
-                                size="xs"
-                                onClick={() => { setBackupName(selected.name); setBackupPid(selected.id) }}
-                              >
-                                恢复
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )
-
-                  return (
-                    <section className="shrink-0 grid grid-cols-1 xl:grid-cols-[minmax(440px,490px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(480px,540px)_minmax(0,1fr)] gap-5 mb-4 items-stretch">
-                      {/* 左侧：放大封面 + 自适应换行的作品名/元信息/简介/单行主操作 */}
-                      <div className="flex flex-col sm:flex-row items-stretch gap-5 min-w-0">
-                        {selected.cover ? (
-                          <SafeImage
-                            src={selected.cover}
-                            alt={selected.name}
-                            retry={false}
-                            className="w-[212px] h-[318px] 2xl:w-[240px] 2xl:h-[360px] mx-auto sm:mx-0 object-cover rounded-xl border border-ink-700/80 shrink-0 shadow-md shadow-black/25"
-                          />
-                        ) : (
-                          <div className="w-[212px] h-[318px] 2xl:w-[240px] 2xl:h-[360px] mx-auto sm:mx-0 rounded-xl border border-dashed border-ink-700/80 bg-gradient-to-b from-ink-800/55 to-ink-900/55 shrink-0 flex flex-col items-center justify-center gap-2.5 text-ink-600 shadow-inner">
-                            <Feather size={34} />
-                            <span className="text-12 text-ink-500">未设封面</span>
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1 flex flex-col py-0.5">
-                          <h2 className={`${titleSizeCls} font-bold text-ink-50 tracking-wide break-words [overflow-wrap:anywhere]`}>
-                            {selected.name}
-                          </h2>
-                          <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-12 text-ink-400 ws-num">
-                            <span className={`px-2 py-0.5 text-10 rounded-[5px] border ${(selected.projectType ?? 'full') === 'custom' ? 'border-amber/35 bg-amber/10 text-amber' : 'border-ink-700 bg-ink-800/90 text-ink-300'}`}>
-                              {(selected.projectType ?? 'full') === 'custom' ? '自定义项目' : '完整项目'}
-                            </span>
-                            <span>创建于 {new Date(selected.createdAt).toLocaleDateString()}</span>
-                            <span>最近活动 {formatRelativeDay(selected.updatedAt)}</span>
-                          </div>
-                          {/* 3.7.5：读《作品信息》的「正式简介 / 一句话简介」（正式优先），
-                              没填才回退项目记录上的旧 intro；两处都空才显示兜底提示。 */}
-                          <p className="mt-3.5 text-13 text-ink-300 leading-relaxed flex-1 min-h-0 max-h-[120px] overflow-y-auto pr-1 break-words whitespace-pre-line">
-                            {selected.introText ? selected.introText : <span className="text-ink-500">暂无简介，可在《作品信息》页的「一句话简介」或「正式简介」里填写。</span>}
-                          </p>
-                          <div className="mt-auto pt-4 flex items-center gap-2.5 flex-nowrap">
-                            <Button
-                              variant="primary"
-                              solid
-                              size="md"
-                              className="whitespace-nowrap px-4"
-                              onClick={() => onOpen(selected.id)}
-                              title="打开项目"
-                              aria-label="打开项目"
-                            >
-                              <FolderOpen size={15} /> 打开项目
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="md"
-                              className="whitespace-nowrap px-4"
-                              onClick={() => startEdit(selected)}
-                              title="编辑项目"
-                              aria-label="编辑项目"
-                            >
-                              <Pencil size={14} /> 编辑项目
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 右侧：4 张卡（上排：作品概览 / 导出与备份 / 危险操作；下排：整宽两列最近自动备份） */}
-                      <div className="flex flex-col gap-3 min-w-0">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
-                          {/* 1) 作品概览 */}
-                          <div className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-3.5 ws-surface flex flex-col">
-                            <h3 className="text-12 font-semibold text-ink-300 flex items-center gap-1.5 mb-2.5">
-                              <Layers size={13} className="text-amber" /> 作品概览
-                            </h3>
-                            <div className="grid grid-cols-2 gap-2 flex-1">
-                              <div className="rounded-lg border border-ink-700/60 bg-ink-900/50 px-2.5 py-1.5 flex flex-col justify-center">
-                                <div className="text-[18px] leading-tight font-bold text-ink-50 ws-num">{selected.stats?.volumes ?? 0}</div>
-                                <div className="mt-0.5 text-10 text-ink-500">卷</div>
-                              </div>
-                              <div className="rounded-lg border border-ink-700/60 bg-ink-900/50 px-2.5 py-1.5 flex flex-col justify-center">
-                                <div className="text-[18px] leading-tight font-bold text-ink-50 ws-num">{selected.stats?.chapters ?? 0}</div>
-                                <div className="mt-0.5 text-10 text-ink-500">章</div>
-                              </div>
-                              <div className="rounded-lg border border-ink-700/60 bg-ink-900/50 px-2.5 py-1.5 flex flex-col justify-center">
-                                <div className="text-[18px] leading-tight font-bold text-ink-50 ws-num">{((selected.stats?.words ?? 0) / 10000).toFixed(1)}</div>
-                                <div className="mt-0.5 text-10 text-ink-500">万字</div>
-                              </div>
-                              <div className="rounded-lg border border-ink-700/60 bg-ink-900/50 px-2.5 py-1.5 flex flex-col justify-center min-w-0">
-                                <div className="text-[13px] leading-tight font-bold text-ink-100 truncate">{normalizeGenrePack(selected.genre)}</div>
-                                <div className="mt-0.5 text-10 text-ink-500">作品题材</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* 2) 导出与备份 */}
-                          <div className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-3.5 ws-surface flex flex-col">
-                            <h3 className="text-12 font-semibold text-ink-300 flex items-center gap-1.5 mb-2.5">
-                              <FileUp size={13} className="text-amber" /> 导出与备份
-                            </h3>
-                            <div className="flex flex-col gap-1.5 flex-1 justify-center">
-                              <Tooltip label="导出单本书完整 JSON 备份" className="w-full">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="w-full !justify-start"
-                                  onClick={() => exportProject(selected)}
-                                  title="导出 JSON 备份"
-                                  aria-label="导出 JSON 备份"
-                                >
-                                  <FileUp size={13} className="text-amber shrink-0" /> 导出 JSON 备份
-                                </Button>
-                              </Tooltip>
-                              <Tooltip label="汇总全部世界观 / 人物 / 设定表" className="w-full">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="w-full !justify-start"
-                                  onClick={async () => {
-                                    db.setCurrentProject(selected.id)
-                                    const { exportSettingCompendium } = await import('@/lib/storage/exporter')
-                                    void exportSettingCompendium(selected.name)
-                                  }}
-                                  title="导出设定集（汇总全部世界观 / 人物 / 设定表）"
-                                  aria-label="导出设定集"
-                                >
-                                  <BookText size={13} className="text-amber shrink-0" /> 导出设定集
-                                </Button>
-                              </Tooltip>
-                              <Tooltip label="查看 / 一键恢复历史自动备份" className="w-full">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="w-full !justify-start"
-                                  onClick={() => { setBackupName(selected.name); setBackupPid(selected.id) }}
-                                  title="备份与恢复：查看 / 一键恢复历史版本"
-                                  aria-label="备份与恢复"
-                                >
-                                  <History size={13} className="text-amber shrink-0" /> 备份与恢复
-                                </Button>
-                              </Tooltip>
-                            </div>
-                          </div>
-
-                          {/* 3) 危险操作 */}
-                          <div className="rounded-xl border border-danger/25 bg-ink-850/90 p-3.5 ws-surface flex flex-col">
-                            <h3 className="text-12 font-semibold text-danger flex items-center gap-1.5 mb-2">
-                              <Trash2 size={13} /> 危险操作
-                            </h3>
-                            <p className="text-11 text-ink-400 leading-relaxed mb-3">
-                              删除后《{selected.name}》的设定、大纲、正文与统计将一并移除且不可撤销，建议先导出 JSON 备份。
-                            </p>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              className="mt-auto w-full"
-                              onClick={() => removeProject(selected)}
-                              title="删除项目"
-                              aria-label="删除项目"
-                            >
-                              <Trash2 size={13} /> 删除项目
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* 4) 最近自动备份（占满右上整宽，双列展示 5 分钟定时与每日备份） */}
-                        <div className="rounded-xl border border-ink-700/75 bg-ink-850/90 p-3.5 ws-surface flex-1 min-h-[164px] flex flex-col">
-                          <div className="flex items-center justify-between gap-2 mb-2.5 shrink-0">
-                            <h3 className="text-12 font-semibold text-ink-300 flex items-center gap-1.5">
-                              <Shield size={13} className="text-amber" /> 最近自动备份
-                            </h3>
-                            <span className="text-11 text-ink-500 ws-num">
-                              共 {auto5minBackups.length + dailyBackups.length} 份自动留存
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-h-0">
-                            {renderBackupColumn(
-                              '定时备份（每 5 分钟）',
-                              auto5minBackups,
-                              '暂无定时备份；编辑项目时每 5 分钟自动留存。',
-                            )}
-                            {renderBackupColumn(
-                              '每日备份',
-                              dailyBackups,
-                              '暂无每日备份；每日首次打开项目自动留存。',
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                  )
-                })()}
-
-                {/* ② 下半部分：最后编辑的章节（拉高填满剩余可视高度，仅内部框滚动） */}
-                <section className="flex-1 min-h-[240px] flex flex-col rounded-xl border border-ink-700/75 bg-ink-850/90 p-4 ws-surface">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 shrink-0">
-                    <h3 className="text-12 font-semibold text-ink-300 flex items-center gap-1.5">
-                      <FileText size={14} className="text-amber" /> 最后编辑的章节
-                    </h3>
-                    {selected.stats?.lastChapter && (
-                      <div className="flex flex-wrap items-center gap-2 text-11 text-ink-500 ws-num">
-                        {selected.stats.lastChapter.status && (
-                          <span className="px-1.5 py-px rounded border border-ink-700 bg-ink-800/80 text-ink-300">
-                            {selected.stats.lastChapter.status}
-                          </span>
-                        )}
-                        <span>{selected.stats.lastChapter.wordCount} 字</span>
-                        {selected.stats.lastChapter.updatedAt > 0 && (
-                          <>
-                            <span>·</span>
-                            <span>更新于 {formatBackupTime(selected.stats.lastChapter.updatedAt)}</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {!selected.stats?.lastChapter ? (
-                    <p className="text-12 text-ink-500">这本书还没有创建章节，打开项目后即可开始创作。</p>
-                  ) : (
-                    <div className="flex-1 min-h-0 flex flex-col">
-                      <div className="text-14 font-semibold text-ink-100 mb-2 truncate shrink-0">
-                        {selected.stats.lastChapter.title}
-                      </div>
-                      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-ink-700/60 bg-ink-900/55 px-5 py-4 text-13 text-ink-200 leading-[1.85] whitespace-pre-wrap break-words">
-                        {selected.stats.lastChapter.excerpt || '（本章暂未填写正文内容）'}
-                      </div>
-                    </div>
-                  )}
-                </section>
-              </div>
+              <ProjectHubDetail
+                selected={selected}
+                recentBackups={recentBackups}
+                onOpen={onOpen}
+                onEdit={startEdit}
+                onExport={exportProject}
+                onExportCompendium={async p => {
+                  db.setCurrentProject(p.id)
+                  const { exportSettingCompendium } = await import('@/lib/storage/exporter')
+                  void exportSettingCompendium(p.name)
+                }}
+                onOpenBackup={p => { setBackupName(p.name); setBackupPid(p.id) }}
+                onDelete={removeProject}
+              />
             )}
           </div>
         </main>
