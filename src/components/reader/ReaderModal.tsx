@@ -249,7 +249,7 @@ export default function ReaderModal({ open, onClose, projectId, projectName, ini
           <div className="h-11 shrink-0 border-b border-ink-700/60 flex items-center gap-2 px-4">
             <span className="text-12 text-ink-200 truncate">{current?.title || '—'}</span>
             <span className="ml-auto text-10 text-ink-500 shrink-0">只读 · 滚轮向下阅读，本章读完自动接下一章</span>
-            <Button variant="ghost" size="sm" onClick={onClose} className="shrink-0">关闭</Button>
+            <Button variant="secondary" size="sm" onClick={onClose} className="shrink-0">关闭</Button>
           </div>
           <div
             ref={bodyRef}
