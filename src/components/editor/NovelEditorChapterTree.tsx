@@ -1,6 +1,7 @@
 import ResizeHandle, { type ResizablePane } from '@/components/common/ResizeHandle'
 import { Z } from '@/lib/app/zLayer'
 import { Button } from '@/components/common/Button'
+import ReaderLaunchButton from '@/components/reader/ReaderLaunchButton'
 import HelpPopover from '@/components/common/HelpPopover'
 import type { Volume, Chapter, ChapterStatus } from '@/lib/types'
 import { BookMarked, Upload, FileDown, FolderPlus, GripVertical, ChevronDown, ChevronRight, FilePlus, FilePlus2, Trash2, Hash, Inbox } from 'lucide-react'
@@ -299,6 +300,16 @@ style={{ zIndex: Z.pagePanelTop, maxHeight: foldVh('60vh') }}>
                 </>
               )}
             </div>
+            {/* 3.7.5（Q-03）：阅读模式入口 —— 与导入 / 新建卷 / 新建章节 同排同款，只放图标 */}
+            <ReaderLaunchButton
+              projectId={activeChapter?.projectId ?? volumes[0]?.projectId ?? ''}
+              projectName={projectName}
+              initialChapterId={activeChapter?.id ?? null}
+              mode="icon"
+              variant="bare"
+              size="xs"
+              className="px-1 h-6 shrink-0 text-ink-400 hover:text-amber rounded-lg transition-colors"
+            />
             <Button variant="icon-amber" size="xs" onClick={() => setNamePrompt({ kind: 'addVol', title: '新建卷', def: `第${nextVolumeNo(volumes)}卷` })} title="新建卷" className="shrink-0">
               <FolderPlus size={13} />
             </Button>

@@ -253,3 +253,24 @@ export function collapsedIdsOf(allIds: readonly string[], expanded: readonly str
   const open = new Set(expanded)
   return allIds.filter(id => !open.has(id))
 }
+
+/**
+ * 读纯文本偏好（3.7.5 · 阅读模式记进度用）。
+ * 与上面几个同源：`yfe-ui:` 命名空间、读失败静默回退 null、写失败不影响本次会话。
+ */
+export function readTextPref(key: string): string | null {
+  try {
+    const raw = localStorage.getItem(PREFIX + key)
+    return raw === null ? null : raw
+  } catch {
+    return null
+  }
+}
+
+export function writeTextPref(key: string, v: string): void {
+  try {
+    localStorage.setItem(PREFIX + key, v)
+  } catch {
+    /* 写不进去就只丢"跨会话记忆"，本次阅读不受影响 */
+  }
+}

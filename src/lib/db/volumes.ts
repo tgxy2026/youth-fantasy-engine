@@ -14,6 +14,16 @@ export async function getAllVolumes(owner?: OwnedOperation): Promise<Volume[]> {
   const all = await (owner?.store ?? ops).getAll<Volume>('volumes')
   return all.filter(v => v.projectId === pid).sort((a, b) => a.order - b.order)
 }
+/**
+ * 按**指定项目 id** 读卷（3.7.5 · Q-03 阅读模式）。
+ * 🔴 首页「阅读模式」打开时并没有"当前打开的项目"，`getAllVolumes()` 会按空 pid 过滤 ⇒ 读不到任何卷。
+ */
+export async function getVolumesFor(projectId: string): Promise<Volume[]> {
+  if (!projectId) return []
+  const all = await ops.getAll<Volume>('volumes')
+  return all.filter(v => v.projectId === projectId).sort((a, b) => a.order - b.order)
+}
+
 export async function saveVolume(v: Volume, owner?: OwnedOperation) {
   const store = owner?.store ?? ops, pid = v.projectId || currentProjectId
   owner?.assertCurrent()

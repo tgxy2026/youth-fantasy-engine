@@ -23,6 +23,18 @@ export async function getAllChapters(owner?: OwnedOperation): Promise<Chapter[]>
       return a.order - b.order
     })
 }
+/**
+ * 按**指定项目 id** 读章（3.7.5 · Q-03 阅读模式）：首页打开阅读器时"当前项目"为空，
+ * `getAllChapters()` 会按空 pid 过滤 ⇒ 一本都读不出来。
+ */
+export async function getChaptersFor(projectId: string): Promise<Chapter[]> {
+  if (!projectId) return []
+  const all = await ops.getAll<Chapter>('chapters')
+  return all
+    .filter(c => c.projectId === projectId)
+    .sort((a, b) => (a.volumeId ?? '').localeCompare(b.volumeId ?? '') || a.order - b.order)
+}
+
 /** Explicit-owner lookup for navigation. Capture the project before the asynchronous read. */
 export async function chapterExistsFor(projectId: string, chapterId: string): Promise<boolean> {
   if (!projectId || !chapterId) return false
