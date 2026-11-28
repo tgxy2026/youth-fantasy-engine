@@ -68,13 +68,18 @@ export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSea
     return {
       keys: new Set(cols.map(c => c.name)),
       /**
-       * 🔴 3.7.6：自定义字段的显示名在 `atlasField.label` 里（作者起的「种族名」），
-       *    `templateLabel` 只有采用模板后才有。漏了它，设定检索会把 `cf_xxx` 原始键
-       *    直接摆给作者看（表格 / 图鉴读的是 atlasField.label，所以那边正常）。
+       * 🔴 显示名优先级：模板快照的 label → 作者改的内置字段显示名（fieldAlias）→
+       *    自定义字段自己的 label → 存储键本身。
+       *
+       * 3.7.6 修两处漏接：
+       *   · 自定义字段的显示名在 `atlasField.label`（原来只读 `templateLabel`，
+       *     检索里会把 `cf_xxx` 原始键摆给作者看）；
+       *   · 内置列的别名在 `aliases`（`atlasColumnsOf` 不会把它写进 templateLabel，
+       *     原来这里直接退回 `defaultLabelOf(name)` —— 作者改了显示名，检索里没变）。
        */
       labels: Object.fromEntries(cols.map(c => [
         c.name,
-        c.templateLabel ?? c.atlasField?.label ?? defaultLabelOf(c.name),
+        c.templateLabel ?? aliases[c.name] ?? c.atlasField?.label ?? defaultLabelOf(c.name),
       ])),
     }
   } catch {
