@@ -17,6 +17,7 @@
 
 import { TABS, getTab, GEO_MAPS_TAB } from '@/lib/schema'
 import { getTableRows } from '@/lib/db'
+import { duplicateNamePlan, isNameLikeCustomFieldLabel } from '@/lib/atlas/duplicateNameRules'
 import type { AuditIssue, AuditLocation } from '@/lib/audit/audit'
 // ⚠️ `import type` 编译后被完全擦除，**不会**把酒馆存储层拽成静态依赖（真正的取用在下面动态 import）
 import type { TavernGhostGroup } from '@/lib/tavern/store'
@@ -40,6 +41,31 @@ export interface HealthResult {
    *    文案一改就**静默失配**（按钮凭空消失）。用 id 关联是稳的。
    */
   tavernGhosts?: TavernGhostInfo[]
+  /** 3.7.6：同一行「内置名称列 + 自定义名字列」都有值的条目（供界面挂合并/归档按钮） */
+  duplicateNames?: DuplicateNameFieldInfo[]
+}
+
+/**
+ * 一条「同名字段」冲突（3.7.6）。
+ *
+ * 典型来源：作者新增了叫「种族名」的自定义字段，把新条目名字写进去，内置「名称」列留空；
+ * 老条目的名字还在内置列 —— 同一条记录里两套名字并存。
+ */
+export interface DuplicateNameFieldInfo {
+  /** 对应 `issues` 里那一条的 id */
+  issueId: string
+  tabId: string
+  rowId: string
+  /** 用于文案的名称（优先内置值） */
+  rowLabel: string
+  /** 保留键（内置名称列） */
+  keepKey: string
+  keepLabel: string
+  keepValue: string
+  /** 要归档的自定义字段 */
+  dropKey: string
+  dropLabel: string
+  dropValue: string
 }
 
 /** 一条「可清理的酒馆幽灵」分组（供界面在该 issue 卡片上挂「清理」按钮） */
@@ -245,6 +271,90 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
     console.warn('[dataHealth] 酒馆列表成对性检查跳过：', e)
   }
 
+  // —— 6) 同一行「内置名称列 + 自定义名字列」都有值（3.7.6）——
+  //
+  // 🔴 必须排在酒馆之后、排序之前：id 是 `H${n}` 递增且「忽略」会持久化 id，
+  //    插到前面会让作者此前忽略的 id 全体错位（同第 5 类的说明）。
+  //
+  // 判据只认「图鉴页签 + 自定义字段 + 名字类字段名」：
+  //   · 内置名称列（displayCol）有值、且某个自定义字段也像名字 → 同一条记录两套名字；
+  //   · 「别称 / 别名 / 曾用名 / 称号」这类是**正常并存**的字段，排除。
+  const duplicateNames: DuplicateNameFieldInfo[] = []
+  try {
+    const [{ isAtlasTab }, { loadEffectiveSearchMeta }] = await Promise.all([
+      import('@/lib/atlas/schema'),
+      import('@/lib/templates/effectiveSearchMeta'),
+    ])
+    for (const t of tableTabs) {
+      if (!isAtlasTab(t.id)) continue
+      const meta = await loadEffectiveSearchMeta(t).catch(() => null)
+      if (!meta) continue
+      const nameKeys: string[] = []
+      for (const key of meta.keys) {
+        const label = (meta.labels[key] ?? key).trim()
+        if (t.displayCol && key === t.displayCol) { nameKeys.push(key); continue }
+        if (!key.startsWith('cf_')) continue
+        if (!isNameLikeCustomFieldLabel(label)) continue
+        nameKeys.push(key)
+      }
+      if (nameKeys.length < 2) continue
+      for (const row of cache.get(t.id) ?? []) {
+        const plan = duplicateNamePlan(nameKeys, row.data, t.displayCol)
+        if (!plan) {
+          /**
+           * 名字只写进自定义字段、内置名称为空：不算「两套名字冲突」，但值得一条 info ——
+           * 检索（3.7.6 起）能正确显示，但 AI 上下文 / 导出 / 跨表引用仍按内置名称列取名，
+           * 给作者一个「搬回内置列」的入口（只追加、先备份、归档不删数据）。
+           */
+          const filled = nameKeys.filter(key => (row.data[key] ?? '').trim())
+          const customOnly = filled.filter(key => key.startsWith('cf_'))
+          const builtinKey = t.displayCol
+          if (filled.length === 1 && customOnly.length === 1 && builtinKey && !(row.data[builtinKey] ?? '').trim()) {
+            const dropKey = customOnly[0]
+            const dropValue = (row.data[dropKey] ?? '').trim()
+            const dropLabel = (meta.labels[dropKey] ?? dropKey).trim()
+            const builtinLabel = (meta.labels[builtinKey] ?? builtinKey).trim()
+            const issueId = push(
+              'info',
+              '名字字段重复',
+              '名字写在自定义字段里，内置名称列是空的',
+              `《${t.name}》「${dropValue}」的名字写在自定义字段「${dropLabel}」里，内置「${builtinLabel}」为空。` +
+              `检索能正常显示，但 AI 上下文、导出与跨表引用仍按内置「${builtinLabel}」取名。` +
+              `可点「合并」把它写进内置列并归档该字段 —— 只追加、不覆盖、自动备份。`,
+              { kind: 'row', tabId: t.id, rowId: row.id, hint: dropKey },
+            )
+            duplicateNames.push({
+              issueId, tabId: t.id, rowId: row.id, rowLabel: dropValue,
+              keepKey: builtinKey, keepLabel: builtinLabel, keepValue: '',
+              dropKey, dropLabel, dropValue,
+            })
+          }
+          continue
+        }
+        const keepValue = (row.data[plan.keepKey] ?? '').trim()
+        const keepLabel = (meta.labels[plan.keepKey] ?? plan.keepKey).trim()
+        for (const dropKey of plan.dropKeys) {
+          const dropValue = (row.data[dropKey] ?? '').trim()
+          const dropLabel = (meta.labels[dropKey] ?? dropKey).trim()
+          const rowLabel = keepValue || dropValue
+          const issueId = push(
+            'warn',
+            '名字字段重复',
+            '同一条记录有两个名字字段都有值',
+            `《${t.name}》「${rowLabel}」：内置「${keepLabel}」= ${keepValue || '(空)'}，自定义「${dropLabel}」= ${dropValue}。` +
+            `表格与图鉴按列显示时看不出来，但设定检索、正文引用与 AI 上下文会分不清哪个才是条目名。` +
+            `可用这条结果上的「合并」把自定义值写进内置列（仅当内置为空）并归档该字段；两者都有值时只归档、不覆盖、不删数据。`,
+            { kind: 'row', tabId: t.id, rowId: row.id, hint: dropKey },
+          )
+          duplicateNames.push({ issueId, tabId: t.id, rowId: row.id, rowLabel, keepKey: plan.keepKey, keepLabel, keepValue, dropKey, dropLabel, dropValue })
+        }
+      }
+    }
+  } catch (e) {
+    // 字段配置 / 模板读取失败：跳过这一类，绝不拖垮其余检查
+    console.warn('[dataHealth] 同名字段检查跳过：', e)
+  }
+
   // 严重度排序：error → warn → info
   const order = { error: 0, warn: 1, info: 2 } as const
   issues.sort((a, b) => order[a.severity] - order[b.severity])
@@ -253,5 +363,6 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
     issues,
     scannedTables: tableTabs.length,
     ...(tavernGhosts.length > 0 ? { tavernGhosts } : {}),
+    ...(duplicateNames.length > 0 ? { duplicateNames } : {}),
   }
 }

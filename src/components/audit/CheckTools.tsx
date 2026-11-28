@@ -26,7 +26,7 @@ import { useAcpWriting } from '@/lib/agentHost/useAcpWriting'
 import { AI_DISABLED_HINT } from '@/lib/ai/aiScope'
 import { aiReviewSensitive, aiContinuityAuditWithStatus, type SensitiveReview, type ContinuityFinding } from '@/lib/ai/aiTasks'
 import { buildProjectContext } from '@/lib/ai/aiContext'
-import { runDataHealthCheck, type TavernGhostInfo } from '@/lib/storage/dataHealth'
+import { runDataHealthCheck, type TavernGhostInfo, type DuplicateNameFieldInfo } from '@/lib/storage/dataHealth'
 import { checkAuditChapters, formatGap } from '@/lib/audit/evidenceGate'
 import { SEVERITY_LABEL, type AuditIssue, type AuditLocation } from '@/lib/audit/audit'
 import { Button } from '@/components/common/Button'
@@ -152,12 +152,15 @@ export default function CheckTools() {
   const [healthRun, setHealthRun] = useState(false)
   /** 第 5 类里「可清理」的分组（靠 issueId 与上面 issues 关联，用于在卡片上挂「清理」按钮） */
   const [ghosts, setGhosts] = useState<TavernGhostInfo[]>([])
+  /** 第 6 类：同一条记录里「内置名称列 + 自定义名字列」都有值（挂合并 / 归档按钮） */
+  const [nameDuplicates, setNameDuplicates] = useState<DuplicateNameFieldInfo[]>([])
   const runHealth = useCallback(async () => {
     setHealthScanning(true); setHealthIssues([]); setHealthRun(false)
     try {
       const res = await runDataHealthCheck()
       setHealthIssues(res.issues)
       setGhosts(res.tavernGhosts ?? [])
+      setNameDuplicates(res.duplicateNames ?? [])
       setHealthRun(true)
     } finally { setHealthScanning(false) }
   }, [])
@@ -219,8 +222,38 @@ export default function CheckTools() {
     }
   }
 
-  /** 敏感词 AI 检测：复用 aiReviewSensitive 复核命中词；无扫描结果时先自动跑一次系统扫描 */
-  const aiDetect = async () => {
+  /**
+   * 第 6 类（名字字段重复）的修复。
+   *
+   * 安全边界在 lib 层（`duplicateNameFix`）：只追加不覆盖、先备份、不删数据；
+   * 界面只负责说清「会改什么、不会改什么」。
+   */
+  const mergeNameField = async (info: DuplicateNameFieldInfo) => {
+    const canFill = !info.keepValue
+    const ok = await confirmDialog({
+      title: canFill ? '把自定义名字写进内置列' : '归档重复的名字字段',
+      message: canFill
+        ? `内置「${info.keepLabel}」现在是空的，将把自定义「${info.dropLabel}」的值「${info.dropValue}」写入它，并归档该自定义字段。\n\n`
+          + `· 只追加，不覆盖任何已有内容；\n· 归档只是不再显示（定义与值都保留，可在「字段设置」里恢复）；\n· 写入前会自动备份。`
+        : `内置「${info.keepLabel}」已有值「${info.keepValue}」，不会被改动；只把自定义「${info.dropLabel}」（值「${info.dropValue}」）归档，让它不再出现在检索与引用里。\n\n`
+          + `· 不删除任何数据，可随时在「字段设置」里恢复；\n· 改动前会自动备份。`,
+      confirmText: canFill ? '写入并归档' : '归档字段',
+    })
+    if (!ok) return
+    try {
+      const { fixDuplicateNameField } = await import('@/lib/atlas/duplicateNameFix')
+      const r = await fixDuplicateNameField({
+        tabId: info.tabId, rowId: info.rowId, keepKey: info.keepKey, dropKey: info.dropKey,
+        mode: canFill ? 'fill-and-archive' : 'archive-only',
+      })
+      showToast(r.filled ? '已写入内置列并归档自定义字段' : r.archived ? '已归档该自定义字段' : '没有可改动的字段')
+      await runHealth()
+    } catch (e) {
+      showToast(`处理失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  /** 敏感词 AI 检测：复用 aiReviewSensitive 复核命中词；无扫描结果时先自动跑一次系统扫描 */  const aiDetect = async () => {
     if (!writingReady || reviewLoading) return
     let hits = scanResult.flatMap(r => r.hits.map(h => ({ word: h.word, snippet: h.context }))).slice(0, 40)
     if (hits.length === 0) {
@@ -483,7 +516,7 @@ export default function CheckTools() {
           <h2 className="text-13 font-semibold text-ink-100 mb-1 flex items-center gap-2">
             <Stethoscope size={14} className="text-success" /> 数据体检
             <HelpPopover title="数据体检怎么用" width="23rem">
-              {'与上方「AI 一致性深度自查」互补：AI 查「故事通不通」（语义矛盾），本工具查「链接断没断」（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖模型，离线可用；\n· 五类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
+              {'与上方「AI 一致性深度自查」互补：AI 查「故事通不通」（语义矛盾），本工具查「链接断没断」（数据结构）。\n\n· 纯程序毫秒级扫描，不依赖模型，离线可用；\n· 六类检查：跨表引用悬空（改名/删除后残留）、孤儿项（父级被删）、编号重复、主名称列必填空、酒馆列表残留（酒馆列表项指向的正文已不在，列表里看得见、点开是空的；此类不会自动清理，需要你在那条结果上点「清理」）、同一条记录里内置名称列与自定义名字列都有值（可在结果上点「合并」把值写进内置列并归档该字段，不覆盖、不删数据），另含伏笔编号引用悬空；\n· 每条问题精确到行，「跳转 ↗」一键飞到那一行手改；\n· 单条可「忽略」（不再汇报），「清除忽略」一键恢复全部被忽略的冲突；\n· 进入本页自动体检一次，也可点「重新体检」。建议改动过名称/删过条目后跑一遍。'}
             </HelpPopover>
           </h2>
           <p className="text-11 text-ink-500 mb-3">
@@ -530,6 +563,18 @@ export default function CheckTools() {
                           className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 transition-colors"
                         >
                           <Trash2 size={11} /> 清理 {g.count} 条
+                        </Button>
+                      ))}
+                      {/* 第 6 类（名字字段重复）：内置空 ⇒ 写入内置后归档；两边都有值 ⇒ 只归档不覆盖 */}
+                      {nameDuplicates.filter(d => d.issueId === issue.id).map(d => (
+                        <Button key={d.dropKey} variant="bare"
+                          onClick={() => void mergeNameField(d)}
+                          title={d.keepValue
+                            ? `内置「${d.keepLabel}」已有值，只归档自定义「${d.dropLabel}」（不删数据、自动备份）`
+                            : `把自定义「${d.dropLabel}」的值写入内置「${d.keepLabel}」并归档该字段（自动备份）`}
+                          className="flex items-center gap-1 px-2 py-0.5 text-11 rounded-md bg-amber/10 text-amber border border-amber/30 hover:bg-amber/20 transition-colors"
+                        >
+                          {d.keepValue ? '归档字段' : '合并到内置'}
                         </Button>
                       ))}
                       <Button variant="bare"
