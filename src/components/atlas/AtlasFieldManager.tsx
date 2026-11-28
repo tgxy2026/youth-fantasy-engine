@@ -19,6 +19,7 @@ import type { TabDef } from '@/lib/types'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from '@/lib/atlas/types'
 import { atlasBadgeKeys, atlasCategoryOptions, atlasGroupsOf } from '@/lib/atlas/schema'
 import { ATLAS_FIELD_TYPE_LABEL } from '@/lib/atlas/values'
+import { builtinFieldNameConflict } from '@/lib/atlas/fieldNameGuard'
 import { newFieldId, removeAtlasFieldAtomically } from '@/lib/atlas/persistence'
 import { getCurrentProjectId } from '@/lib/db/core'
 import { captureStorageWriteOwner } from '@/lib/storage/writeOwner'
@@ -68,6 +69,23 @@ export default function AtlasFieldManager({
   const categories = atlasCategoryOptions(tab)
   const active = config.fields.filter(f => !f.archived).sort((a, b) => a.order - b.order)
   const archived = config.fields.filter(f => f.archived)
+
+  /**
+   * 内置字段的当前显示名（存储键 → 别名 → 原键最后一段）。
+   *
+   * 3.7.6：新增自定义字段要拿它做同名 / 近义拦截 —— 作者把名字写进一个叫「名称」的自定义字段，
+   * 同一条记录就会有两套名字（内置列的空值 + 自定义列的值），设定检索与正文引用分不清谁是条目名。
+   */
+  const builtinLabels = useMemo(() => {
+    const keys = aliasKeys && aliasKeys.length > 0
+      ? [...aliasKeys]
+      : (tab.columns ?? []).map(c => c.name)
+    return new Set(
+      keys
+        .map(k => (aliases?.[k] ?? k.split('::').pop() ?? k).trim())
+        .filter(Boolean),
+    )
+  }, [aliasKeys, aliases, tab])
 
   const [draft, setDraft] = useState<AtlasFieldDefinition | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -402,6 +420,13 @@ export default function AtlasFieldManager({
     if (label.length > 20) return '字段名最多 20 个字'
     const dup = active.some(x => x.id !== f.id && x.label.trim() === label)
     if (dup) return `已有同名字段「${label}」`
+    /**
+     * 🔴 3.7.6：与**内置字段**同名 / 近义要拦。
+     *    放进去的后果不是报错，而是静默分裂：老数据留在内置列、新数据写进自定义列，
+     *    设定检索里同一条记录出现两套名字（用户 2026-11-28 反馈的「新旧数据并存」）。
+     */
+    const conflict = builtinFieldNameConflict(label, builtinLabels)
+    if (conflict) return conflict
     if ((f.type === 'select' || f.type === 'multiSelect') && (f.options ?? []).length === 0) {
       return '单选 / 多选字段至少要有一个选项'
     }
