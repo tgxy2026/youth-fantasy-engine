@@ -67,7 +67,15 @@ export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSea
     const cols = def ? tableColumnsOfTemplate(tab, tpl) : atlasColumnsOf(tab, config, aliases)
     return {
       keys: new Set(cols.map(c => c.name)),
-      labels: Object.fromEntries(cols.map(c => [c.name, c.templateLabel ?? defaultLabelOf(c.name)])),
+      /**
+       * 🔴 3.7.6：自定义字段的显示名在 `atlasField.label` 里（作者起的「种族名」），
+       *    `templateLabel` 只有采用模板后才有。漏了它，设定检索会把 `cf_xxx` 原始键
+       *    直接摆给作者看（表格 / 图鉴读的是 atlasField.label，所以那边正常）。
+       */
+      labels: Object.fromEntries(cols.map(c => [
+        c.name,
+        c.templateLabel ?? c.atlasField?.label ?? defaultLabelOf(c.name),
+      ])),
     }
   } catch {
     return null

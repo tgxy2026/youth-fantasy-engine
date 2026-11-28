@@ -12,6 +12,7 @@ import CalendarSelect from '@/components/common/CalendarSelect'
 import { useCalendarRule } from '@/lib/app/useCalendarRule'
 import { createIndexedFieldWriter } from '@/lib/settings/indexedFieldWriter'
 import { collectTableFields, collectTableKeys, pickKnownKeys } from '@/lib/settings/settingSearchFields'
+import { resolveRowTitle } from '@/lib/settings/rowTitle'
 import { candidateApplyContext } from '@/lib/ai/candidateContext'
 import { registerAuxiliaryLeaveGuard, type LeaveFlushResult } from '@/lib/editor/leaveBarrier'
 import { useListWorkspaceView } from '@/components/common/useListWorkspaceView'
@@ -259,7 +260,6 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
         // 列定义索引：用于让编辑时沿用原表格的控件类型（select 列仍走下拉）
         const colMap = new Map((tab.columns ?? []).map(c => [c.name, c]))
         const isPair = RELATION_PAIR_TAB_IDS.has(tab.id)
-        const displayCol = tab.displayCol ?? (isPair ? '人物A' : colNames[0])
         const subtitleCol = tab.subtitleCol
         for (const r of rows) {
           // === 过滤：伏笔总表，状态 == '已回收' 的不显示 ===
@@ -269,8 +269,12 @@ export default function SettingSearch({ onNavigate, onDraftPendingChange, ctx }:
           }
           const filled = Object.entries(r.data).filter(([, v]) => v && v.trim())
           if (filled.length === 0) continue
-          // 主标题：displayCol 指定列；空时回退到第一个非空列
-          const displayVal = (displayCol && r.data[displayCol]) || filled.find(([, v]) => v && v.trim())?.[1] || ''
+          /**
+           * 主标题：统一取名口径（3.7.6）。
+           * 原来只认 `tab.displayCol`，值为空就回退「第一个非空」—— 新增行最先写入的是自动编号，
+           * 于是标题变成 R0001；名字写在自定义字段时又完全看不见。见 `lib/settings/rowTitle`。
+           */
+          const displayVal = resolveRowTitle(tab, r.data, { labels, keys: allKeys })
           // 副标题：subtitleCol 指定列（关系网默认甲→乙）
           let subtitle: string | undefined
           if (isPair && r.data['人物A'] && r.data['人物B']) {

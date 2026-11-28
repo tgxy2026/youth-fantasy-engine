@@ -9,6 +9,7 @@ import { loadFieldDefinitions } from '@/lib/templates/fieldDefinition'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
 import type { EffectiveTemplate } from '@/lib/templates/types'
 import { readAliases } from '@/lib/settings/aliases'
+import { resolveRowTitle } from '@/lib/settings/rowTitle'
 import {
   chapterContextRefKey, chapterContextSettingKey, emptyChapterContextBinding, findOutlineReferenceSuggestions,
   normalizeChapterContextBinding, outlinePurposeForField,
@@ -31,8 +32,8 @@ function valueSummary(data: Record<string, string>): string {
 }
 
 function rowName(tab: TabDef, row: TableRow): string {
-  const label = tab.displayCol ? row.data[tab.displayCol] : ''
-  return label?.trim() || row.data['名称']?.trim() || row.data['编号']?.trim() || row.id
+  // 3.7.6：与设定检索同口径 —— 名字写在自定义字段、或内置名称列留空时，原来这里只剩编号/内部 id
+  return resolveRowTitle(tab, row.data) || row.id
 }
 
 function matchTerms(name: string, tabId: string, data: Record<string, string>): string[] {

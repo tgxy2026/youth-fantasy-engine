@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, typ
 import * as db from '@/lib/db'
 import { TABS } from '@/lib/schema'
 import { readAliases } from '@/lib/settings/aliases'
+import { resolveRowTitle } from '@/lib/settings/rowTitle'
 import { scanRefHighlight, type RefName } from '@/components/editor/novelEditorHelpers'
 import { usePersistedBool } from '@/lib/settings/uiPrefs'
 import { onDbChange } from '@/lib/db/changeBus'
@@ -73,13 +74,14 @@ export function useNovelEditorHighlight({
         }
       }
     }
-    // 世界构建组下的全部设定表（国家/地理/种族/物品/历史/术语…）均以 displayCol 作为条目名称参与高亮
+    // 世界构建组下的全部设定表（国家/地理/种族/物品/历史/术语…）均以统一取名口径参与高亮
     for (const tab of TABS.filter(t => t.group === '世界构建' && t.type === 'table' && t.displayCol)) {
       const recs = await db.getTableRows(tab.id)
       for (const r of recs) {
-        const v = r.data[tab.displayCol as string]
-        if (v && v.trim()) {
-          const nm = v.trim()
+        // 3.7.6：名字写在自定义字段 / 内置名称列留空时也能命中（原来只认 displayCol）
+        const v = resolveRowTitle(tab, r.data)
+        if (v) {
+          const nm = v
           const ref = { kind: 'row' as const, projectId, tabId: tab.id, id: r.id }
           names.push({ name: nm, type: 'setting', tabId: tab.id, ref })
           for (const a of readAliases(tab.id, r.data)) {
