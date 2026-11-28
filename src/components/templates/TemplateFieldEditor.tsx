@@ -8,7 +8,13 @@ import { useState } from 'react'
 import { Save, X } from 'lucide-react'
 import type { EffectiveField, EffectiveGroup, TemplateFieldPermissions, TemplateFieldType } from '@/lib/templates/types'
 import type { EditableFieldPatch } from '@/lib/templates/draftOps'
+import { builtinFieldNameConflict } from '@/lib/atlas/fieldNameGuard'
 import { Button } from '@/components/common/Button'
+
+/** 自定义字段允许的六种基础类型（均有 AtlasCellInput 控件与序列化支持） */
+export const CUSTOM_TEMPLATE_TYPES: readonly TemplateFieldType[] = [
+  'text', 'textarea', 'number', 'select', 'multiSelect', 'boolean',
+]
 
 export const TYPE_LABEL: Record<TemplateFieldType, string> = {
   text: '短文本',
@@ -47,6 +53,8 @@ interface Props {
   groups: EffectiveGroup[]
   categories: string[]
   defaultGroupId: string
+  /** 内置字段当前显示名列表：用于拦截新增/改名自定义字段与内置字段同名或名称近义 */
+  builtinLabels?: Iterable<string>
   onPatch: (patch: EditableFieldPatch) => void
   onPermissions: (patch: Partial<TemplateFieldPermissions>) => void
   onCreate: (input: CreateInput) => void
@@ -54,7 +62,7 @@ interface Props {
 }
 
 export default function TemplateFieldEditor({
-  mode, field, groups, categories, defaultGroupId, onPatch, onPermissions, onCreate, onClose,
+  mode, field, groups, categories, defaultGroupId, builtinLabels, onPatch, onPermissions, onCreate, onClose,
 }: Props) {
   const [label, setLabel] = useState(field?.label ?? '')
   const [type, setType] = useState<TemplateFieldType>(field?.type ?? 'text')
@@ -88,11 +96,18 @@ export default function TemplateFieldEditor({
     patch({ options: list.length > 0 ? list : undefined })
   }
 
+  const isCustomField = mode === 'create' || field?.source === 'custom'
+  const selectableTypes: readonly TemplateFieldType[] = isCustomField
+    ? (field && !CUSTOM_TEMPLATE_TYPES.includes(field.type) ? [...CUSTOM_TEMPLATE_TYPES, field.type] : CUSTOM_TEMPLATE_TYPES)
+    : (Object.keys(TYPE_LABEL) as TemplateFieldType[])
+
   const submitCreate = () => {
     const name = label.trim()
     if (!name) { setErr('字段名不能为空'); return }
     if ([...name].length > 20) { setErr('字段名最多 20 个字'); return }
     if (!groups.some(g => g.id === groupId)) { setErr('请选择所属分组'); return }
+    const conflict = builtinFieldNameConflict(name, builtinLabels ?? [])
+    if (conflict) { setErr(conflict); return }
     onCreate({ label: name, type, groupId })
   }
 
@@ -119,8 +134,13 @@ export default function TemplateFieldEditor({
             maxLength={20}
             placeholder="例如：食性"
             onChange={e => {
-              setLabel(e.target.value)
-              patch({ label: e.target.value })
+              const next = e.target.value
+              setLabel(next)
+              if (isCustomField) {
+                const conflict = builtinFieldNameConflict(next, builtinLabels ?? [])
+                setErr(conflict)
+              }
+              patch({ label: next })
             }}
           />
         </label>
@@ -137,7 +157,7 @@ export default function TemplateFieldEditor({
               if (t !== 'select' && t !== 'multiSelect') patch({ fixedOptions: undefined })
             }}
           >
-            {(Object.keys(TYPE_LABEL) as TemplateFieldType[]).map(t => (
+            {selectableTypes.map(t => (
               <option key={t} value={t}>{TYPE_LABEL[t]}</option>
             ))}
           </select>

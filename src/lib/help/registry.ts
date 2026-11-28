@@ -37,7 +37,8 @@ import { WCP_ARTICLES } from '@/lib/help/articles/wcp'
 // 37（2026-11-26 · 3.7.5）：首页简介改读《作品信息》，作品信息篇补一段「这两个简介会出现在哪」。
 // 38（2026-11-28 · 3.7.5 发布补记）：012cb3f 已把 whats-new-375 接进 version-index，
 //   但漏了 +1 —— 索引内容已变而版本未变，缓存旧索引不会作废（网页版会搜不到 3.7.5 篇）。
-export const CONTENT_VERSION = 38
+// 39（2026-11-28 · 3.7.6）：新增 whats-new-376，接入 version-index。
+export const CONTENT_VERSION = 39
 
 /** 这套内容核对时对应的软件版本 */
 export const SUPPORTED_APP_VERSION = '3.7.6'

@@ -39,6 +39,8 @@ import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pag
 import PromptModal from '@/components/dialogs/PromptModal'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import ModuleFieldManagerButton from '@/components/sheets/ModuleFieldManager'
+import { supportsModuleCustomFields, useModuleCustomFields } from '@/lib/forms/customFields'
 import { buildSiblingContext } from '@/lib/creative/interview'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -167,6 +169,8 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   // 🔴 `?? []` 兜底：`modulesFor` 返回 `FormModule[] | undefined`（页面下方另有「没有可填字段」的空态）
   const modules = useMemo(() => modulesFor(tab.id, pack) ?? [], [tab.id, pack])
+  const canCustomFields = supportsModuleCustomFields(tab)
+  const customState = useModuleCustomFields(tab, canCustomFields)
   /** AI 补全用的字段模板（key = `模块::字段`，与表单落库的键同名） */
   const templates = useMemo<TemplateField[]>(
     () => modules.flatMap(m => m.fields.map(f => ({
@@ -404,6 +408,14 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
               intro="给这一页的字段起你自己看得懂的名字（每一条用的是同一套字段）。"
               targets={moduleAliasTargets(modules)}
             />
+            {canCustomFields && (
+              <ModuleFieldManagerButton
+                tab={tab}
+                config={customState.config}
+                readOnly={customState.newerFormat}
+                onSave={customState.saveConfig}
+              />
+            )}
             {/* 🔴 2026-10-03：保存 + AI 补全从右栏底部挪到页头 —— 开书定位组四个页签的右上角取向必须一致
                 （世界设定 / 力量体系早已在页头，制度四页签此前压在右栏最底部，同组不同形）。 */}
             <Button variant="toggle" selected={dirty} disabled={!selSub || !dirty || saving}
@@ -543,7 +555,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
                 </span>
               </div>
 
-              <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} />
+              <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} customFields={customState.activeFields} />
 
               {/* 草稿箱（每条一份，与母子版同机制） */}
               <div className="mt-4 rounded-xl border border-ink-700 bg-ink-850/40 p-3">
@@ -607,7 +619,7 @@ export default function ParallelSetSheet({ tab }: { tab: TabDef }) {
           else void addSub(name)
         }}
         onCancel={() => setNaming('')}
-      />
+    />
     </div>
   )
 }

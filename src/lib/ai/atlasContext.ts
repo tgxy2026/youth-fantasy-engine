@@ -11,8 +11,12 @@
  *   3. 归档字段不参与（`resolveAtlasFields` 内部已排除）。
  */
 import type { TabDef } from '@/lib/types'
-import type { AtlasSchemaConfig, ResolvedAtlasField } from '@/lib/atlas/types'
+import type { AtlasSchemaConfig, CustomFieldType, ResolvedAtlasField } from '@/lib/atlas/types'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { supportsModuleCustomFields, resolveModuleCustomFields } from '@/lib/forms/customFields'
+import { loadAliasesFor } from '@/lib/settings/fieldAlias'
+import { isTemplateTab } from '@/lib/templates/eligible'
+import { customTypeOf } from '@/lib/templates/consumers'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
 import { loadTemplateDef } from '@/lib/templates/store'
@@ -77,16 +81,72 @@ function basisOfTpl(tpl: EffectiveTemplate): string {
  * 不再自己调 `resolveAtlasFields`。同一套口径连同缓存一起复用，
  * 输出与旧的 `resolveAtlasFields(...)` 逐字段一致（见 `tests/templatesConsumers.test.ts`）。
  */
-export async function loadAtlasFieldsForAI(tab: TabDef): Promise<TableFieldProjection[] | null> {
+export async function loadAtlasFieldsForAI(tab: TabDef, projectId?: string): Promise<TableFieldProjection[] | null> {
   // 非图鉴页签 ⇒ null（= 走 tab.columns）。调用方本来就会先判 isAtlasTab，
   // 这里显式收口一次，既让类型收窄到 AtlasTabId，也避免将来有人误用拿到空清单。
   if (!isAtlasTab(tab.id)) return null
   try {
-    const r = await resolveTemplateForAI(tab, db.getCurrentProjectId(), 'aiRead')
+    const pid = projectId ?? db.getCurrentProjectId()
+    const r = await resolveTemplateForAI(tab, pid, 'aiRead')
     return aiReadableTableFieldsOf(r.tpl)
   } catch {
     return null
   }
+}
+
+export interface FormCardCustomMeta {
+  labels: Record<string, string>
+  hiddenKeys: Set<string>
+  customFormats: Map<string, { kind: CustomFieldType; unit?: string }>
+}
+
+/**
+ * 读取纯表单 / 卡片 / 大纲页签的自定义字段元数据与权限过滤（3.7.6 · B2-P0-2）。
+ * 放在本文件以保持 `aiContext.ts` 行数远低于 1200 行门禁上限。
+ */
+export async function loadFormAndCardCustomMeta(pid: string, tab: TabDef): Promise<FormCardCustomMeta> {
+  const labels: Record<string, string> = { ...(await loadAliasesFor(pid, tab.id).catch(() => ({}))) }
+  const hiddenKeys = new Set<string>()
+  const customFormats = new Map<string, { kind: CustomFieldType; unit?: string }>()
+  if (!pid) return { labels, hiddenKeys, customFormats }
+
+  if (isTemplateTab(tab.id)) {
+    try {
+      const def = await loadTemplateDef(pid, tab.id)
+      if (def) {
+        for (const f of def.fields) {
+          if (f.archived || !f.permissions.aiRead) {
+            hiddenKeys.add(f.sourceKey)
+            continue
+          }
+          labels[f.sourceKey] = f.label
+          const kind = customTypeOf(f)
+          if (kind) customFormats.set(f.sourceKey, { kind, unit: f.unit })
+        }
+        return { labels, hiddenKeys, customFormats }
+      }
+    } catch { /* 读取失败退回内置 */ }
+  }
+
+  if (supportsModuleCustomFields(tab)) {
+    try {
+      const loaded = await loadAtlasSchema(pid, tab.id)
+      if (loaded.error) {
+        // 读取失败保守跳过全部 cf_* 键，避免未知权限字段泄漏
+        for (const f of loaded.config.fields) hiddenKeys.add(f.id)
+        return { labels, hiddenKeys, customFormats }
+      }
+      for (const f of loaded.config.fields) {
+        if (f.archived || !f.aiReadable) hiddenKeys.add(f.id)
+      }
+      for (const cf of resolveModuleCustomFields(loaded.config, { purpose: 'aiRead' })) {
+        labels[cf.key] = cf.label
+        if (cf.customType) customFormats.set(cf.key, { kind: cf.customType, unit: cf.unit })
+      }
+    } catch { /* 读取失败退回内置 */ }
+  }
+
+  return { labels, hiddenKeys, customFormats }
 }
 
 /**

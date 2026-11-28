@@ -12,6 +12,15 @@ import { TABS } from '@/lib/schema'
 import { isWorldSetTab, isParallelSetTab, splitActive } from '@/lib/world/worldSets'
 import { ZipBuilder, downloadBlob } from '@/lib/storage/zip'
 import { chapterSeqMap, flattenAll } from '@/lib/outline/chapterSeq'
+import { isAtlasTab } from '@/lib/atlas/schema'
+import { loadAtlasSchema } from '@/lib/atlas/persistence'
+import { formatCustomValue } from '@/lib/atlas/values'
+import { resolveModuleCustomFields, supportsModuleCustomFields } from '@/lib/forms/customFields'
+import { loadAliasesFor } from '@/lib/settings/fieldAlias'
+import { isTemplateTab } from '@/lib/templates/eligible'
+import { loadTemplateDef } from '@/lib/templates/store'
+import { resolveTemplateForTab } from '@/lib/templates/resolve'
+import { tableFieldsOf } from '@/lib/templates/consumers'
 
 /** 文本下载（带 UTF-8 BOM，Windows 记事本/Excel 打开不乱码）；仅本模块内部使用 */
 function downloadFile(filename: string, content: string) {
@@ -485,47 +494,82 @@ function hasContent(data: Record<string, string>): boolean {
   return Object.values(data).some(v => v && v.trim())
 }
 
-async function buildSettingCompendium(projectName: string): Promise<string> {
+export async function buildSettingCompendium(projectName: string): Promise<string> {
+  const pid = db.getCurrentProjectId()
   const lines: string[] = [`# ${projectName} · 设定集`, '']
+
   for (const tab of TABS) {
-    if (tab.type === 'dashboard' || tab.type === 'guide' || tab.type === 'about' || tab.id === 'editor') continue
     if (tab.type === 'form') {
-      /**
-       * 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
-       *    全部内容都在 `<tabId>-sub` 那批条目里 ⇒ 不读 formData、也不出「全书统一（母级）」标题，
-       *    直接一条条成节（与 AI 上下文的 `renderActiveParallelSets` 口径一致）。
-       */
+      const [aliases, atlasLoaded] = await Promise.all([
+        loadAliasesFor(pid, tab.id).catch(() => ({} as Record<string, string>)),
+        supportsModuleCustomFields(tab) ? loadAtlasSchema(pid, tab.id).catch(() => null) : Promise.resolve(null),
+      ])
+      const customFields = atlasLoaded && !atlasLoaded.error
+        ? resolveModuleCustomFields(atlasLoaded.config, { purpose: 'detail' })
+        : []
+      const modNames = new Set((tab.modules ?? []).map(m => m.name))
+
       if (isParallelSetTab(tab.id)) {
-        const subs = await db.getSubSets(tab.id).catch(() => [])
+        const subs = await (pid ? db.getSubSetsFor(pid, tab.id) : db.getSubSets(tab.id)).catch(() => [])
         if (subs.length === 0) continue
-        const { active } = splitActive(subs, await db.getActiveSubIds(tab.id).catch(() => []))
+        const { active } = splitActive(subs, await (pid ? db.getActiveSubIdsFor(pid, tab.id) : db.getActiveSubIds(tab.id)).catch(() => []))
         const isActive = new Set(active.map(s => s.id))
         lines.push(`## ${tab.name}`, '')
         for (const s of subs) {
           lines.push(`### ${s.name || '未命名'}（${isActive.has(s.id) ? '活跃' : '已完结'}）`, '')
+          const d = s.data ?? {}
           for (const mod of tab.modules ?? []) {
             lines.push(`#### ${mod.name}`, '')
             for (const f of mod.fields) {
-              const v = (s.data ?? {})[`${mod.name}::${f.name}`]
-              if (v && v.trim()) lines.push(`- **${f.name}**：${v}`)
+              const key = `${mod.name}::${f.name}`
+              const v = d[key]
+              if (v && v.trim()) lines.push(`- **${aliases[key] ?? f.name}**：${v}`)
+            }
+            for (const cf of customFields.filter(c => c.groupId === mod.name)) {
+              const v = d[cf.key]
+              const shown = v ? formatCustomValue(cf.customType ?? 'text', v, cf.unit) : ''
+              if (shown) lines.push(`- **${cf.label}**：${shown}`)
+            }
+            lines.push('')
+          }
+          const extras = customFields.filter(c => !modNames.has(c.groupId))
+          if (extras.some(cf => (d[cf.key] ?? '').trim())) {
+            lines.push('#### 自定义字段', '')
+            for (const cf of extras) {
+              const v = d[cf.key]
+              const shown = v ? formatCustomValue(cf.customType ?? 'text', v, cf.unit) : ''
+              if (shown) lines.push(`- **${cf.label}**：${shown}`)
             }
             lines.push('')
           }
         }
         continue
       }
-      const data = await db.getFormData(tab.id)
-      // 母子结构表（C10）：母级 + 子世界各自成节。**导出是存档，已完结的也要出**（标出来即可），
-      // 与「AI 上下文只喂活跃」是两个口径 —— 别把这里的过滤照抄过去。
-      const subs = isWorldSetTab(tab.id) ? await db.getSubSets(tab.id).catch(() => []) : []
+      const data = await (pid ? db.getFormDataFor(pid, tab.id) : db.getFormData(tab.id))
+      const subs = isWorldSetTab(tab.id) ? await (pid ? db.getSubSetsFor(pid, tab.id) : db.getSubSets(tab.id)).catch(() => []) : []
       if (!hasContent(data) && subs.length === 0) continue
-      // 母级字段段（键为 `模块名::字段名`）——与下面子世界复用同一段渲染
       const formSection = (d: Record<string, string>) => {
         for (const mod of tab.modules ?? []) {
           lines.push(`### ${mod.name}`, '')
           for (const f of mod.fields) {
-            const v = d[`${mod.name}::${f.name}`]
-            if (v && v.trim()) lines.push(`- **${f.name}**：${v}`)
+            const key = `${mod.name}::${f.name}`
+            const v = d[key]
+            if (v && v.trim()) lines.push(`- **${aliases[key] ?? f.name}**：${v}`)
+          }
+          for (const cf of customFields.filter(c => c.groupId === mod.name)) {
+            const v = d[cf.key]
+            const shown = v ? formatCustomValue(cf.customType ?? 'text', v, cf.unit) : ''
+            if (shown) lines.push(`- **${cf.label}**：${shown}`)
+          }
+          lines.push('')
+        }
+        const extras = customFields.filter(c => !modNames.has(c.groupId))
+        if (extras.some(cf => (d[cf.key] ?? '').trim())) {
+          lines.push('### 自定义字段', '')
+          for (const cf of extras) {
+            const v = d[cf.key]
+            const shown = v ? formatCustomValue(cf.customType ?? 'text', v, cf.unit) : ''
+            if (shown) lines.push(`- **${cf.label}**：${shown}`)
           }
           lines.push('')
         }
@@ -534,10 +578,9 @@ async function buildSettingCompendium(projectName: string): Promise<string> {
       if (subs.length === 0) {
         formSection(data)
       } else {
-        // 有子世界时才引入层级标题（没建子项的书导出格式与改动前一字不差）
-        const { active } = splitActive(subs, await db.getActiveSubIds(tab.id).catch(() => []))
+        const { active } = splitActive(subs, await (pid ? db.getActiveSubIdsFor(pid, tab.id) : db.getActiveSubIds(tab.id)).catch(() => []))
         const isActive = new Set(active.map(s => s.id))
-        lines.push(`### 全书统一（母级）`, '')
+        lines.push('### 全书统一（母级）', '')
         formSection(data)
         for (const s of subs) {
           lines.push(`### 子世界 · ${s.name || '未命名'}（${isActive.has(s.id) ? '活跃' : '已完结'}）`, '')
@@ -545,22 +588,74 @@ async function buildSettingCompendium(projectName: string): Promise<string> {
         }
       }
     } else if (tab.type === 'table') {
-      const rows = await db.getTableRows(tab.id)
+      const rows = await (pid ? db.getTableRowsFor(pid, tab.id) : db.getTableRows(tab.id))
       if (!rows.length) continue
+      const [aliases, def, atlasLoaded] = await Promise.all([
+        loadAliasesFor(pid, tab.id).catch(() => ({} as Record<string, string>)),
+        isTemplateTab(tab.id) ? loadTemplateDef(pid, tab.id).catch(() => null) : Promise.resolve(null),
+        isAtlasTab(tab.id) ? loadAtlasSchema(pid, tab.id).catch(() => null) : Promise.resolve(null),
+      ])
+      const tpl = (def || isAtlasTab(tab.id))
+        ? resolveTemplateForTab(tab, {
+          ...(def ? { def } : {}),
+          config: atlasLoaded && !atlasLoaded.error ? atlasLoaded.config : null,
+          aliases,
+          purpose: 'export',
+          ignoreAppliesTo: true,
+        })
+        : null
+      const projections = tpl ? tableFieldsOf(tpl) : null
       lines.push(`## ${tab.name}`, '')
       for (const r of rows) {
-        const parts = Object.entries(r.data).filter(([, v]) => v && v.trim()).map(([k, v]) => `${k}：${v}`)
-        lines.push(`- ${parts.join('；')}`)
+        const parts = projections
+          ? projections.map(p => {
+            const raw = r.data[p.key]
+            if (!raw || !raw.trim()) return ''
+            const shown = p.kind ? formatCustomValue(p.kind, raw, p.unit) : raw.trim()
+            return shown ? `${p.label}：${shown}` : ''
+          }).filter(Boolean)
+          : Object.entries(r.data)
+            .filter(([k, v]) => !k.startsWith('cf_') && v && v.trim())
+            .map(([k, v]) => `${aliases[k] ?? k}：${v}`)
+        if (parts.length) lines.push(`- ${parts.join('；')}`)
       }
       lines.push('')
     } else if (tab.type === 'card') {
-      const records = await db.getCardRecords(tab.id)
+      const records = await (pid ? db.getCardRecordsFor(pid, tab.id) : db.getCardRecords(tab.id))
       if (!records.length) continue
+      const [aliases, def, atlasLoaded] = await Promise.all([
+        loadAliasesFor(pid, tab.id).catch(() => ({} as Record<string, string>)),
+        isTemplateTab(tab.id) ? loadTemplateDef(pid, tab.id).catch(() => null) : Promise.resolve(null),
+        supportsModuleCustomFields(tab) ? loadAtlasSchema(pid, tab.id).catch(() => null) : Promise.resolve(null),
+      ])
+      const tpl = def
+        ? resolveTemplateForTab(tab, { def, aliases, purpose: 'export', ignoreAppliesTo: true })
+        : null
+      const projections = tpl ? tableFieldsOf(tpl) : null
+      const modCustoms = !tpl && atlasLoaded && !atlasLoaded.error
+        ? resolveModuleCustomFields(atlasLoaded.config, { purpose: 'detail' })
+        : []
       lines.push(`## ${tab.name}`, '')
       for (const rec of records) {
         lines.push(`### ${rec.name}`, '')
-        for (const [k, v] of Object.entries(rec.data)) {
-          if (v && v.trim()) lines.push(`- **${k.split('::').pop()}**：${v}`)
+        if (projections) {
+          for (const p of projections) {
+            const raw = rec.data[p.key]
+            if (!raw || !raw.trim()) continue
+            const shown = p.kind ? formatCustomValue(p.kind, raw, p.unit) : raw.trim()
+            if (shown) lines.push(`- **${p.label}**：${shown}`)
+          }
+        } else {
+          for (const [k, v] of Object.entries(rec.data)) {
+            if (!k.startsWith('cf_') && v && v.trim()) {
+              lines.push(`- **${aliases[k] ?? k.split('::').pop()}**：${v}`)
+            }
+          }
+          for (const cf of modCustoms) {
+            const raw = rec.data[cf.key]
+            const shown = raw ? formatCustomValue(cf.customType ?? 'text', raw, cf.unit) : ''
+            if (shown) lines.push(`- **${cf.label}**：${shown}`)
+          }
         }
         lines.push('')
       }

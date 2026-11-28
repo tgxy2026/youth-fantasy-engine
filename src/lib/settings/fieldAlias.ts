@@ -16,7 +16,7 @@
  * 不进 `EXCLUDED_META_KEYS` —— 别名要随项目导出 / 云盘同步 / 备份一起走。
  */
 import { useEffect, useState } from 'react'
-import { getSetting, setSetting, getCurrentProjectId } from '@/lib/db'
+import { getSettingFor, setSetting, getCurrentProjectId } from '@/lib/db'
 import { aliasKeyOf, sanitizeAliases, type AliasMap } from './aliasCore'
 
 // 纯函数核心在 `aliasCore.ts`（模板解析层也要用，那一层不能依赖 React）。
@@ -57,19 +57,22 @@ export function invalidateAliasCache(tabId?: string): void {
   emit()
 }
 
-export async function loadAliases(tabId: string): Promise<AliasMap> {
-  const pid = getCurrentProjectId()
+export async function loadAliasesFor(pid: string, tabId: string): Promise<AliasMap> {
   const hit = peekAliases(tabId, pid)
   if (hit) return hit
   let raw: AliasMap = {}
   try {
-    const v = await getSetting<AliasMap>(aliasKeyOf(tabId), {})
+    const v = await getSettingFor<AliasMap>(pid, aliasKeyOf(tabId), {})
     if (v && typeof v === 'object' && !Array.isArray(v)) raw = v
   } catch {
     raw = {} // 读失败按「无别名」处理：显示层退回原名，功能不可用但不影响数据
   }
   cache.set(tabId, { pid, map: raw })
   return raw
+}
+
+export async function loadAliases(tabId: string): Promise<AliasMap> {
+  return loadAliasesFor(getCurrentProjectId(), tabId)
 }
 
 /** 落盘前统一清洗；同表其它面板（关系分组 / 设定检索）会立刻跟着刷新 */

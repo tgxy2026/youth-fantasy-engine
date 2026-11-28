@@ -26,6 +26,8 @@ import { buildProjectLevelHint } from '@/lib/ai/projectLevelHint'
 import { CHAPTER_RESERVE_CHARS, budgetFromWindow, planFor } from '@/lib/ai/contextLayers'
 import { genreLineForAI } from '@/lib/ai/aiGenreHint'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { formatCustomValue } from '@/lib/atlas/values'
+import { loadFormAndCardCustomMeta } from '@/lib/ai/atlasContext'
 import { cellCap } from '@/lib/ai/fieldCap'
 import {
   renderTable, AUTHOR_SIDE_FIELDS, DEFAULT_ROW_CAP, DEFAULT_TABLE_MAX_CHARS,
@@ -354,10 +356,13 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
     if (isInternalFieldKey(k)) continue
     // T3：待确认含义的字段（含历史遗留键）同样不发送
     if (o.hidePending?.has(k)) continue
+    if (o.hiddenKeys?.has(k)) continue
     const fn = fieldName(k)
     if (SYSTEM_META_FIELDS.has(fn)) continue
     if (o.hideAuthorFields && AUTHOR_SIDE_FIELDS.has(fn)) continue
-    lines.push(`${o.labels?.[k] ?? fn}：${clip(v, cellCap(fn))}`)
+    const fmt = o.customFormats?.get(k)
+    const shown = fmt ? formatCustomValue(fmt.kind, v, fmt.unit) : v
+    if (shown) lines.push(`${o.labels?.[k] ?? fn}：${clip(shown, cellCap(fn))}`)
   }
   return lines.join('\n')
 }
@@ -373,11 +378,12 @@ function renderForm(tab: TabDef, data: Record<string, string>, o: RenderOpts = {
  * 🔴 子项正文复用 `renderForm`：字段键格式与母级完全相同（都是 `模块名::字段名`），
  *    所以口径天然一致，不会出现「母级按模块顺序、子级按字典序」这种偏差。
  */
-async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<string | null> {
+async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}, pid?: string): Promise<string | null> {
   try {
-    const subs = await db.getSubSets(tab.id)
+    const projectId = pid ?? db.getCurrentProjectId()
+    const subs = projectId ? await db.getSubSetsFor(projectId, tab.id) : await db.getSubSets(tab.id)
     if (subs.length === 0) return null
-    const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
+    const { active, closed } = splitActive(subs, projectId ? await db.getActiveSubIdsFor(projectId, tab.id) : await db.getActiveSubIds(tab.id))
     // 角色视角：标了 S 的条目整段剔除；D 级任何视角都不带（与 renderCards / renderTable 同口径）
     // 🔴 2026-10-02 六维审计 P1：这里原来只判 S 不判 D —— 同一份过滤逻辑复制四遍时漏了一处。
     const shown = active.filter(s => !isPrunedForAI(s.data) && !(o.hideSecretRows && isSecretRow(s.data)))
@@ -404,11 +410,12 @@ async function renderActiveSubSets(tab: TabDef, o: RenderOpts = {}): Promise<str
  * 返回 `''`（空串）表示「一个条目都没建」⇒ 调用方整段不带，
  * 于是**没建条目的用户上下文与改动前一字不差**（与母子版同一条回归保护）。
  */
-async function renderActiveParallelSets(tab: TabDef, o: RenderOpts = {}): Promise<string | null> {
+async function renderActiveParallelSets(tab: TabDef, o: RenderOpts = {}, pid?: string): Promise<string | null> {
   try {
-    const subs = await db.getSubSets(tab.id)
+    const projectId = pid ?? db.getCurrentProjectId()
+    const subs = projectId ? await db.getSubSetsFor(projectId, tab.id) : await db.getSubSets(tab.id)
     if (subs.length === 0) return null
-    const { active, closed } = splitActive(subs, await db.getActiveSubIds(tab.id))
+    const { active, closed } = splitActive(subs, projectId ? await db.getActiveSubIdsFor(projectId, tab.id) : await db.getActiveSubIds(tab.id))
     const label = subItemLabel(tab.id, getActivePack())
     // 角色视角：标了 S 的条目整段剔除；D 级任何视角都不带（与 renderCards/renderTable 同口径）
     const shown = active.filter(s => !isPrunedForAI(s.data) && !(o.hideSecretRows && isSecretRow(s.data)))
@@ -470,42 +477,36 @@ async function idsUpToAnchor(anchorId: string): Promise<Set<string> | null> {
 
 /** 单个页签的资料段（空数据返回空串） */
 async function sectionOf(tab: TabDef, knowerName?: string, o: RenderOpts = {}): Promise<string> {
+  const pid = db.getCurrentProjectId()
   try {
-    // 3.2.0 · T3：模型看到作者当前的字段名（采用模板 / 别名）；读不到就退回 schema 原名。
-    // 🔴 同时取出「含义未确认」的字段：整段不发送（方案 §3.12.3.3），但界面照常显示。
-    const { labels, pending } = await loadFieldGating(tab)
+    const [{ labels, pending }, customMeta] = await Promise.all([
+      loadFieldGating(tab),
+      (tab.type === 'form' || tab.type === 'card') ? loadFormAndCardCustomMeta(pid, tab) : Promise.resolve(null),
+    ])
     const ro: RenderOpts = {
       ...o,
-      ...(Object.keys(labels).length ? { labels: { ...o.labels, ...labels } } : {}),
+      ...(Object.keys(labels).length || customMeta ? { labels: { ...o.labels, ...customMeta?.labels, ...labels } } : {}),
       ...(pending.size ? { hidePending: pending } : {}),
+      ...(customMeta?.hiddenKeys.size ? { hiddenKeys: customMeta.hiddenKeys } : {}),
+      ...(customMeta?.customFormats.size ? { customFormats: customMeta.customFormats } : {}),
     }
     if (tab.type === 'form') {
-      // 🔴 2.7.2 并列结构页签（政治 / 经济 / 信仰 / 司法）：**没有母级 formData**，
-      //    资料全在 `<tabId>-sub` 那批条目里 ⇒ 直接渲染活跃条目段，**不读也不带「全书统一」层**。
-      //    （旧实现会读一份根本不存在的 formData、把空的「〖全书统一〗」喂给 AI。）
       if (isParallelSetTab(tab.id)) {
-        return (await renderActiveParallelSets(tab, ro)) ?? ''
+        return (await renderActiveParallelSets(tab, ro, pid)) ?? ''
       }
-      const formData = await db.getFormData(tab.id)
-      // 角色视角：整条记录标了 S（绝密 / 剧透）⇒ 整段不带（含它的子世界）
-      // 🔴 2026-10-02 六维审计 P1：母级整段原来只判 S、不判 D。
-      //    `isPrunedForAI`（D＝终结，任何视角都不进 AI）的契约是「凡是把项目数据交给模型的入口都要过」，
-      //    而 renderCards / renderTable 都接了、这里与两个子集渲染器没接 —— 同一份逻辑复制四遍时漏改。
+      const formData = pid ? await db.getFormDataFor(pid, tab.id) : await db.getFormData(tab.id)
       if (isPrunedForAI(formData)) return ''
       if (ro.hideSecretRows && isSecretRow(formData)) return ''
       const main = renderForm(tab, formData, ro)
-      // 母子结构表（世界设定 / 力量体系）：建过子项才引入母／子两层标题。
-      // 🔴 没建过子项 ⇒ 原样返回（单世界用户的上下文与改动前**一字不差**）。
       if (!isWorldSetTab(tab.id)) return main
-      const sub = await renderActiveSubSets(tab, ro)
+      const sub = await renderActiveSubSets(tab, ro, pid)
       if (sub === null) return main
       return [`〖全书统一〗${main ? '\n' + main : '\n（尚未填写）'}`, sub].join('\n\n')
     }
-    if (tab.type === 'card') return renderCards(tab, await db.getCardRecords(tab.id), ro)
+    if (tab.type === 'card') return renderCards(tab, pid ? await db.getCardRecordsFor(pid, tab.id) : await db.getCardRecords(tab.id), ro)
     if (tab.type === 'table') {
-      const rows = await db.getTableRows(tab.id)
-      // 3.1.3：图鉴页签的字段清单（见 ai/atlasContext 的口径）
-      const atlasFields = isAtlasTab(tab.id) ? await loadAtlasFieldsForAI(tab) : null
+      const rows = pid ? await db.getTableRowsFor(pid, tab.id) : await db.getTableRows(tab.id)
+      const atlasFields = isAtlasTab(tab.id) ? await loadAtlasFieldsForAI(tab, pid) : null
       // 酒馆模式：知情权限只带「该角色是知情者」的条目（方案 §6.5 事实边界的自动推断）
       if (tab.id === 'secrets' && knowerName) {
         // 🔴 2026-10-02 六维审计 P1：`knowerName` 是把多个 AI 角色用「、」拼成的**整串**，

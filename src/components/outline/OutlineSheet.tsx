@@ -24,6 +24,9 @@ import WcpImportModal from '@/components/wcp/WcpImportModal'
 import { SaveFab } from '@/components/common/SaveFab'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import ModuleFieldManagerButton from '@/components/sheets/ModuleFieldManager'
+import { supportsModuleCustomFields, useModuleCustomFields } from '@/lib/forms/customFields'
+import AtlasCellInput from '@/components/atlas/AtlasCellInput'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { LoadingState } from '@/components/common/LoadingState'
 import { registerLeaveGuard } from '@/lib/editor/leaveBarrier'
@@ -116,6 +119,12 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
 
   /** 字段显示名（2.7.3）：只改界面上这行字，取值仍走「模块名::字段名」存储键 */
   const aliasTargets = useMemo(() => moduleAliasTargets(tab.modules), [tab])
+  const canCustomFields = supportsModuleCustomFields(tab)
+  const customState = useModuleCustomFields(tab, canCustomFields)
+  const activeFieldKeys = useMemo(() => [
+    ...(tab.modules ?? []).flatMap(m => m.fields.map(f => `${m.name}::${f.name}`)),
+    ...customState.activeFields.map(f => f.key),
+  ], [tab, customState.activeFields])
   const aliasKeys = useMemo(() => aliasTargets.map(t => t.key), [aliasTargets])
   const aliasLabels = useFieldDisplayLabels(tab.id, aliasKeys)
 
@@ -478,8 +487,8 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
   </section>
   if (!loaded) return <LoadingState />
 
-  const filledCount = draft ? Object.values(draft.data).filter(v => v && v.trim()).length : 0
-  const totalFields = tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0
+  const filledCount = draft ? activeFieldKeys.filter(k => (draft.data[k] ?? "").trim().length > 0).length : 0
+  const totalFields = activeFieldKeys.length
   /** 细纲卡名形如「第12章 听雪」；推演包只需要章号，取不到按 0 处理 */
   const outlineChapterNo = draft ? (Number((draft.name.match(/\d+/) ?? [''])[0]) || 0) : 0
 
@@ -518,6 +527,14 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
               intro={`给这一页的字段起你自己看得懂的名字（每张${noun}用的是同一套字段）。`}
               targets={aliasTargets}
             />
+            {canCustomFields && (
+              <ModuleFieldManagerButton
+                tab={tab}
+                config={customState.config}
+                readOnly={customState.newerFormat}
+                onSave={customState.saveConfig}
+              />
+            )}
             <Button variant="toggle" selected={dirty}
               onClick={save}
               disabled={!dirty || saving}
@@ -697,12 +714,14 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                 </Button>
               </div>
               <div className="columns-1 xl:columns-2 gap-4 space-y-4">
-                {tab.modules!.map(mod => (
+                {tab.modules!.map(mod => {
+                  const modCustoms = customState.activeFields.filter(cf => cf.groupId === mod.name)
+                  return (
                   <section key={mod.name} className="break-inside-avoid bg-ink-850 yfe-surface-2 rounded-xl border border-ink-700 overflow-hidden">
                     <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
                       <span className="w-1 h-3 rounded-full bg-amber/70" />
                       <h3 className="text-12 font-semibold text-ink-100">{mod.name}</h3>
-                      <span className="text-10 text-ink-500 ml-auto">{mod.fields.length} 项</span>
+                      <span className="text-10 text-ink-500 ml-auto">{mod.fields.length + modCustoms.length} 项</span>
                     </div>
                     <div className="divide-y divide-ink-700/60">
                       {mod.fields.map(field => {
@@ -735,9 +754,44 @@ export default function OutlineSheet({ tab, focusRowId, focusRequestId, onFocusC
                           </div>
                         )
                       })}
+                    {modCustoms.map(cf => (
+                        <div key={cf.key} data-workspace-field={cf.key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
+                          <div>
+                            <div className="text-12 font-medium text-ink-100" title={cf.description || `自定义字段（${cf.key}）`}>{cf.label}</div>
+                            {cf.description && <div className="field-desc mt-0.5">{cf.description}</div>}
+                          </div>
+                          <div><AtlasCellInput field={cf} value={draft.data[cf.key] ?? ""} onChange={v => updateField(cf.key, v)} /></div>
+                        </div>
+                      ))}
                     </div>
                   </section>
-                ))}
+                  )
+                })}
+                {(() => {
+                  const modNames = new Set((tab.modules ?? []).map(m => m.name))
+                  const extraCustoms = customState.activeFields.filter(cf => !modNames.has(cf.groupId))
+                  if (extraCustoms.length === 0) return null
+                  return (
+                    <section className="break-inside-avoid bg-ink-850 yfe-surface-2 rounded-xl border border-ink-700 overflow-hidden">
+                      <div className="px-4 py-2.5 bg-ink-800 border-b border-ink-700 flex items-center gap-2">
+                        <span className="w-1 h-3 rounded-full bg-amber/70" />
+                        <h3 className="text-12 font-semibold text-ink-100">自定义字段</h3>
+                        <span className="text-10 text-ink-500 ml-auto">{extraCustoms.length} 项</span>
+                      </div>
+                      <div className="divide-y divide-ink-700/60">
+                        {extraCustoms.map(cf => (
+                          <div key={cf.key} data-workspace-field={cf.key} className="px-4 py-3 grid grid-cols-[140px_1fr] gap-3 hover:bg-ink-800/40 transition-colors">
+                            <div>
+                              <div className="text-12 font-medium text-ink-100" title={cf.description || `自定义字段（${cf.key}）`}>{cf.label}</div>
+                              {cf.description && <div className="field-desc mt-0.5">{cf.description}</div>}
+                            </div>
+                            <div><AtlasCellInput field={cf} value={draft.data[cf.key] ?? ""} onChange={v => updateField(cf.key, v)} /></div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )
+                })()}
               </div>
             </div>
           ) : (

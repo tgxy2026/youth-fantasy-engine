@@ -14,8 +14,10 @@
 //    会把异常吞成空配置，若这里不复检，索引就会把「读失败」当成「作者删光了字段」。
 import type { TabDef } from '@/lib/types'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { supportsModuleCustomFields } from '@/lib/forms/customFields'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { resolveTemplateCached } from '@/lib/templates/cache'
+import { isTemplateTab } from '@/lib/templates/eligible'
 import { indexRulesOf, type IndexFieldRule } from '@/lib/templates/consumers'
 import { loadTemplateDef } from '@/lib/templates/store'
 import { loadFieldDefinitions, type FieldDefinitionDoc } from '@/lib/templates/fieldDefinition'
@@ -109,20 +111,71 @@ export async function loadFieldRules(
   deps: FieldRulesDeps = {},
 ): Promise<FieldRules> {
   if (!pid) return { kind: 'none' }
-  if (!isAtlasTab(tab.id)) return loadNonAtlasRules(pid, tab, deps)
+  const isAtlas = isAtlasTab(tab.id)
+  const isTpl = isTemplateTab(tab.id)
+  const isModuleCustom = supportsModuleCustomFields(tab)
+  if (!isAtlas && !isTpl && !isModuleCustom) return loadNonAtlasRules(pid, tab, deps)
 
-  let def: TemplateDef | null
-  try {
-    def = await (deps.loadDef ?? loadTemplateDef)(pid, tab.id)
-  } catch (e) {
-    return { kind: 'unavailable', reason: `读取模板快照失败：${e instanceof Error ? e.message : String(e)}` }
+  if (isTpl) {
+    let def: TemplateDef | null
+    try {
+      def = await (deps.loadDef ?? loadTemplateDef)(pid, tab.id)
+    } catch (e) {
+      return { kind: 'unavailable', reason: `读取模板快照失败：${e instanceof Error ? e.message : String(e)}` }
+    }
+    if (def) {
+      try {
+        return rulesOfTemplate(resolveTemplateCached(tab, { def, purpose: 'index', ignoreAppliesTo: true }, pid))
+      } catch (e) {
+        return { kind: 'unavailable', reason: `解析模板快照失败：${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+    if (!isAtlas) return loadNonAtlasRules(pid, tab, deps)
   }
 
-  try {
-    if (def) {
-      // 快照自带含义确认状态，轻量定义不再叠加（采用后结构由作者接管）
-      return rulesOfTemplate(resolveTemplateCached(tab, { def, purpose: 'index', ignoreAppliesTo: true }, pid))
+  if (isModuleCustom && !isAtlas) {
+    try {
+      const loaded = await (deps.loadConfig ?? loadAtlasSchema)(pid, tab.id)
+      if (loaded.error) return { kind: 'unavailable', reason: `读取字段配置失败：${loaded.error}` }
+      if (loaded.config.fields.length === 0) return loadNonAtlasRules(pid, tab, deps)
+      const base = await loadNonAtlasRules(pid, tab, deps)
+      if (base.kind === 'unavailable') return base
+      const merged: Record<string, IndexFieldRule> = base.kind === 'rules'
+        ? { ...base.rules }
+        : Object.fromEntries((tab.modules ?? []).flatMap(m => m.fields.map(f => {
+          const key = `${m.name}::${f.name}`
+          return [key, {
+            id: key,
+            label: f.name,
+            source: 'builtin' as const,
+            aiReadable: true,
+            archived: false,
+            appliesTo: '*' as const,
+          }]
+        })))
+      for (const f of loaded.config.fields) {
+        merged[f.id] = {
+          id: f.id,
+          label: f.label,
+          source: 'custom',
+          aiReadable: !f.archived && f.aiReadable,
+          archived: f.archived,
+          ...(f.type ? { customType: f.type } : {}),
+          ...(f.unit ? { unit: f.unit } : {}),
+          appliesTo: '*',
+        }
+      }
+      return {
+        kind: 'rules',
+        rules: merged,
+        templateDigest: base.kind === 'rules' ? base.templateDigest : `mod-custom:${loaded.config.revision}`,
+        authoritative: true,
+      }
+    } catch (e) {
+      return { kind: 'unavailable', reason: `解析字段配置失败：${e instanceof Error ? e.message : String(e)}` }
     }
+  }
+  try {
     const loaded = await (deps.loadConfig ?? loadAtlasSchema)(pid, tab.id as Parameters<typeof loadAtlasSchema>[1])
     if (loaded.error) {
       return { kind: 'unavailable', reason: `读取字段配置失败：${loaded.error}` }

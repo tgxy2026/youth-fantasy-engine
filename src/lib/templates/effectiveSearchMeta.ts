@@ -20,6 +20,7 @@ import { loadTemplateDef } from '@/lib/templates/store'
 import { loadFieldDefinitions } from '@/lib/templates/fieldDefinition'
 import { loadAliases, defaultLabelOf } from '@/lib/settings/fieldAlias'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { supportsModuleCustomFields, resolveModuleCustomFields } from '@/lib/forms/customFields'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import { atlasColumnsOf } from '@/lib/atlas/columns'
 import { resolveTemplateForTab } from '@/lib/templates/resolve'
@@ -33,7 +34,8 @@ export interface EffectiveSearchMeta {
 }
 
 export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSearchMeta | null> {
-  if (tab.type !== 'card' && tab.type !== 'table') return null
+  const isModuleCustom = supportsModuleCustomFields(tab)
+  if (tab.type !== 'card' && tab.type !== 'table' && !isModuleCustom) return null
   const pid = getCurrentProjectId()
   if (!pid) return null
   try {
@@ -42,7 +44,7 @@ export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSea
       loadFieldDefinitions(pid, tab.id).catch(() => null),
       loadAliases(tab.id).catch(() => ({} as Record<string, string>)),
     ])
-    const loaded = isAtlasTab(tab.id)
+    const loaded = (isAtlasTab(tab.id) || isModuleCustom)
       ? await loadAtlasSchema(pid, tab.id as AtlasTabId)
       : null
     // 配置读取失败时 config 是空默认；这时返回 null，让检索页回退旧行为，避免自定义字段整片消失
@@ -53,14 +55,19 @@ export async function loadEffectiveSearchMeta(tab: TabDef): Promise<EffectiveSea
       config,
       aliases,
       ...(defDoc ? { fieldDefinitions: defDoc } : {}),
-      purpose: tab.type === 'card' ? 'detail' : 'table',
+      purpose: tab.type === 'table' ? 'table' : 'detail',
     })
-    if (tab.type === 'card') {
+    if (tab.type === 'card' || tab.type === 'form') {
       const fields = cardGroupsOfTemplate(tab, tpl).flatMap(g => g.fields)
-      return {
-        keys: new Set(fields.map(f => f.key)),
-        labels: Object.fromEntries(fields.map(f => [f.key, f.label])),
+      const keys = new Set(fields.map(f => f.key))
+      const labels: Record<string, string> = Object.fromEntries(fields.map(f => [f.key, f.label]))
+      if (isModuleCustom && !def) {
+        for (const cf of resolveModuleCustomFields(config, { purpose: 'search' })) {
+          keys.add(cf.key)
+          labels[cf.key] = cf.label
+        }
       }
+      return { keys, labels }
     }
     // 与 `useSheetTemplate` 的 effectiveColumns 同口径：
     // 采用快照走模板列；未采用走图鉴列（已过滤隐藏列 / 归档字段）。

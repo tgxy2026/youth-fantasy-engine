@@ -19,6 +19,8 @@ import { aiCapabilityOf } from '@/lib/ai/aiScope'
 import { confirmDialog, showToast } from '@/components/dialogs/dialogs'
 import { Button } from '@/components/common/Button'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import ModuleFieldManagerButton from '@/components/sheets/ModuleFieldManager'
+import { supportsModuleCustomFields, useModuleCustomFields } from '@/lib/forms/customFields'
 import StyleTools from '@/components/sheets/StyleTools'
 import { SaveFab } from '@/components/common/SaveFab'
 import { LoadingState } from '@/components/common/LoadingState'
@@ -48,18 +50,25 @@ export default function FormSheet({ tab }: Props) {
   const [showFillNew, setShowFillNew] = useState(false)
   // 市场雷达弹窗（仅「作品信息」：联网检索 + 模型归纳，给选题做参考 —— 台账 #018）
   const [showRadar, setShowRadar] = useState(false)
+  const canCustomFields = supportsModuleCustomFields(tab)
+  const customState = useModuleCustomFields(tab, canCustomFields)
   const formFields = useMemo<TemplateField[]>(
-    () => (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
-      key: `${m.name}::${f.name}`,
-      label: f.name,
-      desc: f.desc,
-      example: f.example,
-      // 力量体系：数值/境界类字段锁定，避免 AI 编崩"宪法"
-      locked: tab.id === 'power' && isNumericPowerField(f),
-    }))),
-    // 🔴 同 CharacterSheet：读 tab.modules 就得依赖 tab 本身，只写 tab.id 会在
-    //    字段结构变化时沿用旧字段表。
-    [tab],
+    () => [
+      ...(tab.modules ?? []).flatMap(m => m.fields.map(f => ({
+        key: `${m.name}::${f.name}`,
+        label: f.name,
+        desc: f.desc,
+        example: f.example,
+        locked: tab.id === 'power' && isNumericPowerField(f),
+      }))),
+      ...customState.activeFields.filter(f => f.aiWritable).map(f => ({
+        key: f.key,
+        label: f.label,
+        desc: f.description ?? '',
+        example: '',
+      })),
+    ],
+    [tab, customState.activeFields],
   )
 
   /** 仅「作品信息」页提供市场雷达（选题阶段的功能，挂到别的表单页没有意义） */
@@ -223,8 +232,12 @@ export default function FormSheet({ tab }: Props) {
   }
 
   // 渲染期派生（2026-10-04 六维审计 A5）：提到 `if (!loaded) return` **之前**（hook 不能条件调用）。
-  const filledCount = useMemo(() => Object.values(data).filter(v => v && v.trim()).length, [data])
-  const totalFields = useMemo(() => tab.modules?.reduce((s, m) => s + m.fields.length, 0) ?? 0, [tab])
+  const activeFieldKeys = useMemo(() => [
+    ...(tab.modules ?? []).flatMap(m => m.fields.map(x => `${m.name}::${x.name}`)),
+    ...customState.activeFields.map(x => x.key),
+  ], [tab, customState.activeFields])
+  const filledCount = useMemo(() => activeFieldKeys.filter(k => (data[k] ?? "").trim().length > 0).length, [activeFieldKeys, data])
+  const totalFields = activeFieldKeys.length
   /** 3.3.1 · P2：本页分步引导。只有「自管页」在组件内托管（其余表单页由 App 层统一托管，见 guides.ts） */
   const pageGuide = usePageGuide({ tabId: tab.id, ready: loaded, busy: dirty, enabled: SELF_MANAGED_GUIDE_TABS.has(tab.id) })
   // 🔴 2026-11-15：登记给侧栏「本页指引」—— 否则左下角写「此页无」、页头却有按钮，自相矛盾。
@@ -263,6 +276,14 @@ export default function FormSheet({ tab }: Props) {
               intro="给这一页的字段起你自己看得懂的名字。"
               targets={moduleAliasTargets(tab.modules)}
             />
+            {canCustomFields && (
+              <ModuleFieldManagerButton
+                tab={tab}
+                config={customState.config}
+                readOnly={customState.newerFormat}
+                onSave={customState.saveConfig}
+              />
+            )}
             {/* 3.3.3 · B4：写作规范页多三个工具 —— 导出 / 导入 / 按章反推。
                 三者都只改**草稿**（取消即零写入），落库仍是作者按「保存」。 */}
             {tab.id === 'style' && (
@@ -339,6 +360,7 @@ export default function FormSheet({ tab }: Props) {
           data={data}
           onFieldChange={setField}
           twoColumn={fullWidth}
+          customFields={customState.activeFields}
           tabId={tab.id}
         />
       </div>

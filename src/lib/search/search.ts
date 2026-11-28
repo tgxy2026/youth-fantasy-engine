@@ -11,10 +11,14 @@ import * as db from '@/lib/db'
 import { TABS, tabVisible, type VisCtx } from '@/lib/schema'
 import { tokenize } from '@/lib/editor/tokenize'
 import { contentRevision } from '@/lib/editor/editorViewMath'
-import { atlasFieldsForCategory, isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
+import { ATLAS_TABS, atlasFieldsForCategory, isAtlasTab, resolveAtlasFields, atlasSearchText } from '@/lib/atlas/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
-import type { CardRecord, TableRow } from '@/lib/types'
+import { isTemplateTab } from '@/lib/templates/eligible'
+import { loadTemplateDef } from '@/lib/templates/store'
+import { resolveTemplateForTab } from '@/lib/templates/resolve'
+import { atlasFieldOfTemplate } from '@/lib/templates/render'
+import { resolveRowTitle } from '@/lib/settings/rowTitle'
 
 // 🔬 分词口径的**单一真源**已移到 `./tokenize`（纯函数，不 import db）——
 //    好让「知识库」的关键词降级召回也能用它而不与 db 成环。
@@ -117,8 +121,9 @@ export function chapterHitOffsets(doc: SearchDoc, query: string): number[] {
  * @param ctx 可见性上下文；自定义项目下未启用功能对应的页签数据不纳入检索，避免搜出本该看不见的设定
  */
 async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<SearchDoc[]> {
+  const pid = db.getCurrentProjectId()
   const docs: SearchDoc[] = []
-  const chapters = await db.getAllChapters()
+  const chapters = pid ? await db.getChaptersFor(pid) : await db.getAllChapters()
   for (const c of chapters) {
     docs.push({
       id: `ch-${c.id}`,
@@ -136,22 +141,28 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
   for (const tabId of ['char-main', 'char-secondary', 'char-npc']) {
     const tab = TABS.find(t => t.id === tabId)
     if (!tab || !tabVisible(tab.id, ctx)) continue
-    const recs: CardRecord[] = await db.getCardRecords(tabId)
+    const [recs, def] = await Promise.all([
+      pid ? db.getCardRecordsFor(pid, tabId) : db.getCardRecords(tabId),
+      pid ? loadTemplateDef(pid, tabId).catch(() => null) : Promise.resolve(null),
+    ])
+    const tplFields = def
+      ? resolveTemplateForTab(tab, { def, purpose: 'search', ignoreAppliesTo: true }).fields.map(f => atlasFieldOfTemplate(f))
+      : null
     for (const rec of recs) {
-      const body = Object.values(rec.data).filter(Boolean).join('\n')
+      const body = tplFields
+        ? atlasSearchText(tplFields, rec.data)
+        : Object.values(rec.data).filter(Boolean).join('\n')
       docs.push({ id: `card-${rec.id}`, type: 'character', title: rec.name, body, tabId, source: tab?.name })
     }
   }
   // 表格型设定（含人物关系、名词术语、国家势力等）—— 隐藏形态下跳过
-  // 3.1.3：图鉴页签（races / items）的字段配置先加载一次，供下面的正文构造用
+  // 3.7.6：加载全量 ATLAS_TABS（含 nations / geography）及模板快照
   const atlasCfgs = new Map<string, AtlasSchemaConfig | null>()
-  {
-    const pid = db.getCurrentProjectId()
-    for (const id of ['races', 'items'] as const) {
+  if (pid) {
+    for (const id of ATLAS_TABS) {
       try {
         atlasCfgs.set(id, (await loadAtlasSchema(pid, id)).config)
       } catch {
-        // 读配置失败不该让整份检索崩：退回原口径（全部有值字段）
         atlasCfgs.set(id, null)
       }
     }
@@ -159,24 +170,24 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
   for (const tab of TABS) {
     if (tab.type !== 'table') continue
     if (!tabVisible(tab.id, ctx)) continue
-    const rows: TableRow[] = await db.getTableRows(tab.id)
-    const displayCol = tab.displayCol
-    /**
-     * 🔴 检索也按**每行自己的类别**解析（3.1.3 · R02）。
-     *    这里原先整表只解析一次且不带类别 ⇒ "只适用某类别"的字段在所有行上都被排除，
-     *    作者填了值却搜不到。做法与表格列一致：先取全量，再逐行过滤。
-     */
-    const allAtlasFields = isAtlasTab(tab.id)
-      ? resolveAtlasFields(tab, { config: atlasCfgs.get(tab.id) ?? null, purpose: 'search', ignoreAppliesTo: true })
-      : null
+    const [rows, def] = await Promise.all([
+      pid ? db.getTableRowsFor(pid, tab.id) : db.getTableRows(tab.id),
+      pid && isTemplateTab(tab.id) ? loadTemplateDef(pid, tab.id).catch(() => null) : Promise.resolve(null),
+    ])
+    const allAtlasFields = def
+      ? resolveTemplateForTab(tab, { def, purpose: 'search', ignoreAppliesTo: true }).fields.map(f => atlasFieldOfTemplate(f))
+      : isAtlasTab(tab.id)
+        ? resolveAtlasFields(tab, { config: atlasCfgs.get(tab.id) ?? null, purpose: 'search', ignoreAppliesTo: true })
+        : null
+    const titleLabels = allAtlasFields ? Object.fromEntries(allAtlasFields.map(f => [f.key, f.label])) : undefined
+    const titleKeys = allAtlasFields ? allAtlasFields.map(f => f.key) : undefined
     for (const r of rows) {
       const atlasFields = allAtlasFields ? atlasFieldsForCategory(allAtlasFields, r.data?.['类别']) : null
       const body = atlasFields
         ? atlasSearchText(atlasFields, r.data)
         : Object.entries(r.data).filter(([, v]) => v && v.trim()).map(([, v]) => v).join('\n')
       if (!body.trim()) continue
-      const filled = Object.entries(r.data).filter(([, v]) => v && v.trim())
-      let title = (displayCol && r.data[displayCol]) || filled[0]?.[1] || '（未命名）'
+      let title = resolveRowTitle(tab, r.data, { labels: titleLabels, keys: titleKeys }) || '（未命名）'
       if (tab.id === 'relations') {
         const pair = `${r.data['人物A'] || ''} → ${r.data['人物B'] || ''}`.trim()
         if (pair) title = pair
@@ -186,9 +197,9 @@ async function buildDocs(ctx: VisCtx = { type: 'full', features: [] }): Promise<
   }
   // 卷台账（按卷建表）：聚合所有 chapter-vol-<vid> 表，作为「设定」类检索源
   if (tabVisible('chapter-master', ctx)) {
-    const vols = await db.getAllVolumes()
+    const vols = pid ? await db.getVolumesFor(pid) : await db.getAllVolumes()
     for (const v of vols) {
-      const rows = await db.getTableRows(`chapter-vol-${v.id}`)
+      const rows = pid ? await db.getTableRowsFor(pid, `chapter-vol-${v.id}`) : await db.getTableRows(`chapter-vol-${v.id}`)
       for (const r of rows) {
         const filled = Object.entries(r.data).filter(([, val]) => val && val.trim())
         if (filled.length === 0) continue

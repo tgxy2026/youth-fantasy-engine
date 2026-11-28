@@ -33,6 +33,8 @@ import type { TemplateField } from '@/lib/ai'
 import { useWritingReady } from '@/lib/agentHost/useWritingReady'
 import { useSaveHotkey } from '@/lib/app/useSaveHotkey'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import ModuleFieldManagerButton from '@/components/sheets/ModuleFieldManager'
+import { buildFallbackCardGroups, supportsModuleCustomFields, useModuleCustomFields } from '@/lib/forms/customFields'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 import { useFieldGating } from '@/lib/templates/useFieldLabels'
 import { MasterDetail, MasterList, useMasterFilter, useMasterQuery } from '@/components/common/MasterDetail'
@@ -178,6 +180,8 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
    *    没有 ⇒ 逐字沿用 `tab.modules`，老项目行为不变。
    */
   const { def: templateDef } = useSheetTemplate(tab, null)
+  const canModuleCustomFields = !isTemplateTab(tab.id) && supportsModuleCustomFields(tab)
+  const moduleCustomState = useModuleCustomFields(tab, canModuleCustomFields)
   const templateView = useMemo(
     () => (templateDef
       ? resolveTemplateForTab(tab, { def: templateDef, purpose: 'detail', ignoreAppliesTo: true })
@@ -187,29 +191,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
   /** 统一的渲染模型：内置模块与模板分组都折算成同一形状，渲染处不再分支 */
   const cardGroups = useMemo<CardGroupView[]>(() => {
     if (!templateDef || !templateView) {
-      return (tab.modules ?? []).map((m, index) => ({
-        id: m.name,
-        label: m.name,
-        /**
-         * 3.7.5（Q-04）：**第一组也算基础组** —— 立绘列挂在基础组右侧。
-         * 原先只认组名含「基础信息」，而 NPC 角色的唯一模块叫「NPC档案」⇒ 没有基础组
-         * ⇒ 立绘掉到卡片最底部的兜底分支（整行横铺、右侧一片空白）。
-         * 与同文件下方「默认展开」的判据（`g.isBasic || index === 0`）保持同一口径。
-         */
-        isBasic: m.name.includes('基础信息') || index === 0,
-        fields: m.fields.map(f => {
-          const key = `${m.name}::${f.name}`
-          return {
-            key,
-            name: f.name,
-            label: aliasLabels[key] ?? f.name,
-            ...(f.desc ? { desc: f.desc } : {}),
-            ...(f.example ? { example: f.example } : {}),
-            type: (f.kind === 'numeric' ? 'number' : 'textarea') as TemplateFieldType,
-            source: 'builtin' as const,
-          }
-        }),
-      }))
+      return buildFallbackCardGroups(tab, aliasLabels, moduleCustomState.activeFields)
     }
     return cardGroupsOfTemplate(tab, templateView).map(g => ({
       id: g.id,
@@ -228,7 +210,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
         source: f.source,
       })),
     }))
-  }, [tab, templateDef, templateView, aliasLabels])
+  }, [tab, templateDef, templateView, aliasLabels, moduleCustomState.activeFields])
 
   const fieldPermissions = useMemo(() => new Map(templateView?.fields.map(field => [field.sourceKey, field.permissions]) ?? []), [templateView])
 
@@ -269,7 +251,11 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
    * 让世界构建组那一整套 tableIO 逻辑（解析 / 映射 / 校验 / 模板 / 说明）原样复用 ——
    * 见 `lib/storage/cardIO.ts` 的头注。
    */
-  const vtab = useMemo(() => cardTabToTableTab(tab), [tab])
+  const exportTemplate = useMemo(
+    () => (templateDef ? resolveTemplateForTab(tab, { def: templateDef, aliases: aliasLabels, purpose: 'export', ignoreAppliesTo: true }) : undefined),
+    [tab, templateDef, aliasLabels],
+  )
+  const vtab = useMemo(() => cardTabToTableTab(tab, exportTemplate), [tab, exportTemplate])
   /**
    * 含当前未保存草稿的记录列表 —— **导出**与**导入判重**共用它。
    *
@@ -723,7 +709,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
     if (!await flushCurrentDraft()) {
       throw new Error('当前角色卡未能保存，导入已取消 —— 请先手动保存后重试')
     }
-    const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid)
+    const created = buildCardRecords(picked, tab, records, getCurrentProjectId(), uid, exportTemplate)
     const okOnes: CardRecord[] = []
     let failed = 0
     let firstErr = ''
@@ -758,7 +744,7 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
       showToast(`还没有${nounCard}可导出 —— 可先用「导入」批量录入，或点「新建${noun}」逐张录入`, 'info')
       return
     }
-    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, recordsWithDraft)], { type: 'text/csv;charset=utf-8' }))
+    downloadBlob(`${tab.name}.csv`, new Blob(['\uFEFF' + exportCardsCsv(tab, recordsWithDraft, exportTemplate)], { type: 'text/csv;charset=utf-8' }))
   }
 
   /**
@@ -894,6 +880,15 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
             hasSelection={!!draft} canMove={moveTargets.length > 0}
             onTemplate={() => setShowTemplate(true)} onImport={() => setShowImport(true)} onExport={exportCsv}
             onMove={() => setMoveOpen(true)} />
+          {canModuleCustomFields && (
+            <ModuleFieldManagerButton
+              tab={tab}
+              config={moduleCustomState.config}
+              readOnly={moduleCustomState.newerFormat}
+              onSave={moduleCustomState.saveConfig}
+              size="sm"
+            />
+          )}
           {/* 只看角色卡：非角色卡片表（世界构建的「其他设定」）没有「人物状态」字段，
               这个开关对它们点了也没有任何效果 —— 与其摆着让人困惑，不如不渲染 */}
           {isCharTab && (
@@ -1144,9 +1139,9 @@ function CharacterSheetWorkspace({ tab, focusRowId, onFocusConsumed, onNavigate,
       {showImport && (
         <TableImportDialog
           tab={vtab}
-          existing={cardRecordsToTableRows(tab, recordsWithDraft)}
+          existing={cardRecordsToTableRows(tab, recordsWithDraft, exportTemplate)}
           visCtx={ctx}
-          guideBuilder={buildCardImportGuide}
+          guideBuilder={t => buildCardImportGuide(t, exportTemplate)}
           onAdd={handleImport}
           onClose={() => setShowImport(false)}
         />

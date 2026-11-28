@@ -17,6 +17,7 @@ import {
 import type { TabDef } from '@/lib/types'
 import type { AtlasSchemaConfig } from '@/lib/atlas/types'
 import { atlasCategoryOptions, isAtlasTab } from '@/lib/atlas/schema'
+import { builtinFieldNameConflict } from '@/lib/atlas/fieldNameGuard'
 import { getCurrentProjectId } from '@/lib/db'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/common/Button'
@@ -212,6 +213,15 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
   const preview = async () => {
     if (!draft) return
     const to = finalizeTemplateDef(draft, { revision: (current?.revision ?? 0) + 1 })
+    const builtinNames = to.fields.filter(f => f.source === 'builtin').map(f => f.label)
+    for (const f of to.fields) {
+      if (f.archived || f.source !== 'custom') continue
+      const conflict = builtinFieldNameConflict(f.label, builtinNames)
+      if (conflict) {
+        setErr(`自定义字段「${f.label}」与内置字段冲突：${conflict}`)
+        return
+      }
+    }
     const violations = checkTemplateDef(to)
     if (violations.length > 0) {
       setErr(violations.map(v => v.detail).join('\n'))
@@ -313,9 +323,21 @@ export default function TemplateManagerDialog({ tab, atlasConfig = null, onClose
   }
 
   const abandon = async () => {
+    const atlasIds = new Set((atlasConfig?.fields ?? []).map(f => f.id))
+    const hiddenCustom = (current?.fields ?? []).filter(f => f.source === 'custom' && (!isAtlas || !atlasIds.has(f.id)))
+    let extraNote = ''
+    if (hiddenCustom.length > 0) {
+      try {
+        const counts = await countValuesForFields(pid, tab.id, hiddenCustom.map(f => f.id))
+        const totalVals = Object.values(counts).reduce((s, n) => s + n, 0)
+        if (totalVals > 0) {
+          extraNote = `\n\n注意：当前模板中有 ${hiddenCustom.length} 个自定义字段（共 ${totalVals} 条已填内容）在退回后将暂时隐藏（值仍保留在库中，可随时重新采用模板或在数据体检中查看）。`
+        }
+      } catch { /* 读取失败不阻断 */ }
+    }
     if (!await confirmDialog({
       title: '放弃自定义模板',
-      message: '将退回内置结构。自定义字段的值不会被删除，但界面不再显示这些字段；之后重新采用模板可再看到。',
+      message: `将退回内置结构。自定义字段的值不会被删除，但界面不再显示这些字段；之后重新采用模板可再看到。${extraNote}`,
       danger: true,
     })) return
     setBusy(true)
@@ -571,6 +593,10 @@ function EditView({
   const groups = orderedGroups(draft)
   const activeFields = draft.fields.filter(f => !f.archived)
   const archived = draft.fields.filter(f => f.archived)
+  const builtinLabels = useMemo(
+    () => draft.fields.filter(f => f.source === 'builtin').map(f => f.label),
+    [draft.fields],
+  )
   const editingField = editing?.kind === 'edit'
     ? draft.fields.find(f => f.id === editing.fieldId)
     : undefined
@@ -772,6 +798,7 @@ function EditView({
           groups={groups}
           categories={categories}
           defaultGroupId={editingField.groupId}
+          builtinLabels={builtinLabels}
           onPatch={p => patchField(editingField.id, p)}
           onPermissions={p => patchPerms(editingField.id, p)}
           onCreate={() => { /* 编辑模式不创建 */ }}
@@ -785,6 +812,7 @@ function EditView({
           groups={groups}
           categories={categories}
           defaultGroupId={editing.groupId}
+          builtinLabels={builtinLabels}
           onPatch={() => { /* 创建模式只改本地表单 */ }}
           onPermissions={() => { /* 权限在建立后编辑 */ }}
           onCreate={createField}

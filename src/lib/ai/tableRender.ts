@@ -72,6 +72,8 @@ export const AUTHOR_SIDE_FIELDS = new Set([
   '信仰与真相的落差',                  // 宗教信仰：官方教义与真相之间的落差，是作者底牌
 ])
 
+import type { CustomFieldType } from '@/lib/atlas/types'
+
 /** 渲染选项：角色视角下隐藏作者侧字段 */
 export type RenderOpts = {
   /** 角色视角：整列剔除「作者侧字段」（见 AUTHOR_SIDE_FIELDS） */
@@ -85,6 +87,10 @@ export type RenderOpts = {
    *    本字段把承诺落地：与 D 级同层的**行级**过滤，且同样不进「另有 N 条未列出」的计数。
    */
   hideSecretRows?: boolean
+  /** 3.7.6 · B2-P0-2：已归档或关闭 aiRead 的自定义字段键（renderForm 跳过） */
+  hiddenKeys?: Set<string>
+  /** 3.7.6 · B2-P0-2：自定义字段格式化元数据 */
+  customFormats?: Map<string, { kind: CustomFieldType; unit?: string }>
   /**
    * 单张设定表的字符上限（3.1.3 · R3 摘要化）。
    * 表超过它就**先减列、再减行**（见 `ai/tableDigest.ts`），而不是整段塞进装配器再被裁/被丢。

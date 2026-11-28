@@ -26,6 +26,9 @@
  * ⚠️ 本文件住在 lib，**不得 import components**（分层红线，见 `tests/importCycles.test.ts`）。
  */
 import type { CardRecord, TableColumn, TableRow, TabDef } from '@/lib/types'
+import type { EffectiveTemplate } from '@/lib/templates/types'
+import { customTypeOf } from '@/lib/templates/consumers'
+import { formatCustomValue } from '@/lib/atlas/values'
 import { CARD_TABLE_REF_FIELDS } from '@/lib/schema'
 import { CARD_SELECT_FIELDS } from '@/lib/world/cardFields'
 import { buildImportGuide, exportRowsCsv, exportTemplateCsv, type ImportRowResult } from '@/lib/storage/tableIO'
@@ -35,51 +38,71 @@ export const CARD_NAME_FIELD = '姓名'
 
 /** 拍平后的一个卡片字段 */
 export interface CardField {
-  /** CSV 列头 / 列名映射键 —— schema 原字段名（同页签内唯一；重名时退化为 `模块::字段`） */
+  /** CSV 列头 / 列名映射键 —— schema 原字段名或自定义字段名（重名时退化为存储键） */
   name: string
-  /** 存储键 —— `CardRecord.data` 的键，形如 `一、基础信息::姓名` */
+  /** 显示名（模板改名或自定义字段 label；无模板时等于 name） */
+  label?: string
+  /** 存储键 —— `CardRecord.data` 的键，形如 `一、基础信息::姓名` 或 `cf_<uid>` */
   path: string
   /** 所属模块名（含 schema 里的序号，如「一、基础信息」） */
   module: string
   desc: string
   example: string
+  /** 自定义字段的类型与枚举（仅模板自定义字段有值） */
+  customType?: ReturnType<typeof customTypeOf>
+  options?: string[]
+  unit?: string
 }
 
 /**
- * 拍平 `tab.modules` → 字段列表（保持 schema 的模块顺序与模块内顺序）。
- *
- * 🔴 列名默认取**纯字段名**：三个角色页签内字段名互不重复，短名对作者友好得多
- *    （模板里写「核心性格」而不是「二、性格与内心::核心性格」）。
- *    但**重名时必须退化**成全路径 —— 否则两列同名，`mapHeaders` 会把它们映射到同一列，
- *    数据静默串位（这类错在预览里也看不出来）。故先数一遍重名，再决定列名。
+ * 拍平 `tab.modules`（或已采用的有效模板）→ 字段列表。
  */
-export function cardFieldsOf(tab: TabDef): CardField[] {
-  const flat: CardField[] = (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
-    name: f.name,
-    path: `${m.name}::${f.name}`,
-    module: m.name,
-    desc: f.desc,
-    example: f.example,
-  })))
+export function cardFieldsOf(tab: TabDef, tpl?: EffectiveTemplate | null): CardField[] {
+  const builtinMeta = new Map<string, { name: string; module: string; desc: string; example: string }>()
+  for (const m of tab.modules ?? []) {
+    for (const f of m.fields) {
+      builtinMeta.set(`${m.name}::${f.name}`, { name: f.name, module: m.name, desc: f.desc, example: f.example })
+    }
+  }
+  const flat: CardField[] = tpl
+    ? tpl.fields.filter(f => !f.archived).map(f => {
+      const meta = f.source === 'builtin' ? builtinMeta.get(f.sourceKey) : undefined
+      const customType = customTypeOf(f)
+      const shortName = meta?.name ?? f.label
+      return {
+        name: shortName,
+        label: f.label,
+        path: f.sourceKey,
+        module: meta?.module ?? f.groupId,
+        desc: f.description ?? meta?.desc ?? '',
+        example: f.example ?? meta?.example ?? '',
+        ...(customType ? { customType } : {}),
+        ...(f.options ? { options: f.options } : {}),
+        ...(f.unit ? { unit: f.unit } : {}),
+      }
+    })
+    : (tab.modules ?? []).flatMap(m => m.fields.map(f => ({
+      name: f.name,
+      path: `${m.name}::${f.name}`,
+      module: m.name,
+      desc: f.desc,
+      example: f.example,
+    })))
   const seen = new Map<string, number>()
   for (const f of flat) seen.set(f.name, (seen.get(f.name) ?? 0) + 1)
   return flat.map(f => ((seen.get(f.name) ?? 0) > 1 ? { ...f, name: f.path } : f))
 }
 
 /** 列名 → 存储键（落库时把导入行的键转回 `CardRecord.data` 的键） */
-export function cardFieldPathMap(tab: TabDef): Map<string, string> {
-  return new Map(cardFieldsOf(tab).map(f => [f.name, f.path]))
+export function cardFieldPathMap(tab: TabDef, tpl?: EffectiveTemplate | null): Map<string, string> {
+  return new Map(cardFieldsOf(tab, tpl).map(f => [f.name, f.path]))
 }
 
 /**
  * 「姓名」字段的存储键 —— **单一源**（列名因重名退化成 `模块::字段` 时也认得出来）。
- *
- * 🔴 必须只有一份：下面三处若各写各的「找姓名」逻辑，标题与姓名字段就会漂移 ——
- *    `cardRecordsToTableRows`（导出 / 判重的姓名兜底）、`buildCardRecords`（导入落库时取卡名）、
- *    `CharacterSheet` 的重命名补值。
  */
-export function cardNamePath(tab: TabDef): string | undefined {
-  const fields = cardFieldsOf(tab)
+export function cardNamePath(tab: TabDef, tpl?: EffectiveTemplate | null): string | undefined {
+  const fields = cardFieldsOf(tab, tpl)
   return (fields.find(f => f.name === CARD_NAME_FIELD)
     ?? fields.find(f => f.path.endsWith(`::${CARD_NAME_FIELD}`)))?.path
 }
@@ -98,8 +121,8 @@ export function cardNamePath(tab: TabDef): string | undefined {
  * ⚠️ 人物立绘（`CardRecord.portrait`）**不在 columns 里** —— 它是图片、不是 `data` 字段，
  *    天然不会进 CSV，无需额外排除。
  */
-export function cardTabToTableTab(tab: TabDef): TabDef {
-  const fields = cardFieldsOf(tab)
+export function cardTabToTableTab(tab: TabDef, tpl?: EffectiveTemplate | null): TabDef {
+  const fields = cardFieldsOf(tab, tpl)
   const columns: TableColumn[] = fields.map(f => {
     const ref = CARD_TABLE_REF_FIELDS[f.name]
     if (ref) {
@@ -114,6 +137,16 @@ export function cardTabToTableTab(tab: TabDef): TabDef {
     }
     const sel = CARD_SELECT_FIELDS[f.name]
     if (sel) return { name: f.name, type: 'select' as const, options: sel.map(o => o.value), tip: f.desc }
+    if (f.customType === 'select' || f.customType === 'boolean') {
+      return {
+        name: f.name,
+        type: 'select' as const,
+        options: f.customType === 'boolean' ? ['true', 'false'] : (f.options ?? []),
+        tip: f.desc,
+      }
+    }
+    if (f.customType === 'number') return { name: f.name, type: 'number' as const, tip: f.desc }
+    if (f.customType === 'longText') return { name: f.name, type: 'textarea' as const, tip: f.desc }
     return { name: f.name, type: 'text' as const, tip: f.desc }
   })
   const hasName = columns.some(c => c.name === CARD_NAME_FIELD)
@@ -138,8 +171,8 @@ export function cardTabToTableTab(tab: TabDef): TabDef {
  *    姓名字段**有值时不覆盖** —— 作者可能故意让标题与姓名不同（标题「陈渊（主角）」、
  *    姓名「陈渊」），那种情况以字段为准。
  */
-export function cardRecordsToTableRows(tab: TabDef, records: CardRecord[]): TableRow[] {
-  const fields = cardFieldsOf(tab)
+export function cardRecordsToTableRows(tab: TabDef, records: CardRecord[], tpl?: EffectiveTemplate | null): TableRow[] {
+  const fields = cardFieldsOf(tab, tpl)
   const nameCol = fields.find(f => f.name === CARD_NAME_FIELD)?.name
     ?? fields.find(f => f.path.endsWith(`::${CARD_NAME_FIELD}`))?.name
   return records.map(r => {
@@ -170,9 +203,10 @@ export function buildCardRecords(
   existing: CardRecord[],
   projectId: string,
   uid: () => string,
+  tpl?: EffectiveTemplate | null,
 ): CardRecord[] {
-  const fields = cardFieldsOf(tab)
-  const namePath = cardNamePath(tab)
+  const fields = cardFieldsOf(tab, tpl)
+  const namePath = cardNamePath(tab, tpl)
   const fallbackName = `未命名${tab.group === '角色管理' ? '角色' : '设定'}`
   const out: CardRecord[] = []
   for (const r of picked) {
@@ -188,13 +222,21 @@ export function buildCardRecords(
 }
 
 /** 导出空白模板 CSV：只有字段名表头行（不含示例数据，避免误当成一条记录导进去） */
-export function exportCardTemplateCsv(tab: TabDef): string {
-  return exportTemplateCsv(cardTabToTableTab(tab))
+export function exportCardTemplateCsv(tab: TabDef, tpl?: EffectiveTemplate | null): string {
+  return exportTemplateCsv(cardTabToTableTab(tab, tpl))
 }
 
-/** 导出已有角色卡为 CSV（列序 = 字段在 schema 里的顺序） */
-export function exportCardsCsv(tab: TabDef, records: CardRecord[]): string {
-  return exportRowsCsv(cardTabToTableTab(tab), cardRecordsToTableRows(tab, records))
+/** 导出已有角色卡为 CSV（列序 = 字段在 schema / 模板里的顺序） */
+export function exportCardsCsv(tab: TabDef, records: CardRecord[], tpl?: EffectiveTemplate | null): string {
+  const fields = cardFieldsOf(tab, tpl)
+  const byName = new Map(fields.map(f => [f.name, f]))
+  return exportRowsCsv(cardTabToTableTab(tab, tpl), cardRecordsToTableRows(tab, records, tpl), {
+    columns: fields.map(f => ({ name: f.name, label: f.label ?? f.name })),
+    textOf: (name, raw) => {
+      const f = byName.get(name)
+      return f?.customType ? formatCustomValue(f.customType, raw, f.unit) : raw
+    },
+  })
 }
 
 /**
@@ -206,8 +248,8 @@ export function exportCardsCsv(tab: TabDef, records: CardRecord[]): string {
  *    ③ 「所属势力」可多选、用**中文**逗号分隔（表格里没有多值引用列；
  *       写成英文逗号会被 CSV 当成两列）。
  */
-export function buildCardImportGuide(tab: TabDef): string {
-  const lines = buildImportGuide(cardTabToTableTab(tab)).split('\n')
+export function buildCardImportGuide(tab: TabDef, tpl?: EffectiveTemplate | null): string {
+  const lines = buildImportGuide(cardTabToTableTab(tab, tpl)).split('\n')
   const extra = [
     `> **本页是「${tab.name}」角色卡**：CSV 的一行 = 一张角色卡。`,
     '> · 「姓名」是必填列，也是这张卡在左侧列表里显示的名字。',

@@ -19,9 +19,20 @@ import { emptyAtlasSchema } from './schema'
 import type { AtlasFieldDefinition, AtlasSchemaConfig, AtlasTabId, CustomFieldType } from './types'
 import { withAtlasSchemaLock } from './schemaLock'
 
-/** 设置键：`atlasSchema::races` / `atlasSchema::items`（项目级，随项目走） */
-export function atlasSchemaKey(tabId: AtlasTabId): string {
+/** 设置键：`atlasSchema::<tabId>`（项目级，随项目走） */
+export function atlasSchemaKey(tabId: string): string {
   return `atlasSchema::${tabId}`
+}
+
+const schemaListeners = new Set<(tabId: string) => void>()
+
+export function subscribeAtlasSchema(fn: (tabId: string) => void): () => void {
+  schemaListeners.add(fn)
+  return () => { schemaListeners.delete(fn) }
+}
+
+function emitAtlasSchema(tabId: string): void {
+  schemaListeners.forEach(fn => fn(tabId))
 }
 
 /** 当前代码能读写的格式版本 */
@@ -91,7 +102,7 @@ export interface LoadedAtlasSchema {
 }
 
 /** 读取某项目的某个页签配置。永远返回一份可用的配置，不抛异常 */
-export async function loadAtlasSchema(projectId: string, tabId: AtlasTabId, owner?: OwnedOperation): Promise<LoadedAtlasSchema> {
+export async function loadAtlasSchema(projectId: string, tabId: string, owner?: OwnedOperation): Promise<LoadedAtlasSchema> {
   try {
     const raw = await getSettingFor<unknown>(projectId, atlasSchemaKey(tabId), null, owner)
     if (raw == null) return { config: emptyAtlasSchema(), newerFormat: false }
@@ -167,7 +178,7 @@ export function checkAtlasWritable(raw: unknown, readError?: string): AtlasSaveC
  */
 export async function saveAtlasSchema(
   projectId: string,
-  tabId: AtlasTabId,
+  tabId: string,
   config: AtlasSchemaConfig,
   operationOwner?: OwnedOperation,
 ): Promise<AtlasSchemaConfig> {
@@ -188,7 +199,7 @@ export async function saveAtlasSchema(
  */
 export async function saveAtlasSchemaInsideLock(
   projectId: string,
-  tabId: AtlasTabId,
+  tabId: string,
   config: AtlasSchemaConfig,
   operationOwner?: OwnedOperation,
 ): Promise<AtlasSchemaConfig> {
@@ -212,6 +223,7 @@ export async function saveAtlasSchemaInsideLock(
     revision: config.revision + 1,
   }
   await setSettingFor(projectId, atlasSchemaKey(tabId), next, operationOwner)
+  emitAtlasSchema(tabId)
   owner.assertCurrent()
   operationOwner?.assertCurrent()
   return next

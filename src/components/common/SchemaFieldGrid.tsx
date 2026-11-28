@@ -11,15 +11,17 @@ import { useMemo } from 'react'
 import { Info } from 'lucide-react'
 import AutoTextarea from '@/components/common/AutoTextarea'
 import FieldDescription from '@/components/common/FieldDescription'
+import AtlasCellInput from '@/components/atlas/AtlasCellInput'
+import type { ResolvedAtlasField } from '@/lib/atlas/types'
 import type { TabDef } from '@/lib/types'
 import { useFieldDisplayLabels } from '@/lib/templates/useFieldRenames'
 
 interface Props {
   /** schema 的模块清单 */
   modules: NonNullable<TabDef['modules']>
-  /** 字段值（键为 `模块名::字段名`） */
+  /** 字段值（键为 `模块名::字段名` 或 `cf_<uid>`） */
   data: Record<string, string>
-  /** 字段改动回调（键为 `模块名::字段名`） */
+  /** 字段改动回调（键为 `模块名::字段名` 或 `cf_<uid>`） */
   onFieldChange: (key: string, value: string) => void
   /**
    * 宽屏两列。
@@ -31,15 +33,51 @@ interface Props {
    * 别名只改界面上这行字，取值仍走 `模块名::字段名` 这个存储键 —— 已填数据不受影响。
    */
   tabId?: string
+  /** 3.7.6 · P1：本页启用的未归档自定义字段 */
+  customFields?: ResolvedAtlasField[]
 }
 
-export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColumn = false, tabId }: Props) {
+export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColumn = false, tabId, customFields = [] }: Props) {
   /** 字段显示名（2.7.3）：母级表单、子世界、制度四页签都走这里，传 tabId 即自动生效 */
   const keys = useMemo(
     () => modules.flatMap(m => m.fields.map(f => `${m.name}::${f.name}`)),
     [modules],
   )
   const aliasLabels = useFieldDisplayLabels(tabId ?? '', keys)
+  const moduleNames = useMemo(() => new Set(modules.map(m => m.name)), [modules])
+  const customByMod = useMemo(() => {
+    const map = new Map<string, ResolvedAtlasField[]>()
+    for (const cf of customFields) {
+      const target = moduleNames.has(cf.groupId) ? cf.groupId : '__extra__'
+      const list = map.get(target)
+      if (list) list.push(cf)
+      else map.set(target, [cf])
+    }
+    return map
+  }, [customFields, moduleNames])
+  const extraFields = customByMod.get('__extra__') ?? []
+
+  const renderCustomRow = (cf: ResolvedAtlasField) => {
+    const val = data[cf.key] ?? ''
+    return (
+      <div key={cf.key} className="px-3 py-3 grid grid-cols-1 @min-[32rem]/fields:grid-cols-[160px_minmax(0,1fr)] gap-2 @min-[32rem]/fields:gap-4 hover:bg-ink-800/30 transition-colors">
+        <div>
+          <div
+            className="text-13 font-medium text-ink-100"
+            title={cf.description || `自定义字段（存储键 ${cf.key}，改名不影响已填内容）`}
+          >{cf.label}</div>
+          {cf.description && <FieldDescription label={cf.label} description={cf.description} />}
+        </div>
+        <div>
+          <AtlasCellInput
+            field={cf}
+            value={val}
+            onChange={v => onFieldChange(cf.key, v)}
+          />
+        </div>
+      </div>
+    )
+  }
   return (
     /**
      * 3.7.5（Q-08）：网格改**多列流**（CSS columns），卡片高度按内容自然收尾。
@@ -50,12 +88,14 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
      * 键盘 Tab 与读屏仍按 一、二、三、四 走（主人已确认接受"报纸分栏"视觉）。
      */
     <div className={`@container/fields gap-5 ${twoColumn ? 'columns-1 xl:columns-2' : 'columns-1 2xl:columns-2'}`}>
-      {modules.map(mod => (
+      {modules.map(mod => {
+        const modCustoms = customByMod.get(mod.name) ?? []
+        return (
         <section key={mod.name} className="mb-5 break-inside-avoid bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden ws-surface">
           <div className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 flex items-center gap-2">
             <span className="w-1 h-3.5 rounded-full bg-amber/70" />
             <h2 className="text-13 font-semibold text-ink-100">{mod.name}</h2>
-            <span className="text-10 text-ink-500 ml-auto ws-num">{mod.fields.length} 项</span>
+            <span className="text-10 text-ink-500 ml-auto ws-num">{mod.fields.length + modCustoms.length} 项</span>
           </div>
           <div className="divide-y divide-ink-700/45">
             {mod.fields.map(field => {
@@ -90,9 +130,23 @@ export default function SchemaFieldGrid({ modules, data, onFieldChange, twoColum
                 </div>
               )
             })}
+            {modCustoms.map(renderCustomRow)}
           </div>
         </section>
-      ))}
+        )
+      })}
+      {extraFields.length > 0 && (
+        <section className="mb-5 break-inside-avoid bg-ink-850/95 rounded-xl border border-ink-700/75 overflow-hidden ws-surface">
+          <div className="px-4 py-2.5 bg-ink-900/65 border-b border-ink-700/60 flex items-center gap-2">
+            <span className="w-1 h-3.5 rounded-full bg-amber/70" />
+            <h2 className="text-13 font-semibold text-ink-100">自定义字段</h2>
+            <span className="text-10 text-ink-500 ml-auto ws-num">{extraFields.length} 项</span>
+          </div>
+          <div className="divide-y divide-ink-700/45">
+            {extraFields.map(renderCustomRow)}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

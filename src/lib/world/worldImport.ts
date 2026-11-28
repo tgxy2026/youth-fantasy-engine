@@ -16,7 +16,9 @@
 import * as db from '@/lib/db'
 import { uid } from '@/lib/app/id'
 import { isAtlasTab } from '@/lib/atlas/schema'
+import { MODULE_CUSTOM_FIELD_TABS } from '@/lib/forms/customFields'
 import { loadAtlasSchema, newFieldId, saveAtlasSchema } from '@/lib/atlas/persistence'
+import type { AtlasFieldDefinition } from '@/lib/atlas/types'
 import { sameAtlasFieldDefinition, uniqueFieldLabel } from '@/lib/atlas/packageIO'
 import type { WorldPackTable, WorldStoredRecord } from '@/lib/world/worldTypes'
 import { captureOwnedOperation, type OwnedOperation } from '@/lib/storage/ownedOperation'
@@ -73,6 +75,47 @@ export async function importWorldIntoCurrent(worldId: string, version = 0): Prom
  *    旧实现一路用 `currentProjectId` 和全局 `ops`，切书后会把行写进新书、把溯源记到新书，
  *    随后回读「不一致」再回滚原书，却把脏数据留在新书里。
  */
+async function mergeImportedAtlasFields(
+  projectId: string,
+  tabId: string,
+  atlasFields: readonly AtlasFieldDefinition[] | undefined,
+  owner?: OwnedOperation,
+): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>()
+  if (!atlasFields?.length || (!isAtlasTab(tabId) && !MODULE_CUSTOM_FIELD_TABS.has(tabId))) return idMap
+  const loaded = await loadAtlasSchema(projectId, tabId, owner)
+  owner?.assertCurrent()
+  if (loaded.error || loaded.newerFormat) throw new Error(loaded.error || '字段配置由更新版本创建，不能导入。')
+  const cur = loaded.config
+  const nextFields = [...cur.fields]
+  for (const f of atlasFields) {
+    const hit = cur.fields.find(e => sameAtlasFieldDefinition(e, f))
+    if (hit) { idMap.set(f.id, hit.id); continue }
+    const nid = newFieldId()
+    idMap.set(f.id, nid)
+    nextFields.push({
+      ...f,
+      id: nid,
+      label: uniqueFieldLabel([...cur.fields.map(x => x.label), ...nextFields.map(x => x.label)], f.label),
+      archived: false,
+    })
+  }
+  if (nextFields.length > cur.fields.length) {
+    await saveAtlasSchema(projectId, tabId, { ...cur, fields: nextFields }, owner)
+    owner?.assertCurrent()
+  }
+  return idMap
+}
+
+function remapRowKeys(raw: Record<string, string> | undefined, idMap: Map<string, string>): Record<string, string> {
+  const data: Record<string, string> = { ...(raw ?? {}) }
+  for (const [oldKey, newKey] of idMap) {
+    if (oldKey === newKey) continue
+    if (oldKey in data) { data[newKey] = data[oldKey]; delete data[oldKey] }
+  }
+  return data
+}
+
 export async function importWorldIntoProject(
   worldId: string,
   version: number,
@@ -96,44 +139,14 @@ export async function importWorldIntoProject(
 
     for (const t of tables) {
       owner?.assertCurrent()
+      const idMap = await mergeImportedAtlasFields(projectId, t.tabId, t.atlasFields, owner)
       // ---- 表单型（世界设定 / 力量体系母级）----
       if (t.kind === 'form') {
-        for (const row of t.rows) await db.saveFormDataFor(projectId, t.tabId, { ...row.data }, owner)
+        for (const row of t.rows) await db.saveFormDataFor(projectId, t.tabId, remapRowKeys(row.data, idMap), owner)
         continue
       }
       // ---- 表格型 ----
       if (t.kind === 'table') {
-        /**
-         * 3.1.3（方案 §8.3）：随包带来的自定义字段定义**先并进本项目**，再写行。
-         * 🔴 不能直接沿用包里的字段 id：那是源项目的 id，撞上本项目已有 id 就会"两个字段共用一个键"
-         *    （数据串味且极难查）。所以：同名同类型复用本项目字段，其余重新发 id 并**重映射行数据键**。
-         */
-        const idMap = new Map<string, string>()
-        if (t.atlasFields?.length && isAtlasTab(t.tabId)) {
-          const loaded = await loadAtlasSchema(projectId, t.tabId, owner)
-          owner?.assertCurrent()
-          if (loaded.error || loaded.newerFormat) throw new Error(loaded.error || '字段配置由更新版本创建，不能导入。')
-          const cur = loaded.config
-          const nextFields = [...cur.fields]
-          for (const f of t.atlasFields) {
-            // 🔴 3.1.3 · R08：完整定义一致才复用（同名异义不硬合并，与资料包同一口径）
-            const hit = cur.fields.find(e => sameAtlasFieldDefinition(e, f))
-            if (hit) { idMap.set(f.id, hit.id); continue }
-            const nid = newFieldId()
-            idMap.set(f.id, nid)
-            // 名字撞车就改个名（与资料包导入同一口径，见 `uniqueFieldLabel`）
-            nextFields.push({
-              ...f,
-              id: nid,
-              label: uniqueFieldLabel([...cur.fields.map(x => x.label), ...nextFields.map(x => x.label)], f.label),
-              archived: false,
-            })
-          }
-          if (nextFields.length > cur.fields.length) {
-            await saveAtlasSchema(projectId, t.tabId, { ...cur, fields: nextFields }, owner)
-            owner?.assertCurrent()
-          }
-        }
         const oldRows = await db.getTableRowsFor(projectId, t.tabId, owner)
         for (const old of oldRows) {
           owner?.assertCurrent()
@@ -143,11 +156,7 @@ export async function importWorldIntoProject(
         for (let i = 0; i < t.rows.length; i++) {
           owner?.assertCurrent()
           const src = t.rows[i]
-          const data: Record<string, string> = { ...src.data }
-          for (const [oldKey, newKey] of idMap) {
-            if (oldKey === newKey) continue
-            if (oldKey in data) { data[newKey] = data[oldKey]; delete data[oldKey] }
-          }
+          const data = remapRowKeys(src.data, idMap)
           await db.saveTableRow({
             id: uid(), projectId, tabId: t.tabId, data, order: i,
             ...(src.atlasImage ? { atlasImage: src.atlasImage } : {}),
@@ -166,7 +175,7 @@ export async function importWorldIntoProject(
           owner?.assertCurrent()
           await db.saveCardRecord({
             id: uid(), projectId, tabId: t.tabId,
-            name: t.rows[i].name ?? '', data: { ...t.rows[i].data }, order: i,
+            name: t.rows[i].name ?? '', data: remapRowKeys(t.rows[i].data, idMap), order: i,
           }, owner)
         }
         continue
@@ -182,7 +191,7 @@ export async function importWorldIntoProject(
         const id = uid()
         await db.saveSubSetFor(projectId, t.tabId, {
           id, projectId, tabId: '',
-          name: t.rows[i].name ?? '', data: { ...t.rows[i].data }, order: i,
+          name: t.rows[i].name ?? '', data: remapRowKeys(t.rows[i].data, idMap), order: i,
         }, owner)
         newIds.push(id)
       }

@@ -44,6 +44,8 @@ import { PAGE_DESCRIPTION_CLASS, PAGE_HEADER_STICKY_CLASS, PAGE_TITLE_CLASS, pag
 import PromptModal from '@/components/dialogs/PromptModal'
 import SchemaFieldGrid from '@/components/common/SchemaFieldGrid'
 import FieldAliasButton, { moduleAliasTargets } from '@/components/sheets/FieldAliasButton'
+import ModuleFieldManagerButton from '@/components/sheets/ModuleFieldManager'
+import { supportsModuleCustomFields, useModuleCustomFields } from '@/lib/forms/customFields'
 import { buildSiblingContext } from '@/lib/creative/interview'
 import AITemplateFill from '@/components/ai/AITemplateFill'
 import AIDataSourceNote from '@/components/ai/AIDataSourceNote'
@@ -94,6 +96,8 @@ export default function WorldSetSheet({ tab }: Props) {
 
   // 包一层 useMemo：模块随题材包变，依赖 [tab.id, pack]（不是 `tab.modules` —— 那是个 getter，每次读都是活值）
   const modules = useMemo(() => modulesFor(tab.id, pack) ?? [], [tab.id, pack])
+  const canCustomFields = supportsModuleCustomFields(tab)
+  const customState = useModuleCustomFields(tab, canCustomFields)
   const templates = useMemo<TemplateField[]>(
     () => modules.flatMap(m => m.fields.map(f => ({
       key: `${m.name}::${f.name}`,
@@ -360,6 +364,14 @@ export default function WorldSetSheet({ tab }: Props) {
               intro="给这一页的字段起你自己看得懂的名字（母级与每个子项用的是同一套字段）。"
               targets={moduleAliasTargets(modules)}
             />
+            {canCustomFields && (
+              <ModuleFieldManagerButton
+                tab={tab}
+                config={customState.config}
+                readOnly={customState.newerFormat}
+                onSave={customState.saveConfig}
+              />
+            )}
             <Button variant="toggle" selected={dirty} disabled={!dirty || saving}
               onClick={() => void flush()} className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-13 font-medium hover:bg-amber/25"
               title={dirty ? '保存（先落库再切换层，不怕丢）' : '无未保存的改动'}
@@ -507,7 +519,7 @@ export default function WorldSetSheet({ tab }: Props) {
           )}
 
           <div className={isMain ? 'border-l-2 border-amber/40 pl-3' : 'border-l-2 border-ink-600 pl-3'}>
-            <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} />
+            <SchemaFieldGrid modules={modules} data={draft} onFieldChange={setField} tabId={tab.id} customFields={customState.activeFields} />
           </div>
 
           {/* ---------- 设定草稿箱（本层一份，不发给 AI） ---------- */}

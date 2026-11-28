@@ -355,6 +355,55 @@ export async function runDataHealthCheck(): Promise<HealthResult> {
     console.warn('[dataHealth] 同名字段检查跳过：', e)
   }
 
+  // ── 7. 孤儿自定义字段检查（3.7.6 · P0-5）──
+  // 放弃自定义模板或导入旧包后，row.data 中可能残留当前定义里已不存在的 cf_* 有值字段。
+  // 仅作 info 级只读提示，不删数据，排在既有检查之后以保住既有忽略 id。
+  try {
+    const [{ getCurrentProjectId }, { isAtlasTab }, { loadAtlasSchema }, { loadTemplateDef }] = await Promise.all([
+      import('@/lib/db/core'),
+      import('@/lib/atlas/schema'),
+      import('@/lib/atlas/persistence'),
+      import('@/lib/templates/store'),
+    ])
+    const pid = getCurrentProjectId()
+    if (pid) {
+      for (const t of tableTabs) {
+        if (!isAtlasTab(t.id)) continue
+        const [def, loaded] = await Promise.all([
+          loadTemplateDef(pid, t.id).catch(() => null),
+          loadAtlasSchema(pid, t.id as Parameters<typeof loadAtlasSchema>[1]).catch(() => null),
+        ])
+        if (loaded?.error) continue
+        const definedIds = new Set<string>(
+          def
+            ? def.fields.filter(f => f.source === 'custom').map(f => f.id)
+            : (loaded?.config.fields ?? []).map(f => f.id),
+        )
+        const orphanCounts = new Map<string, { count: number; firstRowId: string }>()
+        for (const row of cache.get(t.id) ?? []) {
+          for (const [k, v] of Object.entries(row.data ?? {})) {
+            if (!k.startsWith('cf_') || !(v ?? '').trim()) continue
+            if (definedIds.has(k)) continue
+            const cur = orphanCounts.get(k)
+            if (cur) cur.count++
+            else orphanCounts.set(k, { count: 1, firstRowId: row.id })
+          }
+        }
+        for (const [orphanKey, stat] of orphanCounts) {
+          push(
+            'info',
+            '孤儿自定义字段',
+            `《${t.name}》有 ${stat.count} 条记录包含未定义的自定义字段数据`,
+            `《${t.name}》中有 ${stat.count} 条记录在字段键「${orphanKey}」存有内容，但当前${def ? '模板' : '字段设置'}中已无该字段定义（通常由放弃模板或导入旧包引起）。数据仍安全保留在库中，如需恢复显示可重新采用原模板。`,
+            { kind: 'row', tabId: t.id, rowId: stat.firstRowId, hint: orphanKey },
+          )
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[dataHealth] 孤儿自定义字段检查跳过：', e)
+  }
+
   // 严重度排序：error → warn → info
   const order = { error: 0, warn: 1, info: 2 } as const
   issues.sort((a, b) => order[a.severity] - order[b.severity])

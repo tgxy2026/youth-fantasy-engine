@@ -23,6 +23,7 @@
 
 import * as db from '@/lib/db'
 import { isPrunedForAI, isSecretRow, SYSTEM_META_FIELDS } from '@/lib/ai/aiContext'
+import { isParallelSetTab, isWorldSetTab, splitActive } from '@/lib/world/worldSets'
 import { TABS } from '@/lib/schema'
 import { loadFieldRules, type FieldRules } from '@/lib/semantic/fieldRules'
 import type { IndexFieldRule } from '@/lib/templates/consumers'
@@ -281,13 +282,13 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
     return []
   }
 
-  const chapters = (await db.getAllChapters().catch(onFail)) as CollectInput['chapters']
+  const pid = db.getCurrentProjectId()
+  const chapters = (await (pid ? db.getChaptersFor(pid) : db.getAllChapters()).catch(onFail)) as CollectInput['chapters']
 
   const tables: CollectInput['tables'] = []
   const cards: CollectInput['cards'] = []
   // 隐藏列（如《地理风物》的「地图格子」坐标串）不进索引文本 —— 与 aiContext 同一口径
   const hiddenColsOf = (tab: (typeof TABS)[number]) => (tab.columns ?? []).filter(c => c.hidden).map(c => c.name)
-  const pid = db.getCurrentProjectId()
 
   /**
    * 图鉴页签的字段**索引规则**（存储键 → 名字 / AI 可读 / 类别范围）。
@@ -310,7 +311,7 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
 
   for (const tab of TABS) {
     if (tab.type === 'table') {
-      const rows = await db.getTableRows(tab.id).catch(onFail)
+      const rows = await (pid ? db.getTableRowsFor(pid, tab.id) : db.getTableRows(tab.id)).catch(onFail)
       if (rows.length) {
         tables.push({
           tabId: tab.id,
@@ -321,7 +322,7 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
         })
       }
     } else if (tab.type === 'card') {
-      const rows = await db.getCardRecords(tab.id).catch(onFail)
+      const rows = await (pid ? db.getCardRecordsFor(pid, tab.id) : db.getCardRecords(tab.id)).catch(onFail)
       if (rows.length) cards.push({
         tabId: tab.id,
         tabName: tab.name,
@@ -329,10 +330,39 @@ export async function loadIndexDocsDetailed(): Promise<LoadDocsResult> {
         hiddenCols: hiddenColsOf(tab),
         rules: await fieldRulesOf(tab),
       })
+    } else if (tab.type === 'form') {
+      const formRows: { id: string; name: string; data: Record<string, string> }[] = []
+      if (!isParallelSetTab(tab.id)) {
+        const formData = await (pid ? db.getFormDataFor(pid, tab.id) : db.getFormData(tab.id)).catch(() => null)
+        if (formData && Object.values(formData).some(v => v && v.trim())) {
+          formRows.push({ id: `form::${tab.id}`, name: tab.name, data: formData })
+        }
+      }
+      if (isWorldSetTab(tab.id) || isParallelSetTab(tab.id)) {
+        const subs = await (pid ? db.getSubSetsFor(pid, tab.id) : db.getSubSets(tab.id)).catch(() => [])
+        if (subs.length > 0) {
+          const activeIds = await (pid ? db.getActiveSubIdsFor(pid, tab.id) : db.getActiveSubIds(tab.id)).catch(() => [])
+          const { active } = splitActive(subs, activeIds)
+          for (const s of active) {
+            if (s.data && Object.values(s.data).some(v => v && v.trim())) {
+              formRows.push({ id: s.id, name: `${tab.name} · ${s.name || '未命名'}`, data: s.data })
+            }
+          }
+        }
+      }
+      if (formRows.length) {
+        cards.push({
+          tabId: tab.id,
+          tabName: tab.name,
+          rows: formRows,
+          hiddenCols: [],
+          rules: await fieldRulesOf(tab),
+        })
+      }
     }
   }
   // 章节台账（按卷分表存在 chapter-vol-*）单独取一次 —— 它不在 TABS 的 table 里
-  const ledger = await db.getAllChapterLedgerRows().catch(onFail)
+  const ledger = await (pid ? db.getAllChapterLedgerRowsFor(pid) : db.getAllChapterLedgerRows()).catch(onFail)
   if (ledger.length) {
     tables.push({
       tabId: 'chapter-master',

@@ -20,6 +20,7 @@ import * as db from '@/lib/db'
 //    留在这里会让 `db → worldPack` 成环。此处只 re-export，既有 import 路径一字不变。
 import type { WorldPackKind, WorldPackTable, WorldPackOrigin, WorldPack } from '@/lib/world/worldTypes'
 import { isAtlasTab, resolveAtlasFields } from '@/lib/atlas/schema'
+import { MODULE_CUSTOM_FIELD_TABS, resolveModuleCustomFields } from '@/lib/forms/customFields'
 import { TABS } from '@/lib/schema'
 import { loadAtlasSchema } from '@/lib/atlas/persistence'
 import type { AtlasFieldDefinition } from '@/lib/atlas/types'
@@ -83,6 +84,30 @@ export function worldPackFingerprint(pack: Pick<WorldPack, 'tables' | 'activeSub
  * 从**当前项目**抽一个世界包（只读）。
  * 空表**不产出条目** —— 否则引入方会凭空多出一堆空页签。
  */
+async function collectUsedAtlasFields(
+  projectId: string,
+  tabId: string,
+  rows: readonly { data?: Record<string, string> }[],
+): Promise<AtlasFieldDefinition[] | undefined> {
+  if (!isAtlasTab(tabId) && !MODULE_CUSTOM_FIELD_TABS.has(tabId)) return undefined
+  const cfg = (await loadAtlasSchema(projectId, tabId)).config
+  const usedKeys = new Set<string>()
+  for (const r of rows) {
+    for (const k of Object.keys(r.data ?? {})) {
+      if (k.startsWith('cf_')) usedKeys.add(k)
+    }
+  }
+  if (usedKeys.size === 0) return undefined
+  const defs = cfg.fields.filter(f => usedKeys.has(f.id))
+  const valid = isAtlasTab(tabId)
+    ? new Set(resolveAtlasFields(TABS.find(t => t.id === tabId) ?? ({ id: tabId, columns: [] } as never), {
+      config: cfg, purpose: 'export', ignoreAppliesTo: true,
+    }).filter(f => f.source === 'custom').map(f => f.key))
+    : new Set(resolveModuleCustomFields(cfg, { purpose: 'detail' }).map(f => f.key))
+  const kept = defs.filter(f => valid.has(f.id))
+  return kept.length > 0 ? kept : undefined
+}
+
 export async function collectWorldPack(opts: { name: string; projectName?: string }): Promise<WorldPack> {
   const projectId = db.getCurrentProjectId()
   const tables: WorldPackTable[] = []
@@ -90,45 +115,29 @@ export async function collectWorldPack(opts: { name: string; projectName?: strin
 
   for (const spec of worldPackTabSpecs()) {
     if (spec.kind === 'form') {
-      const data = await db.getFormData(spec.tabId)
+      const data = projectId ? await db.getFormDataFor(projectId, spec.tabId) : await db.getFormData(spec.tabId)
       const filled = Object.keys(data).filter(k => String(data[k] ?? '').trim() !== '')
-      if (filled.length) tables.push({ tabId: spec.tabId, kind: 'form', rows: [{ id: spec.tabId, data, order: 0 }] })
+      if (filled.length) {
+        const rows = [{ id: spec.tabId, data, order: 0 }]
+        const atlasFields = await collectUsedAtlasFields(projectId, spec.tabId, rows)
+        tables.push({ tabId: spec.tabId, kind: 'form', rows, ...(atlasFields ? { atlasFields } : {}) })
+      }
       continue
     }
     if (spec.kind === 'sub') {
-      const subs = await db.getSubSets(spec.tabId)
+      const subs = projectId ? await db.getSubSetsFor(projectId, spec.tabId) : await db.getSubSets(spec.tabId)
       if (!subs.length) continue
-      tables.push({
-        tabId: spec.tabId,
-        kind: 'sub',
-        rows: subs.map(s => ({ id: s.id, name: s.name || '', data: s.data ?? {}, order: s.order ?? 0 })),
-      })
-      activeSubs[spec.tabId] = await db.getActiveSubIds(spec.tabId)
+      const rows = subs.map(s => ({ id: s.id, name: s.name || '', data: s.data ?? {}, order: s.order ?? 0 }))
+      const atlasFields = await collectUsedAtlasFields(projectId, spec.tabId, rows)
+      tables.push({ tabId: spec.tabId, kind: 'sub', rows, ...(atlasFields ? { atlasFields } : {}) })
+      activeSubs[spec.tabId] = projectId ? await db.getActiveSubIdsFor(projectId, spec.tabId) : await db.getActiveSubIds(spec.tabId)
       continue
     }
-    const rows = spec.kind === 'table' ? await db.getTableRows(spec.tabId) : await db.getCardRecords(spec.tabId)
+    const rows = spec.kind === 'table'
+      ? (projectId ? await db.getTableRowsFor(projectId, spec.tabId) : await db.getTableRows(spec.tabId))
+      : (projectId ? await db.getCardRecordsFor(projectId, spec.tabId) : await db.getCardRecords(spec.tabId))
     if (!rows.length) continue
-    /**
-     * 3.1.3（方案 §8.3）：图鉴页签要**随条目带字段定义与主图**。
-     * 只带"被这些行实际用到"的自定义字段 —— 整份配置搬过去等于替对方改了字段方案。
-     */
-    let atlasFields: AtlasFieldDefinition[] | undefined
-    if (isAtlasTab(spec.tabId)) {
-      const cfg = (await loadAtlasSchema(projectId, spec.tabId)).config
-      const usedKeys = new Set<string>()
-      for (const r of rows) {
-        for (const k of Object.keys((r as { data?: Record<string, string> }).data ?? {})) {
-          if (k.startsWith('cf_')) usedKeys.add(k)
-        }
-      }
-      const defs = cfg.fields.filter(f => usedKeys.has(f.id))
-      // 借用 resolveAtlasFields 的"有效字段"口径：归档字段不该随包走
-      const tabDef = TABS.find(t => t.id === spec.tabId) ?? ({ id: spec.tabId, columns: [] } as never)
-      const valid = new Set(resolveAtlasFields(tabDef, { config: cfg, purpose: 'export', ignoreAppliesTo: true })
-        .filter(f => f.source === 'custom').map(f => f.key))
-      const kept = defs.filter(f => valid.has(f.id))
-      if (kept.length) atlasFields = kept
-    }
+    const atlasFields = await collectUsedAtlasFields(projectId, spec.tabId, rows as { data?: Record<string, string> }[])
     tables.push({
       tabId: spec.tabId,
       kind: spec.kind,

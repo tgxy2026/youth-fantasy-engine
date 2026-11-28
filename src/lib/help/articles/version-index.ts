@@ -10,15 +10,17 @@ import type { HelpArticle } from '@/lib/help/types'
 import { VERSION_ARTICLES } from '@/lib/help/articles/version'
 import { VERSION_374_ARTICLES } from '@/lib/help/articles/version-374'
 import { VERSION_375_ARTICLES } from '@/lib/help/articles/version-375'
+import { VERSION_376_ARTICLES } from '@/lib/help/articles/version-376'
 
 /**
  * 全部版本变化篇（按版本号升序）。
  *
  * `VERSION_ARTICLES` 内部已含 `VERSION_373_ARTICLES`（version.ts 末尾拼接），
- * 这里不再重复列 3.7.3，在其后追加 3.7.4、3.7.5。
+ * 这里不再重复列 3.7.3，在其后追加 3.7.4、3.7.5、3.7.6。
  */
 export const ALL_VERSION_NOTES: HelpArticle[] = [
   ...VERSION_ARTICLES,
   ...VERSION_374_ARTICLES,
   ...VERSION_375_ARTICLES,
+  ...VERSION_376_ARTICLES,
 ]
