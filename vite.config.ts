@@ -165,6 +165,12 @@ export default defineConfig(() => ({
         //    `TypeError: manualChunks is not a function`（2026-10-07 实测）。
         manualChunks(id: string) {
           if (/[\\/]node_modules[\\/](?:react|react-dom)[\\/]/.test(id)) return 'react-vendor'
+          if (/[\\/]node_modules[\\/](?:lucide-react|idb)[\\/]/.test(id)) return 'vendor-libs'
+          if (/[\\/]src[\\/]lib[\\/]schemaTabs[\\/]/.test(id)) return 'schema-tabs'
+          if (/[\\/]src[\\/]lib[\\/]sync[\\/]/.test(id)) return 'sync-core'
+          if (/[\\/]src[\\/]lib[\\/]aiTasks[\\/]/.test(id)) return 'ai-tasks'
+          if (/[\\/]src[\\/]lib[\\/]ai[\\/](?:aiContext|atlasContext|tableRender|aiDataSources)/.test(id)) return 'ai-context'
+          if (/[\\/]src[\\/]lib[\\/]ai[\\/]/.test(id)) return 'ai-core'
         },
       },
     },
